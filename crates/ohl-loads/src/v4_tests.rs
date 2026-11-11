@@ -193,7 +193,8 @@ span = 1
     // Refused: "every" with another broken span of its section, two
     // "every", a section removed and broken, removed twice, snow values
     // without snow, a density with ice = false, a bad direction, ice not
-    // true, false, "none" or a thickness, a version above 4.
+    // true, false, "none" or a thickness, a version above the newest
+    // read (5 since 2026-11-11).
     for bad in [
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.broken]]\nsection = \"S\"\nspan = \"every\"\n[[case.broken]]\nsection = \"S\"\nspan = 1\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[[case.broken]]\nsection = \"S\"\nspan = \"every\"\n[[case.broken]]\nsection = \"T\"\nspan = \"every\"\n",
@@ -207,7 +208,7 @@ span = 1
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = \"lots\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = -0.01\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\nwind_from = \"ahead\"\n",
-        "version = 5\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+        "version = 6\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
     ] {
         assert!(LoadCases::parse(bad).is_err(), "{bad}");
     }
@@ -285,6 +286,7 @@ fn two_broken_spans_solve_together() {
                     section: "S1".into(),
                     span: BrokenSpan::One(k),
                     set: None,
+                    subconductors: None,
                 })
                 .collect(),
         );
@@ -355,11 +357,13 @@ fn every_span_beside_a_fixed_break() {
             section: "S2".into(),
             span: BrokenSpan::One(1),
             set: None,
+            subconductors: None,
         },
         BrokenWire {
             section: "S1".into(),
             span: BrokenSpan::Every,
             set: None,
+            subconductors: None,
         },
     ]);
     let r = structure_loads(&line, &lib, &weather, &[c], &budget).unwrap();
@@ -921,4 +925,36 @@ fn local_ice_in_the_structure_checks() {
         }
     }
     assert!(more >= 1, "the local ice uses more of some structure");
+}
+
+/// Version 5 (roadmap O22 item 7): `subconductors` on a broken wire —
+/// read, checked (0 refused; more than the bundle refused against the
+/// line), written only by a file that uses it, an older file unchanged.
+#[test]
+fn subconductors_of_a_broken_wire_are_version_5() {
+    let text = "format = \"ohl-load-cases\"\nversion = 5\n\n[[case]]\nname = \"a\"\n\
+                weather = \"calm\"\n\n[[case.broken]]\nsection = \"S\"\nspan = 2\n\
+                subconductors = 1\n";
+    let set = LoadCases::parse(text).unwrap();
+    let b = set.cases[0].broken.as_ref().unwrap();
+    assert_eq!(b.subconductors, Some(1));
+    assert_eq!(b.describe(), "S span 2 broken (1 subconductor)");
+    assert!(set.cases[0].uses_version_5());
+    assert_eq!(set.written_version(), 5);
+    let written = set.to_toml();
+    assert!(written.contains("version = 5"), "{written}");
+    assert!(written.contains("subconductors = 1"), "{written}");
+    assert_eq!(LoadCases::parse(&written).unwrap(), set);
+    // Without it: the version of before, and no such line.
+    let mut plain = set.clone();
+    plain.cases[0].broken.as_mut().unwrap().subconductors = None;
+    assert_eq!(plain.written_version(), 3);
+    assert!(!plain.to_toml().contains("subconductors"));
+    // Refused: none broken.
+    let zero = text.replace("subconductors = 1", "subconductors = 0");
+    let e = LoadCases::parse(&zero).unwrap_err();
+    assert!(e.contains("subconductors = 0"), "{e}");
+    // A newer file is refused as newer.
+    let newer = text.replace("version = 5", "version = 6");
+    assert!(LoadCases::parse(&newer).is_err());
 }

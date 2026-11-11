@@ -701,7 +701,10 @@ against what line design practice uses). In the order proposed:
    **Built 2026-11-11, in active development (not approved yet):** the
    share per set at a shared point (the line sends each set's part of
    the pulls, line values 7; `sets` with `back` / `ahead` scales those
-   sets only).
+   sets only); the partial break of a bundle (`subconductors = k` of a
+   load case's broken wire, load case file 5: the broken ones gone from
+   the span, the tensions per wire left; the form's field still to do).
+   Still open: point loads across or along, gap-type conductors.
 
 Three hand-sized comparison cases to keep with the benchmarks: three
 inclined spans in the blocks, clipped, and in the blocks then clipped; a

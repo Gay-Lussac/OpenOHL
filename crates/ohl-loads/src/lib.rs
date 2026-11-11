@@ -64,6 +64,11 @@
 //! structures ([`StructureOptions`]); each structure takes only the cases
 //! of its set (`ohl_line::Line::load_cases_for`). [`LoadCases::to_toml`]
 //! writes a file at the lowest version its cases need.
+//!
+//! **Version 5** (2026-11-11, roadmap O22 item 7): a broken wire may
+//! break some subconductors of its bundle only (`subconductors = k` in a
+//! `[[case.broken]]` table, [`BrokenWire::subconductors`]); none given:
+//! the whole phase, as before.
 
 mod analysis;
 mod body;
@@ -88,7 +93,9 @@ use serde::Deserialize;
 
 /// `format` of a load case file.
 pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
-/// Newest format version read. Version 4 (2026-11-03) adds several
+/// Newest format version read. Version 5 (2026-11-11) adds a broken
+/// wire's `subconductors` (some subconductors of a bundle broken,
+/// [`BrokenWire::subconductors`]). Version 4 (2026-11-03) adds several
 /// broken wires per case (`[[case.broken]]`), removed conductors
 /// (`[[case.removed]]`, [`RemovedWire`]), the wires' wind side
 /// (`wind_from`), `use_local`, and in `[case.structure]` the wind's
@@ -97,7 +104,7 @@ pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
 /// version 2 a case's `[case.structure]` table ([`StructureWind`]); each
 /// written only when a case has one ([`LoadCases::written_version`]);
 /// older files read as before.
-pub const LOAD_CASE_FILE_VERSION: u32 = 4;
+pub const LOAD_CASE_FILE_VERSION: u32 = 5;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
@@ -349,7 +356,8 @@ impl From<LoadCaseFile> for LoadCase {
 /// set in that span, as the structures number their wire points): a
 /// check that the span is the wire meant, refused when neither end has
 /// it. A bundle's broken wire is its whole phase (every subconductor in
-/// that span). `span = "every"`: a case per span, one at a time, and for
+/// that span) unless `subconductors` says how many of them break (version
+/// 5, [`BrokenWire::subconductors`]). `span = "every"`: a case per span, one at a time, and for
 /// each structure point the largest of each force component (by size,
 /// its sign kept) with the span giving it — an envelope, conservative for
 /// the allowable-loads check only (the components may come from different
@@ -361,6 +369,7 @@ impl From<LoadCaseFile> for LoadCase {
 /// section = "S3"
 /// span = 2        # 1 = the section's first span; or "every"
 /// set = 1         # optional
+/// subconductors = 1   # optional, version 5: of a bundle, how many break
 /// ```
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -373,6 +382,16 @@ pub struct BrokenWire {
     /// checked).
     #[serde(default)]
     pub set: Option<u32>,
+    /// A bundle: how many of its subconductors break in the span (version
+    /// 5, roadmap O22 item 7): 1 to the bundle's number. None, or all of
+    /// them: the whole phase — the default, and the larger unbalance on
+    /// the structures. Fewer: the wires left keep pulling
+    /// (`ohl_line::solve::solve_section_breaks`: the broken ones taken as
+    /// gone from the span), so the unbalance is smaller; the tension of
+    /// the wires left with the broken ones hanging in their spacers is
+    /// not checked (said in the case's notes). Same solve time.
+    #[serde(default)]
+    pub subconductors: Option<u32>,
 }
 
 /// Which span of a [`BrokenWire`] is broken.
@@ -410,12 +429,53 @@ impl BrokenWire {
     /// `S3 every span broken, one at a time`.
     pub fn describe(&self) -> String {
         let set = self.set.map_or(String::new(), |s| format!(" set {s}"));
+        let some = self.subconductors.map_or(String::new(), |k| {
+            format!(" ({k} subconductor{})", if k == 1 { "" } else { "s" })
+        });
         match self.span {
-            BrokenSpan::One(n) => format!("{} span {n}{set} broken", self.section),
+            BrokenSpan::One(n) => format!("{} span {n}{set} broken{some}", self.section),
             BrokenSpan::Every => {
-                format!("{}{set} every span broken, one at a time", self.section)
+                format!(
+                    "{}{set} every span broken{some}, one at a time",
+                    self.section
+                )
             }
         }
+    }
+
+    /// The breaks of the spans `spans` (from 0, as [`BrokenWire::spans`]
+    /// gives them) for the solve: each with this wire's subconductors.
+    pub fn breaks(&self, spans: &[usize]) -> Vec<ohl_line::solve::Break> {
+        spans
+            .iter()
+            .map(|&span| ohl_line::solve::Break {
+                span,
+                subconductors: self.subconductors,
+            })
+            .collect()
+    }
+
+    /// What a case's notes say of some subconductors broken (none: the
+    /// whole phase, or a section the line does not have): how many of
+    /// how many, what is solved and what is not checked.
+    pub fn partial_note(&self, line: &Line) -> Option<String> {
+        let k = self.subconductors?;
+        let n = line
+            .sections
+            .iter()
+            .find(|s| s.id == self.section)?
+            .bundle
+            .max(1);
+        (k < n).then(|| {
+            format!(
+                "{k} of {n} subconductors of {} broken: the static state after the break, the \
+                 broken ones gone from the span (of the two readings the one with the larger \
+                 unbalance on the structures; smaller than the whole phase broken); NOT ON THE \
+                 SAFE SIDE for the subconductors left: their tension with the broken ones \
+                 hanging in the spacers is higher and not checked",
+                self.section
+            )
+        })
     }
 
     /// The spans broken in `line` (0 = first): the one, or every span of
@@ -438,6 +498,16 @@ impl BrokenWire {
             }
             BrokenSpan::Every => (0..n).collect(),
         };
+        if let Some(k) = self.subconductors {
+            let bundle = s.bundle.max(1);
+            if k == 0 || k > bundle {
+                return Err(format!(
+                    "broken wire: {k} subconductors of section {} (a bundle of {bundle}: 1 to \
+                     {bundle}; none given: the whole phase)",
+                    self.section
+                ));
+            }
+        }
         if let Some(set) = self.set {
             for &k in &spans {
                 if s.points[k].set != set && s.points[k + 1].set != set {
@@ -629,6 +699,12 @@ impl LoadCase {
         }
     }
 
+    /// Whether the case uses anything of file version 5: a broken wire
+    /// with some subconductors of its bundle only.
+    pub fn uses_version_5(&self) -> bool {
+        self.broken_wires().any(|b| b.subconductors.is_some())
+    }
+
     /// Whether the case uses anything of file version 4.
     pub fn uses_version_4(&self) -> bool {
         !self.broken_also.is_empty()
@@ -803,6 +879,13 @@ impl LoadCase {
             if b.section.trim().is_empty() {
                 return Err(format!("{}: a broken wire without a section", self.name));
             }
+            if b.subconductors == Some(0) {
+                return Err(format!(
+                    "{}: {}: subconductors = 0 (at least 1; none given: the whole phase)",
+                    self.name,
+                    b.describe()
+                ));
+            }
             if seen.contains(&(b.section.as_str(), b.span)) {
                 return Err(format!("{}: {} given twice", self.name, b.describe()));
             }
@@ -932,7 +1015,9 @@ impl LoadCases {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
-    /// The version a file of these cases is written at: 4 when a case
+    /// The version a file of these cases is written at: 5 when a broken
+    /// wire gives its subconductors ([`LoadCase::uses_version_5`]), else
+    /// 4 when a case
     /// uses a version-4 value ([`LoadCase::uses_version_4`]), else 3 when
     /// a case has a broken wire, else 2 when a case has a
     /// `[case.structure]` table with a value, else 1 (an older program
@@ -945,7 +1030,9 @@ impl LoadCases {
 /// The version a load case file holding `cases` is written at
 /// ([`LoadCases::written_version`]).
 pub fn written_version(cases: &[LoadCase]) -> u32 {
-    if cases.iter().any(LoadCase::uses_version_4) {
+    if cases.iter().any(LoadCase::uses_version_5) {
+        5
+    } else if cases.iter().any(LoadCase::uses_version_4) {
         4
     } else if cases.iter().any(|c| c.broken.is_some()) {
         3
@@ -1283,6 +1370,7 @@ pub fn default_budget() -> Budget {
 // The structure's axes: (right of the line, ahead) in line axes (the
 // line's one rule).
 use ohl_line::links::axes;
+use ohl_line::solve::Break;
 
 /// Solves every section of `line` (structure types resolved) in each load
 /// case and gives the loads on the structures. A case with a broken wire
@@ -1436,18 +1524,21 @@ pub fn structure_loads(
         }
         // The broken wires: those of one span, all together; one with
         // "every", once per span of its section.
-        let mut fixed: Vec<(String, Vec<usize>)> = Vec::new();
-        let mut every: Option<(String, Vec<usize>)> = None;
+        let mut fixed: Vec<(String, Vec<Break>)> = Vec::new();
+        let mut every: Option<(String, Vec<Break>)> = None;
         for b in case.broken_wires() {
-            let spans = b.spans(solving).map_err(fail)?;
+            let breaks = b.breaks(&b.spans(solving).map_err(fail)?);
             match b.span {
-                BrokenSpan::Every => every = Some((b.section.clone(), spans)),
+                BrokenSpan::Every => every = Some((b.section.clone(), breaks)),
                 BrokenSpan::One(_) => match fixed.iter_mut().find(|f| f.0 == b.section) {
-                    Some(f) => f.1.extend(spans),
-                    None => fixed.push((b.section.clone(), spans)),
+                    Some(f) => f.1.extend(breaks),
+                    None => fixed.push((b.section.clone(), breaks)),
                 },
             }
             notes.push(format!("broken wire: {}", b.describe()));
+            // Some subconductors only (roadmap O22 item 7): what is
+            // solved and what is not checked.
+            notes.extend(b.partial_note(solving));
         }
         if case.broken_wires().count() > 1 {
             notes.push(
@@ -1458,7 +1549,7 @@ pub fn structure_loads(
         }
         // The span named for each component (the first one broken, or the
         // span of "every").
-        let first = fixed.first().and_then(|f| f.1.first().copied());
+        let first = fixed.first().and_then(|f| f.1.first().map(|b| b.span));
         let mut each = Vec::new();
         let (mut loads, failed, mut missing) = match &every {
             None => {
@@ -1479,9 +1570,10 @@ pub fn structure_loads(
                 // several.
                 let mut worst: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
                 let (mut failed, mut missing) = (Vec::new(), Vec::new());
-                for &k in broken {
+                for &one in broken {
+                    let k = one.span;
                     let mut all = fixed.clone();
-                    all.push((section.clone(), vec![k]));
+                    all.push((section.clone(), vec![one]));
                     let (at, f, m) = case_loads(
                         solving,
                         library,
@@ -1762,8 +1854,9 @@ type Loads = (
 );
 
 /// The loads at the structures' points of load case `case` in weather
-/// case `w`, the wires of the spans `broken` (per section, spans from 0)
-/// gone together when given; `named` the broken span the loads name
+/// case `w`, the wires of the spans `broken` (per section, spans from 0;
+/// the whole phase or some subconductors, [`Break`]) broken together
+/// when given; `named` the broken span the loads name
 /// ([`AttachmentLoad::broken_span`], from 0); with the sections and
 /// jumpers that did not solve.
 fn case_loads(
@@ -1771,7 +1864,7 @@ fn case_loads(
     library: &ohl_cables::Library,
     w: &WeatherCase,
     case: &LoadCase,
-    broken: &[(String, Vec<usize>)],
+    broken: &[(String, Vec<Break>)],
     named: Option<usize>,
     budget: &Budget,
 ) -> Loads {
@@ -1792,11 +1885,11 @@ fn case_loads(
     let results = if broken.is_empty() {
         ohl_line::solve::solve_line_with(&solving, library, w, budget)
     } else {
-        let spans: Vec<(&str, Vec<usize>)> = broken
+        let spans: Vec<(&str, Vec<Break>)> = broken
             .iter()
             .map(|(s, k)| (s.as_str(), k.clone()))
             .collect();
-        match ohl_line::solve::solve_line_broken_spans(&solving, library, w, &spans, budget) {
+        match ohl_line::solve::solve_line_breaks(&solving, library, w, &spans, budget) {
             Ok(r) => r,
             // Checked by the caller (the sections are there).
             Err(e) => {

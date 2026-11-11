@@ -128,6 +128,7 @@ fn a_broken_span_sends_no_pull() {
         section: "S".into(),
         span: BrokenSpan::One(2),
         set: None,
+        subconductors: None,
     }]);
     let r = structure_loads(&line, &library(), &weather(), &[case], &default_budget()).unwrap();
     let t2 = at(&r[0], "T2");
@@ -273,4 +274,78 @@ fn the_pulls_per_set_add_up_to_the_points() {
     assert_eq!(t2.pulls_by_set[0].set, 1);
     assert_eq!(t2.pulls_by_set[0].back, t2.pull_back);
     assert_eq!(t2.pulls_by_set[0].ahead, t2.pull_ahead);
+}
+
+/// Some subconductors of a bundle broken in a load case (roadmap O22 item
+/// 7): the three spans as a twin bundle, one subconductor of span 2
+/// broken. T2 keeps both spans' pulls — the one wire left ahead pulling
+/// a little less than the two behind — and takes the difference along the
+/// line, less than with the whole phase broken; the case's notes say what is solved and what
+/// is not checked. More subconductors than the bundle has: the case
+/// fails. Every subconductor: the whole-phase case, the same loads.
+#[test]
+fn some_subconductors_broken_in_a_load_case() {
+    let mut line = three_spans();
+    line.sections[0].bundle = 2;
+    let broken = |k: Option<u32>| {
+        let mut case = LoadCase::from_weather("calm");
+        case.set_broken(vec![BrokenWire {
+            section: "S".into(),
+            span: BrokenSpan::One(2),
+            set: None,
+            subconductors: k,
+        }]);
+        structure_loads(&line, &library(), &weather(), &[case], &default_budget())
+    };
+    let part = broken(Some(1)).unwrap();
+    let whole = broken(None).unwrap();
+    let t2 = at(&part[0], "T2");
+    assert!(
+        t2.pull_back[1] < -1000.0 && t2.pull_ahead[1] > 1000.0,
+        "{t2:?}"
+    );
+    assert!(
+        (t2.pull_back[1] + t2.pull_ahead[1] - t2.local[1]).abs() < 1e-3,
+        "{t2:?}"
+    );
+    // One wire of two left ahead: less pull than the two behind.
+    assert!(t2.pull_ahead[1] < -t2.pull_back[1] - 100.0, "{t2:?}");
+    // A smaller unbalance than the whole phase broken.
+    let all = at(&whole[0], "T2");
+    assert!(
+        t2.local[1] < 0.0 && t2.local[1].abs() < 0.8 * all.local[1].abs(),
+        "{} against {}",
+        t2.local[1],
+        all.local[1]
+    );
+    let notes = &part[0].notes;
+    assert!(
+        notes
+            .iter()
+            .any(|n| n == "broken wire: S span 2 broken (1 subconductor)"),
+        "{notes:?}"
+    );
+    assert!(
+        notes.iter().any(|n| {
+            n.starts_with("1 of 2 subconductors of S broken: the static state after the break")
+                && n.contains("NOT ON THE SAFE SIDE for the subconductors left")
+        }),
+        "{notes:?}"
+    );
+    assert!(
+        !whole[0]
+            .notes
+            .iter()
+            .any(|n| n.contains("subconductors of"))
+    );
+    // Every subconductor is the whole phase.
+    let both = broken(Some(2)).unwrap();
+    assert_eq!(at(&both[0], "T2").local, all.local);
+    assert!(!both[0].notes.iter().any(|n| n.contains("subconductors of")));
+    // More than the bundle has.
+    let e = broken(Some(3)).unwrap_err();
+    assert!(
+        e.contains("3 subconductors of section S (a bundle of 2"),
+        "{e}"
+    );
 }

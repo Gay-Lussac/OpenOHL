@@ -77,12 +77,14 @@ longitudinal = 1.0         # a code's impact factor goes here
 section = "S3"             # the section, by id
 span = 2                   # its span, from 1 (the section's first span is 1); or "every"
 set = 1                    # optional: the set of the wire at the span's ends
+subconductors = 1          # optional, version 5: of a bundle, how many break (default: all)
 ```
 
 | Field | Required | Notes |
 |---|---|---|
 | `section` | yes | The section, by id. A section the line does not have fails the case (it is not solved as if whole). |
 | `span` | yes | The span broken, counted from 1 along the section's points; or `"every"`: each span of the section in turn (below). A span the section does not have fails the case. |
+| `subconductors` | no | Version 5 (2026-11-11, in active development): of a **bundle**, how many subconductors break in the span — 1 to the bundle's number. Not given, or all of them: the **whole phase** (the default, and the larger unbalance on the structures). Fewer: the wires left keep pulling, so the unbalance on the structures is much smaller than with the whole phase broken, and the wires left carry nearly the pull of all the wires behind them (their tension rises by about n/(n − k): check it against their strength). The broken ones are taken as gone from the span; the tension of the wires left with the broken ones hanging in their spacers is higher and **not checked** — said on the span and in the case's notes ("NOT ON THE SAFE SIDE"). Same solve time. 0, or more than the bundle has, fails the case. A file is written at version 5 only when a case gives it. See [the theory](../theory/wirefe.md#some-subconductors-of-a-bundle-broken). |
 | `set` | no | The set of the wire at the span's ends, as the structures number their wire points (a section point's set): the wire of that set in that span. A check that the span is the wire meant — the case fails when neither end of the span has that set (a section renumbered or strung again). |
 
 What is solved: in the case's weather and condition, the section with the wire of that span **gone** — each span keeping its unstressed length of the whole section in the case, the broken span carrying nothing, its two clamps each a free end held by its strings alone. A suspension string next to the break swings towards the spans left on its side until it, its weight and the remaining span's pull are in equilibrium; the remaining spans re-solve with the clamp where it went. The other wires stay as they are. The structure next to the break takes the remaining span's pull along the line, unbalanced; a section end next to the break (a dead-end) holds only its strings' weight. A **bundle**'s broken wire is the whole phase (every subconductor in that span). See [Finite-element wire systems](../theory/wirefe.md#a-broken-wire) for the model and what it leaves out (the dynamic impact, the pieces on the ground).

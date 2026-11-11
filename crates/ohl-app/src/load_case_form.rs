@@ -678,6 +678,7 @@ fn wires_ui(ui: &mut egui::Ui, case: &mut LoadCase, cx: &FormContext<'_>) -> boo
                                     section: id.clone(),
                                     span: BrokenSpan::Every,
                                     set,
+                                    subconductors: None,
                                 });
                             }
                             changed = true;
@@ -707,14 +708,18 @@ fn wires_ui(ui: &mut egui::Ui, case: &mut LoadCase, cx: &FormContext<'_>) -> boo
                                 .changed()
                             {
                                 if on {
-                                    let set = broken
-                                        .iter()
-                                        .find(|b| &b.section == id)
-                                        .and_then(|b| b.set);
+                                    // A span ticked takes what the
+                                    // section's other breaks say (their
+                                    // set, their subconductors: the
+                                    // file's, no field here yet).
+                                    let like = broken.iter().find(|b| &b.section == id);
+                                    let set = like.and_then(|b| b.set);
+                                    let subconductors = like.and_then(|b| b.subconductors);
                                     broken.push(BrokenWire {
                                         section: id.clone(),
                                         span: BrokenSpan::One(k),
                                         set,
+                                        subconductors,
                                     });
                                     broken.sort_by_key(|b| {
                                         (

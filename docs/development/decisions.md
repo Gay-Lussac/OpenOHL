@@ -10,6 +10,45 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Some subconductors of a bundle broken (roadmap O22 item 7; owner "Go ahead with the braces then O22")**
+
+- **What.** `[[case.broken]] subconductors = k`: k of the n
+  subconductors of a bundle break in the span. None given, or n: the
+  whole phase, as before (bit for bit) — the default and the larger
+  unbalance.
+- **How it is solved.** The broken subconductors are taken as **gone
+  from the span** (the recommended reading of the design's open
+  question: of the two readings the larger unbalance on the
+  structures). The span keeps one element with the share left,
+  r = (n − k)/n, of the stiffness, the weight and the loads per metre,
+  its length as cut; its tensions are reported per wire left (÷ r), the
+  stress-strain curves take the tension per wire left, the end pulls are
+  the whole bundle's.
+- **Said.** On the span and in the load case's notes: "NOT ON THE SAFE
+  SIDE" for the tension of the subconductors left — with the broken ones
+  hanging in the spacers it is higher, not modelled, not checked.
+- **A finding worth knowing.** A suspension string takes little along
+  the line, so the wires left carry nearly the pull of all the wires
+  behind them: one of two broken raises the wire left from 28 kN to
+  41.8 kN on the benchmark (`brokenwire-004`), while the structure takes
+  0.82 kN along the line instead of about 19 kN. The strength warning
+  and the tension rules see the per-wire value.
+- **Format.** Load case file version **5**, written only when a case
+  gives `subconductors`; versions 1 to 4 read as before. 0 refused when
+  the file is read, more than the bundle when the case is computed.
+- **Refused** as for a whole break: the ruling-span method; a spacer or
+  a jumper on a span point of the span (kept refused for a partial break
+  too: untested with spacers).
+- **Not done yet:** the "subconductors broken" field of the load case
+  form (a span ticked there keeps the value the file gives its section's
+  other breaks); the design-code plugins write none.
+- **Noticed, not changed:** for a bundle the strings' weight is shared
+  between the subconductors but their stiffness is not, so a string
+  stretches 1/n of what it really does (0.2 mm on the benchmark); said
+  in the theory, the benchmark's reference does the same.
+- No schema page exists under `docs/schema/` for load case files; the
+  data model and the user guide carry the change.
+
 **A share of a span's pull per wire set at a shared attachment point (roadmap O22 item 7; owner "Go ahead with the braces then O22")**
 
 - **What was wrong.** A structure load case's `sets` only picked the

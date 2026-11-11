@@ -2208,6 +2208,15 @@ case name), `condition` (initial, creep, load, max sag), factors
 the set of a section point at one of the span's ends; `BrokenWire::spans(line)`
 the spans broken from 0, or why not; `describe()` → `S3 span 2 broken`);
 written at version 3 only when a case has one (`written_version`);
+**version 5** (2026-11-11, roadmap O22 item 7; `LoadCase::uses_version_5`,
+written at 5 only then): `BrokenWire.subconductors` u32? — of a bundle,
+how many subconductors break in the span (1 to the section's `bundle`;
+none or all: the whole phase; `validate` refuses 0, `spans(line)` more
+than the bundle; `breaks(spans)` → `ohl_line::solve::Break { span,
+subconductors }` for `solve_section_breaks` / `solve_line_breaks`;
+`partial_note(line)` the case's note; no stored result changes: the
+span's tensions in `SpanShape` are per wire left, its flag
+`partial_break_flag`);
 **version 4** (2026-11-03; `LoadCase::uses_version_4`, written at 4 only
 then): `broken_also` (`[[case.broken]]` after the first, in `broken`;
 `broken_wires()`, `has_broken()`, `set_broken(vec)`; the v3 table reads

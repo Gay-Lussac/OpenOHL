@@ -2203,6 +2203,13 @@ outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
 /// the line and height, the string's swing along the line (positive
 /// towards span 2) and force, and the load on T2 (the string's top) along
 /// the line (positive towards T3) and down.
+///
+/// With `bundle` (the section's number of subconductors, default 1) and
+/// `subconductors` (how many of them break, default all): some
+/// subconductors of the bundle broken
+/// ([`ohl_line::solve::solve_section_breaks`], roadmap O22 item 7); then
+/// also `h_broken_n`, the tension per wire left in the broken span (0
+/// with the whole phase broken).
 struct BrokenWireSection;
 
 impl Calculation for BrokenWireSection {
@@ -2212,28 +2219,45 @@ impl Calculation for BrokenWireSection {
 
     fn description(&self) -> &'static str {
         "Two level spans and a suspension string, the wire of one span broken (inputs: \
-         temperature, span 1 or 2); outputs h_n (the remaining span), clamp_x_m, clamp_z_m, \
-         swing_deg, string_n, along_n, down_n (the load on the middle structure)"
+         temperature, span 1 or 2; optional bundle and subconductors: some subconductors of a \
+         bundle broken); outputs h_n (the remaining span, per wire), h_broken_n (the broken \
+         span, per wire left), clamp_x_m, clamp_z_m, swing_deg, string_n, along_n, down_n (the \
+         load on the middle structure)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
-        use ohl_line::solve::{Coupling, solve_section_broken};
+        use ohl_line::solve::{Break, Coupling, solve_section_breaks};
         let cable = two_span_cable()?;
-        let line = two_span_line()?;
+        let mut line = two_span_line()?;
         let span = float_input(inputs, "span")? as usize;
         if !(1..=2).contains(&span) {
             return Err("span: 1 or 2".into());
         }
+        // A bundle, and how many of its subconductors break (none given:
+        // one wire, the whole phase).
+        let optional = |name: &str| -> Result<Option<u32>, String> {
+            inputs
+                .contains_key(name)
+                .then(|| float_input(inputs, name).map(|x| x as u32))
+                .transpose()
+        };
+        if let Some(bundle) = optional("bundle")? {
+            line.sections[0].bundle = bundle;
+        }
+        let subconductors = optional("subconductors")?;
         let case = WeatherCase::still(
             "case",
             quantity_input::<Temperature>(inputs, "temperature")?,
         );
-        let shape = solve_section_broken(
+        let shape = solve_section_breaks(
             &line,
             &line.sections[0],
             &cable,
             &case,
-            span - 1,
+            &[Break {
+                span: span - 1,
+                subconductors,
+            }],
             &default_fe_budget(),
             &Coupling::default(),
         )
@@ -2247,6 +2271,7 @@ impl Calculation for BrokenWireSection {
         });
         Ok(outputs([
             ("h_n", shape.spans[2 - span].horizontal_tension),
+            ("h_broken_n", shape.spans[span - 1].horizontal_tension),
             ("clamp_x_m", clamp[0]),
             ("clamp_z_m", clamp[2]),
             ("swing_deg", swing),

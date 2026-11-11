@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Tests of the local winds per span (roadmap O15) and of the broken
-//! wire (roadmap O9).
+//! wire (roadmap O9; some subconductors of a bundle, roadmap O22 item 7).
 
 use super::*;
 use crate::condition::Calculation;
@@ -541,5 +541,196 @@ fn the_ruling_span_gives_its_end_pulls() {
             span.max_tension
         );
         assert!(a[2] < 0.0 && b[2] < 0.0);
+    }
+}
+
+/// The pull of the string at point `k` on its clamp along the line (x),
+/// N, the whole bundle's: its force along its direction, clamp to top.
+fn string_pull_along(shape: &SectionShape, k: usize) -> f64 {
+    let string = &shape.strings[k][0];
+    let d = v(string.top) - v(string.bottom);
+    string.force * d.x / d.norm()
+}
+
+/// Some subconductors of a bundle broken (roadmap O22 item 7): a twin
+/// bundle on the two spans, one subconductor of span 2 broken. The span
+/// keeps its wire with half the stiffness and half the weight; the
+/// statics at the suspension clamp next to the break,
+///
+/// n·H_back − (n − k)·H_ahead = the string's horizontal pull,
+///
+/// with the tensions per wire as reported (to the solver's tolerance,
+/// 10⁻³ N here). A suspension string takes little along the line, so the
+/// wire left in span 2 carries nearly the pull of the two behind it: its
+/// tension nearly doubles. The string swings back less than with the
+/// whole phase broken (a smaller unbalance), the span is flagged; every
+/// subconductor broken is the whole-phase break, bit for bit; 0 and more
+/// than the bundle are refused.
+#[test]
+fn some_subconductors_of_a_bundle_broken() {
+    let (mut line, cable) = two_spans();
+    line.sections[0].bundle = 2;
+    let budget = default_fe_budget();
+    let case = windy(10.0, 0.0, 0.0);
+    let s = line.sections[0].clone();
+    let solve = |k: Option<u32>| {
+        solve_section_breaks(
+            &line,
+            &s,
+            &cable,
+            &case,
+            &[Break {
+                span: 1,
+                subconductors: k,
+            }],
+            &budget,
+            &Coupling::default(),
+        )
+    };
+    let whole =
+        solve_section_broken(&line, &s, &cable, &case, 1, &budget, &Coupling::default()).unwrap();
+    // All of them, or none given: the whole phase.
+    assert_eq!(solve(Some(2)).unwrap(), whole);
+    assert_eq!(solve(None).unwrap(), whole);
+    for k in [0, 3] {
+        let e = solve(Some(k)).unwrap_err().to_string();
+        assert!(
+            e.contains(&format!("{k} subconductors broken of a bundle of 2")),
+            "{e}"
+        );
+    }
+    let part = solve(Some(1)).unwrap();
+    // The span keeps its wire: not a broken span of the shape.
+    assert_eq!((part.broken, part.broken_spans.len()), (None, 0));
+    assert!(part.spans[1].points.len() > 2);
+    let (back, ahead) = (
+        part.spans[0].horizontal_tension,
+        part.spans[1].horizontal_tension,
+    );
+    assert!(back > 1000.0 && ahead > 1000.0, "{back} {ahead}");
+    // The statics at the clamp (still air: the pulls along the line).
+    let unbalance = 2.0 * back - 1.0 * ahead;
+    let string = string_pull_along(&part, 1);
+    assert!(
+        (unbalance - string).abs() < 1e-3,
+        "2·{back} − 1·{ahead} = {unbalance} against the string's {string}"
+    );
+    // The wire left carries nearly the two wires' pull: more than 1.8
+    // times a wire of span 1.
+    assert!(ahead > 1.8 * back && ahead < 2.0 * back, "{back} {ahead}");
+    // The end pulls are the whole bundle's: one wire left in span 2.
+    assert!((part.spans[1].end_pulls[0][0] - ahead).abs() < 1e-6 * ahead);
+    assert!((part.spans[0].end_pulls[1][0] + 2.0 * back).abs() < 1e-6 * back);
+    // A smaller unbalance than the whole phase broken, and a string
+    // swung back less.
+    let whole_unbalance = string_pull_along(&whole, 1);
+    assert!(
+        unbalance > 100.0 && unbalance < 0.8 * whole_unbalance,
+        "{unbalance} against {whole_unbalance}"
+    );
+    assert!(part.clamps[1][0] > whole.clamps[1][0] + 0.1);
+    assert!(part.clamps[1][0] < 300.0 - 0.01);
+    // T2 takes the unbalance along the line.
+    let t2: f64 = part.attachment_loads[1].iter().map(|l| l.force[0]).sum();
+    assert!((t2 + unbalance).abs() < 1e-3, "{t2} {unbalance}");
+    // Said on the span: what is solved and what is not checked.
+    assert_eq!(
+        part.flags
+            .iter()
+            .filter(|f| f.starts_with("span 2: 1 of 2 subconductors broken"))
+            .count(),
+        1,
+        "{:?}",
+        part.flags
+    );
+    assert!(
+        part.flags
+            .iter()
+            .any(|f| f.contains("NOT ON THE SAFE SIDE for the tension of the subconductors left"))
+    );
+    assert_eq!(
+        partial_break_flag(1, 1, 2),
+        part.flags[part.flags.len() - 1]
+    );
+    // A bundle of four with two broken has the same share left: the same
+    // tensions per wire (the strings' share per subconductor apart, here
+    // made the same by a string twice as heavy and stiff).
+    let mut four = line.clone();
+    four.sections[0].bundle = 4;
+    let string = &mut four.structures[1].strings[0];
+    string.weight *= 2.0;
+    string.stiffness = string.stiffness.map(|k| k * 2.0);
+    let two_of_four = solve_section_breaks(
+        &four,
+        &four.sections[0],
+        &cable,
+        &case,
+        &[Break {
+            span: 1,
+            subconductors: Some(2),
+        }],
+        &budget,
+        &Coupling::default(),
+    )
+    .unwrap();
+    assert!((two_of_four.spans[1].horizontal_tension - ahead).abs() < 1e-6 * ahead);
+    assert!((two_of_four.spans[0].horizontal_tension - back).abs() < 1e-6 * back);
+}
+
+/// The same break on a cable with stress-strain curves: the curves take
+/// the broken span's tension **per wire left** (the element's over the
+/// share left). Checked with curves that are a straight line of the
+/// cable's own modulus, at the stringing temperature: the solution must
+/// then be the linear cable's — with the element's tension taken for the
+/// wire's (half of it here) the span would come out shorter and the
+/// tensions several percent off.
+#[test]
+fn a_partial_break_on_curves_takes_the_tension_per_wire() {
+    let (mut line, linear) = two_spans();
+    line.sections[0].bundle = 2;
+    let mut curved = linear.clone();
+    curved.outer.stress_strain = Some(
+        toml::from_str(
+            "strain = \"unit\"\nstress_unit = \"MPa\"\ninitial = [0.0, 86600.0]\n\
+             final_modulus = 86600.0\nreference_temperature = \"15 °C\"\n",
+        )
+        .unwrap(),
+    );
+    assert!(curves_of(&curved).is_some() && curves_of(&linear).is_none());
+    let budget = default_fe_budget();
+    let case = windy(15.0, 0.0, 0.0);
+    let s = line.sections[0].clone();
+    let solve = |cable: &Cable, breaks: &[Break]| {
+        if breaks.is_empty() {
+            solve_section(&line, &s, cable, &case, &budget).unwrap()
+        } else {
+            solve_section_breaks(
+                &line,
+                &s,
+                cable,
+                &case,
+                breaks,
+                &budget,
+                &Coupling::default(),
+            )
+            .unwrap()
+        }
+    };
+    let one = [Break {
+        span: 1,
+        subconductors: Some(1),
+    }];
+    for breaks in [&[][..], &one[..]] {
+        let (a, b) = (solve(&linear, breaks), solve(&curved, breaks));
+        for k in 0..2 {
+            let (ha, hb) = (a.spans[k].horizontal_tension, b.spans[k].horizontal_tension);
+            assert!(
+                (ha - hb).abs() < 1e-5 * ha,
+                "span {}: linear {ha}, curves {hb} ({} break)",
+                k + 1,
+                breaks.len()
+            );
+        }
+        assert!((a.clamps[1][0] - b.clamps[1][0]).abs() < 1e-5);
     }
 }

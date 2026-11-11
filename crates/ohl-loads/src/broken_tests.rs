@@ -89,7 +89,7 @@ fn broken_wires_are_read_and_checked() {
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.broken]\nsection = \"\"\nspan = 1\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.broken]\nsection = \"S\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.broken]\nsection = \"S\"\nspan = 1\nphase = 2\n",
-        "version = 5\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+        "version = 6\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
     ] {
         assert!(LoadCases::parse(bad).is_err(), "{bad}");
     }
@@ -99,6 +99,7 @@ fn broken_wires_are_read_and_checked() {
         section: "S".into(),
         span,
         set,
+        subconductors: None,
     };
     assert_eq!(wire(BrokenSpan::One(2), Some(1)).spans(&line), Ok(vec![1]));
     assert_eq!(
@@ -134,6 +135,7 @@ fn a_broken_wire_gives_the_unbalanced_longitudinal_loads() {
             section: "S".into(),
             span: BrokenSpan::One(2),
             set: Some(1),
+            subconductors: None,
         }),
         ..LoadCase::from_weather("calm")
     };
@@ -272,6 +274,7 @@ fn every_span_broken_keeps_each_break() {
             section: "S".into(),
             span,
             set: None,
+            subconductors: None,
         }),
         ..LoadCase::from_weather("calm")
     };

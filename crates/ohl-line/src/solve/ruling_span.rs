@@ -460,6 +460,21 @@ pub(super) fn curves_of(cable: &Cable) -> Option<ohl_cables::mechanics::Mechanic
         .filter(|m| m.is_nonlinear())
 }
 
+/// [`span_tensions`] per wire: in a span with subconductors broken the
+/// element carries the share of the bundle left, and each remaining wire
+/// the element's tension over that share ([`Cases::remaining`]).
+pub(super) fn wire_tensions(
+    built: &Built,
+    solution: &ohl_wirefe::Solution,
+    cases: Cases<'_>,
+) -> Vec<f64> {
+    let mut tensions = span_tensions(built, solution);
+    for (s, t) in tensions.iter_mut().enumerate() {
+        *t /= cases.remaining(s);
+    }
+    tensions
+}
+
 /// Mean tension of each span's elements (weighted by their unstressed
 /// lengths), N.
 pub(super) fn span_tensions(built: &Built, solution: &ohl_wirefe::Solution) -> Vec<f64> {

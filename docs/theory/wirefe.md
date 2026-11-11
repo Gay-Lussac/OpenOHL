@@ -234,7 +234,9 @@ next to the broken span (its first or last point) holds no wire: its
 strings hang under their own weight, with the wind on them.
 
 A **bundle**'s broken wire is its whole phase: every subconductor broken
-in that span (the solve follows one subconductor for the bundle).
+in that span (the solve follows one subconductor for the bundle) —
+unless the load case says how many of them break ([some subconductors of
+a bundle](#some-subconductors-of-a-bundle-broken), below).
 
 (The plain section model of the sag-tension jobs had a broken span
 before — `ohl_wirefe::State::broken_spans`, a job's `[[fe.broken]]` —
@@ -242,7 +244,73 @@ in one weather case for a section of its own; this is the line's: its
 structures, strings, condition and load cases.)
 
 **Conservative:** a bundle broken as a whole phase — a code that breaks
-one subconductor leaves the others carrying (less unbalance).
+one subconductor leaves the others carrying (less unbalance). It is the
+default; a partial break must be asked for.
+
+### Some subconductors of a bundle broken
+
+*Built 2026-11-11, in active development (not approved yet); roadmap
+O22 item 7.* A load case may break \\( k \\) of the \\( n \\)
+subconductors of a bundle in a span (`subconductors = k` of its
+`[[case.broken]]`; `ohl_line::solve::solve_section_breaks`). The solve
+follows one subconductor's share of the bundle (\\( 1/n \\) of the
+strings' weight and of the loads), so the span keeps **one element with
+the share left**, \\( r = (n-k)/n \\): \\( r \\) times the axial stiffness,
+the own weight per metre, the spread loads and the ice and wind; its
+unstressed length as cut. The objects on its span points stay (the wires
+left carry them). \\( k = n \\), or none given, is the whole-phase break
+above, bit for bit; 0 and more than \\( n \\) are refused. A section in
+the blocks rolls before the break, as for a whole one.
+
+The statics at the clamp next to the break, along the line, with the
+tensions per wire:
+
+\\[ n\,H_{back} - (n-k)\,H_{ahead} = \text{the string's horizontal pull.} \\]
+
+A suspension string takes little along the line, so the wires left carry
+nearly the pull of all the wires behind them: their tension rises by
+about \\( n/(n-k) \\). On the benchmark's two 300 m spans strung at 28 kN
+(`brokenwire-004`, a twin bundle with one subconductor broken): the wire
+left at **41.83 kN**, the two behind at 21.32 kN each, the string 6.1°
+off plumb, and \\( 2 \times 21\,321.30 - 41\,825.14 = 817.46 \\) N along
+the line on the structure — against about 19 kN with the whole phase
+broken. With one wire left of four (`brokenwire-005`) it carries
+74.2 kN. The tensions reported for the span are **per wire left** (the
+element's tension over \\( r \\)) — what the strength warning and a
+tension rule see; the end pulls are the whole bundle's. Stress-strain
+curves take the span's tension per wire left too (checked against a
+linear cable with straight-line curves).
+
+**Conservative** (for the structures, between the two readings of a
+partial break): the broken subconductors are taken as **gone from the
+span**. Hanging in the spacers of the wires left they would add their
+weight to the span and pull more in it, so the unbalance on the
+structures would be smaller. The whole phase broken stays the larger
+unbalance and the default.
+
+**NOT ON THE SAFE SIDE**, said on the span of every such result
+(`ohl_line::solve::partial_break_flag`) and in the load case's notes:
+the **tension of the subconductors left**. With the broken ones hanging
+in their spacers they carry that weight as well, and their tension is
+higher than the one reported — not modelled and not checked. Exact: the
+broken subconductors as loads on the wires left (their weight at the
+spacers), with the spacers' own statics.
+
+**Simplification:** the string's stiffness is taken as given for one
+subconductor's share of its force (the line's model of a bundle: the
+strings' weight is shared, their stiffness is not, so a string stretches
+\\( 1/n \\) of what it really does — 0.2 mm on the benchmark); the
+benchmark's reference does the same, so that it compares the break
+alone. Refused as for a whole break: the ruling-span method, a spacer or
+a jumper on a span point of the span.
+
+*Validation:* `brokenwire-004`, `005` (an independent evaluation: both
+spans as closed-form elastic catenaries, Newton on the clamp; the
+statics above to \\( 10^{-7} \\) N in the reference, \\( 10^{-3} \\) N —
+the solver's tolerance — in the unit test); unit tests in `ohl-line`
+(\\( k = n \\) equal to the whole break, 2 of 4 equal to 1 of 2 per wire,
+the curves' tension per wire) and `ohl-loads` (the file, the notes, the
+loads).
 
 **Simplification:** the static state after the break: the dynamic
 impact of the wire letting go (a code's impact factor goes into the load
@@ -276,7 +344,8 @@ as cases of their own, `<case> (span k broken)`. Test:
 `every_span_broken_checks_each_break_on_its_own` (ohl-loads).
 
 Checked against an independent evaluation (validation
-`brokenwire-001`…`003`, `benchmarks/wirefe/broken_wire.toml`): the
+`brokenwire-001`…`003` (the whole phase; `004`, `005`: some
+subconductors), `benchmarks/wirefe/broken_wire.toml`): the
 section of `spancases` (two level 300 m spans, a 3 m suspension string
 of 800 N, strung at 28 kN at 15 °C), span 2 broken at 15 °C — the string
 swings 73.27° back into span 1 (\\( \tan\varphi = 9538.5 / (2466.7 + 400)

@@ -400,6 +400,11 @@ struct Cases<'a> {
     /// broken together, 2026-11-03): no element there, their clamps held
     /// by their strings alone.
     broken: &'a [usize],
+    /// The spans where some subconductors of the bundle are broken
+    /// (roadmap O22 item 7, 2026-11-11), each with the share of the
+    /// bundle left, (n − k)/n: the span keeps its element with that share
+    /// of the stiffness, of the weight and of the loads per metre.
+    partial: &'a [(usize, f64)],
 }
 
 impl<'a> Cases<'a> {
@@ -411,6 +416,7 @@ impl<'a> Cases<'a> {
             points: None,
             rolling: None,
             broken: &[],
+            partial: &[],
         }
     }
 
@@ -438,6 +444,7 @@ impl<'a> Cases<'a> {
             own: self.rolling,
             rolling: self.rolling,
             broken: &[],
+            partial: &[],
             ..*self
         }
     }
@@ -445,6 +452,15 @@ impl<'a> Cases<'a> {
     /// Whether span `s` is a broken one.
     fn is_broken(&self, s: usize) -> bool {
         self.broken.contains(&s)
+    }
+
+    /// The share of the bundle left in span `s`: 1, or (n − k)/n where k
+    /// of its n subconductors are broken.
+    fn remaining(&self, s: usize) -> f64 {
+        self.partial
+            .iter()
+            .find(|(span, _)| *span == s)
+            .map_or(1.0, |(_, share)| *share)
     }
 }
 
@@ -1189,6 +1205,14 @@ fn build(
         let scale = reference.weight_scale[s] / thermal;
         // Ice and wind per metre of the stretched wire.
         let (load, stretched) = span_loads_split(case, cable, d, scale, reference.loads_per);
+        // Some subconductors broken here (roadmap O22 item 7): the model
+        // is one subconductor's share of the bundle, so this span carries
+        // the share left of the stiffness, of the weight and of the ice
+        // and wind; its length as cut. The objects on it stay (carried by
+        // the wires left).
+        let kept = cases.remaining(s);
+        let (ea, gravity) = (ea * kept, gravity * kept);
+        let (load, stretched) = (load * kept, stretched * kept);
         let shape_props = CableProperties {
             unstressed_length: reference.lengths[s],
             axial_stiffness: ea,
@@ -1244,7 +1268,12 @@ fn build(
                 let (from, to) = (a0.min(b0), a0.max(b0));
                 // Per metre of the wire as cut, its share: a weight on the
                 // wire, kept as the wire grows or shrinks (as its own).
-                spread.push((from, to, Vector3::new(0.0, 0.0, -l.load / bundle * scale)));
+                // (Of a span with subconductors broken: the share left.)
+                spread.push((
+                    from,
+                    to,
+                    Vector3::new(0.0, 0.0, -l.load / bundle * scale * kept),
+                ));
             }
             sites.sort_by(|a, b| a.0.total_cmp(&b.0));
             shape = Some(solved);
@@ -2485,15 +2514,112 @@ pub fn solve_section_broken_spans(
     budget: &Budget,
     coupling: &Coupling,
 ) -> Result<SectionShape, LineError> {
+    let breaks: Vec<Break> = spans.iter().map(|&s| Break::whole(s)).collect();
+    solve_section_breaks(line, section, cable, case, &breaks, budget, coupling)
+}
+
+/// A span of a section with its wire broken ([`solve_section_breaks`]):
+/// the whole phase, or some subconductors of its bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Break {
+    /// The span (0 = the section's first).
+    pub span: usize,
+    /// How many subconductors of the bundle are broken there (1 to the
+    /// bundle's number); none, or all of them: the whole phase.
+    pub subconductors: Option<u32>,
+}
+
+impl Break {
+    /// The whole phase broken in span `span` (0 = first).
+    pub fn whole(span: usize) -> Self {
+        Self {
+            span,
+            subconductors: None,
+        }
+    }
+}
+
+/// What the flags of a span with `broken` of its `bundle` subconductors
+/// broken say (span from 0). The state solved is the static one after the
+/// break with the broken subconductors **gone from the span** — the
+/// reading that leaves the least pull in the span, so the larger
+/// unbalance on the structures. Not covered: the broken subconductors
+/// hanging in the spacers of the wires left, whose own tension is then
+/// higher than the one reported.
+pub fn partial_break_flag(span: usize, broken: u32, bundle: u32) -> String {
+    format!(
+        "span {}: {broken} of {bundle} subconductors broken — the static state after the break, \
+         the broken ones gone from the span; NOT ON THE SAFE SIDE for the tension of the \
+         subconductors left: with the broken ones hanging in the spacers it is higher (not \
+         checked)",
+        span + 1
+    )
+}
+
+/// [`solve_section_broken_spans`] with, per span, the whole phase or
+/// **some subconductors of the bundle** broken (roadmap O22 item 7,
+/// 2026-11-11). A whole break is as there (bit for bit: `subconductors`
+/// none, or the bundle's number). With k of the n subconductors broken
+/// the span keeps its wire: one element with the share r = (n − k)/n of
+/// the axial stiffness, of the own weight and of the spread, ice and wind
+/// loads, its unstressed length as cut; the objects on its span points
+/// stay (carried by the wires left). Stress-strain curves take that
+/// span's tension per wire left (the element's ÷ r), as do the tensions
+/// reported for it ([`SpanShape::horizontal_tension`],
+/// [`SpanShape::max_tension`]); the end pulls are the whole bundle's. A
+/// section in the blocks rolls before the break, as for a whole one.
+///
+/// Conservative: the broken subconductors are taken as gone from the
+/// span — the least pull left in it, so the larger unbalance on the
+/// structures (still smaller than the whole phase broken, the default).
+/// NOT ON THE SAFE SIDE, flagged on the span ([`partial_break_flag`]):
+/// the tension of the subconductors left when the broken ones hang in
+/// their spacers. Refused: 0 subconductors, more than the bundle has, and
+/// what a whole break refuses (the ruling-span method; a spacer or a
+/// jumper on a span point of the span). A span given twice takes its
+/// larger break.
+///
+/// Expected cost: as [`solve_section`].
+pub fn solve_section_breaks(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    breaks: &[Break],
+    budget: &Budget,
+    coupling: &Coupling,
+) -> Result<SectionShape, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let count = section.points.len().saturating_sub(1);
-    let mut broken: Vec<usize> = spans.to_vec();
-    broken.sort_unstable();
-    broken.dedup();
-    if broken.is_empty() {
+    let bundle = section.bundle.max(1);
+    // Per span, the subconductors broken (the bundle's number: all).
+    let mut by_span: std::collections::BTreeMap<usize, u32> = Default::default();
+    for b in breaks {
+        let k = b.subconductors.unwrap_or(bundle);
+        if k == 0 || k > bundle {
+            return Err(invalid(format!(
+                "span {}: {k} subconductors broken of a bundle of {bundle} (1 to {bundle}; none \
+                 given: the whole phase)",
+                b.span + 1
+            )));
+        }
+        let most = by_span.entry(b.span).or_insert(k);
+        *most = (*most).max(k);
+    }
+    let broken: Vec<usize> = by_span
+        .iter()
+        .filter(|(_, k)| **k == bundle)
+        .map(|(s, _)| *s)
+        .collect();
+    let partial: Vec<(usize, f64)> = by_span
+        .iter()
+        .filter(|(_, k)| **k < bundle)
+        .map(|(s, k)| (*s, f64::from(bundle - k) / f64::from(bundle)))
+        .collect();
+    if by_span.is_empty() {
         return Err(invalid("no span to break".into()));
     }
-    for &span in &broken {
+    for &span in by_span.keys() {
         if span >= count {
             return Err(invalid(format!(
                 "no span {} to break (it has {count})",
@@ -2508,7 +2634,7 @@ pub fn solve_section_broken_spans(
                 .into(),
         ));
     }
-    for &span in &broken {
+    for &span in by_span.keys() {
         let on_broken: Vec<&str> = section
             .span_points
             .iter()
@@ -2548,6 +2674,7 @@ pub fn solve_section_broken_spans(
     };
     let cases = Cases {
         broken: &broken,
+        partial: &partial,
         ..Cases::one(case)
     };
     solve_cases(line, section, cable, cases, budget, coupling)
@@ -2587,7 +2714,26 @@ pub fn solve_line_broken_spans(
     broken: &[(&str, Vec<usize>)],
     budget: &Budget,
 ) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
-    let mut by_section: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    let breaks: Vec<(&str, Vec<Break>)> = broken
+        .iter()
+        .map(|(section, spans)| (*section, spans.iter().map(|&s| Break::whole(s)).collect()))
+        .collect();
+    solve_line_breaks(line, library, case, &breaks, budget)
+}
+
+/// [`solve_line_broken_spans`] with, per span, the whole phase or some
+/// subconductors of the bundle broken ([`solve_section_breaks`], roadmap
+/// O22 item 7).
+///
+/// Expected cost: as there.
+pub fn solve_line_breaks(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    broken: &[(&str, Vec<Break>)],
+    budget: &Budget,
+) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
+    let mut by_section: std::collections::BTreeMap<usize, Vec<Break>> = Default::default();
     for (section, spans) in broken {
         let k = line
             .sections
@@ -2607,9 +2753,7 @@ pub fn solve_line_broken_spans(
     for (k, spans) in by_section {
         let s = &line.sections[k];
         results[k] = match library.get(&s.cable) {
-            Some(cable) => {
-                solve_section_broken_spans(line, s, cable, case, &spans, budget, &coupling)
-            }
+            Some(cable) => solve_section_breaks(line, s, cable, case, &spans, budget, &coupling),
             None => Err(LineError::Invalid(format!(
                 "section {}: wire type {} is not in the wire library",
                 s.id, s.cable
@@ -2852,7 +2996,10 @@ fn solve_fe(
         let mut factors = vec![1.0; base.lengths.len()];
         let mut settled = false;
         for _ in 0..CURVE_PASSES {
-            let tensions = span_tensions(&built, &solution);
+            // Per wire (a span with subconductors broken: its element
+            // carries the share left; its EA has the same share, so the
+            // elastic strain is the wire's tension over the wire's EA).
+            let tensions = wire_tensions(&built, &solution, cases);
             let mut change: f64 = 0.0;
             for (s, &t) in tensions.iter().enumerate() {
                 let (stretched, eps_ref) = at_stringing[s];
@@ -2883,7 +3030,7 @@ fn solve_fe(
                 section.id
             )));
         }
-    } else if let Some((core, offset)) = core_branch(cable, case, &reference, &built, &solution) {
+    } else if let Some((core, offset)) = core_branch(cable, cases, &reference, &built, &solution) {
         // Bimetallic cables without curves: past the transition, outer
         // strands limited in compression leave the core alone
         // ([`core_branch`]).
@@ -2960,12 +3107,15 @@ fn solve_fe(
             .min_by(|x, y| x.z.total_cmp(&y.z))
             .expect("points");
         let sag = crate::jumper::sag_below_chord(&points, a, b);
+        // Per wire: with subconductors broken the element carries the
+        // share of the bundle left.
+        let left = cases.remaining(s);
         spans.push(SpanShape {
             surface_radius: cases.of(s).iced_diameter(cable.diameter).si() / 2.0,
             polyline_error: off,
             points: points.iter().map(|q| p(*q)).collect(),
-            horizontal_tension: solution.cables[elements[0]].horizontal,
-            max_tension,
+            horizontal_tension: solution.cables[elements[0]].horizontal / left,
+            max_tension: max_tension / left,
             mid_point: p(mid),
             low_point: p(low),
             sag,
@@ -3081,12 +3231,17 @@ fn solve_fe(
         cases,
         reference.temperature,
         on_core_branch,
-        &span_tensions(&built, &solution),
+        &wire_tensions(&built, &solution, cases),
     ));
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&spans, cable));
     for k in cases.broken {
         flags.push(format!("span {}: the wire broken (roadmap O9)", k + 1));
+    }
+    let n = section.bundle.max(1);
+    for (k, left) in cases.partial {
+        let broken = n - (left * f64::from(n)).round() as u32;
+        flags.push(partial_break_flag(*k, broken, n));
     }
     Ok(SectionShape {
         broken: cases.broken.first().copied(),
@@ -3212,11 +3367,12 @@ fn knee_flags_fe(
 /// little).
 fn core_branch(
     cable: &Cable,
-    case: &WeatherCase,
+    cases: Cases<'_>,
     reference: &Reference,
     built: &Built,
     solution: &ohl_wirefe::Solution,
 ) -> Option<(Cable, f64)> {
+    let case = cases.base;
     // The same limit as the ruling-span path and the jumpers (curves
     // included).
     let limit = cable.outer_compression_limit_with_curves();
@@ -3224,10 +3380,18 @@ fn core_branch(
     if !limit.is_finite() {
         return None;
     }
-    let elements: Vec<usize> = built.span_elements.iter().flatten().copied().collect();
+    // Per wire: a span with subconductors broken carries the share left.
+    let elements: Vec<(usize, f64)> = built
+        .span_elements
+        .iter()
+        .enumerate()
+        .flat_map(|(s, elements)| elements.iter().map(move |&e| (e, cases.remaining(s))))
+        .collect();
     let tension = elements
         .iter()
-        .map(|&e| 0.5 * (solution.cables[e].tension_i + solution.cables[e].tension_j))
+        .map(|&(e, left)| {
+            0.5 * (solution.cables[e].tension_i + solution.cables[e].tension_j) / left
+        })
         .sum::<f64>()
         / elements.len().max(1) as f64;
     let dt = case.temperature.celsius() - reference.temperature;

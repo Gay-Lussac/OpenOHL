@@ -34,6 +34,21 @@ Newton (an implementation of its own, not the Rust element's code):
 The load on the middle structure (the string's top): the string's pull
 towards the clamp and half its weight.
 
+1b. Some subconductors of a bundle broken (roadmap O22 item 7). The same
+section as a bundle of n subconductors; k of them break in span 2 and are
+taken as gone from the span. Followed for one subconductor's share of the
+bundle: the string with 1/n of its weight (and its stiffness as given: the
+line's model stretches the string by one subconductor's share of its force
+over its whole stiffness, 1/n of the real stretch - 0.2 mm here; the same
+is done here so that the comparison is of the break alone), span 1 as it is,
+span 2 with the share r = (n - k) / n of the axial stiffness and of the
+weight per metre, its unstressed length as cut. Newton on the clamp's two
+coordinates until both spans' end forces, the string's pull and half its
+weight balance. Reported: the tension per wire (span 1: the share's; span
+2: the share's / r), the string's force and the load on the structure for
+the whole bundle (the share's x n). The statics at the clamp, by hand:
+n H1 - (n - k) H2 = the string's horizontal pull.
+
 2. A local wind (roadmap O15). One level 300 m span between wire points
 fixed at (0, 27) and (300, 27) m, clipped in with an unstressed length of
 300.5 m at 20 deg C (the same cable, its data sheet weight w at 20 deg C),
@@ -64,12 +79,13 @@ ENDS = ((0.0, 27.0), (600.0, 27.0))
 DIAMETER = 0.028
 
 
-def ends(H, V, L, w):
-    """Chord (dx, dz) of a span with horizontal tension H, start vertical V."""
+def ends(H, V, L, w, ea=EA):
+    """Chord (dx, dz) of a span with horizontal tension H, start vertical V
+    (axial stiffness ea)."""
     Te = math.hypot(H, V + w * L)
     T0 = math.hypot(H, V)
-    dx = H * L / EA + H / w * (math.asinh((V + w * L) / H) - math.asinh(V / H))
-    dz = (V * L + w * L * L / 2) / EA + (Te - T0) / w
+    dx = H * L / ea + H / w * (math.asinh((V + w * L) / H) - math.asinh(V / H))
+    dz = (V * L + w * L * L / 2) / ea + (Te - T0) / w
     return dx, dz
 
 
@@ -114,11 +130,12 @@ def tension_integral(H, V, L, w):
     return (g(V + w * L) - g(V)) / w
 
 
-def span_forces(L, w, chord, guess=20_000.0):
+def span_forces(L, w, chord, guess=20_000.0, ea=EA):
     """(H, V at start, Tz at end) of a span of unstressed length L under w
     per unstressed metre on chord (dx, dz), Newton from H = guess."""
     H, V = newton2(
-        lambda p: [ends(p[0], p[1], L, w)[0] - chord[0], ends(p[0], p[1], L, w)[1] - chord[1]],
+        lambda p: [ends(p[0], p[1], L, w, ea)[0] - chord[0],
+                   ends(p[0], p[1], L, w, ea)[1] - chord[1]],
         [guess, -w * L / 2],
         [1e-3, 1e-3],
         positive=True,
@@ -136,9 +153,11 @@ def length_for(H, chord, w):
     return L
 
 
-def strung(w):
-    """Unstressed lengths at stringing (clamp plumb, string stretched)."""
+def strung(w, n=1):
+    """Unstressed lengths at stringing (clamp plumb, string stretched); a
+    bundle of n: one subconductor on 1/n of the string."""
     length, weight, k = STRING
+    weight = weight / n
     cz = ATTACH[1] - length
     for _ in range(20):  # converges in 3
         clamp = (ATTACH[0], cz)
@@ -192,6 +211,47 @@ def broken(lengths, t):
     }
 
 
+def partly_broken(lengths, t, n, k_broken):
+    """k_broken of the n subconductors of span 2 broken at temperature t
+    (still air), gone from the span: per wire the tensions of span 1 and
+    of span 2, the clamp, the string's swing and force and the load on its
+    top along the line and down (the whole bundle's)."""
+    length, weight, k = STRING
+    weight = weight / n
+    r = (n - k_broken) / n
+    thermal = math.exp(ALPHA * (t - T_STRING))
+    w = W / thermal
+    L1, L2 = lengths[0] * thermal, lengths[1] * thermal
+
+    def parts(c):
+        h0, _, tz0 = span_forces(L1, w, (c[0] - ENDS[0][0], c[1] - ENDS[0][1]))
+        h1, v1, _ = span_forces(L2, r * w, (ENDS[1][0] - c[0], ENDS[1][1] - c[1]),
+                                ea=r * EA)
+        ax, az = ATTACH[0] - c[0], ATTACH[1] - c[1]
+        d = math.hypot(ax, az)
+        tension = max(0.0, k * (d / length - 1))
+        return h0, tz0, h1, v1, tension, ax / d, az / d
+
+    def residual(c):
+        h0, tz0, h1, v1, tension, ux, uz = parts(c)
+        return [-h0 + h1 + tension * ux, -tz0 + v1 + tension * uz - weight / 2]
+
+    c = newton2(residual, [ATTACH[0] - 0.05, ATTACH[1] - length], [1e-6, 1e-6], tol=1e-7)
+    h0, tz0, h1, v1, tension, ux, uz = parts(c)
+    return {
+        "H": h0,
+        "H_broken": h1 / r,
+        "clamp_x": c[0],
+        "clamp_z": c[1],
+        "swing": math.degrees(math.atan2(c[0] - ATTACH[0], ATTACH[1] - c[1])),
+        "string": n * tension,
+        "along": -n * tension * ux,
+        "down": n * (tension * uz + weight / 2),
+        "statics (n H1 - (n - k) H2 - string pull)":
+            n * h0 - (n - k_broken) * (h1 / r) - n * tension * ux,
+    }
+
+
 def local_wind(p, f):
     """One clipped span (300.5 m at 20 deg C, fixed ends 300 m apart,
     level) in wind p from the right with local factor f."""
@@ -229,6 +289,12 @@ if __name__ == "__main__":
             print(f"  {key:14s} {value:.12g}")
     print("brokenwire-003 span 1 broken at 15 C: the mirror image of 001 "
           "(clamp_x = 600 - x, swing and along with the sign changed)")
+    for name, t, n, k in (("brokenwire-004 twin bundle, 1 of 2 broken in span 2 at 15 C", 15.0, 2, 1),
+                          ("brokenwire-005 quad bundle, 3 of 4 broken in span 2 at -5 C", -5.0, 4, 3)):
+        bundle = strung(W, n)
+        print(f"{name} (unstressed lengths {bundle[0]:.10f} {bundle[1]:.10f})")
+        for key, value in partly_broken(bundle, t, n, k).items():
+            print(f"  {key:14s} {value:.12g}")
     for name, p, f in (("localwind-001 factor 1", 500.0, 1.0),
                        ("localwind-002 factor 1.5", 500.0, 1.5),
                        ("localwind-003 factor 0.6", 500.0, 0.6),

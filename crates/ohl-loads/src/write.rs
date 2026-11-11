@@ -31,6 +31,9 @@ fn broken_table(out: &mut String, b: &BrokenWire) {
     if let Some(set) = b.set {
         let _ = writeln!(out, "set = {set}");
     }
+    if let Some(k) = b.subconductors {
+        let _ = writeln!(out, "subconductors = {k}");
+    }
 }
 
 impl LoadCase {
@@ -126,7 +129,8 @@ impl LoadCase {
 
 impl LoadCases {
     /// The file's text, at [`LoadCases::written_version`] (4 only when a
-    /// case uses a version-4 value): read back by [`LoadCases::parse`] as
+    /// case uses a version-4 value, 5 only when a broken wire gives its
+    /// subconductors): read back by [`LoadCases::parse`] as
     /// the same cases.
     pub fn to_toml(&self) -> String {
         let version = self.written_version();
