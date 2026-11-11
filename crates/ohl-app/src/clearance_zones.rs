@@ -211,6 +211,7 @@ pub fn first_rule() -> ZoneRule {
         wires: ohl_clearance::Wires::Both,
         width: None,
         screen: false,
+        to_ground: false,
         calculation: None,
     }
 }
@@ -1176,6 +1177,14 @@ impl ZoneWindow {
                             );
                             changed |= width_ui(ui, r, zone_width);
                             ui.end_row();
+                            if !r.classes.is_empty() && !r.screen {
+                                ui.label("Points");
+                                changed |= ui
+                                    .checkbox(&mut r.to_ground, TO_GROUND_LABEL)
+                                    .on_hover_text(TO_GROUND_HELP)
+                                    .changed();
+                                ui.end_row();
+                            }
                         }
                         ui.label("Wires");
                         changed |= wires_ui(ui, (measure, k), r);
@@ -1728,6 +1737,23 @@ fn cloud_classes(model: &Model, rules: &[ZoneRule]) -> Vec<(u8, String)> {
         .collect()
 }
 
+/// The tick of a vertical rule's "down to the ground"
+/// ([`ZoneRule::to_ground`]).
+pub const TO_GROUND_LABEL: &str = "down to the ground";
+
+/// What the tick does to the results, said on hover (every setting says
+/// its effect).
+pub const TO_GROUND_HELP: &str = "Each point of the rule's classes stands for the whole height \
+     from the ground up to it (a building, a mast): a wire within the zone's width of the \
+     point in plan, at or below the point's height, is inside the object — clearance 0, a \
+     finding. Above the point the clearance is measured as without the tick.\n\nEffect: more \
+     findings, never fewer — a wire passing beside a tall object below its top is found. \
+     Not ticked (the default), the vertical measure looks only above and below each point: \
+     such a wire is missed unless the classes are also checked radially, and the results \
+     say so. Not for vegetation under the wires or for crossing lines: every point above a \
+     wire then counts as a finding.\n\nTime: unchanged (the same points and wires are \
+     compared).";
+
 /// A clearance window's rule as a row of the shared rule table.
 impl check_ui::RuleRow for ZoneRule {
     fn name(&self) -> &str {
@@ -1769,6 +1795,8 @@ impl check_ui::RuleRow for ZoneRule {
             cases: crate::rule_table::cases_words(&self.cases),
             distance: if self.screen {
                 format!("screen, band {distance}")
+            } else if self.to_ground && !self.classes.is_empty() {
+                format!("{distance}, down to the ground")
             } else {
                 distance
             },

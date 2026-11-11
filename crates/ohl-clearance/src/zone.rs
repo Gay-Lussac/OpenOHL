@@ -151,6 +151,11 @@ pub struct ZoneRule {
     /// band in plan, every point within it reported (kept as the rule
     /// file has it).
     pub screen: bool,
+    /// Vertical, its classes: **down to the ground**
+    /// ([`Rule::to_ground`]) — each point stands for the whole height
+    /// from the ground up to it (kept as the rule file has it; the
+    /// ground target and the radial window do not use it).
+    pub to_ground: bool,
     /// How the wires are solved for it (owner, 2026-11-01: e.g. the
     /// ground at max sag; none: each section's own, or the `[check]`
     /// method) — the rule file's `calculation`.
@@ -197,6 +202,10 @@ impl ZoneRule {
                 // A screen is a vertical rule: in the radial window its
                 // 1000 m would set the reach of a radial check (2026-10-27).
                 screen: self.screen && vertical,
+                to_ground: self.to_ground
+                    && vertical
+                    && !self.screen
+                    && matches!(target, Target::Points { .. }),
                 altitude: self.altitude,
                 target,
             }
@@ -364,6 +373,7 @@ pub fn from_rule_set(
                 wires: rule.wires,
                 width,
                 screen: rule.screen,
+                to_ground: rule.to_ground,
                 calculation: rule.calculation,
             };
             // The ground half of a row written as two rules.
@@ -966,6 +976,17 @@ pub fn check_zones(
             });
         }
     }
+    // Vertical point rules that cannot see a wire beside a tall object
+    // (2026-11-11), once per rule.
+    let point_defs: Vec<(&Rule, Vec<u8>)> = parts
+        .iter()
+        .filter_map(|p| match &p.def.target {
+            Target::Points { classes, .. } => Some((&p.def, classes.clone())),
+            _ => None,
+        })
+        .collect();
+    report.notes.extend(crate::rules::beside_notes(&point_defs));
+    drop(point_defs);
     let groups_n = spans.len();
     // Points: one pass for every point rule.
     let mut wanted = [false; 256];
@@ -1540,6 +1561,7 @@ mod tests {
             wires: Wires::Both,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         }
     }
@@ -1678,6 +1700,7 @@ mod tests {
                 altitude: None,
                 name: "screen".into(),
                 screen: true,
+                to_ground: false,
                 distance: Requirement::Formula {
                     base: 5.0,
                     per_kv: 0.01,
@@ -1858,6 +1881,92 @@ mod tests {
         })
         .unwrap_err();
         assert!(nowhere.contains("routes and alignments"), "{nowhere}");
+    }
+
+    /// Down to the ground in a vertical window (owner, 2026-11-11): a
+    /// point 1 m beside S1's middle and 8 m above the wire — the top of
+    /// something tall the wire passes beside. The vertical rule alone
+    /// (3 m to keep) finds nothing and its report says that it is not on
+    /// the safe side, once; with the option the wire is in the point's
+    /// column: a finding at 0 m, and no such note. The row is kept by the
+    /// rule file (version 2 only then); the radial window ignores it.
+    #[test]
+    fn a_zone_rule_down_to_the_ground() {
+        let case = WeatherCase::still("still", Temperature::from_celsius(15.0));
+        let mid = s1_middle(&case);
+        let top = [mid[0], mid[1] + 1.0, mid[2] + 8.0];
+        let zone = Zone {
+            width: 2.0,
+            ..Zone::new(Measure::Vertical)
+        };
+        let run = |r: &ZoneRule| {
+            check(
+                &zone,
+                std::slice::from_ref(r),
+                std::slice::from_ref(&case),
+                &WindSteps::default(),
+                &[top],
+            )
+            .1
+        };
+        let unsafe_notes = |r: &ZoneReport| {
+            r.notes
+                .iter()
+                .filter(|n| n.contains("passing beside a tall object"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let plain = rule(3.0, &[5]);
+        let report = run(&plain);
+        assert!(s1(&report).is_none(), "{:?}", report.findings);
+        let said = unsafe_notes(&report);
+        assert_eq!(said.len(), 1, "{:?}", report.notes);
+        assert!(
+            said[0].starts_with("NOT ON THE SAFE SIDE: \"r\": "),
+            "{}",
+            said[0]
+        );
+        let down = ZoneRule {
+            to_ground: true,
+            ..plain.clone()
+        };
+        let report = run(&down);
+        let f = s1(&report).expect("the wire is inside the column");
+        assert_eq!(f.distance, 0.0);
+        assert_eq!(f.required, 3.0);
+        assert!(unsafe_notes(&report).is_empty(), "{:?}", report.notes);
+        // A screen says every point of its band: no note either.
+        let screen = ZoneRule {
+            screen: true,
+            ..plain.clone()
+        };
+        assert!(unsafe_notes(&run(&screen)).is_empty());
+        // Kept by the rule file, on the classes' rule only.
+        let both = ZoneRule {
+            ground: true,
+            ..down.clone()
+        };
+        let wind = WindSteps::default();
+        let set = to_rule_set(
+            "x",
+            &zone,
+            &wind,
+            &CheckScope::default(),
+            std::slice::from_ref(&both),
+        );
+        assert_eq!(
+            set.rules.iter().map(|r| r.to_ground).collect::<Vec<_>>(),
+            [true, false]
+        );
+        assert_eq!(set.written_version(), 2);
+        let back = RuleSet::parse(&set.to_toml()).unwrap();
+        let rows = from_rule_set(&back, Measure::Vertical, |_| Vec::new(), &[]).rules;
+        assert_eq!(rows, [both]);
+        let before = to_rule_set("x", &zone, &wind, &CheckScope::default(), &[plain]);
+        assert_eq!(before.written_version(), 1);
+        // The radial window: not a measure of the option.
+        let radial = Zone::new(Measure::Radial);
+        assert!(down.to_rules(&radial).iter().all(|r| !r.to_ground));
     }
 
     /// A rule by voltage: each wire meets the row of its system's nominal
@@ -2160,6 +2269,7 @@ mod tests {
             altitude: None,
             width: Some(2.5),
             screen: false,
+            to_ground: false,
             ..rules[0].clone()
         }];
         let (_, v) = check(
@@ -2244,6 +2354,7 @@ mod tests {
                 wires: Wires::Both,
                 width: None,
                 screen: false,
+                to_ground: false,
                 calculation: None,
             },
             ZoneRule {
@@ -2259,6 +2370,7 @@ mod tests {
                 // Its own half width.
                 width: Some(4.0),
                 screen: false,
+                to_ground: false,
                 calculation: None,
             },
             ZoneRule {
@@ -2273,6 +2385,7 @@ mod tests {
                 wires: Wires::Jumpers,
                 width: None,
                 screen: false,
+                to_ground: false,
                 calculation: None,
             },
         ];

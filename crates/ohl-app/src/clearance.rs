@@ -789,6 +789,12 @@ pub fn run(input: &Input) -> Result<Report, String> {
         }
     }
     report.notes.extend(skipped.into_iter().map(|(_, t)| t));
+    // Vertical point rules that cannot see a wire beside a tall object
+    // (2026-11-11), once per rule.
+    let point_rules: Vec<(&Rule, Vec<u8>)> = rules.iter().zip(point_classes).collect();
+    report
+        .notes
+        .extend(ohl_clearance::rules::beside_notes(&point_rules));
     report.findings = found.into_values().collect();
     report
         .findings

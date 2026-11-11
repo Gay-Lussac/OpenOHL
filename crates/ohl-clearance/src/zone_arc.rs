@@ -302,6 +302,9 @@ pub(crate) struct ArcPointCheck {
     band: f64,
     depth: f64,
     margin: f64,
+    /// The rule's "down to the ground" ([`Rule::to_ground`]): a point
+    /// above the band's highest counts as inside it, clearance 0.
+    to_ground: bool,
     /// The smallest clearance of each arc so far (vertical, radial).
     pub best: Vec<[f64; 2]>,
     /// The measures worked out (vertical, radial).
@@ -373,6 +376,7 @@ impl ArcPointCheck {
             band: def.vertical_band,
             depth: def.vertical_depth,
             margin: def.search_margin,
+            to_ground: def.to_ground,
             measures: [def.vertical.is_some(), def.radial.is_some()],
         }
     }
@@ -452,11 +456,18 @@ impl ArcPointCheck {
             if self.measures[0]
                 && let Some(v) = a.arc.vertical(q, self.band, self.depth)
             {
+                // Down to the ground: the point's column reaches up to it,
+                // so a band at or below it is inside.
+                let gap = if self.to_ground && v.above {
+                    0.0
+                } else {
+                    v.gap
+                };
                 let hit = Hit {
                     // The bundle radius and allowance measured
                     // vertically, r / cos β (2026-11-08; before radially,
                     // not on the safe side on a sloping span).
-                    distance: (v.gap - a.arc.vertical_outer()).max(0.0),
+                    distance: (gap - a.arc.vertical_outer()).max(0.0),
                     wire: v.point,
                     target: q,
                     class: Some(class),

@@ -214,11 +214,15 @@ impl Wire {
     /// `a`–`b` from a point at height `z` below or above it (0 inside its
     /// height range): to the lowest subconductor from below, the highest
     /// from above, measured vertically on the piece ([`vertical_of`]).
-    fn vertical_gap(&self, q: P3, z: f64, a: P3, b: P3) -> f64 {
+    ///
+    /// `to_ground` ([`Rule::to_ground`]): the point stands for the whole
+    /// height from the ground up to `z`, so a bundle whose lowest
+    /// subconductor is at or below `z` is inside it — 0.
+    fn vertical_gap(&self, q: P3, z: f64, a: P3, b: P3, to_ground: bool) -> f64 {
         let (lo, hi) = self.vertical_extent_on(a, b);
         if z <= q[2] + lo {
             q[2] + lo - z
-        } else if z >= q[2] + hi {
+        } else if z >= q[2] + hi && !to_ground {
             z - (q[2] + hi)
         } else {
             0.0
@@ -508,8 +512,9 @@ impl Block {
 
     /// A lower bound of the vertical clearance from a point at height
     /// `z` to its wires, as [`PointCheck::eval`] works it out, with the
-    /// slice depth `depth`.
-    fn vertical_low(&self, z: f64, depth: f64) -> f64 {
+    /// slice depth `depth`; `to_ground`: a point above the wires counts
+    /// as 0 ([`Rule::to_ground`]).
+    fn vertical_low(&self, z: f64, depth: f64, to_ground: bool) -> f64 {
         let rise = if depth > 0.0 {
             self.slope * depth / 2.0
         } else {
@@ -519,9 +524,12 @@ impl Block {
         // vertically ([`vertical_of`]): the steepest piece's factor keeps
         // this below every piece's exact gap.
         let k = self.slope.hypot(1.0);
-        (self.lo[2] + self.extent.0 * k - z)
-            .max(z - (self.hi[2] + self.extent.1 * k))
-            .max(0.0)
+        let above = if to_ground {
+            0.0
+        } else {
+            z - (self.hi[2] + self.extent.1 * k)
+        };
+        (self.lo[2] + self.extent.0 * k - z).max(above).max(0.0)
             - rise
             - self.allowance * k
             - BOUND_EPS
@@ -1054,6 +1062,7 @@ impl PointCheck {
             return true;
         };
         let depth = self.rule.vertical_depth;
+        let to_ground = self.rule.to_ground;
         // Passed over (2026-10-26): a block of segments (a group's, e.g. a
         // span's in every wind state) none of which can come within the
         // reach — the radial lower bound from the block's box, the
@@ -1072,7 +1081,7 @@ impl PointCheck {
                     || x > block.hi[0] + widest
                     || y < block.lo[1] - widest
                     || y > block.hi[1] + widest)
-                && block.vertical_low(z, depth) <= wires.reach;
+                && block.vertical_low(z, depth, to_ground) <= wires.reach;
             let ids = if radial || vertical { ids } else { &[] };
             ids.iter().map(move |&id| {
                 let (w, k) = wires.segments[id as usize];
@@ -1182,9 +1191,13 @@ impl PointCheck {
                     // above it.
                     let (lo, hi) = wires.extents[w];
                     let (lo, hi) = (vertical_of(lo, a, b), vertical_of(hi, a, b));
-                    let low = ((a[2].min(b[2]) + lo - z)
-                        .max(z - (a[2].max(b[2]) + hi))
-                        .max(0.0)
+                    // Down to the ground: a point above the piece is 0.
+                    let above = if to_ground {
+                        0.0
+                    } else {
+                        z - (a[2].max(b[2]) + hi)
+                    };
+                    let low = ((a[2].min(b[2]) + lo - z).max(above).max(0.0)
                         - rise
                         - vertical_of(off, a, b)
                         - BOUND_EPS)
@@ -1199,7 +1212,7 @@ impl PointCheck {
                     // sloping piece (r / cos β), not radially.
                     // (The bounds before this follow it: keep them together.)
                     let off = wire.vertical_allowance(a, b);
-                    let gap = wire.vertical_gap(q, z, a, b)
+                    let gap = wire.vertical_gap(q, z, a, b, to_ground)
                         - slice_rise(a, b, self.rule.vertical_depth)
                         - off;
                     let hit = Hit {
@@ -2653,6 +2666,69 @@ mod tests {
         let (top, bottom) = hit.drawn(true);
         assert_eq!([top[0], top[1]], [bottom[0], bottom[1]]);
         assert!((top[2] - bottom[2] - 19.0).abs() < 1e-9);
+    }
+
+    /// Down to the ground (owner, 2026-11-11): a point stands for the
+    /// whole height from the ground up to it. A level wire 20 m up; a
+    /// mast top 2 m beside it in plan and 6 m above it: the vertical
+    /// measure alone finds 6 m (the top is above the wire — the wire
+    /// passing beside the mast is not seen), with the option the wire is
+    /// inside the mast's column: 0 m, a violation. Below the wire the two
+    /// agree; outside the band neither counts it.
+    #[test]
+    fn down_to_the_ground_finds_a_wire_beside_a_tall_object() {
+        let wire = straight("S", "L1", [0.0, 0.0, 20.0], [100.0, 0.0, 20.0]);
+        let text = |extra: &str| {
+            format!(
+                "[[rule]]\nname = \"v\"\ntarget = \"points\"\nclasses = [6]\nvertical = 5.0\n\
+                 vertical_band = \"3 m\"\nvertical_depth = \"0 m\"\n{extra}"
+            )
+        };
+        let plain = rule(&text(""));
+        let down = rule(&text("to_ground = true"));
+        assert!(!plain.to_ground && down.to_ground);
+        let set = WireSet::new(vec![wire], 20.0);
+        let of = |r: &Rule, p: [f64; 3]| {
+            let mut pc = PointCheck::new(r, &[6], &set);
+            pc.visit(&set, p[0], p[1], p[2], 6);
+            let mut old = super::reference::OldPointCheck::new(r, &[6], &set);
+            old.visit(&set, p[0], p[1], p[2], 6);
+            assert_eq!(pc.results, old.results);
+            (
+                pc.results[0].vertical.map(|h| h.distance),
+                pc.results[0].vertical_violations,
+            )
+        };
+        // The mast top above the wire, beside it.
+        let top = [50.0, 2.0, 26.0];
+        assert_eq!(of(&plain, top), (Some(6.0), 0));
+        assert_eq!(of(&down, top), (Some(0.0), 1));
+        // Far above the wire (beyond the reach of the plain measure): the
+        // column still holds the wire.
+        let high = [50.0, 2.0, 120.0];
+        assert_eq!(of(&plain, high), (None, 0));
+        assert_eq!(of(&down, high), (Some(0.0), 1));
+        // Below the wire: the same either way, 20 − 17 = 3 m.
+        let low = [50.0, 2.0, 17.0];
+        assert_eq!(of(&plain, low), (Some(3.0), 1));
+        assert_eq!(of(&down, low), (Some(3.0), 1));
+        // Outside the band in plan: not this measure's.
+        let beside = [50.0, 3.5, 26.0];
+        assert_eq!(of(&plain, beside), (None, 0));
+        assert_eq!(of(&down, beside), (None, 0));
+        // A bundle: inside from its lowest subconductor (0.2 m below the
+        // centre line) — a top 0.1 m below the centre line is inside.
+        let bundle = Wire {
+            bundle: vec![[0.2, -0.2], [0.2, 0.2], [-0.2, 0.2], [-0.2, -0.2]],
+            ..straight("B", "L1", [0.0, 0.0, 20.0], [100.0, 0.0, 20.0])
+        };
+        let set = WireSet::new(vec![bundle], 20.0);
+        let mut pc = PointCheck::new(&down, &[6], &set);
+        pc.visit(&set, 50.0, 2.0, 19.9, 6);
+        assert_eq!(pc.results[0].vertical.unwrap().distance, 0.0);
+        let mut pc = PointCheck::new(&down, &[6], &set);
+        pc.visit(&set, 50.0, 2.0, 18.8, 6);
+        assert!((pc.results[0].vertical.unwrap().distance - 1.0).abs() < 1e-9);
     }
 
     #[test]

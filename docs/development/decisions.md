@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**A vertical clearance rule "down to the ground" (owner, 2026-11-11)**
+
+The owner approved roadmap O24 item 1 ("go ahead"). A vertical rule
+looks above and below each point within its band in plan; a wire passing
+beside a tall object, below its top, was measured upwards to the top and
+could pass — on the unsafe side unless the class also had a radial rule
+or a screen.
+
+- **The option.** `to_ground = true` on a `[[rule]]` with a point target
+  and a vertical distance (`Rule::to_ground`, `ZoneRule::to_ground`):
+  each point stands for the whole height from the ground up to it. A
+  wire within the band at or below the point's height has the clearance
+  0; above the point the measure is unchanged. The ground's height is
+  not read: a wire is above the ground, so the column needs only its
+  top. With the swing arc the same, against the band's lowest point.
+- **Default off, for every class.** No existing result changes. Which
+  classes it suits (buildings, masts) is the user's rule; the program
+  gives it to no class. Not allowed with `screen` (which reports every
+  point of its band already) or without a vertical distance.
+- **Said where it is missing.** A vertical point rule without the
+  option whose classes no rule of the same check measures radially or
+  screens: the results carry one note per rule, "NOT ON THE SAFE SIDE:
+  …", naming the classes (`rules::beside_notes`; the two zone windows
+  and `ohl zones`, the Clearances tab, `ohl line`). The Vertical
+  clearances window cannot see the Radial window's rules, so there
+  every vertical point rule without the option says it.
+- **Conservative assumptions of the option**, said in the theory: the
+  object as wide as the band at every height, and solid from the ground
+  to the point — a point above a wire always counts (so not for
+  vegetation or crossing lines).
+- **Format.** Rule file version 2, written only when a rule has the
+  key; files without it are written as version 1 and older files read
+  as before. An older program refuses a version 2 file instead of
+  checking it without the option.
+- **Window.** The Vertical clearances window's rule editor shows the
+  tick for a rule with LiDAR classes, its effect and its time on hover;
+  the row says "down to the ground".
+
 **Some subconductors of a bundle broken (roadmap O22 item 7; owner "Go ahead with the braces then O22")**
 
 - **What.** `[[case.broken]] subconductors = k`: k of the n

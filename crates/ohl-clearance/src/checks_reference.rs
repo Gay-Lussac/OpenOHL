@@ -108,7 +108,7 @@ impl OldPointCheck {
                 // depth, to the wire's lowest (highest) in the slice.
                 // Measured vertically on the sloping piece (2026-10-26).
                 let off = wire.vertical_allowance(a, b);
-                let gap = wire.vertical_gap(q, z, a, b)
+                let gap = wire.vertical_gap(q, z, a, b, self.rule.to_ground)
                     - slice_rise(a, b, self.rule.vertical_depth)
                     - off;
                 let hit = Hit {
@@ -318,6 +318,55 @@ mod tests {
     /// cores), and with one measure only — gives the results of before,
     /// bit for bit: every wire's clearances (value, wire point, target),
     /// its counts and the counts per span.
+    /// Down to the ground ([`Rule::to_ground`], 2026-11-11): the fast
+    /// check's bounds follow the measure — the same results as point by
+    /// point without them, also in blocks by group.
+    #[test]
+    fn down_to_the_ground_is_the_same_with_and_without_the_bounds() {
+        let wires = wires();
+        let cloud = points(&wires, 30_000);
+        let groups: Vec<usize> = wires.iter().map(|w| w.span).collect();
+        for (band, depth) in [(1.0, 0.2), (3.0, 0.0)] {
+            let r = rule(
+                "target = \"points\"\nclasses = [3, 4, 5]\nto_ground = true",
+                band,
+                depth,
+            );
+            assert!(r.to_ground);
+            let plain = rule("target = \"points\"\nclasses = [3, 4, 5]", band, depth);
+            for set in [
+                WireSet::new(wires.clone(), 25.0),
+                WireSet::grouped(wires.clone(), 25.0, &groups),
+            ] {
+                let mut old = OldPointCheck::new(&r, &[3, 4, 5], &set).grouped(groups.clone());
+                let mut new = PointCheck::new(&r, &[3, 4, 5], &set).grouped(groups.clone());
+                let mut before = PointCheck::new(&plain, &[3, 4, 5], &set);
+                for (p, c) in &cloud {
+                    old.visit(&set, p[0], p[1], p[2], *c);
+                    new.visit(&set, p[0], p[1], p[2], *c);
+                    before.visit(&set, p[0], p[1], p[2], *c);
+                }
+                assert_eq!(new.results, old.results);
+                assert_eq!(new.group_violations, old.group_violations);
+                // Never fewer findings nor a larger clearance than without
+                // the option, and the radial measure untouched.
+                let d = |r: &WireResult| r.vertical.map_or(f64::INFINITY, |h| h.distance);
+                let mut smaller = false;
+                for (a, b) in new.results.iter().zip(&before.results) {
+                    assert!(a.vertical_violations >= b.vertical_violations);
+                    assert!(d(a) <= d(b));
+                    assert_eq!(a.radial, b.radial);
+                    assert_eq!(a.radial_violations, b.radial_violations);
+                    smaller |= d(a) < d(b);
+                }
+                assert!(
+                    smaller,
+                    "the cloud has points above the wires within the band"
+                );
+            }
+        }
+    }
+
     #[test]
     fn the_point_check_gives_the_results_of_before() {
         let wires = wires();

@@ -628,6 +628,8 @@ Every check window with rules — Vertical and Radial clearances, the Clearances
 
 **Checks › Ground clearances** opens two windows: **Vertical clearances…** and **Radial clearances…**. Each checks the spans and jumpers against its own list of rules. The window can be closed at any time; closing it stops a check that runs.
 
+**Down to the ground** (Vertical clearances, a rule with LiDAR classes; 2026-11-11). Ticked, each point of the rule's classes stands for the whole height from the ground up to it — a building, a mast: a wire within the zone's width of the point in plan, at or below the point's height, is inside the object and reported at 0 m. It gives more findings, never fewer, and takes no more time. Not ticked (the default), the vertical measure looks only above and below each point, so a wire passing beside a tall object below its top is not found; the results then carry a note starting **NOT ON THE SAFE SIDE**, once per rule, unless the classes are a screen's. Do not tick it for vegetation or for classes holding crossing lines: every point above a wire then counts. The rule file keeps it as `to_ground = true` ([rule files](terrain.md#clearance-rules-ohlr)); the theory: [Down to the ground](../theory/clearances.md#down-to-the-ground-a-wire-beside-a-tall-object).
+
 The two windows read as the [vegetation panel](analyses.md#the-vegetation-panel) does: the settings in groups, each with a heading and a link **user guide ↗** to its section below, a line beside each value saying what it does (a longer text on hover), small drawings of the zone and of the wind positions that follow the values, and the same wind choice. The theory: [Vertical and radial clearances](../theory/clearances.md).
 
 #### Clearances: rules and presets

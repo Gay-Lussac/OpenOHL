@@ -841,6 +841,9 @@ pub struct ArcPlace {
 /// A point's vertical clearance to a swing arc ([`SwingArc::vertical`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ArcVertical {
+    /// The point is above the arc's highest over it (a rule "down to the
+    /// ground" then takes the arc as inside the point's column).
+    pub above: bool,
     /// The vertical distance to the arc's centre line (0 inside its
     /// height range), m.
     pub gap: f64,
@@ -1280,18 +1283,21 @@ impl SwingArc {
         let z = q[2];
         Some(if z <= zl {
             ArcVertical {
+                above: false,
                 gap: zl - z,
                 point: low.0,
                 angle: low.1,
             }
         } else if z >= zh {
             ArcVertical {
+                above: true,
                 gap: z - zh,
                 point: high.0,
                 angle: high.1,
             }
         } else {
             ArcVertical {
+                above: false,
                 gap: 0.0,
                 point: low.0,
                 angle: low.1,
@@ -2241,7 +2247,12 @@ mod tests {
         // 20 − 4 cos(asin 0.125) = 16.031 m.
         let v = arc.vertical([50.0, 0.0, 10.0], 0.5, 0.0).unwrap();
         assert!((v.gap - 5.0).abs() < 1e-9, "{v:?}");
+        assert!(!v.above);
         let v = arc.vertical([50.0, 0.0, 16.5], 0.5, 0.0).unwrap();
+        assert!(
+            v.above,
+            "above the band's highest: inside a column down to the ground"
+        );
         let top = 20.0 - 4.0 * (0.125f64).asin().cos();
         assert!((top - 16.031).abs() < 1e-3);
         assert!((v.gap - (16.5 - top)).abs() < 1e-9, "{v:?} {top}");

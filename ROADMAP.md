@@ -752,6 +752,12 @@ From a review on 2026-11-10.
    a mast: the zone is the band in plan, from the ground to the point
    plus the vertical distance), the default for the classes it suits to
    be decided.
+   *Status (2026-11-11), built, in active development (not approved
+   yet):* the rule option `to_ground` (off by default for every class;
+   the Vertical clearances window's tick, `ohl zones`, `ohl line`); a
+   vertical point rule without it, a radial rule or a screen for its
+   classes says "NOT ON THE SAFE SIDE" in its results. Open: which
+   classes should have it by default (none has).
 2. **A horizontal-only measure between wires** (the distance in plan,
    whatever the height difference), beside the radial and the vertical.
 3. **A printable clearance report**: per finding a cross-section at its

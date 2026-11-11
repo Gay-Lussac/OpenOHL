@@ -415,6 +415,14 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
             Err(e) => println!("  note: rule \"{}\": surface {n} not read: {e}", r.name),
         }
     }
+    // Vertical point rules that cannot see a wire beside a tall object
+    // (2026-11-11), once per rule.
+    let point_rules: Vec<(&ohl_clearance::Rule, Vec<u8>)> =
+        rules.iter().zip(point_classes.iter().cloned()).collect();
+    for n in ohl_clearance::rules::beside_notes(&point_rules) {
+        println!("  note: {n}");
+    }
+    drop(point_rules);
     Ok(Prepared {
         rules,
         scheme,

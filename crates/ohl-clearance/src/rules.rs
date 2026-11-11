@@ -72,6 +72,15 @@
 //!   the ground: default 0, straight below the wire);
 //!   `vertical_depth = "0.2 m"` cuts it along the line in slices of that
 //!   depth, the wire taken at its lowest over each slice.
+//! - `to_ground = true` (2026-11-11, optional, default false; point rules
+//!   with a vertical requirement; file version 2, written only when a rule
+//!   has it): **down to the ground** — each point stands for the whole
+//!   height from the ground up to it (a building, a mast), so the zone is
+//!   the band in plan from the ground to the point plus the vertical
+//!   distance: a wire within the band at or below the point's height has
+//!   the clearance 0 ([`Rule::to_ground`]). Without it a wire passing
+//!   beside a tall object below its top is not found by the vertical
+//!   measure, and the results say so ([`beside_notes`]).
 //! - `[wind]` (`steps`, `step`, `sides`, `arc`): how the desktop clearance
 //!   windows apply the wind ([`WindSteps`]), and `ohl zones`; `ohl line`
 //!   ignores it. `arc = true` (2026-10-20) adds each span's swing arc;
@@ -147,8 +156,12 @@ use serde::Deserialize;
 pub const RULE_FILE_EXTENSION: &str = "ohlr";
 /// Format identifier.
 pub const RULE_FILE_FORMAT: &str = "ohl-clearance-rules";
-/// Newest format version read.
-pub const RULE_FILE_VERSION: u32 = 1;
+/// Newest format version read: 2 (2026-11-11) adds a rule's `to_ground`,
+/// written only when a rule has it ([`RuleSet::written_version`]) — an
+/// older program then says "newer" instead of checking without it.
+pub const RULE_FILE_VERSION: u32 = 2;
+/// The version of a rule file without `to_ground`.
+pub const BEFORE_TO_GROUND_VERSION: u32 = 1;
 
 /// What a rule checks against.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -570,9 +583,61 @@ pub struct Rule {
     /// the rule format has no measure for, said as such in the results
     /// ([`Required::band`]; required [`SCREEN_DISTANCE`]).
     pub screen: bool,
+    /// **Down to the ground** (owner, 2026-11-11; point rules with a
+    /// vertical requirement): each point stands for the whole height from
+    /// the ground up to it, so a wire within the band in plan at or below
+    /// the point's height is inside the object — clearance 0 — instead of
+    /// being measured upwards from the point to the wire's underside.
+    /// The ground's height is not needed: a wire is above the ground.
+    /// Off (default): the separation above or below the point.
+    pub to_ground: bool,
     /// The distances' increase with the altitude (none: as given at any
     /// height).
     pub altitude: Option<Altitude>,
+}
+
+/// What the results say of vertical point rules that can miss a wire
+/// passing **beside** a tall object below its top (2026-11-11): one note
+/// per rule in `rules` (each with its point classes resolved) that has a
+/// vertical requirement, is neither a screen nor "down to the ground",
+/// and has a class that no rule of `rules` checks radially or screens.
+/// The notes start with "NOT ON THE SAFE SIDE".
+pub fn beside_notes(rules: &[(&Rule, Vec<u8>)]) -> Vec<String> {
+    let mut covered = [false; 256];
+    for (r, classes) in rules {
+        if r.radial.is_some() || r.screen {
+            for &c in classes {
+                covered[c as usize] = true;
+            }
+        }
+    }
+    let mut notes: Vec<String> = Vec::new();
+    for (r, classes) in rules {
+        if r.vertical.is_none() || r.screen || r.to_ground {
+            continue;
+        }
+        let open: Vec<String> = classes
+            .iter()
+            .filter(|c| !covered[**c as usize])
+            .map(u8::to_string)
+            .collect();
+        if open.is_empty() {
+            continue;
+        }
+        let note = format!(
+            "NOT ON THE SAFE SIDE: \"{}\": the vertical measure looks above and below each \
+             point within the band in plan only — a wire passing beside a tall object below \
+             its top is not found (class{} {}); set \"down to the ground\" (to_ground) for \
+             buildings and masts, or check these classes radially or with a screen",
+            r.name,
+            if open.len() == 1 { "" } else { "es" },
+            open.join(", ")
+        );
+        if !notes.contains(&note) {
+            notes.push(note);
+        }
+    }
+    notes
 }
 
 /// What a screen rule requires vertically ([`Rule::screen`]): no point
@@ -800,6 +865,8 @@ struct RawRule {
     vertical_band: Option<Length>,
     #[serde(default)]
     screen: bool,
+    #[serde(default)]
+    to_ground: bool,
     #[serde(default)]
     search_margin: Option<Length>,
     #[serde(default)]
@@ -1651,6 +1718,20 @@ impl RuleSet {
                         "screen: a vertical requirement (the band in plan) and a point target needed",
                     );
                 }
+                if r.to_ground
+                    && (vertical.is_none() || !matches!(target, Target::Points { .. }))
+                {
+                    return bad(
+                        "to_ground: a vertical requirement and a point target needed (each \
+                         point stands for the height from the ground up to it)",
+                    );
+                }
+                if r.to_ground && r.screen {
+                    return bad(
+                        "to_ground with screen: a screen reports every point within its band \
+                         at any height already",
+                    );
+                }
                 let band = if matches!(target, Target::Ground) {
                     0.0
                 } else {
@@ -1682,6 +1763,7 @@ impl RuleSet {
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
                     surface,
                     screen: r.screen,
+                    to_ground: r.to_ground,
                     altitude,
                 })
             })
@@ -1823,6 +1905,7 @@ impl RuleSet {
                 vertical_depth: 0.0,
                 surface: None,
                 screen: false,
+                to_ground: false,
                 altitude: None,
             }],
             wind: None,
@@ -1857,12 +1940,24 @@ impl RuleSet {
         }
     }
 
+    /// The oldest format version that holds the set: 2 with a rule "down
+    /// to the ground" ([`Rule::to_ground`]), else 1 — so a file without
+    /// it is still read by an older program.
+    pub fn written_version(&self) -> u32 {
+        if self.rules.iter().any(|r| r.to_ground) {
+            RULE_FILE_VERSION
+        } else {
+            BEFORE_TO_GROUND_VERSION
+        }
+    }
+
     /// The rule file's text (TOML), read back by [`RuleSet::parse`] as the
     /// same set.
     pub fn to_toml(&self) -> String {
         use std::fmt::Write;
         let mut t = format!(
-            "format = \"{RULE_FILE_FORMAT}\"\nversion = {RULE_FILE_VERSION}\nname = {}\n",
+            "format = \"{RULE_FILE_FORMAT}\"\nversion = {}\nname = {}\n",
+            self.written_version(),
             quoted(&self.name)
         );
         if !self.checks.is_empty() {
@@ -2050,6 +2145,9 @@ impl Rule {
         if self.screen {
             t.push_str("screen = true\n");
         }
+        if self.to_ground {
+            t.push_str("to_ground = true\n");
+        }
         if self.vertical_band != default_band(&self.target) {
             let _ = writeln!(t, "vertical_band = {}", length(self.vertical_band));
         }
@@ -2103,6 +2201,106 @@ impl Rule {
             let _ = writeln!(t, "altitude = {}", a.to_toml());
         }
         t
+    }
+}
+
+#[cfg(test)]
+mod to_ground_tests {
+    use super::*;
+
+    const POINTS: &str = "[[rule]]\nname = \"Buildings\"\ntarget = \"points\"\nclasses = [6]\n";
+
+    /// `to_ground` (2026-11-11): optional, off by default; a file without
+    /// it is written as version 1 and read as before, one with it as
+    /// version 2 and read back the same; a newer version is refused.
+    #[test]
+    fn to_ground_is_optional_and_raises_the_version_only_when_used() {
+        let old = RuleSet::parse(&format!(
+            "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n{POINTS}vertical = 5.0\n"
+        ))
+        .unwrap();
+        assert!(!old.rules[0].to_ground);
+        assert_eq!(old.written_version(), 1);
+        let text = old.to_toml();
+        assert!(text.contains("version = 1\n") && !text.contains("to_ground"));
+        assert_eq!(RuleSet::parse(&text).unwrap(), old);
+
+        let mut new = old.clone();
+        new.rules[0].to_ground = true;
+        let text = new.to_toml();
+        assert!(text.contains("version = 2\n") && text.contains("to_ground = true\n"));
+        assert_eq!(RuleSet::parse(&text).unwrap(), new);
+        let e = RuleSet::parse(&text.replace("version = 2", "version = 3")).unwrap_err();
+        assert!(e.contains("newer than supported"), "{e}");
+    }
+
+    /// Only a point rule with a vertical requirement, and not a screen.
+    #[test]
+    fn to_ground_needs_points_and_a_vertical_requirement() {
+        for bad in [
+            format!("{POINTS}radial = 5.0\nto_ground = true"),
+            "[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 5.0\nto_ground = true".into(),
+            format!("{POINTS}vertical = 5.0\nscreen = true\nto_ground = true"),
+        ] {
+            let e = RuleSet::parse(&bad).unwrap_err();
+            assert!(e.contains("to_ground"), "{e}");
+        }
+    }
+
+    /// The note of a vertical point rule that cannot see a wire beside a
+    /// tall object: once per rule, naming the classes nothing else
+    /// covers; none with the option, a radial rule or a screen for them.
+    #[test]
+    fn a_vertical_point_rule_alone_is_said_not_on_the_safe_side() {
+        let set = |text: &str| RuleSet::parse(text).unwrap();
+        let notes = |s: &RuleSet| {
+            let rules: Vec<(&Rule, Vec<u8>)> = s
+                .rules
+                .iter()
+                .map(|r| (r, r.point_classes(|_| Vec::new())))
+                .collect();
+            beside_notes(&rules)
+        };
+        let alone = set(&format!("{POINTS}vertical = 5.0"));
+        let n = notes(&alone);
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert!(
+            n[0].starts_with("NOT ON THE SAFE SIDE: \"Buildings\": "),
+            "{}",
+            n[0]
+        );
+        assert!(
+            n[0].contains("class 6") && n[0].contains("to_ground"),
+            "{}",
+            n[0]
+        );
+        // The same rule twice (a window's row checked in two parts): once.
+        let r = &alone.rules[0];
+        assert_eq!(beside_notes(&[(r, vec![6]), (r, vec![6])]).len(), 1);
+        // With the option; with its own radial distance; with another
+        // rule's radial distance or a screen for the class: nothing.
+        for covered in [
+            format!("{POINTS}vertical = 5.0\nto_ground = true"),
+            format!("{POINTS}vertical = 5.0\nradial = 4.0"),
+            format!(
+                "{POINTS}vertical = 5.0\n{}radial = 4.0",
+                POINTS.replace("Buildings", "R")
+            ),
+            format!(
+                "{POINTS}vertical = 5.0\n{}vertical = 4.0\nscreen = true",
+                POINTS.replace("Buildings", "S")
+            ),
+        ] {
+            assert!(notes(&set(&covered)).is_empty(), "{covered}");
+        }
+        // Only the classes left open are named; the ground has no such gap.
+        let part = set(&format!(
+            "[[rule]]\nname = \"V\"\ntarget = \"points\"\nclasses = [6, 17]\nvertical = 5.0\n\
+             {POINTS}radial = 4.0\n[[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = 7.0"
+        ));
+        let n = notes(&part);
+        assert_eq!(n.len(), 1, "{n:?}");
+        assert!(n[0].contains("\"V\"") && n[0].contains("class 17") && !n[0].contains("6,"));
     }
 }
 

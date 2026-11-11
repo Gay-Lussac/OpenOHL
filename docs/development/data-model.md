@@ -1167,6 +1167,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   there; `Rule::reach` / `reach_in_plan` take the highest wire point of
   the case (`top`). Written only when given: still version 1, older
   files read the same.
+  Since 2026-11-11 an optional `to_ground = true` (`Rule::to_ground`,
+  `ZoneRule::to_ground`; point rules with a vertical requirement, not a
+  screen): each point stands for the height from the ground up to it —
+  a wire within the band at or below the point's height has the
+  clearance 0 (`Wire::vertical_gap`, the bounds `Block::vertical_low`;
+  on a swing arc `ArcVertical::above`, `ArcPointCheck`). File **version
+  2**, written only when a rule has it (`RuleSet::written_version`,
+  `BEFORE_TO_GROUND_VERSION` 1; `RULE_FILE_VERSION` 2 read); files
+  without it are written as version 1. `rules::beside_notes`: the note
+  "NOT ON THE SAFE SIDE: …" of a vertical point rule without it, a
+  radial distance or a screen for its classes — in `ZoneReport::notes`
+  (`check_zones`), the Clearances tab's `Report::notes` and `ohl line`'s
+  output. A vertical window's row shows the tick (`clearance_zones::
+  TO_GROUND_LABEL`, `TO_GROUND_HELP`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it) —

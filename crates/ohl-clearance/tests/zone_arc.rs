@@ -47,6 +47,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         },
         ZoneRule {
@@ -61,6 +62,7 @@ fn rules(required: f64) -> Vec<ZoneRule> {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         },
     ]
@@ -111,8 +113,16 @@ fn run_with(
     points: &[[f64; 3]],
     required: f64,
 ) -> ZoneCheckResult {
+    run_rules(measure, wind, points, rules(required))
+}
+
+fn run_rules(
+    measure: Measure,
+    wind: &WindSteps,
+    points: &[[f64; 3]],
+    rules: Vec<ZoneRule>,
+) -> ZoneCheckResult {
     let (line, library, terrain) = example();
-    let rules = rules(required);
     let states = wind_states(&[windy()], |_| true, wind);
     let read = |_: &[Vec<[f64; 2]>],
                 _: f64,
@@ -201,6 +211,40 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
         .find(|f| f.rule == 1 && f.section == "S1" && f.span == 0)
         .unwrap();
     assert!(g.distance > 1.0, "{g:?}");
+}
+
+/// Down to the ground on the swing arc (2026-11-11): a point 8 m above
+/// the wire at half the wind — the top of something tall the swinging
+/// wire passes. Vertically (3 m to keep) the arc is 8 m below it: no
+/// finding; with the rule "down to the ground" the arc is inside the
+/// point's column: 0 m, found on the arc.
+#[test]
+fn down_to_the_ground_on_the_swing_arc() {
+    let (line, library, _) = example();
+    let mut half = windy();
+    half.wind_pressure = Stress::from_si(300.0);
+    half.wind_from = WindSide::Right;
+    let p = ohl_line::solve::solve_one(&line, &line.sections[0], &library, &half)
+        .unwrap()
+        .spans[0]
+        .mid_point;
+    let top = [p[0], p[1], p[2] + 8.0];
+    let arc = WindSteps {
+        arc: true,
+        ..WindSteps::default()
+    };
+    let found = |to_ground: bool| {
+        let mut rules = rules(3.0);
+        rules[1].to_ground = to_ground;
+        let r = run_rules(Measure::Vertical, &arc, &[top], rules);
+        r.zone
+            .findings
+            .iter()
+            .find(|f| f.rule == 1 && f.section == "S1" && f.span == 0)
+            .map(|f| (f.distance, f.arc.is_some()))
+    };
+    assert_eq!(found(false), None);
+    assert_eq!(found(true), Some((0.0, true)));
 }
 
 /// The arc against the steps (50 Pa, both sides) on the example line, to

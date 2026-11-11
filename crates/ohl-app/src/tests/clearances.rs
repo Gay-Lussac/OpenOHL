@@ -432,6 +432,7 @@ fn the_radial_clearances_window_counts_and_stops_at_once() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         });
     }
@@ -570,6 +571,7 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         });
     }
@@ -617,6 +619,79 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// Checks › Vertical clearances: a rule on LiDAR classes shows the tick
+/// **down to the ground** (owner, 2026-11-11) with its effect on hover;
+/// ticked, the rule keeps it, its row says it and the rule file is
+/// written as version 2 — a ground-only rule has no such tick, and a
+/// file without it stays version 1.
+#[test]
+fn a_vertical_rule_can_be_ticked_down_to_the_ground() {
+    use crate::clearance_zones::{TO_GROUND_HELP, TO_GROUND_LABEL};
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1600.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Vertical clearances…");
+    let dir = std::env::temp_dir().join(format!("ohl-app-{}-zones-down", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let w = &mut r.vertical_clearances;
+        w.file = Some(dir.join("rules.ohlr"));
+        w.rules.clear();
+        w.rules.push(ohl_clearance::ZoneRule {
+            name: "Open ground".into(),
+            distance: ohl_clearance::Requirement::Fixed(7.0),
+            ..crate::clearance_zones::first_rule()
+        });
+        w.rules.push(ohl_clearance::ZoneRule {
+            name: "Masts".into(),
+            distance: ohl_clearance::Requirement::Fixed(5.0),
+            classes: vec![6],
+            ground: false,
+            ..crate::clearance_zones::first_rule()
+        });
+        assert_eq!(w.rule_set().written_version(), 1);
+    }
+    harness.run();
+    // The ground's rule: no tick.
+    harness.get_by_label("Open ground").click();
+    harness.run();
+    assert!(harness.query_by_label(TO_GROUND_LABEL).is_none());
+    // The classes' rule: the tick, saying what it does to the results.
+    harness.get_by_label("Masts").click();
+    harness.run();
+    for said in [
+        "more findings, never fewer",
+        "Time: unchanged",
+        "the default",
+    ] {
+        assert!(TO_GROUND_HELP.contains(said), "{said}");
+    }
+    harness.get_by_label(TO_GROUND_LABEL).click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    let w = &r.vertical_clearances;
+    assert!(w.rules[1].to_ground && !w.rules[0].to_ground);
+    use crate::check_ui::RuleRow;
+    assert_eq!(w.rules[1].summary(&[]).distance, "5 m, down to the ground");
+    let set = w.rule_set();
+    assert_eq!(set.written_version(), 2);
+    let text = set.to_toml();
+    assert!(text.contains("to_ground = true"), "{text}");
+    // Read back as the same rows.
+    let back = ohl_clearance::RuleSet::parse(&text).unwrap();
+    let rows = ohl_clearance::zone::from_rule_set(
+        &back,
+        ohl_clearance::Measure::Vertical,
+        |_| Vec::new(),
+        &[],
+    );
+    assert_eq!(rows.rules, w.rules);
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// Checks › Vertical clearances with the swing arc: the window says how
 /// many solves a windy case needs (and suggests the arc for fine steps),
 /// runs the arc (three positions), names the arc and its angle in the
@@ -655,6 +730,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             wires: ohl_clearance::Wires::Sections,
             width: None,
             screen: false,
+            to_ground: false,
             calculation: None,
         });
     }

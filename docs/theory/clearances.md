@@ -79,6 +79,50 @@ the target to the wire point found — beside the target by up to \\( w \\)
 default zone), and the profile drew no clearance marks. The reports'
 CSV keep the wire point found (its coordinates, the swing arc's angle).
 
+### Down to the ground: a wire beside a tall object
+
+The vertical measure looks **above and below** each point within the
+band in plan. A LiDAR point on the top of a building or a mast says
+nothing of the wall below it, and a point cloud seen from above rarely
+holds the wall. So a wire passing *beside* a tall object, lower than its
+top, is measured **upwards from the wire to the top** — the distance of
+the two heights — although the object itself stands at the wire's height,
+within the band, at a distance in plan the vertical measure never takes.
+
+**NOT ON THE SAFE SIDE** for such objects, unless the same classes are
+also checked radially or with a screen. Every result of a vertical point
+rule without one of the three says so, once per rule, naming the classes
+left open (`rules::beside_notes`).
+
+The option **down to the ground** of a vertical rule (`to_ground = true`,
+`Rule::to_ground`; owner, 2026-11-11; default off) closes it: each point
+of the rule's classes stands for the whole height from the ground up to
+it. The zone to keep free is then the band in plan, from the ground up to
+the point's height plus the vertical distance \\( c \\):
+
+\\[ g = \max\left(0,\; z_{\text{wire}} - z_{\text{point}}\right), \qquad g < c \ \text{is a finding} \\]
+
+with \\( z_{\text{wire}} \\) the lowest subconductor's surface over the
+point (the slice's lowest, and on a swing arc the band's lowest, as
+without the option). A wire at or below the point's height is inside the
+object: 0. Above the point nothing changes. The ground's own height is
+not needed — a wire is above the ground — so the option asks for no
+terrain and costs no time.
+
+A worked case (test `down_to_the_ground_finds_a_wire_beside_a_tall_object`):
+a level wire at 20 m, a mast top 2 m beside it in plan at 26 m, the band
+3 m, 5 m to keep. Without the option: 26 − 20 = 6 m ≥ 5 m, no finding.
+With it: the wire is 6 m below the top, inside the column: 0 m, a
+finding. A point at 17 m gives 3 m either way.
+
+**Conservative assumptions** of the option: the object is taken as wide
+as the band at every height (a point at the band's edge counts in full),
+and as standing from the ground to the point without a gap — a point on
+a crossing wire, a tree top overhanging a low wire or a bridge's deck
+makes everything below it a finding. It is meant for the classes of
+buildings and masts, not for vegetation; the default for each class is
+left to the user's rules (no class is given the option by the program).
+
 Each rule gives the wires' voltage, its weather cases, the distance to
 keep (one, by voltage, or base + per kV) and its targets; each span's
 lowest clearance over every wind position of the rule's cases is
