@@ -44,6 +44,7 @@ fn sections_are_calculated_after_creep_or_load_as_chosen() {
         r.creep_stretch_window = Some(CreepStretch {
             creep_case: Some("everyday".into()),
             load_cases: vec!["glaze ice".into(), "rime ice + wind".into()],
+            hot: Vec::new(),
         });
     }
     harness.run();

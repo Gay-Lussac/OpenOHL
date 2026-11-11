@@ -1,0 +1,105 @@
+# Creep at elevated temperature: the MECHANISM only
+# (docs/theory/sagtension.md, "Creep at elevated temperature").
+#
+# INVENTED coefficients — no conductor's law, from no publication, never
+# to be used for design:
+#
+#   eps [microstrain] = k s^a t^b exp(c (T - 20 °C)),
+#   k = 1, a = 1.3, b = 0.16, c = 0.02 /K, from 90 °C,
+#
+# s the tension over the whole area in MPa, t in hours. A real law's
+# coefficients are the user's, from the source the wire file names; the
+# published predictor equations are not among the project's sources yet,
+# so no benchmark with a real law exists.
+#
+# Expected values: benchmarks/reference/textbook_reference.py
+# (hot_creep_cases; `python3 -I benchmarks/reference/textbook_reference.py
+# hotcreep`).
+#
+# By hand (hotcreep-003, 30 MPa held):
+#   500 h at 100 °C: 1 x 30^1.3 x 500^0.16 x e^1.6
+#                    = 83.23 x 2.7029 x 4.9530 = 1114.2 microstrain;
+#   then 100 h at 150 °C (g = e^2.6 = 13.464): the equivalent time
+#   t_eq = (1114.2 / (83.23 x 13.464))^(1/0.16) = 0.9652 h, and
+#   83.23 x 13.464 x 100.9652^0.16 = 2344.7 microstrain — under the plain
+#   sum of the two stages from fresh, 3455.3 microstrain.
+#
+# hotcreep-001 / -002: the dead-end span of tbcreep-001 / -002 (300 m, the
+# textbook cable with creep as +25 °C, strung at 25 kN at 10 °C) after
+# those two stages. Per stage the span's mean tension in still air at the
+# stage's temperature in the state reached so far — 16 293.3 N at 100 °C
+# (40.73 MPa on 400 mm²), then 12 402.4 N at 150 °C (31.01 MPa) — held over
+# the stage: 2477.11 microstrain in all, added to the creep stretch
+# (500 microstrain). After creep at 10 °C the span then carries 14 927.5 N
+# (22 136.2 N without the stages) and sags 11.81 m (7.97 m).
+
+[[case]]
+id = "hotcreep-001"
+title = "INVENTED law: dead-end span 300 m after creep at 10 °C with 500 h at 100 °C and 100 h at 150 °C, ruling span"
+calculation = "line.section"
+reference = "Independent chain of stages + quadrature and secant, additive strain (benchmarks/reference/textbook_reference.py)"
+max_seconds = 10.0
+expected.h_0_n = { value = 14927.54077, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 11.81074821, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", model = "linear_creep_temperature", creep_temperature_shift = 25.0, outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 }, hot_creep = { source = "INVENTED for the benchmark — not a conductor's law", k = 1.0, stress_exponent = 1.3, time_exponent = 0.16, temperature = "exp", temperature_coefficient = 0.02, above = "90 °C" } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "hot creep", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday",
+  "hot": [{"temperature": 150, "hours": 100}, {"temperature": 100, "hours": 500}]},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-rs",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "hotcreep-002"
+title = "INVENTED law: the same span and stages by finite elements"
+calculation = "line.section"
+reference = "Independent chain of stages + elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
+max_seconds = 10.0
+expected.h_0_n = { value = 14927.4358, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 11.81084481, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", model = "linear_creep_temperature", creep_temperature_shift = 25.0, outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 }, hot_creep = { source = "INVENTED for the benchmark — not a conductor's law", k = 1.0, stress_exponent = 1.3, time_exponent = 0.16, temperature = "exp", temperature_coefficient = 0.02, above = "90 °C" } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "hot creep", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday",
+  "hot": [{"temperature": 100, "hours": 500}, {"temperature": 150, "hours": 100}]},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-fe",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "hotcreep-003"
+title = "INVENTED law alone at 30 MPa held: 500 h at 100 °C, then 100 h at 150 °C by strain hardening"
+calculation = "cables.hot_creep"
+reference = "By hand (the comments above) and benchmarks/reference/textbook_reference.py"
+max_seconds = 1.0
+expected.strain_0_microstrain = { value = 1114.202178, rel_tol = 1e-9 }
+expected.equivalent_hours_1 = { value = 0.9652270681, rel_tol = 1e-9 }
+expected.strain_1_microstrain = { value = 2344.718858, rel_tol = 1e-9 }
+
+[case.inputs]
+stress = 30.0
+stages = [{ temperature = 100.0, hours = 500.0 }, { temperature = 150.0, hours = 100.0 }]
+law = { source = "INVENTED for the benchmark — not a conductor's law", k = 1.0, stress_exponent = 1.3, time_exponent = 0.16, temperature = "exp", temperature_coefficient = 0.02, above = "90 °C" }

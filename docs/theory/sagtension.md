@@ -209,6 +209,42 @@ Curves are wire type **data**: OpenOHL ships no manufacturer curves. The reposit
 
 The finite-element model follows the same curves: each span's unstressed length is corrected until its length at the span's mean tension is the curves' length in the case's material state, see [Finite-element wire systems](wirefe.md#non-linear-stress-strain-in-the-elements).
 
+## Creep at elevated temperature
+
+*Built, in active development (not approved yet) — the mechanism only.* Strands held hot creep faster than the wire's creep curve (or its temperature shift), taken at an everyday case, tells: an extra permanent strain that grows with the temperature, the stress and the time, and decelerates in time. OpenOHL takes it from a **law given with the wire type** and a **time at high temperature** given with the line.
+
+**No law and no coefficient is built in.** The published predictor equations and their coefficients per conductor family are **not among the project's sources**; the documents needed, to be supplied by the owner, are:
+
+- Harvey, J. R., and Larson, R. E., "Use of Elevated Temperature Creep Data in Sag-Tension Calculations", *IEEE Transactions on Power Apparatus and Systems*, vol. PAS-89, no. 3, 1970, pp. 380–386;
+- CIGRE Working Group 22.05, "Permanent Elongation of Conductors. Predictor Equations and Evaluation Methods", *Electra* no. 75, 1981, pp. 63–98.
+
+Until they are in hand, nothing here is cited from them, no coefficient is shipped, and the family of forms below — the one of the design note of 2026-11-10 — is **not confirmed against them** (the file format may still change). In hand is CIGRE Technical Brochure 324 only, which names the effect among the uncertainties of hot sags without giving a law for it. Every coefficient is therefore **the user's**, from the `source` the wire file must name; every result computed with a law says so and repeats that source. The tests and benchmarks use invented coefficients, named as such.
+
+**The law** (`[cable.hot_creep]`), in microstrain:
+
+\\[ \varepsilon = k\, s^{a}\, t^{b}\, g(T) \\]
+
+\\( s \\): the tension over the whole area in MPa, or the tension in percent of the RTS; \\( t \\): hours; \\( 0 < b < 1 \\); \\( g = e^{c\,(T - T_{ref})} \\), \\( (T / T_{ref})^{c} \\) (°C) or 1; it applies at or above a temperature the wire file gives.
+
+**The stages** (the line's *time at high temperature*: hours at a conductor temperature), taken in the order of rising temperature, whatever the order typed. For stage \\( i \\):
+
+1. the section's mean tension \\( \bar T_i \\) in still air, bare, at the stage's temperature, in the state reached so far (the state after creep, longer by the hot creep so far): one solve of the section by the ruling-span model; \\( s_i \\) from it;
+2. **strain hardening** — the creep rate depends on the strain reached: the stage starts at the *equivalent time* at which its own stress and temperature would have given the strain so far, \\( t_{eq} = \left(\varepsilon_{i-1} / (k\, s_i^{a}\, g(T_i))\right)^{1/b} \\), and \\( \varepsilon_i = k\, s_i^{a}\,(t_{eq} + t_i)^{b}\, g(T_i) \\).
+
+The sum \\( \varepsilon_{hot} \\) lengthens the whole conductor in the state **after creep** (no weight added): the unstressed length times \\( 1 + \varepsilon_{hot} \\), on top of the creep curve's set or the linear models' stretch, by the ruling span and by the finite elements alike. Initial and after-load states are unchanged; Max Sag takes it through its after-creep state.
+
+Hand check (invented coefficients \\( k = 1 \\), \\( a = 1.3 \\), \\( b = 0.16 \\), \\( g = e^{0.02 (T - 20)} \\), 30 MPa held): 500 h at 100 °C give \\( 30^{1.3} \times 500^{0.16} \times e^{1.6} \\) = 1114.2 µε; then 100 h at 150 °C start at \\( t_{eq} \\) = 0.9652 h and reach 2344.7 µε — under the 3455.3 µε of the two stages taken from fresh.
+
+- **Conservative:** the tension is **held** at its value at the start of each stage (it falls as the wire creeps, and the creep with it).
+- **Conservative:** the hot creep is **added** to the state after creep, not merged with the creep curve's own time (the two overlap in reality; the design's open question, the recommended option).
+- **Conservative:** it lengthens the whole conductor also above a bimetallic wire's knee point, where slack aluminium would not pull the core longer.
+- **NOT ON THE SAFE SIDE — a value is needed:** a wire type without a law on a line with a time at high temperature: its hot creep is **not counted**; every result of such a section after creep says so ("wire type X gives no law of creep at elevated temperature — its creep during … is not counted"). A stage below the law's own range is left out and said.
+- **Not covered:** the loss of strength by annealing at these temperatures (a separate check, not made); whether the law fits the conductor (its family, its range): the user's responsibility — the `source` is shown with every result.
+
+Cost: one solve of the section per stage (about a millisecond for ten spans), once per section, kept with its final state.
+
+*Validation* (mechanism only, invented coefficients): `hotcreep-001…003` (`benchmarks/sagtension/hot-creep.toml`) — the law and the equivalent time by hand; a 300 m span after two stages against an independent chain of stages and change of state (2477.1 µε; 14 927.5 N and 11.81 m after creep at 10 °C against 22 136.2 N and 7.97 m without the stages), by ruling span and by finite elements.
+
 ## Bimetallic wires above the knee point
 
 *Built 2026-11-11 (roadmap O22 item 1), in active development.* The outer strands of a bimetallic wire (aluminium on steel) expand more than its core. Heated at a given tension, they unload onto the core; at the **knee point** they carry nothing. What they do beyond it is not settled by the wire's elastic data, and three models are in use (`ohl_cables::BimetallicUse`; the wire type's `bimetallic_behavior` and `max_virtual_compression`, else the line's bimetallic conductor model):
@@ -290,7 +326,7 @@ On the synthetic example's first section (four spans, strung at 25 kN at 15 °C)
 
 ## Not yet included
 
-- Time-based creep models.
+- Time-based creep at ordinary temperatures (the creep curve, or the linear models' shift, is one state "after creep"); creep at elevated temperature has its mechanism ([above](#creep-at-elevated-temperature)) but **no law**: the sources are missing.
 - Sheave friction in the blocks (a tension ratio per sheave and the pulling end): later (the sheaves are frictionless, above).
 - Validation of the non-linear method against published cases: waits for published reference data (no tables typed from memory); see the roadmap (open point O11).
 

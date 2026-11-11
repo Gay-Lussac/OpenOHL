@@ -10,6 +10,47 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Creep at elevated temperature: the mechanism, no law (roadmap O22 item 6)**
+
+- **What is built.** A wire type may give a law of creep at elevated
+  temperature (`[cable.hot_creep]`, wire library version **3**: a power
+  law in stress, time and a temperature factor, its `source` required);
+  a line may give a time at high temperature (`creep_stretch.hot`: hours
+  at a conductor temperature, line file version **15**). The stages are
+  taken by rising temperature, each at the section's mean tension at its
+  start, joined by strain hardening (the equivalent time); the sum
+  lengthens the conductor in the state after creep, by ruling span and
+  by finite elements.
+- **What is not, and why.** **No law, no coefficient, no citation of a
+  law.** The sources are not in hand: Harvey & Larson, IEEE Trans.
+  PAS-89 no. 3, 1970, pp. 380–386; CIGRE WG 22.05, Electra 75, 1981,
+  pp. 63–98 — to be supplied by the owner. Nothing is typed from memory;
+  the theory page names what is missing; the family of forms is the
+  design note's and is not confirmed against the sources (the format is
+  unreleased and may change). Tests and benchmarks use invented
+  coefficients, named as such.
+- **The user's numbers are said to be the user's.** Every section solved
+  after creep with a law carries a note with the strain added, the
+  stages, and "the user's coefficients, source: …".
+- **Open question of the design, the recommended option taken.** The hot
+  creep is **added** to the state after creep (the upper bound), not
+  combined with the creep curve by a time history.
+- **Safe side.** Conservative: tension held over each stage; added, not
+  merged; applied to the whole conductor. NOT ON THE SAFE SIDE and said:
+  a wire type without a law on a line with a time at high temperature
+  (not counted); a stage below the law's range (left out, said). Not
+  covered: annealing.
+- **A choice made here.** The temperature factor's `power` form takes
+  both temperatures in °C (the design does not say); `temperature`
+  defaults to `none`, `stress` to `mpa`.
+- **Not done.** `ohl sagtension`'s `[final] hot` (its final states are
+  the engine's own pair, which has no lengthening per state: a design
+  choice of its own); the Creep-Stretch window's table and the wire
+  form's fields (later); the JSON schema of wire files (it is version
+  1's).
+- **Validation.** `hotcreep-001…003`, invented coefficients: the law by
+  hand; a span after two stages against an independent chain.
+
 **Point loads with a part across or along the line (roadmap O22 item 7)**
 
 - **What.** The object on a section's span point may carry a constant

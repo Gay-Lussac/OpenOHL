@@ -29,6 +29,7 @@
 //! core = { area = "0.1019 in²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
 //! ```
 
+pub mod hot_creep;
 pub mod mechanics;
 
 use std::collections::BTreeMap;
@@ -168,6 +169,12 @@ pub struct Cable {
     /// area / total area); default [`DEFAULT_MAX_VIRTUAL_COMPRESSION`].
     #[serde(default)]
     pub max_virtual_compression: Option<Stress>,
+    /// Its law of creep at elevated temperature (`[cable.hot_creep]`,
+    /// wire library version 3; roadmap O22 item 6): none — no such creep is
+    /// counted. Every coefficient is the user's, from the law's `source`:
+    /// no law is built in ([`hot_creep`]).
+    #[serde(default)]
+    pub hot_creep: Option<hot_creep::HotCreep>,
 }
 
 /// The bimetallic conductor model of a line: what the outer strands of its
@@ -705,6 +712,13 @@ impl Cable {
                 return Err(error(format!("{name} must be positive, got {value}")));
             }
         }
+        if let Some(e) = self
+            .hot_creep
+            .as_ref()
+            .and_then(hot_creep::HotCreep::problem)
+        {
+            return Err(error(e));
+        }
         if let Some(t) = self.reference_temperature
             && !(-100.0..=300.0).contains(&t.celsius())
         {
@@ -799,9 +813,12 @@ pub const WIRE_FILE_EXTENSION: &str = "ohlw";
 /// Value of the optional `format` header of wire libraries.
 pub const WIRE_FILE_FORMAT: &str = "ohl-wire";
 
-/// Latest wire library format version: 2 adds a cable's optional
+/// Latest wire library format version: 3 adds a cable's optional law of
+/// creep at elevated temperature (`[cable.hot_creep]`,
+/// [`hot_creep::HotCreep`]; roadmap O22 item 6, 2026-11-11) — a file is of
+/// version 3 only when a cable of it gives one; 2 adds a cable's optional
 /// `reference_temperature` (of its mass per length).
-pub const WIRE_FILE_VERSION: u32 = 2;
+pub const WIRE_FILE_VERSION: u32 = 3;
 
 /// The temperature of a data sheet's mass per length when the cable does
 /// not give one, °C (owner decision 2026-10-21).

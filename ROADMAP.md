@@ -704,6 +704,18 @@ against what line design practice uses). In the order proposed:
    sagging condition and lets the strings swing: offer it as a choice
    (tension to 0.6 %, sag to a few centimetres, either way per span).
 6. **Creep at elevated temperature**, for conductors run hot.
+   **Built 2026-11-11, in active development (not approved yet) — the
+   mechanism only:** a law as data of the wire type (`[cable.hot_creep]`,
+   wire library 3), a time at high temperature with the line
+   (`creep_stretch.hot`, line file 15), strain hardening between stages,
+   the lengthening after creep by ruling span and finite elements, the
+   notes (the user's coefficients and their source; "not on the safe
+   side" without a law), benchmarks `hotcreep-001…003` with invented
+   coefficients. **Blocked on sources:** no law and no coefficient is
+   shipped until the owner supplies Harvey & Larson (IEEE Trans. PAS-89,
+   1970) and CIGRE Electra 75 (1981); the family of forms is to be
+   confirmed against them. Still to do: `ohl sagtension`'s final states,
+   the Creep-Stretch window's table, the wire form.
 7. **Smaller:** a partial break of a bundle (some subconductors); point
    loads in a span with a part across or along the line; gap-type
    conductors; a share of a span's pull per set where one attachment

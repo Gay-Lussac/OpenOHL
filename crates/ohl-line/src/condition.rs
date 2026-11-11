@@ -174,9 +174,24 @@ impl From<Calculation> for String {
     }
 }
 
+/// A time the wires are held at a high temperature (roadmap O22 item 6):
+/// one row of [`CreepStretch::hot`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotStage {
+    /// Conductor temperature, °C.
+    pub temperature: f64,
+    /// Hours at that temperature (above 0).
+    pub hours: f64,
+}
+
+/// Rows of time at high temperature a line may give at most
+/// ([`CreepStretch::hot`]): each is one section solve per section.
+pub const HOT_STAGES: usize = 100;
+
 /// Weather cases for the permanent stretch due to creep and load, by name
 /// (Criteria › Creep-Stretch).
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreepStretch {
     /// Case for the final after creep: normally an everyday case the wires
@@ -187,12 +202,62 @@ pub struct CreepStretch {
     /// (hence the most stretch) is used, for each wire.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_cases: Vec<String>,
+    /// Time at high temperature (line file version 15; roadmap O22 item
+    /// 6): the wire types that give a law of creep at elevated temperature
+    /// ([`ohl_cables::hot_creep::HotCreep`]) take the creep of these
+    /// stages **on top of** the state after creep
+    /// ([`crate::solve::final_state`]): larger sags after creep, in every
+    /// weather case. A wire type without a law: not counted, and said.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hot: Vec<HotStage>,
 }
 
 impl CreepStretch {
     /// Whether nothing is chosen.
     pub fn is_empty(&self) -> bool {
-        self.creep_case.is_none() && self.load_cases.is_empty()
+        self.creep_case.is_none() && self.load_cases.is_empty() && self.hot.is_empty()
+    }
+
+    /// What is wrong with the time at high temperature (none: nothing).
+    pub fn hot_problem(&self) -> Option<String> {
+        if self.hot.len() > HOT_STAGES {
+            return Some(format!(
+                "time at high temperature: {} rows, at most {HOT_STAGES}",
+                self.hot.len()
+            ));
+        }
+        self.hot.iter().find_map(|s| {
+            let ok = s.temperature.is_finite()
+                && s.temperature > -273.15
+                && s.hours.is_finite()
+                && s.hours > 0.0;
+            (!ok).then(|| {
+                format!(
+                    "time at high temperature: {} h at {} °C — give hours above 0 and a \
+                     temperature",
+                    s.hours, s.temperature
+                )
+            })
+        })
+    }
+
+    /// The stages in the order they are counted: by rising temperature
+    /// (the result does not depend on the order typed; equal temperatures
+    /// keep theirs).
+    pub fn hot_in_order(&self) -> Vec<HotStage> {
+        let mut stages = self.hot.clone();
+        stages.sort_by(|a, b| a.temperature.total_cmp(&b.temperature));
+        stages
+    }
+
+    /// The time at high temperature in words: "500 h at 100 °C, 100 h at
+    /// 150 °C" (in the order counted).
+    pub fn hot_text(&self) -> String {
+        self.hot_in_order()
+            .iter()
+            .map(|s| format!("{} h at {} °C", s.hours, s.temperature))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

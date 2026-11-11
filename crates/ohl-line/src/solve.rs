@@ -2946,13 +2946,21 @@ fn solve_fe(
     };
     // Linear: stretched before rolling: in the blocks, the longer wire is
     // shared out again so that the spans keep one horizontal tension.
+    // (Curves: their permanent set is in the material state; the creep at
+    // elevated temperature lengthens them in the secant below.)
     let stretch = match (&curves, final_state) {
-        (None, Some(f)) => f.stretch,
+        (None, Some(f)) => f.lengthening(),
         _ => 0.0,
     };
     if stretch != 0.0 {
         reference.lengthen(|_| 1.0 + stretch);
     }
+    // Curves: the creep at elevated temperature, a lengthening on top of
+    // the material state.
+    let hot = match (&curves, final_state) {
+        (Some(_), Some(f)) => f.hot_creep,
+        _ => 0.0,
+    };
     if !section.stringing.clipped() && reference.lengths.len() > 1 {
         reference = rolled(section, &loaded, &reference, cable, cases, budget)?;
     }
@@ -3010,7 +3018,8 @@ fn solve_fe(
             for (s, &t) in tensions.iter().enumerate() {
                 let (stretched, eps_ref) = at_stringing[s];
                 let eps = strain(t, cases.of(s).temperature, &material)?;
-                let k = stretched * (1.0 + eps) / ((1.0 + eps_ref) * thermal(s) * (1.0 + t / ea));
+                let k = stretched * (1.0 + eps) * (1.0 + hot)
+                    / ((1.0 + eps_ref) * thermal(s) * (1.0 + t / ea));
                 change = change.max(((k - factors[s]) / factors[s]).abs());
                 factors[s] = k;
             }
@@ -3241,6 +3250,9 @@ fn solve_fe(
     ));
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&spans, cable));
+    // What the permanent state says of itself (the creep at elevated
+    // temperature: the user's law, or none).
+    flags.extend(final_state.iter().flat_map(|f| f.notes.iter().cloned()));
     for k in cases.broken {
         flags.push(format!("span {}: the wire broken (roadmap O9)", k + 1));
     }
@@ -3529,6 +3541,9 @@ mod final_stringing_tests;
 
 #[cfg(test)]
 mod point_force_tests;
+
+#[cfg(test)]
+mod hot_creep_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

@@ -19,6 +19,42 @@ pub struct FinalState {
     pub stretch: f64,
     /// Weather case that gave it.
     pub case: String,
+    /// The creep at elevated temperature on top of it, unit strain
+    /// (roadmap O22 item 6; after creep only, 0 without a time at high
+    /// temperature or a law of the wire type): a lengthening of the whole
+    /// conductor that adds no weight, in every model
+    /// ([`FinalState::lengthening`]).
+    pub hot_creep: f64,
+    /// What every result in this state says of it: the law used — the
+    /// user's coefficients and their source — or that none was given.
+    pub notes: Vec<String>,
+}
+
+impl Default for FinalState {
+    /// The initial state: no set, no stretch.
+    fn default() -> Self {
+        Self {
+            material: ohl_cables::mechanics::MaterialState::Initial,
+            stretch: 0.0,
+            case: String::new(),
+            hot_creep: 0.0,
+            notes: Vec::new(),
+        }
+    }
+}
+
+impl FinalState {
+    /// The lengthening of the cable's unstressed length the models apply
+    /// besides the material state, unit strain: the creep at elevated
+    /// temperature, and for the linear models (their material state is
+    /// the initial one) their permanent stretch too.
+    pub fn lengthening(&self) -> f64 {
+        use ohl_cables::mechanics::MaterialState;
+        match self.material {
+            MaterialState::Initial => self.stretch + self.hot_creep,
+            _ => self.hot_creep,
+        }
+    }
 }
 
 /// The total load per length of `cable` in `case`, N/m (weight, ice,
@@ -117,8 +153,14 @@ pub(crate) fn strung(
 /// - Linear, temperature: the strain of the temperature shift; no stretch
 ///   after load.
 ///
+/// After creep, the line's **time at high temperature**
+/// ([`crate::condition::CreepStretch::hot`]) adds the creep at elevated
+/// temperature of a wire type that gives a law
+/// ([`ohl_cables::hot_creep::HotCreep`]) on top ([`hot_creep_of`]).
+///
 /// Expected cost: one still-air section solve and a few sag-tension
-/// solves (~1 ms each for 10 spans).
+/// solves (~1 ms each for 10 spans); one more per stage of time at high
+/// temperature.
 pub fn final_state(
     line: &Line,
     section: &Section,
@@ -127,10 +169,50 @@ pub fn final_state(
     budget: &Budget,
 ) -> Result<FinalState, LineError> {
     use crate::condition::Condition;
-    use ohl_cables::CableModel;
+    use ohl_cables::mechanics::{MaterialState, Mechanics};
+    use ohl_core::units::Force;
+    use ohl_sagtension::nonlinear::NonlinearSection;
     let cable = &*line.bimetallic.apply(cable);
     let cable = &*strung_cable(section, cable)?;
-    use ohl_cables::mechanics::{MaterialState, Mechanics};
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
+    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
+    let ns = NonlinearSection::from_known_state(
+        spans,
+        mechanics.clone(),
+        strung_state,
+        Force::from_si(h),
+        &MaterialState::Initial,
+    )
+    .map_err(|e| invalid(e.to_string()))?;
+    let strung_at = (strung_state, h);
+    let mut state = permanent_set(
+        line, section, cable, condition, &ns, &mechanics, strung_at, budget,
+    )?;
+    if condition == Condition::Creep && !line.creep_stretch.hot.is_empty() {
+        hot_creep_of(line, section, cable, &ns, &mut state, budget)?;
+    }
+    Ok(state)
+}
+
+/// The permanent set of [`final_state`] without the creep at elevated
+/// temperature: of `section` strung with `cable` (as strung), its
+/// sag-tension section `ns` and mechanics, strung at `strung_at` (the
+/// stringing state and the horizontal tension then, N).
+#[allow(clippy::too_many_arguments)]
+fn permanent_set(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    condition: crate::condition::Condition,
+    ns: &ohl_sagtension::nonlinear::NonlinearSection,
+    mechanics: &ohl_cables::mechanics::Mechanics,
+    (strung_state, h): (ohl_sagtension::LoadState, f64),
+    budget: &Budget,
+) -> Result<FinalState, LineError> {
+    use crate::condition::Condition;
+    use ohl_cables::CableModel;
+    use ohl_cables::mechanics::MaterialState;
     use ohl_core::units::Force;
     use ohl_sagtension::nonlinear::NonlinearSection;
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
@@ -141,16 +223,6 @@ pub fn final_state(
     // more stretch, more sag).
     let local = section.largest_wind_factor();
     let state_of = |c: &WeatherCase| load_state(&c.with_wind_factor(local), cable);
-    let (spans, _, strung_state, h) = strung(line, section, cable, budget)?;
-    let mechanics = Mechanics::from_cable(cable).map_err(|e| invalid(e.to_string()))?;
-    let ns = NonlinearSection::from_known_state(
-        spans,
-        mechanics.clone(),
-        strung_state,
-        Force::from_si(h),
-        &MaterialState::Initial,
-    )
-    .map_err(st)?;
     // The permanent stretch is measured at the stringing tension: at zero
     // tension, outer strands that take no compression are slack and only
     // the core's set would count.
@@ -183,12 +255,14 @@ pub fn final_state(
                         material,
                         stretch: stretch.max(0.0),
                         case: case.name.clone(),
+                        ..FinalState::default()
                     })
                 }
                 CableModel::LinearCreepTemperature => Ok(FinalState {
                     material: MaterialState::Initial,
                     stretch: alpha * cable.creep_temperature_shift.unwrap_or(0.0),
                     case: case.name.clone(),
+                    ..FinalState::default()
                 }),
                 CableModel::LinearCreepTension => {
                     let solved = ns
@@ -200,6 +274,7 @@ pub fn final_state(
                         material: MaterialState::Initial,
                         stretch: alpha * cable.creep_temperature_shift.unwrap_or(0.0) * t / at,
                         case: case.name.clone(),
+                        ..FinalState::default()
                     })
                 }
             }
@@ -216,6 +291,7 @@ pub fn final_state(
                     material: MaterialState::Initial,
                     stretch: 0.0,
                     case: cases.loads[0].name.clone(),
+                    ..FinalState::default()
                 });
             }
             // The case giving the most stretch.
@@ -239,17 +315,102 @@ pub fn final_state(
                         material,
                         stretch,
                         case: case.name.clone(),
+                        ..FinalState::default()
                     });
                 }
             }
             Ok(best.expect("load cases given"))
         }
-        Condition::Initial | Condition::MaxSag => Ok(FinalState {
-            material: MaterialState::Initial,
-            stretch: 0.0,
-            case: String::new(),
-        }),
+        Condition::Initial | Condition::MaxSag => Ok(FinalState::default()),
     }
+}
+
+/// Adds the creep at elevated temperature to `state`, the state after
+/// creep of `section` (its sag-tension section `ns`, as strung): the
+/// line's time at high temperature, stage by stage in the order of rising
+/// temperature, by the law of `cable`
+/// ([`ohl_cables::hot_creep::HotCreep`]).
+///
+/// Per stage: the section's mean tension in still air, bare, at the
+/// stage's temperature, in the state reached so far (one section solve) —
+/// **held over the stage** (conservative: the tension falls as the wire
+/// creeps) — gives the law's stress; the strain so far continues by strain
+/// hardening ([`ohl_cables::hot_creep::HotCreep::after_stage`]). The sum is
+/// **added** to the state after creep (conservative: not merged with the
+/// creep curve's own time) as a lengthening of the whole conductor.
+///
+/// The state's notes say the law's source — the coefficients are the
+/// user's — and the stages the law does not cover; a wire type without a
+/// law: "NOT ON THE SAFE SIDE", its hot creep is not counted.
+///
+/// Exit clause: at most [`crate::condition::HOT_STAGES`] stages (checked
+/// when the line is read), each one section solve under `budget`; no
+/// iteration.
+pub fn hot_creep_of(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    ns: &ohl_sagtension::nonlinear::NonlinearSection,
+    state: &mut FinalState,
+    budget: &Budget,
+) -> Result<(), LineError> {
+    use ohl_core::units::Temperature;
+    use ohl_sagtension::nonlinear::NonlinearSection;
+    let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
+    let history = &line.creep_stretch;
+    let Some(law) = &cable.hot_creep else {
+        state.notes.push(format!(
+            "NOT ON THE SAFE SIDE: wire type {} gives no law of creep at elevated temperature — \
+             its creep during {} is not counted",
+            cable.id,
+            history.hot_text()
+        ));
+        return Ok(());
+    };
+    let (area, rts) = (cable.area().si(), cable.rated_tensile_strength.si());
+    let mut strain = 0.0;
+    let mut below = Vec::new();
+    for stage in history.hot_in_order() {
+        let at = Temperature::from_celsius(stage.temperature);
+        if !law.applies_at(at) {
+            below.push(format!("{} h at {} °C", stage.hours, stage.temperature));
+            continue;
+        }
+        // The section in the state reached so far, at the stage's
+        // temperature: still air, bare.
+        let mut reached = ns.clone();
+        reached.lengthen(state.lengthening() + strain);
+        let still = WeatherCase::still("hot stage", at);
+        let solved = reached
+            .solve(load_state(&still, cable), &state.material, budget)
+            .map_err(|e| {
+                invalid(format!(
+                    "time at high temperature, {} °C: {e}",
+                    stage.temperature
+                ))
+            })?;
+        let tension = NonlinearSection::section_mean_tension(&solved);
+        strain = law.after_stage(strain, law.stress_of(tension, area, rts), at, stage.hours);
+    }
+    state.hot_creep = strain;
+    state.notes.push(format!(
+        "creep at elevated temperature: +{:.1} µε on the state after creep ({}), by the law of \
+         wire type {} — the user's coefficients, source: {}",
+        strain * 1e6,
+        history.hot_text(),
+        cable.id,
+        law.source.trim()
+    ));
+    if !below.is_empty() {
+        state.notes.push(format!(
+            "creep at elevated temperature: {} not counted — the law of wire type {} applies \
+             from {} °C",
+            below.join(", "),
+            cable.id,
+            law.above.celsius()
+        ));
+    }
+    Ok(())
 }
 
 /// Ruling-span solution of a section in `case`: one horizontal tension for
@@ -288,10 +449,10 @@ pub(super) fn solve_rs(
     .map_err(st)?;
     let material = match final_state {
         Some(f) => {
-            if matches!(f.material, MaterialState::Initial) {
-                // Linear models: the stretch lengthens the cable (adding
-                // no weight).
-                ns.lengthen(f.stretch);
+            // The linear models' stretch and the creep at elevated
+            // temperature lengthen the cable (adding no weight).
+            if f.lengthening() != 0.0 {
+                ns.lengthen(f.lengthening());
             }
             f.material.clone()
         }
@@ -378,6 +539,9 @@ pub(super) fn solve_rs(
     flags.extend(rts_flags(&out, cable));
     // The point loads this method leaves out (roadmap O22 item 7).
     flags.extend(point_loads_left_out(section));
+    // What the permanent state says of itself (the creep at elevated
+    // temperature: the user's law, or none).
+    flags.extend(final_state.iter().flat_map(|f| f.notes.iter().cloned()));
     let n = clamps.len();
     Ok(SectionShape {
         section: section.id.clone(),

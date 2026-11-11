@@ -21,7 +21,7 @@ A `.ohlw` file is plain **TOML** text (any text editor works; editors highlight 
 | Field | Value | Meaning |
 |---|---|---|
 | `format` | `"ohl-wire"` | Identifies the file. Any other value is rejected. |
-| `version` | `2` | Format version (2: a wire type's `reference_temperature`; files of version 1 read unchanged). Newer versions than the program supports are rejected. |
+| `version` | `3` | Format version (3: a wire type's law of creep at elevated temperature, `[cable.hot_creep]`; 2: a wire type's `reference_temperature`; older files read unchanged, and a file needs the higher version only when a wire type of it uses the field). Newer versions than the program supports are rejected. |
 
 ## `[[cable]]`
 
@@ -65,6 +65,26 @@ The outer strands expand more with temperature than the core. Above a transition
 **Which is on the safe side.** Compression without limit (the default) gives the **largest** hot sags — safe for clearances; its tension above the transition is the lowest (about 1 % on a 300 m span at 150 °C). A bird cage or a compression limit gives smaller hot sags (0.12 m in 10.6 m there): the results of a line with such a wire type say "NOT ON THE SAFE SIDE" with the wire type and its sections, and each weather case flags the spans past the transition. Below the transition the choice changes nothing; it costs no solve time. See [Bimetallic wires above the knee point](../theory/sagtension.md#bimetallic-wires-above-the-knee-point).
 
 Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the total area). Past the limit the core alone carries the tension, so a hot wire expands as the core does. Both methods use this: the ruling span through the wire type's stress-strain model; the finite elements through the same curves when the wire type has them (each span's length follows the curves, see [Finite-element wire systems](../theory/wirefe.md#non-linear-stress-strain-in-the-elements)), otherwise with one branch per section (the core alone when, at the section's mean tension, the outer strands are past their limit). A curve's own `max_compression` (below) still applies, whichever is smaller.
+
+## Creep at elevated temperature: `[cable.hot_creep]`
+
+*Built, in active development (not approved yet) — the mechanism only.* A wire type may give a law of the extra creep of its strands when held hot (wire library version 3). **OpenOHL ships no law and no coefficient**: the published equations are not among its sources yet ([theory](../theory/sagtension.md#creep-at-elevated-temperature)). The numbers are yours, from the source you name — and every result computed with them says so.
+
+```toml
+[cable.hot_creep]
+source = "…"                  # required: where the coefficients come from
+form = "power"                # ε[µε] = k · s^stress_exponent · t[h]^time_exponent · g(T)   (the only form)
+stress = "mpa"                # s = tension / total area in MPa (default) | "percent_rts"
+k = 0.0                       # your value
+stress_exponent = 0.0         # your value (≥ 0)
+time_exponent = 0.0           # your value, between 0 and 1
+temperature = "exp"           # g = exp(c·(T − T_ref)) | "power": (T/T_ref)^c, °C | "none" (default)
+temperature_coefficient = 0.0 # c, your value
+reference_temperature = "20 °C"   # T_ref (default 20 °C)
+above = "…"                   # required: the law applies at or above this temperature
+```
+
+**What it does to the results:** with a *time at high temperature* in the line's creep-stretch criteria ([Line files](line-file.md#calculations-condition-and-method)), the wire is longer in the state **after creep** — larger sags, lower tensions, in every weather case solved after creep (and Max Sag). Without that time nothing changes. A line with the time and a wire type **without** a law says "NOT ON THE SAFE SIDE" on that wire type's sections: their hot creep is not counted. Time: one solve of the section per row of time, once. The family of forms is not final (it waits for the sources).
 
 ## Components: `[cable.outer]`, `[cable.core]`
 

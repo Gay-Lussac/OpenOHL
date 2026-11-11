@@ -12,6 +12,7 @@ Covers:
     benchmarks/sagtension/textbook-bimetallic.toml
     benchmarks/sagtension/sag-to-limits.toml
     benchmarks/wirefe/point-force.toml
+    benchmarks/sagtension/hot-creep.toml
     benchmarks/sagtension/cigre-tb324.toml
     benchmarks/weather/textbook-ice-wind.toml
     benchmarks/wirefe/textbook-elastic-catenary.toml
@@ -1182,6 +1183,94 @@ def point_force_cases():
         })
 
 
+def hot_creep_cases():
+    """hotcreep-001...003 (benchmarks/sagtension/hot-creep.toml): creep at
+    elevated temperature, the MECHANISM only, with INVENTED coefficients
+    (no conductor's law, from no publication):
+
+        eps [microstrain] = k s^a t^b exp(c (T - 20 degC)),
+        k = 1, a = 1.3, b = 0.16, c = 0.02 /K, from 90 degC,
+
+    s the tension over the whole area in MPa, t in hours. Stages are joined
+    by strain hardening: a stage starts at the equivalent time
+    t_eq = (eps / (k s^a g))^(1/b) of the strain reached.
+
+    hotcreep-003: the law alone at 30 MPa held, 500 h at 100 degC then
+    100 h at 150 degC. hotcreep-001 / -002: the textbook dead-end span of
+    tbcreep (300 m, strung at 25 kN at 10 degC, creep as +25 degC) with
+    those two stages: per stage the span's mean tension in still air at the
+    stage's temperature in the state reached so far (the ruling-span model:
+    additive strain, the weight conserved), held over the stage; the strain
+    is added to the creep stretch; then the span after creep at 10 degC by
+    the ruling span (-001) and by the finite elements (-002)."""
+    print("== creep at elevated temperature (INVENTED coefficients) ==")
+    k, a, b, c_t, above = 1.0, 1.3, 0.16, 0.02, 90.0
+
+    def rate(s, T):
+        return k * s**a * math.exp(c_t * (T - 20.0)) if T >= above and s > 0 else 0.0
+
+    def after(so_far, s, T, hours):
+        r = rate(s, T)
+        if r <= 0.0:
+            return so_far, 0.0
+        t_eq = (so_far * 1e6 / r) ** (1 / b) if so_far > 0 else 0.0
+        return 1e-6 * r * (t_eq + hours) ** b, t_eq
+
+    stages = [(100.0, 500.0), (150.0, 100.0)]
+    eps, out = 0.0, {}
+    for i, (T, hours) in enumerate(stages):
+        eps, t_eq = after(eps, 30.0, T, hours)
+        out[f"strain_{i}_microstrain"] = eps * 1e6
+        out[f"equivalent_hours_{i}"] = t_eq
+    out["sum_from_fresh_microstrain"] = sum(after(0.0, 30.0, T, h)[0] for T, h in stages) * 1e6
+    show("hotcreep-003 the law alone, 30 MPa held", out)
+
+    d, EA, alpha = CABLE["d"], CABLE["EA"], CABLE["alpha"]
+    area = 400e-6
+    creep = alpha * 25.0
+    strain = lambda T, tt: T / EA + alpha * (tt - 20.0)
+    m = strain(0.0, 10.0)
+
+    def chain(w):
+        """The hot creep of the span strung at 25 kN at 10 degC with the
+        own weight w per metre at 10 degC, and its state after it."""
+
+        def span(H, s, tt):
+            k_of = lambda cc: (1 + s) * (1 + strain(cc["mean_tension"], tt)) / (1 + m)
+            cc, _, _ = conserved_span(300.0, 0.0, H, w, 0.0, 0.0, k_of)
+            return cc, cc["length"] / (1 + strain(cc["mean_tension"], tt))
+
+        L0 = span(25_000.0, 0.0, 10.0)[1]
+
+        def solved(s, tt):
+            H = math.exp(secant(lambda x: span(math.exp(x), s, tt)[1] - L0 * (1 + s),
+                                math.log(25_000.0), math.log(15_000.0)))
+            return H, span(H, s, tt)[0]
+
+        hot, tensions = 0.0, []
+        for T, hours in stages:
+            _, cc = solved(creep + hot, T)
+            tensions.append(cc["mean_tension"])
+            hot, _ = after(hot, cc["mean_tension"] / area / 1e6, T, hours)
+        return hot, tensions, solved
+
+    # -001: the ruling span (the weight at 10 degC in the additive form).
+    w_rs = strung_mass(CABLE["mass"], alpha, 10.0, additive=True) * G
+    hot, tensions, solved = chain(w_rs)
+    H, cc = solved(creep + hot, 10.0)
+    show("hotcreep-001 creep-rs at 10 degC after 500 h at 100 degC and 100 h at 150 degC",
+         {"hot_creep_microstrain": hot * 1e6, "stage_0_mean_tension_n": tensions[0],
+          "stage_1_mean_tension_n": tensions[1], "h_0_n": H, "sag_0_m": cc["sag"],
+          "without_the_stages_h": solved(creep, 10.0)[0]})
+    # -002: the finite elements (the weight at 10 degC in their form; the
+    # stages by the same ruling-span model, as the line computes them).
+    mass = strung_mass(CABLE["mass"], alpha, 10.0)
+    hot, tensions, _ = chain(mass * G)
+    fe = dead_end_span(300.0, 30.0, mass, d, EA, alpha, 25_000.0, 10.0, {"t": 10.0}, stretch=creep + hot)
+    show("hotcreep-002 creep-fe at 10 degC after the same stages",
+         {"hot_creep_microstrain": hot * 1e6, "h_0_n": fe["h_0_n"], "sag_0_m": fe["sag_0_m"]})
+
+
 def heated_span_cases():
     """tbheat-001...003: a level 400 m span between fixed wire points at
     30 m, strung at 25 kN at 10 degC, at 150 degC: the closed-form change of
@@ -1498,10 +1587,14 @@ def main():
     if sys.argv[1:] == ["ptforce"]:
         point_force_cases()
         return
+    if sys.argv[1:] == ["hotcreep"]:
+        hot_creep_cases()
+        return
     self_check()
     textbook_catenary()
     textbook_cos()
     creep_cases()
+    hot_creep_cases()
     point_force_cases()
     sag_to_limits_cases()
     heated_span_cases()

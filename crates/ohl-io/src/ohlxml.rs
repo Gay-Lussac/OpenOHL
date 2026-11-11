@@ -1182,6 +1182,7 @@ pub fn to_xml(line: &Line) -> String {
     let CreepStretch {
         creep_case,
         load_cases,
+        hot,
     } = creep_stretch;
     if !creep_stretch.is_empty() {
         out.push_str("  <creep_stretch");
@@ -1190,6 +1191,13 @@ pub fn to_xml(line: &Line) -> String {
         for c in load_cases {
             out.push_str("    <load_case");
             attr(&mut out, "name", c);
+            out.push_str("/>\n");
+        }
+        // Time at high temperature (line file version 15).
+        for s in hot {
+            out.push_str("    <hot");
+            attr(&mut out, "temperature", &num(s.temperature));
+            attr(&mut out, "hours", &num(s.hours));
             out.push_str("/>\n");
         }
         out.push_str("  </creep_stretch>\n");
@@ -2343,7 +2351,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     let creep_stretch = match root.child("creep_stretch") {
         None => CreepStretch::default(),
         Some(c) => {
-            check(c, &["creep_case"], &["load_case"])?;
+            check(c, &["creep_case"], &["load_case", "hot"])?;
             CreepStretch {
                 creep_case: owned(c, "creep_case"),
                 load_cases: c
@@ -2351,6 +2359,16 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                     .map(|l| {
                         check(l, &["name"], &[])?;
                         Ok(text(l, "name")?.to_owned())
+                    })
+                    .collect::<Result<_, String>>()?,
+                hot: c
+                    .children_named("hot")
+                    .map(|h| {
+                        check(h, &["temperature", "hours"], &[])?;
+                        Ok(ohl_line::condition::HotStage {
+                            temperature: number(h, "temperature")?,
+                            hours: number(h, "hours")?,
+                        })
                     })
                     .collect::<Result<_, String>>()?,
             }

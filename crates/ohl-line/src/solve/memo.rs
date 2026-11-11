@@ -214,6 +214,7 @@ pub(super) fn prepared(
             cable,
             &budget.iteration_limit(),
             &line.condition_cases,
+            &line.creep_stretch.hot,
             &line.bimetallic,
             &line.solver,
         ])
@@ -276,6 +277,7 @@ pub(super) fn final_state(
         cable,
         &line.bimetallic,
         &line.condition_cases,
+        &line.creep_stretch.hot,
         &condition,
         &budget.iteration_limit(),
     ]);

@@ -281,7 +281,7 @@ files](../user-guide/line-file.md).
 | `systems` | `[System]` | — | electrical systems | — |
 | `circuits` | `[Circuit]` | — | version 7 (2026-10-21): the circuits, named groups of conductor paths ([below](#electrical-systems-and-circuits-electricalrs)); left out when none; project `meta` row `circuits`; OHL XML `<circuit id name system description>` | system ids |
 | `display` | `Display` | — | phase colours, `ahead_deg` | phase labels |
-| `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch | weather case **names** |
+| `creep_stretch` | `CreepStretch` | — | weather cases for creep / load stretch; `hot` (line file 15, 2026-11-11): the time at high temperature, `[HotStage { temperature °C, hours }]` (creep at elevated temperature, below: wire library version 3) | weather case **names** |
 | `bimetallic` | `BimetallicModel` | Pa | outer-strand behaviour of bimetallic wire types above the transition temperature, for wire types that do not say. Derived, not stored (2026-11-11): the model each wire type is computed with (`ohl_cables::Cable::bimetallic_model` → `BimetallicUse`: `Unlimited`, `Limited(stress)`, `BirdCage`), the line's notes of it (`ohl_line::bimetallic_notes`) and, per solved case, the flags of the spans past the knee point in `SectionShape::flags` (`ohl_line::bimetallic::past_knee_flag`, from `Mechanics::outer_state`) | — |
 | `solver` | `SolverOptions` | — | how the calculations are done (Criteria › Calculation options): `jumper_loads` — `estimate` (default: weight, ice and wind of the jumper on the clamps) or `pull` (the solved jumper's end forces, sections and jumpers solved in turn); `taps` — `loop` (default: a jumper's own force at its tap put on what it hangs on, solved in turn until the tap settles) or `once` (the estimate, one calculation); `loads_per` (2026-10-21, `LoadsPer`, written only when not the default) — `stretched` (default, exact: the finite elements carry the ice and wind per metre of the stretched wire, `CableElement::stretched_load`, a fixed point) or `unstretched` (per unit of unstressed length, the former treatment, as other programs: a Simplification, about T/EA ≈ 0.1 % less; in the solver `solve::Reference::loads_per`, set from the line in `solve_fe`, and the jumpers' `solve_jumper_in`; the closed forms unaffected); in the project's line settings and OHL XML `<solver taps loads_per>`; `ohl line --loads-per` overrides it; `blocks` (2026-10-25, `InTheBlocks`, line file version 10, written only when not the default) — `sheaves` (default: a section in the blocks shares its length over frictionless sheaves, the wire's tension equal on both sides of each suspension clamp; `ohl_sagtension::sheaves::share`, in the solver `solve::over_sheaves` and `settled_over_sheaves`, the stringing state `in_the_blocks_at_stringing` for `clip_lengths` and the curves' zero-strain lengths; `solve::Reference::blocks`, set from the line in `solve_fe`) or `equal_h` (simplified: one horizontal tension, the strings plumb along the line, the model before; the ruling-span method keeps it either way); the sagging table follows it (`SaggingTable::blocks`, `SaggingSpan::horizontal_tension`, `TensionSection::solve_over_sheaves`, `NonlinearSection::solve_over_sheaves`); OHL XML `<solver blocks>`; `ohl line --blocks` overrides it; `ohl sagtension`'s `[sagging] blocks` (default `sheaves`) and the validation calculation `sagtension.sagging`'s input `blocks`; the app's results keep it in `revision::Revision::loads_per` (the line's hash taken without it, so a change is named on its own) and saved check reports in `parameters.loads_per` (vegetation, safety volumes); `local_spans` (2026-11-03, `ohl_line::local::SpanRule`): `worst` (default, not written) or `mean` — how a span takes its two structures' local factors in `local::localized`; set in Line › Criteria › Calculation options (a radio), through the same session command as the others (`Session::solver_command`: a put of the `solver` settings row, one logged undoable command; an oplog row without it reads `worst`) | — |
 | `circuit_starts` | `[SectionPoint]` | — | conductor path ends that are starts (power flows in); each a point of a section, given once (validated) | structures + sets |
@@ -1102,7 +1102,7 @@ One directory per kind; TOML with units in the values. Each item has an
 
 | Kind (`LibraryKind`) | Extension | Format id | Items per file | Rust type | Guide |
 |---|---|---|---|---|---|
-| `Cables` | `.ohlw` | `ohl-wire` (version 2: a wire type's optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
+| `Cables` | `.ohlw` | `ohl-wire` (version 3: a wire type's optional `[cable.hot_creep]`; 2: its optional `reference_temperature`) | several (`[[cable]]`) | `ohl_cables::Cable` | [Wire library](../user-guide/wire-library.md) |
 | `Insulators` | `.ohli` | `ohl-insulator` | one | `ohl_structures::InsulatorAssembly` | [Structure library](../user-guide/structure-library.md#insulator-assemblies-ohli) |
 | `StructureTypes` | `.ohls` | `ohl-structure` | one | `ohl_structures::StructureType` | [Structure library](../user-guide/structure-library.md) |
 | (structure templates: shipped `libraries/structure-templates`, the project's `Structure templates` folder — the folders' names before 2026-10-21, `pylon-templates`, `Pylon templates`, `PylonTemplates/`, still read; not kept in the project file) | `.ohlpt` | `ohl-structure-template` (`ohl-pylon-template` before 2026-10-21, read) | one | `ohl_structures::templates::PylonTemplate` | [Structure templates](../user-guide/structure-library.md#structure-templates-ohlpt) |
@@ -1126,6 +1126,33 @@ metre at the stringing temperature from it (`Cable::weight_at`,
 wire types' mass at 20 °C). The app's wire library editor raises a file to 2
 when one of its wire types gives the field (`LibraryPage::save`); without it a
 file keeps its version.
+
+**Wire library version 3** (2026-11-11, roadmap O22 item 6; the
+mechanism only): a wire type's optional law of creep at elevated
+temperature, `[cable.hot_creep]` — `Cable::hot_creep:
+Option<ohl_cables::hot_creep::HotCreep>` `{ source (required), form
+("power"), stress ("mpa" | "percent_rts"), k, stress_exponent,
+time_exponent (0–1), temperature ("none" | "exp" | "power"),
+temperature_coefficient, reference_temperature (20 °C), above }`;
+`HotCreep::{strain, equivalent_hours, after_stage, stress_of, problem}`.
+**No coefficient is built in or shipped**; the family of forms is not
+confirmed against the sources (missing) and may change before a release.
+Older files read unchanged; an older program leaves a wire type with the
+table out, saying so (unknown field). The app's wire library editor raises
+a file to 3 when a wire type has the table (`raise_wire_version`). The
+JSON schema `docs/schema/ohl-wire-1.schema.json` is version 1's: it holds
+neither this nor version 2's field. The line's side:
+`condition::CreepStretch::hot: Vec<HotStage { temperature (°C), hours }>`
+(line file **15**, written only when given; at most `HOT_STAGES` = 100;
+`hot_in_order`, `hot_text`, `hot_problem`; OHL XML `<creep_stretch><hot
+temperature hours/>`), applied by `solve::hot_creep_of` in
+`solve::final_state(Condition::Creep)`: `FinalState::hot_creep` (unit
+strain), `FinalState::notes` (the law's source — the user's coefficients
+— or "NOT ON THE SAFE SIDE: … no law …"; they become flags of every
+section solved in that state), `FinalState::lengthening()` (what the
+models add to the unstressed length: the linear models' stretch and the
+hot creep). The memo keys of the final state and of a stringing worked
+back hold `creep_stretch.hot`. Validation calculation `cables.hot_creep`.
 
 **Stress-strain curves and the sag-tension job** (2026-10-22). A
 component's `stress_strain.max_strain` (optional, strain units; absent:

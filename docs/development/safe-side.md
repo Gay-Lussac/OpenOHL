@@ -50,6 +50,8 @@ theory page. Status: **done** (with the date), **open**.
 | [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | With the pull option, every load case's notes name the jumpers whose stiffness is estimated | done 2026-11-08 |
 | [Sag-tension](../theory/sagtension.md#bimetallic-wires-above-the-knee-point) | The compression a bimetallic wire's outer strands really take above the knee point (tests or the maker) | A wire type as a bird cage or with a compression limit: "NOT ON THE SAFE SIDE: wire type X (sections …) modelled …" on every result of the line (its hot sag is not the largest); each weather case flags the spans past the knee point — the default's for the tension (the lowest of the models, about 1 %), a bird cage's or a limit's for the sag | done 2026-11-11 (in active development) |
 
+| [Sag-tension](../theory/sagtension.md#creep-at-elevated-temperature) | A wire type's law of creep at elevated temperature (its coefficients: the maker's or a published predictor equation's — none is built in; the sources are missing) | A line with a time at high temperature and a wire type without a law: "NOT ON THE SAFE SIDE: wire type X gives no law of creep at elevated temperature — its creep during … is not counted" on every result of its sections after creep; with a law, every such result names its source (the user's coefficients) | done 2026-11-11 (mechanism only, in active development) |
+
 ## C. Limits of the method or clauses not covered: said where they apply
 
 | Where | Limit | Status |

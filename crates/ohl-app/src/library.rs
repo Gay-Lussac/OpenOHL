@@ -1100,8 +1100,10 @@ impl LibraryPage {
     }
 
     /// A wire library one of whose cables gives its `reference_temperature`
-    /// is written at version 2 ([`ohl_cables::WIRE_FILE_VERSION`]): its
-    /// `version` raised when lower; without one it keeps its version.
+    /// is written at version 2, one with a law of creep at elevated
+    /// temperature (`hot_creep`) at version 3
+    /// ([`ohl_cables::WIRE_FILE_VERSION`]): its `version` raised when
+    /// lower; without one it keeps its version.
     fn raise_wire_version(&mut self) {
         if self.kind != LibraryKind::Cables {
             return;
@@ -1109,22 +1111,25 @@ impl LibraryPage {
         let Some(doc) = self.edited.doc() else {
             return;
         };
-        let gives = doc
-            .get("cable")
-            .and_then(toml_edit::Item::as_array_of_tables)
-            .is_some_and(|cables| {
-                cables
-                    .iter()
-                    .any(|c| c.contains_key("reference_temperature"))
-            });
-        if gives
-            && doc
-                .get("version")
-                .and_then(toml_edit::Item::as_integer)
-                .is_some_and(|v| v < 2)
+        let any = |key: &str| {
+            doc.get("cable")
+                .and_then(toml_edit::Item::as_array_of_tables)
+                .is_some_and(|cables| cables.iter().any(|c| c.contains_key(key)))
+        };
+        let want = if any("hot_creep") {
+            3
+        } else if any("reference_temperature") {
+            2
+        } else {
+            return;
+        };
+        if doc
+            .get("version")
+            .and_then(toml_edit::Item::as_integer)
+            .is_some_and(|v| v < want)
             && let Some(doc) = self.edited.edit()
         {
-            doc["version"] = toml_edit::value(2);
+            doc["version"] = toml_edit::value(want);
         }
     }
 

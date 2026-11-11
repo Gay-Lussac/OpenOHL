@@ -108,6 +108,8 @@ The names are those of the line file:
   <phase_color label="L1" color="#8b4513"/>     <!-- display colours -->
   <creep_stretch creep_case="…">
     <load_case name="…"/>
+    <hot temperature="100" hours="500"/>        <!-- version 15: a time at high temperature (°C, hours); the wire types
+                                                     with a law of creep at elevated temperature take it after creep -->
   </creep_stretch>
   <defaults spacer_compression="10000"/>        <!-- the project's default values -->
   <solver jumper_loads="pull" taps="once" loads_per="unstretched" blocks="equal_h" local_spans="mean"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched, sheaves (blocks: version 10), worst (local_spans, 2026-11-03) -->

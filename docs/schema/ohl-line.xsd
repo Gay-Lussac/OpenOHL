@@ -862,6 +862,18 @@
                   <xs:attribute name="name" type="xs:string" use="required"/>
                 </xs:complexType>
               </xs:element>
+              <xs:element name="hot" minOccurs="0" maxOccurs="100">
+                <xs:annotation>
+                  <xs:documentation>A time at high temperature (version 15):
+                    hours at a conductor temperature, °C. The wire types
+                    that give a law of creep at elevated temperature take
+                    its creep on top of the state after creep.</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:attribute name="temperature" type="xs:double" use="required"/>
+                  <xs:attribute name="hours" type="xs:double" use="required"/>
+                </xs:complexType>
+              </xs:element>
             </xs:sequence>
             <xs:attribute name="creep_case" type="xs:string"/>
           </xs:complexType>

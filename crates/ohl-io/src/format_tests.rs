@@ -116,6 +116,17 @@ fn rich_line() -> Line {
             span: Some(2),
         })),
     };
+    // A time at high temperature (version 15).
+    line.creep_stretch.hot = vec![
+        ohl_line::condition::HotStage {
+            temperature: 150.0,
+            hours: 100.0,
+        },
+        ohl_line::condition::HotStage {
+            temperature: 100.5,
+            hours: 500.25,
+        },
+    ];
     // Another section by its catenary constant after creep (version 15).
     if let Some(other) = line.sections.get_mut(1) {
         other.stringing = Stringing::CatenaryConstant {

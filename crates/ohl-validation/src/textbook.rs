@@ -15,6 +15,7 @@ use crate::{Calculation, Inputs, Outputs, Registry};
 pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(LineSection));
     registry.register(Box::new(SagToLimits));
+    registry.register(Box::new(HotCreepLaw));
     registry.register(Box::new(CableProperties));
 }
 
@@ -265,6 +266,53 @@ impl Calculation for SagToLimits {
         }
         for (rule, usage) in &s.usages {
             out.insert(format!("usage_{rule}"), *usage);
+        }
+        Ok(out)
+    }
+}
+
+/// `cables.hot_creep`: a law of creep at elevated temperature
+/// ([`ohl_cables::hot_creep::HotCreep`], a `[cable.hot_creep]` table as
+/// `law`) at a held `stress` (the law's measure) through `stages` (a list
+/// of `{ temperature = °C, hours }`, in the order given), joined by strain
+/// hardening.
+///
+/// Outputs per stage `i`: `strain_i_microstrain` (the strain reached
+/// after it) and `equivalent_hours_i` (the time at its own stress and
+/// temperature that gives the strain reached before it).
+struct HotCreepLaw;
+
+impl Calculation for HotCreepLaw {
+    fn id(&self) -> &'static str {
+        "cables.hot_creep"
+    }
+
+    fn description(&self) -> &'static str {
+        "A law of creep at elevated temperature at a held stress through stages (inputs: law = \
+         [cable.hot_creep] table, stress, stages = list of { temperature, hours }); outputs \
+         strain_i_microstrain, equivalent_hours_i"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let law: ohl_cables::hot_creep::HotCreep = table_input(inputs, "law")?;
+        if let Some(e) = law.problem() {
+            return Err(e);
+        }
+        let stress = inputs
+            .get("stress")
+            .and_then(toml::Value::as_float)
+            .ok_or("input \"stress\" must be a number")?;
+        let stages: Vec<ohl_line::condition::HotStage> = table_input(inputs, "stages")?;
+        let mut out = Outputs::new();
+        let mut strain = 0.0;
+        for (i, s) in stages.iter().enumerate() {
+            let at = Temperature::from_celsius(s.temperature);
+            out.insert(
+                format!("equivalent_hours_{i}"),
+                law.equivalent_hours(stress, at, strain),
+            );
+            strain = law.after_stage(strain, stress, at, s.hours);
+            out.insert(format!("strain_{i}_microstrain"), strain * 1e6);
         }
         Ok(out)
     }

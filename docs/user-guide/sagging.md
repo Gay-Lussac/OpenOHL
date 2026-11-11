@@ -25,6 +25,8 @@ A section strung to a value **after creep** or **after load**
 ([Line files › Stringing and status](line-file.md#stringing-and-status))
 is sagged in the field at the **initial** tension worked back from it:
 the sagging table is of that initial state, as for any other section.
+A time at high temperature (creep at elevated temperature) changes the
+state after creep only: never the sagging table.
 
 ## What is given
 

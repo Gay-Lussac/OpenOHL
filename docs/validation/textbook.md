@@ -116,6 +116,16 @@ The references of the forward cases run backwards: asked for the tension an inde
 | `finstr-003` | the same given as a catenary constant after creep, C = H / w = 1410.50 m (w at 10 °C) → 25 kN | `tbcreep-001`, C by hand |
 | `finstr-004` | an invented wire with stress-strain and creep curves, ruling span: 23 579.69 N after creep at 15 °C → 25 kN | `nlstate-001` |
 
+### Creep at elevated temperature, the mechanism (`benchmarks/sagtension/hot-creep.toml`)
+
+**Invented coefficients** — no conductor's law (none is shipped: the sources are missing, [theory](../theory/sagtension.md#creep-at-elevated-temperature)). The law, the equivalent time of strain hardening and the lengthening of a span after two stages, against an independent chain of stages and change of state (`textbook_reference.py`, `hotcreep`).
+
+| Case | What | Reference |
+|---|---|---|
+| `hotcreep-001` | 300 m span after creep with 500 h at 100 °C and 100 h at 150 °C, ruling span: 14 927.54 N, 11.811 m (22 136 N without the stages) | independent, by quadrature |
+| `hotcreep-002` | the same by finite elements: 14 927.44 N | independent, by quadrature |
+| `hotcreep-003` | the law alone at 30 MPa held: 1114.2 µε, equivalent time 0.9652 h, 2344.7 µε | by hand |
+
 ### A constant force on a span point (`benchmarks/wirefe/point-force.toml`)
 
 A level 300 m span at 20 kN with a constant horizontal force at mid-span, against two elastic pieces by quadrature joined at a loaded node (`textbook_reference.py`, `ptforce`) ([theory](../theory/wirefe.md#a-constant-force-across-or-along-the-line)).
