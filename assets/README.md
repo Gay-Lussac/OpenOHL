@@ -33,9 +33,11 @@ every file parses.
 | `icons/tools/add-point.svg`, `two-strings.svg`, `insert-joint.svg` | OHL-Structure's hotbar and inventory: Add point, Two strings to one wire point, Insert a joint on a member (with `add-joint`, `add-member`, `symmetry` there too) |
 
 The other files (the wordmarks, `openohl-mark-plain.svg`,
-`review-sheet.svg`) are for the website and documents. There is no
-macOS application bundle yet (the apps start from `cargo run` or the
-`.command` files), so no `.icns`.
+`review-sheet.svg`) are for the website and documents. No `.icns` or
+`.ico` file is kept here: the packaging makes them from the two
+application icons when it runs (`tools/package-macos.sh` for macOS,
+`packaging/windows/make_assets.py` for the Windows installer; the
+latter reads only simple SVGs, see its first lines).
 
 All are drawn by `make_icons.py` (Python, no dependencies):
 

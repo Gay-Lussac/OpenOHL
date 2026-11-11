@@ -110,6 +110,7 @@
 - [Interphase spacers (proposal)](development/interphase-spacers.md)
 - [Points on the wires and their objects (proposal)](development/line-points-and-objects.md)
 - [Performance and time budgets](development/performance.md)
+- [Making a release](development/releases.md)
 - [Desktop app conventions](development/ui.md)
   - [OHL-Design UI review (2026-10-27)](development/ui-review-2026-10-27.md)
 - [Measuring tools and annotations (proposal)](development/measuring-tools-spec.md)

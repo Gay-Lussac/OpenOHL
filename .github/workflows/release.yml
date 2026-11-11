@@ -1,27 +1,118 @@
 name: Release builds
 
-# Run by hand only (Actions → Release builds → Run workflow): builds
-# OHL-Design, OHL-Structure and the ohl command line for Windows and
-# Linux and attaches them to an existing GitHub release (the macOS build
-# is made locally). The Actions budget is limited: Windows minutes count
-# double. Expected ~25 min per platform with a cold cache.
+# Run by hand only (Actions → Release builds → Run workflow). Builds
+# OHL-Design, OHL-Structure and the ohl command line for Linux (tar.gz)
+# and Windows (zip and the MSI installer) and puts the files into a DRAFT
+# release for the tag. It never publishes: the owner looks at the draft
+# and publishes it by hand. A published release cannot take new files,
+# so everything (also the macOS image, made locally) goes into the draft
+# first. See docs/development/releases.md.
+#
+# The Actions budget is limited: Windows minutes count double. Expected
+# ~25 min per platform with a cold cache; no tests are run here.
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to attach the builds to (e.g. v0.0.1)"
+        description: "Release tag (e.g. v0.0.2). If it exists, it is what gets built"
         required: true
         type: string
+      commit:
+        description: "Only if the tag does not exist yet: the commit (full SHA) or branch to build; publishing the draft creates the tag there"
+        required: false
+        type: string
+        default: ""
+      name:
+        description: "Release name (empty: OpenOHL <tag>); only used when the draft is created"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
 
+# One run per tag at a time.
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
+  GH_REPO: ${{ github.repository }}
+  TAG: ${{ inputs.tag }}
 
 jobs:
+  # Before any building: what to build, and the draft release the files
+  # go into (the one that exists for the tag, or a new one).
+  draft:
+    name: Draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.draft.outputs.sha }}
+    steps:
+      - name: Find the commit and the draft release
+        id: draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ inputs.commit }}
+          NAME: ${{ inputs.name }}
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            *[!A-Za-z0-9._-]*|"") echo "::error::tag '$TAG': use letters, digits, dots, dashes (e.g. v0.0.2)"; exit 1 ;;
+          esac
+          if tag_sha=$(gh api "repos/$GH_REPO/commits/tags/$TAG" --jq .sha 2> /dev/null); then
+            sha="$tag_sha"
+            if [ -n "$COMMIT" ]; then
+              other=$(gh api "repos/$GH_REPO/commits/$COMMIT" --jq .sha)
+              if [ "$other" != "$sha" ]; then
+                echo "::error::the tag $TAG exists at $sha, but 'commit' names $other; leave 'commit' empty to build the tag"
+                exit 1
+              fi
+            fi
+            echo "building the tag $TAG ($sha)"
+          elif [ -n "$COMMIT" ]; then
+            sha=$(gh api "repos/$GH_REPO/commits/$COMMIT" --jq .sha) || {
+              echo "::error::no commit or branch '$COMMIT' in this repository"
+              exit 1
+            }
+            echo "the tag $TAG does not exist yet; building $COMMIT ($sha)"
+          else
+            echo "::error::the tag $TAG does not exist; give the commit or branch to build in 'commit'"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+          # `gh release view` finds a published release by its tag and a
+          # draft by the tag it will get.
+          if is_draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2> /dev/null); then
+            if [ "$is_draft" != "true" ]; then
+              echo "::error::the release $TAG is already published; a published release cannot take new files. Use a new tag."
+              exit 1
+            fi
+            echo "using the draft release that exists for $TAG (files of the same name are replaced)"
+          else
+            gh release create "$TAG" --draft --target "$sha" --title "${NAME:-OpenOHL $TAG}" --notes-file - << 'EOF'
+          DRAFT - edit these notes before publishing.
+
+          Files:
+          - `OpenOHL-<tag>-windows-x86_64.msi`: the Windows installer (OHL-Design, OHL-Structure, the `ohl` command line, libraries, examples, manual).
+          - `OpenOHL-<tag>-windows-x86_64.zip`: the same without an installer; unpack anywhere.
+          - `OpenOHL-<tag>-linux-x86_64.tar.gz`: the Linux build.
+          - macOS: the disk image and the command line, added by hand.
+
+          The Windows installer and programs are not signed: Windows shows "Windows protected your PC" (More info > Run anyway) and names an unknown publisher.
+
+          The Windows and Linux builds come without the Python console of OHL-Design (it would need the user's own Python of the same version).
+          EOF
+            echo "created a draft release for $TAG"
+          fi
+
   build:
     name: Build (${{ matrix.name }})
+    needs: draft
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75 # about 3x the expected duration
     strategy:
@@ -34,10 +125,12 @@ jobs:
           - name: windows-x86_64
             os: windows-latest
             exe: ".exe"
+    env:
+      STAGE: OpenOHL-${{ inputs.tag }}-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag }}
+          ref: ${{ needs.draft.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Without the embedded Python console (it would need the user's own
@@ -47,25 +140,84 @@ jobs:
         run: |
           cargo build --release --locked -p ohl-app --no-default-features
           cargo build --release --locked -p ohl-structure-app -p ohl-cli
-      - name: Package
+      # One folder with the programs side by side and, beside them, what
+      # they look for there: the libraries, the examples and the manual.
+      # The archive is this folder; the installer installs its contents.
+      - name: Stage
         shell: bash
         run: |
-          name="OpenOHL-${{ inputs.tag }}-${{ matrix.name }}"
-          mkdir -p "$name"
+          set -euo pipefail
+          mkdir -p "$STAGE/docs"
           for b in ohl-design ohl-structure ohl; do
-            cp "target/release/$b${{ matrix.exe }}" "$name/"
+            cp "target/release/$b${{ matrix.exe }}" "$STAGE/"
           done
-          cp LICENSE README.md "$name/"
-          cp -r examples "$name/examples"
+          cp LICENSE README.md "$STAGE/"
+          cp -r examples libraries "$STAGE/"
+          cp -r docs/user-guide docs/tutorial docs/theory docs/images "$STAGE/docs/"
+          mkdir -p upload
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a "$name.zip" "$name" > /dev/null
-            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+            7z a "upload/$STAGE.zip" "$STAGE" > /dev/null
           else
-            tar czf "$name.tar.gz" "$name"
-            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+            tar czf "upload/$STAGE.tar.gz" "$STAGE"
           fi
-      - name: Attach to the release
+          # The installer's version: the three numbers of the workspace
+          # version (Windows Installer takes nothing else).
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          msi_version="${version%%[-+]*}"
+          if ! echo "$msi_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version '$version' in Cargo.toml: expected three numbers"
+            exit 1
+          fi
+          if [ "$TAG" != "v$version" ]; then
+            echo "::warning::the tag is $TAG, but Cargo.toml says version $version (the installer shows $msi_version)"
+          fi
+          echo "MSI_VERSION=$msi_version" >> "$GITHUB_ENV"
+      # The MSI: WiX Toolset 5 as a .NET tool (the runner brings the .NET
+      # SDK; its own WiX is the old version 3). Version 5.0.2 on purpose:
+      # see docs/development/releases.md before changing it. Not signed.
+      - name: Windows installer (MSI)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          function Check { if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          python -I packaging/windows/make_assets.py msi-assets; Check
+          dotnet tool install wix --version 5.0.2 --tool-path wix-tool; Check
+          $wix = Join-Path (Resolve-Path wix-tool).Path "wix.exe"
+          & $wix --version; Check
+          & $wix extension add --global WixToolset.UI.wixext/5.0.2; Check
+          $stage = (Resolve-Path $env:STAGE).Path
+          $assets = (Resolve-Path msi-assets).Path
+          $msi = Join-Path (Resolve-Path upload).Path "$env:STAGE.msi"
+          & $wix build -arch x64 -ext WixToolset.UI.wixext `
+            -d "Version=$env:MSI_VERSION" -d "Stage=$stage" -d "Assets=$assets" `
+            -pdbtype none -o $msi packaging/windows/openohl.wxs; Check
+          Get-Item $msi | Format-List Name, Length
+      # Windows Installer's own consistency checks on the finished file:
+      # for the log only, the build does not depend on them.
+      - name: Check the installer (for the log)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & (Join-Path (Resolve-Path wix-tool).Path "wix.exe") msi validate (Join-Path "upload" "$env:STAGE.msi")
+      # Kept with the run for a few days as well, in case the upload to
+      # the draft fails: the files can then be added to the draft by hand
+      # without building again.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.STAGE }}
+          path: upload/*
+          retention-days: 5
+          if-no-files-found: error
+      - name: Add to the draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ inputs.tag }}" "$ASSET" --clobber
+        run: |
+          set -euo pipefail
+          # Once more: never into a published release.
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != "true" ]; then
+            echo "::error::the release $TAG is not a draft any more; nothing uploaded"
+            exit 1
+          fi
+          gh release upload "$TAG" upload/* --clobber
