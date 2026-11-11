@@ -71,6 +71,14 @@ pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
 }
 
 fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
+    if let Some(p) = &model.capacity_plugin
+        && usage.iter().any(|u| u.governs.starts_with(PLUGIN_NOT_RUN))
+    {
+        return format!(
+            "member capacities: {PLUGIN_NOT_RUN} ({}); no other method was used in its place",
+            p.name()
+        );
+    }
     match model.analysis.capacity {
         CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
         CapacityMethod::Asce10 | CapacityMethod::Sia263 => {
@@ -191,6 +199,12 @@ pub const BOWED: &str = "bowed: carries its buckling load";
 /// modelling member): no usage.
 pub const NOT_CHECKED: &str = "not checked (modelling member)";
 
+/// Said for every checked member of a model whose file asks for a
+/// plugin's member check when no plugin was run (the core runs none;
+/// 2026-11-11).
+pub const PLUGIN_NOT_RUN: &str =
+    "NOT CHECKED, NOT ON THE SAFE SIDE: the member check is a plugin's, not run here";
+
 /// The largest bending moments along a member, about its local y and z
 /// (N·m), between its joints (2026-11-08, owner: "stay on the safe
 /// side"): from its end forces and the load along it they include (a
@@ -273,6 +287,24 @@ pub fn member_usage_with(
     strength: f64,
     given: Option<&[crate::asce10::Capacity]>,
 ) -> Vec<MemberUsage> {
+    // The file asks for a plugin's member check and none was run here:
+    // no member is checked by another method in its place.
+    if let (Some(p), None) = (&model.capacity_plugin, given) {
+        return model
+            .members
+            .iter()
+            .enumerate()
+            .map(|(k, m)| MemberUsage {
+                member: k,
+                usage: None,
+                governs: if m.check {
+                    format!("{PLUGIN_NOT_RUN} ({})", p.name())
+                } else {
+                    NOT_CHECKED.to_owned()
+                },
+            })
+            .collect();
+    }
     let crossings = unbraced_crossings(model);
     (0..model.members.len())
         .map(|idx| {

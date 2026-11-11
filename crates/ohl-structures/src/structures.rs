@@ -192,6 +192,9 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// quantities of those pulls (`pull_back_transverse`, … in
 /// `[[load_case.load]]`) — raw tables here, read by the structure
 /// application; a file is written at 10 only when a case uses them.
+/// Version 12 (2026-11-11) adds a plugin's member check as the capacity
+/// method (`[analysis] capacity = "plugin:<plugin>/<method>"`, read by
+/// `ohl_structures_fe`); a file is written at 12 only when it names one.
 /// Version 11 (2026-11-11) adds `joint_details = true`
 /// ([`StructureType::joint_details`]: the calculation takes the joint
 /// details, at level 4 only); a file is written at 11 only when it is set.
@@ -226,7 +229,7 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 11;
+pub const STRUCTURE_FILE_VERSION: u32 = 12;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

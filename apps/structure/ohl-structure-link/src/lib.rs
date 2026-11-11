@@ -51,6 +51,7 @@ mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
 mod plate_frame;
+pub mod plugin_check;
 mod run;
 mod volumes;
 mod welds;
@@ -1357,6 +1358,8 @@ fn model_of(
             None,
         ),
     }
+    // A plugin's member check: found now, or the run refused.
+    .and_then(|m| plugin_check::find(m, dir))
 }
 
 /// Solves `cases` of `table` on the finite-element model of `structure`
@@ -1521,6 +1524,23 @@ fn analyse_one(
     let started = Instant::now();
     let (solution, usage) = ohl_structures_fe::analyse(model, &loads, case.strength, budget)
         .map_err(|e| format!("did not solve: {e}"))?;
+    // The member check by a plugin (found when the model was built).
+    let (usage, plugin_note) = match &model.capacity_plugin {
+        Some(p) => match &p.dir {
+            Some(dir) => {
+                let (u, note) = plugin_check::usage_of_case(
+                    model,
+                    p,
+                    dir,
+                    (&case.name, case.strength, self_weight),
+                    &solution,
+                )?;
+                (u, Some(note))
+            }
+            None => (usage, None),
+        },
+        None => (usage, None),
+    };
     let took = started.elapsed();
     if let Some(note) = ohl_structures_fe::dead_load_note(model) {
         notes.push(note);
@@ -1544,7 +1564,10 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
         notes.push(note);
     }
-    notes.push(ohl_structures_fe::check::capacity_note(model, &usage));
+    notes.push(match plugin_note {
+        Some(n) => n,
+        None => ohl_structures_fe::check::capacity_note(model, &usage),
+    });
     let joints = model
         .nodes
         .iter()

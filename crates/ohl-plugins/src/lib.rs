@@ -195,6 +195,30 @@ pub use member_capacity_bindings::exports::ohl::plugin::member_capacity::{
     MemberInput, MemberResult, MethodInfo,
 };
 
+mod member_check_bindings {
+    wasmtime::component::bindgen!({
+        world: "member-check-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `member-check` interface (2026-11-11): a
+/// structure's members with their forces in every load case, and what a
+/// plugin's method gives for each.
+pub mod member_check {
+    pub use super::member_check_bindings::exports::ohl::plugin::member_check::{
+        Capacity, CaseForces, CaseUsage, CheckInput, EndBolts, EndCondition, EndConnection,
+        LoadCase, Member, MemberBolts, MemberResult, MethodInfo, Part,
+    };
+}
+
+/// Export name of the optional `member-check` interface of any plugin.
+pub const MEMBER_CHECK_EXPORT: &str = "ohl:plugin/member-check@0.1.0";
+
+/// Extension point of plugins checking the members of structures by a
+/// design method (the `member-check` export, 2026-11-11).
+pub const MEMBER_CHECK: &str = "member-check";
+
 /// Export name of the optional `member-capacity` interface of any plugin.
 pub const MEMBER_CAPACITY_EXPORT: &str = "ohl:plugin/member-capacity@0.1.0";
 
@@ -1883,6 +1907,119 @@ impl WasmHost {
         let export = member_capacity_bindings::MemberCapacityExport::new(&mut p.store, &instance)
             .map_err(|e| fail(e, &p, "instantiation"))?;
         Ok(Some((p, export)))
+    }
+
+    /// The member-check export of the plugin in `dir`, instantiated
+    /// (none: not a WebAssembly plugin, not built, or built without it).
+    fn member_check_export(
+        &self,
+        dir: &Path,
+    ) -> Result<Option<(Prepared, member_check_bindings::MemberCheckExport)>, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(None);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component
+            .get_export_index(None, MEMBER_CHECK_EXPORT)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let fail = |e, p: &Prepared, what| classify(e, &p.manifest, what, p.limits);
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        let export = member_check_bindings::MemberCheckExport::new(&mut p.store, &instance)
+            .map_err(|e| fail(e, &p, "instantiation"))?;
+        Ok(Some((p, export)))
+    }
+
+    /// The member-check methods of the plugin in `dir`, from its
+    /// `member-check` export (none: built without it).
+    pub fn member_check_methods(
+        &self,
+        dir: &Path,
+    ) -> Result<Vec<member_check::MethodInfo>, PluginError> {
+        let Some((mut p, export)) = self.member_check_export(dir)? else {
+            return Ok(Vec::new());
+        };
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        export
+            .ohl_plugin_member_check()
+            .call_methods(&mut p.store)
+            .map_err(|e| classify(e, &p.manifest, "member-check", p.limits))
+    }
+
+    /// The members of `input` checked by method `method` of the plugin in
+    /// `dir`, every member and load case in this one call. What comes
+    /// back is what the plugin gave, by member id: a member of `input`
+    /// without a result, or a load case without a usage, is for the
+    /// caller to report as not checked, never as passing. Errors, each
+    /// naming the plugin: no such export, the plugin's own error, a
+    /// result for a member or a load case that was not sent or sent
+    /// twice, a usage that is not a number or negative, a capacity that
+    /// is not a positive number.
+    pub fn check_members(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &member_check::CheckInput,
+    ) -> Result<Vec<member_check::MemberResult>, PluginError> {
+        let Some((mut p, export)) = self.member_check_export(dir)? else {
+            return Err(PluginError::Runtime(format!(
+                "plugin in {}: no member-check export",
+                dir.display()
+            )));
+        };
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_member_check()
+            .call_check_members(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "member-check", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+        let sent: std::collections::HashSet<&str> =
+            input.members.iter().map(|m| m.id.as_str()).collect();
+        let mut seen = std::collections::HashSet::new();
+        for r in &given {
+            if !sent.contains(r.id.as_str()) {
+                return Err(bad(format!(
+                    "a result for member {}, which was not sent",
+                    r.id
+                )));
+            }
+            if !seen.insert(r.id.as_str()) {
+                return Err(bad(format!("two results for member {}", r.id)));
+            }
+            let mut cases = std::collections::HashSet::new();
+            for u in &r.usages {
+                if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
+                    return Err(bad(format!(
+                        "member {}: a usage for load case {} (not sent, or given twice)",
+                        r.id, u.load_case
+                    )));
+                }
+                if !(u.usage.is_finite() && u.usage >= 0.0) {
+                    return Err(bad(format!(
+                        "member {}: a usage that is not a number or is negative",
+                        r.id
+                    )));
+                }
+            }
+            if r.capacities
+                .iter()
+                .any(|c| !(c.value.is_finite() && c.value > 0.0))
+            {
+                return Err(bad(format!(
+                    "member {}: a capacity that is not a positive number",
+                    r.id
+                )));
+            }
+        }
+        Ok(given)
     }
 
     /// The member-capacity methods of the plugin in `dir`, from its

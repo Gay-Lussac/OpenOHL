@@ -102,7 +102,7 @@ pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
 /// modelling member, a tower program's fictitious member). Version 2 adds
 /// the member kind `tension` (a truss in tension only); versions 1 and 2
 /// read as before.
-pub const MODEL_FILE_VERSION: u32 = 4;
+pub const MODEL_FILE_VERSION: u32 = 5;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
@@ -742,7 +742,8 @@ impl CapacityMethod {
             crate::sia263::NAME => Ok(CapacityMethod::Sia263),
             "simple" => Ok(CapacityMethod::Simple),
             other => Err(format!(
-                "capacity \"{other}\": {} (default), {} or simple",
+                "capacity \"{other}\": {} (default), {}, simple, or a plugin's method \
+                 (plugin:<plugin>/<method>)",
                 crate::asce10::NAME,
                 crate::sia263::NAME
             )),
@@ -789,6 +790,51 @@ pub struct Model {
     /// Whether the joint details of a structure file were taken into the
     /// members' ends and end offsets (owner 2026-11-11).
     pub joint_use: JointUse,
+    /// The members are checked by a plugin's method instead of
+    /// [`Analysis::capacity`] (`[analysis] capacity =
+    /// "plugin:<plugin>/<method>"`, model file version 5 and structure
+    /// file version 12, 2026-11-11). The core does not run plugins: a
+    /// runner that does ([`PluginMethod::dir`] found) replaces the
+    /// members' usage; without one every checked member is reported as
+    /// not checked ([`crate::check::PLUGIN_NOT_RUN`]) — never by another
+    /// method in its place.
+    pub capacity_plugin: Option<PluginMethod>,
+}
+
+/// A member-check method of a plugin, as a file names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginMethod {
+    /// The plugin's name (its manifest's).
+    pub plugin: String,
+    /// The method's name among the plugin's.
+    pub method: String,
+    /// Where the plugin is installed, once a runner found it.
+    pub dir: Option<std::path::PathBuf>,
+}
+
+impl PluginMethod {
+    /// What starts a plugin's method in `[analysis] capacity`.
+    pub const PREFIX: &'static str = "plugin:";
+
+    /// `plugin:<plugin>/<method>` read (none: not a plugin's method).
+    pub fn parse(text: &str) -> Option<Result<Self, String>> {
+        let rest = text.strip_prefix(Self::PREFIX)?;
+        Some(match rest.split_once('/') {
+            Some((p, m)) if !p.trim().is_empty() && !m.trim().is_empty() => Ok(Self {
+                plugin: p.trim().to_owned(),
+                method: m.trim().to_owned(),
+                dir: None,
+            }),
+            _ => Err(format!(
+                "capacity \"{text}\": a plugin's method is written plugin:<plugin>/<method>"
+            )),
+        })
+    }
+
+    /// As a file names it.
+    pub fn name(&self) -> String {
+        format!("{}{}/{}", Self::PREFIX, self.plugin, self.method)
+    }
 }
 
 /// How a structure file's joint details (`[[connection]]`) went into the
@@ -882,6 +928,17 @@ impl Model {
             MODEL_FILE_VERSION,
             "structure model",
         )?;
+        // A plugin's method: kept beside the core's default, which then
+        // only serves what the plugin interface does not carry yet.
+        let capacity_plugin = match file
+            .analysis
+            .capacity
+            .as_deref()
+            .and_then(PluginMethod::parse)
+        {
+            None => None,
+            Some(p) => Some(p.map_err(|e| format!("analysis: {e}"))?),
+        };
         let mut materials = BTreeMap::new();
         for m in &file.materials {
             if materials.insert(m.id.as_str(), m).is_some() {
@@ -1082,6 +1139,7 @@ impl Model {
                 single_angle_moments: file.analysis.single_angle_moments,
                 capacity: match &file.analysis.capacity {
                     None => CapacityMethod::default(),
+                    Some(_) if capacity_plugin.is_some() => CapacityMethod::default(),
                     Some(c) => CapacityMethod::parse(c).map_err(|e| format!("analysis: {e}"))?,
                 },
             },
@@ -1091,6 +1149,7 @@ impl Model {
             loads,
             joint_points: Vec::new(),
             joint_use: JointUse::default(),
+            capacity_plugin,
         };
         model.check()?;
         Ok(model)

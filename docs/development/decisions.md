@@ -10,6 +10,55 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**A plugin interface for the members' code check (owner, 2026-11-11)**
+
+The owner: "Go ahead with the interface first once done we'll move the
+codes into plugins"; earlier: "maybe the code check should actually be
+moved out of the core in plugins that can access the infos they need.
+Same as for the rules in the clearances". Built, in active development
+(not approved yet).
+
+- **The plan.** First the interface (this entry) with one example
+  plugin; then ASCE 10-97 and SIA 263:2013 move out of the core into
+  plugins behind it. Until then the two core methods are untouched and
+  the default.
+- **The interface**: the optional plugin export `member-check`
+  (`methods`, `check-members`), additive to interface 0.3; typed records;
+  the whole structure in one call — every checked member with its
+  section, material, lengths, end conditions, design data, its forces in
+  every load case, and its ends' connections only at level 4 with the
+  joint details on. Back per member: capacities by name, usage per case,
+  what governs, notes, what is not on the safe side. Details:
+  [plugins.md](plugins.md#member-checks).
+- **Never passing by default.** A member without a result is NOT CHECKED,
+  NOT ON THE SAFE SIDE; a file naming a plugin that is not installed is
+  refused by name; a program that runs no plugins reports every member
+  of such a file as not checked. No other code is ever used in its place.
+- **Choosing it**: `[analysis] capacity = "plugin:<plugin>/<method>"`
+  (structure file version 12, model file version 5, written at the newer
+  version only when used); in OHL-Structure the *capacities* choice lists
+  the installed plugins' methods.
+- **What the move of ASCE 10-97 and SIA 263 into plugins will need**
+  (not solved now):
+  - the plates', covers', welds' and bolt-group checks
+    (`plates.rs`, `bolt_rules.rs`, the link's plate checks): they are
+    chosen by the core's capacity method and have no plugin interface;
+    with a plugin method they stay with ASCE 10-97, said;
+  - the pole checks (their own codes), not part of this interface;
+  - a built-up member's parts (`parts` is in the record, never filled);
+  - the bolt tools' minimum distances in the Detail view (they ask the
+    core's method, not a plugin);
+  - the live "Resistance" of Member details and the capacities shown in
+    reports (the interface returns capacities, the app shows the core's);
+  - the unbraced-crossing rule and the "kept active" and eccentric-end
+    remarks the core adds to a member's result;
+  - one call for all cases in OHL-Structure's run (today one call per
+    case), `ohl structures fe` and the line's structure check running
+    plugins at all (today: not checked, said);
+  - a plugin's own settings (national parameters) and its formulas for
+    the theory pages; the validation benchmarks of the two codes running
+    against the plugins.
+
 **Level 4 and the option "joint details in the calculation" (owner, 2026-11-11)**
 
 The owner: "the structural calculations should be kept on their simpler form with an option to consider the full joint once it's modelled, maybe as a level 4 structure. Without the full joint details it should be level 3". Built, in active development (not approved yet).

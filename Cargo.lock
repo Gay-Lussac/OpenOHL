@@ -4372,6 +4372,7 @@ dependencies = [
  "ohl-drawing",
  "ohl-line",
  "ohl-loads",
+ "ohl-plugins",
  "ohl-sections",
  "ohl-structure-loads",
  "ohl-structures",

@@ -88,6 +88,7 @@ world, no extension point) and each extension point:
 | `wire-colours` | `wire-colour-plugin` | a colour per wire group |
 | `system-styles` | `system-style-plugin` | a colour, line codes and phase angles per system |
 | `member-capacity` | `member-capacity-plugin` | member capacities by a design method |
+| `member-check` | `member-check-plugin` | the member check of a structure by a design method: every member and load case in one call ([Member checks](#member-checks)) |
 | `field-presets` | `field-preset-plugin` | cuts and places for the fields, and their reports |
 
 A plugin offering more than one point builds a world of its own that
@@ -771,6 +772,95 @@ plugin gives the capacities**:
 The test plugin `plugins/tests/member-capacity` gives an invented
 method (`area-yield`: area × yield both ways, not a design code) to prove
 the interface (host test, CLI test).
+
+## Member checks
+
+*Built 2026-11-11, in active development (not approved yet). Owner: "the
+code check should actually be moved out of the core in plugins that can
+access the infos they need. Same as for the rules in the clearances";
+"Go ahead with the interface first once done we'll move the codes into
+plugins".* The core's own methods (ASCE 10-97, SIA 263:2013, the simple
+check) are untouched and stay the default; this is the interface they
+will move behind.
+
+A plugin checks the members of a structure through the optional export
+`member-check` (`crates/ohl-plugins/wit/code.wit`: the
+`member-check-plugin` world, or `export ohl:plugin/member-check@0.1.0`
+beside another world; extension point `member-check`; additive to 0.3 —
+a plugin without it loads as before and gives none). Typed records only,
+SI units; the plugin sees nothing but these records.
+
+- `methods() -> list<method-info>`: the methods it gives (name,
+  description).
+- `check-members(method, check-input) -> result<list<member-result>, string>`.
+
+**One call for the whole structure** (`check-input`): the structure's
+name, whether the joint details are taken, the load cases (`load-case`:
+name, strength factor, self-weight factor) and **every checked member**
+(`member`) — a tower has thousands of members and dozens of cases, so
+never a call per member and case. A `member` carries:
+
+- its id, kind (`truss`, `frame`, `cable`, `tension`) and class (`leg`,
+  `bracing`, `redundant`, `crossing`);
+- the section as the section library holds it: shape, dimensions by
+  name, area, I_y, I_z, I_v, W_y, W_z; `parts` for a built-up member
+  (**not filled yet**: always empty);
+- the material: E, f_y, f_u;
+- the system length, `k`, `lk`, the three length ratios, the crossing
+  partner;
+- its own design data: end eccentricity and restraint flags,
+  width/thickness, thickness, plies, connected leg, bolts
+  (`member-bolts`), edge and end distances, spacing;
+- `ends`: each end's eccentricity and restraint **as the core's own
+  check would take them**, with where they come from (given, design
+  data, worked out, assumed);
+- `connections` (`end-connection`, with `end-bolts` carrying the bolt
+  library's strengths): only when the structure is level 4 with
+  `joint_details` on (`check-input.joint-details`); else empty;
+- `forces`: per load case the axial force, the twelve end forces (both
+  ends, local axes), the crossing partner's axial force, slack.
+
+**What comes back** per member (`member-result`, by id, any order): its
+`capacities` by name (value, what governs), its `usages` (one per load
+case: the usage with the case's strength factor applied, and the check
+that gives it), the governing check with its clause in words, notes, and
+`not-safe`: what is not on the safe side or not checked, in words.
+
+**The safe-side rule.** The host refuses, naming the plugin, a result for
+a member or case that was not sent or given twice, a usage that is not a
+number or negative, a capacity that is not positive. A member the plugin
+returns nothing for, or a load case without a usage, is reported by
+OpenOHL as **NOT CHECKED, NOT ON THE SAFE SIDE** with no usage — never as
+passing — and counted in the results' notes. `not-safe` is shown with the
+member's result.
+
+**Choosing it.** In a structure file (version 12) or a model file
+(version 5): `[analysis] capacity = "plugin:<plugin>/<method>"` — the
+plugin's name from its manifest and the method's name; in OHL-Structure,
+Design › Member cross-sections › *capacities* lists the installed
+plugins' methods. The plugin is looked for in `Plugins/` beside the
+structure file, then in the user's plugin folder. **Not installed, not
+built, or without that method: the run fails** with a message naming the
+plugin and the method; no other method is used in its place. A program
+that runs no plugins (the core alone, `ohl structures fe`, the line's
+structure check today) reports every member as NOT CHECKED, NOT ON THE
+SAFE SIDE for such a file.
+
+**Host side.** `WasmHost::member_check_methods`, `WasmHost::check_members`
+(`ohl-plugins`); the records are built and the results turned into the
+members' usage in `ohl_structure_link::plugin_check` (the only place
+that knows both the model and the interface). Today OHL-Structure's run
+calls the plugin once per load case (all members in each call) because
+its cases are solved in parallel and their solutions not kept together;
+the interface takes all cases at once and the run is to follow.
+
+**The example.** `plugins/examples/member-check-example`, method
+`example-yield-euler`: gross yield and Euler buckling from the lengths
+given — **an illustration, not a design code**; every result says so and
+is flagged not on the safe side. Tests
+(`apps/structure/ohl-structure-tests/tests/plugin_member_check.rs`): a
+truss checked end to end through the real host against hand values, the
+NOT CHECKED member, the not-installed message.
 
 ## Field presets
 

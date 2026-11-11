@@ -412,3 +412,308 @@ world member-capacity-plugin {
 world member-capacity-export {
     export member-capacity;
 }
+
+/// Member checks by a design method (optional export of any plugin,
+/// extension point `member-check`; 2026-11-11, owner: "the code check
+/// should actually be moved out of the core in plugins that can access
+/// the infos they need"): the structure check sends **every checked
+/// member of a solved structure in one call** — its class, section,
+/// material, lengths, end conditions, design data and its forces in every
+/// load case — and takes back, per member, its capacities by name, its
+/// usage per load case, what governs with its clause, notes, and what is
+/// not on the safe side. A member the plugin returns nothing for is
+/// reported by OpenOHL as NOT CHECKED, NOT ON THE SAFE SIDE, never as
+/// passing. Unlike `member-capacity` (one load case per call, capacities
+/// only) the plugin computes the usage itself, from all the forces.
+/// Added to interface version 0.3 without changing anything else:
+/// plugins built before load as they are, and give none. SI units
+/// throughout (m, N, N·m, Pa). Names of kinds, classes and shapes are the
+/// words of OpenOHL's files; a plugin ignores those it does not know and
+/// says so in its notes.
+interface member-check {
+    /// A method the plugin gives.
+    record method-info {
+        /// Its name, as a structure file chooses it.
+        name: string,
+        /// What it is and where its rules come from, in words.
+        description: string,
+    }
+
+    /// A load case of the run.
+    record load-case {
+        /// Its name.
+        name: string,
+        /// Its strength factor: OpenOHL's own methods multiply the
+        /// capacities by it; the plugin applies it to its usage.
+        strength: f64,
+        /// Its factor on the members' own weight (already in the forces).
+        self-weight: f64,
+    }
+
+    /// A member's forces in one load case.
+    record case-forces {
+        /// The load case: its place in `check-input.cases`.
+        load-case: u32,
+        /// Axial force, N, tension positive.
+        axial: f64,
+        /// The forces at its first joint then at its second, in the
+        /// member's local axes: fx, fy, fz, mx, my, mz each (12 values).
+        end-forces: list<f64>,
+        /// The crossing partner's axial force in this case (none: no
+        /// partner).
+        partner-axial: option<f64>,
+        /// A cable or tension-only member gone slack in this case.
+        slack: bool,
+    }
+
+    /// The member's own bolts (its design data, both ends alike).
+    record member-bolts {
+        /// The bolt's diameter, m.
+        diameter: f64,
+        /// The hole's diameter, m.
+        hole: option<f64>,
+        /// How many bolts.
+        count: u32,
+        /// Shear planes per bolt.
+        shear-planes: u32,
+        /// One bolt's shear capacity per plane, N.
+        shear-capacity: option<f64>,
+        /// The bolt's ultimate strength, Pa.
+        ultimate: option<f64>,
+        /// Its grade as the files name it ("" not given).
+        grade: string,
+        /// Holes in one cross-section.
+        holes: option<u32>,
+    }
+
+    /// The bolts of one end's connection, with the bolt library's values.
+    record end-bolts {
+        /// The library bolt's id ("" typed at the connection).
+        bolt: string,
+        /// How many bolts.
+        count: u32,
+        /// The bolt's diameter, m.
+        diameter: option<f64>,
+        /// The hole's diameter, m.
+        hole: option<f64>,
+        /// Shear planes per bolt.
+        shear-planes: option<u32>,
+        /// One bolt's shear capacity per plane through the threads, N.
+        shear-capacity: option<f64>,
+        /// The same through the shank, N.
+        shear-capacity-shank: option<f64>,
+        /// The bolt's ultimate strength, Pa.
+        ultimate: option<f64>,
+        /// The threads are in the shear plane.
+        threads-in-shear: option<bool>,
+        /// Its grade as the files name it ("" not given).
+        grade: string,
+    }
+
+    /// One end's joint detail (a structure file's `[[connection]]`).
+    record end-connection {
+        /// Which end: 0 at the first joint, 1 at the second.
+        end: u32,
+        /// `bolted`, `welded`, `pinned`, `fixed`, `continuous` ("" not given).
+        kind: string,
+        /// What it bolts onto: `member`, `plate`, `splice`, `other` ("" not given).
+        onto: string,
+        /// The thickness of what it bolts onto, m (a plate's; none: not known).
+        onto-thickness: option<f64>,
+        /// The leg bolted: `both`, `long`, `short`, `none` ("" not given).
+        leg: string,
+        /// Its bolts.
+        bolts: option<end-bolts>,
+        /// Holes in one cross-section.
+        holes: option<u32>,
+        /// The gauge lines from the heel, m.
+        gauges: list<f64>,
+        /// From the bolts to the edge of the leg, m.
+        edge-distance: option<f64>,
+        /// The edge is rolled (not sheared).
+        rolled-edge: option<bool>,
+        /// From the member's end to the first bolt, m.
+        end-distance: option<f64>,
+        /// Between bolts along a line, m.
+        pitch: option<f64>,
+        /// The end moved sideways by this, m (its eccentricity in the model).
+        shift: option<f64>,
+        /// Shear planes worked out from what it bolts onto.
+        planes: option<u32>,
+        /// Runs on through the joint as one part with another member.
+        continuous: bool,
+        /// What OpenOHL says about this end's data.
+        notes: list<string>,
+    }
+
+    /// One end's conditions as OpenOHL's own check would take them.
+    record end-condition {
+        /// Eccentric (none: the member's "one end", which one not said).
+        eccentric: option<bool>,
+        /// Where from: `given`, `design data`, `worked out`, `assumed`.
+        eccentric-source: string,
+        /// Restrained against turning.
+        restrained: option<bool>,
+        /// Where from, as `eccentric-source`.
+        restrained-source: string,
+    }
+
+    /// A part of a built-up member.
+    record part {
+        /// The part's shape.
+        shape: string,
+        /// The part's dimensions by name, m.
+        dimensions: list<tuple<string, f64>>,
+        /// Area, m².
+        area: f64,
+    }
+
+    /// One checked member with its forces in every load case.
+    record member {
+        /// The member's id.
+        id: string,
+        /// `truss`, `frame`, `cable` or `tension`.
+        kind: string,
+        /// `leg`, `bracing`, `redundant`, `crossing` ("" not given).
+        class: string,
+        /// The profile's shape (`equal_angle`, …; "" without a profile).
+        shape: string,
+        /// The profile's dimensions by name, m.
+        dimensions: list<tuple<string, f64>>,
+        /// The parts of a built-up member (empty: one profile, or its
+        /// parts not described).
+        parts: list<part>,
+        /// Area, m².
+        area: f64,
+        /// Second moment about the section's y, m⁴.
+        iy: f64,
+        /// Second moment about the section's z, m⁴.
+        iz: f64,
+        /// The minor principal second moment, m⁴.
+        iv: f64,
+        /// Elastic section modulus about y, m³.
+        wy: option<f64>,
+        /// Elastic section modulus about z, m³.
+        wz: option<f64>,
+        /// Young's modulus, Pa.
+        e: f64,
+        /// Yield strength, Pa.
+        fy: option<f64>,
+        /// Ultimate tensile strength, Pa.
+        fu: option<f64>,
+        /// System length between its joints, m.
+        length: f64,
+        /// Effective length factor.
+        k: f64,
+        /// Effective length, m (none: k × length).
+        lk: option<f64>,
+        /// Buckling lengths over the system length about the section's
+        /// y, z and minor axis (empty: not given; else 3 values).
+        length-ratios: list<f64>,
+        /// Its crossing partner's id ("" none).
+        crossing: string,
+        /// The member's own flags: `none`, `one_end`, `both_ends` ("" not given).
+        end-eccentricity: string,
+        /// The same for the restraint against turning.
+        end-restraint: string,
+        /// The flat width over thickness ratio given.
+        width-thickness: option<f64>,
+        /// The thickness of the leg bolted, m.
+        thickness: option<f64>,
+        /// Plies at the bolts.
+        plies: option<u32>,
+        /// `both`, `long`, `short`, `none` ("" not given).
+        connected-leg: string,
+        /// Its bolts.
+        bolts: option<member-bolts>,
+        /// From the bolts to the edge of the leg, m.
+        edge-distance: option<f64>,
+        /// From the member's end to the first bolt, m.
+        end-distance: option<f64>,
+        /// Between bolts along a line, m.
+        spacing: option<f64>,
+        /// Its two ends' conditions, first joint then second.
+        ends: list<end-condition>,
+        /// Its ends' joint details: only when the structure is level 4
+        /// with its joint details taken (`check-input.joint-details`);
+        /// else empty.
+        connections: list<end-connection>,
+        /// Its forces, one entry per load case.
+        forces: list<case-forces>,
+    }
+
+    /// Everything of one structure for one call.
+    record check-input {
+        /// The structure's name.
+        structure: string,
+        /// The joint details are taken (level 4, the file's option on).
+        joint-details: bool,
+        /// The load cases of the run.
+        cases: list<load-case>,
+        /// The checked members.
+        members: list<member>,
+    }
+
+    /// A capacity by name.
+    record capacity {
+        /// `tension`, `compression`, or the method's own names.
+        name: string,
+        /// N (or the unit the name says), a positive number.
+        value: f64,
+        /// What governs it, in words.
+        governs: string,
+    }
+
+    /// A member's usage in one load case.
+    record case-usage {
+        /// Its place in `check-input.cases`.
+        load-case: u32,
+        /// Share of the capacity used (1 = 100 %), the case's strength
+        /// factor applied; not negative.
+        usage: f64,
+        /// The check that gives it, in words.
+        check: string,
+    }
+
+    /// What the method gives for one member.
+    record member-result {
+        /// The member's id.
+        id: string,
+        /// Its capacities.
+        capacities: list<capacity>,
+        /// One per load case; a case left out is reported as not checked.
+        usages: list<case-usage>,
+        /// The governing check with its clause, in words.
+        governs: string,
+        /// Notes for this member (assumptions, limits), in words.
+        notes: list<string>,
+        /// What is not on the safe side or not checked for this member,
+        /// in words (none: nothing). OpenOHL shows it with the result.
+        not-safe: option<string>,
+    }
+
+    /// The methods the plugin gives.
+    methods: func() -> list<method-info>;
+
+    /// Checks the members of `input` by method `method`: one result per
+    /// member it checks, in any order, by id. The error says why there
+    /// are none.
+    check-members: func(method: string, input: check-input) -> result<list<member-result>, string>;
+}
+
+/// A plugin that gives member checks only (extension point
+/// `member-check`).
+world member-check-plugin {
+    use types.{plugin-info};
+
+    /// Describes the plugin.
+    export describe: func() -> plugin-info;
+
+    export member-check;
+}
+
+/// The `member-check` export alone: how the host finds it in any plugin
+/// (not a world to build plugins for).
+world member-check-export {
+    export member-check;
+}

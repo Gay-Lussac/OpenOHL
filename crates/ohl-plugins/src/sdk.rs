@@ -42,7 +42,7 @@ pub struct ExtensionPoint {
 }
 
 /// Every extension point the applications ask plugins for.
-pub const EXTENSION_POINTS: [ExtensionPoint; 10] = [
+pub const EXTENSION_POINTS: [ExtensionPoint; 11] = [
     ExtensionPoint {
         name: "design-code",
         world: "code-plugin",
@@ -96,6 +96,12 @@ pub const EXTENSION_POINTS: [ExtensionPoint; 10] = [
         world: "member-capacity-plugin",
         export: Some(MEMBER_CAPACITY_EXPORT),
         what: "member capacities of structures by a design method",
+    },
+    ExtensionPoint {
+        name: "member-check",
+        world: "member-check-plugin",
+        export: Some(crate::MEMBER_CHECK_EXPORT),
+        what: "the member check of structures by a design method (every member and load case in one call)",
     },
     ExtensionPoint {
         name: "field-presets",
@@ -377,6 +383,19 @@ fn template_source(kind: &str) -> Option<(&'static str, Option<&'static str>, St
                  impl Guest for Plugin {{\n{}}}\n\
                  \n\
                  impl exports::ohl::plugin::system_styles::Guest for Plugin {{\n    /// A style per system, in order; none and no phases: no suggestion.\n    fn system_styles(systems: Vec<SystemInfo>) -> Result<Vec<SystemStyle>, String> {{\n        Ok(systems\n            .iter()\n            .map(|_| SystemStyle {{\n                color: None,\n                phases: Vec::new(),\n            }})\n            .collect())\n    }}\n}}\n",
+                describe_fn()
+            ),
+        ),
+        "member-check" => (
+            "member-check-plugin",
+            Some("member-check"),
+            "the member check of structures by a design method",
+            format!(
+                "use exports::ohl::plugin::member_check::{{CheckInput, MemberResult, MethodInfo}};\n\
+                 \n\
+                 impl Guest for Plugin {{\n{}}}\n\
+                 \n\
+                 impl exports::ohl::plugin::member_check::Guest for Plugin {{\n    fn methods() -> Vec<MethodInfo> {{\n        vec![MethodInfo {{\n            name: \"example\".into(),\n            description: \"Example method (fill in)\".into(),\n        }}]\n    }}\n\n    // Every checked member of the structure with its forces in every\n    // load case, in this one call. A member left out of the result is\n    // reported as NOT CHECKED, NOT ON THE SAFE SIDE.\n    fn check_members(method: String, input: CheckInput) -> Result<Vec<MemberResult>, String> {{\n        let _ = input;\n        Err(format!(\"method {{method}}: not written yet\"))\n    }}\n}}\n",
                 describe_fn()
             ),
         ),
@@ -707,6 +726,21 @@ impl WasmHost {
                         "colour {:?}, {} phase style(s)",
                         s[0].color,
                         s[0].phases.len()
+                    )
+                }),
+            );
+        }
+        if lists("member-check") {
+            call(
+                "member-check",
+                self.member_check_methods(dir).map(|m| {
+                    format!(
+                        "{} method(s): {}",
+                        m.len(),
+                        m.iter()
+                            .map(|m| m.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )
                 }),
             );

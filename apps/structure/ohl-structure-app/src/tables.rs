@@ -1616,6 +1616,33 @@ impl StructureApp {
                 .unwrap_or("asce10-97")
                 .to_owned();
             let mut chosen = current.clone();
+            // The installed plugins' member-check methods (2026-11-11):
+            // looked up once per folder and session (each plugin is
+            // loaded to ask it).
+            let folder = f
+                .path()
+                .and_then(std::path::Path::parent)
+                .map(std::path::Path::to_path_buf);
+            let id = egui::Id::new(("member-check-methods", &folder));
+            let listed: Option<std::sync::Arc<Vec<(String, String, String)>>> =
+                ui.data(|d| d.get_temp(id));
+            let plugins = listed.unwrap_or_else(|| {
+                let found = std::sync::Arc::new(ohl_structure_link::plugin_check::methods(
+                    &ohl_structure_link::plugin_check::roots(folder.as_deref()),
+                ));
+                ui.data_mut(|d| d.insert_temp(id, std::sync::Arc::clone(&found)));
+                found
+            });
+            let name_of = |p: &str, m: &str| format!("plugin:{p}/{m}");
+            if current.starts_with("plugin:")
+                && !plugins.iter().any(|(p, m, _)| name_of(p, m) == current)
+            {
+                crate::app::error_label(
+                    ui,
+                    "this plugin's method is not installed here: a run is refused (no other \
+                     method is used in its place)",
+                );
+            }
             egui::ComboBox::from_id_salt("analysis-capacity")
                 .selected_text(&chosen)
                 .show_ui(ui, |ui| {
@@ -1637,6 +1664,18 @@ impl StructureApp {
                             "Simple check (Euler buckling, gross yield): not a design code; \
                              unsafe compared with design codes",
                         );
+                    for (p, m, what) in plugins.iter() {
+                        let name = name_of(p, m);
+                        ui.selectable_value(&mut chosen, name.clone(), &name)
+                            .on_hover_text(format!(
+                                "{what}\n\nA method of the plugin {p} (Plugins/ beside the \
+                                 structure, or the user's plugins): it receives every checked \
+                                 member with its forces in each case and gives the usage. Not \
+                                 checked by OpenOHL; a member it returns nothing for is shown \
+                                 as NOT CHECKED, NOT ON THE SAFE SIDE. The plates' and bolts' \
+                                 own checks stay with ASCE 10-97."
+                            ));
+                    }
                 });
             if chosen != current
                 && let Err(e) = f.edit("capacity method", |doc, _| {
@@ -1645,12 +1684,14 @@ impl StructureApp {
                     } else {
                         // Version 8: an older program says the file is
                         // newer instead of refusing the key.
+                        // A plugin's method: version 12.
+                        let needs = if chosen.starts_with("plugin:") { 12 } else { 8 };
                         if doc
                             .get("version")
                             .and_then(toml_edit::Item::as_integer)
-                            .is_some_and(|v| v < 8)
+                            .is_some_and(|v| v < needs)
                         {
-                            doc["version"] = toml_edit::value(8);
+                            doc["version"] = toml_edit::value(needs);
                         }
                         format!("\"{chosen}\"")
                     };

@@ -1155,6 +1155,13 @@ All built, in active development (not approved yet):
 ## Open points — waiting on a decision
 
 ### O4. Code checks of members and joints (e.g. SIA 263)
+*Status 2026-11-11: the plugin interface for the members' check
+(`member-check`, every member and load case in one call) and an example
+plugin are built, in active development (not approved yet). Next step,
+not done: moving ASCE 10-97 and SIA 263:2013 out of the core into plugins
+behind it; what that still needs is listed in the decision log
+(2026-11-11). Joints: no plugin interface yet.*
+
 A plugin interface for code checks: what the core hands over (member
 forces, buckling lengths, sections, joint details), what comes back
 (usage per member and joint, formulas). To be agreed before it is built.

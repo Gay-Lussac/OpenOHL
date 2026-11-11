@@ -386,6 +386,8 @@ fn model_on(input: &RunInput) -> (Result<Model, String>, Vec<String>) {
             )
         }
     };
+    // A plugin's member check: found now, or the run refused.
+    let model = model.and_then(|m| crate::plugin_check::find(m, input.dir));
     (model, notes)
 }
 
