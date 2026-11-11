@@ -192,3 +192,85 @@ fn a_structure_taking_no_load_case_is_skipped_and_said() {
         );
     }
 }
+
+/// [`three_spans`] with a second wire (set 2, section R, strung at
+/// 12 kN) hanging from the same point A1 of T2 and T3 by its own string.
+/// INVENTED.
+fn two_sets_on_a_point() -> Line {
+    Line::from_json(
+        r#"{
+  "format": "ohl-line", "version": 6, "name": "two sets on a point", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1},
+               {"label": "W2", "position": [0, 0, 26], "set": 2}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "points": [{"label": "A1", "position": [300, 0, 30]}],
+     "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0,
+                  "weight": 800.0, "stiffness": 5e7},
+                 {"label": "S2", "top": "A1", "wire": "W2", "length": 4.0,
+                  "weight": 800.0, "stiffness": 5e7}],
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1},
+               {"label": "W2", "position": [300, 0, 26], "set": 2}]},
+    {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [600, 0, 27], "set": 1},
+               {"label": "W2", "position": [600, 0, 26], "set": 2}]}
+  ],
+  "sections": [
+   {"id": "S", "cable": "acsr-drake-26-7", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+               {"structure": "T3", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 20000.0, "temperature": 15.0}},
+   {"id": "R", "cable": "acsr-drake-26-7", "bundle": 1,
+    "points": [{"structure": "T1", "set": 2}, {"structure": "T2", "set": 2},
+               {"structure": "T3", "set": 2}],
+    "stringing": {"kind": "tension", "horizontal_tension": 12000.0, "temperature": 15.0}}]
+}"#,
+    )
+    .unwrap()
+}
+
+/// The pulls per wire set (roadmap O22 item 7): at a point holding two
+/// sets each set's back and ahead pull is kept, the two adding up to the
+/// point's; a point with one set has that set's alone, equal to its own.
+#[test]
+fn the_pulls_per_set_add_up_to_the_points() {
+    let line = two_sets_on_a_point();
+    let r = structure_loads(&line, &library(), &weather(), &cases(), &default_budget()).unwrap();
+    for case in &r {
+        let t2 = case
+            .loads
+            .iter()
+            .find(|l| l.structure == "T2" && l.point == "A1")
+            .expect("the load at A1");
+        assert_eq!(t2.sets, vec![1, 2], "{t2:?}");
+        let sets: Vec<u32> = t2.pulls_by_set.iter().map(|p| p.set).collect();
+        assert_eq!(sets, vec![1, 2]);
+        for i in 0..2 {
+            let back: f64 = t2.pulls_by_set.iter().map(|p| p.back[i]).sum();
+            let ahead: f64 = t2.pulls_by_set.iter().map(|p| p.ahead[i]).sum();
+            assert!((back - t2.pull_back[i]).abs() < 1e-9, "{t2:?}");
+            assert!((ahead - t2.pull_ahead[i]).abs() < 1e-9, "{t2:?}");
+        }
+    }
+    // Still air: set 1 pulls about its 20 kN each way, set 2 about its
+    // 12 kN.
+    let t2 = at(&r[0], "T2");
+    let (one, two) = (t2.pulls_by_set[0], t2.pulls_by_set[1]);
+    assert!(
+        one.back[1] < -15_000.0 && one.ahead[1] > 15_000.0,
+        "{one:?}"
+    );
+    assert!(
+        two.back[1] < -9000.0 && two.back[1] > -15_000.0 && two.ahead[1] > 9000.0,
+        "{two:?}"
+    );
+    // One set at the point: its pulls are the point's.
+    let single = three_spans();
+    let r = structure_loads(&single, &library(), &weather(), &cases(), &default_budget()).unwrap();
+    let t2 = at(&r[0], "T2");
+    assert_eq!(t2.pulls_by_set.len(), 1);
+    assert_eq!(t2.pulls_by_set[0].set, 1);
+    assert_eq!(t2.pulls_by_set[0].back, t2.pull_back);
+    assert_eq!(t2.pulls_by_set[0].ahead, t2.pull_ahead);
+}

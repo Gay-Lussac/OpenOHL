@@ -89,7 +89,9 @@ const LINE_FORCES_HEADERS: [(&str, &str); 9] = [
     ("Longitudinal", "Factor on the longitudinal forces (ahead)"),
     (
         "At",
-        "Every point, or the points of these sets (numbers, ;)",
+        "Every point, or the points of these sets (numbers, ;). With Back % / Ahead %: at a point \
+         holding several sets, only these sets' pulls are scaled (the others as solved; needs \
+         the pulls per set from the line). No solve time.",
     ),
     ("Back %", BACK_SHARE_HOVER),
     ("Ahead %", AHEAD_SHARE_HOVER),

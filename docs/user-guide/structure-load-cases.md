@@ -109,7 +109,7 @@ One table per line result taken:
 |---|---|---|
 | `result` | | The line result, by its name (as the line sent it). |
 | `vertical`, `transverse`, `longitudinal` | 1 | The factor on each axis (vertical down, transverse right of the line, longitudinal ahead). |
-| `sets` | every point | Only the points carrying these sets. |
+| `sets` | every point | Only the points carrying these sets. With `back` / `ahead`: at a point holding several sets, only these sets' pulls are scaled ([below](#some-sets-of-a-shared-point)). |
 | `off` | none | Points (labels) whose line forces are left out — works on the line with a conductor removed. |
 | `back` | 100 | The share of the **back spans'** solved horizontal pull taken, in percent (0 or more; 100: as solved; 0: none). Version 4; see [A share of the spans' pull](#a-share-of-the-spans-pull-back-ahead). |
 | `ahead` | 100 | The same of the **ahead spans**. |
@@ -168,6 +168,33 @@ notes. The exact treatment is a line result solved with the one-sided
 condition (a broken or removed wire, [Loads for
 structures](desktop-app.md#loads-for-structures)); the theory is in
 [Structure analysis](../theory/structures-fe.md#a-share-of-the-spans-pull-a-load-assumption).
+
+#### Some sets of a shared point
+
+*Built 2026-11-11, in active development, not approved yet (roadmap O22
+item 7).* One attachment point can hold several wire sets (two strings
+on one point, a section sharing its strings with another). `sets` picks
+the points; with a share it also says **whose pull is scaled** there:
+
+- `sets` not given, or naming every set of the point: the point's whole
+  pull is scaled, as before (the same numbers, bit for bit);
+- `sets` naming some of the point's sets: only those sets' pulls are
+  scaled, the other sets' pulls stay as solved. The row's note names
+  both ("only the pulls of set(s) 1 scaled (the point also holds set(s)
+  2, taken as solved)").
+
+Example (invented): a dead end holding set 1 pulling back with 20 kN and
+set 2 with 12 kN, so the line sends −32 kN along the line. `sets = [1]`,
+`back = 0`: −32 − (−20) = **−12 kN** — set 1's wire gone, set 2's pull
+kept. `sets = [1, 2]`: 0. Before this, `sets = [1]` took the whole
+point's pull off (0), which removed set 2's pull as well.
+
+For this the line sends each set's part of the pulls at such a point
+(line values of **version 7**, written only when a point of the
+structure holds several sets). With older line values a row scaling
+some sets of a shared point gets **no line value** and says what it
+needs — never the whole point's pull in its place. It is the same load
+assumption as above, said the same way; no extra solve time.
 
 Line values without the pulls (a line-values file older than version 6,
 a structure opened on its own): a row that scales a side gets **no line
@@ -396,7 +423,7 @@ longitudinal ahead, vertical down.
 | `structure_wind` | A pressure (Pa) on `members`: the line case's wind on the structure body, unfactored | yes |
 | `structure_wind_factored` | The same × the case's structure wind factor: the pressure the line's own structure checks put on the body | yes |
 | `pull_back_transverse`, `pull_back_longitudinal` | The horizontal pull of the point's back spans, along each span, across and along the line, unfactored (a share of `transverse` / `longitudinal`; [A share of the spans' pull](#a-share-of-the-spans-pull-back-ahead)); version 4 | yes (line values 6) |
-| `pull_ahead_transverse`, `pull_ahead_longitudinal` | The same of the ahead spans | yes (line values 6) |
+| `pull_ahead_transverse`, `pull_ahead_longitudinal` | The same of the ahead spans | yes (line values 6; per set at a point holding several sets: line values 7) |
 
 The two structure winds are the load case's own values for the
 structures when its `.ohllc` gives them (`[case.structure]`,

@@ -29,7 +29,10 @@ pub struct LinePoint {
 }
 
 /// One value the line gives: at a point, or for a set (summed over the
-/// sets at a point when the point has none of its own).
+/// sets at a point when the point has none of its own) — or, with both
+/// (line-values file version 7), one set's part of a point's value: the
+/// spans' pulls of that set at a point holding several sets
+/// ([`LineValues::get_set`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LineValue {
     /// The line's load case.
@@ -37,7 +40,8 @@ pub struct LineValue {
     /// At this point…
     #[serde(default)]
     pub point: Option<String>,
-    /// …or for this set.
+    /// …or for this set; with a point: this set's part of the point's
+    /// value (version 7).
     #[serde(default)]
     pub set: Option<u32>,
     /// What it is.
@@ -96,7 +100,9 @@ pub struct LineValues {
     pub values: Vec<LineValue>,
     /// (Since line-values file version 6 the values include the spans'
     /// pulls, [`LineQuantity::PULL_BACK`] and [`LineQuantity::PULL_AHEAD`],
-    /// per point; none in older files.)
+    /// per point; none in older files. Version 7: at a point holding
+    /// several sets, also each set's part of them — rows with the point
+    /// and the set.)
     ///
     /// The wind on the structure's own body per line case (line-values
     /// file version 4; none in older files).
@@ -111,10 +117,40 @@ impl LineValues {
         self.structure_wind.iter().find(|w| w.case == case)
     }
 
+    /// Whether the values hold a set's part of a point's value (a row
+    /// with a point and a set): what makes a line-values file version 7.
+    pub fn has_set_parts(&self) -> bool {
+        self.values
+            .iter()
+            .any(|v| v.point.is_some() && v.set.is_some())
+    }
+
+    /// The part of set `set` in the value of `quantity` in line case
+    /// `case` at point `label` (line-values file version 7: the spans'
+    /// pulls per set at a point holding several sets). None: not sent (an
+    /// older file, or a point with one set — its value is the point's).
+    pub fn get_set(
+        &self,
+        case: &str,
+        label: &str,
+        set: u32,
+        quantity: LineQuantity,
+    ) -> Option<f64> {
+        self.values
+            .iter()
+            .find(|v| {
+                v.case == case
+                    && v.quantity == quantity
+                    && v.point.as_deref() == Some(label)
+                    && v.set == Some(set)
+            })
+            .map(|v| v.value)
+    }
+
     /// The value of `quantity` in line case `case` at point `label`
-    /// carrying `sets`: the point's own, else the sum over its sets (when
-    /// every set has one). `tension_max` is also the larger of the back
-    /// and ahead tensions.
+    /// carrying `sets`: the point's own (a row of the point without a
+    /// set), else the sum over its sets (when every set has one).
+    /// `tension_max` is also the larger of the back and ahead tensions.
     pub fn get(
         &self,
         case: &str,
@@ -125,7 +161,12 @@ impl LineValues {
         let own = |q: LineQuantity| {
             self.values
                 .iter()
-                .find(|v| v.case == case && v.quantity == q && v.point.as_deref() == Some(label))
+                .find(|v| {
+                    v.case == case
+                        && v.quantity == q
+                        && v.point.as_deref() == Some(label)
+                        && v.set.is_none()
+                })
                 .map(|v| v.value)
                 .or_else(|| {
                     if sets.is_empty() {
@@ -998,6 +1039,15 @@ fn line_force_rows(
                 "{text}; NOT ON THE SAFE SIDE: {}",
                 crate::parts::SPAN_SHARE_ASSUMPTION
             );
+            // Some sets of the point only (2026-11-11): named.
+            if let Some(scaled) = scaled_sets(l, t) {
+                row.note.push_str(&format!(
+                    "; only the pulls of set(s) {} scaled (the point also holds set(s) {}, \
+                     taken as solved)",
+                    set_list(scaled.iter().copied()),
+                    set_list(t.sets.iter().copied().filter(|s| !scaled.contains(s)))
+                ));
+            }
             match span_share_off(l, t, line) {
                 Ok(off) => {
                     sent[0] -= off[0];
@@ -1016,15 +1066,54 @@ fn line_force_rows(
     rows
 }
 
+/// Sets as a note lists them: `1, 2`.
+fn set_list(sets: impl Iterator<Item = u32>) -> String {
+    sets.map(|s| s.to_string()).collect::<Vec<_>>().join(", ")
+}
+
+/// The sets of point `t` whose pulls line forces `l` scale, when they
+/// are **some of its sets only**: `l.sets` given and the point holding
+/// sets outside them. None: every set of the point (no `sets`, or `sets`
+/// covering the point's) — the point's own pulls are scaled.
+fn scaled_sets(l: &LineForces, t: &Target) -> Option<Vec<u32>> {
+    if l.sets.is_empty() || t.sets.iter().all(|s| l.sets.contains(s)) {
+        return None;
+    }
+    Some(
+        t.sets
+            .iter()
+            .copied()
+            .filter(|s| l.sets.contains(s))
+            .collect(),
+    )
+}
+
 /// What line forces `l` take off the force sent at point `t` (transverse,
 /// longitudinal; N, before the factors): (1 − back/100) of the back
 /// spans' pull and (1 − ahead/100) of the ahead spans' — the line's
 /// values there ([`LineQuantity::PULL_BACK`], [`LineQuantity::PULL_AHEAD`];
 /// the point's own, else the sum over its sets). A side at 100 % (or not
-/// given) takes nothing off and needs no pull. Err: the line did not send
-/// the pulls needed (older line values, a structure opened on its own) —
-/// the row's "missing", never the unscaled force.
+/// given) takes nothing off and needs no pull.
+///
+/// A point holding sets outside `l.sets` (2026-11-11; [`scaled_sets`]):
+/// only the pulls of the sets named are scaled — the sum over them of
+/// each set's part ([`LineValues::get_set`], line values of version 7);
+/// the other sets' pulls stay as solved.
+///
+/// Err: the line did not send the pulls needed (older line values, a
+/// structure opened on its own) — the row's "missing", never the unscaled
+/// force, and never the whole point's pull in place of some sets'.
 fn span_share_off(l: &LineForces, t: &Target, line: &LineValues) -> Result<[f64; 2], String> {
+    let some_sets = scaled_sets(l, t);
+    let pull = |q: LineQuantity| -> Option<f64> {
+        match &some_sets {
+            None => line.get(&l.result, &t.label, &t.sets, q),
+            Some(sets) => sets
+                .iter()
+                .map(|s| line.get_set(&l.result, &t.label, *s, q))
+                .sum(),
+        }
+    };
     let mut off = [0.0; 2];
     let mut lacking: Vec<&str> = Vec::new();
     let sides = [LineQuantity::PULL_BACK, LineQuantity::PULL_AHEAD];
@@ -1033,22 +1122,31 @@ fn span_share_off(l: &LineForces, t: &Target, line: &LineValues) -> Result<[f64;
             continue;
         }
         for (k, q) in quantities.into_iter().enumerate() {
-            match line.get(&l.result, &t.label, &t.sets, q) {
+            match pull(q) {
                 Some(pull) => off[k] += share * pull,
                 None => lacking.push(q.as_str()),
             }
         }
     }
     if lacking.is_empty() {
-        Ok(off)
-    } else {
-        Err(format!(
+        return Ok(off);
+    }
+    Err(match &some_sets {
+        None => format!(
             "no line value: {} in \"{}\" (the line did not send the spans' pulls the back/ahead \
              shares need: line values of version 6, from OHL-Design)",
             lacking.join(", "),
             l.result
-        ))
-    }
+        ),
+        Some(sets) => format!(
+            "no line value: {} of set(s) {} in \"{}\" (the point holds other sets too: scaling \
+             some sets' pulls needs the pulls per set — line values of version 7, from \
+             OHL-Design)",
+            lacking.join(", "),
+            set_list(sets.iter().copied()),
+            l.result
+        ),
+    })
 }
 
 /// Whether case `case`'s loads on the structure itself include any (a

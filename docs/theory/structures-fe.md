@@ -309,6 +309,24 @@ case instead. The share is offered because load trees specify it; every
 load-table row made with it, the solved case's notes, the report and the
 exports say **"NOT ON THE SAFE SIDE"** with the reason.
 
+**A point holding several wire sets** (2026-11-11). With the point's
+pulls the line sends each set's part, \\( \\mathbf P_{b,s} \\) and
+\\( \\mathbf P_{a,s} \\) with \\( \\sum_s \\mathbf P_{b,s} = \\mathbf P_b \\)
+(each section's pull under the set of its point there, with the same
+equal split between structure points as the sums). Line forces naming
+some of the point's sets \\( S \\) scale those only:
+
+\\[ F'_{T,L} = F_{T,L} - (1-\\beta_b) \\sum_{s \\in S} P_{b,s\\,T,L} - (1-\\beta_a) \\sum_{s \\in S} P_{a,s\\,T,L} . \\]
+
+With every set of the point named (or none) it is the formula above,
+bit for bit. Example (invented): a dead end with \\( P_{b,1,L} = -20 \\)
+kN, \\( P_{b,2,L} = -12 \\) kN, \\( F_L = -32 \\) kN; \\( S = \\{1\\} \\),
+\\( \\beta_b = 0 \\): \\( F'_L = -32 + 20 = -12 \\) kN. Without the parts
+per set (line values older than version 7) such a row has no value: the
+point's whole pull is never taken in their place. The status is
+unchanged: a load assumption, said "NOT ON THE SAFE SIDE" on every row,
+which also names the sets scaled.
+
 Further simplifications, all part of the same assumption: a clamp held
 from several structure points (a V-string, strings hanging from strings)
 shares its spans' pull **equally** between them — the sum on the

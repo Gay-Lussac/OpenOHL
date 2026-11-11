@@ -196,3 +196,150 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     assert_eq!(t3.library_cases.len(), lc.len());
     assert!(t3.note.is_none(), "{:?}", t3.note);
 }
+
+/// Two sections on one attachment point: at T2 the point A1 holds set 1
+/// (section S, strung at 20 kN) and set 2 (section R, 12 kN), each by its
+/// own string. INVENTED.
+const TWO_SETS_LINE: &str = r#"{
+  "format": "ohl-line", "version": 6, "name": "two sets on a point", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1},
+               {"label": "W2", "position": [0, 0, 26], "set": 2}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "points": [{"label": "A1", "position": [300, 0, 30]}],
+     "strings": [{"label": "S1", "top": "A1", "wire": "W1", "length": 3.0,
+                  "weight": 800.0, "stiffness": 5e7},
+                 {"label": "S2", "top": "A1", "wire": "W2", "length": 4.0,
+                  "weight": 800.0, "stiffness": 5e7}],
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1},
+               {"label": "W2", "position": [300, 0, 26], "set": 2}]},
+    {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [600, 0, 27], "set": 1},
+               {"label": "W2", "position": [600, 0, 26], "set": 2}]}
+  ],
+  "sections": [
+   {"id": "S", "cable": "acsr-drake-26-7", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+               {"structure": "T3", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 20000.0, "temperature": 15.0}},
+   {"id": "R", "cable": "acsr-drake-26-7", "bundle": 1,
+    "points": [{"structure": "T1", "set": 2}, {"structure": "T2", "set": 2},
+               {"structure": "T3", "set": 2}],
+    "stringing": {"kind": "tension", "horizontal_tension": 12000.0, "temperature": 15.0}}]
+}"#;
+
+/// The structure type of T2 above, for the load table.
+const TWO_SETS_TYPE: &str = r#"
+id = "two-sets"
+name = "two sets on a point"
+kind = "lattice"
+
+[[point]]
+label = "A1"
+point = ["0 m", "0 m", "30 m"]
+
+[[wire]]
+label = "W1"
+set = 1
+
+[[wire]]
+label = "W2"
+set = 2
+
+[[string]]
+label = "S1"
+top = "A1"
+wire = "W1"
+length = "3 m"
+
+[[string]]
+label = "S2"
+top = "A1"
+wire = "W2"
+length = "4 m"
+"#;
+
+/// A share of the pull per wire set at a shared attachment point (roadmap
+/// O22 item 7), from the line to the load table: the line sends, with the
+/// point's pulls, each set's part of them (line values of version 7 —
+/// only for a structure with such a point), the parts adding up to the
+/// point's. Line forces of set 1 with back 0 % take off set 1's back pull
+/// only:
+///
+/// L = sent_L − back_L(set 1),
+///
+/// set 2's pull staying as solved — and with both sets named, the
+/// point's whole back pull, as before.
+#[test]
+fn a_shared_point_sends_each_sets_pull() {
+    let (_, library, weather) = example();
+    let mut line = Line::from_json(TWO_SETS_LINE).unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let budget = ohl_wirefe::default_fe_budget();
+    let cases = structure_cases(&everyday(), &weather);
+    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    let placed = placed_values_with(&loads, &line, "T2", "two sets");
+    assert_eq!(placed.version, 7);
+    // A structure whose points each hold one set: still version 6.
+    assert_eq!(
+        placed_values_with(&loads, &line, "T1", "two sets").version,
+        6
+    );
+    let values = &placed.values;
+    let point = |q| values.get("everyday", "A1", &[1, 2], q).unwrap();
+    let part = |set, q| values.get_set("everyday", "A1", set, q).unwrap();
+    for q in [
+        LineQuantity::PullBackTransverse,
+        LineQuantity::PullBackLongitudinal,
+        LineQuantity::PullAheadTransverse,
+        LineQuantity::PullAheadLongitudinal,
+    ] {
+        assert!(
+            (part(1, q) + part(2, q) - point(q)).abs() < 1e-6,
+            "{q:?}: {} + {} against {}",
+            part(1, q),
+            part(2, q),
+            point(q)
+        );
+    }
+    let back = LineQuantity::PullBackLongitudinal;
+    // Set 1 pulls with about its 20 kN, set 2 with about its 12 kN.
+    assert!(part(1, back) < -15_000.0, "{}", part(1, back));
+    assert!(part(2, back) < -9000.0 && part(2, back) > -15_000.0);
+    let t = StructureType::parse(Path::new("two-sets.ohls"), TWO_SETS_TYPE).unwrap();
+    let forces = |sets: Vec<u32>| LineForces {
+        sets,
+        back: Some(0.0),
+        ..LineForces::new("everyday")
+    };
+    let recipes = [
+        case("set 1", forces(vec![1])),
+        case("both", forces(vec![1, 2])),
+    ];
+    let table = evaluate(&recipes, &t, values);
+    assert!(table.missing().next().is_none(), "{table:#?}");
+    let row = |c: &str| {
+        table
+            .rows
+            .iter()
+            .find(|r| r.case == c && r.label == "A1")
+            .unwrap_or_else(|| panic!("no row of {c}"))
+    };
+    let sent = point(LineQuantity::Longitudinal);
+    assert!((row("set 1").force[1] - (sent - part(1, back))).abs() < 1e-6);
+    assert!((row("both").force[1] - (sent - point(back))).abs() < 1e-6);
+    // The two differ by set 2's back pull, kilonewtons.
+    assert!((row("both").force[1] - row("set 1").force[1] + part(2, back)).abs() < 1e-6);
+    assert!(
+        row("set 1")
+            .note
+            .contains("only the pulls of set(s) 1 scaled"),
+        "{}",
+        row("set 1").note
+    );
+    // Through the file.
+    let read = PlacedValues::parse(&placed.to_json()).unwrap();
+    assert_eq!(read, placed);
+    assert_eq!(evaluate(&recipes, &t, &read.values), table);
+}

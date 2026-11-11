@@ -79,6 +79,11 @@ things are applied and when").
 - The line-values file to the structure application carries the line
   results (name, weather case, side, the weather case's wind pressure, so
   a body wind can take it).
+- Since 2026-11-11 (line values 7, roadmap O22 item 7): at a point
+  holding several wire sets the line also sends each set's part of the
+  spans' pulls, so that line forces with `sets` and `back` / `ahead`
+  scale the pulls of those sets only; without them (older values) such a
+  row has no value.
 
 ## Structure side (OHL-Structure)
 

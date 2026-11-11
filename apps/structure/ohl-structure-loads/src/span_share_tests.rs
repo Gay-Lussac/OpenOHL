@@ -403,7 +403,9 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let json = serde_json::to_string(&t).unwrap();
     assert_eq!(serde_json::from_str::<LoadTable>(&json).unwrap(), t);
     // The line-values file.
-    assert_eq!(LINE_VALUES_FILE_VERSION, 6);
+    // (Version 7 is the newest read; a file without a set's part of a
+    // point's pulls is still written at 6.)
+    assert_eq!(LINE_VALUES_FILE_VERSION, 7);
     let mut placed = PlacedValues::pending("T2", "line", "type", "");
     placed.note = None;
     placed.cases = vec!["calm".into()];
@@ -419,6 +421,187 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let read = PlacedValues::parse(&old_text).unwrap();
     assert_eq!(read.values.get("calm", "A1", &[1], BL), None);
     assert_eq!(read.values.get("calm", "A1", &[1], L), Some(0.0));
-    let newer = text.replace("\"version\": 6", "\"version\": 7");
+    // (Version 7 is read since 2026-11-11: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 8");
+    assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
+}
+
+/// A dead-end point D holding two sets (two strings on one point).
+const TWO_SETS: &str = r#"
+id = "dead-end"
+name = "dead end"
+kind = "lattice"
+
+[[point]]
+label = "D"
+point = ["0 m", "0 m", "20 m"]
+
+[[wire]]
+label = "W1"
+set = 1
+
+[[wire]]
+label = "W2"
+set = 2
+
+[[string]]
+label = "s1"
+top = "D"
+wire = "W1"
+length = "2 m"
+
+[[string]]
+label = "s2"
+top = "D"
+wire = "W2"
+length = "2 m"
+"#;
+
+/// The line's values at D in "calm": a dead end with no ahead span, set
+/// 1 pulling back with 20 kN and set 2 with 12 kN, so the longitudinal
+/// force sent is −32 kN (and 3 kN down). `per_set`: with each set's part
+/// of the pulls (a line-values file of version 7), or the point's only
+/// (version 6).
+fn two_sets(per_set: bool) -> LineValues {
+    let mut values = Vec::new();
+    let mut push = |set: Option<u32>, q: LineQuantity, value: f64| {
+        values.push(LineValue {
+            case: "calm".into(),
+            point: Some("D".into()),
+            set,
+            quantity: q,
+            value,
+        });
+    };
+    for (q, value) in [(T, 0.0), (L, -32_000.0), (V, 3000.0)] {
+        push(None, q, value);
+    }
+    for (q, value) in [(BT, 0.0), (BL, -32_000.0), (AT, 0.0), (AL, 0.0)] {
+        push(None, q, value);
+    }
+    if per_set {
+        for (set, back) in [(1, -20_000.0), (2, -12_000.0)] {
+            for (q, value) in [(BT, 0.0), (BL, back), (AT, 0.0), (AL, 0.0)] {
+                push(Some(set), q, value);
+            }
+        }
+    }
+    LineValues {
+        points: Vec::new(),
+        values,
+        structure_wind: Vec::new(),
+    }
+}
+
+/// A share of the pull per wire set at a shared point (roadmap O22 item
+/// 7), by hand. Back 0 % with `sets = [1]`: only set 1's pull comes off,
+///
+/// L = −32000 − (1 − 0)·(−20000) = −12000 (set 2's pull, as solved)
+///
+/// — before, the whole point's −32000 came off (0: both sets' pull). With
+/// `sets = [1, 2]`, or none, every set of the point: 0, as before, bit
+/// for bit. The row names the sets scaled. The vertical force stays.
+#[test]
+fn a_share_of_some_sets_at_a_shared_point() {
+    let t = StructureType::parse(Path::new("dead-end.ohls"), TWO_SETS).unwrap();
+    let of = |sets: Vec<u32>, values: &LineValues| {
+        let l = LineForces {
+            sets,
+            ..shares(Some(0.0), None)
+        };
+        evaluate(&case(l), &t, values)
+    };
+    let one = of(vec![1], &two_sets(true));
+    assert!(one.missing().next().is_none(), "{:?}", one.rows);
+    close(row(&one, "D").force, [0.0, -12_000.0, 3000.0]);
+    let note = &row(&one, "D").note;
+    assert!(
+        note.contains(
+            "only the pulls of set(s) 1 scaled (the point also holds set(s) 2, taken as solved)"
+        ),
+        "{note}"
+    );
+    assert!(note.contains("NOT ON THE SAFE SIDE"), "{note}");
+    // Set 2 alone: −32000 + 12000.
+    close(
+        row(&of(vec![2], &two_sets(true)), "D").force,
+        [0.0, -20_000.0, 3000.0],
+    );
+    // Every set of the point, named or not: the point's own pull, with
+    // or without the parts per set — bit for bit.
+    let all = of(vec![], &two_sets(false));
+    close(row(&all, "D").force, [0.0, 0.0, 3000.0]);
+    for (sets, per_set) in [(vec![1, 2], true), (vec![1, 2], false), (vec![], true)] {
+        let same = of(sets, &two_sets(per_set));
+        for k in 0..3 {
+            assert_eq!(
+                row(&same, "D").force[k].to_bits(),
+                row(&all, "D").force[k].to_bits()
+            );
+        }
+        assert!(!row(&same, "D").note.contains("only the pulls of set(s)"));
+    }
+    // A point's own value is the row without a set, whatever the order.
+    assert_eq!(
+        two_sets(true).get("calm", "D", &[1, 2], BL),
+        Some(-32_000.0)
+    );
+    assert_eq!(two_sets(true).get_set("calm", "D", 2, BL), Some(-12_000.0));
+    assert_eq!(two_sets(false).get_set("calm", "D", 2, BL), None);
+}
+
+/// Line values of version 6 (the point's pulls only) cannot say one
+/// set's part: the row has no value and says what is needed — never the
+/// whole point's pull taken off in its place.
+#[test]
+fn some_sets_without_their_parts_give_no_value() {
+    let t = StructureType::parse(Path::new("dead-end.ohls"), TWO_SETS).unwrap();
+    let l = LineForces {
+        sets: vec![1],
+        ..shares(Some(0.0), None)
+    };
+    let table = evaluate(&case(l), &t, &two_sets(false));
+    let r = row(&table, "D");
+    assert_eq!(r.force, [0.0; 3]);
+    let why = r.missing.as_deref().expect("missing");
+    assert!(
+        why.starts_with(
+            "no line value: pull_back_transverse, pull_back_longitudinal of set(s) 1 in \"calm\""
+        ),
+        "{why}"
+    );
+    assert!(why.contains("line values of version 7"), "{why}");
+}
+
+/// The line-values file: version 7 only with a set's part of a point's
+/// value among the values (this place's or another's), else 6; both read
+/// back as written.
+#[test]
+fn the_file_is_version_7_only_with_parts_per_set() {
+    let placed = |values: LineValues| {
+        let mut p = PlacedValues::pending("T9", "line", "dead-end", "");
+        p.note = None;
+        p.cases = vec!["calm".into()];
+        p.values = values;
+        p.at_needed_version()
+    };
+    let old = placed(two_sets(false));
+    assert_eq!(old.version, 6);
+    assert!(old.to_json().contains("\"version\": 6"));
+    let new = placed(two_sets(true));
+    assert_eq!(new.version, 7);
+    let text = new.to_json();
+    assert!(text.contains("\"version\": 7"), "{text}");
+    assert_eq!(PlacedValues::parse(&text).unwrap(), new);
+    // Another place of the same structure file with such values.
+    let mut other = placed(two_sets(false));
+    other.others.push(OtherPlace {
+        structure: "T10".into(),
+        values: two_sets(true),
+        missing: Vec::new(),
+    });
+    assert_eq!(other.at_needed_version().version, 7);
+    // A newer file is refused.
+    let newer = text.replace("\"version\": 7", "\"version\": 8");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }

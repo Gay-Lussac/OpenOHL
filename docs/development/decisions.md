@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**A share of a span's pull per wire set at a shared attachment point (roadmap O22 item 7; owner "Go ahead with the braces then O22")**
+
+- **What was wrong.** A structure load case's `sets` only picked the
+  points; `back` / `ahead` then scaled the **point's** pull. At a point
+  holding sets 1 and 2, `sets = [1], back = 0` took both sets' pull off.
+- **Now.** The line keeps the spans' pulls per wire set at each point
+  (`ohl_loads::AttachmentLoad::pulls_by_set`, filled where the point's
+  pulls are, with the same shares; the envelope of a broken wire in
+  every span keeps them with the component's break) and sends them for
+  the points holding more than one set (line values with `point` and
+  `set`). Line forces naming some of a point's sets take off only those
+  sets' share; naming all of them, or none: the arithmetic of before,
+  bit for bit.
+- **Format.** Line-values file version **7**, written only when the
+  values hold a set's part (`PlacedValues::needed_version`; else 6, so
+  an older program still reads the file). Versions 1 to 6 are read. No
+  change of `.ohlslc` (4) or `.ohls`.
+- **Never a silently different force.** With line values of version 6
+  such a row is "no line value … needs line values of version 7". A
+  point's own value is the row without a set (`LineValues::get`).
+- **Unchanged status.** A share of the pull is a load assumption: "NOT
+  ON THE SAFE SIDE" stays on every row, which now names the sets scaled.
+- **No new setting**; the hover of the line forces' Sets says the
+  effect. No schema page exists under `docs/schema/` for this file; the
+  data model and the user guide carry it.
+
 **The bimetallic model said on the results (roadmap O22 item 1; owner "Go with O22 but not 2 4 and 5", 2026-11-10)**
 
 - **The premise corrected.** The roadmap item first said the default

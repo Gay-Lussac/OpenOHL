@@ -698,6 +698,10 @@ against what line design practice uses). In the order proposed:
    loads in a span with a part across or along the line; gap-type
    conductors; a share of a span's pull per set where one attachment
    point carries several sets (today per point).
+   **Built 2026-11-11, in active development (not approved yet):** the
+   share per set at a shared point (the line sends each set's part of
+   the pulls, line values 7; `sets` with `back` / `ahead` scales those
+   sets only).
 
 Three hand-sized comparison cases to keep with the benchmarks: three
 inclined spans in the blocks, clipped, and in the blocks then clipped; a

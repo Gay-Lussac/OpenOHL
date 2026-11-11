@@ -1006,6 +1006,48 @@ pub struct AttachmentLoad {
     /// The same of the spans **after** the point in each section's order
     /// (the ahead spans).
     pub pull_ahead: [f64; 2],
+    /// [`AttachmentLoad::pull_back`] and [`AttachmentLoad::pull_ahead`]
+    /// per wire set held at the point (2026-11-11, roadmap O22 item 7):
+    /// each section's pulls under the set of its point there, with the
+    /// same shares between the structure points as the sums — so the
+    /// entries add up to `pull_back` and `pull_ahead`. In order of the
+    /// sets; a set whose spans pull nothing has no entry. What lets a
+    /// structure load case scale the pulls of some sets only at a point
+    /// holding several.
+    pub pulls_by_set: Vec<SetPulls>,
+}
+
+/// The horizontal pulls of the back and ahead spans of one wire set at a
+/// structure point ([`AttachmentLoad::pulls_by_set`]): in the structure's
+/// axes (transverse, longitudinal), N, unfactored.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SetPulls {
+    /// The wire set.
+    pub set: u32,
+    /// Its back spans' pull.
+    pub back: [f64; 2],
+    /// Its ahead spans' pull.
+    pub ahead: [f64; 2],
+}
+
+/// The entry of set `set` in `pulls` (kept in order of the sets), made
+/// with no pull when it is not there.
+fn set_pulls(pulls: &mut Vec<SetPulls>, set: u32) -> &mut SetPulls {
+    let k = match pulls.binary_search_by_key(&set, |p| p.set) {
+        Ok(k) => k,
+        Err(k) => {
+            pulls.insert(
+                k,
+                SetPulls {
+                    set,
+                    back: [0.0; 2],
+                    ahead: [0.0; 2],
+                },
+            );
+            k
+        }
+    };
+    &mut pulls[k]
 }
 
 /// The loads of a load case.
@@ -1678,10 +1720,19 @@ fn envelope(e: &mut AttachmentLoad, l: &AttachmentLoad, line: &Line) {
             e.factored[i] = l.factored[i];
             e.local[i] = l.local[i];
             kept[i] = theirs[i];
-            // The spans' pulls of the break giving the component.
+            // The spans' pulls of the break giving the component: the
+            // point's and each set's (a set without a pull in that
+            // break: none).
             if i < 2 {
                 e.pull_back[i] = l.pull_back[i];
                 e.pull_ahead[i] = l.pull_ahead[i];
+                for p in &mut e.pulls_by_set {
+                    (p.back[i], p.ahead[i]) = (0.0, 0.0);
+                }
+                for theirs in &l.pulls_by_set {
+                    let p = set_pulls(&mut e.pulls_by_set, theirs.set);
+                    (p.back[i], p.ahead[i]) = (theirs.back[i], theirs.ahead[i]);
+                }
             }
         }
     }
@@ -1989,7 +2040,9 @@ fn span_pulls(shape: &ohl_line::solve::SectionShape, k: usize) -> [[f64; 2]; 2] 
 /// ([`AttachmentLoad::pull_back`], [`AttachmentLoad::pull_ahead`]; in the
 /// structure's axes): each clamp's shared equally between the structure
 /// points its section reports its loads at, or — a section sharing its
-/// strings with one that reports them (a TAK) — between that one's.
+/// strings with one that reports them (a TAK) — between that one's. The
+/// same pulls are kept per wire set of the clamp's section point
+/// ([`AttachmentLoad::pulls_by_set`]), with the same shares.
 fn add_span_pulls(
     at: &mut BTreeMap<(String, String), AttachmentLoad>,
     line: &Line,
@@ -2018,12 +2071,20 @@ fn add_span_pulls(
             let Some(e) = at.get_mut(&(p.structure.clone(), label.clone())) else {
                 continue;
             };
-            for (sum, f) in [
-                (&mut e.pull_back, p.pulls[0]),
-                (&mut e.pull_ahead, p.pulls[1]),
-            ] {
-                sum[0] += share * (f[0] * right[0] + f[1] * right[1]);
-                sum[1] += share * (f[0] * ahead[0] + f[1] * ahead[1]);
+            // In the structure's axes, this point's share.
+            let local = |f: [f64; 2]| {
+                [
+                    share * (f[0] * right[0] + f[1] * right[1]),
+                    share * (f[0] * ahead[0] + f[1] * ahead[1]),
+                ]
+            };
+            let (back, forward) = (local(p.pulls[0]), local(p.pulls[1]));
+            let of_set = set_pulls(&mut e.pulls_by_set, p.set);
+            for i in 0..2 {
+                e.pull_back[i] += back[i];
+                e.pull_ahead[i] += forward[i];
+                of_set.back[i] += back[i];
+                of_set.ahead[i] += forward[i];
             }
         }
     }
@@ -2066,6 +2127,7 @@ fn add(
             broken_span: None,
             pull_back: [0.0; 2],
             pull_ahead: [0.0; 2],
+            pulls_by_set: Vec::new(),
         });
     if !e.sections.iter().any(|s| s == source) {
         e.sections.push(source.to_owned());
@@ -2185,6 +2247,7 @@ pub fn add_structure_wind(
                     broken_span: None,
                     pull_back: [0.0; 2],
                     pull_ahead: [0.0; 2],
+                    pulls_by_set: Vec::new(),
                 });
             }
         }

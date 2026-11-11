@@ -223,7 +223,9 @@ back and ahead spans' pull (owner, 2026-11-10: `back`, `ahead` of
 written only when a case uses them: `ohl_structure_loads::written_version`,
 `ohl_structure_edit::raise_for_line_pressures` → `SPAN_SHARES_VERSION`)
 and the line-values file **6** (the four pulls among the values, always
-written); a structure taking no load case (`Structure.no_load_cases`)
+written; **7**, 2026-11-11: each set's part of them at a point holding
+several sets, written only when the values hold such parts,
+`PlacedValues::needed_version`); a structure taking no load case (`Structure.no_load_cases`)
 made the line file **14** (written only by a line with one,
 `Line::to_json`; OHL XML `no_load_cases="true"` on `<structure>`).
 
@@ -2252,7 +2254,11 @@ words). `add_structure_loads(results, line, types, sections, weather)`
 case) and the ice and snow per structure as loads without a point ("ice
 on the structure", "snow on the structure"; `analysis::body_weights` on
 the model's members with a profile, `analysis::pole_ice` on a pole's
-shaft). `AttachmentLoad::pull_back` and `pull_ahead` (`[f64; 2]`,
+shaft). `AttachmentLoad::pulls_by_set` (`Vec<SetPulls>`: `set`, `back`,
+`ahead`; 2026-11-11): the two pulls below per wire set held at the
+point, in order of the sets, adding up to them (the same shares; the
+envelope of a broken wire in every span keeps each set's with the
+component's break). `AttachmentLoad::pull_back` and `pull_ahead` (`[f64; 2]`,
 2026-11-10; transverse, longitudinal in the structure's axes, N,
 unfactored): the horizontal pull of the point's back and ahead spans,
 along each span in plan (`span_pulls`: of `SpanShape::end_pulls` the
@@ -2404,8 +2410,15 @@ file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
-`format = "ohl-structure-line-values"`, version 6; versions 1 to 5 are
-read too; 6 (2026-11-10) adds four `LineQuantity` values per point and
+`format = "ohl-structure-line-values"`, version 6 or 7; versions 1 to 5
+are read too; 7 (2026-11-11, roadmap O22 item 7) adds, at a point
+holding more than one wire set, each set's part of the four pull
+quantities — `LineValue`s with both `point` and `set`
+(`LineValues::get_set`; `AttachmentLoad::pulls_by_set`), which a case's
+line forces with `sets` and `back` / `ahead` need to scale some sets'
+pulls only; a file without such values is still written at 6
+(`PlacedValues::needed_version`, `at_needed_version`), and a point's own
+value is the row without a set (`LineValues::get`); 6 (2026-11-10) adds four `LineQuantity` values per point and
 case among `values` — `pull_back_transverse`, `pull_back_longitudinal`,
 `pull_ahead_transverse`, `pull_ahead_longitudinal` (N, structure axes,
 unfactored; `AttachmentLoad::pull_back` / `pull_ahead`; a side without a

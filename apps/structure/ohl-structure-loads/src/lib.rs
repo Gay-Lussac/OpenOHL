@@ -124,8 +124,9 @@ pub use parts::{
     mirror_wind, point_text, snow_text, span_share_text, wind_text,
 };
 pub use placed::{
-    CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION, MissingWire,
-    OtherPlace, PlacedValues, file_part, incomplete_text, line_values_path, overrides_path,
+    CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION,
+    LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS, MissingWire, OtherPlace, PlacedValues, file_part,
+    incomplete_text, line_values_path, overrides_path,
 };
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,

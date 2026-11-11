@@ -242,6 +242,7 @@ fn the_envelope_of_the_breaks_is_no_bound_of_a_combination() {
         broken_span: Some([span; 3]),
         pull_back: [0.0; 2],
         pull_ahead: [0.0; 2],
+        pulls_by_set: Vec::new(),
     };
     let (one, two) = (load(1, 10e3, 1e3), load(2, -9e3, 5e3));
     let mut e = one.clone();
@@ -319,4 +320,80 @@ fn at_loads<'a>(loads: &'a [AttachmentLoad], structure: &str) -> &'a AttachmentL
         .iter()
         .find(|l| l.structure == structure && !l.point.is_empty())
         .unwrap_or_else(|| panic!("no load at {structure}"))
+}
+
+/// The envelope of several breaks keeps, per component, the pulls of the
+/// break giving it — the point's and each set's (roadmap O22 item 7), so
+/// the sets still add up to the point. Break 1: L = +10 kN, set 1 pulling
+/// (back −4, ahead +14) kN along the line. Break 2: T = +2 kN, L = −9 kN,
+/// sets 1 and 2 each pulling 1 kN across from the back, set 1 −9 kN along.
+/// The envelope takes T from break 2 and L from break 1.
+#[test]
+fn the_envelope_keeps_each_sets_pulls_with_its_component() {
+    let line = three_spans();
+    let load = |span: usize, local: [f64; 3], pulls: Vec<SetPulls>| AttachmentLoad {
+        structure: "T2".into(),
+        point: "A1".into(),
+        label: "A1".into(),
+        sets: vec![1, 2],
+        sections: vec!["S".into()],
+        at: [300.0, 0.0, 30.0],
+        force: [0.0; 3],
+        local,
+        factored: local,
+        broken_span: Some([span; 3]),
+        pull_back: [0, 1].map(|i| pulls.iter().map(|p| p.back[i]).sum()),
+        pull_ahead: [0, 1].map(|i| pulls.iter().map(|p| p.ahead[i]).sum()),
+        pulls_by_set: pulls,
+    };
+    let one = load(
+        1,
+        [0.0, 10e3, 0.0],
+        vec![SetPulls {
+            set: 1,
+            back: [0.0, -4e3],
+            ahead: [0.0, 14e3],
+        }],
+    );
+    let two = load(
+        2,
+        [2e3, -9e3, 0.0],
+        vec![
+            SetPulls {
+                set: 1,
+                back: [1e3, -9e3],
+                ahead: [0.0; 2],
+            },
+            SetPulls {
+                set: 2,
+                back: [1e3, 0.0],
+                ahead: [0.0; 2],
+            },
+        ],
+    );
+    let mut e = one.clone();
+    envelope(&mut e, &two, &line);
+    assert_eq!(e.factored, [2e3, 10e3, 0.0]);
+    assert_eq!(e.broken_span, Some([2, 1, 1]));
+    assert_eq!((e.pull_back, e.pull_ahead), ([2e3, -4e3], [0.0, 14e3]));
+    assert_eq!(
+        e.pulls_by_set,
+        vec![
+            SetPulls {
+                set: 1,
+                back: [1e3, -4e3],
+                ahead: [0.0, 14e3],
+            },
+            SetPulls {
+                set: 2,
+                back: [1e3, 0.0],
+                ahead: [0.0; 2],
+            },
+        ]
+    );
+    for i in 0..2 {
+        let back: f64 = e.pulls_by_set.iter().map(|p| p.back[i]).sum();
+        let ahead: f64 = e.pulls_by_set.iter().map(|p| p.ahead[i]).sum();
+        assert_eq!((back, ahead), (e.pull_back[i], e.pull_ahead[i]));
+    }
 }

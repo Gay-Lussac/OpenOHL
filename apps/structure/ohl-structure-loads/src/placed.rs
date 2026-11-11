@@ -54,7 +54,14 @@
 //! span after it; a side without a span: 0). They are shares of
 //! `transverse` and `longitudinal`, not forces added to them: a structure
 //! load case's line forces scale them (`back`, `ahead`, percent). Older
-//! files have none: such line forces then get "no line value".
+//! files have none: such line forces then get "no line value". Version 7
+//! (2026-11-11, roadmap O22 item 7) adds, at a point holding more than
+//! one wire set, each set's part of those four quantities: values with
+//! both `point` and `set`. They let a structure load case scale the pulls
+//! of some sets only at such a point (`sets` with `back` / `ahead`); an
+//! older file has none and such line forces get "no line value" there. A
+//! file is written at version 7 only when it holds such values, else at 6
+//! ([`PlacedValues::needed_version`]).
 
 use std::path::{Path, PathBuf};
 
@@ -67,8 +74,14 @@ use crate::table::LineValues;
 pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `version` of a line-values file (2: `sources`; 3: `missing`; 4:
 /// `structure_wind` in the values; 5: `library_cases`; 6: the spans'
-/// pulls among the values; older files are read too).
-pub const LINE_VALUES_FILE_VERSION: u32 = 6;
+/// pulls among the values; 7: each set's part of the pulls at a point
+/// holding several sets; older files are read too). The newest version
+/// read; a file is written at the lowest its values need
+/// ([`PlacedValues::needed_version`]).
+pub const LINE_VALUES_FILE_VERSION: u32 = 7;
+/// The version of a line-values file without a set's part of a point's
+/// value (what an older program still reads).
+pub const LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS: u32 = 6;
 
 /// A section or jumper at the placed structure that did not solve in one
 /// of the line's cases: the values of that case lack its forces.
@@ -216,7 +229,7 @@ impl PlacedValues {
     pub fn pending(structure: &str, line: &str, structure_type: &str, note: &str) -> Self {
         Self {
             format: LINE_VALUES_FILE_FORMAT.into(),
-            version: LINE_VALUES_FILE_VERSION,
+            version: LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS,
             structure: structure.into(),
             line: line.into(),
             structure_type: structure_type.into(),
@@ -228,6 +241,27 @@ impl PlacedValues {
             missing: Vec::new(),
             library_cases: Vec::new(),
         }
+    }
+
+    /// The version a file of these values is written at: 7 when the
+    /// values (this place's or another's) hold a set's part of a point's
+    /// value ([`LineValues::has_set_parts`]), else 6 — an older program
+    /// still reads a file that uses nothing newer.
+    pub fn needed_version(&self) -> u32 {
+        let set_parts =
+            self.values.has_set_parts() || self.others.iter().any(|o| o.values.has_set_parts());
+        if set_parts {
+            LINE_VALUES_FILE_VERSION
+        } else {
+            LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS
+        }
+    }
+
+    /// The same values at the version they need
+    /// ([`PlacedValues::needed_version`]).
+    pub fn at_needed_version(mut self) -> Self {
+        self.version = self.needed_version();
+        self
     }
 
     /// The wires missing from the values of case `case`.

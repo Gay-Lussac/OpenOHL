@@ -126,7 +126,10 @@ use ohl_structures_fe::{Loads, Model, NodalLoad};
 /// "back" is the span before the point in its section's order of points,
 /// "ahead" the span after it; a side without a span 0) — what a structure
 /// load case's `back` and `ahead` shares scale; the line only transmits
-/// them. The wind bands' loads (no
+/// them. At a point holding more than one wire set (2026-11-11), also
+/// each set's part of those pulls (`ohl_loads::AttachmentLoad::
+/// pulls_by_set`): values with the point and the set, which make the
+/// line-values file version 7. The wind bands' loads (no
 /// point) are left out: the structure application puts the body wind on
 /// the members; tensions per span, wind on the wires and ice on their own
 /// are not given by the line's structure loads yet (the recipes using
@@ -193,6 +196,32 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
                     quantity,
                     value,
                 });
+            }
+            // A point holding several sets (line-values file 7): each
+            // set's part of the pulls, 0 for a set whose spans pull
+            // nothing — so that "not sent" is an older file only.
+            if l.sets.len() > 1 {
+                for &set in &l.sets {
+                    let (back, ahead) = l
+                        .pulls_by_set
+                        .iter()
+                        .find(|p| p.set == set)
+                        .map_or(([0.0; 2], [0.0; 2]), |p| (p.back, p.ahead));
+                    for (quantity, value) in [
+                        (LineQuantity::PullBackTransverse, back[0]),
+                        (LineQuantity::PullBackLongitudinal, back[1]),
+                        (LineQuantity::PullAheadTransverse, ahead[0]),
+                        (LineQuantity::PullAheadLongitudinal, ahead[1]),
+                    ] {
+                        out.values.push(LineValue {
+                            case: case.case.name.clone(),
+                            point: Some(l.point.clone()),
+                            set: Some(set),
+                            quantity,
+                            value,
+                        });
+                    }
+                }
             }
         }
     }
@@ -708,6 +737,8 @@ pub fn placed_values(
         missing: missing_wires(loads, structure),
         ..PlacedValues::pending(structure, line_name, &structure_type, "")
     }
+    // Version 7 only with a set's part of a point's pulls among them.
+    .at_needed_version()
 }
 
 /// Per case of `loads`, the sections and jumpers at placed structure

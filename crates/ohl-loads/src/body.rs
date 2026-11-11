@@ -130,6 +130,7 @@ pub fn add_structure_loads(
                     broken_span: None,
                     pull_back: [0.0; 2],
                     pull_ahead: [0.0; 2],
+                    pulls_by_set: Vec::new(),
                 });
             }
         }
