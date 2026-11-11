@@ -53,7 +53,7 @@ brackets). "Time" is the effect on how long a run takes.
 | In the window | Default | Effect on the results | Effect on the time |
 |---|---|---|---|
 | **2 Scope** › weather case | the first case | the wires' places (sag, swing) as solved in it; for the NISV guide the case of the largest sag | a case not solved yet is solved first |
-| voltage between phases, per circuit (`--voltage C=KV`) | the system's nominal voltage, said | the field in proportion; each phase at it over \\( \sqrt3 \\) to earth, at its system's phase angle; **0 kV**: the circuit voltage-free (its wires at earth potential, like the earth wires) | none |
+| voltage between phases, per circuit (`--voltage C=KV`) | the system's highest operating voltage where the line gives one, else its nominal voltage, said as not on the safe side | the field in proportion; each phase at it over \\( \sqrt3 \\) to earth, at its system's phase angle; **0 kV**: the circuit voltage-free (its wires at earth potential, like the earth wires) | none |
 | Model: **3D** / 2D (`--two-d`) | 3D | 3D: the wires as solved (sag, line angles, the line's length), the jumpers, the ground under the line; 2D: infinite straight wires over level ground at the profile | 2D: a moment; 3D: seconds to minutes |
 | Jumpers: carry their phase's charge | on | near the structures; off: left out (**not conservative** there) | a few more pieces |
 | Ground: **tiled floor** / plane under each point (`--plane`) | tiled floor | the floor follows hollows and ridges; the plane read the largest field up to 8 % low on bumps (**not conservative**) and up to 24 % high in a hollow | the floor: about a second per profile; the plane: none |
@@ -125,11 +125,25 @@ each bundle as its equivalent wire):
   angle (L1 0°, L2 −120°, L3 +120° unless the system gives others). Every
   earth wire is at zero: it takes the charge that keeps it there.
 - Each frequency is solved apart, the phases of the others at zero.
-- **The voltage** per circuit is yours to give. A circuit without one
-  takes its **system's nominal voltage, said**: an ordinance may ask
-  the highest operating voltage (the NISV guide does: give it). A circuit
-  given 0 kV is voltage-free: its wires at earth potential, carrying the
-  charges that keep them there.
+- **The voltage** per circuit (since 2026-11-11), in this order: the one
+  given for the run; else its system's **highest operating voltage**
+  \\( U_m \\), where the line gives one (the system's `highest_voltage_kv`,
+  the user's value — the program holds no table of such voltages and
+  fills none in); else its system's **nominal voltage** \\( U_n \\). The
+  charges, and with them the field at every point, are linear in the
+  voltages:
+  \\[ E(U_m) = \frac{U_m}{U_n}\,E(U_n) \ge E(U_n) \\]
+  for a line whose circuits are all raised by the same ratio. So a
+  result at the nominal voltage is **NOT ON THE SAFE SIDE** wherever the
+  line runs above it: the result says "NOT ON THE SAFE SIDE: nominal
+  voltage used for … ; the highest operating voltage gives a higher
+  field", naming the circuits, and every result says which voltage each
+  circuit was computed at and where it comes from ("voltages used,
+  between phases: …"). An ordinance may ask the highest operating
+  voltage (the NISV guide does). A circuit given 0 kV is voltage-free:
+  its wires at earth potential, carrying the charges that keep them
+  there. Test: `the_highest_operating_voltage_is_used_where_given` (1.1
+  times the voltage: 1.1 times the field, to 10⁻⁹).
 
 **Where along the span.** In 2D the profile's or point's own
 cross-section. In 3D each span is cut into **stretches** along its
@@ -483,7 +497,7 @@ the field away from the wires, not at their surface.
 | Fine tiles 2 m at profiles, 8 m under cuts and volumes | profiles are where limits are checked; cuts and volumes cover far more ground | cuts and volumes within some 3 % of the largest value on even ground |
 | A floor over 2 GB refused | laptops of 16 to 32 GB; swapping would stall the computer | none (a run is refused, said) |
 | The structures' steel off by default | it needs members (detail level 2 or 3) and time; it lowers the field beside the structures | **conservative** beside a structure, **not conservative** at the steel |
-| The nominal voltage when none is given | a value is needed; said in the notes | **not conservative** where the highest operating voltage is asked: give it |
+| The nominal voltage when neither a voltage for the run nor the system's highest operating voltage is given | a value is needed; the highest operating voltage is the user's to give (no table of them is built in) | **NOT ON THE SAFE SIDE**, said in the result with the circuits concerned: the field is lower by \\( U_n / U_m \\) |
 | The jumpers on by default | they carry the phase's charge near the structures | off: **not conservative** near the structures |
 | Trees, buildings, people not modelled | not in the model | **conservative** away from them, **not conservative** at their tops |
 | DC systems left out | a static field with space charge needs another method | **not conservative** near a DC system (said) |

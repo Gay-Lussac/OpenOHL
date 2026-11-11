@@ -53,7 +53,7 @@ The names are those of the line file:
          <wire_point>, <leg>; <omit set phase>; section points with a phase -->
     <member>x y z x y z …</member>              <!-- stick drawing polyline -->
   </structure>
-  <system id="…" name="…" owner="…" number="…" kind="ac" voltage_kv="220" frequency_hz="50" current_a="900" color="#e4572e">  <!-- owner, number: the phase plan's table; current_a (version 13): operating current, A per phase -->
+  <system id="…" name="…" owner="…" number="…" kind="ac" voltage_kv="220" highest_voltage_kv="…" insulation_level="low" frequency_hz="50" current_a="900" color="#e4572e">  <!-- owner, number: the phase plan's table; current_a (version 13): operating current, A per phase; highest_voltage_kv, insulation_level (version 15, both optional): the highest operating voltage, kV, at least voltage_kv — the user's value; "low" or "high" (not given: high) -->
     <phase label="L1" angle_deg="0" polarity="1" code=".-"/>  <!-- code: line code by system -->
   </system>
   <circuit id="…" name="North" system="…" description="…"/>  <!-- version 7: a circuit; its sections give its name -->

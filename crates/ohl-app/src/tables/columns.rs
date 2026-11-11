@@ -714,6 +714,18 @@ pub(super) const SYSTEMS: &[Column] = &[
     ("name", 200.0, Yes, "name"),
     ("kind", 50.0, Yes, "AC or DC"),
     ("kV", 70.0, Yes, "nominal voltage"),
+    (
+        "max kV",
+        70.0,
+        Yes,
+        "highest operating voltage, kV between phases (DC: pole to earth), at least the nominal; empty: not given. Your value: none is filled in. Used by the electric field and the conductor surface gradient (Checks › Fields): with it they are computed at this voltage; without it at the nominal, which gives a lower field and is said as not on the safe side in their results. No other check reads it today",
+    ),
+    (
+        "insulation",
+        80.0,
+        Yes,
+        "insulation level of the system: high or low; empty: high (the default, shown grey). The line's own value (not a plugin's column). No check of the program reads it today; a design-code plugin may, e.g. a table with a low and a high row per voltage. No values of a standard are attached to it",
+    ),
     ("Hz", 60.0, Yes, "frequency (AC; empty: none)"),
     (
         "phases",

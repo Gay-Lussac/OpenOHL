@@ -452,12 +452,18 @@ impl TableKind {
                 .iter()
                 .enumerate()
                 .map(|(k, s)| Row {
-                    defaulted: (0..9)
-                        .map(|c| {
-                            (c == 6 && s.phases.iter().all(|p| p.code.is_none()))
-                                || (c == 7 && s.color.is_none())
-                        })
-                        .collect(),
+                    defaulted: {
+                        let column = |name| TableKind::Systems.column(name);
+                        let (codes, colour, insulation) =
+                            (column("line codes"), column("colour"), column("insulation"));
+                        (0..=codes.max(colour).max(insulation))
+                            .map(|c| {
+                                (c == codes && s.phases.iter().all(|p| p.code.is_none()))
+                                    || (c == colour && s.color.is_none())
+                                    || (c == insulation && s.insulation_level.is_none())
+                            })
+                            .collect()
+                    },
                     key: s.id.clone(),
                     select: Selection::None,
                     cells: vec![
@@ -468,6 +474,8 @@ impl TableKind {
                             ohl_line::electrical::SystemKind::Dc => "DC".into(),
                         },
                         f(s.voltage_kv, 1),
+                        s.highest_voltage_kv.map_or(String::new(), |v| f(v, 1)),
+                        s.insulation().as_str().to_owned(),
                         s.frequency_hz.map_or(String::new(), |v| f(v, 1)),
                         s.phases
                             .iter()
@@ -626,9 +634,9 @@ impl TableKind {
                     line.systems.iter().map(|s| s.id.as_str()).collect(),
                     "system-0",
                 );
-                cells[2] = "AC".into();
-                cells[4] = "50".into();
-                cells[5] = "L1 L2 L3".into();
+                cells[self.column("kind")] = "AC".into();
+                cells[self.column("Hz")] = "50".into();
+                cells[self.column("phases")] = "L1 L2 L3".into();
             }
             TableKind::Alignments => {
                 let mut taken = line.clone();

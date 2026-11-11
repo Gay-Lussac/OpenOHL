@@ -237,6 +237,20 @@ struct Stored {
     gradient: Option<bool>,
 }
 
+/// What the voltages' grid says of a circuit at its system's nominal
+/// voltage.
+pub const NOMINAL_VOLTAGE_LABEL: &str = "the system's nominal — not on the safe side";
+
+/// Its hover text: the effect and what to do.
+pub const NOMINAL_VOLTAGE_HELP: &str = "No highest operating voltage is given for this system and \
+     none is typed here: the field is computed at the nominal voltage. The highest operating \
+     voltage gives a higher field, in proportion — the result says NOT ON THE SAFE SIDE. Give \
+     it in Line › Sections › Electrical systems (max kV), or type the voltage here.";
+
+/// What the grid says of a circuit at its system's highest operating
+/// voltage.
+pub const HIGHEST_VOLTAGE_LABEL: &str = "the system's highest operating";
+
 impl ElectricFieldWindow {
     /// The inputs as kept in the project.
     fn stored(&mut self, model: &Model) -> Stored {
@@ -483,16 +497,27 @@ impl ElectricFieldWindow {
     /// A circuit's voltage between phases: given, else its system's
     /// nominal (none: DC, or no such system).
     fn voltage(&self, model: &Model, c: &ohl_electrical::parameters::CircuitKey) -> Option<f64> {
+        self.voltage_used(model, c).map(|v| v.kv)
+    }
+
+    /// A circuit's voltage between phases as a run takes it, and where it
+    /// comes from (owner, 2026-11-11): given here, else its system's
+    /// highest operating voltage, else its nominal (none: DC, or no such
+    /// system).
+    pub fn voltage_used(
+        &self,
+        model: &Model,
+        c: &ohl_electrical::parameters::CircuitKey,
+    ) -> Option<ohl_electrical::electric::VoltageUsed> {
         let system = model.line.systems.iter().find(|s| s.id == c.system)?;
         if system.kind == SystemKind::Dc {
             return None;
         }
-        Some(
-            self.voltages
-                .get(&c.label())
-                .copied()
-                .unwrap_or(system.voltage_kv),
-        )
+        Some(ohl_electrical::electric::circuit_voltage(
+            system.voltage_kv,
+            system.highest_voltage_kv,
+            self.voltages.get(&c.label()).copied(),
+        ))
     }
 
     /// The settings as the engine takes them.
@@ -1092,19 +1117,18 @@ impl ElectricFieldWindow {
                     let label = c.label();
                     ui.label(&label);
                     ui.label(&c.system);
-                    let Some(mut kv) = self.voltage(model, c) else {
+                    let used = self.voltage_used(model, c);
+                    let Some(mut kv) = used.map(|v| v.kv) else {
                         ui.label(egui::RichText::new("DC: left out").weak())
                             .on_hover_text("A static field with space charge: not computed");
                         ui.label("");
                         ui.end_row();
                         continue;
                     };
-                    let nominal = model
-                        .line
-                        .systems
-                        .iter()
-                        .find(|s| s.id == c.system)
-                        .map_or(0.0, |s| s.voltage_kv);
+                    // What it falls back on when none is typed here.
+                    let system = model.line.systems.iter().find(|s| s.id == c.system);
+                    let nominal = system.map_or(0.0, |s| s.voltage_kv);
+                    let highest = system.and_then(|s| s.highest_voltage_kv);
                     let r = crate::style::field(
                         ui,
                         egui::DragValue::new(&mut kv)
@@ -1121,21 +1145,35 @@ impl ElectricFieldWindow {
                         self.voltages.insert(label.clone(), kv);
                     }
                     ui.horizontal(|ui| {
+                        use ohl_electrical::electric::VoltageSource;
                         let given = self.voltages.contains_key(&label);
-                        let what = if kv == 0.0 {
-                            "voltage-free"
-                        } else if given {
-                            "given"
+                        let source = used.map(|v| v.source);
+                        if kv == 0.0 {
+                            ui.label(egui::RichText::new("voltage-free").weak());
+                        } else if source == Some(VoltageSource::Nominal) {
+                            // Said where it is chosen, as in the results.
+                            ui.label(
+                                egui::RichText::new(NOMINAL_VOLTAGE_LABEL)
+                                    .color(ui.visuals().warn_fg_color),
+                            )
+                            .on_hover_text(NOMINAL_VOLTAGE_HELP);
                         } else {
-                            "the system's nominal"
+                            ui.label(
+                                egui::RichText::new(match source {
+                                    Some(VoltageSource::Highest) => HIGHEST_VOLTAGE_LABEL,
+                                    _ => "given",
+                                })
+                                .weak(),
+                            );
+                        }
+                        let (back, to) = match highest {
+                            Some(u) => ("highest", format!("highest operating voltage, {u} kV")),
+                            None => ("nominal", format!("nominal voltage, {nominal} kV")),
                         };
-                        ui.label(egui::RichText::new(what).weak());
                         if given
                             && ui
-                                .small_button("nominal")
-                                .on_hover_text(format!(
-                                    "Back to the system's nominal voltage, {nominal} kV"
-                                ))
+                                .small_button(back)
+                                .on_hover_text(format!("Back to the system's {to}"))
                                 .clicked()
                         {
                             self.voltages.remove(&label);
@@ -1146,11 +1184,15 @@ impl ElectricFieldWindow {
             });
         help::explain(
             ui,
-            "Each circuit at its system's nominal voltage unless given; 0 kV: voltage-free.",
+            "Each circuit at its system's highest operating voltage where the line gives one \
+             (Electrical systems, max kV), else at its nominal — not on the safe side, said — \
+             unless a voltage is given here; 0 kV: voltage-free.",
             "The NISV guide (BAFU 2007, 8.7.3) asks the highest operating voltage, the largest \
              sag (the weather case) and, on a double circuit built to compensate, one circuit \
-             voltage-free. Which governs is yours to choose; none is built in. A higher \
-             voltage raises the field in proportion; the time is the same.",
+             voltage-free. Which governs is yours to choose; no voltage is built in or filled \
+             in: the highest operating voltage is your value. A higher voltage raises the \
+             field in proportion (10 % more voltage: 10 % more field); the time is the same. \
+             The results always say which voltage each circuit was computed at.",
         );
         ui.add_space(4.0);
         egui::Grid::new("electric-field-settings")

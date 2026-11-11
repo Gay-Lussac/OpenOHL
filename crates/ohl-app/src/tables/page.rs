@@ -128,6 +128,7 @@ pub(super) fn choices(
             false,
         ),
         (TableKind::Systems, "kind") => (vec!["AC".into(), "DC".into()], false),
+        (TableKind::Systems, "insulation") => (vec!["high".into(), "low".into()], false),
         (TableKind::WeatherCases, "Wind from\n ") => (vec!["right".into(), "left".into()], false),
         (TableKind::AlignmentPoints, "structure") => (
             with_none(model.line.structures.iter().map(|s| s.id.clone()).collect()),

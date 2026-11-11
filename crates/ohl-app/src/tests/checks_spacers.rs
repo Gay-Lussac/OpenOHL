@@ -2155,6 +2155,15 @@ fn the_electric_field_window_runs_and_goes_out_of_date() {
     submenu(&mut harness, "Checks", "Electrical");
     harness.get_by_label("Electric field…").click();
     harness.run();
+    // No highest operating voltage in the example's systems and none typed:
+    // the grid says each circuit is at its nominal, not on the safe side
+    // (2026-11-11).
+    assert!(
+        harness
+            .query_all_by_label(crate::electric_field::NOMINAL_VOLTAGE_LABEL)
+            .next()
+            .is_some()
+    );
     let circuits = {
         let r = harness.state_mut().ready().unwrap();
         assert!(r.electric_field.open);

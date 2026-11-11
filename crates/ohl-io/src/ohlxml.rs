@@ -965,6 +965,8 @@ fn write_system(out: &mut String, s: &System) {
         number,
         kind,
         voltage_kv,
+        highest_voltage_kv,
+        insulation_level,
         frequency_hz,
         current_a,
         phases,
@@ -979,6 +981,10 @@ fn write_system(out: &mut String, s: &System) {
     nonempty(out, "number", number);
     attr(out, "kind", &enum_name(kind));
     attr(out, "voltage_kv", &num(*voltage_kv));
+    opt_num(out, "highest_voltage_kv", *highest_voltage_kv);
+    if let Some(level) = insulation_level {
+        attr(out, "insulation_level", level.as_str());
+    }
     opt_num(out, "frequency_hz", *frequency_hz);
     opt_num(out, "current_a", *current_a);
     if let Some(c) = color {
@@ -2127,6 +2133,8 @@ fn read_system(e: &Element) -> Result<System, String> {
             "number",
             "kind",
             "voltage_kv",
+            "highest_voltage_kv",
+            "insulation_level",
             "frequency_hz",
             "current_a",
             "color",
@@ -2147,6 +2155,15 @@ fn read_system(e: &Element) -> Result<System, String> {
         number: owned(e, "number").unwrap_or_default(),
         kind,
         voltage_kv: number(e, "voltage_kv")?,
+        highest_voltage_kv: optional(e, "highest_voltage_kv")?,
+        insulation_level: match e.attr("insulation_level") {
+            None => None,
+            Some(l) => Some(
+                ohl_line::electrical::InsulationLevel::parse(l).ok_or_else(|| {
+                    format!("<system>: insulation_level \"{l}\" unknown (low or high)")
+                })?,
+            ),
+        },
         frequency_hz: optional(e, "frequency_hz")?,
         current_a: optional(e, "current_a")?,
         color: owned(e, "color"),

@@ -10,6 +10,52 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**The highest operating voltage and the insulation level of a system; the electric field's voltage (owner, 2026-11-11)**
+
+The owner approved roadmap O23 item 4 ("go ahead") and added: "maybe in
+the circuit table or system table where the voltage is given, it could
+also be given the maximal operating voltage and maybe the insulation too
+(high or low) for the cases where it's needed and by default it takes
+high."
+
+- **Where.** Both are fields of the electrical **system**, beside its
+  nominal voltage (`System::highest_voltage_kv`,
+  `System::insulation_level`), and columns of the Electrical systems
+  table right after **kV**: **max kV** and **insulation**. (The circuits
+  table gives no voltage: a circuit takes its system's.)
+- **The highest operating voltage** is optional and the user's value:
+  nothing fills it in, no table of such voltages is in the program. At
+  least the nominal (a smaller one is refused: it would lower a field).
+- **The electric field's voltage**, per circuit: a voltage given for the
+  run; else the system's highest operating voltage; else the nominal,
+  with the note "NOT ON THE SAFE SIDE: nominal voltage used for
+  <circuits>; the highest operating voltage gives a higher field". The
+  result always says which voltage each circuit was computed at and
+  where it comes from. The **conductor surface gradient** takes its
+  voltage the same way (the same function), with the same notes — it
+  had the same gap.
+- **The insulation level**: `low` or `high`, high when not given;
+  written only when given. **No check of the core reads it** and no
+  standard's values are attached to it; it is there for design-code
+  plugins.
+- **Plugins.** Neither value was added to the plugin interface's records
+  (`system-info`, `wire-group`): a record field changes the interface,
+  which stays 0.3. A plugin sees them only in the line file JSON handed
+  to an exporter. Open for the owner: an interface raise to hand them
+  to the design-code hooks.
+- **A plugin column of the same name** (a plugin may declare its own
+  `insulation_level` column) cannot collide: it is stored as
+  `<plugin>.insulation_level` among the object's `fields`, the line's
+  own as the system's `insulation_level`; in the table the plugin's is a
+  plugin column after the table's own.
+- **Format.** Line file version 15, written only when a system has one
+  of the two; OHL XML attributes `highest_voltage_kv`,
+  `insulation_level`; older files read as nominal only, insulation
+  high.
+- **Seen on the way.** Typing `high` over the grey default `high` in the
+  table changes nothing (a cell equal to what it shows is not an edit):
+  an explicit `high` is reached from `low`, or in the file.
+
 **Trees without ground nearby are listed as questionable (owner, 2026-11-11)**
 
 The owner approved roadmap O25 item 1 ("go ahead"). A vegetation point

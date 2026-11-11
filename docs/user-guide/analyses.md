@@ -1473,8 +1473,15 @@ default.
 
 - **Voltages**: per circuit its voltage between phases (kV, rms); each
   phase at it over √3 to earth at its system's phase angle (L1 0°, L2
-  −120°, L3 +120° unless the system gives others). Unless given, the
-  system's **nominal** voltage (said beside it; **nominal** sets it back).
+  −120°, L3 +120° unless the system gives others). Unless given here,
+  the system's **highest operating voltage** where the line gives one
+  (Line › Electrical systems, column **max kV** — your value, none is
+  filled in), else the system's **nominal** voltage, which gives a lower
+  field: the grid says so beside it ("the system's nominal — not on the
+  safe side") and the result carries **NOT ON THE SAFE SIDE: nominal
+  voltage used for …**. Every result says which voltage each circuit
+  was computed at. **highest** / **nominal** beside a typed value sets
+  it back.
   **0 kV: voltage-free** — the circuit at earth potential, like the earth
   wires. The NISV guide (BAFU 2007, 8.7.3) asks the highest operating
   voltage, the largest sag (the weather case) and, on a double circuit
@@ -1582,8 +1589,10 @@ mean of the subconductors' largest gradients — what the noise formulas
 take), the **maximum** and **Markt–Mengele**'s value as a cross-check,
 kV/cm **rms** (peak √2 times); **Export CSV…** per subconductor (its
 largest gradient, where round it, its mean). Saved with the run in
-Performed checks. Give the circuits' highest operating voltage: the
-nominal is taken otherwise (said), not conservative for noise. Method,
+Performed checks. Give the systems' highest operating voltage (Line ›
+Electrical systems, column **max kV**) or a voltage for the run: the
+nominal is taken otherwise — **NOT ON THE SAFE SIDE**, said in the
+result with the circuits concerned. Method,
 convergence, validation (closed forms, hvlbuzz) and what is left out:
 [Conductor surface gradient](../theory/surface-gradient.md). Not in 3D.
 

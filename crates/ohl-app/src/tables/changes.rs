@@ -1268,8 +1268,30 @@ pub(super) fn system_cells(
         "DC" => ohl_line::electrical::SystemKind::Dc,
         other => return Err(format!("{name} kind: \"{other}\" is not AC or DC")),
     };
-    s.voltage_kv = num(&c.get(3), &format!("{name} voltage"))?;
-    s.frequency_hz = opt_num(&c.get(4), &format!("{name} frequency"))?;
+    let column = |title| TableKind::Systems.column(title);
+    s.voltage_kv = num(&c.get(column("kV")), &format!("{name} voltage"))?;
+    // The highest operating voltage: the user's value, at least the
+    // nominal (owner, 2026-11-11).
+    s.highest_voltage_kv = opt_num(
+        &c.get(column("max kV")),
+        &format!("{name} highest operating voltage"),
+    )?;
+    if let Some(u) = s.highest_voltage_kv.filter(|u| *u < s.voltage_kv) {
+        return Err(format!(
+            "{name} highest operating voltage: {u} kV — at least the nominal {} kV (empty: not given)",
+            s.voltage_kv
+        ));
+    }
+    // The insulation level: empty (the default shown) is not given, high.
+    s.insulation_level = match c.get(column("insulation")).trim().to_lowercase().as_str() {
+        "" => None,
+        level => Some(
+            ohl_line::electrical::InsulationLevel::parse(level).ok_or_else(|| {
+                format!("{name} insulation: \"{level}\" is not high or low (empty: high)")
+            })?,
+        ),
+    };
+    s.frequency_hz = opt_num(&c.get(column("Hz")), &format!("{name} frequency"))?;
     s.current_a = opt_num(
         &c.get(TableKind::Systems.column("A")),
         &format!("{name} operating current"),
@@ -1278,13 +1300,13 @@ pub(super) fn system_cells(
         return Err(format!("{name} operating current: {i} A — a current ≥ 0 A"));
     }
     let labels: Vec<String> = c
-        .get(5)
+        .get(column("phases"))
         .split([' ', ','])
         .filter(|t| !t.is_empty())
         .map(str::to_owned)
         .collect();
     // A default shown reads empty: the colour by its place.
-    s.color = parse_color(&c.get(7), name)?;
+    s.color = parse_color(&c.get(column("colour")), name)?;
     let old = std::mem::take(&mut s.phases);
     s.phases = labels
         .into_iter()
@@ -1299,7 +1321,11 @@ pub(super) fn system_cells(
         .collect();
     // Line codes, one per phase in order (fewer: the rest by place; a
     // default shown reads empty).
-    let codes: Vec<String> = c.get(6).split_whitespace().map(str::to_owned).collect();
+    let codes: Vec<String> = c
+        .get(column("line codes"))
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
     if codes.len() > s.phases.len() {
         return Err(format!(
             "{name} line codes: {} for {} phases",

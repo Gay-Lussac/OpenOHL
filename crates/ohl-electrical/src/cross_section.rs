@@ -162,6 +162,9 @@ pub struct PhaseData {
     pub kind: SystemKind,
     /// The system's nominal voltage, kV (AC between phases, DC to earth).
     pub voltage_kv: f64,
+    /// The system's highest operating voltage, kV, when the line gives
+    /// one ([`ohl_line::electrical::System::highest_voltage_kv`]).
+    pub highest_kv: Option<f64>,
     /// AC frequency, Hz, when the system gives one.
     pub frequency_hz: Option<f64>,
     /// AC phase angle, degrees (DC: 0).
@@ -594,6 +597,7 @@ pub(crate) fn phase_data(
         circuit: section.circuit_name.clone(),
         kind: sys.kind,
         voltage_kv: sys.voltage_kv,
+        highest_kv: sys.highest_voltage_kv,
         frequency_hz: sys.frequency_hz,
         angle_deg: match sys.kind {
             SystemKind::Ac => sys.phases[kp].angle_deg.unwrap_or(-(kp as f64) * 360.0 / n),

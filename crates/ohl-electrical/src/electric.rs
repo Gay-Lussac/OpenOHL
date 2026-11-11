@@ -633,12 +633,101 @@ pub struct ElectricField {
 // ---------------------------------------------------------------------------
 // The run.
 
+/// Where a circuit's voltage comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VoltageSource {
+    /// Given for this run ([`Settings::voltages`]).
+    Given,
+    /// Its system's highest operating voltage, from the line.
+    Highest,
+    /// Its system's nominal voltage: not on the safe side, said.
+    Nominal,
+}
+
+/// The voltage a circuit was computed at.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct VoltageUsed {
+    /// Between phases, kV (rms).
+    pub kv: f64,
+    /// Where it comes from.
+    pub source: VoltageSource,
+}
+
+/// The voltages used, by circuit label.
+pub(crate) type VoltagesUsed = BTreeMap<String, VoltageUsed>;
+
+/// A circuit's voltage between phases, kV (owner, 2026-11-11): the one
+/// given for the run, else its system's highest operating voltage where
+/// the line gives one, else its nominal voltage.
+pub fn circuit_voltage(
+    nominal_kv: f64,
+    highest_kv: Option<f64>,
+    given: Option<f64>,
+) -> VoltageUsed {
+    match (given, highest_kv) {
+        (Some(kv), _) => VoltageUsed {
+            kv,
+            source: VoltageSource::Given,
+        },
+        (None, Some(kv)) => VoltageUsed {
+            kv,
+            source: VoltageSource::Highest,
+        },
+        (None, None) => VoltageUsed {
+            kv: nominal_kv,
+            source: VoltageSource::Nominal,
+        },
+    }
+}
+
+/// What a result says of its voltages: always which voltage each circuit
+/// was computed at and where it comes from; and, for the circuits at
+/// their nominal voltage, that this is not on the safe side (`grows`:
+/// what a higher voltage raises, e.g. "field").
+pub(crate) fn voltage_notes(used: &VoltagesUsed, grows: &str) -> Vec<String> {
+    if used.is_empty() {
+        return Vec::new();
+    }
+    let said: Vec<String> = used
+        .iter()
+        .map(|(c, v)| {
+            format!(
+                "{c} {} kV ({})",
+                v.kv,
+                match v.source {
+                    VoltageSource::Given => "given for this run",
+                    VoltageSource::Highest => "its system's highest operating voltage",
+                    VoltageSource::Nominal => "its system's nominal voltage",
+                }
+            )
+        })
+        .collect();
+    let mut notes = vec![format!(
+        "voltages used, between phases: {}",
+        said.join("; ")
+    )];
+    let nominal: Vec<&str> = used
+        .iter()
+        .filter(|(_, v)| v.source == VoltageSource::Nominal)
+        .map(|(c, _)| c.as_str())
+        .collect();
+    if !nominal.is_empty() {
+        notes.push(format!(
+            "NOT ON THE SAFE SIDE: nominal voltage used for {}; the highest operating voltage \
+             gives a higher {grows} (give it with the system, or a voltage for this run)",
+            nominal.join(", ")
+        ));
+    }
+    notes
+}
+
 /// A phase's voltage to earth, V (rms phasor), and its frequency; `None`:
-/// DC or no voltage.
+/// DC or no voltage. `used` takes its circuit's voltage and where it
+/// comes from ([`circuit_voltage`]).
 pub(crate) fn phase_voltage(
     p: &PhaseData,
     given: &[CircuitVoltage],
-    defaulted: &mut BTreeMap<String, f64>,
+    used: &mut VoltagesUsed,
 ) -> Option<(f64, C)> {
     if p.kind == SystemKind::Dc {
         return None;
@@ -647,17 +736,14 @@ pub(crate) fn phase_voltage(
         circuit: p.circuit.clone(),
         system: p.system.clone(),
     };
-    let kv = match given
+    let given = given
         .iter()
         .rev()
         .find(|g| magnetic::matches(&key, &g.circuit))
-    {
-        Some(g) => g.kv,
-        None => {
-            defaulted.insert(key.label(), p.voltage_kv);
-            p.voltage_kv
-        }
-    };
+        .map(|g| g.kv);
+    let voltage = circuit_voltage(p.voltage_kv, p.highest_kv, given);
+    used.insert(key.label(), voltage);
+    let kv = voltage.kv;
     let f = p.frequency_hz.unwrap_or(DEFAULT_FREQUENCY_HZ);
     let v = kv * 1e3 / 3f64.sqrt();
     Some((f, C::from_polar(v, p.angle_deg.to_radians())))
@@ -669,7 +755,7 @@ pub(crate) fn phase_voltage(
 pub(crate) fn cross_section_charges(
     cs: &CrossSection,
     given: &[CircuitVoltage],
-    defaulted: &mut BTreeMap<String, f64>,
+    defaulted: &mut VoltagesUsed,
     notes: &mut Vec<String>,
 ) -> Vec<(f64, Vec<C>)> {
     let mut wires = Vec::new();
@@ -1040,11 +1126,9 @@ pub fn run_keeping(
             }
         }
     }
-    for (c, kv) in &defaulted {
-        notes.push(format!(
-            "{c}: no voltage given, its system's nominal {kv} kV taken (an ordinance may ask the highest operating voltage: give it)"
-        ));
-    }
+    // Which voltage each circuit was computed at, always; the nominal
+    // one said as not on the safe side (2026-11-11).
+    notes.extend(voltage_notes(&defaulted, "field"));
     if line.systems.iter().any(|s| s.kind == SystemKind::Dc) {
         notes.push("DC systems left out (a static field with space charge; not computed)".into());
     }

@@ -25,14 +25,22 @@ fn example() -> (Line, ohl_cables::Library) {
 
 fn field(settings: &Settings) -> electric::ElectricField {
     let (line, library) = example();
+    field_of(&line, &library, settings)
+}
+
+fn field_of(
+    line: &Line,
+    library: &ohl_cables::Library,
+    settings: &Settings,
+) -> electric::ElectricField {
     let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
-    let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+    let shapes: Vec<_> = ohl_line::solve::solve_line(line, library, &case)
         .into_iter()
         .map(Result::unwrap)
         .collect();
     let src = Sources {
-        line: &line,
-        library: &library,
+        line,
+        library,
         shapes: &shapes,
         temperature: Temperature::from_celsius(40.0),
         ground: None,
@@ -90,6 +98,86 @@ fn the_field_goes_with_the_voltage() {
     s.voltages[0].kv = 400.0;
     let b = field(&s).profiles[0].max_kv_m;
     assert!((b - 2.0 * a).abs() < 1e-9 * b, "{a} {b}");
+}
+
+/// The voltage of the field (owner, 2026-11-11): a system's highest
+/// operating voltage where the line gives one — the field in proportion,
+/// here 1.1 times the nominal's — else the nominal, said as not on the
+/// safe side for those circuits only; a voltage given for the run before
+/// both. The result always says which voltage each circuit was computed
+/// at.
+#[test]
+fn the_highest_operating_voltage_is_used_where_given() {
+    let (mut line, library) = example();
+    let s = Settings {
+        stations: vec![mid("T1", "T2")],
+        ground_model: electric::GroundModel::Plane,
+        ..Settings::default()
+    };
+    let unsafe_note = |m: &electric::ElectricField| -> Option<String> {
+        m.notes
+            .iter()
+            .find(|n| n.starts_with("NOT ON THE SAFE SIDE: nominal voltage used for "))
+            .cloned()
+    };
+    let used = |m: &electric::ElectricField| -> String {
+        m.notes
+            .iter()
+            .find(|n| n.starts_with("voltages used, between phases: "))
+            .cloned()
+            .expect("the voltages used are always said")
+    };
+    // None given: the nominal, not on the safe side, for every circuit.
+    let nominal = field_of(&line, &library, &s);
+    let a = nominal.profiles[0].max_kv_m;
+    let note = unsafe_note(&nominal).expect("said");
+    assert!(
+        note.ends_with("the highest operating voltage gives a higher field (give it with the system, or a voltage for this run)"),
+        "{note}"
+    );
+    assert!(used(&nominal).contains("(its system's nominal voltage)"));
+    assert!(!used(&nominal).contains("highest"));
+    // One system with its highest operating voltage: the others still said.
+    let systems = line.systems.len();
+    assert!(systems >= 2, "the example is a double circuit");
+    line.systems[0].highest_voltage_kv = Some(1.1 * line.systems[0].voltage_kv);
+    let mixed = field_of(&line, &library, &s);
+    let said = used(&mixed);
+    assert!(
+        said.contains("(its system's highest operating voltage)")
+            && said.contains("(its system's nominal voltage)"),
+        "{said}"
+    );
+    let partly = unsafe_note(&mixed).expect("the other systems at their nominal");
+    assert!(partly.len() < note.len(), "{partly} / {note}");
+    // Every system: 1.1 times the field, nothing unsafe to say.
+    for sys in &mut line.systems {
+        sys.highest_voltage_kv = Some(1.1 * sys.voltage_kv);
+    }
+    line.validate().unwrap();
+    let highest = field_of(&line, &library, &s);
+    let b = highest.profiles[0].max_kv_m;
+    assert!((b - 1.1 * a).abs() < 1e-9 * b, "{a} {b}");
+    assert_eq!(unsafe_note(&highest), None);
+    assert!(!used(&highest).contains("nominal"));
+    // The charges' voltages to earth follow.
+    let kv = |m: &electric::ElectricField| m.charges.iter().map(|c| c.kv).fold(0.0, f64::max);
+    assert!((kv(&highest) - 1.1 * kv(&nominal)).abs() < 1e-9 * kv(&highest));
+    // A voltage given for the run comes first.
+    let given = field_of(
+        &line,
+        &library,
+        &Settings {
+            voltages: vec![CircuitVoltage {
+                circuit: "*".into(),
+                kv: 200.0,
+            }],
+            ..s.clone()
+        },
+    );
+    assert_eq!(unsafe_note(&given), None);
+    assert!(used(&given).contains("200 kV (given for this run)"));
+    assert!(!used(&given).contains("system's"));
 }
 
 /// At mid-span of a straight line the 3D field is near the 2D one (the

@@ -77,6 +77,39 @@ pub fn is_line_code(code: &str) -> bool {
     !code.is_empty() && code.chars().all(|c| c == '.' || c == '-')
 }
 
+/// A system's insulation level (owner, 2026-11-11): `high` unless given.
+/// No check of the core reads it today; a design-code plugin may (e.g. a
+/// rule table with a low and a high row per voltage). No standard's
+/// values are attached to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InsulationLevel {
+    /// Low.
+    Low,
+    /// High (the default when none is given).
+    #[default]
+    High,
+}
+
+impl InsulationLevel {
+    /// `low` or `high`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+        }
+    }
+
+    /// Reads `low` or `high`.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "low" => Some(Self::Low),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+}
+
 /// An electrical system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -101,6 +134,22 @@ pub struct System {
     pub kind: SystemKind,
     /// Nominal voltage, kV: AC between phases (rms), DC pole to earth.
     pub voltage_kv: f64,
+    /// Highest operating voltage, kV (as the nominal: AC between phases,
+    /// rms; DC pole to earth), when the line file gives one (line file
+    /// version 15, owner 2026-11-11): the user's value, never filled in
+    /// by the program — at least the nominal. Used by the electric field
+    /// and the conductor surface gradient, where the nominal voltage is
+    /// taken — and said not to be on the safe side — without it. None:
+    /// not given (nothing changes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highest_voltage_kv: Option<f64>,
+    /// Insulation level, when the line file gives one (line file version
+    /// 15, owner 2026-11-11); none: [`InsulationLevel::High`]
+    /// ([`System::insulation`]). Not read by any check of the core. A
+    /// plugin's own column of the same name is another thing: it lives
+    /// in [`System::fields`] under `plugin.column`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub insulation_level: Option<InsulationLevel>,
     /// AC frequency, Hz (e.g. 50, 16.7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frequency_hz: Option<f64>,
@@ -131,6 +180,11 @@ pub const SYSTEM_COLORS: [&str; 8] = [
 ];
 
 impl System {
+    /// Its insulation level: as given, else high.
+    pub fn insulation(&self) -> InsulationLevel {
+        self.insulation_level.unwrap_or_default()
+    }
+
     /// The line code of phase `k` (its own, else by its place).
     pub fn line_code(&self, k: usize) -> String {
         self.phases
@@ -175,6 +229,16 @@ impl System {
         }
         if self.phases.is_empty() {
             return Err(format!("system {id}: needs at least one phase or pole"));
+        }
+        if let Some(u) = self
+            .highest_voltage_kv
+            .filter(|u| !(u.is_finite() && *u >= self.voltage_kv))
+        {
+            return Err(format!(
+                "system {id}: highest operating voltage {u} kV must be a number of kV at least \
+                 the nominal {} kV",
+                self.voltage_kv
+            ));
         }
         if let Some(i) = self.current_a.filter(|i| !(i.is_finite() && *i >= 0.0)) {
             return Err(format!(
@@ -846,6 +910,15 @@ impl Line {
             .collect()
     }
 
+    /// The highest operating voltage of system `id`, kV (none: not given,
+    /// or no such system).
+    pub fn system_highest_voltage(&self, id: &str) -> Option<f64> {
+        self.systems
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.highest_voltage_kv)
+    }
+
     /// The operating current of system `id`, A (none: not given, or no
     /// such system).
     pub fn system_current(&self, id: &str) -> Option<f64> {
@@ -974,6 +1047,8 @@ mod tests {
             number: String::new(),
             kind,
             voltage_kv: kv,
+            highest_voltage_kv: None,
+            insulation_level: None,
             frequency_hz: None,
             current_a: None,
             color: None,

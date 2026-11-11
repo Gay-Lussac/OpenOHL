@@ -552,6 +552,18 @@
             <xs:attribute name="number" type="xs:string"/>
             <xs:attribute name="kind" type="ohl:systemKind" default="ac"/>
             <xs:attribute name="voltage_kv" type="xs:double" use="required"/>
+            <!-- Highest operating voltage, kV, at least voltage_kv (version
+                 15, 2026-11-11): the user's value. -->
+            <xs:attribute name="highest_voltage_kv" type="xs:double"/>
+            <!-- Insulation level (version 15, 2026-11-11); not given: high. -->
+            <xs:attribute name="insulation_level">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="low"/>
+                  <xs:enumeration value="high"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
             <xs:attribute name="frequency_hz" type="xs:double"/>
             <!-- Operating current, A rms per phase (version 13, 2026-11-04). -->
             <xs:attribute name="current_a" type="xs:double"/>

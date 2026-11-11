@@ -729,6 +729,14 @@ From a review on 2026-11-10.
    rms of the vector (the magnetic field has both already).
 4. **The voltage of the electric field**: the nominal voltage is taken;
    offer the highest operating voltage, and say which was used.
+   *Status (2026-11-11), built, in active development (not approved
+   yet):* a system's optional highest operating voltage (the user's
+   value) and insulation level (high unless given; read by no check
+   yet) in the line file and the systems table; the electric field and
+   the surface gradient take the highest operating voltage where
+   given, else the nominal with "NOT ON THE SAFE SIDE", and always say
+   which voltage was used. Open: the two values in the plugin
+   interface.
 5. **Other lines in the same field run** (a parallel or crossing line of
    the project).
 6. **Smaller:** milligauss beside microtesla; line parameters per unit on

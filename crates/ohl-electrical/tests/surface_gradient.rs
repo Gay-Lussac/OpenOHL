@@ -63,6 +63,20 @@ fn every_span_three_cross_sections() {
         "{:?}",
         g.notes
     );
+    // Not on the safe side, and which voltage was used (2026-11-11).
+    assert!(
+        g.notes.iter().any(
+            |n| n.starts_with("NOT ON THE SAFE SIDE: nominal voltage used for ")
+                && n.contains("gives a higher surface gradient")
+        ),
+        "{:?}",
+        g.notes
+    );
+    assert!(
+        g.notes
+            .iter()
+            .any(|n| n.starts_with("voltages used, between phases: "))
+    );
     for c in &g.cuts {
         assert!(c.potential_error < 1e-4, "{}", c.potential_error);
         let phases: Vec<_> = c.bundles.iter().filter(|b| b.kv > 0.0).collect();

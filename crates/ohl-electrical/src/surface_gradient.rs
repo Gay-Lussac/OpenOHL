@@ -517,11 +517,12 @@ pub fn run(src: &Sources<'_>, settings: &Settings) -> Result<SurfaceGradients, S
             Err(e) => notes.push(format!("span {}–{} at {t:.1} m: {e}", span.from, span.to)),
         }
     }
-    for (c, kv) in &defaulted {
-        notes.push(format!(
-            "{c}: no voltage given, its system's nominal {kv} kV taken (a noise assessment usually asks the highest operating voltage: give it)"
-        ));
-    }
+    // Which voltage each circuit was computed at, always; the nominal
+    // one said as not on the safe side (2026-11-11).
+    notes.extend(crate::electric::voltage_notes(
+        &defaulted,
+        "surface gradient",
+    ));
     if line
         .systems
         .iter()
@@ -547,7 +548,7 @@ fn cut_gradients(
     given: &[CircuitVoltage],
     n: usize,
     points: usize,
-    defaulted: &mut BTreeMap<String, f64>,
+    defaulted: &mut crate::electric::VoltagesUsed,
 ) -> Result<(Vec<BundleGradient>, f64), String> {
     // Every subconductor a cylinder; per wire its range in the list.
     let mut cyl: Vec<(Cylinder, Option<(f64, C)>)> = Vec::new();

@@ -69,8 +69,8 @@ pub struct GradientArgs {
     pub temperature: f64,
     /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
     /// its system's id, `*` every circuit). Repeatable; default: the
-    /// system's nominal voltage, said (noise is usually assessed at the
-    /// highest operating voltage: give it).
+    /// system's highest operating voltage where the line gives one, else
+    /// its nominal voltage — not on the safe side, said in the result.
     #[arg(long, value_name = "CIRCUIT=KV")]
     pub voltage: Vec<String>,
     /// A cross-section: FROM:TO (a span's structures) at its lowest point,
@@ -273,7 +273,8 @@ pub struct MagneticOptions {
 pub struct ElectricOptions {
     /// A circuit's voltage between phases: CIRCUIT=KV (CIRCUIT: its name or
     /// its system's id, `*` every circuit). Repeatable; default: the
-    /// system's nominal voltage, said.
+    /// system's highest operating voltage where the line gives one, else
+    /// its nominal voltage — not on the safe side, said in the result.
     #[arg(long, value_name = "CIRCUIT=KV")]
     pub voltage: Vec<String>,
     /// The ground plane under a point is fitted over this distance either

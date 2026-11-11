@@ -419,6 +419,10 @@ fn rich_line() -> Line {
         sys.number = "C12".into();
         // Its operating current (line file 13, 2026-11-04).
         sys.current_a = Some(640.0);
+        // Its highest operating voltage and insulation level (line file
+        // 15, 2026-11-11).
+        sys.highest_voltage_kv = Some(sys.voltage_kv + 25.0);
+        sys.insulation_level = Some(ohl_line::electrical::InsulationLevel::Low);
     }
     // The strings added here: their lengths and directions from where
     // their wire points are.

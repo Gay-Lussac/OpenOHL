@@ -1270,3 +1270,197 @@ fn a_tall_editor_window_is_kept_on_the_screen() {
     let r = apply.rect();
     assert!(r.max.y <= 900.0, "Apply at {r:?}");
 }
+
+/// The systems table (owner, 2026-11-11): beside the nominal voltage the
+/// **highest operating voltage** (optional, at least the nominal) and the
+/// **insulation level** (high unless given, the default shown as such),
+/// each typed in one undoable command and saying in its help what uses
+/// it; the Electric field takes the highest operating voltage where
+/// given. A plugin's own column of the same name is another column and
+/// another value.
+#[test]
+fn a_systems_highest_voltage_and_insulation_are_typed_in_its_table() {
+    use crate::tables::{PluginColumn, TableKind};
+    use ohl_electrical::electric::VoltageSource;
+    use ohl_line::electrical::InsulationLevel;
+    let model = synthetic_project("system-voltages");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (id, nominal) = {
+        let s = &harness.state_mut().ready().unwrap().model.line.systems[0];
+        (s.id.clone(), s.voltage_kv)
+    };
+    // The two columns stand beside the nominal voltage; their help says
+    // what uses them.
+    let columns = TableKind::Systems.columns();
+    let kv = TableKind::Systems.column("kV");
+    assert_eq!(TableKind::Systems.column("max kV"), kv + 1);
+    assert_eq!(TableKind::Systems.column("insulation"), kv + 2);
+    assert!(columns[kv + 1].3.contains("electric field") && columns[kv + 1].3.contains("empty"));
+    assert!(columns[kv + 2].3.contains("plugin") && columns[kv + 2].3.contains("high"));
+    let system =
+        |h: &mut Harness<'_, App>| h.state_mut().ready().unwrap().model.line.systems[0].clone();
+    let row = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        TableKind::Systems
+            .rows(&r.model, r.case)
+            .into_iter()
+            .find(|x| x.key == id)
+            .unwrap()
+    };
+    // Not given: empty, and the insulation high as the default.
+    let before = row(&mut harness);
+    assert_eq!(before.cells[kv + 1], "");
+    assert_eq!(before.cells[kv + 2], "high");
+    assert!(before.defaulted[kv + 2] && !before.defaulted[kv + 1]);
+    let source = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let c = ohl_electrical::magnetic::circuits(&r.model.line)
+            .into_iter()
+            .find(|c| c.system == r.model.line.systems[0].id)
+            .unwrap();
+        r.electric_field.voltage_used(&r.model, &c).unwrap()
+    };
+    assert_eq!(source(&mut harness).source, VoltageSource::Nominal);
+    // The highest operating voltage typed: one command, undone in one.
+    let highest = nominal + 25.0;
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        &id,
+        "max kV",
+        &highest.to_string(),
+    );
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    assert_eq!(system(&mut harness).highest_voltage_kv, Some(highest));
+    assert_eq!(system(&mut harness).insulation_level, None);
+    let used = source(&mut harness);
+    assert_eq!((used.kv, used.source), (highest, VoltageSource::Highest));
+    harness.state_mut().ready().unwrap().model.undo().unwrap();
+    assert_eq!(system(&mut harness).highest_voltage_kv, None);
+    assert_eq!(source(&mut harness).source, VoltageSource::Nominal);
+    // Below the nominal: refused, with the reason.
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        &id,
+        "max kV",
+        &(nominal - 1.0).to_string(),
+    );
+    let e = apply_table(&mut harness, TableKind::Systems, false).unwrap_err();
+    assert!(
+        e.contains("highest operating voltage") && e.contains("at least the nominal"),
+        "{e}"
+    );
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        &id,
+        "max kV",
+        &highest.to_string(),
+    );
+    // The insulation level: low, then high given explicitly, then none.
+    set_cell(&mut harness, TableKind::Systems, &id, "insulation", "low");
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    let s = system(&mut harness);
+    assert_eq!(s.highest_voltage_kv, Some(highest));
+    assert_eq!(s.insulation_level, Some(InsulationLevel::Low));
+    let shown = row(&mut harness);
+    assert_eq!(shown.cells[kv + 2], "low");
+    assert!(!shown.defaulted[kv + 2]);
+    harness.state_mut().ready().unwrap().model.undo().unwrap();
+    assert_eq!(system(&mut harness).insulation_level, None);
+    assert_eq!(system(&mut harness).highest_voltage_kv, None);
+    // (The default shown is "high": typing it there changes nothing. Over
+    // "low" it is kept as given.)
+    set_cell(&mut harness, TableKind::Systems, &id, "insulation", "low");
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    set_cell(&mut harness, TableKind::Systems, &id, "insulation", "high");
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    assert_eq!(
+        system(&mut harness).insulation_level,
+        Some(InsulationLevel::High)
+    );
+    assert!(!row(&mut harness).defaulted[kv + 2]);
+    set_cell(&mut harness, TableKind::Systems, &id, "insulation", "");
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    assert_eq!(system(&mut harness).insulation_level, None);
+    assert_eq!(system(&mut harness).insulation(), InsulationLevel::High);
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        &id,
+        "insulation",
+        "medium",
+    );
+    let e = apply_table(&mut harness, TableKind::Systems, false).unwrap_err();
+    assert!(e.contains("not high or low"), "{e}");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Systems);
+    // A plugin's column of the same name on the same table: another
+    // column (after the table's own), kept under `plugin.column`.
+    let own = columns.len();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.model.plugin_columns = vec![PluginColumn {
+            table: "systems".into(),
+            key: "example.insulation_level".into(),
+            title: "insulation level".into(),
+            help: String::new(),
+            values: vec!["low".into(), "high".into()],
+            default: Some("high".into()),
+            plugin: "example 0.1.0".into(),
+            in_use: true,
+        }];
+        let rows = TableKind::Systems.rows(&r.model, r.case);
+        let x = rows.iter().find(|x| x.key == id).unwrap();
+        assert_eq!(x.cells.len(), own + 1);
+        let original = x.cells[own].clone();
+        r.tables
+            .entry(TableKind::Systems)
+            .or_default()
+            .set(&id, own, "low", &original);
+    }
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    let s = system(&mut harness);
+    assert_eq!(
+        s.fields.get("example.insulation_level").map(String::as_str),
+        Some("low")
+    );
+    assert_eq!(s.insulation_level, None, "the line's own is untouched");
+    harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .tables
+        .remove(&TableKind::Systems);
+    set_cell(&mut harness, TableKind::Systems, &id, "insulation", "low");
+    set_cell(
+        &mut harness,
+        TableKind::Systems,
+        &id,
+        "max kV",
+        &highest.to_string(),
+    );
+    apply_table(&mut harness, TableKind::Systems, false).unwrap();
+    let s = system(&mut harness);
+    assert_eq!(s.insulation_level, Some(InsulationLevel::Low));
+    assert_eq!(
+        s.fields.get("example.insulation_level").map(String::as_str),
+        Some("low")
+    );
+    // Both written, apart, and read back the same.
+    let line = harness.state_mut().ready().unwrap().model.line.clone();
+    let text = line.to_json();
+    assert!(text.contains("\"insulation_level\": \"low\""));
+    assert!(text.contains("\"example.insulation_level\": \"low\""));
+    assert!(text.contains("\"highest_voltage_kv\""));
+    let back = ohl_line::Line::from_json(&text).unwrap();
+    assert_eq!(back.systems[0], line.systems[0]);
+}

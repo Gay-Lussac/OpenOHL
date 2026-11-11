@@ -42,7 +42,7 @@ fn a_structure_without_load_cases_round_trips_at_version_14() {
     // The others as before.
     assert!(line.takes_load_case(&line.structures[0].id, "anything"));
     let text = line.to_json();
-    assert_eq!(LINE_FILE_VERSION, 14);
+    assert_eq!(LINE_FILE_VERSION, 15);
     assert!(text.contains("\"version\": 14"));
     assert!(text.contains("\"no_load_cases\": true"));
     let back = Line::from_json(&text).unwrap();

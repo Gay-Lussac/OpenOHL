@@ -84,7 +84,8 @@ voltage. In the cross-section:
       \ln\frac{|\vec x_i - \vec c_j^{\,\prime}|}{|\vec x_i - \vec c_j|}, \\]
    equals the wire's voltage to earth: a phase its system's voltage
    between phases over \\( \sqrt 3 \\) at its phase angle (the
-   circuit's voltage given, else the system's nominal, said), an earth
+   circuit's voltage given, else the system's highest operating voltage
+   where the line gives one, else its nominal, said), an earth
    wire zero. One real system \\( P\,q = V \\) of \\( n \\) unknowns per
    cylinder, solved once (LU) per cross-section and frequency for the
    real and the imaginary part of the phasors \\( V \\).
@@ -291,9 +292,15 @@ in a source that could be read (to add).
   a conductor's gradient.
 - **The earth wires at zero potential** (continuously earthed); their
   gradient from their induced charge is reported too.
-- **The voltage**: the circuit's given, else the system's nominal (said).
-  Noise is usually assessed at the highest operating voltage: giving
-  only the nominal is **not conservative**.
+- **The voltage** (since 2026-11-11): the circuit's given for the run,
+  else its system's highest operating voltage where the line gives one
+  (the user's value, `highest_voltage_kv`), else the system's nominal.
+  The gradient is linear in the voltages, so at the nominal it is lower
+  by \\( U_n / U_m \\): **NOT ON THE SAFE SIDE**, said in the result
+  ("NOT ON THE SAFE SIDE: nominal voltage used for … ; the highest
+  operating voltage gives a higher surface gradient") with the circuits
+  concerned; every result says which voltage each circuit was computed
+  at. Noise is usually assessed at the highest operating voltage.
 - **No space charge** (AC), no rain or water drops on the surface (the
   noise methods' weather terms), the air of permittivity
   \\( \varepsilon_0 \\). DC systems left out (a static field with space
