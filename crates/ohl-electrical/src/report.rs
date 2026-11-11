@@ -26,6 +26,9 @@ pub struct Row {
     pub sections: Vec<String>,
     /// Horizontal length, km.
     pub length_km: f64,
+    /// The wires' length over it, km (their sag and slope in): what the
+    /// totals are taken over ([`crate::parameters::Totals::wire_length`]).
+    pub wire_km: f64,
     /// Positive sequence R, X Ω/km and B µS/km (ideally transposed);
     /// `None` unless three phases (and for a coupling).
     pub positive: Option<[f64; 3]>,
@@ -41,7 +44,7 @@ impl Row {
     /// Totals over its length: (R1, X1, R0, X0) Ω and (B1, B0) µS.
     pub fn totals(&self) -> Option<([f64; 4], [f64; 2])> {
         let (p, z) = (self.positive?, self.zero?);
-        let l = self.length_km;
+        let l = self.wire_km;
         Some((
             [p[0] * l, p[1] * l, z[0] * l, z[1] * l],
             [p[2] * l, z[2] * l],
@@ -57,7 +60,8 @@ fn sequence_row(
     to: &str,
     sections: &[String],
 ) -> Row {
-    let km = totals.length / 1000.0;
+    // Per kilometre of wire: the totals are over the wires' length.
+    let km = totals.wire_length / 1000.0;
     let seq = c
         .abc()
         .and_then(|abc| totals.sequence(c.frequency_hz, &abc));
@@ -68,7 +72,8 @@ fn sequence_row(
         from: from.to_owned(),
         to: to.to_owned(),
         sections: sections.to_vec(),
-        length_km: km,
+        length_km: totals.length / 1000.0,
+        wire_km: km,
         positive: seq.map(|s| {
             [
                 per(s.z1_transposed.re),
@@ -121,7 +126,7 @@ pub fn rows(p: &LineParameters, sections: &[String]) -> Vec<Row> {
         if !sections.is_empty() {
             continue;
         }
-        let km = k.length / 1000.0;
+        let km = k.wire_length / 1000.0;
         let z0m = k.z0m();
         out.push(Row {
             kind: "coupling",
@@ -129,7 +134,8 @@ pub fn rows(p: &LineParameters, sections: &[String]) -> Vec<Row> {
             from: String::new(),
             to: String::new(),
             sections: Vec::new(),
-            length_km: km,
+            length_km: k.length / 1000.0,
+            wire_km: km,
             positive: None,
             zero: Some([z0m.re / km, z0m.im / km, 0.0]),
             unbalance: None,
@@ -142,14 +148,14 @@ pub fn rows(p: &LineParameters, sections: &[String]) -> Vec<Row> {
 /// comment lines (`# …`).
 pub fn csv(p: &LineParameters, sections: &[String]) -> String {
     let mut out = String::from(
-        "kind,circuit,from,to,sections,length_km,r1_ohm_per_km,x1_ohm_per_km,b1_us_per_km,r0_ohm_per_km,x0_ohm_per_km,b0_us_per_km,r1_ohm,x1_ohm,b1_us,r0_ohm,x0_ohm,b0_us,unbalance\n",
+        "kind,circuit,from,to,sections,length_km,r1_ohm_per_km,x1_ohm_per_km,b1_us_per_km,r0_ohm_per_km,x0_ohm_per_km,b0_us_per_km,r1_ohm,x1_ohm,b1_us,r0_ohm,x0_ohm,b0_us,unbalance,wire_length_km\n",
     );
     let f = |x: Option<f64>| x.map(|v| format!("{v:.6}")).unwrap_or_default();
     for r in rows(p, sections) {
         let t = r.totals();
         let _ = writeln!(
             out,
-            "{},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.6}",
             r.kind,
             csv_field(&r.circuit),
             csv_field(&r.from),
@@ -169,6 +175,7 @@ pub fn csv(p: &LineParameters, sections: &[String]) -> String {
             f(t.map(|x| x.0[3])),
             f(t.map(|x| x.1[1])),
             f(r.unbalance),
+            r.wire_km,
         );
     }
     for n in &p.notes {

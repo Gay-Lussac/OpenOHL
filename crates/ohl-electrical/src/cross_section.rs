@@ -110,6 +110,13 @@ pub struct CrossWire {
     pub height: f64,
     /// Elevation, m.
     pub elevation: f64,
+    /// The wire's length over the span, m (2026-11-11): along the wire as
+    /// solved between its two clamps (its sag and its slope in), plus the
+    /// stretch along the axis between each clamp and its structure (a
+    /// strain string's, bridged by a jumper: at its horizontal length).
+    /// Never less than the span's horizontal length
+    /// ([`Station::span_length`]); the same at every station of the span.
+    pub length: f64,
     /// Its bundle.
     pub bundle: BundleData,
     /// Its wire type's data.
@@ -169,6 +176,29 @@ pub struct PhaseData {
     pub frequency_hz: Option<f64>,
     /// AC phase angle, degrees (DC: 0).
     pub angle_deg: f64,
+}
+
+/// A wire's length over its span ([`CrossWire::length`]): the length of
+/// its polyline `points` (the solver's pieces: below the curve's by less
+/// than a millionth, see [`ohl_line::solve::polyline_error`]) and, at
+/// each end, the stretch along the axis from the structure to the wire's
+/// end there (`samples`: each point's place along the axis first; the
+/// axis `span` long in plan).
+fn wire_length(points: &[[f64; 3]], samples: &[(f64, f64, f64, f64)], span: f64) -> f64 {
+    let along: f64 = points
+        .windows(2)
+        .map(|w| {
+            let d = [w[1][0] - w[0][0], w[1][1] - w[0][1], w[1][2] - w[0][2]];
+            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+        })
+        .sum();
+    let (first, last) = match (samples.first(), samples.last()) {
+        (Some(a), Some(b)) => (a.0.min(b.0), a.0.max(b.0)),
+        _ => (0.0, span),
+    };
+    // Signed: a suspension clamp swung past its structure's axis gives a
+    // little back to the next span.
+    (along + first + (span - last)).max(span)
 }
 
 /// A wire of another line in the corridor (extension point; none today).
@@ -536,6 +566,7 @@ fn cross_section_of(
             offset,
             height,
             elevation,
+            length: wire_length(&sp.points, &samples, axis.length),
             bundle: BundleData {
                 count: section.bundle.max(1),
                 spacing: section.bundle_spacing,

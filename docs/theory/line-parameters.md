@@ -167,13 +167,64 @@ the earth wires reduced out (zero voltage) the same way, then
 ## Along the line
 
 Each span's matrices are reduced to its phases, keyed by **circuit,
-system and phase** (not by the wires' places), and summed times the span's
-**horizontal length**: series impedances add (the spans in series) and so
-do the capacitances (the spans in parallel at one voltage). A transposition
-along the line is so in the totals as built. **Simplification:** the
-wires' length is taken as the span's horizontal length (the sag adds about
-\\( 8f^2/(3L) \\), 0.1–0.3 %); each span's wires parallel at their mean
-height.
+system and phase** (not by the wires' places), and summed times the
+**length of the circuit's wires in the span**: series impedances add (the
+spans in series) and so do the capacitances (the spans in parallel at one
+voltage). A transposition along the line is so in the totals as built.
+
+**The wires' length** (since 2026-11-11). A wire's length over a span is
+measured along the wire as solved in the weather case, between its two
+clamps — its sag and its slope are in it — plus, at a strain structure,
+the stretch along the axis between the clamp and the structure (the
+insulator string's, which a jumper bridges) at its horizontal length. Per
+span the circuit takes the mean of its phases' lengths (a coupling: of
+both circuits' phases). So for a span of horizontal length \\( L \\),
+sloping at \\( \beta \\) (its chord \\( c = L/\cos\beta \\)), with the sag
+\\( f \\) measured vertically at mid-span (\\( f_\perp = f\cos\beta \\)
+square to the chord),
+
+\\[ \ell \approx \frac{L}{\cos\beta}\left(1 + \frac{8 f_\perp^2}{3 c^2}\right), \qquad
+    Z_{\text{total}} = \sum_{\text{spans}} Z'\,\ell , \qquad
+    C_{\text{total}} = \sum_{\text{spans}} C'\,\ell \\]
+
+(the length of the parabola \\( y = x\tan\beta - 4 f x (L - x)/L^2 \\) to
+the second order in \\( f/L \\): \\( \int_0^L \sqrt{1 + y'^2}\,dx \approx
+c + 8 f^2\cos^3\beta/(3L) \\); the program sums the solved wire's pieces,
+it does not use this formula). Before, the horizontal length \\( L \\) was
+taken: **low** by the sag's share \\( 8f_\perp^2/(3c^2) \\) — 0.24 % for a
+sag of 12 m on a level 400 m — and by the slope's \\( 1/\cos\beta - 1 \\),
+which the page did not say:
+
+| slope \\( \beta \\) | 5° | 10° | 20° | 30° |
+|---|---|---|---|---|
+| \\( 1/\cos\beta - 1 \\) | 0.38 % | 1.54 % | 6.42 % | 15.47 % |
+
+Worked example (computed): a span of \\( L = 400 \\) m rising
+\\( 400\tan 10° = 70.53 \\) m, sag 12 m. Chord \\( c = 400/\cos 10° =
+406.17 \\) m; \\( f_\perp = 12\cos 10° = 11.82 \\) m; wire \\( \ell =
+406.17\,(1 + 8\cdot11.82^2/(3\cdot406.17^2)) = 406.17 \cdot 1.00226 =
+407.09 \\) m (the parabola's length integrated numerically: 407.086 m).
+The totals are 407.09/400 = 1.0177 times those over the horizontal
+length: 1.77 % more impedance and capacitance, of which 1.54 % is the
+slope's.
+
+The values **per kilometre** are per kilometre of wire: a span's are its
+matrices per unit length as before, a circuit's the totals over its
+wires' length. Every result says that its totals are over the wires'
+length; the table and the CSV give both lengths.
+Tested (`totals_over_the_wires_length`): each wire's length against the
+parabola's on the example's spans (within \\( 2\cdot10^{-4} \\)); the
+example with every span sloping at 10°: the totals 1.0154 times the level
+line's, the values per kilometre unchanged within the geometry's change.
+
+**Simplifications:** each span's wires parallel at their mean height (the
+matrices per unit length are those of the horizontal arrangement: on a
+slope the wires are \\( \cos\beta \\) nearer each other and the ground
+measured square to them — not taken); a jumper is counted at the
+horizontal length of the string it bridges, though it is longer (**low**
+by the difference, a metre or two per strain structure); the solved
+wire's pieces are straight (shorter than the curve by less than
+\\( 10^{-6} \\)).
 
 A **circuit** is the phases of one system with one circuit name (or none);
 its **stretches** are consecutive spans with the same sections (between

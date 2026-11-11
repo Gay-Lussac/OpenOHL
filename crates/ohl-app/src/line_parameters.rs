@@ -15,6 +15,13 @@
 use eframe::egui;
 use ohl_electrical::LineParameters;
 use ohl_electrical::report::{self, Row};
+
+/// What the wires' length is and does, on the column's header.
+pub const WIRE_LENGTH_HELP: &str = "The length of the circuit's wires: along each wire as solved \
+     in the weather case (its sag and its slope in), the mean of the phases. The totals (Z1, Z0, \
+     B) are the values per kilometre times this length — more than over the horizontal length \
+     by the sag (0.1–0.3 %) and the slope (1.5 % on 10°, 6.4 % on 20°). The values per \
+     kilometre are per kilometre of wire and do not change with it.";
 use ohl_line::electrical::{
     DEFAULT_SOIL_RESISTIVITY_OHM_M, EarthReturn, ElectricalSettings, MeanHeight,
 };
@@ -294,6 +301,7 @@ impl LineParametersWindow {
                         }),
                         Cell::text("circuit"),
                         num(Some(r.length_km), 3),
+                        num(Some(r.wire_km), 3),
                         num(r.positive.map(|x| x[0]), 4),
                         num(r.positive.map(|x| x[1]), 4),
                         num(r.positive.map(|x| x[2]), 3),
@@ -307,6 +315,7 @@ impl LineParametersWindow {
                         Cell::text(&r.circuit),
                         Cell::text(format!("{}–{}: {}", r.from, r.to, r.sections.join(", "))),
                         num(Some(r.length_km), 3),
+                        num(Some(r.wire_km), 3),
                         num(r.positive.map(|x| x[0]), 4),
                         num(r.positive.map(|x| x[1]), 4),
                         num(r.positive.map(|x| x[2]), 3),
@@ -322,6 +331,7 @@ impl LineParametersWindow {
                             Cell::text(&r.circuit),
                             Cell::text("zero sequence mutual"),
                             num(Some(r.length_km), 3),
+                            num(Some(r.wire_km), 3),
                             num(None, 4),
                             num(None, 4),
                             num(None, 3),
@@ -330,8 +340,8 @@ impl LineParametersWindow {
                             num(None, 3),
                             num(None, 3),
                             Cell::sorted(
-                                format!("{:.3} + j{:.3}", z[0] * r.length_km, z[1] * r.length_km),
-                                (z[0] * r.length_km).hypot(z[1] * r.length_km),
+                                format!("{:.3} + j{:.3}", z[0] * r.wire_km, z[1] * r.wire_km),
+                                (z[0] * r.wire_km).hypot(z[1] * r.wire_km),
                             ),
                         ]
                     }
@@ -345,7 +355,8 @@ impl LineParametersWindow {
             vec![
                 Col::text("Circuit"),
                 Col::text("Stretch").tip("The circuit, a stretch of it, or a mutual coupling"),
-                Col::num("Length [km]"),
+                Col::num("Length [km]").tip("Horizontal, between the structures"),
+                Col::num("Wire [km]").tip(WIRE_LENGTH_HELP),
                 Col::num("R1 [Ω/km]"),
                 Col::num("X1 [Ω/km]"),
                 Col::num("B1 [µS/km]"),

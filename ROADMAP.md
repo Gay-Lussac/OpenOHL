@@ -720,6 +720,12 @@ From a review on 2026-11-10.
    by the sag (0.1–0.3 %, said in the theory) and by the slope, which the
    theory does not say (1.5 % at 10°, 6.4 % at 20°). Take the wire's
    length, or say it.
+   *Status (2026-11-11), built, in active development (not approved
+   yet):* the totals over the wires' length as solved (sag and slope
+   in), said in the results, both lengths in the table and the CSV;
+   the values per kilometre are per kilometre of wire. Open: the
+   jumpers' own length at strain structures; the wires' spacing square
+   to a sloping span.
 2. **A current per wire.** One balanced current per circuit is given.
    Wanted: magnitude and angle per phase (unbalance — far from the line a
    net current governs the magnetic field, so balanced-only input is not

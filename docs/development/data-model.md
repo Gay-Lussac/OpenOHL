@@ -695,8 +695,17 @@ per span `SpanMatrices` (one per AC frequency: `phases` as `PhaseKey`
 earth wires reduced out); per circuit (`CircuitKey` {circuit name,
 system}) `CircuitParameters` {`frequency_hz`, `phases`, `angles`,
 `stretches` (consecutive spans with the same sections: `sections`,
-`from`, `to`, `spans`, `totals`), `total`}; `Totals` {`length` m, `z` Ω,
-`c` F} (`per_km`, `sequence`); `Sequence` (z1, z2, z0 and c1, c0 as built;
+`from`, `to`, `spans`, `totals`), `total`}; `Totals` {`length` m
+(horizontal), `wire_length` m, `z` Ω, `c` F} (`per_km`: per kilometre of
+wire; `sequence`) — since 2026-11-11 the sums are over the wires' own
+length: `cross_section::CrossWire::length` (along the solved wire
+between its clamps, plus the stretch along the axis between a clamp and
+its structure; never below `Station::span_length`), per span the mean of
+the circuit's phases (`parameters::wires_length`; a `Coupling`: of both
+circuits', its `wire_length` beside `length`); `report::Row::wire_km`
+beside `length_km` (the totals: per km × `wire_km`), the parameters CSV
+ends with a new column `wire_length_km`; every result carries
+`parameters::WIRE_LENGTH_NOTE`; `Sequence` (z1, z2, z0 and c1, c0 as built;
 the ideally transposed z1, z0, c1, c0, b1, b0; `unbalance`); `Coupling`
 between circuits of one frequency sharing spans (`length`, `z`, `c`,
 `z0m`). Methods: [Line parameters](../theory/line-parameters.md).

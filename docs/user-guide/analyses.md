@@ -886,7 +886,15 @@ command, kept in the project). Choose the weather case in *2 Scope* (the wires a
 solved in it; its temperature is the conductors' for the resistances; it
 was in the footer until 2026-10-27) and **Run**; the results open in the
 Results tab. The table gives per circuit the positive and zero sequence
-R, X (Ω/km) and B (µS/km) of the ideally transposed line and the totals;
+R, X (Ω/km) and B (µS/km) of the ideally transposed line and the totals.
+The **totals are over the wires' length** (2026-11-11; column **Wire
+[km]** beside the horizontal **Length [km]**): along each wire as solved
+in the weather case, its sag and slope in — more than over the
+horizontal length by the sag (0.1–0.3 %) and by the slope (1.5 % on 10°,
+6.4 % on 20°), which the totals lacked before. The values per kilometre
+are per kilometre of wire and do not change with it; a note says so.
+The CSV has both lengths
+(`length_km`, and `wire_length_km` as its last column);
 the + button shows the circuit's stretches (consecutive spans with the same
 sections). Hover a circuit to see how much its sequences couple as built
 (a line not transposed). The coupling rows give the zero sequence mutual

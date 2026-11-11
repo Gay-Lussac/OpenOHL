@@ -637,6 +637,30 @@ fn the_model_is_folded_and_the_setups_say_what_they_need() {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     h.run_steps(4);
+    // The totals are over the wires' length (2026-11-11): its column
+    // beside the horizontal length, saying what it does; never shorter.
+    assert!(h.query_all_by_label_contains("Wire [km]").next().is_some());
+    for said in ["sag", "slope", "per kilometre of wire"] {
+        assert!(
+            crate::line_parameters::WIRE_LENGTH_HELP.contains(said),
+            "{said}"
+        );
+    }
+    {
+        let r = h.state_mut().ready().unwrap();
+        let p = r
+            .line_parameters
+            .job
+            .result
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap();
+        let rows = ohl_electrical::report::rows(&p.parameters, &[]);
+        assert!(!rows.is_empty());
+        assert!(rows.iter().all(|x| x.wire_km >= x.length_km));
+        assert!(rows.iter().any(|x| x.wire_km > x.length_km));
+    }
     h.get_all_by_label("Example 1").next().unwrap().click();
     h.run_steps(2);
     let r = h.state_mut().ready().unwrap();

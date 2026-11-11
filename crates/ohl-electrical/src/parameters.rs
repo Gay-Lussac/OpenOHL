@@ -9,9 +9,11 @@
 //! the coupling between circuits sharing spans.
 //!
 //! Along the line the phase matrices are summed span by span, each times
-//! its span's horizontal length, indexed by the phases (not by the
-//! wires' places): a transposition along the line is in the totals as
-//! built. Series impedances add (the spans are in series), and so do the
+//! the length of the circuit's wires in the span (2026-11-11: the wires'
+//! own length, their sag and slope in — [`CrossWire::length`], the mean
+//! of the circuit's phases; before, the span's horizontal length, low by
+//! both), indexed by the phases (not by the wires' places): a
+//! transposition along the line is in the totals as built. Series impedances add (the spans are in series), and so do the
 //! capacitances (in parallel along the line).
 
 use std::collections::BTreeMap;
@@ -236,12 +238,38 @@ pub fn span_matrices(
     out
 }
 
+/// What every result says of its totals (2026-11-11).
+pub const WIRE_LENGTH_NOTE: &str = "totals over the wires' length as solved (their sag and \
+     slope in; each row gives it beside the horizontal length), not over the horizontal \
+     length; the values per kilometre are per kilometre of wire";
+
+/// The length the sums of a span are taken over, m: the mean of the
+/// lengths of the wires of `sections` in the cross-section `cs`
+/// ([`CrossWire::length`]; none found: the span's horizontal length).
+fn wires_length(cs: &CrossSection, sections: &[String]) -> f64 {
+    let lengths: Vec<f64> = cs
+        .wires
+        .iter()
+        .filter(|w| sections.contains(&w.section))
+        .map(|w| w.length)
+        .collect();
+    if lengths.is_empty() {
+        cs.station.span_length
+    } else {
+        lengths.iter().sum::<f64>() / lengths.len() as f64
+    }
+}
+
 /// Sums of a circuit's matrices over a length of line.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Totals {
     /// Horizontal length of line, m.
     pub length: f64,
-    /// Series impedance, Ω (the phase matrix times the length, summed).
+    /// The wires' length over it, m ([`CrossWire::length`], per span the
+    /// mean of the circuit's phases): what the sums are taken over.
+    pub wire_length: f64,
+    /// Series impedance, Ω (the phase matrix times the wires' length,
+    /// summed).
     pub z: CMatrix,
     /// Capacitance, F.
     pub c: DMatrix<f64>,
@@ -251,6 +279,7 @@ impl Totals {
     fn zero(n: usize) -> Self {
         Self {
             length: 0.0,
+            wire_length: 0.0,
             z: CMatrix::zeros(n, n),
             c: DMatrix::zeros(n, n),
         }
@@ -258,14 +287,16 @@ impl Totals {
 
     fn add(&mut self, other: &Totals) {
         self.length += other.length;
+        self.wire_length += other.wire_length;
         self.z += &other.z;
         self.c += &other.c;
     }
 
-    /// Per kilometre: (Ω/km, F/km).
+    /// Per kilometre of wire: (Ω/km, F/km) — the totals over the wires'
+    /// length (a single span: its matrices per unit length, unchanged).
     pub fn per_km(&self) -> (CMatrix, DMatrix<f64>) {
-        let k = if self.length > 0.0 {
-            1000.0 / self.length
+        let k = if self.wire_length > 0.0 {
+            1000.0 / self.wire_length
         } else {
             0.0
         };
@@ -405,8 +436,11 @@ pub struct Coupling {
     pub a: CircuitKey,
     /// The second circuit.
     pub b: CircuitKey,
-    /// The length they share, m.
+    /// The length they share, m (horizontal).
     pub length: f64,
+    /// The wires' length over it, m (per span the mean of both circuits'
+    /// phases): what the sums are taken over.
+    pub wire_length: f64,
     /// The mutual phase matrix (rows a's phases, columns b's), Ω.
     pub z: CMatrix,
     /// The mutual capacitances (Maxwell's, negative), F.
@@ -515,14 +549,17 @@ pub fn line_parameters(
                 incomplete += 1;
                 continue;
             };
-            let l = cs.station.span_length;
+            let sections: Vec<String> = at.iter().map(|&i| m.sections[i].clone()).collect();
+            // Over the wires' own length (2026-11-11): the mean of the
+            // circuit's phases in the span.
+            let l = wires_length(cs, &sections);
             let piece = Totals {
-                length: l,
+                length: cs.station.span_length,
+                wire_length: l,
                 z: CMatrix::from_fn(n, n, |i, j| m.z[(at[i], at[j])] * l),
                 c: DMatrix::from_fn(n, n, |i, j| m.c[(at[i], at[j])] * l),
             };
             total.add(&piece);
-            let sections: Vec<String> = at.iter().map(|&i| m.sections[i].clone()).collect();
             match stretches.last_mut() {
                 Some(s) if s.sections == sections && s.to == span.from => {
                     s.totals.add(&piece);
@@ -573,7 +610,7 @@ pub fn line_parameters(
             let (na, nb) = (a.phases.len(), b.phases.len());
             let mut z = CMatrix::zeros(na, nb);
             let mut c = DMatrix::zeros(na, nb);
-            let mut length = 0.0;
+            let (mut length, mut wire_length) = (0.0, 0.0);
             for (_, cs, ms) in &with {
                 let Some(m) = ms.iter().find(|m| m.frequency_hz == a.frequency_hz) else {
                     continue;
@@ -593,8 +630,15 @@ pub fn line_parameters(
                 let (Some(pa), Some(pb)) = (place(&a.key, na), place(&b.key, nb)) else {
                     continue;
                 };
-                let l = cs.station.span_length;
-                length += l;
+                // Over both circuits' wires' length in the span (their mean).
+                let both: Vec<String> = pa
+                    .iter()
+                    .chain(&pb)
+                    .map(|&i| m.sections[i].clone())
+                    .collect();
+                let l = wires_length(cs, &both);
+                length += cs.station.span_length;
+                wire_length += l;
                 for i in 0..na {
                     for j in 0..nb {
                         z[(i, j)] += m.z[(pa[i], pb[j])] * l;
@@ -607,11 +651,15 @@ pub fn line_parameters(
                     a: a.key.clone(),
                     b: b.key.clone(),
                     length,
+                    wire_length,
                     z,
                     c,
                 });
             }
         }
+    }
+    if !out_circuits.is_empty() {
+        notes.push(WIRE_LENGTH_NOTE.to_owned());
     }
     let mut seen = std::collections::BTreeSet::new();
     notes.retain(|n| seen.insert(n.clone()));
@@ -641,6 +689,7 @@ mod tests {
             a: k("A"),
             b: k("B"),
             length: 1.0,
+            wire_length: 1.0,
             z: CMatrix::from_element(3, 3, m),
             c: DMatrix::zeros(3, 3),
         };

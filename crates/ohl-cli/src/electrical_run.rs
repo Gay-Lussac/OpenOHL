@@ -712,11 +712,12 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
     }
     let rows = ohl_electrical::report::rows(&p, &a.section);
     println!(
-        "{:<9} {:<18} {:<14} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
+        "{:<9} {:<18} {:<14} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
         "",
         "circuit",
         "from–to",
         "km",
+        "wire km",
         "R1 Ω/km",
         "X1 Ω/km",
         "B1 µS/km",
@@ -735,11 +736,12 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
             format!("{}–{}", r.from, r.to)
         };
         println!(
-            "{:<9} {:<18} {:<14} {:>8.3} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
+            "{:<9} {:<18} {:<14} {:>8.3} {:>8.3} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
             r.kind,
             r.circuit,
             span,
             r.length_km,
+            r.wire_km,
             num(r.positive.map(|x| x[0]), 4),
             num(r.positive.map(|x| x[1]), 4),
             num(r.positive.map(|x| x[2]), 3),

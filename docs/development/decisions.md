@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Line parameter totals over the wires' length (owner, 2026-11-11)**
+
+The owner approved roadmap O23 item 1 ("go ahead"). A span's totals were
+its values per kilometre times its horizontal length: low by the sag
+(0.1–0.3 %, said) and by the slope (1.5 % at 10°, 6.4 % at 20°, not
+said).
+
+- **The wire's length.** Along the wire as solved in the weather case,
+  between its clamps (the sum of the solver's pieces), plus the stretch
+  along the axis between a clamp and its structure at its horizontal
+  length — the strain string a jumper bridges. Never less than the
+  horizontal length, so no total gets smaller than before.
+- **Per span and circuit** the mean of its phases' lengths (one length
+  for the whole matrix, so that a span's values per kilometre are its
+  matrices per unit length exactly, as before); a coupling takes the
+  mean of both circuits' phases.
+- **Per kilometre means per kilometre of wire.** A span's values do not
+  change; a circuit's over several spans are weighted by the wires'
+  lengths instead of the horizontal ones (a small change
+  on a line of unequal slopes).
+- **Said in the results**: a note that the totals are over the wires'
+  length; both lengths in the table (Wire [km]) and
+  in the CSV (a new last column `wire_length_km`; the columns before it
+  unchanged).
+- **Left as simplifications, said in the theory**: the matrices per unit
+  length are those of the horizontal arrangement (on a slope the wires
+  are closer measured square to them); a jumper counted at the
+  horizontal length of the string it bridges (low by a metre or two per
+  strain structure).
+- **The theory** gives the formula with the sag measured square to the
+  chord, the table of the slope's share and a worked example (400 m at
+  10° with 12 m of sag: 1.77 % more), each computed.
+- The magnetic and electric fields do not use these totals.
+
 **A current per wire for the magnetic field; balanced input says what it leaves out (owner, 2026-11-11)**
 
 The owner approved roadmap O23 item 2 ("go ahead"). One balanced current
