@@ -438,6 +438,69 @@ fn internal_clearances_refuses_a_rule_without_a_distance() {
     assert!(h.query_by_label_contains("Before Run").is_none());
 }
 
+/// Internal clearances: a rule's insulation condition (owner,
+/// 2026-11-11) in its editor — any (the default), low only, high only —
+/// with its effect on hover; chosen, the rule keeps it, its row says it
+/// and the rule file writes it (version 2).
+#[test]
+fn an_internal_rule_takes_an_insulation_condition() {
+    use crate::check_ui::RuleRow;
+    use crate::internal_clearances::{
+        INSULATION_ANY, INSULATION_HELP, INSULATION_HIGH, INSULATION_LOW,
+    };
+    use ohl_line::electrical::InsulationLevel;
+    let mut h = window();
+    let dir = std::env::temp_dir().join(format!(
+        "ohl-app-{}-internal-insulation",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.internal_clearances.show(&r.model);
+        // Kept in a scratch folder, not next to the example (a rule file
+        // there would be found by the other windows).
+        r.internal_clearances.file = Some(dir.join("internal-rules.ohlr"));
+        r.internal_clearances.rules = vec![ohl_clearance::internal::InternalRule {
+            distance: ohl_clearance::rules::Requirement::Fixed(1.5),
+            ..ohl_clearance::internal::InternalRule::blank("Phase to steel")
+        }];
+    }
+    h.run();
+    h.run();
+    for said in [
+        "the default",
+        "NOT CHECKED",
+        "not on the safe side",
+        "No effect on the time",
+    ] {
+        assert!(INSULATION_HELP.contains(said), "{said}");
+    }
+    // The rule's row opens its editor.
+    if h.query_by_label(INSULATION_ANY).is_none() {
+        h.get_all_by_label("Phase to steel").next().unwrap().click();
+        h.run();
+    }
+    h.get_by_label(INSULATION_ANY);
+    h.get_by_label(INSULATION_HIGH);
+    let rule = |h: &mut egui_kittest::Harness<'_, crate::app::App>| {
+        h.state_mut().ready().unwrap().internal_clearances.rules[0].clone()
+    };
+    assert_eq!(rule(&mut h).insulation, None);
+    h.get_by_label(INSULATION_LOW).click_accesskit();
+    h.run();
+    let low = rule(&mut h);
+    assert_eq!(low.insulation, Some(InsulationLevel::Low));
+    assert!(low.summary(&[]).wires.ends_with("insulation low only"));
+    assert!(low.to_toml().contains("insulation = \"low\"\n"));
+    h.get_by_label(INSULATION_ANY).click_accesskit();
+    h.run();
+    let any = rule(&mut h);
+    assert_eq!(any.insulation, None);
+    assert!(!any.to_toml().contains("insulation"));
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// What the Stop test's window keeps: its job, the run's token, whether
 /// Results is shown.
 type StopState = (

@@ -962,6 +962,9 @@ impl InternalClearancesWindow {
                             "None ticked: every voltage",
                         );
                         ui.end_row();
+                        ui.label("Insulation").on_hover_text(INSULATION_HELP);
+                        changed |= insulation_ui(ui, r);
+                        ui.end_row();
                         ui.label("Parts");
                         ui.horizontal_wrapped(|ui| {
                             changed |= ui
@@ -1118,7 +1121,7 @@ impl InternalClearancesWindow {
                 r.distance,
                 r.required,
                 r.distance - r.required,
-                report.rules[r.rule].name,
+                report.rules[r.rule].label(),
                 r.case
             ),
             Some(r) => format!(
@@ -1210,7 +1213,7 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
                     } else {
                         against
                     }),
-                    Cell::text(&report.rules[r.rule].name),
+                    Cell::text(report.rules[r.rule].label()),
                     Cell::text(&r.case),
                     Cell::num(Some(r.distance), 2).bad(!r.pass()),
                     Cell::num(Some(r.required), 2),
@@ -1225,6 +1228,41 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
             )
         })
         .collect()
+}
+
+/// The three choices of a rule's insulation condition.
+pub const INSULATION_ANY: &str = "any insulation";
+/// Only the systems of low insulation.
+pub const INSULATION_LOW: &str = "low insulation only";
+/// Only the systems of high insulation.
+pub const INSULATION_HIGH: &str = "high insulation only";
+
+/// What the condition does to the results, on hover.
+pub const INSULATION_HELP: &str = "Which conductors the rule applies to, by their system's \
+     insulation level (Line › Sections › Electrical systems, column insulation; a system that \
+     gives none is high). Any (the default): every conductor, as before. Low / high only: the \
+     rule checks the conductors, jumpers, string ends and shapes of the systems of that \
+     level and no others — give a second rule for the other level (e.g. a code's table with \
+     a low and a high row per voltage).\n\nEffect: a conductor is measured against the \
+     distance of the rule of its own level; a circuit that only rules of the other level \
+     would take is NOT CHECKED, and the results say so (not on the safe side). No effect on \
+     the time.";
+
+/// The rule's insulation condition: any, low only or high only.
+fn insulation_ui(ui: &mut egui::Ui, r: &mut InternalRule) -> bool {
+    use ohl_line::electrical::InsulationLevel;
+    let before = r.insulation;
+    ui.horizontal(|ui| {
+        for (value, label) in [
+            (None, INSULATION_ANY),
+            (Some(InsulationLevel::Low), INSULATION_LOW),
+            (Some(InsulationLevel::High), INSULATION_HIGH),
+        ] {
+            ui.radio_value(&mut r.insulation, value, label)
+                .on_hover_text(INSULATION_HELP);
+        }
+    });
+    r.insulation != before
 }
 
 /// An internal clearance rule as a row of the shared rule table.

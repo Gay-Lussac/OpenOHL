@@ -428,6 +428,7 @@ other checks ignore them. A preset declares the check with `checks =
 name = "Body (invented 1.5 m)"
 cases = ["high wind"]          # optional; none: every case
 voltages = [220.0]             # optional; none: every electrified part
+insulation = "high"            # optional: only the systems of this insulation level (low or high)
 distance = "1.5 m"             # or { by_voltage = [[up to kV, "m"], …] } or { base, per_kv, above_kv }
 conductors = true              # the conductors near the structure (default true)
 jumpers = true                 # the jumpers at it (default true)
@@ -442,6 +443,7 @@ distance_wind = "1.2 m"        # optional: in the cases with wind (invented)
 | `name` | for the reports |
 | `cases` | weather case names (`*` `?` wildcards); none: every case |
 | `voltages` | the nominal voltages of the parts' sections, kV; none: every electrified part (earth wires are never checked) |
+| `insulation` | optional (2026-11-11; rule file version 2, written only when a rule has it): `"low"` or `"high"` — the rule takes only the parts of the systems of that **insulation level** (Line › Electrical systems, column *insulation*; a system that gives none is **high**). Without the key the rule takes every part, as before. A table with a low and a high row per voltage is two rules, one for each level (below). Every rule that takes a part gives its own row, as before — there is no precedence among rules. A circuit that only rules of the other level would take is **not checked**, and the results say so, once per circuit: "NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for <circuit> (insulation high)". The results name the condition with the rule: `Phase to steel (insulation low)` |
 | `distance` | the distance to keep, required: a distance, a table by voltage or a formula, as the clearance rules' `vertical` / `radial`; a part whose voltage the table does not reach is not checked (a note says so) |
 | `conductors` | each span's conductor from its clamp at the structure out to `reach` (in plan along the solved wire), as solved in the case (the strings' swing included); a bundle subconductor by subconductor |
 | `jumpers` | each jumper with an end on the structure, as solved |
@@ -449,6 +451,25 @@ distance_wind = "1.2 m"        # optional: in the cases with wind (invented)
 | `shapes` | the volumes on the strings (2026-10-25): each string's electrified shapes as parts, and every part measured against the grounded shapes too; `false`: neither (the first part's check) |
 | `reach` | above 0 m; default 20 m |
 | `distance_wind` | optional (2026-10-25, the owner's rule): the distance to keep in the cases **with wind** (a wind pressure above 0), in the forms of `distance`; none: `distance` in every case |
+
+A voltage with a low and a high row, with and without wind (the distances
+INVENTED):
+
+```toml
+[[internal_rule]]
+name = "Phase to steel"
+voltages = [220.0]
+insulation = "low"
+distance = "1.6 m"
+distance_wind = "1.0 m"
+
+[[internal_rule]]
+name = "Phase to steel"
+voltages = [220.0]
+insulation = "high"
+distance = "2.0 m"
+distance_wind = "1.3 m"
+```
 
 What is measured: only **structures at detail level 2 or 3** (a body:
 members, a pole); a level-1 structure is listed as *not checked*. Each

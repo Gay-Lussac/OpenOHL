@@ -726,7 +726,7 @@ pub(super) const SYSTEMS: &[Column] = &[
         "insulation",
         80.0,
         Yes,
-        "insulation level of the system: high or low; empty: high (the default, shown grey). The line's own value (not a plugin's column). No check of the program reads it today; a design-code plugin may, e.g. a table with a low and a high row per voltage. No values of a standard are attached to it",
+        "insulation level of the system: high or low; empty: high (the default, shown grey). The line's own value (not a plugin's column). Read by the internal clearances (Checks › Internal clearances): a rule with the condition insulation low or high applies only to the conductors of the systems of that level, so a system's level decides which rule's distance its conductors are measured against; rules without the condition take every conductor. No other check reads it, and no values of a standard are attached to it",
     ),
     ("Hz", 60.0, Yes, "frequency (AC; empty: none)"),
     (

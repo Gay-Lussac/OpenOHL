@@ -82,6 +82,45 @@ fn ohl_internal_checks_the_structures_with_a_body() {
             assert!(distance(r) > 0.0 && r.contains(",centre line,"), "{r}");
         }
     }
+    // The insulation condition (2026-11-11). The example's system gives no
+    // level: it is high. A rule for high insulation checks it, its rows
+    // naming the condition; a rule for low insulation alone takes none of
+    // its parts, and the circuit is said not checked.
+    let conditioned = |level: &str| {
+        let file = dir.join(format!("internal-{level}.ohlr"));
+        std::fs::write(
+            &file,
+            format!(
+                "format = \"ohl-clearance-rules\"\nversion = 2\nname = \"invented\"\n\
+                 [[internal_rule]]\nname = \"invented 0.5 m\"\ncases = [\"everyday\"]\n\
+                 insulation = \"{level}\"\ndistance = \"0.5 m\"\n"
+            ),
+        )
+        .unwrap();
+        let out = run(&file);
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            std::fs::read_to_string(&csv).unwrap(),
+        )
+    };
+    let (said, high) = conditioned("high");
+    assert!(!said.contains("NOT CHECKED"), "{said}");
+    let high_rows: Vec<&str> = high.lines().skip(1).collect();
+    assert_eq!(high_rows.len(), rows.len());
+    assert!(
+        high_rows
+            .iter()
+            .all(|r| r.starts_with("invented 0.5 m (insulation high),")),
+        "{high}"
+    );
+    let (said, low) = conditioned("low");
+    assert_eq!(low.lines().count(), 1, "{low}");
+    assert!(
+        said.contains(
+            "NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for Example 1 (insulation high)"
+        ),
+        "{said}"
+    );
     // A rule file without internal rules: refused (status 2).
     let out = run(&example("clearance-rules.ohlr"));
     assert_eq!(out.status.code(), Some(2));

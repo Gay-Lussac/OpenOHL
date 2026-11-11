@@ -636,7 +636,7 @@ whichever section passes through `from`.
 | `System.kind` | `ac` / `dc` | — | default `ac` | — |
 | `System.voltage_kv` | f64 | kV | AC: between phases (rms); DC: pole to earth | — |
 | `System.highest_voltage_kv` | f64? | kV | highest operating voltage (as `voltage_kv`: AC between phases, DC pole to earth); ≥ the nominal (validated); none: not given — never filled in by the program. Line file **15** (2026-11-11), written only when a system has it or an insulation level (`Line::to_json`, else 14 or older, `BEFORE_SYSTEM_VOLTAGES_VERSION`); OHL XML attribute `highest_voltage_kv` of `<system>`; `Line::system_highest_voltage`. Read by the electric field and the surface gradient: `cross_section::PhaseData::highest_kv`, `electric::circuit_voltage` (given for the run, else this, else the nominal: `VoltageUsed` {`kv`, `source`: `VoltageSource::Given` / `Highest` / `Nominal`}), `electric::voltage_notes` ("voltages used, between phases: …" always; "NOT ON THE SAFE SIDE: nominal voltage used for …" for the circuits at their nominal). Systems table column **max kV**; the Electric field window's grid says the source (`ElectricFieldWindow::voltage_used`) | — |
-| `System.insulation_level` | `InsulationLevel`? | — | `low` / `high`; none: high (`System::insulation`). Line file **15** (the same raise); OHL XML attribute `insulation_level`. **Read by no check of the core**; not in the plugin interface's records (`system-info`, `wire-group`: unchanged, interface 0.3) — a plugin sees it and `highest_voltage_kv` only in the line file JSON it is handed (`export-model`). A plugin's own column of the same name is `System.fields["<plugin>.insulation_level"]`: another key (the table shows it as a plugin column after the table's own). Systems table column **insulation** | — |
+| `System.insulation_level` | `InsulationLevel`? | — | `low` / `high`; none: high (`System::insulation`). Line file **15** (the same raise); OHL XML attribute `insulation_level`. Read by the internal clearances (2026-11-11): an `[[internal_rule]]` with `insulation` takes only the parts of the systems of that level; no other check of the core reads it. Not in the plugin interface's records (`system-info`, `wire-group`: unchanged, interface 0.3) — a plugin sees it and `highest_voltage_kv` only in the line file JSON it is handed (`export-model`). A plugin's own column of the same name is `System.fields["<plugin>.insulation_level"]`: another key (the table shows it as a plugin column after the table's own). Systems table column **insulation** | — |
 | `System.frequency_hz` | f64? | Hz | AC frequency | — |
 | `System.current_a` | f64? | A | operating current, rms per phase (DC: per pole), shared by a bundle's subconductors; ≥ 0 (validated); none: not given. Line file **13** (2026-11-04), written only when a system has one (`Line::to_json`, else 12 or older, `BEFORE_CURRENT_VERSION`); OHL XML attribute `current_a` of `<system>`. `Line::section_currents` (per section via its conductor path's system), `Line::system_current`. The default of `ohl_thermal::sections::Current::Line` and of the magnetic field's circuits not given a current (`magnetic::run`, a note says so) | — |
 | `System.phases` | `[SystemPhase]` | — | phases (AC) or poles (DC) | — |
@@ -1564,6 +1564,20 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   first), `not_checked` (structure, why: level 1) and `notes`. CSV
   `rule, case, structure, part, member, distance_m, required_m,
   margin_m, to, status, x, y, z, member_x, member_y, member_z`.
+- **Internal clearances, the insulation condition** (2026-11-11):
+  `[[internal_rule]]` takes an optional `insulation = "low"` / `"high"`
+  (`InternalRule::insulation`: `ohl_line::electrical::InsulationLevel`?;
+  `takes_insulation`, `label` — the rule's name with the condition, in
+  the rows, the CSV and the command line —, `describe_parts`). A rule
+  with it takes only the parts of sections whose system has that level
+  (`System::insulation`, high when not given; in `internal::check` the
+  per-rule filter beside `takes_voltage`); without it every part, as
+  before. `internal::no_rule_for_insulation`: the note "NOT CHECKED, NOT
+  ON THE SAFE SIDE: no internal rule for <circuit> (insulation …)" for a
+  circuit whose voltage only rules of the other level take. Rule file
+  **version 2**, written only when a rule has the key
+  (`RuleSet::written_version`); older files read unchanged. The window's
+  rule editor: `internal_clearances::insulation_ui`, `INSULATION_HELP`.
 - **Internal clearances, the volumes on the strings** (2026-10-25,
   additive): `[[internal_rule]]` takes `shapes` (default true) and an
   optional `distance_wind` (a requirement for the cases with wind;

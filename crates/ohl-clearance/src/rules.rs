@@ -161,7 +161,8 @@ pub const RULE_FILE_FORMAT: &str = "ohl-clearance-rules";
 /// Newest format version read: 2 (2026-11-11) adds a rule's `to_ground`
 /// and a tension rule's limit as a catenary constant or a tension in
 /// place of the factor of the RTS (`catenary_constant`, `tension`;
-/// roadmap O22 item 3), written only when the set has one of them
+/// roadmap O22 item 3) and an internal rule's `insulation` condition
+/// (owner, 2026-11-11), written only when the set has one of them
 /// ([`RuleSet::written_version`]) — an older program then says "newer"
 /// instead of checking without it.
 pub const RULE_FILE_VERSION: u32 = 2;
@@ -2069,6 +2070,7 @@ impl RuleSet {
     pub fn written_version(&self) -> u32 {
         if self.rules.iter().any(|r| r.to_ground.given().is_some())
             || self.tension_rules.iter().any(|r| r.since_version_2())
+            || self.internal_rules.iter().any(|r| r.insulation.is_some())
         {
             RULE_FILE_VERSION
         } else {

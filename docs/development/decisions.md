@@ -10,6 +10,41 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**An internal clearance rule by the system's insulation level (owner, 2026-11-11)**
+
+The owner: "Insulation level stays in the plugin for the preset but if
+it needs to be in the core to apply it to the clearances I would put it
+in the core." It is needed in the core for one check: the internal
+clearances are run by the core and could not tell a circuit's level, so
+a preset had to give the stricter (high) row to every conductor.
+
+- **The condition.** `insulation = "low"` or `"high"` on an
+  `[[internal_rule]]`: the rule takes only the parts of the systems of
+  that level (`System.insulation_level`; not given on the system: high).
+  A rule without it takes every part, exactly as before: no existing
+  result changes.
+- **How a part's rule is chosen: unchanged.** Every rule whose cases
+  and voltages take a part checks it and gives its own row; there was
+  and is no precedence ("first" or "largest") among rules. The
+  condition is one more filter in the same place.
+- **Never skipped silently.** A circuit whose voltage only rules of the
+  other level take is said once: "NOT CHECKED, NOT ON THE SAFE SIDE: no
+  internal rule for <circuit> (insulation high)". (A voltage that no
+  rule names at all is not said today, as before — seen on the way, for
+  the owner.)
+- **Earth wires** have no system: not parts, as before.
+- **Named in the results**: the rule's name with its condition,
+  `Phase to steel (insulation low)`, in the rows, the CSV and
+  `ohl internal`.
+- **Format.** Rule file version 2 only when a rule has the key; older
+  files read unchanged.
+- **Window.** The internal clearances' rule editor: *any insulation*
+  (the default) / *low insulation only* / *high insulation only*, its
+  effect on hover; the Systems table's help for *insulation* now names
+  this check.
+- **Not touched:** the plugin interface; a plugin's own
+  `insulation_level` column stays the preset's.
+
 **"Down to the ground" by default for the terrain's classes (owner, 2026-11-11)**
 
 On the open question which classes take `to_ground` by default, the

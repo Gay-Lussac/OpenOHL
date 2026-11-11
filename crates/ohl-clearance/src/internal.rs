@@ -85,6 +85,11 @@ pub struct InternalRule {
     /// Nominal voltages of the parts checked, kV; empty: every
     /// electrified part (as the clearance windows' rules).
     pub voltages: Vec<f64>,
+    /// Only the parts of systems of this insulation level (owner,
+    /// 2026-11-11; `insulation = "low"` / `"high"`;
+    /// [`ohl_line::electrical::System::insulation`], high when the system
+    /// gives none); none: every part, whatever its system's level.
+    pub insulation: Option<ohl_line::electrical::InsulationLevel>,
     /// The distance to keep: fixed, or by the part's nominal voltage.
     pub distance: Requirement,
     /// Check the conductors near the structure.
@@ -116,6 +121,7 @@ impl InternalRule {
             name: name.into(),
             cases: Vec::new(),
             voltages: Vec::new(),
+            insulation: None,
             distance: Requirement::Fixed(0.0),
             conductors: true,
             jumpers: true,
@@ -159,8 +165,24 @@ impl InternalRule {
         self.voltages.is_empty() || self.voltages.iter().any(|v| (v - kv).abs() < 1e-6)
     }
 
+    /// Whether it takes a part of a system of insulation level `level`:
+    /// its own condition, or any level without one.
+    pub fn takes_insulation(&self, level: ohl_line::electrical::InsulationLevel) -> bool {
+        self.insulation.is_none_or(|l| l == level)
+    }
+
+    /// Its name for the results, with its insulation condition when it
+    /// has one — `Phase to steel (insulation low)` — so that a reader
+    /// sees which row was applied.
+    pub fn label(&self) -> String {
+        match self.insulation {
+            Some(l) => format!("{} (insulation {})", self.name, l.as_str()),
+            None => self.name.clone(),
+        }
+    }
+
     /// The parts it checks, in words: "conductors (20 m), jumpers, string
-    /// ends".
+    /// ends" — and its insulation condition, when it has one.
     pub fn describe_parts(&self) -> String {
         let mut parts = Vec::new();
         if self.conductors {
@@ -174,6 +196,9 @@ impl InternalRule {
         }
         if self.shapes {
             parts.push("string shapes".to_owned());
+        }
+        if let Some(l) = self.insulation {
+            parts.push(format!("insulation {} only", l.as_str()));
         }
         parts.join(", ")
     }
@@ -190,6 +215,9 @@ impl InternalRule {
         if !self.voltages.is_empty() {
             let list: Vec<String> = self.voltages.iter().map(|v| format!("{v:?}")).collect();
             let _ = writeln!(t, "voltages = [{}]", list.join(", "));
+        }
+        if let Some(l) = self.insulation {
+            let _ = writeln!(t, "insulation = \"{}\"", l.as_str());
         }
         let _ = writeln!(t, "distance = {}", self.distance.to_toml());
         if let Some(d) = &self.distance_wind {
@@ -228,6 +256,8 @@ pub(crate) struct RawInternalRule {
     cases: Vec<String>,
     #[serde(default)]
     voltages: Vec<f64>,
+    #[serde(default)]
+    insulation: Option<String>,
     distance: crate::rules::RawRequirement,
     #[serde(default = "yes")]
     conductors: bool,
@@ -261,8 +291,20 @@ impl RawInternalRule {
             ),
             None => None,
         };
+        let insulation = match self.insulation.as_deref() {
+            None => None,
+            Some(l) => Some(
+                ohl_line::electrical::InsulationLevel::parse(l).ok_or_else(|| {
+                    format!(
+                        "internal rule \"{}\": insulation \"{l}\": use low or high",
+                        self.name
+                    )
+                })?,
+            ),
+        };
         let rule = InternalRule {
             altitude,
+            insulation,
             distance: self
                 .distance
                 .resolve()
@@ -282,6 +324,47 @@ impl RawInternalRule {
             None => Ok(rule),
         }
     }
+}
+
+/// The circuits no rule takes because of the rules' insulation
+/// conditions (owner, 2026-11-11): an electrified section whose voltage a
+/// rule takes, but only rules of the other insulation level — none
+/// without the condition, none of its own level. Not skipped silently:
+/// one note per circuit, "NOT CHECKED, NOT ON THE SAFE SIDE: …".
+fn no_rule_for_insulation(
+    line: &Line,
+    rules: &[InternalRule],
+    kv_of: &dyn Fn(&str) -> Option<f64>,
+    levels: &BTreeMap<String, ohl_line::electrical::InsulationLevel>,
+) -> Vec<String> {
+    let mut circuits: BTreeSet<(String, &'static str)> = BTreeSet::new();
+    for section in &line.sections {
+        let (Some(kv), Some(level)) = (kv_of(&section.id), levels.get(&section.id)) else {
+            continue;
+        };
+        let of_voltage = || {
+            rules
+                .iter()
+                .filter(|r| r.problem().is_none() && r.takes_voltage(kv))
+        };
+        if of_voltage().next().is_some() && !of_voltage().any(|r| r.takes_insulation(*level)) {
+            let circuit = if section.circuit_name.is_empty() {
+                format!("section {}", section.id)
+            } else {
+                section.circuit_name.clone()
+            };
+            circuits.insert((circuit, level.as_str()));
+        }
+    }
+    circuits
+        .into_iter()
+        .map(|(circuit, level)| {
+            format!(
+                "NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for {circuit} (insulation \
+                 {level}): the rules of its voltage are for the other insulation level only"
+            )
+        })
+        .collect()
 }
 
 /// A member of a structure's body, in project coordinates.
@@ -485,7 +568,7 @@ impl InternalReport {
             let _ = writeln!(
                 out,
                 "{},{},{},{},{},{:.3},{:.3},{:.3},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
-                q(&rules[r.rule].name),
+                q(&rules[r.rule].label()),
                 q(&r.case),
                 q(&r.structure),
                 q(&r.part.to_string()),
@@ -969,6 +1052,17 @@ pub fn check(
             .flatten()
             .map(|p| p.nominal_kv)
     };
+    // Each electrified section's insulation level: its system's (high
+    // when the system gives none).
+    let levels: BTreeMap<String, ohl_line::electrical::InsulationLevel> = line
+        .section_phases()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter_map(|(id, at)| at.map(|(k, _)| (id, line.systems[k].insulation())))
+        .collect();
+    report
+        .notes
+        .extend(no_rule_for_insulation(line, rules, &kv_of, &levels));
     // The structures with a body, in the line's order.
     let mut checked: Vec<(&str, Vec<Prepared>)> = Vec::new();
     for st in &line.structures {
@@ -1016,6 +1110,15 @@ pub fn check(
             report.notes.push(format!("{e}: not checked"));
             continue;
         }
+        // The parts the rule takes: of its voltages (in `pieces_at`) and
+        // of systems of its insulation level, when it has that condition.
+        let taken = |section: &str| -> Option<f64> {
+            kv_of(section).filter(|_| {
+                levels
+                    .get(section)
+                    .is_some_and(|l| rule.takes_insulation(*l))
+            })
+        };
         let mut any = false;
         let mut no_distance: BTreeSet<String> = BTreeSet::new();
         for case in solved {
@@ -1027,7 +1130,7 @@ pub fn check(
                 run.step()
                     .map_err(|e| format!("internal clearances: {e}"))?;
                 let (pieces, grounded) =
-                    pieces_at(line, structure, case, &by_string, rule, filter, &kv_of);
+                    pieces_at(line, structure, case, &by_string, rule, filter, &taken);
                 // The structure's highest point (its members, its grounded
                 // shapes): with each part's own, the height of the rule's
                 // altitude term — never below what is measured.
@@ -1413,6 +1516,195 @@ mod tests {
         let b = near_end(&pts, 12.0, false);
         assert_eq!(b.first().unwrap(), &[38.0, 0.0, 0.0]);
         assert_eq!(b.last().unwrap(), &[50.0, 0.0, 0.0]);
+    }
+
+    /// The insulation condition of a rule (owner, 2026-11-11): a rule
+    /// with `insulation = "low"` / `"high"` takes only the parts of the
+    /// systems of that level (a system that gives none is high); a rule
+    /// without it takes every part, as before. Every rule that takes a
+    /// part gives its row, as before (no precedence among them). A
+    /// circuit that only rules of the other level would take is not
+    /// skipped silently. The file keeps the condition, at version 2.
+    #[test]
+    fn a_rule_by_the_systems_insulation_level() {
+        use ohl_line::electrical::InsulationLevel;
+        let (mut line, library) = example();
+        let still = WeatherCase::still("still", Temperature::from_celsius(10.0));
+        let shapes = solve(&line, &library, &still);
+        // A member 2 m beside every string's wire point of the first
+        // structure holding strings (INVENTED geometry).
+        let sid = line
+            .sections
+            .iter()
+            .zip(&shapes)
+            .flat_map(|(s, sh)| s.points.iter().zip(&sh.strings))
+            .find(|(_, st)| !st.is_empty())
+            .map(|(p, _)| p.structure.clone())
+            .unwrap();
+        let members: Vec<BodyMember> = line
+            .sections
+            .iter()
+            .zip(&shapes)
+            .flat_map(|(s, sh)| s.points.iter().zip(&sh.strings))
+            .filter(|(p, _)| p.structure == sid)
+            .flat_map(|(_, st)| st.iter().map(|x| x.bottom))
+            .enumerate()
+            .map(|(k, b)| BodyMember {
+                id: Some(format!("m{k}")),
+                line: vec![
+                    [b[0] + 2.0, b[1], b[2] - 5.0],
+                    [b[0] + 2.0, b[1], b[2] + 5.0],
+                ],
+                solid: Vec::new(),
+            })
+            .collect();
+        let bodies = vec![StructureBody {
+            structure: sid.clone(),
+            members,
+        }];
+        let jumpers: Vec<JumperShape> = Vec::new();
+        let run = |line: &Line, rules: &[InternalRule]| {
+            check(
+                line,
+                &[still_case(&shapes, &jumpers)],
+                &bodies,
+                &[],
+                rules,
+                &Default::default(),
+                &Budget::new().max_iterations(1000),
+            )
+            .unwrap()
+        };
+        let rule = |name: &str, d: f64, insulation| InternalRule {
+            distance: Requirement::Fixed(d),
+            insulation,
+            ..InternalRule::blank(name)
+        };
+        let any = [rule("any", 1.0, None)];
+        let both = [
+            rule("row", 1.0, Some(InsulationLevel::Low)),
+            rule("row", 3.0, Some(InsulationLevel::High)),
+        ];
+        let unchecked = |r: &InternalReport| -> Vec<String> {
+            r.notes
+                .iter()
+                .filter(|n| {
+                    n.starts_with("NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for ")
+                })
+                .cloned()
+                .collect()
+        };
+        // The section of a row's part.
+        let section_of = |row: &InternalRow| match &row.part {
+            Part::Conductor { section, .. } => section.clone(),
+            other => panic!("{other:?}"),
+        };
+        // No system gives a level: every one is high — the high row for
+        // every part, the low row for none; the parts those of a rule
+        // without the condition.
+        assert!(line.systems.iter().all(|s| s.insulation_level.is_none()));
+        let plain = run(&line, &any);
+        assert!(!plain.rows.is_empty());
+        let r = run(&line, &both);
+        assert_eq!(r.rows.len(), plain.rows.len());
+        assert!(r.rows.iter().all(|x| x.rule == 1 && x.required == 3.0));
+        assert!(unchecked(&r).is_empty() && unchecked(&plain).is_empty());
+        for (a, b) in r.rows.iter().zip(&plain.rows) {
+            assert_eq!((a.distance, &a.part), (b.distance, &b.part));
+        }
+        // The first system low: its sections' parts by the low row, the
+        // others' by the high row; none twice, none left out.
+        let low_system = line.systems[0].id.clone();
+        line.systems[0].insulation_level = Some(InsulationLevel::Low);
+        let low_sections: Vec<String> = line
+            .sections
+            .iter()
+            .filter(|s| s.system.as_deref() == Some(low_system.as_str()))
+            .map(|s| s.id.clone())
+            .collect();
+        let r = run(&line, &both);
+        assert_eq!(r.rows.len(), plain.rows.len());
+        let mut by_level = [0usize; 2];
+        for x in &r.rows {
+            let low = low_sections.contains(&section_of(x));
+            assert_eq!(x.rule, usize::from(!low), "{:?}", x.part);
+            assert_eq!(x.required, if low { 1.0 } else { 3.0 });
+            by_level[x.rule] += 1;
+        }
+        assert!(
+            by_level[0] > 0,
+            "the example's first system has wires at {sid}"
+        );
+        assert!(unchecked(&r).is_empty());
+        // A rule without the condition beside them: it takes every part
+        // too (each matching rule gives its row, as before).
+        let three = [both[0].clone(), both[1].clone(), any[0].clone()];
+        let r3 = run(&line, &three);
+        assert_eq!(r3.rows.len(), 2 * plain.rows.len());
+        assert_eq!(
+            r3.rows.iter().filter(|x| x.rule == 2).count(),
+            plain.rows.len()
+        );
+        // Only the low row given: the circuits of the high systems are not
+        // checked, and said — once per circuit; the low system's are.
+        let only_low = [both[0].clone()];
+        let r = run(&line, &only_low);
+        assert_eq!(r.rows.len(), by_level[0]);
+        let said = unchecked(&r);
+        let high_circuits: BTreeSet<String> = line
+            .sections
+            .iter()
+            .filter(|s| s.system.as_deref().is_some_and(|id| id != low_system))
+            .map(|s| {
+                if s.circuit_name.is_empty() {
+                    format!("section {}", s.id)
+                } else {
+                    s.circuit_name.clone()
+                }
+            })
+            .collect();
+        assert_eq!(said.len(), high_circuits.len(), "{said:?}");
+        for c in &high_circuits {
+            assert!(
+                said.iter().any(|n| n.starts_with(&format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for {c} (insulation high)"
+                ))),
+                "{c}: {said:?}"
+            );
+        }
+        // Earthed wires have no system: not parts, not named.
+        assert!(line.sections.iter().any(|s| s.system.is_none()));
+        assert!(!said.iter().any(|n| n.contains("insulation low")));
+        // The results name the row applied.
+        assert_eq!(both[0].label(), "row (insulation low)");
+        assert_eq!(any[0].label(), "any");
+        assert!(both[1].describe_parts().ends_with("insulation high only"));
+        assert!(r.csv(&only_low).contains("\nrow (insulation low),still,"));
+        // The rule file: the key optional, version 2 only with it, read
+        // back the same; another value refused.
+        let set = |rules: &[InternalRule]| RuleSet {
+            internal_rules: rules.to_vec(),
+            ..RuleSet::ground(7.0)
+        };
+        let with = set(&both);
+        assert_eq!(with.written_version(), 2);
+        let text = with.to_toml();
+        assert!(
+            text.contains("insulation = \"low\"\n") && text.contains("insulation = \"high\"\n")
+        );
+        assert_eq!(RuleSet::parse(&text).unwrap(), with);
+        let without = set(&any);
+        assert_eq!(without.written_version(), 1);
+        let text = without.to_toml();
+        assert!(!text.contains("insulation"));
+        let back = RuleSet::parse(&text).unwrap();
+        assert_eq!(back.internal_rules[0].insulation, None);
+        assert_eq!(back, without);
+        let e = RuleSet::parse(
+            "[[internal_rule]]\nname = \"x\"\ndistance = 1.0\ninsulation = \"medium\"\n",
+        )
+        .unwrap_err();
+        assert!(e.contains("use low or high"), "{e}");
     }
 
     /// A body around the example line's first structure with a body: the

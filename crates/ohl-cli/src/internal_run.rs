@@ -156,7 +156,7 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
     for r in &report.rows {
         println!(
             "{:<20} {:<16} {:<10} {:<28} {:<28} {:>8.3} m {:>8.3} m {:<12} {}",
-            set.internal_rules[r.rule].name,
+            set.internal_rules[r.rule].label(),
             r.case,
             r.structure,
             r.part.to_string(),

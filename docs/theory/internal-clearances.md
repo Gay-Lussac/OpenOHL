@@ -163,6 +163,19 @@ distances grow with the height above sea level, taken at the **highest
 point of the structure** (its members and grounded shapes) or of the
 part measured, whichever is higher — *conservative*: never below any
 point measured ([Distances growing with the altitude](clearances.md#distances-growing-with-the-altitude)).
+An optional **insulation** condition (owner, 2026-11-11; `insulation =
+"low"` / `"high"`) restricts a rule to the parts of the systems of that
+insulation level (the system's own value in the line; none given:
+high), so that a code's table with a low and a high row per voltage is
+two rules. How a part's rule is chosen is unchanged: **every** rule
+whose cases, voltages and — now — insulation condition take the part
+checks it and gives its own row; there is no precedence among rules, and
+a rule without the condition takes every part as before. A circuit whose
+voltage only rules of the *other* level take is **not checked — NOT ON
+THE SAFE SIDE**: it is never skipped silently, the results name it once
+per circuit. A system's level given wrongly as low is measured against
+the smaller distance: the level is the user's statement about the line,
+and the results name the row applied (`… (insulation low)`).
 With **Use local conditions** ticked the cases
 are solved again on the line with the structures' wind for clearances
 and wire ice on their spans, and a structure's **wind study** is taken
