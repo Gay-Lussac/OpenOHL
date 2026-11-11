@@ -356,9 +356,20 @@ their menu or from View.
   2026-11-10): two angles in a star heel to heel with the gap between
   them open, four in a cross, two angles or two channels back to back —
   in the 3D view, the Detail view's close-up and its face view alike
-  (before, as one body with the space between them filled). The braces
-  bolted onto a built-up leg are not seated on it yet: they still run to
-  the work point. The plates, splices' covers and **bolts** are drawn with them
+  (before, as one body with the space between them filled). An angle
+  **bolted onto a built-up member of angles** (a star, a cross, two back
+  to back) is seated on the one angle of it that faces it and cut short
+  of that angle (since 2026-11-11; before, it ran uncut to the work
+  point through the leg): on the leg running out on the brace's own
+  side, not in the gap between two backs (the gusset's place), on the
+  face its roll turns it to — where its legs are more than 25° off the
+  leg's it is cut but not seated, and Joint details says by how much to
+  turn it. For the drawings, the bolts' places and the bolts' lengths
+  only: no capacity, usage or force follows from it. Not seated yet: a
+  built-up member that is itself the brace (two angles back to back
+  astride a leg or a gusset), an end onto two channels, onto an I or H,
+  onto a plate that lies on a built-up leg (the plate stays through the
+  work point). The plates, splices' covers and **bolts** are drawn with them
   (the bolts once they are a few pixels wide; each through its own leg,
   orange where the layout is partly assumed). Near, its edges and its
   work line (thin) show; far, the work lines are drawn over it as

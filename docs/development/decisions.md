@@ -10,6 +10,45 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Braces seated and cut against built-up members (owner, 2026-11-11)**
+
+The owner, after the built-up sections were drawn as their parts: "Go
+ahead with the braces". An angle bolted onto a built-up member ran uncut
+to the work point, through the leg's steel, because the seat and the cut
+needed a single angle at both ends.
+
+- **The angle facing it.** A built-up section of angles gives its angles
+  where its properties place them (`Shape::built_up_angles`; the joint
+  details' `Profile::part_angles`). The end is seated on and cut against
+  one of them (`joints::facing`): the one whose leg — the one the end
+  lies on — runs from its heel out on the end's own side; not where the
+  end would lie in the gap against the back of the next angle (the
+  gusset's place); not where its outstanding leg would pass through the
+  leg; then the nearest to its work line. A single angle is itself, as
+  before, and every single-angle seat and cut is unchanged.
+- **The cut.** As against a single angle, short of the facing angle's
+  heel; on an inner face also short of that angle's other leg (its
+  thickness). At most half the member, as before, so no member loses
+  all its steel.
+- **What follows from it.** The drawings (3D view, close-up, face view,
+  joint sheet, member view), the bolts' places and their grip (the
+  facing angle's thickness, so their length in the exports), a part's
+  steel length in the part list, and Joint details' "turn it" note
+  where the leg bolted is more than 5° off the face — now said for
+  built-up members too. **No strength check, no finite-element input
+  and no capacity or usage changes**: those read the member's design
+  data and the `[[connection]]` tables, never the seat.
+- **Plates left where they were.** A plate lying on a built-up leg, and
+  the ends bolted onto it, stay through the work point: where a plate
+  lies sets its bolts against its edges, which its checks use. Moving
+  it would change checked values, so it is not done without a decision.
+- **Not done.** A built-up member that is itself the arriving end (two
+  angles back to back sit astride a leg or a gusset: another mechanism,
+  with its own fit of gap against thickness); an end onto two channels
+  or an I or H (no heel); nesting in a built-up member. Seen on the way,
+  left as it is: a single angle seated on the inner face of a single
+  angle is cut at that angle's heel, not past its other leg's thickness.
+
 **Plans and sheets: a name of one's own; name and folder last (owner, 2026-11-11)**
 
 The owner: "for all plans, I would like the path to be given to be the

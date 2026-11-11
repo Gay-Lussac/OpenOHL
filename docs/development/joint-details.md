@@ -467,6 +467,24 @@ yet:
   (within 20°: a leg running on, one part or spliced, not lapped)
   without bolts or a face given: it stays on its work line. Display only,
   as before (the analysis takes the shift, not the seat).
+- **Onto a built-up member (2026-11-11).** The seat and the cut need an
+  angle at both ends; a built-up section of angles gives its angles
+  (`Shape::built_up_angles`, `Profile::part_angles`) and the end is
+  seated on and cut against the one facing it (`joints::facing`): the
+  one whose leg, the one the end lies on, runs from its heel out on the
+  end's side; not one where the end would lie in the gap against the
+  next angle's back; not one its outstanding leg would pass through;
+  then the nearest to its work line. On an inner face the cut also
+  clears that angle's other leg (its thickness; a single angle's inner
+  face as before). The cut is at most half the member, as before. The
+  bolts' grip takes that angle's thickness. Display and detailing only:
+  the member's design data, its end conditions, the finite-element
+  model and every capacity are read from the file and do not use the
+  seat. A plate on a built-up leg is not moved (where a plate lies
+  enters its checks): it stays through the work point. Not yet: a
+  built-up member as the arriving end (it sits astride what it bolts
+  onto: another mechanism), two channels, an I or H, nesting in a
+  built-up member.
 - **Bolts on both legs.** `leg = "both"` lays the layout on each leg of
   the angle: the bolts shared (`count` the total; the leg lying on what
   it bolts onto takes the odd one), the same gauge lines, pitch and end

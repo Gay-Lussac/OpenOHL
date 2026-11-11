@@ -133,6 +133,10 @@ pub struct Profile {
     /// For an angle: the heel (y, z) and the legs' lengths along y and z
     /// and its thickness, m.
     pub angle: Option<Angle>,
+    /// A built-up section's angles where they are (2026-11-11: what
+    /// bolts onto it is seated on the one facing it), about the member's
+    /// axis; empty for the other sections.
+    pub part_angles: Vec<PartAngle>,
     /// The section's name.
     pub section: String,
     /// The section's id.
@@ -150,6 +154,17 @@ impl Profile {
         let one = self.parts.is_empty().then_some(self.outline.as_slice());
         self.parts.iter().map(Vec::as_slice).chain(one)
     }
+}
+
+/// One angle of a built-up section, about the member's axis.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PartAngle {
+    /// Its heel (y, z), m.
+    pub heel: [f64; 2],
+    /// Where its legs point from its heel along y and z (±1 each).
+    pub towards: [f64; 2],
+    /// Thickness, m.
+    pub t: f64,
 }
 
 /// An angle's geometry around its centroid.
@@ -1332,7 +1347,11 @@ fn flat_of(a: &Arrival, all: &[Arrival], seats: &PlateSeats) -> Option<crate::we
         return crate::welds::flat_roll(p.axes, a.leg_y, s.normal);
     }
     let q = all.iter().find(|b| &b.member == onto)?.profile.as_ref()?;
-    q.angle?;
+    // An angle's legs, or those of a built-up section's angles (they lie
+    // along the same two axes).
+    if q.angle.is_none() && q.part_angles.is_empty() {
+        return None;
+    }
     let across = |n: [f64; 3]| (dot(n, p.axes[0]).abs() * 1e3).round();
     [q.axes[1], q.axes[2]]
         .into_iter()
@@ -1435,11 +1454,14 @@ fn weld_data<'a>(
 /// bolts onto ([`Arrival::offset`]): along the bolts' axis, so the leg's
 /// outer face (the heel's) lies on the onto leg's face turned towards it;
 /// none when it bolts onto no angle or the legs are not near parallel
-/// (within 25°).
-fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f64; 3] {
+/// (within 25°). Onto a built-up member (`parts`): on the angle of it
+/// facing `a` ([`facing`]).
+fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 3] {
     // Onto a plate: on the plate, which lies on the joint's leg (seated
     // onto the leg, then the plate's thickness out); no leg: the plate
-    // through the work point.
+    // through the work point. A plate at a built-up leg stays through the
+    // work point, as before 2026-11-11: where a plate lies enters its
+    // checks (its bolts against its edges), so it is not moved here.
     if let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o)) {
         let Some(p) = a.profile.as_ref() else {
             return [0.0; 3];
@@ -1451,7 +1473,7 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f
         let on_leg = s.leg.as_ref().map(|l| {
             let mut b = a.clone();
             b.onto = Valued::of(l.clone(), Source::WorkedOut);
-            seat(&b, joint, all, &PlateSeats::new())
+            seat(&b, all, &PlateSeats::new(), false)
         });
         return match on_leg {
             Some(o) if norm(o) > 0.0 => add(o, scale(nb, s.thickness)),
@@ -1464,7 +1486,7 @@ fn seat(a: &Arrival, joint: [f64; 3], all: &[Arrival], seats: &PlateSeats) -> [f
     let face = (a.sits.source == Source::Given)
         .then_some(a.sits.value)
         .flatten();
-    member_seat(a, joint, all, face).map_or([0.0; 3], |s| s.offset)
+    member_seat(a, all, face, parts).map_or([0.0; 3], |s| s.offset)
 }
 
 /// How a member end sits on the leg of the angle it bolts onto
@@ -1481,40 +1503,142 @@ struct MemberSeat {
     face: Face,
 }
 
+/// An angle a member can be seated on, at a joint: its heel from the
+/// joint and its two legs' directions from the heel (structure axes), its
+/// thickness. A single angle's own, or one angle of a built-up section.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Corner {
+    /// The heel, from the joint, m.
+    heel: [f64; 3],
+    /// Along its leg along the section's y, from the heel to the toe.
+    ey: [f64; 3],
+    /// Along its leg along the section's z, from the heel to the toe.
+    ez: [f64; 3],
+    /// Thickness, m.
+    t: f64,
+}
+
+impl Corner {
+    /// From the heel to the toe of its leg that lies flat against a leg of
+    /// normal `nb` (the leg whose own normal is most nearly `nb`).
+    fn flange(&self, nb: [f64; 3]) -> [f64; 3] {
+        if dot(self.ez, nb).abs() >= dot(self.ey, nb).abs() {
+            self.ey
+        } else {
+            self.ez
+        }
+    }
+}
+
+/// The angles of `q` a member can be seated on: a single angle's own; a
+/// built-up section's angles when `parts` (two in a star or back to back,
+/// four in a cross: 2026-11-11); none for the other sections.
+fn corners(q: &Profile, parts: bool) -> Vec<Corner> {
+    let at = |heel: [f64; 2], s: [f64; 2], t: f64| Corner {
+        heel: add(scale(q.axes[1], heel[0]), scale(q.axes[2], heel[1])),
+        ey: scale(q.axes[1], s[0]),
+        ez: scale(q.axes[2], s[1]),
+        t,
+    };
+    match q.angle {
+        Some(g) => vec![at(g.heel, [1.0, 1.0], g.t)],
+        None if parts => q
+            .part_angles
+            .iter()
+            .map(|g| at(g.heel, g.towards, g.t))
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// The angle of `q` (what `a` bolts onto) that `a` is seated on and cut
+/// against, and its seat there ([`seat_on`]; none: the legs not near
+/// parallel). A single angle: itself. A built-up section (`parts`): the
+/// angle whose leg `a` lies on runs out from its heel on `a`'s side (the
+/// leg facing it); of several, one where `a` does not lie in the gap
+/// against the back of the next angle (the gusset's place), then one
+/// `a`'s outstanding leg does not pass through, then the one that moves
+/// `a` least from its work line.
+fn facing(
+    a: &Arrival,
+    q: &Profile,
+    given: Option<Face>,
+    parts: bool,
+) -> Option<(Corner, Option<MemberSeat>)> {
+    let p = a.profile.as_ref()?;
+    let g = p.angle?;
+    let list = corners(q, parts);
+    if list.len() <= 1 {
+        return list.first().map(|c| (*c, seat_on(a, p, g, c, given)));
+    }
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    list.iter()
+        .map(|c| {
+            let seat = seat_on(a, p, g, c, given);
+            let flange = c.flange(nb);
+            let away = dot(a.direction, flange) <= 1e-6;
+            // On the leg's back (the heel's face) with another angle's
+            // leg behind it, back to back across the gap: in the gap.
+            let back = if dot(c.ez, nb).abs() >= dot(c.ey, nb).abs() {
+                c.ez
+            } else {
+                c.ey
+            };
+            let in_gap = seat.is_some_and(|s| s.face == Face::Outside)
+                && list.iter().any(|d| {
+                    dot(d.flange(nb), flange) > 0.5 && dot(sub(d.heel, c.heel), back) < -1e-9
+                });
+            let key = (
+                away,
+                seat.is_none(),
+                in_gap,
+                seat.is_some_and(|s| s.flipped),
+            );
+            (key, seat.map_or(0.0, |s| norm(s.offset)), *c, seat)
+        })
+        .min_by(|x, y| x.0.cmp(&y.0).then(x.1.total_cmp(&y.1)))
+        .map(|(_, _, c, seat)| (c, seat))
+}
+
 /// The shift that seats `a`'s leg bolted on a face of the leg of the
 /// angle it bolts onto: along the bolts' axis, so its leg lies on that
 /// face, on the far side of the leg from the other's steel. The face is
 /// `given` (outside: the leg's outer face, the heel's; inside: its inner
 /// face), else the one turned towards `a`'s outer face (the inner one when
 /// `a`'s outstanding leg points into the other angle: as before
-/// 2026-11-05). None when it bolts onto no angle or the legs are not near
-/// parallel (within 25°).
+/// 2026-11-05). Onto a built-up section (`parts`): on the angle of it
+/// that faces `a` ([`facing`]). None when it bolts onto no angle or the
+/// legs are not near parallel (within 25°).
 fn member_seat(
     a: &Arrival,
-    joint: [f64; 3],
     all: &[Arrival],
     given: Option<Face>,
+    parts: bool,
 ) -> Option<MemberSeat> {
-    let p = a.profile.as_ref()?;
     let o = a
         .onto
         .value
         .as_ref()
         .and_then(|o| all.iter().find(|b| &b.member == o))
         .and_then(|b| b.profile.as_ref())?;
-    let (g, h) = (p.angle?, o.angle?);
+    facing(a, o, given, parts)?.1
+}
+
+/// [`member_seat`] on the angle `c`: `a`'s profile `p`, an angle `g`.
+fn seat_on(
+    a: &Arrival,
+    p: &Profile,
+    g: Angle,
+    c: &Corner,
+    given: Option<Face>,
+) -> Option<MemberSeat> {
     // The leg bolted's normal, towards its own side (its outstanding leg).
     let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
-    let heel = |q: &Profile, g: Angle| {
-        add(
-            joint,
-            add(scale(q.axes[1], g.heel[0]), scale(q.axes[2], g.heel[1])),
-        )
-    };
-    let own = dot(sub(heel(p, g), joint), nb);
+    let own_heel = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
+    let own = dot(own_heel, nb);
     // The onto leg most nearly parallel: its normal from the heel into
     // its thickness (a leg along y: z), towards the other angle's inside.
-    let (nl, cos) = [o.axes[2], o.axes[1]]
+    let (nl, cos) = [c.ez, c.ey]
         .into_iter()
         .map(|n| (n, dot(n, nb)))
         .max_by(|x, y| x.1.abs().total_cmp(&y.1.abs()))
@@ -1530,15 +1654,15 @@ fn member_seat(
         _ => cos > 0.0,
     };
     let face = if inner {
-        add(heel(o, h), scale(nl, h.t))
+        add(c.heel, scale(nl, c.t))
     } else {
-        heel(o, h)
+        c.heel
     };
     // `a`'s leg on the far side of that face from the other's steel:
     // along nb (its outer face on it) or against it (its inner face on
     // it, its outstanding leg through the other's leg).
     let away = if inner { cos > 0.0 } else { cos < 0.0 };
-    let f = dot(sub(face, joint), nb);
+    let f = dot(face, nb);
     let heel_at = if away { f } else { f - g.t };
     Some(MemberSeat {
         offset: scale(nb, heel_at - own),
@@ -1853,7 +1977,7 @@ fn place_bolts(
     }
     a.cut = match c.and_then(|c| c.cut) {
         Some(x) => Valued::of(x.si(), Source::Given),
-        None => match fit_cut(a, all) {
+        None => match fit_cut(a, all, given_face) {
             Some(x) => Valued::of(x, Source::WorkedOut),
             None => Valued::of(0.0, Source::Assumed),
         },
@@ -1907,7 +2031,7 @@ fn place_bolts(
             }
         },
         (Some(_), f) => {
-            if let Some(s) = member_seat(a, joint, all, f) {
+            if let Some(s) = member_seat(a, all, f, true) {
                 a.sits = Valued::of(
                     s.face,
                     if f.is_some() {
@@ -1948,7 +2072,7 @@ fn place_bolts(
         if host || !lapped {
             [0.0; 3]
         } else {
-            seated.unwrap_or_else(|| seat(a, joint, all, seats))
+            seated.unwrap_or_else(|| seat(a, all, seats, true))
         },
         shifted,
     );
@@ -2065,9 +2189,12 @@ fn place_bolts(
 /// Where `a`'s steel must stop so it fits, m from the work point: its leg
 /// bolted lies on the flange of the angle it bolts onto, so its end stays
 /// on that flange's side of the other angle's heel (where its outstanding
-/// leg stands) — in the face they bolt in. None: it bolts onto no angle,
-/// runs in line with it, or is no angle.
-fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
+/// leg stands) — in the face they bolt in. Onto a built-up member: against
+/// the angle of it facing `a` ([`facing`], on the face `given`), so it
+/// stops short of that angle's heel and of the gap behind it. At most
+/// half its length. None: it bolts onto no angle, runs in line with it,
+/// or is no angle.
+fn fit_cut(a: &Arrival, all: &[Arrival], given: Option<Face>) -> Option<f64> {
     let p = a.profile.as_ref()?;
     let g = p.angle?;
     let o = a
@@ -2076,7 +2203,7 @@ fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
         .as_ref()
         .and_then(|o| all.iter().find(|b| &b.member == o))?;
     let q = o.profile.as_ref()?;
-    let h = q.angle?;
+    let (c, seat) = facing(a, q, given.filter(|f| *f != Face::Nested), true)?;
     // A splice (in line): no cut.
     if angle_between(a.direction, o.direction) < 20.0 {
         return None;
@@ -2086,12 +2213,12 @@ fn fit_cut(a: &Arrival, all: &[Arrival]) -> Option<f64> {
     let w = if a.leg_y { g.b } else { g.h };
     // The onto angle's leg flat against ours (its normal most nearly
     // ours) and the direction across it, from its heel to its toe.
-    let flange = if dot(q.axes[2], nb).abs() >= dot(q.axes[1], nb).abs() {
-        q.axes[1]
-    } else {
-        q.axes[2]
-    };
-    let heel_o = add(scale(q.axes[1], h.heel[0]), scale(q.axes[2], h.heel[1]));
+    let flange = c.flange(nb);
+    // On the inner face of a built-up member's angle: short of that
+    // angle's other leg too (its thickness from the heel; a single
+    // angle's as before).
+    let inside = q.angle.is_none() && seat.is_some_and(|s| s.face == Face::Inside);
+    let heel_o = add(c.heel, scale(flange, if inside { c.t } else { 0.0 }));
     let heel = add(
         add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
         scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0),
@@ -2940,6 +3067,21 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
         .and_then(Shape::built_up_parts)
         .map(|parts| parts.into_iter().map(&shift).collect())
         .unwrap_or_default();
+    let part_angles: Vec<PartAngle> = s
+        .shape
+        .as_ref()
+        .and_then(Shape::built_up_angles)
+        .map(|angles| {
+            angles
+                .iter()
+                .map(|g| PartAngle {
+                    heel: [g.heel[0] + ll[0], g.heel[1] + ll[1]],
+                    towards: g.towards,
+                    t: g.t,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let (outline, angle) = match s.shape {
         Some(Shape::EqualAngle { h, t, .. }) | Some(Shape::UnequalAngle { h, t, .. }) => {
             let b = match s.shape {
@@ -3008,6 +3150,7 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
         outline,
         parts,
         angle,
+        part_angles,
         section: s.name.clone(),
         section_id: s.id.clone(),
         shaped,
@@ -3136,11 +3279,14 @@ fn grip(
             .find(|p| &p.id == o)
             .map(|p| p.thickness.si())
             .or_else(|| {
-                all.iter()
+                let q = all
+                    .iter()
                     .find(|b| &b.member == o)
-                    .and_then(|b| b.profile.as_ref())
-                    .and_then(|p| p.angle)
+                    .and_then(|b| b.profile.as_ref())?;
+                // A built-up member's: the angle of it `a` is seated on.
+                q.angle
                     .map(|g| g.t)
+                    .or_else(|| facing(a, q, None, true).map(|(c, _)| c.t))
             })
     });
     [own, onto.unwrap_or(own)]

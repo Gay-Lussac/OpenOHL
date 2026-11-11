@@ -383,50 +383,52 @@ impl Shape {
         self.part().is_some()
     }
 
+    /// The angles of a built-up shape of angles where its properties
+    /// place them, in the axes of [`Shape::built_up_outline`] (the lower
+    /// left of the shape's outline box at the origin): two back to back,
+    /// two heel to heel in a star, four in a cross. None for the other
+    /// shapes (two channels have no heel). For drawings and for seating
+    /// what bolts onto one of them: no property is worked out from these.
+    pub fn built_up_angles(&self) -> Option<Vec<PlacedAngle>> {
+        let at = |heel: [f64; 2], towards: [f64; 2], h: f64, b: f64, t: f64| PlacedAngle {
+            heel,
+            towards,
+            h,
+            b,
+            t,
+        };
+        Some(match *self {
+            Shape::DoubleAngle { h, b, t, gap, .. } => vec![
+                at([b, 0.0], [-1.0, 1.0], h, b, t),
+                at([b + gap, 0.0], [1.0, 1.0], h, b, t),
+            ],
+            Shape::StarAngle { h, b, t, gap, .. } => vec![
+                at([b + gap, h + gap], [1.0, 1.0], h, b, t),
+                at([b, h], [-1.0, -1.0], h, b, t),
+            ],
+            Shape::CrossAngle { h, t, gap, .. } => vec![
+                at([h + gap, h + gap], [1.0, 1.0], h, h, t),
+                at([h, h + gap], [-1.0, 1.0], h, h, t),
+                at([h, h], [-1.0, -1.0], h, h, t),
+                at([h + gap, h], [1.0, -1.0], h, h, t),
+            ],
+            _ => return None,
+        })
+    }
+
     /// The parts of a built-up shape as drawn, each its own outline
     /// (counter-clockwise, the fillets left out), in the axes of
     /// [`Shape::built_up_outline`] (the lower left of the shape's outline
     /// box at the origin), where the properties place them: two angles
     /// back to back or heel to heel with the gap between them, four in a
-    /// cross, two channels back to back. None for the other shapes.
-    /// Drawing only: no property is worked out from these.
+    /// cross ([`Shape::built_up_angles`]), two channels back to back.
+    /// None for the other shapes. Drawing only: no property is worked out
+    /// from these.
     pub fn built_up_parts(&self) -> Option<Vec<Vec<[f64; 2]>>> {
-        // An angle, its heel at `heel`, leg `b` along y towards `s[0]`
-        // (±1), leg `h` along z towards `s[1]`.
-        let angle = |heel: [f64; 2], s: [f64; 2], h: f64, b: f64, t: f64| {
-            let at = |y: f64, z: f64| [heel[0] + s[0] * y, heel[1] + s[1] * z];
-            let mut o = vec![
-                at(0.0, 0.0),
-                at(b, 0.0),
-                at(b, t),
-                at(t, t),
-                at(t, h),
-                at(0.0, h),
-            ];
-            // Mirrored once: turned the other way round.
-            if s[0] * s[1] < 0.0 {
-                o.reverse();
-            }
-            o
-        };
+        if let Some(angles) = self.built_up_angles() {
+            return Some(angles.iter().map(PlacedAngle::outline).collect());
+        }
         Some(match *self {
-            Shape::DoubleAngle { h, b, t, gap, .. } => vec![
-                angle([b, 0.0], [-1.0, 1.0], h, b, t),
-                angle([b + gap, 0.0], [1.0, 1.0], h, b, t),
-            ],
-            Shape::StarAngle { h, b, t, gap, .. } => vec![
-                angle([b + gap, h + gap], [1.0, 1.0], h, b, t),
-                angle([b, h], [-1.0, -1.0], h, b, t),
-            ],
-            Shape::CrossAngle { h, t, gap, .. } => [
-                ([h + gap, h + gap], [1.0, 1.0]),
-                ([h, h + gap], [-1.0, 1.0]),
-                ([h, h], [-1.0, -1.0]),
-                ([h + gap, h], [1.0, -1.0]),
-            ]
-            .into_iter()
-            .map(|(heel, s)| angle(heel, s, h, h, t))
-            .collect(),
             Shape::DoubleChannel {
                 h, b, tw, tf, gap, ..
             } => {
@@ -711,6 +713,45 @@ impl Shape {
                 [f64::from(n) * y, f64::from(n) * z]
             }
         })
+    }
+}
+
+/// One angle of a built-up shape where it is placed
+/// ([`Shape::built_up_angles`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlacedAngle {
+    /// Its heel (y, z), m.
+    pub heel: [f64; 2],
+    /// Where its legs point from the heel: the leg `b` along y towards
+    /// `towards[0]` (±1), the leg `h` along z towards `towards[1]`.
+    pub towards: [f64; 2],
+    /// The leg along z, m.
+    pub h: f64,
+    /// The leg along y, m.
+    pub b: f64,
+    /// Thickness, m.
+    pub t: f64,
+}
+
+impl PlacedAngle {
+    /// Its outline, counter-clockwise, the fillet left out.
+    pub fn outline(&self) -> Vec<[f64; 2]> {
+        let s = self.towards;
+        let at = |y: f64, z: f64| [self.heel[0] + s[0] * y, self.heel[1] + s[1] * z];
+        let (h, b, t) = (self.h, self.b, self.t);
+        let mut o = vec![
+            at(0.0, 0.0),
+            at(b, 0.0),
+            at(b, t),
+            at(t, t),
+            at(t, h),
+            at(0.0, h),
+        ];
+        // Mirrored once: turned the other way round.
+        if s[0] * s[1] < 0.0 {
+            o.reverse();
+        }
+        o
     }
 }
 

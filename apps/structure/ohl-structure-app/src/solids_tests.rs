@@ -149,6 +149,43 @@ fn a_star_is_drawn_as_its_two_angles() {
     }
 }
 
+/// The braces at a leg of two angles in a star (owner 2026-11-11: "Go
+/// ahead with the braces"): every brace bolted onto the leg at N2 is cut
+/// short of the work point, those lying flat on it seated on one of its
+/// angles, and the Detail view opens on the joint (an image of it with
+/// `OHL_JOINT_SCREENSHOTS`).
+#[test]
+fn braces_at_a_star_leg_are_seated_and_cut() {
+    let text = ANGLES.replace("section = \"EA-61x7\"", "section = \"2S-61x7\"");
+    let d = ohl_structure_link::joint_details(&text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let mut seated = 0;
+    for a in j
+        .arrivals
+        .iter()
+        .filter(|a| a.class.as_deref() != Some("leg"))
+    {
+        assert!(a.cut.value.unwrap_or(0.0) > 0.0, "{}: not cut", a.member);
+        seated += usize::from(a.sits.value.is_some() && a.offset != [0.0; 3]);
+    }
+    assert!(seated >= 1, "no brace seated on the star leg");
+    let tower = angle_tower("star-leg", &text);
+    let mut h = harness(&tower);
+    h.state_mut().open_in_detail(Handle::Joint("N2".into()));
+    h.run();
+    h.run();
+    assert!(h.state().is_open(crate::layout::Panel::JointView));
+    if ohl_render::headless_device().is_ok()
+        && let Some(dir) = ohl_core::env::var_os("OHL_JOINT_SCREENSHOTS")
+    {
+        h.run_steps(4);
+        h.render()
+            .unwrap()
+            .save(std::path::Path::new(&dir).join("brace-on-star-leg.png"))
+            .unwrap();
+    }
+}
+
 /// The angle tower of the joint tests in a folder with the example
 /// sections.
 fn angle_tower(tag: &str, text: &str) -> std::path::PathBuf {

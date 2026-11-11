@@ -352,6 +352,98 @@ fn a_star_is_two_angles_that_do_not_overlap() {
     assert_eq!((l.bands.len(), l.section.len()), (1, 1));
 }
 
+/// A point (y, z) inside an outline.
+fn inside_outline(o: &[[f64; 2]], q: [f64; 2]) -> bool {
+    let mut odd = false;
+    for k in 0..o.len() {
+        let (a, c) = (o[k], o[(k + 1) % o.len()]);
+        if (a[1] > q[1]) != (c[1] > q[1])
+            && q[0] < a[0] + (q[1] - a[1]) / (c[1] - a[1]) * (c[0] - a[0])
+        {
+            odd = !odd;
+        }
+    }
+    odd
+}
+
+/// A brace bolted onto a built-up leg (owner 2026-11-11: "Go ahead with
+/// the braces"; before, it ran uncut to the work point through the leg):
+/// onto two angles in a star and onto four in a cross it is seated on the
+/// angle facing it (shifted off its work line, lying on a face of that
+/// angle's leg), cut short of the work point, and its steel — the middle
+/// of both its legs' thickness, from its cut end 0.6 m along it — lies in
+/// none of the leg's angles; its solid's end is the close-up's. The same
+/// brace whatever its roll (four quarter turns) and from either side.
+#[test]
+fn a_brace_is_seated_and_cut_against_a_built_up_leg() {
+    for leg in ["2S-61x7", "4X-61x7"] {
+        for roll in [0, 90, 180, 270] {
+            for x in ["4 m", "-4 m"] {
+                let text = TOWER
+                    .replace("section = \"EA-61x7\"", &format!("section = \"{leg}\""))
+                    .replace(
+                        "point = [\"4 m\", \"1 m\", \"0 m\"]",
+                        &format!("point = [\"{x}\", \"1 m\", \"0 m\"]"),
+                    )
+                    .replace(
+                        "section = \"UA-83x52x6\"",
+                        &format!("section = \"UA-83x52x6\"\nroll = \"{roll} deg\""),
+                    );
+                let what = format!("{leg}, roll {roll}°, from x = {x}");
+                let d = joint_details(&text, &library(), &Default::default()).unwrap();
+                assert!(d.level3, "{what}: {:?}", d.notes);
+                let a = arrival(&d, "N2", "D1");
+                let o = arrival(&d, "N2", a.onto.value.as_deref().unwrap());
+                let q = o.profile.as_ref().unwrap();
+                assert!(q.angle.is_none() && q.part_angles.len() >= 2, "{what}");
+                let p = a.profile.as_ref().unwrap();
+                let g = p.angle.unwrap();
+                // Seated: moved off its work line, on a face of the leg.
+                assert!(a.sits.value.is_some(), "{what}: not seated");
+                let off = a.offset.iter().map(|v| v * v).sum::<f64>().sqrt();
+                assert!(off > 1e-4 && off < 0.2, "{what}: offset {off}");
+                // Cut short, within half its length.
+                let cut = a.cut.value.unwrap();
+                assert!(cut > 0.0 && cut <= a.length / 2.0, "{what}: cut {cut}");
+                assert_eq!(a.cut.source, crate::Source::WorkedOut, "{what}");
+                assert!(!a.misfit, "{what}: {:?}", a.notes);
+                // Its steel in none of the leg's angles.
+                let mut samples: Vec<[f64; 2]> = Vec::new();
+                let n = 12;
+                for k in 0..=n {
+                    let f = k as f64 / n as f64;
+                    samples.push([
+                        g.heel[0] + g.t / 2.0 + f * (g.b - g.t / 2.0),
+                        g.heel[1] + g.t / 2.0,
+                    ]);
+                    samples.push([
+                        g.heel[0] + g.t / 2.0,
+                        g.heel[1] + g.t / 2.0 + f * (g.h - g.t / 2.0),
+                    ]);
+                }
+                for step in 0..=60 {
+                    // From 1 mm past its cut end (the end itself touches).
+                    let along = steel_start(a) + 0.001 + step as f64 * 0.01;
+                    for (k, at) in crate::outline_at(a, p, &samples, along).iter().enumerate() {
+                        let yz =
+                            [0, 1].map(|i| (0..3).map(|c| at[c] * q.axes[i + 1][c]).sum::<f64>());
+                        for part in &q.parts {
+                            assert!(
+                                !inside_outline(part, yz),
+                                "{what}: its steel (sample {k}, {along:.2} m along) in the leg"
+                            );
+                        }
+                    }
+                }
+                let solids = member_solids(&d);
+                ends_are_the_close_ups(&d, &solids);
+                let s = solid(&solids, "D1");
+                assert!((s.cut[a.end] - cut).abs() < 1e-12, "{what}");
+            }
+        }
+    }
+}
+
 /// The time to work out the joint details and the solids of a large
 /// tower, run by hand: `OHL_SOLIDS_FILE` (a structure file) and
 /// `OHL_SOLIDS_SECTIONS` (its section library).
@@ -378,6 +470,44 @@ fn solids_timing() {
         s.len(),
         (t1 - t0).as_secs_f64() * 1e3,
         (t2 - t1).as_secs_f64() * 1e3
+    );
+    // The ends bolting onto a built-up member (seated on its angle
+    // facing them since 2026-11-11): how many, seated, cut, the largest
+    // cut, not fitting, off its face; the members with no steel left
+    // between their cuts.
+    let (mut onto, mut seated, mut cut, mut largest, mut misfit, mut off) = (0, 0, 0, 0.0, 0, 0);
+    for j in &d.joints {
+        for a in &j.arrivals {
+            let built_up = a
+                .onto
+                .value
+                .as_ref()
+                .and_then(|o| j.arrivals.iter().find(|b| &b.member == o))
+                .and_then(|b| b.profile.as_ref())
+                .is_some_and(|q| !q.part_angles.is_empty());
+            if !built_up || a.profile.as_ref().is_none_or(|p| p.angle.is_none()) {
+                continue;
+            }
+            onto += 1;
+            seated += usize::from(a.offset != [0.0; 3]);
+            let c = a.cut.value.unwrap_or(0.0);
+            cut += usize::from(c > 0.0);
+            largest = f64::max(largest, c);
+            misfit += usize::from(a.misfit);
+            off += usize::from(a.flat.is_some_and(|f| f.off > crate::FLAT_OFF));
+            assert!(c <= a.length / 2.0 + 1e-12, "{}: cut {c}", a.member);
+        }
+    }
+    let gone = d
+        .joints
+        .iter()
+        .flat_map(|j| &j.arrivals)
+        .filter(|a| a.end == 0 && a.profile.is_some())
+        .count()
+        - s.len();
+    eprintln!(
+        "STATS onto built-up {onto} seated {seated} cut {cut} largest {largest:.4} misfit \
+         {misfit} off {off} no-solid {gone}"
     );
 }
 
