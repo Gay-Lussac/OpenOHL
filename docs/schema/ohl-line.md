@@ -64,6 +64,9 @@ The names are those of the line file:
     <point structure="T1" set="1"/> …
     <stringing kind="tension" horizontal_tension="25000" temperature="15"/>
     <!-- or kind="sag" sag="…" temperature="…" span="…" -->
+    <!-- or kind="catenary_constant" constant="1500" temperature="…" (version 15): H / w in metres -->
+    <!-- these three: condition="creep" or "load" (version 15): the value holds after creep / after load,
+         the initial stringing is worked back from it; none: initial -->
     <!-- or kind="unstressed_lengths" temperature="…">
            <lengths>300.1 299.9 …</lengths><stringing kind="sag" …/></stringing> -->
     <span_point label="M1" span="1" fraction="0.5" description="marker ball">  <!-- or distance="…" or station="…" -->

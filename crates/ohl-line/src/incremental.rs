@@ -827,6 +827,7 @@ mod tests {
 
         // Change S1's stringing.
         line.sections[0].stringing = crate::Stringing::Tension {
+            condition: crate::StrungAt::Initial,
             horizontal_tension: 23_000.0,
             temperature: 15.0,
         };
@@ -900,6 +901,7 @@ mod tests {
         close(&line, &solved);
         // An edit.
         line.sections[0].stringing = crate::Stringing::Tension {
+            condition: crate::StrungAt::Initial,
             horizontal_tension: 23_000.0,
             temperature: 15.0,
         };

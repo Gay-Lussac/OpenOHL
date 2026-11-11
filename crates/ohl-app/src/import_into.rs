@@ -829,6 +829,7 @@ mod tests {
         let id = line.sections[0].id.clone();
         let before = tension(r);
         line.sections[0].stringing = ohl_line::Stringing::Tension {
+            condition: ohl_line::StrungAt::Initial,
             horizontal_tension: before + 1000.0,
             temperature: 15.0,
         };

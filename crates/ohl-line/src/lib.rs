@@ -73,8 +73,13 @@ use legacy::{SpanLoad, SpreadLoad};
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// Latest line file version: 15 adds a system's highest operating voltage
 /// and insulation level (`highest_voltage_kv`, `insulation_level`,
-/// [`electrical::System`]; owner 2026-11-11), written only by a line with
-/// one (else 14 or older, [`Line::to_json`]); 14 adds a structure that takes no load case
+/// [`electrical::System`]; owner 2026-11-11) and a section's stringing
+/// given in a final condition (`condition`: after creep or after load,
+/// [`StrungAt`]) or by its catenary constant
+/// (`kind = "catenary_constant"`, [`Stringing::CatenaryConstant`]; roadmap
+/// O22 item 3, the same raise), written only by a line that uses one of
+/// them (else 14 or older, [`Line::to_json`]: an older program must not
+/// read such a stringing as an initial one); 14 adds a structure that takes no load case
 /// (`no_load_cases`, [`Structure::no_load_cases`]; owner 2026-11-10),
 /// written only by a line with one (else 13 or older, [`Line::to_json`]:
 /// an older program must not read such a line and compute loads for that
@@ -116,8 +121,9 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 pub const LINE_FILE_VERSION: u32 = 15;
 
 /// The version before a system's highest operating voltage and insulation
-/// level: what a line without them is written as (when a structure takes
-/// no load case).
+/// level, and before a stringing in a final condition or by catenary
+/// constant: what a line without them is written as (when a structure
+/// takes no load case).
 const BEFORE_SYSTEM_VOLTAGES_VERSION: u32 = 14;
 
 /// The version before a structure taking no load case: what a line
@@ -1315,6 +1321,11 @@ fn check_stringing(stringing: &Stringing, spans: usize) -> Result<(), String> {
                 return Err(format!("sag in span {} of {spans}", k + 1));
             }
         }
+        Stringing::CatenaryConstant { constant, .. } => {
+            if !(constant.is_finite() && *constant > 0.0) {
+                return Err("the catenary constant must be above 0 m".to_owned());
+            }
+        }
         Stringing::UnstressedLengths {
             lengths, sagged, ..
         } => {
@@ -1590,6 +1601,11 @@ impl SectionPoint {
 /// section **clipped in**: each span keeps its own unstressed length, so a
 /// structure moved changes the spans next to it and the suspension strings
 /// swing to balance them (the effect fades along the section).
+///
+/// A value in the blocks holds in a **condition** ([`StrungAt`]): as
+/// strung (initial, the default), or after creep or after load — the
+/// initial stringing is then worked back from it
+/// ([`solve::worked_back`]), and it is higher than the value given.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Stringing {
@@ -1600,6 +1616,23 @@ pub enum Stringing {
         horizontal_tension: f64,
         /// Cable temperature, °C.
         temperature: f64,
+        /// The condition the tension holds in.
+        #[serde(default, skip_serializing_if = "StrungAt::is_initial")]
+        condition: StrungAt,
+    },
+    /// In the blocks: sagged to a catenary constant \\( C = H / w \\) at a
+    /// temperature (still air): the horizontal tension is the constant
+    /// times the bare weight per metre of the cable as strung (at the
+    /// stringing temperature, [`solve::strung_cable`]), the same in every
+    /// span.
+    CatenaryConstant {
+        /// Catenary constant, m.
+        constant: f64,
+        /// Cable temperature, °C.
+        temperature: f64,
+        /// The condition the constant holds in.
+        #[serde(default, skip_serializing_if = "StrungAt::is_initial")]
+        condition: StrungAt,
     },
     /// In the blocks: sagged to a sag at a temperature (still air) — in
     /// the ruling span (no `span`), or in span `span` (0 = first) — with
@@ -1612,6 +1645,9 @@ pub enum Stringing {
         /// The span sagged (index); none: the ruling span.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         span: Option<usize>,
+        /// The condition the sag holds in.
+        #[serde(default, skip_serializing_if = "StrungAt::is_initial")]
+        condition: StrungAt,
     },
     /// Clipped in: the unstressed length of each span (per wire), at a
     /// temperature.
@@ -1638,7 +1674,102 @@ impl Stringing {
         match self {
             Stringing::Tension { temperature, .. }
             | Stringing::Sag { temperature, .. }
+            | Stringing::CatenaryConstant { temperature, .. }
             | Stringing::UnstressedLengths { temperature, .. } => *temperature,
+        }
+    }
+
+    /// A horizontal tension (N) at a temperature (°C), as strung (the
+    /// initial condition).
+    pub fn tension(horizontal_tension: f64, temperature: f64) -> Self {
+        Stringing::Tension {
+            horizontal_tension,
+            temperature,
+            condition: StrungAt::Initial,
+        }
+    }
+
+    /// The condition its value holds in (a clipped-in section's lengths
+    /// are always the initial cut lengths).
+    pub fn condition(&self) -> StrungAt {
+        match self {
+            Stringing::Tension { condition, .. }
+            | Stringing::Sag { condition, .. }
+            | Stringing::CatenaryConstant { condition, .. } => *condition,
+            Stringing::UnstressedLengths { .. } => StrungAt::Initial,
+        }
+    }
+
+    /// Whether it needs line file version 15: a value in a final
+    /// condition or a catenary constant (also in what a clipped-in section
+    /// was sagged to before).
+    pub fn since_version_15(&self) -> bool {
+        match self {
+            Stringing::CatenaryConstant { .. } => true,
+            Stringing::Tension { condition, .. } | Stringing::Sag { condition, .. } => {
+                !condition.is_initial()
+            }
+            Stringing::UnstressedLengths { sagged, .. } => {
+                sagged.as_ref().is_some_and(|s| s.since_version_15())
+            }
+        }
+    }
+}
+
+/// The condition a stringing value holds in (roadmap O22 item 3): written
+/// `"initial"` (the default, not written), `"creep"` or `"load"`. The
+/// weather cases of the final conditions are the line's creep-stretch
+/// criteria ([`condition::CreepStretch`]). (Max Sag is a choice per
+/// weather case, not a state a wire can be strung to.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrungAt {
+    /// As strung.
+    #[default]
+    Initial,
+    /// After the permanent stretch due to creep.
+    Creep,
+    /// After the permanent stretch due to the heaviest load.
+    Load,
+}
+
+impl StrungAt {
+    /// Whether it is the initial condition (the default).
+    pub fn is_initial(&self) -> bool {
+        *self == StrungAt::Initial
+    }
+
+    /// Its name in texts: `initial`, `after creep`, `after load`.
+    pub fn label(self) -> &'static str {
+        match self {
+            StrungAt::Initial => "initial",
+            StrungAt::Creep => "after creep",
+            StrungAt::Load => "after load",
+        }
+    }
+
+    /// Its name in files: `initial`, `creep`, `load`.
+    pub fn name(self) -> &'static str {
+        match self {
+            StrungAt::Initial => "initial",
+            StrungAt::Creep => "creep",
+            StrungAt::Load => "load",
+        }
+    }
+
+    /// From its name in files.
+    pub fn parse(text: &str) -> Option<Self> {
+        [StrungAt::Initial, StrungAt::Creep, StrungAt::Load]
+            .into_iter()
+            .find(|c| c.name() == text.trim())
+    }
+
+    /// The cable condition it is.
+    pub fn as_condition(self) -> condition::Condition {
+        match self {
+            StrungAt::Initial => condition::Condition::Initial,
+            StrungAt::Creep => condition::Condition::Creep,
+            StrungAt::Load => condition::Condition::Load,
         }
     }
 }
@@ -2849,7 +2980,9 @@ impl Section {
                 sag,
                 temperature,
                 span,
+                condition,
             } => Stringing::Sag {
+                condition: *condition,
                 sag: *sag,
                 temperature: *temperature,
                 span: span.filter(|k| spans.contains(k)).map(|k| k - from),
@@ -3511,7 +3644,8 @@ impl Line {
 
     /// Serialises to pretty JSON at the oldest version that holds the
     /// line, so an older program still reads it: 15 with a system's
-    /// highest operating voltage or insulation level, else 14 with a structure
+    /// highest operating voltage or insulation level, or a stringing in a
+    /// final condition or by catenary constant, else 14 with a structure
     /// taking no load case, else 13 with a system's
     /// operating current, else 12 with a torus among a
     /// string's own volumes, else 11 with electrical
@@ -3543,8 +3677,9 @@ impl Line {
             .systems
             .iter()
             .any(|s| s.highest_voltage_kv.is_some() || s.insulation_level.is_some());
+        let final_stringing = self.sections.iter().any(|s| s.stringing.since_version_15());
         let written = match (sheaves, winds, shapes) {
-            _ if system_voltages => LINE_FILE_VERSION,
+            _ if system_voltages || final_stringing => LINE_FILE_VERSION,
             _ if no_cases => BEFORE_SYSTEM_VOLTAGES_VERSION,
             _ if current => BEFORE_NO_LOAD_CASES_VERSION,
             _ if torus => BEFORE_CURRENT_VERSION,
@@ -4829,6 +4964,7 @@ mod tests {
         );
         // A sag in a span left out: taken in the ruling span.
         s.stringing = Stringing::Sag {
+            condition: crate::StrungAt::Initial,
             sag: 10.0,
             temperature: 10.0,
             span: Some(0),
@@ -4998,6 +5134,7 @@ mod tests {
         let p = sec.points.clone();
         sec.span_points = vec![span_point("A", 1, SpanPlace::at_fraction(0.5))];
         sec.stringing = Stringing::Sag {
+            condition: crate::StrungAt::Initial,
             sag: 5.0,
             temperature: 15.0,
             span: Some(2),
@@ -5067,11 +5204,13 @@ mod tests {
 
         let mut bad = line.clone();
         bad.sections[0].stringing = Stringing::Tension {
+            condition: crate::StrungAt::Initial,
             horizontal_tension: -1.0,
             temperature: 15.0,
         };
         assert!(bad.validate().is_err());
         bad.sections[0].stringing = Stringing::Tension {
+            condition: crate::StrungAt::Initial,
             horizontal_tension: 20e3,
             temperature: f64::NAN,
         };

@@ -514,9 +514,30 @@ before):
 
 | `kind` | Fields | Meaning |
 |---|---|---|
-| `tension` | `horizontal_tension` (N per wire), `temperature` (°C) | in the blocks: one horizontal tension in every span |
-| `sag` | `sag` (m), `temperature` (°C), `span` (index, optional) | in the blocks: sagged in the ruling span or in span `span` |
+| `tension` | `horizontal_tension` (N per wire), `temperature` (°C), `condition` (optional) | in the blocks: one horizontal tension in every span |
+| `sag` | `sag` (m), `temperature` (°C), `span` (index, optional), `condition` (optional) | in the blocks: sagged in the ruling span or in span `span` |
+| `catenary_constant` | `constant` (m), `temperature` (°C), `condition` (optional) | in the blocks (line file **15**, 2026-11-11, roadmap O22 item 3): H = constant × the bare weight per metre of the cable as strung (`solve::strung_cable(..).weight()`), every span |
 | `unstressed_lengths` | `lengths` (m, one per span), `temperature` (°C), `sagged` (optional nested `Stringing`) | clipped in: each span keeps its own unstressed length |
+
+`condition` (`StrungAt`: `initial` — the default, not written — `creep`,
+`load`; line file **15**, 2026-11-11, roadmap O22 item 3): the condition
+the value holds in. A final one is worked back to the initial horizontal
+tension by `solve::final_stringing::work_back` (Illinois secant on the
+section's own solve in still air at the stringing temperature, the wire
+alone; ≤ `WORK_BACK_SOLVES` = 60 solves), called from `solve::memo::prepared`
+— whose key then also holds the line's `condition_cases`, `bimetallic`
+and `solver` — and kept as `Prepared::worked_back`; the reference, the
+strain strings' estimated weights and `clip_lengths` are those of the
+initial tension found (`Prepared::as_strung`). `solve::worked_back` gives
+`WorkedBack { condition, temperature, target, initial, solves, note }` to
+reports (`ohl line`: `solve::final_stringing_notes`; the validation
+calculation `line.section`: `stringing_target_n`, `stringing_initial_n`).
+`Stringing::since_version_15` decides the version written
+(`Line::to_json`: 15 only with a final condition or a catenary constant,
+also inside `sagged`; else 14 or older). OHL XML: `<stringing
+kind="catenary_constant" constant>` and the attribute `condition`. The
+Sections table's condition cell: "tension, after creep", "catenary
+constant", …; the section form: three kinds and "at condition".
 
 `LineObject` (`objects.rs`): `kind` (`body` | `clamp` — a clamp holds a
 jumper or a spacer, a hinge passing forces only), `type` (the library

@@ -179,15 +179,20 @@ pub fn sections(model: &ExportModel) -> Table {
             "sag_m",
             "temperature_c",
             "calculation",
+            "catenary_constant_m",
+            "stringing_condition",
         ],
     );
     for s in &model.line.sections {
-        let (kind, tension, sag) = match &s.stringing {
+        let (kind, tension, sag, constant) = match &s.stringing {
             Stringing::Tension {
                 horizontal_tension, ..
-            } => ("tension", Some(*horizontal_tension), None),
-            Stringing::Sag { sag, .. } => ("sag", None, Some(*sag)),
-            Stringing::UnstressedLengths { .. } => ("clipped in", None, None),
+            } => ("tension", Some(*horizontal_tension), None, None),
+            Stringing::Sag { sag, .. } => ("sag", None, Some(*sag), None),
+            Stringing::CatenaryConstant { constant, .. } => {
+                ("catenary constant", None, None, Some(*constant))
+            }
+            Stringing::UnstressedLengths { .. } => ("clipped in", None, None, None),
         };
         t.rows.push(vec![
             s.id.as_str().into(),
@@ -204,6 +209,8 @@ pub fn sections(model: &ExportModel) -> Table {
             sag.into(),
             s.stringing.temperature().into(),
             s.calculation.label().into(),
+            constant.into(),
+            s.stringing.condition().name().into(),
         ]);
     }
     t

@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Stringing at a final condition and by catenary constant (roadmap O22 item 3; owner "go ahead and through with O22 too")**
+
+- **What.** A section's stringing value may hold *after creep* or
+  *after load* (`"condition": "creep" | "load"`), and may be a catenary
+  constant (`"kind": "catenary_constant"`, C = H / w, w the bare weight
+  per metre of the wire as strung). The initial stringing is worked back
+  from it: Illinois secant on the section's own solve in still air at the
+  stringing temperature, 6–12 solves, at most 60, never beyond the RTS.
+- **Open questions of the design, the recommended options taken.** The
+  value holds in the section's **own method** (FE or RS; the two differ
+  by about 0.1 % of H). Max Sag is refused as a stringing condition.
+- **A choice made here.** The value holds for **the wire alone, as at
+  stringing**: no jumpers, no spacers, nothing hanging in the spans —
+  what the initial stringing has always meant. A solve of the finished
+  line at the stringing temperature therefore shows the value given
+  only up to what hangs on the wire (as for an initial value).
+- **Safe side.** The initial tension is higher than the value given and
+  is the one the structures are loaded with; `ohl line` says both. A
+  linear wire strung "after load" has no stretch: the same as initial,
+  said.
+- **Format.** Line file version **15**, written only when a section uses
+  a final condition or a catenary constant (also in what a clipped
+  section was sagged to before); OHL XML attributes `constant`,
+  `condition`. Older files unchanged.
+- **App.** The section form and the Sections table take the three kinds
+  and the condition (needed so that an edit there does not drop them);
+  the initial tension in the table's cell is still to do.
+- **Validation.** `finstr-001…004`: the references of `tbcreep-001`,
+  `tbcreep-002` and `nlstate-001` run backwards.
+
 **Line parameter totals over the wires' length (owner, 2026-11-11)**
 
 The owner approved roadmap O23 item 1 ("go ahead"). A span's totals were

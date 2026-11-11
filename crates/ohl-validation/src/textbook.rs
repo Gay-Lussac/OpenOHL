@@ -46,6 +46,10 @@ fn string_input<'a>(inputs: &'a Inputs, name: &str) -> Result<&'a str, String> {
 /// as given (in the blocks: the same horizontal tension in every span).
 ///
 /// Outputs, numbered from 0 in the section's order:
+/// - of a section in the blocks: `stringing_target_n` (the horizontal
+///   tension its stringing asks for, in its condition) and
+///   `stringing_initial_n` (the initial tension that gives it: worked back
+///   from a value after creep or after load, [`ohl_line::solve::worked_back`]);
 /// - per span `i`: `h_i_n` (horizontal tension of its first element),
 ///   `max_tension_i_n`, `sag_i_m` (largest vertical distance below the
 ///   clamp-to-clamp chord), `mid_{x,y,z}_i_m` (the wire at half the
@@ -67,7 +71,7 @@ impl Calculation for LineSection {
     fn description(&self) -> &'static str {
         "One section of a line solved by the line's solver (inputs: line = .ohl.json text, \
          cable = wire library entry, weather = one weather case, optional section index); \
-         outputs per span h_i_n, max_tension_i_n, sag_i_m, mid_{x,y,z}_i_m, low_{x,y,z}_i_m, \
+         outputs stringing_target_n, stringing_initial_n (in the blocks), per span h_i_n, max_tension_i_n, sag_i_m, mid_{x,y,z}_i_m, low_{x,y,z}_i_m, \
          per point clamp_{x,y,z}_k_m, per string string_k_j_n, string_k_j_slack, \
          string_k_j_across_deg, string_k_j_along_deg, string_k_j_{x,y,z}_m"
     }
@@ -119,6 +123,15 @@ impl Calculation for LineSection {
         )
         .map_err(|e| e.to_string())?;
         let mut out = Outputs::new();
+        // What it is strung to and the initial tension worked back from a
+        // value in a final condition (roadmap O22 item 3).
+        if let Some(w) =
+            ohl_line::solve::worked_back(&line, &section, &cable, &ohl_wirefe::default_fe_budget())
+                .map_err(|e| e.to_string())?
+        {
+            out.insert("stringing_target_n".to_owned(), w.target);
+            out.insert("stringing_initial_n".to_owned(), w.initial);
+        }
         let xyz = ["x", "y", "z"];
         for (i, s) in shape.spans.iter().enumerate() {
             out.insert(format!("h_{i}_n"), s.horizontal_tension);

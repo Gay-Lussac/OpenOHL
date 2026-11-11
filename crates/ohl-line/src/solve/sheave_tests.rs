@@ -22,6 +22,7 @@ fn example() -> Line {
     line.jumpers.clear();
     line.sections[0].clear_point_loads();
     line.sections[0].stringing = Stringing::Tension {
+        condition: crate::StrungAt::Initial,
         horizontal_tension: 25_000.0,
         temperature: 15.0,
     };

@@ -2260,6 +2260,7 @@ mod tests {
         )];
         let mut theirs = imported(line.clone());
         theirs.line.sections[0].stringing = ohl_line::Stringing::Tension {
+            condition: ohl_line::StrungAt::Initial,
             horizontal_tension: 20_000.0,
             temperature: 15.0,
         };

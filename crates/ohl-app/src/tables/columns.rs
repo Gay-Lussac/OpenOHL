@@ -154,7 +154,9 @@ pub(super) const SECTIONS: &[Column] = &[
         "condition",
         120.0,
         Yes,
-        "tension · sag, ruling span · sag, span N (clipped: N lengths); give the value too",
+        "tension · catenary constant · sag, ruling span · sag, span N (clipped: N lengths); add \
+         \", after creep\" or \", after load\" for a value that holds in that condition (the \
+         initial stringing is worked back from it and is higher); give the value too",
     ),
     (
         "value",

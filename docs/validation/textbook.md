@@ -105,6 +105,17 @@ the real strings (FE, clipped in) the spans carry −0.73 %, +0.26 % and
 | tbpl-001 | level 300 m, 2 kN at mid-span: slope jump P/H | closed form \\( C[\cosh(a+b) - \cosh b] \\) + reference | \\( 10^{-8} \\) |
 | tbpl-002 | inclined, 1.5 kN at 100 m | vertical balance, \\( T_B - T_A = wh \\) + jump + reference | \\( 10^{-8} \\) |
 
+### Stringing given after creep (`benchmarks/sagtension/final-stringing.toml`)
+
+The references of the forward cases run backwards: asked for the tension an independent calculation gives after creep for a span strung initially at 25 kN, the line must find 25 kN initial ([theory](../theory/sagtension.md#stringing-given-at-a-final-condition)).
+
+| Case | What | Reference |
+|---|---|---|
+| `finstr-001` | linear wire (creep as +25 °C), finite elements: 22 136.08 N after creep at 10 °C → 25 kN initial | `tbcreep-001` |
+| `finstr-002` | the same by the ruling span: 22 136.17 N → 25 kN | `tbcreep-002` |
+| `finstr-003` | the same given as a catenary constant after creep, C = H / w = 1410.50 m (w at 10 °C) → 25 kN | `tbcreep-001`, C by hand |
+| `finstr-004` | an invented wire with stress-strain and creep curves, ruling span: 23 579.69 N after creep at 15 °C → 25 kN | `nlstate-001` |
+
 ### Bimetallic conductor (`benchmarks/sagtension/textbook-bimetallic.toml`)
 
 Linear aluminium on a linear steel core (TB 324's typical component

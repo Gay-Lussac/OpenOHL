@@ -143,8 +143,35 @@ pub(super) struct Prepared {
     pub(super) layout: Vec<Holder>,
     pub(super) weights: Vec<Option<f64>>,
     pub(super) reference: Reference,
+    /// Its stringing worked back from a final condition (none: an initial
+    /// value, or clipped in).
+    pub(super) worked_back: Option<super::WorkedBack>,
     /// Its memo key (the stringing state of curves builds on it).
     pub(super) key: Key,
+}
+
+impl Prepared {
+    /// `section` as strung initially: with a stringing worked back from a
+    /// final condition, the section at the initial tension found; else the
+    /// section itself.
+    pub(super) fn as_strung<'a>(&self, section: &'a Section) -> std::borrow::Cow<'a, Section> {
+        as_strung(self.worked_back.as_ref(), section)
+    }
+}
+
+/// [`Prepared::as_strung`] of a stringing worked back.
+fn as_strung<'a>(
+    worked_back: Option<&super::WorkedBack>,
+    section: &'a Section,
+) -> std::borrow::Cow<'a, Section> {
+    match worked_back {
+        Some(w) => {
+            let mut s = section.clone();
+            s.stringing = crate::Stringing::tension(w.initial, w.temperature);
+            std::borrow::Cow::Owned(s)
+        }
+        None => std::borrow::Cow::Borrowed(section),
+    }
 }
 
 type Parts<V> = Mutex<Option<Lru<V>>>;
@@ -167,7 +194,11 @@ fn keep<V: Clone>(memo: &Parts<V>, k: Key, v: V) {
 }
 
 /// [`estimate_strain_weights`] and [`reference`] of `section` (its holders
-/// from `line`), from the memo when solved before.
+/// from `line`), from the memo when solved before. A stringing value in a
+/// final condition is worked back to the initial one first
+/// ([`super::final_stringing::work_back`]): it depends on the line's
+/// creep-stretch cases, bimetallic model and calculation options too, which
+/// are then part of the key.
 pub(super) fn prepared(
     line: &Line,
     section: &Section,
@@ -175,16 +206,38 @@ pub(super) fn prepared(
     budget: &Budget,
 ) -> Result<Arc<Prepared>, LineError> {
     let holders = holders_of(line, section)?;
-    let k = key(&[section, &holders, cable, &budget.iteration_limit()]);
+    let final_condition = !section.stringing.condition().is_initial();
+    let k = if final_condition {
+        key(&[
+            section,
+            &holders,
+            cable,
+            &budget.iteration_limit(),
+            &line.condition_cases,
+            &line.bimetallic,
+            &line.solver,
+        ])
+    } else {
+        key(&[section, &holders, cable, &budget.iteration_limit()])
+    };
     if let Some(p) = recall(&PREPARED, &k) {
         return Ok(p);
     }
-    let (layout, weights) = estimate_strain_weights(section, holders, cable, budget)?;
-    let reference = reference(section, &layout, cable, budget)?;
+    let worked_back = if final_condition {
+        Some(super::final_stringing::work_back(
+            line, section, &holders, cable, budget,
+        )?)
+    } else {
+        None
+    };
+    let strung = as_strung(worked_back.as_ref(), section);
+    let (layout, weights) = estimate_strain_weights(&strung, holders, cable, budget)?;
+    let reference = reference(&strung, &layout, cable, budget)?;
     let p = Arc::new(Prepared {
         layout,
         weights,
         reference,
+        worked_back,
         key: k,
     });
     keep(&PREPARED, k, p.clone());

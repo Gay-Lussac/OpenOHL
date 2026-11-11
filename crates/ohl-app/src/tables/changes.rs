@@ -975,9 +975,25 @@ pub(super) fn section_cells(
             ));
         }
         let value = num(&c.get(col("value")), &format!("{name} value"))?;
+        // The condition the value holds in: "…, after creep" / "…, after
+        // load" (none: initial).
+        let (condition, held) = [ohl_line::StrungAt::Creep, ohl_line::StrungAt::Load]
+            .into_iter()
+            .find_map(|h| {
+                let rest = condition.strip_suffix(h.label())?;
+                Some((rest.trim_end_matches([',', ' ']).to_owned(), h))
+            })
+            .unwrap_or((condition, ohl_line::StrungAt::Initial));
         form.stringing = if condition == "tension" {
             Stringing::Tension {
+                condition: held,
                 horizontal_tension: value * 1000.0,
+                temperature,
+            }
+        } else if condition == "catenary constant" {
+            Stringing::CatenaryConstant {
+                condition: held,
+                constant: value,
                 temperature,
             }
         } else if let Some(rest) = condition.strip_prefix("sag") {
@@ -993,13 +1009,16 @@ pub(super) fn section_cells(
                 Some(k.max(1) - 1)
             };
             Stringing::Sag {
+                condition: held,
                 sag: value,
                 temperature,
                 span,
             }
         } else {
             return Err(format!(
-                "{name} condition: \"{condition}\" — write tension, sag, ruling span or sag, span N"
+                "{name} condition: \"{condition}\" — write tension, catenary constant, \
+                 sag, ruling span or sag, span N (then \", after creep\" or \", after load\" \
+                 for a value that holds in that condition)"
             ));
         };
     } else if let Stringing::UnstressedLengths { temperature: t, .. } = &mut form.stringing {
@@ -1054,11 +1073,13 @@ pub(super) fn reach_target(
     if target.is_nan() || target <= 0.0 {
         return Err(format!("{name}: the target must be above 0"));
     }
-    let by_tension = matches!(form.stringing, Stringing::Tension { .. });
+    // A tension and a catenary constant rise together.
+    let by_tension = !matches!(form.stringing, Stringing::Sag { .. });
     let start = match &form.stringing {
         Stringing::Tension {
             horizontal_tension, ..
         } => *horizontal_tension,
+        Stringing::CatenaryConstant { constant, .. } => *constant,
         Stringing::Sag { sag, .. } => *sag,
         Stringing::UnstressedLengths { .. } => unreachable!("checked"),
     };
@@ -1066,6 +1087,7 @@ pub(super) fn reach_target(
         Stringing::Tension {
             horizontal_tension, ..
         } => *horizontal_tension = v,
+        Stringing::CatenaryConstant { constant, .. } => *constant = v,
         Stringing::Sag { sag, .. } => *sag = v,
         Stringing::UnstressedLengths { .. } => {}
     };

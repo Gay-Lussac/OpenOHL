@@ -50,9 +50,11 @@ use ohl_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, defau
 use crate::{Line, LineError, Point, Section, Stringing};
 
 mod coupled;
+mod final_stringing;
 mod memo;
 mod ruling_span;
 pub use coupled::*;
+pub use final_stringing::{WORK_BACK_SOLVES, WorkedBack, final_stringing_notes, worked_back};
 pub(crate) use memo::live_memo;
 pub use memo::{forget_solves, solve_line_memo, solve_line_memo_default};
 pub use ruling_span::*;
@@ -1535,35 +1537,25 @@ fn reference(
 ) -> Result<Reference, LineError> {
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let mut clamps: Vec<Vector3<f64>> = layout.iter().map(plumb).collect();
-    let (horizontal_tension, temperature) = match &section.stringing {
-        Stringing::UnstressedLengths {
-            lengths,
-            temperature,
-            ..
-        } => {
-            return Ok(Reference {
-                clamps,
-                lengths: lengths.clone(),
-                temperature: *temperature,
-                weight_scale: vec![1.0; lengths.len()],
-                loads_per: crate::LoadsPer::default(),
-                blocks: crate::InTheBlocks::default(),
-            });
-        }
-        Stringing::Tension {
-            horizontal_tension,
-            temperature,
-        } => (*horizontal_tension, *temperature),
-        Stringing::Sag {
-            sag,
-            temperature,
-            span,
-        } => (
-            tension_for_sag(&clamps, *span, *sag, cable.weight().si())
-                .map_err(|m| invalid(format!("sag {sag} m: {m}")))?,
-            *temperature,
-        ),
-    };
+    if let Stringing::UnstressedLengths {
+        lengths,
+        temperature,
+        ..
+    } = &section.stringing
+    {
+        return Ok(Reference {
+            clamps,
+            lengths: lengths.clone(),
+            temperature: *temperature,
+            weight_scale: vec![1.0; lengths.len()],
+            loads_per: crate::LoadsPer::default(),
+            blocks: crate::InTheBlocks::default(),
+        });
+    }
+    // The value as an initial one: a value in a final condition is worked
+    // back to its initial tension before ([`final_stringing::as_strung`]).
+    let temperature = section.stringing.temperature();
+    let horizontal_tension = final_stringing::asked_tension(section, &clamps, cable)?;
     let ea = cable.axial_stiffness().si();
     let gravity = Vector3::new(0.0, 0.0, -cable.weight().si());
     let case = WeatherCase::still(
@@ -2266,11 +2258,13 @@ pub fn clip_lengths(
     let budget = default_fe_budget();
     let cable = &*line.bimetallic.apply(cable);
     let cable = &*strung_cable(section, cable)?;
-    let (layout, _) = estimate_strain_weights(section, holders_of(line, section)?, cable, &budget)?;
-    let mut r = reference(section, &layout, cable, &budget)?;
+    // A value in a final condition: the initial cut lengths, worked back.
+    let prepared = memo::prepared(line, section, cable, &budget)?;
+    let (section, layout) = (&*prepared.as_strung(section), &prepared.layout);
+    let mut r = prepared.reference.clone();
     r.loads_per = line.solver.loads_per;
     r.blocks = line.solver.blocks;
-    let r = in_the_blocks_at_stringing(section, &layout, &r, cable, &budget)?;
+    let r = in_the_blocks_at_stringing(section, layout, &r, cable, &budget)?;
     Ok((r.lengths, r.temperature))
 }
 
@@ -3517,6 +3511,9 @@ mod span_case_tests;
 
 #[cfg(test)]
 mod local_tests;
+
+#[cfg(test)]
+mod final_stringing_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

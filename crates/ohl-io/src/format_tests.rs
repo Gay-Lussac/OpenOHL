@@ -108,12 +108,23 @@ fn rich_line() -> Line {
     sec.stringing = Stringing::UnstressedLengths {
         lengths: vec![300.1, 299.987654321, 0.1 + 0.2, 1e-7],
         temperature: -5.0,
+        // Sagged to a value after load (line file version 15).
         sagged: Some(Box::new(Stringing::Sag {
+            condition: ohl_line::StrungAt::Load,
             sag: 9.5,
             temperature: 15.0,
             span: Some(2),
         })),
     };
+    // Another section by its catenary constant after creep (version 15).
+    if let Some(other) = line.sections.get_mut(1) {
+        other.stringing = Stringing::CatenaryConstant {
+            constant: 1500.25,
+            temperature: 10.0,
+            condition: ohl_line::StrungAt::Creep,
+        };
+    }
+    let sec = &mut line.sections[0];
     sec.bundle = 2;
     sec.bundle_spacing = Some(0.4);
     sec.bundle_rotation_deg = Some(45.0);

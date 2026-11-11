@@ -102,6 +102,31 @@ Limits (% RTS support or horizontal tension, maximum \\( H \\), maximum \\( H/w 
 
 *Validation:* `criteria-001`; `nlcrit-001…005` (an invented cable, against an independent re-implementation).
 
+### Stringing given at a final condition
+
+*Built, in active development (not approved yet).* A section's stringing value — a horizontal tension, a sag, or a catenary constant \\( C = H / w \\) (\\( w \\): the bare weight per metre of the wire as strung, at the stringing temperature) — may be given in a **condition**: *initial* (as strung, the default), *after creep* or *after load*. Every calculation starts from the initial stringing, so a value in a final condition is **worked back** to it.
+
+The unknown is the initial horizontal tension \\( H_0 \\) at the stringing temperature \\( t_s \\). Let \\( F(H_0) \\) be the mean horizontal tension of the section strung initially at \\( H_0 \\) and solved in still air at \\( t_s \\) in the condition asked, by the section's own method (finite elements or ruling span), the wire alone as at stringing (no jumpers, no spacers, nothing hanging in the spans). The permanent stretch only lengthens the wire, so \\( F(H_0) \le H_0 \\), and \\( F \\) rises with \\( H_0 \\). With \\( H^* \\) the tension asked (given, \\( C\\,w \\), or the tension of the sag asked between the plumb clamps):
+
+\\[ F(H_0) = H^* \\]
+
+is bracketed from \\( H^* \\) upwards (steps of × 1.25, never beyond the wire's rated tensile strength: an error says that the value cannot be reached) and solved by the Illinois secant to \\( 10^{-9} H^* \\). Exit clauses: 60 section solves (it settles in 6–12), the solver's time limit; the error names the bracket and the mismatch. The result is kept with the section's other weather-independent parts, so it is worked out once.
+
+Hand check (parabola, a linear wire whose creep is a temperature shift \\( \Delta t_c \\)): from \\( H_0 \\) to the final \\( H_f \\) at the same temperature,
+
+\\[ H_0^2\,(H_0 + K) = \frac{EA\, w^2 S^2}{24}, \qquad K = -H_f + \frac{EA\, w^2 S^2}{24 H_f^2} - EA\,\alpha\,\Delta t_c \\]
+
+A level 300 m span, \\( w \\) = 15.970 N/m, \\( EA \\) = 34.656 MN, \\( \alpha \\) = 18.8514·10⁻⁶ /K, \\( \Delta t_c \\) = 20 K, 25 kN after creep: \\( K \\) = 14 966 N, the right side 3.3146·10¹³ N³, \\( H_0 \\) = **27 830 N** (the line's solvers: within 0.1 %, the catenary and the weight at the stringing temperature).
+
+- A linear wire has no permanent stretch after load: a value *after load* is then the initial one, and the result says so.
+- A wire with stress-strain curves: the sets follow the tension, as in the criteria above; each trial \\( H_0 \\) is a full calculation of the final state.
+- Clipping in such a section cuts the **initial** lengths (those of \\( H_0 \\)).
+- The condition is read in the section's own method: the two methods differ by about 0.1 % of \\( H \\) for the same \\( H_0 \\).
+
+**Conservative:** the initial tension found is higher than the value given, and the initial state — the one that loads the structures — is computed from it; the final sags are those asked. Every report says the initial tension beside the value given ("sagged to 22.00 kN after creep at 15 °C: 23.31 kN initial"), so that loads are never read off the final value.
+
+*Validation:* `finstr-001…004` (`benchmarks/sagtension/final-stringing.toml`): the independent references of `tbcreep-001`, `tbcreep-002` and `nlstate-001` run backwards — asked for the tension those give after creep, the line finds their 25 kN initial (linear wire by finite elements and by ruling span, by catenary constant, and the invented wire with curves).
+
 ## Weather loads
 
 Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \\): \\( w_i = \rho_i g \frac{\pi}{4}[(d+2t)^2 - d^2] \\). Wind pressure \\( q \\) on the iced diameter: \\( w_h = q(d + 2t) \\). Resultant \\( \sqrt{(w_c + w_i)^2 + w_h^2} \\), in a plane swung by \\( \arctan(w_h / w_v) \\). Sag-tension uses the resultant in the span plane (exact for level spans).

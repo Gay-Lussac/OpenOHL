@@ -173,6 +173,7 @@ impl SectionForm {
                 rotation: 0.0,
                 points: Vec::new(),
                 stringing: Stringing::Tension {
+                    condition: ohl_line::StrungAt::Initial,
                     horizontal_tension: 20_000.0,
                     temperature: ohl_line::DEFAULT_STRINGING_TEMPERATURE,
                 },
@@ -225,6 +226,7 @@ impl SectionForm {
                     .and_then(|x| x.spans.first())
                     .map_or(20_000.0, |sp| sp.horizontal_tension);
                 Stringing::Tension {
+                    condition: ohl_line::StrungAt::Initial,
                     horizontal_tension: (h / 10.0).round() * 10.0,
                     temperature: *temperature,
                 }
@@ -348,22 +350,46 @@ impl SectionForm {
 /// Returns true when "pick points again" is clicked.
 /// A sagging condition in words.
 pub fn describe(s: &Stringing) -> String {
+    // A final condition is said; the initial one is the usual.
+    let held = match s.condition() {
+        ohl_line::StrungAt::Initial => String::new(),
+        c => format!(" {}", c.label()),
+    };
     match s {
         Stringing::Tension {
             horizontal_tension,
             temperature,
-        } => format!("{:.1} kN at {temperature} °C", horizontal_tension / 1000.0),
+            ..
+        } => format!(
+            "{:.1} kN{held} at {temperature} °C",
+            horizontal_tension / 1000.0
+        ),
+        Stringing::CatenaryConstant {
+            constant,
+            temperature,
+            ..
+        } => format!("a catenary constant of {constant:.0} m{held} at {temperature} °C"),
         Stringing::Sag {
             sag,
             temperature,
             span,
+            ..
         } => format!(
-            "a sag of {sag:.2} m in {} at {temperature} °C",
+            "a sag of {sag:.2} m in {}{held} at {temperature} °C",
             span.map_or("the ruling span".into(), |k| format!("span {}", k + 1))
         ),
         Stringing::UnstressedLengths { lengths, .. } => {
             format!("{} unstressed lengths", lengths.len())
         }
+    }
+}
+
+/// A stringing condition in the form's list.
+fn strung_at_label(c: ohl_line::StrungAt) -> &'static str {
+    match c {
+        ohl_line::StrungAt::Initial => "Initial",
+        ohl_line::StrungAt::Creep => "After creep",
+        ohl_line::StrungAt::Load => "After load",
     }
 }
 
@@ -507,33 +533,90 @@ pub(super) fn section_ui(
     }
     let spans = f.points.len().saturating_sub(1);
     match &mut f.stringing {
-        Stringing::Tension { .. } | Stringing::Sag { .. } => {
-            // The sagging condition: a tension, or a sag.
+        Stringing::Tension { .. } | Stringing::Sag { .. } | Stringing::CatenaryConstant { .. } => {
+            // The sagging condition: a tension, a sag or a catenary
+            // constant, and the condition it holds in.
             let temperature = f.stringing.temperature();
-            let mut by_sag = matches!(f.stringing, Stringing::Sag { .. });
+            let condition = f.stringing.condition();
+            let kind_of = |s: &Stringing| match s {
+                Stringing::Sag { .. } => 1,
+                Stringing::CatenaryConstant { .. } => 2,
+                _ => 0,
+            };
+            let mut kind = kind_of(&f.stringing);
             ui.horizontal(|ui| {
                 ui.label("sagged to");
-                ui.radio_value(&mut by_sag, false, "a tension");
-                ui.radio_value(&mut by_sag, true, "a sag");
+                ui.radio_value(&mut kind, 0, "a tension");
+                ui.radio_value(&mut kind, 1, "a sag");
+                ui.radio_value(&mut kind, 2, "a catenary constant")
+                    .on_hover_text(
+                        "The horizontal tension over the bare weight per metre of the wire as \
+                         strung (H / w), in metres: the same in every span. No solve time.",
+                    );
             });
-            if by_sag != matches!(f.stringing, Stringing::Sag { .. }) {
-                f.stringing = if by_sag {
-                    Stringing::Sag {
+            if kind != kind_of(&f.stringing) {
+                f.stringing = match kind {
+                    1 => Stringing::Sag {
+                        condition,
                         sag: 10.0,
                         temperature,
                         span: None,
-                    }
-                } else {
-                    Stringing::Tension {
+                    },
+                    2 => Stringing::CatenaryConstant {
+                        condition,
+                        constant: 1500.0,
+                        temperature,
+                    },
+                    _ => Stringing::Tension {
+                        condition,
                         horizontal_tension: 20_000.0,
                         temperature,
-                    }
+                    },
                 };
             }
+            if let Stringing::Tension { condition, .. }
+            | Stringing::Sag { condition, .. }
+            | Stringing::CatenaryConstant { condition, .. } = &mut f.stringing
+            {
+                ui.horizontal(|ui| {
+                    ui.label("at condition");
+                    egui::ComboBox::from_id_salt("strung-at")
+                        .selected_text(strung_at_label(*condition))
+                        .show_ui(ui, |ui| {
+                            for c in [
+                                ohl_line::StrungAt::Initial,
+                                ohl_line::StrungAt::Creep,
+                                ohl_line::StrungAt::Load,
+                            ] {
+                                ui.selectable_value(condition, c, strung_at_label(c));
+                            }
+                        })
+                        .response
+                        .on_hover_text(
+                            "The value holds in this condition; the initial stringing is worked \
+                             back from it (about 10 solves of the section, once: 0.1–1 s). After \
+                             creep or load the initial tension is higher than the value given: \
+                             the loads on the structures follow from the initial one.",
+                        );
+                });
+            }
             match &mut f.stringing {
+                Stringing::CatenaryConstant {
+                    constant,
+                    temperature,
+                    ..
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("catenary constant");
+                        value(ui, constant, 1.0, " m");
+                        ui.label("at");
+                        value(ui, temperature, 0.5, " °C");
+                    });
+                }
                 Stringing::Tension {
                     horizontal_tension,
                     temperature,
+                    ..
                 } => {
                     let mut kn = *horizontal_tension / 1000.0;
                     ui.horizontal(|ui| {
@@ -549,6 +632,7 @@ pub(super) fn section_ui(
                     sag,
                     temperature,
                     span,
+                    ..
                 } => {
                     ui.horizontal(|ui| {
                         ui.label("sag");

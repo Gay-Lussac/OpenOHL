@@ -350,6 +350,7 @@ pub fn spotted_line(
                 .map(|s| SectionPoint::new(s.id.clone(), set))
                 .collect(),
             stringing: Stringing::Tension {
+                condition: ohl_line::StrungAt::Initial,
                 horizontal_tension: options.horizontal_tension,
                 temperature: options.temperature,
             },

@@ -337,18 +337,34 @@ fn write_stringing(out: &mut String, s: &Stringing, indent: &str) {
         Stringing::Tension {
             horizontal_tension,
             temperature,
+            condition,
         } => {
-            let _ = writeln!(
+            let _ = write!(
                 out,
-                " kind=\"tension\" horizontal_tension=\"{}\" temperature=\"{}\"/>",
+                " kind=\"tension\" horizontal_tension=\"{}\" temperature=\"{}\"",
                 num(*horizontal_tension),
                 num(*temperature)
             );
+            write_condition(out, *condition);
+        }
+        Stringing::CatenaryConstant {
+            constant,
+            temperature,
+            condition,
+        } => {
+            let _ = write!(
+                out,
+                " kind=\"catenary_constant\" constant=\"{}\" temperature=\"{}\"",
+                num(*constant),
+                num(*temperature)
+            );
+            write_condition(out, *condition);
         }
         Stringing::Sag {
             sag,
             temperature,
             span,
+            condition,
         } => {
             let _ = write!(
                 out,
@@ -359,7 +375,7 @@ fn write_stringing(out: &mut String, s: &Stringing, indent: &str) {
             if let Some(k) = span {
                 let _ = write!(out, " span=\"{k}\"");
             }
-            out.push_str("/>\n");
+            write_condition(out, *condition);
         }
         Stringing::UnstressedLengths {
             lengths,
@@ -378,6 +394,25 @@ fn write_stringing(out: &mut String, s: &Stringing, indent: &str) {
             }
             let _ = writeln!(out, "{indent}</stringing>");
         }
+    }
+}
+
+/// Ends a `<stringing>` element in the blocks: its `condition` (only
+/// when not the initial one) and the closing.
+fn write_condition(out: &mut String, condition: ohl_line::StrungAt) {
+    if !condition.is_initial() {
+        let _ = write!(out, " condition=\"{}\"", condition.name());
+    }
+    out.push_str("/>\n");
+}
+
+/// A `<stringing>` element's `condition` (none: initial).
+fn read_condition(e: &Element) -> Result<ohl_line::StrungAt, String> {
+    match e.attr("condition") {
+        None => Ok(ohl_line::StrungAt::Initial),
+        Some(c) => ohl_line::StrungAt::parse(c).ok_or_else(|| {
+            format!("<stringing>: condition \"{c}\" unknown (initial, creep or load)")
+        }),
     }
 }
 
@@ -1461,15 +1496,29 @@ fn read_section_point(e: &Element) -> Result<SectionPoint, String> {
 fn read_stringing(e: &Element) -> Result<Stringing, String> {
     Ok(match text(e, "kind")? {
         "tension" => {
-            check(e, &["kind", "horizontal_tension", "temperature"], &[])?;
+            check(
+                e,
+                &["kind", "horizontal_tension", "temperature", "condition"],
+                &[],
+            )?;
             Stringing::Tension {
+                condition: read_condition(e)?,
                 horizontal_tension: number(e, "horizontal_tension")?,
                 temperature: number(e, "temperature")?,
             }
         }
+        "catenary_constant" => {
+            check(e, &["kind", "constant", "temperature", "condition"], &[])?;
+            Stringing::CatenaryConstant {
+                condition: read_condition(e)?,
+                constant: number(e, "constant")?,
+                temperature: number(e, "temperature")?,
+            }
+        }
         "sag" => {
-            check(e, &["kind", "sag", "temperature", "span"], &[])?;
+            check(e, &["kind", "sag", "temperature", "span", "condition"], &[])?;
             Stringing::Sag {
+                condition: read_condition(e)?,
                 sag: number(e, "sag")?,
                 temperature: number(e, "temperature")?,
                 span: optional(e, "span")?,

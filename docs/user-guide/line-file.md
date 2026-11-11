@@ -232,7 +232,22 @@ Sagged to this horizontal tension (per subconductor) at this temperature, still 
 ```
 Sagged to a sag (largest vertical distance below the chord, m) at a temperature, still air: in the ruling span \\( \sqrt{\sum S^3 / \sum S} \\) (level) without `span`, or in span `span` (0 = first). The tension giving that sag is used in every span.
 
-In both, suspension clamps sit at their equilibrium position: swung across the line at line angles, plumb along it.
+```json
+{ "kind": "catenary_constant", "constant": 1500.0, "temperature": 15.0 }
+```
+Sagged to a catenary constant \\( C = H / w \\) in metres (line file version 15, *built, in active development — not approved yet*): the horizontal tension is the constant times the **bare weight per metre of the wire as strung** (at the stringing temperature, still air), the same in every span.
+
+**The condition of the value** (version 15). The three kinds above take an optional `"condition"`: `"initial"` (as strung; the default, not written), `"creep"` or `"load"` — the value then holds **after creep** or **after load** (the weather cases of Criteria › Creep-Stretch), in still air at the temperature given:
+
+```json
+{ "kind": "tension", "horizontal_tension": 22000.0, "temperature": 15.0, "condition": "creep" }
+{ "kind": "sag", "sag": 9.2, "temperature": 15.0, "condition": "load" }
+{ "kind": "catenary_constant", "constant": 1500.0, "temperature": 15.0, "condition": "creep" }
+```
+
+The initial stringing is worked back from it ([theory](../theory/sagtension.md#stringing-given-at-a-final-condition)): about ten solves of the section, once (0.1–1 s for ten spans), kept until the section, its wire or the creep-stretch cases change. After creep or after load the **initial tension is higher than the value given**; the loads on the structures follow from the initial one, so `ohl line` prints both ("stringing: section S1: sagged to 22.00 kN after creep at 15 °C: 23.31 kN initial"). The value holds in the section's own method (FE or RS), for the wire alone as at stringing (no jumpers, nothing hanging in the spans). A value the wire cannot reach below its rated tensile strength, or a condition without its weather case, is an error naming the section. Max Sag is not a stringing condition (it is a choice per weather case). A linear wire has no stretch after load: `"load"` is then the same as initial, and said. A line that uses neither is written as before (version 14 or older).
+
+In all of them, suspension clamps sit at their equilibrium position: swung across the line at line angles, plumb along it.
 
 Clipped in, each span keeps its own unstressed length (per subconductor) at a temperature — the state after clipping in, or lengths from a previous design or another program:
 

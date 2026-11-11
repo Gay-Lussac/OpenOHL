@@ -116,6 +116,7 @@ fn a_spacer_group_brought_up_to_date_is_a_full_solve() {
     let id = line.sections[0].id.clone();
     for h in [22_000.0, 26_000.0, 24_000.0] {
         line.sections[0].stringing = crate::Stringing::Tension {
+            condition: crate::StrungAt::Initial,
             horizontal_tension: h,
             temperature: 15.0,
         };

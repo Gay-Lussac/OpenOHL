@@ -21,6 +21,11 @@ sheaves share it out. The former model, one horizontal tension through
 the section, is the option *simplified (equal H)* (Line › Criteria ›
 Calculation options; `blocks = "equal_h"` on the command line).
 
+A section strung to a value **after creep** or **after load**
+([Line files › Stringing and status](line-file.md#stringing-and-status))
+is sagged in the field at the **initial** tension worked back from it:
+the sagging table is of that initial state, as for any other section.
+
 ## What is given
 
 | Output | Meaning |

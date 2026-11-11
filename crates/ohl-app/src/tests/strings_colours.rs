@@ -441,6 +441,7 @@ fn string_editor_presets_make_valid_assemblies() {
     ];
     section.clear_point_loads();
     section.stringing = ohl_line::Stringing::Tension {
+        condition: ohl_line::StrungAt::Initial,
         horizontal_tension: 20_000.0,
         temperature: 15.0,
     };

@@ -94,6 +94,7 @@ fn commands_are_validated_and_report_dirty_sections() {
     );
     // Batch: all or nothing.
     let stringing = Stringing::Tension {
+        condition: ohl_line::StrungAt::Initial,
         horizontal_tension: 24_000.0,
         temperature: 10.0,
     };
@@ -131,6 +132,7 @@ fn undo_is_per_user_and_refuses_to_overwrite_others() {
         Command::SetStringing {
             section: "S2".into(),
             stringing: Stringing::Tension {
+                condition: ohl_line::StrungAt::Initial,
                 horizontal_tension: 15_000.0,
                 temperature: 15.0,
             },

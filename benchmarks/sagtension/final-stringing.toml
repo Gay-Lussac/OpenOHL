@@ -1,0 +1,161 @@
+# A stringing value given in a final condition (after creep), and by
+# catenary constant: the initial stringing worked back from it
+# (docs/theory/sagtension.md, "Stringing given at a final condition").
+#
+# The references are those of the forward cases, run backwards: an
+# independent calculation gives the tension after creep of a span strung
+# initially at 25 kN; asked for that tension after creep, the line must
+# find 25 kN initial.
+#
+# - finstr-001, -003: tbcreep-001 (benchmarks/sagtension/
+#   textbook-change-of-state.toml; benchmarks/reference/textbook_reference.py,
+#   creep_cases): dead-end span 300 m, linear cable with creep as +25 °C,
+#   strung at 25 kN at 10 °C; after creep at 10 °C by the finite elements
+#   22136.08193 N, sag 7.973514789 m.
+# - finstr-002: tbcreep-002, the same by the ruling-span method:
+#   22136.17226 N, sag 7.973475592 m.
+# - finstr-003: the same span given by its catenary constant after creep,
+#   C = H / w with w the bare weight per metre of the cable as strung, at
+#   10 °C: the data sheet's 1.6 kg/m at 20 °C in the finite elements'
+#   multiplicative form, w = 1.6 x exp(-20e-6 x (10 - 20)) x 9.80665 =
+#   15.693778442 N/m; C = 22136.08193 / 15.693778442 = 1410.500474 m.
+# - finstr-004: nlstate-001 (benchmarks/sagtension/nonlinear-states.toml;
+#   benchmarks/sagtension/reference_invented_states.py): the INVENTED test
+#   cable with stress-strain and creep curves (not a real conductor), level
+#   300 m strung at 25 kN at 15 °C; after creep at 15 °C 23579.68878 N.
+#   The cable's weight is given at 15 °C here (reference_temperature), as
+#   the reference takes it at its known state.
+#
+# By hand (finstr-001, parabola): the creep is a temperature shift of 25 K,
+# EA = 30 MN, alpha = 20e-6 /K, w = 15.69 N/m, S = 300 m, H_f = 22136 N:
+#   H_0^2 (H_0 + K) = EA w^2 S^2 / 24 = 2.7697e13 N^3,
+#   K = -H_f + EA w^2 S^2 / (24 H_f^2) - EA alpha 25 = 19388 N
+#   -> H_0 = 25000 N (24999.6 by the parabola).
+#
+# Tolerance: 1e-7 relative on the initial tension for the linear cable (the
+# reference values have 10 digits; the working back stops at 1e-9), 1e-6
+# for the cable with curves (the line's ruling-span path against the
+# engine-level reference).
+
+[[case]]
+id = "finstr-001"
+title = "Sagged to 22136.08 N after creep at 10 °C (linear cable, creep as +25 °C), finite elements: 25 kN initial"
+calculation = "line.section"
+reference = "tbcreep-001 run backwards: independent elastic span by quadrature (benchmarks/reference/textbook_reference.py)"
+max_seconds = 10.0
+expected.stringing_target_n = { value = 22136.08193, rel_tol = 1e-12 }
+expected.stringing_initial_n = { value = 25000.0, rel_tol = 1e-7 }
+expected.h_0_n = { value = 22136.08193, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 7.973514789, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", model = "linear_creep_temperature", creep_temperature_shift = 25.0, outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "final stringing", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday"},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-fe",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 22136.08193, "temperature": 10.0, "condition": "creep"}}]
+}
+'''
+
+[[case]]
+id = "finstr-002"
+title = "Sagged to 22136.17 N after creep at 10 °C (linear cable, creep as +25 °C), ruling span: 25 kN initial"
+calculation = "line.section"
+reference = "tbcreep-002 run backwards: independent quadrature + secant, additive strain (benchmarks/reference/textbook_reference.py)"
+max_seconds = 10.0
+expected.stringing_initial_n = { value = 25000.0, rel_tol = 1e-7 }
+expected.h_0_n = { value = 22136.17226, rel_tol = 1e-7 }
+expected.sag_0_m = { value = 7.973475592, abs_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", model = "linear_creep_temperature", creep_temperature_shift = 25.0, outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "final stringing", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday"},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-rs",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 22136.17226, "temperature": 10.0, "condition": "creep"}}]
+}
+'''
+
+[[case]]
+id = "finstr-003"
+title = "Sagged to a catenary constant of 1410.500474 m after creep at 10 °C (H = C w = 22136.08 N), finite elements: 25 kN initial"
+calculation = "line.section"
+reference = "tbcreep-001 run backwards, C = H / w by hand (benchmarks/reference/textbook_reference.py)"
+max_seconds = 10.0
+expected.stringing_target_n = { value = 22136.08193, rel_tol = 1e-9 }
+expected.stringing_initial_n = { value = 25000.0, rel_tol = 1e-7 }
+expected.h_0_n = { value = 22136.08193, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", model = "linear_creep_temperature", creep_temperature_shift = 25.0, outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "final stringing", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday"},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1, "calculation": "creep-fe",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "catenary_constant", "constant": 1410.50047393262, "temperature": 10.0, "condition": "creep"}}]
+}
+'''
+
+[[case]]
+id = "finstr-004"
+title = "INVENTED cable with curves, sagged to 23579.69 N after creep at 15 °C, ruling span: 25 kN initial"
+calculation = "line.section"
+reference = "nlstate-001 run backwards: independent re-implementation (benchmarks/sagtension/reference_invented_states.py)"
+max_seconds = 20.0
+expected.stringing_initial_n = { value = 25000.0, rel_tol = 1e-6 }
+expected.h_0_n = { value = 23579.68878, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "15 °C" }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "final stringing", "crs": "local",
+ "creep_stretch": {"creep_case": "everyday"},
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "invented-signed-set", "bundle": 1, "calculation": "creep-rs",
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "stringing": {"kind": "tension", "horizontal_tension": 23579.68878, "temperature": 15.0, "condition": "creep"}}]
+}
+'''
+
+[case.inputs.cable]
+id = "invented-signed-set"
+name = "Invented test cable (core steeper than its final modulus)"
+kind = "acsr"
+source = "Invented test data — not a real conductor"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+reference_temperature = "15 °C"
+rated_tensile_strength = "140 kN"
+outer = { area = "400 mm²", modulus = "55 GPa", thermal_expansion = 23.0e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 250.0, -110.0, 40.0, -8.0], creep = [0.0, 160.0, -60.0, 15.0, -2.0], final_modulus = 550.0, max_compression = 0.0, reference_temperature = "20 °C" } }
+core = { area = "65 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6, stress_strain = { stress_unit = "MPa", initial = [0.0, 1950.0, -150.0, 30.0, -5.0], creep = [0.0, 1850.0, -120.0, 30.0, -5.0], final_modulus = 1900.0, max_compression = 0.0, reference_temperature = "20 °C" } }

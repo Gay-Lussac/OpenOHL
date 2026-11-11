@@ -680,6 +680,12 @@ against what line design practice uses). In the order proposed:
    constant, or a sag) given at the state after creep or after load, the
    initial stringing worked back from it; and sagging found automatically
    against tension limits.
+   **Built 2026-11-11, in active development (not approved yet):** the
+   stringing given after creep or after load (`"condition"`) and by
+   catenary constant (`"kind": "catenary_constant"`), line file 15, the
+   initial tension worked back and said beside the value (`ohl line`),
+   the section form and the Sections table, the benchmarks
+   `finstr-001…004`.
 4. **Wind on wires with a direction and with height.** The wind is one
    pressure, square to every span. Wanted: a wind direction (the part
    square to each span acting, with the part along it — a load case with

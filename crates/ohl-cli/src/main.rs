@@ -2057,6 +2057,17 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         for n in ohl_line::bimetallic_notes(&line, &library) {
             println!("note: {n}");
         }
+        // The sections strung to a value after creep or after load, or by
+        // catenary constant: the initial tension worked back, said beside
+        // the value given (the structures' loads follow from it; roadmap
+        // O22 item 3).
+        for n in ohl_line::solve::final_stringing_notes(
+            &line,
+            &library,
+            &ohl_wirefe::default_fe_budget(),
+        ) {
+            println!("stringing: {n}");
+        }
         for case in &cases {
             let started = std::time::Instant::now();
             let results = ohl_line::solve::solve_line(&line, &library, case);

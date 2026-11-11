@@ -784,6 +784,7 @@ fn tension_stringing_reproduces_its_tension() {
     // within 0.1 %: sagging holds the clamps plumb along the line, the
     // solved state lets them settle longitudinally (6 N observed).
     line.sections[0].stringing = Stringing::Tension {
+        condition: crate::StrungAt::Initial,
         horizontal_tension: 25_000.0,
         temperature: 15.0,
     };
@@ -809,6 +810,7 @@ fn sag_stringing_reproduces_its_sag() {
     // Jumpers hang their weight on the clamps after stringing.
     line.jumpers.clear();
     line.sections[0].stringing = Stringing::Sag {
+        condition: crate::StrungAt::Initial,
         sag: 8.0,
         temperature: 15.0,
         span: Some(1),
@@ -838,6 +840,7 @@ fn sections_in_the_blocks_roll_clipped_ones_do_not() {
     line.solver.blocks = crate::InTheBlocks::EqualH;
     line.sections[0].clear_point_loads();
     line.sections[0].stringing = Stringing::Tension {
+        condition: crate::StrungAt::Initial,
         horizontal_tension: 25_000.0,
         temperature: 15.0,
     };
@@ -1348,6 +1351,7 @@ fn finite_elements_follow_the_curves() {
     s.cable = "synthetic".into();
     s.points.truncate(2);
     s.stringing = Stringing::Tension {
+        condition: crate::StrungAt::Initial,
         horizontal_tension: 20_000.0,
         temperature: 15.0,
     };
@@ -1410,6 +1414,7 @@ fn the_weight_is_the_data_sheets_at_the_stringing_temperature() {
     s.points.truncate(2);
     s.calculation = Calculation::INITIAL_FE;
     s.stringing = Stringing::Tension {
+        condition: crate::StrungAt::Initial,
         horizontal_tension: 20_000.0,
         temperature: 10.0,
     };

@@ -515,11 +515,13 @@ fn the_tutorial_builds_a_first_line() {
         assert_eq!(
             f.stringing,
             ohl_line::Stringing::Tension {
+                condition: ohl_line::StrungAt::Initial,
                 horizontal_tension: 20_000.0,
                 temperature: 20.0
             }
         );
         f.stringing = ohl_line::Stringing::Tension {
+            condition: ohl_line::StrungAt::Initial,
             horizontal_tension: 10_000.0,
             temperature: 20.0,
         };

@@ -297,6 +297,7 @@ fn a_section_is_sagged_clipped_in_and_back_in_the_blocks() {
         span: 0,
     };
     let sag = Stringing::Sag {
+        condition: ohl_line::StrungAt::Initial,
         sag: 7.5,
         temperature: 15.0,
         span: None,
@@ -563,6 +564,7 @@ fn tables_edit_the_line_in_one_command_each() {
     assert_eq!(
         harness.state_mut().ready().unwrap().model.line.sections[0].stringing,
         ohl_line::Stringing::Sag {
+            condition: ohl_line::StrungAt::Initial,
             sag: 8.0,
             temperature: 15.0,
             span: Some(1)

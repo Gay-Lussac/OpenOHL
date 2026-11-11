@@ -936,7 +936,9 @@ fn edit_benchmark() {
         ohl_line::Stringing::Tension {
             horizontal_tension,
             temperature,
+            condition,
         } => ohl_line::Stringing::Tension {
+            condition: *condition,
             horizontal_tension: horizontal_tension + k,
             temperature: *temperature,
         },

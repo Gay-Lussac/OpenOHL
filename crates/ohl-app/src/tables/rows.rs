@@ -258,6 +258,9 @@ impl TableKind {
                         Stringing::Tension {
                             horizontal_tension, ..
                         } => ("tension".to_owned(), f(horizontal_tension / 1000.0, 2)),
+                        Stringing::CatenaryConstant { constant, .. } => {
+                            ("catenary constant".to_owned(), f(*constant, 1))
+                        }
                         Stringing::Sag { sag, span, .. } => (
                             span.map_or("sag, ruling span".into(), |k| {
                                 format!("sag, span {}", k + 1)
@@ -267,6 +270,11 @@ impl TableKind {
                         Stringing::UnstressedLengths { lengths, .. } => {
                             (format!("{} lengths", lengths.len()), String::new())
                         }
+                    };
+                    // A value that holds after creep or after load says so.
+                    let condition = match s.stringing.condition() {
+                        ohl_line::StrungAt::Initial => condition,
+                        held => format!("{condition}, {}", held.label()),
                     };
                     let shapes: Vec<&ohl_line::solve::SectionShape> = model
                         .section_cases(&s.id, case)

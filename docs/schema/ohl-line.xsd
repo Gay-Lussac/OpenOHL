@@ -68,7 +68,22 @@
     <xs:restriction base="xs:string">
       <xs:enumeration value="tension"/>
       <xs:enumeration value="sag"/>
+      <xs:enumeration value="catenary_constant"/>
       <xs:enumeration value="unstressed_lengths"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="strungAt">
+    <xs:annotation>
+      <xs:documentation>The condition a stringing value holds in (version
+        15): initial (as strung, the default, not written), creep (after
+        creep) or load (after load); the initial stringing is worked back
+        from a final value.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="initial"/>
+      <xs:enumeration value="creep"/>
+      <xs:enumeration value="load"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -242,7 +257,9 @@
     <xs:annotation>
       <xs:documentation>tension: horizontal_tension and temperature (in the
         blocks). sag: sag, temperature and optionally the span (0 = first;
-        none: the ruling span). unstressed_lengths: clipped in, the lengths
+        none: the ruling span). catenary_constant (version 15): constant
+        (H / w, metres) and temperature. These three may give a condition
+        (version 15). unstressed_lengths: clipped in, the lengths
         of the spans at temperature, and the stringing it was sagged to
         before (a nested stringing).</xs:documentation>
     </xs:annotation>
@@ -253,6 +270,8 @@
     <xs:attribute name="kind" type="ohl:stringingKind" use="required"/>
     <xs:attribute name="horizontal_tension" type="xs:double"/>
     <xs:attribute name="sag" type="xs:double"/>
+    <xs:attribute name="constant" type="xs:double"/>
+    <xs:attribute name="condition" type="ohl:strungAt"/>
     <xs:attribute name="span" type="xs:unsignedInt"/>
     <xs:attribute name="temperature" type="xs:double" use="required"/>
   </xs:complexType>
