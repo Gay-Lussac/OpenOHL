@@ -17,7 +17,7 @@ ohl-loads.workspace = true
 ohl-cables.workspace = true
 ohl-weather.workspace = true
 ohl-structures-fe.workspace = true
-ohl-plugins.workspace = true
+ohl-member-check.workspace = true
 ohl-sections.workspace = true
 ohl-clearance.workspace = true
 # The joints' face views as SVG and PDF sheets.

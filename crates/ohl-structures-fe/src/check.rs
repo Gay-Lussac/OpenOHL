@@ -317,40 +317,52 @@ pub fn member_usage_with(
                 given.map(|g| g.get(idx).cloned().unwrap_or_default()),
             )
         })
-        .map(|mut u| {
-            if solution.kept_active.contains(&u.member) {
-                u.governs = if u.governs.is_empty() {
-                    KEPT_ACTIVE.to_owned()
-                } else {
-                    format!("{} — {KEPT_ACTIVE}", u.governs)
-                };
-            }
-            // Its eccentric ends (connection shifts): where their moment
-            // went, or that it was left out.
-            let n = solution.members.get(u.member).map_or(0.0, |f| f.axial);
-            // A half of a diagonal through a crossing nothing else holds
-            // out of plane, in compression: its buckling length may be
-            // the whole diagonal's (2026-11-08).
-            if n < 0.0
-                && let Some(j) = &crossings[u.member]
-                && u.usage.is_some()
-            {
-                u.governs.push_str(&format!(
-                    " {NOT_SAFE} buckling length its own: the crossing at {j} is held out of its \
-                     plane only by the other diagonal (unless that one is in tension, the length \
-                     is the whole diagonal's; give lk, or the crossing partner)]"
-                ));
-            }
-            if let Some(w) = crate::offsets::eccentricity_words(model, u.member, n) {
-                u.governs = if u.governs.is_empty() {
-                    format!("{SHIFTED} {w}]")
-                } else {
-                    format!("{} {SHIFTED} {w}]", u.governs)
-                };
-            }
-            u
-        })
+        .map(|u| with_remarks(model, solution, &crossings, u))
         .collect()
+}
+
+/// A member's usage with what the core says about it whatever method
+/// checked it (its own, or a plugin's): kept active though it would go
+/// slack ([`KEPT_ACTIVE`]), a half of a diagonal through a crossing only
+/// the other diagonal holds (`crossings`: [`unbraced_crossings`]; said
+/// not on the safe side), and its eccentric ends ([`SHIFTED`]).
+pub fn with_remarks(
+    model: &Model,
+    solution: &Solution,
+    crossings: &[Option<String>],
+    mut u: MemberUsage,
+) -> MemberUsage {
+    if solution.kept_active.contains(&u.member) {
+        u.governs = if u.governs.is_empty() {
+            KEPT_ACTIVE.to_owned()
+        } else {
+            format!("{} — {KEPT_ACTIVE}", u.governs)
+        };
+    }
+    // Its eccentric ends (connection shifts): where their moment
+    // went, or that it was left out.
+    let n = solution.members.get(u.member).map_or(0.0, |f| f.axial);
+    // A half of a diagonal through a crossing nothing else holds
+    // out of plane, in compression: its buckling length may be
+    // the whole diagonal's (2026-11-08).
+    if n < 0.0
+        && let Some(j) = &crossings[u.member]
+        && u.usage.is_some()
+    {
+        u.governs.push_str(&format!(
+            " {NOT_SAFE} buckling length its own: the crossing at {j} is held out of its \
+             plane only by the other diagonal (unless that one is in tension, the length \
+             is the whole diagonal's; give lk, or the crossing partner)]"
+        ));
+    }
+    if let Some(w) = crate::offsets::eccentricity_words(model, u.member, n) {
+        u.governs = if u.governs.is_empty() {
+            format!("{SHIFTED} {w}]")
+        } else {
+            format!("{} {SHIFTED} {w}]", u.governs)
+        };
+    }
+    u
 }
 
 /// Per member, the joint where it is a half of a diagonal through a

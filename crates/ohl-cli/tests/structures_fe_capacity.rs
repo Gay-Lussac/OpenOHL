@@ -95,3 +95,83 @@ fn each_capacity_method_is_used_and_said() {
         eprintln!("skipping the plugin: tests/member-capacity not built");
     }
 }
+
+/// A model whose file names a plugin's member check (`[analysis] capacity
+/// = "plugin:<plugin>/<method>"`, 2026-11-11): `ohl structures fe` runs
+/// it — the example plugin's Euler load 184.2 kN, 20 / 184.2 = 10.9 %,
+/// said as the plugin's and not on the safe side. Not installed beside
+/// the file: refused by name, no other method in its place; a method
+/// asked for on the command line replaces the file's.
+#[test]
+fn the_files_plugin_method_is_run() {
+    let dir = std::env::temp_dir().join(format!("ohl-fe-cap-file-plugin-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("bar.ohlfe");
+    std::fs::write(
+        &file,
+        MODEL.replace(
+            "nonlinear = false\n",
+            "nonlinear = false\ncapacity = \"plugin:member-check-example/example-yield-euler\"\n",
+        ),
+    )
+    .unwrap();
+    let run = |extra: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+            .args(["structures", "fe"])
+            .arg(&file)
+            .args(extra)
+            .output()
+            .unwrap();
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let (ok, stdout, stderr) = run(&[]);
+    assert!(!ok, "{stdout}");
+    assert!(
+        stderr.contains(
+            "plugin \"member-check-example\" (method \"example-yield-euler\") is not installed"
+        ) && stderr.contains("not checked by another method in its place"),
+        "{stderr}"
+    );
+    let (ok, stdout, stderr) = run(&["--capacity", "asce10-97"]);
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("member capacities: ASCE 10-97"), "{stdout}");
+    let from =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples/member-check-example");
+    let wasm = "target/wasm32-wasip2/release/member_check_example.wasm";
+    if !from.join(wasm).is_file() {
+        assert!(
+            std::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "plugins/examples/member-check-example not built"
+        );
+        eprintln!("skipping the plugin: examples/member-check-example not built");
+        std::fs::remove_dir_all(&dir).ok();
+        return;
+    }
+    let to = dir.join("Plugins/member-check-example");
+    std::fs::create_dir_all(to.join(wasm).parent().unwrap()).unwrap();
+    std::fs::copy(from.join("ohl-plugin.toml"), to.join("ohl-plugin.toml")).unwrap();
+    std::fs::copy(from.join(wasm), to.join(wasm)).unwrap();
+    let (ok, stdout, stderr) = run(&[]);
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(ok, "{stdout}\n{stderr}");
+    assert!(
+        stdout.contains(
+            "member capacities: method example-yield-euler of the plugin member-check-example \
+             (not checked by OpenOHL)"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("10.9 %") && stdout.contains("Euler buckling, L_k 1.50 m (example)"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[not on the safe side: EXAMPLE METHOD, not a design code"),
+        "{stdout}"
+    );
+}

@@ -165,6 +165,41 @@ pub(crate) struct Analyses {
     wind: Option<ohl_sections::StructureWind>,
     /// The lattice faces of each model, when the wind factors need them.
     faces: BTreeMap<ModelKey, Vec<ohl_structures_fe::wind::Face>>,
+    /// Why a model's plugin (its file's member check) was not found: its
+    /// check is refused with this, never made by another method.
+    plugin_errors: BTreeMap<ModelKey, String>,
+    /// The members checked by plugins ([`Analyses::check_plugins`]).
+    plugin_runs: std::sync::Mutex<PluginRuns>,
+}
+
+/// The member checks by plugins of a usage run (2026-11-11): a plugin is
+/// called **once per placed structure with all its load cases**, so the
+/// run is made in two passes. The first ([`PluginRuns::collecting`])
+/// only solves the structures whose model names a plugin and keeps their
+/// solutions, in the order they are asked for; then each structure's
+/// plugin is called once ([`Analyses::check_plugins`]); the second pass
+/// — the run itself — takes the kept solutions and the plugin's usage in
+/// the same order instead of solving again.
+#[derive(Default)]
+struct PluginRuns {
+    /// The first pass: solve and keep, check nothing.
+    collecting: bool,
+    /// Per placed structure (its id; a type on its own: "" and the type
+    /// id), its solves in the order asked for.
+    kept: BTreeMap<(String, String), Vec<Kept>>,
+    /// Per structure, how many of `kept` the second pass has taken.
+    taken: BTreeMap<(String, String), usize>,
+}
+
+/// One solve of a structure whose members a plugin checks.
+struct Kept {
+    key: ModelKey,
+    case: String,
+    strength: f64,
+    self_weight: f64,
+    solution: Result<ohl_structures_fe::Solution, String>,
+    /// The plugin's usage and its note, once it was called.
+    checked: Option<Result<(Vec<ohl_structures_fe::MemberUsage>, String), String>>,
 }
 
 impl Analyses {
@@ -214,6 +249,83 @@ impl Analyses {
             }
         }
         out
+    }
+
+    /// Looks for the plugins the models' files name for their member
+    /// check (`Plugins/` beside each type's file, then the user's plugin
+    /// folder); true: at least one model names a plugin. One not found
+    /// refuses that model's check, the plugin named.
+    pub fn find_plugins(&mut self, types: &StructureLibrary) -> bool {
+        let mut any = false;
+        for (key, model) in &mut self.models {
+            let Ok(m) = model else { continue };
+            let Some(p) = &mut m.capacity_plugin else {
+                continue;
+            };
+            any = true;
+            let dir = types.path(&key.0).and_then(Path::parent);
+            match ohl_member_check::resolve(p, &ohl_member_check::roots(dir)) {
+                Ok(found) => p.dir = Some(found),
+                Err(e) => {
+                    self.plugin_errors.insert(key.clone(), e);
+                }
+            }
+        }
+        any
+    }
+
+    /// The first pass of a run with plugins on (solve and keep) or off.
+    pub fn collect_for_plugins(&self, on: bool) {
+        self.plugin_runs.lock().expect("not poisoned").collecting = on;
+    }
+
+    /// Calls each structure's plugin once with every solve kept for it
+    /// in the first pass. A plugin that fails: every check of that
+    /// structure is refused with its message.
+    pub fn check_plugins(&self) {
+        let mut runs = self.plugin_runs.lock().expect("not poisoned");
+        for kept in runs.kept.values_mut() {
+            let Some(key) = kept.first().map(|k| k.key.clone()) else {
+                continue;
+            };
+            let Some(Ok(model)) = self.models.get(&key) else {
+                continue;
+            };
+            let places: Vec<usize> = (0..kept.len())
+                .filter(|k| kept[*k].solution.is_ok())
+                .collect();
+            let checked = {
+                let solved: Vec<ohl_member_check::Solved> = places
+                    .iter()
+                    .filter_map(|k| {
+                        let k = &kept[*k];
+                        Some(ohl_member_check::Solved {
+                            name: &k.case,
+                            strength: k.strength,
+                            self_weight: k.self_weight,
+                            solution: k.solution.as_ref().ok()?,
+                        })
+                    })
+                    .collect();
+                if solved.is_empty() {
+                    continue;
+                }
+                ohl_member_check::check(model, &solved)
+            };
+            match checked {
+                Some(Ok(mut c)) => {
+                    for (n, k) in places.iter().enumerate().rev() {
+                        kept[*k].checked = Some(Ok((c.usage.remove(n), c.note.clone())));
+                    }
+                }
+                Some(Err(e)) => {
+                    for k in places {
+                        kept[k].checked = Some(Err(e.clone()));
+                    }
+                }
+                None => {}
+            }
+        }
     }
 
     /// The model a structure of type `t` standing on `extension` is
@@ -285,6 +397,15 @@ impl Analyses {
                 return None;
             }
         };
+        // The members are a plugin's to check: in the first pass of the
+        // run only these structures are solved (and kept for the
+        // plugin's one call).
+        let by_plugin = model.capacity_plugin.is_some();
+        let collecting = self.plugin_runs.lock().expect("not poisoned").collecting;
+        if collecting && !by_plugin {
+            return None;
+        }
+        let run_key = (placed.map_or(String::new(), |s| s.id.clone()), t.id.clone());
         // Which form the member ends were taken in, as OHL-Structure says
         // it (joint details asked for below level 4: not applied, said).
         if let Some(n) = model.joint_use.note() {
@@ -473,13 +594,79 @@ impl Analyses {
                 0.0
             },
         };
-        match ohl_structures_fe::analyse(
-            model,
-            &loads,
-            case.strength,
-            &ohl_structures_fe::default_budget(),
-        ) {
+        if let Some(e) = self.plugin_errors.get(&key) {
+            // The plugin is not installed (or has no such method): the
+            // check is refused, the plugin named.
+            return refused(e.clone());
+        }
+        let solve = || {
+            ohl_structures_fe::analyse(
+                model,
+                &loads,
+                case.strength,
+                &ohl_structures_fe::default_budget(),
+            )
+            .map_err(|e| e.to_string())
+        };
+        let mut plugin_note = None;
+        let solved = if !by_plugin {
+            solve()
+        } else if collecting {
+            let solution = solve().map(|(s, _)| s);
+            self.plugin_runs
+                .lock()
+                .expect("not poisoned")
+                .kept
+                .entry(run_key)
+                .or_default()
+                .push(Kept {
+                    key: key.clone(),
+                    case: case.name.clone(),
+                    strength: case.strength,
+                    self_weight: loads.self_weight,
+                    solution,
+                    checked: None,
+                });
+            return None;
+        } else {
+            // The second pass: the solve kept, with the plugin's usage.
+            let mut runs = self.plugin_runs.lock().expect("not poisoned");
+            let n = {
+                let n = runs.taken.entry(run_key.clone()).or_default();
+                *n += 1;
+                *n - 1
+            };
+            match runs.kept.get_mut(&run_key).and_then(|k| k.get_mut(n)) {
+                Some(k) => match (
+                    std::mem::replace(&mut k.solution, Err("taken".into())),
+                    k.checked.take(),
+                ) {
+                    (Err(e), _) => Err(e),
+                    (Ok(_), Some(Err(e))) => Err(e),
+                    (Ok(s), Some(Ok((usage, note)))) => {
+                        plugin_note = Some(note);
+                        Ok((s, usage))
+                    }
+                    // No plugin was called: the core's own words (every
+                    // member not checked).
+                    (Ok(s), None) => {
+                        let usage = ohl_structures_fe::member_usage(model, &s, case.strength);
+                        Ok((s, usage))
+                    }
+                },
+                // Not kept in the first pass (it never asked for this
+                // solve): solved now, every member not checked, said.
+                None => solve(),
+            }
+        };
+        match solved {
             Ok((solution, usage)) => {
+                if let Some(note) = plugin_note {
+                    let n = format!("model: {note}");
+                    if !notes.contains(&n) {
+                        notes.push(n);
+                    }
+                }
                 if let Some(note) = ohl_structures_fe::dead_load_note(model) {
                     notes.push(format!("model: {note}"));
                 }
@@ -532,6 +719,29 @@ impl Analyses {
                         }
                     ));
                 }
+                // Members a plugin was to check and gave no result for
+                // (or no plugin ran): never passing, said with which.
+                let unchecked: Vec<String> = usage
+                    .iter()
+                    .filter(|u| {
+                        u.usage.is_none() && u.governs.starts_with(ohl_member_check::NOT_CHECKED)
+                    })
+                    .map(|u| model.members[u.member].id.clone())
+                    .collect();
+                if !unchecked.is_empty() {
+                    const NAMED: usize = 10;
+                    notes.push(format!(
+                        "model: {}: {} member(s) without a result of the member check{}: {}{}",
+                        ohl_member_check::NOT_CHECKED,
+                        unchecked.len(),
+                        model
+                            .capacity_plugin
+                            .as_ref()
+                            .map_or(String::new(), |p| format!(" ({})", p.name())),
+                        unchecked[..unchecked.len().min(NAMED)].join(", "),
+                        if unchecked.len() > NAMED { ", …" } else { "" }
+                    ));
+                }
                 match worst(&usage) {
                     Some(w) => Some(Check {
                         method: Method::Fe,
@@ -542,7 +752,20 @@ impl Analyses {
                         not_safe: usage
                             .iter()
                             .filter(|u| ohl_structures_fe::check::not_safe(&u.governs))
-                            .count(),
+                            .count()
+                            + unchecked.len(),
+                    }),
+                    // No member checked at all: not a pass.
+                    None if !unchecked.is_empty() => Some(Check {
+                        method: Method::Fe,
+                        usage: f64::INFINITY,
+                        governs: format!(
+                            "model: {}: no member has a result of the member check",
+                            ohl_member_check::NOT_CHECKED
+                        ),
+                        incomplete: false,
+                        approximate: false,
+                        not_safe: unchecked.len(),
                     }),
                     None => {
                         notes.push("model: no member has a capacity".into());

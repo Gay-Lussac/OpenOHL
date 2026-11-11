@@ -39,11 +39,16 @@ Rules:
   re-exports what they need of the engines, e.g. the usage
   classification `classify_usage`, `NEAR_FULL`).
 - Plugins reach the application only through `ohl-plugins` (a core
-  crate, an allowed dependency of `ohl-structure-app` only): design codes
+  crate, an allowed dependency of `ohl-structure-app` only) and, for a
+  structure's member and joint checks by a plugin, through the core crate
+  `ohl-member-check` (the finite-element results mapped to the plugin
+  interface's records and back; a dependency of the link, which
+  re-exports it as `plugin_check`, and of the core's `ohl-cli` and
+  `ohl-loads`, so that every runner checks alike; 2026-11-11): design codes
   stay `code-plugin`s giving the line's weather and load cases — the
   application takes their load-case names as recipes taking the line's
-  values (`ohl_structure_edit::take_line_load_cases`). No plugin world is
-  made for the application yet; check plugins are listed only.
+  values (`ohl_structure_edit::take_line_load_cases`). Check
+  plugins are listed only.
 
 ## On its own: start page, libraries, plugins
 

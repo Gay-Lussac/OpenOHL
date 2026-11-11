@@ -4042,6 +4042,7 @@ dependencies = [
  "ohl-lidar",
  "ohl-line",
  "ohl-loads",
+ "ohl-member-check",
  "ohl-plugins",
  "ohl-pointcloud",
  "ohl-sagtension",
@@ -4176,6 +4177,7 @@ dependencies = [
  "ohl-cables",
  "ohl-core",
  "ohl-line",
+ "ohl-member-check",
  "ohl-sections",
  "ohl-structures",
  "ohl-structures-fe",
@@ -4183,6 +4185,15 @@ dependencies = [
  "ohl-wirefe",
  "serde",
  "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "ohl-member-check"
+version = "0.0.2"
+dependencies = [
+ "ohl-plugins",
+ "ohl-sections",
+ "ohl-structures-fe",
 ]
 
 [[package]]
@@ -4372,7 +4383,7 @@ dependencies = [
  "ohl-drawing",
  "ohl-line",
  "ohl-loads",
- "ohl-plugins",
+ "ohl-member-check",
  "ohl-sections",
  "ohl-structure-loads",
  "ohl-structures",

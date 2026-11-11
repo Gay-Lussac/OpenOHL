@@ -239,8 +239,19 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     if let Some(c) = &args.capacity
         && args.capacity_plugin.is_none()
     {
+        // Asked for on the command line, whatever the model says — also
+        // instead of a plugin's method the file names.
         model.analysis.capacity = ohl_structures_fe::CapacityMethod::parse(c)?;
+        model.capacity_plugin = None;
     }
+    if args.capacity_plugin.is_some() {
+        model.capacity_plugin = None;
+    }
+    // The member check by the plugin the file names
+    // (`[analysis] capacity = "plugin:<plugin>/<method>"`): looked for in
+    // `Plugins/` beside the file, then in the user's plugin folder; not
+    // found: refused, the plugin named.
+    let model = ohl_member_check::find(model, args.model.parent())?;
     let plugin = match &args.capacity_plugin {
         None => None,
         Some(dir) => {
@@ -343,6 +354,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         }
     };
     let mut csv = String::from("case,member,kind,section,axial_n,usage,governs\n");
+    // Every case solved first: a plugin's member check is one call with
+    // all of them.
+    let mut solved = Vec::new();
     for (case, mut nodal) in runs {
         nodal.extend(wind.iter().copied());
         let started = std::time::Instant::now();
@@ -351,13 +365,34 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             self_weight: weight,
             member: spread.clone(),
         };
-        let (s, mut usage) = ohl_structures_fe::analyse(
+        let (s, usage) = ohl_structures_fe::analyse(
             &model,
             &loads,
             args.strength,
             &ohl_structures_fe::default_budget(),
         )
         .map_err(|e| format!("{case}: {e}"))?;
+        solved.push((case, s, usage, started.elapsed()));
+    }
+    let by_plugin = {
+        let cases: Vec<ohl_member_check::Solved> = solved
+            .iter()
+            .map(|(case, s, _, _)| ohl_member_check::Solved {
+                name: case,
+                strength: args.strength,
+                self_weight: weight,
+                solution: s,
+            })
+            .collect();
+        ohl_member_check::check(&model, &cases).transpose()?
+    };
+    let plugin_note = by_plugin.as_ref().map(|c| c.note.clone());
+    if let Some(c) = by_plugin {
+        for (run, usage) in solved.iter_mut().zip(c.usage) {
+            run.2 = usage;
+        }
+    }
+    for (case, s, mut usage, took) in solved {
         if let Some((host, dir, method)) = &plugin {
             let given = plugin_capacities(host, dir, method, args.strength, &model, &s)
                 .map_err(|e| format!("{case}: {e}"))?;
@@ -382,7 +417,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             "{case}: {} iterations in {:.1?}, largest displacement {:.1} mm at {}, \
              reactions {:.1} / {:.1} / {:.1} kN",
             s.iterations,
-            started.elapsed(),
+            took,
             worst_d * 1000.0,
             model.nodes[worst_node].id,
             reaction[0] / 1000.0,
@@ -413,7 +448,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         match &plugin {
             None => println!(
                 "  {}",
-                ohl_structures_fe::check::capacity_note(&model, &usage)
+                plugin_note
+                    .clone()
+                    .unwrap_or_else(|| ohl_structures_fe::check::capacity_note(&model, &usage))
             ),
             Some((_, dir, method)) => println!(
                 "  member capacities: method {method} of the plugin in {} (not checked by OpenOHL)",
@@ -425,6 +462,22 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         sorted.sort_by(|a, b| b.usage.unwrap_or(0.0).total_cmp(&a.usage.unwrap_or(0.0)));
         if sorted.is_empty() {
             println!("  no member has a capacity");
+        }
+        // Members without a result of the plugin's check: never passing,
+        // said with how many (each is in the CSV).
+        let unchecked: Vec<&str> = usage
+            .iter()
+            .filter(|u| u.usage.is_none() && u.governs.starts_with(ohl_member_check::NOT_CHECKED))
+            .map(|u| model.members[u.member].id.as_str())
+            .collect();
+        if !unchecked.is_empty() {
+            println!(
+                "  {}: {} member(s) without a result of the member check: {}{}",
+                ohl_member_check::NOT_CHECKED,
+                unchecked.len(),
+                unchecked[..unchecked.len().min(10)].join(", "),
+                if unchecked.len() > 10 { ", …" } else { "" }
+            );
         }
         for u in sorted.iter().take(args.top) {
             let m = &model.members[u.member];

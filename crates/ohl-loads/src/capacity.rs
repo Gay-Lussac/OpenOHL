@@ -483,10 +483,32 @@ pub fn usage_with_sections(
     weather: &[WeatherCase],
     results: &[CaseLoads],
 ) -> Vec<CaseUsage> {
+    let mut analyses = crate::analysis::Analyses::load(types, sections);
+    // Members checked by a plugin (a structure file's `[analysis]
+    // capacity = "plugin:…"`): a first pass solves those structures in
+    // every case, each plugin is called once per structure with all its
+    // cases, and the run itself takes what it gave.
+    if analyses.find_plugins(types) {
+        analyses.collect_for_plugins(true);
+        let _ = usage_pass(line, types, library, weather, results, &analyses);
+        analyses.collect_for_plugins(false);
+        analyses.check_plugins();
+    }
+    usage_pass(line, types, library, weather, results, &analyses)
+}
+
+/// One pass of [`usage_with_sections`] over every case and structure.
+fn usage_pass(
+    line: &Line,
+    types: &StructureLibrary,
+    library: &ohl_cables::Library,
+    weather: &[WeatherCase],
+    results: &[CaseLoads],
+    analyses: &crate::analysis::Analyses,
+) -> Vec<CaseUsage> {
     let wind = wind_spans(line);
     let position = positions(line);
     let angles = line_angles(line);
-    let analyses = crate::analysis::Analyses::load(types, sections);
     results
         .iter()
         .map(|r| {

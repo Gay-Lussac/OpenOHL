@@ -93,6 +93,7 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | `ohl-server` | Server mode (pre-alpha, in active development): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
 | `ohl-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
 | `ohl-plugins` | Plugin manifests (`ohl-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
+| `ohl-member-check` | A structure's member and joint checks by a plugin (2026-11-11): the finite-element model and its solved cases mapped to the plugin interface's records (`member-check`), one call per structure with all its load cases, and the results back as the members' usage with the core's own remarks; the one crate that knows both `ohl-structures-fe` and the plugin host. Used by `ohl-loads` (the line's structure check), `ohl-cli` (`ohl structures fe`) and the structure application's link |
 | `ohl-validation` | Validation framework: cases (`benchmarks/`), runner and reports (`ohl validate`); a client of the engines it checks |
 | `ohl-app` | OHL-Design, the line application `ohl-design` (egui, ADR-0009): 3D, plan, profile, properties, tools, tables, library editors, checks, Python console, plugin manager |
 | `ohl-cli` | The `ohl` command-line tool |

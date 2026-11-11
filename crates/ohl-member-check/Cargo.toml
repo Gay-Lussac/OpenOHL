@@ -1,0 +1,17 @@
+[package]
+name = "ohl-member-check"
+description = "OpenOHL: a structure's member and joint checks by a plugin (the finite-element results mapped to the plugin interface's records and back)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-plugins.workspace = true
+ohl-sections.workspace = true
+ohl-structures-fe.workspace = true
+
+[lints]
+workspace = true

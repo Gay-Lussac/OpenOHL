@@ -123,19 +123,25 @@ Same as for the rules in the clearances". Built, in active development
     chosen by the core's capacity method and have no plugin interface;
     with a plugin method they stay with ASCE 10-97, said;
   - the pole checks (their own codes), not part of this interface;
-  - a built-up member's parts (`parts` is in the record, never filled);
   - the bolt tools' minimum distances in the Detail view (they ask the
     core's method, not a plugin);
   - the live "Resistance" of Member details and the capacities shown in
     reports (the interface returns capacities, the app shows the core's);
-  - the unbraced-crossing rule and the "kept active" and eccentric-end
-    remarks the core adds to a member's result;
-  - one call for all cases in OHL-Structure's run (today one call per
-    case), `ohl structures fe` and the line's structure check running
-    plugins at all (today: not checked, said);
   - a plugin's own settings (national parameters) and its formulas for
     the theory pages; the validation benchmarks of the two codes running
     against the plugins.
+
+- **Completed the same day** (built, in active development, not
+  approved yet): the mapping moved from the link into the core crate
+  `ohl-member-check` (it alone knows the finite-element results and the
+  plugin host), so that every runner checks alike — OHL-Structure,
+  `ohl structures fe` and the line's structure check all run a file's
+  plugin method, **one call per structure with all its load cases**; a
+  built-up member's `parts` are filled; the core's remarks (kept active,
+  a crossing held only by the other diagonal, eccentric ends) are
+  appended to the plugin's results. In the line a structure whose plugin
+  is not installed fails its check with the message, and members without
+  a result count as not on the safe side.
 
 **Level 4 and the option "joint details in the calculation" (owner, 2026-11-11)**
 

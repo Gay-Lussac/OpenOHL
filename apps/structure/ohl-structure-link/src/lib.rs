@@ -51,7 +51,9 @@ mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
 mod plate_frame;
-pub mod plugin_check;
+/// The member check by a plugin: the core crate `ohl-member-check`
+/// (shared with `ohl structures fe` and the line's structure check).
+pub use ohl_member_check as plugin_check;
 mod run;
 mod volumes;
 mod welds;
@@ -1380,13 +1382,83 @@ pub fn analyse_cases(
     budget: &Budget,
 ) -> Result<Vec<CaseRun>, String> {
     let model = model_of(structure, text, dir, sections)?;
-    Ok(in_case_order(cases.len(), threads(cases.len()), |k| {
-        let c = &cases[k];
-        (
-            c.name.clone(),
-            analyse_one(&model, table, c, &Default::default(), budget),
-        )
-    }))
+    let solved = in_case_order(cases.len(), threads(cases.len()), |k| {
+        analyse_one(&model, table, &cases[k], &Default::default(), budget)
+    });
+    Ok(cases
+        .iter()
+        .map(|c| c.name.clone())
+        .zip(plugin_checked(&model, cases, solved))
+        .collect())
+}
+
+/// One case solved, with its solution kept when a plugin checks the
+/// members (for the one call with every case, [`plugin_checked`]).
+pub(crate) type SolvedCase = Result<(CaseResult, Option<ohl_structures_fe::Solution>), String>;
+
+/// The cases' results with the members checked by the plugin the model's
+/// file names: **one call** for all the solved cases
+/// ([`ohl_member_check::check`]); each case's members take the plugin's
+/// usage and what governs, its capacity note the plugin's. A plugin that
+/// fails fails every case it was to check, with its message — no other
+/// method in its place. A model without a plugin: the results as solved.
+pub(crate) fn plugin_checked(
+    model: &Model,
+    cases: &[CaseToRun],
+    solved: Vec<SolvedCase>,
+) -> Vec<Result<CaseResult, String>> {
+    let kept: Vec<(usize, ohl_member_check::Solved)> = solved
+        .iter()
+        .enumerate()
+        .filter_map(|(k, r)| {
+            let (_, solution) = r.as_ref().ok()?;
+            let c = cases.get(k)?;
+            Some((
+                k,
+                ohl_member_check::Solved {
+                    name: &c.name,
+                    strength: c.strength,
+                    self_weight: if model.analysis.self_weight {
+                        c.self_weight
+                    } else {
+                        0.0
+                    },
+                    solution: solution.as_ref()?,
+                },
+            ))
+        })
+        .collect();
+    let checked = if kept.is_empty() {
+        None
+    } else {
+        let list: Vec<ohl_member_check::Solved> = kept.iter().map(|(_, s)| *s).collect();
+        ohl_member_check::check(model, &list)
+    };
+    let places: Vec<usize> = kept.iter().map(|(k, _)| *k).collect();
+    drop(kept);
+    let mut out: Vec<Result<CaseResult, String>> = Vec::with_capacity(solved.len());
+    let mut checked = checked;
+    for (k, r) in solved.into_iter().enumerate() {
+        let n = places.iter().position(|p| *p == k);
+        out.push(match (r, n, &mut checked) {
+            (Ok((mut result, _)), Some(n), Some(Ok(c))) => {
+                for u in c.usage.get(n).map_or(&[][..], |u| &u[..]) {
+                    if let Some(m) = result.members.get_mut(u.member) {
+                        m.usage = u.usage;
+                        m.governs.clone_from(&u.governs);
+                    }
+                }
+                result
+                    .notes
+                    .retain(|n| !n.starts_with("member capacities:"));
+                result.notes.push(c.note.clone());
+                Ok(result)
+            }
+            (Ok(_), Some(_), Some(Err(e))) => Err(e.clone()),
+            (r, _, _) => r.map(|(result, _)| result),
+        });
+    }
+    out
 }
 
 /// Threads for `n` cases: the cores, at most one per case.
@@ -1437,7 +1509,7 @@ fn analyse_one(
     case: &CaseToRun,
     extra: &ohl_structures_fe::Loads,
     budget: &Budget,
-) -> Result<CaseResult, String> {
+) -> SolvedCase {
     let self_weight = if model.analysis.self_weight {
         case.self_weight
     } else {
@@ -1524,23 +1596,6 @@ fn analyse_one(
     let started = Instant::now();
     let (solution, usage) = ohl_structures_fe::analyse(model, &loads, case.strength, budget)
         .map_err(|e| format!("did not solve: {e}"))?;
-    // The member check by a plugin (found when the model was built).
-    let (usage, plugin_note) = match &model.capacity_plugin {
-        Some(p) => match &p.dir {
-            Some(dir) => {
-                let (u, note) = plugin_check::usage_of_case(
-                    model,
-                    p,
-                    dir,
-                    (&case.name, case.strength, self_weight),
-                    &solution,
-                )?;
-                (u, Some(note))
-            }
-            None => (usage, None),
-        },
-        None => (usage, None),
-    };
     let took = started.elapsed();
     if let Some(note) = ohl_structures_fe::dead_load_note(model) {
         notes.push(note);
@@ -1564,10 +1619,9 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
         notes.push(note);
     }
-    notes.push(match plugin_note {
-        Some(n) => n,
-        None => ohl_structures_fe::check::capacity_note(model, &usage),
-    });
+    // With a plugin's member check the note is the plugin's, put in its
+    // place once every case is solved ([`plugin_checked`]).
+    notes.push(ohl_structures_fe::check::capacity_note(model, &usage));
     let joints = model
         .nodes
         .iter()
@@ -1626,7 +1680,12 @@ fn analyse_one(
             }
         })
         .collect();
-    Ok(CaseResult {
+    // Kept for the plugin's one call with every case.
+    let keep = model
+        .capacity_plugin
+        .as_ref()
+        .is_some_and(|p| p.dir.is_some());
+    let result = CaseResult {
         case: case.name.clone(),
         joints,
         members,
@@ -1640,7 +1699,8 @@ fn analyse_one(
         notes,
         points,
         plates: Vec::new(),
-    })
+    };
+    Ok((result, keep.then_some(solution)))
 }
 
 #[cfg(test)]

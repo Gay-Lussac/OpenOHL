@@ -33,6 +33,7 @@ ohl-crs = { path = "crates/ohl-crs" }
 ohl-io = { path = "crates/ohl-io" }
 ohl-validation = { path = "crates/ohl-validation" }
 ohl-plugins = { path = "crates/ohl-plugins" }
+ohl-member-check = { path = "crates/ohl-member-check" }
 ohl-server = { path = "crates/ohl-server" }
 ohl-loads = { path = "crates/ohl-loads" }
 ohl-render = { path = "crates/ohl-render" }

@@ -99,6 +99,21 @@ fn check(m: &Member, input: &CheckInput) -> Option<MemberResult> {
             }
         })
         .collect();
+    // What was received beyond the profile, said (the example reads it
+    // only to say so; the tests of the interface look for these notes).
+    let mut notes = vec![EXAMPLE.to_owned()];
+    if input.joint_details {
+        notes.push(format!(
+            "joint details received: {} end connection(s) of this member (not used by the example)",
+            m.connections.len()
+        ));
+    }
+    if !m.parts.is_empty() {
+        notes.push(format!(
+            "built-up member: {} part(s) received (checked as one section by the example)",
+            m.parts.len()
+        ));
+    }
     Some(MemberResult {
         id: m.id.clone(),
         capacities: vec![
@@ -115,7 +130,7 @@ fn check(m: &Member, input: &CheckInput) -> Option<MemberResult> {
         ],
         usages,
         governs: worst.1,
-        notes: vec![EXAMPLE.to_owned()],
+        notes,
         not_safe: Some(EXAMPLE.to_owned()),
     })
 }

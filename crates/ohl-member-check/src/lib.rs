@@ -24,13 +24,24 @@
 //!   and what the plugin flags as not on the safe side is said with the
 //!   member.
 //!
-//! The run of the structure application calls the plugin once per load
-//! case (the cases are solved in parallel and their solutions not kept
-//! together); the interface itself takes every case in one call.
+//! - **One call per structure** ([`check`]): every solved load case in
+//!   one call, for every runner — OHL-Structure's run (through its link),
+//!   `ohl structures fe` and the line's structure check (`ohl-loads`).
+//!   [`calls`] counts them (for the tests).
+//! - **The core's own remarks stay**: what the core says about a member
+//!   whatever method checks it — kept active, a crossing only the other
+//!   diagonal holds, eccentric ends
+//!   ([`ohl_structures_fe::check::with_remarks`]) — is appended to the
+//!   plugin's result.
+//!
+//! This crate is the one place that knows both the finite-element
+//! results and the plugin host: `ohl-structures-fe` runs no plugins, and
+//! `ohl-plugins` knows no model.
 
 use std::path::{Path, PathBuf};
 
 use ohl_plugins::member_check as wit;
+use ohl_sections::Shape;
 use ohl_structures_fe::check::MemberUsage;
 use ohl_structures_fe::design::Onto;
 use ohl_structures_fe::model::PluginMethod;
@@ -132,18 +143,72 @@ pub fn find(mut model: Model, dir: Option<&Path>) -> Result<Model, String> {
     Ok(model)
 }
 
+/// The parts of a built-up member (two angles, two channels): each
+/// part's shape and dimensions, half the section's area each; empty for
+/// one profile or a section without a profile.
+fn parts(model: &Model, member: usize) -> Vec<wit::Part> {
+    let s = &model.sections[model.members[member].section];
+    let Some(profile) = &s.profile else {
+        return Vec::new();
+    };
+    let named = |v: &[(&str, f64)]| -> Vec<(String, f64)> {
+        v.iter().map(|(k, x)| ((*k).to_owned(), *x)).collect()
+    };
+    let (shape, dimensions) = match profile.shape {
+        Shape::DoubleAngle { h, b, t, r, .. } | Shape::StarAngle { h, b, t, r, .. } => {
+            if (h - b).abs() < 1e-12 {
+                ("equal_angle", named(&[("h", h), ("t", t), ("r", r)]))
+            } else {
+                (
+                    "unequal_angle",
+                    named(&[("h", h), ("b", b), ("t", t), ("r", r)]),
+                )
+            }
+        }
+        Shape::CrossAngle { h, t, r, .. } => {
+            ("equal_angle", named(&[("h", h), ("t", t), ("r", r)]))
+        }
+        Shape::DoubleChannel {
+            h, b, tw, tf, r, ..
+        } => (
+            "channel",
+            named(&[("h", h), ("b", b), ("tw", tw), ("tf", tf), ("r", r)]),
+        ),
+        _ => return Vec::new(),
+    };
+    (0..2)
+        .map(|_| wit::Part {
+            shape: shape.to_owned(),
+            dimensions: dimensions.clone(),
+            area: s.area / 2.0,
+        })
+        .collect()
+}
+
 fn word<T>(v: Option<T>, f: impl Fn(T) -> &'static str) -> String {
     v.map_or(String::new(), |v| f(v).to_owned())
 }
 
-/// The interface's records for `model` and its solved `cases` (name,
-/// strength factor, self-weight factor, solution): every checked member,
-/// its forces in each case.
-pub fn input(model: &Model, cases: &[(&str, f64, f64, &Solution)]) -> wit::CheckInput {
+/// One solved load case of a structure, as [`check`] takes it.
+#[derive(Debug, Clone, Copy)]
+pub struct Solved<'a> {
+    /// The case's name.
+    pub name: &'a str,
+    /// Its strength factor.
+    pub strength: f64,
+    /// Its factor on the members' own weight (already in the forces).
+    pub self_weight: f64,
+    /// Its solution.
+    pub solution: &'a Solution,
+}
+
+/// The interface's records for `model` and its solved `cases`: every
+/// checked member, its forces in each case.
+pub fn input(model: &Model, cases: &[Solved]) -> wit::CheckInput {
     let taken = model.joint_use.taken();
     let basics: Vec<Vec<ohl_structures_fe::capacity::CapacityInput>> = cases
         .iter()
-        .map(|c| ohl_structures_fe::capacity::capacity_inputs(model, c.3))
+        .map(|c| ohl_structures_fe::capacity::capacity_inputs(model, c.solution))
         .collect();
     let mut members = Vec::new();
     for (k, m) in model.members.iter().enumerate() {
@@ -209,7 +274,7 @@ pub fn input(model: &Model, cases: &[(&str, f64, f64, &Solution)]) -> wit::Check
             .iter()
             .enumerate()
             .map(|(n, c)| {
-                let f = &c.3.members[k];
+                let f = &c.solution.members[k];
                 wit::CaseForces {
                     load_case: n as u32,
                     axial: f.axial,
@@ -225,7 +290,7 @@ pub fn input(model: &Model, cases: &[(&str, f64, f64, &Solution)]) -> wit::Check
             class: word(d.class, |c| c.as_str()),
             shape: b.shape.clone(),
             dimensions: b.dimensions.clone(),
-            parts: Vec::new(),
+            parts: parts(model, k),
             area: b.area,
             iy: b.iy,
             iz: b.iz,
@@ -273,9 +338,9 @@ pub fn input(model: &Model, cases: &[(&str, f64, f64, &Solution)]) -> wit::Check
         cases: cases
             .iter()
             .map(|c| wit::LoadCase {
-                name: c.0.to_owned(),
-                strength: c.1,
-                self_weight: c.2,
+                name: c.name.to_owned(),
+                strength: c.strength,
+                self_weight: c.self_weight,
             })
             .collect(),
         members,
@@ -287,17 +352,21 @@ pub fn input(model: &Model, cases: &[(&str, f64, f64, &Solution)]) -> wit::Check
 /// member without a result, or without a usage for the case, is
 /// [`NOT_CHECKED`] (no usage: never passing); a modelling member as the
 /// core says it; what the plugin flags as not safe is said with the
-/// member.
+/// member, and what the core says about a member whatever method checks
+/// it (kept active, an unbraced crossing, eccentric ends) is appended.
 pub fn usages(
     model: &Model,
     p: &PluginMethod,
-    cases: usize,
+    cases: &[Solved],
     results: &[wit::MemberResult],
 ) -> Vec<Vec<MemberUsage>> {
+    let crossings = ohl_structures_fe::check::unbraced_crossings(model);
     let by_id: std::collections::HashMap<&str, &wit::MemberResult> =
         results.iter().map(|r| (r.id.as_str(), r)).collect();
-    (0..cases)
-        .map(|n| {
+    cases
+        .iter()
+        .enumerate()
+        .map(|(n, case)| {
             model
                 .members
                 .iter()
@@ -330,40 +399,82 @@ pub fn usages(
                         u.check.clone()
                     };
                     if let Some(w) = &r.not_safe {
-                        governs.push_str(&format!(" [NOT ON THE SAFE SIDE: {w}]"));
+                        // The core's own mark: counted wherever the
+                        // members not on the safe side are.
+                        governs.push_str(&format!(" {} {w}]", ohl_structures_fe::check::NOT_SAFE));
                     }
-                    MemberUsage {
-                        member: k,
-                        usage: Some(u.usage),
-                        governs,
-                    }
+                    ohl_structures_fe::check::with_remarks(
+                        model,
+                        case.solution,
+                        &crossings,
+                        MemberUsage {
+                            member: k,
+                            usage: Some(u.usage),
+                            governs,
+                        },
+                    )
                 })
                 .collect()
         })
         .collect()
 }
 
-/// One case's member usage by the plugin `p` names, installed in `dir`
-/// ([`resolve`]): the plugin called with every checked member and this
-/// case, and the note for the results (the method, by whom, how many
-/// members are not checked).
-pub fn usage_of_case(
+/// What a plugin's member check gave for a structure ([`check`]).
+#[derive(Debug, Clone)]
+pub struct Checked {
+    /// The members' usage, one list per case in the model's member order.
+    pub usage: Vec<Vec<MemberUsage>>,
+    /// The note for the results: the method, by whom, how many members
+    /// are not checked (in the worst case).
+    pub note: String,
+    /// What the plugin returned, as it gave it (capacities, notes).
+    pub results: Vec<wit::MemberResult>,
+}
+
+static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// How many times [`check`] called a plugin's `check-members` in this
+/// process (the tests of "one call per structure").
+pub fn calls() -> usize {
+    CALLS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The member check of `model` by the plugin its file names, **one call
+/// for all of `cases`**. None: the file names no plugin, or the plugin
+/// was not looked for ([`find`]; the core's own results then say every
+/// member is not checked). Err: the plugin failed — no result, never
+/// another method in its place.
+pub fn check(model: &Model, cases: &[Solved]) -> Option<Result<Checked, String>> {
+    let p = model.capacity_plugin.as_ref()?;
+    let dir = p.dir.as_deref()?;
+    Some(check_in(model, p, dir, cases))
+}
+
+fn check_in(
     model: &Model,
     p: &PluginMethod,
     dir: &Path,
-    case: (&str, f64, f64),
-    solution: &Solution,
-) -> Result<(Vec<MemberUsage>, String), String> {
-    let host = ohl_plugins::WasmHost::new().map_err(|e| e.to_string())?;
-    let sent = input(model, &[(case.0, case.1, case.2, solution)]);
-    let results = host
-        .check_members(dir, &p.method, &sent)
-        .map_err(|e| format!("member check: {e}"))?;
-    let usage = usages(model, p, 1, &results).remove(0);
+    cases: &[Solved],
+) -> Result<Checked, String> {
+    let host = ohl_plugins::WasmHost::new().map_err(|e| format!("member check: {e}"))?;
+    let sent = input(model, cases);
+    CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let results = host.check_members(dir, &p.method, &sent).map_err(|e| {
+        format!(
+            "member check: plugin {} (method {}): {e}",
+            p.plugin, p.method
+        )
+    })?;
+    let usage = usages(model, p, cases, &results);
     let bare = usage
         .iter()
-        .filter(|u| u.governs.starts_with(NOT_CHECKED))
-        .count();
+        .map(|u| {
+            u.iter()
+                .filter(|u| u.governs.starts_with(NOT_CHECKED))
+                .count()
+        })
+        .max()
+        .unwrap_or(0);
     let mut note = format!(
         "member capacities: method {} of the plugin {} (not checked by OpenOHL)",
         p.method, p.plugin
@@ -373,5 +484,9 @@ pub fn usage_of_case(
             "; {bare} member(s) {NOT_CHECKED}: the plugin returned nothing for them"
         ));
     }
-    Ok((usage, note))
+    Ok(Checked {
+        usage,
+        note,
+        results,
+    })
 }

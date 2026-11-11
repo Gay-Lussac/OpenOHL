@@ -109,6 +109,7 @@ One Rust crate per module, in [`crates/`](crates/) (the structure application's 
 | `ohl-server` | Server mode (QUIC) and the web client |
 | `ohl-render` | wgpu renderer with levels of detail |
 | `ohl-plugins` | Plugin manifests, discovery and the WebAssembly host (WIT interfaces) |
+| `ohl-member-check` | A structure's member and joint checks by a plugin: the finite-element results mapped to the plugin interface's records and back |
 | `ohl-validation` | Validation framework: reference cases, runner, reports |
 | `ohl-app` | OHL-Design, the line application `ohl-design` (egui) |
 | `ohl-cli` | Command-line tool `ohl` |

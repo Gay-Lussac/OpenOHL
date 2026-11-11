@@ -231,3 +231,38 @@ fn plugins_are_managed_with_shared_settings() {
     std::fs::remove_dir_all(&user).ok();
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
+
+/// The capacities choice (Design › Member cross-sections, Analysis) lists
+/// the member-check methods of the plugins installed in `Plugins/` beside
+/// the structure (2026-11-11); choosing one writes it into the file
+/// (`[analysis] capacity = "plugin:<plugin>/<method>"`, version 12).
+#[test]
+fn the_capacities_choice_lists_an_installed_plugins_method() {
+    let from = root().join("plugins/examples/member-check-example");
+    let wasm = "target/wasm32-wasip2/release/member_check_example.wasm";
+    if !from.join(wasm).is_file() {
+        assert!(
+            ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "member-check-example plugin not built"
+        );
+        eprintln!("skipping: plugins/examples/member-check-example not built");
+        return;
+    }
+    let path = copy_of("type-02.ohls", "member-check-method");
+    let to = path.parent().unwrap().join("Plugins/member-check-example");
+    std::fs::create_dir_all(to.join(wasm).parent().unwrap()).unwrap();
+    std::fs::copy(from.join("ohl-plugin.toml"), to.join("ohl-plugin.toml")).unwrap();
+    std::fs::copy(from.join(wasm), to.join(wasm)).unwrap();
+    let p = path.clone();
+    let mut h = started(move |a| a.open(&p));
+    crate::layout::open_panel(&mut h.state_mut().dock, Panel::MemberSections);
+    h.run();
+    const METHOD: &str = "plugin:member-check-example/example-yield-euler";
+    h.get_by_value("asce10-97").click();
+    h.run();
+    h.get_by_label(METHOD).click();
+    h.run();
+    let text = h.state().file.as_ref().unwrap().text().to_owned();
+    assert!(text.contains(&format!("capacity = \"{METHOD}\"")), "{text}");
+    assert!(text.contains("version = 12"), "{text}");
+}

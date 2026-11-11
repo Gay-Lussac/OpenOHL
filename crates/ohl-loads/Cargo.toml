@@ -15,6 +15,7 @@ ohl-line.workspace = true
 ohl-structures.workspace = true
 ohl-sections.workspace = true
 ohl-structures-fe.workspace = true
+ohl-member-check.workspace = true
 ohl-weather.workspace = true
 ohl-wirefe.workspace = true
 serde.workspace = true

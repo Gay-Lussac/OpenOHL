@@ -842,25 +842,46 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                 }
                 _ => Default::default(),
             };
-            analyse_one(m, input.table, c, &extra, budget).map(|mut r| {
+            analyse_one(m, input.table, c, &extra, budget).map(|(mut r, solution)| {
                 r.notes.extend(notes);
                 if let Some(p) = plans.as_ref().filter(|p| !p.is_empty()) {
                     let axial = r.members.iter().map(|m| (m.id.clone(), m.axial)).collect();
                     r.plates = crate::plate_usage(p, &axial, c.strength);
                 }
-                r
+                (r, solution)
             })
         });
         let pole = pole.as_ref().map(|p| match p {
             Ok(p) => pole_case(input, p, c, budget),
             Err(e) => Err(e.clone()),
         });
-        StructureCase {
-            name: c.name.clone(),
-            fe,
-            pole,
-        }
+        (c.name.clone(), fe, pole)
     });
-    run.cases.extend(solved);
+    // The members checked by a plugin: one call with every solved case.
+    let mut names = Vec::new();
+    let mut fes = Vec::new();
+    let mut poles = Vec::new();
+    for (name, fe, pole) in solved {
+        names.push(name);
+        fes.push(fe);
+        poles.push(pole);
+    }
+    let fes: Vec<Option<Result<CaseResult, String>>> = match &model {
+        Some(m) => {
+            let solved = fes.into_iter().map(|f| f.expect("a model")).collect();
+            crate::plugin_checked(m, cases, solved)
+                .into_iter()
+                .map(Some)
+                .collect()
+        }
+        None => fes.into_iter().map(|_| None).collect(),
+    };
+    run.cases.extend(
+        names
+            .into_iter()
+            .zip(fes)
+            .zip(poles)
+            .map(|((name, fe), pole)| StructureCase { name, fe, pole }),
+    );
     Ok(run)
 }

@@ -841,18 +841,35 @@ Design › Member cross-sections › *capacities* lists the installed
 plugins' methods. The plugin is looked for in `Plugins/` beside the
 structure file, then in the user's plugin folder. **Not installed, not
 built, or without that method: the run fails** with a message naming the
-plugin and the method; no other method is used in its place. A program
-that runs no plugins (the core alone, `ohl structures fe`, the line's
-structure check today) reports every member as NOT CHECKED, NOT ON THE
-SAFE SIDE for such a file.
+plugin and the method; no other method is used in its place. This holds
+for every runner (2026-11-11): OHL-Structure's run, `ohl structures fe`
+(a method given with `--capacity` replaces the file's) and the line's
+structure check (OHL-Design, `ohl loads`: the check of a structure whose
+plugin is not installed is refused, shown as failing with the message).
+The core alone (`ohl-structures-fe`, which runs no plugins) reports
+every member of such a file as NOT CHECKED, NOT ON THE SAFE SIDE; the
+line's check counts members without a result as not on the safe side
+and names them.
 
 **Host side.** `WasmHost::member_check_methods`, `WasmHost::check_members`
 (`ohl-plugins`); the records are built and the results turned into the
-members' usage in `ohl_structure_link::plugin_check` (the only place
-that knows both the model and the interface). Today OHL-Structure's run
-calls the plugin once per load case (all members in each call) because
-its cases are solved in parallel and their solutions not kept together;
-the interface takes all cases at once and the run is to follow.
+members' usage in the core crate `ohl-member-check` (the only place that
+knows both the model and the interface; `ohl-structures-fe` runs no
+plugins, `ohl-plugins` knows no model; the link re-exports it as
+`ohl_structure_link::plugin_check`). **One call per structure with all
+its load cases, in every runner** (`ohl_member_check::check`; `calls()`
+counts them for the tests): OHL-Structure's run keeps the solutions of
+its cases (solved in parallel) and calls once; `ohl structures fe`
+solves every case first; the line's structure check makes a first pass
+that only solves the structures a plugin checks, calls each placed
+structure's plugin once, and takes what it gave in the run itself. A
+built-up member's `parts` are filled (two angles or two channels, half
+the area each). What the core says about a member whatever method checks
+it — kept active, a crossing held only by the other diagonal (not on the
+safe side), eccentric ends — is appended to the plugin's result
+(`ohl_structures_fe::check::with_remarks`); what the plugin flags as not
+safe carries the core's mark `[not on the safe side: …]`, so it is
+counted wherever such members are.
 
 **The example.** `plugins/examples/member-check-example`, method
 `example-yield-euler`: gross yield and Euler buckling from the lengths
@@ -860,7 +877,14 @@ given — **an illustration, not a design code**; every result says so and
 is flagged not on the safe side. Tests
 (`apps/structure/ohl-structure-tests/tests/plugin_member_check.rs`): a
 truss checked end to end through the real host against hand values, the
-NOT CHECKED member, the not-installed message.
+NOT CHECKED member, the not-installed message, one call for three cases,
+the connections of a level 4 structure reaching the plugin with the
+core's remark kept, the line's structure check (one call per placed
+structure); `crates/ohl-cli/tests/structures_fe_capacity.rs`
+(`ohl structures fe`); the capacities choice listing the method
+(`ohl-structure-app`, `self_sufficient_tests.rs`). They skip when the
+example is not built, and fail instead with `OHL_REQUIRE_PLUGIN_TESTS`
+set.
 
 ## Field presets
 
