@@ -416,19 +416,44 @@ fn bolts_and_dimensions(
             label: false,
         });
     }
-    if let Some(g) = a.gauges.value.as_ref().and_then(|g| g.first()) {
+    // The gauge of the bolts as drawn (their places across the leg): the
+    // connection's gauge when they sit on it, said assumed when it is;
+    // bolts placed by hand elsewhere: their own places (2026-11-11 — the
+    // drawing never names a gauge its bolts are not on).
+    let mut drawn: Vec<i64> = a
+        .bolt_flat
+        .iter()
+        .map(|q| (q[1] * 1e4).round() as i64)
+        .collect();
+    drawn.sort_unstable();
+    drawn.dedup();
+    let given = a.gauges.value.as_ref().and_then(|g| g.first()).copied();
+    let on_it = |g: f64| drawn.is_empty() || drawn.contains(&((g * 1e4).round() as i64));
+    let text = match given {
+        Some(g) if on_it(g) => Some(format!(
+            "g {:.0}{}",
+            g * 1000.0,
+            if a.gauges.source == Source::Assumed {
+                " (assumed)"
+            } else {
+                ""
+            }
+        )),
+        _ if !drawn.is_empty() => Some(format!(
+            "g {} (by hand)",
+            drawn
+                .iter()
+                .map(|g| format!("{:.0}", *g as f64 / 10.0))
+                .collect::<Vec<_>>()
+                .join("/")
+        )),
+        _ => None,
+    };
+    if let Some(text) = text {
         let q = at(stations[stations.len() - 1] + 0.03);
         marks.push(Mark::Text {
             at: q,
-            text: format!(
-                "g {:.0}{}",
-                g * 1000.0,
-                if a.gauges.source == Source::Assumed {
-                    " (assumed)"
-                } else {
-                    ""
-                }
-            ),
+            text,
             label: false,
         });
     }

@@ -1594,3 +1594,19 @@ fn a_continuous_part_in_the_exports() {
     assert!(ifc.contains("'PartMembers'"));
     assert!(ifc.contains("IFCLABEL('L1, L2')"));
 }
+
+/// The run and the report carry the joints' note (2026-11-11): the
+/// example tower asked for its joint details at level 3 — not applied,
+/// said among the report's notes; without the key, no such note.
+#[test]
+fn the_report_says_when_joint_details_are_not_applied() {
+    let text = type_02();
+    let asked = format!("joint_details = true\n{text}");
+    let h = report_of(&asked, None).html;
+    assert!(
+        h.contains("joint details asked for (joint_details = true) but not taken")
+            && h.contains("members checked in the simple form"),
+        "the note"
+    );
+    assert!(!report_of(&text, None).html.contains("joint details"));
+}

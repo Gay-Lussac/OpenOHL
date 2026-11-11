@@ -987,6 +987,35 @@ impl StructureApp {
                     )
                 });
             };
+            // A value that may be left out: "not given" instead of a false
+            // 0.0 mm (UI review 2026-11-11); typed 0 or cleared: not given.
+            let optional = |ui: &mut egui::Ui, label: &str, v: &mut f64, tip: &str| {
+                ui.label(label).on_hover_text(tip);
+                ui.scope(|ui| {
+                    crate::style::field_visuals(ui);
+                    ui.add(
+                        egui::DragValue::new(v)
+                            .range(0.0..=2000.0)
+                            .speed(0.5)
+                            .custom_formatter(|x, _| {
+                                if x == 0.0 {
+                                    "not given".to_owned()
+                                } else {
+                                    format!("{x:.1} mm")
+                                }
+                            })
+                            .custom_parser(|s| {
+                                let s = s.trim().trim_end_matches("mm").trim();
+                                if s.is_empty() || s == "not given" {
+                                    Some(0.0)
+                                } else {
+                                    s.parse().ok()
+                                }
+                            }),
+                    )
+                    .on_hover_text(tip)
+                });
+            };
             let lib = self.bolt_library();
             ui.horizontal_wrapped(|ui| {
                 ui.label("Bolt");
@@ -1038,11 +1067,12 @@ impl StructureApp {
                 });
                 ui.add_enabled_ui(typed, |ui| {
                     num(ui, "×  diameter", &mut e.diameter, "The bolt's diameter");
-                    num(
+                    optional(
                         ui,
                         "hole",
                         &mut e.hole,
-                        "The hole's diameter (0: not given)",
+                        "The hole's diameter. Not given: nothing is written for it at this end \
+                         (a library bolt brings its own hole; else the member's design data).",
                     );
                     ui.label("grade");
                     ui.add(egui::TextEdit::singleline(&mut e.grade).desired_width(60.0))
@@ -1074,11 +1104,12 @@ impl StructureApp {
                     &mut e.end,
                     "From the member's end to the first bolt",
                 );
-                num(
+                optional(
                     ui,
                     "edge",
                     &mut e.edge,
-                    "From the bolts to the leg's edge (0: not given)",
+                    "From the bolts to the leg's edge. Not given: nothing is written for it at \
+                     this end (the table's Edge distance then shows where its value comes from).",
                 );
             });
             let l = e.layout();
@@ -1236,6 +1267,42 @@ impl StructureApp {
 
 /// Both ends of every member of `member`'s group (or class), but `member`
 /// at `joint` itself.
+/// Bolts placed by hand (along the member, across the leg; none when the
+/// connection gives no places): their gauges (the distinct places across,
+/// mm, "30" or "30/60") and the spacing between neighbours on a line
+/// (smallest to largest, mm: "50", "50\u{2013}60"; one bolt per line: "\u{2014}").
+pub(crate) fn hand_spacing(points: &[[ohl_core::units::Length; 2]]) -> Option<(String, String)> {
+    if points.is_empty() {
+        return None;
+    }
+    // To 0.1 mm.
+    let tenth = |l: ohl_core::units::Length| (l.si() * 1e4).round() as i64;
+    let mut lines: std::collections::BTreeMap<i64, Vec<i64>> = Default::default();
+    for p in points {
+        lines.entry(tenth(p[1])).or_default().push(tenth(p[0]));
+    }
+    let show = |v: i64| {
+        let x = v as f64 / 10.0;
+        if x.fract() == 0.0 {
+            format!("{x:.0}")
+        } else {
+            format!("{x:.1}")
+        }
+    };
+    let gauges = lines.keys().map(|g| show(*g)).collect::<Vec<_>>().join("/");
+    let mut steps: Vec<i64> = Vec::new();
+    for along in lines.values_mut() {
+        along.sort_unstable();
+        steps.extend(along.windows(2).map(|w| w[1] - w[0]));
+    }
+    let pitch = match (steps.iter().min(), steps.iter().max()) {
+        (Some(a), Some(b)) if a == b => show(*a),
+        (Some(a), Some(b)) => format!("{}\u{2013}{}", show(*a), show(*b)),
+        _ => "\u{2014}".to_owned(),
+    };
+    Some((gauges, pitch))
+}
+
 fn member_targets(
     t: &ohl_structures::StructureType,
     details: &JointDetails,
@@ -1724,12 +1791,33 @@ fn row(
             v.and_then(|s| s.parse().ok()).map(FieldValue::Count),
         ));
     }
+    // Bolts placed by hand (the Detail view's tools): the picture draws
+    // those places, so the table says them too — never the layout's gauge
+    // and pitch beside a picture that shows others (UI review 2026-11-11).
+    let by_hand = t
+        .connection(m, jid)
+        .map(|c| hand_spacing(&c.bolt_points))
+        .filter(|s| s.is_some())
+        .flatten();
+    if let Some((gauges, pitch)) = &by_hand {
+        let tip = "The bolts of this end were placed by hand (the Detail view's bolt tools): \
+                   these are their real places, as drawn. The bolt layout (click Bolts) lays \
+                   them out regularly again.";
+        ui.label(egui::RichText::new(format!("{gauges} by hand")).italics())
+            .on_hover_text(format!("Across the leg, from the heel, mm. {tip}"));
+        ui.label(egui::RichText::new(format!("{pitch} by hand")).italics())
+            .on_hover_text(format!(
+                "Between neighbouring bolts on a line, smallest to largest, mm. {tip}"
+            ));
+    }
     // The first gauge (both in the layout window).
     let gauge = Valued {
         value: a.gauges.value.as_ref().and_then(|g| g.first().copied()),
         source: a.gauges.source,
     };
-    if let Some(v) = length_cell(ui, buffers, format!("jg-{m}-{jid}"), &gauge, "Gauge") {
+    if by_hand.is_some() {
+        // Said above.
+    } else if let Some(v) = length_cell(ui, buffers, format!("jg-{m}-{jid}"), &gauge, "Gauge") {
         let lines = a.gauge_lines.value.unwrap_or(1).max(1) as usize;
         acts.push(field(
             "gauges",
@@ -1746,6 +1834,9 @@ fn row(
         ("je", &a.end_distance, "end_distance", "End distance"),
         ("jd", &a.edge_distance, "edge_distance", "Edge distance"),
     ] {
+        if key == "jp" && by_hand.is_some() {
+            continue;
+        }
         if let Some(x) = length_cell(ui, buffers, format!("{key}-{m}-{jid}"), v, tip) {
             acts.push(field(f, x.map(FieldValue::Length)));
         }

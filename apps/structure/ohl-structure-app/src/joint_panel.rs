@@ -274,6 +274,11 @@ impl StructureApp {
                 t.ends_without_joint_details().len(),
             )
         });
+        let short = if taken {
+            "Joint details taken in the calculation."
+        } else {
+            "Members checked in the simple form: joint details not taken."
+        };
         let how = if taken {
             "Joint details taken (Results \u{203a} Joint details in the calculation is on, level \
              4): the ASCE 10-97 check takes from this table each end's eccentric and restrained \
@@ -293,15 +298,17 @@ impl StructureApp {
                  Results \u{203a} Joint details in the calculation is ticked."
             )
         };
-        ui.label(
-            egui::RichText::new(format!(
-                "{how} The plates and their welds are checked per case with the analysis \
-                 (Results \u{203a} Run) whatever that option: below, under Plate checks. Values \
-                 in a connection override the member's design data at that end."
-            ))
-            .small()
-            .weak(),
-        );
+        // One line; the rest on hover (UI review 2026-11-11).
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(short).small().weak());
+            ui.label(egui::RichText::new("(why?)").small().weak().underline());
+        })
+        .response
+        .on_hover_text(format!(
+            "{how} The plates and their welds are checked per case with the analysis (Results \
+             \u{203a} Run) whatever that option: below, under Plate checks. Values in a \
+             connection override the member's design data at that end."
+        ));
         if !details.level3 {
             ui.label(
                 "The structure is not a full design yet (level 3: every member with a \
@@ -353,9 +360,11 @@ impl StructureApp {
                 .map(|a| crate::joint_sketch::Shown::of(a, &j.id)),
             _ => None,
         };
+        // Closed until asked for (it pushed the table down); egui keeps
+        // it open once the user opened it.
         egui::CollapsingHeader::new("What the values mean")
             .id_salt("joint-values-sketch")
-            .default_open(true)
+            .default_open(false)
             .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(match &shown {
@@ -1251,9 +1260,10 @@ fn paint_face(painter: &egui::Painter, rect: egui::Rect, v: &FaceView, dark: boo
             }
         }
     }
+    // At the top: the tool strip is at the bottom.
     painter.text(
-        rect.left_bottom() + egui::vec2(6.0, -6.0),
-        egui::Align2::LEFT_BOTTOM,
+        rect.left_top() + egui::vec2(6.0, 6.0),
+        egui::Align2::LEFT_TOP,
         &v.title,
         egui::FontId::proportional(11.0),
         ink,

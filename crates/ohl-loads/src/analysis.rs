@@ -285,6 +285,14 @@ impl Analyses {
                 return None;
             }
         };
+        // Which form the member ends were taken in, as OHL-Structure says
+        // it (joint details asked for below level 4: not applied, said).
+        if let Some(n) = model.joint_use.note() {
+            let n = format!("model: {n}");
+            if !notes.contains(&n) {
+                notes.push(n);
+            }
+        }
         let mut nodal = Vec::new();
         // The loads along members put on their joints as halves (ice,
         // snow, member wind): for the bending between joints.

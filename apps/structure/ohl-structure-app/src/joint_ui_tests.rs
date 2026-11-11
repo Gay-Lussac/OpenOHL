@@ -1419,8 +1419,9 @@ fn the_values_are_drawn_and_a_plate_in_a_grip_is_drawn() {
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.run();
     h.run();
-    // The drawing, open the first time, and the columns named as in it.
-    h.get_by_label("What the values mean");
+    // The drawing, folded until asked for, and the columns named as in it.
+    h.get_by_label("What the values mean").click();
+    h.run();
     for t in crate::joint_sketch::TERMS {
         h.get_by_label(t.header);
     }
@@ -2022,7 +2023,11 @@ fn a_joint_is_detailed_step_by_step() {
     };
     let n0 = bare(&h);
     assert!(n0 >= 8, "{n0}");
-    h.get_by_label_contains(&format!("{n0} end(s) still without"));
+    // The sketch of the values is folded until asked for.
+    assert!(
+        h.query_by_label_contains("The leg bolted of an angle seen flat")
+            .is_none()
+    );
     shot(&mut h, "walk-1-joint.png");
     // H1's bolts (the member's) clicked: the layout, applied at this end.
     let t0 = text(&h);
@@ -2038,7 +2043,6 @@ fn a_joint_is_detailed_step_by_step() {
     h.run();
     undo_redo(&mut h, &t0);
     assert_eq!(bare(&h), n0 - 1);
-    h.get_by_label_contains(&format!("{} end(s) still without", n0 - 1));
     shot(&mut h, "walk-3-defined.png");
     // The face view: a bolt added, moved, removed with the tools' acts.
     h.state_mut().joints.drawn = Drawn::Face;
@@ -2080,11 +2084,16 @@ fn a_joint_is_detailed_step_by_step() {
     undo_redo(&mut h, &t1);
     h.run();
     h.get_by_label_contains("3 × M16");
+    // Placed by hand: the table says the places drawn, not the layout's.
+    h.get_by_label("30 by hand");
+    h.get_by_label("50 by hand");
     shot(&mut h, "walk-4-bolt-added.png");
     let t2 = text(&h);
     act(&mut h, vec![[0.03, 0.03], [0.08, 0.03], [0.14, 0.03]]);
     assert!((points(&h)[2][0] - 0.14).abs() < 1e-9);
     undo_redo(&mut h, &t2);
+    h.run();
+    h.get_by_label("50\u{2013}60 by hand");
     let t3 = text(&h);
     act(&mut h, vec![[0.03, 0.03], [0.08, 0.03]]);
     assert_eq!(points(&h).len(), 2);

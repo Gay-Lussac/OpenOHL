@@ -545,11 +545,17 @@ pub struct FaceFit {
     centre: egui::Pos2,
 }
 
+/// The room the Detail view's tool strip takes at the bottom, points.
+pub const STRIP_ROOM: f32 = 52.0;
+
 impl FaceFit {
     /// `bounds` (left, bottom, right, top, m) fitted into `rect`.
     pub fn new(rect: egui::Rect, bounds: [f64; 4]) -> Self {
         let [x0, y0, x1, y1] = bounds;
         let margin = 24.0;
+        // Clear of the tool strip at the bottom of the view: it covered
+        // the lowest member's label (UI review 2026-11-11).
+        let rect = egui::Rect::from_min_max(rect.min, rect.max - egui::vec2(0.0, STRIP_ROOM));
         let k = ((f64::from(rect.width()) - 2.0 * margin) / (x1 - x0).max(1e-6))
             .min((f64::from(rect.height()) - 2.0 * margin) / (y1 - y0).max(1e-6));
         Self {
