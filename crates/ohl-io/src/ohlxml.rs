@@ -738,7 +738,7 @@ fn write_section(out: &mut String, s: &Section) {
 }
 
 /// An object on a point: `<object kind type weight shape …sizes drag
-/// clamp_length/>`; a jumper's support clamp holds `<hold structure
+/// clamp_length force_across force_along/>`; a jumper's support clamp holds `<hold structure
 /// wire/>` (on a structure's strings) or `<hold x y z length weight/>`
 /// (a string from a fixed point).
 fn write_object(out: &mut String, o: &ohl_line::LineObject, indent: &str) {
@@ -750,6 +750,8 @@ fn write_object(out: &mut String, o: &ohl_line::LineObject, indent: &str) {
         drag,
         clamp_length,
         hold,
+        force_across,
+        force_along,
     } = o;
     let _ = write!(out, "{indent}<object");
     attr(out, "kind", kind.as_str());
@@ -787,6 +789,13 @@ fn write_object(out: &mut String, o: &ohl_line::LineObject, indent: &str) {
     }
     opt_num(out, "drag", *drag);
     opt_num(out, "clamp_length", *clamp_length);
+    // A constant horizontal force (line file version 15): only when given.
+    opt_num(
+        out,
+        "force_across",
+        Some(*force_across).filter(|f| *f != 0.0),
+    );
+    opt_num(out, "force_along", Some(*force_along).filter(|f| *f != 0.0));
     match hold {
         None => out.push_str("/>\n"),
         Some(h) => {
@@ -830,6 +839,8 @@ fn read_object(e: &Element) -> Result<ohl_line::LineObject, String> {
             "ice_area",
             "drag",
             "clamp_length",
+            "force_across",
+            "force_along",
         ],
         &["hold"],
     )?;
@@ -893,6 +904,8 @@ fn read_object(e: &Element) -> Result<ohl_line::LineObject, String> {
         drag: optional(e, "drag")?,
         clamp_length: optional(e, "clamp_length")?,
         hold,
+        force_across: optional(e, "force_across")?.unwrap_or(0.0),
+        force_along: optional(e, "force_along")?.unwrap_or(0.0),
     })
 }
 

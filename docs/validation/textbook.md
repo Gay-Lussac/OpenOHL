@@ -116,6 +116,15 @@ The references of the forward cases run backwards: asked for the tension an inde
 | `finstr-003` | the same given as a catenary constant after creep, C = H / w = 1410.50 m (w at 10 °C) → 25 kN | `tbcreep-001`, C by hand |
 | `finstr-004` | an invented wire with stress-strain and creep curves, ruling span: 23 579.69 N after creep at 15 °C → 25 kN | `nlstate-001` |
 
+### A constant force on a span point (`benchmarks/wirefe/point-force.toml`)
+
+A level 300 m span at 20 kN with a constant horizontal force at mid-span, against two elastic pieces by quadrature joined at a loaded node (`textbook_reference.py`, `ptforce`) ([theory](../theory/wirefe.md#a-constant-force-across-or-along-the-line)).
+
+| Case | What | Reference |
+|---|---|---|
+| `ptforce-001` | 500 N across: the point 1.848 m to the right (taut string 1.875 m), 250 N across on each support | independent, by quadrature |
+| `ptforce-002` | 300 N along: the wire behind 20 150.37 N, ahead 19 850.37 N — 300 N apart | independent, by quadrature |
+
 ### Sag to limits (`benchmarks/sagtension/sag-to-limits.toml`)
 
 The largest stringing tension of a dead-end span that keeps two tension rules (invented factors), against an independent bisection on the elastic span by quadrature (`textbook_reference.py`, `saglim`) ([theory](../theory/sagtension.md#sag-to-limits-on-the-line)).

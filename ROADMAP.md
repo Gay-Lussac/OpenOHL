@@ -714,7 +714,11 @@ against what line design practice uses). In the order proposed:
    sets only); the partial break of a bundle (`subconductors = k` of a
    load case's broken wire, load case file 5: the broken ones gone from
    the span, the tensions per wire left; the form's field still to do).
-   Still open: point loads across or along, gap-type conductors.
+   Point loads across or along (`force_across`, `force_along` on a
+   span point's object, line file 15, finite elements; the ruling span
+   says the point loads it leaves out; benchmarks `ptforce-001…002`; the
+   object form's fields still to do).
+   Still open: gap-type conductors.
 
 Three hand-sized comparison cases to keep with the benchmarks: three
 inclined spans in the blocks, clipped, and in the blocks then clipped; a

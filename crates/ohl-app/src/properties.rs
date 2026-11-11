@@ -1879,6 +1879,10 @@ fn object_rows(o: Option<&ohl_line::LineObject>) -> Vec<(String, String)> {
         } => format!("wind {wind_area} m², ice {ice_area} m²"),
     };
     rows.push(("shape".to_owned(), shape));
+    // A constant horizontal force on the wire (finite elements only).
+    if o.has_force() {
+        rows.push(("constant force".to_owned(), o.force_text()));
+    }
     if let Some(d) = o.drag {
         rows.push(("drag".to_owned(), format!("{d}")));
     }

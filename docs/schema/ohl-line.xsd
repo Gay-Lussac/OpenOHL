@@ -171,6 +171,20 @@
     <xs:attribute name="ice_area" type="xs:double"/>
     <xs:attribute name="drag" type="xs:double"/>
     <xs:attribute name="clamp_length" type="xs:double"/>
+    <xs:attribute name="force_across" type="xs:double">
+      <xs:annotation>
+        <xs:documentation>A constant horizontal force on the wire here, N,
+          the whole bundle's (version 15): across the span's chord in plan,
+          positive to the right looking ahead in the section's order. On a
+          section's span point only; finite elements only.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="force_along" type="xs:double">
+      <xs:annotation>
+        <xs:documentation>A constant horizontal force along the span's chord
+          in plan, N, positive ahead (version 15).</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
   </xs:complexType>
 
   <xs:complexType name="field">

@@ -77,9 +77,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// given in a final condition (`condition`: after creep or after load,
 /// [`StrungAt`]) or by its catenary constant
 /// (`kind = "catenary_constant"`, [`Stringing::CatenaryConstant`]; roadmap
-/// O22 item 3, the same raise), written only by a line that uses one of
-/// them (else 14 or older, [`Line::to_json`]: an older program must not
-/// read such a stringing as an initial one); 14 adds a structure that takes no load case
+/// O22 item 3, the same raise) and a constant horizontal force on a span
+/// point's object (`force_across`, `force_along`,
+/// [`LineObject::force_across`]; roadmap O22 item 7, the same raise),
+/// written only by a line that uses one of them (else 14 or older,
+/// [`Line::to_json`]: an older program must not read such a stringing as
+/// an initial one); 14 adds a structure that takes no load case
 /// (`no_load_cases`, [`Structure::no_load_cases`]; owner 2026-11-10),
 /// written only by a line with one (else 13 or older, [`Line::to_json`]:
 /// an older program must not read such a line and compute loads for that
@@ -3644,8 +3647,9 @@ impl Line {
 
     /// Serialises to pretty JSON at the oldest version that holds the
     /// line, so an older program still reads it: 15 with a system's
-    /// highest operating voltage or insulation level, or a stringing in a
-    /// final condition or by catenary constant, else 14 with a structure
+    /// highest operating voltage or insulation level, a stringing in a
+    /// final condition or by catenary constant or a point's constant
+    /// force, else 14 with a structure
     /// taking no load case, else 13 with a system's
     /// operating current, else 12 with a torus among a
     /// string's own volumes, else 11 with electrical
@@ -3677,7 +3681,10 @@ impl Line {
             .systems
             .iter()
             .any(|s| s.highest_voltage_kv.is_some() || s.insulation_level.is_some());
-        let final_stringing = self.sections.iter().any(|s| s.stringing.since_version_15());
+        let final_stringing = self
+            .sections
+            .iter()
+            .any(|s| s.stringing.since_version_15() || s.objects().any(|(_, o)| o.has_force()));
         let written = match (sheaves, winds, shapes) {
             _ if system_voltages || final_stringing => LINE_FILE_VERSION,
             _ if no_cases => BEFORE_SYSTEM_VOLTAGES_VERSION,
@@ -4336,6 +4343,14 @@ impl Line {
                             j.id, p.label
                         ))
                     })?;
+                    if o.has_force() {
+                        return bad(&format!(
+                            "the object on {} gives a constant force ({}): only a section's \
+                             span point takes one",
+                            p.label,
+                            o.force_text()
+                        ));
+                    }
                 }
             }
             match (j.rigid, j.length, j.sag, j.tension) {

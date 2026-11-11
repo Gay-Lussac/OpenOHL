@@ -1247,6 +1247,15 @@ fn build(
                 )
             };
             let bundle = f64::from(section.bundle.max(1));
+            // The objects' constant forces (roadmap O22 item 7): along the
+            // span's chord in plan, ahead; across it, to the right looking
+            // ahead — whatever the wind's side.
+            let ahead = if horizontal.norm() > 0.0 {
+                Vector3::new(horizontal.x, horizontal.y, 0.0) / horizontal.norm()
+            } else {
+                Vector3::zeros()
+            };
+            let right = Vector3::new(ahead.y, -ahead.x, 0.0);
             sites = section
                 .span_points
                 .iter()
@@ -1256,10 +1265,13 @@ fn build(
                         .object
                         .as_ref()
                         .map_or([0.0; 2], |o| o.forces(case, cable.diameter.si()));
+                    let constant = p.object.as_ref().map_or(Vector3::zeros(), |o| {
+                        right * o.force_across + ahead * o.force_along
+                    });
                     (
                         along(&p.at),
                         // The model is one subconductor: its share.
-                        (left * across - Vector3::new(0.0, 0.0, down)) / bundle,
+                        (left * across - Vector3::new(0.0, 0.0, down) + constant) / bundle,
                         Some(p.label.clone()),
                     )
                 })
@@ -3514,6 +3526,9 @@ mod local_tests;
 
 #[cfg(test)]
 mod final_stringing_tests;
+
+#[cfg(test)]
+mod point_force_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

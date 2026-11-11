@@ -256,7 +256,8 @@ pub fn final_state(
 /// all spans (the sag-tension section, non-linear cable model, with the
 /// permanent state `final_state`), each span a catenary between its
 /// clamps held where they hang in still air at stringing, in the plane of
-/// its load (blown out by the wind). Point loads are left out.
+/// its load (blown out by the wind). Point loads are left out, and said
+/// ([`point_loads_left_out`]).
 ///
 /// It keeps the equal horizontal tension whatever the line's in-the-blocks
 /// model ([`crate::InTheBlocks`], owner decision 2026-10-25): the ruling
@@ -375,6 +376,8 @@ pub(super) fn solve_rs(
     }
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&out, cable));
+    // The point loads this method leaves out (roadmap O22 item 7).
+    flags.extend(point_loads_left_out(section));
     let n = clamps.len();
     Ok(SectionShape {
         section: section.id.clone(),
@@ -392,6 +395,42 @@ pub(super) fn solve_rs(
         broken: None,
         broken_spans: Vec::new(),
     })
+}
+
+/// The flag of a section solved by the ruling-span method whose span
+/// points carry loads — objects with a weight or a constant force
+/// ([`crate::LineObject::force_across`]) — which that method leaves out:
+/// "NOT ON THE SAFE SIDE: point loads (M1: 55 N down; P1: across 400 N)
+/// left out by the ruling-span method — use FE". Up to six are named.
+/// Nothing for a section without such loads.
+pub fn point_loads_left_out(section: &Section) -> Option<String> {
+    let loads: Vec<String> = section
+        .objects()
+        .filter(|(_, o)| o.weight > 0.0 || o.has_force())
+        .map(|(p, o)| {
+            let mut parts = Vec::new();
+            if o.weight > 0.0 {
+                parts.push(format!("{} N down", o.weight));
+            }
+            if o.has_force() {
+                parts.push(o.force_text());
+            }
+            format!("{}: {}", p.label, parts.join(", "))
+        })
+        .collect();
+    if loads.is_empty() {
+        return None;
+    }
+    let more = loads.len().saturating_sub(6);
+    Some(format!(
+        "NOT ON THE SAFE SIDE: point loads ({}{}) left out by the ruling-span method — use FE",
+        loads[..loads.len() - more].join("; "),
+        if more > 0 {
+            format!("; and {more} more")
+        } else {
+            String::new()
+        }
+    ))
 }
 
 /// Whether a span of `shape` exceeds its wire's rated tensile strength

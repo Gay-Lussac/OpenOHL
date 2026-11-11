@@ -56,7 +56,11 @@ fn string_input<'a>(inputs: &'a Inputs, name: &str) -> Result<&'a str, String> {
 ///   clamp-to-clamp chord), `mid_{x,y,z}_i_m` (the wire at half the
 ///   horizontal clamp distance) and `low_{x,y,z}_i_m` (its lowest point).
 ///   The last three come from the solver's 65 points per element: exact
-///   where a point falls there (the middle of a symmetric span);
+///   where a point falls there (the middle of a symmetric span); the
+///   wire's pull on its two ends, the whole bundle's,
+///   `pull_i_{back,ahead}_{x,y,z}_n`;
+/// - per span point: `point_{label}_{x,y,z}_m`, where it is on the solved
+///   wire (finite elements);
 /// - per section point `k`: `clamp_{x,y,z}_k_m`;
 /// - per string `j` holding point `k`: `string_k_j_n` (axial force, tension
 ///   positive), `string_k_j_slack` (1 slack, 0 taut), the swing across and
@@ -73,6 +77,7 @@ impl Calculation for LineSection {
         "One section of a line solved by the line's solver (inputs: line = .ohl.json text, \
          cable = wire library entry, weather = one weather case, optional section index); \
          outputs stringing_target_n, stringing_initial_n (in the blocks), per span h_i_n, max_tension_i_n, sag_i_m, mid_{x,y,z}_i_m, low_{x,y,z}_i_m, \
+         pull_i_{back,ahead}_{x,y,z}_n, per span point point_{label}_{x,y,z}_m, \
          per point clamp_{x,y,z}_k_m, per string string_k_j_n, string_k_j_slack, \
          string_k_j_across_deg, string_k_j_along_deg, string_k_j_{x,y,z}_m"
     }
@@ -141,6 +146,18 @@ impl Calculation for LineSection {
             for (k, axis) in xyz.iter().enumerate() {
                 out.insert(format!("mid_{axis}_{i}_m"), s.mid_point[k]);
                 out.insert(format!("low_{axis}_{i}_m"), s.low_point[k]);
+            }
+        }
+        for (i, s) in shape.spans.iter().enumerate() {
+            for (end, pull) in ["back", "ahead"].iter().zip(&s.end_pulls) {
+                for (k, axis) in xyz.iter().enumerate() {
+                    out.insert(format!("pull_{i}_{end}_{axis}_n"), pull[k]);
+                }
+            }
+        }
+        for (label, at) in &shape.span_points {
+            for (k, axis) in xyz.iter().enumerate() {
+                out.insert(format!("point_{label}_{axis}_m"), at[k]);
             }
         }
         for (k, c) in shape.clamps.iter().enumerate() {

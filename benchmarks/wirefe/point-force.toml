@@ -1,0 +1,93 @@
+# A constant horizontal force on the wire at a span point: across the
+# line and along it (docs/theory/wirefe.md, "Point loads: marker balls and
+# other bodies"; line file keys `force_across`, `force_along`).
+#
+# The textbook cable (EA 30 MN, 1.6 kg/m at 20 °C), one level 300 m span
+# between fixed wire points at 30 m, strung at 20 kN at 10 °C; still air
+# at 10 °C; a clamp of no weight at mid-span carries the force. The span
+# runs along +x: "across, to the right looking ahead" is -y, "along,
+# ahead" is +x.
+#
+# Expected values: benchmarks/reference/textbook_reference.py
+# (point_force_cases; `python3 -I benchmarks/reference/textbook_reference.py
+# ptforce`): two elastic pieces of half the unstressed length each, by
+# quadrature, joined at a free node carrying the force, the node found by
+# Newton on its force balance.
+#
+# By hand:
+# - ptforce-001 (500 N across): a taut string moves by P S / (4 H) =
+#   500 x 300 / (4 x 20 000) = 1.875 m; the wire, whose tension rises to
+#   20 295 N under the force and which also sags, 1.848 m (1.4 % less).
+#   Each support takes half the force across: 250 N.
+# - ptforce-002 (300 N along): the horizontal balance of the point gives
+#   H behind - H ahead = 300 N exactly: 20 150.37 N and 19 850.37 N.
+#
+# Tolerance: 1e-7 relative on the forces, 1e-6 m on the point.
+
+[[case]]
+id = "ptforce-001"
+title = "500 N across at mid-span of a level 300 m span at 20 kN: 1.848 m to the right (taut string: 1.875 m)"
+calculation = "line.section"
+reference = "Two elastic pieces by quadrature joined at a loaded node (benchmarks/reference/textbook_reference.py)"
+max_seconds = 5.0
+expected.point_P1_x_m = { value = 150.0, abs_tol = 1e-6 }
+expected.point_P1_y_m = { value = -1.847928218, abs_tol = 1e-6 }
+expected.point_P1_z_m = { value = 21.29519378, abs_tol = 1e-6 }
+expected.h_0_n = { value = 20294.53592, rel_tol = 1e-7 }
+expected.pull_0_back_x_n = { value = 20292.99604, rel_tol = 1e-7 }
+expected.pull_0_back_y_n = { value = -250.0, rel_tol = 1e-7 }
+expected.pull_0_back_z_n = { value = -2357.92326, rel_tol = 1e-7 }
+expected.pull_0_ahead_x_n = { value = -20292.99604, rel_tol = 1e-7 }
+expected.pull_0_ahead_y_n = { value = -250.0, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "point force", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "span_points": [{"label": "P1", "span": 0, "at": {"fraction": 0.5},
+    "object": {"kind": "clamp", "weight": 0, "force_across": 500}}],
+  "stringing": {"kind": "tension", "horizontal_tension": 20000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "ptforce-002"
+title = "300 N along at mid-span of the same span: the wire behind 300 N tighter than the wire ahead"
+calculation = "line.section"
+reference = "Two elastic pieces by quadrature joined at a loaded node (benchmarks/reference/textbook_reference.py)"
+max_seconds = 5.0
+expected.point_P1_x_m = { value = 150.0020483, abs_tol = 1e-6 }
+expected.point_P1_z_m = { value = 21.16812355, abs_tol = 1e-6 }
+expected.h_0_n = { value = 20150.36823, rel_tol = 1e-7 }
+expected.pull_0_back_x_n = { value = 20150.36823, rel_tol = 1e-7 }
+expected.pull_0_back_z_n = { value = -2366.728884, rel_tol = 1e-7 }
+expected.pull_0_ahead_x_n = { value = -19850.36823, rel_tol = 1e-7 }
+expected.pull_0_ahead_z_n = { value = -2349.117635, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "everyday", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 15, "name": "point force", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+  "span_points": [{"label": "P1", "span": 0, "at": {"fraction": 0.5},
+    "object": {"kind": "clamp", "weight": 0, "force_along": 300}}],
+  "stringing": {"kind": "tension", "horizontal_tension": 20000.0, "temperature": 10.0}}]
+}
+'''

@@ -519,6 +519,20 @@ before):
 | `catenary_constant` | `constant` (m), `temperature` (°C), `condition` (optional) | in the blocks (line file **15**, 2026-11-11, roadmap O22 item 3): H = constant × the bare weight per metre of the cable as strung (`solve::strung_cable(..).weight()`), every span |
 | `unstressed_lengths` | `lengths` (m, one per span), `temperature` (°C), `sagged` (optional nested `Stringing`) | clipped in: each span keeps its own unstressed length |
 
+**A point's constant force** (line file **15**, 2026-11-11, roadmap O22
+item 7): `LineObject::force_across`, `force_along` (N, the whole
+bundle's, default 0, not written when 0; `has_force`, `force_text`):
+across the span's chord in plan, + to the right looking ahead in the
+section's order; along it, + ahead. `solve::build` adds
+`(right·across + ahead·along) / bundle` to the point's node. The keys are
+not `across` / `along`: those are a box shape's sizes. A jumper point's
+object with one is refused (`Line::validate`). The ruling-span method
+leaves point loads out: `solve::point_loads_left_out` flags the section
+in every weather case ("NOT ON THE SAFE SIDE: point loads (…) left out by
+the ruling-span method — use FE"), weights included. OHL XML: `<object
+force_across force_along>`. Validation outputs of `line.section`:
+`point_{label}_{x,y,z}_m`, `pull_i_{back,ahead}_{x,y,z}_n`.
+
 `condition` (`StrungAt`: `initial` — the default, not written — `creep`,
 `load`; line file **15**, 2026-11-11, roadmap O22 item 3): the condition
 the value holds in. A final one is worked back to the initial horizontal

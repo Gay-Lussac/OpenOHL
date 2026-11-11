@@ -155,7 +155,7 @@ fn an_initial_value_is_the_reference_as_before() {
 /// One level 300 m span between fixed wire points, a linear cable whose
 /// creep is a temperature shift of 20 K (w 15.970 N/m, EA 34.656 MN,
 /// α 18.8514e-6 /K), sagged to 25 kN after creep at 15 °C.
-fn one_span(stringing: &str, calculation: &str) -> (Line, Cable) {
+pub(super) fn one_span(stringing: &str, calculation: &str) -> (Line, Cable) {
     let cable: Cable = toml::from_str(
         "id = \"hand\"\nname = \"hand\"\nkind = \"aaac\"\nsource = \"invented test data\"\n\
          diameter = \"28.1 mm\"\nmass_per_length = \"1.6285 kg/m\"\n\

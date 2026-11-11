@@ -330,6 +330,10 @@ struct LineObjectFile {
     clamp_length: Option<f64>,
     #[serde(default)]
     hold: Option<Hold>,
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
+    force_across: f64,
+    #[serde(default, deserialize_with = "si::de::<_, Force>")]
+    force_along: f64,
 }
 
 impl TryFrom<LineObjectFile> for LineObject {
@@ -354,6 +358,8 @@ impl TryFrom<LineObjectFile> for LineObject {
             drag: f.drag,
             clamp_length: f.clamp_length,
             hold: f.hold,
+            force_across: f.force_across,
+            force_along: f.force_along,
         })
     }
 }
@@ -485,9 +491,55 @@ pub struct LineObject {
     /// A clamp on a jumper held up (a support), and by what.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hold: Option<Hold>,
+    /// A constant horizontal force on the wire here, across the line, N
+    /// (the whole bundle's; roadmap O22 item 7, line file version 15):
+    /// positive to the **right looking ahead** in the section's order,
+    /// square to the span's chord in plan. The same in every weather
+    /// case (a tap's pull, a hold-down, a stay). Finite elements only.
+    /// (The keys `across` and `along` are a box's sizes: hence the names.)
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "si::de::<_, Force>"
+    )]
+    pub force_across: f64,
+    /// A constant horizontal force on the wire here, along the line, N
+    /// (the whole bundle's): positive **ahead** in the section's order,
+    /// along the span's chord in plan.
+    #[serde(
+        default,
+        skip_serializing_if = "is_zero",
+        deserialize_with = "si::de::<_, Force>"
+    )]
+    pub force_along: f64,
+}
+
+/// Whether a force is zero (not written).
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(force: &f64) -> bool {
+    *force == 0.0
 }
 
 impl LineObject {
+    /// Whether it carries a constant horizontal force
+    /// ([`LineObject::force_across`], [`LineObject::force_along`]).
+    pub fn has_force(&self) -> bool {
+        self.force_across != 0.0 || self.force_along != 0.0
+    }
+
+    /// Its constant force in words: "across 400 N", "across 400 N, along
+    /// -120 N" (nothing without one).
+    pub fn force_text(&self) -> String {
+        let mut parts = Vec::new();
+        if self.force_across != 0.0 {
+            parts.push(format!("across {} N", self.force_across));
+        }
+        if self.force_along != 0.0 {
+            parts.push(format!("along {} N", self.force_along));
+        }
+        parts.join(", ")
+    }
+
     /// A body of `weight` N and `shape`.
     pub fn body(weight: f64, shape: Shape) -> Self {
         Self {
@@ -523,6 +575,9 @@ impl LineObject {
         }
         if self.hold.is_some() && self.kind != ObjectKind::Clamp {
             return Err("only a clamp is held (a support)".into());
+        }
+        if !(self.force_across.is_finite() && self.force_along.is_finite()) {
+            return Err("force_across and force_along must be numbers".into());
         }
         self.shape.validate()
     }
@@ -656,6 +711,9 @@ impl ObjectType {
             drag: self.drag,
             clamp_length: self.clamp_length,
             hold: None,
+            // A constant force is the point's, never a type's.
+            force_across: 0.0,
+            force_along: 0.0,
         })
     }
 }

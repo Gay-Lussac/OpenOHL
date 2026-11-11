@@ -187,8 +187,11 @@ fn rich_line() -> Line {
         span: 0,
         at: ohl_line::SpanPlace::at_station(110.0),
         description: String::new(),
+        // A tap's clamp with a constant pull (line file version 15).
         object: Some(ohl_line::LineObject {
             clamp_length: Some(0.25),
+            force_across: 400.0,
+            force_along: -120.5,
             ..ohl_line::LineObject::clamp(30.0)
         }),
     });

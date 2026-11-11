@@ -366,6 +366,23 @@ On a bundle the forces are shared by its subconductors. These loads can matter: 
 
 **Simplification:** a body's drag coefficient is 1 unless given, and its ice is the wire's radial thickness. Both are stand-ins: a code or the maker may give other values, either way. Exact: the body's own drag and ice from the data.
 
+### A constant force across or along the line
+
+*Built, in active development (not approved yet).* The object on a span point may also carry a **constant horizontal force** (`force_across`, `force_along`, N, the whole bundle's): the pull of a tap, a hold-down, a stay. With \\( \mathbf{a} \\) the unit vector of the span's chord in plan, ahead in the section's order, and \\( \mathbf{r} = (a_y, -a_x, 0) \\) the one to the right looking ahead, the node of the point carries
+
+\\[ \mathbf{F} = \frac{1}{n}\left(F_{\text{across}}\,\mathbf{r} + F_{\text{along}}\,\mathbf{a}\right) \\]
+
+beside its weight, ice and wind (\\( n \\): the bundle's subconductors; the model is one of them). It is the same in every weather case: not scaled by the case's wind or ice, whatever the wind's side. The finite elements take it as any nodal load; nothing else changes.
+
+Hand checks: a force across at the middle of a level span moves the wire by about \\( P S / (4H) \\), the taut string's value (500 N on 300 m at 20 kN: 1.875 m; the wire 1.848 m, its tension rising to 20.29 kN); a force along is exactly the difference of the horizontal tensions on its two sides, \\( H_{\text{behind}} - H_{\text{ahead}} = F_{\text{along}} \\); the supports carry every load.
+
+- The force is **as given**: the user's value, on the safe side or not as that value is. It reaches the structures through the solved pulls; a structure load case's factors act on those attachment loads as a whole, so on its part of them too.
+- A section in the blocks shares its length between the spans without the point loads ([above](#sections-sagging-and-clamping)), the constant forces as the weights: the **Simplification** said there.
+- **NOT ON THE SAFE SIDE with the ruling-span method:** that method leaves point loads out — weights and constant forces alike. A section solved by it says so in every weather case, naming them ("point loads (P1: across 400 N) left out by the ruling-span method — use FE").
+- A jumper's point takes no constant force (refused when the line is read).
+
+*Validation:* `ptforce-001…002` (`benchmarks/wirefe/point-force.toml`): two elastic pieces by quadrature joined at a loaded node, to 10⁻⁷ on the forces.
+
 ## Line sections: strain assemblies, bundles, jumpers
 
 In a line model the strings holding the wire at each point are built as the structure gives them ([line file](../user-guide/line-file.md#points-strings-and-wire-points)): its points are fixed nodes, its wire points free nodes, its strings bars. One string from the structure in the middle of the section, hanging below its top, is a **suspension string**; the section's ends, and middle points held by one string not below its top, are **strain assemblies**: a free clamp on a member from the fixed attachment point, lined up with the conductor by equilibrium, so it moves with every weather case. A strain string given without a weight (geometry only, e.g. imported) gets the weight that holds it where the data puts it in the stringing state. Without a weight means a resolved weight of 0 N — from its own data or from an insulator assembly that gives 0 N — whether or not it names an assembly (2026-10-21; before, a string naming one never got the estimate, and linked to "0 N" library entries a real line's strain strings lost it: median sag differences to another program's results grew from 0.7–2.4 cm to 2–9 cm). An assembly with a real weight gives that weight. A point whose wire point and attachment point coincide is fixed. A **bundle** is solved as one subconductor carrying its share of the strings' weight and wind area; the string forces and reactions reported are the whole bundle's.

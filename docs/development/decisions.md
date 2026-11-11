@@ -10,6 +10,34 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Point loads with a part across or along the line (roadmap O22 item 7)**
+
+- **What.** The object on a section's span point may carry a constant
+  horizontal force: `force_across` (N, + to the right looking ahead in
+  the section's order, square to the span's chord in plan) and
+  `force_along` (N, + ahead), the whole bundle's, the same in every
+  weather case. Finite elements only; line file version **15** only when
+  not zero; OHL XML attributes of `<object>`.
+- **The keys are not the design's.** The design names them `across` and
+  `along`; those keys are already a box shape's sizes on the same object
+  (JSON and XML). Hence `force_across` / `force_along` — the owner may
+  rename them before approval (unreleased).
+- **Ruling span.** It leaves point loads out; it now says so on the
+  section in every weather case, naming them — the constant forces and
+  (the design's recommendation, taken) the weights it always left out,
+  until now said only in the user guide: "NOT ON THE SAFE SIDE: point
+  loads (…) left out by the ruling-span method — use FE".
+- **A correction to the design.** It says the force is "not factored by
+  load cases". It reaches the structures through the solved pulls, and a
+  structure load case's factors act on those attachment loads as a
+  whole: its part is factored with them. Said so in the theory.
+- **Refused:** on a jumper's point.
+- **Not done.** The object form's two fields (the form keeps the values;
+  the properties panel shows them).
+- **Validation.** `ptforce-001…002`: two elastic pieces by quadrature
+  joined at a loaded node (500 N across: 1.848 m, a taut string 1.875 m;
+  300 N along: the two sides exactly 300 N apart).
+
 **Sag to limits: a command; tension rules by catenary constant or tension (roadmap O22 item 3)**
 
 - **What.** `ohl tensions --sag-to-limits`: for each section in the

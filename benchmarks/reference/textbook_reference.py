@@ -11,6 +11,7 @@ Covers:
     benchmarks/sagtension/textbook-point-load.toml
     benchmarks/sagtension/textbook-bimetallic.toml
     benchmarks/sagtension/sag-to-limits.toml
+    benchmarks/wirefe/point-force.toml
     benchmarks/sagtension/cigre-tb324.toml
     benchmarks/weather/textbook-ice-wind.toml
     benchmarks/wirefe/textbook-elastic-catenary.toml
@@ -1150,6 +1151,37 @@ def sag_to_limits_cases():
           "usage_1": state(H, ice)["max_tension_0_n"] / (0.40 * rts)})
 
 
+def point_force_cases():
+    """ptforce-001...002 (benchmarks/wirefe/point-force.toml): a level
+    300 m span between fixed wire points at 30 m, the textbook cable
+    strung at 20 kN at 10 degC, with a constant horizontal force on the
+    wire at mid-span, in still air at 10 degC. Two pieces of half the
+    span's unstressed length each (the middle of a level span is the
+    middle of the wire), joined at a free node that carries the force:
+    500 N across (to the right looking ahead: -y for a span along +x),
+    and 300 N along (ahead: +x)."""
+    print("== point force across / along ==")
+    d, EA, alpha = CABLE["d"], CABLE["EA"], CABLE["alpha"]
+    mass = strung_mass(CABLE["mass"], alpha, 10.0)
+    w = mass * G
+    a, b = [0.0, 0.0, 30.0], [300.0, 0.0, 30.0]
+    L0 = span_stringing_length(a, b, 20_000.0, w, EA)[0]
+    for name, force in (("ptforce-001 500 N across", [0.0, -500.0, 0.0]),
+                        ("ptforce-002 300 N along", [300.0, 0.0, 0.0])):
+        nodes = [a, [150.0, 0.0, 23.0], b]
+        spans = [Span(0, 1, L0 / 2, EA, [0.0, 0.0, -w]), Span(1, 2, L0 / 2, EA, [0.0, 0.0, -w])]
+        pos = equilibrium(nodes, [1], spans, [], extra={1: force})
+        back, _ = spans[0].forces(pos)
+        _, ahead = spans[1].forces(pos)
+        show(name, {
+            "point_P1_x_m": pos[1][0], "point_P1_y_m": pos[1][1], "point_P1_z_m": pos[1][2],
+            "h_back_n": math.hypot(back[0], back[1]), "h_ahead_n": math.hypot(ahead[0], ahead[1]),
+            "pull_0_back_x_n": back[0], "pull_0_back_y_n": back[1], "pull_0_back_z_n": back[2],
+            "pull_0_ahead_x_n": -ahead[0], "pull_0_ahead_y_n": -ahead[1], "pull_0_ahead_z_n": -ahead[2],
+            "taut_string_deflection_m": abs(force[1]) * 300.0 / (4 * 20_000.0),
+        })
+
+
 def heated_span_cases():
     """tbheat-001...003: a level 400 m span between fixed wire points at
     30 m, strung at 25 kN at 10 degC, at 150 degC: the closed-form change of
@@ -1463,10 +1495,14 @@ def main():
     if sys.argv[1:] == ["saglim"]:
         sag_to_limits_cases()
         return
+    if sys.argv[1:] == ["ptforce"]:
+        point_force_cases()
+        return
     self_check()
     textbook_catenary()
     textbook_cos()
     creep_cases()
+    point_force_cases()
     sag_to_limits_cases()
     heated_span_cases()
     weight_reference_cases()
