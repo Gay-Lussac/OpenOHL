@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+  SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+  License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
+
+  The Windows installer (MSI) of OpenOHL, for WiX Toolset 5 (the schema
+  namespace is still called "v4"). Built by the release workflow
+  (.github/workflows/release.yml); see docs/development/releases.md.
+
+  It installs for all users into Program Files\OpenOHL:
+    ohl-design.exe, ohl-structure.exe, ohl.exe   side by side (OHL-Design
+                                                  starts OHL-Structure from
+                                                  its own folder)
+    libraries\, examples\, docs\, LICENSE, …     everything else in the
+                                                  staged folder, as it is
+  with Start-menu shortcuts for the two applications, the file types
+  .ohl (OHL-Design) and .ohls (OHL-Structure), and, if chosen, the folder
+  on the system PATH for the ohl command line.
+
+  The build gives three values (wix build -d Name=Value):
+    Version   the version, three numbers (0.0.2); Windows Installer
+              compares only these when it replaces an older version
+    Stage     the folder to install, absolute, written with backslashes
+              and without one at the end: the three programs and
+              everything that goes beside them
+    Assets    the folder made by packaging/windows/make_assets.py
+              (ohl-design.ico, ohl-structure.ico, License.rtf)
+
+  The GUIDs below identify this product and its hand-written components
+  to Windows Installer. Never change them: a new UpgradeCode would
+  install a second OpenOHL beside the old one instead of replacing it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="OpenOHL $(var.Version)"
+           Manufacturer="OpenOHL"
+           Version="$(var.Version)"
+           UpgradeCode="B067C443-A61C-430B-BF26-65748D05265C"
+           Scope="perMachine"
+           Language="1033"
+           InstallerVersion="500"
+           Compressed="yes">
+    <SummaryInformation Description="OpenOHL $(var.Version): OHL-Design, OHL-Structure and the ohl command line" />
+
+    <!-- A newer version replaces an older one (the old one is removed
+         first, so files that no longer exist go away); an installer of
+         the same version replaces it too; an older one refuses. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of OpenOHL is already installed. Remove it first to install this older one." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- The entry under Settings > Apps (Add or remove programs). -->
+    <Icon Id="DesignIcon.ico" SourceFile="$(var.Assets)\ohl-design.ico" />
+    <Icon Id="StructureIcon.ico" SourceFile="$(var.Assets)\ohl-structure.ico" />
+    <Property Id="ARPPRODUCTICON" Value="DesignIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/Gay-Lussac/OpenOHL" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/Gay-Lussac/OpenOHL/issues" />
+
+    <!-- The pages: welcome, licence, what to install (and where), install. -->
+    <ui:WixUI Id="WixUI_FeatureTree" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.Assets)\License.rtf" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="OpenOHL" />
+    </StandardDirectory>
+
+    <!-- The three programs and the two icons (the file types show them):
+         one file each, so Windows Installer gives each its identity from
+         where it is installed. -->
+    <ComponentGroup Id="Programs" Directory="INSTALLFOLDER">
+      <Component Id="DesignProgram">
+        <File Id="DesignExe" Source="$(var.Stage)\ohl-design.exe" KeyPath="yes" />
+        <!-- OHL-Design opens the project file given as its first argument. -->
+        <ProgId Id="OpenOHL.Project" Description="OpenOHL project" Icon="DesignIconFile">
+          <Extension Id="ohl">
+            <Verb Id="open" Command="Open with OHL-Design" TargetFile="DesignExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+      </Component>
+      <Component Id="StructureProgram">
+        <File Id="StructureExe" Source="$(var.Stage)\ohl-structure.exe" KeyPath="yes" />
+        <!-- OHL-Structure opens the structure file given as its first argument. -->
+        <ProgId Id="OpenOHL.Structure" Description="OpenOHL structure" Icon="StructureIconFile">
+          <Extension Id="ohls">
+            <Verb Id="open" Command="Open with OHL-Structure" TargetFile="StructureExe" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+      </Component>
+      <Component Id="CommandLineProgram">
+        <File Id="CommandLineExe" Source="$(var.Stage)\ohl.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="DesignIconComponent">
+        <File Id="DesignIconFile" Source="$(var.Assets)\ohl-design.ico" KeyPath="yes" />
+      </Component>
+      <Component Id="StructureIconComponent">
+        <File Id="StructureIconFile" Source="$(var.Assets)\ohl-structure.ico" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- The Start menu, for all users. Windows Installer wants a
+         registry value of the installing user as the identity of a
+         component that only holds shortcuts. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcuts" Guid="CA493AA1-D944-447A-8AD5-D6610E8869C1">
+        <Shortcut Id="DesignShortcut"
+                  Name="OHL-Design"
+                  Description="Overhead line design: 3D, plan and profile"
+                  Target="[#DesignExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="DesignIcon.ico" />
+        <Shortcut Id="StructureShortcut"
+                  Name="OHL-Structure"
+                  Description="Structures of overhead lines: geometry, members, checks"
+                  Target="[#StructureExe]"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="StructureIcon.ico" />
+        <RegistryValue Root="HKCU" Key="Software\OpenOHL" Name="StartMenuShortcuts" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- The folder at the end of the system PATH; taken off again when
+         OpenOHL (or this part of it) is removed. -->
+    <Component Id="PathEntry" Guid="15E3798B-1335-402E-8249-733D983A3A45" Directory="INSTALLFOLDER">
+      <RegistryValue Root="HKLM" Key="Software\OpenOHL" Name="CommandLineOnPath" Type="integer" Value="1" KeyPath="yes" />
+      <Environment Id="OpenOhlPath" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="yes" Permanent="no" />
+    </Component>
+
+    <Feature Id="Main"
+             Title="OpenOHL"
+             Description="OHL-Design, OHL-Structure, the ohl command line, the libraries, the examples and the manual."
+             Level="1"
+             AllowAbsent="no"
+             AllowAdvertise="no"
+             Display="expand"
+             ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentGroupRef Id="Programs" />
+      <ComponentRef Id="StartMenuShortcuts" />
+      <!-- Everything else in the staged folder, folders included: no
+           list of files to keep up to date. The programs are left out
+           here because they are named above. -->
+      <Files Directory="INSTALLFOLDER" Include="$(var.Stage)\**">
+        <Exclude Files="$(var.Stage)\ohl-design.exe" />
+        <Exclude Files="$(var.Stage)\ohl-structure.exe" />
+        <Exclude Files="$(var.Stage)\ohl.exe" />
+      </Files>
+
+      <!-- Level 1: ticked unless the user unticks it. Level 2 or higher
+           would leave it unticked. -->
+      <Feature Id="CommandLinePath"
+               Title="Add the ohl command line to PATH"
+               Description="Adds the OpenOHL folder to the PATH of all users, so that a terminal finds ohl. Removed again with OpenOHL."
+               Level="1"
+               AllowAdvertise="no">
+        <ComponentRef Id="PathEntry" />
+      </Feature>
+    </Feature>
+  </Package>
+</Wix>
