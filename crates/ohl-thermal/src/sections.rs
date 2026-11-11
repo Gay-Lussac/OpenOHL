@@ -140,8 +140,10 @@ pub fn section_temperatures(
 /// (2026-11-08): for the sections carrying current, one uniform
 /// temperature in the conductor and along the section; for those of
 /// steel-cored conductors (ACSR, ACSS), the core's magnetic heating
-/// beyond what the AC resistance holds. Empty: no section carries
-/// current.
+/// beyond what the AC resistance holds; the bimetallic wire types
+/// modelled as a bird cage or with a compression limit
+/// ([`ohl_line::bimetallic_notes`], 2026-11-11: their hot sag is not the
+/// largest of the models). Empty: no section carries current.
 pub fn not_safe_notes(line: &Line, library: &Library) -> Vec<String> {
     let potentials = line.potentials().unwrap_or_default();
     let live: Vec<&ohl_line::Section> = line
@@ -185,6 +187,14 @@ pub fn not_safe_notes(line: &Line, library: &Library) -> Vec<String> {
             first.join(", ")
         ));
     }
+    // Bimetallic wires modelled otherwise than with the outer strands in
+    // compression without limit: their hot sag is not the largest of the
+    // models (roadmap O22 item 1).
+    notes.extend(
+        ohl_line::bimetallic_notes(line, library)
+            .into_iter()
+            .filter(|n| n.starts_with("NOT ON THE SAFE SIDE: ")),
+    );
     notes
 }
 

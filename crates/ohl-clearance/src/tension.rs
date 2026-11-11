@@ -346,6 +346,8 @@ impl TensionReport {
 /// solved in it (`SectionShape::section` naming the section) — against
 /// `rules`, the RTS of each section's wire type from `library`. A wire
 /// type without an RTS (or not in the library) is not checked (a note).
+/// The notes start with the bimetallic model of the line's wire types
+/// ([`ohl_line::bimetallic_notes`]).
 pub fn check(
     line: &Line,
     library: &ohl_cables::Library,
@@ -353,7 +355,12 @@ pub fn check(
     rules: &[TensionRule],
     filter: &ohl_weather::CaseFilter,
 ) -> TensionReport {
-    let mut report = TensionReport::default();
+    // The bimetallic model of the wire types (roadmap O22 item 1): above
+    // the knee point the default's tension is the lowest of the models.
+    let mut report = TensionReport {
+        notes: ohl_line::bimetallic_notes(line, library),
+        ..TensionReport::default()
+    };
     let mut noted = std::collections::BTreeSet::new();
     for (k, rule) in rules.iter().enumerate() {
         if let Some(e) = rule.problem() {

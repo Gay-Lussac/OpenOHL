@@ -306,6 +306,16 @@ pub(super) fn solve_rs(
         .into_iter()
         .map(|w| format!("stress-strain {w}"))
         .collect();
+    // Bimetallic cables: the spans past the knee point (roadmap O22
+    // item 1), at each span's mean tension.
+    for (k, sol) in solved.spans.iter().enumerate() {
+        let mean = Force::from_si(sol.tension_integral() / sol.length().si());
+        let state = ns
+            .mechanics
+            .outer_state(mean, case.temperature, &material)
+            .map_err(|e| invalid(e.to_string()))?;
+        flags.extend(state.and_then(|s| crate::bimetallic::past_knee_flag(k, s)));
+    }
     let h = solved.horizontal_tension.si();
     let mut out = Vec::with_capacity(spans.len());
     for (k, sol) in solved.spans.iter().enumerate() {

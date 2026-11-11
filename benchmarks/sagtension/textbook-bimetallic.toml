@@ -33,9 +33,15 @@
 #   60 °C (below the knee): a linear cable with EA = 34.656 MN and the
 #   composite alpha; the outer strands still carry 10969 N.
 #   150 °C (above the knee): the core alone, eps = Tmean / E_cA_c + a_c dt.
-#   With the composite model throughout (outer strands taking compression,
-#   no knee) 150 °C would give 16857.9 N and 10.644 m: the knee keeps the
-#   sag 0.121 m smaller.
+#   With the composite model throughout (outer strands taking compression
+#   without limit, the default of a wire type that says nothing; no knee)
+#   150 °C gives 16857.9 N and 10.644 m (tbbim-003): 0.121 m MORE sag and
+#   1.1 % less tension than the bird cage. Compression without limit is
+#   the upper bound of the hot sag (on the safe side for clearances) and
+#   the lower bound of the tension; the bird cage the other way round.
+#   By hand at 17 kN, dt = 130 K: composite eps = 17000 / 34.656 MN +
+#   18.8514e-6 x 130 = 2941 µstrain; the core alone 17000 / 12.502 MN +
+#   11.5e-6 x 130 = 2855 µstrain: the composite 86 µstrain longer.
 #
 # Tolerance: 1e-7 relative (the code's strain inversion and section
 # bisection converge far below it).
@@ -103,5 +109,38 @@ diameter = "28.1 mm"
 mass_per_length = "1.6285 kg/m"
 rated_tensile_strength = "140 kN"
 bimetallic_behavior = "bird_cage"
+outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
+core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }
+
+[[case]]
+id = "tbbim-003"
+title = "Bimetallic, compression without limit (the default): same cable at 150 °C, the composite throughout — the largest hot sag"
+calculation = "sagtension.nonlinear"
+reference = "Independent quadrature + closed-form component strains (benchmarks/reference/textbook_reference.py)"
+max_seconds = 2.0
+expected.h_initial_n = { value = 16857.91443, rel_tol = 1e-7 }
+expected.sag_initial_m = { value = 10.64410374, rel_tol = 1e-7 }
+
+[case.inputs]
+span = "300 m"
+known_tension = "28 kN"
+known_load = "15.970129525 N/m"
+known_temperature = "20 °C"
+creep_load = "15.970129525 N/m"
+creep_temperature = "20 °C"
+max_load = "15.970129525 N/m"
+max_temperature = "20 °C"
+load = "15.970129525 N/m"
+temperature = "150 °C"
+
+[case.inputs.cable]
+id = "bimetallic-textbook"
+name = "Bimetallic textbook cable"
+kind = "acsr"
+source = "Component values from CIGRE TB 324 sec. 5.2.3-5.2.4 (typical data)"
+diameter = "28.1 mm"
+mass_per_length = "1.6285 kg/m"
+rated_tensile_strength = "140 kN"
+bimetallic_behavior = "compression"
 outer = { area = "402.8 mm²", modulus = "55 GPa", thermal_expansion = 23e-6 }
 core = { area = "65.8 mm²", modulus = "190 GPa", thermal_expansion = 11.5e-6 }

@@ -246,6 +246,91 @@ impl BimetallicBehavior {
     }
 }
 
+/// The bimetallic model a cable is computed with above its knee point
+/// ([`Cable::bimetallic_model`]): what its results must say
+/// ([`BimetallicUse::note`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BimetallicUse {
+    /// The outer strands take compression without limit (the default):
+    /// the composite's expansion above the knee point — the largest hot
+    /// sag of the models, the lowest tension.
+    Unlimited,
+    /// Compression up to this virtual stress (on the total area), the
+    /// core alone beyond.
+    Limited(Stress),
+    /// No compression: the core alone above the knee point — the smallest
+    /// hot sag of the models.
+    BirdCage,
+}
+
+impl BimetallicUse {
+    /// Whether the hot sags of this model are the largest of the models
+    /// (on the safe side for clearances): only without a limit.
+    pub fn is_safe_for_sag(self) -> bool {
+        self == BimetallicUse::Unlimited
+    }
+
+    /// Short name for a table cell: `compression`, `limited 20 MPa`,
+    /// `bird cage`.
+    pub fn label(self) -> String {
+        match self {
+            BimetallicUse::Unlimited => "compression".to_owned(),
+            BimetallicUse::Limited(s) => format!("limited {} MPa", megapascals(s.si())),
+            BimetallicUse::BirdCage => "bird cage".to_owned(),
+        }
+    }
+
+    /// What a result of wire type `wire` says of its bimetallic model;
+    /// `sections`: the sections it is strung in, named after it (empty:
+    /// none named). The default says itself and its bound; the two other
+    /// models start with "NOT ON THE SAFE SIDE: " — their hot sag is
+    /// smaller than the default's (0.12 m in 10.6 m on the benchmark span
+    /// `tbbim-002` / `tbbim-003`, 300 m at 150 °C).
+    pub fn note(self, wire: &str, sections: &str) -> String {
+        let of = if sections.is_empty() {
+            String::new()
+        } else {
+            format!(" ({sections})")
+        };
+        let model = match self {
+            BimetallicUse::Unlimited => {
+                return format!(
+                    "wire type {wire}{of}: outer strands take compression without limit above \
+                     the knee point (the default) — the largest hot sag of the models, on the \
+                     safe side for clearances"
+                );
+            }
+            BimetallicUse::Limited(s) => {
+                format!("with compression limited to {} MPa", megapascals(s.si()))
+            }
+            BimetallicUse::BirdCage => "as a bird cage".to_owned(),
+        };
+        format!(
+            "NOT ON THE SAFE SIDE: wire type {wire}{of} modelled {model}: above the knee point \
+             its hot sag is smaller than with the outer strands in compression (0.12 m in 10.6 m \
+             on the 300 m benchmark span at 150 °C)"
+        )
+    }
+}
+
+/// A stress (Pa) in MPa as the bimetallic notes print it: three
+/// significant digits at most, no trailing zeros.
+pub fn megapascals(pascals: f64) -> String {
+    let mpa = pascals / 1e6;
+    let text = if mpa >= 100.0 {
+        format!("{mpa:.0}")
+    } else if mpa >= 10.0 {
+        format!("{mpa:.1}")
+    } else {
+        format!("{mpa:.2}")
+    };
+    if text.contains('.') {
+        text.trim_end_matches('0').trim_end_matches('.').to_owned()
+    } else {
+        text
+    }
+}
+
 /// Default largest virtual compressive stress of the outer strands, Pa:
 /// 10⁷ psi (68 947.4 MPa), in practice no limit.
 pub const DEFAULT_MAX_VIRTUAL_COMPRESSION: f64 = 68_947.4e6;
@@ -537,6 +622,34 @@ impl Cable {
         };
         // Virtual stress is on the total area.
         virtual_stress.abs() * self.area().si()
+    }
+
+    /// Which bimetallic model the cable is computed with above its knee
+    /// point ([`BimetallicUse`]); none without a core. Taken from the
+    /// limit the calculations use
+    /// ([`Cable::outer_compression_limit_with_curves`]: the bimetallic
+    /// behaviour's and the outer curves' own), so a cable whose curves
+    /// forbid compression counts as a bird cage whatever its behaviour
+    /// says. Without limit: a limit of at least ten times the rated
+    /// tensile strength (the default's 10⁷ psi and anything like it; no
+    /// strength given: the default's value or more).
+    pub fn bimetallic_model(&self) -> Option<BimetallicUse> {
+        self.core.as_ref()?;
+        let limit = self.outer_compression_limit_with_curves();
+        let area = self.area().si();
+        let rts = self.rated_tensile_strength.si();
+        let without_limit = if rts.is_finite() && rts > 0.0 {
+            10.0 * rts
+        } else {
+            DEFAULT_MAX_VIRTUAL_COMPRESSION * area
+        };
+        Some(if limit <= 0.0 {
+            BimetallicUse::BirdCage
+        } else if limit >= without_limit {
+            BimetallicUse::Unlimited
+        } else {
+            BimetallicUse::Limited(Stress::from_si(limit / area))
+        })
     }
 
     /// Checks that the data is physically plausible. Catches typos and unit

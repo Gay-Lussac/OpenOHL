@@ -115,6 +115,7 @@ by hand and by the reference.
 |---|---|---|---|
 | tbbim-001 | 60 °C, both components in tension | composite modulus and expansion + reference | \\( 10^{-7} \\) |
 | tbbim-002 | 150 °C, the core alone | core-only strain + reference | \\( 10^{-7} \\) |
+| tbbim-003 | 150 °C, the outer strands in compression without limit (the default): the composite throughout, 0.121 m more sag and 1.1 % less tension than tbbim-002 | composite strain by hand (86 µstrain longer than the core alone at 17 kN) + reference | \\( 10^{-7} \\) |
 
 ### Non-linear model: both final states and the signed set (`benchmarks/sagtension/nonlinear-states.toml`)
 

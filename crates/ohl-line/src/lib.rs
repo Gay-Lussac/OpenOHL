@@ -27,6 +27,7 @@
 //! elements, insulator strings) and solves it in any weather state.
 
 pub mod assembly;
+pub mod bimetallic;
 pub mod bundles;
 pub mod circuits;
 pub mod condition;
@@ -48,6 +49,7 @@ pub mod route;
 pub mod sagging;
 pub mod solve;
 
+pub use bimetallic::bimetallic_notes;
 pub use objects::{
     Axis, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject, TypeKind,
 };

@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**The bimetallic model said on the results (roadmap O22 item 1; owner "Go with O22 but not 2 4 and 5", 2026-11-10)**
+
+- **The premise corrected.** The roadmap item first said the default
+  (the outer strands in compression without limit) gave the smaller hot
+  sags. The benchmark and the source say the opposite: above the knee
+  point the wire in compression keeps the composite's expansion and is
+  the longer one (`tbbim-003` against `tbbim-002`: 10.644 m against
+  10.523 m at 150 °C, 1.1 % less tension). The default is the upper
+  bound of the hot sag — on the safe side for clearances — and stays.
+- **Said per line.** `ohl_line::bimetallic_notes`: per bimetallic wire
+  type, its model and its sections (ten named). The default without a
+  mark; a bird cage or a compression limit as "NOT ON THE SAFE SIDE: …"
+  (its hot sag is not the largest). Shown by `ohl line`, the wire
+  tension check (`ohl tensions`, its window's notes), the clearance-zone
+  check, `ohl internal`, the thermal notes, and `ohl sagtension` for its
+  wire type.
+- **Said per weather case.** A span whose state is past the knee point
+  gets a flag (`SectionShape::flags`): under the default "NOT ON THE
+  SAFE SIDE for the tension" (the recommended reading of the design's
+  open question: flagged only where a span is actually past the knee),
+  a bird cage "for the sag", a span at its compression limit for both.
+- **No format change, no default change, no computed value changed.**
+  New in the core: `Cable::bimetallic_model` (`BimetallicUse`; without
+  limit = at least ten times the RTS), `Mechanics::component_loads` and
+  `Mechanics::outer_state`.
+- **Not done yet:** the Sections table's "bimetallic" cell and the
+  hovers of the Criteria window and the wire form; the notes in the
+  app's internal-clearance and LiDAR windows (their checks do not have
+  the wire library; the per-case flags reach them through the warnings
+  by weather case).
+- **Sources.** CIGRE TB 324 p. 42–43 and p. 67 (in hand). Its references
+  19 and 20 are cited as the brochure cites them: the papers themselves
+  were not at hand, said in the theory page.
+
 **Braces seated and cut against built-up members (owner, 2026-11-11)**
 
 The owner, after the built-up sections were drawn as their parts: "Go

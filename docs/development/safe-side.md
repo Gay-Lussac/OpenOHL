@@ -35,6 +35,7 @@ theory page. Status: **done** (with the date), **open**.
 | [LiDAR](../theory/lidar-analysis.md) | A voltage above the table's last row: that row's distance | Kept (owner, 2026-10-27): checked with the last row's distance, each such span named in the report's warnings as on the unsafe side ("extend the table") | kept (owner) |
 | [Thermal](../theory/thermal.md) | Wire-to-wire rules left out of the temperature limit; a 10 °C grid can miss a narrow failure | Said on every limit: the wire-to-wire rules applying to the base case named; with a radial rule, a failure between two scan steps (the step is a setting) | done 2026-11-08 |
 | [Jumpers](../theory/jumpers.md) | The riser's ice and wind per unstretched metre | Per stretched metre at the largest stretch (a second solve), the own weight per unstressed metre | done 2026-11-08 |
+| [Sag-tension](../theory/sagtension.md#bimetallic-wires-above-the-knee-point) | Bimetallic wires above the knee point: which of the models bounds the hot sag was not said (the roadmap first took the default for the smaller sag; it is the larger) | Kept: the default (outer strands in compression without limit) is the conservative one for the sag — the largest hot sag of the models; said with the wire types and sections on the results (`ohl_line::bimetallic_notes`) | done 2026-11-11 (in active development) |
 
 ## B. A value is needed: said on every result until it is given
 
@@ -47,6 +48,7 @@ theory page. Status: **done** (with the date), **open**.
 | [Internal clearances](../theory/internal-clearances.md) | A string's volumes | Per structure, the strings without volumes named, in the report's notes | done 2026-11-08 |
 | [Thermal](../theory/thermal.md) | Steel-core magnetic heating in the AC resistance | Above every thermal result, the sections of ACSR and ACSS conductors named | done 2026-11-08 |
 | [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | With the pull option, every load case's notes name the jumpers whose stiffness is estimated | done 2026-11-08 |
+| [Sag-tension](../theory/sagtension.md#bimetallic-wires-above-the-knee-point) | The compression a bimetallic wire's outer strands really take above the knee point (tests or the maker) | A wire type as a bird cage or with a compression limit: "NOT ON THE SAFE SIDE: wire type X (sections …) modelled …" on every result of the line (its hot sag is not the largest); each weather case flags the spans past the knee point — the default's for the tension (the lowest of the models, about 1 %), a bird cage's or a limit's for the sag | done 2026-11-11 (in active development) |
 
 ## C. Limits of the method or clauses not covered: said where they apply
 

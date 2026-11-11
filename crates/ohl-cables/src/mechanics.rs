@@ -232,15 +232,26 @@ pub enum MaterialState {
 pub struct Mechanics {
     components: Vec<ComponentMechanics>,
     reference_temperature: Temperature,
+    /// Total area of the cable, m² (virtual stresses refer to it).
+    total_area: f64,
 }
 
 impl ComponentMechanics {
+    /// The component's load at its mechanical strain `strain`, N, never
+    /// more compression than it may carry.
     fn load(&self, strain: f64, state: &MaterialState, index: usize) -> f64 {
+        self.unlimited_load(strain, state, index)
+            .max(-self.max_compression)
+    }
+
+    /// The load its curves (or its modulus) give, before the compression
+    /// limit.
+    fn unlimited_load(&self, strain: f64, state: &MaterialState, index: usize) -> f64 {
         let Some(c) = &self.curves else {
-            return (self.linear_stiffness * strain).max(-self.max_compression);
+            return self.linear_stiffness * strain;
         };
         let elastic_from = |permanent: f64| c.final_stiffness * (strain - permanent);
-        let load = match state {
+        match state {
             MaterialState::Initial => {
                 if strain >= 0.0 {
                     c.initial_at(strain)
@@ -269,9 +280,26 @@ impl ComponentMechanics {
                 };
                 line.min(envelope)
             }
-        };
-        load.max(-self.max_compression)
+        }
     }
+}
+
+/// What the outer strands of a bimetallic cable do in a state
+/// ([`Mechanics::outer_state`]): in tension below the knee point, past it
+/// in compression, at their compression limit, or slack.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OuterState {
+    /// Below the knee point: the outer strands in tension (or just
+    /// unloaded).
+    Tension,
+    /// Past the knee point, within their limit: their compressive load
+    /// as a virtual stress, Pa (load / total area).
+    Compression(f64),
+    /// Past the knee point, at their compression limit (the core takes
+    /// the rest): the limit as a virtual stress, Pa.
+    AtLimit(f64),
+    /// Past the knee point, a bird cage: no compression, the core alone.
+    Slack,
 }
 
 impl Mechanics {
@@ -318,6 +346,7 @@ impl Mechanics {
         Ok(Self {
             components,
             reference_temperature: reference.unwrap_or_else(default_reference_temperature),
+            total_area,
         })
     }
 
@@ -374,6 +403,49 @@ impl Mechanics {
                 .map(|(k, (e, c))| c.load(e, state, k))
                 .sum(),
         )
+    }
+
+    /// The load of each component (outer, then core) at total strain
+    /// `strain` and `temperature`, N: the loads [`Mechanics::tension`]
+    /// sums.
+    pub fn component_loads(
+        &self,
+        strain: f64,
+        temperature: Temperature,
+        state: &MaterialState,
+    ) -> Vec<f64> {
+        self.mechanical_strains(strain, temperature)
+            .zip(&self.components)
+            .enumerate()
+            .map(|(k, (e, c))| c.load(e, state, k))
+            .collect()
+    }
+
+    /// What the outer strands do when the cable carries `tension` at
+    /// `temperature` in `state` ([`OuterState`]): whether the state is
+    /// past the knee point of a bimetallic cable, for the results' notes.
+    /// None for a cable without a core (no knee point).
+    pub fn outer_state(
+        &self,
+        tension: Force,
+        temperature: Temperature,
+        state: &MaterialState,
+    ) -> Result<Option<OuterState>, CableError> {
+        let [outer, _core] = self.components.as_slice() else {
+            return Ok(None);
+        };
+        let strain = self.strain(tension, temperature, state)?;
+        let dt = (temperature - self.reference_temperature).kelvin();
+        let wanted = outer.unlimited_load(strain - outer.thermal_expansion * dt, state, 0);
+        Ok(Some(if wanted >= 0.0 {
+            OuterState::Tension
+        } else if -wanted <= outer.max_compression {
+            OuterState::Compression(-wanted / self.total_area)
+        } else if outer.max_compression > 0.0 {
+            OuterState::AtLimit(outer.max_compression / self.total_area)
+        } else {
+            OuterState::Slack
+        }))
     }
 
     /// Total strain at which the cable carries `tension` at `temperature`.
@@ -932,6 +1004,89 @@ mod tests {
         // No core: never limited.
         c.core = None;
         assert_eq!(c.outer_compression_limit(), f64::INFINITY);
+    }
+
+    /// The model a cable's results name: the default and anything as
+    /// high as it without limit, a real limit, a bird cage, none without
+    /// a core.
+    #[test]
+    fn bimetallic_model_names_what_is_computed() {
+        use crate::{BimetallicBehavior, BimetallicUse};
+        let mut c = cable();
+        c.outer.stress_strain = None;
+        c.core.as_mut().unwrap().stress_strain = None;
+        assert_eq!(c.bimetallic_model(), Some(BimetallicUse::Unlimited));
+        c.bimetallic_behavior = Some(BimetallicBehavior::Compression);
+        c.max_virtual_compression = Some(Stress::from_si(crate::DEFAULT_MAX_VIRTUAL_COMPRESSION));
+        assert_eq!(c.bimetallic_model(), Some(BimetallicUse::Unlimited));
+        c.max_virtual_compression = Some(Stress::from_megapascals(20.0));
+        let Some(BimetallicUse::Limited(s)) = c.bimetallic_model() else {
+            panic!("{:?}", c.bimetallic_model());
+        };
+        assert!((s.megapascals() - 20.0).abs() < 1e-9);
+        assert_eq!(BimetallicUse::Limited(s).label(), "limited 20 MPa");
+        c.max_virtual_compression = Some(Stress::ZERO);
+        assert_eq!(c.bimetallic_model(), Some(BimetallicUse::BirdCage));
+        c.bimetallic_behavior = Some(BimetallicBehavior::BirdCage);
+        c.max_virtual_compression = None;
+        assert_eq!(c.bimetallic_model(), Some(BimetallicUse::BirdCage));
+        c.core = None;
+        assert_eq!(c.bimetallic_model(), None);
+        // The notes: only the default is not marked.
+        assert!(
+            BimetallicUse::Unlimited
+                .note("x", "sections A, B")
+                .starts_with("wire type x (sections A, B): outer strands take compression")
+        );
+        for other in [BimetallicUse::BirdCage, BimetallicUse::Limited(s)] {
+            assert!(
+                other
+                    .note("x", "")
+                    .starts_with("NOT ON THE SAFE SIDE: wire type x modelled ")
+            );
+            assert!(!other.is_safe_for_sag());
+        }
+    }
+
+    /// The outer strands' state: in tension when cold, past the knee in
+    /// compression (the default), at the limit, or slack (bird cage); the
+    /// component loads add up to the tension.
+    #[test]
+    fn outer_state_says_when_the_knee_is_passed() {
+        use crate::BimetallicBehavior;
+        let mut c = cable();
+        c.outer.stress_strain = None;
+        c.core.as_mut().unwrap().stress_strain = None;
+        let tension = Force::from_kilonewtons(2.0);
+        let state = MaterialState::Initial;
+        let of = |c: &Cable, at: f64| {
+            Mechanics::from_cable(c)
+                .unwrap()
+                .outer_state(tension, t(at), &state)
+                .unwrap()
+        };
+        assert_eq!(of(&c, 20.0), Some(OuterState::Tension));
+        let Some(OuterState::Compression(stress)) = of(&c, 150.0) else {
+            panic!("{:?}", of(&c, 150.0));
+        };
+        // The loads: outer −σ·A, core the rest.
+        let m = Mechanics::from_cable(&c).unwrap();
+        let e = m.strain(tension, t(150.0), &state).unwrap();
+        let loads = m.component_loads(e, t(150.0), &state);
+        assert_eq!(loads.len(), 2);
+        assert!((loads[0] + stress * c.area().si()).abs() < 1e-6);
+        assert!((loads[0] + loads[1] - tension.newtons()).abs() < 1e-6);
+        c.bimetallic_behavior = Some(BimetallicBehavior::Compression);
+        c.max_virtual_compression = Some(Stress::from_megapascals(0.1));
+        let Some(OuterState::AtLimit(limit)) = of(&c, 150.0) else {
+            panic!("{:?}", of(&c, 150.0));
+        };
+        assert!((limit - 0.1e6).abs() < 1e-3);
+        c.bimetallic_behavior = Some(BimetallicBehavior::BirdCage);
+        assert_eq!(of(&c, 150.0), Some(OuterState::Slack));
+        assert_eq!(of(&c, 20.0), Some(OuterState::Tension));
+        c.core = None;
+        assert_eq!(of(&c, 150.0), None);
     }
 
     #[test]

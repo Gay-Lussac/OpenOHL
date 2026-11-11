@@ -664,6 +664,12 @@ against what line design practice uses). In the order proposed:
    default), and put both in the safe-side list. *(Corrected 2026-11-10:
    this item first said the default gave the smaller sags; the
    bimetallic benchmark and the theory's source show the opposite.)*
+   **Built 2026-11-11, in active development (not approved yet):** the
+   notes per line (`ohl line`, `ohl tensions`, the zone check, `ohl
+   internal`, thermal, `ohl sagtension`), the flags per weather case on
+   the spans past the knee point, the theory section, both rows of the
+   safe-side list, the benchmark `tbbim-003`. Still to do: the Sections
+   table's cell and the hovers in the app.
 2. **Strain strings as hanging cables.** A strain string is a straight
    bar with half its weight at each end. On a tight span that is a
    millimetre; on a slack span (a few kN, a substation span with heavy

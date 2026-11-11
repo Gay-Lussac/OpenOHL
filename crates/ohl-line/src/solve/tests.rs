@@ -1233,6 +1233,64 @@ fn bird_cage_changes_the_hot_sag() {
     );
 }
 
+/// A bimetallic span past its knee point says so in the weather case's
+/// flags (roadmap O22 item 1), in both methods: nothing at 60 °C; at
+/// 180 °C the default's outer strands are in compression (not on the safe
+/// side for the tension), a bird cage's slack (not on the safe side for
+/// the sag), a low limit reached.
+#[test]
+fn spans_past_the_knee_point_are_flagged() {
+    use crate::condition::Calculation;
+    let lib = library();
+    let budget = default_fe_budget();
+    let knee = |shape: &SectionShape| -> Vec<String> {
+        shape
+            .flags
+            .iter()
+            .filter(|f| f.contains(crate::bimetallic::PAST_KNEE))
+            .cloned()
+            .collect()
+    };
+    for calculation in [Calculation::INITIAL_RS, Calculation::INITIAL_FE] {
+        let mut cable = lib.get("acsr-drake-26-7").unwrap().clone();
+        let mut line = crate::tests::example();
+        line.sections[0].clear_point_loads();
+        line.sections[0].calculation = calculation;
+        let spans = line.sections[0].points.len() - 1;
+        let at = |cable: &Cable, t: f64| {
+            let case = WeatherCase::still("t", Temperature::from_celsius(t));
+            knee(&solve_section(&line, &line.sections[0], cable, &case, &budget).unwrap())
+        };
+        assert!(at(&cable, 60.0).is_empty(), "{calculation:?}");
+        let hot = at(&cable, 180.0);
+        assert_eq!(hot.len(), spans, "{calculation:?}: {hot:?}");
+        assert!(
+            hot[0].starts_with("span 1: outer strands in compression (")
+                && hot[0].ends_with(
+                    "NOT ON THE SAFE SIDE for the tension — a bird cage gives the higher one"
+                ),
+            "{calculation:?}: {}",
+            hot[0]
+        );
+        cable.bimetallic_behavior = Some(ohl_cables::BimetallicBehavior::BirdCage);
+        assert!(at(&cable, 60.0).is_empty(), "{calculation:?}");
+        let caged = at(&cable, 180.0);
+        assert_eq!(caged.len(), spans, "{calculation:?}: {caged:?}");
+        assert_eq!(
+            caged[0],
+            "span 1: outer strands slack (bird cage): NOT ON THE SAFE SIDE for the sag"
+        );
+        cable.bimetallic_behavior = Some(ohl_cables::BimetallicBehavior::Compression);
+        cable.max_virtual_compression = Some(Stress::from_megapascals(1.0));
+        let limited = at(&cable, 180.0);
+        assert!(
+            limited[0].starts_with("span 1: outer strands at their compression limit (1 MPa"),
+            "{calculation:?}: {}",
+            limited[0]
+        );
+    }
+}
+
 /// Creep as a temperature increase (linear model): after creep at
 /// 15 °C sags as initial at 15 °C + the shift.
 #[test]

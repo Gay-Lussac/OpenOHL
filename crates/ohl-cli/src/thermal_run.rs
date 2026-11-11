@@ -501,7 +501,7 @@ fn clearance_limit(l: &LimitArgs) -> Result<(), String> {
         base.name,
         started.elapsed()
     );
-    for n in ohl_thermal::sections::not_safe_notes(&line, &library) {
+    for n in thermal_notes(&line, &library) {
         println!("  {n}");
     }
     // What the limits leave out, not on the safe side: each note once.
@@ -681,7 +681,7 @@ fn clearance_check(c: &CheckArgs) -> Result<(), String> {
         base.name,
         started.elapsed()
     );
-    for n in ohl_thermal::sections::not_safe_notes(&line, &library) {
+    for n in thermal_notes(&line, &library) {
         println!("  {n}");
     }
     let mut csv = "section,cable,current_a,bundle,temperature_c,ambient_case,status,rule,span,measure,clearance_m,required_m,margin_m\n".to_owned();
@@ -761,6 +761,20 @@ fn clearance_check(c: &CheckArgs) -> Result<(), String> {
         write_csv(path, &csv)?;
     }
     Ok(())
+}
+
+/// The notes of a thermal run on a line: what is not on the safe side
+/// (`ohl_thermal::sections::not_safe_notes`, the bimetallic models other
+/// than the default among them), then the default bimetallic model of
+/// the wire types that have it (hot states are where it acts).
+fn thermal_notes(line: &ohl_line::Line, library: &ohl_cables::Library) -> Vec<String> {
+    let mut notes = ohl_thermal::sections::not_safe_notes(line, library);
+    for n in ohl_line::bimetallic_notes(line, library) {
+        if !notes.contains(&n) {
+            notes.push(n);
+        }
+    }
+    notes
 }
 
 #[cfg(test)]

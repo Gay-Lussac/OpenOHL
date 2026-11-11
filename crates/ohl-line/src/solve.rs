@@ -2825,6 +2825,8 @@ fn solve_fe(
         budget,
         Some(&extras),
     )?;
+    // Linear bimetallic cables: whether the section is on its core branch.
+    let mut on_core_branch = false;
     if let (Some(m), Some(strung)) = (&curves, &strung) {
         use ohl_cables::mechanics::MaterialState;
         use ohl_core::units::{Force, Temperature};
@@ -2885,6 +2887,7 @@ fn solve_fe(
         // Bimetallic cables without curves: past the transition, outer
         // strands limited in compression leave the core alone
         // ([`core_branch`]).
+        on_core_branch = true;
         reference.lengthen(|_| 1.0 + offset);
         (built, solution) = solve_built(
             section,
@@ -3069,6 +3072,17 @@ fn solve_fe(
             }
         }
     }
+    // Bimetallic cables: the spans past the knee point (roadmap O22
+    // item 1), at each span's mean tension.
+    flags.extend(knee_flags_fe(
+        cable,
+        curves.as_ref(),
+        final_state,
+        cases,
+        reference.temperature,
+        on_core_branch,
+        &span_tensions(&built, &solution),
+    ));
     // Above the wire's strength (owner, 2026-10-22).
     flags.extend(rts_flags(&spans, cable));
     for k in cases.broken {
@@ -3127,6 +3141,65 @@ fn solve_fe(
             .collect(),
         spacers: spacer_states,
     })
+}
+
+/// The flags of the spans of a bimetallic cable past its knee point in
+/// the finite-element solution ([`crate::bimetallic::past_knee_flag`]),
+/// from each span's mean tension `tensions` (N; 0: a broken span, no
+/// flag) at its own case's temperature:
+///
+/// - with curves, the outer strands' state of the curves in the case's
+///   material state ([`ohl_cables::mechanics::Mechanics::outer_state`]);
+/// - without, on the core branch ([`core_branch`], one per section) every
+///   span at its limit or slack; else the closed form of the composite
+///   ([`crate::bimetallic::linear_outer_state`], from the stringing
+///   temperature `strung_at`, °C).
+fn knee_flags_fe(
+    cable: &Cable,
+    curves: Option<&ohl_cables::mechanics::Mechanics>,
+    final_state: Option<&FinalState>,
+    cases: Cases<'_>,
+    strung_at: f64,
+    on_core_branch: bool,
+    tensions: &[f64],
+) -> Vec<String> {
+    use ohl_cables::mechanics::{MaterialState, OuterState};
+    if cable.core.is_none() {
+        return Vec::new();
+    }
+    let material = final_state.map_or(MaterialState::Initial, |f| f.material.clone());
+    let state_of = |s: usize, tension: f64| -> Option<OuterState> {
+        let temperature = cases.of(s).temperature;
+        match curves {
+            Some(m) => m
+                .outer_state(
+                    ohl_core::units::Force::from_si(tension),
+                    temperature,
+                    &material,
+                )
+                .ok()
+                .flatten(),
+            None if on_core_branch => {
+                let limit = cable.outer_compression_limit_with_curves();
+                Some(if limit > 0.0 {
+                    OuterState::AtLimit(limit / cable.area().si())
+                } else {
+                    OuterState::Slack
+                })
+            }
+            None => crate::bimetallic::linear_outer_state(
+                cable,
+                tension,
+                temperature.celsius() - strung_at,
+            ),
+        }
+    };
+    tensions
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| **t > 0.0)
+        .filter_map(|(s, &t)| crate::bimetallic::past_knee_flag(s, state_of(s, t)?))
+        .collect()
 }
 
 /// The core branch of a bimetallic cable, when its outer strands are in

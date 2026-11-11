@@ -62,6 +62,8 @@ The outer strands expand more with temperature than the core. Above a transition
 | `compression` (default) | the outer strands go into compression, up to `max_virtual_compression` |
 | `bird_cage` | the outer strands take no compression: the core carries the whole tension |
 
+**Which is on the safe side.** Compression without limit (the default) gives the **largest** hot sags — safe for clearances; its tension above the transition is the lowest (about 1 % on a 300 m span at 150 °C). A bird cage or a compression limit gives smaller hot sags (0.12 m in 10.6 m there): the results of a line with such a wire type say "NOT ON THE SAFE SIDE" with the wire type and its sections, and each weather case flags the spans past the transition. Below the transition the choice changes nothing; it costs no solve time. See [Bimetallic wires above the knee point](../theory/sagtension.md#bimetallic-wires-above-the-knee-point).
+
 Virtual stress = actual stress × Ao / At (Ao the outer strands' area, At the total area). Past the limit the core alone carries the tension, so a hot wire expands as the core does. Both methods use this: the ruling span through the wire type's stress-strain model; the finite elements through the same curves when the wire type has them (each span's length follows the curves, see [Finite-element wire systems](../theory/wirefe.md#non-linear-stress-strain-in-the-elements)), otherwise with one branch per section (the core alone when, at the section's mean tension, the outer strands are past their limit). A curve's own `max_compression` (below) still applies, whichever is smaller.
 
 ## Components: `[cable.outer]`, `[cable.core]`

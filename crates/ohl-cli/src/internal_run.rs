@@ -142,7 +142,11 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
     for (s, why) in &report.not_checked {
         println!("  not checked: {s}: {why}");
     }
-    for n in &report.notes {
+    for n in report
+        .notes
+        .iter()
+        .chain(&ohl_line::bimetallic_notes(&line, &library))
+    {
         println!("  note: {n}");
     }
     println!(

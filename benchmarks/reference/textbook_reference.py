@@ -1306,6 +1306,13 @@ def bimetallic_cases():
                                     "outer_load_n (both in tension)": outer})
     knee = bisect(lambda t: state(t)[2], 60.0, 150.0)
     print(f"    knee temperature {fmt(knee)} degC")
+    # tbbim-003: the outer strands in compression without limit (the
+    # composite throughout).
+    free = bimetallic_strain(EAo, ao, EAc, ac, float("inf"))
+    H, loads = cos_additive([(300.0, 0.0)], free, 28_000.0, w, 20.0, w, 150.0)
+    c = catenary_span(300.0, 0.0, H, loads[0])
+    show("tbbim at 150.0 degC, compression without limit",
+         {"h_initial_n": H, "sag_initial_m": c["sag"]})
 
 
 def weather_cases():

@@ -2052,6 +2052,11 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         let mut envelope = ohl_clearance::Envelope::default();
         let mut extras = ohl_line::export::ViewerExtras::default();
         let mut failed = 0;
+        // The bimetallic model of its wire types, said once (roadmap
+        // O22 item 1); the spans past the knee point with each case.
+        for n in ohl_line::bimetallic_notes(&line, &library) {
+            println!("note: {n}");
+        }
         for case in &cases {
             let started = std::time::Instant::now();
             let results = ohl_line::solve::solve_line(&line, &library, case);

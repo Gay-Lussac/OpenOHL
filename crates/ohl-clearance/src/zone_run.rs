@@ -283,6 +283,11 @@ pub fn run_zone_check(
             )?;
             let mut report = report;
             report.notes.extend(arc_notes);
+            // The bimetallic model of the wire types (roadmap O22 item 1):
+            // the hot sags depend on it.
+            report
+                .notes
+                .extend(ohl_line::bimetallic_notes(line, library));
             Ok((
                 report,
                 solved,

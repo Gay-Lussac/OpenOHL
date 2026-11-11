@@ -862,6 +862,19 @@ pub fn run(path: &Path, units: UnitSystem) -> Result<JobOutput, String> {
         show(cable.weight(), units, 4),
         show(strung_at, units, 0)
     );
+    // A bimetallic cable: its model above the knee point (roadmap O22
+    // item 1). The linear tables take the composite throughout.
+    if let Some(model) = cable.bimetallic_model() {
+        let _ = writeln!(out, "  Note: {}", model.note(&cable.id, ""));
+        if !model.is_safe_for_sag() {
+            let _ = writeln!(
+                out,
+                "  Note: the linear tables (one modulus, one expansion) keep the composite above \
+                 the knee point — compression without limit, the largest hot sag; the \
+                 stress-strain tables follow the wire type's model"
+            );
+        }
+    }
     let ruling = ruling_span(&spans).map_err(|e| e.to_string())?;
     let _ = writeln!(
         out,
