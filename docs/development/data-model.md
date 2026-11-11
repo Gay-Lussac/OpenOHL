@@ -1542,7 +1542,19 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `Found` — point, grows, falls, position, fall position, a tree's base),
   each `VegPoint` with its `position`, `fall_position`,
   `fall_point` (indices into `positions`) and the `required` clearance
-  applied. The danger CSV
+  applied. Since 2026-11-11 the **questionable points**
+  (`vegetation::Questionable`: `point`, `class`, `span` — the nearest in
+  plan —, `distance` in plan from its swept volume, `why`:
+  `NoBase::NoGroundBelow` / `GroundPointTooFar`): the points without a
+  tree base within `VegetationParams::fall_reach` of a span in plan,
+  where a ground surface was given — `VegetationCheck::questionable_points`
+  (all) and `VegetationCheck::questionable()` (the nearest
+  `QUESTIONABLE_KEPT` = 10 000, nearest first, the same however the
+  points were shared between threads); `vegetation::questionable_note`
+  (the report's "NOT CHECKED, NOT ON THE SAFE SIDE: …") and
+  `questionable_csv` (rows appended to the danger CSV, the kind
+  `questionable: <why>`). `without_ground` and `ground_too_far` count as
+  before. The danger CSV
   (`vegetation::DANGER_CSV_HEADER`) has a row per kept point with its
   case and position; the older per-case CSV (`vegetation::CSV_HEADER`,
   `to_csv`) remains for a single case. Isoclearance lines:
@@ -3165,7 +3177,16 @@ Pa`), `spans` (`section`, `span`, `required` m, `encroaching`,
 (`ohl_session::packing`, `"zstd+base64:…"`): `grow_in` — the count, then
 x, y, z in mm (each column as zigzag varints of the difference to the
 point before), then each label (varint) — and `fall_in` the same with
-the base's z (mm) after z. Opened again, it is out of date when the line
+the base's z (mm) after z. Since 2026-11-11, only when the run has
+questionable points (`results` `version` 2 then, else 1 as before; an
+older program refuses a version 2 run instead of showing it without
+them; `vegetation::SAVED_VERSION` 2, `BEFORE_QUESTIONABLE_VERSION` 1):
+`questionable_points` (how many in all), `questionable_spans`
+[[section, span]] and `questionable` [{`point` [x, y, z], `class`,
+`place` (index into `questionable_spans`), `distance` m in plan, `why`
+(`no_ground_below` / `ground_point_too_far`)}] — in `ohl-app`
+`vegetation::Report::questionable`, `questionable_points`,
+`questionable_spans` (`QuestionablePoint`). Opened again, it is out of date when the line
 state, `points_state` or `ground` differ from now. Isoclearance lines are
 not saved (run again to draw them).
 

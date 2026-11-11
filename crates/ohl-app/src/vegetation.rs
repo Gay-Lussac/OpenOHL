@@ -58,8 +58,12 @@ use crate::selection::Selection;
 pub const CHECK_ID: &str = "ohl.vegetation";
 /// Its title.
 pub const CHECK_TITLE: &str = "Vegetation and danger trees";
-/// The version of its parameters and results ([`saved`]).
-pub const SAVED_VERSION: u32 = 1;
+/// The version of its parameters and results ([`saved`]): 2
+/// (2026-11-11) adds the questionable points, written only when a run
+/// has some ([`saved::results`]); 1 is read as before.
+pub const SAVED_VERSION: u32 = 2;
+/// The version of saved results without questionable points.
+pub const BEFORE_QUESTIONABLE_VERSION: u32 = 1;
 /// The user guide's page of the panel's settings.
 pub const GUIDE: &str = "user-guide/analyses";
 
@@ -437,6 +441,23 @@ pub struct FoundPoint {
     pub label: u32,
 }
 
+/// A questionable point (owner, 2026-11-11): a vegetation point without
+/// a tree base where a tree could reach a span — its fall-in not worked
+/// out ([`ohl_clearance::vegetation::Questionable`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QuestionablePoint {
+    /// The point.
+    pub point: [f64; 3],
+    /// Its class.
+    pub class: u8,
+    /// The nearest span ([`Report::questionable_spans`]).
+    pub place: u32,
+    /// Its distance in plan from that span's swept volume, m.
+    pub distance: f64,
+    /// Why it has no base.
+    pub why: ohl_clearance::vegetation::NoBase,
+}
+
 /// A worst point of a span.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorstPoint {
@@ -494,6 +515,13 @@ pub struct Report {
     pub positions: usize,
     /// Notes.
     pub notes: Vec<String>,
+    /// The questionable points listed, nearest to the wires first (at
+    /// most [`ohl_clearance::vegetation::QUESTIONABLE_KEPT`]).
+    pub questionable: Vec<QuestionablePoint>,
+    /// How many there are in all ([`Report::questionable`] may list fewer).
+    pub questionable_points: u64,
+    /// The spans the questionable points are near (section, span).
+    pub questionable_spans: Vec<(String, usize)>,
     /// The settings of the run.
     pub settings: Settings,
     /// Its weather cases' names.
@@ -584,11 +612,59 @@ impl Report {
             points: 0,
             positions: positions.positions.len(),
             notes: Vec::new(),
+            questionable: Vec::new(),
+            questionable_points: 0,
+            questionable_spans: Vec::new(),
             settings,
             cases,
             lines: None,
             saved: None,
         }
+    }
+
+    /// Takes the questionable points of a run (`count` in all, `list`
+    /// those kept): each with its span, the spans named once.
+    fn set_questionable(
+        &mut self,
+        positions: &Positions,
+        count: u64,
+        list: &[ohl_clearance::vegetation::Questionable],
+    ) {
+        let mut place: HashMap<usize, u32> = HashMap::new();
+        self.questionable_points = count;
+        self.questionable = list
+            .iter()
+            .map(|q| {
+                let k = *place.entry(q.span).or_insert_with(|| {
+                    let w = &positions.spans[q.span].wire;
+                    self.questionable_spans.push((w.section.clone(), w.span));
+                    (self.questionable_spans.len() - 1) as u32
+                });
+                QuestionablePoint {
+                    point: q.point,
+                    class: q.class,
+                    place: k,
+                    distance: q.distance,
+                    why: q.why,
+                }
+            })
+            .collect();
+    }
+
+    /// The span a questionable point is near.
+    pub fn questionable_span(&self, q: &QuestionablePoint) -> Option<Selection> {
+        self.questionable_spans
+            .get(q.place as usize)
+            .map(|(section, span)| Selection::Span {
+                section: section.clone(),
+                span: *span,
+            })
+    }
+
+    /// Why a questionable point has no base, in words.
+    pub fn why(&self, q: &QuestionablePoint) -> String {
+        let (limited, limit) = self.settings.base_limit;
+        q.why.words(limited.then_some(limit))
     }
 
     /// The case and position of `label`.
@@ -622,6 +698,24 @@ impl Report {
                     ohl_core::text::csv_field(self.label(w.label)),
                 );
             }
+        }
+        // The questionable points: where and why, nothing worked out.
+        for q in &self.questionable {
+            let (section, span) = self
+                .questionable_spans
+                .get(q.place as usize)
+                .map_or((String::new(), String::new()), |(s, k)| {
+                    (ohl_core::text::csv_field(s), k.to_string())
+                });
+            let _ = writeln!(
+                t,
+                "{section},{span},{},{},{:.3},{:.3},{:.3},,,,,,",
+                ohl_core::text::csv_field(&format!("questionable: {}", self.why(q))),
+                q.class,
+                q.point[0],
+                q.point[1],
+                q.point[2],
+            );
         }
         for (kind, list) in [("grow_in", &self.grow), ("fall_in", &self.fall)] {
             for p in list {
@@ -979,9 +1073,21 @@ impl VegetationWindow {
             };
             let read = check.points;
             let required = check.required().to_vec();
+            // The questionable points (2026-11-11): none silently
+            // unchecked.
+            let questionable_points = check.questionable_points;
+            let questionable = check.questionable().to_vec();
+            if let Some(n) = ohl_clearance::vegetation::questionable_note(
+                questionable_points,
+                questionable.len(),
+                &params,
+            ) {
+                notes.push(n);
+            }
             let results = check.finish();
             let mut report =
                 Report::of_run(&positions, &results, &required, &params, settings, names);
+            report.set_questionable(&positions, questionable_points, &questionable);
             report.points = read;
             report.notes = notes;
             report.lines = lines;
@@ -1064,7 +1170,9 @@ impl VegetationWindow {
         let mut parameters = report.settings.to_json(&report.cases);
         parameters["points_state"] = json!(s.points_state());
         parameters["ground"] = json!(ground_key(model));
-        parameters["version"] = json!(SAVED_VERSION);
+        // The parameters are as before: version 1 (the results' version
+        // rises with the questionable points, `saved::results`).
+        parameters["version"] = json!(BEFORE_QUESTIONABLE_VERSION);
         // The ice and wind per stretched or unstretched metre (2026-10-21).
         parameters["loads_per"] = json!(self.job.stamp.loads_per(model).as_str());
         let (enc, fall) = report
@@ -1988,7 +2096,17 @@ fn report_ui(
         .iter()
         .filter(|r| r.encroaching > 0 || r.fall_in > 0)
         .collect();
-    let text = if found.is_empty() {
+    // Questionable trees are not cleared: never a green verdict with them.
+    let questionable = report.questionable_points;
+    let text = if found.is_empty() && questionable > 0 {
+        format!(
+            "✖ No vegetation found within reach, but {questionable} questionable tree{} not \
+             checked (no tree base; listed below): {} vegetation points, {} spans checked",
+            if questionable == 1 { "" } else { "s" },
+            report.points,
+            report.spans.len()
+        )
+    } else if found.is_empty() {
         format!(
             "✔ No vegetation within reach: {} vegetation points, {} spans checked",
             report.points,
@@ -2014,9 +2132,16 @@ fn report_ui(
                 .describe()
             ));
         }
+        if questionable > 0 {
+            t.push_str(&format!(
+                "; {questionable} questionable tree{} not checked (listed below)",
+                if questionable == 1 { "" } else { "s" }
+            ));
+        }
         t
     };
-    if check_ui::verdict(ui, !found.is_empty(), &text, !found.is_empty())
+    let failing = !found.is_empty() || questionable > 0;
+    if check_ui::verdict(ui, failing, &text, !found.is_empty())
         && let Some(r) = found.first()
     {
         go = Some(Selection::Span {
@@ -2087,6 +2212,9 @@ fn report_ui(
         });
     }
     check_ui::notes_fold(ui, "vegetation", &report.notes);
+    if let Some(s) = questionable_ui(ui, report) {
+        go = Some(s);
+    }
     let worst: usize = report.spans.iter().map(|r| r.worst.len()).sum();
     egui::CollapsingHeader::new(format!("Worst points ({worst})"))
         .id_salt("vegetation-worst")
@@ -2128,6 +2256,81 @@ fn report_ui(
                 },
             );
         });
+    go
+}
+
+/// The heading of the questionable points' list: how many, and how many
+/// of them are listed.
+pub fn questionable_title(report: &Report) -> String {
+    let (n, listed) = (report.questionable_points, report.questionable.len());
+    if listed as u64 >= n {
+        format!("Questionable trees ({n}): fall-in not checked")
+    } else {
+        format!("Questionable trees ({n}, the {listed} nearest listed): fall-in not checked")
+    }
+}
+
+/// The questionable points (owner, 2026-11-11), folded open when there
+/// are some: where each is, the span it is near (a click goes there) and
+/// why it could not be checked, in a list of a fixed height.
+fn questionable_ui(ui: &mut egui::Ui, report: &Report) -> Option<Selection> {
+    if report.questionable_points == 0 {
+        return None;
+    }
+    let mut go = None;
+    egui::CollapsingHeader::new(
+        egui::RichText::new(questionable_title(report)).color(ui.visuals().warn_fg_color),
+    )
+    .id_salt("vegetation-questionable")
+    .default_open(true)
+    .show(ui, |ui| {
+        ui.label(
+            egui::RichText::new(
+                "Vegetation points with no tree base (no ground below them, or no ground \
+                 point within the search distance) where a tree of the tallest height checked \
+                 could reach a span. Their fall-in is not worked out — neither found nor \
+                 cleared: look at them, or give the ground there. Their grow-in is checked \
+                 as every point's.",
+            )
+            .small()
+            .weak(),
+        );
+        help::list(
+            ui,
+            "vegetation-list-questionable",
+            200.0,
+            egui::ScrollArea::vertical().id_salt("vegetation-questionable-rows"),
+            |ui| {
+                egui::Grid::new("vegetation-questionable-grid")
+                    .striped(true)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        for h in ["Near span", "Class", "x, y, z", "In plan [m]", "Why"] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        for q in &report.questionable {
+                            let span = report.questionable_span(q);
+                            let name = span.as_ref().map_or("-".to_owned(), Selection::describe);
+                            if ui.link(name).on_hover_text("Go to this span").clicked() {
+                                go = span;
+                            }
+                            ui.label(q.class.to_string());
+                            ui.label(format!(
+                                "{:.2}, {:.2}, {:.2}",
+                                q.point[0], q.point[1], q.point[2]
+                            ));
+                            ui.label(format!("{:.1}", q.distance)).on_hover_text(
+                                "Its distance in plan from the span's wires in every position \
+                                 checked",
+                            );
+                            ui.label(report.why(q));
+                            ui.end_row();
+                        }
+                    });
+            },
+        );
+    });
     go
 }
 
@@ -2267,8 +2470,8 @@ pub mod saved {
                 })
             })
             .collect();
-        Ok(json!({
-            "version": SAVED_VERSION,
+        let mut out = json!({
+            "version": BEFORE_QUESTIONABLE_VERSION,
             "points": report.points,
             "positions": report.positions,
             "notes": report.notes,
@@ -2276,7 +2479,33 @@ pub mod saved {
             "spans": spans,
             "grow_in": pack_points(&report.grow, false)?,
             "fall_in": pack_points(&report.fall, true)?,
-        }))
+        });
+        // The questionable points: written only when there are some, the
+        // version raised with them (an older program then refuses the
+        // run instead of showing it without them).
+        if report.questionable_points > 0 {
+            out["version"] = json!(SAVED_VERSION);
+            out["questionable_points"] = json!(report.questionable_points);
+            out["questionable_spans"] = report
+                .questionable_spans
+                .iter()
+                .map(|(s, k)| json!([s, k]))
+                .collect();
+            out["questionable"] = report
+                .questionable
+                .iter()
+                .map(|q| {
+                    json!({
+                        "point": point(q.point),
+                        "class": q.class,
+                        "place": q.place,
+                        "distance": q.distance,
+                        "why": q.why.as_str(),
+                    })
+                })
+                .collect();
+        }
+        Ok(out)
     }
 
     /// The report and the parameters of a saved run.
@@ -2358,6 +2587,28 @@ pub mod saved {
                 None => Ok(Vec::new()),
             }
         };
+        let list = |k: &str| {
+            v.get(k)
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let questionable = list("questionable")
+            .iter()
+            .filter_map(|q| {
+                Some(QuestionablePoint {
+                    point: p3(&q["point"])?,
+                    class: q["class"].as_u64().unwrap_or(0) as u8,
+                    place: q["place"].as_u64().unwrap_or(u64::MAX) as u32,
+                    distance: q["distance"].as_f64().unwrap_or(f64::NAN),
+                    why: ohl_clearance::vegetation::NoBase::parse(q["why"].as_str()?)?,
+                })
+            })
+            .collect();
+        let questionable_spans = list("questionable_spans")
+            .iter()
+            .filter_map(|s| Some((s.get(0)?.as_str()?.to_owned(), s.get(1)?.as_u64()? as usize)))
+            .collect();
         let report = Report {
             spans,
             grow: points("grow_in", false)?,
@@ -2366,6 +2617,12 @@ pub mod saved {
             points: v.get("points").and_then(Value::as_u64).unwrap_or(0),
             positions: v.get("positions").and_then(Value::as_u64).unwrap_or(0) as usize,
             notes: strings("notes"),
+            questionable,
+            questionable_points: v
+                .get("questionable_points")
+                .and_then(Value::as_u64)
+                .unwrap_or(0),
+            questionable_spans,
             settings,
             cases,
             lines: None,

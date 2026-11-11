@@ -974,6 +974,42 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
             params.max_base_ground_distance.unwrap_or(f64::INFINITY)
         );
     }
+    // The questionable points (2026-11-11): none silently unchecked.
+    let questionable_points = check.questionable_points;
+    let questionable = check.questionable().to_vec();
+    if let Some(n) = ohl_clearance::vegetation::questionable_note(
+        questionable_points,
+        questionable.len(),
+        &params,
+    ) {
+        println!("  warning: {n}");
+        const SHOWN: usize = 20;
+        for q in questionable.iter().take(SHOWN) {
+            let w = &positions.spans[q.span].wire;
+            println!(
+                "    questionable: class {} at ({:.2}, {:.2}, {:.2}), {:.1} m in plan from {} span {}: {}",
+                q.class,
+                q.point[0],
+                q.point[1],
+                q.point[2],
+                q.distance,
+                w.section,
+                w.span + 1,
+                q.why.words(params.max_base_ground_distance)
+            );
+        }
+        if questionable.len() > SHOWN {
+            println!(
+                "    … {} more{}",
+                questionable.len() - SHOWN,
+                if a.csv.is_some() {
+                    " (every one listed in the CSV)"
+                } else {
+                    " (--csv lists them)"
+                }
+            );
+        }
+    }
     let results = check.finish();
     let (enc, fall): (u64, u64) = results
         .iter()
@@ -1023,10 +1059,13 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         );
     }
     if let Some(path) = &a.csv {
-        write(
-            path,
-            &ohl_clearance::vegetation::danger_csv(&positions, &results, &params),
-        )?;
+        let mut text = ohl_clearance::vegetation::danger_csv(&positions, &results, &params);
+        text.push_str(&ohl_clearance::vegetation::questionable_csv(
+            &positions,
+            &questionable,
+            &params,
+        ));
+        write(path, &text)?;
     }
     if !a.isoclearance.is_empty() {
         let Some(ground) = terrain.as_ref() else {

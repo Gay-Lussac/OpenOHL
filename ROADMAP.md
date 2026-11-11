@@ -772,6 +772,11 @@ From a review on 2026-11-10.
    within the search distance is left out of the fall-in check and only
    counted. List them as *questionable* (where they are, why), so that
    none is silently unchecked.
+   *Status (2026-11-11), built, in active development (not approved
+   yet):* listed in the result, the panel, the CSV and a saved run
+   (those within the tallest tree's reach of a span; at most 10 000,
+   the nearest first; the counts stay). Open: drawing them in the
+   views.
 2. **Grow-in with a horizontal and a vertical distance.** Grow-in is one
    radial distance. Wanted: separate distances across and up (a rectangle
    round the wire), as clearance rules have, beside the radial one.

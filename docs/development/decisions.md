@@ -10,6 +10,41 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Trees without ground nearby are listed as questionable (owner, 2026-11-11)**
+
+The owner approved roadmap O25 item 1 ("go ahead"). A vegetation point
+with no ground below it, or no ground point within the search distance,
+has no tree base: its fall-in was not worked out and it was only
+counted — not on the safe side for that point, and nowhere to be found.
+
+- **Listed.** Every such point from which a tree of the tallest height
+  checked could reach a span (its distance in plan from the span's
+  swept volume at most `fall_reach`) is a *questionable* point: where
+  it is, the span it is near, why it has no base. Conservative: the
+  distance in plan is never more than the one the fall-in check uses,
+  and a low point is listed like a tall one (its height is not known).
+- **Not a finding, not cleared.** The count of fall-in trees is
+  unchanged; the result carries the note "NOT CHECKED, NOT ON THE SAFE
+  SIDE: n vegetation points … listed as questionable", and the panel's
+  verdict is not green while there is one.
+- **The counts stay.** `without_ground` and `ground_too_far` as before;
+  points beyond the tallest tree's reach are only counted (no tree up
+  to the largest height checked reaches a wire from there).
+- **At most 10 000 listed**, the nearest to the wires (a cloud without
+  usable ground would list millions); the number said is of all, and
+  the note says when the list is shorter.
+- **No ground surface at all**: as before one note, "no ground surface:
+  no fall-in check"; nothing listed (the reason is the same for every
+  point).
+- **Where.** The engine (`VegetationCheck::questionable`), the panel (a
+  list of its own, a click goes to the span), **Export points CSV…**,
+  `ohl lidar vegetation`'s output and `--csv` (rows of the kind `questionable:
+  …` in the existing columns), a saved run (results version 2 only when
+  it has some).
+- **Not done.** They are not drawn in the views (the list and the CSV
+  give the coordinates); a guessed base (the nearest ground height) was
+  not taken: it would turn an unknown into a number.
+
 **A vertical clearance rule "down to the ground" (owner, 2026-11-11)**
 
 The owner approved roadmap O24 item 1 ("go ahead"). A vertical rule

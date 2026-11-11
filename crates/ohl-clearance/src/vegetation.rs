@@ -206,6 +206,80 @@ pub struct VegPoint {
     bound_only: bool,
 }
 
+/// Why a vegetation point has no tree base ([`Questionable::why`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoBase {
+    /// The ground surface has no height at its place (a hole, outside it).
+    NoGroundBelow,
+    /// No ground point within
+    /// [`VegetationParams::max_base_ground_distance`] of it in plan.
+    GroundPointTooFar,
+}
+
+impl NoBase {
+    /// The reason in words (`limit`: the search distance, m).
+    pub fn words(self, limit: Option<f64>) -> String {
+        match (self, limit) {
+            (Self::NoGroundBelow, _) => "no ground below it".to_owned(),
+            (Self::GroundPointTooFar, Some(l)) => format!("no ground point within {l} m"),
+            (Self::GroundPointTooFar, None) => "no ground point near it".to_owned(),
+        }
+    }
+
+    /// `no_ground_below` or `ground_point_too_far` (files).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoGroundBelow => "no_ground_below",
+            Self::GroundPointTooFar => "ground_point_too_far",
+        }
+    }
+
+    /// Reads [`NoBase::as_str`].
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "no_ground_below" => Some(Self::NoGroundBelow),
+            "ground_point_too_far" => Some(Self::GroundPointTooFar),
+            _ => None,
+        }
+    }
+}
+
+/// A **questionable** vegetation point (owner, 2026-11-11): one without a
+/// tree base — so its fall cannot be worked out — standing where a tree
+/// of the tallest height checked could reach a span. Not a finding and
+/// not cleared: it is listed so that it is looked at.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Questionable {
+    /// The point.
+    pub point: P3,
+    /// Its class.
+    pub class: u8,
+    /// The nearest span in plan ([`Positions::spans`]).
+    pub span: usize,
+    /// Its distance in plan from that span's swept volume (the capsule of
+    /// its positions), m; 0 inside it.
+    pub distance: f64,
+    /// Why it has no base.
+    pub why: NoBase,
+}
+
+impl Questionable {
+    /// Nearest to the wires first, then by place (the same order however
+    /// the points were shared between threads).
+    fn order(&self, other: &Self) -> std::cmp::Ordering {
+        self.distance
+            .total_cmp(&other.distance)
+            .then_with(|| self.point[0].total_cmp(&other.point[0]))
+            .then_with(|| self.point[1].total_cmp(&other.point[1]))
+            .then_with(|| self.point[2].total_cmp(&other.point[2]))
+    }
+}
+
+/// The most questionable points kept in a check's list
+/// ([`VegetationCheck::questionable`]): the nearest to the wires; the
+/// count ([`VegetationCheck::questionable_points`]) is of all of them.
+pub const QUESTIONABLE_KEPT: usize = 10_000;
+
 /// A grow-in or fall-in point found ([`WireVegetation::all`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Found {
@@ -367,6 +441,28 @@ pub fn spans_near(
     (0..near.len()).filter(|&s| near[s]).collect()
 }
 
+/// The span nearest to (x, y) in plan among those of the point's cell:
+/// its index and the distance in plan from its swept volume (its axis
+/// less its capsule radius; 0 inside), m.
+fn nearest_span_in_plan(
+    positions: &Positions,
+    index: &SpanIndex,
+    x: f64,
+    y: f64,
+) -> Option<(usize, f64)> {
+    index
+        .near(x, y)
+        .iter()
+        .map(|&s| {
+            let sp = &positions.spans[s as usize];
+            let (a, b) = (sp.axis.a1, sp.axis.a2);
+            let (q, _) = closest_on_segment([x, y, 0.0], [a[0], a[1], 0.0], [b[0], b[1], 0.0]);
+            let d = ((q[0] - x).hypot(q[1] - y) - sp.capsule).max(0.0);
+            (s as usize, d)
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
+}
+
 /// Whether a point of `ground` (a vertex of its triangles: a ground point
 /// it is built from) lies within `limit` m of (x, y) in plan.
 pub fn ground_point_within(ground: &Terrain, x: f64, y: f64, limit: f64) -> bool {
@@ -428,6 +524,15 @@ pub struct VegetationCheck {
     /// Of those, the points with a ground surface below them but no ground
     /// point within [`VegetationParams::max_base_ground_distance`].
     pub ground_too_far: u64,
+    /// Of the points without ground, those within the fall reach
+    /// ([`VegetationParams::fall_reach`]) of a span in plan, where a
+    /// ground surface was given: the **questionable** points — a tree
+    /// there could reach a wire and is not checked.
+    pub questionable_points: u64,
+    /// The questionable points kept ([`QUESTIONABLE_KEPT`] at most: the
+    /// nearest to the wires); read them with
+    /// [`VegetationCheck::questionable`].
+    questionable: Vec<Questionable>,
     /// The work done.
     pub work: Work,
     touched: Vec<Touched>,
@@ -533,12 +638,31 @@ impl VegetationCheck {
             points: 0,
             without_ground: 0,
             ground_too_far: 0,
+            questionable_points: 0,
+            questionable: Vec::new(),
             work: Work::default(),
             touched: Vec::new(),
             scratch: Vec::new(),
             required: Arc::new(required),
             allowance: Arc::new(allowance),
             beyond,
+        }
+    }
+
+    /// The questionable points, nearest to the wires first: every one
+    /// when there are at most [`QUESTIONABLE_KEPT`], else the nearest
+    /// that many ([`VegetationCheck::questionable_points`] counts all).
+    pub fn questionable(&mut self) -> &[Questionable] {
+        self.trim_questionable(0);
+        &self.questionable
+    }
+
+    /// Sorts the questionable points and keeps the nearest
+    /// [`QUESTIONABLE_KEPT`], once the list holds `from` or more.
+    fn trim_questionable(&mut self, from: usize) {
+        if self.questionable.len() >= from {
+            self.questionable.sort_by(Questionable::order);
+            self.questionable.truncate(QUESTIONABLE_KEPT);
         }
     }
 
@@ -577,6 +701,8 @@ impl VegetationCheck {
             points: 0,
             without_ground: 0,
             ground_too_far: 0,
+            questionable_points: 0,
+            questionable: Vec::new(),
             work: Work::default(),
             touched: Vec::new(),
             scratch: Vec::new(),
@@ -589,6 +715,9 @@ impl VegetationCheck {
         self.points += other.points;
         self.without_ground += other.without_ground;
         self.ground_too_far += other.ground_too_far;
+        self.questionable_points += other.questionable_points;
+        self.questionable.extend(other.questionable);
+        self.trim_questionable(2 * QUESTIONABLE_KEPT);
         self.work.pairs += other.work.pairs;
         self.work.distances += other.work.distances;
         self.work.sectors += other.work.sectors;
@@ -923,15 +1052,37 @@ impl VegetationCheck {
         let growth = params.growth();
         let near_reach = params.near_reach();
         let mut g = ground.and_then(|t| t.height(x, y));
+        let mut why = NoBase::NoGroundBelow;
         if params.fall_in
             && let (Some(t), Some(_), Some(limit)) = (ground, g, params.max_base_ground_distance)
             && !ground_point_within(t, x, y, limit)
         {
             g = None;
+            why = NoBase::GroundPointTooFar;
             self.ground_too_far += 1;
         }
         if params.fall_in && g.is_none() {
             self.without_ground += 1;
+            // Questionable (2026-11-11): where a tree of the tallest height
+            // checked could reach a span. Without any ground surface no
+            // point has a base: the caller says that once.
+            if ground.is_some()
+                && let Some((span, distance)) = nearest_span_in_plan(geo, index, x, y)
+                && distance <= params.fall_reach()
+            {
+                self.questionable_points += 1;
+                self.questionable.push(Questionable {
+                    point: p,
+                    class,
+                    span,
+                    distance,
+                    why,
+                });
+                if self.questionable.len() >= 2 * QUESTIONABLE_KEPT {
+                    self.questionable.sort_by(Questionable::order);
+                    self.questionable.truncate(QUESTIONABLE_KEPT);
+                }
+            }
         }
         let height = g.map(|g| z - g);
         let is_tree = params.fall_in
@@ -1192,6 +1343,61 @@ fn rows(r: &WireVegetation) -> Vec<(&'static str, &VegPoint)> {
         .chain(r.worst_fall.iter().map(|v| ("worst_fall", v)))
         .chain(r.worst.iter().map(|v| ("worst", v)))
         .collect()
+}
+
+/// The questionable points as rows of [`danger_csv`] (appended to it):
+/// the kind says why — `questionable: no ground below it` —, the place
+/// is the nearest span's, the point's class and coordinates given; no
+/// distance, height or margin (none could be worked out).
+pub fn questionable_csv(
+    positions: &Positions,
+    list: &[Questionable],
+    p: &VegetationParams,
+) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for q in list {
+        let w = &positions.spans[q.span].wire;
+        let _ = writeln!(
+            out,
+            "{},{},{},{},{},,,{},{:.3},{:.3},{:.3},,,,,,,,",
+            ohl_core::text::csv_field(&w.section),
+            w.span,
+            ohl_core::text::csv_field(&w.circuit),
+            ohl_core::text::csv_field(&w.phase),
+            ohl_core::text::csv_field(&format!(
+                "questionable: {}",
+                q.why.words(p.max_base_ground_distance)
+            )),
+            q.class,
+            q.point[0],
+            q.point[1],
+            q.point[2],
+        );
+    }
+    out
+}
+
+/// What a report says of the questionable points: `listed` of `count`
+/// (none: nothing to say). Starts with "NOT CHECKED".
+pub fn questionable_note(count: u64, listed: usize, p: &VegetationParams) -> Option<String> {
+    if count == 0 {
+        return None;
+    }
+    let all = if listed as u64 >= count {
+        "every one listed as questionable".to_owned()
+    } else {
+        format!("the {listed} nearest to the wires listed as questionable")
+    };
+    Some(format!(
+        "NOT CHECKED, NOT ON THE SAFE SIDE: {count} vegetation point{} within {:.1} m of a span \
+         in plan (the reach of the tallest tree checked) with no tree base — no ground below \
+         {} or no ground point within the search distance: their fall-in is not worked out; \
+         {all}",
+        if count == 1 { "" } else { "s" },
+        p.fall_reach(),
+        if count == 1 { "it" } else { "them" },
+    ))
 }
 
 /// Header of [`danger_csv`].
@@ -1719,6 +1925,205 @@ mod tests {
         r.worst.sort_by(|a, b| a.order(b, params));
         r.worst.truncate(params.keep);
         r
+    }
+
+    /// Questionable points (owner, 2026-11-11): a vegetation point without
+    /// a tree base is listed — where, near which span, why — when a tree
+    /// of the tallest height checked could reach a span from there, and
+    /// only counted beyond that; with a base it is checked and not listed;
+    /// the list is the same however the points are shared between
+    /// threads, nearest to the wires first, and written to the CSV.
+    #[test]
+    fn points_without_a_tree_base_are_listed_as_questionable() {
+        let p = |x: f64, y: f64| SurveyPoint {
+            x,
+            y,
+            z: 0.0,
+            code: String::new(),
+            line: String::new(),
+        };
+        // Ground: the corners, and one ground point at (150, 4). The
+        // wire runs along y = 0 from x = 0 to 300, 20 m up.
+        let ground = Terrain::from_points(
+            &[
+                p(-100.0, -100.0),
+                p(400.0, -100.0),
+                p(400.0, 100.0),
+                p(-100.0, 100.0),
+                p(150.0, 4.0),
+            ],
+            None,
+        )
+        .unwrap();
+        let params = VegetationParams {
+            clearance: 4.0,
+            fall_in: true,
+            max_base_ground_distance: Some(5.0),
+            max_tree_height: 40.0,
+            ..plain()
+        };
+        // The reach of the tallest tree checked: 40 m (no root ball, no
+        // allowance, no growth here).
+        assert!((params.fall_reach() - 40.0).abs() < 1e-9);
+        let points = [
+            // With a ground point 4 m away: a base, checked, not listed.
+            (150.0, 0.0, 25.0),
+            // No ground point within 5 m, 10 m beside the wire: listed.
+            (100.0, -10.0, 18.0),
+            // The same, 30 m beside it: listed, farther.
+            (200.0, 30.0, 12.0),
+            // 60 m beside it: beyond the tallest tree's reach, only counted.
+            (120.0, 60.0, 12.0),
+            // Outside the ground surface, 20 m beside the wire: listed.
+            (150.0, -20.0, 15.0),
+        ];
+        let run = |order: &[usize]| {
+            let mut c = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+            for &k in order {
+                let (x, y, z) = points[k];
+                c.visit(Some(&ground), x, y, z, 5);
+            }
+            c
+        };
+        let mut check = run(&[0, 1, 2, 3, 4]);
+        assert_eq!(check.without_ground, 4);
+        assert_eq!(check.questionable_points, 3);
+        let list = check.questionable().to_vec();
+        let expected = [
+            ([100.0, -10.0, 18.0], 10.0),
+            ([150.0, -20.0, 15.0], 20.0),
+            ([200.0, 30.0, 12.0], 30.0),
+        ];
+        assert_eq!(list.len(), expected.len());
+        for (q, (point, d)) in list.iter().zip(expected) {
+            assert_eq!(q.point, point);
+            assert!((q.distance - d).abs() < 1e-9, "{q:?}");
+        }
+        assert!(list.iter().all(|q| q.span == 0 && q.class == 5));
+        assert!(list.iter().all(|q| q.why == NoBase::GroundPointTooFar));
+        assert_eq!(list[0].why.words(Some(5.0)), "no ground point within 5 m");
+        // In another order, and merged from two parts: the same list.
+        assert_eq!(run(&[4, 3, 2, 1, 0]).questionable(), &list[..]);
+        let mut merged = run(&[2, 0]);
+        merged.merge(run(&[4, 1, 3]));
+        assert_eq!(merged.questionable_points, 3);
+        assert_eq!(merged.questionable(), &list[..]);
+        // What the report says, and the CSV's rows.
+        let note = questionable_note(3, list.len(), &params).unwrap();
+        assert!(
+            note.starts_with(
+                "NOT CHECKED, NOT ON THE SAFE SIDE: 3 vegetation points within 40.0 m"
+            ),
+            "{note}"
+        );
+        assert!(note.ends_with("every one listed as questionable"), "{note}");
+        assert!(questionable_note(0, 0, &params).is_none());
+        let some = questionable_note(25_000, QUESTIONABLE_KEPT, &params).unwrap();
+        assert!(some.ends_with("the 10000 nearest to the wires listed as questionable"));
+        let positions = Arc::clone(check.positions());
+        let csv = questionable_csv(&positions, &list, &params);
+        let rows: Vec<&str> = csv.lines().collect();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[0],
+            "S,0,c,L1,questionable: no ground point within 5 m,,,5,100.000,-10.000,18.000,,,,,,,,"
+        );
+        // As many cells as the danger trees' header.
+        assert_eq!(
+            rows[0].split(',').count(),
+            DANGER_CSV_HEADER.trim().split(',').count()
+        );
+        // The point with a base is a danger tree, as before.
+        assert_eq!(check.finish()[0].fall_in, 1);
+        // No ground surface at all: no point has a base, said once by the
+        // caller — nothing listed.
+        let mut none = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+        none.visit(None, 100.0, -10.0, 18.0, 5);
+        assert_eq!((none.without_ground, none.questionable_points), (1, 0));
+        // A hole in the ground: "no ground below it". (The surface's
+        // outline is its points' hull: a point outside it.)
+        let mut outside = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+        outside.visit(Some(&ground), -105.0, 0.0, 18.0, 5);
+        // 105 m before the wire's start: beyond the reach, only counted.
+        assert_eq!(
+            (outside.without_ground, outside.questionable_points),
+            (1, 0)
+        );
+        let far = Terrain::from_points(
+            &[p(0.0, 50.0), p(300.0, 50.0), p(300.0, 90.0), p(0.0, 90.0)],
+            None,
+        )
+        .unwrap();
+        let mut hole = VegetationCheck::new(vec![level_wire()], &[5], params.clone());
+        hole.visit(Some(&far), 100.0, 10.0, 18.0, 5);
+        assert_eq!(hole.questionable_points, 1);
+        assert_eq!(hole.questionable()[0].why, NoBase::NoGroundBelow);
+        assert_eq!(
+            NoBase::parse(NoBase::NoGroundBelow.as_str()),
+            Some(NoBase::NoGroundBelow)
+        );
+        // Fall-in off: nothing is questionable (no fall is asked for).
+        let mut off = VegetationCheck::new(
+            vec![level_wire()],
+            &[5],
+            VegetationParams {
+                fall_in: false,
+                ..params.clone()
+            },
+        );
+        off.visit(Some(&ground), 100.0, -10.0, 18.0, 5);
+        assert_eq!((off.without_ground, off.questionable_points), (0, 0));
+    }
+
+    /// The list keeps the nearest [`QUESTIONABLE_KEPT`] points; the count
+    /// is of all.
+    #[test]
+    fn the_questionable_list_keeps_the_nearest() {
+        let far = Terrain::from_points(
+            &[
+                SurveyPoint {
+                    x: 0.0,
+                    y: 500.0,
+                    z: 0.0,
+                    code: String::new(),
+                    line: String::new(),
+                },
+                SurveyPoint {
+                    x: 300.0,
+                    y: 500.0,
+                    z: 0.0,
+                    code: String::new(),
+                    line: String::new(),
+                },
+                SurveyPoint {
+                    x: 300.0,
+                    y: 590.0,
+                    z: 0.0,
+                    code: String::new(),
+                    line: String::new(),
+                },
+            ],
+            None,
+        )
+        .unwrap();
+        let params = VegetationParams {
+            fall_in: true,
+            max_tree_height: 40.0,
+            ..plain()
+        };
+        let mut c = VegetationCheck::new(vec![level_wire()], &[5], params);
+        let n = 2 * QUESTIONABLE_KEPT + 500;
+        for k in 0..n {
+            // Farther first: 30 m down to nearly 0 m beside the wire.
+            let y = 30.0 * (n - k) as f64 / n as f64;
+            c.visit(Some(&far), 150.0, y, 18.0, 5);
+        }
+        assert_eq!(c.questionable_points, n as u64);
+        let list = c.questionable();
+        assert_eq!(list.len(), QUESTIONABLE_KEPT);
+        assert!(list.windows(2).all(|w| w[0].distance <= w[1].distance));
+        let last = 30.0 * QUESTIONABLE_KEPT as f64 / n as f64;
+        assert!((list[QUESTIONABLE_KEPT - 1].distance - last).abs() < 1e-9);
     }
 
     /// The ground under a tree is taken only with a ground point within

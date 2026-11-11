@@ -304,6 +304,118 @@ fn a_saved_run_reads_back_and_tells_when_the_points_changed() {
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }
 
+/// Questionable trees (owner, 2026-11-11): vegetation points without a
+/// tree base near the wires are listed — in the panel (a list of its
+/// own, the verdict not green), the notes, the CSV and a saved run
+/// (version 2, read back the same); a run with every base found has
+/// none and is saved as version 1, as before.
+#[test]
+fn trees_without_a_base_are_listed_as_questionable() {
+    let (file, mut h) = opened("veg-questionable");
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(
+            r.model.ground_for_checks().is_some(),
+            "the example's ground"
+        );
+        r.vegetation.settings.fall_in = true;
+        // No ground point so near any vegetation point: none has a base.
+        r.vegetation.settings.base_limit = (true, 0.1);
+    }
+    h.run_steps(2);
+    run(&mut h);
+    let report = {
+        let r = h.state_mut().ready().unwrap();
+        r.vegetation.result().0.unwrap().as_ref().unwrap().clone()
+    };
+    let n = report.questionable_points;
+    assert!(n > 0, "{:?}", report.notes);
+    assert_eq!(report.questionable.len() as u64, n);
+    assert!(report.fall.is_empty());
+    // Nearest to the wires first, each near a span, with its reason.
+    assert!(
+        report
+            .questionable
+            .windows(2)
+            .all(|w| w[0].distance <= w[1].distance)
+    );
+    let q = &report.questionable[0];
+    assert!(report.questionable_span(q).is_some());
+    assert_eq!(report.why(q), "no ground point within 0.1 m");
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|t| t.starts_with("NOT CHECKED, NOT ON THE SAFE SIDE: ")
+                && t.ends_with("every one listed as questionable")),
+        "{:?}",
+        report.notes
+    );
+    // The panel: the list under its own heading; the verdict says them.
+    h.run_steps(2);
+    h.get_by_label(&crate::vegetation::questionable_title(&report));
+    h.get_by_label_contains("questionable tree");
+    // The CSV: a row each, where and why.
+    let csv = report.csv();
+    let rows: Vec<&str> = csv
+        .lines()
+        .filter(|l| l.contains(",questionable: no ground "))
+        .collect();
+    assert_eq!(rows.len() as u64, n);
+    let header = csv.lines().next().unwrap().split(',').count();
+    assert_eq!(rows[0].split(',').count(), header);
+    // Saved: version 2 with them, read back the same.
+    let results = crate::vegetation::saved::results(&report).unwrap();
+    assert_eq!(results["version"], 2);
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.vegetation.set_save_name("questionable");
+    }
+    h.run_steps(2);
+    h.get_by_label("Save in Performed checks").click_accesskit();
+    h.run_steps(3);
+    let saved = {
+        let r = h.state_mut().ready().unwrap();
+        r.model
+            .session()
+            .unwrap()
+            .report("questionable")
+            .expect("saved")
+    };
+    let (back, _) = crate::vegetation::saved::read(&saved).unwrap();
+    assert_eq!(back.questionable_points, n);
+    assert_eq!(back.questionable, report.questionable);
+    assert_eq!(back.questionable_spans, report.questionable_spans);
+    // A newer version is refused, not read without what it holds.
+    let mut newer = saved.clone();
+    newer.results["version"] = serde_json::json!(3);
+    assert!(crate::vegetation::saved::read(&newer).is_err());
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+    // No fall-in asked (a fresh panel): nothing is questionable, saved as
+    // version 1 without the keys, as before.
+    let (file, mut h) = opened("veg-questionable-none");
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.vegetation.settings.fall_in = false;
+    }
+    h.run_steps(2);
+    run(&mut h);
+    let plain = {
+        let r = h.state_mut().ready().unwrap();
+        r.vegetation.result().0.unwrap().as_ref().unwrap().clone()
+    };
+    assert_eq!(plain.questionable_points, 0);
+    assert!(plain.questionable.is_empty());
+    assert!(!plain.notes.iter().any(|t| t.starts_with("NOT CHECKED")));
+    let results = crate::vegetation::saved::results(&plain).unwrap();
+    assert_eq!(results["version"], 1);
+    assert!(results.get("questionable").is_none());
+    assert!(!plain.csv().contains("questionable"));
+    h.run_steps(2);
+    assert!(h.query_by_label_contains("Questionable trees").is_none());
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
 /// The presets of two design-code plugins (invented, as a plugin returns
 /// them): the dropdown lists them grouped by plugin (a plugin without a
 /// vegetation preset says so); the vegetation preset previewed — its

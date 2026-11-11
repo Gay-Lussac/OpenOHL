@@ -397,6 +397,33 @@ the fall-in check rather than given a guessed height (it is reported, not
 assumed safe: the count says how many). Default: 5 m (no limit when
 none is given).
 
+**Questionable trees** (owner, 2026-11-11). A point without a base is
+**not checked for fall-in: NOT ON THE SAFE SIDE** — a real tree may stand
+there. So that none is silently unchecked, every such point from which a
+tree of the tallest height checked could reach a span is listed as
+*questionable*, with its place, the span it is near and the reason (no
+ground below it, or no ground point within the distance). "Could reach":
+its distance in plan from the span's swept volume (the capsule round the
+span's positions) is at most the fall reach of the tallest tree,
+
+\\[ d_{\text{plan}} \le k\,h' + \sqrt{h'^2 + (k\,h')^2} + A, \qquad h' = h_{\max} + g \\]
+
+(`VegetationParams::fall_reach`: the hinge at the root ball's edge
+\\( k\,h' \\) from the base, the trunk's top \\( \sqrt{h'^2 + (k h')^2} \\)
+from the hinge, the allowance \\( A \\); \\( g \\) the growth). The distance
+in plan is never more than the distance in space the fall-in check uses,
+so the list holds every point the check would have looked at had it had a
+base — **conservative**: it also holds low points that could not reach.
+A point farther away cannot reach the wires at any height up to
+\\( h_{\max} \\) and is only counted, as before. The list is neither a
+finding nor a clearance: the panel's verdict is not green while it holds
+a point. At most 10 000 are listed, the nearest to the wires; the count
+is of all. With no ground surface at all no point has a base: said once,
+nothing listed. The grow-in check of these points is unaffected (it
+needs no ground). Tests:
+`points_without_a_tree_base_are_listed_as_questionable`,
+`the_questionable_list_keeps_the_nearest`.
+
 It falls towards the wire point \\( q \\) (the worst direction). In the
 vertical plane through \\( B \\) and \\( q \\), with coordinates \\( (x, z) \\)
 from \\( B \\) (\\( x \\) towards \\( q \\), \\( z \\) up):

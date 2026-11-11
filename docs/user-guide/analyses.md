@@ -405,7 +405,13 @@ span (in parallel on every core):
   `--max-base-ground-distance` (default 5 m): a tree's base is taken
   from the ground only when a ground point lies within that distance in
   plan (`inf`: no limit); the points left without a base are counted,
-  with the reason.
+  with the reason. Those from which a tree of the tallest height could
+  reach a span are **questionable**: their fall-in is not checked (not
+  on the safe side), so they are listed — the first 20 in the output,
+  every one (10 000 at most, the nearest to the wires) as rows of the
+  CSV with the kind `questionable: no ground below it` or
+  `questionable: no ground point within 5 m`, the nearest span's place,
+  the class and the coordinates.
 - **Swing arc** (`--swing-arc`): each span of a windy case also anywhere
   along its swing between the left and the right blowout (the span
   swinging as one about the line through its attachment points; since
@@ -596,6 +602,22 @@ Docking or moving the panel keeps them. **Export points CSV…** writes the wors
 points of every span and every point found (with case and position;
 **Export CSV…** under it, the rows of the table as shown),
 **Export lines (CSV)…** the isoclearance lines.
+
+**Questionable trees** (2026-11-11). A vegetation point with no tree
+base — no ground below it, or no ground point within the distance set —
+cannot be checked for fall-in. Where a tree of the tallest height
+checked could reach a span from such a point, it is listed under
+**Questionable trees (n): fall-in not checked**, open below the notes:
+the span it is near (a click goes there), its class, its coordinates,
+its distance in plan from the span's wires and why it has no base. They
+are neither findings nor cleared: the verdict is red while there is one
+("… questionable trees not checked"), a note starting **NOT CHECKED, NOT
+ON THE SAFE SIDE** gives their number, and **Export points CSV…** writes
+a row for each (kind `questionable: …`). Look at them on site or in the
+point cloud, or give the ground there (a surface with ground points
+near them) and run again. At most 10 000 are listed, the nearest to the
+wires first; the number in the heading is of all. A saved run keeps
+them.
 
 **Presets.** The **Preset** dropdown lists the vegetation presets of
 every design-code plugin turned on (a preset with vegetation settings;
