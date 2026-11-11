@@ -1159,8 +1159,11 @@ All built, in active development (not approved yet):
 (`member-check`, every member and load case in one call) and an example
 plugin are built, in active development (not approved yet). Next step,
 not done: moving ASCE 10-97 and SIA 263:2013 out of the core into plugins
-behind it; what that still needs is listed in the decision log
-(2026-11-11). Joints: no plugin interface yet.*
+behind it; what that still needs, and a proposed order for the move, are
+listed in the decision log (2026-11-11, "Completing the code-check plugin
+interface"). Decided, not built: joints and minimum distances as further
+optional functions of the same world; plugin methods run by the CLI and
+the line's structure check; poles by an export of their own.*
 
 A plugin interface for code checks: what the core hands over (member
 forces, buckling lengths, sections, joint details), what comes back

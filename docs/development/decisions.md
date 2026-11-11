@@ -10,6 +10,84 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**Completing the code-check plugin interface: decided, not built yet (owner, 2026-11-11)**
+
+The owner: "you can go ahead". What is decided here is the shape; none
+of it is built yet — the interface is as the entry below describes it
+(members only, run by OHL-Structure only).
+
+- **One world, optional functions.** A code plugin gives members and
+  joints through the same export `member-check`: beside `check-members`,
+  a second optional function for the joints (plates, covers and splices,
+  fillet welds, the bolt group: the plate's geometry and material, the
+  bolts with their strengths and places, the welds, the member forces
+  arriving per load case, the edge and end distances; back per plate,
+  cover and weld the usage per case, the governing check with its
+  clause, notes, not-safe) and a third for the minimum distances the
+  bolt tools ask for (hole, end, edge, pitch by bolt and plate data).
+  Adding a function to a released interface is not additive for plugins
+  built before it, so each comes as its own optional export beside
+  `member-check` in that world (as `structure-wind` beside a design
+  code), found by name; a plugin without it is not broken.
+- **Never another code in its place.** With a plugin as the structure's
+  method: joints are checked by its joint function, or reported "NOT
+  CHECKED by <plugin>, NOT ON THE SAFE SIDE" when it has none (today
+  they are still checked by ASCE 10-97: to be removed with this step);
+  the bolt tools say "no minimum distances from <plugin>" when it gives
+  none; Member details shows the plugin's capacities.
+- **Run everywhere the core methods run**, one call for all load cases
+  of a structure: OHL-Structure (today one call per case), `ohl
+  structures fe` and the line's structure check (today: every member
+  not checked, said). The records' mapping
+  (`ohl_structure_link::plugin_check`) then moves to the lowest crate
+  that may know both the model and the plugin host, the route the line
+  already takes for code plugins; `docs/development/structure-app.md`
+  to be updated if a crate rule changes.
+- **Poles** (ASCE/SEI 48-19, SIA 263 shafts, SIA 265 wood): carried by a
+  further optional export of the same world, not by `check-members` — a
+  pole is checked along its height, not per member. Its records, to be
+  designed with the move of the pole codes and not now: the shaft as
+  sections along the height (shape, dimensions, wall or solid, material
+  with its strengths), the foundation level and fixity, per load case
+  the resultants at each section (axial, two shears, two moments,
+  torsion) and the deflection at the top; back per section the usage per
+  case, what governs with its clause, notes, not-safe. The pole check
+  stays in the core until then.
+- **What still blocks moving ASCE 10-97 and SIA 263:2013 out of the
+  core** (2026-11-11, nothing of this list is built):
+  1. the joint function and the minimum-distances function above, with
+     the example plugin and tests through the real host;
+  2. plugin methods run by the CLI and the line's structure check, one
+     call for all cases everywhere;
+  3. a built-up member's `parts` filled; the core's own remarks
+     (crossing members, kept active, eccentric ends) appended to a
+     plugin's results; the level 4 `connections` mapping tested through
+     a plugin;
+  4. Member details and the reports showing a plugin's capacities;
+  5. a plugin's settings (national parameters): the design-code plugins'
+     parameter files are the mechanism to reuse, not looked at yet;
+  6. the two codes' validation benchmarks and theory pages running
+     against the plugins;
+  7. the pole export (above), for the pole codes only.
+- **Proposed order for the move** (to be confirmed by the owner):
+  1. finish items 1 to 4;
+  2. SIA 263:2013 first — the younger of the two in the core and not the
+     default, so a mistake in the move cannot change a default result;
+     its benchmarks must give the same numbers through the plugin before
+     the core copy is removed;
+  3. then ASCE 10-97, the default, the same way;
+  4. the plugins live in the repository beside the design codes
+     (`plugins/codes/`), built and tested by the full check, and are
+     **shipped inside the applications' bundles** and found before the
+     user's folder, so a fresh install has them and a tower is never
+     left without its default check; a bundled plugin that does not load
+     is an error at start, not a silent fallback;
+  5. files that name the core methods today (`capacity = "asce10-97"`,
+     `"sia263-2013"`, or nothing) keep reading unchanged: those names
+     become aliases of the bundled plugins' methods, the default stays
+     ASCE 10-97, no file is rewritten and no file version is raised for
+     it; `simple` stays in the core.
+
 **A plugin interface for the members' code check (owner, 2026-11-11)**
 
 The owner: "Go ahead with the interface first once done we'll move the
