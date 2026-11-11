@@ -330,6 +330,7 @@ field](../theory/magnetic-field.md).
 | electrical-034 | the same, the ellipse by sampling the cycle | a sagging wire in three pieces beside a second phase at −120°: components, B, the cycle's largest value | \( 10^{-8} \) |
 | electrical-035 | the three conductors' closed forms summed (`reference_magnetic.py`) | a balanced flat line near it: B, the largest value | \( 10^{-9} \)–\( 10^{-8} \) |
 | electrical-036, 037 | the far field √3 μ0 I s/(2π d²) | a balanced flat line at 4 km and 8 km (a quarter: 1/d²) | \( 10^{-4} \) |
+| electrical-074, 075 | each conductor's μ0 I/(2π d) added as phasors, by hand | a net current (2026-11-11): three conductors of 100 A in phase at 500 m (0.12 µT, as 1/d); a flat line with 5 % more current in one phase at 4 km — 13.5 times the balanced line's value there | \( 10^{-9} \) |
 
 No openly published field profile with all its inputs was found yet (to
 look for: IEC 62110's examples, CIGRE brochures, papers with

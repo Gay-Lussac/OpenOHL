@@ -725,6 +725,12 @@ From a review on 2026-11-10.
    net current governs the magnetic field, so balanced-only input is not
    conservative there) and an earth-wire current typed instead of
    computed.
+   *Status (2026-11-11), built, in active development (not approved
+   yet):* a circuit given per phase (magnitude and angle, its net
+   current said) and earth wire currents typed, in the window and on
+   the command line; a result with a balanced circuit says "NOT ON THE
+   SAFE SIDE far from the line". Open: per phase together with the
+   currents at the end points; a typed earth wire current per span.
 3. **The electric field's major axis and vertical component**, beside the
    rms of the vector (the magnetic field has both already).
 4. **The voltage of the electric field**: the nominal voltage is taken;

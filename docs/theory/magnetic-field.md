@@ -69,6 +69,8 @@ brackets). "Time" is the effect on how long a run takes.
 | current, per circuit: given for *the circuit* (`--current C=A`) | 0 A | the field in proportion; rms, each phase, balanced at the system's phase angles | none |
 | … or *at its end points* (`--end C@S=A`) | in at the first end, *the rest* out at the last | each section's current by Kirchhoff's current law, branches included ([Currents](#currents)) | none |
 | … or the thermal rating (command line only, `--thermal`) | — | the least ampacity over the circuit's sections, at your conductor temperature and ambient case | none |
+| … or *per phase* (`--phase-current C:PHASE=A@DEG`, every phase) | — | each phase's own current and angle: an unbalanced circuit with its net current, which governs far from the line ([Balanced input and the net current](#balanced-input-and-the-net-current)) | none |
+| Earth wire currents typed (`--earth-current SECTION=A@DEG[@HZ]`) | none | that earth wire carries the typed current in every span instead of a computed one; the others (when on) are induced by the phases and by it | none |
 | load flow: along / against the line (`:reverse`) | along | every phase turned by 180°: changes the field where circuits add or compensate | none |
 | Model: **3D** / 2D (`--two-d`) | 3D | 3D: the wires as solved (sag, line angles, the line's length), jumpers, structures' currents; 2D: infinite straight wires at the profile | 2D: a moment |
 | wires at the span's mean height (2D only, `--mean-heights`) | off | on: lower field under the lowest point (**not conservative**) | none |
@@ -262,6 +264,46 @@ neither conservative nor not in general.
   those conditions belong to the ordinance's parameter file, not to the
   program.
 
+- **Per phase** (since 2026-11-11): each phase's current
+  \\( \underline I_k = I_k \angle \varphi_k \\) typed — magnitude and
+  angle, in the frame of the systems' phase angles, along the line. A
+  circuit given so needs all its phases; it takes them in place of the
+  balanced current (not together with the end points). The field is the
+  same sum over the wires as before, each wire with its own phasor.
+
+### Balanced input and the net current
+
+**NOT ON THE SAFE SIDE far from the line.** A balanced circuit's
+currents sum to zero: seen from far away its wires cancel, and its field
+falls off as \\( 1/d^2 \\) with the distance \\( d \\). An unbalanced
+circuit leaves a **net current**
+
+\\[ \underline I_n = \sum_k \underline I_k \neq 0 , \\]
+
+whose field is that of one conductor, falling off only as \\( 1/d \\).
+For a flat circuit of phase spacing \\( s \\) (the far-field forms used
+[below](#the-grounds-return-currents--left-out) for the earth's images),
+
+\\[ B_{\text{bal}} \approx \frac{\sqrt3\,\mu_0\,I\,s}{2\pi\,d^2}, \qquad
+    B_{\text{net}} = \frac{\mu_0\,I_n}{2\pi\,d}, \qquad
+    B_{\text{net}} = B_{\text{bal}} \ \text{at} \ d^* = \frac{\sqrt3\,I\,s}{I_n} . \\]
+
+Beyond \\( d^* \\) the net current governs. Computed for \\( I = 1000 \\) A
+and \\( s = 8 \\) m: a net current of 5 % (50 A) governs beyond 277 m
+(0.036 µT there), of 2 % (20 A) beyond 693 m (0.0058 µT), of 1 % (10 A)
+beyond 1386 m (0.0014 µT). Balanced input holds no net current, so it
+gives too little there — small values, which matter where a low limit or
+a long limit line is asked. Every result with a balanced circuit says so
+("NOT ON THE SAFE SIDE far from the line: …", `magnetic::BALANCED_NOTE`);
+a result whose circuits are all given per phase names each circuit's net
+current instead. Which unbalance to assume is the user's (none is built
+in). Tested (`currents_per_phase_and_the_net_current`): the phases typed
+at the balanced values give the balanced field to \\( 10^{-9} \\); three
+in-phase currents of 100 A give \\( \mu_0 \cdot 300 / (2\pi \cdot 500) =
+0.12 \\) µT at 500 m (within 0.5 %) and half of it at twice the distance,
+where the balanced circuit gives a quarter; 5 % more current in one
+phase of 1000 A gives more than twice the balanced field at 500 m.
+
 A **direction** per circuit: the load flow along the line (from its first
 structure to its last) or against it — every phase's current turned by
 180°. Which combination of directions governs is the ordinance's question
@@ -339,6 +381,25 @@ double-circuit example (L1 lowest, L3 next to the earth wire) the induced
 current is nearly in phase with L1 and **raises** the field near the
 ground by about 5 % (one circuit) to 6 % (both); other arrangements lower it. Run both when it
 matters.
+
+### An earth wire's current typed
+
+Since 2026-11-11 an earth wire's current may be **typed instead of
+computed** (a measured or a specified current, e.g. a share of a net
+current returning in it): magnitude and angle, along the line, the same
+in every span of its section. It is carried whether the induced currents
+are on or off. With them on, the typed earth wires are given currents
+beside the phases': the others follow from
+
+\\[ \underline I_f = -\,Z_{ff}^{-1}\left( Z_{fp}\,\underline I_p + Z_{ft}\,\underline I_t \right) \\]
+
+(\\( f \\) the earth wires computed, \\( t \\) those typed, \\( p \\) the
+phases; the same primitive matrices). Not together with the structures'
+network (it computes every earth wire's current: refused). **Neither
+conservative nor not**: the typed value is the user's. Tested
+(`an_earth_wire_current_typed`): typed at the induced value it gives the
+induced field to \\( 10^{-9} \\); 60 A alone give \\( \mu_0 \cdot 60 /
+(2\pi \cdot 500) = 0.024 \\) µT at 500 m.
 
 ## The ground's return currents — left out
 
@@ -613,7 +674,7 @@ How the computation is made fast, with its measured times: [Performance](../deve
 
 | Choice | Why | Effect on the result |
 |---|---|---|
-| Balanced currents, no harmonics | the governing state the NISV guide describes (2.4.1, 8.1.4) | neither in general (**Assumption**) |
+| Balanced currents by default, no harmonics | the governing state the NISV guide describes (2.4.1, 8.1.4) | near the line neither in general (**Assumption**); **NOT ON THE SAFE SIDE far from the line** (no net current), said in the result — give the currents per phase to include one |
 | The wires in free space (no earth currents, no steel's permeability) | both are small at the profiles' distances (estimated above) | neither in general; small |
 | 3D by default | it sees the sag, line angles, the line's length, jumpers | none; 2D under the lowest point is **conservative** against 3D on sagging spans |
 | 2D at the wires' place in the profile (not the mean height) | the field is largest where the wires hang lowest | **conservative** against the mean height |
@@ -630,8 +691,10 @@ How the computation is made fast, with its measured times: [Performance](../deve
   [estimated above](#the-grounds-return-currents--left-out), small.
 - **The steel's magnetic permeability** (structures, earth wire cores):
   estimated above, small beyond a few metres.
-- **Unbalance and harmonics**: the currents are balanced, at power
-  frequency.
+- **Unbalance**, unless the currents are given per phase: balanced input
+  holds no net current — **not on the safe side far from the line**
+  ([above](#balanced-input-and-the-net-current)), said in the result.
+- **Harmonics**: the currents are at power frequency.
 - **A substation's earthing grid** at the line's ends (with the earth
   wire network): **not conservative** near the ends.
 - **Other lines** (crossings, parallel lines): not in the model yet
@@ -650,7 +713,10 @@ against Biot–Savart's law integrated numerically (`reference_magnetic.py`,
 scipy's adaptive quadrature; the ellipse by sampling the cycle) within
 \\( 10^{-9} \\)–\\( 10^{-8} \\), a balanced flat line near it, and far
 away against its closed form \\( \sqrt3\mu_0 I s/(2\pi d^2) \\) and its
-\\( 1/d^2 \\) decay. Tests in the crate: the field of a split segment, a
+\\( 1/d^2 \\) decay. A net current (electrical-074, 075; by hand, each
+conductor's \\( \mu_0 I/(2\pi d) \\) added as phasors): three in-phase
+conductors, and a flat line with 5 % more current in one phase, 13.5
+times the balanced line's value at 4 km. Tests in the crate: the field of a split segment, a
 reversed one, the ellipse's axes, and on the synthetic double circuit the
 symmetry, the load-flow directions and phase arrangement, the earth wire's
 currents, 2D against 3D, the 2D line angle warning, given points.

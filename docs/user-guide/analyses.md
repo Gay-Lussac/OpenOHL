@@ -973,6 +973,23 @@ longer in the line falls back to the default.
   included; a circuit closing a loop is refused: it needs the load
   flow). On the command line `--end CIRCUIT@STRUCTURE=A` (or `=rest`),
   `--ends` lists the end points.
+  Or *per phase* (2026-11-11): each phase's current and angle typed (it
+  starts from the balanced values) — an **unbalanced** circuit. The line
+  under the phases gives their sum, the **net current**: its field falls
+  off as 1/d with the distance, a balanced circuit's as 1/d², so far
+  from the line it governs. A result with a balanced circuit says
+  **NOT ON THE SAFE SIDE far from the line** (it holds no net current);
+  a circuit given per phase has its phases and net current in the notes
+  instead. On the command line `--phase-current CIRCUIT:PHASE=A@DEG`,
+  once for every phase of the circuit (e.g. `North:L2=1000@-120`).
+- **Earth wire currents typed** (2026-11-11, folded under the currents;
+  shown on a line with earth wires): tick an earth wire to give its
+  current and angle instead of a computed one — along the line, the
+  same in every span, also with the earth wire currents off. With them
+  on, the other earth wires are induced by the phases and by it. Not
+  together with *through the structures' earthing* (the run is refused:
+  that network computes every earth wire's current). On the command
+  line `--earth-current SECTION=A@DEG[@HZ]`.
 - **Model**: *3D* — the wires as solved (sag, line angles, the line's
   length), bundles subconductor by subconductor; *2D* — the wires as
   infinite straight conductors where they cross the profile (tick *wires
@@ -1202,6 +1219,7 @@ use as objects of the project, the structures' magnetic permeability
 ohl electrical magnetic LINE.ohl.json|PROJECT.ohl
     [--weather CASES.ohlwc --case NAME | --temperature 40]
     (--current CIRCUIT=A[:reverse])… (--end CIRCUIT@STRUCTURE=A|rest)… [--ends]
+    (--phase-current CIRCUIT:PHASE=A@DEG)… (--earth-current SECTION=A@DEG[@HZ])…
     [--thermal AMBIENT.ohlta --ambient-case NAME --max-temp °C
         [--method ieee738|cigre601|cigre207] [--reverse CIRCUIT]…]
     [--earth-wires [--towers]] [--no-jumpers] [--two-d [--mean-heights]]

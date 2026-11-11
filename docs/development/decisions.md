@@ -10,6 +10,44 @@ of Parts A, B and C).
 
 ## 2026-11-11
 
+**A current per wire for the magnetic field; balanced input says what it leaves out (owner, 2026-11-11)**
+
+The owner approved roadmap O23 item 2 ("go ahead"). One balanced current
+per circuit was the only input; an unbalance leaves a net current, which
+governs the field far from the line, and balanced input has none.
+
+- **Per phase.** A circuit may be given per phase: magnitude and angle
+  of each phase's current (`Settings::phase_currents`), all its phases,
+  in place of its balanced current. The angle is the current's own, in
+  the frame of the systems' phase angles; the window starts from the
+  balanced values. Not together with the currents at its end points
+  (refused): Kirchhoff's law per phase with typed phasors is a further
+  step.
+- **Balanced stays the default**, and says: "NOT ON THE SAFE SIDE far
+  from the line: the phases' currents are balanced … a balanced
+  circuit's field falls off as 1/d², a net current's as 1/d, so beyond
+  the distance where the two are equal the net current governs and is
+  not covered". Near the line the wording of the theory stands (an
+  assumption, neither conservative nor not). The theory gives the
+  distance, d* = √3·I·s/I_n, with computed examples.
+- **No unbalance is built in**: which net current to assume is the
+  user's or an ordinance's.
+- **An earth wire's current typed** (`Settings::earth_currents`): the
+  same in every span of its section, carried with the induced currents
+  on or off; the earth wires computed beside it take it as a given
+  current. Refused together with the structures' network, which
+  computes every earth wire's current — overriding one branch of a
+  solved network would break Kirchhoff's law at the structures.
+- **Results.** A circuit per phase is reported with its largest phase
+  current and "per phase"; its phases and their sum are in the notes.
+- **Format.** No file format changed: the window's inputs kept in the
+  project take two optional keys (`phases`, `earth_typed`), written
+  only when used; older inputs read as before. The fields plan file has
+  no currents and is unchanged. Command line: `--phase-current`,
+  `--earth-current`.
+- **Not done.** The electric field takes no per-phase voltages; a typed
+  earth wire current is one value for all its spans.
+
 **The highest operating voltage and the insulation level of a system; the electric field's voltage (owner, 2026-11-11)**
 
 The owner approved roadmap O23 item 4 ("go ahead") and added: "maybe in

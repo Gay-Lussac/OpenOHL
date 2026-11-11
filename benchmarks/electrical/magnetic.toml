@@ -134,3 +134,40 @@ conductors = [
 ]
 [case.expected]
 b_ut = { value = 4.330127019e-05, rel_tol = 1e-4 }
+
+# A net current (2026-11-11, roadmap O23 item 2: a current per wire). The
+# field of a balanced circuit falls off as 1/d², that of a net current as
+# 1/d: far from the line the net current governs. Both by hand, each
+# conductor's μ0 I/(2π d) added as phasors (the point at the conductors'
+# height: every contribution is vertical).
+
+[[case]]
+id = "electrical-074"
+title = "A pure net current: three conductors of 100 A in phase, at 500 m"
+calculation = "electrical.magnetic_2d"
+reference = "Closed form: 2·10⁻⁷ · 100 · (1/508 + 1/500 + 1/492) T = 0.120020485 µT (three times one conductor's field, to 2·10⁻⁴)"
+[case.inputs]
+point = [500.0, 20.0]
+conductors = [
+    { y = -8.0, z = 20.0, current = 100.0, angle = 0.0 },
+    { y = 0.0, z = 20.0, current = 100.0, angle = 0.0 },
+    { y = 8.0, z = 20.0, current = 100.0, angle = 0.0 },
+]
+[case.expected]
+b_ut = { value = 0.12002048524, rel_tol = 1e-9 }
+b_major_ut = { value = 0.12002048524, rel_tol = 1e-9 }
+
+[[case]]
+id = "electrical-075"
+title = "An unbalanced flat line at 4 km: 5 % more current in one phase (a net current of 50 A)"
+calculation = "electrical.magnetic_2d"
+reference = "Phasor sum by hand of 2·10⁻⁷ · I_k / (4000 − y_k) for 1050 A ∠0°, 1000 A ∠−120°, 1000 A ∠120°: 0.0023467143 µT — 13.5 times the balanced line's 0.000173 µT there (electrical-036)"
+[case.inputs]
+point = [4000.0, 20.0]
+conductors = [
+    { y = -8.0, z = 20.0, current = 1050.0, angle = 0.0 },
+    { y = 0.0, z = 20.0, current = 1000.0, angle = -120.0 },
+    { y = 8.0, z = 20.0, current = 1000.0, angle = 120.0 },
+]
+[case.expected]
+b_ut = { value = 0.0023467143193, rel_tol = 1e-9 }

@@ -220,6 +220,21 @@ pub struct MagneticOptions {
     /// by Kirchhoff's current law. Repeatable; --ends lists the end points.
     #[arg(long, value_name = "CIRCUIT@STRUCTURE=A")]
     pub end: Vec<String>,
+    /// One phase's current of a circuit, typed: CIRCUIT:PHASE=AMPS@ANGLE
+    /// (A rms along the line, its phase angle in degrees; e.g.
+    /// C1:L2=950@-120). A circuit given so needs every one of its phases
+    /// and takes them in place of --current: an unbalanced circuit, with
+    /// its net current (which governs far from the line). Repeatable.
+    #[arg(long, value_name = "CIRCUIT:PHASE=A@DEG", allow_hyphen_values = true)]
+    pub phase_current: Vec<String>,
+    /// An earth wire's current, typed instead of computed:
+    /// SECTION=AMPS@ANGLE or SECTION=AMPS@ANGLE@HZ (A rms along the line
+    /// in every span of that earth wire section; default frequency: the
+    /// line's first AC system's). With --earth-wires the other earth
+    /// wires are induced by the phases and by it. Not with --towers.
+    /// Repeatable.
+    #[arg(long, value_name = "SECTION=A@DEG[@HZ]", allow_hyphen_values = true)]
+    pub earth_current: Vec<String>,
     /// List every circuit's end points and stop.
     #[arg(long)]
     pub ends: bool,
@@ -1384,14 +1399,64 @@ fn currents(
     }
     // The systems' operating currents in the line file are the default
     // (2026-11-04): only a line without any needs them given.
-    if currents.is_empty() && ends.is_empty() && line.systems.iter().all(|s| s.current_a.is_none())
+    if currents.is_empty()
+        && ends.is_empty()
+        && o.phase_current.is_empty()
+        && line.systems.iter().all(|s| s.current_a.is_none())
     {
         return Err(
-            "give the currents: --current CIRCUIT=A, --end CIRCUIT@STRUCTURE=A (or --thermal), or the systems' operating currents in the line file"
+            "give the currents: --current CIRCUIT=A, --phase-current CIRCUIT:PHASE=A@DEG, --end CIRCUIT@STRUCTURE=A (or --thermal), or the systems' operating currents in the line file"
                 .into(),
         );
     }
     Ok(Some((currents, sources, ends)))
+}
+
+/// `--phase-current CIRCUIT:PHASE=AMPS@ANGLE`.
+fn phase_current_arg(text: &str) -> Result<ohl_electrical::magnetic::PhaseCurrent, String> {
+    let form = || format!("--phase-current {text}: CIRCUIT:PHASE=AMPS@ANGLE, e.g. C1:L2=950@-120");
+    let (left, value) = text.split_once('=').ok_or_else(form)?;
+    let (circuit, phase) = left.rsplit_once(':').ok_or_else(form)?;
+    let (amps, angle) = value.split_once('@').ok_or_else(form)?;
+    let number = |v: &str, what: &str| -> Result<f64, String> {
+        v.trim()
+            .parse()
+            .map_err(|_| format!("--phase-current {text}: {v} is not a number of {what}"))
+    };
+    Ok(ohl_electrical::magnetic::PhaseCurrent {
+        circuit: circuit.trim().to_owned(),
+        phase: phase.trim().to_owned(),
+        amps: number(amps, "amperes")?,
+        angle_deg: number(angle, "degrees")?,
+    })
+}
+
+/// `--earth-current SECTION=AMPS@ANGLE[@HZ]`.
+fn earth_current_arg(text: &str) -> Result<ohl_electrical::magnetic::EarthCurrent, String> {
+    let form = || format!("--earth-current {text}: SECTION=AMPS@ANGLE[@HZ], e.g. EW=40@15");
+    let (section, value) = text.split_once('=').ok_or_else(form)?;
+    let mut parts = value.split('@');
+    let number = |v: Option<&str>, what: &str| -> Result<f64, String> {
+        let v = v.ok_or_else(form)?;
+        v.trim()
+            .parse()
+            .map_err(|_| format!("--earth-current {text}: {v} is not a number of {what}"))
+    };
+    let amps = number(parts.next(), "amperes")?;
+    let angle_deg = number(parts.next(), "degrees")?;
+    let frequency_hz = match parts.next() {
+        Some(f) => Some(number(Some(f), "hertz")?),
+        None => None,
+    };
+    if parts.next().is_some() {
+        return Err(form());
+    }
+    Ok(ohl_electrical::magnetic::EarthCurrent {
+        section: section.trim().to_owned(),
+        amps,
+        angle_deg,
+        frequency_hz,
+    })
 }
 
 /// The magnetic field's settings.
@@ -1419,6 +1484,16 @@ fn magnetic_settings(
         },
         currents,
         ends,
+        phase_currents: o
+            .phase_current
+            .iter()
+            .map(|t| phase_current_arg(t))
+            .collect::<Result<_, _>>()?,
+        earth_currents: o
+            .earth_current
+            .iter()
+            .map(|t| earth_current_arg(t))
+            .collect::<Result<_, _>>()?,
         earth_wires: o.earth_wires,
         towers: o.towers,
         height: c.height,
@@ -1782,11 +1857,16 @@ fn print_magnetic(
         }
     );
     for c in &m.currents {
-        let source = sources
-            .iter()
-            .rev()
-            .find(|(n, _)| n == &c.circuit || n == &c.system || n == "*")
-            .map_or("none given", |s| s.1.as_str());
+        let source = if c.source == ohl_electrical::magnetic::PER_PHASE_SOURCE {
+            // Typed per phase: the largest phase here, each in the notes.
+            "per phase: the largest; each phase and the net current in the notes"
+        } else {
+            sources
+                .iter()
+                .rev()
+                .find(|(n, _)| n == &c.circuit || n == &c.system || n == "*")
+                .map_or("none given", |s| s.1.as_str())
+        };
         println!(
             "  circuit {:<16} {:>8.1} A  {} Hz  {}  ({source})",
             c.circuit,

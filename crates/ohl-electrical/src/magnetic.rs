@@ -292,6 +292,41 @@ pub struct CircuitCurrent {
     pub reverse: bool,
 }
 
+/// The current of one phase of a circuit, typed (owner, 2026-11-11: "a
+/// current per wire"): its magnitude and its angle, so that the phases
+/// need not be balanced. A circuit given so takes every one of its phases
+/// from here ([`Settings::phase_currents`]); the angle is the current's
+/// own, in the frame of the systems' phase angles (a balanced circuit's
+/// L1 is at its system's angle, 0° unless the system gives another).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PhaseCurrent {
+    /// The circuit: its name, or its system's id.
+    pub circuit: String,
+    /// The phase's label in its system (e.g. `L1`).
+    pub phase: String,
+    /// Current along the line, A (rms).
+    pub amps: f64,
+    /// Its phase angle, degrees.
+    pub angle_deg: f64,
+}
+
+/// An earth wire's current, typed instead of computed (owner,
+/// 2026-11-11): the same in every span of its section, along the line
+/// (from the line's first structure towards its last).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EarthCurrent {
+    /// The earth wire's section (its id).
+    pub section: String,
+    /// Current along the line, A (rms).
+    pub amps: f64,
+    /// Its phase angle, degrees (the frame of the phases' angles).
+    pub angle_deg: f64,
+    /// Its frequency, Hz; `None`: the line's first AC system's (else
+    /// [`DEFAULT_FREQUENCY_HZ`]).
+    #[serde(default)]
+    pub frequency_hz: Option<f64>,
+}
+
 /// Where a profile is taken.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StationSpec {
@@ -332,6 +367,18 @@ pub struct Settings {
     /// section's current from them by Kirchhoff's current law (a circuit
     /// given here: its `currents` entry is not used).
     pub ends: Vec<EndCurrent>,
+    /// Currents typed per phase (magnitude and angle): a circuit named
+    /// here takes all its phases from here — an unbalanced circuit, with
+    /// its net current — and neither its `currents` entry nor its
+    /// system's operating current. Not with `ends` for the same circuit.
+    #[serde(default)]
+    pub phase_currents: Vec<PhaseCurrent>,
+    /// Earth wire currents typed instead of computed: such an earth wire
+    /// carries its typed current whether `earth_wires` is on or off, and
+    /// is a given current to the earth wires computed beside it. Not with
+    /// `towers` (the network computes every earth wire's current).
+    #[serde(default)]
+    pub earth_currents: Vec<EarthCurrent>,
     /// Earth wire currents induced by the phases (else none).
     pub earth_wires: bool,
     /// With `earth_wires`: the earth wires as a network over the line,
@@ -647,6 +694,8 @@ impl Default for Settings {
             heights_2d: Heights2d::Station,
             currents: Vec::new(),
             ends: Vec::new(),
+            phase_currents: Vec::new(),
+            earth_currents: Vec::new(),
             earth_wires: false,
             towers: false,
             height: 1.0,
@@ -1056,6 +1105,13 @@ pub fn thermal_currents(
 /// the direction's sign.
 struct Currents {
     by_key: BTreeMap<CircuitKey, (f64, f64)>,
+    /// The circuits given per phase ([`Settings::phase_currents`]): each
+    /// phase's current along the line (rms phasor, A), by the phase's
+    /// place in its system.
+    per_phase: BTreeMap<CircuitKey, BTreeMap<usize, C>>,
+    /// The earth wires given a current ([`Settings::earth_currents`]), by
+    /// section id: frequency and current along the line (rms phasor, A).
+    earth_typed: BTreeMap<String, (f64, C)>,
     /// Per section of a circuit given by its end points: its current
     /// along its points, A (negative: against them).
     flows: BTreeMap<usize, f64>,
@@ -1111,9 +1167,160 @@ impl Currents {
         }
         Ok(Self {
             by_key,
+            per_phase: BTreeMap::new(),
+            earth_typed: BTreeMap::new(),
             flows: BTreeMap::new(),
             directions: Directions::default(),
         })
+    }
+
+    /// Takes the currents typed per phase (owner, 2026-11-11): a circuit
+    /// named takes every phase from them — all of its phases must be
+    /// given — in place of its balanced current; what is said of it in
+    /// `notes` is its phases and their sum, the net current.
+    fn take_phases(
+        &mut self,
+        line: &ohl_line::Line,
+        given: &[PhaseCurrent],
+        ends: &[EndCurrent],
+        notes: &mut Vec<String>,
+    ) -> Result<(), String> {
+        let all = circuits(line);
+        for g in given {
+            if !(g.amps.is_finite() && g.amps >= 0.0 && g.angle_deg.is_finite()) {
+                return Err(format!(
+                    "circuit {} phase {}: a current of {} A at {}°",
+                    g.circuit, g.phase, g.amps, g.angle_deg
+                ));
+            }
+            let key = all
+                .iter()
+                .find(|c| matches(c, &g.circuit))
+                .ok_or_else(|| format!("no circuit {}", g.circuit))?;
+            if ends.iter().any(|e| matches(key, &e.circuit)) {
+                return Err(format!(
+                    "circuit {}: currents per phase and currents at its end points — give one \
+                     of the two",
+                    key.label()
+                ));
+            }
+            let system = line
+                .systems
+                .iter()
+                .find(|s| s.id == key.system)
+                .ok_or_else(|| format!("no system {}", key.system))?;
+            let index = system
+                .phases
+                .iter()
+                .position(|p| p.label == g.phase)
+                .ok_or_else(|| {
+                    format!(
+                        "circuit {}: no phase {} (phases: {})",
+                        key.label(),
+                        g.phase,
+                        system
+                            .phases
+                            .iter()
+                            .map(|p| p.label.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })?;
+            self.per_phase
+                .entry(key.clone())
+                .or_default()
+                .insert(index, C::from_polar(g.amps, g.angle_deg.to_radians()));
+        }
+        for (key, phases) in &self.per_phase {
+            let system = line.systems.iter().find(|s| s.id == key.system);
+            let labels: Vec<&str> = system.map_or(Vec::new(), |s| {
+                s.phases.iter().map(|p| p.label.as_str()).collect()
+            });
+            let missing: Vec<&str> = labels
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !phases.contains_key(k))
+                .map(|(_, l)| *l)
+                .collect();
+            if !missing.is_empty() {
+                return Err(format!(
+                    "circuit {}: currents per phase need every phase — none for {}",
+                    key.label(),
+                    missing.join(", ")
+                ));
+            }
+            // In the reports: the largest phase's magnitude.
+            let largest = phases.values().map(|i| i.norm()).fold(0.0, f64::max);
+            self.by_key.insert(key.clone(), (largest, 1.0));
+            let net: C = phases.values().sum();
+            let said: Vec<String> = phases
+                .iter()
+                .map(|(k, i)| format!("{} {}", labels[*k], polar_text(*i)))
+                .collect();
+            let label = key.label();
+            notes.retain(|n| {
+                !n.starts_with(&format!("circuit {label}: no current given"))
+                    && !n.starts_with(&format!("circuit {label}: its system's operating current"))
+            });
+            notes.push(format!(
+                "circuit {label}: currents per phase as given along the line ({}); their sum, \
+                 the net current, {}",
+                said.join(", "),
+                polar_text(net)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Takes the earth wires' typed currents: each an earthed section of
+    /// the line, at `default_hz` unless it gives its frequency.
+    fn take_earth(
+        &mut self,
+        line: &ohl_line::Line,
+        given: &[EarthCurrent],
+        default_hz: f64,
+        notes: &mut Vec<String>,
+    ) -> Result<(), String> {
+        for g in given {
+            let section = line
+                .sections
+                .iter()
+                .find(|s| s.id == g.section)
+                .ok_or_else(|| format!("earth wire current: no section {}", g.section))?;
+            if section.system.is_some() {
+                return Err(format!(
+                    "earth wire current: section {} is a phase conductor of system {} — give \
+                     its current with its circuit",
+                    g.section,
+                    section.system.as_deref().unwrap_or_default()
+                ));
+            }
+            let f = g.frequency_hz.unwrap_or(default_hz);
+            if !(g.amps.is_finite() && g.amps >= 0.0 && g.angle_deg.is_finite() && f > 0.0) {
+                return Err(format!(
+                    "earth wire {}: a current of {} A at {}° and {f} Hz",
+                    g.section, g.amps, g.angle_deg
+                ));
+            }
+            let i = C::from_polar(g.amps, g.angle_deg.to_radians());
+            self.earth_typed.insert(g.section.clone(), (f, i));
+            notes.push(format!(
+                "earth wire {}: its current as typed, {} at {f} Hz along the line in every \
+                 span (not computed)",
+                g.section,
+                polar_text(i)
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether a circuit's phases carry the balanced current (not typed
+    /// per phase) and some current at all.
+    fn any_balanced(&self) -> bool {
+        self.by_key
+            .iter()
+            .any(|(k, (amps, _))| *amps > 0.0 && !self.per_phase.contains_key(k))
+            || self.flows.values().any(|a| *a != 0.0)
     }
 
     /// A phase's current in a section's span from the span's first
@@ -1324,14 +1531,41 @@ impl Currents {
             circuit: p.circuit.clone(),
             system: p.system.clone(),
         };
+        let f = p.frequency_hz.unwrap_or(DEFAULT_FREQUENCY_HZ);
+        // Typed per phase: as given (magnitude and angle).
+        if let Some(phases) = self.per_phase.get(&key) {
+            let i = *phases.get(&p.index)?;
+            return (i.norm() > 0.0).then_some((f, i));
+        }
         let (amps, sign) = self.by_key.get(&key).copied()?;
         if amps == 0.0 {
             return None;
         }
-        let f = p.frequency_hz.unwrap_or(DEFAULT_FREQUENCY_HZ);
         Some((f, C::from_polar(sign * amps, p.angle_deg.to_radians())))
     }
 }
+
+/// [`CurrentUsed::source`] of a circuit typed per phase (its `amps` is
+/// then the largest phase's; the phases are in the notes).
+pub const PER_PHASE_SOURCE: &str = "per phase";
+
+/// A current phasor in words: `950.0 A at -120.0°`.
+fn polar_text(i: C) -> String {
+    let angle = if i.norm() > 1e-9 {
+        i.arg().to_degrees()
+    } else {
+        0.0
+    };
+    format!("{:.1} A at {angle:.1}°", i.norm())
+}
+
+/// What a result with balanced currents says (owner, 2026-11-11): far
+/// from the line a net current governs, and balanced input has none.
+pub const BALANCED_NOTE: &str = "NOT ON THE SAFE SIDE far from the line: the phases' currents \
+     are balanced (each circuit's sum to zero), so no net current is in the result — the field \
+     of a balanced circuit falls off as 1/d² with the distance d, that of a net current (an \
+     unbalance, a zero-sequence current) as 1/d, so beyond the distance where the two are equal \
+     the net current governs and is not covered; give the currents per phase to include it";
 
 /// Earth wire currents per (section id, span index in its section): per
 /// frequency, the current along the line (rms phasor, A).
@@ -1356,8 +1590,13 @@ fn earth_terms(
     method: ohl_line::electrical::EarthReturn,
     notes: &mut Vec<String>,
 ) -> Vec<EarthTerms> {
-    let earthed: Vec<&cross_section::CrossWire> =
-        cs.wires.iter().filter(|w| w.phase.is_none()).collect();
+    // The earth wires computed: those without a typed current (a typed
+    // one is a given current beside the phases', below).
+    let earthed: Vec<&cross_section::CrossWire> = cs
+        .wires
+        .iter()
+        .filter(|w| w.phase.is_none() && !currents.earth_typed.contains_key(&w.section))
+        .collect();
     if earthed.is_empty() {
         return Vec::new();
     }
@@ -1377,8 +1616,11 @@ fn earth_terms(
     }
     let mut phases: Vec<(f64, C, Wire)> = Vec::new();
     for w in &cs.wires {
-        let Some(p) = &w.phase else { continue };
-        let Some((f, i)) = currents.in_span(p, &w.section, w.span) else {
+        let source = match &w.phase {
+            Some(p) => currents.in_span(p, &w.section, w.span),
+            None => currents.earth_typed.get(&w.section).copied(),
+        };
+        let Some((f, i)) = source else {
             continue;
         };
         phases.push((
@@ -2040,7 +2282,7 @@ fn build_3d(
             };
             let flows: Vec<(f64, C)> = match &phase {
                 Some(p) => currents.of_section(p, k).into_iter().collect(),
-                None if with_earth_wires => earth
+                None if with_earth_wires || currents.earth_typed.contains_key(&section.id) => earth
                     .get(&(section.id.clone(), j))
                     .cloned()
                     .unwrap_or_default(),
@@ -2230,7 +2472,7 @@ fn build_2d(
                 .in_span(p, &w.section, w.span)
                 .into_iter()
                 .collect(),
-            None if with_earth_wires => earth
+            None if with_earth_wires || currents.earth_typed.contains_key(&w.section) => earth
                 .get(&(w.section.clone(), w.span))
                 .cloned()
                 .unwrap_or_default(),
@@ -2406,7 +2648,24 @@ pub fn run_keeping(
         return Err("the line has no spans".into());
     }
     currents.directions = Directions::new(line, &spans);
+    // (Per phase first: a circuit given both ways is refused there.)
+    currents.take_phases(line, &settings.phase_currents, &settings.ends, &mut notes)?;
     currents.take_ends(line, &settings.ends, &mut notes)?;
+    if settings.earth_wires && settings.towers && !settings.earth_currents.is_empty() {
+        return Err(
+            "earth wire currents typed and the earth wires through the structures' earthing: \
+             the network computes every earth wire's current — turn the structures' earthing \
+             off, or take the typed earth wire currents out"
+                .into(),
+        );
+    }
+    let default_hz = line
+        .systems
+        .iter()
+        .find(|s| s.kind == SystemKind::Ac)
+        .and_then(|s| s.frequency_hz)
+        .unwrap_or(DEFAULT_FREQUENCY_HZ);
+    currents.take_earth(line, &settings.earth_currents, default_hz, &mut notes)?;
     let axes: Vec<Option<Axis>> = spans.iter().map(|s| Axis::of(line, s).ok()).collect();
     // Distance along the line to each span's start.
     let mut along = Vec::with_capacity(spans.len());
@@ -2478,8 +2737,47 @@ pub fn run_keeping(
         notes.push(
             "earth wire currents: induced by the phases on an infinitely long earth wire earthed everywhere (I_e = −inv(Z_ee) · Z_ep · I_p per span, from its mean cross-section) — an approximation: the towers' earthing and the earth wires' ends are not modelled".into(),
         );
-    } else if line.sections.iter().any(|s| s.system.is_none()) {
-        notes.push("earth wires carry no current (earth wire currents off)".into());
+    } else if line
+        .sections
+        .iter()
+        .any(|s| s.system.is_none() && !currents.earth_typed.contains_key(&s.id))
+    {
+        notes.push(if currents.earth_typed.is_empty() {
+            "earth wires carry no current (earth wire currents off)".to_owned()
+        } else {
+            "earth wires without a typed current carry none (earth wire currents off)".to_owned()
+        });
+    }
+    // The typed earth wire currents: in every span of their sections, in
+    // place of what was computed there.
+    if !currents.earth_typed.is_empty() {
+        if settings.earth_wires {
+            notes.push(
+                "the earth wires without a typed current: induced by the phases and by the \
+                 typed earth wire currents"
+                    .into(),
+            );
+        }
+        for (span, cs) in &means {
+            for w in cs.wires.iter().filter(|w| w.phase.is_none()) {
+                let Some(&(f, i)) = currents.earth_typed.get(&w.section) else {
+                    continue;
+                };
+                earth.insert((w.section.clone(), w.span), vec![(f, i)]);
+                earth_rows.push(EarthWireCurrent {
+                    section: w.section.clone(),
+                    from: span.from.clone(),
+                    to: span.to.clone(),
+                    frequency_hz: f,
+                    amps: i.norm(),
+                    angle_deg: if i.norm() > 1e-9 {
+                        i.arg().to_degrees()
+                    } else {
+                        0.0
+                    },
+                });
+            }
+        }
     }
     if line.systems.iter().any(|s| s.kind == SystemKind::Dc) {
         notes.push("DC systems left out (a static field; not computed)".into());
@@ -2495,14 +2793,24 @@ pub fn run_keeping(
     }
     notes.push(
         format!(
-            "the ground's return currents left out (their image lies at the complex depth, hundreds of metres down at power frequency); {}; balanced phases, no harmonics",
+            "the ground's return currents left out (their image lies at the complex depth, hundreds of metres down at power frequency); {}; {}, no harmonics",
             if settings.jumpers && settings.model == Model::ThreeD {
                 "the jumpers carry their phase's current"
             } else {
                 "jumpers left out"
+            },
+            match (currents.any_balanced(), currents.per_phase.is_empty()) {
+                (true, true) => "balanced phases",
+                (true, false) => "balanced phases but for the circuits given per phase",
+                (false, _) => "the phases' currents as given per phase",
             }
         ),
     );
+    // Balanced input has no net current: said, not on the safe side far
+    // from the line (2026-11-11).
+    if currents.any_balanced() {
+        notes.push(BALANCED_NOTE.to_owned());
+    }
     let model3d = match settings.model {
         Model::ThreeD => Some(build_3d(src, &currents, &earth, settings, &mut notes).map(
             |mut w| {
@@ -2972,7 +3280,11 @@ pub fn run_keeping(
                 frequency_hz: sys
                     .and_then(|s| s.frequency_hz)
                     .unwrap_or(DEFAULT_FREQUENCY_HZ),
-                source: String::new(),
+                source: if currents.per_phase.contains_key(&c) {
+                    PER_PHASE_SOURCE.to_owned()
+                } else {
+                    String::new()
+                },
             }
         })
         .collect();

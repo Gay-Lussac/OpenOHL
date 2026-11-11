@@ -94,6 +94,63 @@ fn magnetic(extra: &[&str]) -> std::process::Output {
         .unwrap()
 }
 
+/// `ohl electrical magnetic` with a current per wire (2026-11-11):
+/// `--phase-current` for every phase of a circuit (its net current said,
+/// no balanced circuit left: no such warning), `--earth-current` typed
+/// for the earth wire; balanced input says that it holds no net current;
+/// a phase missing and a malformed value are refused.
+#[test]
+fn magnetic_field_with_a_current_per_wire() {
+    let out = magnetic(&[
+        "--two-d",
+        "--phase-current",
+        "North:L1=1050@0",
+        "--phase-current",
+        "North:L2=1000@-120",
+        "--phase-current",
+        "North:L3=1000@120",
+        "--earth-current",
+        "EW=40@15",
+    ]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("circuit North: currents per phase as given")
+            && text.contains("the net current, 50.0 A"),
+        "{text}"
+    );
+    assert!(text.contains("per phase: the largest"), "{text}");
+    assert!(
+        text.contains("earth wire EW: its current as typed, 40.0 A"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("NOT ON THE SAFE SIDE far from the line"),
+        "{text}"
+    );
+    // Balanced: said.
+    let out = magnetic(&["--two-d", "--current", "*=1000"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(
+        text.contains("NOT ON THE SAFE SIDE far from the line"),
+        "{text}"
+    );
+    // A phase missing; a value without its angle.
+    let out = magnetic(&["--two-d", "--phase-current", "North:L1=1050@0"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("need every phase"), "{err}");
+    let out = magnetic(&["--two-d", "--phase-current", "North:L1=1050"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("CIRCUIT:PHASE=AMPS@ANGLE"), "{err}");
+}
+
 /// `ohl electrical magnetic`: the profiles, a limit's line, given points
 /// from a CSV, the CSV written; the thermal rating as the currents; 2D;
 /// no current refused.

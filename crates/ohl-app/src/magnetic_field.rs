@@ -65,6 +65,42 @@ pub struct Answer {
 /// Every circuit's end points: its label and the structures.
 type CircuitEnds = Vec<(String, Vec<String>)>;
 
+/// A phase's typed current: its label, A (rms) and its angle, degrees.
+type PhaseRow = (String, f64, f64);
+
+/// How a circuit's current is given.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Given {
+    /// One balanced current for the circuit.
+    Circuit,
+    /// At its end points.
+    Ends,
+    /// Per phase: magnitude and angle.
+    Phases,
+}
+
+/// The choice "per phase" of a circuit's current.
+pub const PER_PHASE_LABEL: &str = "per phase";
+
+/// What the choice does, on hover.
+pub const PER_PHASE_HELP: &str = "The circuit: one current everywhere, balanced at the system's \
+     phase angles, along the line or against it. At its end points (owner, 2026-10-29): the \
+     current in or out at each end (one end may take the rest); every section's current \
+     follows by Kirchhoff's current law, branches included (a meshed circuit needs the load \
+     flow: refused). Per phase (owner, 2026-11-11): each phase's current and angle typed — an \
+     unbalanced circuit. Its phases' sum is a net current, whose field falls off as 1/d with \
+     the distance, a balanced circuit's as 1/d²: far from the line the net current governs. \
+     Balanced input has none and says so in its results (not on the safe side far from the \
+     line). No effect on the time.";
+
+/// The tick of an earth wire's typed current.
+pub const EARTH_TYPED_HELP: &str = "Ticked: this earth wire carries the current typed here \
+     (rms, along the line from its first structure to its last, in every span) instead of a \
+     computed one — also with the earth wire currents off. With them on, the other earth \
+     wires are induced by the phases and by this one. Not together with \"through the \
+     structures' earthing\" (that network computes every earth wire's current): the run is \
+     refused. The field changes by this current's own field; no effect on the time.";
+
 /// The Magnetic field window.
 pub struct MagneticFieldWindow {
     /// What both field windows have (reached through `Deref` from outside).
@@ -76,6 +112,12 @@ pub struct MagneticFieldWindow {
     /// circuit, each end's structure and current into the line (A,
     /// negative: out; none: the rest).
     ends: BTreeMap<String, Vec<(String, Option<f64>)>>,
+    /// The circuits given per phase (owner, 2026-11-11): per circuit,
+    /// each phase's label, current (A) and angle (degrees).
+    phases: BTreeMap<String, Vec<PhaseRow>>,
+    /// The earth wires given a current instead of a computed one: per
+    /// earth wire section, its current (A) and angle (degrees).
+    earth_typed: BTreeMap<String, (f64, f64)>,
     /// The circuits' end points, by the line's version.
     ends_seen: Option<(u64, CircuitEnds)>,
     earth_wires: bool,
@@ -121,6 +163,8 @@ impl Default for MagneticFieldWindow {
             }),
             currents: BTreeMap::new(),
             ends: BTreeMap::new(),
+            phases: BTreeMap::new(),
+            earth_typed: BTreeMap::new(),
             ends_seen: None,
             earth_wires: false,
             towers: true,
@@ -157,6 +201,12 @@ struct Stored {
 
     currents: BTreeMap<String, (f64, bool)>,
     ends: BTreeMap<String, Vec<(String, Option<f64>)>>,
+    /// Since 2026-11-11 (absent: none): the circuits given per phase.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    phases: BTreeMap<String, Vec<PhaseRow>>,
+    /// Since 2026-11-11 (absent: none): the earth wires' typed currents.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    earth_typed: BTreeMap<String, (f64, f64)>,
     earth_wires: bool,
     towers: Option<bool>,
     mean_heights: bool,
@@ -170,13 +220,167 @@ struct Stored {
     above_spans: Vec<(String, String)>,
 }
 
+/// A circuit's phases at the balanced current `amps` (against the line:
+/// turned by 180°), at its system's phase angles: where "per phase"
+/// starts from.
+fn balanced_rows(
+    model: &Model,
+    c: &ohl_electrical::parameters::CircuitKey,
+    amps: f64,
+    reverse: bool,
+) -> Vec<PhaseRow> {
+    let Some(system) = model.line.systems.iter().find(|s| s.id == c.system) else {
+        return Vec::new();
+    };
+    let n = system.phases.len().max(1) as f64;
+    system
+        .phases
+        .iter()
+        .enumerate()
+        .map(|(k, p)| {
+            let angle = p.angle_deg.unwrap_or(-(k as f64) * 360.0 / n);
+            let angle = if reverse { angle + 180.0 } else { angle };
+            // Within −180° to 180°.
+            let angle = (angle + 180.0).rem_euclid(360.0) - 180.0;
+            (p.label.clone(), amps, angle)
+        })
+        .collect()
+}
+
+/// The net current of typed phases: their phasors' sum, A and degrees.
+pub fn net_current(rows: &[PhaseRow]) -> (f64, f64) {
+    let (re, im) = rows.iter().fold((0.0, 0.0), |(re, im), (_, a, deg)| {
+        let r = deg.to_radians();
+        (re + a * r.cos(), im + a * r.sin())
+    });
+    (re.hypot(im), im.atan2(re).to_degrees())
+}
+
+/// A circuit's phases, each with its current and angle, and their sum.
+fn phases_ui(ui: &mut egui::Ui, rows: &mut [PhaseRow]) {
+    ui.vertical(|ui| {
+        for (label, amps, angle) in rows.iter_mut() {
+            ui.horizontal(|ui| {
+                ui.label(label.as_str());
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(amps)
+                        .range(0.0..=100_000.0)
+                        .speed(5.0)
+                        .suffix(" A"),
+                )
+                .on_hover_text(
+                    "rms, this phase, along the line (from its first structure to its last). \
+                     The field of this phase grows in proportion",
+                );
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(angle)
+                        .range(-360.0..=360.0)
+                        .speed(1.0)
+                        .suffix("°"),
+                )
+                .on_hover_text(
+                    "This current's phase angle, in the frame of the systems' phase angles \
+                     (a balanced circuit: L1 0°, L2 −120°, L3 +120° unless its system gives \
+                     others; against the line: 180° more)",
+                );
+            });
+        }
+        let (net, at) = net_current(rows);
+        ui.label(
+            egui::RichText::new(format!("net current {net:.1} A at {at:.1}°"))
+                .small()
+                .weak(),
+        )
+        .on_hover_text(
+            "The sum of the phases' currents. Its field falls off as 1/d with the distance, \
+             the balanced part's as 1/d²: far from the line it governs",
+        );
+    });
+}
+
 impl MagneticFieldWindow {
+    /// The earth wires' typed currents (owner, 2026-11-11): per earth wire
+    /// section a tick, its current and its angle; nothing shown on a line
+    /// without earth wires.
+    fn earth_typed_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let earthed: Vec<&str> = model
+            .line
+            .sections
+            .iter()
+            .filter(|s| s.system.is_none())
+            .map(|s| s.id.as_str())
+            .collect();
+        // A section no longer an earth wire: not kept.
+        self.earth_typed
+            .retain(|id, _| earthed.contains(&id.as_str()));
+        if earthed.is_empty() {
+            return;
+        }
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new(format!(
+            "Earth wire currents typed ({} of {})",
+            self.earth_typed.len(),
+            earthed.len()
+        ))
+        .id_salt("magnetic-field-earth-typed")
+        .show(ui, |ui| {
+            help::list(
+                ui,
+                "magnetic-field-earth-typed-list",
+                help::LIST_HEIGHT,
+                egui::ScrollArea::vertical().id_salt("magnetic-field-earth-typed-rows"),
+                |ui| {
+                    for id in &earthed {
+                        ui.horizontal(|ui| {
+                            let mut typed = self.earth_typed.contains_key(*id);
+                            if ui
+                                .checkbox(&mut typed, *id)
+                                .on_hover_text(EARTH_TYPED_HELP)
+                                .changed()
+                            {
+                                if typed {
+                                    self.earth_typed.insert((*id).to_owned(), (0.0, 0.0));
+                                } else {
+                                    self.earth_typed.remove(*id);
+                                }
+                            }
+                            if let Some((amps, angle)) = self.earth_typed.get_mut(*id) {
+                                crate::style::field(
+                                    ui,
+                                    egui::DragValue::new(amps)
+                                        .range(0.0..=100_000.0)
+                                        .speed(1.0)
+                                        .suffix(" A"),
+                                )
+                                .on_hover_text("rms, along the line, in every span");
+                                crate::style::field(
+                                    ui,
+                                    egui::DragValue::new(angle)
+                                        .range(-360.0..=360.0)
+                                        .speed(1.0)
+                                        .suffix("°"),
+                                )
+                                .on_hover_text(
+                                    "Its phase angle, in the frame of the systems' phase angles",
+                                );
+                            }
+                        });
+                    }
+                },
+            );
+        });
+    }
+
     /// The inputs as kept in the project.
     fn stored(&mut self, model: &Model) -> Stored {
         Stored {
             common: self.common.stored_common(model),
             currents: self.currents.clone(),
             ends: self.ends.clone(),
+            phases: self.phases.clone(),
+            earth_typed: self.earth_typed.clone(),
             earth_wires: self.earth_wires,
             towers: Some(self.towers),
             mean_heights: self.mean_heights,
@@ -239,6 +443,8 @@ impl MagneticFieldWindow {
             .filter(|(_, v)| *v != (0.0, false))
             .collect();
         self.ends = st.ends;
+        self.phases = st.phases;
+        self.earth_typed = st.earth_typed;
         self.earth_wires = st.earth_wires;
         self.towers = st.towers.unwrap_or(d.towers);
         // Kept since 2026-11-01 (0: the whole line); before, as it was.
@@ -252,6 +458,38 @@ impl MagneticFieldWindow {
         });
         self.common.span_pick.above = st.above_spans.into_iter().collect();
         self.mean_heights = st.mean_heights;
+    }
+
+    /// Gives a circuit per phase: each phase's label, A and angle (tests).
+    #[cfg(test)]
+    pub fn set_phases(&mut self, circuit: &str, phases: Vec<PhaseRow>) {
+        self.ends.remove(circuit);
+        self.phases.insert(circuit.to_owned(), phases);
+    }
+
+    /// The circuits given per phase (tests).
+    #[cfg(test)]
+    pub fn phases(&self, circuit: &str) -> Option<&Vec<PhaseRow>> {
+        self.phases.get(circuit)
+    }
+
+    /// Takes a circuit's typed phases out: balanced again (tests).
+    #[cfg(test)]
+    pub fn clear_phases(&mut self, circuit: &str) {
+        self.phases.remove(circuit);
+    }
+
+    /// An earth wire's typed current, A and degrees (tests).
+    #[cfg(test)]
+    pub fn earth_typed(&self, section: &str) -> Option<(f64, f64)> {
+        self.earth_typed.get(section).copied()
+    }
+
+    /// Types an earth wire's current, A and degrees (tests).
+    #[cfg(test)]
+    pub fn set_earth_typed(&mut self, section: &str, amps: f64, angle_deg: f64) {
+        self.earth_typed
+            .insert(section.to_owned(), (amps, angle_deg));
     }
 
     /// Sets a circuit's current, A (tests).
@@ -372,7 +610,7 @@ impl MagneticFieldWindow {
             currents: self
                 .currents
                 .iter()
-                .filter(|(c, _)| !self.ends.contains_key(*c))
+                .filter(|(c, _)| !self.ends.contains_key(*c) && !self.phases.contains_key(*c))
                 .map(|(c, &(amps, reverse))| CircuitCurrent {
                     circuit: c.clone(),
                     amps,
@@ -388,6 +626,29 @@ impl MagneticFieldWindow {
                         structure: s.clone(),
                         amps: *a,
                     })
+                })
+                .collect(),
+            phase_currents: self
+                .phases
+                .iter()
+                .flat_map(|(c, list)| {
+                    list.iter()
+                        .map(move |(phase, amps, angle)| magnetic::PhaseCurrent {
+                            circuit: c.clone(),
+                            phase: phase.clone(),
+                            amps: *amps,
+                            angle_deg: *angle,
+                        })
+                })
+                .collect(),
+            earth_currents: self
+                .earth_typed
+                .iter()
+                .map(|(section, &(amps, angle_deg))| magnetic::EarthCurrent {
+                    section: section.clone(),
+                    amps,
+                    angle_deg,
+                    frequency_hz: None,
                 })
                 .collect(),
             earth_wires: self.earth_wires,
@@ -723,6 +984,8 @@ impl MagneticFieldWindow {
                         .values()
                         .flatten()
                         .any(|e| e.1.is_some_and(|a| a != 0.0))
+                    && !self.phases.values().flatten().any(|p| p.1 > 0.0)
+                    && !self.earth_typed.values().any(|e| e.0 > 0.0)
                 {
                     Some("give a circuit a current (2 Scope)".to_owned())
                 } else if matches!(
@@ -891,27 +1154,54 @@ impl MagneticFieldWindow {
                         .find(|(l, _)| *l == label)
                         .map(|(_, e)| e.clone())
                         .unwrap_or_default();
-                    let mut by_ends = self.ends.contains_key(&label);
+                    let was = if self.phases.contains_key(&label) {
+                        Given::Phases
+                    } else if self.ends.contains_key(&label) {
+                        Given::Ends
+                    } else {
+                        Given::Circuit
+                    };
+                    let mut given_as = was;
                     egui::ComboBox::from_id_salt(("magnetic-field-given", &label))
-                        .selected_text(if by_ends {
-                            "at its end points"
-                        } else {
-                            "the circuit"
+                        .selected_text(match given_as {
+                            Given::Circuit => "the circuit",
+                            Given::Ends => "at its end points",
+                            Given::Phases => PER_PHASE_LABEL,
                         })
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut by_ends, false, "the circuit");
+                            ui.selectable_value(&mut given_as, Given::Circuit, "the circuit");
                             ui.add_enabled_ui(points.len() >= 2, |ui| {
-                                ui.selectable_value(&mut by_ends, true, "at its end points");
+                                ui.selectable_value(
+                                    &mut given_as,
+                                    Given::Ends,
+                                    "at its end points",
+                                );
                             });
+                            ui.selectable_value(&mut given_as, Given::Phases, PER_PHASE_LABEL);
                         })
                         .response
-                        .on_hover_text(
-                            "The circuit: one current everywhere, along the line or against it. \
-                             At its end points (owner, 2026-10-29): the current in or out at each \
-                             end (one end may take the rest); every section's current follows by \
-                             Kirchhoff's current law, branches included (a meshed circuit needs \
-                             the load flow: refused)",
-                        );
+                        .on_hover_text(PER_PHASE_HELP);
+                    let by_ends = given_as == Given::Ends;
+                    if given_as == Given::Phases && was != Given::Phases {
+                        // From the balanced current it had: each phase at
+                        // it, at its system's angle (against the line:
+                        // turned by 180°).
+                        let (amps, reverse) = self.currents.get(&label).copied().unwrap_or((
+                            model.line.system_current(&c.system).unwrap_or(0.0),
+                            false,
+                        ));
+                        self.ends.remove(&label);
+                        self.phases
+                            .insert(label.clone(), balanced_rows(model, c, amps, reverse));
+                    } else if given_as != Given::Phases {
+                        self.phases.remove(&label);
+                    }
+                    if let Some(rows) = self.phases.get_mut(&label) {
+                        phases_ui(ui, rows);
+                        ui.label("");
+                        ui.end_row();
+                        continue;
+                    }
                     if by_ends && !self.ends.contains_key(&label) {
                         // In at the first end, the rest out at the others.
                         let amps = self.currents.get(&label).map_or_else(
@@ -1048,6 +1338,7 @@ impl MagneticFieldWindow {
                     ui.end_row();
                 }
             });
+        self.earth_typed_ui(ui, model);
         ui.add_space(4.0);
         egui::Grid::new("magnetic-field-settings")
             .num_columns(2)
@@ -1339,17 +1630,27 @@ impl MagneticFieldWindow {
         });
         for c in &m.currents {
             ui.label(
-                egui::RichText::new(format!(
-                    "circuit {}: {:.1} A, {} Hz, {}",
-                    c.circuit,
-                    c.amps,
-                    c.frequency_hz,
-                    if c.reverse {
-                        "against the line"
-                    } else {
-                        "along the line"
-                    }
-                ))
+                egui::RichText::new(if c.source == magnetic::PER_PHASE_SOURCE {
+                    // Typed per phase: the phases and their net current are
+                    // in the notes.
+                    format!(
+                        "circuit {}: per phase, the largest {:.1} A, {} Hz (each phase and \
+                         the net current: the notes)",
+                        c.circuit, c.amps, c.frequency_hz
+                    )
+                } else {
+                    format!(
+                        "circuit {}: {:.1} A, {} Hz, {}",
+                        c.circuit,
+                        c.amps,
+                        c.frequency_hz,
+                        if c.reverse {
+                            "against the line"
+                        } else {
+                            "along the line"
+                        }
+                    )
+                })
                 .small(),
             );
         }

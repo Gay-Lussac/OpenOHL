@@ -2136,6 +2136,151 @@ fn the_magnetic_field_inputs_are_kept_in_the_project() {
     assert_eq!(fresh.views(), (Some(3.0), Some(0.5), Some(2.0)));
 }
 
+/// Checks › Electrical › Magnetic field…: a current per wire (owner,
+/// 2026-11-11). A circuit given **per phase** shows each phase's current
+/// and angle and their net current, runs, and its result names the
+/// phases and the net current; a balanced circuit's result says that it
+/// holds no net current (not on the safe side far from the line). An
+/// earth wire's typed current is carried. Both are kept in the project.
+#[test]
+fn the_magnetic_field_takes_a_current_per_wire() {
+    use egui_kittest::kittest::NodeT;
+    use ohl_electrical::magnetic::BALANCED_NOTE;
+    let model = crate::tests::session_edits::synthetic_project("magnetic-per-wire");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    submenu(&mut harness, "Checks", "Electrical");
+    harness.get_by_label("Magnetic field…").click();
+    harness.run();
+    assert!(
+        run_in(&harness, "Magnetic field")
+            .accesskit_node()
+            .is_disabled(),
+        "no current yet"
+    );
+    // The first circuit per phase: 500 A in each phase but 550 A in the
+    // first, at its system's angles; an earth wire at 40 A.
+    let (label, rows, earth) = {
+        let r = harness.state_mut().ready().unwrap();
+        let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+        let c = &circuits[0];
+        let system = r
+            .model
+            .line
+            .systems
+            .iter()
+            .find(|s| s.id == c.system)
+            .unwrap();
+        let n = system.phases.len() as f64;
+        let rows: Vec<(String, f64, f64)> = system
+            .phases
+            .iter()
+            .enumerate()
+            .map(|(k, p)| {
+                (
+                    p.label.clone(),
+                    if k == 0 { 550.0 } else { 500.0 },
+                    p.angle_deg.unwrap_or(-(k as f64) * 360.0 / n),
+                )
+            })
+            .collect();
+        let earth = r
+            .model
+            .line
+            .sections
+            .iter()
+            .find(|s| s.system.is_none())
+            .map(|s| s.id.clone())
+            .expect("the example has an earth wire");
+        r.magnetic_field.set_phases(&c.label(), rows.clone());
+        r.magnetic_field.set_earth_typed(&earth, 40.0, 10.0);
+        (c.label(), rows, earth)
+    };
+    harness.run();
+    // The phases' sum, said beside them; the choice explained.
+    let (net, _) = crate::magnetic_field::net_current(&rows);
+    harness.get_by_label_contains(&format!("net current {net:.1} A"));
+    assert_eq!(crate::magnetic_field::PER_PHASE_LABEL, "per phase");
+    for said in [
+        "1/d",
+        "not on the safe side far from the line",
+        "No effect on the time",
+    ] {
+        assert!(
+            crate::magnetic_field::PER_PHASE_HELP.contains(said),
+            "{said}"
+        );
+    }
+    assert!(crate::magnetic_field::EARTH_TYPED_HELP.contains("instead of a computed one"));
+    harness.get_by_label_contains("Earth wire currents typed (1 of ");
+    assert!(
+        !run_in(&harness, "Magnetic field")
+            .accesskit_node()
+            .is_disabled(),
+        "a circuit per phase carries current"
+    );
+    run_in(&harness, "Magnetic field").click();
+    let wait = |harness: &mut Harness<'_, App>| -> Vec<String> {
+        let started = std::time::Instant::now();
+        loop {
+            harness.step();
+            let r = harness.state_mut().ready().unwrap();
+            if !r.magnetic_field.job.running()
+                && let Some(res) = &r.magnetic_field.job.result
+            {
+                let a = res.as_ref().expect("a field");
+                assert!(a.field.profiles.iter().all(|p| p.max_ut > 0.0));
+                return a.field.notes.clone();
+            }
+            assert!(started.elapsed().as_secs() < 60, "no field in 60 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+    let notes = wait(&mut harness);
+    assert!(
+        notes.iter().any(|n| n
+            .starts_with(&format!("circuit {label}: currents per phase as given"))
+            && n.contains("the net current")),
+        "{notes:?}"
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with(&format!("earth wire {earth}: its current as typed, 40.0 A"))),
+        "{notes:?}"
+    );
+    assert!(!notes.iter().any(|n| n == BALANCED_NOTE), "{notes:?}");
+    // Kept in the project (written when the run started), read back by a
+    // window opened anew.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let mut fresh = crate::magnetic_field::MagneticFieldWindow::default();
+        fresh.keep(&mut r.model, &egui::Context::default());
+        assert_eq!(fresh.phases(&label), Some(&rows));
+        assert_eq!(fresh.earth_typed(&earth), Some((40.0, 10.0)));
+    }
+    // The same circuit balanced: said not to hold a net current.
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.magnetic_field.clear_phases(&label);
+        r.magnetic_field.set_current(&label, 500.0);
+        assert_eq!(r.magnetic_field.phases(&label), None);
+    }
+    harness.run();
+    assert!(harness.query_by_label_contains("net current ").is_none());
+    let ctx = harness.ctx.clone();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        r.magnetic_field.start(&r.model, &ctx);
+    }
+    harness.step();
+    let notes = wait(&mut harness);
+    assert!(notes.iter().any(|n| n == BALANCED_NOTE), "{notes:?}");
+    assert!(BALANCED_NOTE.starts_with("NOT ON THE SAFE SIDE far from the line"));
+}
+
 /// Checks › Electrical › Electric field…: Run is greyed while every
 /// circuit is voltage-free; then a profile per span with the charges per
 /// wire; the line edited, the results are out of date.

@@ -1045,3 +1045,336 @@ fn currents_at_the_end_points() {
     assert!(at(vec![end("T2", Some(1000.0))]).is_err());
     assert!(at(vec![end("T1", None), end("T3", None)]).is_err());
 }
+
+/// A circuit's phases as typed: `amps` at `angles` (degrees), L1 to L3.
+fn per_phase(circuit: &str, amps: [f64; 3], angles: [f64; 3]) -> Vec<magnetic::PhaseCurrent> {
+    ["L1", "L2", "L3"]
+        .iter()
+        .zip(amps.iter().zip(angles))
+        .map(|(phase, (a, angle_deg))| magnetic::PhaseCurrent {
+            circuit: circuit.into(),
+            phase: (*phase).into(),
+            amps: *a,
+            angle_deg,
+        })
+        .collect()
+}
+
+/// A current per wire (owner, 2026-11-11). The phases typed at the
+/// balanced values give the balanced field; three equal in-phase currents
+/// (a pure net current of 3 × 100 A) give, far from the line, the field
+/// of one conductor carrying their sum, μ0 I / (2π d) = 0.12 µT at 500 m
+/// — falling as 1/d, where the balanced circuit's falls as 1/d². Balanced
+/// input says that it holds no net current (not on the safe side far from
+/// the line); input per phase names its net current instead.
+#[test]
+fn currents_per_phase_and_the_net_current() {
+    let (line, library) = example();
+    let far = Settings {
+        model: Model::TwoD,
+        stations: vec![mid("T1", "T2")],
+        width: 500.0,
+        step: 250.0,
+        ..Settings::default()
+    };
+    let balanced = field(
+        &line,
+        &library,
+        &Settings {
+            currents: vec![CircuitCurrent {
+                circuit: "North".into(),
+                amps: 1000.0,
+                reverse: false,
+            }],
+            ..far.clone()
+        },
+    );
+    assert!(
+        balanced.notes.iter().any(|n| n == magnetic::BALANCED_NOTE),
+        "{:?}",
+        balanced.notes
+    );
+    assert!(magnetic::BALANCED_NOTE.starts_with("NOT ON THE SAFE SIDE far from the line: "));
+    // The same currents typed per phase: the same field, to rounding.
+    let typed = field(
+        &line,
+        &library,
+        &Settings {
+            phase_currents: per_phase("North", [1000.0; 3], [0.0, -120.0, 120.0]),
+            ..far.clone()
+        },
+    );
+    for (a, b) in balanced.profiles[0]
+        .points
+        .iter()
+        .zip(&typed.profiles[0].points)
+    {
+        assert!(
+            (a.b_ut - b.b_ut).abs() <= 1e-9 * a.b_ut.max(1e-12),
+            "{a:?} {b:?}"
+        );
+    }
+    // Every current typed per phase: nothing balanced is assumed.
+    assert!(!typed.notes.iter().any(|n| n == magnetic::BALANCED_NOTE));
+    let said = typed
+        .notes
+        .iter()
+        .find(|n| n.starts_with("circuit North: currents per phase as given"))
+        .expect("the phases and their sum are said");
+    assert!(said.contains("L2 1000.0 A at -120.0°"), "{said}");
+    assert!(said.contains("the net current, 0.0 A"), "{said}");
+    assert_eq!(typed.currents[0].source, magnetic::PER_PHASE_SOURCE);
+    assert_eq!(typed.currents[0].amps, 1000.0);
+    // The balanced circuit far away: as 1/d² (a quarter at twice the
+    // distance, within the wires' spread over the distance).
+    let p = &balanced.profiles[0];
+    let ratio = at(p, 500.0) / at(p, 250.0);
+    assert!((ratio - 0.25).abs() < 0.03, "{ratio}");
+    // A pure net current, 3 × 100 A in phase: as 1/d, and the size of one
+    // conductor's field at the sum — by hand μ0 · 300 A / (2π · 500 m)
+    // = 2e-7 · 300 / 500 T = 0.12 µT (the mean of both sides: the
+    // circuit hangs 5 m beside the axis).
+    let net = field(
+        &line,
+        &library,
+        &Settings {
+            phase_currents: per_phase("North", [100.0; 3], [0.0; 3]),
+            ..far.clone()
+        },
+    );
+    let p = &net.profiles[0];
+    let mean = 0.5 * (at(p, 500.0) + at(p, -500.0));
+    assert!((mean / 0.12 - 1.0).abs() < 0.005, "{mean}");
+    let ratio = at(p, 500.0) / at(p, 250.0);
+    assert!((ratio - 0.5).abs() < 0.01, "{ratio}");
+    assert!(
+        net.notes
+            .iter()
+            .any(|n| n.contains("the net current, 300.0 A at 0.0°")),
+        "{:?}",
+        net.notes
+    );
+    // An unbalance of 5 % in one phase leaves 50 A: at 500 m more than the
+    // whole balanced 1000 A gives there.
+    let unbalanced = field(
+        &line,
+        &library,
+        &Settings {
+            phase_currents: per_phase("North", [1050.0, 1000.0, 1000.0], [0.0, -120.0, 120.0]),
+            ..far.clone()
+        },
+    );
+    assert!(
+        unbalanced
+            .notes
+            .iter()
+            .any(|n| n.contains("the net current, 50.0 A at 0.0°")),
+        "{:?}",
+        unbalanced.notes
+    );
+    let (b, u) = (&balanced.profiles[0], &unbalanced.profiles[0]);
+    assert!(
+        at(u, 500.0) > 2.0 * at(b, 500.0),
+        "{} {}",
+        at(u, 500.0),
+        at(b, 500.0)
+    );
+    // One circuit per phase, the other balanced: the note stays for it.
+    let mixed = field(
+        &line,
+        &library,
+        &Settings {
+            currents: vec![CircuitCurrent {
+                circuit: "South".into(),
+                amps: 500.0,
+                reverse: false,
+            }],
+            phase_currents: per_phase("North", [1000.0; 3], [0.0, -120.0, 120.0]),
+            ..far.clone()
+        },
+    );
+    assert!(mixed.notes.iter().any(|n| n == magnetic::BALANCED_NOTE));
+    // Refused: a phase missing, a phase the system has not, per phase
+    // with end points.
+    let refused = |s: Settings| {
+        let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+        let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let src = Sources {
+            line: &line,
+            library: &library,
+            shapes: &shapes,
+            temperature: Temperature::from_celsius(40.0),
+            ground: None,
+            jumpers: &[],
+        };
+        magnetic::run(&src, &s, None).unwrap_err()
+    };
+    let mut two = per_phase("North", [1000.0; 3], [0.0, -120.0, 120.0]);
+    two.pop();
+    let e = refused(Settings {
+        phase_currents: two,
+        ..far.clone()
+    });
+    assert!(e.contains("need every phase") && e.contains("L3"), "{e}");
+    let mut wrong = per_phase("North", [1000.0; 3], [0.0, -120.0, 120.0]);
+    wrong[1].phase = "L9".into();
+    let e = refused(Settings {
+        phase_currents: wrong,
+        ..far.clone()
+    });
+    assert!(e.contains("no phase L9"), "{e}");
+    let e = refused(Settings {
+        phase_currents: per_phase("North", [1000.0; 3], [0.0, -120.0, 120.0]),
+        ends: vec![magnetic::EndCurrent {
+            circuit: "North".into(),
+            structure: "T1".into(),
+            amps: Some(1000.0),
+        }],
+        ..far
+    });
+    assert!(e.contains("give one of the two"), "{e}");
+}
+
+/// An earth wire's current typed instead of computed (owner,
+/// 2026-11-11): typed at the value the phases induce, the field is the
+/// induced one's; it is carried with the earth wire currents off, in
+/// every span; alone (no phase current) it is one conductor's field, as
+/// 1/d; it is not taken together with the structures' network, nor for a
+/// phase conductor.
+#[test]
+fn an_earth_wire_current_typed() {
+    let (line, library) = example();
+    let base = Settings {
+        model: Model::TwoD,
+        currents: vec![CircuitCurrent {
+            circuit: "North".into(),
+            amps: 1000.0,
+            reverse: false,
+        }],
+        stations: vec![mid("T1", "T2")],
+        width: 500.0,
+        step: 250.0,
+        ..Settings::default()
+    };
+    let induced = field(
+        &line,
+        &library,
+        &Settings {
+            earth_wires: true,
+            ..base.clone()
+        },
+    );
+    let row = induced
+        .earth_wires
+        .iter()
+        .find(|e| e.from == "T1" && e.to == "T2")
+        .unwrap();
+    let typed = |amps: f64, angle_deg: f64| magnetic::EarthCurrent {
+        section: "EW".into(),
+        amps,
+        angle_deg,
+        frequency_hz: None,
+    };
+    // Typed at the induced value, the induced currents off: the same field.
+    let same = field(
+        &line,
+        &library,
+        &Settings {
+            earth_currents: vec![typed(row.amps, row.angle_deg)],
+            ..base.clone()
+        },
+    );
+    for (a, b) in induced.profiles[0]
+        .points
+        .iter()
+        .zip(&same.profiles[0].points)
+    {
+        assert!(
+            (a.b_ut - b.b_ut).abs() <= 1e-9 * a.b_ut.max(1e-12),
+            "{a:?} {b:?}"
+        );
+    }
+    // In every span of its section, as typed.
+    assert_eq!(same.earth_wires.len(), 2);
+    for e in &same.earth_wires {
+        assert!((e.amps - row.amps).abs() < 1e-9 && e.frequency_hz == 50.0);
+    }
+    assert!(
+        same.notes
+            .iter()
+            .any(|n| n.starts_with("earth wire EW: its current as typed, ")),
+        "{:?}",
+        same.notes
+    );
+    // Another value: another field (it is the typed one that counts, also
+    // with the induced currents on).
+    let other = field(
+        &line,
+        &library,
+        &Settings {
+            earth_wires: true,
+            earth_currents: vec![typed(3.0 * row.amps, row.angle_deg)],
+            ..base.clone()
+        },
+    );
+    assert!((other.earth_wires[0].amps - 3.0 * row.amps).abs() < 1e-9);
+    assert!(at(&other.profiles[0], 500.0) != at(&induced.profiles[0], 500.0));
+    // Alone, 60 A: one conductor's field far away, μ0 · 60 A / (2π · 500 m)
+    // = 2e-7 · 60 / 500 T = 0.024 µT (the earth wire on the axis), as 1/d.
+    let alone = field(
+        &line,
+        &library,
+        &Settings {
+            currents: Vec::new(),
+            phase_currents: Vec::new(),
+            earth_currents: vec![typed(60.0, 0.0)],
+            ..base.clone()
+        },
+    );
+    let p = &alone.profiles[0];
+    assert!(
+        (at(p, 500.0) / 0.024 - 1.0).abs() < 0.005,
+        "{}",
+        at(p, 500.0)
+    );
+    assert!((at(p, 500.0) / at(p, 250.0) - 0.5).abs() < 0.005);
+    // Refused with the structures' network, and for a phase conductor.
+    let refused = |s: Settings| {
+        let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
+        let shapes: Vec<_> = ohl_line::solve::solve_line(&line, &library, &case)
+            .into_iter()
+            .map(Result::unwrap)
+            .collect();
+        let src = Sources {
+            line: &line,
+            library: &library,
+            shapes: &shapes,
+            temperature: Temperature::from_celsius(40.0),
+            ground: None,
+            jumpers: &[],
+        };
+        magnetic::run(&src, &s, None).unwrap_err()
+    };
+    let e = refused(Settings {
+        model: Model::ThreeD,
+        earth_wires: true,
+        towers: true,
+        earth_currents: vec![typed(60.0, 0.0)],
+        ..base.clone()
+    });
+    assert!(
+        e.contains("the network computes every earth wire's current"),
+        "{e}"
+    );
+    let e = refused(Settings {
+        earth_currents: vec![magnetic::EarthCurrent {
+            section: "NL1".into(),
+            ..typed(60.0, 0.0)
+        }],
+        ..base
+    });
+    assert!(e.contains("is a phase conductor"), "{e}");
+}
