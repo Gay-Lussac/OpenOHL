@@ -121,6 +121,12 @@ struct Planned {
 pub struct PlatePlans {
     /// The capacity method.
     pub method: CapacityMethod,
+    /// The structure's member check is this plugin's method: the joints
+    /// are checked by its `joint-check` export ([`plate_usage_cases`]),
+    /// never by `method`.
+    pub plugin: Option<ohl_structures_fe::model::PluginMethod>,
+    /// The structure's name (for the plugin).
+    structure: String,
     parts: Vec<Planned>,
     /// What applies to every case.
     pub notes: Vec<String>,
@@ -169,6 +175,8 @@ pub fn plate_plans(
     };
     let mut out = PlatePlans {
         method: model.analysis.capacity,
+        plugin: model.capacity_plugin.clone(),
+        structure: model.name.clone(),
         ..PlatePlans::default()
     };
     if out.method == CapacityMethod::Simple {
@@ -526,13 +534,7 @@ fn bolt_group(
     // through the bolts when narrower.
     let edge_min = idx
         .and_then(|k| {
-            ohl_structures_fe::bolt_rules::rules_in(
-                model,
-                k,
-                a.end,
-                None,
-                Some((steel.thickness, steel.fu)),
-            )
+            crate::member_view::rules_in(model, k, a.end, None, Some((steel.thickness, steel.fu)))
         })
         .map(|r| r.edge);
     let own = a
@@ -690,6 +692,158 @@ pub fn plate_usage(
                     .collect(),
                 notes: x.notes.iter().chain(&checked.notes).cloned().collect(),
             }
+        })
+        .collect()
+}
+
+/// One load case for [`plate_usage_cases`]: its name, its strength
+/// factor, each member's axial force (N, tension positive).
+pub type PlateCase<'a> = (&'a str, f64, &'a BTreeMap<String, f64>);
+
+/// The plate checks of every case of `cases`, one list per case: the
+/// capacity method's own ([`plate_usage`]), or — the structure's member
+/// check a plugin's method — that plugin's joint check, **one call with
+/// every part and case** (`ohl_member_check::joints::check_joints`). A
+/// plugin without a joint check, or that fails: every part is "NOT
+/// CHECKED by <plugin>, NOT ON THE SAFE SIDE", without a usage — never
+/// ASCE 10-97 in its place; so is a part or a load case it returns
+/// nothing for. What it flags as not safe is said with the part.
+pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<PlateUsage>> {
+    use ohl_member_check::joints as by_plugin;
+    let Some(p) = &plans.plugin else {
+        return cases.iter().map(|c| plate_usage(plans, c.2, c.1)).collect();
+    };
+    let force = |x: &Planned, axial: &BTreeMap<String, f64>| match &x.plan {
+        Plan::Bolted { member, share, .. } => axial.get(member).copied().unwrap_or(0.0) * share,
+        Plan::Unplaced { member } => axial.get(member).copied().unwrap_or(0.0),
+        Plan::NoSeam { .. } => 0.0,
+        Plan::Weld { sides, ring, .. } => weld_force(sides, *ring, axial),
+    };
+    let sent: Vec<by_plugin::Part> = plans
+        .parts
+        .iter()
+        .enumerate()
+        .filter_map(|(k, x)| {
+            let (kind, other, bolts, steel, weld) = match &x.plan {
+                Plan::Bolted {
+                    member,
+                    group,
+                    steel,
+                    ..
+                } => (
+                    "bolts",
+                    member,
+                    Some(by_plugin::bolt_group(group)),
+                    Some(by_plugin::plate_steel(steel)),
+                    None,
+                ),
+                Plan::Weld { with, input, .. } => {
+                    ("weld", with, None, None, Some(by_plugin::weld(input)))
+                }
+                Plan::NoSeam { .. } | Plan::Unplaced { .. } => return None,
+            };
+            Some(by_plugin::Part {
+                id: k as u32,
+                joint: x.joint.clone(),
+                plate: x.plate.clone(),
+                kind: kind.to_owned(),
+                other: other.clone(),
+                bolts,
+                steel,
+                weld,
+                forces: cases.iter().map(|c| force(x, c.2)).collect(),
+                notes: x.notes.clone(),
+            })
+        })
+        .collect();
+    let checked = if sent.is_empty() {
+        by_plugin::JointsChecked::Results(Vec::new())
+    } else {
+        by_plugin::check_joints(
+            p,
+            &by_plugin::JointInput {
+                structure: plans.structure.clone(),
+                cases: cases
+                    .iter()
+                    .map(|c| by_plugin::LoadCase {
+                        name: c.0.to_owned(),
+                        strength: c.1,
+                    })
+                    .collect(),
+                parts: sent,
+            },
+        )
+    };
+    let not_checked = by_plugin::not_checked_by(p);
+    cases
+        .iter()
+        .enumerate()
+        .map(|(n, c)| {
+            plans
+                .parts
+                .iter()
+                .enumerate()
+                .map(|(k, x)| {
+                    let part = match &x.plan {
+                        Plan::Bolted { member, .. } | Plan::Unplaced { member } => {
+                            PlatePart::Member(member.clone())
+                        }
+                        Plan::Weld { with, .. } | Plan::NoSeam { with } => {
+                            PlatePart::Weld(with.clone())
+                        }
+                    };
+                    let mut row = PlateUsage {
+                        joint: x.joint.clone(),
+                        plate: x.plate.clone(),
+                        part,
+                        force: force(x, c.2),
+                        usage: None,
+                        governs: String::new(),
+                        checks: Vec::new(),
+                        notes: x.notes.clone(),
+                    };
+                    if matches!(x.plan, Plan::NoSeam { .. } | Plan::Unplaced { .. }) {
+                        // Nothing to send: not checked, as the core says it.
+                        row.governs = x
+                            .notes
+                            .last()
+                            .cloned()
+                            .unwrap_or_else(|| "not checked".into());
+                        return row;
+                    }
+                    let results = match &checked {
+                        by_plugin::JointsChecked::NotChecked(why) => {
+                            row.governs = format!("{not_checked}: {why}");
+                            return row;
+                        }
+                        by_plugin::JointsChecked::Results(r) => r,
+                    };
+                    let Some(r) = results.iter().find(|r| r.id as usize == k) else {
+                        row.governs =
+                            format!("{not_checked}: the plugin returned nothing for this part");
+                        return row;
+                    };
+                    row.notes.extend(r.notes.iter().cloned());
+                    let Some(u) = r.usages.iter().find(|u| u.load_case as usize == n) else {
+                        row.governs = format!(
+                            "{not_checked}: the plugin returned no usage for this load case"
+                        );
+                        return row;
+                    };
+                    row.usage = Some(u.usage);
+                    row.governs = if u.check.is_empty() {
+                        r.governs.clone()
+                    } else {
+                        u.check.clone()
+                    };
+                    row.checks = vec![(row.governs.clone(), u.usage)];
+                    if let Some(w) = &r.not_safe {
+                        row.governs
+                            .push_str(&format!(" {} {w}]", ohl_structures_fe::check::NOT_SAFE));
+                    }
+                    row
+                })
+                .collect()
         })
         .collect()
 }

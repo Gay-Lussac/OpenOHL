@@ -215,6 +215,42 @@ pub mod member_check {
 /// Export name of the optional `member-check` interface of any plugin.
 pub const MEMBER_CHECK_EXPORT: &str = "ohl:plugin/member-check@0.1.0";
 
+mod joint_check_bindings {
+    wasmtime::component::bindgen!({
+        world: "joint-check-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `joint-check` interface (2026-11-11): the plates',
+/// covers', welds' and bolt groups' checks of a structure by a plugin.
+pub mod joint_check {
+    pub use super::joint_check_bindings::exports::ohl::plugin::joint_check::{
+        BoltGroup, CaseUsage, JointInput, LoadCase, Part, PartResult, PlateSteel, Weld,
+    };
+}
+
+/// Export name of the optional `joint-check` interface of any plugin.
+pub const JOINT_CHECK_EXPORT: &str = "ohl:plugin/joint-check@0.1.0";
+
+mod bolt_distances_bindings {
+    wasmtime::component::bindgen!({
+        world: "bolt-distances-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `bolt-distances` interface (2026-11-11): a
+/// plugin's minimum bolt distances for the bolt tools.
+pub mod bolt_distances {
+    pub use super::bolt_distances_bindings::exports::ohl::plugin::bolt_distances::{
+        DistanceInput, Distances,
+    };
+}
+
+/// Export name of the optional `bolt-distances` interface of any plugin.
+pub const BOLT_DISTANCES_EXPORT: &str = "ohl:plugin/bolt-distances@0.1.0";
+
 /// Extension point of plugins checking the members of structures by a
 /// design method (the `member-check` export, 2026-11-11).
 pub const MEMBER_CHECK: &str = "member-check";
@@ -2020,6 +2056,125 @@ impl WasmHost {
             }
         }
         Ok(given)
+    }
+
+    /// The plugin in `dir` prepared and instantiated when it has the
+    /// optional export `export` (none: not a WebAssembly plugin, not
+    /// built, or built without it).
+    fn optional_export(
+        &self,
+        dir: &Path,
+        export: &str,
+    ) -> Result<Option<(Prepared, wasmtime::component::Instance)>, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(None);
+        }
+        let mut p = self.prepare(dir, None)?;
+        if p.component.get_export_index(None, export).is_none() {
+            return Ok(None);
+        }
+        let instance = self
+            .linker
+            .instantiate(&mut p.store, &p.component)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        Ok(Some((p, instance)))
+    }
+
+    /// The joint parts of `input` checked by method `method` of the
+    /// plugin in `dir` (its `joint-check` export), every part and load
+    /// case in this one call. None: the plugin has no such export — for
+    /// the caller to report every part as not checked, never as passing.
+    /// Errors, each naming the plugin: its own error, a result for a part
+    /// or a load case that was not sent or sent twice, a usage that is
+    /// not a number or negative.
+    pub fn check_joints(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check::JointInput,
+    ) -> Result<Option<Vec<joint_check::PartResult>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_EXPORT)? else {
+            return Ok(None);
+        };
+        let export = joint_check_bindings::JointCheckExport::new(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_joint_check()
+            .call_check_joints(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "joint-check", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+        let sent: std::collections::HashSet<u32> = input.parts.iter().map(|x| x.id).collect();
+        let mut seen = std::collections::HashSet::new();
+        for r in &given {
+            if !sent.contains(&r.id) || !seen.insert(r.id) {
+                return Err(bad(format!(
+                    "a result for joint part {} (not sent, or given twice)",
+                    r.id
+                )));
+            }
+            let mut cases = std::collections::HashSet::new();
+            for u in &r.usages {
+                if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
+                    return Err(bad(format!(
+                        "joint part {}: a usage for load case {} (not sent, or given twice)",
+                        r.id, u.load_case
+                    )));
+                }
+                if !(u.usage.is_finite() && u.usage >= 0.0) {
+                    return Err(bad(format!(
+                        "joint part {}: a usage that is not a number or is negative",
+                        r.id
+                    )));
+                }
+            }
+        }
+        Ok(Some(given))
+    }
+
+    /// The minimum bolt distances by method `method` of the plugin in
+    /// `dir` (its `bolt-distances` export). None: the plugin has no such
+    /// export; `Some(None)`: the method gives none for this bolt. Errors
+    /// name the plugin: its own error, a distance that is not a positive
+    /// number, clauses that are not three.
+    pub fn minimum_distances(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &bolt_distances::DistanceInput,
+    ) -> Result<Option<Option<bolt_distances::Distances>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, BOLT_DISTANCES_EXPORT)? else {
+            return Ok(None);
+        };
+        let export = bolt_distances_bindings::BoltDistancesExport::new(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_bolt_distances()
+            .call_minimum_distances(&mut p.store, method, *input)
+            .map_err(|e| classify(e, &p.manifest, "bolt-distances", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        if let Some(d) = &given {
+            let positive = |x: f64| x.is_finite() && x > 0.0;
+            if !(positive(d.end) && positive(d.spacing) && positive(d.edge))
+                || d.hole.is_some_and(|h| !positive(h))
+            {
+                return Err(PluginError::Runtime(format!(
+                    "plugin {name}: a minimum distance that is not a positive number"
+                )));
+            }
+            if d.clauses.len() != 3 {
+                return Err(PluginError::Runtime(format!(
+                    "plugin {name}: the clauses of the minimum distances are not three (end, \
+                     spacing, edge)"
+                )));
+            }
+        }
+        Ok(Some(given))
     }
 
     /// The member-capacity methods of the plugin in `dir`, from its

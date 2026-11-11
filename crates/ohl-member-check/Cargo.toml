@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 ohl-plugins.workspace = true
 ohl-sections.workspace = true
+ohl-structures.workspace = true
 ohl-structures-fe.workspace = true
 
 [lints]

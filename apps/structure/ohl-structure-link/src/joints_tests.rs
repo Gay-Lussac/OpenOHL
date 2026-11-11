@@ -205,7 +205,7 @@ fn a_plate_keeps_the_codes_distances_from_its_bolts() {
     let p = &n2.plates[0];
     let r = crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None)
         .expect("the code's rules");
-    assert!(p.edges[0].contains(r.code), "{:?}", p.edges);
+    assert!(p.edges[0].contains(&r.code), "{:?}", p.edges);
     assert!(p.notes.is_empty(), "{:?}", p.notes);
     assert!(matches!(p.leg.as_deref(), Some("L1" | "L2")));
     let least = r.edge.min(r.end);

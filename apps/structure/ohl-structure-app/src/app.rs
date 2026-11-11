@@ -297,6 +297,9 @@ impl StructureApp {
                     2 => Area::Body,
                     _ => Area::Design,
                 };
+                // Where this structure's plugins are looked for
+                // (`Plugins/` beside it), remembered for the joint tools.
+                ohl_structure_link::plugin_check::roots(path.parent());
                 self.file = Some(f);
                 self.open_error = None;
                 self.selected.clear();

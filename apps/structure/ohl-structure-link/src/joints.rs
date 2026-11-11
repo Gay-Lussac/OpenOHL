@@ -757,7 +757,7 @@ pub fn joint_details(
         let rules_in = |a: &Arrival, part: Option<(f64, Option<f64>)>| {
             let m = model.as_ref()?;
             let idx = m.members.iter().position(|x| x.id == a.member)?;
-            ohl_structures_fe::bolt_rules::rules_in(m, idx, a.end, None, part)
+            crate::member_view::rules_in(m, idx, a.end, None, part)
         };
         for a in &mut arrivals {
             let c = t.connection(&a.member, &n.id);

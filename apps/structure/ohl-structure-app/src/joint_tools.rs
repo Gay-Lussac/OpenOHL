@@ -288,6 +288,10 @@ pub struct JointTools {
     /// The design code's bolt rules per member end, and the state they
     /// were worked out for (the file, the libraries, the analysis).
     rules: std::collections::HashMap<(String, String), (u64, Option<BoltRules>)>,
+    /// Why there are no bolt rules when the structure's method is a
+    /// plugin's that gives no minimum distances, and the file's revision
+    /// it was asked for.
+    no_rules: Option<(u64, Option<String>)>,
     /// The Continuous members window: (joint, member, the other, one part
     /// now, ticked).
     pub continuous: Option<Vec<ContinuousRow>>,
@@ -311,6 +315,23 @@ impl StructureApp {
             .filter_map(|r| r.members.iter().find(|m| m.id == member))
             .map(|m| m.axial.abs())
             .reduce(f64::max)
+    }
+
+    /// "no minimum distances from <plugin>: …" when the structure's
+    /// member check is a plugin's method and that plugin gives none (the
+    /// bolt tools then say so, and never show another code's); asked
+    /// again when the file changes.
+    pub(crate) fn no_bolt_rules(&mut self) -> Option<String> {
+        let f = self.file.as_ref()?;
+        let rev = f.revision();
+        match &self.joint_tools.no_rules {
+            Some((r, why)) if *r == rev => why.clone(),
+            _ => {
+                let why = ohl_structure_link::no_bolt_rules(f.text_ref());
+                self.joint_tools.no_rules = Some((rev, why.clone()));
+                why
+            }
+        }
     }
 
     /// The design code's bolt rules of the member ends `ends` (member,
@@ -960,6 +981,11 @@ impl StructureApp {
         let rules = self
             .bolt_rules_of(&[(e.member.clone(), e.joint.clone())])
             .remove(&(e.member.clone(), e.joint.clone()));
+        let no_rules = if rules.is_none() {
+            self.no_bolt_rules()
+        } else {
+            None
+        };
         let mut open = true;
         let mut apply = false;
         ui.group(|ui| {
@@ -1120,6 +1146,15 @@ impl StructureApp {
             // The design code's minimums, and what of the layout breaks
             // them (the bolts laid out as the joints lay them: every second
             // line staggered by half a pitch; from the steel's end).
+            if let Some(why) = &no_rules {
+                crate::app::error_label(
+                    ui,
+                    format!(
+                        "{why} \u{2014} the layout is not checked against minimum distances \
+                         (NOT ON THE SAFE SIDE)"
+                    ),
+                );
+            }
             if let Some(r) = &rules {
                 ui.label(egui::RichText::new(r.words()).small());
                 let lines = l.gauges.len().max(1) as u32;

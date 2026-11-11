@@ -253,6 +253,17 @@ impl StructureApp {
             let t = f.structure();
             !t.connections.is_empty() && !t.joint_details_taken()
         });
+        // A plugin's method: its resistance comes with a run, and no
+        // other code's is shown in its place.
+        if let Err(e) = c.as_ref()
+            && e.starts_with(ohl_structure_link::RESISTANCE_FROM_PLUGIN)
+        {
+            ui.group(|ui| {
+                ui.strong("Resistance");
+                ui.label(e);
+            });
+            return;
+        }
         ui.group(|ui| {
             ui.strong("Resistance (ASCE 10-97, worked out live)");
             if simple {

@@ -265,6 +265,21 @@ impl StructureRun {
                 failed: Vec::new(),
             };
             for c in &self.cases {
+                // Parts a plugin did not check: the check did not run
+                // for them — never a pass.
+                if let Some(Ok(r)) = &c.fe {
+                    let bare: Vec<&crate::PlateUsage> = r
+                        .plates
+                        .iter()
+                        .filter(|p| p.usage.is_none() && p.governs.starts_with("NOT CHECKED by"))
+                        .collect();
+                    if let Some(first) = bare.first() {
+                        s.failed.push((
+                            c.name.clone(),
+                            format!("{} part(s) {}", bare.len(), first.governs),
+                        ));
+                    }
+                }
                 if let Some(Ok(r)) = &c.fe
                     && let Some(g) = r.governing_plate()
                     && let Some(u) = g.usage
@@ -844,7 +859,12 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             };
             analyse_one(m, input.table, c, &extra, budget).map(|(mut r, solution)| {
                 r.notes.extend(notes);
-                if let Some(p) = plans.as_ref().filter(|p| !p.is_empty()) {
+                // A plugin's joint check: one call with every case, once
+                // they are all solved (below).
+                if let Some(p) = plans
+                    .as_ref()
+                    .filter(|p| !p.is_empty() && p.plugin.is_none())
+                {
                     let axial = r.members.iter().map(|m| (m.id.clone(), m.axial)).collect();
                     r.plates = crate::plate_usage(p, &axial, c.strength);
                 }
@@ -876,6 +896,42 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         }
         None => fes.into_iter().map(|_| None).collect(),
     };
+    // The joints of a structure a plugin checks: its joint check, one
+    // call with every solved case — or every part NOT CHECKED, said.
+    let mut fes = fes;
+    if let Some(p) = plans
+        .as_ref()
+        .filter(|p| !p.is_empty() && p.plugin.is_some())
+    {
+        let solved: Vec<(usize, std::collections::BTreeMap<String, f64>)> = fes
+            .iter()
+            .enumerate()
+            .filter_map(|(k, r)| {
+                let r = r.as_ref()?.as_ref().ok()?;
+                Some((
+                    k,
+                    r.members.iter().map(|m| (m.id.clone(), m.axial)).collect(),
+                ))
+            })
+            .collect();
+        let list: Vec<crate::plate_checks::PlateCase> = solved
+            .iter()
+            .map(|(k, axial)| (cases[*k].name.as_str(), cases[*k].strength, axial))
+            .collect();
+        let rows = crate::plate_checks::plate_usage_cases(p, &list);
+        if let Some(bare) = rows
+            .iter()
+            .flatten()
+            .find(|r| r.usage.is_none() && r.governs.starts_with("NOT CHECKED by"))
+        {
+            run.notes.push(format!("plates: {}", bare.governs));
+        }
+        for ((k, _), rows) in solved.iter().zip(rows) {
+            if let Some(Some(Ok(r))) = fes.get_mut(*k) {
+                r.plates = rows;
+            }
+        }
+    }
     run.cases.extend(
         names
             .into_iter()

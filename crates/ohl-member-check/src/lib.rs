@@ -40,6 +40,8 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod joints;
+
 use ohl_plugins::member_check as wit;
 use ohl_sections::Shape;
 use ohl_structures_fe::check::MemberUsage;
@@ -59,10 +61,34 @@ pub fn roots(dir: Option<&Path>) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if let Some(d) = dir {
         out.push(d.join(BESIDE));
+        // Remembered for the session ([`session_roots`]).
+        let mut seen = SEEN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !seen.iter().any(|s| s == d) {
+            seen.push(d.to_path_buf());
+        }
     }
     if let Some(s) = ohl_plugins::settings::shared_storage_dir() {
         out.push(ohl_plugins::settings::user_dir(&s));
     }
+    out
+}
+
+static SEEN: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+/// The folders plugins are looked for when a structure's folder is not
+/// known (a model built from a file's text alone: the joint tools):
+/// `Plugins/` beside every structure opened or run in this session
+/// (the folders [`roots`] was asked for, the last first), then the
+/// user's plugin folder.
+pub fn session_roots() -> Vec<PathBuf> {
+    let seen = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let mut out: Vec<PathBuf> = seen.iter().rev().map(|d| d.join(BESIDE)).collect();
+    out.extend(roots(None));
     out
 }
 

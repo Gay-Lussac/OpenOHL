@@ -116,21 +116,38 @@ Same as for the rules in the clearances". Built, in active development
   (structure file version 12, model file version 5, written at the newer
   version only when used); in OHL-Structure the *capacities* choice lists
   the installed plugins' methods.
-- **What the move of ASCE 10-97 and SIA 263 into plugins will need**
-  (not solved now):
-  - the plates', covers', welds' and bolt-group checks
-    (`plates.rs`, `bolt_rules.rs`, the link's plate checks): they are
-    chosen by the core's capacity method and have no plugin interface;
-    with a plugin method they stay with ASCE 10-97, said;
-  - the pole checks (their own codes), not part of this interface;
-  - the bolt tools' minimum distances in the Detail view (they ask the
-    core's method, not a plugin);
-  - the live "Resistance" of Member details and the capacities shown in
-    reports (the interface returns capacities, the app shows the core's);
-  - a plugin's own settings (national parameters) and its formulas for
-    the theory pages; the validation benchmarks of the two codes running
-    against the plugins.
-
+- **What still blocks the move of ASCE 10-97 and SIA 263 into plugins**
+  (after the completion below; not solved):
+  - the two codes themselves are still core code (`asce10.rs`,
+    `sia263.rs`, the code branches of `plates.rs` and `bolt_rules.rs`):
+    writing them as plugins against the three exports is the move, not
+    started; `Analysis::capacity` and `CapacityMethod` stay until then;
+  - the interface carries less than the core's own checks read in
+    places: the bolt positions of a group are given as lines, pitch,
+    span and edge distances (not each bolt's place), a frame member's
+    end shear and moments are not in the joint parts (the core's plate
+    checks leave them out too, said), and the width of a net section is
+    OpenOHL's own choice sent with its words;
+  - Member details' live resistance and the reports show no capacities
+    of a plugin (the interface returns them —
+    `ohl_member_check::Checked::results` —, no run keeps or displays
+    them yet: the panel says "resistance: from <plugin> after a run");
+  - the joint sheets and the exports were not looked at for values of
+    the core's method shown beside a plugin's;
+  - the Detail view's bolt tools place freely when the plugin gives no
+    minimum distances; only the bolt layout form says so;
+  - each plugin call starts the plugin anew (a tower's run: two calls,
+    the bolt tools: one per different bolt and part, kept for the
+    session) — not measured on a large tower;
+  - the pole checks (their own codes): not part of these interfaces;
+  - a plugin's own settings (national parameters): not built;
+  - the plugins' formulas for the theory pages, and the validation
+    benchmarks of the two codes running against the plugins;
+  - `tools/check.sh` and the CI workflow do not build
+    `plugins/examples/member-check-example` or
+    `plugins/tests/member-check-only`: the tests through the host skip
+    there (they run where the plugins are built, and fail instead of
+    skipping with `OHL_REQUIRE_PLUGIN_TESTS`).
 - **Completed the same day** (built, in active development, not
   approved yet): the mapping moved from the link into the core crate
   `ohl-member-check` (it alone knows the finite-element results and the
@@ -142,6 +159,19 @@ Same as for the rules in the clearances". Built, in active development
   appended to the plugin's results. In the line a structure whose plugin
   is not installed fails its check with the message, and members without
   a result count as not on the safe side.
+- **Joints and minimum distances** (the same day; built, in active
+  development, not approved yet): two more optional exports beside
+  `member-check` — a function added to the released interface would
+  break the plugins built against it. `joint-check` (every planned part
+  of every joint with its force in every case, one call: a member's bolt
+  group in a plate or cover with the plate's steel, or a weld) and
+  `bolt-distances` (minimum end, spacing and edge distances from the
+  bolt and the connected part). With a plugin's method nothing of
+  another code is shown: joint rows are the plugin's or read "NOT
+  CHECKED by <plugin>, NOT ON THE SAFE SIDE", the bolt tools have the
+  plugin's distances or say "no minimum distances from <plugin>", and
+  Member details says "resistance: from <plugin> after a run". Details:
+  [plugins.md](plugins.md#member-checks).
 
 **Level 4 and the option "joint details in the calculation" (owner, 2026-11-11)**
 

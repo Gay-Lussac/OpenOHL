@@ -4193,6 +4193,7 @@ version = "0.0.2"
 dependencies = [
  "ohl-plugins",
  "ohl-sections",
+ "ohl-structures",
  "ohl-structures-fe",
 ]
 

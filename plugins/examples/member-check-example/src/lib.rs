@@ -20,6 +20,20 @@
 //! side. A member without a yield strength is not returned at all —
 //! OpenOHL then reports it as NOT CHECKED, NOT ON THE SAFE SIDE.
 //!
+//! The same method also gives, through the two optional exports beside
+//! `member-check` (both **illustrations, not a design code**, with
+//! invented round rules and no standard's numbers):
+//!
+//! - `joint-check`: a member's bolt group in a plate — the smaller of
+//!   "bolts × diameter × plate thickness × the plate's ultimate strength"
+//!   and "the width given × thickness × yield strength"; a fillet weld —
+//!   throat × length × yield strength; the usage = |force| / (that ×
+//!   the case's strength factor). A part without the strengths needed,
+//!   or a weld without a throat, is not returned (OpenOHL reports it as
+//!   NOT CHECKED);
+//! - `bolt-distances`: end 2 × diameter, spacing 4 × diameter, edge
+//!   2 × diameter — invented for the example.
+//!
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
 wit_bindgen::generate!({
@@ -27,6 +41,8 @@ wit_bindgen::generate!({
         package local:member-check-example;
         world example {
             include ohl:plugin/member-check-plugin@0.1.0;
+            export ohl:plugin/joint-check@0.1.0;
+            export ohl:plugin/bolt-distances@0.1.0;
         }
     "#,
     path: "../../../crates/ohl-plugins/wit",
@@ -152,6 +168,89 @@ impl exports::ohl::plugin::member_check::Guest for Example {
             .iter()
             .filter_map(|m| check(m, &input))
             .collect())
+    }
+}
+
+use exports::ohl::plugin::bolt_distances::{DistanceInput, Distances};
+use exports::ohl::plugin::joint_check::{
+    CaseUsage as PartUsage, JointInput, Part, PartResult,
+};
+
+/// A part's resistance by the example's invented rules, N, and what it
+/// is; none: the data it needs is not given.
+fn part_resistance(p: &Part) -> Option<(f64, String)> {
+    match p.kind.as_str() {
+        "bolts" => {
+            let (g, s) = (p.bolts.as_ref()?, p.steel.as_ref()?);
+            let holes = f64::from(g.count) * g.diameter * s.thickness * s.fu?;
+            let plate = g.width * s.thickness * s.fy?;
+            Some(if holes < plate {
+                (holes, "bolts × diameter × thickness × f_u (example)".into())
+            } else {
+                (plate, "width × thickness × f_y (example)".into())
+            })
+        }
+        "weld" => {
+            let w = p.weld.as_ref()?;
+            Some((
+                w.throat? * w.length * w.fy?,
+                "throat × length × f_y (example)".into(),
+            ))
+        }
+        _ => None,
+    }
+}
+
+impl exports::ohl::plugin::joint_check::Guest for Example {
+    fn check_joints(method: String, input: JointInput) -> Result<Vec<PartResult>, String> {
+        if method != METHOD {
+            return Err(format!("no method \"{method}\" (it gives: {METHOD})"));
+        }
+        Ok(input
+            .parts
+            .iter()
+            .filter_map(|p| {
+                let (resistance, check) = part_resistance(p)?;
+                let usages = p
+                    .forces
+                    .iter()
+                    .enumerate()
+                    .map(|(n, f)| PartUsage {
+                        load_case: n as u32,
+                        usage: f.abs() / (resistance * input.cases.get(n).map_or(1.0, |c| c.strength)),
+                        check: check.clone(),
+                    })
+                    .collect();
+                Some(PartResult {
+                    id: p.id,
+                    usages,
+                    governs: check,
+                    notes: vec![EXAMPLE.to_owned()],
+                    not_safe: Some(EXAMPLE.to_owned()),
+                })
+            })
+            .collect())
+    }
+}
+
+impl exports::ohl::plugin::bolt_distances::Guest for Example {
+    fn minimum_distances(method: String, input: DistanceInput) -> Result<Option<Distances>, String> {
+        if method != METHOD {
+            return Err(format!("no method \"{method}\" (it gives: {METHOD})"));
+        }
+        let d = input.diameter;
+        Ok(Some(Distances {
+            end: 2.0 * d,
+            spacing: 4.0 * d,
+            edge: 2.0 * d,
+            hole: None,
+            clauses: vec![
+                "example: 2 × diameter".into(),
+                "example: 4 × diameter".into(),
+                "example: 2 × diameter".into(),
+            ],
+            notes: vec![EXAMPLE.to_owned()],
+        }))
     }
 }
 

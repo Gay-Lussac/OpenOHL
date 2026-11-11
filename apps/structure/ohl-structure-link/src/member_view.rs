@@ -241,6 +241,15 @@ pub fn member_capacity(
         .iter()
         .position(|m| m.id == id)
         .ok_or_else(|| format!("no member {id} in the model"))?;
+    // A plugin's method: its capacities come with a run's results, and
+    // no other code's are shown in their place.
+    if let Some(p) = &model.capacity_plugin {
+        return Err(format!(
+            "{RESISTANCE_FROM_PLUGIN} {} after a run (method {}): the member's usage and what \
+             governs are in Results; no other code's resistance is shown in its place",
+            p.plugin, p.method
+        ));
+    }
     let c = ohl_structures_fe::asce10::capacity(&model, idx, None);
     let mut assumed = c.compression_assumed.clone();
     for a in &c.tension_assumed {
@@ -256,6 +265,53 @@ pub fn member_capacity(
         joints: c.joints,
         limit: c.limit,
     })
+}
+
+/// How [`member_capacity`]'s message starts when the structure's method
+/// is a plugin's: "resistance: from <plugin> after a run".
+pub const RESISTANCE_FROM_PLUGIN: &str = "resistance: from";
+
+/// The minimum distances of member `idx`'s end `end` in `model`
+/// (arguments as [`ohl_structures_fe::bolt_rules::rules_in`]): the
+/// capacity method's own, or — the method a plugin's — that plugin's
+/// (its `bolt-distances` export; none when it gives none: never another
+/// code's).
+pub(crate) fn rules_in(
+    model: &Model,
+    idx: usize,
+    end: usize,
+    force: Option<f64>,
+    part: Option<(f64, Option<f64>)>,
+) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
+    match ohl_member_check::joints::bolt_rules(model, idx, end, force, part) {
+        Some(by_plugin) => by_plugin.ok(),
+        None => ohl_structures_fe::bolt_rules::rules_in(model, idx, end, force, part),
+    }
+}
+
+/// Why the structure file `text` has no bolt rules of a design code: its
+/// member check is a plugin's method and that plugin gives no minimum
+/// distances ("no minimum distances from <plugin>: …"); none: the method
+/// is the core's, or the plugin gives them.
+pub fn no_bolt_rules(text: &str) -> Option<String> {
+    use ohl_structures::LibraryItem as _;
+    let t =
+        ohl_structures::StructureType::parse(std::path::Path::new("structure.ohls"), text).ok()?;
+    let name = t.analysis.as_ref()?.get("capacity")?.as_str()?;
+    let p = ohl_structures_fe::model::PluginMethod::parse(name)?.ok()?;
+    // Asked for an ordinary bolt: whether the plugin gives any at all.
+    ohl_member_check::joints::minimum_distances(
+        &p,
+        &ohl_member_check::joints::DistanceInput {
+            diameter: 0.016,
+            thickness: 0.0,
+            ultimate: None,
+            bolt_force: None,
+            sheared_edge: true,
+            redundant: false,
+        },
+    )
+    .err()
 }
 
 /// The bolt rules of member `id`'s end at joint `joint` by the design code
@@ -282,5 +338,5 @@ pub fn bolt_rules(
     } else {
         return None;
     };
-    ohl_structures_fe::bolt_rules::rules(&model, idx, end, force)
+    rules_in(&model, idx, end, force, None)
 }

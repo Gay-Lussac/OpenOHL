@@ -1672,8 +1672,11 @@ impl StructureApp {
                                  structure, or the user's plugins): it receives every checked \
                                  member with its forces in each case and gives the usage. Not \
                                  checked by OpenOHL; a member it returns nothing for is shown \
-                                 as NOT CHECKED, NOT ON THE SAFE SIDE. The plates' and bolts' \
-                                 own checks stay with ASCE 10-97."
+                                 as NOT CHECKED, NOT ON THE SAFE SIDE. The plates', covers', \
+                                 welds' and bolt groups' checks and the bolt tools' minimum \
+                                 distances are the plugin's too where it gives them; where \
+                                 it does not, they are shown as not checked by it — never \
+                                 by another code."
                             ));
                     }
                 });

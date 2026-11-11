@@ -61,8 +61,8 @@ impl Force {
 /// The code's minimums at one member end, m.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoltRules {
-    /// The code (as the results name it).
-    pub code: &'static str,
+    /// The code (as the results name it; a plugin's method: its name).
+    pub code: String,
     /// Minimum end distance, from where the steel stops to a bolt.
     pub end: f64,
     /// Minimum distance between two bolts.
@@ -70,7 +70,7 @@ pub struct BoltRules {
     /// Minimum distance from a bolt to the leg's free edge (its toe).
     pub edge: f64,
     /// The clauses, for the words: end, spacing, edge.
-    pub clauses: [&'static str; 3],
+    pub clauses: [String; 3],
     /// The force per bolt used.
     pub force: Force,
     /// The bolts' diameter, m.
@@ -130,6 +130,110 @@ pub fn rules_in(
     force: Option<f64>,
     part: Option<(f64, Option<f64>)>,
 ) -> Option<BoltRules> {
+    // A plugin's method: the core has none of its rules, and never
+    // gives another code's in their place (the runner asks the plugin).
+    if model.capacity_plugin.is_some() {
+        return None;
+    }
+    let Basis {
+        diameter,
+        thickness: t,
+        ultimate,
+        force,
+        leg,
+        root,
+        sheared,
+        redundant,
+    } = basis(model, idx, end, force, part)?;
+    match model.analysis.capacity {
+        CapacityMethod::Asce10 => {
+            let [end_min, spacing, edge] = crate::asce10::bolt_minimums(
+                diameter,
+                t,
+                ultimate.unwrap_or(0.0),
+                force.value(),
+                redundant,
+                sheared,
+            );
+            Some(BoltRules {
+                code: "ASCE 10-97".into(),
+                end: end_min,
+                spacing,
+                edge,
+                clauses: [
+                    if redundant {
+                        "4.5.1, redundant"
+                    } else {
+                        "4.5.1"
+                    },
+                    "4.5.2",
+                    if sheared {
+                        "4.5.3, Eq. 4.5-7"
+                    } else {
+                        "4.5.3, Eq. 4.5-6"
+                    },
+                ]
+                .map(str::to_owned),
+                force,
+                diameter,
+                leg,
+                root,
+                sheared,
+            })
+        }
+        // SIA 263 Table 17: minimums by bolt size, the same for any force
+        // and edge (none for a size the table does not list).
+        CapacityMethod::Sia263 => {
+            let [end_min, spacing, edge] = crate::sia263::bolt_minimums(diameter)?;
+            Some(BoltRules {
+                code: crate::sia263::TITLE.into(),
+                end: end_min,
+                spacing,
+                edge,
+                clauses: ["Table 17, e_1", "Table 17, p_1", "Table 17, e_2"].map(str::to_owned),
+                force,
+                diameter,
+                leg,
+                root,
+                sheared,
+            })
+        }
+        CapacityMethod::Simple => None,
+    }
+}
+
+/// What a code's minimum distances at a member end are worked out from:
+/// the data of the end, whatever the code ([`rules_in`]'s own, or a
+/// plugin's method through its runner).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Basis {
+    /// The bolts' diameter, m.
+    pub diameter: f64,
+    /// The connected part's thickness, m (0: not known).
+    pub thickness: f64,
+    /// The connected part's ultimate strength, Pa.
+    pub ultimate: Option<f64>,
+    /// The force per bolt.
+    pub force: Force,
+    /// The bolted leg's width and thickness, m (none: not an angle).
+    pub leg: Option<(f64, f64)>,
+    /// The leg's root radius, m.
+    pub root: f64,
+    /// The edge taken as sheared.
+    pub sheared: bool,
+    /// The member is a redundant.
+    pub redundant: bool,
+}
+
+/// The [`Basis`] of member `idx`'s end `end` (arguments as
+/// [`rules_in`]); none: the end has no bolts of known diameter.
+pub fn basis(
+    model: &Model,
+    idx: usize,
+    end: usize,
+    force: Option<f64>,
+    part: Option<(f64, Option<f64>)>,
+) -> Option<Basis> {
     let m = model.members.get(idx)?;
     let d = &m.design;
     let e = d.ends.get(end).and_then(Option::as_ref);
@@ -167,61 +271,16 @@ pub fn rules_in(
         _ => Force::Unknown,
     };
     let sheared = !e.and_then(|e| e.rolled_edge).unwrap_or(false);
-    let redundant = d.class == Some(MemberClass::Redundant);
-    match model.analysis.capacity {
-        CapacityMethod::Asce10 => {
-            let [end_min, spacing, edge] = crate::asce10::bolt_minimums(
-                diameter,
-                t,
-                part.and_then(|p| p.1).or(s.ultimate).unwrap_or(0.0),
-                force.value(),
-                redundant,
-                sheared,
-            );
-            Some(BoltRules {
-                code: "ASCE 10-97",
-                end: end_min,
-                spacing,
-                edge,
-                clauses: [
-                    if redundant {
-                        "4.5.1, redundant"
-                    } else {
-                        "4.5.1"
-                    },
-                    "4.5.2",
-                    if sheared {
-                        "4.5.3, Eq. 4.5-7"
-                    } else {
-                        "4.5.3, Eq. 4.5-6"
-                    },
-                ],
-                force,
-                diameter,
-                leg,
-                root,
-                sheared,
-            })
-        }
-        // SIA 263 Table 17: minimums by bolt size, the same for any force
-        // and edge (none for a size the table does not list).
-        CapacityMethod::Sia263 => {
-            let [end_min, spacing, edge] = crate::sia263::bolt_minimums(diameter)?;
-            Some(BoltRules {
-                code: crate::sia263::TITLE,
-                end: end_min,
-                spacing,
-                edge,
-                clauses: ["Table 17, e_1", "Table 17, p_1", "Table 17, e_2"],
-                force,
-                diameter,
-                leg,
-                root,
-                sheared,
-            })
-        }
-        CapacityMethod::Simple => None,
-    }
+    Some(Basis {
+        diameter,
+        thickness: t,
+        ultimate: part.and_then(|p| p.1).or(s.ultimate),
+        force,
+        leg,
+        root,
+        sheared,
+        redundant: d.class == Some(MemberClass::Redundant),
+    })
 }
 
 /// A bolt that breaks a rule, in words with the clause.
@@ -440,11 +499,11 @@ mod tests {
 
     fn rules() -> BoltRules {
         BoltRules {
-            code: "ASCE 10-97",
+            code: "ASCE 10-97".into(),
             end: 0.025,
             spacing: 0.05,
             edge: 0.025,
-            clauses: ["4.5.1", "4.5.2", "4.5.3"],
+            clauses: ["4.5.1", "4.5.2", "4.5.3"].map(str::to_owned),
             force: Force::Unknown,
             diameter: 0.016,
             leg: Some((0.1, 0.008)),

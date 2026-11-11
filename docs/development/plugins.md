@@ -871,7 +871,69 @@ safe side), eccentric ends — is appended to the plugin's result
 safe carries the core's mark `[not on the safe side: …]`, so it is
 counted wherever such members are.
 
-**The example.** `plugins/examples/member-check-example`, method
+**Joints and minimum distances** (2026-11-11; built, in active
+development, not approved yet). Adding a function to the released
+`member-check` interface would break the plugins built against it, so
+the joints have their own two optional exports beside it (same package,
+`code.wit`; found by their export names, a plugin without them loads as
+before; the method names are `member-check`'s):
+
+- `joint-check` — `check-joints(method, joint-input) ->
+  result<list<part-result>, string>`: **every planned part of every
+  joint in one call**, with every load case. A `part` is a member's bolt
+  group in a plate or a splice's cover (`kind = "bolts"`: `bolt-group` —
+  count, diameter, hole, bolt strength, gauge lines, bolts per line,
+  pitch, span, the distances from the bolts to the plate's edge along
+  the force in tension and in compression and across it, the width a
+  net section crosses with how it was taken — and `plate-steel`:
+  thickness, f_y, f_u) or a weld between two plates (`kind = "weld"`:
+  fillet or full penetration, throat, length, angle, the lower f_y, the
+  two thicknesses), with `forces` — one per load case: the member's
+  axial force times the share the plate takes, or the resultant the weld
+  carries — and OpenOHL's notes on its data. This is what the link's
+  plate checks hand the core's own methods (`plate_checks.rs`:
+  `BoltGroup`, `PlateSteel`, `WeldInput`). Back per part (by its
+  number): the usage per case with the check and its clause, what
+  governs, notes, what is not on the safe side.
+- `bolt-distances` — `minimum-distances(method, distance-input) ->
+  result<option<distances>, string>`: from a bolt's diameter, the
+  connected part's thickness and ultimate strength, the force per bolt,
+  a sheared or rolled edge and whether the member is a redundant, the
+  minimum end distance, spacing and edge distance with their clauses
+  (and optionally the hole's diameter).
+
+**Never another code in their place.** With a structure whose method is
+a plugin's: the plates', covers', welds' and bolt groups' rows come from
+its `joint-check` (`ohl_structure_link::plate_usage_cases`, one call per
+run); a plugin without that export, or one that fails, or a part or load
+case it returns nothing for: the row reads **"NOT CHECKED by <plugin>,
+NOT ON THE SAFE SIDE: …"** without a usage, the run's notes say it and
+the *plates* check lists the cases as not run — no silent ASCE 10-97.
+The bolt tools (Joint details, the bolt layout, the Detail view's tools)
+take their minimum distances from `bolt-distances`
+(`ohl_member_check::joints::bolt_rules`; asked once per different bolt
+and part in a session); without it there are none and the bolt layout
+says **"no minimum distances from <plugin>: …"** and that the layout is
+not checked against them. Member details' live *Resistance* reads
+**"resistance: from <plugin> after a run"** instead of another code's
+values. `ohl_structures_fe::bolt_rules::rules_in` gives none for a model
+that names a plugin (the core has none of its rules). A model built from
+a file's text alone does not know its folder: the plugin is looked for
+in `Plugins/` beside the structures opened or run in the session, then
+in the user's plugin folder (`ohl_member_check::joints::installed`).
+
+**The example.** The example plugin gives both exports with invented
+round rules (bolts × diameter × thickness × f_u or width × thickness ×
+f_y; throat × length × f_y; distances of 2, 4 and 2 diameters) —
+illustrations, not a design code, no standard's numbers.
+`plugins/tests/member-check-only` is a test plugin with the member
+check alone. Tests through the host
+(`apps/structure/ohl-structure-link/src/plate_checks_tests.rs`): the
+joint results in one call for two cases, the NOT CHECKED rows of the
+plugin without the export, the plugin's minimum distances in the bolt
+rules and a bolt pair breaking them, the resistance message.
+
+**The example of the member check.** `plugins/examples/member-check-example`, method
 `example-yield-euler`: gross yield and Euler buckling from the lengths
 given — **an illustration, not a design code**; every result says so and
 is flagged not on the safe side. Tests
