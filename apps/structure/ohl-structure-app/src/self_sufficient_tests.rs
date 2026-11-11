@@ -190,6 +190,8 @@ fn plugins_are_managed_with_shared_settings() {
     if built {
         // Turned off here: the shared file says so (the line application
         // reads it).
+        h.get_by_label("en50341").scroll_to_me();
+        h.run();
         h.get_by_label("en50341").click();
         h.run();
         let s = ohl_plugins::PluginSettings::load(&ohl_plugins::PluginSettings::path(&user))
