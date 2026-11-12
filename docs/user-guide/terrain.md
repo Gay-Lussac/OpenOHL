@@ -418,7 +418,7 @@ too).
 
 Since 2026-10-25 a rule file may hold **internal clearance rules**: the
 electrified parts at each structure against the structure's own body
-(`ohl internal`; the desktop window is in active development). Optional
+(`ohl internal`; the desktop window: [Internal clearances](internal-clearances.md)). Optional
 `[[internal_rule]]` tables; a file without them reads as before, the
 other checks ignore them. A preset declares the check with `checks =
 ["internal"]` (or holds internal rules).

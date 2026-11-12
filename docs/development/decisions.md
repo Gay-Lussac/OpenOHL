@@ -51,7 +51,15 @@ clearances** and **Internal clearances** (a submenu holding
 *Internal clearances…*, as Ground clearances holds its two windows).
 This supersedes the placement of 2026-10-27 ("Internal clearances should
 be just under the wire clearance"), at the end of the Wire clearances
-submenu.
+submenu. The window then takes the check pages' treatment (section 6 of
+[Check pages](check-pages.md)): a user guide page of its own,
+[Internal clearances](../user-guide/internal-clearances.md) — what it
+answers, the check in six steps with a new drawing
+(`check-windows/9-internal-check-step-by-step.svg`), every setting
+(default, effect, time), every field of an internal rule and of the
+`[check]` keys it reads, what is and is not conservative, what a
+structure below detail 2 gets, `ohl internal`. The OHL-Design page keeps
+a summary and links to it; the theory page links back.
 
 **Radial clearances: the same treatment as the vertical** (owner: "once
 the vertical clearances are done please apply the exact same treatment to

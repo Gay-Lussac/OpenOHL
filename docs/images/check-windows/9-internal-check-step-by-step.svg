@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="g" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <rect width="1000" height="430" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">The internal clearance check, step by step</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. What one Run does at every structure and for every rule (docs/user-guide/internal-clearances.md).</text>
+
+  <!-- 1 weather cases -->
+  <rect x="20" y="70" width="150" height="250" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">1  Weather cases</text>
+  <rect x="35" y="105" width="120" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="121">still air</text>
+  <rect x="35" y="133" width="120" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="149">high wind 600 Pa</text>
+  <rect x="35" y="161" width="120" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="177">ice</text>
+  <text x="30" y="210" fill="#555" font-size="12">the cases the rules</text>
+  <text x="30" y="225" fill="#555" font-size="12">name (none named:</text>
+  <text x="30" y="240" fill="#555" font-size="12">every case); the line</text>
+  <text x="30" y="255" fill="#555" font-size="12">solved in each, with</text>
+  <text x="30" y="270" fill="#555" font-size="12">its jumpers</text>
+
+  <!-- 2 structures with a body -->
+  <rect x="185" y="70" width="150" height="250" fill="none" stroke="#ccc"/>
+  <text x="195" y="90" font-weight="bold">2  With a body</text>
+  <path d="M215,200 L230,115 L245,200 M222,160 L238,160 M218,180 L242,180 M209,130 L251,130" fill="none" stroke="#555" stroke-width="2"/>
+  <text x="205" y="218" fill="#555" font-size="11">detail 2 or 3</text>
+  <line x1="300" y1="115" x2="300" y2="200" stroke="#999" stroke-width="2" stroke-dasharray="3,3"/>
+  <circle cx="300" cy="115" r="4" fill="#999"/>
+  <text x="280" y="218" fill="#999" font-size="11">detail 1</text>
+  <text x="195" y="245" fill="#555" font-size="12">only structures with</text>
+  <text x="195" y="260" fill="#555" font-size="12">members (or a pole);</text>
+  <text x="195" y="275" fill="#555" font-size="12">the others listed as</text>
+  <text x="195" y="290" fill="#555" font-size="12">not checked</text>
+
+  <!-- 3 the parts -->
+  <rect x="350" y="70" width="150" height="250" fill="none" stroke="#ccc"/>
+  <text x="360" y="90" font-weight="bold">3  The live parts</text>
+  <line x1="380" y1="105" x2="400" y2="160" stroke="#7f8c8d" stroke-width="3"/>
+  <circle cx="400" cy="160" r="5" fill="#c0392b"/>
+  <path d="M400,160 Q440,175 490,168" fill="none" stroke="#1f618d" stroke-width="2"/>
+  <path d="M400,160 Q385,190 410,200" fill="none" stroke="#2e86c1" stroke-width="2" stroke-dasharray="5,2"/>
+  <line x1="400" y1="208" x2="490" y2="208" stroke="#555" marker-start="url(#g)" marker-end="url(#g)"/>
+  <text x="430" y="222" fill="#555" font-size="11">reach</text>
+  <text x="360" y="245" fill="#555" font-size="12">the conductors out to</text>
+  <text x="360" y="260" fill="#555" font-size="12">the reach, the jumpers,</text>
+  <text x="360" y="275" fill="#555" font-size="12">the strings' live ends</text>
+  <text x="360" y="290" fill="#555" font-size="12">and live shapes; earth</text>
+  <text x="360" y="305" fill="#555" font-size="12">wires never</text>
+
+  <!-- 4 measured -->
+  <rect x="515" y="70" width="150" height="250" fill="none" stroke="#ccc"/>
+  <text x="525" y="90" font-weight="bold">4  To the members</text>
+  <rect x="610" y="105" width="22" height="110" fill="#d5d8dc" stroke="#7f8c8d"/>
+  <circle cx="555" cy="160" r="6" fill="#1f618d"/>
+  <line x1="562" y1="160" x2="606" y2="160" stroke="#b9770e" marker-end="url(#g)"/>
+  <text x="560" y="150" fill="#b9770e" font-size="11">surface</text>
+  <rect x="540" y="185" width="22" height="12" fill="#7f8c8d"/>
+  <text x="527" y="214" fill="#555" font-size="11">grounded fitting</text>
+  <text x="525" y="245" fill="#555" font-size="12">every part to every</text>
+  <text x="525" y="260" fill="#555" font-size="12">member's surface (else</text>
+  <text x="525" y="275" fill="#555" font-size="12">its centre line) and to</text>
+  <text x="525" y="290" fill="#555" font-size="12">the strings' grounded</text>
+  <text x="525" y="305" fill="#555" font-size="12">fittings</text>
+
+  <!-- 5 rule -->
+  <rect x="680" y="70" width="150" height="250" fill="none" stroke="#ccc"/>
+  <text x="690" y="90" font-weight="bold">5  The rule</text>
+  <rect x="790" y="105" width="22" height="110" fill="#d5d8dc" stroke="#7f8c8d"/>
+  <circle cx="730" cy="160" r="5" fill="#1f618d"/>
+  <line x1="736" y1="160" x2="786" y2="160" stroke="#555" marker-end="url(#g)"/>
+  <text x="742" y="152" font-size="12">found</text>
+  <circle cx="730" cy="160" r="40" fill="none" stroke="#c0392b" stroke-dasharray="4,3"/>
+  <text x="700" y="218" fill="#c0392b" font-size="12">required</text>
+  <text x="690" y="245" fill="#555" font-size="12">the rule's distance at</text>
+  <text x="690" y="260" fill="#555" font-size="12">the part's voltage (and</text>
+  <text x="690" y="275" fill="#555" font-size="12">insulation level); with</text>
+  <text x="690" y="290" fill="#555" font-size="12">wind its own, if it has</text>
+  <text x="690" y="305" fill="#555" font-size="12">one</text>
+
+  <!-- 6 results -->
+  <rect x="845" y="70" width="135" height="250" fill="none" stroke="#ccc"/>
+  <text x="855" y="90" font-weight="bold">6  Results</text>
+  <rect x="855" y="105" width="115" height="20" fill="#fdedec" stroke="#c0392b"/>
+  <text x="860" y="120" fill="#c0392b" font-size="12">✖ T3 jumper −0.21</text>
+  <rect x="855" y="130" width="115" height="20" fill="#fff" stroke="#ccc"/>
+  <text x="860" y="145" font-size="12">T5 conductor +0.08</text>
+  <circle cx="910" cy="195" r="9" fill="none" stroke="#c0392b" stroke-width="3"/>
+  <text x="880" y="225" fill="#c0392b" font-size="12">mark in views</text>
+  <text x="855" y="260" fill="#555" font-size="12">a row per part, rule</text>
+  <text x="855" y="275" fill="#555" font-size="12">and case, the nearest</text>
+  <text x="855" y="290" fill="#555" font-size="12">first; notes on what is</text>
+  <text x="855" y="305" fill="#555" font-size="12">not on the safe side</text>
+
+  <!-- arrows -->
+  <line x1="95" y1="340" x2="912" y2="340" stroke="#555" marker-end="url(#g)"/>
+  <text x="20" y="370" fill="#555">Every rule, every weather case it applies in, every structure with a body, every live part it takes: the smallest distance to the body</text>
+  <text x="20" y="388" fill="#555">and the grounded fittings is kept per part, with the member or fitting nearest. A distance below the required one is a finding:</text>
+  <text x="20" y="406" fill="#555">a red row in the Results tab and a mark at the part in the views while the window is open.</text>
+</svg>

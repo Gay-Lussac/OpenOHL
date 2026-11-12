@@ -7,8 +7,9 @@ on its strings. This page says how they are measured and which
 assumptions are **conservative** (a distance never more than the exact
 one), **on the unsafe side** (a distance that may be more than the real
 one) or **approximate** (neither: a simplification of the geometry). The
-user's side is in [Clearance rules](../user-guide/terrain.md#internal-clearance-rules-internal_rule)
-and [the desktop application](../user-guide/desktop-app.md#internal-clearances).
+user's side is in [Internal clearances](../user-guide/internal-clearances.md)
+(the window, step by step, every setting and every field of a rule) and
+[Clearance rules](../user-guide/terrain.md#internal-clearance-rules-internal_rule).
 
 ## What is measured
 

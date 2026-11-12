@@ -753,41 +753,24 @@ Without the window: `ohl lightning` ([Lightning shielding rules](terrain.md#ligh
 
 ### Internal clearances
 
-**Checks › Internal clearances › Internal clearances…** (2026-10-25; roadmap O6, first part; a line of the Clearances group of its own since 2026-11-12, beside Ground clearances and Wire clearances, the owner: "It should be another line with ground clearances and wire clearances" — the wires to the structure): at
-each structure with a body (detail level 2 or 3), the electrified parts as
-solved in each weather case of the rules — the **conductors** near it
-(within each rule's **reach** along the span, 20 m by default), its
-**jumpers** and its strings' **live ends** (their wire points; the
-fittings' size not counted yet, on the unsafe side) — against **every
-member** of its body: to the member's **surface** where its section's
-solid is known, else to its centre line (each structure where that is so
-said: on the unsafe side). Earth wires are not electrified, not checked.
-Structures without a body are listed as not checked. The rules
-(`[[internal_rule]]`, kept with the project as a rule file) are in the
-shared [rule table](#the-rule-table) (2026-10-28): one row each, the
-selected rule's fields below it — name, weather cases (groups' buttons),
-voltages, which parts, reach, and the required distance — fixed or by
-voltage (the clearance rules' editor); **Preset** (a dropdown) brings a design-code
-plugin's (or the project's) own, merged or replacing. A rule whose distance is not
-set (a new rule's 0 m, a table not filled in) is refused, as in the
-ground windows: Run is greyed and the footer says which ("Before Run:
-"a": set the distance", 2026-10-27). **Use local conditions** beside
-**Run** (the wind for clearances; and each structure's wind study, set in Setup › 4 Wind study: its least pressure and cases, and **Copy into the structures** for the weather case groups' old columns — [Weather cases: a wind study per structure](weather.md#a-wind-study-per-structure)). Results: every part per rule and case, the
-nearest first (structure — a link to it —, part, member, rule, case,
-distance, required, to the surface or the centre line, pass or too near),
-the verdict first (the smallest margin; red when nothing was checked), **Only violations**, **Export CSV…** and **Full report (CSV)…**; before Run, *1 What it checks* says how many structures have a body ("2 of 7 structures have a body (detail levels 2 and 3)") when some have none; the parts too near (else the nearest)
-marked in the views while the window is open. `ohl internal` runs the same
-from the command line.
+**Checks › Internal clearances › Internal clearances…** (2026-10-25; a
+line of the Clearances group of its own since 2026-11-12): at each
+structure with a body (detail level 2 or 3), the conductors near it, its
+jumpers, its strings' live ends and the live shapes on its strings,
+against every member of its body and the grounded fittings on its
+strings, as solved in each weather case of the rules
+(`[[internal_rule]]`, kept with the project as a rule file; a rule may
+take only the systems of one insulation level since 2026-11-11).
+Structures without a body are listed as not checked; what is not on the
+safe side (members to their centre line, strings without shapes, a
+circuit no rule takes) is said in the results. `ohl internal` runs the
+same from the command line.
 
-**Volumes on the strings** (2026-10-25, the next part; in active
-development, not approved yet): each rule's **shapes** tick checks the
-electrified shapes on the strings (Line › Structures › **String shapes**, or
-built in the **String builder**, with grading rings as tori: [The String
-builder](structure-library.md#the-string-builder)) and
-measures every part against the grounded ones too (the member column then
-names the shape: *shape string S1 top fitting*); **with wind**, ticked,
-gives the rule a distance of its own in the weather cases with wind (a
-wind pressure above 0). How the shapes sit on a solved string:
+**The window has a page of its own: [Internal
+clearances](internal-clearances.md)** — what it answers, how it works
+step by step with drawings, every setting with its default, effect and
+time, every field of a rule, and what is conservative and what is not.
+Its **user guide ↗** buttons open that page. The theory:
 [Internal clearances](../theory/internal-clearances.md).
 
 ### String checks
