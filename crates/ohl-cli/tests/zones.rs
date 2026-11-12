@@ -257,8 +257,13 @@ fn zones_by_a_rule_file_with_its_check() {
     );
     let check = imported.check.unwrap();
     let mut z = Zone::with_defaults(Measure::Vertical, &base.defaults);
-    z.width = imported.width.unwrap();
-    z.depth = imported.depth.unwrap();
+    // Only what the file states; else the project's defaults (2026-11-12).
+    if let Some(w) = imported.width {
+        z.width = w;
+    }
+    if let Some(d) = imported.depth {
+        z.depth = d;
+    }
     z.search = check.search_distance;
     let cases: Vec<WeatherCase> = WeatherCases::load(&weather).unwrap().cases;
     let mut base = base;

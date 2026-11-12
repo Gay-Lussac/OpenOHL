@@ -92,7 +92,36 @@ not approved yet.
   control for the same thing in every window (a weather case picker, a
   span table, a level list).
 
-## 6. Checking a window against these guidelines
+## 6. Its own page in the user guide, and the help beside each field
+
+Owner, 2026-11-12, after the rework of the Vertical clearances window:
+"they should always be built like this with a helper page". Every check
+window is built like [Vertical clearances](../user-guide/vertical-clearances.md):
+
+- **A user-guide page of its own** (`docs/user-guide/<check>.md`, in the
+  book's summary), opened by the window's *user guide* buttons, in plain
+  words for a line designer: what the check answers (with its main
+  drawing); how it works, step by step, each step with a drawing; the
+  window setting by setting, in the window's order — each with its
+  default, its effect on the result and its time; a table of **every
+  field a rule (or the user) can set**, taken from the code — name in the
+  window, name in the file, unit, default, meaning; what is conservative
+  and what is not (linked to the theory); the same check without the
+  window (the command line). The general pages keep a summary and link
+  to it; the theory links back.
+- **The Setup** in numbered sections, the rarely used options folded
+  under *Model*; units in the labels; every field's hover says what it
+  changes in the result.
+- **Explanations behind the (?)**: the small grey lines between the
+  fields are moved into the (?) help of their field or section ("yes
+  move the grey lines into the help"); a field keeps its label, its
+  value and at most one short line. **Always visible**: every warning
+  and error, every *NOT ON THE SAFE SIDE* note, what blocks Run, and the
+  time a setting costs.
+- **Reviewed on screenshots**: the Setup steps and the Results rendered
+  before and after a rework, compared by the owner.
+
+## 7. Checking a window against these guidelines
 
 The Setup and Results tabs are rendered by a test with `OHL_RENDER_PNG`
 (made as `USER=tester`) and looked at: sections in order, nothing
