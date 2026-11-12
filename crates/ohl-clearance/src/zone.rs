@@ -66,6 +66,13 @@ pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on the
      band (up to 0.293 m on the example line, measured with 10 Pa steps). Enter a jumper band \
      margin for your jumpers, or tick the wind steps (exact at the pressures they solve).";
 
+/// What the results say when the radial check measured to LiDAR points
+/// (owner, 2026-11-12): the distance is only to the points the scan
+/// holds, so whatever it missed is not checked.
+pub const RADIAL_POINTS_NOTE: &str = "NOT ON THE SAFE SIDE: the radial distance is measured only \
+     to the points scanned; anything the scan missed (a wall, a roof edge, a thin object) is not \
+     checked.";
+
 /// Default half width of the vertical zone, m.
 pub const DEFAULT_WIDTH: f64 = ohl_line::Defaults::PROGRAM.clearance_zone_width;
 /// Default depth of the slices of the vertical zone, m.

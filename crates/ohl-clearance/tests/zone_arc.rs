@@ -642,3 +642,25 @@ fn a_zone_check_stopped_among_the_points_returns_at_once() {
         "returned {after:?} after Stop"
     );
 }
+
+/// The radial check to LiDAR points says that it measures only to the
+/// points scanned (owner, 2026-11-12); the vertical check, and the radial
+/// check without points, do not.
+#[test]
+fn the_radial_check_says_it_measures_only_to_the_points_scanned() {
+    let p = [0.0, 0.0, 0.0];
+    let note = ohl_clearance::zone::RADIAL_POINTS_NOTE.to_owned();
+    let said = |r: &ZoneCheckResult| r.zone.notes.contains(&note);
+    assert!(said(&run(Measure::Radial, &WindSteps::default(), &[p])));
+    assert!(!said(&run(Measure::Vertical, &WindSteps::default(), &[p])));
+    let ground_only: Vec<ZoneRule> = rules(100.0)
+        .into_iter()
+        .filter(|r| r.classes.is_empty())
+        .collect();
+    assert!(!said(&run_rules(
+        Measure::Radial,
+        &WindSteps::default(),
+        &[p],
+        ground_only
+    )));
+}

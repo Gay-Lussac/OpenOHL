@@ -130,6 +130,10 @@ pub fn run_zone_check(
     progress: &ZoneProgress,
     filter: &ohl_weather::CaseFilter,
 ) -> Result<ZoneCheckResult, String> {
+    // Radial distances to LiDAR points: only to what the scan holds.
+    let radial_to_points = zone.measure == crate::zone::Measure::Radial
+        && points.is_some()
+        && rules.iter().any(|r| !r.classes.is_empty());
     let mut sections = sections_needed(line, &rules);
     // The circuits chosen only.
     if !check.circuits.is_empty() {
@@ -303,6 +307,13 @@ pub fn run_zone_check(
             // the blowouts: said (owner, 2026-11-12: never silent).
             if jumpers_unsafe(arc, &states, &arcs) {
                 report.notes.push(crate::zone::JUMPER_BAND_NOTE.to_owned());
+            }
+            // Radial to the points scanned only (owner, 2026-11-12: "yes
+            // add the line to the results").
+            if radial_to_points {
+                report
+                    .notes
+                    .push(crate::zone::RADIAL_POINTS_NOTE.to_owned());
             }
             // The bimetallic model of the wire types (roadmap O22 item 1):
             // the hot sags depend on it.

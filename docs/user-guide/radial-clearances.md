@@ -265,7 +265,11 @@ Not on the safe side, and said in the results each time it applies:
   [theory](../theory/clearances.md#wind-positions)).
 
 The distance is to the points the point cloud holds: a part of an object
-the scan did not see is not measured, the nearest point seen is.
+the scan did not see is not measured, the nearest point seen is. **Not on
+the safe side**, and said in every result that measured to LiDAR points
+(2026-11-12): "NOT ON THE SAFE SIDE: the radial distance is measured only
+to the points scanned; anything the scan missed (a wall, a roof edge, a
+thin object) is not checked."
 
 ## Without the window
 

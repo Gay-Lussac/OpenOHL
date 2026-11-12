@@ -10,6 +10,12 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Radial clearances to LiDAR points: said in the results** (owner: "yes
+add the line to the results"). Whenever the radial check measures to
+points of a class, its results carry `zone::RADIAL_POINTS_NOTE`: the
+distance is only to the points scanned, what the scan missed is not
+checked. Not on the safe side, now said rather than only in the guide.
+
 **Radial clearances: the same treatment as the vertical** (owner: "once
 the vertical clearances are done please apply the exact same treatment to
 the radial clearances"). Part 1: [Radial
