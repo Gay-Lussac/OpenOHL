@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Vegetation: the swing arc on by default** (owner: "yes swing arc on
+for both"). A new Vegetation window starts with the swing arc on (band
+margin 0.15 m); saved settings keep their choice. **Wire clearances: not
+changed yet** — measured in a debug build on the example line, the wire
+clearance check took 81 s with the swing arc against 0.86 s without
+(about 95 times), so the default is put back to the owner with the
+measured time before it changes.
+
 **The Magnetic and Electric field windows in three pages** (owner: "For
 the electric field and magnetic fields, I would like to have the page
 easier to understand (and actually have 3 pages): one to make the 3D

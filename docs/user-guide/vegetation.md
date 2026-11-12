@@ -55,7 +55,7 @@ it swings to the side. The window always checks a case without wind as
 it is and a windy case **blown to the left and to the right** at its full
 pressure. On request (in *4 Model › Wire positions*):
 
-- the **swing arc** (off by default): every position between still air
+- the **swing arc** (on by default since 2026-11-12): every position between still air
   and the two blowouts, as a band from the smallest to the largest radius,
   widened by the **band margin** (0.15 m); three solves per windy case;
 - the **wind steps** (off by default): still air and every pressure from
@@ -211,7 +211,7 @@ vegetation part is taken ([Presets per check](design-codes.md#presets-per-check)
 
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|
-| **swing arc** | off | every position between still air and the blowouts is checked: more findings, never fewer. **Off, with no wind steps: the positions between still air and the full blowouts are not checked** ([below](#what-is-conservative-and-what-is-not)) | 3 solves per windy case; the window says the solves |
+| **swing arc** | on (since 2026-11-12) | every position between still air and the blowouts is checked: more findings, never fewer. **Off, with no wind steps: the positions between still air and the full blowouts are not checked** ([below](#what-is-conservative-and-what-is-not)) | 3 solves per windy case; the window says the solves |
 | **band margin [m]** | 0.15 m | every distance to the swing band taken this much smaller (conservative); below 0.15 m the window warns: less safe | none |
 | **jumper band margin** | greyed | this check leaves the jumpers out | — |
 | **wind stepped** | off | still air and every pressure up to the case's solved exactly, from the sides chosen (the full pressure from both sides in any case); between two steps nothing | one solve per step and side: the window says how many and suggests the arc above 40 |
@@ -270,7 +270,7 @@ command line `ohl lidar vegetation` takes the same values as options.
 | tallest tree | `max_tree_height` | `--max-tree-height` | m | 40 | the reach searched |
 | tree base to a ground point within | `max_base_ground_distance` | `--max-base-ground-distance` | m | 5 (none: no limit; `inf`) | a base only with a ground point this near |
 | search distance | `search_distance` | `--corridor` | m | 50 | half width of the corridor read |
-| swing arc | `swing_arc` | `--swing-arc` | — | off | the positions between the blowouts |
+| swing arc | `swing_arc` | `--swing-arc` | — | on in the window (a setting saved without it: off); off on the command line | the positions between the blowouts |
 | band margin | `band_margin` | `--band-margin` | m | 0.15 | the band widened |
 | wind stepped, step | `wind_steps`, `wind_step` | `--wind-step` | Pa | off, 50 | still air and every pressure by the step |
 | from | `wind_sides` | `--wind-sides` | `both`, `left`, `right` | both | the stepped wind's sides |
@@ -321,7 +321,7 @@ Not on the safe side, and said in the results each time it applies:
 - **The ground stops the falling trunk** (the default): a rule that
   ignores the ground counts more trees below a steep slope; tick *the
   trunk turns on through the ground* to count them.
-- **Without the swing arc and the wind steps** (the default) only still
+- **Without the swing arc and the wind steps** (the swing arc unticked) only still
   air and the full blowouts are checked: a point nearer a wire between
   them is not found. With a windy case ticked the window says so under
   the wind, and the results' notes: *NOT ON THE SAFE SIDE: without the

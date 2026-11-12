@@ -293,7 +293,9 @@ impl Default for Settings {
             max_tree_height: p.max_tree_height,
             base_limit: (true, DEFAULT_MAX_BASE_GROUND_DISTANCE),
             search: DEFAULT_SEARCH_DISTANCE,
-            arc: false,
+            // On by default (owner, 2026-11-12: "swing arc on for both");
+            // settings saved without the key keep it off.
+            arc: true,
             steps: WindSteps::default(),
             ice: (Ice::Off, 5.0),
             keep: p.keep,
