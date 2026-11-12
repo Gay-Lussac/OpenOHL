@@ -553,6 +553,13 @@ fn guide_buttons_open(h: &mut Harness<'_, App>, page: &str, count: usize) {
     );
 }
 
+/// The electric field window's five headings open its own page.
+#[test]
+fn the_electric_window_opens_its_own_guide_page() {
+    let mut h = electric();
+    guide_buttons_open(&mut h, crate::electric_field::GUIDE, 5);
+}
+
 /// The magnetic field window's five headings open its own page.
 #[test]
 fn the_magnetic_window_opens_its_own_guide_page() {

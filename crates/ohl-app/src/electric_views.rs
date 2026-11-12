@@ -70,7 +70,9 @@ impl ElectricFieldWindow {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
-        crate::check_ui::section(ui, 4, "Model", None);
+        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some("4-model-folded")) {
+            self.common.guide = Some(a);
+        }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
         // each setting with its effect and time when opened.
         egui::CollapsingHeader::new("Wire pieces, structures' steel, the ground's tiles")
@@ -79,7 +81,11 @@ impl ElectricFieldWindow {
             .show(ui, |ui| {
                 self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
             });
-        crate::check_ui::section(ui, 5, "Views and levels", None);
+        if let Some(a) =
+            crate::check_ui::section(ui, 5, "Views and levels", Some("5-views-and-levels"))
+        {
+            self.common.guide = Some(a);
+        }
         self.levels_ui(ui, rate, rate_from, pieces);
     }
 

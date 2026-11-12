@@ -2467,13 +2467,22 @@ impl App {
         ready.magnetic_field.ui(ctx, &ready.model);
         ready.electric_field.ui(ctx, &ready.model);
         // A heading's user guide ↗: the window's own page, at its section.
-        if let Some(anchor) = ready.magnetic_field.common.guide.take() {
-            ready.status = Some(
-                match crate::help::open_section(crate::magnetic_field::GUIDE, anchor) {
+        for (page, anchor) in [
+            (
+                crate::magnetic_field::GUIDE,
+                ready.magnetic_field.common.guide.take(),
+            ),
+            (
+                crate::electric_field::GUIDE,
+                ready.electric_field.common.guide.take(),
+            ),
+        ] {
+            if let Some(anchor) = anchor {
+                ready.status = Some(match crate::help::open_section(page, anchor) {
                     Ok(m) => (format!("user guide opened: {m}"), false),
                     Err(e) => (e, true),
-                },
-            );
+                });
+            }
         }
         ready
             .building_fields

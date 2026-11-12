@@ -3,7 +3,9 @@
 *Built, in active development, not approved yet* (roadmap O18 step 5,
 2026-10-29; the window Checks › Electrical › Electric field… in
 OHL-Design and `ohl electrical electric` on the command line, both on
-the same engine, `crates/ohl-electrical`, `electric`). The electric field
+the same engine, `crates/ohl-electrical`, `electric`; how to use the
+window: [Electric field](../user-guide/electric-field.md), step by step,
+every setting). The electric field
 strength (kV/m) of the line's voltages, from the wires where they hang
 in a weather case.
 

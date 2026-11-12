@@ -974,7 +974,7 @@ grids](../theory/magnetic-field.md#cut-offs-and-grids-measured).
 
 The window's shared parts — the span table, the cuts on the alignment,
 the volumes, the weather case per electrical system, the ground — work
-the same in the [electric field](#electrical-electric-field) window. Long volumes
+the same in the [Electric field](electric-field.md) window. Long volumes
 are computed in parts of some 20 million points each (the same surfaces
 as in one piece, far less memory). Not yet: the thermal rating as the
 currents (on the command line only), places of sensitive use as objects
@@ -1247,146 +1247,29 @@ Methods, assumptions (each marked conservative or not) and validation:
 systems; the circuits are the phases of a system in one named circuit;
 sections of no system are earth wires, at earth potential) and the
 wires' diameters. **No limit is built in**: an ordinance's values (which
-voltage, which sag, which places, which limit) are yours to give.
+voltage, which sag, which places, which limit) are yours to give. Each
+circuit is computed at its system's **highest operating voltage** (Line
+› Electrical systems, column **max kV** — your value, none is filled
+in), else at its **nominal** voltage, which gives a lower field: the
+result then says **NOT ON THE SAFE SIDE: nominal voltage used for …**.
 
-**In OHL-Design:** Checks › Electrical › **Electric field…** Its inputs
-— the weather case, the voltages, the model, the jumpers, the ground
-plane, the profiles, the limit, the points (the CSV's text), the pieces,
-the levels and the views — are kept in the project for the project line
-worked on, written when a run starts or the window closes, as for the
-magnetic field. A case or span no longer in the line falls back to the
-default.
-
-- **Voltages**: per circuit its voltage between phases (kV, rms); each
-  phase at it over √3 to earth at its system's phase angle (L1 0°, L2
-  −120°, L3 +120° unless the system gives others). Unless given here,
-  the system's **highest operating voltage** where the line gives one
-  (Line › Electrical systems, column **max kV** — your value, none is
-  filled in), else the system's **nominal** voltage, which gives a lower
-  field: the grid says so beside it ("the system's nominal — not on the
-  safe side") and the result carries **NOT ON THE SAFE SIDE: nominal
-  voltage used for …**. Every result says which voltage each circuit
-  was computed at. **highest** / **nominal** beside a typed value sets
-  it back.
-  **0 kV: voltage-free** — the circuit at earth potential, like the earth
-  wires. The NISV guide (BAFU 2007, 8.7.3) asks the highest operating
-  voltage, the largest sag (the weather case) and, on a double circuit
-  built to compensate, one circuit voltage-free; which governs is yours to
-  choose. DC systems are left out (a static field with space charge). Run
-  stays greyed while every circuit is voltage-free.
-- **Model**: *3D* — the wires as solved (sag, line angles, the line's
-  length) and the jumpers as straight pieces of uniform charge, their
-  images in the ground under each point; *2D* — infinite line charges
-  where the wires cross the profile over level ground at the
-  cross-section (quick; not valid near a line angle, a structure or on
-  sloping ground). The charges per wire from the cross-section where they are: in 2D
-  the profile's own, in 3D each span in 16 stretches (2026-10-31; until
-  then from each span's mean cross-section, 3–4 % low where the wires
-  hang lowest).
-- **Jumpers** (3D, on by default): a jumper at a section's end carries
-  that section's charge per metre; jumpers not at a section's end are
-  left out and listed in the notes.
-- **Structures' steel** (4 Model; 2026-10-31, **off by default**):
-  *earthed (on the tiled floor)* — the structures' members at earth
-  potential, solved with each floor they stand on: the field lower near
-  the structures, higher at the steel. Beside it: how many structures
-  have members (detail levels 2 and 3, else their own stick drawing),
-  how many are left out (level 1) and how much longer a profile's floor
-  beside two structures takes. Use the profiles *beside its structures*
-  to see it. On the command line `--steel`.
-- **Ground** (3D): *tiled floor* (the default since 2026-10-29: the
-  owner, "keep the tiled implementation") — the terrain as a conducting
-  floor of tiles (fine tiles of 2 m near the profile by default, 8 m
-  beyond, to 200 m) solved around each profile, group of points and cut,
-  some seconds each (the window says how many tiles and how long); it
-  follows hollows and ridges. Or *plane under each point*, fitted over ±
-  a distance (default ±10 m): quick, exact for level or evenly sloping
-  ground, on a real line up to 8 % low on bumps and up to 24 % high in a
-  hollow. Cuts across the line (the cross-section panels too) and volumes
-  on coarser 8 m tiles by default, each a parameter (*tiles: profiles and
-  points / cuts / volumes*; a volume's floor of 8 m tiles is some 3 % off
-  on even ground, of 4 m 0.2 % and some 40 times as long), and how far a
-  volume's floor **reaches** beyond it (100 m; 2026-11-01). A volume too
-  large for one floor (over the memory one calculation may take) is
-  floored in parts as long as that reach, each over the ground within it
-  (as close to the exact field as one floor on level ground; see [the
-  theory](../theory/electric-field.md)); the window says so before Run,
-  the results in their notes. The volumes' tile cannot be set smaller than
-  what fits that memory, and a run whose floor would not fit cannot be
-  started: Run is greyed out with the reason (2026-11-12). The memory is
-  a setting of the application, for every project: Line › Calculation
-  options… › *Memory one calculation may take* (2 GB by default, offered
-  up to three quarters of the memory this computer has, which it shows). On the command
-  line `--plane`; the tiles `--tile`, `--coarse-tile`, `--floor-reach`,
-  `--cut-tile`, `--volume-tile`, `--volume-margin`. Progress bars: the run's in the footer
-  (saying which floor is being solved), the cross-section panels' under
-  *Cross-sections* and in the results.
-- **Points from CSV…**: as for the [magnetic
-  field](#electrical-magnetic-field).
-- **Limit**: optional, kV/m: the margin at every point and per profile.
-
-**3 Spans and what to compute in each** (2026-10-31): the span table, the
-**Profiles** and **Across** (default ±50 m every 1 m at 1 m above the
-ground) and the sizes of the **2D cuts** and **Volumes**, as for the
-[magnetic field](#electrical-magnetic-field) (no isolines from above
-yet); the volumes' floor (tiles, memory, time) beside them. The summary
-beside **Run** and the **Results** list (Plot, Open cut, Show in 3D) as
-there.
-
-**4 Model** (3D; folded): the structures' steel, **Wire pieces** *as solved* or *at most* a length, as
-for the magnetic field (each piece's field exact, in closed form; the
-only error is how far the wire curves away from it). Beside it the
-profiles' time: every point sums every piece twice (the charges and
-their images), estimated from the last run's speed, else from a short
-measurement on this computer. The whole line is always modelled.
-
-**5 Views and levels**: the **levels** (kV/m; default 1 and 5 kV/m
-drawn, 10 kV/m not; display only, none is a limit; **+ the limit**),
-*colour the cuts by band*, the field *also in any cross-section panel I
-open* (every step, default 0.5 m; computed from the run's charges
-whenever a panel opens or moves); the cuts and volumes asked in the
-table (isosurfaces of the levels, one volume along each run of spans
-with *Volume* ticked, ± the width, from the ground to 10 m over the
-highest wire) — each with its time beside it, drawn on the
-layer **Electric field (isolines, surfaces)** while the window is open,
-as for the magnetic field. Not yet: isolines from above.
-
-The results: the case and model, the **charges per wire** (per section
-and span: the voltage to earth, the charge per metre in nC/m, the
-frequency), the notes (what was assumed or left out); the chosen profile
-plotted — E against the distance from the axis (right positive), the
-limit dashed, the value under the pointer; a table per profile (station,
-the largest E and where, the margin); a table of the points with E and
-the margin (red when above the limit); under **Views**, per view what was
-computed and how far its drawings lie off their levels (the cuts on the
-alignment, as in the magnetic field's window). **Export CSV…**
-writes every profile point, point and cut point. The results are marked
-out of date when the line or the ground changes; the views then draw
-faded. Not modelled: the structures, trees, buildings and people (earthed
-objects lower the field beside them and raise it at their tops).
+**In OHL-Design:** Checks › Electrical › **Electric field…** — the
+window has a page of its own: **[Electric field](electric-field.md)**:
+what it answers, how it works step by step with drawings, every setting
+with its default, its effect and its time (the voltages, the tiled floor
+and its tiles, the memory a floor may take, the structures' steel, the
+stretches per span, 2D cuts, profiles and volumes, the levels), the
+results with the **conductor surface gradient** (2D), and what is and is
+not on the safe side. Its **user guide ↗** buttons open that page. Its
+span table, cuts, volumes and views work as in the [Magnetic
+field](magnetic-field.md) window.
 
 **Conductor surface gradient** (*built 2026-11-04, 2D only, in active
-development, not approved yet*; the owner: "only for the 2D cuts for the
-noise do not apply it in 3D"). With a 2D run (cuts and profiles),
-**Surface gradient** (on by default; the hover says what it does) also
-computes the field at the conductors' surfaces — the corona noise
-methods' input — at the profiles' spans: each at its lowest point and at
-both ends (at the structures, the first cross-section every wire
-reaches). A charge simulation of every subconductor over level,
-perfectly conducting ground (8 line charges in each, the field at 360
-points round it; some milliseconds per cross-section; it changes no field
-value). The results under **Conductor surface gradient, 2D**: per
-cross-section and bundle (earth wires too) the **average maximum** (the
-mean of the subconductors' largest gradients — what the noise formulas
-take), the **maximum** and **Markt–Mengele**'s value as a cross-check,
-kV/cm **rms** (peak √2 times); **Export CSV…** per subconductor (its
-largest gradient, where round it, its mean). Saved with the run in
-Performed checks. Give the systems' highest operating voltage (Line ›
-Electrical systems, column **max kV**) or a voltage for the run: the
-nominal is taken otherwise — **NOT ON THE SAFE SIDE**, said in the
-result with the circuits concerned. Method,
-convergence, validation (closed forms, hvlbuzz) and what is left out:
-[Conductor surface gradient](../theory/surface-gradient.md). Not in 3D.
+development, not approved yet*): with a 2D run, the field at the
+conductors' surfaces at the profiles' spans (each at its lowest point
+and both ends) — the corona noise methods' input. Method, convergence,
+validation and what is left out: [Conductor surface
+gradient](../theory/surface-gradient.md). Not in 3D. On the command line:
 
 ```sh
 ohl electrical gradient LINE.ohl.json|PROJECT.ohl [--voltage CIRCUIT=KV]… \

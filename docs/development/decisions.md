@@ -72,6 +72,17 @@ changes. The NOT ON THE SAFE SIDE notes, the warnings and Run's reason
 stay in view. Before/after screenshots: local review folder (not in the
 repository).
 
+[Electric field](../user-guide/electric-field.md) the same way: what it
+answers, the six steps (the voltages and charges, the ground as a tiled
+floor or a plane, the field, the places, the drawings) with the theory's
+drawings, every setting (default, effect, time; the memory a floor may
+take and Run greyed when a floor would not fit), the results with the
+conductor surface gradient, what is and is not on the safe side (the
+nominal voltage, the plane, the steel, the jumpers, earthed objects).
+Its headings' **user guide ↗** open it; the electric part of Analyses is
+a summary with the link (the command lines stay); the electric field's
+and the surface gradient's theory pages link to it.
+
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)
 and the release folder (`.github/workflows/release.yml`, so the Windows

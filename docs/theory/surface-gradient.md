@@ -3,7 +3,8 @@
 *Built 2026-11-04, 2D only, in active development, not approved yet*
 (roadmap O18 item 7; `crates/ohl-electrical`, `surface_gradient`; the
 window Checks › Electrical › Electric field… with its 2D cuts in
-OHL-Design and `ohl electrical gradient` on the command line). The owner,
+OHL-Design — [Electric field](../user-guide/electric-field.md), the window
+step by step — and `ohl electrical gradient` on the command line). The owner,
 2026-11-04: "only for the 2D cuts for the noise do not apply it in 3D as
 these are different usage". The electric field's 3D model and its 2D
 field values are unchanged by it.
