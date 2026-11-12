@@ -257,35 +257,51 @@ pub fn pick(
     at: [f64; 2],
     radius: f64,
 ) -> Option<Handle> {
-    let d =
-        |p: [f64; 3]| project(p).map(|q| ((q[0] - at[0]).powi(2) + (q[1] - at[1]).powi(2)).sqrt());
-    let nearest = |found: Vec<(Option<f64>, Handle)>| {
+    pick_at(g, project, at, radius).map(|(h, _)| h)
+}
+
+/// [`pick`], with the point on the screen it snapped to (the snap
+/// marker's place, owner 2026-11-12): a joint's or point's own place, the
+/// nearest point of a rigid link or a member as projected. The one search
+/// of the click and the marker, so the two never disagree.
+pub fn pick_at(
+    g: &Geometry,
+    project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
+    at: [f64; 2],
+    radius: f64,
+) -> Option<(Handle, [f64; 2])> {
+    let dist = |q: [f64; 2]| ((q[0] - at[0]).powi(2) + (q[1] - at[1]).powi(2)).sqrt();
+    let nearest = |found: Vec<(Option<[f64; 2]>, Handle)>| {
         found
             .into_iter()
-            .filter_map(|(dist, h)| Some((dist.filter(|x| *x <= radius)?, h)))
+            .filter_map(|(q, h)| {
+                let q = q?;
+                let d = dist(q);
+                (d <= radius).then_some((d, h, q))
+            })
             .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|b| b.1)
+            .map(|b| (b.1, b.2))
     };
     let handles = g
         .points
         .iter()
-        .map(|(l, p)| (d(*p), Handle::Point(l.clone())))
+        .map(|(l, p)| (project(*p), Handle::Point(l.clone())))
         .chain(
             g.wires
                 .iter()
-                .map(|(l, p, _)| (d(*p), Handle::Wire(l.clone()))),
+                .map(|(l, p, _)| (project(*p), Handle::Wire(l.clone()))),
         )
         .chain(
             g.joints
                 .iter()
-                .map(|(id, p, _)| (d(*p), Handle::Joint(id.clone()))),
+                .map(|(id, p, _)| (project(*p), Handle::Joint(id.clone()))),
         )
         .collect();
     if let Some(h) = nearest(handles) {
         return Some(h);
     }
-    // A rigid link picks its attachment point.
-    let segment = |a: [f64; 3], b: [f64; 3]| -> Option<f64> {
+    // The point of a segment nearest to `at`, as projected.
+    let segment = |a: [f64; 3], b: [f64; 3]| -> Option<[f64; 2]> {
         let (qa, qb) = (project(a)?, project(b)?);
         let (dx, dy) = (qb[0] - qa[0], qb[1] - qa[1]);
         let len2 = dx * dx + dy * dy;
@@ -294,9 +310,9 @@ pub fn pick(
         } else {
             0.0
         };
-        let (x, y) = (qa[0] + s * dx, qa[1] + s * dy);
-        Some(((x - at[0]).powi(2) + (y - at[1]).powi(2)).sqrt())
+        Some([qa[0] + s * dx, qa[1] + s * dy])
     };
+    // A rigid link picks its attachment point.
     let links = g
         .links
         .iter()
@@ -305,24 +321,11 @@ pub fn pick(
     if let Some(h) = nearest(links) {
         return Some(h);
     }
-    let mut members = Vec::new();
-    for (id, a, b, _) in &g.members {
-        let (Some(qa), Some(qb)) = (project(*a), project(*b)) else {
-            continue;
-        };
-        let (dx, dy) = (qb[0] - qa[0], qb[1] - qa[1]);
-        let len2 = dx * dx + dy * dy;
-        let s = if len2 > 0.0 {
-            (((at[0] - qa[0]) * dx + (at[1] - qa[1]) * dy) / len2).clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
-        let (x, y) = (qa[0] + s * dx, qa[1] + s * dy);
-        members.push((
-            Some(((x - at[0]).powi(2) + (y - at[1]).powi(2)).sqrt()),
-            Handle::Member(id.clone()),
-        ));
-    }
+    let members = g
+        .members
+        .iter()
+        .map(|(id, a, b, _)| (segment(*a, *b), Handle::Member(id.clone())))
+        .collect();
     nearest(members)
 }
 

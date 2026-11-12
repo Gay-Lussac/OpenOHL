@@ -17,6 +17,9 @@ pub struct PlanView {
     /// The weather case of the copy picked by the last click (`Some(None)`:
     /// the case shown); taken by the app.
     pub picked_case: Option<Option<usize>>,
+    /// Where a click under the pointer would pick (the snap marker): the
+    /// click's own search, again only when the pointer or the view moved.
+    pub snap_hover: ohl_ui::snap_marker::Hover,
     /// Project coordinates at the centre of the view.
     centre: Option<[f64; 2]>,
     /// Pixels per metre.
@@ -452,6 +455,7 @@ impl PlanView {
             mid,
             c,
             scale,
+            radius: ohl_ui::snap_marker::Settings::get(ui.ctx()).radius(2.0),
         };
         let used = self.clicks(ui, &response, &fr, selection, buttons);
         let painter = ui.painter_at(rect);
@@ -474,6 +478,7 @@ impl PlanView {
         }
         self.paint_overlays(&painter, &fr, sheets);
         paint_scale_bar(&painter, &fr, &response);
+        self.snap_hover.paint(&painter);
         used
     }
 
@@ -517,9 +522,7 @@ impl PlanView {
         selection: &mut Selection,
         buttons: (egui::PointerButton, egui::PointerButton),
     ) -> Option<selection::Use> {
-        let Frame {
-            model, case, snaps, ..
-        } = *fr;
+        let Frame { model, case, .. } = *fr;
         let to_screen = fr.to_screen();
         let use_at = |pos: egui::Pos2| find_use(fr, pos);
         // The button whose click selects, the one whose click uses the
@@ -544,21 +547,25 @@ impl PlanView {
         } else {
             self.hover_use = None;
         }
+        // The snap marker: the click's own search, again when the pointer
+        // or the view moved.
+        let marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
+        match response.hover_pos() {
+            Some(pos) if marker.show => {
+                let key = view_key(fr, marker.distance);
+                if self.snap_hover.stale(pos, key) {
+                    let at = pick_at(fr, pos)
+                        .2
+                        .map(|q| egui::pos2(q[0] as f32, q[1] as f32));
+                    self.snap_hover.found(pos, key, at);
+                }
+            }
+            _ => self.snap_hover.clear(),
+        }
         if (response.clicked_by(select_button) || response.double_clicked_by(select_button))
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let (picked, picked_case) = selection::pick_shown(
-                model,
-                case,
-                snaps,
-                [f64::from(pos.x), f64::from(pos.y)],
-                12.0,
-                &|p| {
-                    let q = to_screen(p);
-                    Some(([f64::from(q.x), f64::from(q.y)], 0.0))
-                },
-                &selection::LidarShown::Nothing,
-            );
+            let (picked, picked_case, _) = pick_at(fr, pos);
             selection::clicked(ui.ctx(), &picked);
             *selection = picked;
             self.picked_case = Some(picked_case);
@@ -868,6 +875,9 @@ struct Frame<'a> {
     mid: egui::Pos2,
     c: [f64; 2],
     scale: f64,
+    /// How far from the pointer a click picks, px (the snap distance,
+    /// 2 px less).
+    radius: f64,
 }
 
 impl Frame<'_> {
@@ -886,32 +896,50 @@ impl Frame<'_> {
 /// The structures' names as laid out: where, the text.
 type Names = Vec<(egui::Pos2, std::sync::Arc<egui::Galley>)>;
 
-/// What a click of the tool button at `pos` finds there.
-fn find_use(fr: &Frame<'_>, pos: egui::Pos2) -> selection::Use {
-    let Frame {
-        model,
-        case,
-        snaps,
-        mid,
-        c,
-        scale,
-        ..
-    } = *fr;
+/// What a click at `pos` picks, the case of the copy picked, the point it
+/// snapped to (screen): the one search of the clicks and the snap marker.
+/// The plan view draws no LiDAR points: none can be clicked.
+fn pick_at(fr: &Frame<'_>, pos: egui::Pos2) -> (Selection, Option<usize>, Option<[f64; 2]>) {
     let to_screen = fr.to_screen();
-    // The plan view draws no LiDAR points: none can be clicked.
-    let target = selection::pick_shown(
-        model,
-        case,
-        snaps,
+    selection::pick_shown_at(
+        fr.model,
+        fr.case,
+        fr.snaps,
         [f64::from(pos.x), f64::from(pos.y)],
-        12.0,
+        fr.radius,
         &|p| {
             let q = to_screen(p);
             Some(([f64::from(q.x), f64::from(q.y)], 0.0))
         },
         &selection::LidarShown::Nothing,
     )
-    .0;
+}
+
+/// What the snap marker's place depends on besides the pointer: where
+/// the view is, the case, the snaps, the snap distance.
+fn view_key(fr: &Frame<'_>, distance: f32) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    [fr.c[0], fr.c[1], fr.scale].map(f64::to_bits).hash(&mut h);
+    [fr.mid.x, fr.mid.y, distance]
+        .map(f32::to_bits)
+        .hash(&mut h);
+    (fr.case, &fr.snaps.0).hash(&mut h);
+    h.finish()
+}
+
+/// What a click of the tool button at `pos` finds there.
+fn find_use(fr: &Frame<'_>, pos: egui::Pos2) -> selection::Use {
+    let Frame {
+        model,
+        case,
+        mid,
+        c,
+        scale,
+        ..
+    } = *fr;
+    let to_screen = fr.to_screen();
+    let target = pick_at(fr, pos).0;
     let (x, y) = (
         c[0] + f64::from(pos.x - mid.x) / scale,
         c[1] - f64::from(pos.y - mid.y) / scale,

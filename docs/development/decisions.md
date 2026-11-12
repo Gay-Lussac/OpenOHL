@@ -40,6 +40,26 @@ height, the page is really laggy").
   the window froze for the comparison of every size at each settled
   change.
 
+**The snap point: a red dot where a click would pick, in both
+applications** (owner: "I would like to have a highlight of what I'm
+clicking on with a transparent red point when I move the mouse that's
+dependent on the snap settings and can be a bit outer from the point
+where I actually click"). While the pointer moves over a view (OHL-Design:
+3D, plan, profile, cross-sections; OHL-Structure: the 3D view), a
+semi-transparent red dot with a ring marks the point the click there
+would pick: a point candidate itself, the nearest point of a line
+candidate as projected; none when nothing is within reach. The dot comes
+from the click's own search (`selection::pick_shown_at`, the profile's
+`Picker::pick_at`, `ohl_structure_edit::pick_at`: each click now calls
+the same function), so the dot and the click cannot disagree, and it
+follows Edit › Snap. It is found again only when the pointer moved or the
+view, the line or the settings changed. View › Show the snap point
+(default on) and View › Snap distance (px) (new; default 14 px, the
+radius the 3D view had; the 2D views and OHL-Structure keep their 2 px
+less, the first-person crosshair 4 px less) are kept per application.
+Painter, colour and settings are shared in `ohl_ui::snap_marker`. Not in
+OHL-Structure's Detail view yet.
+
 **A plugin removed or installed again asks again for more time or
 memory** (owner: "if a plugin that requires more time or memory to work
 was accepted. if we uninstall it and reinstall it it should ask again").

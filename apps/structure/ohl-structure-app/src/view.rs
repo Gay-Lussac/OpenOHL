@@ -16,7 +16,9 @@ use eframe::egui;
 use eframe::egui_wgpu;
 use ohl_render::{Bounds, Camera, GpuScene, Renderer, Scene};
 use ohl_structure_edit::symmetry::move_to;
-use ohl_structure_edit::{Geometry, Handle, StructureFile, compass_radius, pick, position};
+use ohl_structure_edit::{
+    Geometry, Handle, StructureFile, compass_radius, pick, pick_at, position,
+};
 
 const STEEL: [u8; 4] = [215, 215, 220, 255];
 const BARE: [u8; 4] = [200, 170, 110, 255];
@@ -173,6 +175,13 @@ pub struct View {
     /// A box to zoom on (its lowest and highest corners), on the next
     /// frame: a row double-clicked in a table ([`View::zoom_on`]).
     zoom: Option<([f64; 3], [f64; 3])>,
+    /// Where a click under the pointer would pick, or where a dragged
+    /// joint or point lands (the snap marker, [`ohl_ui::snap_marker`]):
+    /// the click's own search, again only when the pointer, the view or
+    /// the structure changed.
+    pub snap_hover: ohl_ui::snap_marker::Hover,
+    /// How often the scene was built (part of the marker's key).
+    scenes_built: u64,
 }
 
 /// What the view needs to draw and edit.
@@ -336,6 +345,10 @@ impl View {
         let projector = cam.projector(size);
         let project = |p: [f64; 3]| projector(p).map(|(q, _)| q);
         let linking = v.link.as_ref().map(|l| l.point.clone());
+        // The snap distance (View › Snap distance; 2 px less, as before it
+        // was a setting).
+        let marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
+        let radius = marker.radius(2.0);
         // The joint under the pointer while a point is chosen (any but a
         // support joint; only an attach joint takes the link).
         let joint_at = |at: [f64; 2]| -> Option<(String, [f64; 3], bool)> {
@@ -344,7 +357,7 @@ impl View {
                 .filter_map(|(id, p, attach)| {
                     let q = project(*p)?;
                     let d = (q[0] - at[0]).hypot(q[1] - at[1]);
-                    (d <= 12.0).then_some((d, id.clone(), *p, *attach))
+                    (d <= radius).then_some((d, id.clone(), *p, *attach))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0))
                 .map(|(_, id, p, attach)| (id, p, attach))
@@ -354,6 +367,18 @@ impl View {
             .filter(|_| matches!(linking, Some(Some(_))))
             .and_then(|p| joint_at(local(p)));
         self.link_hover = hover.as_ref().map(|h| h.0.clone());
+        // What a click at `at` picks and the point it snapped to: the one
+        // search of every click and the snap marker. The Link tool: a
+        // point, else (a point chosen) the joint under the pointer.
+        let click_pick = |at: [f64; 2]| -> Option<(Handle, [f64; 2])> {
+            match pick_at(g, &project, at, radius) {
+                Some((Handle::Point(l), q)) if linking.is_some() => Some((Handle::Point(l), q)),
+                _ if matches!(linking, Some(Some(_))) => {
+                    joint_at(at).and_then(|(id, p, _)| project(p).map(|q| (Handle::Joint(id), q)))
+                }
+                other => other,
+            }
+        };
         if linking.is_some() {
             // The Link tool: a click chooses the point, then its joint; a
             // right-click cancels.
@@ -362,14 +387,7 @@ impl View {
             } else if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
             {
-                let at = local(pos);
-                let picked = match pick(g, &project, at, 12.0) {
-                    Some(Handle::Point(l)) => Some(Handle::Point(l)),
-                    _ if matches!(linking, Some(Some(_))) => {
-                        joint_at(at).map(|(id, _, _)| Handle::Joint(id))
-                    }
-                    other => other,
-                };
+                let picked = click_pick(local(pos)).map(|(h, _)| h);
                 *v.action = Some(ViewAction::LinkClick(picked));
                 self.dirty = true;
             }
@@ -379,7 +397,7 @@ impl View {
             // The right-click menu ([`crate::context_menu`]): of what is
             // under the pointer (selected), or of the selection (an object
             // of a selection of several, or nothing under the pointer).
-            self.menu_on = match pick(g, &project, local(pos), 12.0) {
+            self.menu_on = match pick(g, &project, local(pos), radius) {
                 Some(h) if v.selected.len() > 1 && v.selected.contains(&h) => {
                     Some(MenuOn::Selection)
                 }
@@ -408,7 +426,7 @@ impl View {
             && let Some(pos) = response.interact_pointer_pos()
         {
             let here = local(pos);
-            let picked = pick(g, &project, here, 12.0);
+            let picked = click_pick(here).map(|(h, _)| h);
             let at = cam.ray(here, size).and_then(|(a, d)| {
                 let eye = cam.eye();
                 let n = [0, 1, 2].map(|k| eye[k] - cam.target[k]);
@@ -428,7 +446,7 @@ impl View {
             && let Some(pos) = response.interact_pointer_pos()
         {
             let shift = ui.input(|i| i.modifiers.shift);
-            match pick(g, &project, local(pos), 12.0) {
+            match click_pick(local(pos)).map(|(h, _)| h) {
                 Some(h) if shift => {
                     if let Some(k) = v.selected.iter().position(|x| *x == h) {
                         v.selected.remove(k);
@@ -448,7 +466,7 @@ impl View {
             && v.tool == Tool::Move
             && response.drag_started_by(egui::PointerButton::Primary)
             && let Some(pos) = response.interact_pointer_pos()
-            && let Some(h) = pick(g, &project, local(pos), 12.0)
+            && let Some((h, _)) = click_pick(local(pos))
             && !matches!(h, Handle::Member(_))
             && let Some(at) = position(g, &h)
         {
@@ -463,6 +481,8 @@ impl View {
                 normal: n.map(|x| x / len),
             });
         }
+        // Where a dragged joint or point lands this frame (snapped).
+        let mut drag_at: Option<[f64; 3]> = None;
         if let Some(m) = self.drag.clone() {
             if response.dragged_by(egui::PointerButton::Primary)
                 && let Some(pos) = response.interact_pointer_pos()
@@ -484,6 +504,7 @@ impl View {
                     }) {
                         at = *p;
                     }
+                    drag_at = Some(at);
                     if position(g, &m.handle) != Some(at) {
                         let what = m.handle.describe();
                         match file.edit(&format!("move {what}"), |doc, t| {
@@ -524,9 +545,46 @@ impl View {
                 camera.zoom((-f64::from(scroll) * 0.002).exp());
             }
         }
+        // The snap marker: where a dragged joint or point lands; else where
+        // a click would pick (none while the view is turned or panned).
+        let to_pos = |q: [f64; 2]| rect.min + egui::vec2(q[0] as f32, q[1] as f32);
+        match response.hover_pos() {
+            Some(pos) if marker.show && drag_at.is_some() => {
+                let q = drag_at.and_then(project).map(to_pos);
+                self.snap_hover.found(pos, 0, q);
+            }
+            Some(pos) if marker.show && self.drag.is_none() && !response.dragged() => {
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    [
+                        cam.target[0],
+                        cam.target[1],
+                        cam.target[2],
+                        cam.distance,
+                        cam.yaw,
+                        cam.pitch,
+                        size[0],
+                        size[1],
+                    ]
+                    .map(f64::to_bits)
+                    .hash(&mut h);
+                    (cam.ortho, self.scenes_built, self.dirty, &linking).hash(&mut h);
+                    (rect.min.x.to_bits(), rect.min.y.to_bits()).hash(&mut h);
+                    marker.distance.to_bits().hash(&mut h);
+                    h.finish()
+                };
+                if self.snap_hover.stale(pos, key) {
+                    let q = click_pick(local(pos)).map(|(_, q)| to_pos(q));
+                    self.snap_hover.found(pos, key, q);
+                }
+            }
+            _ => self.snap_hover.clear(),
+        }
         // Draw.
         let device = &rs.device;
         if self.dirty || self.gpu.is_none() {
+            self.scenes_built += 1;
             let (main, levels) = scene(
                 g,
                 v.foot,
@@ -658,12 +716,13 @@ impl View {
         if v.usage_legend {
             usage_legend(&painter, rect);
         }
+        self.snap_hover.paint(&painter);
         self.buttons(ui, rect);
         // A member under the pointer: how it is drawn.
         let words = response
             .hover_pos()
             .filter(|_| self.drag.is_none() && linking.is_none() && !response.dragged())
-            .and_then(|p| match pick(g, &project, local(p), 12.0) {
+            .and_then(|p| match pick(g, &project, local(p), radius) {
                 Some(Handle::Member(id)) => Some(member_words(g, v.solids, &id)),
                 _ => None,
             });

@@ -457,6 +457,9 @@ fn view_menu(
     ui.separator();
     // A tick menu: it stays open (the scale kept between runs).
     crate::menu::options_menu(ui, "UI scale", |ui| crate::style::scale_menu(ui, ui_scale));
+    // The snap marker and the snap distance (kept between runs): ticking
+    // keeps the menu open (it is one).
+    ohl_ui::snap_marker::Settings::menu(ui);
     if ui.button("Customize the quick bar…").clicked() {
         *customize = true;
         ui.close();

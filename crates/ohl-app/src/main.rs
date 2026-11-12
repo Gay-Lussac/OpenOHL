@@ -356,6 +356,7 @@ fn main() -> std::process::ExitCode {
             }
             app.plugins = plugins::Plugins::load(cc.storage, plugins::Plugins::default_user_dir());
             app.ui_scale = style::load_scale(cc.storage);
+            ohl_ui::snap_marker::Settings::load(cc.storage, app::SNAP_MARKER_KEY).set(&cc.egui_ctx);
             if let Some(st) = cc.storage {
                 app.layer_groups = scene::LayerGroups::load(st);
             }

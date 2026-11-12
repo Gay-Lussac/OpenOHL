@@ -535,6 +535,8 @@ impl StructureApp {
                 Some("The size of the whole window's text and controls (kept)"),
             );
         });
+        // The snap marker and the snap distance (kept between runs).
+        ohl_ui::snap_marker::Settings::menu(ui);
         if item(
             ui,
             "Reset layout",

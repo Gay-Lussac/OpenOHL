@@ -1322,15 +1322,33 @@ pub fn pick_shown(
     project3: &dyn Fn([f64; 3]) -> Option<([f64; 2], f64)>,
     lidar: &LidarShown<'_>,
 ) -> (Selection, Option<usize>) {
+    let (s, c, _) = pick_shown_at(model, case, snaps, at, radius, project3, lidar);
+    (s, c)
+}
+
+/// [`pick_shown`], with the point on the screen it snapped to (the snap
+/// marker's place, owner 2026-11-12): a point candidate's own place, the
+/// nearest point of a line candidate as projected, the pointer itself
+/// inside a pole's outline; none when nothing was picked. One search for
+/// the click and the marker, so the two never disagree.
+pub fn pick_shown_at(
+    model: &Model,
+    case: usize,
+    snaps: &Snaps,
+    at: [f64; 2],
+    radius: f64,
+    project3: &dyn Fn([f64; 3]) -> Option<([f64; 2], f64)>,
+    lidar: &LidarShown<'_>,
+) -> (Selection, Option<usize>, Option<[f64; 2]>) {
     let project = |p: [f64; 3]| project3(p).map(|q| q.0);
     let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
     let mut picked_case = None;
     let others = other_case_candidates(model, case, snaps);
     let pieces: Vec<Candidate> = others.iter().map(|x| x.0.clone()).collect();
-    if let Some((score, i)) = pick_scored_index(&pieces, at, radius, &project)
+    if let Some((score, i, on)) = pick_scored_index(&pieces, at, radius, &project)
         && best.as_ref().is_none_or(|b| score < b.0)
     {
-        best = Some((score, pieces[i].0.clone()));
+        best = Some((score, pieces[i].0.clone(), on));
         picked_case = Some(others[i].1);
     }
     // Inside a pole's outline on the screen (a pole at level 2 or 3 drawn
@@ -1339,7 +1357,7 @@ pub fn pick_shown(
         && snaps.on(Snap::Structure)
         && let Some(id) = pole_at(model, at, &project)
     {
-        best = Some((-Snap::Structure.priority(), Selection::Structure(id)));
+        best = Some((-Snap::Structure.priority(), Selection::Structure(id), at));
     }
     let found = best.as_ref().map(|b| b.1.clone());
     if snaps.on(Snap::SurveyPoint)
@@ -1352,7 +1370,7 @@ pub fn pick_shown(
             };
             let d = (s[0] - at[0]).hypot(s[1] - at[1]);
             if d <= radius && best.as_ref().is_none_or(|b| d - bonus < b.0) {
-                best = Some((d - bonus, Selection::SurveyPoint(k)));
+                best = Some((d - bonus, Selection::SurveyPoint(k), s));
             }
         }
     }
@@ -1360,16 +1378,31 @@ pub fn pick_shown(
         && let Some((d, p)) = pick_lidar(model, lidar, at, radius, project3)
     {
         let bonus = Snap::LidarPoint.priority();
-        if best.as_ref().is_none_or(|b| d - bonus < b.0) {
-            best = Some((d - bonus, Selection::LidarPoint(p)));
+        if best.as_ref().is_none_or(|b| d - bonus < b.0)
+            && let Some((s, _)) = project3(lidar_xyz(model, &p.0))
+        {
+            best = Some((d - bonus, Selection::LidarPoint(p), s));
         }
     }
+    let on = best.as_ref().map(|b| b.2);
     let chosen = best.map_or(Selection::None, |b| b.1);
     // The case only for the copy chosen (a point may have won after).
     let case_of = (found.as_ref() == Some(&chosen))
         .then_some(picked_case)
         .flatten();
-    (chosen, case_of)
+    (chosen, case_of, on)
+}
+
+/// The point of the segment `a`–`b` nearest to `at` (all on the screen).
+pub fn nearest_on_segment(at: [f64; 2], a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    let ab = [b[0] - a[0], b[1] - a[1]];
+    let len2 = ab[0] * ab[0] + ab[1] * ab[1];
+    let u = if len2 > 0.0 {
+        (((at[0] - a[0]) * ab[0] + (at[1] - a[1]) * ab[1]) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    [a[0] + u * ab[0], a[1] + u * ab[1]]
 }
 
 /// The candidate nearest to `at` within `radius` (as [`pick_scored`]):
@@ -1379,7 +1412,7 @@ fn pick_scored_index(
     at: [f64; 2],
     radius: f64,
     project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
-) -> Option<(f64, usize)> {
+) -> Option<(f64, usize, [f64; 2])> {
     candidates
         .iter()
         .enumerate()
@@ -1396,7 +1429,7 @@ fn pick_scored_index(
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
-            (d <= radius).then_some((d - bonus, i))
+            (d <= radius).then(|| (d - bonus, i, nearest_on_segment(at, pa, pb)))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
 }
@@ -1421,7 +1454,7 @@ fn pick_scored(
     at: [f64; 2],
     radius: f64,
     project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
-) -> Option<(f64, Selection)> {
+) -> Option<(f64, Selection, [f64; 2])> {
     candidates
         .iter()
         .filter_map(|(s, a, b)| {
@@ -1440,10 +1473,10 @@ fn pick_scored(
                 Selection::Spacer(_) => 1.0,
                 _ => s.kind().map_or(0.0, Snap::priority),
             };
-            (d <= radius).then_some((d - bonus, s))
+            (d <= radius).then(|| (d - bonus, s, nearest_on_segment(at, pa, pb)))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(d, s)| (d, s.clone()))
+        .map(|(d, s, on)| (d, s.clone(), on))
 }
 
 #[cfg(test)]

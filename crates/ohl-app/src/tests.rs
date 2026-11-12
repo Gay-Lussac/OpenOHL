@@ -32,6 +32,7 @@ mod objects;
 mod plugins_hosting;
 mod project;
 mod session_edits;
+mod snap_marker;
 mod string_builder;
 mod strings_colours;
 mod strings_picking;

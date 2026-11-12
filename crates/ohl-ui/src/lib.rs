@@ -17,4 +17,5 @@ pub mod icons;
 pub mod messages;
 pub mod notices;
 pub mod rows;
+pub mod snap_marker;
 pub mod style;

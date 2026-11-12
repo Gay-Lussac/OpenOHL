@@ -189,6 +189,11 @@ pub struct StructureApp {
     pub ui_scale: f32,
     /// The scale and style applied to the window (none yet).
     applied_scale: Option<f32>,
+    /// The snap marker's settings (View menu; kept): put in force on
+    /// the first frame, copied back from the context each frame.
+    pub snap_marker: ohl_ui::snap_marker::Settings,
+    /// They were put in force.
+    snap_marker_applied: bool,
     /// The short "No line values" line of the load panels closed (its ×),
     /// until the program is started again.
     pub line_notice_closed: bool,
@@ -271,6 +276,8 @@ impl StructureApp {
             notices: Default::default(),
             ui_scale: 1.0,
             applied_scale: None,
+            snap_marker: Default::default(),
+            snap_marker_applied: false,
             line_notice_closed: false,
             hotbar: Default::default(),
             held: crate::tools::Tool::Select,
@@ -979,6 +986,9 @@ impl StructureApp {
         }
         self.recent = crate::start::Recent::load(storage);
         self.ui_scale = crate::style::load_scale(storage);
+        self.snap_marker =
+            ohl_ui::snap_marker::Settings::load(storage, crate::style::SNAP_MARKER_KEY);
+        self.snap_marker_applied = false;
         self.hotbar = crate::tools::Hotbar::load(storage);
         self.joints.steps = crate::detail_tools::ToolSteps::load(storage);
         self.held = self.hotbar.tool();
@@ -1026,6 +1036,12 @@ impl StructureApp {
         self.view.link_hover.clone()
     }
 
+    /// Where the 3D view's snap marker is (tests).
+    #[cfg(test)]
+    pub fn view_snap_marker(&self) -> Option<egui::Pos2> {
+        self.view.snap_hover.at
+    }
+
     /// The window's title: the file, starred with unsaved changes.
     fn title(&mut self, ctx: &egui::Context) {
         let title = match &self.file {
@@ -1060,12 +1076,20 @@ impl eframe::App for StructureApp {
         );
         self.recent.save(storage);
         crate::style::save_scale(storage, self.ui_scale);
+        self.snap_marker
+            .save(storage, crate::style::SNAP_MARKER_KEY);
         self.hotbar.save(storage);
         self.joints.steps.save(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        if self.snap_marker_applied {
+            self.snap_marker = ohl_ui::snap_marker::Settings::get(&ctx);
+        } else {
+            self.snap_marker.set(&ctx);
+            self.snap_marker_applied = true;
+        }
         if self.applied_scale != Some(self.ui_scale) {
             if self.applied_scale.is_none() {
                 crate::style::apply(&ctx);

@@ -36,6 +36,10 @@ use menu_bar::*;
 pub(crate) use object_windows::*;
 pub(crate) use settings_windows::*;
 pub(crate) use viewer::*;
+
+/// Where the snap marker's settings are kept between runs
+/// ([`ohl_ui::snap_marker::Settings::save`]).
+pub const SNAP_MARKER_KEY: &str = "snap-marker";
 pub(crate) use windows::*;
 
 /// The pages (tabs).
@@ -726,6 +730,9 @@ pub struct App {
     help_status: Option<(String, bool)>,
     /// The UI scale (View › UI scale, kept between runs; 1: 100 %).
     pub ui_scale: f32,
+    /// The snap marker's settings in force (View menu), copied from the
+    /// context each frame to be kept between runs.
+    snap_marker: ohl_ui::snap_marker::Settings,
     /// The scale the window is drawn at (none: the style not set yet).
     applied_scale: Option<f32>,
     /// The messages also as notices at the bottom right (errors stay
@@ -798,6 +805,7 @@ impl App {
             about: false,
             help_status: None,
             ui_scale: 1.0,
+            snap_marker: Default::default(),
             applied_scale: None,
             notices: Default::default(),
             layer_groups: Default::default(),
@@ -1277,6 +1285,7 @@ impl App {
             about: false,
             help_status: None,
             ui_scale: 1.0,
+            snap_marker: Default::default(),
             applied_scale: None,
             notices: crate::notices::Notices::hidden(),
             layer_groups: Default::default(),
@@ -2006,6 +2015,7 @@ impl eframe::App for App {
         }
         self.view_prefs.save(storage);
         crate::style::save_scale(storage, self.ui_scale);
+        self.snap_marker.save(storage, SNAP_MARKER_KEY);
         self.layer_groups.save(storage);
         storage.set_string("ecw-converter", crate::backgrounds::converter());
         storage.set_string(
@@ -2028,6 +2038,7 @@ impl eframe::App for App {
             }
             self.applied_scale = Some(self.ui_scale);
         }
+        self.snap_marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
         self.loading_frame();
         let file = self.sources.file.display().to_string();
         let ctx = ui.ctx().clone();

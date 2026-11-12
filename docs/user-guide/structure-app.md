@@ -349,7 +349,20 @@ their menu or from View.
   **Top** (from above, ahead up) — these three in parallel projection —
   and **Iso** (from the back left and above, in perspective); **Fit**
   (and View › Fit the view) shows the whole structure as it opens. **?**
-  shows the controls and the axes' colours on hover. The loads of the
+  shows the controls and the axes' colours on hover. **The snap point**
+  (2026-11-12; built, in active development, not approved yet): while
+  the pointer moves over the view, a semi-transparent **red dot** with a
+  ring marks what a click there would pick — a joint, point or wire
+  point itself, or the nearest point of a member or rigid link as drawn;
+  it may sit a few pixels from the pointer (a click picks within the
+  snap distance); no dot, nothing to pick. It is found with the click's
+  own search, so the dot and the click never disagree. While the
+  **Move** tool drags a joint or point, the dot shows where it lands
+  (snapped to the grid or onto a joint). **View › Show the snap point**
+  (default on) shows or hides it, **View › Snap distance (px)** (default
+  14: the view picks within 2 px less, 12 as before) sets how far a
+  click reaches; both are kept, and shared in look with OHL-Design. The
+  Detail view has no dot yet. The loads of the
   case shown (while a load panel was the last clicked) or the results
   (while FE results was) are drawn over the structure; with the members
   coloured by usage, a **legend** at the bottom right gives the colours

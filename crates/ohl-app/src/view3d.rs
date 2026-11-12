@@ -146,6 +146,10 @@ pub struct View3d {
     /// The cut whose outline the last click picked; taken by the app
     /// (its panel comes to the front).
     pub picked_cut: Option<u32>,
+    /// Where a click under the pointer would pick (the snap marker,
+    /// [`ohl_ui::snap_marker`]): found with the click's own search, again
+    /// only when the pointer, the view or the model changed.
+    pub snap_hover: ohl_ui::snap_marker::Hover,
 }
 
 /// A cut's slab outlined in the main 3D view: its tab's number, its
@@ -1384,7 +1388,10 @@ impl View3d {
             area_done,
             use_at,
         } = clicks;
-        let radius = if self.captured { 10.0 } else { 14.0 };
+        // The snap distance (the setting; the crosshair 4 px less, as
+        // before it was one).
+        let marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
+        let radius = marker.radius(if self.captured { 4.0 } else { 0.0 });
         let use_at = self.link_hover(fr, pointer, radius, use_at);
         let local = fr.local();
         let camera = self.camera.as_mut().expect("fitted above");
@@ -1404,21 +1411,26 @@ impl View3d {
             log::info!("3D view: {total} LiDAR points in the area, found in {took:.1?}");
             self.area_picked = Some((points, total, took));
         }
-        // What a click of the tool button at `at` (view pixels) finds.
+        // What a click of the tool button at `at` (view pixels) finds, and
+        // the point it snapped to (view pixels).
         let use_point = |at: [f64; 2]| {
             let project = clipped_projector(camera, size, clip);
-            let target = selection::pick_shown(model, case, snaps, at, radius, &project, &lidar).0;
+            let (target, _, snapped) =
+                selection::pick_shown_at(model, case, snaps, at, radius, &project, &lidar);
             // In a cut's panel: only ground within its slab.
             let ground = camera
                 .ray(at, size)
                 .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]))
                 .filter(|p| clip.is_none_or(|c| c.contains(*p)));
             let on = selection::on_span(model, case, &target, at, |p| project(p).map(|(q, _)| q));
-            selection::Use {
-                target,
-                at: ground,
-                on,
-            }
+            (
+                selection::Use {
+                    target,
+                    at: ground,
+                    on,
+                },
+                snapped,
+            )
         };
         if let Some(at) = use_at {
             let project = clipped_projector(camera, size, clip);
@@ -1429,7 +1441,7 @@ impl View3d {
             );
         }
         let used = use_at.map(|at| {
-            let u = use_point(at);
+            let u = use_point(at).0;
             log::info!(
                 "3D view: tool click (mouse captured: {}) on {}",
                 self.captured,
@@ -1445,16 +1457,65 @@ impl View3d {
             response.hover_pos().map(local)
         };
         let moved = ui.input(|i| i.pointer.is_moving()) || self.captured;
+        // The snap marker: found again only when the pointer moved or the
+        // view, the model or the settings changed (the image's key holds
+        // the layers and the model's state).
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (self.image_key, self.generation, case, self.captured).hash(&mut h);
+            let c = &*camera;
+            for v in [
+                c.target[0],
+                c.target[1],
+                c.target[2],
+                c.distance,
+                c.yaw,
+                c.pitch,
+                size[0],
+                size[1],
+            ] {
+                v.to_bits().hash(&mut h);
+            }
+            snaps.0.hash(&mut h);
+            marker.distance.to_bits().hash(&mut h);
+            h.finish()
+        };
+        let rect_min = fr.rect.min;
+        let to_pos = move |q: [f64; 2]| rect_min + egui::vec2(q[0] as f32, q[1] as f32);
+        let hover_pos = hover_at.map(to_pos);
+        let marker_stale = marker.show && hover_pos.is_some_and(|p| self.snap_hover.stale(p, key));
+        let mut hover_found = None;
         self.hover_use = match hover_at {
-            Some(at) if self.measuring && (moved || self.hover_use.is_none()) => {
+            Some(at) if self.measuring && (moved || self.hover_use.is_none() || marker_stale) => {
                 let started = std::time::Instant::now();
-                let u = use_point(at);
+                let (u, snapped) = use_point(at);
                 log::trace!("3D view: measuring hover in {:.1?}", started.elapsed());
+                hover_found = Some(snapped);
                 Some(u)
             }
             Some(_) if self.measuring => self.hover_use.take(),
             _ => None,
         };
+        match (hover_at, hover_pos) {
+            (Some(at), Some(p)) if marker.show => {
+                if marker_stale {
+                    // One search for the marker and the measuring hover.
+                    let snapped = hover_found.unwrap_or_else(|| {
+                        let started = std::time::Instant::now();
+                        let project = clipped_projector(camera, size, clip);
+                        let s = selection::pick_shown_at(
+                            model, case, snaps, at, radius, &project, &lidar,
+                        )
+                        .2;
+                        log::trace!("3D view: snap marker in {:.1?}", started.elapsed());
+                        s
+                    });
+                    self.snap_hover.found(p, key, snapped.map(to_pos));
+                }
+            }
+            _ => self.snap_hover.clear(),
+        }
         if let Some((at, double)) = pick_at {
             let cam = *camera;
             let project = clipped_projector(&cam, size, clip);
@@ -1983,6 +2044,8 @@ impl View3d {
         if self.captured {
             paint_crosshair(&painter, rect);
         }
+        // Where a click would pick, on top of everything.
+        self.snap_hover.paint(&painter);
     }
 
     /// The measured line, its label at its middle.

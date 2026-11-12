@@ -1622,3 +1622,124 @@ fn clearance_zones_benchmark() {
         }
     }
 }
+
+/// The snap marker's search (owner, 2026-11-12): the time of one hover
+/// pick — [`crate::selection::pick_shown_at`], the click's own search —
+/// over the synthetic example with its LiDAR file loaded and every snap
+/// kind on, in a 3D projection of the whole line, at 200 pointer places
+/// across the view (the marker runs it once each time the pointer moves).
+///
+/// ```bash
+/// cargo test --release -p ohl-app hover_pick_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run in release with --ignored --nocapture"]
+fn hover_pick_benchmark() {
+    use crate::selection::{LidarShown, Snap, Snaps, pick_shown_at};
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let ex = root.join("examples/synthetic-line");
+    let mut m = model::load(
+        Sources {
+            file: ex.join("synthetic-line.ohl.json"),
+            library: Some(root.join("libraries/cables")),
+            terrain: Some(ex.join("synthetic-survey.csv")),
+            weather: Some(ex.join("weather-cases.ohlwc")),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    for k in 0..m.cases.len() {
+        m.ensure_solved(k);
+    }
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for s in &m.line.structures {
+        for i in 0..3 {
+            lo[i] = lo[i].min(s.position[i]);
+            hi[i] = hi[i].max(s.position[i] + 40.0);
+        }
+    }
+    // LiDAR points loaded (the worst case: every one projected, no
+    // culling by group): 10⁶ on a grid over the line's box, 1 m up.
+    let n = 1000;
+    m.points = (0..n * n)
+        .map(|k| {
+            let (i, j) = (f64::from(k % n), f64::from(k / n));
+            let x = lo[0] + (hi[0] - lo[0]) * i / f64::from(n);
+            let y = lo[1] - 30.0 + (hi[1] - lo[1] + 60.0) * j / f64::from(n);
+            let q = [x - m.origin[0], y - m.origin[1], lo[2] + 1.0 - m.origin[2]];
+            (q.map(|v| (v * 1000.0) as i32), 2)
+        })
+        .collect();
+    let cam = ohl_render::Camera::fit(&ohl_render::Bounds { min: lo, max: hi });
+    let size = [1200.0, 800.0];
+    let project = cam.projector(size);
+    // The points in tiles of 32 × 32 with their bounds, as the view's
+    // chunks hand them to the pick (groups away from the pointer skipped).
+    let mut tiles: std::collections::BTreeMap<(usize, usize), Vec<u32>> = Default::default();
+    for k in 0..n * n {
+        tiles
+            .entry(((k % n) as usize / 32, (k / n) as usize / 32))
+            .or_default()
+            .push(k);
+    }
+    let groups: Vec<crate::selection::LidarGroup<'_>> = tiles
+        .values()
+        .map(|ix| {
+            let (mut a, mut b) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            for &i in ix {
+                let p = crate::selection::lidar_xyz(&m, &m.points[i as usize].0);
+                for k in 0..3 {
+                    a[k] = a[k].min(p[k]);
+                    b[k] = b[k].max(p[k]);
+                }
+            }
+            crate::selection::LidarGroup {
+                bounds: Some([a, b]),
+                points: crate::selection::LidarPoints::Indices(ix, 1),
+                cells: &[],
+            }
+        })
+        .collect();
+    let in_groups = LidarShown::Groups(groups);
+    let all = Snaps(Snap::ALL.into_iter().collect());
+    let no_lidar = Snaps(
+        Snap::ALL
+            .into_iter()
+            .filter(|s| *s != Snap::LidarPoint)
+            .collect(),
+    );
+    for (name, snaps, shown) in [
+        ("every kind but LiDAR", &no_lidar, &LidarShown::Nothing),
+        ("every kind, LiDAR in tiles (as the view)", &all, &in_groups),
+        (
+            "every kind, LiDAR all scanned (worst)",
+            &all,
+            &LidarShown::Loaded,
+        ),
+    ] {
+        let mut times = Vec::new();
+        let mut found = 0;
+        for k in 0..200 {
+            let at = [
+                size[0] * (0.1 + 0.8 * f64::from(k % 20) / 19.0),
+                size[1] * (0.2 + 0.6 * f64::from(k / 20) / 9.0),
+            ];
+            let t = Instant::now();
+            let (s, _, on) = pick_shown_at(&m, 0, snaps, at, 14.0, &project, shown);
+            times.push(t.elapsed().as_secs_f64() * 1e3);
+            found += usize::from(on.is_some() && s != crate::selection::Selection::None);
+        }
+        times.sort_by(f64::total_cmp);
+        println!(
+            "hover pick, {name}: {} LiDAR points, {} structures; median {:.2} ms, max {:.2} ms; \
+             {found}/200 found something",
+            m.points.len(),
+            m.line.structures.len(),
+            times[times.len() / 2],
+            times[times.len() - 1],
+        );
+    }
+}

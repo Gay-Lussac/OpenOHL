@@ -112,6 +112,8 @@ mod section_editor_tests;
 #[cfg(test)]
 mod self_sufficient_tests;
 #[cfg(test)]
+mod snap_marker_tests;
+#[cfg(test)]
 mod solids_tests;
 #[cfg(test)]
 mod tests;

@@ -21,6 +21,9 @@ pub struct ProfileView {
     /// What it shows (none yet: the route with most structures).
     pub(crate) show: Option<Show>,
     pub(crate) drawing: Option<(Key, Built)>,
+    /// Where a click under the pointer would pick (the snap marker): the
+    /// click's own search, again only when the pointer or the view moved.
+    pub snap_hover: ohl_ui::snap_marker::Hover,
     /// Each route's corridor as last made (by alignment id), kept while
     /// what it is made from is unchanged (an edit of the line leaves it).
     corridors: Vec<(String, CorridorKey, Built)>,
@@ -621,7 +624,9 @@ impl ProfileView {
         self.paint_title(&painter, &fr, ratio);
         self.hover_and_measure(ui, &response, &fr, snaps);
         self.area_ui(ui, &fr, area_done);
-        self.clicks(ui, &response, &fr, snaps, selection, buttons)
+        let used = self.clicks(ui, &response, &fr, snaps, selection, buttons);
+        self.snap_hover.paint(&painter);
+        used
     }
 
     /// The bar above the view: what the profile is of, the line width,
@@ -1545,14 +1550,51 @@ impl ProfileView {
         // One alignment shown (not several one after the other): a point
         // of the profile's plane is a point on its axis.
         let single = built.joints.len() <= 1;
+        let marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
         let picker = Picker {
             fr: *fr,
             d,
             lidar_dots: &self.lidar_dots,
             snaps,
             single,
+            radius: marker.radius(2.0) as f32,
         };
         let use_at = |pos: egui::Pos2| picker.use_at(pos);
+        // The snap marker: the click's own search, again when the pointer
+        // or the view moved (or the LiDAR points dotted changed).
+        match response.hover_pos() {
+            Some(pos) if marker.show => {
+                let key = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    let Frame {
+                        rect,
+                        s0,
+                        s1,
+                        z0,
+                        z1,
+                        ..
+                    } = *fr;
+                    [s0, s1, z0, z1].map(f64::to_bits).hash(&mut h);
+                    [
+                        rect.min.x,
+                        rect.min.y,
+                        rect.max.x,
+                        rect.max.y,
+                        marker.distance,
+                    ]
+                    .map(f32::to_bits)
+                    .hash(&mut h);
+                    (&snaps.0, self.lidar_dots.len(), d.wires.len()).hash(&mut h);
+                    h.finish()
+                };
+                if self.snap_hover.stale(pos, key) {
+                    let at = picker.pick_at(pos).1;
+                    self.snap_hover.found(pos, key, at);
+                }
+            }
+            _ => self.snap_hover.clear(),
+        }
         if !self.measuring {
             self.hover_use = None;
         } else if let Some(pos) = response.hover_pos() {
@@ -1627,6 +1669,7 @@ impl ProfileView {
             lidar_dots: &self.lidar_dots,
             snaps,
             single,
+            radius: ohl_ui::snap_marker::Settings::get(ui.ctx()).radius(2.0) as f32,
         };
         let pick = |pos: egui::Pos2| picker.pick(pos);
         let use_at = |pos: egui::Pos2| picker.use_at(pos);
@@ -1845,55 +1888,71 @@ struct Picker<'a> {
     lidar_dots: &'a [(egui::Pos2, crate::model::LidarPoint)],
     snaps: &'a crate::selection::Snaps,
     single: bool,
+    /// How far from the pointer a click picks, px (the snap distance,
+    /// 2 px less).
+    radius: f32,
 }
 
 impl Picker<'_> {
     /// What is at `pos`.
     fn pick(&self, pos: egui::Pos2) -> Selection {
-        let (d, snaps) = (self.d, self.snaps);
+        self.pick_at(pos).0
+    }
+
+    /// What is at `pos`, and the point it snapped to (the snap marker's
+    /// place): on a structure's line at the pointer's height, the wire's
+    /// nearest point drawn, the LiDAR dot.
+    fn pick_at(&self, pos: egui::Pos2) -> (Selection, Option<egui::Pos2>) {
+        let (d, snaps, radius) = (self.d, self.snaps, self.radius);
         let to_screen = self.fr.to_screen();
         // Picking: structures by station, wires by nearest point. Select
         // held, a left-click selects; another tool, a left-click uses it
         // and a right-click selects ([`crate::controls::click_buttons`]).
-        let mut best: Option<(f32, Selection)> = None;
-        let mut consider = |d: f32, s: Selection| {
+        let mut best: Option<(f32, Selection, egui::Pos2)> = None;
+        let mut consider = |d: f32, s: Selection, at: egui::Pos2| {
             let on = s.kind().is_some_and(|k| snaps.on(k));
-            if on && d < 12.0 && best.as_ref().is_none_or(|b| d < b.0) {
-                best = Some((d, s));
+            if on && d < radius && best.as_ref().is_none_or(|b| d < b.0) {
+                best = Some((d, s, at));
             }
         };
         for m in &d.structures {
             let a = to_screen(m.station, m.base);
             let b = to_screen(m.station, m.top);
             let dx = (pos.x - a.x).abs();
-            if pos.y >= b.y - 12.0 && pos.y <= a.y + 4.0 {
-                consider(dx - 3.0, Selection::Structure(m.id.clone()));
+            if pos.y >= b.y - radius && pos.y <= a.y + 4.0 {
+                let at = egui::pos2(a.x, pos.y.clamp(b.y.min(a.y), a.y.max(b.y)));
+                consider(dx - 3.0, Selection::Structure(m.id.clone()), at);
             }
         }
         for w in &d.wires {
             let Some(sel) = trace_selection(&w.label) else {
                 continue;
             };
-            let dmin = w
+            let nearest = w
                 .points
                 .iter()
-                .map(|p| to_screen(p[0], p[2]).distance(pos))
-                .fold(f32::INFINITY, f32::min);
-            consider(dmin, sel);
+                .map(|p| {
+                    let q = to_screen(p[0], p[2]);
+                    (q.distance(pos), q)
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((dmin, q)) = nearest {
+                consider(dmin, sel, q);
+            }
         }
         // The LiDAR points dotted (every one drawn can be clicked; a
         // point under another's dot is drawn as that one).
-        if let Some((d, p)) = self
+        if let Some((d, p, q)) = self
             .lidar_dots
             .iter()
-            .map(|(q, p)| (q.distance(pos), *p))
+            .map(|(q, p)| (q.distance(pos), *p, *q))
             .min_by(|a, b| a.0.total_cmp(&b.0))
-            .filter(|(d, _)| *d <= 12.0)
+            .filter(|(d, _, _)| *d <= radius)
         {
             // Over the wires at about the same distance (as in 3D).
-            consider((d - 4.0).max(0.0), Selection::LidarPoint(p));
+            consider((d - 4.0).max(0.0), Selection::LidarPoint(p), q);
         }
-        best.map_or(Selection::None, |b| b.1)
+        best.map_or((Selection::None, None), |b| (b.1, Some(b.2)))
     }
 
     /// What a click of the tool button at `pos` finds.
