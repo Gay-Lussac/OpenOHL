@@ -738,15 +738,16 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
         ui.label(
             egui::RichText::new(
                 "Between the wires of this line and to exclusion zones: the rules of a \
-                     rule file (.ohlr), in the weather case shown; results in the Clearances \
-                     window (other lines: `ohl line --other-line`)",
+                     rule file (.ohlr), in every weather case of its rules; results in the \
+                     Clearances window (other lines: `ohl line --other-line`)",
             )
             .small()
             .weak(),
         );
         item(ui, Command::RunChecks, out);
         let c = &mut r.clearances;
-        ui.checkbox(&mut c.auto, "also after every edit");
+        ui.checkbox(&mut c.auto, "also after every edit")
+            .on_hover_text("The check runs again after each edit and change of weather case");
         if !c.files.is_empty() {
             ui.menu_button("Rule file", |ui| {
                 let mut chosen = None;
@@ -771,7 +772,11 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
             ui.close();
             add_rule_file(r);
         }
-        if ui.button("Show results").clicked() {
+        if ui
+            .button("Show results")
+            .on_hover_text("Opens the Clearances window: its setup and its results")
+            .clicked()
+        {
             r.clearances.open = true;
             ui.close();
         }

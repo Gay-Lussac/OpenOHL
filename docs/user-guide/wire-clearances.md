@@ -235,7 +235,15 @@ the file's order stay as they are. The fields of a rule are in the
 | **step** | 50 Pa (the project's `clearance_wind_step`) | a smaller step finds the wires nearer their worst place between steps | more steps, more solves |
 | **from** | both sides | left or right alone: only that side's positions | half the windy solves |
 
-The drawing beside the wind shows the positions checked.
+The drawing beside the wind shows the positions checked; the **(?)**
+beside *Wind* explains how the swing arc works between the wires. With
+the swing arc on, orange lines under the wind say before you run what is
+not on the safe side or not checked (and *NOT CHECKED on the swing arc or
+the wind steps: the case pairs …* with the steps too) — *NOT ON THE SAFE SIDE: jumpers
+checked on their swing band without a margin …* (a rule between the
+wires that takes jumpers, a jumper band margin of 0 m, no wind steps) and
+*NOT CHECKED here: the ground and LiDAR points on the swing arc …* (a
+rule to the ground or points) — and the results say the same.
 
 ### The footer
 
@@ -321,18 +329,24 @@ On the safe side (theory, [Wire to wire on the swing arc](../theory/clearances.m
 - with `altitude`, the distance is taken at the highest point of the wire
   (the higher wire of a pair).
 
-Not on the safe side, or not checked:
+Not on the safe side, or not checked (*said*: in the results' notes each
+time it applies):
 
 - **Jumpers on the swing arc at a jumper band margin of 0 m** (the
   default), without the wind steps: between its blowouts a jumper can lie
   outside its swing (up to 0.293 m on the example line). Enter a jumper
-  band margin for your jumpers or tick the wind steps.
+  band margin for your jumpers or tick the wind steps. *Said*, and under
+  the wind before Run.
 - **Case pairs** are checked at each case's full wind only, not swung or
-  stepped.
+  stepped. *Said* with the swing arc or the steps on, and under the wind
+  before Run.
 - **The ground and LiDAR points** are checked here only at the positions
   solved (still air, the full blowouts and the steps when ticked), not on
   the swing arc between: the Vertical and Radial clearance windows check
-  them there.
+  them there. *Said* with the swing arc on, and under the wind before Run.
+- **Radial distances to LiDAR points** are measured only to the points
+  scanned: anything the scan missed is not checked (said in the notes,
+  as in the radial window). *Said.*
 - **Rules to other lines** are not run here (said in the notes).
 - **The structures rigid** in the wire solve, as in every clearance check.
 - The swing arc is a rigid swing about the attachments (a simplification;

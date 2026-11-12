@@ -74,7 +74,21 @@ Checks › Wire clearances menu and the Clearances window setting by setting
 and is not conservative (the ground and points only at the positions
 solved, case pairs not swung, jumpers at a band margin of 0 m), the
 command line. The OHL-Design page keeps a summary and links to it; the
-theory links back.
+theory links back. Part 2, the window: its **user guide ↗** buttons (1
+What it checks, 2 Scope, 3 Rules, the wind, the results; the wind's
+button did nothing before) open that page; the grey lines of 1, 2, 3 and
+the wind moved into the (?) of their section (`check_ui::section_help`,
+`wind_choice_with(.., false)`); the solves per windy case and the band
+margin's warning stay written. New, as the ground windows: with the
+swing arc on, the window says under the wind and the results say in
+their notes *NOT ON THE SAFE SIDE* for jumpers at a jumper band margin
+of 0 m without steps (`zone::JUMPER_BAND_NOTE`) and *NOT CHECKED here*
+for the ground and points between the blowouts
+(`clearance::ARC_GROUND_NOTE`), and with the arc or the steps
+*NOT CHECKED* for a rule's case pairs (`clearance::CASE_PAIRS_NOTE`); a radial point rule's results carry
+`zone::RADIAL_POINTS_NOTE`. Hovers say the effect of the rule fields;
+the menu no longer says "in the weather case shown" (every case of the
+rules runs since 2026-10-28).
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

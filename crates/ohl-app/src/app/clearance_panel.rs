@@ -641,6 +641,18 @@ pub(crate) fn clearance_zone_out(
     }
 }
 
+/// What the wind of the Clearances window leaves not on the safe side or
+/// not checked with `rules`, said under it before Run (the results say
+/// it too: [`crate::clearance::safe_side_notes`]).
+fn wind_warnings(
+    rules: Option<&[ohl_clearance::Rule]>,
+    wind: &ohl_clearance::rules::WindSteps,
+) -> Vec<&'static str> {
+    rules.map_or(Vec::new(), |rules| {
+        crate::clearance::safe_side_notes(rules, wind.arc.then(|| wind.margins()), wind.stepped)
+    })
+}
+
 /// How the swing arc works between the wires (the Clearances window's
 /// wind settings; [`ohl_clearance::wire_arc`]).
 const WIRE_ARC_HELP: &str = "How the swing arc works between wires: in each windy case one wind \
@@ -802,6 +814,34 @@ pub(super) fn keep_rule_file(
 /// The id of the Clearances window's body, tabs and footer.
 const WINDOW: &str = "clearances-window";
 
+/// The Clearances window's own page of the user guide (owner,
+/// 2026-11-12: "also do the same on the wire clearance after").
+pub const WIRE_GUIDE: &str = "user-guide/wire-clearances";
+
+/// The section of [`WIRE_GUIDE`] a **user guide ↗** of the window opens,
+/// for its anchor.
+pub fn wire_guide(anchor: &str) -> &'static str {
+    match anchor {
+        "clearances-what-it-checks" => "1-what-it-checks",
+        "clearances-scope" => "2-scope",
+        "clearances-rules" => "3-rules",
+        "clearances-wind" => "4-model-the-wind-folded",
+        "clearances-results" => "7-the-results-and-the-red-marks",
+        _ => "what-it-answers",
+    }
+}
+
+/// Opens the user guide's page of the window at the section of `anchor`
+/// (said in the status line).
+fn open_wire_guide(r: &mut Ready, anchor: &str) {
+    r.status = Some(
+        match crate::help::open_section(WIRE_GUIDE, wire_guide(anchor)) {
+            Ok(m) => (format!("user guide opened: {m}"), false),
+            Err(e) => (e, true),
+        },
+    );
+}
+
 /// The Clearances window (wire clearances: the line's wires among
 /// themselves and to other lines; owner, 2026-10-27: two windows, this
 /// one "with the model itself", the ground windows "to the ground", on
@@ -905,7 +945,10 @@ pub(super) fn clearance_panel(ui: &mut egui::Ui, r: &mut Ready) {
                 };
                 let auto = &mut c.auto;
                 if crate::check_ui::run_footer(ui, f, |ui| {
-                    ui.checkbox(auto, "after every edit");
+                    ui.checkbox(auto, "after every edit").on_hover_text(
+                        "The check runs again after each edit and change of weather case (the \
+                         tab you are on stays)",
+                    );
                 }) == crate::check_ui::Action::Run
                 {
                     check = true;
@@ -976,16 +1019,23 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         });
         return false;
     }
-    crate::check_ui::section(ui, 1, "What it checks", None);
-    crate::check_help::explain(
+    // The explanations behind the (?) (owner, 2026-11-12, as the
+    // vertical and radial windows: "move the grey lines into the help").
+    let mut guide = crate::check_ui::section_help(
         ui,
-        "The clearances between the wires of this line (and to exclusion zones), by the rules \
-         of a rule file, in every weather case of its rules and the wind positions of 4 Model.",
-        "Each rule gives a vertical and/or radial distance by voltage (a wire pair takes the \
+        1,
+        "What it checks",
+        Some("clearances-what-it-checks"),
+        Some((
+            "The clearances between the wires of this line (and to exclusion zones), by the \
+             rules of a rule file, in every weather case of its rules and the wind positions of \
+             4 Model.",
+            "Each rule gives a vertical and/or radial distance by voltage (a wire pair takes the \
          pair's voltage) between the wires of the line, to the ground or to points, in its \
          weather cases. The check solves the line in every case of the rules (those ticked in \
          2 Scope), at each wind position, and across the cases of a rule's case pairs; rules to \
          other lines are checked by the command line (`ohl line --other-line`).",
+        )),
     );
     crate::check_ui::how_computed(
         ui,
@@ -1004,11 +1054,7 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
     // To the ground and the LiDAR points: the other two clearance
     // windows (the same layout).
     ui.horizontal_wrapped(|ui| {
-        ui.label(
-            egui::RichText::new("To the ground and LiDAR points:")
-                .small()
-                .weak(),
-        );
+        ui.label(egui::RichText::new("To the ground and LiDAR points:").small());
         if ui
             .small_button("Vertical…")
             .on_hover_text("Checks › Ground clearances › Vertical clearances")
@@ -1025,7 +1071,19 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         }
     });
     ui.separator();
-    crate::check_ui::section(ui, 2, "Scope", None);
+    guide = guide.or(crate::check_ui::section_help(
+        ui,
+        2,
+        "Scope",
+        Some("clearances-scope"),
+        Some((
+            "The circuits, routes and weather cases checked.",
+            "Every circuit, the whole line and every weather case of the rules, unless ticked \
+             otherwise. Fewer circuits, routes or cases: fewer sections and positions solved, a \
+             faster run; what is not ticked is not checked. Kept in the rule file's [check]. \
+             View › Work on route narrows the routes further.",
+        )),
+    ));
     // The circuits, routes and alignments checked: kept in the rule
     // file's `[check]`, as the vertical and radial windows keep theirs
     // (owner, 2026-10-27).
@@ -1082,7 +1140,16 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         );
     }
     ui.separator();
-    crate::check_ui::section(ui, 3, "Rules", None);
+    guide = guide.or(crate::check_ui::section_help(
+        ui,
+        3,
+        "Rules",
+        Some("clearances-rules"),
+        Some((
+            "The rule file checked and its rules; click a rule to edit it below.",
+            crate::rule_editor::RULES_HELP,
+        )),
+    ));
     let c = &mut r.clearances;
     let name = |p: &std::path::Path| {
         p.file_name()
@@ -1108,7 +1175,10 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
                 }
             })
             .response
-            .on_hover_text("The clearance rule file Run checks (several may be kept)");
+            .on_hover_text(
+                "The rule file checked: its rules, wind and scope are what Run checks (several \
+                 may be kept; another one changes the results)",
+            );
         if let Some(Ok(rules)) = &c.rules {
             ui.label(egui::RichText::new(format!("{} rules", rules.len())).weak());
         }
@@ -1137,36 +1207,54 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
         .map(|s| s.full)
         .fold(0.0, f64::max);
     let mut wind = r.clearances.wind;
-    let changed = crate::check_ui::model_section(ui, WINDOW, 4, |ui| {
-        crate::check_help::heading(ui, "Wind", "clearances-wind");
-        ui.horizontal_top(|ui| {
-            let changed = ui
-                .vertical(|ui| {
-                    let changed = crate::check_help::wind_choice(
-                        ui, WINDOW, &mut wind, true, full, true, true,
-                    );
-                    if wind.arc {
-                        crate::check_help::explain(
-                            ui,
-                            "Swing arc here: the wires against each other, swung together by one \
-                             wind.",
-                            WIRE_ARC_HELP,
+    let rules = match &r.clearances.rules {
+        Some(Ok(rules)) => Some(rules.clone()),
+        _ => None,
+    };
+    let model = crate::check_ui::model_section(ui, WINDOW, 4, |ui| {
+        let mut anchor = None;
+        ui.horizontal(|ui| {
+            anchor = crate::check_help::heading(ui, "Wind", "clearances-wind");
+            crate::check_help::question_both(
+                ui,
+                "Swing arc here: the wires against each other, swung together by one wind.",
+                WIRE_ARC_HELP,
+            );
+        });
+        let changed = ui
+            .horizontal_top(|ui| {
+                let changed = ui
+                    .vertical(|ui| {
+                        let changed = crate::check_help::wind_choice_with(
+                            ui, WINDOW, &mut wind, true, full, true, true, false,
                         );
-                    }
-                    changed
-                })
-                .inner;
-            let n = if wind.stepped {
-                (full / wind.step.max(1.0)).ceil() as usize
-            } else {
-                0
-            };
-            crate::check_help::wind_positions(ui, wind.arc, n);
-            changed
-        })
-        .inner
-    })
-    .unwrap_or(false);
+                        // Not on the safe side, or not checked here: said
+                        // before Run (and in the results).
+                        for w in wind_warnings(rules.as_deref(), &wind) {
+                            ui.colored_label(
+                                ui.visuals().warn_fg_color,
+                                egui::RichText::new(w).small(),
+                            );
+                        }
+                        changed
+                    })
+                    .inner;
+                let n = if wind.stepped {
+                    (full / wind.step.max(1.0)).ceil() as usize
+                } else {
+                    0
+                };
+                crate::check_help::wind_positions(ui, wind.arc, n);
+                changed
+            })
+            .inner;
+        (changed, anchor)
+    });
+    let (changed, anchor) = model.unwrap_or((false, None));
+    guide = guide.or(anchor);
+    if let Some(a) = guide {
+        open_wire_guide(r, a);
+    }
     if changed {
         r.clearances.wind = wind;
         let saved = r
@@ -1232,6 +1320,9 @@ fn clearance_rows(rep: &crate::clearance::Report) -> Vec<crate::check_ui::Row> {
 /// case and goes there), the rules' lowest clearances and the notes
 /// folded under it.
 fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
+    if let Some(a) = crate::check_help::heading(ui, "Results", "clearances-results") {
+        open_wire_guide(r, a);
+    }
     let c = &mut r.clearances;
     let mut go: Option<crate::clearance::Finding> = None;
     match &c.report {
@@ -1356,5 +1447,99 @@ pub(crate) fn convert_group_study(r: &mut Ready, study: &crate::internal_clearan
             ));
         }
         Err(e) => r.status = Some((e, true)),
+    }
+}
+
+#[cfg(test)]
+mod guide_tests {
+    use super::*;
+
+    /// Every section the Clearances window's **user guide ↗** buttons
+    /// open is a heading of its own page, Wire clearances (2026-11-12;
+    /// mdBook's anchors: lower case, spaces as `-`, punctuation dropped).
+    #[test]
+    fn the_window_links_to_its_own_page() {
+        assert_eq!(WIRE_GUIDE, "user-guide/wire-clearances");
+        let text = std::fs::read_to_string(
+            crate::tests::root().join("docs/user-guide/wire-clearances.md"),
+        )
+        .unwrap();
+        let anchors: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for a in [
+            "clearances-what-it-checks",
+            "clearances-scope",
+            "clearances-rules",
+            "clearances-wind",
+            "clearances-results",
+            "anything else",
+        ] {
+            let s = wire_guide(a);
+            assert!(
+                anchors.iter().any(|x| x == s),
+                "{a}: {s} not in {anchors:?}"
+            );
+        }
+    }
+
+    /// The wind's notes (2026-11-12): the jumpers on the swing arc without
+    /// a margin and without steps, the ground and points not on the arc
+    /// here; none without the arc.
+    #[test]
+    fn the_wind_says_what_is_not_on_the_safe_side() {
+        let rules = ohl_clearance::RuleSet::parse(
+            "[[rule]]\nname = \"pp\"\ntarget = \"same_line\"\nradial = \"3 m\"\n\n\
+             [[rule]]\nname = \"g\"\ntarget = \"ground\"\nvertical = \"7 m\"",
+        )
+        .unwrap()
+        .rules;
+        let none = ohl_clearance::positions::BandMargins {
+            span: 0.15,
+            jumper: 0.0,
+        };
+        let notes = crate::clearance::safe_side_notes(&rules, Some(none), false);
+        assert_eq!(
+            notes,
+            vec![
+                ohl_clearance::zone::JUMPER_BAND_NOTE,
+                crate::clearance::ARC_GROUND_NOTE
+            ]
+        );
+        // The steps, or a jumper margin: the jumpers are covered.
+        let stepped = crate::clearance::safe_side_notes(&rules, Some(none), true);
+        assert_eq!(stepped, vec![crate::clearance::ARC_GROUND_NOTE]);
+        let margin = ohl_clearance::positions::BandMargins {
+            jumper: 0.3,
+            ..none
+        };
+        let with = crate::clearance::safe_side_notes(&rules[..1], Some(margin), false);
+        assert!(with.is_empty());
+        assert!(crate::clearance::safe_side_notes(&rules, None, false).is_empty());
+        // A case pair: said once the wind is swung or stepped.
+        let pairs = ohl_clearance::RuleSet::parse(
+            "[[rule]]\nname = \"p\"\ntarget = \"same_line\"\nradial = \"3 m\"\n\
+             wires = \"sections\"\ncase_pairs = [[\"ice\", \"hot\"]]",
+        )
+        .unwrap()
+        .rules;
+        assert_eq!(
+            crate::clearance::safe_side_notes(&pairs, None, true),
+            vec![crate::clearance::CASE_PAIRS_NOTE]
+        );
+        assert!(crate::clearance::safe_side_notes(&pairs, None, false).is_empty());
     }
 }

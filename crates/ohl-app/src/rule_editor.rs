@@ -921,6 +921,15 @@ impl RuleEditor {
 /// the case pairs, the pair's voltage, the circuits and the exclusions —;
 /// one *Preset ▾*, Import / Export; *Merge rules by voltage…* and *Remove
 /// all rules* of this window beside.
+/// The rules' explanation, in the **(?)** of the Clearances window's
+/// *3 Rules* (owner, 2026-11-12: "move the grey lines into the help").
+pub const RULES_HELP: &str = "Each distance: one distance, a table \"up to kV: distance\" or a \
+     base plus an amount per kV, so one rule covers every voltage (the preview gives the distance \
+     at the project's voltages; wire rules take the pair's voltage). Written when the mouse is \
+     released and every rule is complete; for a project's rule file each change is one command \
+     (Edit › Undo takes it back). Comments and the fields the editor does not show stay in the \
+     file as they are.";
+
 pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     let file = r
         .clearances
@@ -931,16 +940,6 @@ pub fn ui(ui: &mut egui::Ui, r: &mut Ready) {
     r.rule_editor.follow(file.as_deref(), &defaults);
     let voltages = ohl_clearance::zone::line_voltages(&r.model.line);
     let editable = r.model.can_edit().is_ok() || r.model.library_dir.is_none();
-    ui.label(
-        egui::RichText::new(
-            "Each distance: one distance, a table \"up to kV: distance\" or a base plus an \
-             amount per kV, so one rule covers every voltage (the preview gives the distance at \
-             the project's voltages; wire rules take the pair's voltage). Written when the mouse \
-             is released and every rule is complete.",
-        )
-        .small()
-        .weak(),
-    );
     {
         let e = &mut r.rule_editor;
         if let Some(err) = &e.error {
@@ -1119,7 +1118,14 @@ fn edit_rule(
                 let mut on = q.is_some();
                 if ui
                     .checkbox(&mut on, m)
-                    .on_hover_text(format!("A {} clearance", m.to_lowercase()))
+                    .on_hover_text(if m == "Vertical" {
+                        "Ticked: the separation where two wires cross in plan (to the ground or \
+                         points: straight below or above) is compared with this distance; \
+                         unticked: not checked"
+                    } else {
+                        "Ticked: the shortest 3D distance (surface to surface) is compared with \
+                         this distance; unticked: not checked"
+                    })
                     .changed()
                 {
                     *q = on.then_some(Requirement::Fixed(0.0));
@@ -1140,7 +1146,10 @@ fn edit_rule(
                 }
                 ui.end_row();
             }
-            ui.label("Voltages");
+            ui.label("Voltages").on_hover_text(
+                "Only the wires of these voltages are checked (a pair: its first wire); none \
+                 ticked: every wire",
+            );
             ui.horizontal(|ui| {
                 let depends = rule.by_voltage();
                 if !depends {
@@ -1155,7 +1164,10 @@ fn edit_rule(
                 );
             });
             ui.end_row();
-            ui.label("Weather cases");
+            ui.label("Weather cases").on_hover_text(
+                "The cases this rule is checked in; none ticked: every case. Fewer cases: a \
+                 faster run",
+            );
             changed |= cases_menu(ui, &mut rule.fields.cases, cases, groups);
             ui.end_row();
             // How the wires are solved (owner, 2026-11-01).
@@ -1217,7 +1229,11 @@ fn edit_rule(
                 }
             });
             ui.end_row();
-            ui.label("Pair voltage");
+            ui.label("Pair voltage").on_hover_text(
+                "The voltage a pair's distance is taken at: the higher of the two wires', their \
+                 sum, or the voltage actually between the two conductors (two phases of one \
+                 system: its voltage; the same phase of parallel systems: 0 kV)",
+            );
             let name = |p: PairVoltage| match p {
                 PairVoltage::Higher => "the higher of the two",
                 PairVoltage::Sum => "the sum of both",
@@ -1240,7 +1256,11 @@ fn edit_rule(
                 .on_hover_text("The voltage a wire pair's distance is taken at");
             ui.end_row();
             if rule.target == "same_line" {
-                ui.label("Circuits");
+                ui.label("Circuits").on_hover_text(
+                    "Which pairs are checked: every pair, only those of one circuit (phase to \
+                     phase), or only those of different circuits (circuit to circuit, a phase \
+                     and an earth wire)",
+                );
                 ui.horizontal_wrapped(|ui| {
                     let name = |c: CircuitFilter| match c {
                         CircuitFilter::Any => "every pair",
@@ -1270,7 +1290,10 @@ fn edit_rule(
                 });
                 ui.end_row();
             }
-            ui.label("Left out");
+            ui.label("Left out").on_hover_text(
+                "Exclusion zones, where wires come close by design: what is left out is not \
+                 checked (no finding there)",
+            );
             ui.horizontal_wrapped(|ui| {
                 ui.label("near the ends [m]");
                 let r = crate::style::field(

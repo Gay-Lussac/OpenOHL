@@ -440,6 +440,56 @@ fn swing_findings(
     Ok(())
 }
 
+/// What the results say when the swing arc is on and a rule goes to the
+/// ground or to LiDAR points (2026-11-12, the wire clearances' review:
+/// never silent): they are checked here at the positions solved only.
+pub const ARC_GROUND_NOTE: &str = "NOT CHECKED here: the ground and LiDAR points on the swing arc \
+     between the blowouts — this window checks them at the positions solved (still air, the full \
+     blowouts, the wind steps when ticked); the Vertical and Radial clearances windows check them \
+     on the swing arc.";
+
+/// What the results say when a rule has case pairs and the wind is
+/// swung or stepped (2026-11-12): the pairs are not.
+pub const CASE_PAIRS_NOTE: &str = "NOT CHECKED on the swing arc or the wind steps: the case pairs \
+     — each of their two cases at its own full wind only.";
+
+/// What the Clearances window's wind leaves not on the safe side or not
+/// checked with `rules`: `arc` its band margins when the swing arc is on,
+/// `stepped` the wind steps ticked. Said under the wind before Run and in
+/// the results.
+pub fn safe_side_notes(
+    rules: &[Rule],
+    arc: Option<ohl_clearance::positions::BandMargins>,
+    stepped: bool,
+) -> Vec<&'static str> {
+    use ohl_clearance::Target;
+    let mut notes = Vec::new();
+    // Case pairs: each case at its own full wind (not swung, not
+    // stepped).
+    if (arc.is_some() || stepped) && rules.iter().any(|r| !r.case_pairs.is_empty()) {
+        notes.push(CASE_PAIRS_NOTE);
+    }
+    let Some(margins) = arc else {
+        return notes;
+    };
+    // A jumper swung with the others, without a margin of its own and
+    // without the steps between its blowouts (as the ground windows say).
+    let jumpers = rules.iter().any(|r| {
+        matches!(r.target, Target::SameLine { .. })
+            && r.wires != ohl_clearance::rules::Wires::Sections
+    });
+    if jumpers && margins.jumper <= 0.0 && !stepped {
+        notes.push(ohl_clearance::zone::JUMPER_BAND_NOTE);
+    }
+    if rules
+        .iter()
+        .any(|r| matches!(r.target, Target::Ground | Target::Points { .. }))
+    {
+        notes.push(ARC_GROUND_NOTE);
+    }
+    notes
+}
+
 /// Runs the check.
 pub fn run(input: &Input) -> Result<Report, String> {
     let named = input.surfaces.read();
@@ -799,6 +849,24 @@ pub fn run(input: &Input) -> Result<Report, String> {
         }
     }
     report.notes.extend(skipped.into_iter().map(|(_, t)| t));
+    // Not on the safe side, or not checked: said (2026-11-12).
+    let stepped = states
+        .iter()
+        .any(|s| s.pressure > 0.0 && s.pressure < s.full);
+    report.notes.extend(
+        safe_side_notes(rules, input.arc, stepped)
+            .into_iter()
+            .map(str::to_owned),
+    );
+    if input.cloud.is_some()
+        && rules
+            .iter()
+            .any(|r| r.radial.is_some() && matches!(r.target, ohl_clearance::Target::Points { .. }))
+    {
+        report
+            .notes
+            .push(ohl_clearance::zone::RADIAL_POINTS_NOTE.to_owned());
+    }
     report.notes.extend(by_default);
     // Vertical point rules that cannot see a wire beside a tall object
     // (2026-11-11), once per rule.
