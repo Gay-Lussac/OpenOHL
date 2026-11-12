@@ -599,7 +599,7 @@ pub(crate) fn clearance_zone_out(
         ));
     }
     if let Some(anchor) = out.guide {
-        // The vertical window's own page, the radial's sections.
+        // Each window's own page (the radial's since 2026-11-12).
         let (page, anchor) = crate::clearance_zones::guide(measure, anchor);
         r.status = Some(match crate::help::open_section(page, anchor) {
             Ok(m) => (format!("user guide opened: {m}"), false),

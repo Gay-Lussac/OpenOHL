@@ -52,23 +52,28 @@ use crate::check_help as help;
 use crate::model::Model;
 use crate::selection::Selection;
 
-/// The user guide's page of the windows' settings (the radial window's).
-pub const GUIDE: &str = "user-guide/desktop-app";
-
 /// The vertical window's own page of the user guide (owner, 2026-11-12:
 /// "a better page specifically for vertical clearances").
 pub const VERTICAL_GUIDE: &str = "user-guide/vertical-clearances";
 
+/// The radial window's own page of the user guide (owner, 2026-11-12:
+/// "the exact same treatment to the radial clearances").
+pub const RADIAL_GUIDE: &str = "user-guide/radial-clearances";
+
 /// The page and the section a window's **user guide ↗** opens: the
-/// vertical window's own page (its section for the anchor), the radial
-/// window's sections of [`GUIDE`].
+/// window's own page, its section for the anchor.
 pub fn guide(measure: Measure, anchor: &'static str) -> (&'static str, &'static str) {
     match measure {
         Measure::Radial => (
-            GUIDE,
+            RADIAL_GUIDE,
             match anchor {
-                "clearances-what-it-checks" => "vertical-and-radial-clearances",
-                a => a,
+                "clearances-rules-and-presets" => "2-rules",
+                "clearances-wind" => "3-wind",
+                "clearances-zone" => "3-the-distance-in-any-direction",
+                "clearances-what-is-solved" => "4-scope",
+                "clearances-model" => "5-model-more-options-folded",
+                "clearances-results" => "6-the-results-and-the-red-marks",
+                _ => "what-it-answers",
             },
         ),
         Measure::Vertical => (
@@ -89,48 +94,48 @@ pub fn guide(measure: Measure, anchor: &'static str) -> (&'static str, &'static 
 mod guide_tests {
     use super::*;
 
-    /// Every section the vertical window links to is a heading of its
-    /// page (mdBook's anchors: lower case, spaces as `-`, punctuation
-    /// dropped).
+    /// Every section a window links to is a heading of its own page
+    /// (mdBook's anchors: lower case, spaces as `-`, punctuation
+    /// dropped); the radial window's since 2026-11-12.
     #[test]
-    fn the_vertical_window_links_to_its_own_page() {
-        let page = std::fs::read_to_string(
-            crate::tests::root().join("docs/user-guide/vertical-clearances.md"),
-        )
-        .unwrap();
-        let anchors: Vec<String> = page
-            .lines()
-            .filter_map(|l| l.strip_prefix('#'))
-            .map(|h| {
-                h.trim_start_matches('#')
-                    .trim()
-                    .to_lowercase()
-                    .chars()
-                    .filter_map(|c| match c {
-                        ' ' => Some('-'),
-                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .collect();
-        for a in [
-            "clearances-what-it-checks",
-            "clearances-rules-and-presets",
-            "clearances-wind",
-            "clearances-zone",
-            "clearances-what-is-solved",
-            "clearances-model",
-            "clearances-results",
+    fn each_window_links_to_its_own_page() {
+        for (measure, file, page) in [
+            (Measure::Vertical, "vertical-clearances.md", VERTICAL_GUIDE),
+            (Measure::Radial, "radial-clearances.md", RADIAL_GUIDE),
         ] {
-            let (p, s) = guide(Measure::Vertical, a);
-            assert_eq!(p, VERTICAL_GUIDE);
-            assert!(anchors.iter().any(|x| x == s), "{s} not in {anchors:?}");
+            let text =
+                std::fs::read_to_string(crate::tests::root().join("docs/user-guide").join(file))
+                    .unwrap();
+            let anchors: Vec<String> = text
+                .lines()
+                .filter_map(|l| l.strip_prefix('#'))
+                .map(|h| {
+                    h.trim_start_matches('#')
+                        .trim()
+                        .to_lowercase()
+                        .chars()
+                        .filter_map(|c| match c {
+                            ' ' => Some('-'),
+                            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .collect();
+            for a in [
+                "clearances-what-it-checks",
+                "clearances-rules-and-presets",
+                "clearances-wind",
+                "clearances-zone",
+                "clearances-what-is-solved",
+                "clearances-model",
+                "clearances-results",
+            ] {
+                let (p, s) = guide(measure, a);
+                assert_eq!(p, page);
+                assert!(anchors.iter().any(|x| x == s), "{s} not in {anchors:?}");
+            }
         }
-        assert_eq!(
-            guide(Measure::Radial, "clearances-wind"),
-            (GUIDE, "clearances-wind")
-        );
     }
 }
 
@@ -203,7 +208,7 @@ pub struct Out {
     /// A design-code plugin's preset loaded (its plugin, the preset): its
     /// weather cases missing from the model to add.
     pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
-    /// A section of the user guide to open ([`GUIDE`]).
+    /// A section of the user guide to open (the window's page: [`guide`]).
     pub guide: Option<&'static str>,
 }
 

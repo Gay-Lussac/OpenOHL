@@ -10,6 +10,19 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Radial clearances: the same treatment as the vertical** (owner: "once
+the vertical clearances are done please apply the exact same treatment to
+the radial clearances"). Part 1: [Radial
+clearances](../user-guide/radial-clearances.md) — what it answers, the
+check in six steps with the existing drawings and one new
+(`check-windows/8-radial-check-step-by-step.svg`), every setting
+(default, effect, time), every field of a radial rule and of the `[wind]`
+and `[check]` tables (those of the vertical window said to have no
+meaning here), what is and is not conservative. The radial window's
+**user guide ↗** buttons open it (until now the OHL-Design page's
+sections); the theory page, the vertical page, the OHL-Design page and
+the vegetation panel's wind link to it.
+
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)
 and the release folder (`.github/workflows/release.yml`, so the Windows

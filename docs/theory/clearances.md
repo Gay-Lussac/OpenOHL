@@ -3,8 +3,9 @@
 *Built, in active development (not approved yet).* The Vertical and
 Radial clearances windows of OHL-Design and `ohl zones`
 (`crates/ohl-clearance`: `zone`, `zone_arc`, `zone_run`, `checks`). How to
-use them: [Vertical clearances](../user-guide/vertical-clearances.md) (the
-window step by step, every setting and rule field), [OHL-Design › Vertical and radial
+use them: [Vertical clearances](../user-guide/vertical-clearances.md) and
+[Radial clearances](../user-guide/radial-clearances.md) (each window step
+by step, every setting and rule field), [OHL-Design › Vertical and radial
 clearances](../user-guide/desktop-app.md#vertical-and-radial-clearances)
 and [`ohl zones`](../user-guide/terrain.md#vertical-and-radial-clearances-without-the-window-ohl-zones).
 Every clearance is to the conductor's surface ([Clearance](../user-guide/terrain.md#clearance)).

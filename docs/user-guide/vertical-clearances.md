@@ -6,7 +6,7 @@ window for a line designer: what it answers, how it works, every setting
 and every field of a rule. The calculation in detail, with its sources:
 [theory › Vertical and radial clearances](../theory/clearances.md). The
 radial window works the same way with a 3D distance instead of the
-vertical one: [Vertical and radial clearances](desktop-app.md#vertical-and-radial-clearances).
+vertical one: [Radial clearances](radial-clearances.md).
 
 ## What it answers
 

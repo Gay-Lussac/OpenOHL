@@ -634,7 +634,7 @@ Every check window with rules — Vertical and Radial clearances, the Clearances
 
 **Checks › Ground clearances** opens two windows: **Vertical clearances…** and **Radial clearances…**. Each checks the spans and jumpers against its own list of rules. The window can be closed at any time; closing it stops a check that runs.
 
-**The vertical window has a page of its own: [Vertical clearances](vertical-clearances.md)** — what it answers, how it works step by step with drawings, every setting with its default, effect and time, and every field of a rule. Its **user guide ↗** buttons open that page; the radial window's open the sections below.
+**Each window has a page of its own: [Vertical clearances](vertical-clearances.md) and [Radial clearances](radial-clearances.md)** — what it answers, how it works step by step with drawings, every setting with its default, effect and time, and every field of a rule. Their **user guide ↗** buttons open those pages; the sections below are the reference shared by both.
 
 **Down to the ground** (Vertical clearances, a rule with LiDAR classes; 2026-11-11): **by the terrain's classes** (the default), **always** or **never** — each point standing for the whole height from the ground up to it, so that a wire passing beside a tall object is found; off, the results say **NOT ON THE SAFE SIDE** once per rule. In full: [Vertical clearances › Every field of a rule](vertical-clearances.md#every-field-of-a-rule) and the theory: [Down to the ground](../theory/clearances.md#down-to-the-ground-a-wire-beside-a-tall-object).
 
@@ -670,7 +670,7 @@ Below the ticks the window says how many solves a windy case needs (e.g. "131 so
 #### Clearances: zone
 
 - **Vertical**: a strip straight under (and over) the wire, **width on each side** (default 1 m) across the line, in plan, and **depth** (default 0.2 m) along it; the clearance is measured vertically, targets beyond the width are left out entirely. A rule may have **its own width**. In full, with drawings: [Vertical clearances › The zone under the wire](vertical-clearances.md#3-the-zone-under-the-wire).
-- **Radial**: the direct 3D distance from the wire, to each subconductor of a bundle.
+- **Radial**: no zone to set — the shortest 3D distance from the wire in any direction, to each subconductor of a bundle. In full, with drawings: [Radial clearances › The distance in any direction](radial-clearances.md#3-the-distance-in-any-direction).
 - **Ignore LiDAR points farther than … m from the wires** (both windows; unticked: as far as the rules reach): only the points within that distance of the wires are read and compared.
 
 The drawing beside shows the vertical zone (the width each side, a point and its vertical distance, the depth) or, in the radial window, the 3D distance around the wire.
