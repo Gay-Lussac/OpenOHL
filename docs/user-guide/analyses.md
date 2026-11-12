@@ -523,7 +523,8 @@ marked *out of date* when it changes. Under it the **jumper band
 margin** is shown greyed: this check leaves the jumpers out. **Wind stepped**
 (a step in Pa, the sides): still air and every pressure up to the case's.
 Arc and steps work alone or together — the same wind choice as the
-[vertical and radial clearance windows](desktop-app.md#clearances-wind),
+[vertical and radial clearance windows](desktop-app.md#clearances-wind)
+([Vertical clearances](vertical-clearances.md#3-wind-and-zone), step by step),
 with the solves a windy case needs said below it and the arc suggested
 when fine steps need many (here the full pressure is solved from both
 sides in any case; the sides apply to the steps). **Unbalanced ice**: off, the case's

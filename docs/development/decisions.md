@@ -80,6 +80,31 @@ less, the first-person crosshair 4 px less) are kept per application.
 Painter, colour and settings are shared in `ohl_ui::snap_marker`. Not in
 OHL-Structure's Detail view yet.
 
+**Vertical clearances: a page of its own, defaults, the rules list, the
+cut view** (owner: "let's start with the vertical clearances. First I
+would like to have a link to the user guide as now but with a better page
+specifically for vertical clearances that explains the parameters, how
+it's solved and visually shows what it does. Most of the drawings already
+exist, not just in a specific page for this. I would then set the swing
+arc as default with 15 cm and have the zone and depth be 1 m and 20 cm
+with wind from both sides. It must be easier to understand that clicking
+on a rule in the list opens it below to edit it. All the parameters that
+can be set in a rule must be described in the helper document. Also
+review the page of the setup to see if it could be better designed for a
+human. Also the measuring tools do not work the same in the cut as in the
+3D view. They should (no blue highlight or something that shows where we
+are clicking). In the cut view can you also make it by default that the
+controls are the same as in the 3D view. It should actually just be an
+extraction of the 3D view that limits it to a certain depth but not
+more."). Part 1: [Vertical clearances](../user-guide/vertical-clearances.md)
+— what it answers, the check in six steps with the existing drawings and
+one new (`check-windows/7-vertical-check-step-by-step.svg`), every setting
+(default, effect, time) and every field of a vertical rule and of the
+`[wind]` and `[check]` tables, what is and is not conservative. The
+vertical window's **user guide ↗** buttons open it (the radial window's
+still open the OHL-Design page's sections); the theory page, the OHL-Design
+page and the vegetation panel's wind link to it.
+
 **A plugin removed or installed again asks again for more time or
 memory** (owner: "if a plugin that requires more time or memory to work
 was accepted. if we uninstall it and reinstall it it should ask again").

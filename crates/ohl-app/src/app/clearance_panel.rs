@@ -599,12 +599,12 @@ pub(crate) fn clearance_zone_out(
         ));
     }
     if let Some(anchor) = out.guide {
-        r.status = Some(
-            match crate::help::open_section(crate::clearance_zones::GUIDE, anchor) {
-                Ok(m) => (format!("user guide opened: {m}"), false),
-                Err(e) => (e, true),
-            },
-        );
+        // The vertical window's own page, the radial's sections.
+        let (page, anchor) = crate::clearance_zones::guide(measure, anchor);
+        r.status = Some(match crate::help::open_section(page, anchor) {
+            Ok(m) => (format!("user guide opened: {m}"), false),
+            Err(e) => (e, true),
+        });
     }
     if out.hide_marks && r.marks_from == MarksFrom::Zone(measure) {
         // Its window closed: its violations off the views.

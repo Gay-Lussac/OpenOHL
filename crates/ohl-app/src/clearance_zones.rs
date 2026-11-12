@@ -52,8 +52,87 @@ use crate::check_help as help;
 use crate::model::Model;
 use crate::selection::Selection;
 
-/// The user guide's page of the windows' settings.
+/// The user guide's page of the windows' settings (the radial window's).
 pub const GUIDE: &str = "user-guide/desktop-app";
+
+/// The vertical window's own page of the user guide (owner, 2026-11-12:
+/// "a better page specifically for vertical clearances").
+pub const VERTICAL_GUIDE: &str = "user-guide/vertical-clearances";
+
+/// The page and the section a window's **user guide ↗** opens: the
+/// vertical window's own page (its section for the anchor), the radial
+/// window's sections of [`GUIDE`].
+pub fn guide(measure: Measure, anchor: &'static str) -> (&'static str, &'static str) {
+    match measure {
+        Measure::Radial => (
+            GUIDE,
+            match anchor {
+                "clearances-what-it-checks" => "vertical-and-radial-clearances",
+                a => a,
+            },
+        ),
+        Measure::Vertical => (
+            VERTICAL_GUIDE,
+            match anchor {
+                "clearances-rules-and-presets" => "2-rules",
+                "clearances-wind" | "clearances-zone" => "3-wind-and-zone",
+                "clearances-what-is-solved" => "4-scope",
+                "clearances-model" => "5-model-more-options-folded",
+                "clearances-results" => "6-the-results-and-the-red-marks",
+                _ => "what-it-answers",
+            },
+        ),
+    }
+}
+
+#[cfg(test)]
+mod guide_tests {
+    use super::*;
+
+    /// Every section the vertical window links to is a heading of its
+    /// page (mdBook's anchors: lower case, spaces as `-`, punctuation
+    /// dropped).
+    #[test]
+    fn the_vertical_window_links_to_its_own_page() {
+        let page = std::fs::read_to_string(
+            crate::tests::root().join("docs/user-guide/vertical-clearances.md"),
+        )
+        .unwrap();
+        let anchors: Vec<String> = page
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for a in [
+            "clearances-what-it-checks",
+            "clearances-rules-and-presets",
+            "clearances-wind",
+            "clearances-zone",
+            "clearances-what-is-solved",
+            "clearances-model",
+            "clearances-results",
+        ] {
+            let (p, s) = guide(Measure::Vertical, a);
+            assert_eq!(p, VERTICAL_GUIDE);
+            assert!(anchors.iter().any(|x| x == s), "{s} not in {anchors:?}");
+        }
+        assert_eq!(
+            guide(Measure::Radial, "clearances-wind"),
+            (GUIDE, "clearances-wind")
+        );
+    }
+}
 
 /// What its results are computed from ([`crate::revision`]).
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
@@ -709,7 +788,7 @@ impl ZoneWindow {
                         ui,
                         1,
                         "What it checks",
-                        Some("clearances-results"),
+                        Some("clearances-what-it-checks"),
                     ));
                     self.help(ui);
                     let measure = self.zone.measure;
