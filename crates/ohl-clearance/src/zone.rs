@@ -422,8 +422,10 @@ pub fn from_rule_set(
         };
         // The window's zone: the first rule's, where its file states it
         // (2026-11-12: a value not given is the window's default, the
-        // project's — not the band of `ohl line`, nor a depth of 0).
-        if first && !rows.is_empty() {
+        // project's — not the band of `ohl line`, nor a depth of 0). The
+        // radial window has no zone: nothing taken (2026-11-12, a file
+        // with both measures read by the radial window).
+        if first && !rows.is_empty() && measure == Measure::Vertical {
             first = false;
             out.width = rule.stated.band.then_some(rule.vertical_band);
             out.depth = rule.stated.depth.then_some(rule.vertical_depth);
@@ -2825,5 +2827,37 @@ mod tests {
         let v = from_rule_set(&again, Measure::Vertical, |_| vec![], &[220.0]);
         assert_eq!((v.width, v.depth), (Some(0.5), Some(0.0)));
         assert!(v.rules.iter().all(|r| r.width.is_none()), "{:?}", v.rules);
+    }
+
+    /// The radial window has no zone: a file stating one (a rule with
+    /// both measures) gives it none, nor a rule its own width; its wind
+    /// is taken as stated, a `[wind]` without `arc` keeping the arc off
+    /// (2026-11-12, the vertical window's rules for the radial one).
+    #[test]
+    fn the_radial_window_takes_no_zone() {
+        let text = r#"
+            format = "ohl-clearance-rules"
+            version = 1
+            [wind]
+            steps = true
+            [[rule]]
+            name = "Roofs"
+            target = "points"
+            classes = [6]
+            vertical = "5 m"
+            radial = "4 m"
+            vertical_band = "2 m"
+            vertical_depth = "0.5 m"
+        "#;
+        let set = RuleSet::parse(text).unwrap();
+        let r = from_rule_set(&set, Measure::Radial, |_| vec![], &[220.0]);
+        assert_eq!((r.width, r.depth), (None, None));
+        assert_eq!(r.rules.len(), 1);
+        assert_eq!(r.rules[0].width, None);
+        let wind = r.wind.unwrap();
+        assert!(wind.stepped && !wind.arc);
+        // The vertical window takes the zone stated.
+        let v = from_rule_set(&set, Measure::Vertical, |_| vec![], &[220.0]);
+        assert_eq!((v.width, v.depth), (Some(2.0), Some(0.5)));
     }
 }

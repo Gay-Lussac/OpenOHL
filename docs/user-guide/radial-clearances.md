@@ -111,7 +111,10 @@ was not checked or **not on the safe side**.
 
 The Setup tab, top to bottom. Every setting is kept in the project's rule
 file of the window (`<model>.radial-clearances.ohlr`) as soon as the
-mouse is released, and a change marks the results *out of date*.
+mouse is released, and a change marks the results *out of date*. Each
+section and field explains itself in its **(?)** (on hover: a short line,
+then the longer text); only warnings, what blocks **Run** and the solves
+a windy case needs stay written under the fields.
 
 ### 1 What it checks
 

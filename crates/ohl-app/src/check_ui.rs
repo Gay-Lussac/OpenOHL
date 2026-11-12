@@ -163,11 +163,28 @@ pub fn section(
     title: &str,
     anchor: Option<&'static str>,
 ) -> Option<&'static str> {
+    section_help(ui, number, title, anchor, None)
+}
+
+/// [`section`] with a **(?)** after its title holding the section's
+/// explanation, `help` (short line, longer text): the grey line it had
+/// under its settings (owner, 2026-11-12, the vertical and radial
+/// clearance windows: "move the grey lines into the help").
+pub fn section_help(
+    ui: &mut egui::Ui,
+    number: usize,
+    title: &str,
+    anchor: Option<&'static str>,
+    help: Option<(&str, &str)>,
+) -> Option<&'static str> {
     ui.add_space(4.0);
     let mut out = None;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(format!("{number}")).weak().strong());
         ui.strong(title);
+        if let Some((short, long)) = help {
+            crate::check_help::question_both(ui, short, long);
+        }
         if let Some(a) = anchor
             && ui
                 .small_button("user guide ↗")

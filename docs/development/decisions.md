@@ -21,7 +21,24 @@ and `[check]` tables (those of the vertical window said to have no
 meaning here), what is and is not conservative. The radial window's
 **user guide ↗** buttons open it (until now the OHL-Design page's
 sections); the theory page, the vertical page, the OHL-Design page and
-the vegetation panel's wind link to it.
+the vegetation panel's wind link to it. Part 2, the window: a new radial
+window starts as the vertical — the swing arc on with its band margin
+of 0.15 m, the wind from both sides (`clearance_zones::default_wind`;
+a rule file's `[wind]` without `arc` still keeps it off, as before). The
+zone's width and depth have no meaning in 3D: the radial window says so
+in one line under the wind and no longer takes a zone from a rule file
+(`zone::from_rule_set`, a file with both measures). The jumpers' *NOT ON
+THE SAFE SIDE* note was already shared (window and results). The setup
+order (1 What it checks … 5 Model) and the rules list were already the
+vertical's; hover texts now say the effect and time of *Calculation*,
+*Solved by* and the search distance. **The grey lines into the help**
+(owner: "yes move the grey lines into the help for both"): in both
+windows each section's and field's explanation is in its **(?)** (the
+short line, then the longer text: `check_help::question_both`,
+`check_ui::section_help`, `check_help::wind_choice_with(.., lines:
+false)`); the warnings (the jumpers' note, a band margin below 0.15 m,
+"set the distance", what blocks Run) and the solves of a windy case stay
+written. The vegetation panel and the safety volumes keep their lines.
 
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)

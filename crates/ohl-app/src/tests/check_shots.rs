@@ -95,6 +95,12 @@ const SHOTS: &[Shot] = &[
         done: None,
     },
     Shot {
+        name: "radial-clearances",
+        title: "Radial clearances",
+        open: |r| r.radial_clearances.show(&r.model),
+        done: None,
+    },
+    Shot {
         name: "safety-volumes",
         title: "Safety volumes",
         open: |r| {

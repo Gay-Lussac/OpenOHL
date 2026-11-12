@@ -638,7 +638,7 @@ Every check window with rules — Vertical and Radial clearances, the Clearances
 
 **Down to the ground** (Vertical clearances, a rule with LiDAR classes; 2026-11-11): **by the terrain's classes** (the default), **always** or **never** — each point standing for the whole height from the ground up to it, so that a wire passing beside a tall object is found; off, the results say **NOT ON THE SAFE SIDE** once per rule. In full: [Vertical clearances › Every field of a rule](vertical-clearances.md#every-field-of-a-rule) and the theory: [Down to the ground](../theory/clearances.md#down-to-the-ground-a-wire-beside-a-tall-object).
 
-The two windows read as the [vegetation panel](analyses.md#the-vegetation-panel) does: the settings in groups, each with a heading and a link **user guide ↗** to its section below, a line beside each value saying what it does (a longer text on hover), small drawings of the zone and of the wind positions that follow the values, and the same wind choice. The theory: [Vertical and radial clearances](../theory/clearances.md).
+The two windows read as the [vegetation panel](analyses.md#the-vegetation-panel) does: the settings in groups, each with a heading and a link **user guide ↗** to its section below, a **(?)** beside each section title or value saying what it does (its short line, then a longer text, on hover — since 2026-11-12 no longer a grey line under it; warnings, what blocks Run and the solves a windy case needs stay written), small drawings of the zone and of the wind positions that follow the values, and the same wind choice. The theory: [Vertical and radial clearances](../theory/clearances.md).
 
 #### Clearances: rules and presets
 

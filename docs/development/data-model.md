@@ -1306,8 +1306,9 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   2026-10-20 `arc` (bool, default false; written only when true, so a
   file without it is written as before and older programs read it; a
   `[wind]` table without it stays off — since 2026-11-12 only a new
-  vertical window, or a rule file without `[wind]`, starts with the arc
-  on, `clearance_zones::default_wind`) —
+  vertical or radial window, or a rule file without `[wind]`, starts with
+  the arc on, `clearance_zones::default_wind`; the radial window takes
+  no zone from `vertical_band` / `vertical_depth`) —
   how the desktop clearance windows and `ohl zones` apply the wind: the
   steps up to each case's pressure, and/or each span's swing arc
   (`WindSteps::arc`; the danger-tree check's `positions::SwingArc`,

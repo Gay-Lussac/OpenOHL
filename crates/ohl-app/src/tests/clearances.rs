@@ -855,27 +855,83 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
     std::fs::remove_dir_all(dir).ok();
 }
 
-/// A new window's defaults (owner, 2026-11-12): the vertical window with
-/// the swing arc and its 0.15 m band margin, the wind from both sides,
-/// the zone 1 m on each side and 0.2 m deep; the radial window without
-/// the arc.
+/// A new window's defaults (owner, 2026-11-12): the swing arc and its
+/// 0.15 m band margin, the wind from both sides, in the vertical window
+/// and since the same day in the radial one ("the exact same treatment");
+/// the zone 1 m on each side and 0.2 m deep (vertical only).
 #[test]
-fn a_new_vertical_window_starts_with_the_swing_arc() {
+fn a_new_window_starts_with_the_swing_arc() {
     use ohl_clearance::zone::Measure;
+    for measure in [Measure::Vertical, Measure::Radial] {
+        let w = crate::clearance_zones::ZoneWindow::new(measure);
+        assert!(w.wind.arc && !w.wind.stepped, "{measure:?}");
+        assert_eq!(w.wind.band_margin, 0.15);
+        assert_eq!(w.wind.jumper_band_margin, 0.0);
+        assert_eq!(w.wind.sides, ohl_clearance::WindSides::Both);
+        // The first rule checks spans and jumpers: the jumpers' band
+        // without a margin is said beside the wind.
+        let mut w = w;
+        w.rules.push(crate::clearance_zones::first_rule());
+        assert!(w.jumpers_unsafe(), "{measure:?}");
+        w.wind.jumper_band_margin = 0.3;
+        assert!(!w.jumpers_unsafe());
+    }
     let v = crate::clearance_zones::ZoneWindow::new(Measure::Vertical);
-    assert!(v.wind.arc && !v.wind.stepped);
-    assert_eq!(v.wind.band_margin, 0.15);
-    assert_eq!(v.wind.sides, ohl_clearance::WindSides::Both);
     assert_eq!((v.zone.width, v.zone.depth), (1.0, 0.2));
-    let r = crate::clearance_zones::ZoneWindow::new(Measure::Radial);
-    assert!(!r.wind.arc);
-    // The first rule checks spans and jumpers: the jumpers' band without
-    // a margin is said beside the wind.
-    let mut v = v;
-    v.rules.push(crate::clearance_zones::first_rule());
-    assert!(v.jumpers_unsafe());
-    v.wind.jumper_band_margin = 0.3;
-    assert!(!v.jumpers_unsafe());
+}
+
+/// Checks › Radial clearances (owner, 2026-11-12): the swing arc on, the
+/// jumpers' band without a margin said in orange before Run, the solves
+/// shown; the grey lines in the (?) of their section or field ("move the
+/// grey lines into the help"), no zone to set said in one line; every
+/// user guide link to the radial window's own page.
+#[test]
+fn the_radial_clearances_window_as_the_vertical() {
+    let model = synthetic();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1600.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    open_clearance_window(&mut harness, "Radial clearances…");
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.radial_clearances.wind.arc);
+        assert!(r.radial_clearances.jumpers_unsafe());
+    }
+    harness.run();
+    harness.get_by_label(crate::clearance_zones::JUMPERS_UNSAFE);
+    assert!(
+        harness
+            .query_all_by_label_contains("solves for a windy case of 600 Pa")
+            .next()
+            .is_some()
+    );
+    harness.get_by_label_contains("No zone to set");
+    // Moved into the (?): no longer a line of their own.
+    for moved in [
+        "Band margin: every distance to the swing band",
+        "Swing arc: anywhere between the blowouts",
+        "Circuits: those checked.",
+        "A rule: what must stay clear",
+    ] {
+        assert!(
+            harness.query_all_by_label_contains(moved).next().is_none(),
+            "{moved}"
+        );
+    }
+    for a in [
+        "clearances-what-it-checks",
+        "clearances-rules-and-presets",
+        "clearances-wind",
+        "clearances-what-is-solved",
+        "clearances-model",
+        "clearances-results",
+    ] {
+        assert_eq!(
+            crate::clearance_zones::guide(ohl_clearance::zone::Measure::Radial, a).0,
+            crate::clearance_zones::RADIAL_GUIDE
+        );
+    }
 }
 
 /// The time left of a step: none before 2 % of it, then from its pace;

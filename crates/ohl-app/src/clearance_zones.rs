@@ -290,18 +290,55 @@ const ZONE_DEPTH_HELP: &str = "Along the line (default 0.2 m): the wire is taken
      distances where the wire slopes (on the safe side); 0: exactly over the point. No time.";
 
 /// The wind a window starts with (a new window, a rule file without a
-/// `[wind]` table): from both sides; in the vertical window also the
-/// swing arc, with the band margin of 0.15 m (owner, 2026-11-12: "set the
-/// swing arc as default with 15 cm … with wind from both sides"). The arc
+/// `[wind]` table): from both sides, the swing arc with the band margin
+/// of 0.15 m (owner, 2026-11-12: "set the swing arc as default with 15 cm
+/// … with wind from both sides"; the radial window too since the same
+/// day: "the exact same treatment to the radial clearances"). The arc
 /// only adds positions: more findings, never fewer. A rule file's
 /// `[wind]` is taken as it is (no `arc` key: off, as files written with
-/// the arc off read).
-pub fn default_wind(measure: Measure) -> WindSteps {
+/// the arc off read). The same in both windows: `measure` kept for the
+/// callers.
+pub fn default_wind(_measure: Measure) -> WindSteps {
     WindSteps {
-        arc: measure == Measure::Vertical,
+        arc: true,
         ..WindSteps::default()
     }
 }
+
+/// The rules' explanation, in the (?) of *2 Rules*.
+const RULES_HELP: (&str, &str) = (
+    "A rule: what must stay clear (the ground, LiDAR classes), by how much, in which weather \
+     cases and for which voltages. Click a rule to edit it below.",
+    "Voltage: any (each wire with the distance of its own system) or one of the line's. Weather \
+     cases: those the rule applies in (none ticked: every case). Distance: one value, a table \
+     \"up to kV: distance\" or a base plus an amount per kV. Targets: the LiDAR classes ticked \
+     (by number and name of the class scheme, with their colours) and the ground surface of the \
+     checks. A preset (a design code's) is merged into the rules (a rule of the same name \
+     replaced) or replaces them, with its wind and what it solves.",
+);
+
+/// The scope's explanation, in the (?) of *4 Scope*.
+const SCOPE_HELP: (&str, &str) = (
+    "Circuits: those checked. Routes: the routes and alignments checked (none ticked: the whole \
+     line).",
+    "Only the sections of the circuits ticked, on the routes and alignments ticked, are solved \
+     and checked (a section with a structure on one of them, whole). Fewer: fewer sections \
+     solved, faster. The rules' weather cases are set per rule (2 Rules); the method each \
+     section is solved with is in 5 Model.",
+);
+
+/// The radial window's line under the wind: no zone to set.
+const RADIAL_NO_ZONE: (&str, &str) = (
+    "No zone to set: the shortest 3D distance from the conductor's surface, in any direction.",
+    "To each subconductor of a bundle; to the ground, the nearest point of the ground surface in \
+     any direction. The vertical window's zone width and depth have no meaning here: a target \
+     beside the wire is measured as one below it.",
+);
+
+/// *Solved by*, on hover: its effect and time.
+const METHOD_HOVER: &str = "The method every section is solved with in this check (each keeps its \
+     cable condition). Finite elements: the strings swinging, slower; ruling span: the classic \
+     approximation, faster.";
 
 /// A rule's distance not set yet (the placeholder of a window's first
 /// rule, a row added blank: 0 m, which no regulation asks for), or a
@@ -835,11 +872,16 @@ impl ZoneWindow {
                     // The rules first (owner, 2026-11-12: the setup "better
                     // designed for a human" — the most used settings
                     // first, the rarely used folded).
-                    guide = guide.or(check_ui::section(
+                    // The grey lines between the fields in the (?) of their
+                    // section or field (owner, 2026-11-12: "yes move the
+                    // grey lines into the help for both"); warnings and
+                    // the solves stay visible.
+                    guide = guide.or(check_ui::section_help(
                         ui,
                         2,
                         "Rules",
                         Some("clearances-rules-and-presets"),
+                        Some(RULES_HELP),
                     ));
                     self.rules_ui(ui, model, presets, &mut out);
                     ui.separator();
@@ -853,29 +895,26 @@ impl ZoneWindow {
                         Some("clearances-wind"),
                     ));
                     self.wind_ui(ui, model);
-                    if self.zone.measure == Measure::Vertical {
-                        guide = guide.or(help::heading(ui, "Zone", "clearances-zone"));
-                        self.zone_ui(ui);
+                    match self.zone.measure {
+                        Measure::Vertical => {
+                            guide = guide.or(help::heading(ui, "Zone", "clearances-zone"));
+                            self.zone_ui(ui);
+                        }
+                        // No zone in 3D: said once, in one line (2026-11-12).
+                        Measure::Radial => help::explain(ui, RADIAL_NO_ZONE.0, RADIAL_NO_ZONE.1),
                     }
                     ui.separator();
-                    guide = guide.or(check_ui::section(
+                    guide = guide.or(check_ui::section_help(
                         ui,
                         4,
                         "Scope",
                         Some("clearances-what-is-solved"),
+                        Some(SCOPE_HELP),
                     ));
                     self.check_ui(ui, model);
                     ui.separator();
                     // Rarely changed: folded (check pages' guidelines).
                     let model_guide = check_ui::model_section(ui, footer, 5, |ui| {
-                        ui.label(
-                            egui::RichText::new(
-                                "More options: the calculation method and how far LiDAR points \
-                                 are read.",
-                            )
-                            .small()
-                            .weak(),
-                        );
                         self.method_ui(ui);
                         self.search_ui(ui);
                         help::heading(ui, "These options", "clearances-model")
@@ -1042,7 +1081,8 @@ impl ZoneWindow {
                 .checkbox(&mut limited, "Ignore LiDAR points farther than")
                 .on_hover_text(
                     "Only the points within this distance of the wires are read and compared \
-                     (unticked: as far as the rules reach)",
+                     (unticked: as far as the rules reach). Smaller: fewer points read, faster; \
+                     never a different clearance within it.",
                 )
                 .changed()
             {
@@ -1051,26 +1091,23 @@ impl ZoneWindow {
             }
             if let Some(d) = self.zone.search.as_mut() {
                 self.dirty |= ui
-                    .add(egui::DragValue::new(d).speed(0.5).range(0.5..=500.0))
+                    .add(
+                        egui::DragValue::new(d)
+                            .speed(0.5)
+                            .range(0.5..=500.0)
+                            .suffix(" m"),
+                    )
                     .changed();
-                ui.label("m from the wires");
+                ui.label("from the wires");
             }
-        });
-        help::explain(
-            ui,
-            "Search distance: only the LiDAR points this near the wires are read.",
-            "Points farther from every wire position (and swing arc) are not read nor compared; \
-             unticked, as far as the rules' largest distance reaches. A smaller distance reads \
-             fewer points: faster, never a different clearance within it.",
-        );
-        if self.zone.measure != Measure::Vertical {
-            help::explain(
+            help::question_both(
                 ui,
-                "Radial: the shortest 3D distance from the conductor's surface.",
-                "To each subconductor of a bundle; to the ground, the nearest point of the ground \
-                 surface in any direction.",
+                "Search distance: only the LiDAR points this near the wires are read.",
+                "Points farther from every wire position (and swing arc) are not read nor \
+                 compared; unticked, as far as the rules' largest distance reaches. A smaller \
+                 distance reads fewer points: faster, never a different clearance within it.",
             );
-        }
+        });
     }
 
     /// The vertical zone's width and depth.
@@ -1096,14 +1133,14 @@ impl ZoneWindow {
                 )
                 .on_hover_text(ZONE_DEPTH_HELP)
                 .changed();
+            help::question_both(
+                ui,
+                "Width on each side of the wire, in plan; depth: the slice along the line.",
+                "A target within the width of the wire (across the line, in plan) is compared \
+                 with the wire's lowest point over the slice of the depth around it (its highest \
+                 for a target above). A rule may have its own width (the rules' width column).",
+            );
         });
-        help::explain(
-            ui,
-            "Width on each side of the wire, in plan; depth: the slice along the line.",
-            "A target within the width of the wire (across the line, in plan) is compared with \
-             the wire's lowest point over the slice of the depth around it (its highest for a \
-             target above). A rule may have its own width (the rules' width column).",
-        );
     }
 
     /// The wind choice (shared with the vegetation panel) and its drawing.
@@ -1117,8 +1154,16 @@ impl ZoneWindow {
             .fold(0.0, f64::max);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                self.dirty |=
-                    help::wind_choice(ui, self.title(), &mut self.wind, true, full, true, true);
+                self.dirty |= help::wind_choice_with(
+                    ui,
+                    self.title(),
+                    &mut self.wind,
+                    true,
+                    full,
+                    true,
+                    true,
+                    false,
+                );
             });
             let n = if self.wind.stepped {
                 (full / self.wind.step.max(1.0)).ceil() as usize
@@ -1156,22 +1201,13 @@ impl ZoneWindow {
             self.scope.write_check(&mut self.check);
             self.dirty = true;
         }
-        help::explain(
-            ui,
-            "Circuits: those checked. Routes: the routes and alignments checked (none ticked: \
-             the whole line).",
-            "Only the sections of the circuits ticked, on the routes and alignments ticked, are \
-             solved and checked (a section with a structure on one of them, whole). The rules' \
-             weather cases are set per rule (2 Rules); the method each section is solved with is \
-             in 5 Model.",
-        );
     }
 
     /// *Solved by* (in 5 Model): each section's own calculation, or one
     /// method for all (kept in the rule file's `[check]`).
     fn method_ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Solved by");
+            ui.label("Solved by").on_hover_text(METHOD_HOVER);
             let name = |m: Option<Method>| match m {
                 None => "each section's calculation",
                 Some(Method::Fe) => "finite elements (FE)",
@@ -1187,17 +1223,16 @@ impl ZoneWindow {
                     }
                 })
                 .response
-                .on_hover_text(
-                    "The method every section is solved with in this check (each keeps its \
-                     cable condition)",
-                );
+                .on_hover_text(METHOD_HOVER);
+            help::question_both(
+                ui,
+                "More options: the calculation method and how far LiDAR points are read. Solved \
+                 by: each section's own calculation, or one method for all.",
+                "Finite elements solve each section with its strings swinging; ruling span is the \
+                 classic approximation; each section keeps its cable condition (initial, final). \
+                 Finite elements take longer than ruling span.",
+            );
         });
-        help::explain(
-            ui,
-            "Solved by: each section's own calculation, or one method for all.",
-            "Finite elements solve each section with its strings swinging; ruling span is the \
-             classic approximation; each section keeps its cable condition (initial, final).",
-        );
     }
 
     /// *How it is computed*, in short.
@@ -1235,18 +1270,6 @@ impl ZoneWindow {
         presets: &[crate::rule_editor::PluginPresets],
         out: &mut Out,
     ) {
-        help::explain(
-            ui,
-            "A rule: what must stay clear (the ground, LiDAR classes), by how much, in which \
-             weather cases and for which voltages.",
-            "Voltage: any (each wire with the distance of its own system) or one of the line's. \
-             Weather cases: those the rule applies in (none ticked: every case). Distance: one \
-             value, a table \"up to kV: distance\" or a base plus an amount per kV. Targets: the \
-             LiDAR classes ticked (by number and name of the class scheme, with their colours) \
-             and the ground surface of the checks. A preset (a design code's) is merged into \
-             the rules (a rule of the same name replaced) or replaces them, with its wind and \
-             what it solves.",
-        );
         let measure = self.zone.measure;
         let part = crate::preset_cases::Part::of(measure);
         let voltages = line_voltages(model);
@@ -1310,7 +1333,9 @@ impl ZoneWindow {
                         // How the wires are solved (owner, 2026-11-01:
                         // e.g. the ground at max sag).
                         ui.label("Calculation").on_hover_text(
-                            "How every wire is solved for this rule; each section's own by default",
+                            "How every wire is solved for this rule (e.g. the ground at max sag); \
+                             each section's own by default. Rules of several calculations: the \
+                             line is solved once for each (time).",
                         );
                         changed |= crate::rule_table::calculation_combo(
                             ui,

@@ -317,6 +317,24 @@ pub fn wind_choice(
     jumpers: bool,
     arc: bool,
 ) -> bool {
+    wind_choice_with(ui, id, wind, sides_all, full, jumpers, arc, true)
+}
+
+/// [`wind_choice`]; `lines` false: the explanations in the **(?)** of
+/// their row instead of a grey line under it (owner, 2026-11-12, the
+/// vertical and radial clearance windows: "move the grey lines into the
+/// help"). Warnings and the solves stay visible either way.
+#[allow(clippy::too_many_arguments)]
+pub fn wind_choice_with(
+    ui: &mut egui::Ui,
+    id: &str,
+    wind: &mut WindSteps,
+    sides_all: bool,
+    full: f64,
+    jumpers: bool,
+    arc: bool,
+    lines: bool,
+) -> bool {
     let mut changed = false;
     if !arc {
         wind.arc = false;
@@ -367,37 +385,19 @@ pub fn wind_choice(
                 .response
                 .on_hover_text("Left and right looking ahead along the line");
         });
+        if !lines {
+            let (what, long) = wind_texts(wind, sides_all);
+            question_both(ui, what, long);
+        }
     });
     if wind.arc {
-        changed |= band_margin_ui(ui, id, &mut wind.band_margin);
-        changed |= jumper_band_margin_ui(ui, id, &mut wind.jumper_band_margin, jumpers);
+        changed |= band_margin_ui(ui, id, &mut wind.band_margin, lines);
+        changed |= jumper_band_margin_ui(ui, id, &mut wind.jumper_band_margin, jumpers, lines);
     }
-    let what = match (wind.arc, wind.stepped) {
-        (false, false) => "None ticked: each case's own pressure, blown to each side.",
-        (true, false) => "Swing arc: anywhere between the blowouts (closed form).",
-        (false, true) => {
-            "Wind stepped: still air and every pressure up to the case's, by the step."
-        }
-        (true, true) => "Both: every step solved, and the swing arc between the blowouts.",
-    };
-    explain(
-        ui,
-        what,
-        if sides_all {
-            "Alongside each other or alone. The swing arc swings each span as one about the line \
-             through its attachment points, between still air and the full blowouts of the sides \
-             chosen, at every radius from the smallest to the largest of theirs, widened by \
-             the band margin (conservative): every angle and radius between is covered. The \
-             steps solve the wires at 0, step, 2 × step … up to the case's pressure: the exact \
-             positions at those pressures, nothing between them. Left and right looking ahead \
-             along the line."
-        } else {
-            "Alongside each other or alone. The swing arc covers every position between the two \
-             blowouts (closed form); the steps solve the wires at 0, step, 2 × step … up to the \
-             case's pressure, from the sides chosen, as the vertical and radial clearance windows \
-             do. The full pressure is checked from both sides in any case."
-        },
-    );
+    if lines {
+        let (what, long) = wind_texts(wind, sides_all);
+        explain(ui, what, long);
+    }
     if full > 0.0 {
         let n = solves_per_case(wind, full, sides_all);
         let text = format!(
@@ -425,11 +425,46 @@ pub fn wind_choice(
     changed
 }
 
+/// The wind choice's short line and its longer text.
+fn wind_texts(wind: &WindSteps, sides_all: bool) -> (&'static str, &'static str) {
+    let what = match (wind.arc, wind.stepped) {
+        (false, false) => "None ticked: each case's own pressure, blown to each side.",
+        (true, false) => "Swing arc: anywhere between the blowouts (closed form).",
+        (false, true) => {
+            "Wind stepped: still air and every pressure up to the case's, by the step."
+        }
+        (true, true) => "Both: every step solved, and the swing arc between the blowouts.",
+    };
+    let long = if sides_all {
+        "Alongside each other or alone. The swing arc swings each span as one about the line \
+             through its attachment points, between still air and the full blowouts of the sides \
+             chosen, at every radius from the smallest to the largest of theirs, widened by \
+             the band margin (conservative): every angle and radius between is covered. The \
+             steps solve the wires at 0, step, 2 × step … up to the case's pressure: the exact \
+             positions at those pressures, nothing between them. Left and right looking ahead \
+             along the line."
+    } else {
+        "Alongside each other or alone. The swing arc covers every position between the two \
+             blowouts (closed form); the steps solve the wires at 0, step, 2 × step … up to the \
+             case's pressure, from the sides chosen, as the vertical and radial clearance windows \
+             do. The full pressure is checked from both sides in any case."
+    };
+    (what, long)
+}
+
+/// A **(?)** holding a grey line moved into the help (owner, 2026-11-12):
+/// `short`, then `long`, on hover.
+pub fn question_both(ui: &mut egui::Ui, short: &str, long: &str) -> egui::Response {
+    question(ui, &format!("{short}\n\n{long}"))
+}
+
 /// The swing band's margin (2026-10-21, the owner's decision: editable
 /// wherever the band is used): a field in metres, with the shared
 /// explanation — what it covers, that it is conservative, and that a
-/// smaller value is less safe. True when changed.
-pub fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64) -> bool {
+/// smaller value is less safe. `lines` false: its line in the row's
+/// **(?)** (2026-11-12; the warning below the default stays visible).
+/// True when changed.
+fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, lines: bool) -> bool {
     let default = ohl_clearance::positions::BAND_MARGIN;
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -456,6 +491,9 @@ pub fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64) -> bool {
             *margin = default;
             changed = true;
         }
+        if !lines && *margin >= default {
+            question_both(ui, BAND_MARGIN_SHORT, BAND_MARGIN_HELP);
+        }
     });
     if *margin < default {
         ui.colored_label(
@@ -466,16 +504,15 @@ pub fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64) -> bool {
             .small(),
         )
         .on_hover_text(BAND_MARGIN_HELP);
-    } else {
-        explain(
-            ui,
-            "Band margin: every distance to the swing band taken this much smaller \
-             (conservative).",
-            BAND_MARGIN_HELP,
-        );
+    } else if lines {
+        explain(ui, BAND_MARGIN_SHORT, BAND_MARGIN_HELP);
     }
     changed
 }
+
+/// The band margin's line.
+const BAND_MARGIN_SHORT: &str =
+    "Band margin: every distance to the swing band taken this much smaller (conservative).";
 
 /// The band margin's longer explanation (hover).
 pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the largest radius of the \
@@ -493,8 +530,16 @@ pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the lar
 /// jumper's band is not conservative between its blowouts (a
 /// Simplification on the user's responsibility; exact: the wind steps),
 /// the excess measured on the example line's jumper. `enabled` false:
-/// shown greyed (a check without jumpers). True when changed.
-pub fn jumper_band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, enabled: bool) -> bool {
+/// shown greyed (a check without jumpers). `lines` false: its line in
+/// the row's **(?)** (2026-11-12; the clearance windows say a margin of
+/// 0 m in orange beside the wind where it matters). True when changed.
+fn jumper_band_margin_ui(
+    ui: &mut egui::Ui,
+    id: &str,
+    margin: &mut f64,
+    enabled: bool,
+    lines: bool,
+) -> bool {
     let default = ohl_clearance::positions::JUMPER_BAND_MARGIN;
     let mut changed = false;
     ui.add_enabled_ui(enabled, |ui| {
@@ -525,19 +570,26 @@ pub fn jumper_band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, enab
                 *margin = default;
                 changed = true;
             }
+            if enabled && !lines {
+                question_both(ui, jumper_short(*margin), JUMPER_BAND_MARGIN_HELP);
+            }
         });
-        if enabled {
-            let short = if *margin > 0.0 {
-                "Jumper band margin: every distance to a jumper's band taken this much smaller \
-                 (your value, on your responsibility)."
-            } else {
-                "Jumper band margin 0: a jumper's band is not widened and does not hold the \
-                 jumper between its blowouts (on your responsibility)."
-            };
-            explain(ui, short, JUMPER_BAND_MARGIN_HELP);
+        if enabled && lines {
+            explain(ui, jumper_short(*margin), JUMPER_BAND_MARGIN_HELP);
         }
     });
     changed
+}
+
+/// The jumper band margin's line.
+fn jumper_short(margin: f64) -> &'static str {
+    if margin > 0.0 {
+        "Jumper band margin: every distance to a jumper's band taken this much smaller (your \
+         value, on your responsibility)."
+    } else {
+        "Jumper band margin 0: a jumper's band is not widened and does not hold the jumper \
+         between its blowouts (on your responsibility)."
+    }
 }
 
 /// The jumpers' band margin's longer explanation (hover).
