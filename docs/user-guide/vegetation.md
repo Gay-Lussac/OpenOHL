@@ -151,7 +151,11 @@ line, the LiDAR points or the ground changed since.
 The Setup tab, top to bottom. The setup is kept in the project for each
 project line (project setting `app.vegetation.<line>`), read again when
 the project opens; a change after a run marks the results *out of date*
-where it matters. Each field says on hover what it changes.
+where it matters. Each section and field explains itself in its **(?)**
+(on hover: a short line, then the longer text) and says on hover what it
+changes; only the warnings (*NOT ON THE SAFE SIDE …*, a band margin
+below 0.15 m), what blocks **Run** and the solves a windy case needs stay
+written under the fields. The units are in the labels.
 
 ### 1 What it checks
 
@@ -319,7 +323,10 @@ Not on the safe side, and said in the results each time it applies:
   trunk turns on through the ground* to count them.
 - **Without the swing arc and the wind steps** (the default) only still
   air and the full blowouts are checked: a point nearer a wire between
-  them is not found. Tick the swing arc (three solves per windy case).
+  them is not found. With a windy case ticked the window says so under
+  the wind, and the results' notes: *NOT ON THE SAFE SIDE: without the
+  swing arc or the wind steps only still air and the full blowouts are
+  checked …*. Tick the swing arc (three solves per windy case).
 - **The points the scan holds**: a part of a tree the scan did not see is
   not measured, the nearest point seen is.
 - The swing arc is a rigid swing about the attachments (a simplification

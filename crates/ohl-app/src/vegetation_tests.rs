@@ -81,7 +81,12 @@ fn every_setting_is_explained_and_drawn() {
     ] {
         h.get_by_label(drawing);
     }
-    for text in [
+    // The explanations in the (?) of their section or field (check pages'
+    // guidelines §6, 2026-11-12): no longer a grey line of their own, a
+    // (?) beside each — Scope, Rules, Colours, the preset, c, g, b, k, A,
+    // the trees, the base, the wind, Wires by, the ice, the classes, the
+    // search, the isoclearance lines.
+    for moved in [
         "Radially from the conductor's surface",
         "Growth until the next cut",
         "Added to the clearance",
@@ -92,9 +97,27 @@ fn every_setting_is_explained_and_drawn() {
         "Half width of the corridor read",
         "None ticked: each case's own pressure",
         "The span checked carries more ice",
-        "The LiDAR classes checked as vegetation",
+        "Drawn while this",
+        "A design-code plugin may preset",
     ] {
-        h.get_by_label_contains(text);
+        assert!(
+            h.query_all_by_label_contains(moved).next().is_none(),
+            "{moved}"
+        );
+    }
+    let questions = h.query_all_by_label("(?)").count();
+    assert!(questions >= 17, "{questions}");
+    // The units in the labels.
+    for label in [
+        "required clearance c [m]",
+        "growth per year g [m]",
+        "buffer b [m]",
+        "allowance A [m]",
+        "smallest tree [m]",
+        "tallest tree [m]",
+        "search distance ± [m]",
+    ] {
+        h.get_by_label(label);
     }
     // (Scrolled to: the Setup tab is longer than the window.)
     h.get_by_label("Fall-in: user guide ↗").scroll_to_me();
@@ -750,4 +773,81 @@ fn the_vegetation_calculation_reads_back() {
     };
     let (back, _) = Settings::from_json(&s.to_json(&[])).unwrap();
     assert_eq!(back.calculation, s.calculation);
+}
+
+/// The window's user guide buttons open its own page (owner, 2026-11-12:
+/// every check window "with a helper page"): each section they link to
+/// is a heading of `docs/user-guide/vegetation.md` (mdBook's anchors:
+/// lower case, spaces as `-`, punctuation dropped).
+#[test]
+fn the_user_guide_buttons_open_the_vegetation_page() {
+    assert_eq!(crate::vegetation::GUIDE, "user-guide/vegetation");
+    let text = std::fs::read_to_string(crate::tests::root().join("docs/user-guide/vegetation.md"))
+        .unwrap();
+    let anchors: Vec<String> = text
+        .lines()
+        .filter_map(|l| l.strip_prefix('#'))
+        .map(|h| {
+            h.trim_start_matches('#')
+                .trim()
+                .to_lowercase()
+                .chars()
+                .filter_map(|c| match c {
+                    ' ' => Some('-'),
+                    c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    // The sections' buttons (1, 2, 3, 5) and the headings' (Grow-in,
+    // Fall-in, Wire positions, Search).
+    for a in [
+        "1-what-it-checks",
+        "2-scope",
+        "3-rules",
+        "5-colours-in-the-views",
+        "grow-in",
+        "fall-in",
+        "wire-positions",
+        "search",
+    ] {
+        assert!(anchors.iter().any(|x| x == a), "{a} not in {anchors:?}");
+    }
+}
+
+/// A windy case with neither the swing arc nor the wind steps: only the
+/// blowouts are checked — said in the window and in the results, not on
+/// the safe side (2026-11-12); with the arc, not said.
+#[test]
+fn only_the_blowouts_is_said_not_on_the_safe_side() {
+    let (file, mut h) = opened("veg-blowouts");
+    let r = h.state_mut().ready().unwrap();
+    let windy = r
+        .model
+        .cases
+        .iter()
+        .position(|c| c.case.wind_pressure.si() > 0.0)
+        .expect("a windy case");
+    r.vegetation.cases = vec![windy];
+    r.vegetation.settings.arc = false;
+    r.vegetation.settings.steps.stepped = false;
+    h.run_steps(3);
+    h.get_by_label(crate::vegetation::BLOWOUTS_ONLY);
+    run(&mut h);
+    let r = h.state_mut().ready().unwrap();
+    let Some(Ok(report)) = r.vegetation.result().0 else {
+        panic!("a report");
+    };
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|n| n == crate::vegetation::BLOWOUTS_ONLY)
+    );
+    r.vegetation.settings.arc = true;
+    h.get_by_label("Setup").click();
+    h.run_steps(3);
+    assert!(h.query_by_label(crate::vegetation::BLOWOUTS_ONLY).is_none());
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }

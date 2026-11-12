@@ -87,6 +87,91 @@ const PANEL: &str = "vegetation-panel";
 /// `app.vegetation.<line>`; owner, 2026-10-27).
 pub const SETTING: &str = "app.vegetation";
 
+/// The note, in the window and the results, when a windy case is
+/// checked with neither the swing arc nor the wind steps (safe side,
+/// 2026-11-12).
+pub const BLOWOUTS_ONLY: &str = "NOT ON THE SAFE SIDE: without the swing arc or the wind steps \
+    only still air and the full blowouts are checked — a point nearer a wire between them is not \
+    found; tick the swing arc (3 solves per windy case)";
+
+/// The help of *2 Scope* (short line, longer text).
+const SCOPE_HELP: (&str, &str) = (
+    "The circuits, routes, sections and weather cases checked.",
+    "The line is still solved whole (sections solved together stay together); the spans of \
+     the wires out of scope are left out of the check and the scope is said in the notes. \
+     Fewer circuits, sections or cases: fewer solves, a faster run. A case group ticks its \
+     cases at once.",
+);
+
+/// The help of *3 Rules*.
+const RULES_HELP: (&str, &str) = (
+    "The distances of the check: grow-in (c, g, b) and fall-in (k, A, the trees).",
+    "Take them from the regulation and the practice you work to: no distance is given for \
+     you (the defaults are the program's). A design-code preset may set them all.",
+);
+
+/// The help of the preset.
+const PRESET_HELP: (&str, &str) = (
+    "A design-code plugin may preset the classes, the distances and the wind steps of this \
+     check.",
+    "The presets of every design-code plugin turned on (File › Plugins › Plugin manager), read \
+     with the parameter file of Line › Criteria › Design code. Choose one to see what it sets; \
+     Apply puts its values in, creates its weather cases the project lacks and ticks them.",
+);
+
+/// The help of the required clearance.
+const CLEARANCE_HELP: (&str, &str) = (
+    "Radially from the conductor's surface; one distance, or by the voltage of each wire's \
+     system.",
+    "A table \"up to kV: distance\" or a base plus an amount per kV checks each wire with the \
+     distance for its own system's nominal voltage (an earthed wire: 0 kV). The line under it \
+     gives it at the line's voltages. A larger c: more grow-in points, more points read.",
+);
+
+/// The help of the allowance A.
+const ALLOWANCE_HELP: (&str, &str) = (
+    "What a falling tree must keep from the wire (flashover, buffers).",
+    "A tree whose sector comes within A of a wire position is a danger tree; by voltage like \
+     the clearance when it depends on it. A larger A: more danger trees, more points read.",
+);
+
+/// The help of the unbalanced ice.
+const ICE_HELP: (&str, &str) = (
+    "The span checked carries more ice than its neighbours (spans near vegetation only).",
+    "Solved with its section on its own, the span in a weather case of its own: the case's ice \
+     on it alone, more radial ice (mm), more ice load per wire (N/m), or a load at mid-span (N, \
+     the whole bundle's). It sags further: more findings. One solve per span near vegetation, \
+     case and side: the notes say how many.",
+);
+
+/// The help of how the wires are solved.
+const CALCULATION_HELP: &str = "How every wire is solved for this check (initial, after creep, \
+    after load, max sag; ruling span or finite elements); none: each section's own \
+    calculation. Finite elements are slower than ruling span.";
+
+/// The help of the points kept per span.
+const KEEP_HELP: &str = "How many worst points of each span the Worst points list keeps; every \
+    point found is still counted, written to the CSV and drawn";
+
+/// The help of *5 Colours in the views*.
+const COLOURS_HELP: (&str, &str) = (
+    "Drawn while this window is open (View › Layers: Vegetation).",
+    "Every grow-in point and every danger tree found are drawn in the 3D view, the plan and the \
+     profile while the window is open; closing it takes them off the views, reopening it (or a \
+     saved run) draws them again. The colours are kept with this project's view settings.",
+);
+
+/// A number field: its label (with its unit), the value between 0 and
+/// `range.1` dragged by `range.0`, and `hover` saying its effect.
+fn number_field(ui: &mut egui::Ui, label: &str, v: &mut f64, range: (f64, f64), hover: &str) {
+    ui.label(label).on_hover_text(hover);
+    crate::style::field(
+        ui,
+        egui::DragValue::new(v).speed(range.0).range(0.0..=range.1),
+    )
+    .on_hover_text(hover);
+}
+
 /// How unbalanced ice is checked (none: not).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Ice {
@@ -123,6 +208,16 @@ impl Ice {
             .iter()
             .find(|x| x.0 == self)
             .map_or("off", |x| x.2)
+    }
+
+    /// The unit of its value (none: it has none).
+    fn unit(self) -> Option<&'static str> {
+        match self {
+            Ice::Off | Ice::OfCase => None,
+            Ice::Thickness => Some("mm"),
+            Ice::Extra => Some("N/m"),
+            Ice::Concentrated => Some("N"),
+        }
     }
 
     fn parse(s: &str) -> Ice {
@@ -973,6 +1068,10 @@ impl VegetationWindow {
                 check_ui::scope_words(&model.line, &self.scope, true)
             )
         });
+        // Neither the arc nor the steps, a windy case: said (safe side).
+        let blowouts_only = !settings.arc
+            && !settings.steps.stepped
+            && cases.iter().any(|c| c.wind_pressure.si() > 0.0);
         let cancel = self.job.cancel_token();
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();
@@ -1008,6 +1107,9 @@ impl VegetationWindow {
             )?;
             let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
             let mut notes = local.notes();
+            if blowouts_only {
+                notes.push(BLOWOUTS_ONLY.to_owned());
+            }
             notes.extend(positions.notes.iter().cloned());
             notes.extend(scope_note);
             if let Some(mode) = ice {
@@ -1267,7 +1369,11 @@ impl VegetationWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, PANEL, |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
+                        if let Some(a) =
+                            check_ui::section(ui, 1, "What it checks", Some("1-what-it-checks"))
+                        {
+                            out.guide = Some(a);
+                        }
                         help::explain(
                             ui,
                             "Vegetation near the wires of the cases ticked, now and after growth, \
@@ -1300,7 +1406,17 @@ impl VegetationWindow {
                             },
                         );
                         ui.separator();
-                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some("2-scope")) {
+                        // The grey lines in the (?) of their section or
+                        // field (check pages' guidelines §6, owner
+                        // 2026-11-12); warnings, what blocks Run and the
+                        // solves stay written.
+                        if let Some(a) = check_ui::section_help(
+                            ui,
+                            2,
+                            "Scope",
+                            Some("2-scope"),
+                            Some(SCOPE_HELP),
+                        ) {
                             out.guide = Some(a);
                         }
                         let names: Vec<String> =
@@ -1318,7 +1434,15 @@ impl VegetationWindow {
                             crate::case_groups::pick_indices(ui, model, &groups, &mut self.cases);
                         });
                         ui.separator();
-                        check_ui::section(ui, 3, "Rules", None);
+                        if let Some(a) = check_ui::section_help(
+                            ui,
+                            3,
+                            "Rules",
+                            Some("3-rules"),
+                            Some(RULES_HELP),
+                        ) {
+                            out.guide = Some(a);
+                        }
                         self.preset_ui(ui, model, presets, &mut out);
                         ui.separator();
                         self.rule_values_ui(ui, model, &mut out);
@@ -1331,7 +1455,15 @@ impl VegetationWindow {
                             self.search_ui(ui, model, &mut out);
                         });
                         ui.separator();
-                        check_ui::section(ui, 5, "Colours in the views", None);
+                        if let Some(a) = check_ui::section_help(
+                            ui,
+                            5,
+                            "Colours in the views",
+                            Some("5-colours-in-the-views"),
+                            Some(COLOURS_HELP),
+                        ) {
+                            out.guide = Some(a);
+                        }
                         self.colors_ui(ui, model);
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, PANEL, |ui| {
@@ -1499,20 +1631,12 @@ impl VegetationWindow {
                 |p| crate::preset_cases::Part::Check(PresetCheck::Vegetation).lists(&p.rules),
                 &mut self.preset,
             );
+            help::question_both(ui, PRESET_HELP.0, PRESET_HELP.1);
         });
         let Some((plugin, p)) = self.preset.and_then(|(i, k)| {
             let pp = presets.get(i)?;
             Some((pp.plugin.clone(), pp.presets.as_ref().ok()?.get(k)?.clone()))
         }) else {
-            help::explain(
-                ui,
-                "A design-code plugin may preset the classes, the distances and the wind steps \
-                 of this check.",
-                "The presets of every design-code plugin turned on (File › Plugins › Plugin manager), \
-                 read with the parameter file of Line › Criteria › Design code. Choose one to see what \
-                 it sets; Apply puts its values in, creates its weather cases the project lacks \
-                 and ticks them.",
-            );
             return;
         };
         let Some(v) = &p.rules.vegetation else {
@@ -1660,13 +1784,18 @@ impl VegetationWindow {
         let s = &mut self.settings;
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                help::explain(
-                    ui,
-                    "Each case ticked: still air as it is, a windy case blown to the left and to \
-                     the right.",
-                    "The wires are solved in each case ticked; a case with wind is solved with \
-                     the wind from the right (blown left) and from the left (blown right).",
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        "Each case ticked: still air as it is, a windy case blown to each side.",
+                    );
+                    help::question(
+                        ui,
+                        "The wires are solved in each case ticked; a case with wind is solved \
+                         with the wind from the right (blown left) and from the left (blown \
+                         right), at its full pressure. The swing arc and the wind steps add the \
+                         positions between.",
+                    );
+                });
                 // The wind choice shared with the clearance windows (the
                 // arc kept apart, as saved).
                 let full = cases
@@ -1679,20 +1808,39 @@ impl VegetationWindow {
                     ..s.steps
                 };
                 // The danger-tree check leaves the jumpers out: their margin greyed.
-                help::wind_choice(ui, "vegetation", &mut wind, false, full, false, true);
+                help::wind_choice_with(
+                    ui,
+                    "vegetation",
+                    &mut wind,
+                    false,
+                    full,
+                    false,
+                    true,
+                    false,
+                );
+                // Neither the arc nor the steps: the positions between
+                // still air and the blowouts not checked — said (safe
+                // side; also in the results' notes).
+                if full > 0.0 && !wind.arc && !wind.stepped {
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        egui::RichText::new(BLOWOUTS_ONLY).small(),
+                    );
+                }
                 // How the wires are solved (owner, 2026-11-01).
                 ui.horizontal(|ui| {
-                    ui.label("Wires by");
+                    ui.label("Wires by").on_hover_text(CALCULATION_HELP);
                     crate::rule_table::calculation_combo(
                         ui,
                         "vegetation-calculation",
                         &mut s.calculation,
                     );
+                    help::question(ui, CALCULATION_HELP);
                 });
                 s.arc = wind.arc;
                 s.steps = WindSteps { arc: false, ..wind };
                 ui.horizontal(|ui| {
-                    ui.label("unbalanced ice");
+                    ui.label("unbalanced ice").on_hover_text(ICE_HELP.1);
                     egui::ComboBox::from_id_salt("vegetation-ice")
                         .selected_text(s.ice.0.text())
                         .show_ui(ui, |ui| {
@@ -1700,23 +1848,21 @@ impl VegetationWindow {
                                 ui.selectable_value(&mut s.ice.0, k, n);
                             }
                         });
-                    if !matches!(s.ice.0, Ice::Off | Ice::OfCase) {
+                    if let Some(unit) = s.ice.0.unit() {
                         crate::style::field(
                             ui,
                             egui::DragValue::new(&mut s.ice.1)
                                 .speed(1.0)
                                 .range(0.0..=1e6),
+                        )
+                        .on_hover_text(
+                            "More ice on the span checked: it sags further; a larger value, \
+                             more findings",
                         );
+                        ui.label(unit);
                     }
+                    help::question_both(ui, ICE_HELP.0, ICE_HELP.1);
                 });
-                help::explain(
-                    ui,
-                    "The span checked carries more ice than its neighbours (spans near \
-                     vegetation only).",
-                    "Solved with its section on its own, the span in a weather case of its own: \
-                     the case's ice on it alone, more radial ice, more ice load per wire, or a \
-                     load at mid-span.",
-                );
             });
             ui.vertical(|ui| {
                 let n = if s.steps.stepped {
@@ -1740,48 +1886,61 @@ impl VegetationWindow {
     /// unchanged): grow-in and fall-in.
     fn rule_values_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
         let voltages = ohl_clearance::zone::line_voltages(&model.line);
-        let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
-            ui.label(label);
-            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
-        };
+        let num = number_field;
         let s = &mut self.settings;
         // Grow-in.
         Self::heading(ui, "Grow-in", "grow-in", out);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label("required clearance c");
+                    ui.label("required clearance c [m]")
+                        .on_hover_text(CLEARANCE_HELP.1);
                     crate::requirement_ui::requirement_ui(
                         ui,
                         "vegetation-clearance",
                         &mut s.clearance,
                         &voltages,
                     );
+                    help::question_both(ui, CLEARANCE_HELP.0, CLEARANCE_HELP.1);
                 });
-                help::explain(
-                    ui,
-                    "Radially from the conductor's surface; one distance, or by the voltage of \
-                     each wire's system.",
-                    "A table \"up to kV: distance\" or a base plus an amount per kV checks each \
-                     wire with the distance for its own system's nominal voltage (an earthed \
-                     wire: 0 kV). The line under it gives it at the line's voltages.",
-                );
                 ui.horizontal(|ui| {
-                    num(ui, "growth per year g", &mut s.growth_per_year, 0.05, 5.0);
-                    num(ui, "years", &mut s.years, 0.1, 30.0);
+                    num(
+                        ui,
+                        "growth per year g [m]",
+                        &mut s.growth_per_year,
+                        (0.05, 5.0),
+                        "Growth each year, in every direction and on each tree's height: more \
+                         growth, more grow-in points and danger trees",
+                    );
+                    num(
+                        ui,
+                        "years",
+                        &mut s.years,
+                        (0.1, 30.0),
+                        "Years until the next cut: the growth is g × years",
+                    );
+                    help::question_both(
+                        ui,
+                        "Growth until the next cut: g × years, in every direction.",
+                        "A point closer than c + g·years + b to a wire grows in before the next \
+                         cut; a tree's height grows by g·years too.",
+                    );
                 });
-                help::explain(
-                    ui,
-                    "Growth until the next cut: g × years, in every direction.",
-                    "A point closer than c + g·years + b to a wire grows in before the next cut.",
-                );
-                ui.horizontal(|ui| num(ui, "buffer b, m", &mut s.buffer, 0.05, 20.0));
-                help::explain(
-                    ui,
-                    "Added to the clearance, e.g. the survey's accuracy.",
-                    "The buffer b covers what the points do not say exactly: the survey's \
-                     accuracy, the wire's position at the survey.",
-                );
+                ui.horizontal(|ui| {
+                    num(
+                        ui,
+                        "buffer b [m]",
+                        &mut s.buffer,
+                        (0.05, 20.0),
+                        "Added to the clearance: a larger buffer, more grow-in points",
+                    );
+                    help::question_both(
+                        ui,
+                        "Added to the clearance, e.g. the survey's accuracy.",
+                        "The buffer b covers what the points do not say exactly: the survey's \
+                         accuracy, the wire's position at the survey.",
+                    );
+                });
             });
             help::grow_in(
                 ui,
@@ -1795,17 +1954,27 @@ impl VegetationWindow {
         Self::heading(ui, "Fall-in", "fall-in", out);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
-                ui.checkbox(&mut s.fall_in, "trees falling in");
+                ui.checkbox(&mut s.fall_in, "trees falling in")
+                    .on_hover_text(
+                        "Off: no danger tree is looked for (grow-in only), a faster run",
+                    );
                 ui.add_enabled_ui(s.fall_in, |ui| {
                     ui.horizontal(|ui| {
-                        num(ui, "root-ball fraction k", &mut s.root_ball, 0.01, 0.5)
+                        num(
+                            ui,
+                            "root-ball fraction k",
+                            &mut s.root_ball,
+                            (0.01, 0.5),
+                            "The hinge k × h from the trunk: a larger k, the tree reaches further \
+                             and more danger trees are found",
+                        );
+                        help::question_both(
+                            ui,
+                            "The tree turns about the edge of its root ball, k × h from its trunk.",
+                            "h: the tree's height grown until the next cut. k = 0: it turns about \
+                             its base. The sector it sweeps has radius √(h² + (k·h)²).",
+                        );
                     });
-                    help::explain(
-                        ui,
-                        "The tree turns about the edge of its root ball, k × h from its trunk.",
-                        "h: the tree's height grown until the next cut. k = 0: it turns about \
-                         its base. The sector it sweeps has radius √(h² + (k·h)²).",
-                    );
                     ui.checkbox(
                         &mut s.fall_through_ground,
                         "the trunk turns on through the ground",
@@ -1818,46 +1987,65 @@ impl VegetationWindow {
                          nothing changes on level ground. No change in time.",
                     );
                     ui.horizontal(|ui| {
-                        ui.label("allowance A");
+                        ui.label("allowance A [m]").on_hover_text(ALLOWANCE_HELP.1);
                         crate::requirement_ui::requirement_ui(
                             ui,
                             "vegetation-allowance",
                             &mut s.allowance,
                             &voltages,
                         );
+                        help::question_both(ui, ALLOWANCE_HELP.0, ALLOWANCE_HELP.1);
                     });
-                    help::explain(
-                        ui,
-                        "What a falling tree must keep from the wire (flashover, buffers).",
-                        "A tree whose sector comes within A of a wire position is a danger \
-                         tree; by voltage like the clearance when it depends on it.",
-                    );
                     ui.horizontal(|ui| {
-                        num(ui, "smallest tree, m", &mut s.min_tree_height, 0.1, 50.0);
-                        num(ui, "tallest tree, m", &mut s.max_tree_height, 0.5, 120.0);
+                        num(
+                            ui,
+                            "smallest tree [m]",
+                            &mut s.min_tree_height,
+                            (0.1, 50.0),
+                            "Points lower than this above the ground are not trees",
+                        );
+                        num(
+                            ui,
+                            "tallest tree [m]",
+                            &mut s.max_tree_height,
+                            (0.5, 120.0),
+                            "Points are searched as far as a tree this tall can reach (the \
+                             questionable trees too): taller, more points read",
+                        );
+                        help::question_both(
+                            ui,
+                            "Points lower than the smallest are not trees; bases are searched as \
+                             far as the tallest can reach.",
+                            "Heights above the surface of the checks (the TIN below the point).",
+                        );
                     });
-                    help::explain(
-                        ui,
-                        "Points lower than the smallest are not trees; bases are searched as far \
-                         as the tallest can reach.",
-                        "Heights above the surface of the checks (the TIN below the point).",
-                    );
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut s.base_limit.0, "tree base to a ground point within m");
+                        ui.checkbox(&mut s.base_limit.0, "tree base to a ground point within")
+                            .on_hover_text(
+                                "Unticked: the ground's height trusted wherever it is \
+                                 interpolated, every point a tree base",
+                            );
                         ui.add_enabled(
                             s.base_limit.0,
                             egui::DragValue::new(&mut s.base_limit.1)
                                 .speed(0.1)
                                 .range(0.1..=100.0),
+                        )
+                        .on_hover_text(
+                            "A point with no ground point this near in plan has no base: its \
+                             fall-in is not checked, it is listed as questionable",
+                        );
+                        ui.label("m");
+                        help::question_both(
+                            ui,
+                            "The base is taken from the ground only with a ground point this \
+                             near in plan.",
+                            "Where the ground surface is only interpolated far from any ground \
+                             point (under dense trees), its height is not trusted: no fall-in \
+                             check there — the point is listed as a questionable tree when a \
+                             tree of the tallest height could reach a span from it.",
                         );
                     });
-                    help::explain(
-                        ui,
-                        "The base is taken from the ground only with a ground point this near in \
-                         plan.",
-                        "Where the ground surface is only interpolated far from any ground point \
-                         (under dense trees), its height is not trusted: no fall-in check there.",
-                    );
                 });
             });
             ui.vertical(|ui| {
@@ -1869,10 +2057,7 @@ impl VegetationWindow {
 
     /// Where the vegetation points are searched (4 Model).
     fn search_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
-        let num = |ui: &mut egui::Ui, label: &str, v: &mut f64, speed: f64, max: f64| {
-            ui.label(label);
-            crate::style::field(ui, egui::DragValue::new(v).speed(speed).range(0.0..=max));
-        };
+        let num = number_field;
         let s = &mut self.settings;
         // Search.
         Self::heading(ui, "Search", "search", out);
@@ -1928,35 +2113,75 @@ impl VegetationWindow {
                     }
                 });
             });
-            r.response
-                .on_hover_text("The LiDAR classes checked as vegetation");
+            r.response.on_hover_text(
+                "The LiDAR classes checked as vegetation: more classes, more points read",
+            );
+            help::question_both(
+                ui,
+                "The LiDAR classes checked as vegetation (default: those whose role is \
+                 vegetation).",
+                "From the project's class scheme (number, name, colour). A design-code preset \
+                 may set them.",
+            );
         });
-        help::explain(
-            ui,
-            "The LiDAR classes checked as vegetation (default: those whose role is vegetation).",
-            "From the project's class scheme (number, name, colour). A design-code preset may \
-             set them.",
-        );
         ui.horizontal(|ui| {
-            num(ui, "search distance ± m", &mut s.search, 1.0, 500.0);
-            ui.label("points kept per span");
-            crate::style::field(ui, egui::DragValue::new(&mut s.keep).range(0..=1000));
+            num(
+                ui,
+                "search distance ± [m]",
+                &mut s.search,
+                (1.0, 500.0),
+                "Half width of the corridor read: wider, more points read (slower); widened by \
+                 itself to what the checks reach",
+            );
+            ui.label("points kept per span").on_hover_text(KEEP_HELP);
+            crate::style::field(ui, egui::DragValue::new(&mut s.keep).range(0..=1000))
+                .on_hover_text(KEEP_HELP);
+            help::question_both(
+                ui,
+                "Half width of the corridor read around the spans (and drawn for the lines).",
+                "Points farther from every span's chord are not read; the reach of the checks is \
+                 added when larger. Every grow-in and fall-in point found is listed and drawn; \
+                 the table keeps the worst of each span.",
+            );
         });
-        help::explain(
-            ui,
-            "Half width of the corridor read around the spans (and drawn for the lines).",
-            "Points farther from every span's chord are not read; the reach of the checks is \
-             added when larger. Every grow-in and fall-in point found is listed and drawn; the \
-             table keeps the worst of each span.",
-        );
         ui.horizontal(|ui| {
             let iso = &mut s.iso;
-            ui.checkbox(&mut iso.0, "isoclearance lines");
+            ui.checkbox(&mut iso.0, "isoclearance lines").on_hover_text(
+                "The ground's clearance to the nearest wire contoured over the corridor: a \
+                 drawing (the checks use the exact distances); a finer grid takes longer",
+            );
             ui.add_enabled_ui(iso.0, |ui| {
-                num(ui, "every m", &mut iso.1.interval, 0.1, 50.0);
-                num(ui, "hide above m", &mut iso.1.max_level, 0.5, 200.0);
-                num(ui, "grid m", &mut iso.1.spacing, 0.1, 10.0);
+                num(
+                    ui,
+                    "every [m]",
+                    &mut iso.1.interval,
+                    (0.1, 50.0),
+                    "The interval between two lines",
+                );
+                num(
+                    ui,
+                    "hide above [m]",
+                    &mut iso.1.max_level,
+                    (0.5, 200.0),
+                    "Lines of a larger clearance are not drawn",
+                );
+                num(
+                    ui,
+                    "grid [m]",
+                    &mut iso.1.spacing,
+                    (0.1, 10.0),
+                    "The grid the clearance is worked out on: finer, the lines placed more \
+                     exactly and a longer run",
+                );
             });
+            help::question_both(
+                ui,
+                "Isoclearance lines: the ground's clearance to the nearest wire, contoured.",
+                "Over the search corridor, from 0 every interval up to the hide-above value. A \
+                 tree of height h standing inside the h line can reach a wire when it falls (no \
+                 root ball, level ground). A drawing only: a line is placed within about a grid \
+                 cell of the true one.",
+            );
         });
     }
 
@@ -1986,14 +2211,6 @@ impl VegetationWindow {
                 ui.label(name);
             }
         });
-        help::explain(
-            ui,
-            "Drawn while this panel is open (View › Layers: Vegetation).",
-            "Every grow-in point and every danger tree found are drawn in the 3D view, the plan \
-             and the profile while the panel is open; closing the panel takes them off the \
-             views, reopening it (or a saved run) draws them again. The colours are kept with \
-             this project's view settings.",
-        );
     }
 
     /// Saving the run shown in Performed checks.
@@ -2202,7 +2419,10 @@ fn report_ui(
     )
     .rows_kept(rows)
     .csv("vegetation-spans.csv")
-    .below(check_ui::FOLDS_BELOW + 70.0)
+    // Room for the folds below: the notes, the worst points, the save
+    // row, and the questionable trees' list open (2026-11-12: it covered
+    // the worst points).
+    .below(check_ui::FOLDS_BELOW + 70.0 + if questionable > 0 { 290.0 } else { 0.0 })
     .ui(ui);
     if let Some(k) = clicked {
         let r = &report.spans[k];

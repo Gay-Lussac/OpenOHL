@@ -49,7 +49,21 @@ the analyses page's sections); the analyses page keeps the command line
 and a summary of the window, the OHL-Design page, the drawings page and
 the theory link to it. Without the swing arc and the wind steps (the
 window's default) only still air and the full blowouts are checked:
-written as not on the safe side.
+written as not on the safe side. Part 2, the window: the grey lines in
+the **(?)** of their section or field (`check_ui::section_help`,
+`check_help::question_both`, `wind_choice_with(.., lines: false)`), the
+question of *1 What it checks* kept; the units in the labels (c, g, b,
+A, the trees, the base, the search, the isoclearance lines, the
+unbalanced ice's mm, N/m or N after its field); every field's hover says
+its effect (and time where it costs); *1 What it checks*, *2 Scope*,
+*3 Rules* and *5 Colours* have their user guide buttons. Stay written:
+the band margin's warning, the solves of a windy case, what blocks Run,
+the questionable trees' list and its note, and a new warning under the
+wind — a windy case with neither the arc nor the steps — also written in
+the results' notes (`vegetation::BLOWOUTS_ONLY`; the default stays the
+arc off, the owner's to change; the command line does not say it yet).
+The results table leaves room for the questionable trees' list (it
+covered *Worst points*).
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to
