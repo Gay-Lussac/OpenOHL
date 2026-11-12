@@ -37,8 +37,10 @@ use crate::check_ui;
 use crate::job::Job;
 use crate::model::Model;
 
-/// The user-guide page of the window's sections.
-pub const GUIDE: &str = "user-guide/analyses";
+/// The window's own page of the user guide (owner, 2026-11-12: every
+/// check window built like the vertical clearances, "and the safety
+/// volumes"): each **user guide ↗** opens it at its section.
+pub const GUIDE: &str = "user-guide/safety-volumes";
 
 /// The id of a saved run in the library of performed checks.
 pub const CHECK_ID: &str = "ohl.safety-volume";
@@ -944,7 +946,7 @@ impl SafetyVolumeWindow {
                             self.settings_ui(ui, model, presets, &mut out, Part::Mesh);
                         });
                         ui.separator();
-                        if let Some(a) = help::heading(ui, "Export", "safety-volumes-export") {
+                        if let Some(a) = help::heading(ui, "Export", "export") {
                             out.guide = Some(a);
                         }
                         self.export_ui(ui, model);
@@ -970,9 +972,7 @@ impl SafetyVolumeWindow {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
                                     self.save_ui(ui, model, &mut out);
-                                    if let Some(a) =
-                                        help::heading(ui, "Export", "safety-volumes-export")
-                                    {
+                                    if let Some(a) = help::heading(ui, "Export", "export") {
                                         out.guide = Some(a);
                                     }
                                     self.export_ui(ui, model);
@@ -1122,7 +1122,7 @@ impl SafetyVolumeWindow {
         let s = &mut self.settings;
         // Wire positions: the wind (the cases in the scope).
         if part == Part::Positions {
-            heading(ui, "Wire positions", "safety-volumes-wire-positions");
+            heading(ui, "Wire positions", "wire-positions");
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                 help::explain(
@@ -1182,7 +1182,7 @@ impl SafetyVolumeWindow {
         }
         // Distance: the rule, a preset's, the margin.
         if part == Part::Distance {
-            heading(ui, "Distance", "safety-volumes-distance");
+            heading(ui, "Distance", "distance");
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                 ui.label("from the conductors' surface");
@@ -1295,7 +1295,7 @@ impl SafetyVolumeWindow {
         }
         // What is included: the circuits or systems, the grouping.
         if part == Part::Included {
-            heading(ui, "What is included", "safety-volumes-what-is-included");
+            heading(ui, "What is included", "what-is-included");
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -1395,7 +1395,7 @@ impl SafetyVolumeWindow {
         }
         // Mesh: the tolerance.
         if part == Part::Mesh {
-            heading(ui, "Mesh", "safety-volumes-mesh");
+            heading(ui, "Mesh", "mesh");
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
                 ui.horizontal(|ui| {

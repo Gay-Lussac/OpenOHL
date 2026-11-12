@@ -145,6 +145,16 @@ is compared (the horizontal tension) instead of a measure the rule does
 not use. Kept visible: *set the factor*, the status and errors, what
 blocks Run, the footer's time; a result note *NOT ON THE SAFE SIDE* now
 in the warning colour.
+**Safety volumes: the same treatment** (owner, the check windows one by
+one, "and the safety volumes"). Part 1: [Safety
+volumes](../user-guide/safety-volumes.md) — what it answers (the space
+work near the line must stay out of), the volumes in six steps with the
+theory's drawings and one new
+(`check-windows/9-safety-volume-step-by-step.svg`), every setting
+(default, effect, time), every field of the setup, a saved run and
+`ohl safety-volume`, the files, what is and is not conservative. The
+window's **user guide ↗** buttons open it (until now the analyses page's
+sections, now a summary and a link); the theory links to it.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

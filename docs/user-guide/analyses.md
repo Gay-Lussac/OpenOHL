@@ -425,7 +425,7 @@ span (in parallel on every core):
   every distance to the band taken this much smaller. The default is the
   worst excess measured on the example lines (0.089 m) plus an allowance:
   conservative. A smaller value is less safe and on your responsibility.
-  The jumpers' own margin (below, in the safety volumes and the
+  The jumpers' own margin (in the [safety volumes](safety-volumes.md) and the
   clearance windows) does not apply here: the danger-tree check leaves
   the jumpers out.
 - **Unbalanced ice** (`--unbalanced-ice`): each span with vegetation
@@ -511,168 +511,17 @@ See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees).
 *Built, in active development (not approved yet).* The space within a
 distance of the wires in every position of the weather cases chosen —
 for planning work near the line (cranes, scaffolds, trees felled): one
-closed volume per wire (a circuit's phase through all its sections), per
-circuit or per electrical system, shown in the 3D view and the plan, saved with the line and
-exported as georeferenced files. Since 2026-10-21 the **jumpers** are
-part of it (at their solved positions in each case: blown left and
-right, still air, every step; with the swing arc, on a swing band of
-their own about the line through their two end clamps), so the volume is
-continuous at the structures; the structures themselves (steel,
-insulators, fittings) are not.
+closed volume per wire, per circuit or per electrical system, the
+jumpers included (the structures not), shown in the 3D view and the
+plan, saved with the line and exported as georeferenced DXF, IFC4 and
+KML/KMZ files. No safety distance is built in: you enter it (by voltage
+or not), or take a rule of a design-code plugin's preset.
 
-**In the desktop app:** Checks › **Safety volumes…** The window reads
-as the [vegetation window](vegetation.md) and the clearance
-windows do: the settings in five groups, each with a heading and a link
-**user guide ↗** to its section below, a line under each value saying
-what it does (a longer text on hover), and small drawings that follow
-the values typed (the distance around a conductor, the wind positions
-and the swing arc, the volumes grouped, a mesh where two tubes meet). On
-the check windows' layout (2026-10-27): *2 Scope* holds the weather cases
-and *What is included*, *3 Rules* the distance, *4 Model* (folded) the
-wire positions and the mesh (in *What is included* until 2026-10-31); the volumes, *Save* and *Export* are in the
-Results tab. The setup is kept in the project per project line
-(`app.safety_volumes`).
-
-#### Safety volumes: wire positions
-
-- **Weather cases**: tick any number. Each is solved by the line's
-  solver: still air as it is, a windy case blown to the left and to the
-  right at its full pressure.
-- **Wind**: the two ticks shared with the danger-tree check — **swing
-  arc** (also every position between the two blowouts: the span swinging
-  about its attachment axis over the band from the smallest to the largest
-  radius of its positions, widened by the **band margin**, closed form;
-  each jumper on a band of its own) and **wind stepped** by **step
-  Pa** (also still air and every pressure up to the case's, from the
-  sides chosen); both, either or none (none: the blowouts at full wind).
-  The window says how many solves a windy case needs, and suggests the
-  arc when the steps need many. The drawing shows the positions seen
-  along a span.
-- **Band margin** (with the swing arc; since 2026-10-21): the shared
-  field of the danger-tree check (default 0.15 m, conservative; smaller
-  is less safe and on your responsibility). Saved with the run; a change
-  marks the run *out of date*.
-- **Jumper band margin** (with the swing arc; since 2026-10-21, the
-  owner's decision): the jumpers' bands' own margin, default 0 m — no
-  widening, so a jumper's band does not hold it between its blowouts (on
-  the example line up to 0.293 m outside): a simplification on your
-  responsibility; enter a value for your jumpers (the wind steps show
-  it). Saved with the run (a run saved before reads the band margin, as
-  its jumpers then took); a change marks the run *out of date*.
-
-#### Safety volumes: distance
-
-- **Distance from the conductors' surface**: the shared distance editor
-  ([Distances by voltage](desktop-app.md#distances-by-voltage)) — **One
-  distance**, a **Table by voltage** or **Base + per kV**, each value an
-  input field with its unit, the distance at the line's voltages on the
-  line under it. Each wire takes the distance of its own system's nominal
-  voltage (earthed wires: 0 kV). **No safety distance is built in**:
-  enter the one of the rules you work to, or choose a design-code
-  plugin's preset and one of its rules — shown greyed, *(preview — Apply
-  to edit)* — then **Fill the distance** (its radial distance, else its
-  vertical one).
-- **Margin**: added to the distance (e.g. the survey's accuracy, tools).
-
-#### Safety volumes: what is included
-
-- **Scope by** (2026-10-21): **Systems | Circuits | Spans**, then a list
-  of the line's objects of that kind, each with a tick — systems: name
-  and voltage; circuits: name, system and voltage; spans: section, span
-  number (from 1), the two structures and the length in plan. Above the
-  list a **search** field filters the rows as you type (by name or id, a
-  part of it, upper and lower case alike); **All**, **None** and
-  **Invert** act on the rows shown only, and "n of m ticked" counts the
-  ticks. The list scrolls in a box of fixed height (hundreds of spans
-  stay quick). All with nothing searched: every one, also those added
-  later; none ticked: Run says to tick one. Systems end with a row
-  **(no system)** (since 2026-10-21): the earthed wires and any section
-  without a system, ticked like a system (their distance at 0 kV). A span ticked brings every
-  wire on it; a jumper comes along when the spans at both its ends are
-  ticked (continuity).
-- **One volume per**: **wire** (a circuit's phase through all its
-  sections), **circuit** (its phases together) or **system** (every
-  circuit of one electrical system together; since 2026-10-21 the wires
-  without a system — earthed wires — together in one volume named
-  **(no system)**). The distance by voltage still uses each wire's own
-  system voltage.
-- The jumpers are part of the volumes (at their solved positions, and on
-  a swing band of their own with the swing arc); the structures are not.
-
-#### Safety volumes: mesh
-
-- **Tolerance** (default 0.05 m): how far the volume may lie outside the
-  exact one where it is smooth; it is never inside it. Smaller: more
-  triangles, longer. The results give each volume's **outside by at
-  most**: measured; where two tubes meet the triangles bridge the groove
-  between them, so it can be larger than the tolerance.
-
-**Run** (the window's footer, bottom left) computes it in the
-background. The table lists each volume: its
-colour (its circuit's wire colour), voltage, distance, triangles, volume
-and how far it lies outside the exact volume at most (measured; where
-tubes meet the triangles bridge the groove, so this can be larger than
-the tolerance). The volumes are drawn translucent in the 3D view (layer
-*Safety volumes*) and their outlines in the plan while the window is
-open. When the line or its weather cases change the window says *out of
-date* (the layers dimmed) with **Run again** (also when the band margin
-changes with the swing arc on).
-
-**Save in Performed checks** keeps the run (its settings — with the
-scope, the ticks and the grouping — and the volumes' meshes) with the project line; Checks › Performed checks opens it again.
-
-#### Safety volumes: export
-
-**Export to a folder…** (after a run) writes the formats ticked, in the
-line's coordinate system (Properties of the line, *CRS*; the window shows
-it, and says when none is set):
-
-| file | contents |
-|------|----------|
-| `.dxf` + `.prj` | DXF R12: 3D faces (`3DFACE`), a layer `SAFETY_<volume>` per volume, in the line's coordinates; the `.prj` holds the coordinate system as WKT (EPSG systems) |
-| `.ifc` | IFC4: one spatial element per volume (since 2026-10-21 an `IfcSpatialZone`, predefined type user-defined, object type `SafetyVolume`, referenced in the site), a closed triangulated face set, translucent; georeferenced by `IfcMapConversion` to an `IfcProjectedCRS` named by its EPSG code; property set `OHL_SafetyVolume` (line, circuit, phases, sections, voltage, distance, margin, rule, weather cases, wind, date, tolerance, volume) |
-| `.kml`, `.kmz` | WGS84 for Google Earth: each volume a placemark of triangles at absolute heights, with the same properties; needs the line's real coordinate system (EPSG) |
-
-Heights in KML are the line's (above its height datum), not corrected to
-a geoid: see the theory.
-
-**From the command line:** on the example line, 5 m around the wires in
-the high wind case (about 40 s in a debug build):
-
-```bash
-ohl safety-volume synthetic-line.ohl.json --weather weather-cases.ohlwc \
-    --case "high wind" --distance 5 --out volumes
-```
-
-It writes `volumes/safety-volume.dxf` and `.ifc`, one closed mesh per
-circuit and phase, and says that it writes no `.prj` and no KMZ: the
-example's coordinate system ("local (invented)") is not an EPSG one.
-With every option, on a line in a real coordinate system:
-
-```bash
-ohl safety-volume line.ohl.json --weather cases.ohlwc --case "high wind" --case "max temperature" \
-    --wind both --wind-step 100 --distance '{ by_voltage = [[0, 2], [110, 3], [380, 5]] }' \
-    --margin 0.5 --per circuit --crs EPSG:2056 --out volumes --format dxf,ifc,kmz
-```
-
-`--wind none|steps|arc|both`, `--wind-step` (Pa), `--wind-sides
-both|left|right`, `--band-margin` (m, default 0.15; with the arc),
-`--jumper-band-margin` (m, default 0: the jumpers' bands' own margin;
-with the arc),
-`--distance` (required; the rule file's forms),
-`--margin`, `--tolerance`, `--per wire|circuit|system`, `--circuit`
-(repeatable), `--system` (repeatable: a system's id or name; `none` —
-or `"(no system)"` — for the wires without a system, unless the line
-has a system called so), `--span
-SECTION:N` (repeatable, N from 1: every wire on the spans; given
-together, a wire must match each filter),
-`--crs` (when the line file has none), `--format` (dxf, ifc, kml, kmz),
-`--name` (file name stem, default `safety-volume`), `--time-limit`.
-
-On the example line (two cases, wind stepped and swing arc, 4 m): three
-volumes of 23 000–48 000 triangles (the branch's with its jumper), about
-a minute and a half (2026-10-21, a shared computer; with the band and the
-jumpers).
+**In the desktop app:** Checks › **Safety volumes…**; **from the
+command line:** `ohl safety-volume`. Everything about it — how it works
+step by step, every setting and field, the files, what is conservative
+and what is not — is on its own page:
+[Safety volumes](safety-volumes.md).
 
 See the theory: [Safety volumes](../theory/safety-volumes.md).
 

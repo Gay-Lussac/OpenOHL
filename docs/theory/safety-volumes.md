@@ -6,6 +6,8 @@ rule by voltage, exported as a georeferenced file, for the safety of work
 near the line. Code: `ohl_clearance::safety_volume` (the envelope, its
 mesh and its simplification), `ohl_io::safety_volume` (the files).*
 
+The window and the command, setting by setting, in plain words: [user guide › Safety volumes](../user-guide/safety-volumes.md).
+
 ## The envelope
 
 For each wire (a circuit's phase through all its sections), each
