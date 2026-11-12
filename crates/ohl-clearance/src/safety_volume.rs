@@ -920,5 +920,42 @@ pub fn run(
     let mut positions = solve_positions(line, library, cases, wind.options(steps), budget)?;
     // The structure and section overrides: each span its own cases.
     positions.retain_cases(line, filter);
-    build(&positions, params, budget)
+    let mut v = build(&positions, params, budget)?;
+    v.notes.extend(safe_side_notes(line, cases, wind, steps));
+    Ok(v)
 }
+
+/// What the volumes do not hold, said with every run (owner, 2026-11-12:
+/// the safety volumes like the clearance windows — never silent): the
+/// structures rigid; a windy case without the arc and the steps; the
+/// jumpers' bands without a margin.
+pub fn safe_side_notes(
+    line: &Line,
+    cases: &[WeatherCase],
+    wind: WindMode,
+    steps: WindSteps,
+) -> Vec<String> {
+    let mut out = vec![crate::RIGID_STRUCTURES.to_owned()];
+    let windy = cases.iter().any(|c| c.wind_pressure.si() > 0.0);
+    if windy && !wind.arc() && !wind.stepped() {
+        out.push(WIND_NONE_NOTE.to_owned());
+    }
+    if wind.arc() && !wind.stepped() && steps.jumper_band_margin <= 0.0 && !line.jumpers.is_empty()
+    {
+        out.push(JUMPER_BAND_NOTE.to_owned());
+    }
+    out
+}
+
+/// Said when a windy case is taken at its full blowouts only (no swing
+/// arc, no wind steps).
+pub const WIND_NONE_NOTE: &str = "NOT ON THE SAFE SIDE: the windy cases only blown out at their \
+     full pressure — the positions at lower pressures, between still air and the blowouts, are \
+     not in the volumes. Tick the swing arc or the wind steps.";
+
+/// Said when the jumpers are on their swing bands without a margin and
+/// without the wind steps.
+pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: the jumpers on their swing bands \
+     without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside \
+     the volume (up to 0.293 m on the example line, measured with 10 Pa steps). Enter a jumper \
+     band margin for your jumpers, or tick the wind steps.";

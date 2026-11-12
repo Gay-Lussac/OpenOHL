@@ -269,7 +269,11 @@ impl Default for Settings {
             distance: p.distance,
             margin: p.margin,
             tolerance: DEFAULT_TOLERANCE,
-            wind: WindMode::None,
+            // The swing arc, band margin 0.15 m, as the clearance windows
+            // start (owner, 2026-11-12, for those: "set the swing arc as
+            // default with 15 cm"): it only adds positions, so a volume
+            // never smaller. A saved run or setup keeps its own wind.
+            wind: WindMode::Arc,
             steps: WindSteps::default(),
             grouping: Grouping::Wire,
             scope: Scope::Circuits,
@@ -524,11 +528,140 @@ enum Part {
     Included,
     /// The distance (3 Rules).
     Distance,
-    /// The wire positions (4 Model).
+    /// The wire positions (4 Wind).
     Positions,
-    /// The mesh's tolerance (4 Model).
+    /// How the wires are solved (5 Model).
+    Calculation,
+    /// The mesh's tolerance (5 Model).
     Mesh,
 }
+
+/// Every section the window's **user guide ↗** buttons open: headings of
+/// [`GUIDE`] (a test reads the page).
+#[cfg(test)]
+pub const ANCHORS: [&str; 7] = [
+    "what-it-answers",
+    "what-is-included",
+    "distance",
+    "wire-positions",
+    "mesh",
+    "export",
+    "the-results",
+];
+
+/// A group's heading: its title, its explanation in a **(?)** (`help`:
+/// short line, longer text) and **Title: user guide ↗** opening
+/// [`GUIDE`] at `anchor` (returned when clicked).
+fn heading_help(
+    ui: &mut egui::Ui,
+    title: &str,
+    anchor: &'static str,
+    help: (&str, &str),
+) -> Option<&'static str> {
+    let mut out = None;
+    ui.horizontal(|ui| {
+        ui.strong(title);
+        help::question_both(ui, help.0, help.1);
+        if ui
+            .small_button(format!("{title}: user guide ↗"))
+            .on_hover_text(format!("Help › User guide: {title} (and its theory)"))
+            .clicked()
+        {
+            out = Some(anchor);
+        }
+    });
+    out
+}
+
+/// *1 What it checks*, in its (?).
+const WHAT_HELP: (&str, &str) = (
+    "The space within the distance of the wires in every position of the cases ticked, for work \
+     near the line: one closed volume per wire, circuit or system, shown in the 3D view and the \
+     plan, exported as DXF, IFC or KML.",
+    "No safety distance is built in: type yours (or take a design-code plugin's preset) in \
+     3 Rules. Nothing is compared: the volumes are the result.",
+);
+
+/// *2 Scope*, in its (?).
+const SCOPE_HELP: (&str, &str) = (
+    "The weather cases solved, and the wires taken.",
+    "Each case ticked is solved by the line's solver; more cases: more solves, a longer run, \
+     larger volumes where they differ. Under What is included: the systems, circuits or spans \
+     whose wires are taken, and how they are grouped into volumes.",
+);
+
+/// *What is included*, in its (?).
+const INCLUDED_HELP: (&str, &str) = (
+    "The wires of the systems, circuits or spans ticked; how they are grouped into closed \
+     volumes (each wire keeps the distance of its own voltage). Jumpers included, structures not.",
+    "All with nothing searched: every wire of the line, also of what is added later. By system, \
+     the row (no system) is the earthed wires and any section without a system (at 0 kV), ticked \
+     like a system. By span: every wire on the spans ticked, and a jumper when the spans at both \
+     its ends are ticked. Per wire: a circuit's phase through all its sections. Per circuit: its \
+     phases in one mesh. Per system: every circuit of the system in one mesh, and the wires \
+     without a system (earthed wires) together in one named (no system). A volume of several \
+     wires is the union of theirs. The jumpers at their solved positions in every case and wind \
+     position, so the volume is continuous at the structures; with the swing arc, each jumper \
+     also on a swing band of its own about the line through its two end clamps, widened by the \
+     jumper band margin. The structures and their strings are not part of the volumes. Fewer \
+     wires: a shorter run.",
+);
+
+/// *Distance*, in its (?).
+const DISTANCE_HELP: (&str, &str) = (
+    "The distance from the conductors' surface, and a margin added to it for every wire.",
+    "One distance, a table by voltage or a base plus an amount per kV: each wire takes the \
+     distance of its own system's nominal voltage (earthed wires: 0 kV), measured from its \
+     surface (each subconductor of a bundle, iced in a case with ice). A preset's rule fills it \
+     (its radial distance, else its vertical one). The margin covers what the distance does \
+     not: the survey's accuracy, tools or loads swinging near the line. Larger: a larger volume, \
+     a little longer to mesh.",
+);
+
+/// *Wire positions*, in its (?).
+const POSITIONS_HELP: (&str, &str) = (
+    "Each case ticked: still air as it is, a windy case blown to the left and to the right at \
+     its full pressure; the swing arc (on by default) or the wind steps add the positions \
+     between.",
+    "The wires are solved in each case ticked by the line's solver; a case with wind is solved \
+     with the wind from the right (blown left) and from the left (blown right). The volume holds \
+     every position. The swing arc swings each span as one between the blowouts (three solves \
+     per windy case, conservative with its band margin); the wind steps solve every pressure \
+     (exact at the pressures solved, one solve per step and side).",
+);
+
+/// *Mesh*, in its (?).
+const MESH_HELP: (&str, &str) = (
+    "The mesh holds the exact volume whole; outside it by at most the tolerance where it is \
+     smooth.",
+    "Smaller: more triangles, a longer run, larger files. The results give each volume's \
+     \"outside by at most\", measured: where two tubes meet, the triangles bridge the groove \
+     between them (up to one grid cell), so it can be larger than the tolerance.",
+);
+
+/// *Export*, in its (?).
+const EXPORT_HELP: (&str, &str) = (
+    "The volumes shown, in the formats ticked, georeferenced in the line's coordinate system.",
+    "DXF for CAD, IFC for BIM models, KML/KMZ for maps. Each file carries the line, the distance, \
+     the wind and the date. DXF: the line's coordinates, the system as WKT in the .prj. IFC: a \
+     map conversion to the projected system named by its EPSG code. KML: converted to WGS84, \
+     heights kept as they are (above the line's height datum, not corrected to a geoid). Set the \
+     system in the line's properties (CRS).",
+);
+
+/// *Results*, in its (?).
+const RESULTS_HELP: (&str, &str) = (
+    "One row per volume; a row clicked turns the 3D view to it.",
+    "Each mesh holds the whole exact volume (never inside it) and lies outside it by at most the \
+     value shown where the volume is smooth; where tubes meet, its triangles may bridge the \
+     groove by up to one grid cell. What is not on the safe side is written above the table; \
+     the other notes are folded.",
+);
+
+/// Under the wind when a windy case is taken at its full blowouts only.
+pub const NO_ARC_UNSAFE: &str = "NOT ON THE SAFE SIDE: without the swing arc or the wind steps a \
+     windy case gives only its two full blowouts; the positions between still air and them are \
+     not in the volumes. The results say so.";
 
 /// The Safety volumes window.
 pub struct SafetyVolumeWindow {
@@ -898,16 +1031,18 @@ impl SafetyVolumeWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
-                        help::explain(
+                        // The grey lines in the (?) of their section or
+                        // group (owner, 2026-11-12: the check windows one
+                        // by one, "and the safety volumes").
+                        if let Some(a) = check_ui::section_help(
                             ui,
-                            "The space within the distance of the wires in every position of the \
-                             cases ticked, for work near the line: one closed volume per wire, \
-                             circuit or system, shown in the 3D view and the plan, exported as \
-                             DXF, IFC or KML.",
-                            "No safety distance is built in: type yours (or take a design-code \
-                             plugin's preset) in 3 Rules.",
-                        );
+                            1,
+                            "What it checks",
+                            Some("what-it-answers"),
+                            Some(WHAT_HELP),
+                        ) {
+                            out.guide = Some(a);
+                        }
                         check_ui::how_computed(
                             ui,
                             WINDOW,
@@ -917,7 +1052,7 @@ impl SafetyVolumeWindow {
                              conductors' surface is a tube; the tubes of a wire, circuit or \
                              system are joined into one closed mesh that holds the exact volume \
                              whole and lies outside it by at most the tolerance where it is \
-                             smooth (4 Model).",
+                             smooth (5 Model).",
                             |ui| {
                                 ui.horizontal(|ui| {
                                     help::safety_distance(ui, 4.0, 1.0);
@@ -926,7 +1061,7 @@ impl SafetyVolumeWindow {
                             },
                         );
                         ui.separator();
-                        check_ui::section(ui, 2, "Scope", None);
+                        check_ui::section_help(ui, 2, "Scope", None, Some(SCOPE_HELP));
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
                         check_ui::ScopePicker::new(WINDOW, &model.line)
@@ -938,15 +1073,21 @@ impl SafetyVolumeWindow {
                         check_ui::section(ui, 3, "Rules", None);
                         self.settings_ui(ui, model, presets, &mut out, Part::Distance);
                         ui.separator();
+                        // The wind out of the fold (2026-11-12): it decides
+                        // what the volumes hold, and says when not on the
+                        // safe side.
+                        check_ui::section(ui, 4, "Wind", None);
+                        self.settings_ui(ui, model, presets, &mut out, Part::Positions);
+                        ui.separator();
                         // The modelling settings, folded (check pages'
-                        // guidelines): the wire positions, the mesh.
-                        check_ui::model_section(ui, WINDOW, 4, |ui| {
-                            self.settings_ui(ui, model, presets, &mut out, Part::Positions);
+                        // guidelines): how the wires are solved, the mesh.
+                        check_ui::model_section(ui, WINDOW, 5, |ui| {
+                            self.settings_ui(ui, model, presets, &mut out, Part::Calculation);
                             ui.separator();
                             self.settings_ui(ui, model, presets, &mut out, Part::Mesh);
                         });
                         ui.separator();
-                        if let Some(a) = help::heading(ui, "Export", "export") {
+                        if let Some(a) = heading_help(ui, "Export", "export", EXPORT_HELP) {
                             out.guide = Some(a);
                         }
                         self.export_ui(ui, model);
@@ -964,6 +1105,11 @@ impl SafetyVolumeWindow {
                         Some(Ok(_)) => {
                             // The table in the room the save and the
                             // export leave; they scroll under it.
+                            if let Some(a) =
+                                heading_help(ui, "Results", "the-results", RESULTS_HELP)
+                            {
+                                out.guide = Some(a);
+                            }
                             if let Some(k) = self.report_ui(ui) {
                                 self.row_clicked(k, &mut out);
                             }
@@ -972,7 +1118,9 @@ impl SafetyVolumeWindow {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| {
                                     self.save_ui(ui, model, &mut out);
-                                    if let Some(a) = help::heading(ui, "Export", "export") {
+                                    if let Some(a) =
+                                        heading_help(ui, "Export", "export", EXPORT_HELP)
+                                    {
                                         out.guide = Some(a);
                                     }
                                     self.export_ui(ui, model);
@@ -1103,7 +1251,9 @@ impl SafetyVolumeWindow {
         self.kept = kept;
     }
 
-    /// A part of the settings: `part`.
+    /// A part of the settings: `part`. Each group's explanation in the
+    /// **(?)** after its heading (owner, 2026-11-12: "move the grey lines
+    /// into the help"); warnings and what blocks Run stay written.
     fn settings_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -1113,60 +1263,53 @@ impl SafetyVolumeWindow {
         part: Part,
     ) {
         let voltages = ohl_clearance::zone::line_voltages(&model.line);
-        let mut heading = |ui: &mut egui::Ui, title: &str, anchor: &'static str| {
-            if let Some(a) = help::heading(ui, title, anchor) {
-                out.guide = Some(a);
-            }
-        };
+        let mut heading =
+            |ui: &mut egui::Ui, title: &str, anchor: &'static str, h: (&str, &str)| {
+                if let Some(a) = heading_help(ui, title, anchor, h) {
+                    out.guide = Some(a);
+                }
+            };
         let cases = &mut self.cases;
         let s = &mut self.settings;
         // Wire positions: the wind (the cases in the scope).
         if part == Part::Positions {
-            heading(ui, "Wire positions", "wire-positions");
+            heading(ui, "Wire positions", "wire-positions", POSITIONS_HELP);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                help::explain(
-                    ui,
-                    "Each case ticked: still air as it is, a windy case blown to the left and to \
-                     the right at its full pressure.",
-                    "The wires are solved in each case ticked by the line's solver; a case with \
-                     wind is solved with the wind from the right (blown left) and from the left \
-                     (blown right). The volume holds every position.",
-                );
-                // The wind choice shared with the danger-tree check (the
-                // full blowouts from both sides; the sides for the steps).
-                let full = cases
-                    .iter()
-                    .filter_map(|&k| model.cases.get(k))
-                    .map(|c| c.case.wind_pressure.si())
-                    .fold(0.0, f64::max);
-                let mut wind = WindSteps {
-                    arc: s.wind.arc(),
-                    stepped: s.wind.stepped(),
-                    ..s.steps
-                };
-                help::wind_choice(ui, "safety-volume", &mut wind, false, full, true, true);
-                // How the wires are solved (owner, 2026-11-01).
-                ui.horizontal(|ui| {
-                    ui.label("Wires by");
-                    crate::rule_table::calculation_combo(
+                    // The wind choice shared with the danger-tree check (the
+                    // full blowouts from both sides; the sides for the steps).
+                    let full = cases
+                        .iter()
+                        .filter_map(|&k| model.cases.get(k))
+                        .map(|c| c.case.wind_pressure.si())
+                        .fold(0.0, f64::max);
+                    let mut wind = WindSteps {
+                        arc: s.wind.arc(),
+                        stepped: s.wind.stepped(),
+                        ..s.steps
+                    };
+                    help::wind_choice_with(
                         ui,
-                        "safety-volume-calculation",
-                        &mut s.calculation,
+                        "safety-volume",
+                        &mut wind,
+                        false,
+                        full,
+                        true,
+                        true,
+                        false,
                     );
+                    s.wind = match (wind.arc, wind.stepped) {
+                        (false, false) => WindMode::None,
+                        (false, true) => WindMode::Steps,
+                        (true, false) => WindMode::Arc,
+                        (true, true) => WindMode::Both,
+                    };
+                    s.steps = WindSteps {
+                        arc: false,
+                        stepped: false,
+                        ..wind
+                    };
                 });
-                s.wind = match (wind.arc, wind.stepped) {
-                    (false, false) => WindMode::None,
-                    (false, true) => WindMode::Steps,
-                    (true, false) => WindMode::Arc,
-                    (true, true) => WindMode::Both,
-                };
-                s.steps = WindSteps {
-                    arc: false,
-                    stepped: false,
-                    ..wind
-                };
-            });
                 let n = if s.wind.stepped() {
                     let full = cases
                         .iter()
@@ -1179,113 +1322,157 @@ impl SafetyVolumeWindow {
                 };
                 help::wind_positions(ui, s.wind.arc(), n);
             });
+            // Not on the safe side, under the wind at the window's full
+            // width: said where it is chosen, and in the results
+            // (`safe_side_notes`).
+            let full = cases
+                .iter()
+                .filter_map(|&k| model.cases.get(k))
+                .map(|c| c.case.wind_pressure.si())
+                .fold(0.0, f64::max);
+            let warn = |ui: &mut egui::Ui, text: &str| {
+                // Wrapped within what is seen (the body may scroll
+                // sideways).
+                let seen = (ui.clip_rect().right() - ui.cursor().left() - 8.0).max(200.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(seen);
+                    ui.colored_label(
+                        ui.visuals().warn_fg_color,
+                        egui::RichText::new(text).small(),
+                    );
+                });
+            };
+            if full > 0.0 && s.wind == WindMode::None {
+                warn(ui, NO_ARC_UNSAFE);
+            }
+            if s.wind == WindMode::Arc
+                && s.steps.jumper_band_margin <= 0.0
+                && !model.line.jumpers.is_empty()
+            {
+                warn(ui, crate::clearance_zones::JUMPERS_UNSAFE);
+            }
+        }
+        // How the wires are solved (owner, 2026-11-01).
+        if part == Part::Calculation {
+            ui.horizontal(|ui| {
+                ui.label("Wires by");
+                crate::rule_table::calculation_combo(
+                    ui,
+                    "safety-volume-calculation",
+                    &mut s.calculation,
+                );
+                help::question(
+                    ui,
+                    "How every wire is solved for the volumes (e.g. max sag; finite elements or \
+                     ruling span); none chosen: each section's own calculation. A larger sag: a \
+                     volume reaching lower. Finite elements are slower.",
+                );
+            });
         }
         // Distance: the rule, a preset's, the margin.
         if part == Part::Distance {
-            heading(ui, "Distance", "distance");
+            heading(ui, "Distance", "distance", DISTANCE_HELP);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                ui.label("from the conductors' surface");
-                crate::requirement_ui::requirement_ui(
-                    ui,
-                    "safety-volume-distance",
-                    &mut s.distance,
-                    &voltages,
-                );
-                help::explain(
-                    ui,
-                    "No safety distance is built in: enter the one of the rules you work to, or \
-                     fill it from a preset's rule below.",
-                    "One distance, a table by voltage or a base plus an amount per kV: each wire \
-                     takes the distance of its own system's nominal voltage (earthed wires: \
-                     0 kV), measured from its surface (each subconductor of a bundle, iced in a \
-                     case with ice).",
-                );
-                // A preset's rule fills the distance (its radial distance,
-                // else its vertical one).
-                ui.horizontal(|ui| {
-                    ui.label("preset");
-                    if crate::rule_editor::preset_dropdown(
+                    ui.label("from the conductors' surface");
+                    crate::requirement_ui::requirement_ui(
                         ui,
-                        "safety-volume-preset",
-                        presets,
-                        |p| {
-                            p.rules
-                                .rules
-                                .iter()
-                                .any(|r| r.radial.is_some() || r.vertical.is_some())
-                        },
-                        &mut self.preset,
-                    ) {
-                        self.rule = 0;
-                    }
-                });
-                if let Some(preset) = self
-                    .preset
-                    .and_then(|(i, k)| presets.get(i)?.presets.as_ref().ok()?.get(k).cloned())
-                {
-                    let rules: Vec<(String, Requirement)> = preset
-                        .rules
-                        .rules
-                        .iter()
-                        .filter_map(|r| {
-                            r.radial
-                                .clone()
-                                .or_else(|| r.vertical.clone())
-                                .map(|q| (r.name.clone(), q))
-                        })
-                        .collect();
+                        "safety-volume-distance",
+                        &mut s.distance,
+                        &voltages,
+                    );
+                    // Kept written: nothing is filled in for the user.
+                    ui.label(
+                        egui::RichText::new(
+                            "No safety distance is built in: enter yours or fill it from a preset.",
+                        )
+                        .small(),
+                    );
+                    // A preset's rule fills the distance (its radial distance,
+                    // else its vertical one).
                     ui.horizontal(|ui| {
-                        ui.label("rule");
-                        let shown = rules.get(self.rule).map_or("-", |r| r.0.as_str());
-                        egui::ComboBox::from_id_salt("safety-volume-preset-rule")
-                            .selected_text(shown)
-                            .show_ui(ui, |ui| {
-                                for (k, (name, q)) in rules.iter().enumerate() {
-                                    ui.selectable_value(&mut self.rule, k, format!("{name}: {q}"));
-                                }
-                            });
-                        if let Some((name, q)) = rules.get(self.rule)
-                            && ui
-                                .button("Fill the distance")
-                                .on_hover_text(format!(
-                                    "The rule \"{name}\"'s radial distance (else its vertical \
-                                     one): {q}"
-                                ))
-                                .clicked()
-                        {
-                            s.distance = q.clone();
+                        ui.label("preset");
+                        if crate::rule_editor::preset_dropdown(
+                            ui,
+                            "safety-volume-preset",
+                            presets,
+                            |p| {
+                                p.rules
+                                    .rules
+                                    .iter()
+                                    .any(|r| r.radial.is_some() || r.vertical.is_some())
+                            },
+                            &mut self.preset,
+                        ) {
+                            self.rule = 0;
                         }
                     });
-                    if let Some((_, q)) = rules.get(self.rule) {
-                        crate::requirement_ui::requirement_view(
-                            ui,
-                            "safety-volume-preset-rule",
-                            q,
-                            &voltages,
-                        );
+                    if let Some(preset) = self
+                        .preset
+                        .and_then(|(i, k)| presets.get(i)?.presets.as_ref().ok()?.get(k).cloned())
+                    {
+                        let rules: Vec<(String, Requirement)> = preset
+                            .rules
+                            .rules
+                            .iter()
+                            .filter_map(|r| {
+                                r.radial
+                                    .clone()
+                                    .or_else(|| r.vertical.clone())
+                                    .map(|q| (r.name.clone(), q))
+                            })
+                            .collect();
+                        ui.horizontal(|ui| {
+                            ui.label("rule");
+                            let shown = rules.get(self.rule).map_or("-", |r| r.0.as_str());
+                            egui::ComboBox::from_id_salt("safety-volume-preset-rule")
+                                .selected_text(shown)
+                                .show_ui(ui, |ui| {
+                                    for (k, (name, q)) in rules.iter().enumerate() {
+                                        ui.selectable_value(
+                                            &mut self.rule,
+                                            k,
+                                            format!("{name}: {q}"),
+                                        );
+                                    }
+                                });
+                            if let Some((name, q)) = rules.get(self.rule)
+                                && ui
+                                    .button("Fill the distance")
+                                    .on_hover_text(format!(
+                                        "Replaces the distance above by the rule \"{name}\"'s \
+                                         radial distance (else its vertical one): {q}"
+                                    ))
+                                    .clicked()
+                            {
+                                s.distance = q.clone();
+                            }
+                        });
+                        if let Some((_, q)) = rules.get(self.rule) {
+                            crate::requirement_ui::requirement_view(
+                                ui,
+                                "safety-volume-preset-rule",
+                                q,
+                                &voltages,
+                            );
+                        }
                     }
-                }
-                ui.horizontal(|ui| {
-                    ui.label("margin");
-                    crate::style::field(
-                        ui,
-                        egui::DragValue::new(&mut s.margin)
-                            .speed(0.05)
-                            .range(0.0..=50.0)
-                            .suffix(" m"),
-                    )
-                    .on_hover_text(
-                        "Added to the distance (e.g. for the survey's accuracy or tools)",
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label("Margin [m]");
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut s.margin)
+                                .speed(0.05)
+                                .range(0.0..=50.0)
+                                .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "Added to the distance for every wire (e.g. the survey's accuracy, \
+                             tools or loads swinging near the line). Larger: a larger volume; \
+                             a little longer to mesh.",
+                        );
+                    });
                 });
-                help::explain(
-                    ui,
-                    "Added to the distance, for every wire.",
-                    "The margin covers what the distance does not: the survey's accuracy, tools \
-                     or loads swinging near the line.",
-                );
-            });
                 let d = voltages
                     .iter()
                     .filter_map(|kv| s.distance.at(*kv).ok())
@@ -1295,111 +1482,90 @@ impl SafetyVolumeWindow {
         }
         // What is included: the circuits or systems, the grouping.
         if part == Part::Included {
-            heading(ui, "What is included", "what-is-included");
+            heading(ui, "What is included", "what-is-included", INCLUDED_HELP);
             ui.horizontal_top(|ui| {
                 ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    ui.label("scope by");
-                    for (scope, tip) in [
-                        (
-                            Scope::Systems,
-                            "Tick the line's electrical systems; the row (no system) holds the \
-                             earthed wires and any section without a system",
-                        ),
-                        (Scope::Circuits, "Tick the line's circuits"),
-                        (
-                            Scope::Spans,
-                            "Tick spans: every wire on them, and the jumpers whose two ends are \
-                             on spans ticked",
-                        ),
-                    ] {
-                        if ui
-                            .add(
-                                egui::Button::new(scope.title())
-                                    .selected(s.scope == scope)
-                                    .frame_when_inactive(true),
-                            )
-                            .on_hover_text(tip)
-                            .clicked()
-                        {
-                            s.scope = scope;
+                    ui.horizontal(|ui| {
+                        ui.label("scope by");
+                        for (scope, tip) in [
+                            (
+                                Scope::Systems,
+                                "Tick the line's electrical systems; the row (no system) holds \
+                                 the earthed wires and any section without a system",
+                            ),
+                            (Scope::Circuits, "Tick the line's circuits"),
+                            (
+                                Scope::Spans,
+                                "Tick spans: every wire on them, and the jumpers whose two ends \
+                                 are on spans ticked",
+                            ),
+                        ] {
+                            if ui
+                                .add(
+                                    egui::Button::new(scope.title())
+                                        .selected(s.scope == scope)
+                                        .frame_when_inactive(true),
+                                )
+                                .on_hover_text(tip)
+                                .clicked()
+                            {
+                                s.scope = scope;
+                            }
                         }
-                    }
-                });
-                let all = scope_items(&model.line, s.scope);
-                let items = scope_items_on(model, s.scope);
-                let chosen = match s.scope {
-                    Scope::Systems => &mut s.systems,
-                    Scope::Circuits => &mut s.circuits,
-                    Scope::Spans => &mut s.spans,
-                };
-                let before = chosen.clone();
-                if crate::tick_list::tick_list(
-                    ui,
-                    ("safety-volume-scope", s.scope.as_str()),
-                    &items,
-                    chosen,
-                    130.0,
-                ) {
-                    // Ticked outside the route worked on: kept.
-                    let keys = |v: &[crate::tick_list::Item]| -> Vec<String> {
-                        v.iter().map(|x| x.key.clone()).collect()
+                    });
+                    let all = scope_items(&model.line, s.scope);
+                    let items = scope_items_on(model, s.scope);
+                    let chosen = match s.scope {
+                        Scope::Systems => &mut s.systems,
+                        Scope::Circuits => &mut s.circuits,
+                        Scope::Spans => &mut s.spans,
                     };
-                    check_ui::keep_hidden(&before, chosen, &keys(&all), &keys(&items));
-                }
-                if let Some(p) = s.scope_problem() {
-                    ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(p).small());
-                }
-                help::explain(
-                    ui,
-                    "The wires of the systems, circuits or spans ticked.",
-                    "All with nothing searched: every wire of the line, also of what is added \
-                     later. By system, the row (no system) is the earthed wires and any section \
-                     without a system (at 0 kV), ticked like a system. By span: every wire on \
-                     the spans ticked, and a jumper when the spans at both its ends are \
-                     ticked.",
-                );
-                ui.horizontal(|ui| {
-                    ui.label("one volume per");
-                    ui.radio_value(&mut s.grouping, Grouping::Wire, "wire")
-                        .on_hover_text("A circuit's phase through all its sections");
-                    ui.radio_value(&mut s.grouping, Grouping::Circuit, "circuit")
-                        .on_hover_text("A circuit's phases together");
-                    ui.radio_value(&mut s.grouping, Grouping::System, "system")
-                        .on_hover_text(
-                            "Every circuit of one electrical system together (the wires without \
-                             a system together: (no system))",
+                    let before = chosen.clone();
+                    if crate::tick_list::tick_list(
+                        ui,
+                        ("safety-volume-scope", s.scope.as_str()),
+                        &items,
+                        chosen,
+                        130.0,
+                    ) {
+                        // Ticked outside the route worked on: kept.
+                        let keys = |v: &[crate::tick_list::Item]| -> Vec<String> {
+                            v.iter().map(|x| x.key.clone()).collect()
+                        };
+                        check_ui::keep_hidden(&before, chosen, &keys(&all), &keys(&items));
+                    }
+                    if let Some(p) = s.scope_problem() {
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            egui::RichText::new(p).small(),
                         );
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label("one volume per");
+                        ui.radio_value(&mut s.grouping, Grouping::Wire, "wire")
+                            .on_hover_text(
+                                "A circuit's phase through all its sections: the most volumes \
+                                 and rows",
+                            );
+                        ui.radio_value(&mut s.grouping, Grouping::Circuit, "circuit")
+                            .on_hover_text("A circuit's phases together: one volume per circuit");
+                        ui.radio_value(&mut s.grouping, Grouping::System, "system")
+                            .on_hover_text(
+                                "Every circuit of one electrical system together (the wires \
+                                 without a system together: (no system)); the same space, fewer \
+                                 volumes",
+                            );
+                    });
                 });
-                help::explain(
-                    ui,
-                    "How the wires are grouped into closed volumes; each wire keeps the distance \
-                     of its own voltage.",
-                    "Per wire: a circuit's phase through all its sections. Per circuit: its \
-                     phases in one mesh. Per system: every circuit of the system in one mesh, \
-                     and the wires without a system (earthed wires) together in one named (no \
-                     system). A volume of several wires is the union of theirs.",
-                );
-                help::explain(
-                    ui,
-                    "Jumpers included, structures not.",
-                    "The jumpers at their solved positions in every case and wind position, so \
-                     the volume is continuous at the structures; with the swing arc, each jumper \
-                     also on a swing band of its own about the line through its two end clamps, \
-                     widened by the band margin. The structures and their strings are not part \
-                     of the volumes.",
-                );
-            });
                 help::volume_grouping(ui, s.grouping);
             });
         }
         // Mesh: the tolerance.
         if part == Part::Mesh {
-            heading(ui, "Mesh", "mesh");
+            heading(ui, "Mesh", "mesh", MESH_HELP);
             ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label("tolerance");
+                    ui.label("Tolerance [m]");
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut s.tolerance)
@@ -1409,19 +1575,10 @@ impl SafetyVolumeWindow {
                     )
                     .on_hover_text(
                         "How far the mesh may lie outside the exact volume where it is smooth; \
-                         it is never inside it. Smaller: more triangles.",
+                         it is never inside it. Smaller: more triangles, a longer run, larger \
+                         files; never a smaller volume.",
                     );
                 });
-                help::explain(
-                    ui,
-                    "The mesh holds the exact volume whole; outside it by at most this where it \
-                     is smooth.",
-                    "Smaller: more triangles, a longer run, larger files. The results give each \
-                     volume's \"outside by at most\", measured: where two tubes meet, the \
-                     triangles bridge the groove between them (up to one grid cell), so it can \
-                     be larger than the tolerance.",
-                );
-            });
                 help::mesh_outside(ui, s.tolerance);
             });
         }
@@ -1484,8 +1641,15 @@ impl SafetyVolumeWindow {
                 "Saved without its meshes (too large): run it again to see and export them.",
             );
         }
+        // Not on the safe side: written, in warning colour (owner,
+        // 2026-11-12: always visible); the other notes folded.
+        let (unsafe_notes, notes): (Vec<String>, Vec<String>) =
+            v.notes.iter().cloned().partition(|n| n.starts_with("NOT "));
+        for n in &unsafe_notes {
+            ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(n).small());
+        }
         // What was assumed and left out, folded above the table.
-        crate::check_ui::notes_fold(ui, "safety-volume-rows", &v.notes);
+        crate::check_ui::notes_fold(ui, "safety-volume-rows", &notes);
         // The shared results table (owner, 2026-10-28): sortable, units in
         // the headers, CSV (the colour of each volume: in the views).
         use crate::check_ui::Col;
@@ -1499,26 +1663,19 @@ impl SafetyVolumeWindow {
             Col::num("Distance [m]"),
             Col::num("Triangles"),
             Col::num("Volume [m³]"),
-            Col::num("Outside by ≤ [m]")
-                .tip("The most the mesh lies outside the exact volume where it is smooth"),
+            Col::num("Outside by ≤ [m]").tip(
+                "The most the mesh lies outside the exact volume, measured (never inside \
+                     it); where tubes meet, its triangles may bridge the groove by up to one grid \
+                     cell, so it can exceed the tolerance",
+            ),
             Col::num("Time [s]"),
         ];
-        let clicked = crate::check_ui::ResultTable::new("safety-volume-rows", cols)
+        crate::check_ui::ResultTable::new("safety-volume-rows", cols)
             .rows_kept(rows)
             .no_filter()
             .csv("safety-volumes.csv")
             .below(260.0)
-            .ui(ui);
-        ui.label(
-            egui::RichText::new(
-                "Each mesh holds the whole exact volume (never inside it) and lies outside it by \
-                 at most the value shown where the volume is smooth; where tubes meet, its \
-                 triangles may bridge the groove by up to one grid cell.",
-            )
-            .small()
-            .weak(),
-        );
-        clicked
+            .ui(ui)
     }
 
     fn save_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
@@ -1621,31 +1778,21 @@ impl SafetyVolumeWindow {
                 }
             });
         });
-        help::explain(
-            ui,
-            if ready {
-                "The volumes shown, in the formats ticked."
-            } else {
-                "Run first (a saved run without meshes: run it again)."
-            },
-            "DXF for CAD, IFC for BIM models, KML/KMZ for Google Earth. Each file carries the \
-             line, the distance, the wind and the date.",
-        );
-        help::explain(
-            ui,
-            &format!(
-                "Georeferenced in the line's coordinate system: {}",
-                if model.line.crs.is_empty() {
-                    "none set (KML needs one)"
-                } else {
-                    model.line.crs.as_str()
-                }
-            ),
-            "DXF: the line's coordinates, the system as WKT in the .prj. IFC: a map conversion \
-             to the projected system named by its EPSG code. KML: converted to WGS84, heights \
-             kept as they are (above the line's height datum, not corrected to a geoid). Set \
-             the system in the line's properties (CRS).",
-        );
+        // What blocks the export and the coordinate system: written
+        // (the formats explained in the (?) of Export).
+        if !ready {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                egui::RichText::new("Run first (a saved run without meshes: run it again).")
+                    .small(),
+            );
+        }
+        let crs = if model.line.crs.is_empty() {
+            "none set (KML needs one: the line's properties, CRS)"
+        } else {
+            model.line.crs.as_str()
+        };
+        ui.label(egui::RichText::new(format!("Coordinate system: {crs}")).small());
         if let Some((m, error)) = &self.export_message {
             crate::menu::message(
                 ui,

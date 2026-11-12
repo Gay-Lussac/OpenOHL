@@ -155,6 +155,21 @@ theory's drawings and one new
 `ohl safety-volume`, the files, what is and is not conservative. The
 window's **user guide ↗** buttons open it (until now the analyses page's
 sections, now a summary and a link); the theory links to it.
+Part 2, the window: the grey lines into the **(?)** of their section or
+group; written stay the *NOT ON THE SAFE SIDE* lines, what blocks Run or
+the export, the solves, "No safety distance is built in" and the
+coordinate system. The wind left the folded *Model* for a section of its
+own (*4 Wind*; *5 Model* holds *Wires by* and the mesh). **A new window
+starts with the swing arc** (band margin 0.15 m, both sides), as the
+clearance windows since today: the arc only adds positions, the volumes
+never smaller; a saved run or setup keeps its wind; `ohl safety-volume
+--wind` still defaults to `none` (for the owner to decide). The results
+now say, written above the table, what they do not hold
+(`safety_volume::safe_side_notes`): the structures rigid (always), a
+windy case at its full blowouts only (no arc, no steps), the jumpers on
+their bands without a margin; the window says the last two under the
+wind. Units in the labels (*Margin [m]*, *Tolerance [m]*), hovers saying
+the effect, a *Results* heading with its **user guide ↗**.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

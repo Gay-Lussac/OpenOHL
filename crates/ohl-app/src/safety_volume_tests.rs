@@ -100,6 +100,26 @@ fn safety_volumes_are_built_drawn_saved_and_exported() {
             .sum::<usize>()
     };
     h.get_by_label_contains("volumes from");
+    // Not on the safe side, written above the table (2026-11-12): the
+    // structures rigid; the example's jumper on its band without a margin.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let notes = &r.safety_volume.report().unwrap().volumes.notes;
+        assert!(notes.iter().any(|n| n == ohl_clearance::RIGID_STRUCTURES));
+        assert!(
+            notes
+                .iter()
+                .any(|n| n == ohl_clearance::safety_volume::JUMPER_BAND_NOTE)
+        );
+        assert!(
+            !notes
+                .iter()
+                .any(|n| n == ohl_clearance::safety_volume::WIND_NONE_NOTE)
+        );
+    }
+    h.get_by_label(ohl_clearance::RIGID_STRUCTURES);
+    h.get_by_label(ohl_clearance::safety_volume::JUMPER_BAND_NOTE);
+    h.get_by_label("Results: user guide ↗");
     png(&mut h, "safety-volume-window-3d.png");
     // The 3D layer alone with the line, headless: in perspective and from
     // above (the outline the plan draws).
@@ -272,10 +292,13 @@ fn safety_volumes_by_system() {
         let s = &mut r.safety_volume.settings;
         s.distance = ohl_clearance::rules::Requirement::Fixed(3.0);
         s.tolerance = 0.3;
+        // The blowouts only (the swing arc is the default since
+        // 2026-11-12): a still-air case, one position per span.
+        s.wind = ohl_clearance::safety_volume::WindMode::None;
     }
     h.run_steps(3);
-    // The groups and their user-guide links (the wire positions and the
-    // mesh in 4 Model, folded).
+    // The groups and their user-guide links (the mesh in 5 Model, folded;
+    // the wire positions in 4 Wind since 2026-11-12).
     crate::tests::open_model(&mut h);
     for title in [
         "Wire positions",
@@ -286,6 +309,7 @@ fn safety_volumes_by_system() {
     ] {
         h.get_by_label(&format!("{title}: user guide ↗"));
     }
+    h.get_by_label("Wires by");
     h.get_by_label("Systems").click_accesskit();
     h.run_steps(2);
     h.get_by_label("220 kV example system — 220 kV");
@@ -447,4 +471,88 @@ fn the_safety_volumes_calculation_reads_back() {
     let mut old = Settings::default().to_json(&[]);
     old.as_object_mut().unwrap().remove("calculation");
     assert_eq!(Settings::from_json(&old).unwrap().0.calculation, None);
+}
+
+/// The window's user-guide buttons open sections of its own page
+/// (2026-11-12): every anchor a heading of the page (anchors as mdBook
+/// makes them: lower case, spaces as dashes, punctuation dropped).
+#[test]
+fn the_safety_volumes_guide_buttons_open_its_page() {
+    assert_eq!(crate::safety_volume::GUIDE, "user-guide/safety-volumes");
+    let text =
+        std::fs::read_to_string(crate::tests::root().join("docs/user-guide/safety-volumes.md"))
+            .unwrap();
+    let anchors: Vec<String> = text
+        .lines()
+        .filter_map(|l| l.strip_prefix('#'))
+        .map(|h| {
+            h.trim_start_matches('#')
+                .trim()
+                .to_lowercase()
+                .chars()
+                .filter_map(|c| match c {
+                    ' ' => Some('-'),
+                    c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect();
+    for a in crate::safety_volume::ANCHORS {
+        assert!(anchors.iter().any(|x| x == a), "{a} in {anchors:?}");
+    }
+}
+
+/// A new window starts with the swing arc (band margin 0.15 m, both
+/// sides; 2026-11-12, as the clearance windows): it only adds positions.
+/// Without the arc and the steps a windy case is said not on the safe
+/// side, in the window (written, not in a (?)) and in the results' notes.
+#[test]
+fn the_safety_volumes_start_with_the_swing_arc() {
+    use ohl_clearance::safety_volume::WindMode;
+    let s = crate::safety_volume::Settings::default();
+    assert_eq!(s.wind, WindMode::Arc);
+    assert_eq!(s.steps.band_margin, ohl_clearance::positions::BAND_MARGIN);
+    assert_eq!(s.steps.sides, ohl_clearance::rules::WindSides::Both);
+    let model = crate::tests::synthetic_project("safety-volume-arc");
+    let mut h = harness(model, false);
+    h.run_steps(3);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let wind = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "high wind")
+            .unwrap();
+        r.safety_volume.show(wind);
+    }
+    h.run_steps(3);
+    // The arc on, the jumper margin 0: the jumpers said, written.
+    h.get_by_label(crate::clearance_zones::JUMPERS_UNSAFE);
+    assert!(
+        h.query_by_label(crate::safety_volume::NO_ARC_UNSAFE)
+            .is_none()
+    );
+    h.state_mut().ready().unwrap().safety_volume.settings.wind = WindMode::None;
+    h.run_steps(3);
+    h.get_by_label(crate::safety_volume::NO_ARC_UNSAFE);
+    // The engine's notes for the same choice.
+    let r = h.state_mut().ready().unwrap();
+    let case = r
+        .model
+        .cases
+        .iter()
+        .find(|c| c.case.name == "high wind")
+        .unwrap()
+        .case
+        .clone();
+    let notes = ohl_clearance::safety_volume::safe_side_notes(
+        &r.model.line,
+        std::slice::from_ref(&case),
+        WindMode::None,
+        Default::default(),
+    );
+    assert!(notes.contains(&ohl_clearance::safety_volume::WIND_NONE_NOTE.to_owned()));
+    assert!(notes.contains(&ohl_clearance::RIGID_STRUCTURES.to_owned()));
 }

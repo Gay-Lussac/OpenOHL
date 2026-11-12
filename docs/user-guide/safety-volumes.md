@@ -103,8 +103,10 @@ to a folder…** writes the files.
 The Setup tab, top to bottom. The setup is kept in the project per
 project line (project setting `app.safety_volumes`) and read again when
 the project opens. Each section and field explains itself in its **(?)**
-(on hover: a short line, then the longer text); every **user guide ↗**
-opens this page at its section.
+(on hover: a short line, then the longer text); only warnings — *NOT ON
+THE SAFE SIDE* in warning colour —, what blocks **Run** or the export,
+the solves a windy case needs and the coordinate system stay written
+under the fields. Every **user guide ↗** opens this page at its section.
 
 ### 1 What it checks
 
@@ -150,22 +152,26 @@ and of the mesh outside the volume).
 - **preset** and **rule**: a design-code plugin's preset and one of its
   rules, shown greyed (*preview — Apply to edit*); **Fill the distance**
   copies its radial distance (else its vertical one) into the editor.
-- **margin** (m, default 0): added to the distance for every wire — the
+- **No safety distance is built in** stays written under the editor.
+- **Margin [m]** (default 0): added to the distance for every wire — the
   survey's accuracy, tools or loads swinging near the line.
 
 The drawing beside it shows the largest distance at the line's voltages
 and the margin around a conductor.
 
-### 4 Model (folded)
-
-The modelling settings: their defaults are sound, open it to change
-them.
+### 4 Wind
 
 #### Wire positions
 
-- **swing arc** (default off): also every position between the two
-  blowouts (step 2). Three solves per windy case; a larger volume
-  between the blowouts.
+Out of the folded *Model* since 2026-11-12: the wind decides what the
+volumes hold.
+
+- **swing arc** (default **on**, since 2026-11-12, as the clearance
+  windows start): also every position between the two blowouts (step 2).
+  Three solves per windy case; a larger volume between the blowouts,
+  never a smaller one. Off, with the wind steps off too, a windy case
+  gives only its two full blowouts: the window says *NOT ON THE SAFE
+  SIDE* under the wind, and the results say it too.
 - **band margin** (m, with the swing arc, default 0.15): the band is
   widened by it. Smaller is less safe: below the default the window says
   so in warning colour, on your responsibility, with a button setting
@@ -173,7 +179,9 @@ them.
 - **jumper band margin** (m, with the swing arc, default 0): the jumpers'
   bands' own widening. At 0 a jumper's band does not hold the jumper
   between its blowouts (up to 0.293 m outside on the example line):
-  enter a value for your jumpers, or tick the wind steps.
+  enter a value for your jumpers, or tick the wind steps. With the arc
+  alone and 0 m the window says *NOT ON THE SAFE SIDE for the jumpers*
+  under the wind, and the results say it too.
 - **wind stepped** and **step** (Pa, default 50): also still air and every
   pressure up to the case's. Exact at the pressures solved; one solve per
   step and side — a fine step on a long line takes minutes (the window
@@ -181,15 +189,21 @@ them.
   they are many).
 - **from** (with the steps): both sides, the left or the right, looking
   ahead along the line.
+The drawing shows the positions seen along a span.
+
+### 5 Model (folded)
+
+The modelling settings: their defaults are sound, open it to change
+them.
+
 - **Wires by**: how every wire is solved for the volumes (e.g. max sag,
   finite elements or ruling span); none chosen: each section's own
-  calculation.
-
-The drawing shows the positions seen along a span.
+  calculation. A larger sag: a volume reaching lower; finite elements are
+  slower.
 
 #### Mesh
 
-- **tolerance** (m, default 0.05, from 0.005 to 1): how far the mesh may
+- **Tolerance [m]** (m, default 0.05, from 0.005 to 1): how far the mesh may
   lie outside the exact volume where it is smooth. Smaller: more
   triangles, a longer run, larger files; never a smaller volume.
 
@@ -197,9 +211,10 @@ The drawing shows the positions seen along a span.
 
 **DXF + .prj**, **IFC4**, **KML**, **KMZ** (DXF, IFC and KMZ ticked by
 default) and **Export to a folder…**: after a run, the formats ticked
-are written into the folder chosen ([The files](#the-files)). The line
-under it names the line's coordinate system, or says none is set (KML
-needs one: Properties of the line, *CRS*). Also in the Results tab.
+are written into the folder chosen ([The files](#the-files)). Before a
+run it says *Run first* in warning colour. The line under it names the
+line's coordinate system, or says none is set (KML needs one: Properties
+of the line, *CRS*). Also in the Results tab.
 
 ### The footer
 
@@ -217,7 +232,12 @@ needs one: Properties of the line, *CRS*). Also in the Results tab.
 
 - One line: how many volumes from how many wire positions, the weather
   cases, the distance and the wind.
-- **Notes** (folded): what was assumed and left out.
+- **NOT ON THE SAFE SIDE** notes, written in warning colour above the
+  table (2026-11-12): the structures rigid in the wire solve (always);
+  the windy cases at their full blowouts only (without the arc and the
+  steps); the jumpers on their bands without a margin (the arc alone,
+  jumper band margin 0 m, a line with jumpers).
+- **Notes** (folded): the other notes — what was assumed and left out.
 - The table, one row per volume: **Volume** (its name: circuit and phase,
   circuit or system), **Voltage**, **Distance [m]** (with the margin),
   **Triangles**, **Volume [m³]**, **Outside by ≤ [m]** (the most the mesh
@@ -248,7 +268,7 @@ run's parameters) and what `ohl safety-volume` takes:
 | One volume per | `per` | `--per` | `wire`, `circuit`, `system` | `wire` | the grouping |
 | Distance | `distance` | `--distance` (required) | m | none (to set) | `5`, `"5 m"`, `{ by_voltage = [[110, 3], [380, 5]] }` or `{ base = …, per_kv = …, above_kv = … }` |
 | margin | `margin` | `--margin` | m | 0 | added to the distance |
-| swing arc, wind stepped | `wind` | `--wind` | `none`, `steps`, `arc`, `both` | `none` | the positions between and below the full blowouts |
+| swing arc, wind stepped | `wind` | `--wind` | `none`, `steps`, `arc`, `both` | window `arc`; command line `none` | the positions between and below the full blowouts |
 | step | `wind_step` | `--wind-step` | Pa | 50 | the pressure step |
 | from | `wind_sides` | `--wind-sides` | `both`, `left`, `right` | `both` | the sides of the steps |
 | band margin | `band_margin` | `--band-margin` | m | 0.15 | the swing band's widening |
@@ -299,18 +319,25 @@ and [The mesh](../theory/safety-volumes.md#the-mesh)):
 
 Not on the safe side, or not included:
 
+Each of these is said in the results' notes (*NOT ON THE SAFE SIDE: …*,
+written above the table and printed by the command line) whenever it
+applies:
+
 - **Without the swing arc and the wind steps** a windy case gives only
   its two full blowouts: the positions at lower pressures between still
-  air and the blowouts are not in the volume.
+  air and the blowouts are not in the volume. The window starts with the
+  arc on; the command line's `--wind` still defaults to `none`.
 - **Jumpers with the swing arc, without the wind steps, at a jumper band
   margin of 0 m**: a jumper can lie outside its band between its
   blowouts (up to 0.293 m on the example line). Enter a jumper band
   margin or tick the wind steps.
+Not said in the results, explained in the theory:
+
 - The swing arc is a **rigid swing** about the attachments (a
   simplification; the band margin covers it on the example lines).
 - **The structures** (steel, insulators, fittings) are not part of the
-  volumes, and they are rigid in the wire solve: a structure giving under
-  the wires' pull lowers the sags.
+  volumes. That they are rigid in the wire solve (a structure giving
+  under the wires' pull lowers the sags) is said in every result.
 - The **distance** is yours: no rule is built in, and nothing checks
   that it is the one your work needs.
 - **KML heights** are not corrected to a geoid.
