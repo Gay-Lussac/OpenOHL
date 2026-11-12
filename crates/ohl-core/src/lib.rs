@@ -11,6 +11,7 @@ pub mod env;
 pub mod files;
 pub mod geometry;
 pub mod grid;
+pub mod memory;
 pub mod pattern;
 pub mod text;
 pub mod units;

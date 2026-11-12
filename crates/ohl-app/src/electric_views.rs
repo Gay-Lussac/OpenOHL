@@ -339,6 +339,63 @@ impl ElectricFieldWindow {
     /// The sizes of what the table asks (section 3, 3D; owner, 2026-10-31:
     /// one line under the table): the cuts' width, step and reach, the
     /// volumes' step, each with how long it takes.
+    /// Why a run would be refused for its memory: a tiled floor of the
+    /// run needing more than one calculation may take (Line › Calculation
+    /// options; owner, 2026-11-12: such an error blocks the start). The
+    /// same estimates as the window shows, the volumes' and cuts' only
+    /// where there are any.
+    pub(super) fn memory_block(&mut self, model: &Model, spans: &Spans) -> Option<String> {
+        if !self.tiled {
+            return None;
+        }
+        let limit = electric::floor_memory();
+        let mut floors = vec![(
+            "the profiles' and points' floor",
+            electric::TiledFloor {
+                fine: self.tile,
+                ..Default::default()
+            }
+            .tiles(self.common.width),
+        )];
+        if !self.common.span_pick.cut_places(model, spans).0.is_empty() {
+            floors.push((
+                "a cut's floor",
+                electric::TiledFloor {
+                    fine: self.cut_tile,
+                    coarse: self.cut_tile.max(8.0),
+                    ..Default::default()
+                }
+                .tiles(self.common.cut_width),
+            ));
+        }
+        if let (Some(v), false) = (&self.common.volume, self.common.planes) {
+            let width = v.width;
+            let runs = self.common.span_pick.volume_runs(model, spans);
+            if let Some(longest) = runs.iter().map(|r| r.1).max() {
+                let st = self.piece_stats(model);
+                let (_, tiles) = electric::volume_parts(
+                    st.span() * longest as f64,
+                    width,
+                    self.volume_tile,
+                    self.volume_margin,
+                );
+                floors.push(("the longest volume's floor", tiles));
+            }
+        }
+        floors
+            .into_iter()
+            .find(|(_, t)| electric::floor_bytes(*t) > limit)
+            .map(|(what, t)| {
+                format!(
+                    "{what} would need {:.1} GB, more than the {:.1} GB one calculation may take \
+                     (Line › Calculation options): coarser tiles, a smaller width or reach, or \
+                     the plane under each point",
+                    electric::floor_bytes(t) / 1e9,
+                    limit / 1e9
+                )
+            })
+    }
+
     pub(super) fn sizes_ui(&mut self, ui: &mut egui::Ui, model: &Model, spans: &Spans) {
         let st = self.piece_stats(model);
         let (rate, rate_from) = self.rate();
@@ -482,8 +539,20 @@ impl ElectricFieldWindow {
                         if self.tiled {
                             let longest = runs.iter().map(|r| r.1).max().unwrap_or(1);
                             let width = self.common.volume.as_ref().map_or(self.common.width, |v| v.width);
+                            let length = st.span() * longest as f64;
+                            // No tile whose floor is too large (owner,
+                            // 2026-11-12): the field's least, and the tile
+                            // raised to it.
+                            let fits = |t| {
+                                electric::volume_parts(length, width, t, self.volume_margin).1
+                            };
+                            self.volume_tile_min =
+                                electric::smallest_tile(2.0, 32.0, fits).unwrap_or(32.0);
+                            if self.volume_tile < self.volume_tile_min {
+                                self.volume_tile = self.volume_tile_min;
+                            }
                             let (parts, tiles) = electric::volume_parts(
-                                st.span() * longest as f64,
+                                length,
                                 width,
                                 self.volume_tile,
                                 self.volume_margin,
@@ -508,14 +577,14 @@ impl ElectricFieldWindow {
                                 )
                             };
                             ui.label("");
-                            if bytes > electric::FLOOR_MEMORY {
+                            if bytes > electric::floor_memory() {
                                 crate::menu::error_label(
                                     ui,
                                     format!(
                                         "{text} Over the {:.0} GB a floor may take: coarser tiles \
                                          under the volumes or a smaller margin (Ground), a smaller \
                                          width, or the plane under each point.",
-                                        electric::FLOOR_MEMORY / 1e9
+                                        electric::floor_memory() / 1e9
                                     ),
                                 );
                             } else {

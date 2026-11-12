@@ -653,6 +653,20 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
     harness.run_steps(3);
     harness.get_by_label(crate::drawings::PREVIEW_TICK);
     assert!(harness.state_mut().ready().unwrap().drawings.preview_on);
+    // Laid out in the background (2026-11-12): drawn once it is there.
+    let since = std::time::Instant::now();
+    while harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .profile
+        .sheets_drawn
+        .is_empty()
+        && since.elapsed() < std::time::Duration::from_secs(60)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        harness.run_steps(2);
+    }
     crate::ux_tests::shot(&mut harness, "sheet-preview-profile");
     // The sheets of the alignments shown, as the export lays them out (A3
     // at 1:2000 / 1:200 by default).
@@ -717,6 +731,23 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
     harness.run_steps(1);
     std::thread::sleep(crate::drawings::PREVIEW_SETTLE);
     harness.run_steps(3);
+    // (Laid out in the background since 2026-11-12.)
+    let since = std::time::Instant::now();
+    while harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .profile
+        .sheets_drawn
+        .iter()
+        .filter(|s| s.0 == id)
+        .count()
+        <= profile_sheets.len()
+        && since.elapsed() < std::time::Duration::from_secs(60)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        harness.run_steps(2);
+    }
     let a4 = harness
         .state_mut()
         .ready()
@@ -761,6 +792,19 @@ fn the_sheet_preview_shows_the_exports_sheets_over_the_profile_and_plan() {
     harness.run_steps(1);
     std::thread::sleep(crate::drawings::PREVIEW_SETTLE);
     harness.run_steps(3);
+    let since = std::time::Instant::now();
+    while !harness
+        .state_mut()
+        .ready()
+        .unwrap()
+        .profile
+        .sheets_drawn
+        .is_empty()
+        && since.elapsed() < std::time::Duration::from_secs(60)
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        harness.run_steps(2);
+    }
     assert!(
         harness
             .state_mut()

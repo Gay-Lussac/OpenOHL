@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Magnetic field: no "whole line"; electric field: memory as a setting,
+checked before Run; sheet layout in the background** (owner: "in the
+magnetic field parameters, I would have the 2000 m limit as default and
+the option for the full line to be removed … we can always increase the
+limit to simulate it"; "on [a real line] when I set the electric field
+with 2 m tiles for the volume it says it's too small and the code
+crashes, can you limit the choices for the tiled floor"; "if the tile is
+too big for the RAM, the error should block the start of the
+calculations. Also the limit for the maximum RAM of those calculations
+should be a parameter that can be set for the whole software and it
+should be able to detect the maximum system RAM available"; "if the
+automatic sheet choice is activated and I change the ratio for the
+height, the page is really laggy").
+- Magnetic field: the cut-off distance is always given (2 000 m by
+  default); a project kept with "the whole line" opens at 2 000 m.
+- Electric field: the memory a floor may take is
+  `electric::floor_memory()` (default `FLOOR_MEMORY`, 2 GB), set by the
+  application from Line › Calculation options… (kept with the
+  application, for every project; at most three quarters of the
+  computer's memory, `ohl_core::memory::system_bytes`). The volumes'
+  tile field starts at the smallest tile whose floor fits
+  (`electric::smallest_tile`), and the window refuses a run whose floor
+  would not fit before anything starts (Run greyed out with the reason;
+  `start` refuses it too). The crash itself was not reproduced; if it
+  was not the memory refusal, it is still open.
+- Sheet preview over the views: laid out on a thread (the old one drawn
+  meanwhile), as the sheet image already was; with the optimised paper
+  the window froze for the comparison of every size at each settled
+  change.
+
 **A plugin removed or installed again asks again for more time or
 memory** (owner: "if a plugin that requires more time or memory to work
 was accepted. if we uninstall it and reinstall it it should ask again").

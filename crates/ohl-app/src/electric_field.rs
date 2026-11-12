@@ -148,6 +148,10 @@ pub struct ElectricFieldWindow {
     cut_tile: f64,
     /// The tiles under the volumes, m.
     volume_tile: f64,
+    /// The smallest tile under the volumes whose floor fits the memory a
+    /// floor may take (worked out with the volumes' estimate; owner,
+    /// 2026-11-12: no choice that is refused or too large).
+    volume_tile_min: f64,
     /// The volumes' floor margin, m (2026-11-01).
     volume_margin: f64,
     /// 3D: the stretches each span is cut into (2026-11-01).
@@ -196,6 +200,7 @@ impl Default for ElectricFieldWindow {
             tile: 2.0,
             cut_tile: 8.0,
             volume_tile: 8.0,
+            volume_tile_min: 2.0,
             volume_margin: electric::VOLUME_MARGIN,
             stretches: electric::STRETCHES,
             gradient: true,
@@ -670,6 +675,13 @@ impl ElectricFieldWindow {
             self.common.job.result = Some(Err("no weather case in the model".into()));
             return;
         };
+        // Refused before anything starts when a floor would not fit
+        // (owner, 2026-11-12), whichever way the run was asked for.
+        let spans = self.common.spans(model);
+        if let Some(why) = self.memory_block(model, &spans) {
+            self.common.job.result = Some(Err(why));
+            return;
+        }
         // By the window's calculation: the case solved for the run.
         let line =
             ohl_clearance::calculation::line_for(&model.line, self.common.calculation).into_owned();
@@ -978,7 +990,8 @@ impl ElectricFieldWindow {
                 } {
                     Some("no span ticked (3 Spans)".to_owned())
                 } else {
-                    None
+                    let spans = self.common.spans(model);
+                    self.memory_block(model, &spans)
                 };
                 let tab = check_ui::tabs(
                     ui,
@@ -1297,10 +1310,17 @@ impl ElectricFieldWindow {
                             crate::style::field(
                                 ui,
                                 egui::DragValue::new(&mut self.volume_tile)
-                                    .range(2.0..=32.0)
+                                    .range(self.volume_tile_min.max(2.0)..=32.0)
                                     .speed(0.1)
                                     .suffix(" m"),
-                            );
+                            )
+                            .on_hover_text(format!(
+                                "The tiles under the volumes. At least {} m here: a smaller \
+                                 tile's floor would not fit the {:.0} GB a floor may take \
+                                 (longest volume, its width and reach).",
+                                self.volume_tile_min.max(2.0),
+                                electric::floor_memory() / 1e9
+                            ));
                             ui.label("reaching");
                             crate::style::field(
                                 ui,

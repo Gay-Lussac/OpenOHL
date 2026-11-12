@@ -184,7 +184,7 @@ impl TabViewer for Viewer<'_> {
                     &mut r.selection,
                     &snaps,
                     &r.visible,
-                    r.drawings.preview(&r.model, r.case),
+                    r.drawings.preview(ui.ctx(), &r.model, r.case),
                     buttons,
                 )
             }

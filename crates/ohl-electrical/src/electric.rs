@@ -2073,7 +2073,7 @@ fn plan_cells(core: &[[f64; 2]], reach: f64, tile: f64) -> Vec<(f64, f64)> {
 /// How a volume of `length` along its run and `width` either side is
 /// floored (owner, 2026-11-01: "split only when it doesn't fit"): one
 /// floor along the whole run and `margin` beyond when it fits
-/// [`FLOOR_MEMORY`] — `(1, its tiles)` —, else `parts` equal parts of the
+/// [`floor_memory`] — `(1, its tiles)` —, else `parts` equal parts of the
 /// run each with its own floor over the ground within `width + margin`
 /// of its part ([`Floor::around`]), each part as long as `margin` (the
 /// time of the floors, growing with the cube of their tiles, is least
@@ -2081,7 +2081,7 @@ fn plan_cells(core: &[[f64; 2]], reach: f64, tile: f64) -> Vec<(f64, f64)> {
 /// bound of each part's.
 pub fn volume_parts(length: f64, width: f64, tile: f64, margin: f64) -> (usize, usize) {
     let one = Floor::tiles_under(length, width, tile, margin);
-    if floor_bytes(one) <= FLOOR_MEMORY {
+    if floor_bytes(one) <= floor_memory() {
         return (1, one);
     }
     let parts = (length / margin.max(tile)).ceil().max(2.0) as usize;
@@ -2098,10 +2098,48 @@ pub fn floor_bytes(tiles: usize) -> f64 {
     16.0 * (tiles as f64).powi(2)
 }
 
-/// The most memory one floor may take, bytes (owner, 2026-10-31: laptops
-/// of 16 to 32 GB): 2 GB, some 11 000 tiles. A larger floor is refused,
-/// said, rather than slowing the computer down by swapping.
+/// The smallest tile, m, from `from` up in steps of 0.5 m to `to`, whose
+/// floor (`tiles` of a tile size) fits [`floor_memory`]: what a window
+/// offers at least, so that a run is not refused for its memory (owner,
+/// 2026-11-12). `None`: not even `to` fits.
+pub fn smallest_tile(from: f64, to: f64, tiles: impl Fn(f64) -> usize) -> Option<f64> {
+    let mut t = from;
+    while t <= to + 1e-9 {
+        if floor_bytes(tiles(t)) <= floor_memory() {
+            return Some(t);
+        }
+        t += 0.5;
+    }
+    None
+}
+
+/// The most memory one floor may take by default, bytes (owner,
+/// 2026-10-31: laptops of 16 to 32 GB): 2 GB, some 11 000 tiles. A larger
+/// floor is refused, said, rather than slowing the computer down by
+/// swapping. The applications may set another limit
+/// ([`set_floor_memory`]; owner, 2026-11-12: a setting of the whole
+/// software, offered up to the memory this computer has).
 pub const FLOOR_MEMORY: f64 = 2.0e9;
+
+/// The limit in force, bytes (0: the default, [`FLOOR_MEMORY`]).
+static FLOOR_LIMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The most memory one floor may take now, bytes: what the application
+/// set ([`set_floor_memory`]), else [`FLOOR_MEMORY`].
+pub fn floor_memory() -> f64 {
+    match FLOOR_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => FLOOR_MEMORY,
+        b => b as f64,
+    }
+}
+
+/// Sets the most memory one floor may take, bytes (none: the default).
+pub fn set_floor_memory(bytes: Option<f64>) {
+    let b = bytes
+        .filter(|b| b.is_finite() && *b > 0.0)
+        .map_or(0, |b| b as u64);
+    FLOOR_LIMIT.store(b, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// How many floors of `tiles` are solved at the same time: at most 2 (each
 /// LU already on all cores with faer: 4 real spans' profiles 5.8 s one at
@@ -2120,12 +2158,12 @@ fn with_floor<T>(
     tiles: usize,
     solve: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    if floor_bytes(tiles) > FLOOR_MEMORY {
+    if floor_bytes(tiles) > floor_memory() {
         return Err(format!(
             "{what}: a tiled floor of {tiles} tiles would take {:.1} GB of memory (at most {:.0} GB): \
              coarser tiles, a smaller width or floor margin, or the plane under each point",
             floor_bytes(tiles) / 1e9,
-            FLOOR_MEMORY / 1e9
+            floor_memory() / 1e9
         ));
     }
     let token = progress.map(|p| {
@@ -2281,12 +2319,12 @@ fn solve_floor(
 ) -> Result<(PerFrequency, PerFrequency), String> {
     let tiles = panels.len();
     let n = tiles + steel.len();
-    if floor_bytes(n) > FLOOR_MEMORY {
+    if floor_bytes(n) > floor_memory() {
         return Err(format!(
             "a tiled floor of {tiles} tiles and {} pieces of steel would take {:.1} GB of memory (at most {:.0} GB)",
             steel.len(),
             floor_bytes(n) / 1e9,
-            FLOOR_MEMORY / 1e9
+            floor_memory() / 1e9
         ));
     }
     // Where the potential is held at zero: tiles' centres, then the
@@ -2837,5 +2875,16 @@ mod tests {
             plane_worst > tiled_worst,
             "the plane is the less exact here"
         );
+    }
+
+    /// The smallest tile offered keeps a volume's floor within the memory
+    /// a floor may take; a larger tile fits too, a smaller one would not.
+    #[test]
+    fn the_smallest_tile_fits_the_memory() {
+        let tiles = |t| volume_parts(2000.0, 60.0, t, VOLUME_MARGIN).1;
+        let t = smallest_tile(2.0, 32.0, tiles).unwrap();
+        assert!(floor_bytes(tiles(t)) <= floor_memory());
+        assert!(t == 2.0 || floor_bytes(tiles(t - 0.5)) > floor_memory());
+        assert_eq!(smallest_tile(2.0, 2.0, |_| 1_000_000), None);
     }
 }

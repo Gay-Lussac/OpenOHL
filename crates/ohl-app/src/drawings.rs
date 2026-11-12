@@ -497,6 +497,14 @@ pub struct Drawings {
         SheetKey,
         std::sync::mpsc::Receiver<Result<SheetPixels, String>>,
     )>,
+    /// The sheet preview over the views being laid out in the background
+    /// (owner, 2026-11-12: with the optimised paper a change of the
+    /// settings froze the window while the sizes were compared): for
+    /// what, and where it comes.
+    preview_job: Option<(
+        PreviewKey,
+        std::sync::mpsc::Receiver<Result<Preview, String>>,
+    )>,
 }
 
 /// A sheet previewed, for the tests: the route's sheet count, the
@@ -602,12 +610,24 @@ impl Preview {
 ///
 /// Expected cost: what the export takes to collect the drawing data
 /// (under a second per route), without writing anything.
+#[cfg(test)]
 pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview, String> {
+    preview_of(&preview_input(model, case, w)?)
+}
+
+/// What [`preview`] lays out: the model's data for every route (cheap,
+/// on the screen's thread).
+fn preview_input(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Input, String> {
     let every = DrawingsWindow {
         route: None,
         ..w.clone()
     };
-    let input = Input::prepare(model, case, &every, PathBuf::new(), true)?;
+    Input::prepare(model, case, &every, PathBuf::new(), true)
+}
+
+/// The sheets of [`preview`] from its input (the layout: in the
+/// background).
+fn preview_of(input: &Input) -> Result<Preview, String> {
     let options = input.route_options();
     let export = input.common_export(&options)?;
     let mut routes = Vec::new();
@@ -3480,9 +3500,27 @@ impl Drawings {
 
     /// The sheet preview when it is on: made again when the settings or
     /// the case change (and after [`Self::invalidate_preview`]).
-    pub fn preview(&mut self, model: &Model, case: usize) -> Option<&Result<Preview, String>> {
+    pub fn preview(
+        &mut self,
+        ctx: &egui::Context,
+        model: &Model,
+        case: usize,
+    ) -> Option<&Result<Preview, String>> {
         if !self.preview_on {
+            self.preview_job = None;
             return None;
+        }
+        // The layout made in the background, once there.
+        if let Some((k, rx)) = &self.preview_job {
+            match rx.try_recv() {
+                Ok(made) => {
+                    let k = k.clone();
+                    self.preview = Some((k, made));
+                    self.preview_job = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.preview_job = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
         }
         // Only what shapes the sheets (not the folder, formats, message,
         // the sheet previewed, the fields' values written on them).
@@ -3512,8 +3550,7 @@ impl Drawings {
             && self.preview.as_ref().is_some_and(|(k, _)| *k == key)
             && since.elapsed() >= PREVIEW_SETTLE
         {
-            let made = preview(model, case, &key.0);
-            self.preview = Some((key.clone(), made));
+            self.start_preview(ctx, model, case, key.clone());
             self.preview_stale = None;
         }
         if self.preview.as_ref().is_none_or(|(k, _)| *k != key) {
@@ -3523,15 +3560,36 @@ impl Drawings {
                 Some((k, since)) if *k == key => since.elapsed() >= PREVIEW_SETTLE,
                 _ => false,
             };
-            if self.preview.is_none() || settled {
-                let made = preview(model, case, &key.0);
-                self.preview = Some((key, made));
+            let running = self.preview_job.as_ref().is_some_and(|(k, _)| *k == key);
+            if running {
+            } else if self.preview.is_none() || settled {
+                self.start_preview(ctx, model, case, key);
                 self.preview_pending = None;
             } else if self.preview_pending.as_ref().is_none_or(|(k, _)| *k != key) {
                 self.preview_pending = Some((key, std::time::Instant::now()));
             }
         }
         self.preview.as_ref().map(|(_, p)| p)
+    }
+
+    /// Lays the preview out for `key` in the background (the model's data
+    /// read here); the old preview stays drawn meanwhile.
+    fn start_preview(&mut self, ctx: &egui::Context, model: &Model, case: usize, key: PreviewKey) {
+        match preview_input(model, case, &key.0) {
+            Err(e) => {
+                self.preview = Some((key, Err(e)));
+                self.preview_job = None;
+            }
+            Ok(input) => {
+                let (tx, rx) = std::sync::mpsc::channel();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(preview_of(&input));
+                    ctx.request_repaint();
+                });
+                self.preview_job = Some((key, rx));
+            }
+        }
     }
 
     /// The sheet preview's options, in a menu of ticks (it stays open on

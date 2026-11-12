@@ -75,6 +75,7 @@ mod local_solve;
 mod lod;
 mod magnetic_field;
 mod measure;
+mod memory_limit;
 mod menu;
 mod merge_cases;
 mod merge_conflicts;
@@ -338,6 +339,9 @@ fn main() -> std::process::ExitCode {
                 .or_else(|| cc.storage.and_then(controls::Controls::load))
                 .unwrap_or_default();
             log::info!("controls: {}", app.controls.name);
+            if let Some(st) = cc.storage {
+                memory_limit::load(st);
+            }
             if let Some(s) = cc.storage.and_then(selection::Snaps::load) {
                 app.snaps = s;
             }

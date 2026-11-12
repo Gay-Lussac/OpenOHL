@@ -265,6 +265,9 @@ tiles:
   factors): 0.35 GB at 4 660 tiles. As many floors are solved side by
   side as 1 GB holds (at most 2). A floor over **2 GB** (some 11 000
   tiles) is refused, said, rather than slowing the computer by swapping.
+  Since 2026-11-12 the 2 GB is the default of a setting of the
+  application (Line › Calculation options…, up to three quarters of the
+  computer's memory), and a run needing more is refused before it starts.
   A volume's floor grows with its run: 2 850 tiles for one 300 m span,
   5 360 for three (0.45 GB); the window says the longest run's before
   Run.

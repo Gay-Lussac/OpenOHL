@@ -448,10 +448,12 @@ impl MagneticFieldWindow {
         self.earth_wires = st.earth_wires;
         self.towers = st.towers.unwrap_or(d.towers);
         // Kept since 2026-11-01 (0: the whole line); before, as it was.
+        // The whole line is no longer offered (owner, 2026-11-12): kept
+        // as it, the default distance.
         self.modelled_within = match st.modelled {
             Some(d) if d > 0.0 => Some(d),
-            Some(_) => None,
-            None => st.modelled_within,
+            Some(_) => Some(CUTOFF),
+            None => st.modelled_within.or(Some(CUTOFF)),
         };
         self.above = Some(Above {
             step: st.above.map_or(2.0, |(_, step)| step),

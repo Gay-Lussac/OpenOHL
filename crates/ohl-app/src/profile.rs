@@ -1752,7 +1752,7 @@ fn sheet_preview<'a>(
     let mut sheets: Vec<(f64, &str, &ohl_drawing::SheetLayout)> = Vec::new();
     // The lines below the lowest conductor the sheets carry.
     let mut curves: Vec<(f64, &ohl_drawing::curves::Curve)> = Vec::new();
-    match drawings.preview(model, case) {
+    match drawings.preview(ui.ctx(), model, case) {
         None => {}
         Some(Err(e)) => {
             crate::menu::message(

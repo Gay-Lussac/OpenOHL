@@ -557,6 +557,12 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+            // Not the project's: the application's, for every project
+            // (owner, 2026-11-12), taken at once.
+            ui.separator();
+            ui.strong("Memory (every project, this computer)");
+            crate::memory_limit::ui(ui);
+            ui.separator();
             if let Err(why) = r.model.can_edit() {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
             }

@@ -86,7 +86,7 @@ brackets). "Time" is the effect on how long a run takes.
 | 2D cuts at (+ station) / ± / every / up to | none; ± 100 m, every 1 m, up to 10 m over the highest wire | a vertical cut on the alignment with isolines; the step how closely the isolines follow their levels (measured: [Cut-offs and grids](#cut-offs-and-grids-measured)) | in proportion to the points: halving the step, four times the points |
 | Volumes: every (Volume ticked) | 2 m | how closely the surfaces follow their levels (measured: see below) | halving the step takes 4 to 8 times as long |
 | **4 Model** › Wire pieces: as solved / at most | as solved (1 m when ticked) | how far a wire lies off its pieces (millimetres) | in proportion to the pieces |
-| Modelled: the whole line / wires within (`--modelled-within`) | wires within 2 000 m in the window (2026-11-01; the whole line before, and in `ohl`) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
+| Modelled: wires within (`--modelled-within`) | 2 000 m in the window (2026-11-01; the whole line before, and in `ohl`; the window's "whole line" choice removed 2026-11-12 — a longer distance takes more wires) | cuts and volumes only; the difference to the whole line is measured at each run ([Cut-offs and grids](#cut-offs-and-grids-measured)) | far quicker on a long line |
 | **5 Views and levels** › levels | 1 and 10 µT on, 100 µT off | drawing only; none is a limit | each level a little |
 | colour the cuts by band; also in any cross-section panel I open | on; off (0.5 m when on) | drawing only; the field in each cross-section view opened after a run | per view opened |
 

@@ -1148,8 +1148,10 @@ for it).
   Shorter pieces take longer in proportion.
 - **Modelled**: the *wires within* a distance of each cut and volume —
   **2 km by default since 2026-11-01** (the defaults reviewed for accuracy
-  and speed) — or *the whole line* (the most exact; a project kept before
-  keeps its choice). Profiles and points always take the whole line. Each run then computes the whole
+  and speed). There is no "whole line" choice any more (2026-11-12: far
+  too long to compute); a distance longer than the line takes every wire,
+  and a project kept with "the whole line" opens at 2 km. Profiles and
+  points always take the whole line. Each run then computes the whole
   line's field at some 200 points of the cut or volume and says how much
   the wires left out change it (on a real line of 28 km, 2 km changed it
   by at most 0.03 % and made a volume ten times quicker).
@@ -1547,10 +1549,16 @@ default.
   points / cuts / volumes*; a volume's floor of 8 m tiles is some 3 % off
   on even ground, of 4 m 0.2 % and some 40 times as long), and how far a
   volume's floor **reaches** beyond it (100 m; 2026-11-01). A volume too
-  large for one floor (over 2 GB) is floored in parts as long as that
-  reach, each over the ground within it (as close to the exact field as
-  one floor on level ground; see [the theory](../theory/electric-field.md));
-  the window says so before Run, the results in their notes. On the command
+  large for one floor (over the memory one calculation may take) is
+  floored in parts as long as that reach, each over the ground within it
+  (as close to the exact field as one floor on level ground; see [the
+  theory](../theory/electric-field.md)); the window says so before Run,
+  the results in their notes. The volumes' tile cannot be set smaller than
+  what fits that memory, and a run whose floor would not fit cannot be
+  started: Run is greyed out with the reason (2026-11-12). The memory is
+  a setting of the application, for every project: Line › Calculation
+  options… › *Memory one calculation may take* (2 GB by default, offered
+  up to three quarters of the memory this computer has, which it shows). On the command
   line `--plane`; the tiles `--tile`, `--coarse-tile`, `--floor-reach`,
   `--cut-tile`, `--volume-tile`, `--volume-margin`. Progress bars: the run's in the footer
   (saying which floor is being solved), the cross-section panels' under

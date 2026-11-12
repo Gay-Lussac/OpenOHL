@@ -355,23 +355,26 @@ impl MagneticFieldWindow {
                 );
                 ui.end_row();
                 ui.label("Modelled");
+                // No "whole line" choice (owner, 2026-11-12: far too long to
+                // compute; a larger distance simulates it).
                 ui.horizontal(|ui| {
-                    let mut near = self.modelled_within.is_some();
-                    ui.radio_value(&mut near, false, "the whole line");
-                    ui.radio_value(&mut near, true, "wires within");
-                    if !near {
-                        self.modelled_within = None;
-                    } else {
-                        let d = self.modelled_within.get_or_insert(2000.0);
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(d)
-                                .range(50.0..=100_000.0)
-                                .speed(10.0)
-                                .suffix(" m"),
-                        );
-                        ui.label("of a cut or volume");
-                    }
+                    ui.label("wires within");
+                    let d = self
+                        .modelled_within
+                        .get_or_insert(crate::magnetic_field::CUTOFF);
+                    crate::style::field(
+                        ui,
+                        egui::DragValue::new(d)
+                            .range(50.0..=100_000.0)
+                            .speed(10.0)
+                            .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "The wires farther than this from a cut or volume are left out. \
+                         Larger: closer to the whole line's field, longer to compute (a \
+                         distance longer than the line takes every wire).",
+                    );
+                    ui.label("of a cut or volume");
                 });
                 ui.end_row();
                 ui.label("");
