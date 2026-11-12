@@ -71,12 +71,13 @@ pub fn ui(ui: &mut egui::Ui, id: &str, model: &Model, per: &mut PerSystem) {
     })
     .id_salt((id, "per-system"))
     .show(ui, |ui| {
-        ui.label(
-            egui::RichText::new(
-                "e.g. the conductors at their load's temperature, the earth wires at the air's",
-            )
-            .small()
-            .weak(),
+        // Its explanation behind the (?) (owner, 2026-11-12: no grey lines
+        // between fields).
+        crate::check_help::question(
+            ui,
+            "A system (or the earth wires) may take its own weather case and calculation, e.g. \
+             the conductors at their load's temperature, the earth wires at the air's. Each case \
+             and calculation is solved once for the run (a solve each); the notes say which.",
         );
         egui::Grid::new((id, "per-system-grid"))
             .num_columns(3)

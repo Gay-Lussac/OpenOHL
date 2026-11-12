@@ -57,6 +57,21 @@ none). The window part of Analyses › Electrical: magnetic field is now a
 summary with the link; the command line, the plugins and the plan
 templates stay there; the theory page links to the new page.
 
+The magnetic window, reviewed for a human (check pages' guidelines):
+the small grey lines between fields went behind the **(?)** of their
+setting (Wires by, Per electrical system; the wire pieces, the wires
+modelled, the cuts, the volumes and the cross-section panels keep one
+short line with their count and time, the rest behind the (?)); nothing
+removed. **Profiles by**, **Earth wires** and **Jumpers** moved from 2
+Scope into the folded 4 Model (now *Profiles by, earth wires, jumpers,
+wire pieces, the wires modelled*): modelling settings whose defaults are
+sound; Scope keeps the case, the currents, the limit and the points.
+Units in the labels (Limit [µT], Levels drawn [µT]); every size field
+(profiles, cuts, volumes, pieces, panels, levels) says on hover what it
+changes. The NOT ON THE SAFE SIDE notes, the warnings and Run's reason
+stay in view. Before/after screenshots: local review folder (not in the
+repository).
+
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)
 and the release folder (`.github/workflows/release.yml`, so the Windows

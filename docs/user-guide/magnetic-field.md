@@ -115,7 +115,11 @@ follows it.*
 The Setup tab, top to bottom. The window's inputs are kept in the project
 for the line worked on: it opens as it was left, for every user of the
 project. A case or span no longer in the line falls back to the default.
-Each heading's **user guide ↗** opens its section of this page.
+Each heading's **user guide ↗** opens its section of this page. A setting
+keeps its label (units in brackets), its value and at most one short line
+— its count and its time —; what it does is said on hover and behind its
+**(?)**. Warnings, what is not on the safe side and why Run is greyed
+stay in view.
 
 ### 1 What it checks
 
@@ -135,9 +139,6 @@ type) and the sources of the field.
 | **current [A]** | the system's operating current (*the line's*); ↺ brings it back | the field grows in proportion | none |
 | **load flow** | along the line | *against the line*: every phase turned by 180°; which combination governs is the ordinance's question | none |
 | **Earth wire currents typed** (folded) | none | an earth wire's own current and angle instead of a computed one | none |
-| **Profiles by** | 3D | 2D: infinite straight conductors (tick *wires at the span's mean height* to take the line parameters' mean); not valid near a line angle over 5° or between differently arranged structures (warned) | 2D is quicker |
-| **Earth wires** | off | *carry the currents the phases induce*: may raise or lower the field; *through the structures' earthing* (on): each structure's earthing resistance (Structures table, else the line's, else 10 Ω, said) | a network solve |
-| **Jumpers** | on | off: left out (not on the safe side near the structures) | none |
 | **Limit [µT]** | none | the margin at every point and the limit line's extent on every profile | none |
 | **Points from CSV…** | none | the field at your places: a CSV with a header naming `x`, `y` and `z` (elevation) or `height` (above the ground), optionally `name` | a point each |
 | **Buildings** (from the Buildings window) | none | the cuts and places a buildings preset handed over | as their cuts |
@@ -165,8 +166,14 @@ shown. A span on no alignment can have no cut (said under the table).
 
 ### 4 Model (folded)
 
+Folded under *Profiles by, earth wires, jumpers, wire pieces, the wires
+modelled*: the defaults are sound; open it to change the model.
+
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|
+| **Profiles by** | 3D | 2D: infinite straight conductors (tick *wires at the span's mean height* to take the line parameters' mean); not valid near a line angle over 5° or between differently arranged structures (warned) | 2D is quicker |
+| **Earth wires** | off | *carry the currents the phases induce*: may raise or lower the field; *through the structures' earthing* (on): each structure's earthing resistance (Structures table, else the line's, else 10 Ω, said) | a network solve |
+| **Jumpers** | on | off: left out (not on the safe side near the structures) | none |
 | **Wire pieces** | as solved (64 per span) | *at most [m]*: shorter pieces placed on the curve; the field changes by about the wire's offset over the distance to it (a few hundredths of a per cent at 10 m) | in proportion to the pieces; said beside it |
 | **Modelled: wires within [m] of a cut or volume** | 2 000 m | larger: closer to the whole line's field (longer than the line: every wire); each run says what the wires left out change. Profiles and points always take the whole line | in proportion to the wires taken |
 

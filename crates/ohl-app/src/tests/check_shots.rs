@@ -289,7 +289,11 @@ fn check_windows_rendered_for_review() {
             save(&mut harness, &dir, &format!("{}-setup-{i}", shot.name));
         }
         // The Model opened (where the window has one), at the bottom.
-        if let Some(m) = harness.query_by_label_contains("  Model") {
+        // (The field windows' Model fold is titled by what it holds.)
+        if let Some(m) = harness
+            .query_by_label_contains("  Model")
+            .or_else(|| harness.query_by_label_contains("Profiles by, "))
+        {
             m.click();
             harness.run_steps(4);
             wheel(&mut harness, body, -2000.0);

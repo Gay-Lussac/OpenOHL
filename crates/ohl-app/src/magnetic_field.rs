@@ -1064,15 +1064,9 @@ impl MagneticFieldWindow {
                                 "field-calculation",
                                 &mut self.common.calculation,
                             );
-                            ui.label(
-                                egui::RichText::new(
-                                    "e.g. Max Sag: the lowest wires, the highest field at the \
-                                     ground; another than each section's own solves the case for \
-                                     the run",
-                                )
-                                .small()
-                                .weak(),
-                            );
+                            // Its explanation behind the (?) (owner,
+                            // 2026-11-12: no grey lines between fields).
+                            help::question(ui, field_common::WIRES_BY_HELP);
                         });
                         crate::field_systems::ui(ui, WINDOW, model, &mut self.common.per_system);
                         crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
@@ -1364,60 +1358,7 @@ impl MagneticFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Profiles by");
-                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.common.two_d, false, "3D")
-                            .on_hover_text(FieldModel::ThreeD.describe());
-                        ui.selectable_value(&mut self.common.two_d, true, "2D")
-                        .on_hover_text(
-                            "Infinite straight parallel conductors: not valid near a line angle \
-                             over 5°, near crossings, or on spans between differently arranged \
-                             structures (warned)",
-                        );
-                        if self.common.two_d {
-                            ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
-                            .on_hover_text(
-                                "Off: the wires where they cross the profile (at the lowest point \
-                                 by default, the larger field). On: the span's mean height, as \
-                                 the line parameters take it — less than under the lowest point",
-                            );
-                        }
-                    })
-                });
-                ui.end_row();
-                ui.label("Earth wires");
-                ui.horizontal(|ui| {
-                    ui.checkbox(
-                        &mut self.earth_wires,
-                        "carry the currents the phases induce",
-                    )
-                    .on_hover_text("Off: no current in the earth wires");
-                    if self.earth_wires {
-                        ui.checkbox(&mut self.towers, "through the structures' earthing")
-                            .on_hover_text(
-                                "On: the earth wires as a network over the line, each structure \
-                                 leading current into the ground through its earthing resistance \
-                                 (Structures table, earthing Ω; else the line's, else 10 Ω \
-                                 assumed), the structures' currents in the field (3D). Off: an \
-                                 infinitely long earth wire earthed everywhere, I_e = −inv(Z_ee) · \
-                                 Z_ep · I_p per span",
-                            );
-                    }
-                });
-                ui.end_row();
-                {
-                    ui.label("Jumpers");
-                    ui.checkbox(&mut self.common.jumpers, "carry their phase's current")
-                        .on_hover_text(
-                            "A jumper between two section ends of one phase carries that phase's \
-                             current, as solved in the weather case (3D). Off: left out (not \
-                             conservative near the structures). Jumpers on taps or between \
-                             different phases are left out, said",
-                        );
-                    ui.end_row();
-                }
-                ui.label("Limit");
+                ui.label("Limit [µT]");
                 ui.horizontal(|ui| {
                     let mut given = self.common.limit.is_some();
                     ui.checkbox(&mut given, "given").on_hover_text(
@@ -1485,6 +1426,74 @@ impl MagneticFieldWindow {
         if let Some(e) = &self.common.points_error {
             crate::menu::error_label(ui, e.as_str());
         }
+    }
+
+    /// The modelling settings of the inputs (owner, 2026-11-12: in 4 Model,
+    /// folded, with the wire pieces and the wires modelled): the profiles' model,
+    /// the earth wires, the jumpers.
+    pub(super) fn model_inputs_ui(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("magnetic-field-model-inputs")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Profiles by");
+                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.common.two_d, false, "3D")
+                            .on_hover_text(FieldModel::ThreeD.describe());
+                        ui.selectable_value(&mut self.common.two_d, true, "2D")
+                        .on_hover_text(
+                            "Infinite straight parallel conductors: not valid near a line angle \
+                             over 5°, near crossings, or on spans between differently arranged \
+                             structures (warned)",
+                        );
+                        if self.common.two_d {
+                            ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
+                            .on_hover_text(
+                                "Off: the wires where they cross the profile (at the lowest point \
+                                 by default, the larger field). On: the span's mean height, as \
+                                 the line parameters take it — less than under the lowest point",
+                            );
+                        }
+                    })
+                });
+                ui.end_row();
+                ui.label("Earth wires");
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut self.earth_wires,
+                        "carry the currents the phases induce",
+                    )
+                    .on_hover_text(
+                        "On: the earth wires carry the currents the phases induce in them; this may \
+                         raise the field as well as lower it (run both when it matters). A network \
+                         solve over the line. Off: no current in the earth wires",
+                    );
+                    if self.earth_wires {
+                        ui.checkbox(&mut self.towers, "through the structures' earthing")
+                            .on_hover_text(
+                                "On: the earth wires as a network over the line, each structure \
+                                 leading current into the ground through its earthing resistance \
+                                 (Structures table, earthing Ω; else the line's, else 10 Ω \
+                                 assumed), the structures' currents in the field (3D). Off: an \
+                                 infinitely long earth wire earthed everywhere, I_e = −inv(Z_ee) · \
+                                 Z_ep · I_p per span",
+                            );
+                    }
+                });
+                ui.end_row();
+                {
+                    ui.label("Jumpers");
+                    ui.checkbox(&mut self.common.jumpers, "carry their phase's current")
+                        .on_hover_text(
+                            "A jumper between two section ends of one phase carries that phase's \
+                             current, as solved in the weather case (3D). Off: left out (not \
+                             conservative near the structures). Jumpers on taps or between \
+                             different phases are left out, said",
+                        );
+                    ui.end_row();
+                }
+            });
     }
 
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {

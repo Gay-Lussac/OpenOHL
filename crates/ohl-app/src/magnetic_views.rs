@@ -290,10 +290,13 @@ impl MagneticFieldWindow {
         }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
         // each setting with its effect and time when opened.
-        egui::CollapsingHeader::new("Wire pieces, the wires modelled")
-            .id_salt("magnetic-field-model-fold")
-            .default_open(false)
-            .show(ui, |ui| {
+        egui::CollapsingHeader::new(
+            "Profiles by, earth wires, jumpers, wire pieces, the wires modelled",
+        )
+        .id_salt("magnetic-field-model-fold")
+        .default_open(false)
+        .show(ui, |ui| {
+            self.model_inputs_ui(ui);
         egui::Grid::new("magnetic-field-model")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -310,50 +313,72 @@ impl MagneticFieldWindow {
                         crate::style::field(
                             ui,
                             egui::DragValue::new(l).range(0.1..=50.0).speed(0.1).suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The longest straight piece of a wire: shorter, a field closer to the \
+                             curved wire's (a few hundredths of a per cent at 10 m), longer to \
+                             compute in proportion",
                         );
                     }
                 });
                 ui.end_row();
                 ui.label("");
+                // One short line (the counts and the time), the rest behind
+                // its (?) (owner, 2026-11-12: no grey paragraphs).
                 let solver = format!(
                     "As solved: {} pieces, the longest {:.1} m; a wire lies at most {:.1} mm off them.",
                     st.count,
                     st.longest,
                     st.off * 1e3
                 );
-                let text = match self.common.piece_length {
+                let (short, text) = match self.common.piece_length {
                     Some(l) if st.longest > 0.0 => {
                         let parts = (st.longest / l).ceil().max(1.0);
                         let off = st.off / (parts * parts);
-                        format!(
-                            "{solver} At most {l} m: ≈ {:.0} pieces, at most {:.2} mm off; the field \
-                             changes by about the wire's offset over the distance to it (at 1 m from \
-                             a conductor ≈ {:.2} %, at 10 m ≈ {:.3} %, instead of {:.2} % and {:.3} %). \
-                             Time × {:.1}.",
-                            pieces,
-                            off * 1e3,
-                            off * 100.0,
-                            off * 10.0,
-                            st.off * 100.0,
-                            st.off * 10.0,
-                            pieces / (st.count.max(1) as f64)
+                        let times = pieces / (st.count.max(1) as f64);
+                        (
+                            format!(
+                                "≈ {pieces:.0} pieces, at most {:.2} mm off the wire; time × {times:.1}",
+                                off * 1e3
+                            ),
+                            format!(
+                                "{solver} At most {l} m: ≈ {pieces:.0} pieces, at most {:.2} mm off; the \
+                                 field changes by about the wire's offset over the distance to it (at \
+                                 1 m from a conductor ≈ {:.2} %, at 10 m ≈ {:.3} %, instead of {:.2} % \
+                                 and {:.3} %). Time × {times:.1}.",
+                                off * 1e3,
+                                off * 100.0,
+                                off * 10.0,
+                                st.off * 100.0,
+                                st.off * 10.0,
+                            ),
                         )
                     }
-                    _ => format!(
-                        "{solver} The field changes by about the wire's offset over the distance \
-                         to it: ≈ {:.2} % at 1 m from a conductor, ≈ {:.3} % at 10 m.",
-                        st.off * 100.0,
-                        st.off * 10.0
+                    _ => (
+                        format!(
+                            "{} pieces, at most {:.1} mm off the wire: ≈ {:.3} % at 10 m",
+                            st.count,
+                            st.off * 1e3,
+                            st.off * 10.0
+                        ),
+                        format!(
+                            "{solver} The field changes by about the wire's offset over the \
+                             distance to it: ≈ {:.2} % at 1 m from a conductor, ≈ {:.3} % at 10 m.",
+                            st.off * 100.0,
+                            st.off * 10.0
+                        ),
                     ),
                 };
                 crate::check_help::explain(
                     ui,
-                    &text,
-                    "Each straight piece's field is exact (Biot–Savart in closed form); the \
-                     only error of the pieces is how far the wire curves away from them (the \
-                     sagitta, falling with the square of the piece's length). Shorter pieces \
-                     are placed on the curve through the solver's points; where it kinks (a \
-                     spacer, a clamp) on the chord.",
+                    &short,
+                    &format!(
+                        "{text} Each straight piece's field is exact (Biot–Savart in closed \
+                         form); the only error of the pieces is how far the wire curves away from \
+                         them (the sagitta, falling with the square of the piece's length). \
+                         Shorter pieces are placed on the curve through the solver's points; \
+                         where it kinks (a spacer, a clamp) on the chord."
+                    ),
                 );
                 ui.end_row();
                 ui.label("Modelled");
@@ -380,24 +405,21 @@ impl MagneticFieldWindow {
                 });
                 ui.end_row();
                 ui.label("");
+                let d = self.modelled_within.unwrap_or(crate::magnetic_field::CUTOFF);
                 crate::check_help::explain(
                     ui,
-                    &match self.modelled_within {
-                        None => "Cuts and volumes take every wire of the line (the most exact; \
-                                 the longest)."
-                            .to_owned(),
-                        Some(d) => format!(
-                            "Cuts and volumes take the wires within {d:.0} m only (≈ {:.0} of {:.0} \
-                             pieces for one span): quicker; each run computes the whole line's \
-                             field at some of their points and says the difference (on a real \
-                             line 2 km changed it by at most 0.03 %).",
-                            taken(Some(d), st.span()),
-                            pieces
-                        ),
-                    },
-                    "The NISV guide asks for at least five times the 1 µT reach before and \
-                     after (said for the profiles). Profiles, grids and points always take the \
-                     whole line.",
+                    &format!(
+                        "≈ {:.0} of {:.0} pieces for one span; each run says what the rest change",
+                        taken(Some(d), st.span()),
+                        pieces
+                    ),
+                    &format!(
+                        "Cuts and volumes take the wires within {d:.0} m only: quicker; each run \
+                         computes the whole line's field at some of their points and says the \
+                         difference (on a real line 2 km changed it by at most 0.03 %). The NISV \
+                         guide asks for at least five times the 1 µT reach before and after (said \
+                         for the profiles). Profiles, grids and points always take the whole line."
+                    ),
                 );
                 ui.end_row();
             });
@@ -417,7 +439,15 @@ impl MagneticFieldWindow {
         }
         crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
-        ui.label(egui::RichText::new("Levels drawn (µT, display only: none is a limit)").small());
+        ui.horizontal(|ui| {
+            ui.label("Levels drawn [µT]");
+            crate::check_help::question(
+                ui,
+                "The isolines and surfaces drawn at these values, each in its colour, ticked to \
+                 draw it: display only, none is a limit (give the limit in 2 Scope; + the limit \
+                 adds it here). More levels: more surfaces to draw in a volume.",
+            );
+        });
         let mut remove = None;
         egui::Grid::new("magnetic-field-levels")
             .spacing([8.0, 2.0])
@@ -430,7 +460,8 @@ impl MagneticFieldWindow {
                             .range(0.001..=100_000.0)
                             .speed(0.01)
                             .suffix(" µT"),
-                    );
+                    )
+                    .on_hover_text("An isoline (a surface in a volume) drawn at this value");
                     ui.color_edit_button_srgb(&mut l.rgb);
                     if ui
                         .small_button("×")
@@ -491,6 +522,10 @@ impl MagneticFieldWindow {
                         crate::style::field(
                             ui,
                             egui::DragValue::new(s).range(0.05..=10.0).speed(0.05).suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The step of a panel's points: finer, isolines closer to their levels, \
+                             four times the points at half the step",
                         );
                     }
                 });
@@ -501,16 +536,18 @@ impl MagneticFieldWindow {
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "A cut of ±50 m × 70 m: ≈ {points:.0} points, {} per cut ({rate_from}); \
-                             computed after a run whenever a panel opens or moves. Isolines are \
-                             drawn straight between points {step} m apart (each cut says how far \
-                             they lie off their levels).",
+                            "≈ {points:.0} points, {} per panel ({rate_from})",
                             duration(points * taken(self.modelled_within, 0.0) * rate)
                         ),
-                        "Open a cross-section (C) at a building: the panel shows the field in \
-                         its plane, the ground, the LiDAR points and the line. Cells coloured by \
-                         the highest level at or below their value (optional), the levels' \
-                         isolines over them. Not under the ground.",
+                        &format!(
+                            "A cut of ±50 m × 70 m, computed after a run whenever a panel opens or \
+                             moves. Isolines are drawn straight between points {step} m apart (each \
+                             cut says how far they lie off their levels). Open a cross-section (C) \
+                             at a building: the panel shows the field in its plane, the ground, the \
+                             LiDAR points and the line. Cells coloured by the highest level at or \
+                             below their value (optional), the levels' isolines over them. Not \
+                             under the ground."
+                        ),
                     );
                     ui.end_row();
                 }
@@ -554,6 +591,10 @@ impl MagneticFieldWindow {
                                 .range(5.0..=500.0)
                                 .speed(1.0)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The cut's half width across the line: wider, more points, the low \
+                             levels' isolines inside it",
                         );
                         ui.label("every");
                         crate::style::field(
@@ -562,6 +603,10 @@ impl MagneticFieldWindow {
                                 .range(0.05..=10.0)
                                 .speed(0.05)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The step between the cut's points: finer, isolines closer to their \
+                             levels, four times the points at half the step",
                         );
                         ui.label("up to");
                         crate::style::field(
@@ -570,6 +615,9 @@ impl MagneticFieldWindow {
                                 .range(0.0..=100.0)
                                 .speed(0.5)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "How far over the highest wire the cut reaches: higher, more points",
                         );
                         ui.label("over the highest wire");
                     });
@@ -580,16 +628,15 @@ impl MagneticFieldWindow {
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
-                             each, {} per cut ({rate_from}). Each a vertical plane across its span, \
-                             its isolines at the levels (5); Results › Open cut shows it on the wires. \
-                             Every point's value is exact; an isoline is drawn straight between \
-                             points: measured, 1 m (default) keeps the 1 and 3 µT isolines within \
-                             0.03 % of their level, those of 10 µT and more near the wires within \
-                             7 % (0.5 m: 1.5 %, four times the points).",
+                            "{cuts} cut(s) asked: ≈ {points:.0} points each, {} per cut ({rate_from})",
                             duration(points * taken(self.modelled_within, 0.0) * rate)
                         ),
-                        "The cut is a vertical plane at the alignment station of its place in the \
+                        "Each cut asked in the table (+ station) is a vertical plane across its \
+                         span, its isolines at the levels (5); Results › Open cut shows it on the \
+                         wires. Every point's value is exact; an isoline is drawn straight between \
+                         points: measured, 1 m (default) keeps the 1 and 3 µT isolines within \
+                         0.03 % of their level, those of 10 µT and more near the wires within 7 % \
+                         (0.5 m: 1.5 %, four times the points). The cut is a vertical plane at the alignment station of its place in the \
                          span (between its structures' stations), perpendicular to the alignment — \
                          at an angle point along the bisector — as a cross-section panel opened \
                          there; from the lowest ground to this far over the highest wire.",
@@ -617,6 +664,10 @@ impl MagneticFieldWindow {
                                 .range(1.0..=2000.0)
                                 .speed(1.0)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The volume's half width across the line: wider, a low level's surface \
+                             inside the box, more points",
                         );
                         ui.label("every");
                         crate::style::field(
@@ -625,6 +676,10 @@ impl MagneticFieldWindow {
                                 .range(0.25..=20.0)
                                 .speed(0.05)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The lattice step: halving it takes 4 to 8 times as long and places the \
+                             surfaces closer to their levels",
                         );
                     });
                     ui.end_row();
@@ -638,13 +693,8 @@ impl MagneticFieldWindow {
                         crate::check_help::explain(
                             ui,
                             &format!(
-                                "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
-                                 ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
-                                 step takes about 4 to 8 times as long and places the surfaces closer \
-                                 to their levels: on a real line 2 m put the 1 µT surface within \
-                                 0.05 % for nine points in ten, the 10 µT one within 1 %, the 100 µT \
-                                 one (a thin tube around each conductor) within 15 % — 1 m within \
-                                 0.01 %, 0.3 % and 4 %. Results › Show in 3D turns the 3D view to it.",
+                                "{n:.0} span(s) of ≈ {:.0} m: ≈ {:.1} M points, ≈ {:.0} % computed \
+                                 ({}), {} ({rate_from}); {} levels",
                                 st.span(),
                                 full / 1e6,
                                 share * 100.0,
@@ -656,7 +706,12 @@ impl MagneticFieldWindow {
                                 duration(t),
                                 n_levels
                             ),
-                            "A coarse lattice first (4 steps apart), then the fine one only where a \
+                            "Halving the step takes about 4 to 8 times as long and places the \
+                             surfaces closer to their levels: on a real line 2 m put the 1 µT \
+                             surface within 0.05 % for nine points in ten, the 10 µT one within 1 %, \
+                             the 100 µT one (a thin tube around each conductor) within 15 % — 1 m \
+                             within 0.01 %, 0.3 % and 4 %. Results › Show in 3D turns the 3D view to \
+                             it. A coarse lattice first (4 steps apart), then the fine one only where a \
                              level passes, near the wires, and wherever a surface goes on; every \
                              lattice point is computed in full, only the surface between the points \
                              is interpolated. Drawn translucent in the 3D view, each level in its \

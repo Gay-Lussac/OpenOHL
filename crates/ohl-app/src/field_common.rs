@@ -575,6 +575,10 @@ impl<A> FieldShared<A> {
                             .range(1.0..=2000.0)
                             .speed(1.0)
                             .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "The profile's half width across the line: wider, the low levels' reach \
+                         inside it, more points",
                     );
                     ui.label("every");
                     crate::style::field(
@@ -583,6 +587,10 @@ impl<A> FieldShared<A> {
                             .range(0.1..=50.0)
                             .speed(0.1)
                             .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "The step between a profile's points: finer, more points, the time in \
+                         proportion",
                     );
                     ui.label("at");
                     crate::style::field(
@@ -591,6 +599,10 @@ impl<A> FieldShared<A> {
                             .range(0.0..=200.0)
                             .speed(0.1)
                             .suffix(" m"),
+                    )
+                    .on_hover_text(
+                        "The profile's height above the ground: the field is largest nearest \
+                         the wires",
                     );
                     ui.label("above the ground");
                 });
@@ -933,6 +945,12 @@ pub(crate) fn add_run_notes(
         );
     }
 }
+
+/// What **Wires by** changes (its (?) in both field windows).
+pub const WIRES_BY_HELP: &str = "How every wire is solved in the weather case for this window: \
+    each section's own calculation, or another for all (e.g. Max Sag: the lowest wires, the \
+    highest field at the ground). Another than each section's own solves the case for the run: \
+    a solve per case.";
 
 /// A field run under way as its footer says it (owner, 2026-11-10: "step
 /// 1 of x increasing, then resetting to 0 with step 2 and so on"): the

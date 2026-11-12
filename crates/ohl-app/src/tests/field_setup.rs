@@ -565,4 +565,16 @@ fn the_magnetic_window_opens_its_own_guide_page() {
     r.magnetic_field.show(r.case);
     h.run();
     guide_buttons_open(&mut h, crate::magnetic_field::GUIDE, 5);
+    // The modelling settings folded under 4 Model (owner, 2026-11-12: the
+    // setup for a human), shown when it is opened; the scope keeps the
+    // limit and its unit.
+    h.get_by_label("Limit [µT]");
+    for l in ["Profiles by", "Earth wires", "Jumpers", "Wire pieces"] {
+        assert!(h.query_by_label(l).is_none(), "{l} folded");
+    }
+    h.get_by_label_contains("Profiles by, earth wires").click();
+    h.run();
+    for l in ["Profiles by", "Earth wires", "Jumpers", "Wire pieces"] {
+        h.get_by_label(l);
+    }
 }
