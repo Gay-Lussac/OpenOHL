@@ -615,7 +615,7 @@ pub fn preview(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Preview
     preview_of(&preview_input(model, case, w)?)
 }
 
-/// What [`preview`] lays out: the model's data for every route (cheap,
+/// What the sheet preview lays out: the model's data for every route (cheap,
 /// on the screen's thread).
 fn preview_input(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Input, String> {
     let every = DrawingsWindow {
@@ -625,7 +625,7 @@ fn preview_input(model: &Model, case: usize, w: &DrawingsWindow) -> Result<Input
     Input::prepare(model, case, &every, PathBuf::new(), true)
 }
 
-/// The sheets of [`preview`] from its input (the layout: in the
+/// The sheets of the sheet preview from its input (the layout: in the
 /// background).
 fn preview_of(input: &Input) -> Result<Preview, String> {
     let options = input.route_options();
