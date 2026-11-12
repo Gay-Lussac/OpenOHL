@@ -161,7 +161,13 @@ weather case drawn), shared with the other views; the tool held acts on
 the tool click (Move, Edit, Delete, the Link tool, Add string…), the
 drag handles of the structure being edited show, Alt + drag selects
 LiDAR points; what is outside the slab is never picked. An edit shows
-at once. Hovering gives, where the pointer's ray meets the plane, the
+at once. The **measuring tools** work as in the 3D view (2026-11-12,
+the owner: the cut is "just an extraction of the 3D view"): the red
+snap point under the pointer where the click picks, the measurement
+following the pointer, the measurements drawn, the same results — a
+click with a measuring tool measures, it does not select. The only
+thing of its own is the start: the front view, and **Back to the cut
+view** (Home) to return to it. Hovering gives, where the pointer's ray meets the plane, the
 **offset**, the **height**, the **height above the ground** (the ground
 surface cut by the plane, else the lowest LiDAR ground point of every
 half metre across) and the **distance** (in the plane) to the nearest

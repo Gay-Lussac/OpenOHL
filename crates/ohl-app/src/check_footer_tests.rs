@@ -227,6 +227,10 @@ fn closing_a_clearance_window_takes_its_marks_off() {
         r.vertical_clearances.show(&r.model);
         let w = &mut r.vertical_clearances;
         w.file = Some(dir.join("rules.ohlr"));
+        // The blowouts alone (the swing arc, on by default since
+        // 2026-11-12, makes the ground's check far longer; not this
+        // test's subject).
+        w.wind.arc = false;
         w.rules.clear();
         // 100 m over the ground: every span is below it.
         w.rules.push(ohl_clearance::ZoneRule {

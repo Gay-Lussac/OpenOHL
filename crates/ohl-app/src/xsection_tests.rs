@@ -1116,3 +1116,133 @@ fn the_profile_right_click_opens_a_cut_at_its_station() {
         ref other => panic!("{other:?}"),
     }
 }
+
+/// Moves the pointer to `at` (and half a point on: a move the views see).
+fn hover(h: &mut Harness<'_, App>, at: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.run();
+    h.input_mut()
+        .events
+        .push(egui::Event::PointerMoved(at + egui::vec2(0.5, 0.0)));
+    h.run();
+    h.input_mut().events.push(egui::Event::PointerMoved(at));
+    h.run();
+}
+
+/// The measuring tools in a cut are the 3D view's (owner, 2026-11-12:
+/// "the measuring tools do not work the same in the cut as in the 3D
+/// view. They should"): hovering puts the red snap dot where the click
+/// picks and finds the measuring hover, a click measures (never
+/// selects), and two clicks give the distance the same two points
+/// clicked in the 3D view give. The cut's controls are the 3D view's,
+/// and follow a change of scheme.
+#[test]
+fn measuring_in_a_cut_is_the_3d_views() {
+    let Some(mut h) = gpu_harness(synthetic()) else {
+        return;
+    };
+    h.state_mut().ready().unwrap().set_case(0);
+    h.run();
+    // The cut at T2, as it will be drawn: a point on T2's mast and the
+    // crossing of a wire with the plane.
+    let (a, b) = {
+        let r = h.state_mut().ready().unwrap();
+        let plane = placed(&r.model, At::Structure("T2".into())).plane;
+        let c = crate::xsection::contents(&r.model, r.case, &plane, DEFAULT_DEPTH, 40.0);
+        let m = &c.structures.iter().find(|s| s.id == "T2").unwrap().lines[0];
+        let w = c
+            .wires
+            .iter()
+            .find(|w| !w.crossings.is_empty())
+            .unwrap()
+            .crossings[0];
+        let at = |o: f64, z: f64| {
+            let p = plane.at(o);
+            [p[0], p[1], z]
+        };
+        (
+            at(0.5 * (m[0][0] + m[1][0]), 0.5 * (m[0][1] + m[1][1]) - 5.0),
+            at(w[0], w[1]),
+        )
+    };
+    let tool = {
+        let r = h.state_mut().ready().unwrap();
+        r.hotbar.hold(crate::tools::Tool::MeasureDistance);
+        crate::controls::click_buttons(false).1
+    };
+    // In the 3D view, looking at the two points.
+    h.state_mut().show_tab(Tab::View3d);
+    h.run_steps(3);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let cam = r.view3d.camera.as_mut().unwrap();
+        cam.target = [
+            0.5 * (a[0] + b[0]),
+            0.5 * (a[1] + b[1]),
+            0.5 * (a[2] + b[2]),
+        ];
+        cam.distance = 60.0;
+    }
+    h.run_steps(3);
+    let screen = |h: &mut Harness<'_, App>, p: [f64; 3]| {
+        let r = h.state_mut().ready().unwrap();
+        let rect = r.view3d.rect.unwrap();
+        let size = [f64::from(rect.width()), f64::from(rect.height())];
+        let (q, _) = r.view3d.camera.unwrap().project(p, size).unwrap();
+        rect.min + egui::vec2(q[0] as f32, q[1] as f32)
+    };
+    let (qa, qb) = (screen(&mut h, a), screen(&mut h, b));
+    for q in [qa, qb] {
+        hover(&mut h, q);
+        click(&mut h, q, tool);
+    }
+    let in_3d = {
+        let r = h.state_mut().ready().unwrap();
+        let v = r
+            .measuring
+            .done
+            .last()
+            .expect("measured in the 3D view")
+            .rows[0]
+            .value;
+        r.measuring.done.clear();
+        r.measuring.picks.clear();
+        r.selection = Selection::None;
+        v
+    };
+    // The same two points in the cut.
+    let id = open_floating(&mut h, At::Structure("T2".into()));
+    let (pa, pb) = (
+        on_screen(&mut h, id, a).unwrap(),
+        on_screen(&mut h, id, b).unwrap(),
+    );
+    hover(&mut h, pa);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let v = &r.xsections.views[&id].view;
+        let dot = v.snap_hover.at.expect("the snap dot in the cut");
+        assert!(dot.distance(pa) < 2.0, "{dot:?} {pa:?}");
+        assert!(v.hover_use.is_some(), "the measuring hover in the cut");
+    }
+    click(&mut h, pa, tool);
+    hover(&mut h, pb);
+    click(&mut h, pb, tool);
+    let in_cut = {
+        let r = h.state_mut().ready().unwrap();
+        assert_eq!(r.selection, Selection::None, "measuring does not select");
+        r.measuring.done.last().expect("measured in the cut").rows[0].value
+    };
+    assert!(
+        (in_cut - in_3d).abs() < 0.02,
+        "cut {in_cut} m, 3D view {in_3d} m"
+    );
+    // The controls: the 3D view's, a scheme change followed.
+    let cad = crate::controls::Controls::presets()
+        .into_iter()
+        .find(|c| c.name == "CAD")
+        .unwrap();
+    h.state_mut().ready().unwrap().view3d.controls = cad.clone();
+    h.run_steps(3);
+    let r = h.state_mut().ready().unwrap();
+    assert_eq!(r.xsections.views[&id].view.controls, cad);
+}

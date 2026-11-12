@@ -131,6 +131,22 @@ LiDAR points are read); units in the labels, every rule field and zone
 value saying on hover what it changes and its time; the rule's own width
 reads "the window's, 1.00 m" with "give it its own".
 
+Part 3, the cut. The cut's panel was already the 3D view (`View3d::ui`,
+the same renderer, picking, snap dot and controls — the main view's
+controls copied every frame, so the CAD scheme too) clipped to its slab;
+what differed was the application's side: the measuring tool held was
+never given to the panel (`View3d::measuring` false there, no measuring
+hover, a click resolved as a plain pick), its measurements were not
+drawn in it (`draws` left the cut out), and its hover and clicked
+annotation were not read back (`viewer.rs`). Now the cut is handled as
+the 3D view in all four places. What stays its own: it starts in its
+front view (orthographic, looking ahead) with **Back to the cut view**
+(Home), and the cut's own bar (step, depth, width, projection). Test:
+`xsection_tests::measuring_in_a_cut_is_the_3d_views` (the snap dot where
+the click picks, the measuring hover, no selection, the same distance as
+the same two points in the 3D view, the controls following a scheme
+change).
+
 **A plugin removed or installed again asks again for more time or
 memory** (owner: "if a plugin that requires more time or memory to work
 was accepted. if we uninstall it and reinstall it it should ask again").

@@ -136,7 +136,13 @@ impl TabViewer for Viewer<'_> {
         // and draw the measurement (made only for the views drawing it;
         // the kept ones shared, made when they change).
         let measuring = r.hotbar.tool().measuring();
-        let draws = matches!(tab, Tab::View3d | Tab::Plan | Tab::Profile);
+        // (A cut's panel is the 3D view clipped to its slab, owner
+        // 2026-11-12: "just an extraction of the 3D view": it measures and
+        // draws the measurements as the 3D view.)
+        let draws = matches!(
+            tab,
+            Tab::View3d | Tab::Plan | Tab::Profile | Tab::CrossSection(_)
+        );
         let overlay = if draws
             && (measuring || !r.measuring.done.is_empty() || !r.measuring.kept.is_empty())
         {
@@ -210,8 +216,13 @@ impl TabViewer for Viewer<'_> {
             }
             Tab::CrossSection(id) => {
                 // A 3D view of the slab: the main view's layers, controls
-                // and tools.
+                // and tools — the measuring tools too, with their hover
+                // and their drawing, as in the 3D view.
                 let link = r.link_overlay();
+                if let Some(v) = r.xsections.views.get_mut(id) {
+                    v.view.measuring = measuring;
+                    v.view.user_measure = overlay;
+                }
                 let used = r.xsections.ui(
                     *id,
                     ui,
@@ -442,6 +453,11 @@ impl TabViewer for Viewer<'_> {
             Tab::View3d => r.view3d.hover_use.clone(),
             Tab::Plan => r.plan.hover_use.clone(),
             Tab::Profile => r.profile.hover_use.clone(),
+            Tab::CrossSection(id) => r
+                .xsections
+                .views
+                .get(id)
+                .and_then(|v| v.view.hover_use.clone()),
             _ => None,
         };
         if hovered.is_some() {
@@ -452,6 +468,11 @@ impl TabViewer for Viewer<'_> {
             Tab::View3d => r.view3d.annotation_hit.take(),
             Tab::Plan => r.plan.annotation_hit.take(),
             Tab::Profile => r.profile.annotation_hit.take(),
+            Tab::CrossSection(id) => r
+                .xsections
+                .views
+                .get_mut(id)
+                .and_then(|v| v.view.annotation_hit.take()),
             _ => None,
         };
         if used.is_some() {
