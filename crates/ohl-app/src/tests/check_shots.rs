@@ -205,6 +205,15 @@ const SHOTS: &[Shot] = &[
     },
 ];
 
+/// A field window's Model fold: titled by what it holds, the topmost
+/// node naming its first setting.
+fn model_fold<'h>(harness: &'h Harness<'_, App>) -> Option<egui_kittest::Node<'h>> {
+    harness
+        .query_all_by_label_contains("Earth wires")
+        .chain(harness.query_all_by_label_contains("Jumpers, "))
+        .min_by(|a, b| a.rect().top().total_cmp(&b.rect().top()))
+}
+
 /// The field window `name`'s setup turned to `page`.
 fn set_page(r: &mut crate::app::Ready, name: &str, page: crate::field_common::FieldPage) {
     if name == "magnetic-field" {
@@ -305,18 +314,12 @@ fn check_windows_rendered_for_review() {
                     wheel(&mut harness, body, -550.0);
                     save(&mut harness, &dir, &format!("{}-{tag}-{i}", shot.name));
                 }
-                if let Some(m) = harness
-                    .query_by_label_contains("Earth wires")
-                    .or_else(|| harness.query_by_label_contains("Jumpers, "))
-                {
+                if let Some(m) = model_fold(&harness) {
                     m.click();
                     harness.run_steps(4);
                     wheel(&mut harness, body, -2000.0);
                     save(&mut harness, &dir, &format!("{}-{tag}-model", shot.name));
-                    if let Some(m) = harness
-                        .query_by_label_contains("Earth wires")
-                        .or_else(|| harness.query_by_label_contains("Jumpers, "))
-                    {
+                    if let Some(m) = model_fold(&harness) {
                         m.click();
                         harness.run_steps(4);
                     }
