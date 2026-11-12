@@ -530,6 +530,22 @@ impl PairVoltage {
     }
 }
 
+/// Which of a rule's zone values its file gave ([`Rule::stated`]); two
+/// rules compare equal whatever it holds.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Stated {
+    /// `vertical_band` given.
+    pub band: bool,
+    /// `vertical_depth` given.
+    pub depth: bool,
+}
+
+impl PartialEq for Stated {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 /// One rule.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
@@ -579,6 +595,11 @@ pub struct Rule {
     /// cut in slices of this depth, m (0: the wire straight above the
     /// target).
     pub vertical_depth: f64,
+    /// Whether the rule file gave `vertical_band` and `vertical_depth`
+    /// (2026-11-12): a vertical clearance window takes its zone only from
+    /// values a file states, else the project's defaults. Not part of the
+    /// rule's value (always equal).
+    pub stated: Stated,
     /// Ground rules: the terrain surface (TIN layer) checked, by name
     /// (none: the surface the checks use, the project's check surface or
     /// `--terrain`).
@@ -1884,6 +1905,10 @@ impl RuleSet {
                     voltages: r.voltages,
                     wires: r.wires.as_deref().map_or(Ok(Wires::Both), Wires::parse)?,
                     vertical_depth: r.vertical_depth.map_or(0.0, |l| l.si()),
+                    stated: Stated {
+                        band: r.vertical_band.is_some(),
+                        depth: r.vertical_depth.is_some(),
+                    },
                     surface,
                     screen: r.screen,
                     to_ground: r.to_ground.map_or(ToGround::ByTerrain, ToGround::Given),
@@ -2026,6 +2051,7 @@ impl RuleSet {
                 voltages: Vec::new(),
                 wires: Wires::Both,
                 vertical_depth: 0.0,
+                stated: Stated::default(),
                 surface: None,
                 screen: false,
                 to_ground: ToGround::ByTerrain,
@@ -2277,10 +2303,12 @@ impl Rule {
         if let Some(v) = self.to_ground.given() {
             let _ = writeln!(t, "to_ground = {v}");
         }
-        if self.vertical_band != default_band(&self.target) {
+        // Also when stated at the default (a window's zone, 2026-11-12):
+        // read back as stated.
+        if self.stated.band || self.vertical_band != default_band(&self.target) {
             let _ = writeln!(t, "vertical_band = {}", length(self.vertical_band));
         }
-        if self.vertical_depth != 0.0 {
+        if self.stated.depth || self.vertical_depth != 0.0 {
             let _ = writeln!(t, "vertical_depth = {}", length(self.vertical_depth));
         }
         if self.search_margin != DEFAULT_SEARCH_MARGIN {

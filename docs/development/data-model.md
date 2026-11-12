@@ -1249,7 +1249,11 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
 - `[[rule]]`: a target (LiDAR `classes`, the ground, other wires), a
   distance (`vertical` / `radial`, fixed or by voltage), the weather
   `cases` it applies to, `vertical_band` (zone width each side of the
-  wire), `vertical_depth` (the area's depth along the line), `voltages`
+  wire), `vertical_depth` (the area's depth along the line; since
+  2026-11-12 `Rule::stated` says whether the file gave the two — the
+  vertical clearance window and `ohl zones` take their zone only from
+  values stated, else the project's `clearance_zone_width` / `_depth`,
+  and a window writes both into every rule, also at their defaults), `voltages`
   (kV of the wires checked; 0: earthed wires) and `wires` (`sections`,
   `jumpers` or `both`); since 2026-10-23 a ground rule's `surface` (a
   terrain surface of the project by name; none: the checks' surface;
@@ -1300,7 +1304,10 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `TO_GROUND_HELP`; `clearance_zones::terrain_classes`).
 - `[wind]` (optional): `steps`, `step` (Pa), `sides`, and since
   2026-10-20 `arc` (bool, default false; written only when true, so a
-  file without it is written as before and older programs read it) —
+  file without it is written as before and older programs read it; a
+  `[wind]` table without it stays off — since 2026-11-12 only a new
+  vertical window, or a rule file without `[wind]`, starts with the arc
+  on, `clearance_zones::default_wind`) —
   how the desktop clearance windows and `ohl zones` apply the wind: the
   steps up to each case's pressure, and/or each span's swing arc
   (`WindSteps::arc`; the danger-tree check's `positions::SwingArc`,

@@ -562,6 +562,7 @@ impl RuleEditor {
                         circuits: Default::default(),
                         exclude_near_ends: 0.0,
                         exclude_spans_at: Vec::new(),
+                        stated: Default::default(),
                         target: match r.target {
                             ohl_clearance::Target::SameLine { .. } => {
                                 ohl_clearance::Target::SameLine {

@@ -58,6 +58,14 @@ pub use crate::zone_run::{
 };
 use ohl_line::jumper::JumperShape;
 
+/// What the results say when jumpers were checked on their swing bands
+/// with no margin and without the wind steps (owner, 2026-11-12: the
+/// combination the window allows, never silent).
+pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on their swing band \
+     without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside its \
+     band (up to 0.293 m on the example line, measured with 10 Pa steps). Enter a jumper band \
+     margin for your jumpers, or tick the wind steps (exact at the pressures they solve).";
+
 /// Default half width of the vertical zone, m.
 pub const DEFAULT_WIDTH: f64 = ohl_line::Defaults::PROGRAM.clearance_zone_width;
 /// Default depth of the slices of the vertical zone, m.
@@ -197,6 +205,11 @@ impl ZoneRule {
                 voltages: self.voltages.clone(),
                 wires: self.wires,
                 vertical_depth: if vertical { zone.depth } else { 0.0 },
+                // The window's zone, written as stated.
+                stated: crate::rules::Stated {
+                    band: vertical,
+                    depth: vertical,
+                },
                 surface: matches!(target, Target::Ground)
                     .then(|| self.surface.clone())
                     .flatten(),
@@ -344,6 +357,7 @@ pub fn from_rule_set(
         check: set.check.clone(),
         ..Imported::default()
     };
+    let mut first = true;
     for rule in &set.rules {
         let note = |why: &str| format!("\"{}\": {why}", rule.name);
         let classes = match &rule.target {
@@ -406,15 +420,19 @@ pub fn from_rule_set(
                 vec![(kept, required.clone())]
             }
         };
-        if out.width.is_none() && !rows.is_empty() {
-            out.width = Some(rule.vertical_band);
-            out.depth = Some(rule.vertical_depth);
+        // The window's zone: the first rule's, where its file states it
+        // (2026-11-12: a value not given is the window's default, the
+        // project's — not the band of `ohl line`, nor a depth of 0).
+        if first && !rows.is_empty() {
+            first = false;
+            out.width = rule.stated.band.then_some(rule.vertical_band);
+            out.depth = rule.stated.depth.then_some(rule.vertical_depth);
         }
-        // A vertical rule's own half width: one other than the window's
-        // (the first rule's).
-        let width = (measure == Measure::Vertical)
+        // A vertical rule's own half width: one stated other than the
+        // window's (the first rule's).
+        let width = (measure == Measure::Vertical && rule.stated.band)
             .then_some(rule.vertical_band)
-            .filter(|w| out.width.is_some_and(|z| (z - w).abs() > 1e-9));
+            .filter(|w| out.width.is_none_or(|z| (z - w).abs() > 1e-9));
         for (voltages, distance) in rows {
             let row = ZoneRule {
                 altitude: rule.altitude,
@@ -2765,5 +2783,47 @@ mod tests {
         assert!(!back.rules[0].checks_voltage(None));
         assert_eq!(voltages_text(&[110.0, 220.0]), "110 or 220 kV");
         assert_eq!(voltages_text(&[]), "any voltage");
+    }
+
+    /// A rule file stating no zone (a preset, a file written by hand)
+    /// leaves the window its own (the project's 1 m and 0.2 m), not the
+    /// band of `ohl line` nor a depth of 0 (2026-11-12); a window's zone
+    /// is written and read back as stated, also at those values.
+    #[test]
+    fn only_a_stated_zone_is_taken() {
+        let text = r#"
+            format = "ohl-clearance-rules"
+            version = 1
+            [[rule]]
+            name = "Ground"
+            target = "ground"
+            vertical = "7 m"
+            [[rule]]
+            name = "Roofs"
+            target = "points"
+            classes = [6]
+            vertical = "5 m"
+        "#;
+        let set = RuleSet::parse(text).unwrap();
+        let v = from_rule_set(&set, Measure::Vertical, |_| vec![], &[220.0]);
+        assert_eq!((v.width, v.depth), (None, None));
+        assert!(v.rules.iter().all(|r| r.width.is_none()), "{:?}", v.rules);
+        // The window's zone at 0 m and 0.5 m: kept.
+        let zone = Zone {
+            width: 0.5,
+            depth: 0.0,
+            ..Zone::new(Measure::Vertical)
+        };
+        let back = to_rule_set(
+            "w",
+            &zone,
+            &WindSteps::default(),
+            &CheckScope::default(),
+            &v.rules,
+        );
+        let again = RuleSet::parse(&back.to_toml()).unwrap();
+        let v = from_rule_set(&again, Measure::Vertical, |_| vec![], &[220.0]);
+        assert_eq!((v.width, v.depth), (Some(0.5), Some(0.0)));
+        assert!(v.rules.iter().all(|r| r.width.is_none()), "{:?}", v.rules);
     }
 }

@@ -622,7 +622,7 @@ Every check window with rules — Vertical and Radial clearances, the Clearances
 - **Import…** and **Export…** — rule files (`.ohlr`).
 - **Add rule** (or **Add rule…** with a choice of target; at the end), **Duplicate** (the rule selected, after it), **Remove** (asked first: *Remove it* / *Keep it*; a window that always keeps a rule greys it on the last one), **Move up** and **Move down** (the rule selected one place; the rule file keeps the order — owner, 2026-10-28). The **…** at the end of a row duplicates or removes that row.
 - **The table** — one compact row per rule: **Name**, **Target**, **Voltages**, **Weather cases**, **Distance** (in words: "7.5 m", "by voltage: up to 110 kV 5 m, …", "5 m + 0.01 m/kV above 0 kV", *not set*), **Wires**. A long cell is cut, the whole text on hover. The list keeps its height; drag the grip under it to make it taller.
-- **Below the table**, the selected rule's fields: its name, then the check's own fields — the distance editor with its preview at the line's voltages, the voltages, the weather cases, and what only this check has. A click on a row selects it.
+- **Below the table**, the selected rule's fields: its name, then the check's own fields — the distance editor with its preview at the line's voltages, the voltages, the weather cases, and what only this check has. A click on a row selects it: the line above the table says so (*Click a rule to edit it below.*), the whole row is highlighted, and the fields below are under the title *Editing rule n: name*; a rule added or duplicated is opened there at once (2026-11-12).
 
 ### Vertical and radial clearances
 
@@ -672,6 +672,10 @@ The drawing beside shows the vertical zone (the width each side, a point and its
 #### Clearances: what is solved
 
 **Scope** (*2 Scope* in the Setup tab; *What is solved* until 2026-10-27). **Circuits**: the circuits checked, ticked by circuit name (all ticked: every circuit, also those added later; none ticked: Run greyed). **Routes** (2026-10-27; built, in active development, not approved yet): the routes checked, and inside each its alignments — a route ticked takes all of it, an alignment may be ticked alone (none ticked: the whole line). Only the sections and jumpers with a structure on a route or alignment ticked are solved and checked (a section reaching into another route is taken whole: it is solved as one). The circuits and the routes are kept in the window's rule file (`[check]`: `circuits`, `routes`, `alignments`), as are the Clearances window's ([below](#clearances)); `ohl zones` reads them (`--circuits`, `--route`, `--alignment` override them). With **View › Work on route** set, only that route's part of the choice is checked. **Solved by** (in *4 Model* since 2026-10-31): each section's own calculation (the default), or every section by **finite elements** or by **ruling span** for this check (each keeps its wire condition).
+
+#### Clearances: model
+
+*5 Model* (folded; 2026-11-12, the setup reordered: 1 What it checks, 2 Rules, 3 Wind (and zone), 4 Scope, 5 Model): **Solved by** ([what is solved](#clearances-what-is-solved)) and **Ignore LiDAR points farther than … m from the wires** ([zone](#clearances-zone)) — the options rarely changed.
 
 #### Clearances: results
 

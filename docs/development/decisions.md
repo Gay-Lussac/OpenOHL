@@ -105,6 +105,32 @@ vertical window's **user guide ↗** buttons open it (the radial window's
 still open the OHL-Design page's sections); the theory page, the OHL-Design
 page and the vegetation panel's wind link to it.
 
+Part 2, the window. **Defaults**: a new vertical window (and a rule file
+without `[wind]`) starts with the swing arc on, the band margin 0.15 m,
+the wind from both sides (`clearance_zones::default_wind`; the radial
+window keeps the arc off, the owner's words being the vertical window's);
+the zone was already 1 m / 0.2 m. Why other values were seen: a rule file
+or preset whose rules gave no `vertical_band` / `vertical_depth` set the
+window's zone to the `ohl line` band (0.5 m, 0 m for a ground rule) and a
+depth of 0 — now only stated values are taken (`Rule::stated`), else the
+project's; a window writes both into every rule. A `[wind]` table without
+`arc` keeps the arc off: that is how a file written with the arc off
+reads (the format wrote the arc only when on), so a user's choice is
+never overwritten; such a project ticks it once. Both changes give more
+findings, never fewer, also in `ohl zones`. **Jumpers**: with the arc on,
+no wind steps and a jumper band margin of 0 m, the results say *NOT ON
+THE SAFE SIDE: jumpers checked on their swing band without a margin …*
+(`zone::JUMPER_BAND_NOTE`, `zone_run::jumpers_unsafe`) and the window says
+it under the wind (`ZoneWindow::jumpers_unsafe`). **The rules list**
+(the shared rule table, every check window): "Click a rule to edit it
+below." above it, the whole selected row highlighted, each cell's hover
+"Click to edit this rule below", the editor titled *Editing rule n:
+name* (a new rule, added or duplicated, opened there at once). **The setup**: 1 What it checks, 2 Rules, 3 Wind and zone
+(open: the most used), 4 Scope, 5 Model (folded: the method and how far
+LiDAR points are read); units in the labels, every rule field and zone
+value saying on hover what it changes and its time; the rule's own width
+reads "the window's, 1.00 m" with "give it its own".
+
 **A plugin removed or installed again asks again for more time or
 memory** (owner: "if a plugin that requires more time or memory to work
 was accepted. if we uninstall it and reinstall it it should ask again").

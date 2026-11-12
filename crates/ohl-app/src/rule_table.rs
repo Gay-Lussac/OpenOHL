@@ -642,6 +642,14 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
         if rules.is_empty() {
             ui.label(egui::RichText::new("No rule yet: add one, or take a preset.").weak());
         } else {
+            // How the list works, said above it (owner, 2026-11-12: "it
+            // must be easier to understand that clicking on a rule in the
+            // list opens it below to edit it").
+            ui.label(
+                egui::RichText::new("Click a rule to edit it below.")
+                    .small()
+                    .weak(),
+            );
             table(
                 ui,
                 id,
@@ -657,9 +665,10 @@ impl<'a, R: RuleRow> RuleTable<'a, R> {
         if let Some(k) = st.selected.filter(|k| *k < rules.len()) {
             ui.separator();
             let rule = &mut rules[k];
+            // Titled with the rule's name: what is edited.
+            ui.strong(format!("Editing rule {}: {}", k + 1, rule.name()));
             ui.add_enabled_ui(editable, |ui| {
                 ui.horizontal(|ui| {
-                    ui.strong(format!("Rule {}", k + 1));
                     let label = ui.label("Rule name");
                     // Kept once typed (not at every key).
                     out.changed |= ui
@@ -726,8 +735,8 @@ fn table<R: RuleRow>(
                             .clicked();
                         for text in [&s.target, &s.voltages, &s.cases, &s.distance, &s.wires] {
                             hit |= ui
-                                .add(egui::Label::new(cut(text)).sense(egui::Sense::click()))
-                                .on_hover_text(text.as_str())
+                                .selectable_label(selected, cut(text))
+                                .on_hover_text(format!("{text}\n\nClick to edit this rule below"))
                                 .clicked();
                         }
                         ui.push_id((id, "row-menu", k), |ui| {

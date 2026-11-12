@@ -83,6 +83,22 @@ type Merged = (
     Duration,
 );
 
+/// Whether jumpers were checked on swing bands with no margin while no
+/// wind steps solve them between the blowouts: their bands do not hold
+/// them there ([`crate::zone::JUMPER_BAND_NOTE`]).
+pub fn jumpers_unsafe(
+    arc: Option<crate::positions::BandMargins>,
+    states: &[WindState],
+    arcs: &[crate::zone_arc::ZoneArc],
+) -> bool {
+    let stepped = states
+        .iter()
+        .any(|s| s.pressure > 0.0 && s.pressure < s.full - 1e-9);
+    arc.is_some_and(|m| m.jumper <= 0.0)
+        && !stepped
+        && arcs.iter().any(|a| a.wire.section.starts_with("jumper:"))
+}
+
 /// Runs a zone check: the sections the rules need ([`sections_needed`];
 /// of `check`'s circuits only, every one by `check`'s method, and of
 /// `sections_scope` only when given) solved in every state of `states`
@@ -283,6 +299,11 @@ pub fn run_zone_check(
             )?;
             let mut report = report;
             report.notes.extend(arc_notes);
+            // Jumpers on their bands without a margin and no steps between
+            // the blowouts: said (owner, 2026-11-12: never silent).
+            if jumpers_unsafe(arc, &states, &arcs) {
+                report.notes.push(crate::zone::JUMPER_BAND_NOTE.to_owned());
+            }
             // The bimetallic model of the wire types (roadmap O22 item 1):
             // the hot sags depend on it.
             report

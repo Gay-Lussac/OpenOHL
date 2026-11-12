@@ -140,8 +140,9 @@ page.
 ### 2 Rules
 
 The rules, one row each. **Click a rule to edit it below**: the row is
-highlighted and its fields appear under the list, titled *Editing rule:
-name*. A new rule (**Add rule**) is opened there at once.
+highlighted and its fields appear under the list, titled
+*Editing rule n: name*. A new rule (**Add rule**, **Duplicate**) is
+opened there at once. Each field says on hover what it changes.
 
 - **Preset ▾**: the rules of a design-code plugin or of the project; the
   chosen preset is shown first, then **Merge** (by name) or **Replace**
@@ -168,7 +169,11 @@ The fields of a rule are in the [table below](#every-field-of-a-rule).
 | **width on each side** | 1 m | a wider strip takes more targets beside the wire: more findings, never fewer | more points compared |
 | **depth** | 0.2 m | the wire taken at its lowest over a longer slice: smaller distances on a sloping wire (conservative); 0: exactly over the point | none |
 
-A rule may have its own width (its **Width [m]** field). The defaults come
+With the swing arc alone, a jumper band margin of 0 m and a rule that
+checks jumpers, a warning under the wind says *NOT ON THE SAFE SIDE for
+the jumpers …* before you run. A rule may have its own width (its
+**Width [m]** field: *the window's, 1.00 m* until you click **give it
+its own**). The defaults come
 from the program, unless the project's line file gives others (its
 `[defaults]`: `clearance_zone_width`, `clearance_zone_depth`) or the rule
 file states them (`vertical_band`, `vertical_depth`, the `[wind]` table).

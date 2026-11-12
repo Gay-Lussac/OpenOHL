@@ -384,10 +384,25 @@ fn the_margin_is_an_input_and_the_jumpers_have_bands() {
         a.band_margin,
         Some(ohl_clearance::positions::BandMargins::default())
     );
+    // Every jumper on a band (none at its solved positions only); at a
+    // jumper margin of 0 without steps, said not on the safe side
+    // (2026-11-12), with a margin not.
     assert!(
-        !a.zone.notes.iter().any(|n| n.contains("jumper")),
+        a.zone
+            .notes
+            .iter()
+            .filter(|n| n.contains("jumper"))
+            .all(|n| n == ohl_clearance::zone::JUMPER_BAND_NOTE)
+            && a.zone
+                .notes
+                .contains(&ohl_clearance::zone::JUMPER_BAND_NOTE.to_owned()),
         "{:?}",
         a.zone.notes
+    );
+    assert!(
+        !b.zone.notes.iter().any(|n| n.contains("jumper")),
+        "{:?}",
+        b.zone.notes
     );
     let (la, lb) = (lowest(&a), lowest(&b));
     assert_eq!(la.len(), lb.len());

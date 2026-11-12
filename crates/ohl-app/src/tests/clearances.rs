@@ -783,7 +783,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             classes: Vec::new(),
             ground: true,
             surface: None,
-            wires: ohl_clearance::Wires::Sections,
+            wires: ohl_clearance::Wires::Both,
             width: None,
             screen: false,
             to_ground: ohl_clearance::rules::ToGround::ByTerrain,
@@ -791,8 +791,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
         });
     }
     harness.run();
-    // The wind in 4 Model (folded by default).
-    open_model(&mut harness);
+    // The wind in 3 Wind and zone (open since 2026-11-12).
     // 600 Pa in 10 Pa steps: 1 + 59 × 2 + 2 solves, the arc suggested.
     let text = harness
         .query_all_by_label_contains("121 solves for a windy case of 600 Pa")
@@ -804,7 +803,8 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             .next()
             .is_some()
     );
-    for g in ["Wind: user guide ↗", "Zone: user guide ↗"] {
+    // 3 Wind and zone (open), the zone's own guide link.
+    for g in ["Wind and zone", "Zone: user guide ↗"] {
         harness.get_by_label(g);
     }
     {
@@ -832,6 +832,17 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             assert_eq!(rep.states.len(), 3);
             assert!(rep.arc_spans > 0);
             assert!(rep.zone.findings.iter().any(|f| f.arc.is_some()));
+            // The jumper on its band without a margin, no steps: said
+            // (2026-11-12), and beside the wind.
+            assert!(
+                rep.zone
+                    .notes
+                    .iter()
+                    .any(|n| n == ohl_clearance::zone::JUMPER_BAND_NOTE),
+                "{:?}",
+                rep.zone.notes
+            );
+            assert!(r.vertical_clearances.jumpers_unsafe());
             break;
         }
         // Some 40 s alone in a debug build; the whole suite shares the
@@ -842,6 +853,29 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
     harness.run();
     assert!(harness.query_all_by_label_contains("arc ").next().is_some());
     std::fs::remove_dir_all(dir).ok();
+}
+
+/// A new window's defaults (owner, 2026-11-12): the vertical window with
+/// the swing arc and its 0.15 m band margin, the wind from both sides,
+/// the zone 1 m on each side and 0.2 m deep; the radial window without
+/// the arc.
+#[test]
+fn a_new_vertical_window_starts_with_the_swing_arc() {
+    use ohl_clearance::zone::Measure;
+    let v = crate::clearance_zones::ZoneWindow::new(Measure::Vertical);
+    assert!(v.wind.arc && !v.wind.stepped);
+    assert_eq!(v.wind.band_margin, 0.15);
+    assert_eq!(v.wind.sides, ohl_clearance::WindSides::Both);
+    assert_eq!((v.zone.width, v.zone.depth), (1.0, 0.2));
+    let r = crate::clearance_zones::ZoneWindow::new(Measure::Radial);
+    assert!(!r.wind.arc);
+    // The first rule checks spans and jumpers: the jumpers' band without
+    // a margin is said beside the wind.
+    let mut v = v;
+    v.rules.push(crate::clearance_zones::first_rule());
+    assert!(v.jumpers_unsafe());
+    v.wind.jumper_band_margin = 0.3;
+    assert!(!v.jumpers_unsafe());
 }
 
 /// The time left of a step: none before 2 % of it, then from its pace;
