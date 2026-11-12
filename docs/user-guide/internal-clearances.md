@@ -176,7 +176,7 @@ with **Use local conditions** ticked.
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|
 | **Least pressure [Pa]** | unticked (none); 300 Pa offered when ticked | a structure's wind study below it is taken at it (a design code's bound), said in the notes | none |
-| **Cases** | empty: every case of the rules with wind | the weather cases (names, `*` `?`, comma separated) that take the wind study | one more solve of the line per study pressure and case |
+| **Cases taking it** | empty: every case of the rules with wind | the weather cases (names, `*` `?`, comma separated) that take the wind study | one more solve of the line per study pressure and case |
 
 Always visible under the fold, when it applies: how many structures give
 a wind study, and that it is **not taken** while Use local conditions is
@@ -238,7 +238,7 @@ Read by the window from the file's `[check]` table:
 | `circuits`, `routes`, `alignments`, `sections` | every circuit, the whole line | **Scope** |
 | `local` | false | **Use local conditions** |
 | `wind_study_min` | none | **Least pressure** |
-| `wind_study_cases` | none: every case of the rules with wind | **Cases** (wind study) |
+| `wind_study_cases` | none: every case of the rules with wind | **Cases taking it** (wind study) |
 
 The `[check]` keys `cases`, `method` and `search_distance`, the
 `[[rule]]` tables and the `[wind]` table belong to other check windows;

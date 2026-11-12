@@ -106,7 +106,7 @@ run's, named `<case> (wind study 450 Pa)`. Structures without one keep the
 case's wind (times their **wind clearance** factor). Unticked, no wind
 study is taken (the notes say at how many structures one is given).
 
-Two settings of the check, in its Setup (4 Wind study) and its rule
+Two settings of the check, in its Setup (4 Model › Wind study, folded) and its rule
 file's `[check]`:
 
 | Key | Default | What |
@@ -126,7 +126,7 @@ study: `structure_wind` named a Structures table column (a plugin's
 `plugin.column`, e.g. `my-code.wind_study`), `structure_wind_min` its
 least, and the group's cases took it. Those keys are still read and kept
 in the weather case file, **no longer used**: a run says so in its notes.
-Internal clearances › Setup › 4 Wind study offers **Copy into the
+Internal clearances › Setup, under 4 Model, offers **Copy into the
 structures** while a structure's value in such a column differs from its
 wind study: one change (Undo takes it back) that sets each structure's
 `local.wind_study` to its value in the column (Pa, with or without the

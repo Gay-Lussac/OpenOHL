@@ -544,6 +544,14 @@ pub(crate) fn internal_clearances_out(r: &mut Ready, out: crate::internal_cleara
     if let Some(study) = out.convert {
         convert_group_study(r, &study);
     }
+    // The window's own page of the user guide (2026-11-12).
+    if let Some(anchor) = out.guide {
+        let (page, anchor) = crate::internal_clearances::guide(anchor);
+        r.status = Some(match crate::help::open_section(page, anchor) {
+            Ok(m) => (format!("user guide opened: {m}"), false),
+            Err(e) => (e, true),
+        });
+    }
     if let Some((plugin, p)) = out.plugin_preset
         && let Some(wc) = &p.weather
         && let Err(e) = crate::rule_editor::preset_cases(r, &plugin, &p.name, &p.weather_text, wc)

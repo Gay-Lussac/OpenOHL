@@ -61,7 +61,78 @@ pub struct Out {
     /// The weather case groups' wind study to copy into the structures'
     /// local conditions (one undoable command; [`GroupStudy::command`]).
     pub convert: Option<GroupStudy>,
+    /// A section of the window's user guide page to open ([`guide`]).
+    pub guide: Option<&'static str>,
 }
+
+/// The window's own page of the user guide (owner, 2026-11-12: the
+/// check pages' treatment, after the vertical and radial windows).
+pub const GUIDE: &str = "user-guide/internal-clearances";
+
+/// The sections of [`GUIDE`] the window's **user guide ↗** buttons open
+/// (each a heading of the page: tested).
+pub mod anchors {
+    /// *1 What it checks*.
+    pub const WHAT: &str = "1-what-it-checks";
+    /// *2 Rules*.
+    pub const RULES: &str = "2-rules";
+    /// *3 Scope*.
+    pub const SCOPE: &str = "3-scope";
+    /// *4 Model*: the wind study.
+    pub const MODEL: &str = "4-model-more-options-folded";
+    /// The Results tab.
+    pub const RESULTS: &str = "the-results";
+}
+
+/// The page and section a **user guide ↗** button opens.
+pub fn guide(anchor: &'static str) -> (&'static str, &'static str) {
+    (GUIDE, anchor)
+}
+
+/// The question's longer text, in the (?) of *1 What it checks*.
+const WHAT_HELP: (&str, &str) = (
+    "At each structure with a body: the conductors near it, its jumpers and its strings' live \
+     ends against its members, per weather case.",
+    "Run solves the line in each weather case of the rules, with its jumpers. At each structure \
+     with a body (detail level 2 or 3) the electrified parts — the conductors out to the rule's \
+     reach, the jumpers, the strings' live ends and electrified shapes — are measured to every \
+     member (to its surface where its section is known, else to its centre line: on the unsafe \
+     side, said per row) and to the strings' grounded shapes, and compared with the rule's \
+     distance at the part's voltage. Earth wires and structures without a body are not checked.",
+);
+
+/// The rules' explanation, in the (?) of *2 Rules*.
+const RULES_HELP: (&str, &str) = (
+    "A rule: which live parts must keep which distance from the structure, in which weather \
+     cases, for which voltages and insulation levels. Click a rule to edit it below.",
+    "Every rule that takes a part (its weather case, its voltage, its system's insulation \
+     level) gives its own row; there is no precedence among rules. Distance: one value, a \
+     table \"up to kV: distance\" or a base plus an amount per kV; with wind, a distance of its \
+     own if ticked. A preset (a design code's) is merged into the rules (a rule of the same \
+     name replaced) or replaces them. Run is greyed while a rule's distance is not set.",
+);
+
+/// The scope's explanation, in the (?) of *3 Scope*.
+const SCOPE_HELP: (&str, &str) = (
+    "Circuits, routes and sections: those checked (none ticked: the whole line).",
+    "Only the sections of the circuits ticked, on the routes, alignments or sections ticked, \
+     are solved and their structures checked. Fewer: fewer sections solved, faster. Each rule \
+     gives its own voltages and weather cases besides (2 Rules).",
+);
+
+/// The wind study's explanation, in the (?) of its heading under *4 Model*.
+const WIND_STUDY_HELP: (&str, &str) = (
+    "With Use local conditions ticked: a structure with a wind study (Structures table › wind \
+     study Pa) is checked at its pressure in the cases below.",
+    "A wind study may give a structure another wind than the weather case for the conductors' \
+     distances to it. With Use local conditions ticked, each structure with a body whose local \
+     conditions give a wind study is checked, in every weather case of the rules with wind that \
+     is listed here (none listed: every one), a second time at the study's pressure in place of \
+     the case's — its rows in those cases are that run's, marked \"(wind study … Pa)\". A \
+     pressure below the least is taken at the least. The structures without one keep the \
+     case's wind (times their wind factor for clearances). Time: one more solve of the line per \
+     study pressure and case.",
+);
 
 /// The Internal clearances window.
 #[derive(Default)]
@@ -308,7 +379,7 @@ pub fn group_study_note(groups: &[ohl_weather::CaseGroup]) -> Option<String> {
         format!(
             "weather case group(s) {} give a wind study column: no longer read (2026-11-04) — \
              a structure's wind study is its local wind_study (Structures table › wind study \
-             Pa); Copy into the structures (Setup › 4 Wind study) takes the columns' values",
+             Pa); Copy into the structures (Setup, under 4 Model) takes the columns' values",
             named.join(", ")
         )
     })
@@ -632,6 +703,7 @@ impl InternalClearancesWindow {
         let mut open = true;
         let mut run = false;
         let mut changed = false;
+        let mut guide = None;
         let stale = self.out_of_date(model);
         help::window(
             ctx,
@@ -664,20 +736,18 @@ impl InternalClearancesWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, "internal-clearances-window", |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
-                        help::explain(
+                        // The check pages' treatment (owner, 2026-11-12):
+                        // the most used first (the rules), the rarely used
+                        // folded under Model; the grey lines between the
+                        // fields in the (?) of their section; warnings,
+                        // what blocks Run and the time stay written.
+                        guide = guide.or(check_ui::section(
                             ui,
-                            "At each structure with a body: the conductors near it, its jumpers and its strings' \
-                             live ends against its members, per weather case.",
-                            "Run solves the line in each weather case of the rules, with its \
-                             jumpers. At each structure with a body (detail level 2 or 3) the \
-                             electrified parts — the conductors out to the rule's reach, the \
-                             jumpers, the strings' live ends and electrified shapes — are measured \
-                             to every member (to its surface where its section is known, else to \
-                             its centre line: on the unsafe side, said per row) and to the strings' \
-                             grounded shapes, and compared with the rule's distance at the part's \
-                             voltage. Earth wires and structures without a body are not checked.",
-                        );
+                            1,
+                            "What it checks",
+                            Some(anchors::WHAT),
+                        ));
+                        help::explain(ui, WHAT_HELP.0, WHAT_HELP.1);
                         check_ui::how_computed(
                             ui,
                             "internal-clearances-window",
@@ -697,7 +767,22 @@ impl InternalClearancesWindow {
                             );
                         }
                         ui.separator();
-                        check_ui::section(ui, 2, "Scope", None);
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            2,
+                            "Rules",
+                            Some(anchors::RULES),
+                            Some(RULES_HELP),
+                        ));
+                        changed |= self.rules_ui(ui, model, presets, &mut out);
+                        ui.separator();
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            3,
+                            "Scope",
+                            Some(anchors::SCOPE),
+                            Some(SCOPE_HELP),
+                        ));
                         if check_ui::ScopePicker::new("internal-clearances-scope", &model.line)
                             .route_of(model)
                             .wires(&mut self.scope, true)
@@ -705,19 +790,27 @@ impl InternalClearancesWindow {
                         {
                             changed = true;
                         }
-                        ui.label(
-                            egui::RichText::new(
-                                "Each rule gives its own voltages and weather cases besides (3 Rules).",
-                            )
-                            .small()
-                            .weak(),
-                        );
                         ui.separator();
-                        check_ui::section(ui, 3, "Rules", None);
-                        changed |= self.rules_ui(ui, model, presets, &mut out);
-                        ui.separator();
-                        check_ui::section(ui, 4, "Wind study", None);
-                        changed |= self.study_ui(ui, model, &mut out);
+                        // Rarely changed: folded (check pages' guidelines);
+                        // what it says that matters stays below the fold.
+                        let model_guide =
+                            check_ui::model_section(ui, "internal-clearances-window", 4, |ui| {
+                                let g = ui
+                                    .horizontal(|ui| {
+                                        let g = help::heading(ui, "Wind study", anchors::MODEL);
+                                        help::question_both(
+                                            ui,
+                                            WIND_STUDY_HELP.0,
+                                            WIND_STUDY_HELP.1,
+                                        );
+                                        g
+                                    })
+                                    .inner;
+                                changed |= self.study_ui(ui);
+                                g
+                            });
+                        guide = guide.or(model_guide.flatten());
+                        self.study_notes_ui(ui, model, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
                                 crate::menu::error_label(ui, text.as_str());
@@ -728,6 +821,7 @@ impl InternalClearancesWindow {
                     }),
                     check_ui::Tab::Results => {
                         check_ui::results_area(ui, "internal-clearances-window", |ui| {
+                            guide = guide.or(help::heading(ui, "Results", anchors::RESULTS));
                             self.results_ui(ui, &stale, &mut run, &mut out);
                         })
                     }
@@ -756,6 +850,7 @@ impl InternalClearancesWindow {
             },
         );
         self.open = open;
+        out.guide = guide;
         if changed {
             self.save(model);
         }
@@ -766,50 +861,19 @@ impl InternalClearancesWindow {
         out
     }
 
-    /// The wind study (owner 2026-11-04: "make the wind study local"): the
-    /// least pressure and the cases taking it, kept in the rule file's
-    /// `[check]`; the weather case groups' old columns offered to copy into
-    /// the structures; whether a setting changed.
-    fn study_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) -> bool {
+    /// The wind study's settings (owner 2026-11-04: "make the wind study
+    /// local"), under *Model*: the least pressure and the cases taking
+    /// it, kept in the rule file's `[check]`; whether a setting changed.
+    fn study_ui(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
-        help::explain(
-            ui,
-            "With Use local conditions ticked: a structure with a wind study (Structures table › \
-             wind study Pa) is checked at its pressure in the cases below.",
-            "A wind study may give a structure another wind than the weather case for the \
-             conductors' distances to it. With Use local conditions ticked, each structure with \
-             a body whose local conditions give a wind study is checked, in every weather case \
-             of the rules with wind that is listed here (none listed: every one), a second time \
-             at the study's pressure in place of the case's — its rows in those cases are that \
-             run's, marked \"(wind study … Pa)\". A pressure below the least is taken at the \
-             least. The structures without one keep the case's wind (times their wind factor \
-             for clearances).",
-        );
-        let studies = model
-            .line
-            .structures
-            .iter()
-            .filter(|s| s.local.wind_study.is_some())
-            .count();
-        ui.label(
-            egui::RichText::new(format!(
-                "{studies} structure(s) give a wind study{}",
-                if self.local || studies == 0 {
-                    ""
-                } else {
-                    " — not taken: Use local conditions unticked"
-                }
-            ))
-            .small()
-            .weak(),
-        );
         ui.horizontal(|ui| {
             let mut has = self.wind_study_min.is_some();
             if ui
-                .checkbox(&mut has, "Least pressure")
+                .checkbox(&mut has, "Least pressure [Pa]")
                 .on_hover_text(
-                    "A wind study's pressure below it is taken at it (a design code's bound); \
-                     unticked: none",
+                    "A structure's wind study below it is taken at it (a design code's bound), \
+                     said in the notes: more wind, more swing, on the safe side. Unticked: \
+                     none, the study's pressure as given. No effect on the time.",
                 )
                 .changed()
             {
@@ -828,9 +892,10 @@ impl InternalClearancesWindow {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Cases").on_hover_text(
+            ui.label("Cases taking it").on_hover_text(
                 "The weather cases taking the wind study, by name (* and ? wildcards, comma \
-                 separated); empty: every case of the rules with wind",
+                 separated); empty: every case of the rules with wind. Each case listed is \
+                 solved once more per study pressure.",
             );
             let text = self
                 .study_cases_text
@@ -853,6 +918,36 @@ impl InternalClearancesWindow {
                 self.study_cases_text = None;
             }
         });
+        changed
+    }
+
+    /// What the wind study says that matters, below the *Model* fold
+    /// (always visible): how many structures give one and that it is not
+    /// taken while Use local conditions is unticked; the weather case
+    /// groups' old columns, offered once to copy into the structures.
+    fn study_notes_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
+        let studies = model
+            .line
+            .structures
+            .iter()
+            .filter(|s| s.local.wind_study.is_some())
+            .count();
+        if studies > 0 {
+            let text = format!(
+                "{studies} structure(s) give a wind study{}",
+                if self.local {
+                    ": taken (4 Model › Wind study)"
+                } else {
+                    " — not taken: Use local conditions unticked"
+                }
+            );
+            let text = egui::RichText::new(text).small();
+            ui.label(if self.local {
+                text.weak()
+            } else {
+                text.color(ui.visuals().warn_fg_color)
+            });
+        }
         // The weather case groups' columns of before (2026-10-25): offered
         // once to copy into the structures.
         let groups = crate::case_groups::groups_shared(model);
@@ -878,7 +973,6 @@ impl InternalClearancesWindow {
                 out.convert = Some(study);
             }
         }
-        changed
     }
 
     /// Takes the groups' least pressure and cases where this check gives
@@ -935,7 +1029,10 @@ impl InternalClearancesWindow {
                     .num_columns(2)
                     .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
-                        ui.label("Weather cases");
+                        ui.label("Weather cases").on_hover_text(
+                            "The cases this rule checks in (none ticked: every case); Run solves \
+                             the line once in every case any rule names: more cases, more time",
+                        );
                         crate::menu::options_menu(
                             ui,
                             &crate::rule_table::cases_words(&r.cases),
@@ -954,7 +1051,10 @@ impl InternalClearancesWindow {
                             },
                         );
                         ui.end_row();
-                        ui.label("Voltages");
+                        ui.label("Voltages").on_hover_text(
+                            "Only the parts of these nominal voltages are checked by this rule \
+                             (none ticked: every voltage; earth wires never)",
+                        );
                         changed |= crate::rule_table::voltages_menu(
                             ui,
                             voltages,
@@ -965,7 +1065,10 @@ impl InternalClearancesWindow {
                         ui.label("Insulation").on_hover_text(INSULATION_HELP);
                         changed |= insulation_ui(ui, r);
                         ui.end_row();
-                        ui.label("Parts");
+                        ui.label("Parts").on_hover_text(
+                            "The live parts this rule measures against the structure; a part \
+                             unticked is not checked by it",
+                        );
                         ui.horizontal_wrapped(|ui| {
                             changed |= ui
                                 .checkbox(&mut r.conductors, "conductors")
@@ -1000,10 +1103,16 @@ impl InternalClearancesWindow {
                                 .range(1.0..=200.0)
                                 .speed(0.5),
                         )
-                        .on_hover_text("How far along each span from its clamp, in plan");
+                        .on_hover_text(
+                            "How far along each span from its clamp the conductor is measured, in \
+                             plan (default 20 m); shorter: the conductor farther out is not checked",
+                        );
                         changed |= resp.drag_stopped() || resp.lost_focus();
                         ui.end_row();
-                        ui.label("Distance");
+                        ui.label("Distance").on_hover_text(
+                            "The distance each part must keep from the members and the grounded \
+                             fittings, read at the part's voltage: a part nearer is too near",
+                        );
                         changed |= crate::requirement_ui::requirement_ui(
                             ui,
                             ("internal-distance", k),
@@ -1013,7 +1122,10 @@ impl InternalClearancesWindow {
                         ui.end_row();
                         // A distance of its own in the cases with wind
                         // (owner, 2026-10-19); none: the same.
-                        ui.label("With wind");
+                        ui.label("With wind").on_hover_text(
+                            "In the weather cases with wind (a pressure above 0): a distance of \
+                             its own, when ticked",
+                        );
                         ui.vertical(|ui| {
                             let mut own = r.distance_wind.is_some();
                             if ui
@@ -1140,8 +1252,14 @@ impl InternalClearancesWindow {
         {
             out.go = Some(Selection::Structure(r.structure.clone()));
         }
+        // Every note visible; those not on the safe side as warnings.
         for n in &report.report.notes {
-            ui.label(egui::RichText::new(n).small().weak());
+            let text = egui::RichText::new(n).small();
+            ui.label(if n.contains("NOT ") || n.contains("unsafe side") {
+                text.color(ui.visuals().warn_fg_color)
+            } else {
+                text.weak()
+            });
         }
         if !report.report.not_checked.is_empty() {
             egui::CollapsingHeader::new(format!(
@@ -1449,7 +1567,7 @@ mod tests {
 #[cfg(test)]
 mod app_tests {
     use eframe::egui;
-    use egui_kittest::Harness;
+    use egui_kittest::{Harness, kittest::Queryable};
 
     use super::*;
 
@@ -1496,6 +1614,70 @@ mod app_tests {
         h.run();
         let r = h.state_mut().ready().unwrap();
         assert!(r.view3d.marks.is_empty());
+    }
+
+    /// Every section the window's **user guide ↗** buttons open is a
+    /// heading of its own page (mdBook's anchors: lower case, spaces as
+    /// `-`, punctuation dropped; 2026-11-12).
+    #[test]
+    fn each_guide_button_opens_a_heading_of_the_page() {
+        let text = std::fs::read_to_string(
+            crate::tests::root().join("docs/user-guide/internal-clearances.md"),
+        )
+        .unwrap();
+        let headings: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for a in [
+            anchors::WHAT,
+            anchors::RULES,
+            anchors::SCOPE,
+            anchors::MODEL,
+            anchors::RESULTS,
+        ] {
+            let (page, s) = guide(a);
+            assert_eq!(page, "user-guide/internal-clearances");
+            assert!(headings.iter().any(|x| x == s), "{s} not in {headings:?}");
+        }
+    }
+
+    /// The window's first **user guide ↗** (1 What it checks) opens its
+    /// own page, not the OHL-Design page's section.
+    #[test]
+    fn the_user_guide_button_opens_the_window_page() {
+        let model = crate::tests::typed_project("internal-guide");
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.internal_clearances.show(&r.model);
+        }
+        h.run();
+        h.query_all_by_label("user guide ↗")
+            .next()
+            .expect("a user guide button")
+            .click();
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        let (said, error) = r.status.clone().expect("what was opened");
+        assert!(!error, "{said}");
+        assert!(said.contains("internal-clearances"), "{said}");
+        assert!(said.contains(anchors::WHAT), "{said}");
     }
 
     /// Runs the window's check on `h`'s model; its report.

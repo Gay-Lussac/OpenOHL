@@ -59,7 +59,17 @@ answers, the check in six steps with a new drawing
 (default, effect, time), every field of an internal rule and of the
 `[check]` keys it reads, what is and is not conservative, what a
 structure below detail 2 gets, `ohl internal`. The OHL-Design page keeps
-a summary and links to it; the theory page links back.
+a summary and links to it; the theory page links back. The window: its
+sections reordered for a human — 1 What it checks, 2 Rules, 3 Scope, 4
+Model (folded: the wind study's least pressure and cases); each
+section's grey line moved into its (?); a **user guide ↗** per section
+and on the Results (none before) opening the page. Always visible: the
+structures without a body, what blocks Run and the time in the footer,
+the wind study not taken while Use local conditions is unticked and the
+weather case groups' old columns with *Copy into the structures* (below
+the fold), and every note of the results — those *NOT ON THE SAFE SIDE*
+or *NOT CHECKED* now in the warning colour. Each field of a rule says
+its effect on hover; units in the labels. No capability removed.
 
 **Radial clearances: the same treatment as the vertical** (owner: "once
 the vertical clearances are done please apply the exact same treatment to
