@@ -112,14 +112,22 @@ const SHOTS: &[Shot] = &[
     Shot {
         name: "distance-between-conductors",
         title: "Distance between conductors",
-        open: |r| r.phase_distance.show(&r.model),
-        done: None,
+        open: |r| {
+            r.phase_distance.show(&r.model);
+            if r.phase_distance.cases.is_empty() {
+                r.phase_distance.cases.insert(0);
+            }
+        },
+        done: Some(|r| r.phase_distance.job.result.is_some()),
     },
     Shot {
         name: "unequal-wind",
         title: "Distance between conductors under unequal wind",
-        open: |r| r.unequal_wind.show(&r.model),
-        done: None,
+        open: |r| {
+            r.unequal_wind.show(&r.model);
+            r.unequal_wind.wind_step = 200.0;
+        },
+        done: Some(|r| r.unequal_wind.job.result.is_some()),
     },
     Shot {
         name: "vegetation",
@@ -228,6 +236,28 @@ fn set_page(r: &mut crate::app::Ready, name: &str, page: crate::field_common::Fi
     }
 }
 
+/// The public test plugin of the two distance checks
+/// (`plugins/tests/check-distance`: an invented fixed distance, not a
+/// design code) in use, when it is built: whether it is.
+pub(super) fn check_distance_plugin(h: &mut Harness<'_, App>) -> bool {
+    let dir = root().join("plugins/tests/check-distance");
+    let built = ohl_plugins::Manifest::load(&dir).is_ok_and(|m| m.entry_path().is_file());
+    assert!(
+        built || ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+        "plugins/tests/check-distance is not built"
+    );
+    if !built {
+        eprintln!("skipping: plugins/tests/check-distance not built");
+        return false;
+    }
+    let app = h.state_mut();
+    app.plugins = crate::plugins::Plugins::load(None, None);
+    app.plugins.folders = vec![dir];
+    app.plugins.refresh();
+    h.run();
+    true
+}
+
 /// The window in front, saved as `dir`/`name`.png.
 fn save(harness: &mut Harness<'_, App>, dir: &Path, name: &str) {
     let image = harness.render().unwrap();
@@ -294,6 +324,14 @@ fn check_windows_rendered_for_review() {
                 App::with_model(model, cc.wgpu_render_state.clone())
             });
         harness.run();
+        // The two distance windows: the public test plugin's checks
+        // (`plugins/tests/check-distance`, an invented distance).
+        if matches!(shot.name, "distance-between-conductors" | "unequal-wind") {
+            assert!(
+                check_distance_plugin(&mut harness),
+                "build plugins/tests/check-distance first"
+            );
+        }
         (shot.open)(harness.state_mut().ready().unwrap());
         harness.run();
         harness.run_steps(4);

@@ -230,7 +230,12 @@ None of these costs time.
 
 ### 4 Model
 
-Folded: the defaults are sound.
+Folded: the defaults are sound. Each setting says its effect on hover and
+in its (?); **user guide ↗** opens this section. Below them the window
+always says *NOT ON THE SAFE SIDE (a simplification)*: nothing is measured
+between two stations (under unequal wind: two wind steps); and, while
+*Nearby spans* is off, *NOT CHECKED: pairs not between the same two
+structures*.
 
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|

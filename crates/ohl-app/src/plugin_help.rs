@@ -43,6 +43,18 @@ pub fn label(plugin: &str, topic: HelpTopic<'_>) -> String {
 /// otherwise); a click opens it, an error is shown beside it. True when
 /// drawn.
 pub fn button(ui: &mut egui::Ui, dir: &Path, plugin: &str, topic: HelpTopic<'_>) -> bool {
+    button_labelled(ui, dir, plugin, topic, &label(plugin, topic))
+}
+
+/// [`button`] titled `text` (the distance windows, 2026-11-12: *the
+/// plugin's rule (its name) ↗* beside OpenOHL's *how it is measured ↗*).
+pub fn button_labelled(
+    ui: &mut egui::Ui,
+    dir: &Path,
+    plugin: &str,
+    topic: HelpTopic<'_>,
+    text: &str,
+) -> bool {
     if ohl_plugins::help::page_file(dir, topic).is_none() {
         return false;
     }
@@ -56,7 +68,7 @@ pub fn button(ui: &mut egui::Ui, dir: &Path, plugin: &str, topic: HelpTopic<'_>)
         HelpTopic::ClassScheme(n) => format!("its class scheme {n}"),
     };
     if ui
-        .small_button(label(plugin, topic))
+        .small_button(text)
         .on_hover_text(format!(
             "The plugin {plugin}'s own page on {what} (shipped with the plugin, opened in the \
              browser)"

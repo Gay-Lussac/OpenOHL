@@ -206,6 +206,83 @@ pub(super) fn lev_plugin(h: &mut Harness<'_, App>) -> bool {
     true
 }
 
+/// The two distance windows with the public test plugin
+/// (`plugins/tests/check-distance`, an invented z of 3 m; built first,
+/// else skipped): opened from its submenu; OpenOHL's *how it is
+/// measured ↗* beside *the plugin's rule (check-distance) ↗*, each
+/// labelled as whose it is; a run gives its pairs, each against the
+/// plugin's 3 m.
+#[test]
+fn the_distance_windows_run_with_the_test_plugin() {
+    for (entry, unequal) in [
+        ("Distance between conductors (test)…", false),
+        (
+            "Distance between conductors under unequal wind (test)…",
+            true,
+        ),
+    ] {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(1600.0, 900.0))
+            .build_eframe(|_| App::with_model(synthetic(), None));
+        harness.run();
+        if !super::check_shots::check_distance_plugin(&mut harness) {
+            return;
+        }
+        harness.get_by_label("Checks").click();
+        harness.run();
+        harness.get_by_label_contains("Test distances").hover();
+        harness.run();
+        harness.get_by_label(entry).click();
+        harness.run();
+        assert!(harness.query_by_label("how it is measured ↗").is_some());
+        // In 1 What it checks and in 3 Rules.
+        assert_eq!(
+            harness
+                .query_all_by_label_contains("the plugin's rule (check-distance ")
+                .count(),
+            2
+        );
+        {
+            let r = harness.state_mut().ready().unwrap();
+            let w = if unequal {
+                &mut r.unequal_wind
+            } else {
+                &mut r.phase_distance
+            };
+            assert!(w.open, "{entry}: its window");
+            assert!(w.check().is_ok(), "{:?}", w.check().err());
+            if w.cases.is_empty() {
+                w.cases.insert(0);
+            }
+            w.wind_step = 300.0;
+        }
+        harness.run();
+        harness.get_by_label("Run").click();
+        let started = std::time::Instant::now();
+        loop {
+            harness.step();
+            let r = harness.state_mut().ready().unwrap();
+            let w = if unequal {
+                &r.unequal_wind
+            } else {
+                &r.phase_distance
+            };
+            if let (Some(rep), false) = w.report() {
+                let rep = rep.as_ref().unwrap();
+                assert!(rep.pairs > 0 && !rep.rows.is_empty(), "{entry}: pairs");
+                for x in &rep.rows {
+                    assert!((x.required - 3.0).abs() < 1e-9, "{}", x.required);
+                    assert_eq!(x.rule, "invented fixed distance");
+                    assert_eq!(x.pressure.is_some(), unequal);
+                }
+                break;
+            }
+            assert!(started.elapsed().as_secs() < 120, "no report in 120 s");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
 /// Checks › LeV/OLEI › Distance between conductors under unequal wind:
 /// its own page, one weather case with wind (the windiest), run in the
 /// background with a coarse step; each pair's two winds 60 … 100 % apart;

@@ -1,0 +1,13 @@
+[plugin]
+name = "check-distance"
+version = "0.1.0"
+description = "Test plugin: the distance between conductors in the span and under unequal wind by an invented fixed distance (not a design code)"
+sdk = "0.3"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/check_distance.wasm"
+extension-points = ["check"]
+
+# Its page on its checks (the windows' "the plugin's rule" buttons).
+[help.check]
+phase-distance = "docs/rule.md"
+unequal-wind = "docs/rule.md"

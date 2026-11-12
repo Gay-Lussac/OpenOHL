@@ -114,7 +114,78 @@ impl Kind {
             Kind::UnequalWind => "unequal-wind-page",
         }
     }
+
+    /// The sections of [`GUIDE`] its OpenOHL buttons open: how it is
+    /// measured (*1 What it checks*), *2 Scope*, *3 Rules*, *4 Model*,
+    /// the results.
+    pub fn guide_sections(self) -> [&'static str; 5] {
+        [
+            match self {
+                Kind::Span => "in-the-span-how-it-is-measured-step-by-step",
+                Kind::UnequalWind => "under-unequal-wind-how-it-is-measured",
+            },
+            "2-scope",
+            "3-rules",
+            "4-model",
+            "the-results",
+        ]
+    }
+
+    /// *What it checks*: its short line and its (?) (check pages'
+    /// guidelines §6: the grey lines in the help).
+    fn what_help(self) -> (&'static str, &'static str) {
+        match self {
+            Kind::Span => (
+                "The distance between the conductors of every span against the distance z the \
+                 check plugin requires there.",
+                "OpenOHL measures: the pairs of conductors of each span, stations along them, the \
+                 distance d between their axes, the angle β, each one's local sag and string \
+                 length l_k, the sag between phase spacers. The check plugin gives the distance \
+                 z required at each station, from its rule and its values (3 Rules: the values \
+                 used, the project's copy, else the plugin's). Per pair the worst station and the \
+                 length of conductor below z. How it is measured ↗ opens OpenOHL's page, the \
+                 plugin's rule ↗ the plugin's own (when it ships one).",
+            ),
+            Kind::UnequalWind => (
+                "The closest approach of two conductors blown by unequal wind against the \
+                 distance z the check plugin requires.",
+                "One conductor at a wind p, the other from a share of p up to p (4 Model), p in \
+                 steps from none to the weather case's wind, from each side: the exact closest \
+                 approach between their axes, against the plugin's distance z (its values: 3 \
+                 Rules). How it is measured ↗ opens OpenOHL's page, the plugin's rule ↗ the \
+                 plugin's own (when it ships one).",
+            ),
+        }
+    }
 }
+
+/// The two windows' own page of the user guide (owner, 2026-11-12:
+/// "update the tests phase distance and differential wind as for the
+/// other tests").
+pub const GUIDE: &str = "user-guide/distance-between-conductors";
+
+/// *2 Scope*: what were its grey lines, in its (?).
+const SCOPE_HELP: (&str, &str) = (
+    "The weather cases, how the wires are solved, the circuits and routes checked.",
+    "Weather cases: each one ticked is checked on its own, both conductors of a pair from the \
+     same case (under unequal wind one case: its wind is the largest of the steps, its \
+     temperature and ice kept). Wires by: how every wire is solved (each section's own \
+     calculation, or e.g. the final sag). Circuits: a pair is checked when both its \
+     conductors' circuits are ticked (none: Run greyed). Routes and alignments: only the pairs \
+     on them (none ticked: the whole line). Fewer cases, circuits or routes: a faster run.",
+);
+
+/// *3 Rules*: what were its grey lines, in its (?).
+const RULES_HELP: (&str, &str) = (
+    "The check plugin's part: its values, its choices, a value per circuit where it needs one.",
+    "OpenOHL has no rule of its own for this check: the distance z comes from the check \
+     plugin's rule and its values file. The values used are shown as tables, locked: the \
+     project's copy (edited by an admin of the project, used by every run on it), else the \
+     plugin's; Choose a values file… uses another one for this session. The plugin's choices \
+     (e.g. a diagram) and, when it needs one, a value per circuit (e.g. an insulation level, \
+     the same as the Electrical circuits table's column) are set here. The plugin's rule ↗ \
+     opens the plugin's own page on its rule.",
+);
 
 /// A saved report keeps the pairs below z and those within this of it,
 /// m (all of them are counted).
@@ -429,6 +500,8 @@ pub struct Out {
     pub wind: Option<String>,
     /// The wires to draw, replacing the last (empty: none).
     pub wires: Option<Vec<MeasureWire>>,
+    /// A section of its user guide page to open ([`Kind::guide_sections`]).
+    pub guide: Option<&'static str>,
 }
 
 /// The Distance between conductors window (and the one under unequal
@@ -1584,6 +1657,7 @@ impl PhaseDistanceWindow {
             }
             check_ui::Tab::Results => {
                 check_ui::results_area(ui, page, |ui| {
+                    out.guide = help::heading(ui, "Results", self.kind.guide_sections()[4]);
                     // The saved report shown, the questions, saving the
                     // run (Save in Performed checks).
                     self.library_ui(ui, model, &mut out);
@@ -1748,37 +1822,75 @@ impl PhaseDistanceWindow {
         self.kept = kept;
     }
 
-    /// The Setup tab.
-    /// The check plugin's own page on this check (2026-11-12): its *user
-    /// guide ↗*, when the plugin declares one ([`crate::plugin_help`]).
+    /// The check plugin's own page on this check (2026-11-12): *the
+    /// plugin's rule (its name) ↗*, when the plugin declares one
+    /// ([`crate::plugin_help`]), beside OpenOHL's *how it is measured ↗*.
     fn plugin_guide(&self, ui: &mut egui::Ui) {
         if let Ok(c) = self.check() {
             let topic = ohl_plugins::HelpTopic::Check(&c.info.id);
-            if ohl_plugins::help::page_file(&c.dir, topic).is_some() {
-                ui.horizontal(|ui| crate::plugin_help::button(ui, &c.dir, &c.plugin, topic));
-            }
+            crate::plugin_help::button_labelled(
+                ui,
+                &c.dir,
+                &c.plugin,
+                topic,
+                &format!("the plugin's rule ({}) ↗", c.plugin),
+            );
         }
     }
 
+    /// A numbered part of the setup: its number and title, its **(?)**
+    /// (`help`: the grey lines it had), OpenOHL's user guide button
+    /// (`ours`: its label, the page's section) and, with `plugin`, the
+    /// plugin's page beside it — each labelled as whose it is. The section
+    /// to open when OpenOHL's is clicked.
+    fn section(
+        &self,
+        ui: &mut egui::Ui,
+        number: usize,
+        title: &str,
+        help: Option<(&str, &str)>,
+        ours: (&str, &'static str),
+        plugin: bool,
+    ) -> Option<&'static str> {
+        ui.add_space(4.0);
+        let mut out = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.label(egui::RichText::new(format!("{number}")).weak().strong());
+            ui.strong(title);
+            if let Some((short, long)) = help {
+                help::question_both(ui, short, long);
+            }
+            if ui
+                .small_button(ours.0)
+                .on_hover_text(
+                    "OpenOHL's user guide: what OpenOHL measures and how, every setting \
+                     (Help › User guide › Distance between conductors)",
+                )
+                .clicked()
+            {
+                out = Some(ours.1);
+            }
+            if plugin {
+                self.plugin_guide(ui);
+            }
+        });
+        out
+    }
+
+    /// The Setup tab.
     fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let mut out = Out::default();
-        check_ui::section(ui, 1, "What it checks", None);
-        self.plugin_guide(ui);
-        help::explain(
+        let anchors = self.kind.guide_sections();
+        let mut guide = self.section(
             ui,
-            match self.kind {
-                Kind::Span => {
-                    "The distance between the conductors of every span against the distance z \
-                     the design-code plugin's values give (the k diagram, the sag, the swing)."
-                }
-                Kind::UnequalWind => {
-                    "The closest approach of two conductors blown by unequal wind (one at the \
-                     case's wind, the other at a share of it) against the plugin's distance z."
-                }
-            },
-            "The values come from the check plugin's values file (the project's copy, else the \
-             plugin's); How it is computed shows them.",
+            1,
+            "What it checks",
+            None,
+            ("how it is measured ↗", anchors[0]),
+            true,
         );
+        let (short, long) = self.kind.what_help();
+        help::explain(ui, short, long);
         // How it computes and with which values: folded under 1.
         egui::CollapsingHeader::new("How it is computed")
             .id_salt((self.kind.page(), "how-computed"))
@@ -1787,11 +1899,24 @@ impl PhaseDistanceWindow {
                 explanation(ui, plugin.as_deref(), self.kind);
             });
         ui.separator();
-        check_ui::section(ui, 2, "Scope", None);
+        guide = guide.or(self.section(
+            ui,
+            2,
+            "Scope",
+            Some(SCOPE_HELP),
+            ("user guide ↗", anchors[1]),
+            false,
+        ));
         self.scope_ui(ui, model);
         ui.separator();
-        check_ui::section(ui, 3, "Rules", None);
-        self.plugin_guide(ui);
+        guide = guide.or(self.section(
+            ui,
+            3,
+            "Rules",
+            Some(RULES_HELP),
+            ("user guide ↗", anchors[2]),
+            true,
+        ));
         // The values file, the insulation levels of the circuits, then the
         // plugin's values (the distances z).
         self.values_file_ui(ui);
@@ -1799,7 +1924,12 @@ impl PhaseDistanceWindow {
         self.values_ui(ui, model);
         ui.separator();
         // The modelling settings, folded (check pages' guidelines).
-        check_ui::model_section(ui, self.kind.page(), 4, |ui| self.model_ui(ui));
+        if let Some(Some(a)) =
+            check_ui::model_section(ui, self.kind.page(), 4, |ui| self.model_ui(ui, anchors[3]))
+        {
+            guide = guide.or(Some(a));
+        }
+        out.guide = guide;
         out
     }
 
@@ -2124,11 +2254,6 @@ impl PhaseDistanceWindow {
                 let n = self.cases.iter().filter(|&&k| k < names.len()).count();
                 let title = format!("Weather cases: {n} of {}", names.len());
                 crate::menu::options_menu(ui, &title, |ui| {
-                    ui.label(
-                        egui::RichText::new("each checked on its own (LeV: f at 10 °C, still air)")
-                            .small()
-                            .weak(),
-                    );
                     let mut ticked: Vec<usize> = self.cases.iter().copied().collect();
                     let groups = crate::case_groups::groups(model);
                     if crate::case_groups::pick_indices(ui, model, &groups, &mut ticked) {
@@ -2153,13 +2278,25 @@ impl PhaseDistanceWindow {
                         },
                     );
                 });
+                help::question(
+                    ui,
+                    "Each case ticked is checked on its own: both conductors of a pair from the \
+                     same case, one row per pair and case. More cases: more rows, one solve and \
+                     one measuring of the line each. None chosen yet: the still-air cases at \
+                     10 °C.",
+                );
             });
         }
         // The circuits and routes (owner, 2026-10-28: the scope of every
         // check window, the shared picker).
         // How the wires are solved (owner, 2026-11-01).
         ui.horizontal(|ui| {
-            ui.label("Wires by");
+            ui.label("Wires by").on_hover_text(
+                "How every wire is solved for this check: each section's own calculation, or \
+                 one condition and method for all (e.g. the final sag after creep): the sags \
+                 and swings measured change with it. Finite elements take longer than the \
+                 ruling span.",
+            );
             crate::rule_table::calculation_combo(
                 ui,
                 "phase-distance-calculation",
@@ -2232,32 +2369,66 @@ impl PhaseDistanceWindow {
 
     /// *4 Model*: how the wires are solved and measured — the wind steps
     /// and the other conductor's share (under unequal wind), the stations
-    /// along a span, the nearby spans; a labelled row each, what it
-    /// changes under it.
-    fn model_ui(&mut self, ui: &mut egui::Ui) {
+    /// along a span, the nearby spans; a labelled row each (its unit in
+    /// the label), what it changes in its hover and its (?) (the grey
+    /// lines it had, 2026-11-12). The section of the user guide to open
+    /// when its *user guide ↗* (`anchor`) is clicked.
+    fn model_ui(&mut self, ui: &mut egui::Ui, anchor: &'static str) -> Option<&'static str> {
+        let mut out = None;
+        if ui
+            .small_button("user guide ↗")
+            .on_hover_text("OpenOHL's user guide: the Model settings, their defaults and time")
+            .clicked()
+        {
+            out = Some(anchor);
+        }
+        let row = |ui: &mut egui::Ui, label: &str, hover: &str, long: &str| {
+            ui.horizontal(|ui| {
+                ui.label(label).on_hover_text(hover);
+                help::question(ui, long);
+            });
+        };
         egui::Grid::new((self.kind.page(), "model"))
             .num_columns(2)
             .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 if self.kind == Kind::UnequalWind {
-                    ui.label("Wind step");
+                    row(
+                        ui,
+                        "Wind step [Pa]",
+                        "The wind on one conductor from none to the case's, in these steps",
+                        "The line is solved at each step from no wind to the weather case's \
+                         (always included), and at the share of each step. Smaller: more levels, \
+                         a closest approach between two steps less likely missed, a longer run — \
+                         each level is a solve of the line, and the combinations measured grow \
+                         with the square of the levels. Between two steps nothing is measured: \
+                         not on the safe side.",
+                    );
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut self.wind_step)
                             .range(1.0..=1000.0)
-                            .speed(1.0)
-                            .suffix(" Pa"),
-                    );
+                            .speed(1.0),
+                    )
+                    .on_hover_text("50 Pa by default");
                     ui.end_row();
-                    ui.label("Other conductor's wind from");
+                    row(
+                        ui,
+                        "Other conductor's wind from [%]",
+                        "The other conductor at this share of the first's wind, up to the same",
+                        "One conductor at a wind p, the other at every level from this share of \
+                         p up to p, both ways round. Lower: more unequal swings, closer \
+                         approaches found, a little longer run. 60 % by default; a design code \
+                         may set it (its plugin's page says).",
+                    );
                     let mut share = self.low_share * 100.0;
                     if ui
                         .add(
                             egui::DragValue::new(&mut share)
                                 .range(0.0..=100.0)
-                                .speed(1.0)
-                                .suffix(" %"),
+                                .speed(1.0),
                         )
+                        .on_hover_text("60 % by default")
                         .changed()
                     {
                         self.low_share = share / 100.0;
@@ -2266,58 +2437,70 @@ impl PhaseDistanceWindow {
                 } else {
                     // Under unequal wind the closest approach is exact: no
                     // stations.
-                    ui.label("Stations every");
+                    row(
+                        ui,
+                        "Stations every [m]",
+                        "Where along each conductor the distance is measured",
+                        "The distance to the other conductor is measured at stations this far \
+                         apart along each conductor (the other's closest point searched \
+                         continuously). Smaller: the closest point found more exactly, more \
+                         measurements — half the spacing, about twice the time. Between two \
+                         stations nothing is measured: not on the safe side. 0.1 m by default.",
+                    );
                     crate::style::field(
                         ui,
                         egui::DragValue::new(&mut self.settings.spacing)
                             .range(0.1..=50.0)
-                            .speed(0.1)
-                            .suffix(" m"),
-                    );
+                            .speed(0.1),
+                    )
+                    .on_hover_text("0.1 m by default");
                     ui.end_row();
                 }
-                ui.label("Nearby spans");
+                row(
+                    ui,
+                    "Nearby spans, within [m]",
+                    "Also conductors not between the same two structures",
+                    "Ticked: also pairs of conductors not between the same two structures \
+                     (another line's span, the next span), measured where closer than this \
+                     distance (20 m by default). Keep it above the largest z of the values used. \
+                     Unticked, those pairs are not checked. More pairs: a longer run.",
+                );
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.settings.nearby, "too");
+                    ui.checkbox(&mut self.settings.nearby, "")
+                        .on_hover_text("Off by default: only the pairs of the same span");
                     ui.add_enabled(
                         self.settings.nearby,
                         egui::DragValue::new(&mut self.settings.max_distance)
                             .range(1.0..=200.0)
-                            .speed(0.5)
-                            .prefix("within ")
-                            .suffix(" m"),
+                            .speed(0.5),
                     );
                 });
                 ui.end_row();
             });
-        if self.kind == Kind::UnequalWind {
-            help::explain(
-                ui,
-                "Wind step: the wind on one conductor from none to the case's in these steps.",
-                "The case's wind is always included; the line is solved at each step, and at the \
-                 share of each. Smaller: more solves, a longer run.",
-            );
-            help::explain(
-                ui,
-                "Other conductor's wind: from this share of the first's up to it.",
-                "LeV: up to 40 % less, 60 %. A lower share makes the two conductors swing more \
-                 unequally: closer approaches.",
-            );
-        } else {
-            help::explain(
-                ui,
-                "Stations: where along each span the distance is measured.",
-                "The distance between two conductors is measured at stations this far apart \
-                 along the span; smaller finds the closest point more exactly, at more \
-                 measurements.",
+        // Always visible (check pages' guidelines §6).
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(match self.kind {
+                Kind::Span => {
+                    "NOT ON THE SAFE SIDE (a simplification): nothing is measured between two \
+                     stations; the smaller the spacing, the smaller what may be missed."
+                }
+                Kind::UnequalWind => {
+                    "NOT ON THE SAFE SIDE (a simplification): nothing is measured between two \
+                     wind steps; the smaller the step, the smaller what may be missed."
+                }
+            })
+            .small(),
+        );
+        if !self.settings.nearby {
+            ui.label(
+                egui::RichText::new(
+                    "NOT CHECKED: pairs not between the same two structures (Nearby spans off).",
+                )
+                .small(),
             );
         }
-        help::explain(
-            ui,
-            "Nearby spans: also conductors not between the same two structures.",
-            "Another line, the next span: measured where closer than this distance. Keep it \
-             above the largest z (about 12 m at 380 kV).",
-        );
+        out
     }
 
     /// The circuits ticked with their voltage and the plugin's circuit
@@ -2337,15 +2520,23 @@ impl PhaseDistanceWindow {
             .id_salt("phase-distance-levels")
             .default_open(true)
             .show(ui, |ui| {
+                // Its grey line in a (?) (2026-11-12).
                 if let Some(c) = &column {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} The same as the Electrical circuits table's column ({}).",
-                            c.help, c.plugin
-                        ))
-                        .small()
-                        .weak(),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{title}: set per circuit, all its sections"
+                            ))
+                            .small(),
+                        );
+                        help::question(
+                            ui,
+                            &format!(
+                                "{} The same as the Electrical circuits table's column ({}).",
+                                c.help, c.plugin
+                            ),
+                        );
+                    });
                 }
                 let options: Vec<String> =
                     column.as_ref().map_or_else(Vec::new, |c| c.values.clone());
@@ -2538,6 +2729,8 @@ impl PhaseDistanceWindow {
             Some(Ok(r)) => r,
         };
         let (below, length) = report.below();
+        // Never "-0 m of conductor".
+        let length = if length > 0.0 { length } else { 0.0 };
         let kept = report.rows.len() < report.pairs;
         let unequal = self.kind == Kind::UnequalWind;
         let worst = report
@@ -2753,8 +2946,8 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
                      the share of p to p, both ways, on each side: the shortest distance \
                      between their axes (a bundle by its subconductors), exact — segment \
                      against segment, not at stations. Kept: the closest, with the winds and \
-                     the side. Required: C₃ within one system and towards earth wires, C₄ \
-                     between systems (the plugin's values; no sag or string term).",
+                     the side. Required: the plugin's distance (asked with no sag and no \
+                     string).",
             );
             return;
         }
@@ -2775,8 +2968,9 @@ fn explanation(ui: &mut egui::Ui, rules: Option<&str>, kind: Kind) {
             "f: the local sag there, below the chord between the clamps (0 at the \
                  clamps). l_k: the suspension string's length at each end (one string: its \
                  length; two strings to one wire point, tension or clamped: 0; a string \
-                 below two: that string; two tension strings from a string: that string), \
-                 linear between the ends. Conductors joined by \
+                 below two: that string; two tension strings from a string: that string; \
+                 a section's first or last point: always 0), linear between the ends. \
+                 Conductors joined by \
                  interphase spacers in the span: each one's largest sag between its spacer \
                  clamps (and the span's clamps).",
         );
@@ -2926,5 +3120,43 @@ mod kept_file_tests {
         assert_eq!(kept.text(&a).as_deref(), Ok("three"));
         assert_eq!(read(), before + 5);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod guide_tests {
+    use super::{GUIDE, Kind};
+
+    /// Every section the windows' OpenOHL **user guide ↗** buttons open
+    /// (both kinds) is a heading of their own page (mdBook's anchors:
+    /// lower case, spaces as `-`, punctuation dropped), the page in the
+    /// book's summary.
+    #[test]
+    fn the_user_guide_buttons_open_the_pages_sections() {
+        let root = crate::tests::root();
+        let text = std::fs::read_to_string(root.join("docs").join(format!("{GUIDE}.md"))).unwrap();
+        let anchors: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for kind in [Kind::Span, Kind::UnequalWind] {
+            for s in kind.guide_sections() {
+                assert!(anchors.iter().any(|x| x == s), "{s}: {anchors:?}");
+            }
+        }
+        let summary = std::fs::read_to_string(root.join("docs/SUMMARY.md")).unwrap();
+        assert!(summary.contains(&format!("({GUIDE}.md)")), "{summary}");
     }
 }

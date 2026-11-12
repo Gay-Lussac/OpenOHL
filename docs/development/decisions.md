@@ -26,7 +26,13 @@ and links to it; the core's note links to it. Part 2: the two windows as
 the other check windows (check pages' guidelines §6): the grey lines in
 the (?) help, the warnings, *NOT ON THE SAFE SIDE* notes, Run blockers and
 times kept visible, the user guide buttons — **how it is measured ↗**
-(this page) beside **the plugin's rule ↗** (the plugin's page).
+(this page) beside **the plugin's rule ↗** (the plugin's page); the units
+in the Model's labels, each setting's effect on hover; Model says what is
+not on the safe side (between stations, between wind steps) and what is
+not checked (nearby spans off). A public test plugin,
+`plugins/tests/check-distance` (an invented fixed distance, not a design
+code), runs both checks in the tests and the review screenshots, so
+neither is skipped without the private plugin.
 
 **Distance between conductors: l_k 0 at every section end** (owner: "for
 tension strings the l_k should be 0", seen wrong on a real line whose

@@ -311,6 +311,15 @@ impl Ready {
         out: crate::phase_distance::Out,
         kind: crate::phase_distance::Kind,
     ) {
+        if let Some(section) = out.guide {
+            // Their own page (2026-11-12).
+            self.status = Some(
+                match crate::help::open_section(crate::phase_distance::GUIDE, section) {
+                    Ok(m) => (format!("user guide opened: {m}"), false),
+                    Err(e) => (e, true),
+                },
+            );
+        }
         if let Some((what, command)) = out.apply {
             self.perform(crate::edit::Action::Command { what, command });
         }
