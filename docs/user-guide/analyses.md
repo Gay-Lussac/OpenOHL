@@ -203,7 +203,7 @@ run in the windy case (`ohl line --rules`, the Clearances window).
 
 ## Phase to phase and circuit to circuit
 
-Rule files' `same_line` rules take `circuits = "same"` (phase to phase) or
+In OHL-Design: [Wire clearances](wire-clearances.md). Rule files' `same_line` rules take `circuits = "same"` (phase to phase) or
 `"different"` (circuit to circuit, phase to earth wire), with `case_pairs`
 for one wire in one weather case and the other in another — e.g. one circuit
 at maximum sag and the other with its ice dropped:

@@ -395,8 +395,8 @@ are those of every angle checked in full.
 
 ## Wire to wire on the swing arc
 
-The Clearances window (wire clearances) checks the line's own wires
-against each other on the swing arc too (owner, 2026-10-28;
+The Clearances window ([wire clearances](../user-guide/wire-clearances.md))
+checks the line's own wires against each other on the swing arc too (owner, 2026-10-28;
 `ohl_clearance::wire_arc`). Two wires do not swing independently: one
 wind blows on both. So the spans are swung **together**: for a windy case
 of pressure \\( P \\) and a side, the pressure \\( p = f P \\),

@@ -36,6 +36,7 @@
   - [Vertical clearances](user-guide/vertical-clearances.md)
   - [Radial clearances](user-guide/radial-clearances.md)
   - [Internal clearances](user-guide/internal-clearances.md)
+  - [Wire clearances](user-guide/wire-clearances.md)
 - [Thermal rating (.ohlta)](user-guide/thermal.md)
 - [Bill of materials and cost estimate (.ohlcost)](user-guide/bom-and-cost.md)
 - [Optimum structure spotting](user-guide/spotting.md)

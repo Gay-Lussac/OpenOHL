@@ -64,6 +64,17 @@ the results' notes (`vegetation::BLOWOUTS_ONLY`; the default stays the
 arc off, the owner's to change; the command line does not say it yet).
 The results table leaves room for the questionable trees' list (it
 covered *Worst points*).
+**Wire clearances: the same treatment** (owner: "also do the same on the
+wire clearance after"). Part 1: [Wire clearances](../user-guide/wire-clearances.md)
+— what the check answers, the check in seven steps with the existing
+drawings and one new (`check-windows/9-wire-check-step-by-step.svg`), the
+Checks › Wire clearances menu and the Clearances window setting by setting
+(default, effect, time), every field of a rule and of the rule file's
+`[wind]` and `[check]` (those of other windows named as unused), what is
+and is not conservative (the ground and points only at the positions
+solved, case pairs not swung, jumpers at a band margin of 0 m), the
+command line. The OHL-Design page keeps a summary and links to it; the
+theory links back.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to
