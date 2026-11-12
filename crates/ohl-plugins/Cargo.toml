@@ -12,6 +12,8 @@ authors.workspace = true
 ohl-core.workspace = true
 serde.workspace = true
 toml.workspace = true
+# Renders a plugin's Markdown help pages to HTML (help.rs).
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 wasmtime = { version = "49", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "49", default-features = false, features = ["p2"] }
 

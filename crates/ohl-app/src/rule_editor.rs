@@ -276,6 +276,8 @@ pub fn merge_preview(rules: &[EditRule], group: &[usize], voltages: &[f64]) -> V
 pub struct PluginPresets {
     /// The plugin's name.
     pub plugin: String,
+    /// Its folder (its own help pages: [`crate::plugin_help`]).
+    pub dir: PathBuf,
     /// Its presets.
     pub presets: Result<Vec<RulePresetChecked>, String>,
 }
@@ -328,6 +330,7 @@ impl PresetsWindow {
                         Ok(h) => ohl_io::codes::rule_presets(h, &dir, &text),
                         Err(e) => Err(e.to_string()),
                     },
+                    dir,
                 })
                 .collect();
             let _ = tx.send(out);
@@ -1627,6 +1630,18 @@ pub fn preset_dropdown(
                 }
             }
         });
+    // The preset's own page, when its plugin declares one (2026-11-12).
+    if let Some((p, k)) = *chosen
+        && let Some(pp) = list.get(p)
+        && let Some(x) = pp.presets.as_ref().ok().and_then(|l| l.get(k))
+    {
+        crate::plugin_help::button(
+            ui,
+            &pp.dir,
+            &pp.plugin,
+            ohl_plugins::HelpTopic::Preset(&x.name),
+        );
+    }
     *chosen != before
 }
 

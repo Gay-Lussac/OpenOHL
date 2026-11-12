@@ -412,6 +412,7 @@ fn a_rule_preset_uses_the_projects_case_of_the_same_weather() {
         let w = &mut r.rule_editor.presets;
         w.list = vec![crate::rule_editor::PluginPresets {
             plugin: "code-a".into(),
+            dir: std::path::PathBuf::new(),
             presets: ohl_io::codes::check_rule_presets(
                 "code-a",
                 vec![ohl_plugins::RulePreset {

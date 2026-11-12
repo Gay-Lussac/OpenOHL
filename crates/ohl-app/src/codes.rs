@@ -369,6 +369,17 @@ pub fn window(ctx: &egui::Context, r: &mut Ready, plugins: &crate::plugins::Plug
                 });
             if let Some(c) = chosen {
                 ui.label(egui::RichText::new(&c.description).small());
+                // The plugin's own pages on its cases and as a whole
+                // (2026-11-12), when it declares them.
+                ui.horizontal(|ui| {
+                    crate::plugin_help::button(
+                        ui,
+                        &c.dir,
+                        &c.name,
+                        ohl_plugins::HelpTopic::DesignCode,
+                    );
+                    crate::plugin_help::button(ui, &c.dir, &c.name, ohl_plugins::HelpTopic::Overview);
+                });
             }
             ui.horizontal(|ui| {
                 if ui.button("Parameter file…").clicked()

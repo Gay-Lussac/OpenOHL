@@ -3541,6 +3541,14 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 ## What a plugin sees
 
 Plugin tiers and manifests: [Writing plugins](plugins.md) and ADR-0003.
+**Manifest `[help]`** (2026-11-12; optional, additive: `sdk = "0.3"`
+unchanged, a manifest without it reads as before; hosts before refuse
+it, as every unknown key): `overview`, `design-code` (a path each) and
+the tables `check`, `preset`, `column`, `sheet-template`,
+`class-scheme` (name → path): the plugin's own help pages, inside its
+folder, `.md`/`.markdown` (rendered to HTML in a cache folder) or
+`.html`/`.htm`; unknown keys and paths outside the folder refused
+(`ohl_plugins::HelpPages`, [Help pages](plugins.md#help-pages)).
 The project's own default values (`defaults`) and calculation options
 (`solver`) are in the line a plugin receives.
 WebAssembly interface: `crates/ohl-plugins/wit/plugin.wit` and

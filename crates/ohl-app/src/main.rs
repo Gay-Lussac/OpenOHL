@@ -92,6 +92,7 @@ mod placed_editor;
 mod placement;
 mod plan;
 mod plans_window;
+mod plugin_help;
 mod plugins;
 mod preset_cases;
 mod preset_edits;

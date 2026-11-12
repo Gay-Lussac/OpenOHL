@@ -6,3 +6,7 @@ sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/hello_wasm.wasm"
 extension-points = []
+
+# Its own help page (2026-11-12): the Plugin manager's Help button.
+[help]
+overview = "docs/index.md"

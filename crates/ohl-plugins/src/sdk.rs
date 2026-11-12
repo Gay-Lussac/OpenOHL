@@ -190,6 +190,13 @@ extension-points = {points}
 [permissions]             # everything denied by default
 network = false
 filesystem = []
+
+# Its own help pages, in this folder (Markdown or HTML), opened by the
+# applications' "user guide" buttons; all optional:
+# [help]
+# overview = "docs/index.md"
+# [help.check]            # per check id; also preset, column,
+# my-check = "docs/my-check.md"   # sheet-template, class-scheme; design-code = "…"
 "#,
         description = describe_kind(kind),
         major = SDK_VERSION.0,
@@ -547,6 +554,15 @@ impl WasmHost {
                 );
             }
         }
+        // Its help pages (`[help]`): each must be in its folder.
+        let pages = manifest.help.pages().len();
+        let missing = manifest.help.missing(&manifest.dir);
+        if pages > 0 && missing.is_empty() {
+            r.push(Level::Ok, format!("help pages: {pages} found"));
+        }
+        for m in missing {
+            r.push(Level::Error, format!("help page {m}"));
+        }
         let entry = manifest.entry_path();
         if !entry.is_file() {
             let hint = if p.tier == Tier::Wasm {
@@ -856,6 +872,30 @@ mod tests {
             r.lines
                 .iter()
                 .any(|(l, t)| *l == Level::Error && t.contains("cargo build")),
+            "{r:?}"
+        );
+        // A help page declared but not there: an error; there: found.
+        let manifest = dir.join(crate::MANIFEST_FILE);
+        let text = std::fs::read_to_string(&manifest).unwrap();
+        std::fs::write(
+            &manifest,
+            format!("{text}\n[help]\noverview = \"docs/index.md\"\n"),
+        )
+        .unwrap();
+        let r = host.check_plugin(&dir);
+        assert!(
+            r.lines
+                .iter()
+                .any(|(l, t)| *l == Level::Error && t.contains("docs/index.md not found")),
+            "{r:?}"
+        );
+        std::fs::create_dir_all(dir.join("docs")).unwrap();
+        std::fs::write(dir.join("docs/index.md"), "# x\n").unwrap();
+        let r = host.check_plugin(&dir);
+        assert!(
+            r.lines
+                .iter()
+                .any(|(l, t)| *l == Level::Ok && t == "help pages: 1 found"),
             "{r:?}"
         );
         std::fs::remove_dir_all(&dir).ok();

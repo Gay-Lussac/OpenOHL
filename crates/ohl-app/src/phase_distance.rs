@@ -1749,9 +1749,21 @@ impl PhaseDistanceWindow {
     }
 
     /// The Setup tab.
+    /// The check plugin's own page on this check (2026-11-12): its *user
+    /// guide ↗*, when the plugin declares one ([`crate::plugin_help`]).
+    fn plugin_guide(&self, ui: &mut egui::Ui) {
+        if let Ok(c) = self.check() {
+            let topic = ohl_plugins::HelpTopic::Check(&c.info.id);
+            if ohl_plugins::help::page_file(&c.dir, topic).is_some() {
+                ui.horizontal(|ui| crate::plugin_help::button(ui, &c.dir, &c.plugin, topic));
+            }
+        }
+    }
+
     fn body_ui(&mut self, ui: &mut egui::Ui, model: &Model) -> Out {
         let mut out = Out::default();
         check_ui::section(ui, 1, "What it checks", None);
+        self.plugin_guide(ui);
         help::explain(
             ui,
             match self.kind {
@@ -1779,6 +1791,7 @@ impl PhaseDistanceWindow {
         self.scope_ui(ui, model);
         ui.separator();
         check_ui::section(ui, 3, "Rules", None);
+        self.plugin_guide(ui);
         // The values file, the insulation levels of the circuits, then the
         // plugin's values (the distances z).
         self.values_file_ui(ui);

@@ -38,12 +38,14 @@ use std::time::Duration;
 use serde::Deserialize;
 
 pub mod field_presets;
+pub mod help;
 pub mod sdk;
 pub mod settings;
 pub use field_presets::{
     FIELD_PRESETS, FIELD_PRESETS_EXPORT, FieldInput, FieldInputTable, FieldPreset, InputPoint,
     OutFile, Outline, Place, PresetCut, ReportInput,
 };
+pub use help::{HelpPages, HelpTopic};
 pub use settings::{
     Consent, PluginSettings, SETTINGS_FILE, STORAGE_ID, USER_DIR, consent_for, forget_consents,
     load_shared_consents, set_consents, shared_storage_dir, user_dir,
@@ -558,6 +560,10 @@ pub struct Manifest {
     /// `field-presets` export (2026-10-31; none: none gathered).
     #[serde(default, rename = "field-input")]
     pub field_input: Option<FieldInputTable>,
+    /// `[help]`: the plugin's own help pages (2026-11-12; none: none),
+    /// shipped in its folder ([`help`]).
+    #[serde(default)]
+    pub help: HelpPages,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -612,6 +618,10 @@ impl Manifest {
         if let Some(f) = &manifest.field_input {
             f.check().map_err(|m| bad(format!("field-input: {m}")))?;
         }
+        manifest
+            .help
+            .check()
+            .map_err(|m| bad(format!("help: {m}")))?;
         let mut names = std::collections::BTreeSet::new();
         for c in &manifest.columns {
             if !COLUMN_TABLES.contains(&c.table.as_str()) {
@@ -668,6 +678,15 @@ impl Manifest {
     /// Absolute path of the entry file.
     pub fn entry_path(&self) -> PathBuf {
         self.dir.join(&self.plugin.entry)
+    }
+
+    /// The help page the plugin declares for `topic` (`[help]`), as an
+    /// absolute path, when the file is there.
+    pub fn help_page(&self, topic: HelpTopic<'_>) -> Option<PathBuf> {
+        self.help
+            .page(topic)
+            .map(|p| self.dir.join(p))
+            .filter(|p| p.is_file())
     }
 
     /// Checks that the plugin targets an interface version this host supports.
@@ -2690,6 +2709,70 @@ mod tests {
         assert_eq!(m.plugin.extension_points, ["checks"]);
         assert_eq!(m.entry_path(), Path::new("/plugins/t/t.wasm"));
         assert!(!m.permissions.network);
+    }
+
+    /// `[help]`: absent (none), present (the pages per topic), a page
+    /// outside the folder or not a page refused, a missing page found.
+    #[test]
+    fn help_pages() {
+        assert!(manifest("0.3", "").help.is_empty());
+        let m = manifest(
+            "0.3",
+            "[help]\noverview = \"docs/index.md\"\ndesign-code = \"docs/cases.html\"\n\
+             [help.check]\nmy-check = \"docs/check.md\"\n[help.preset]\n\"roads A\" = \"docs/roads.md\"",
+        );
+        assert_eq!(m.help.pages().len(), 4);
+        assert_eq!(
+            m.help.page(HelpTopic::Preset("roads A")),
+            Some(Path::new("docs/roads.md"))
+        );
+        assert_eq!(
+            m.help.page(HelpTopic::Check("my-check")),
+            Some(Path::new("docs/check.md"))
+        );
+        assert_eq!(m.help.page(HelpTopic::Column("x")), None);
+        // Not in /plugins/t: all four missing, none given as found.
+        assert_eq!(m.help.missing(&m.dir).len(), 4);
+        assert_eq!(m.help_page(HelpTopic::Overview), None);
+        let text = |extra: &str| {
+            format!(
+                "[plugin]\nname = \"t\"\nversion = \"1.0.0\"\nsdk = \"0.3\"\ntier = \"wasm\"\nentry = \"t.wasm\"\n{extra}"
+            )
+        };
+        for bad in [
+            "[help]\noverview = \"../x.md\"",
+            "[help]\noverview = \"docs/x.pdf\"",
+            "[help]\nunknown = \"x.md\"",
+        ] {
+            assert!(
+                Manifest::parse(&text(bad), Path::new("/plugins/t")).is_err(),
+                "{bad}"
+            );
+        }
+    }
+
+    /// A plugin's help pages travel with it when it is installed.
+    #[test]
+    fn help_pages_are_installed() {
+        let root = std::env::temp_dir().join(format!("ohl-help-install-{}", std::process::id()));
+        let from = root.join("src");
+        std::fs::create_dir_all(from.join("docs")).unwrap();
+        std::fs::write(
+            manifest_path(&from),
+            "[plugin]\nname = \"helped\"\nversion = \"0.1.0\"\nsdk = \"0.3\"\ntier = \"python\"\n\
+             entry = \"main.py\"\n[help]\noverview = \"docs/index.md\"\n",
+        )
+        .unwrap();
+        std::fs::write(from.join("main.py"), "").unwrap();
+        std::fs::write(from.join("docs/index.md"), "# helped\n").unwrap();
+        let to = install(&from, &root.join("installed"), false).unwrap();
+        let m = Manifest::load(&to).unwrap();
+        assert_eq!(
+            m.help_page(HelpTopic::Overview),
+            Some(to.join("docs/index.md"))
+        );
+        assert!(m.help.missing(&to).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `[[column]]`s: read, keyed `plugin.column`; a table, name or

@@ -89,6 +89,23 @@ for the ground and points between the blowouts
 `zone::RADIAL_POINTS_NOTE`. Hovers say the effect of the rule fields;
 the menu no longer says "in the weather case shown" (every case of the
 rules runs since 2026-10-28).
+**Plugins ship their own help pages** (owner: "do the vegetation next
+and also the [design-code] plugin functions with the helper pages in the
+plugin itself", then "start the [design-code] plugin pages too"; the
+plugin's name left out, its pages are its own). Until now a plugin could
+give only a short explanation text. The manifest's optional `[help]`
+table (additive, interface 0.3 unchanged) names a page in the plugin's
+folder per check, rule preset, column, sheet template, class scheme, its
+design code's cases, and an overview; Markdown (rendered to a plain HTML
+page in a cache folder with pulldown-cmark, a small and widely used
+crate — the only new dependency) or HTML (opened as it is).
+`ohl plugin check` reports a page that is missing. The check window of a
+plugin's check, the preset choosers, the Design code window and the
+Plugin manager (both applications) get the plugin's *user guide* /
+*Help* button where a page is declared — the check-pages rule (section
+6: every check window has its own page) extended to plugins. The public
+example `hello-wasm` ships an overview page with a drawing. [Help
+pages](plugins.md#help-pages).
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

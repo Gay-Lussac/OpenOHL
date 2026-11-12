@@ -44,6 +44,64 @@ in a column marked "(unused)", typed like text. A check plugin can
 declare a circuit's value its check needs this way (e.g. an insulation
 level read by the distance between conductors).
 
+### Help pages
+
+*Built 2026-11-12, in active development (not approved yet).* A plugin
+may ship **its own user-guide pages** in its folder, one per thing it
+provides and an overview, declared in its manifest (any tier; optional,
+all keys optional; interface version unchanged, 0.3):
+
+```toml
+[help]
+overview = "docs/index.md"          # the plugin as a whole
+design-code = "docs/cases.md"       # its weather and load cases
+
+[help.check]                        # per check id (the `checks` it lists)
+my-check = "docs/my-check.md"
+
+[help.preset]                       # per rule preset name
+"roads" = "docs/roads.html"
+
+[help.column]                       # per [[column]] name
+[help.sheet-template]               # per sheet template name
+[help.class-scheme]                 # per class scheme name
+```
+
+A sheet template or class scheme the manifest names by file is named by
+its file name without the extension (as the applications list it).
+
+- **Paths** are inside the plugin's folder (as for `entry`; `..` or an
+  absolute path is refused when the manifest is read) and end in `.md`,
+  `.markdown`, `.html` or `.htm`; an unknown key in `[help]` is refused.
+  `ohl plugin check` lists `help pages: N found` and reports each page
+  that is not there as an error. Install copies the whole folder, so the
+  pages (and their pictures) travel with the plugin.
+- **How they open**: an HTML page opens in the browser as it is. A
+  Markdown page is rendered (pulldown-cmark: tables, footnotes, heading
+  anchors as the manual's book makes them) into a plain HTML page in
+  `ohl-plugin-help/` in the system's temporary folder, together with the
+  other Markdown pages of its folder: a link to another `.md` page goes to
+  its rendered page, a relative picture or file is read from the plugin's
+  folder (a `file://` link), anchors work. Nothing is fetched from the
+  internet. A page is the plugin's own content, opened like any local web
+  page: install only plugins you trust (as for their code).
+- **Where they appear** (OHL-Design): the window of a plugin's check
+  (*Distance between conductors*, *… under unequal wind*: *user guide
+  (plugin) ↗* under *1 What it checks* and *3 Rules*); beside a chosen
+  rule preset (every check window's *Preset ▾* preview, the vegetation
+  and safety-volume preset choosers); Line › Criteria › Design code (the
+  `design-code` page and the overview, for the plugin chosen); the Plugin
+  manager (*Help ↗*: the overview; *pages…*: every page declared).
+  OHL-Structure's Plugin manager has *Help ↗*. No page declared: no
+  button. `ohl_plugins::help` (`HelpPages`, `HelpTopic`, `pages_of`,
+  `viewable`); `ohl-app` `plugin_help`.
+- **Example**: `plugins/examples/hello-wasm` ships `docs/index.md` (with
+  a drawing) as its overview; the test plugin `plugins/tests/code-presets`
+  a page for its preset `trees`. A page is written like the user guide's
+  check pages ([check pages](check-pages.md), section 6): what it answers,
+  how it works step by step, every parameter (unit, default, effect),
+  what is conservative and what is not, the source of each rule.
+
 
 **Licence.** The plugin interface (the WIT files in
 `crates/ohl-plugins/wit/`) and everything under `plugins/` (the shared

@@ -909,7 +909,20 @@ fn preset_preview(
     let mut close = false;
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.strong(format!("{group}: {}", preset.name));
+        // The plugin's groups come first, in its order (the project's
+        // last): the preset's own page, when its plugin declares one.
+        let plugin = p.plugins.get(g).filter(|pp| pp.plugin == *group);
+        ui.horizontal(|ui| {
+            ui.strong(format!("{group}: {}", preset.name));
+            if let Some(pp) = plugin {
+                crate::plugin_help::button(
+                    ui,
+                    &pp.dir,
+                    &pp.plugin,
+                    ohl_plugins::HelpTopic::Preset(&preset.name),
+                );
+            }
+        });
         if !preset.description.is_empty() {
             crate::menu::message(ui, egui::RichText::new(&preset.description).small(), None);
         }
@@ -1125,6 +1138,7 @@ mod tests {
         let own = "[[rule]]\nname = \"ground\"\ntarget = \"ground\"\nvertical = 7.5\n";
         let plugins = vec![PluginPresets {
             plugin: "code".into(),
+            dir: std::path::PathBuf::new(),
             presets: Ok(vec![preset("roads", code)]),
         }];
         let project = vec![

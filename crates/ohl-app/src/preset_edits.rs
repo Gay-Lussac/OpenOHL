@@ -383,6 +383,7 @@ pub fn apply_presets(
             });
             crate::rule_editor::PluginPresets {
                 plugin: pp.plugin.clone(),
+                dir: pp.dir.clone(),
                 presets: presets.map_err(Clone::clone),
             }
         })

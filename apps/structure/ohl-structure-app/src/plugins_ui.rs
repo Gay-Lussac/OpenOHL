@@ -616,6 +616,7 @@ impl StructureApp {
         let mut remove: Option<PathBuf> = None;
         let mut drop_folder: Option<usize> = None;
         let mut describe: Option<Listed> = None;
+        let mut help_error: Option<String> = None;
         egui::Window::new("Plugin manager")
             .open(&mut open)
             .default_width(960.0)
@@ -766,6 +767,24 @@ impl StructureApp {
                                         }
                                     }
                                     ui.horizontal(|ui| {
+                                        // Its own overview page (2026-11-12),
+                                        // when it declares one.
+                                        let dir = &l.found.dir;
+                                        let overview = ohl_plugins::HelpTopic::Overview;
+                                        if ohl_plugins::help::page_file(dir, overview).is_some()
+                                            && ui
+                                                .small_button("Help ↗")
+                                                .on_hover_text(format!(
+                                                    "The plugin {name}'s own page (shipped \
+                                                     with it, opened in the browser)"
+                                                ))
+                                                .clicked()
+                                        {
+                                            help_error =
+                                                ohl_plugins::help::file_to_open(dir, overview)
+                                                    .and_then(|f| crate::help::open(&f))
+                                                    .err();
+                                        }
                                         if ui
                                             .small_button("Details")
                                             .on_hover_text(
@@ -822,6 +841,9 @@ impl StructureApp {
                 }
             });
         p.open = open;
+        if let Some(e) = help_error {
+            p.status = Some((e, true));
+        }
         if let Some((name, on)) = toggle {
             p.set_enabled(&name, on);
         }

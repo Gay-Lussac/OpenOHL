@@ -1576,7 +1576,9 @@ CAD", kept from before the rename so nothing is lost) and those of the folders a
 tier, extension points, **what it does in OHL-Structure** (greyed with
 the reason where nothing applies), its status (or why it cannot be used:
 another interface version, its entry file not built…), **Details** (what
-it describes, loaded in each of its worlds; in a box that scrolls) and,
+it describes, loaded in each of its worlds; in a box that scrolls),
+**Help ↗** when the plugin ships its own overview page (2026-11-12; opened
+in the browser, [Help pages](../development/plugins.md#help-pages)) and,
 for an installed one, **Remove**. **Install from a folder…**, **Add a
 plugin folder…**, **Reload**. The tick turns a plugin on or off.
 

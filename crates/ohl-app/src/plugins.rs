@@ -1065,6 +1065,12 @@ impl Plugins {
                                                 .as_ref()
                                                 .is_ok_and(|m| !m.sheet_templates.is_empty()));
                                     ui.horizontal(|ui| {
+                                        // Its own help pages (2026-11-12).
+                                        crate::plugin_help::manager_buttons(
+                                            ui,
+                                            &l.found.dir,
+                                            &name,
+                                        );
                                         if presets
                                             && ui
                                                 .small_button("Presets…")

@@ -6,3 +6,7 @@ sdk = "0.3"
 tier = "wasm"
 entry = "target/wasm32-wasip2/release/code_presets.wasm"
 extension-points = ["design-code"]
+
+# Its preset's own help page (2026-11-12): the preset's user guide button.
+[help.preset]
+trees = "docs/trees.md"

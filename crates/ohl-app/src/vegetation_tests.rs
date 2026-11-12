@@ -469,6 +469,7 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
     let list = vec![
         crate::rule_editor::PluginPresets {
             plugin: "code-a".into(),
+            dir: std::path::PathBuf::new(),
             presets: ohl_io::codes::check_rule_presets(
                 "code-a",
                 vec![
@@ -479,6 +480,7 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
         },
         crate::rule_editor::PluginPresets {
             plugin: "code-b".into(),
+            dir: std::path::PathBuf::new(),
             presets: ohl_io::codes::check_rule_presets(
                 "code-b",
                 vec![preset("ground only", &ground, "")],
@@ -556,6 +558,52 @@ fn a_plugin_preset_is_chosen_previewed_and_applied() {
     std::fs::remove_dir_all(file.parent().unwrap()).ok();
 }
 
+/// A preset whose plugin declares a page for it (2026-11-12): beside the
+/// preset chosen, *user guide (plugin) ↗* opens that page (the test
+/// plugin `code-presets`' page of its preset `trees`, rendered to HTML).
+#[test]
+fn a_presets_own_page_opens_from_its_button() {
+    let (file, mut h) = opened("veg-preset-page");
+    let dir = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../plugins/tests/code-presets"
+    ))
+    .to_path_buf();
+    let rules = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"p\"\n\
+                 [vegetation]\nclasses = [5]\n";
+    {
+        let r = h.state_mut().ready().unwrap();
+        let w = &mut r.rule_editor.presets;
+        w.list = vec![crate::rule_editor::PluginPresets {
+            plugin: "code-presets".into(),
+            dir,
+            presets: ohl_io::codes::check_rule_presets(
+                "code-presets",
+                vec![ohl_plugins::RulePreset {
+                    name: "trees".into(),
+                    description: "invented test values".into(),
+                    rules: rules.into(),
+                    weather_cases: String::new(),
+                }],
+            ),
+        }];
+        w.original = w.list.clone();
+        w.asked = true;
+        r.vegetation.preset = Some((0, 0));
+    }
+    h.run_steps(2);
+    h.get_by_label("user guide (code-presets) ↗").click();
+    h.run_steps(2);
+    let opened = crate::help::OPENED.lock().unwrap().clone();
+    assert!(
+        opened
+            .iter()
+            .any(|p| p.ends_with("docs/trees.html") && p.is_file()),
+        "{opened:?}"
+    );
+    std::fs::remove_dir_all(file.parent().unwrap()).ok();
+}
+
 /// A vegetation preset whose cases the project has under other names
 /// (owner, 2026-10-21): "Utility vegetation 80 °C" is the project's "max
 /// temperature" (80 °C, still air) — used and ticked, nothing created;
@@ -575,6 +623,7 @@ fn a_preset_uses_the_projects_cases_of_the_same_weather() {
         let w = &mut r.rule_editor.presets;
         w.list = vec![crate::rule_editor::PluginPresets {
             plugin: "code-a".into(),
+            dir: std::path::PathBuf::new(),
             presets: ohl_io::codes::check_rule_presets(
                 "code-a",
                 vec![ohl_plugins::RulePreset {
@@ -653,6 +702,7 @@ fn the_vegetation_panel_takes_only_its_part_of_a_big_preset() {
         let w = &mut r.rule_editor.presets;
         w.list = vec![crate::rule_editor::PluginPresets {
             plugin: "code-big".into(),
+            dir: std::path::PathBuf::new(),
             presets: Ok(vec![crate::preset_cases::tests::big_preset("")]),
         }];
         w.original = w.list.clone();
