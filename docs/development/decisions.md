@@ -10,6 +10,24 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Distance between conductors and under unequal wind: a user guide page
+and the windows reworked** (owner: "update the [the design-code plugin]
+tests phase distance and differential wind as for the other tests").
+Part 1: [Distance between
+conductors](../user-guide/distance-between-conductors.md), one page for
+both windows — what OpenOHL measures at each station and how (d, β, the
+local sag, l_k with 0 at a section's end and at a tension string, the
+sag between phase spacers, the stations, the swing under unequal wind),
+with a drawing (`docs/images/check-windows/distance-between-conductors-step-by-step.svg`);
+that the required distance is the plugin's, whose own page explains its
+rule; every setting with its default, effect and time; what is
+conservative and what is not on OpenOHL's side. Analyses keeps a summary
+and links to it; the core's note links to it. Part 2: the two windows as
+the other check windows (check pages' guidelines §6): the grey lines in
+the (?) help, the warnings, *NOT ON THE SAFE SIDE* notes, Run blockers and
+times kept visible, the user guide buttons — **how it is measured ↗**
+(this page) beside **the plugin's rule ↗** (the plugin's page).
+
 **Distance between conductors: l_k 0 at every section end** (owner: "for
 tension strings the l_k should be 0", seen wrong on a real line whose
 project marked no string as a tension string, although its export holds

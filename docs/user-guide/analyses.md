@@ -219,104 +219,33 @@ case_pairs = [["glaze ice", "everyday"]]
 
 ## Distance between conductors in the span (check plugins)
 
-Some codes require a distance between two conductors of a span that
-depends on where along it one looks — on the local sag, the suspension
-strings, the angle between the conductors, the voltages (e.g. the Swiss
-ordinance's still-air distance, LeV Annex 6, 2.2). OpenOHL **measures**
-the conductors; the values and the rules are a **check plugin**'s (it
-must be in use: File › Plugins › Plugin manager). A plugin for the Swiss LeV
-exists separately; it is not part of the public code. What is measured
-and how: [the core's part](../development/phase-distance-check.md).
+A design code may require a distance between two conductors of a span
+that depends on where along it one looks — on the local sag, the
+suspension strings, the angle between the conductors, the voltages — or a
+fixed distance while the wind blows them unequally. **OpenOHL measures**
+the conductors (the pairs, stations along the span, the distance d between
+the axes, the angle β, the local sag, the string length l_k, the sag
+between phase spacers, the swing under unequal wind); the required
+distance comes from a **check plugin** in use (File › Plugins › Plugin
+manager), whose entries in the Checks menu open the two windows
+**Distance between conductors…** and **Distance between conductors under
+unequal wind…**. Without such a plugin they are not in the menu.
 
-In the desktop app, with such a plugin in use (the plugin defines the
-menu: without it, it is not there), its entry in the Checks menu (e.g.
-**Checks › LeV/OLEI › Distance between conductors…**) opens the check's
-window: a values file (else the project's copy, else the plugin's), the
-plugin's choices, the weather cases (each checked on its own), the
-circuits (ticked in a list, select all / none), the station spacing
-(0.1 m by default since 2026-11-04, 1 m before), and nearby spans (conductors not between the same two
-structures, within a distance). On the check windows' layout
-(2026-10-27; 2026-10-31): *1 What it checks* with *How it is computed*
-folded, *2 Scope* (the weather cases — **Weather cases: n of m**, a tick
-menu; under unequal wind one case, the weather case list the other
-single-case windows use —, circuits, routes), *3 Rules* (**Choose a
-values file…** and the plugin's choices, the circuits' levels, the
-values used), *4 Model*, folded (the station spacing — under unequal
-wind the wind step and the other conductor's share instead —, nearby
-spans; each with a line saying what it changes); the values used as
-tables across the window's width (2026-11-04); under unequal wind the
-footer counts the run's two steps while it runs — the line solved at each
-wind level, then the pairs measured — with the time left (2026-11-04); the Results tab holds the saved
-report and *Save*, the verdict and the table (*Only violations* — the
-pairs below z — on by default, sortable, grouped by case, span or rule).
-The setup is kept in the project per project line (`app.phase_distance`,
-`app.unequal_wind`). Without its plugin the window says so once and Run
-is greyed ("Before Run: the check plugin: …"). The window opens floating; its **📌**
-docks it as a panel (next to Properties), like every check window
-([one design](desktop-app.md#check-windows-one-design)). When the
-plugin needs a value per circuit (a plugin column, e.g. an insulation
-level), **Circuits checked** lists the ticked circuits with their
-voltage and that value, chosen there for all the circuit's sections —
-the same value as the Conductor paths table's column. **Run** (the
-window's footer, bottom left) runs in the background; the pairs come worst first: the two spans and
-circuits, kV, d, the required distance, the margin, the length of
-conductor below it, and at the worst station the measured values, the
-plugin's own and the rule it applied, with a note when it is at a clamp
-or on a nearby span. Clicking a span, or a distance, selects the span,
-draws the two conductors' sections in the result's weather case (first,
-the cases shown after it; the case shown for the rest of the line stays
-as it is), says the case beside it, and draws the worst station's line
-in the 3D view, labelled with d and the required distance; the line goes
-when the window is closed (or a new run starts), the result's case when
-the window is closed or you select something else. **Export CSV…** writes
-the rows shown, **Full report (CSV)…** every pair with the points. Below the settings, the window explains the
-computation (the plugin's "How it is computed") and shows the **values
-used** as tables, for transparency, and where they come from (the
-plugin's, a file chosen, a saved report, or the project's copy). They
-are locked; an **admin** of the project may **Edit values** (a cell at a
-time, checked by the plugin) and **Save in the project**: the project's
-copy of the file (headed with who edited it and when), used by every
-run on the project and kept in each report; **Back to the plugin's**
-removes the copy. **Choose a values file…** uses another one instead.
-
-**Save** keeps the run in the [library of performed
-checks](#the-library-of-performed-checks) under a name: its parameters
-(the values file's text included), the pairs below the required
-distance and within 1 m of it, the counts. Opened again it shows its
-results and whether the line changed since (*stale*); **Run** runs it
-again with its parameters, shows each pair against the saved run (new,
-fixed, worse, better) and asks whether to replace the saved report.
-
+Both windows — what they measure and how, every setting with its default,
+effect and time, the results, what is on the safe side — are explained on
+their own page: [Distance between conductors](distance-between-conductors.md).
+The plugin's own page (its button in the window) explains its rule. A run
+is saved in the [library of performed
+checks](#the-library-of-performed-checks).
 
 ### Under unequal wind
 
-With a plugin that runs it (e.g. **Checks › LeV/OLEI › Distance between
-conductors under unequal wind…**), the same window checks the distance
-two conductors keep while the wind blows them unequally: one at a wind
-p, the other at a share of p up to p (LeV: 60 … 100 %), p from none up
-to the wind of the **weather case** chosen (its temperature and ice
-kept), in **steps** you set (default 50 Pa; the case's wind always
-included), from each side. The line is solved at each step and at the
-share of each (a few seconds per level on a long line, side by side on
-the cores). The pairs are chosen as above (circuits, nearby spans).
-Per pair: the closest approach — the exact shortest distance between
-the two wires (a bundle by its subconductors), not at stations —, d,
-the required distance (the plugin's: with the LeV, C₃ within a system,
-C₄ between systems), the margin, the wind on each conductor and the
-side.
-Clicking it draws the line between the two points and the pair's two
-conductors as they were measured, each at its wind, labelled with it
-and the side — only that span's pair, on top of the view; the pair's
-sections are drawn in the result's weather case (as above), the case
-shown for the line stays as it is and nothing is solved (a saved run keeps the
-pair's conductors to draw them too). Values, saved runs
-and CSV as above: **Save** keeps the run in the library of performed
-checks, and opened again from there it shows its pairs on its Results
-tab with its weather case, wind step and share set again; **Run** runs
-it again with them and compares it with the saved run, as for the
-distance in the span. (Runs saved before 2026-11-04 could not be opened
-again: they open now.) How it is measured: [the core's
-part](../development/phase-distance-check.md#under-unequal-wind).
+One conductor at a wind p, the other at a share of p up to p, p in steps
+from none up to the wind of the weather case chosen, from each side: the
+exact closest approach of each pair against the plugin's distance
+([Distance between conductors › Under unequal
+wind](distance-between-conductors.md#under-unequal-wind-how-it-is-measured)).
+
 ## The library of performed checks
 
 **Checks › Performed checks…** (a window like the check's, floating

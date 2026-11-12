@@ -46,6 +46,7 @@
   - [Electric field](user-guide/electric-field.md)
   - [Vegetation and danger trees](user-guide/vegetation.md)
   - [Safety volumes](user-guide/safety-volumes.md)
+  - [Distance between conductors](user-guide/distance-between-conductors.md)
 - [Sagging outputs](user-guide/sagging.md)
 - [Drawings and profile exports](user-guide/drawings.md)
   - [Sheet templates (.ohlsheet)](user-guide/sheet-templates.md)

@@ -10,6 +10,9 @@ says what is required at each station, through the `check` interface
 LeV runs such a check; it is kept apart from the public code. The
 measuring is `ohl_clearance::phase_distance`, the host's side
 `ohl_io::checks`, the window `crates/ohl-app/src/phase_distance.rs`.
+For the user, both windows (in the span and under unequal wind) are
+explained on their own page,
+[Distance between conductors](../user-guide/distance-between-conductors.md).
 
 ## What is measured
 
@@ -17,7 +20,7 @@ For each **pair of conductors** in each **weather case chosen** (each
 case checked on its own, both conductors always from the same case):
 
 1. **Stations** along the first conductor, every *Δs* of its length
-   (default **1 m**), its ends included.
+   (default **0.1 m** since 2026-11-04, 1 m before), its ends included.
 2. At each station P, the **closest point Q on the second conductor**
    (3D). The measurement is made in the vertical plane through P and Q
    (not square to the span: with large line angles a square section
