@@ -10,6 +10,34 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**The Magnetic and Electric field windows in three pages** (owner: "For
+the electric field and magnetic fields, I would like to have the page
+easier to understand (and actually have 3 pages): one to make the 3D
+volumes, the 2D profiles and the 2D cuts. For the 2D profiles and cuts I
+would like to make them based on the 3D method or 2D only, with each
+method clearly explained in the page aside with the influence of each
+parameter. This way each test and method of test (2D or 3D) can only keep
+showing the necessary parameters and not more. This should keep the page
+cleaner and more understandable."). The Setup opens with three tabs,
+**3D volumes**, **2D profiles**, **2D cuts** (`field_common::FieldPage`),
+each with its own sections (What it computes with its drawing; Scope;
+What and where; Model folded; Views and levels — not on the profiles,
+whose plot draws the limit) and only its parameters; one state behind
+them (the case, the currents or voltages, the levels are the same values
+on every page). Run computes the page shown, its summary beside it
+("Run: 2D cuts, 3 cut(s), from the 3D model — ≈ 4 s"); what blocks Run
+is the page's (no span ticked, no cut asked, no volume ticked, a floor
+too large). On 2D profiles the method — from the 3D model or 2D only —
+each with its line and its (?); 2D only says its assumptions (infinitely
+long straight parallel conductors at the section's heights, no sag) where
+it is chosen and in its results. On 2D cuts only "from the 3D model": the
+engines have no 2D-only cut, so "2D only" is shown greyed, "not available
+yet". The CSV points belong to the profiles, the buildings' cuts and
+places to the cuts (their places now computed with the cuts, from the 3D
+model; before, they were left out of a run without profiles). Kept
+inputs: `page` added; older projects open on the page that made what
+they asked ([data model](data-model.md)).
+
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to
 points of a class, its results carry `zone::RADIAL_POINTS_NOTE`: the

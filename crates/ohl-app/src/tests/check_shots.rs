@@ -205,6 +205,15 @@ const SHOTS: &[Shot] = &[
     },
 ];
 
+/// The field window `name`'s setup turned to `page`.
+fn set_page(r: &mut crate::app::Ready, name: &str, page: crate::field_common::FieldPage) {
+    if name == "magnetic-field" {
+        r.magnetic_field.common.page = page;
+    } else {
+        r.electric_field.common.page = page;
+    }
+}
+
 /// The window in front, saved as `dir`/`name`.png.
 fn save(harness: &mut Harness<'_, App>, dir: &Path, name: &str) {
     let image = harness.render().unwrap();
@@ -282,17 +291,55 @@ fn check_windows_rendered_for_review() {
             harness.get_by_label("How it is computed").click();
             harness.run_steps(4);
         }
+        // The field windows: each of their three pages (owner,
+        // 2026-11-12), from its top, its Model opened at the end; then
+        // back on the 2D profiles for the run.
+        if shot.name.ends_with("-field") {
+            for page in crate::field_common::FieldPage::ALL {
+                set_page(harness.state_mut().ready().unwrap(), shot.name, page);
+                harness.run_steps(4);
+                wheel(&mut harness, body, 5000.0);
+                let tag = page.guide();
+                save(&mut harness, &dir, &format!("{}-{tag}-1", shot.name));
+                for i in 2..=4 {
+                    wheel(&mut harness, body, -550.0);
+                    save(&mut harness, &dir, &format!("{}-{tag}-{i}", shot.name));
+                }
+                if let Some(m) = harness
+                    .query_by_label_contains("Earth wires")
+                    .or_else(|| harness.query_by_label_contains("Jumpers, "))
+                {
+                    m.click();
+                    harness.run_steps(4);
+                    wheel(&mut harness, body, -2000.0);
+                    save(&mut harness, &dir, &format!("{}-{tag}-model", shot.name));
+                    if let Some(m) = harness
+                        .query_by_label_contains("Earth wires")
+                        .or_else(|| harness.query_by_label_contains("Jumpers, "))
+                    {
+                        m.click();
+                        harness.run_steps(4);
+                    }
+                }
+            }
+            set_page(
+                harness.state_mut().ready().unwrap(),
+                shot.name,
+                crate::field_common::FieldPage::Profiles,
+            );
+            wheel(&mut harness, body, 5000.0);
+        }
         // The field windows' setup is longer: more pages.
-        let pages = if shot.name.ends_with("-field") { 7 } else { 4 };
+        let pages = if shot.name.ends_with("-field") { 0 } else { 4 };
         for i in 2..=pages {
             wheel(&mut harness, body, -550.0);
             save(&mut harness, &dir, &format!("{}-setup-{i}", shot.name));
         }
-        // The Model opened (where the window has one), at the bottom.
-        // (The field windows' Model fold is titled by what it holds.)
+        // The Model opened (where the window has one), at the bottom
+        // (the field windows': per page, above).
         if let Some(m) = harness
             .query_by_label_contains("  Model")
-            .or_else(|| harness.query_by_label_contains("Profiles by, "))
+            .filter(|_| !shot.name.ends_with("-field"))
         {
             m.click();
             harness.run_steps(4);

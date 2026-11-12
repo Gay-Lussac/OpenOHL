@@ -100,6 +100,27 @@ Every value at a point is computed in full; only the lines and surfaces
 between the points are interpolated, and each run says how far they lie
 off their levels.
 
+## The window's three pages
+
+The Setup has three pages (2026-11-12), each with only the settings its
+output needs; Run computes the page shown. Each heading's **user guide ↗**
+opens the part of its page.
+
+### 3D volumes
+
+The surfaces of the levels around the wires over the spans with Volume
+ticked, from the 3D model.
+
+### 2D profiles
+
+The field across the spans ticked at a height above the ground (and at
+points from CSV), from the 3D model or by the 2D-only method.
+
+### 2D cuts
+
+The isolines in vertical planes across the line at the stations asked,
+from the 3D model (2D only: not available yet).
+
 ## The window, setting by setting
 
 The Setup tab, top to bottom. The inputs are kept in the project for the

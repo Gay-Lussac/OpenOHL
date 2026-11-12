@@ -34,7 +34,8 @@ pub mod views;
 use crate::check_help as help;
 use crate::check_ui;
 use crate::field_common::{
-    self, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon, beside_stations,
+    self, FieldPage, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon,
+    beside_stations,
 };
 use crate::field_overlay::Level;
 use crate::field_results::{self, ResultRow, RowAction};
@@ -393,46 +394,19 @@ impl ElectricFieldWindow {
     /// Model, folded, with the steel and the wire pieces): the profiles'
     /// model, the jumpers, the stretches per span, the ground and its
     /// tiles.
+    /// The page computes by the 2D-only method (the profiles, 2D only).
+    pub(super) fn two_d_page(&self) -> bool {
+        self.common.page == FieldPage::Profiles && self.common.two_d
+    }
+
     pub(super) fn model_inputs_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        let page = self.common.page;
         egui::Grid::new("electric-field-model-inputs")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Profiles by");
-                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.common.two_d, false, "3D")
-                            .on_hover_text(
-                                "The wires as solved (sag, line angles, the line's length) and the \
-                         jumpers as pieces of uniform charge over the ground (a tiled \
-                         conducting floor by default, 4 Model)",
-                            );
-                        ui.selectable_value(&mut self.common.two_d, true, "2D")
-                        .on_hover_text(
-                            "Infinite line charges where the wires cross the profile, over level \
-                         ground at the cross-section: not valid near a line angle, a structure \
-                         or on sloping ground",
-                        );
-                    })
-                });
-                ui.end_row();
-                ui.label("");
-                help::explain(
-                    ui,
-                    if self.common.two_d {
-                        "2D: a profile's points in a moment"
-                    } else {
-                        "3D: the profiles' time below"
-                    },
-                    "2D: the sag along the span, the line angles and the jumpers not seen \
-                     (under the lowest point close to 3D on a long level span). 3D: every point \
-                     sums every piece of charge twice (the charges and their images). Both take \
-                     the charges of the cross-section where they are (3D: in stretches, 24 by \
-                     default). 3D sees what the span does along it; 2D assumes every span \
-                     infinitely long and straight, its ground level.",
-                );
-                ui.end_row();
-                {
+                // The jumpers, the stretches, the ground: the 3D model's.
+                if !self.two_d_page() {
                     ui.label("Jumpers");
                     ui.checkbox(&mut self.common.jumpers, "carry their phase's charge")
                         .on_hover_text(
@@ -464,6 +438,7 @@ impl ElectricFieldWindow {
                         ui.radio_value(&mut self.tiled, true, "tiled floor");
                         ui.radio_value(&mut self.tiled, false, "plane under each point");
                         if self.tiled {
+                            if page == FieldPage::Profiles {
                             ui.label("tiles: profiles and points");
                             crate::style::field(
                                 ui,
@@ -477,7 +452,9 @@ impl ElectricFieldWindow {
                                  terrain (4 m to 2 m moved the profiles 1–3 %), far longer (1 m about 8 \
                                  times as long)",
                             );
-                            ui.label("cuts");
+                            }
+                            if page == FieldPage::Cuts {
+                            ui.label("tiles: cuts");
                             crate::style::field(
                                 ui,
                                 egui::DragValue::new(&mut self.cut_tile)
@@ -488,7 +465,9 @@ impl ElectricFieldWindow {
                             .on_hover_text(
                                 "The tiles under the cuts: finer, a closer floor, far longer",
                             );
-                            ui.label("volumes");
+                            }
+                            if page == FieldPage::Volumes {
+                            ui.label("tiles: volumes");
                             crate::style::field(
                                 ui,
                                 egui::DragValue::new(&mut self.volume_tile)
@@ -514,6 +493,7 @@ impl ElectricFieldWindow {
                             .on_hover_text(
                                 "How far the floor under a volume reaches beyond it every way",
                             );
+                            }
                         } else {
                             ui.label("fitted over ±");
                             crate::style::field(
@@ -638,7 +618,7 @@ impl ElectricFieldWindow {
                 // The conductor surface gradient (owner, 2026-11-04: 2D
                 // only, for the noise).
                 ui.label("Surface gradient");
-                ui.add_enabled_ui(self.common.planes, |ui| {
+                ui.add_enabled_ui(self.common.page != FieldPage::Volumes, |ui| {
                     ui.checkbox(
                         &mut self.gradient,
                         "2D, per span: lowest point and both ends",
@@ -652,8 +632,12 @@ impl ElectricFieldWindow {
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let spans = self.common.spans(model);
         self.common.spans_ui(ui, "electric-field", model, &spans);
-        self.sizes_ui(ui, model, &spans);
-        self.gradient_ui(ui);
+        if self.common.page != FieldPage::Profiles {
+            self.sizes_ui(ui, model, &spans);
+        }
+        if self.common.page != FieldPage::Volumes {
+            self.gradient_ui(ui);
+        }
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile, cut
@@ -741,8 +725,13 @@ impl ElectricFieldWindow {
             step,
             width: self.common.width,
         });
-        // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
-        self.common.planes = volume.is_none();
+        // A volume asked: the 3D volumes page (2026-11-12: a run makes
+        // the page shown).
+        if volume.is_some() {
+            self.common.page = FieldPage::Volumes;
+        } else if self.common.page == FieldPage::Volumes {
+            self.common.page = FieldPage::Profiles;
+        }
     }
 
     /// The views (tests): the panels' and the volume's step.
@@ -844,11 +833,11 @@ impl ElectricFieldWindow {
             width: self.common.width,
             step: self.common.step,
             stations,
-            profiles: self.common.planes && self.common.profiles,
+            profiles: self.common.page == FieldPage::Profiles,
             // The CSV's points with the profiles; the buildings' places
-            // in any 2D run.
+            // with the cuts (2026-11-12: their page).
             points: {
-                let mut v = if self.common.planes && self.common.profiles {
+                let mut v = if self.common.page == FieldPage::Profiles {
                     self.common
                         .points
                         .as_ref()
@@ -857,7 +846,7 @@ impl ElectricFieldWindow {
                 } else {
                     Vec::new()
                 };
-                if self.common.planes
+                if self.common.page == FieldPage::Cuts
                     && let Some(b) = &self.common.buildings
                 {
                     v.extend(b.points());
@@ -882,7 +871,7 @@ impl ElectricFieldWindow {
             piece_length: self.common.piece_length,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if !self.common.planes {
+            cuts: if self.common.page != FieldPage::Cuts {
                 Vec::new()
             } else {
                 self.common
@@ -902,8 +891,8 @@ impl ElectricFieldWindow {
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.common.volume, self.common.planes) {
-                (Some(v), false) => self
+            volumes: match (&self.common.volume, self.common.page) {
+                (Some(v), FieldPage::Volumes) => self
                     .common
                     .span_pick
                     .volume_runs(model, &spans)
@@ -975,13 +964,14 @@ impl ElectricFieldWindow {
         let steps = steps_of(&settings);
         // The surface gradients of the 2D cross-sections (2026-11-04):
         // the profiles' spans, their lowest points and both ends.
-        let gradient_settings = (self.common.planes && self.gradient).then(|| {
-            ohl_electrical::surface_gradient::Settings {
-                voltages: settings.voltages.clone(),
-                stations: settings.stations.clone(),
-                ..Default::default()
-            }
-        });
+        let gradient_settings =
+            (self.common.page != FieldPage::Volumes && self.gradient).then(|| {
+                ohl_electrical::surface_gradient::Settings {
+                    voltages: settings.voltages.clone(),
+                    stations: settings.stations.clone(),
+                    ..Default::default()
+                }
+            });
         let progress = Arc::new(Progress::default());
         self.common.progress = Some(progress.clone());
         // A new run's outputs all drawn.
@@ -1247,14 +1237,8 @@ impl ElectricFieldWindow {
                     .any(|c| self.voltage(model, c).is_some_and(|v| v > 0.0))
                 {
                     Some("every circuit voltage-free: give one a voltage (2 Scope)".to_owned())
-                } else if matches!(
-                    self.common.stations,
-                    Stations::EverySpan | Stations::Beside { .. }
-                ) && {
-                    let spans = self.common.spans(model);
-                    self.common.span_pick.chosen(model, &spans).0.is_empty()
-                } {
-                    Some("no span ticked (3 Spans)".to_owned())
+                } else if let Some(why) = self.common.page_blocker(model) {
+                    Some(why)
                 } else {
                     let spans = self.common.spans(model);
                     self.memory_block(model, &spans)
@@ -1268,40 +1252,46 @@ impl ElectricFieldWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        // Three pages (owner, 2026-11-12), each with only
+                        // what its output needs; Run makes the page shown.
+                        field_common::page_ui(ui, &mut self.common.page);
+                        ui.separator();
+                        let page = self.common.page;
                         if let Some(a) =
-                            check_ui::section(ui, 1, "What it checks", Some("1-what-it-checks"))
+                            check_ui::section(ui, 1, "What it computes", Some(page.guide()))
                         {
                             self.common.guide = Some(a);
                         }
-                        help::explain(
-                            ui,
-                            "The electric field strength (kV/m, the rms of the vector) of the \
-                             line's voltages, from the wires where they hang in a weather case.",
-                            "The charge per metre of every wire from the cross-section where it is \
-                             (q = inv(P) · V, the line parameters' potential coefficients; 3D: each \
-                             span in stretches, 24 by default); 3D from the solved wires and jumpers as pieces \
-                             of uniform charge over the ground as a tiled conducting floor (or a \
-                             plane under each point, 4 Model), the structures' steel optional; 2D: \
-                             infinite line charges over level ground. Trees and buildings are not \
-                             modelled. A limit is yours to give; none is built in. Built, in \
-                             active development, not approved yet.",
-                        );
-                        ui.horizontal(|ui| {
-                            crate::field_help::profile(
-                                ui,
-                                crate::field_help::Field::Electric,
-                                self.common.width,
-                                self.common.step,
-                                self.common.height,
-                            );
-                            crate::field_help::sources(
-                                ui,
-                                crate::field_help::Field::Electric,
-                                self.tiled,
-                            );
+                        let (short, long) = what_it_computes(page);
+                        help::explain(ui, short, long);
+                        ui.horizontal(|ui| match page {
+                            FieldPage::Profiles => {
+                                crate::field_help::profile(
+                                    ui,
+                                    crate::field_help::Field::Electric,
+                                    self.common.width,
+                                    self.common.step,
+                                    self.common.height,
+                                );
+                                crate::field_help::sources(
+                                    ui,
+                                    crate::field_help::Field::Electric,
+                                    self.tiled && !self.common.two_d,
+                                );
+                            }
+                            FieldPage::Cuts => {
+                                crate::field_help::cut(ui, self.common.cut_step);
+                            }
+                            FieldPage::Volumes => {
+                                crate::field_help::sources(
+                                    ui,
+                                    crate::field_help::Field::Electric,
+                                    self.tiled,
+                                );
+                            }
                         });
                         ui.separator();
-                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some("2-scope")) {
+                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some(page.guide())) {
                             self.common.guide = Some(a);
                         }
                         check_ui::ScopePicker::new(WINDOW, &model.line)
@@ -1324,13 +1314,20 @@ impl ElectricFieldWindow {
                         crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
-                        if let Some(a) = check_ui::section(
-                            ui,
-                            3,
-                            "Spans and what to compute in each",
-                            Some("3-spans-and-what-to-compute-in-each"),
-                        ) {
+                        if let Some(a) =
+                            check_ui::section(ui, 3, "What and where", Some(page.guide()))
+                        {
                             self.common.guide = Some(a);
+                        }
+                        match page {
+                            FieldPage::Profiles => field_common::profiles_method_ui(
+                                ui,
+                                &mut self.common.two_d,
+                                &PROFILES_3D,
+                                &PROFILES_2D,
+                            ),
+                            FieldPage::Cuts => field_common::cuts_method_ui(ui, &CUTS_3D),
+                            FieldPage::Volumes => {}
                         }
                         self.spans_ui(ui, model);
                         let spans = self.common.spans(model);
@@ -1507,46 +1504,51 @@ impl ElectricFieldWindow {
                     }
                 });
                 ui.end_row();
-                ui.label("Points");
-                ui.horizontal(|ui| {
-                    if ui
-                        .button("Points from CSV…")
-                        .on_hover_text(
-                            "A CSV file with a header naming x, y and z (elevation) or height \
+                if self.common.page == FieldPage::Profiles {
+                    ui.label("Points");
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("Points from CSV…")
+                            .on_hover_text(
+                                "A CSV file with a header naming x, y and z (elevation) or height \
                              (above the ground), optionally name: e.g. places of sensitive use",
-                        )
-                        .clicked()
-                        && let Some(path) = rfd::FileDialog::new()
-                            .add_filter("CSV", &["csv", "txt"])
-                            .pick_file()
-                    {
-                        match std::fs::read_to_string(&path)
-                            .map_err(|e| e.to_string())
-                            .and_then(|t| magnetic::parse_points(&t).map(|p| (t, p)))
+                            )
+                            .clicked()
+                            && let Some(path) = rfd::FileDialog::new()
+                                .add_filter("CSV", &["csv", "txt"])
+                                .pick_file()
                         {
-                            Ok((text, p)) => {
-                                let name = path
-                                    .file_name()
-                                    .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                                self.common.points = Some((name, p));
-                                self.common.points_text = Some(text);
-                                self.common.points_error = None;
-                            }
-                            Err(e) => {
-                                self.common.points_error = Some(format!("{}: {e}", path.display()))
+                            match std::fs::read_to_string(&path)
+                                .map_err(|e| e.to_string())
+                                .and_then(|t| magnetic::parse_points(&t).map(|p| (t, p)))
+                            {
+                                Ok((text, p)) => {
+                                    let name = path.file_name().map_or(String::new(), |n| {
+                                        n.to_string_lossy().into_owned()
+                                    });
+                                    self.common.points = Some((name, p));
+                                    self.common.points_text = Some(text);
+                                    self.common.points_error = None;
+                                }
+                                Err(e) => {
+                                    self.common.points_error =
+                                        Some(format!("{}: {e}", path.display()))
+                                }
                             }
                         }
-                    }
-                    if let Some((name, p)) = &self.common.points {
-                        ui.label(format!("{} points from {name}", p.len()));
-                        if ui.small_button("Clear").clicked() {
-                            self.common.points = None;
-                            self.common.points_text = None;
+                        if let Some((name, p)) = &self.common.points {
+                            ui.label(format!("{} points from {name}", p.len()));
+                            if ui.small_button("Clear").clicked() {
+                                self.common.points = None;
+                                self.common.points_text = None;
+                            }
                         }
-                    }
-                });
-                ui.end_row();
-                if crate::field_preset::row(ui, &mut self.common.buildings, self.common.planes) {
+                    });
+                    ui.end_row();
+                }
+                if self.common.page == FieldPage::Cuts
+                    && crate::field_preset::row(ui, &mut self.common.buildings, true)
+                {
                     self.common.commit = true;
                 }
             });
@@ -1616,6 +1618,10 @@ impl ElectricFieldWindow {
                 save_csv("electric-field.csv", &electric::csv(m));
             }
         });
+        // The 2D-only method's assumptions said with its results.
+        if m.model == FieldModel::TwoD && !m.profiles.is_empty() {
+            ui.colored_label(ui.visuals().warn_fg_color, field_common::TWO_D_ASSUMES);
+        }
         if !m.charges.is_empty() {
             egui::CollapsingHeader::new(format!("Charges per wire ({})", m.charges.len()))
                 .id_salt("electric-field-charges")
@@ -1896,6 +1902,12 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
             Settings {
                 model: FieldModel::ThreeD,
                 cuts: all.cuts.clone(),
+                // The buildings' places with the cuts (no profile asked).
+                points: if all.profiles {
+                    Vec::new()
+                } else {
+                    all.points.clone()
+                },
                 ..none.clone()
             },
         ));
@@ -1930,3 +1942,62 @@ const GRADIENT_EFFECT: &str = "The conductor surface gradient (kV/cm rms) by a c
 /// What the stretches per span change, measured (the theory's
 /// sensitivity table; filled from it).
 const STRETCHES_EFFECT: &str = "measured against 64, a profile's largest value near a structure: 4: 1.2 % off, 8: 0.16 %, 16: 0.03 %, 24 (default): 0.005 %; the time hardly changes";
+
+/// What a page computes: its line and what is behind its (?).
+fn what_it_computes(page: FieldPage) -> (&'static str, &'static str) {
+    const ALL: &str = "The electric field strength (kV/m, the rms of the vector) of the line's \
+        voltages, from the wires where they hang in a weather case: the charge per metre of \
+        every wire from the cross-section where it is (q = inv(P) · V, the line parameters' \
+        potential coefficients). Trees and buildings are not modelled. A limit is yours to \
+        give; none is built in. Built, in active development, not approved yet.";
+    match page {
+        FieldPage::Profiles => (
+            "E (kV/m) across each span ticked, at a height above the ground, and at points from \
+             CSV: plotted and listed in Results.",
+            ALL,
+        ),
+        FieldPage::Cuts => (
+            "Isolines of E (kV/m) in vertical planes across the line at the stations asked: \
+             Results › Open cut shows each on the wires.",
+            ALL,
+        ),
+        FieldPage::Volumes => (
+            "Surfaces of E (kV/m) at the levels around the wires over the spans with Volume \
+             ticked: Results › Show in 3D.",
+            ALL,
+        ),
+    }
+}
+
+/// The profiles from the 3D model.
+const PROFILES_3D: field_common::MethodText = field_common::MethodText {
+    short: "The wires and jumpers as solved, over the ground (a tiled floor by default); for \
+            any span and terrain; the time in 4 Model.",
+    long: "The wires as solved (sag, line angles, the line's length) and the jumpers as pieces \
+           of uniform charge, each span in stretches at its own cross-section's charge, over \
+           the ground as a tiled conducting floor (or a plane under each point; 4 Model), the \
+           structures' steel optional. Every point sums every piece of charge twice (the \
+           charges and their images). It sees what the span does along it and the terrain.",
+};
+
+/// The profiles by the 2D-only method.
+const PROFILES_2D: field_common::MethodText = field_common::MethodText {
+    short: "Infinite line charges at the section's heights over level ground; enough on long \
+            straight spans over level ground away from structures; in a moment.",
+    long: "Each wire an infinitely long straight line charge where it crosses the profile, over \
+           level ground at the cross-section (the charges' images in it), the classic \
+           cross-section method. No sag along the span, no line angle, no jumpers, no \
+           structures, no terrain. Under the lowest point close to 3D on a long level span; \
+           not valid near a line angle, a structure or on sloping ground (warned). The width \
+           and step change only the points shown; a profile takes a moment.",
+};
+
+/// The cuts from the 3D model (the only method the engine has for cuts).
+const CUTS_3D: field_common::MethodText = field_common::MethodText {
+    short: "The wires and jumpers as solved over the ground (the cuts' tiles, 4 Model); the \
+            time beside the cuts' sizes below.",
+    long: "The 3D model of the profiles at every point of the cut's lattice: the wires and \
+           jumpers as pieces of uniform charge over the ground (a tiled floor of the cuts' own \
+           tiles, or a plane under each point; 4 Model); the isolines drawn straight between \
+           the points. Finer steps and wider cuts take longer (said beside them).",
+};

@@ -37,7 +37,8 @@ pub mod views;
 use crate::check_help as help;
 use crate::check_ui;
 use crate::field_common::{
-    self, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon, beside_stations,
+    self, FieldPage, FieldShared, FieldStart, KeepStep, Spans, Stations, StoredCommon,
+    beside_stations,
 };
 use crate::field_results::{self, ResultRow, RowAction};
 use crate::job::save_csv;
@@ -546,8 +547,13 @@ impl MagneticFieldWindow {
             step,
             width: self.common.width,
         });
-        // A volume asked: 3D (2026-11-01: 3D makes the volumes only).
-        self.common.planes = volume.is_none();
+        // A volume asked: the 3D volumes page (2026-11-12: a run makes
+        // the page shown).
+        if volume.is_some() {
+            self.common.page = FieldPage::Volumes;
+        } else if self.common.page == FieldPage::Volumes {
+            self.common.page = FieldPage::Profiles;
+        }
     }
 
     /// The views (tests): from above, the panels, the volume's step.
@@ -665,7 +671,7 @@ impl MagneticFieldWindow {
             width: self.common.width,
             step: self.common.step,
             stations,
-            profiles: self.common.planes && self.common.profiles,
+            profiles: self.common.page == FieldPage::Profiles,
             // No isolines from above (owner, 2026-11-01: dropped).
             grids: Vec::new(),
             grid_step: None,
@@ -673,7 +679,7 @@ impl MagneticFieldWindow {
             modelled_within: self.modelled_within,
             // The cuts asked in the table (owner, 2026-10-31: "for the 2D
             // cuts it should be asked at which stations we want one").
-            cuts: if !self.common.planes {
+            cuts: if self.common.page != FieldPage::Cuts {
                 Vec::new()
             } else {
                 self.common
@@ -693,8 +699,8 @@ impl MagneticFieldWindow {
             },
             // A volume: one along each run of spans following each other
             // with Volume ticked (continuous across the line angles).
-            volumes: match (&self.common.volume, self.common.planes) {
-                (Some(v), false) => self
+            volumes: match (&self.common.volume, self.common.page) {
+                (Some(v), FieldPage::Volumes) => self
                     .common
                     .span_pick
                     .volume_runs(model, &spans)
@@ -720,9 +726,9 @@ impl MagneticFieldWindow {
                     .map(|b| b.levels_ut.as_slice()),
             ),
             // The CSV's points with the profiles; the buildings' places
-            // in any 2D run.
+            // with the cuts (2026-11-12: their page).
             points: {
-                let mut v = if self.common.planes && self.common.profiles {
+                let mut v = if self.common.page == FieldPage::Profiles {
                     self.common
                         .points
                         .as_ref()
@@ -731,7 +737,7 @@ impl MagneticFieldWindow {
                 } else {
                     Vec::new()
                 };
-                if self.common.planes
+                if self.common.page == FieldPage::Cuts
                     && let Some(b) = &self.common.buildings
                 {
                     v.extend(b.points());
@@ -995,16 +1001,8 @@ impl MagneticFieldWindow {
                     && !self.earth_typed.values().any(|e| e.0 > 0.0)
                 {
                     Some("give a circuit a current (2 Scope)".to_owned())
-                } else if matches!(
-                    self.common.stations,
-                    Stations::EverySpan | Stations::Beside { .. }
-                ) && {
-                    let spans = self.common.spans(model);
-                    self.common.span_pick.chosen(model, &spans).0.is_empty()
-                } {
-                    Some("no span ticked (3 Spans)".to_owned())
                 } else {
-                    None
+                    self.common.page_blocker(model)
                 };
                 // Two tabs (owner, 2026-10-27): the setup scrolls, the
                 // results fill theirs; Run in the footer, always visible.
@@ -1017,39 +1015,46 @@ impl MagneticFieldWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
+                        // Three pages (owner, 2026-11-12), each with only
+                        // what its output needs; Run makes the page shown.
+                        field_common::page_ui(ui, &mut self.common.page);
+                        ui.separator();
+                        let page = self.common.page;
                         if let Some(a) =
-                            check_ui::section(ui, 1, "What it checks", Some("1-what-it-checks"))
+                            check_ui::section(ui, 1, "What it computes", Some(page.guide()))
                         {
                             self.common.guide = Some(a);
                         }
-                        help::explain(
-                            ui,
-                            "The magnetic flux density (µT, the rms of the vector) of the line's \
-                             currents, from the wires where they hang in a weather case.",
-                            "3D from the solved wires (Biot–Savart for every straight piece, \
-                             bundles subconductor by subconductor) or 2D (infinite straight \
-                             conductors). A limit is yours to give; none is built in. Built, in \
-                             active development, not approved yet.",
-                        );
-                        ui.horizontal(|ui| {
-                            crate::field_help::profile(
-                                ui,
-                                crate::field_help::Field::Magnetic,
-                                self.common.width,
-                                self.common.step,
-                                self.common.height,
-                            );
-                            crate::field_help::sources(
-                                ui,
-                                crate::field_help::Field::Magnetic,
-                                false,
-                            );
+                        let (short, long) = what_it_computes(page);
+                        help::explain(ui, short, long);
+                        ui.horizontal(|ui| match page {
+                            FieldPage::Profiles => {
+                                crate::field_help::profile(
+                                    ui,
+                                    crate::field_help::Field::Magnetic,
+                                    self.common.width,
+                                    self.common.step,
+                                    self.common.height,
+                                );
+                                crate::field_help::sources(
+                                    ui,
+                                    crate::field_help::Field::Magnetic,
+                                    false,
+                                );
+                            }
+                            FieldPage::Cuts => {
+                                crate::field_help::cut(ui, self.common.cut_step);
+                            }
+                            FieldPage::Volumes => {
+                                crate::field_help::sources(
+                                    ui,
+                                    crate::field_help::Field::Magnetic,
+                                    false,
+                                );
+                            }
                         });
                         ui.separator();
-                        // The weather case: in the scope (it was in the
-                        // footer until 2026-10-27); the circuits' currents
-                        // under it.
-                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some("2-scope")) {
+                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some(page.guide())) {
                             self.common.guide = Some(a);
                         }
                         check_ui::ScopePicker::new(WINDOW, &model.line)
@@ -1072,13 +1077,34 @@ impl MagneticFieldWindow {
                         crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
-                        if let Some(a) = check_ui::section(
-                            ui,
-                            3,
-                            "Spans and what to compute in each",
-                            Some("3-spans-and-what-to-compute-in-each"),
-                        ) {
+                        if let Some(a) =
+                            check_ui::section(ui, 3, "What and where", Some(page.guide()))
+                        {
                             self.common.guide = Some(a);
+                        }
+                        match page {
+                            FieldPage::Profiles => {
+                                field_common::profiles_method_ui(
+                                    ui,
+                                    &mut self.common.two_d,
+                                    &PROFILES_3D,
+                                    &PROFILES_2D,
+                                );
+                                if self.common.two_d {
+                                    ui.checkbox(
+                                        &mut self.mean_heights,
+                                        "wires at the span's mean height",
+                                    )
+                                    .on_hover_text(
+                                        "Off: the wires where they cross the profile (at the \
+                                         lowest point by default, the larger field). On: the \
+                                         span's mean height, as the line parameters take it — \
+                                         less than under the lowest point (not on the safe side)",
+                                    );
+                                }
+                            }
+                            FieldPage::Cuts => field_common::cuts_method_ui(ui, &CUTS_3D),
+                            FieldPage::Volumes => {}
                         }
                         self.spans_ui(ui, model);
                         self.views_ui(ui, model);
@@ -1380,46 +1406,51 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
-                ui.label("Points");
-                ui.horizontal(|ui| {
-                    if ui
-                        .button("Points from CSV…")
-                        .on_hover_text(
-                            "A CSV file with a header naming x, y and z (elevation) or height \
+                if self.common.page == FieldPage::Profiles {
+                    ui.label("Points");
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button("Points from CSV…")
+                            .on_hover_text(
+                                "A CSV file with a header naming x, y and z (elevation) or height \
                              (above the ground), optionally name: e.g. places of sensitive use",
-                        )
-                        .clicked()
-                        && let Some(path) = rfd::FileDialog::new()
-                            .add_filter("CSV", &["csv", "txt"])
-                            .pick_file()
-                    {
-                        match std::fs::read_to_string(&path)
-                            .map_err(|e| e.to_string())
-                            .and_then(|t| magnetic::parse_points(&t))
+                            )
+                            .clicked()
+                            && let Some(path) = rfd::FileDialog::new()
+                                .add_filter("CSV", &["csv", "txt"])
+                                .pick_file()
                         {
-                            Ok(p) => {
-                                let name = path
-                                    .file_name()
-                                    .map_or(String::new(), |n| n.to_string_lossy().into_owned());
-                                self.common.points = Some((name, p));
-                                self.common.points_text = std::fs::read_to_string(&path).ok();
-                                self.common.points_error = None;
-                            }
-                            Err(e) => {
-                                self.common.points_error = Some(format!("{}: {e}", path.display()))
+                            match std::fs::read_to_string(&path)
+                                .map_err(|e| e.to_string())
+                                .and_then(|t| magnetic::parse_points(&t))
+                            {
+                                Ok(p) => {
+                                    let name = path.file_name().map_or(String::new(), |n| {
+                                        n.to_string_lossy().into_owned()
+                                    });
+                                    self.common.points = Some((name, p));
+                                    self.common.points_text = std::fs::read_to_string(&path).ok();
+                                    self.common.points_error = None;
+                                }
+                                Err(e) => {
+                                    self.common.points_error =
+                                        Some(format!("{}: {e}", path.display()))
+                                }
                             }
                         }
-                    }
-                    if let Some((name, p)) = &self.common.points {
-                        ui.label(format!("{} points from {name}", p.len()));
-                        if ui.small_button("Clear").clicked() {
-                            self.common.points = None;
-                            self.common.points_text = None;
+                        if let Some((name, p)) = &self.common.points {
+                            ui.label(format!("{} points from {name}", p.len()));
+                            if ui.small_button("Clear").clicked() {
+                                self.common.points = None;
+                                self.common.points_text = None;
+                            }
                         }
-                    }
-                });
-                ui.end_row();
-                if crate::field_preset::row(ui, &mut self.common.buildings, self.common.planes) {
+                    });
+                    ui.end_row();
+                }
+                if self.common.page == FieldPage::Cuts
+                    && crate::field_preset::row(ui, &mut self.common.buildings, true)
+                {
                     self.common.commit = true;
                 }
             });
@@ -1428,36 +1459,19 @@ impl MagneticFieldWindow {
         }
     }
 
+    /// The page computes by the 2D-only method (the profiles, 2D only).
+    pub(super) fn two_d_page(&self) -> bool {
+        self.common.page == FieldPage::Profiles && self.common.two_d
+    }
+
     /// The modelling settings of the inputs (owner, 2026-11-12: in 4 Model,
-    /// folded, with the wire pieces and the wires modelled): the profiles' model,
-    /// the earth wires, the jumpers.
+    /// folded, with the wire pieces and the wires modelled): the earth
+    /// wires, the jumpers (3D).
     pub(super) fn model_inputs_ui(&mut self, ui: &mut egui::Ui) {
         egui::Grid::new("magnetic-field-model-inputs")
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Profiles by");
-                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.common.two_d, false, "3D")
-                            .on_hover_text(FieldModel::ThreeD.describe());
-                        ui.selectable_value(&mut self.common.two_d, true, "2D")
-                        .on_hover_text(
-                            "Infinite straight parallel conductors: not valid near a line angle \
-                             over 5°, near crossings, or on spans between differently arranged \
-                             structures (warned)",
-                        );
-                        if self.common.two_d {
-                            ui.checkbox(&mut self.mean_heights, "wires at the span's mean height")
-                            .on_hover_text(
-                                "Off: the wires where they cross the profile (at the lowest point \
-                                 by default, the larger field). On: the span's mean height, as \
-                                 the line parameters take it — less than under the lowest point",
-                            );
-                        }
-                    })
-                });
-                ui.end_row();
                 ui.label("Earth wires");
                 ui.horizontal(|ui| {
                     ui.checkbox(
@@ -1482,7 +1496,8 @@ impl MagneticFieldWindow {
                     }
                 });
                 ui.end_row();
-                {
+                // The jumpers: in the 3D model only.
+                if !self.two_d_page() {
                     ui.label("Jumpers");
                     ui.checkbox(&mut self.common.jumpers, "carry their phase's current")
                         .on_hover_text(
@@ -1499,7 +1514,11 @@ impl MagneticFieldWindow {
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let spans = self.common.spans(model);
         self.common.spans_ui(ui, "magnetic-field", model, &spans);
-        self.sizes_ui(ui, model, &spans);
+        // The cuts' or the volumes' sizes (the profiles': in the table's
+        // setup).
+        if self.common.page != FieldPage::Profiles {
+            self.sizes_ui(ui, model, &spans);
+        }
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile,
@@ -1657,6 +1676,10 @@ impl MagneticFieldWindow {
                 save_csv("magnetic-field.csv", &magnetic::csv(m));
             }
         });
+        // The 2D-only method's assumptions said with its results.
+        if m.model == FieldModel::TwoD && !m.profiles.is_empty() {
+            ui.colored_label(ui.visuals().warn_fg_color, field_common::TWO_D_ASSUMES);
+        }
         for c in &m.currents {
             ui.label(
                 egui::RichText::new(if c.source == magnetic::PER_PHASE_SOURCE {
@@ -1900,6 +1923,12 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
             Settings {
                 model: FieldModel::ThreeD,
                 cuts: all.cuts.clone(),
+                // The buildings' places with the cuts (no profile asked).
+                points: if all.profiles {
+                    Vec::new()
+                } else {
+                    all.points.clone()
+                },
                 ..none.clone()
             },
         ));
@@ -1927,3 +1956,61 @@ fn steps_of(all: &Settings) -> Vec<(String, Settings)> {
     }
     out
 }
+
+/// What a page computes: its line and what is behind its (?).
+fn what_it_computes(page: FieldPage) -> (&'static str, &'static str) {
+    const ALL: &str = "The magnetic flux density (µT, the rms of the vector) of the line's \
+        currents, from the wires where they hang in a weather case. A limit is yours to give; \
+        none is built in. Built, in active development, not approved yet.";
+    match page {
+        FieldPage::Profiles => (
+            "B (µT) across each span ticked, at a height above the ground, and at points from \
+             CSV: plotted and listed in Results.",
+            ALL,
+        ),
+        FieldPage::Cuts => (
+            "Isolines of B (µT) in vertical planes across the line at the stations asked: \
+             Results › Open cut shows each on the wires.",
+            ALL,
+        ),
+        FieldPage::Volumes => (
+            "Surfaces of B (µT) at the levels around the wires over the spans with Volume \
+             ticked: Results › Show in 3D.",
+            ALL,
+        ),
+    }
+}
+
+/// The profiles from the 3D model.
+const PROFILES_3D: field_common::MethodText = field_common::MethodText {
+    short: "The wires as solved (sag, line angles, the line's length, jumpers); for any span; \
+            the time below (4 Model).",
+    long: "Biot–Savart for every straight piece of the wires as solved in the weather case \
+           (bundles subconductor by subconductor), the jumpers and, with the earth wires on \
+           through the structures, their currents. It sees what the span does along it: the \
+           sag, the line angles, the line's ends. The time grows with the pieces (4 Model) and \
+           the profile's points (its width over its step). Profiles take the whole line.",
+};
+
+/// The profiles by the 2D-only method.
+const PROFILES_2D: field_common::MethodText = field_common::MethodText {
+    short: "Infinite straight parallel conductors at the section's heights; enough on long \
+            straight spans away from structures and angles; in a moment.",
+    long: "Each wire an infinitely long straight conductor at the height where it crosses the \
+           profile (at the lowest point by default; or at the span's mean height), the \
+           classic cross-section formula. No sag along the span, no line angle, no jumpers, no \
+           structures. Under the lowest point it is conservative against the 3D model on \
+           sagging spans (theory); near a line angle over 5°, a crossing or a span between \
+           differently arranged structures it is not valid (warned per profile). The width and \
+           step change only the points shown; a profile takes a moment.",
+};
+
+/// The cuts from the 3D model (the only method the engine has for cuts).
+const CUTS_3D: field_common::MethodText = field_common::MethodText {
+    short: "The wires as solved within the distance modelled (4 Model); the time beside the \
+            cuts' sizes below.",
+    long: "Biot–Savart for every straight piece of the wires as solved within the distance \
+           modelled of the cut (4 Model; each run says what the rest change), at every point \
+           of the cut's lattice; the isolines drawn straight between the points. Finer steps \
+           and wider cuts take longer (said beside them).",
+};

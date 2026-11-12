@@ -69,14 +69,12 @@ pub struct FieldShared<A> {
     pub span_pick: SpanPick,
     /// The limit drawn and checked, in the field's unit (none given).
     pub limit: Option<f64>,
-    /// The profiles' model: 2D (infinite line charges or straight
-    /// conductors), else 3D.
+    /// The profiles' method: 2D only (infinite line charges or straight
+    /// conductors), else from the 3D model.
     pub two_d: bool,
-    /// What a run makes (owner, 2026-11-01): 2D — the cuts and, with
-    /// `profiles`, the profiles; else 3D — the volumes only.
-    pub planes: bool,
-    /// 2D: the profiles (and the points) too.
-    pub profiles: bool,
+    /// The page of the setup shown, what a run makes (owner, 2026-11-12:
+    /// three pages, 3D volumes, 2D profiles, 2D cuts).
+    pub page: FieldPage,
     /// Points read from a CSV file, and its name.
     pub points: Option<(String, Vec<GivenPoint>)>,
     /// The cuts and places set up by Checks › Electrical › Buildings
@@ -181,6 +179,9 @@ pub struct StoredCommon {
     pub planes: Option<bool>,
     /// 2D: the profiles too (absent: yes).
     pub profiles: Option<bool>,
+    /// The page shown, what a run makes (2026-11-12; absent: from
+    /// `planes` and `profiles`, [`FieldPage::of_old`]).
+    pub page: Option<FieldPage>,
     /// The points file's name and text.
     pub points: Option<(String, String)>,
     /// The buildings' preset (2026-11-03).
@@ -237,8 +238,7 @@ impl<A> FieldShared<A> {
             span_pick: SpanPick::default(),
             limit: None,
             two_d: false,
-            planes: true,
-            profiles: true,
+            page: FieldPage::default(),
             points: None,
             buildings: None,
             points_text: None,
@@ -331,22 +331,41 @@ impl<A> FieldShared<A> {
         self.saved = Some((key, json));
     }
 
-    /// What a run makes and the spans' table; the profiles' setup under it.
+    /// The spans' table with the page's column only; on 2D profiles the
+    /// profiles' setup under it.
     pub(crate) fn spans_ui(&mut self, ui: &mut egui::Ui, id: &str, model: &Model, spans: &Spans) {
-        method_ui(ui, &mut self.planes, &mut self.profiles);
         self.span_pick.table(
             ui,
             id,
             model,
             spans,
             Columns {
-                profile: self.planes && self.profiles,
-                cuts: self.planes,
-                volume: !self.planes,
+                profile: self.page == FieldPage::Profiles,
+                cuts: self.page == FieldPage::Cuts,
+                volume: self.page == FieldPage::Volumes,
             },
         );
-        if self.planes && self.profiles {
+        if self.page == FieldPage::Profiles {
             self.profiles_setup_ui(ui, id, spans);
+        }
+    }
+
+    /// What the page's run waits for in the span table (none: it can
+    /// run): a span ticked for the profiles, a cut asked, a volume ticked.
+    pub(crate) fn page_blocker(&mut self, model: &Model) -> Option<String> {
+        let spans = self.spans(model);
+        match self.page {
+            FieldPage::Profiles => {
+                (matches!(self.stations, Stations::EverySpan | Stations::Beside { .. })
+                    && self.span_pick.chosen(model, &spans).0.is_empty())
+                .then(|| "no span ticked (3 What and where)".to_owned())
+            }
+            FieldPage::Cuts => (self.span_pick.cut_places(model, &spans).0.is_empty()
+                && self.buildings.is_none())
+            .then(|| "no cut asked: + station in the table (3 What and where)".to_owned()),
+            FieldPage::Volumes => (self.volume.is_none()
+                || self.span_pick.volume_runs(model, &spans).is_empty())
+            .then(|| "no span with Volume ticked (3 What and where)".to_owned()),
         }
     }
 
@@ -374,8 +393,10 @@ impl<A> FieldShared<A> {
             spans_on: self.span_pick.on.iter().cloned().collect(),
             limit: self.limit,
             two_d: self.two_d,
-            planes: Some(self.planes),
-            profiles: Some(self.profiles),
+            page: Some(self.page),
+            // As older versions read them: the page's outputs.
+            planes: Some(self.page != FieldPage::Volumes),
+            profiles: Some(self.page == FieldPage::Profiles),
             points: match (&self.points, &self.points_text) {
                 (Some((name, _)), Some(text)) => Some((name.clone(), text.clone())),
                 _ => None,
@@ -440,8 +461,7 @@ impl<A> FieldShared<A> {
             .unwrap_or_default();
         self.limit = st.limit;
         self.two_d = st.two_d;
-        self.planes = st.planes.unwrap_or(true);
-        self.profiles = st.profiles.unwrap_or(true);
+        self.page = st.page.unwrap_or(FieldPage::of_old(st.planes, st.profiles));
         self.piece_length = st.piece_length;
         self.levels = st.levels.unwrap_or(d.levels);
         self.fill = st.fill.unwrap_or(d.fill);
@@ -498,6 +518,7 @@ impl<A> FieldShared<A> {
     /// Asks a 2D cut in span `k` at `at` (tests).
     #[cfg(test)]
     pub fn add_cut(&mut self, model: &Model, k: usize, at: CutAt) {
+        self.page = FieldPage::Cuts;
         let spans = self.spans(model);
         self.span_pick
             .cuts
@@ -553,6 +574,10 @@ impl<A> FieldShared<A> {
 
     /// Sets the buildings' preset (Checks › Electrical › Buildings).
     pub fn set_buildings(&mut self, preset: Option<crate::field_preset::Preset>) {
+        // The buildings' cuts and places: on the 2D cuts page.
+        if preset.is_some() {
+            self.page = FieldPage::Cuts;
+        }
         self.buildings = preset;
         self.commit = true;
     }
@@ -742,21 +767,159 @@ pub(crate) fn profiles_ui(ui: &mut egui::Ui, id: &str, stations: &mut Stations, 
     });
 }
 
-/// What a run makes (owner, 2026-11-01): **2D** — the cuts at the
-/// stations asked in the span table and, ticked, the profiles; **3D** —
-/// the volumes only. Shared by the Magnetic and the Electric field.
-pub(crate) fn method_ui(ui: &mut egui::Ui, planes: &mut bool, profiles: &mut bool) {
+/// The three pages of a field window's setup (owner, 2026-11-12: "one
+/// to make the 3D volumes, the 2D profiles and the 2D cuts"): each shows
+/// only what its output needs; a run computes the page shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FieldPage {
+    /// The field's surfaces around the wires over the spans ticked.
+    Volumes,
+    /// The field across the spans at a height above the ground.
+    #[default]
+    Profiles,
+    /// The field's isolines in vertical planes across the line.
+    Cuts,
+}
+
+impl FieldPage {
+    /// The three, in the order of the tabs.
+    pub const ALL: [FieldPage; 3] = [FieldPage::Volumes, FieldPage::Profiles, FieldPage::Cuts];
+
+    /// Its tab's title.
+    pub fn title(self) -> &'static str {
+        match self {
+            FieldPage::Volumes => "3D volumes",
+            FieldPage::Profiles => "2D profiles",
+            FieldPage::Cuts => "2D cuts",
+        }
+    }
+
+    /// Its part of the window's user guide page (the heading's anchor).
+    pub fn guide(self) -> &'static str {
+        match self {
+            FieldPage::Volumes => "3d-volumes",
+            FieldPage::Profiles => "2d-profiles",
+            FieldPage::Cuts => "2d-cuts",
+        }
+    }
+
+    /// The page of inputs kept before the pages (2026-11-12): `planes`
+    /// false the volumes; else the profiles when they were made (absent:
+    /// yes), the cuts when not.
+    pub fn of_old(planes: Option<bool>, profiles: Option<bool>) -> FieldPage {
+        match (planes.unwrap_or(true), profiles.unwrap_or(true)) {
+            (false, _) => FieldPage::Volumes,
+            (true, true) => FieldPage::Profiles,
+            (true, false) => FieldPage::Cuts,
+        }
+    }
+}
+
+/// The pages' tabs at the top of the setup.
+pub(crate) fn page_ui(ui: &mut egui::Ui, page: &mut FieldPage) {
     ui.horizontal(|ui| {
         ui.label("Make");
-        ui.selectable_value(planes, true, "2D: cuts and profiles")
-            .on_hover_text("Isolines in vertical cuts at the stations asked (+ station in the table), and the profiles across the spans if ticked");
-        ui.selectable_value(planes, false, "3D: volumes")
-            .on_hover_text("The surfaces of the levels around the wires over the spans with Volume ticked");
-        if *planes {
-            ui.checkbox(profiles, "profiles too")
-                .on_hover_text("The field across each span ticked, at a height above the ground (and the points from CSV)");
+        for p in FieldPage::ALL {
+            let hover = match p {
+                FieldPage::Volumes => {
+                    "The surfaces of the levels around the wires over the spans with Volume \
+                     ticked, from the 3D model"
+                }
+                FieldPage::Profiles => {
+                    "The field across each span ticked at a height above the ground (and at \
+                     the points from CSV): from the 3D model or 2D only"
+                }
+                FieldPage::Cuts => {
+                    "Isolines in vertical planes across the line at the stations asked \
+                     (+ station in the table), from the 3D model"
+                }
+            };
+            ui.selectable_value(page, p, egui::RichText::new(p.title()).strong())
+                .on_hover_text(hover);
         }
     });
+}
+
+/// A method in words: one short line beside it (what it assumes, when it
+/// is enough, its time), the rest behind its (?).
+pub(crate) struct MethodText {
+    /// The line beside the choice.
+    pub short: &'static str,
+    /// Behind the (?).
+    pub long: &'static str,
+}
+
+/// The profiles' method, each beside its explanation (owner, 2026-11-12:
+/// "each method clearly explained in the page aside with the influence
+/// of each parameter"): from the 3D model or 2D only.
+pub(crate) fn profiles_method_ui(
+    ui: &mut egui::Ui,
+    two_d: &mut bool,
+    three_d: &MethodText,
+    flat: &MethodText,
+) {
+    egui::Grid::new("field-profiles-method")
+        .num_columns(2)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Method");
+            ui.radio_value(two_d, false, "from the 3D model")
+                .on_hover_text(three_d.long);
+            ui.end_row();
+            ui.label("");
+            crate::check_help::explain(ui, three_d.short, three_d.long);
+            ui.end_row();
+            ui.label("");
+            ui.radio_value(two_d, true, "2D only")
+                .on_hover_text(flat.long);
+            ui.end_row();
+            ui.label("");
+            crate::check_help::explain(ui, flat.short, flat.long);
+            ui.end_row();
+        });
+    // The 2D method's assumptions are not on the safe side everywhere:
+    // said where it is chosen.
+    if *two_d {
+        ui.colored_label(ui.visuals().warn_fg_color, TWO_D_ASSUMES);
+    }
+}
+
+/// What the 2D-only method assumes, said where it is chosen and in its
+/// results.
+pub(crate) const TWO_D_ASSUMES: &str = "2D only assumes infinitely long, straight, parallel \
+     conductors at the section's heights (no sag along the span, no line angle, no jumpers, no \
+     structures): NOT ON THE SAFE SIDE near a line angle, a structure or a crossing (warned per \
+     profile).";
+
+/// What the cuts' 2D-only method lacks: the engines compute cuts from the
+/// 3D model only (2026-11-12).
+pub(crate) const CUTS_TWO_D_MISSING: &str =
+    "not available yet: the field engines compute cuts from the 3D model only";
+
+/// The cuts' method: from the 3D model (the only one the engines have);
+/// 2D only shown disabled with the reason.
+pub(crate) fn cuts_method_ui(ui: &mut egui::Ui, three_d: &MethodText) {
+    egui::Grid::new("field-cuts-method")
+        .num_columns(2)
+        .spacing([10.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Method");
+            let _ = ui
+                .radio(true, "from the 3D model")
+                .on_hover_text(three_d.long);
+            ui.end_row();
+            ui.label("");
+            crate::check_help::explain(ui, three_d.short, three_d.long);
+            ui.end_row();
+            ui.label("");
+            ui.add_enabled(false, egui::RadioButton::new(false, "2D only"))
+                .on_disabled_hover_text(CUTS_TWO_D_MISSING);
+            ui.end_row();
+            ui.label("");
+            ui.label(egui::RichText::new(CUTS_TWO_D_MISSING).small().weak());
+            ui.end_row();
+        });
 }
 
 /// A profile to plot ([`plot`]): what differs between the fields.

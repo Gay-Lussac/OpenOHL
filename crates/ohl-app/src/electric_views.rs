@@ -21,6 +21,7 @@ use ohl_electrical::field_views::{self, VerticalCut};
 use ohl_electrical::magnetic;
 
 use super::{ElectricFieldWindow, Spans, Stations};
+use crate::field_common::FieldPage;
 use crate::field_overlay::{self, Level, Overlay};
 use crate::magnetic_field::views::{
     PanelCut, PanelKey, PieceStats, SUSTAINED, VolumeSetup, duration, nowhere, off_text,
@@ -70,23 +71,40 @@ impl ElectricFieldWindow {
             Some(l) if l > 0.0 => (st.length / l).max(st.count as f64),
             _ => st.count as f64,
         };
-        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some("4-model-folded")) {
+        let page = self.common.page;
+        let flat = self.two_d_page();
+        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some(page.guide())) {
             self.common.guide = Some(a);
         }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
-        // each setting with its effect and time when opened.
-        egui::CollapsingHeader::new(
-            "Profiles by, jumpers, stretches, the ground and its tiles, steel, wire pieces",
-        )
-        .id_salt("electric-field-model-fold")
-        .default_open(false)
-        .show(ui, |ui| {
-            self.model_inputs_ui(ui, model);
-            self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
-        });
-        if let Some(a) =
-            crate::check_ui::section(ui, 5, "Views and levels", Some("5-views-and-levels"))
-        {
+        // each setting with its effect and time when opened; only what the
+        // page's method takes (owner, 2026-11-12).
+        if flat {
+            // 2D only: nothing of the 3D model; the profiles' time.
+            crate::check_help::explain(
+                ui,
+                "2D only: no model setting; a profile takes a moment.",
+                "The 2D-only method takes the wires' heights where they cross the profile and \
+                 level ground there: the jumpers, the stretches, the ground's tiles, the steel \
+                 and the wire pieces are the 3D model's.",
+            );
+        } else {
+            egui::CollapsingHeader::new(
+                "Jumpers, stretches, the ground and its tiles, steel, wire pieces",
+            )
+            .id_salt("electric-field-model-fold")
+            .default_open(false)
+            .show(ui, |ui| {
+                self.model_inputs_ui(ui, model);
+                self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
+            });
+        }
+        // The levels: drawn in cuts and volumes, not on a profile (its
+        // plot draws the limit).
+        if page == FieldPage::Profiles {
+            return;
+        }
+        if let Some(a) = crate::check_ui::section(ui, 5, "Views and levels", Some(page.guide())) {
             self.common.guide = Some(a);
         }
         self.levels_ui(ui, rate, rate_from, pieces);
@@ -234,7 +252,10 @@ impl ElectricFieldWindow {
                     ),
                 );
                 ui.end_row();
-                // The profiles' and points' time.
+                // The profiles' and points' time (their page).
+                if self.common.page != FieldPage::Profiles {
+                    return;
+                }
                 let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
                 let profiles = match self.common.stations {
                     Stations::EverySpan => self.common.span_pick.chosen(model, spans).0.len().max(1) as f64,
@@ -267,7 +288,6 @@ impl ElectricFieldWindow {
     /// Section 5: the levels drawn, the cuts coloured by band, and the
     /// field in any cross-section panel opened.
     fn levels_ui(&mut self, ui: &mut egui::Ui, rate: f64, rate_from: &str, pieces: f64) {
-        crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.horizontal(|ui| {
             ui.label("Levels drawn [kV/m]");
@@ -325,8 +345,14 @@ impl ElectricFieldWindow {
                     on: true,
                 });
             }
-            ui.checkbox(&mut self.common.fill, "colour the cuts by band");
+            if self.common.page == FieldPage::Cuts {
+                ui.checkbox(&mut self.common.fill, "colour the cuts by band");
+            }
         });
+        // The cross-section panels: cuts of their own (the cuts' page).
+        if self.common.page != FieldPage::Cuts {
+            return;
+        }
         egui::Grid::new("electric-field-views")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -398,15 +424,19 @@ impl ElectricFieldWindow {
             return None;
         }
         let limit = electric::floor_memory();
-        let mut floors = vec![(
-            "the profiles' and points' floor",
-            electric::TiledFloor {
-                fine: self.tile,
-                ..Default::default()
-            }
-            .tiles(self.common.width),
-        )];
-        if !self.common.span_pick.cut_places(model, spans).0.is_empty() {
+        let page = self.common.page;
+        let mut floors = Vec::new();
+        if page == FieldPage::Profiles && !self.common.two_d {
+            floors.push((
+                "the profiles' and points' floor",
+                electric::TiledFloor {
+                    fine: self.tile,
+                    ..Default::default()
+                }
+                .tiles(self.common.width),
+            ));
+        }
+        if page == FieldPage::Cuts && !self.common.span_pick.cut_places(model, spans).0.is_empty() {
             floors.push((
                 "a cut's floor",
                 electric::TiledFloor {
@@ -417,7 +447,7 @@ impl ElectricFieldWindow {
                 .tiles(self.common.cut_width),
             ));
         }
-        if let (Some(v), false) = (&self.common.volume, self.common.planes) {
+        if let (Some(v), FieldPage::Volumes) = (&self.common.volume, page) {
             let width = v.width;
             let runs = self.common.span_pick.volume_runs(model, spans);
             if let Some(longest) = runs.iter().map(|r| r.1).max() {
@@ -463,9 +493,9 @@ impl ElectricFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                // 2D: the cuts; 3D: the volumes (owner, 2026-11-01).
-                if self.common.planes {
-                    ui.label("2D cuts");
+                // The cuts' page: the cuts; the volumes' page: the volumes.
+                if self.common.page == FieldPage::Cuts {
+                    ui.label("Cut size");
                     ui.horizontal(|ui| {
                         ui.label("±");
                         crate::style::field(
@@ -533,7 +563,7 @@ impl ElectricFieldWindow {
                     }
                     // The volumes: their spans ticked in the table.
                 } else {
-                    ui.label("Volumes");
+                    ui.label("Volume size");
                     ui.horizontal(|ui| {
                         let v = self.common.volume.get_or_insert(VolumeSetup {
                             step: 2.0,
@@ -686,19 +716,25 @@ impl ElectricFieldWindow {
     pub(super) fn summary(&mut self, model: &Model) -> String {
         let spans = self.common.spans(model);
         let n = self.common.span_pick.chosen(model, &spans).0.len();
-        let profiles = match (
-            self.common.planes && self.common.profiles,
-            &self.common.stations,
-        ) {
+        let page = self.common.page;
+        let profiles = match (page == FieldPage::Profiles, &self.common.stations) {
             (false, _) => 0,
             (true, Stations::EverySpan) => n,
             (true, Stations::Beside { .. }) => 2 * n,
             (true, Stations::One { .. }) => 1,
         };
-        let (cuts, volumes) = if self.common.planes {
-            (self.common.span_pick.cuts_asked(model, &spans).len(), 0)
-        } else {
-            (0, self.common.span_pick.volume_runs(model, &spans).len())
+        let (cuts, volumes) = match page {
+            FieldPage::Cuts => (
+                self.common.span_pick.cuts_asked(model, &spans).len()
+                    + self.common.buildings.as_ref().map_or(0, |b| b.cuts.len()),
+                0,
+            ),
+            FieldPage::Volumes => (0, self.common.span_pick.volume_runs(model, &spans).len()),
+            FieldPage::Profiles => (0, 0),
+        };
+        let given = match page {
+            FieldPage::Profiles => self.common.points.as_ref().map_or(0, |p| p.1.len()),
+            _ => 0,
         };
         let st = self.piece_stats(model);
         let (rate, _) = self.rate();
@@ -709,7 +745,8 @@ impl ElectricFieldWindow {
         let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
         let cut_points = (2.0 * self.common.cut_width / self.common.cut_step + 1.0)
             * (70.0 / self.common.cut_step + 1.0);
-        let mut seconds = (profiles as f64 * across + cuts as f64 * cut_points) * pieces * rate;
+        let mut seconds =
+            (profiles as f64 * across + given as f64 + cuts as f64 * cut_points) * pieces * rate;
         if self.tiled {
             let floor = electric::TiledFloor {
                 fine: self.tile,
@@ -740,13 +777,30 @@ impl ElectricFieldWindow {
                 ticked as f64 * (st.span() / v.step) * (2.0 * v.width / v.step) * (70.0 / v.step);
             seconds += full * self.common.volume_share.unwrap_or(0.5) * pieces * rate;
         }
-        if self.common.planes {
-            format!(
-                "2D · {n} span(s) · {cuts} cut(s) · {profiles} profile(s) — {}",
-                duration(seconds)
-            )
+        let points = if given > 0 {
+            format!(" + {given} point(s)")
         } else {
-            format!("3D · {volumes} volume(s) — {}", duration(seconds))
+            String::new()
+        };
+        match page {
+            FieldPage::Profiles if self.common.two_d => format!(
+                "Run: 2D profiles, {profiles} profile(s){points}, 2D only (infinite line \
+                 charges) — in a moment"
+            ),
+            FieldPage::Profiles => format!(
+                "Run: 2D profiles, {profiles} profile(s){points}, from the 3D model — {}",
+                duration(seconds)
+            ),
+            FieldPage::Cuts => format!(
+                "Run: 2D cuts, {cuts} cut(s), from the 3D model — {}",
+                duration(seconds)
+            ),
+            FieldPage::Volumes => {
+                format!(
+                    "Run: 3D volumes, {volumes} volume(s) — {}",
+                    duration(seconds)
+                )
+            }
         }
     }
 

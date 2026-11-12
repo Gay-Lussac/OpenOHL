@@ -21,6 +21,7 @@ use ohl_electrical::field_views::{self, CutValues, Deviation, VerticalCut};
 use ohl_electrical::magnetic::{self, Wires3d};
 
 use super::{MagneticFieldWindow, Spans, Stations};
+use crate::field_common::FieldPage;
 use crate::field_overlay::{self, Level, Overlay};
 use crate::job::Job;
 use crate::model::Model;
@@ -285,18 +286,26 @@ impl MagneticFieldWindow {
                 None => pieces,
             }
         };
-        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some("4-model-folded")) {
+        let page = self.common.page;
+        let flat = self.two_d_page();
+        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some(page.guide())) {
             self.common.guide = Some(a);
         }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
-        // each setting with its effect and time when opened.
-        egui::CollapsingHeader::new(
-            "Profiles by, earth wires, jumpers, wire pieces, the wires modelled",
-        )
+        // each setting with its effect and time when opened; only what the
+        // page's method takes (owner, 2026-11-12).
+        egui::CollapsingHeader::new(match (page, flat) {
+            (_, true) => "Earth wires",
+            (FieldPage::Profiles, false) => "Earth wires, jumpers, wire pieces",
+            _ => "Earth wires, jumpers, wire pieces, the wires modelled",
+        })
         .id_salt("magnetic-field-model-fold")
         .default_open(false)
         .show(ui, |ui| {
             self.model_inputs_ui(ui);
+            if flat {
+                return;
+            }
         egui::Grid::new("magnetic-field-model")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -381,6 +390,11 @@ impl MagneticFieldWindow {
                     ),
                 );
                 ui.end_row();
+                // The cut-off: cuts and volumes only (profiles take the
+                // whole line).
+                if page == FieldPage::Profiles {
+                    return;
+                }
                 ui.label("Modelled");
                 // No "whole line" choice (owner, 2026-11-12: far too long to
                 // compute; a larger distance simulates it).
@@ -429,15 +443,19 @@ impl MagneticFieldWindow {
             (st.span() / self.common.piece_length.unwrap_or(st.longest).max(0.1)).ceil() as usize;
         ui.horizontal(|ui| {
             crate::field_help::pieces(ui, per_span);
-            crate::field_help::modelled(ui, self.modelled_within);
+            if page != FieldPage::Profiles {
+                crate::field_help::modelled(ui, self.modelled_within);
+            }
         });
             });
-        if let Some(a) =
-            crate::check_ui::section(ui, 5, "Views and levels", Some("5-views-and-levels"))
-        {
+        // The levels: drawn in cuts and volumes, not on a profile (its
+        // plot draws the limit).
+        if page == FieldPage::Profiles {
+            return;
+        }
+        if let Some(a) = crate::check_ui::section(ui, 5, "Views and levels", Some(page.guide())) {
             self.common.guide = Some(a);
         }
-        crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.horizontal(|ui| {
             ui.label("Levels drawn [µT]");
@@ -495,8 +513,14 @@ impl MagneticFieldWindow {
                     on: true,
                 });
             }
-            ui.checkbox(&mut self.common.fill, "colour the cuts by band");
+            if page == FieldPage::Cuts {
+                ui.checkbox(&mut self.common.fill, "colour the cuts by band");
+            }
         });
+        // The cross-section panels: cuts of their own (the cuts' page).
+        if page != FieldPage::Cuts {
+            return;
+        }
         egui::Grid::new("magnetic-field-views")
             .num_columns(2)
             .spacing([10.0, 4.0])
@@ -580,9 +604,9 @@ impl MagneticFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                // 2D: the cuts; 3D: the volumes (owner, 2026-11-01).
-                if self.common.planes {
-                    ui.label("2D cuts");
+                // The cuts' page: the cuts; the volumes' page: the volumes.
+                if self.common.page == FieldPage::Cuts {
+                    ui.label("Cut size");
                     ui.horizontal(|ui| {
                         ui.label("±");
                         crate::style::field(
@@ -648,7 +672,7 @@ impl MagneticFieldWindow {
                         ui.end_row();
                     }
                 } else {
-                    ui.label("Volumes");
+                    ui.label("Volume size");
                     ui.horizontal(|ui| {
                         let v = self.common.volume.get_or_insert(VolumeSetup {
                             step: 2.0,
@@ -725,51 +749,72 @@ impl MagneticFieldWindow {
     }
 
     /// What the run will compute and about how long it takes (owner,
-    /// 2026-10-31: a summary beside Run): the spans ticked, the profiles,
-    /// the cuts, the volumes — 2D: the cuts and the profiles asked; 3D:
-    /// the volumes (owner, 2026-11-01).
+    /// 2026-10-31: a summary beside Run; 2026-11-12: the page shown), as
+    /// "Run: 2D cuts at 3 stations, from the 3D model, ≈ 4 s".
     pub(super) fn summary(&mut self, model: &Model) -> String {
         let spans = self.common.spans(model);
         let n = self.common.span_pick.chosen(model, &spans).0.len();
-        let profiles = match (
-            self.common.planes && self.common.profiles,
-            &self.common.stations,
-        ) {
-            (false, _) => 0,
-            (true, Stations::EverySpan) => n,
-            (true, Stations::Beside { .. }) => 2 * n,
-            (true, Stations::One { .. }) => 1,
-        };
-        let (cuts, volume_spans, volumes) = if self.common.planes {
-            (self.common.span_pick.cuts_asked(model, &spans).len(), 0, 0)
-        } else {
-            let runs = self.common.span_pick.volume_runs(model, &spans);
-            (0, runs.iter().map(|r| r.1).sum::<usize>(), runs.len())
-        };
         let st = self.piece_stats(model);
         let (rate, _) = self.rate();
         let pieces = self.pieces_with(&st, self.common.piece_length);
-        let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
-        let cut_points = (2.0 * self.common.cut_width / self.common.cut_step + 1.0)
-            * (70.0 / self.common.cut_step + 1.0);
-        let mut points = profiles as f64 * across + cuts as f64 * cut_points;
-        if let Some(v) = &self.common.volume {
-            points += volume_spans as f64
-                * (st.span() / v.step)
-                * (2.0 * v.width / v.step)
-                * (70.0 / v.step)
-                * self.common.volume_share.unwrap_or(0.5);
-        }
-        if self.common.planes {
-            format!(
-                "2D · {n} span(s) · {cuts} cut(s) · {profiles} profile(s) — {}",
-                duration(points * pieces * rate)
-            )
-        } else {
-            format!(
-                "3D · {volumes} volume(s) over {volume_spans} span(s) — {}",
-                duration(points * pieces * rate)
-            )
+        match self.common.page {
+            FieldPage::Profiles => {
+                let profiles = match &self.common.stations {
+                    Stations::EverySpan => n,
+                    Stations::Beside { .. } => 2 * n,
+                    Stations::One { .. } => 1,
+                };
+                let across = (2.0 * self.common.width / self.common.step.max(0.01)).round() + 1.0;
+                let given = self.common.points.as_ref().map_or(0, |p| p.1.len());
+                let points = if given > 0 {
+                    format!(" + {given} point(s)")
+                } else {
+                    String::new()
+                };
+                if self.common.two_d {
+                    format!(
+                        "Run: 2D profiles, {profiles} profile(s){points}, 2D only (infinite \
+                         straight conductors) — in a moment"
+                    )
+                } else {
+                    format!(
+                        "Run: 2D profiles, {profiles} profile(s){points}, from the 3D model — {}",
+                        duration((profiles as f64 * across + given as f64) * pieces * rate)
+                    )
+                }
+            }
+            FieldPage::Cuts => {
+                let cuts = self.common.span_pick.cuts_asked(model, &spans).len();
+                let more = self.common.buildings.as_ref().map_or(0, |b| b.cuts.len());
+                let cut_points = (2.0 * self.common.cut_width / self.common.cut_step + 1.0)
+                    * (70.0 / self.common.cut_step + 1.0);
+                let line = st.line.max(1.0);
+                let taken = match self.modelled_within {
+                    Some(d) => pieces * ((2.0 * d) / line).min(1.0),
+                    None => pieces,
+                };
+                format!(
+                    "Run: 2D cuts, {} cut(s), from the 3D model — {}",
+                    cuts + more,
+                    duration((cuts + more) as f64 * cut_points * taken * rate)
+                )
+            }
+            FieldPage::Volumes => {
+                let runs = self.common.span_pick.volume_runs(model, &spans);
+                let volume_spans = runs.iter().map(|r| r.1).sum::<usize>();
+                let points = self.common.volume.as_ref().map_or(0.0, |v| {
+                    volume_spans as f64
+                        * (st.span() / v.step)
+                        * (2.0 * v.width / v.step)
+                        * (70.0 / v.step)
+                        * self.common.volume_share.unwrap_or(0.5)
+                });
+                format!(
+                    "Run: 3D volumes, {} volume(s) over {volume_spans} span(s) — {}",
+                    runs.len(),
+                    duration(points * pieces * rate)
+                )
+            }
         }
     }
 

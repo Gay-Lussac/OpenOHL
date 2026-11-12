@@ -51,11 +51,14 @@ fn wait(harness: &mut Harness<'_, App>) {
 /// The centre of the node labelled `label`, scrolled into the window's
 /// body first (the wheel over the window).
 fn centre_of(harness: &mut Harness<'_, App>, label: &str) -> egui::Pos2 {
+    let mut last = f32::NAN;
     for _ in 0..30 {
         let r = harness.get_by_label(label).rect();
-        if r.center().y < 420.0 {
+        // High enough, or the body scrolled to its end with it in view.
+        if r.center().y < 420.0 || (r.center().y == last && r.center().y < 900.0) {
             return r.center();
         }
+        last = r.center().y;
         harness.event(egui::Event::PointerMoved(egui::pos2(400.0, 400.0)));
         harness.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
@@ -368,7 +371,8 @@ fn the_magnetic_table_asks_cuts_volumes_and_grids() {
         );
         assert!(!a.field.cuts[0].alignment.is_empty());
         assert!(a.field.volumes.is_empty() && a.field.grids.is_empty());
-        assert!(!a.field.profiles.is_empty(), "the profiles too");
+        // The 2D cuts page makes the cuts only (owner, 2026-11-12).
+        assert!(a.field.profiles.is_empty(), "no profile on the cuts' page");
     }
     assert_eq!(harness.query_all_by_label("Open cut").count(), 2);
     {
@@ -553,11 +557,12 @@ fn guide_buttons_open(h: &mut Harness<'_, App>, page: &str, count: usize) {
     );
 }
 
-/// The electric field window's five headings open its own page.
+/// The electric field window's headings open its own page (the 2D
+/// profiles: four, no levels).
 #[test]
 fn the_electric_window_opens_its_own_guide_page() {
     let mut h = electric();
-    guide_buttons_open(&mut h, crate::electric_field::GUIDE, 5);
+    guide_buttons_open(&mut h, crate::electric_field::GUIDE, 4);
     // The modelling settings folded under 4 Model (owner, 2026-11-12),
     // the surface gradient with what is computed; the plane's note that
     // it is not on the safe side stays in view once opened.
@@ -571,20 +576,17 @@ fn the_electric_window_opens_its_own_guide_page() {
     ] {
         assert!(h.query_by_label(l).is_none(), "{l} folded");
     }
-    h.get_by_label_contains("Profiles by, jumpers").click();
+    h.get_by_label_contains("Jumpers, stretches").click();
     h.run();
-    for l in [
-        "Profiles by",
-        "Jumpers",
-        "Stretches per span",
-        "tiled floor",
-    ] {
+    assert!(h.query_by_label("Profiles by").is_none(), "on the page");
+    for l in ["Jumpers", "Stretches per span", "tiled floor"] {
         h.get_by_label(l);
     }
     h.get_by_label_contains("up to 8 % low on bumps: not on the safe side");
 }
 
-/// The magnetic field window's five headings open its own page.
+/// The magnetic field window's headings open its own page (the 2D
+/// profiles: four, no levels).
 #[test]
 fn the_magnetic_window_opens_its_own_guide_page() {
     let model = synthetic();
@@ -595,7 +597,7 @@ fn the_magnetic_window_opens_its_own_guide_page() {
     let r = h.state_mut().ready().unwrap();
     r.magnetic_field.show(r.case);
     h.run();
-    guide_buttons_open(&mut h, crate::magnetic_field::GUIDE, 5);
+    guide_buttons_open(&mut h, crate::magnetic_field::GUIDE, 4);
     // The modelling settings folded under 4 Model (owner, 2026-11-12: the
     // setup for a human), shown when it is opened; the scope keeps the
     // limit and its unit.
@@ -603,9 +605,176 @@ fn the_magnetic_window_opens_its_own_guide_page() {
     for l in ["Profiles by", "Earth wires", "Jumpers", "Wire pieces"] {
         assert!(h.query_by_label(l).is_none(), "{l} folded");
     }
-    h.get_by_label_contains("Profiles by, earth wires").click();
+    h.get_by_label_contains("Earth wires, jumpers").click();
     h.run();
-    for l in ["Profiles by", "Earth wires", "Jumpers", "Wire pieces"] {
+    for l in ["Earth wires", "Jumpers", "Wire pieces"] {
         h.get_by_label(l);
     }
+}
+
+/// The magnetic window on the synthetic line, one circuit at 800 A.
+fn magnetic() -> Harness<'static, App> {
+    let model = synthetic();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+    r.magnetic_field.set_current(&circuits[0].label(), 800.0);
+    r.magnetic_field.show(r.case);
+    h.run();
+    h
+}
+
+/// Turns the magnetic (else the electric) window's setup to `page`.
+fn turn(h: &mut Harness<'_, App>, magnetic: bool, page: crate::field_common::FieldPage) {
+    let r = h.state_mut().ready().unwrap();
+    if magnetic {
+        r.magnetic_field.common.page = page;
+    } else {
+        r.electric_field.common.page = page;
+    }
+    h.run();
+}
+
+/// Three pages (owner, 2026-11-12: "one to make the 3D volumes, the 2D
+/// profiles and the 2D cuts … only keep showing the necessary
+/// parameters"): each shows its own parameters and not the others'; the
+/// profiles' method shows its own; Run's summary names what it makes.
+#[test]
+fn each_field_page_shows_only_its_parameters() {
+    use crate::field_common::FieldPage;
+    for magnetic_window in [true, false] {
+        let mut h = if magnetic_window {
+            magnetic()
+        } else {
+            electric()
+        };
+        // The tabs of the three.
+        for p in FieldPage::ALL {
+            h.get_by_label(p.title());
+        }
+        // 2D profiles (the default): where and how wide, the CSV points.
+        h.get_by_label("Across");
+        h.get_by_label("Points from CSV…");
+        h.get_by_label("from the 3D model");
+        h.get_by_label("2D only");
+        h.get_by_label_contains("Run: 2D profiles");
+        h.get_by_label_contains("from the 3D model —");
+        for l in [
+            "Volume size",
+            "Cut size",
+            "colour the cuts by band",
+            "Buildings",
+        ] {
+            assert!(h.query_by_label(l).is_none(), "{l} on the profiles' page");
+        }
+        // Its method 2D only: the 3D model's settings gone, its
+        // assumptions said.
+        h.get_by_label("2D only").click();
+        h.run();
+        h.get_by_label_contains("2D only assumes infinitely long");
+        h.get_by_label_contains("— in a moment");
+        if magnetic_window {
+            h.get_by_label("wires at the span's mean height");
+            assert!(h.query_by_label_contains("Earth wires, jumpers").is_none());
+            h.get_by_label("Earth wires");
+        } else {
+            assert!(h.query_by_label_contains("Jumpers, stretches").is_none());
+        }
+        h.get_by_label("from the 3D model").click();
+        h.run();
+        if magnetic_window {
+            assert!(
+                h.query_by_label("wires at the span's mean height")
+                    .is_none()
+            );
+        } else {
+            h.get_by_label_contains("Jumpers, stretches");
+        }
+        // 2D cuts: their sizes, the buildings, the bands; no profile's
+        // width, no CSV points; 2D only shown, not available yet.
+        turn(&mut h, magnetic_window, FieldPage::Cuts);
+        h.get_by_label("Cut size");
+        h.get_by_label("colour the cuts by band");
+        h.get_by_label("Buildings");
+        assert!(
+            h.query_all_by_label_contains(crate::field_common::CUTS_TWO_D_MISSING)
+                .count()
+                > 0
+        );
+        for l in ["Across", "Points from CSV…", "Volume size"] {
+            assert!(h.query_by_label(l).is_none(), "{l} on the cuts' page");
+        }
+        // No cut asked yet: Run says so; one asked, its summary.
+        h.get_by_label_contains("no cut asked");
+        {
+            let r = h.state_mut().ready().unwrap();
+            if magnetic_window {
+                r.magnetic_field.add_cut(&r.model, 0, CutAt::Mid);
+            } else {
+                r.electric_field.add_cut(&r.model, 0, CutAt::Mid);
+            }
+        }
+        h.run();
+        h.get_by_label_contains("Run: 2D cuts, 1 cut(s), from the 3D model");
+        // 3D volumes: their sizes; nothing of the profiles or cuts.
+        turn(&mut h, magnetic_window, FieldPage::Volumes);
+        h.get_by_label("Volume size");
+        // No span with Volume ticked by default: Run says so.
+        h.get_by_label_contains("no span with Volume ticked");
+        for l in [
+            "Across",
+            "Points from CSV…",
+            "colour the cuts by band",
+            "Buildings",
+            "Cut size",
+            "from the 3D model",
+            "2D only",
+        ] {
+            assert!(h.query_by_label(l).is_none(), "{l} on the volumes' page");
+        }
+    }
+}
+
+/// Inputs kept before the pages (2026-11-12) open on the page that made
+/// what they asked: `planes` false the volumes, `profiles` false the
+/// cuts, else the profiles; the page is kept from then on, with
+/// `planes` and `profiles` as older versions read them.
+#[test]
+fn old_field_inputs_open_on_their_page() {
+    use crate::field_common::{FieldPage, StoredCommon};
+    for (json, page) in [
+        (r#"{"planes":false}"#, FieldPage::Volumes),
+        (r#"{"planes":true,"profiles":false}"#, FieldPage::Cuts),
+        (r#"{"planes":true,"profiles":true}"#, FieldPage::Profiles),
+        (r#"{}"#, FieldPage::Profiles),
+        (r#"{"planes":false,"page":"cuts"}"#, FieldPage::Cuts),
+    ] {
+        let st: StoredCommon = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            st.page.unwrap_or(FieldPage::of_old(st.planes, st.profiles)),
+            page,
+            "{json}"
+        );
+    }
+    // Through the window: taken and kept again.
+    let mut h = magnetic();
+    {
+        let r = h.state_mut().ready().unwrap();
+        let mut st = r.magnetic_field.common.stored_common(&r.model);
+        assert_eq!(st.page, Some(FieldPage::Profiles));
+        st.page = None;
+        st.planes = Some(false);
+        r.magnetic_field.common.take_common(&r.model, st);
+        assert_eq!(r.magnetic_field.common.page, FieldPage::Volumes);
+        let st = r.magnetic_field.common.stored_common(&r.model);
+        assert_eq!(
+            (st.page, st.planes, st.profiles),
+            (Some(FieldPage::Volumes), Some(false), Some(false))
+        );
+    }
+    h.run();
+    h.get_by_label("Volume size");
 }
