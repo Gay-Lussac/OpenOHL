@@ -36,7 +36,7 @@ yet". The CSV points belong to the profiles, the buildings' cuts and
 places to the cuts (their places now computed with the cuts, from the 3D
 model; before, they were left out of a run without profiles). Kept
 inputs: `page` added; older projects open on the page that made what
-they asked ([data model](data-model.md)).
+they asked ([data model](data-model.md)). The guide pages [Magnetic field](../user-guide/magnetic-field.md) and [Electric field](../user-guide/electric-field.md) in three parts matching the pages (what each gives, how it works, the methods compared, the parameters shown with default, effect and time); each heading's **user guide ↗** opens its page's part.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

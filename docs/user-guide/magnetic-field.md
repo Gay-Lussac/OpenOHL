@@ -2,9 +2,10 @@
 
 *Built, in active development (not approved yet).* **Checks › Electrical ›
 Magnetic field…** in OHL-Design. This page explains the window for a line
-designer: what it answers, how it works, every setting with its default,
-its effect and its time, and what is and is not on the safe side. The
-calculation in detail, with its sources and its validation:
+designer: what it answers, how it works, and its three pages — **3D
+volumes**, **2D profiles**, **2D cuts** — each with its methods and every
+setting it shows (default, effect, time), then what is and is not on the
+safe side. The calculation in detail, with its sources and its validation:
 [theory › Magnetic field](../theory/magnetic-field.md). The command line,
 the plugins that place cuts at buildings and the plan templates:
 [Analyses › Electrical: magnetic field](analyses.md#electrical-magnetic-field).
@@ -60,13 +61,19 @@ resistance. The jumpers at the structures carry their phase's current.
 *The earth wires as a network over the line, each structure leading
 current into the ground.*
 
-### 4. The field at every point
+### 4. The field at every point: two methods
 
-Every wire is cut into straight pieces (as solved: 64 per span). At every
-point asked, every piece adds its field, exactly (Biot–Savart in closed
-form). For cuts and volumes, only the wires within a distance of the cut
-or volume are taken (2 000 m by default); each run says how much the
-wires left out change the field.
+**From the 3D model** (volumes, cuts, profiles): every wire is cut into
+straight pieces (as solved: 64 per span). At every point asked, every
+piece adds its field, exactly (Biot–Savart in closed form). For cuts and
+volumes, only the wires within a distance of the cut or volume are taken
+(2 000 m by default); each run says how much the wires left out change
+the field.
+
+**2D only** (profiles): every wire is an infinitely long, straight
+conductor parallel to the others, at the height where it crosses the
+profile — the classic cross-section formula. No sag along the span, no
+line angle, no jumpers, no structures.
 
 ![A sagging wire and the chords between the solver's points, the sagitta between a chord and the wire; one piece cut into three, the new points on the curve](../images/theory/field-pieces.svg)
 
@@ -77,78 +84,36 @@ wire curves away from it.*
 
 *The wires modelled: those within the distance of a cut or volume.*
 
-### 5. Where: profiles, cuts and volumes
-
-![Three ways to see the field: a profile, a row of points at a height above the ground with the field plotted along it; a cut, a grid of points in a vertical plane with isolines; a volume, a lattice in a box with surfaces around the wires](../images/theory/field-views.svg)
-
-- A **profile**: a row of points across a span at a height above the
-  ground (1 m), plotted.
-- A **2D cut**: a vertical plane across the line at a station of the
-  alignment, its points every step, the isolines of the levels drawn.
-- A **volume**: a lattice in a box over a run of spans, the surfaces of
-  the levels drawn in the 3D view.
-- **Points from CSV**: places you give (e.g. places of sensitive use).
-
-![In plan: an alignment with an angle point; a cut at a station perpendicular to the alignment, a cut at the angle point along the bisector, a profile square to its span's axis](../images/theory/field-cut-plane.svg)
-
-*A cut lies on the alignment, perpendicular to it (at an angle point
-along the bisector), exactly where a cross-section panel opened at that
-station lies.*
-
-![A double-circuit line in a vertical cut across it with a house beside it: the grid's points, the isolines of 3, 10 and 30 microtesla cut at the ground](../images/theory/field-cut.svg)
-
-*A cut at a house: the isolines between the grid's points.*
-
-### 6. The results and the drawings
+### 5. The results and the drawings
 
 Every value at a point is computed in full; only the lines and surfaces
 drawn between the points are interpolated. Each run measures how far its
 drawings lie off their levels and says so.
 
-![Left: a coarse grid around a wire, the isoline drawn straight between its crossings, cutting the circle's corners; right: a fine grid following the circle](../images/theory/field-grid-step.svg)
+![Three ways to see the field: a profile, a row of points at a height above the ground with the field plotted along it; a cut, a grid of points in a vertical plane with isolines; a volume, a lattice in a box with surfaces around the wires](../images/theory/field-views.svg)
 
-*A coarse step draws an isoline near a wire too small; a finer step
-follows it.*
+## The window
 
-## The window's three pages
+The Setup opens with three tabs — **3D volumes**, **2D profiles**, **2D
+cuts** (owner, 2026-11-12) — each a page with only the settings its
+output needs, in the same numbered sections: 1 What it computes (with its
+drawing), 2 Scope, 3 What and where, 4 Model (folded), 5 Views and levels
+(volumes and cuts; a profile's plot draws the limit itself). **Run
+computes the page shown.** The inputs shared by the pages — the weather
+case, the currents, the limit, the levels — are one set of values: change
+them on one page and the others show the same.
 
-The Setup has three pages (2026-11-12), each with only the settings its
-output needs; Run computes the page shown. Each heading's **user guide ↗**
-opens the part of its page.
-
-### 3D volumes
-
-The surfaces of the levels around the wires over the spans with Volume
-ticked, from the 3D model.
-
-### 2D profiles
-
-The field across the spans ticked at a height above the ground (and at
-points from CSV), from the 3D model or by the 2D-only method.
-
-### 2D cuts
-
-The isolines in vertical planes across the line at the stations asked,
-from the 3D model (2D only: not available yet).
-
-## The window, setting by setting
-
-The Setup tab, top to bottom. The window's inputs are kept in the project
-for the line worked on: it opens as it was left, for every user of the
-project. A case or span no longer in the line falls back to the default.
-Each heading's **user guide ↗** opens its section of this page. A setting
+The window's inputs are kept in the project for the line worked on: it
+opens as it was left, on the page it was left on, for every user of the
+project (a project kept before the pages opens on the page that made what
+it asked). A case or span no longer in the line falls back to the default.
+Each heading's **user guide ↗** opens its page's part below. A setting
 keeps its label (units in brackets), its value and at most one short line
 — its count and its time —; what it does is said on hover and behind its
 **(?)**. Warnings, what is not on the safe side and why Run is greyed
 stay in view.
 
-### 1 What it checks
-
-The question in one line; the method behind the **(?)**; two drawings:
-a profile across the line (they follow the width, step and height you
-type) and the sources of the field.
-
-### 2 Scope
+### Scope (every page)
 
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|
@@ -161,76 +126,140 @@ type) and the sources of the field.
 | **load flow** | along the line | *against the line*: every phase turned by 180°; which combination governs is the ordinance's question | none |
 | **Earth wire currents typed** (folded) | none | an earth wire's own current and angle instead of a computed one | none |
 | **Limit [µT]** | none | the margin at every point and the limit line's extent on every profile | none |
-| **Points from CSV…** | none | the field at your places: a CSV with a header naming `x`, `y` and `z` (elevation) or `height` (above the ground), optionally `name` | a point each |
-| **Buildings** (from the Buildings window) | none | the cuts and places a buildings preset handed over | as their cuts |
 
-Run is greyed out, with the reason, while no circuit carries a current.
+Run is greyed out, with the reason, while no circuit carries a current,
+or while the page has nothing to compute (no span ticked, no cut asked,
+no volume ticked).
 
-### 3 Spans and what to compute in each
+### The span table (every page)
 
-**Make**: **2D: cuts and profiles** (the default; **profiles too**
-ticked) or **3D: volumes**. Then the span table: every span a row, the
-spans of each alignment first in station order and ticked, the others
-unticked. Its columns: the tick, the span, its length, **2D cuts at**
-(*+ station*: at mid-span, at its lowest point or a distance from its
-first structure; a click on a chip removes it) and **Volume** (3D).
-**Press on a tick and drag across the rows** to flip them; shift-click
-ticks a range; a filter, *All*, *None* and *Invert* act on the rows
-shown. A span on no alignment can have no cut (said under the table).
+Every span a row, the spans of each alignment first in station order and
+ticked, the others unticked; the page's own column only (**Profile**,
+**2D cuts at** or **Volume**). **Press on a tick and drag across the
+rows** to flip them; shift-click ticks a range; a filter, *All*, *None*
+and *Invert* act on the rows shown.
 
-| Setting | Default | What changes in the result | Time |
-|---|---|---|---|
-| **Profiles** | at each ticked span's lowest point | *beside its structures* (10 m into the span from each), or *one span* at its lowest point or a place 0–1 along it | one profile each |
-| **Across ± [m]**, **every [m]**, **at [m] above the ground** | ±100 m every 1 m at 1 m | wider: the low levels' reach inside the profile; a finer step: more points | in proportion to the points |
-| **2D cuts ± [m]**, **every [m]**, **up to [m] over the highest wire** | ±100 m every 1 m, 10 m | the cut's size; a finer step draws the isolines closer to their levels (1 m: the 1 and 3 µT isolines within 0.03 %) | said beside it: points per cut and seconds |
-| **Volumes ± [m]**, **every [m]** | ±100 m every 2 m | a finer step places the surfaces closer to their levels (2 m: 1 µT within 0.05 %, 100 µT within 15 %; 1 m: 0.01 % and 4 %) | said beside it; halving the step takes 4 to 8 times as long |
+### The footer and the results
 
-### 4 Model (folded)
-
-Folded under *Profiles by, earth wires, jumpers, wire pieces, the wires
-modelled*: the defaults are sound; open it to change the model.
-
-| Setting | Default | What changes in the result | Time |
-|---|---|---|---|
-| **Profiles by** | 3D | 2D: infinite straight conductors (tick *wires at the span's mean height* to take the line parameters' mean); not valid near a line angle over 5° or between differently arranged structures (warned) | 2D is quicker |
-| **Earth wires** | off | *carry the currents the phases induce*: may raise or lower the field; *through the structures' earthing* (on): each structure's earthing resistance (Structures table, else the line's, else 10 Ω, said) | a network solve |
-| **Jumpers** | on | off: left out (not on the safe side near the structures) | none |
-| **Wire pieces** | as solved (64 per span) | *at most [m]*: shorter pieces placed on the curve; the field changes by about the wire's offset over the distance to it (a few hundredths of a per cent at 10 m) | in proportion to the pieces; said beside it |
-| **Modelled: wires within [m] of a cut or volume** | 2 000 m | larger: closer to the whole line's field (longer than the line: every wire); each run says what the wires left out change. Profiles and points always take the whole line | in proportion to the wires taken |
-
-### 5 Views and levels
-
-| Setting | Default | What changes | Time |
-|---|---|---|---|
-| **Levels drawn [µT]** | 1 and 10 µT drawn, 100 µT not | the isolines and surfaces drawn; display only, none is a limit. **+ level**, **+ the limit** | more levels, more surfaces |
-| **colour the cuts by band** | off | a cut's cells in the colour of the highest level at or below their value | none |
-| **Cross-sections: also in any cross-section panel I open, every [m]** | off (1 m when ticked) | the field in every cross-section panel you open (C), from the run's wires | some seconds per panel, said beside it |
+- Beside **Run**, one line says what Run will compute on the page shown
+  and about how long: *Run: 2D cuts, 3 cut(s), from the 3D model — about
+  4 s*; the times come from the last run's speed, else from a short
+  measurement on this computer. When Run is greyed out, the footer says
+  why. While it runs: the step, a bar, the time gone and left; **Stop**.
+- **Results**: the list of everything computed — every profile, cut and
+  volume with its largest value — with **Show plot**, **Open cut** (a
+  cross-section panel on the very plane computed) and **Show in 3D**, and
+  a **3D** tick to draw each or not. Then the currents used, the earth
+  wires' and structures' currents, the notes (what was assumed or left
+  out), the profile plotted (B against the distance from the axis, the
+  cycle's largest fainter, the limit dashed), the tables of the profiles
+  and points (red above the limit), and per view how far its drawings lie
+  off their levels. A 2D-only run says its assumptions above them.
+  **Export CSV…** writes every point; **Save in Performed checks** keeps
+  the run. The results are marked out of date when the line or the ground
+  changes.
 
 The views are drawn on the layer **Magnetic field (isolines, surfaces)**
 while the window is open.
 
-### The footer
+## 3D volumes
 
-- Before **Run**, one line says what a run will compute and about how
-  long: *2D · 4 span(s) · 2 cut(s) · 4 profile(s) — about 6 s*; the
-  times come from the last run's speed, else from a short measurement on
-  this computer. When Run is greyed out, the footer says why.
-- While it runs: the step (*step 3 of 7: volume A–B: fine lattice*), a
-  bar, the time gone and left; **Stop**.
+**What it gives:** the surfaces of the levels (1 and 10 µT by default)
+around the wires over each run of spans with **Volume** ticked, drawn
+translucent in the 3D view (**Show in 3D**); the largest value in each
+volume.
 
-### The results tab
+**How it works:** from the 3D model only. A coarse lattice first (4 steps
+apart), then the fine one only where a level passes, near the wires and
+wherever a surface goes on; every lattice point is computed in full, only
+the surface between the points is interpolated. Spans with Volume ticked
+that follow each other make one volume (no seam at the structures).
 
-The list of everything computed — every profile, cut, volume and grid with
-its largest value — with **Show plot**, **Open cut** (a cross-section
-panel on the very plane computed) and **Show in 3D**, and a **3D** tick to
-draw each or not. Then the currents used, the earth wires' and
-structures' currents, the notes (what was assumed or left out), the
-chosen profile plotted (B against the distance from the axis, the cycle's
-largest fainter, the limit dashed), a table per profile and a table of
-the points with their margin (red above the limit), and per view how far
-its drawings lie off their levels. **Export CSV…** writes every point;
-**Save in Performed checks** keeps the run. The results are marked out
-of date when the line or the ground changes.
+| Setting | Default | What changes in the result | Time |
+|---|---|---|---|
+| Scope | see [Scope](#scope-every-page) | | |
+| **Volume** column of the span table | none ticked | the spans a volume covers | in proportion to the spans |
+| **Volume size ± [m]**, **every [m]** | ±100 m every 2 m | wider: a low level's surface inside the box; a finer step places the surfaces closer to their levels (2 m: 1 µT within 0.05 %, 100 µT within 15 %; 1 m: 0.01 % and 4 %) | said beside it; halving the step takes 4 to 8 times as long |
+| **Earth wires** (4 Model) | off | *carry the currents the phases induce*: may raise or lower the field; *through the structures' earthing* (on): each structure's earthing resistance (Structures table, else the line's, else 10 Ω, said) | a network solve |
+| **Jumpers** (4 Model) | on | off: left out (not on the safe side near the structures) | none |
+| **Wire pieces** (4 Model) | as solved (64 per span) | *at most [m]*: shorter pieces placed on the curve; the field changes by about the wire's offset over the distance to it (a few hundredths of a per cent at 10 m) | in proportion to the pieces; said beside it |
+| **Modelled: wires within [m]** (4 Model) | 2 000 m | larger: closer to the whole line's field (longer than the line: every wire); each run says what the wires left out change | in proportion to the wires taken |
+| **Levels drawn [µT]** (5) | 1 and 10 µT drawn, 100 µT not | the surfaces drawn; display only, none is a limit. **+ level**, **+ the limit** | more levels, more surfaces |
+
+## 2D profiles
+
+**What it gives:** B across each span ticked, at a height above the
+ground, plotted against the distance from the axis and listed (the
+largest value, where the limit is passed); and B at the points of a CSV
+file (e.g. places of sensitive use).
+
+**How it works:** a row of points square to the span's axis, at the
+span's lowest point by default, computed by the method chosen.
+
+![A profile across a span: points every step from minus to plus the half width, at a height above the ground](../images/theory/field-views.svg)
+
+### The methods compared
+
+| | From the 3D model (default) | 2D only |
+|---|---|---|
+| Assumes | the wires as solved: sag, line angles, the line's ends, jumpers, the earth wires' network | infinitely long, straight, parallel conductors at the height where each wire crosses the profile; no sag along the span, no angle, no jumpers, no structures |
+| Enough when | always (the reference) | long straight spans away from structures, angles and crossings; at the lowest point it is **on the safe side** against 3D on sagging spans; at the span's mean height it is **not** |
+| Not valid | — | near a line angle over 5°, a crossing, or a span between differently arranged structures (warned per profile) |
+| Time | seconds per profile (every piece of the whole line at every point; said beside it) | a moment |
+| Its settings | earth wires, jumpers, wire pieces | earth wires, *wires at the span's mean height* |
+
+The 2D-only method's assumptions are said under its choice and above its
+results.
+
+| Setting | Default | What changes in the result | Time |
+|---|---|---|---|
+| Scope | see [Scope](#scope-every-page) | | |
+| **Points from CSV…** | none | the field at your places: a CSV with a header naming `x`, `y` and `z` (elevation) or `height` (above the ground), optionally `name` | a point each |
+| **Method** | from the 3D model | see the comparison above | see above |
+| **wires at the span's mean height** (2D only) | off | on: the line parameters' mean height, a lower field than under the lowest point (not on the safe side) | none |
+| **Profile** column of the span table | the spans of the alignments | the spans profiled | one profile each |
+| **Profiles** | at each ticked span's lowest point | *beside its structures* (10 m into the span from each), or *one span* at its lowest point or a place 0–1 along it | one profile each |
+| **Across ± [m]**, **every [m]**, **at [m] above the ground** | ±100 m every 1 m at 1 m | wider: the low levels' reach inside the profile; a finer step: more points; higher: nearer the wires, a higher field | in proportion to the points |
+| **Earth wires** (4 Model) | off | as on the volumes | a network solve |
+| **Jumpers**, **Wire pieces** (4 Model, from the 3D model) | on; as solved | as on the volumes; profiles always take the whole line | as on the volumes |
+
+## 2D cuts
+
+**What it gives:** the isolines of the levels in vertical planes across
+the line at the stations asked in the span table (*+ station*: mid-span,
+lowest point or a distance from its first structure), with **Open cut**
+showing each on the wires; and the cuts and places handed over by the
+**Buildings** window.
+
+**How it works:** a lattice of points in the vertical plane at the
+alignment station, perpendicular to the alignment (at an angle point
+along the bisector), exactly where a cross-section panel opened at that
+station lies; from the lowest ground up to a reach over the highest wire.
+
+![In plan: an alignment with an angle point; a cut at a station perpendicular to the alignment, a cut at the angle point along the bisector, a profile square to its span's axis](../images/theory/field-cut-plane.svg)
+
+![A double-circuit line in a vertical cut across it with a house beside it: the grid's points, the isolines of 3, 10 and 30 microtesla cut at the ground](../images/theory/field-cut.svg)
+
+*A cut at a house: the isolines between the grid's points.*
+
+### The methods
+
+| | From the 3D model | 2D only |
+|---|---|---|
+| Assumes | the wires as solved within the distance modelled, at every point of the cut | — |
+| Enough when | always | **not available yet**: the engine computes cuts from the 3D model only (shown greyed in the window) |
+| Time | said beside the cuts' sizes (points per cut × wires taken) | — |
+
+| Setting | Default | What changes in the result | Time |
+|---|---|---|---|
+| Scope | see [Scope](#scope-every-page) | | |
+| **Buildings** | none | the cuts and places a buildings preset handed over (its places computed with the cuts, from the 3D model) | as their cuts |
+| **2D cuts at** column of the span table | none | the cuts asked; a span on no alignment can have no cut (said under the table) | one cut each |
+| **Cut size ± [m]**, **every [m]**, **up to [m] over the highest wire** | ±100 m every 1 m, 10 m | the cut's size; a finer step draws the isolines closer to their levels (1 m: the 1 and 3 µT isolines within 0.03 %) | said beside it: points per cut and seconds |
+| **Earth wires**, **Jumpers**, **Wire pieces**, **Modelled: wires within** (4 Model) | as on the volumes | as on the volumes | as on the volumes |
+| **Levels drawn [µT]** (5) | 1 and 10 µT drawn, 100 µT not | the isolines drawn; display only | none |
+| **colour the cuts by band** (5) | off | a cut's cells in the colour of the highest level at or below their value | none |
+| **Cross-sections: also in any cross-section panel I open, every [m]** (5) | off (1 m when ticked) | the field in every cross-section panel you open (C), from the run's wires | some seconds per panel, said beside it |
 
 ## What is conservative and what is not
 
@@ -240,14 +269,15 @@ and [what is left out](../theory/magnetic-field.md#what-is-left-out):
 - **Balanced currents** (the default) hold no net current: the result
   says **NOT ON THE SAFE SIDE far from the line**. Give the currents per
   phase to include one.
-- **2D** at the wires' place under the lowest point is on the safe side
-  against 3D on sagging spans; at the span's mean height it is not.
+- **2D only** at the wires' place under the lowest point is on the safe
+  side against 3D on sagging spans; at the span's mean height it is not;
+  near a line angle, a crossing or a structure it is not valid (warned).
 - **Jumpers off**: not on the safe side near the structures.
 - **Earth wire currents** may raise or lower the field: run with and
   without them when it matters. Through the structures' earthing, the
   line's ends are not on the safe side (no substation earthing).
-- **Wires within** a distance: the wires left out change the field; each
-  run says by how much.
+- **Wires within** a distance (cuts, volumes): the wires left out change
+  the field; each run says by how much.
 - Left out: the earth's currents, the steel's permeability, harmonics,
   other lines (said), DC systems (said) — small or said in the result.
 
