@@ -391,19 +391,29 @@ fn a_settings_list_is_made_taller() {
     assert!((taller - 520.0).abs() < 1.0, "{taller}");
 }
 
-/// Internal clearances (owner, 2026-10-27: "Internal clearances should be
-/// just under the wire clearance"): in the Checks menu's Wire clearances
-/// submenu, no more among the Analyses; it opens the window.
+/// Internal clearances (owner, 2026-11-12: "move the internal clearances
+/// out of the wire clearances. It should be another line with ground
+/// clearances and wire clearances"): a line of the Checks menu's
+/// Clearances group of its own, no more in the Wire clearances submenu;
+/// its entry opens the window.
 #[test]
-fn internal_clearances_is_under_wire_clearances() {
+fn internal_clearances_is_a_line_of_the_clearances() {
     let mut h = window();
     h.get_by_label("Checks").click();
     h.run();
     // Not in the Checks menu itself (the submenu is closed).
     assert!(h.query_by_label("Internal clearances…").is_none());
+    // Nor under Wire clearances any more.
     h.query_all_by_label_contains("Wire clearances")
         .next()
         .expect("the Wire clearances submenu")
+        .hover();
+    h.run();
+    h.run();
+    assert!(h.query_by_label("Internal clearances…").is_none());
+    h.query_all_by_label_contains("Internal clearances")
+        .next()
+        .expect("the Internal clearances submenu")
         .hover();
     h.run();
     h.run();

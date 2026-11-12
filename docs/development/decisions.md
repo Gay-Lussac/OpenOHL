@@ -43,6 +43,15 @@ add the line to the results"). Whenever the radial check measures to
 points of a class, its results carry `zone::RADIAL_POINTS_NOTE`: the
 distance is only to the points scanned, what the scan missed is not
 checked. Not on the safe side, now said rather than only in the guide.
+**Internal clearances: a line of the Clearances group of its own**
+(owner: "move the internal clearances out of the wire clearances. It
+should be another line with ground clearances and wire clearances").
+Checks › Clearances now has three lines: **Ground clearances**, **Wire
+clearances** and **Internal clearances** (a submenu holding
+*Internal clearances…*, as Ground clearances holds its two windows).
+This supersedes the placement of 2026-10-27 ("Internal clearances should
+be just under the wire clearance"), at the end of the Wire clearances
+submenu.
 
 **Radial clearances: the same treatment as the vertical** (owner: "once
 the vertical clearances are done please apply the exact same treatment to

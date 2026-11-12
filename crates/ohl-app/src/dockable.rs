@@ -69,7 +69,7 @@ pub enum Panel {
     IceShedding,
     /// Checks › Analyses › String checks.
     StringChecks,
-    /// Checks › Wire clearances › Internal clearances.
+    /// Checks › Internal clearances › Internal clearances.
     InternalClearances,
     /// Checks › As-built wires.
     AsBuiltWires,
