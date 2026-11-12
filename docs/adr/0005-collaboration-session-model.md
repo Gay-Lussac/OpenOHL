@@ -12,7 +12,7 @@ Several users must be able to work on one project at the same time, like players
 3. **Authoritative server with a validated, ordered command log.**
 
 ## Decision
-- **Authoritative server** (`ols-session`) owns the model; clients send commands, the server validates, applies atomically, appends to the log and broadcasts change sets. Single-user = in-process server.
+- **Authoritative server** (`ohl-session`) owns the model; clients send commands, the server validates, applies atomically, appends to the log and broadcasts change sets. Single-user = in-process server.
 - **Optimistic client prediction**: edits apply instantly locally, are confirmed by the server, rolled back on rejection.
 - **Conflicts**: per-object versions; stale destructive edits are rejected with a clear message; soft locks on a section while being dragged; presence indicators.
 - **Undo (confirmed)**: per user — each person undoes only their own changes, via inverse commands.
@@ -29,6 +29,6 @@ Several users must be able to work on one project at the same time, like players
 - Requires a running session even offline (in-process, invisible to the user).
 
 ## Implementation (alpha, 2026-10)
-`ols-server`: one authority thread owns the session; clients join with an invitation (address, access code, certificate fingerprint), receive a consistent copy of the project file (`VACUUM INTO`), and replay the broadcast operations with the same session code, checking the log sequence numbers (a mismatch: join again). Users known to the project join only with a personal invitation (its code derived from the server's secret and the name). Not yet: optimistic prediction (edits wait for the answer), interest management (the whole project is copied), the WebSocket fallback for the desktop client, OIDC.
+`ohl-server`: one authority thread owns the session; clients join with an invitation (address, access code, certificate fingerprint), receive a consistent copy of the project file (`VACUUM INTO`), and replay the broadcast operations with the same session code, checking the log sequence numbers (a mismatch: join again). Users known to the project join only with a personal invitation (its code derived from the server's secret and the name). Not yet: optimistic prediction (edits wait for the answer), interest management (the whole project is copied), the WebSocket fallback for the desktop client, OIDC.
 
 Web client (2026-10): an optional HTTPS listener (same self-signed certificate; the browser trusts it once, the user compares the fingerprint) serves an embedded HTML/JavaScript client and a WebSocket speaking the same JSON messages (`ClientMsg`/`ServerMsg`, one per text message), checked by the same authority, codes and size limits. A browser keeps no replica: the welcome has `size` 0 and a new `ServerMsg::Scene` follows — the line, its wires solved on the server in one weather case (cached per line revision, one solve at a time) — and again after each edit of the line or its libraries. The protocol number is unchanged: QUIC clients never receive a `Scene`.

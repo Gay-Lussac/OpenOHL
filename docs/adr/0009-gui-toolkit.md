@@ -8,8 +8,8 @@ Phase 3 starts the desktop application. ADR-0002 deferred the toolkit to a compa
 
 ## Decision
 - **egui** (immediate-mode UI, pure Rust) through **eframe** with its **wgpu** backend; **egui_dock** for dockable, rearrangeable tabs.
-- The renderer (`ols-render`) is independent of the UI: it draws into an offscreen texture that the views show, and renders headless for images and tests.
-- The application (`ols-app`, binary `ols-cad`) loads and solves models on background threads and shares one selection and weather case between views.
+- The renderer (`ohl-render`) is independent of the UI: it draws into an offscreen texture that the views show, and renders headless for images and tests.
+- The application (`ohl-app`, binary `ohl-design`) loads and solves models on background threads and shares one selection and weather case between views.
 - UI tests run the whole window with `egui_kittest`, including the 3D view when a GPU is available.
 
 ## Consequences

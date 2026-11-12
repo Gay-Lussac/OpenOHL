@@ -26,7 +26,7 @@ project (one working state, ADR-0005).
 ## Decision
 Option 3, on top of the existing session.
 
-**Storage** (`ols_session::versions`, schema 2):
+**Storage** (`ohl_session::versions`, schema 2):
 
 - `vc_blob(hash, data)`: SHA-256 of a text → the text, zstd. The texts are
   object values (canonical JSON: keys sorted), library files, and trees.
@@ -56,11 +56,11 @@ the working state for every user.
 
 **Diff** compares two states object by object; changed objects field by
 field (paths into their JSON; arrays compared whole). The **engineering
-impact** (`ols_session::impact`) solves the touched sections — changed ones
+impact** (`ohl_session::impact`) solves the touched sections — changed ones
 and those through changed structures, every section when a library changed
 — on both sides in one weather case, with each side's own libraries, and
 reports largest sag, largest tension and smallest ground clearance; bounded
-by a section count and a time limit (`ols_core::budget`).
+by a section count and a time limit (`ohl_core::budget`).
 
 **Merge** is three-way against a **latest common ancestor**: a common
 ancestor that no other common ancestor descends from (2026-11-10; before,
@@ -149,7 +149,7 @@ More of 2026-11-10 (the version-management review), each with its test:
 Not built yet: conflicts of one logged command settled together. **Revert** is a three-way merge of the working
 state with the reverted revision as base and its first parent as theirs.
 
-**Edit rights** (`ols_session::collab`): a grant limits a user, or every user
+**Edit rights** (`ohl_session::collab`): a grant limits a user, or every user
 of a role (`role:designer`), to kinds, objects and/or a plan polygon (an
 object's plan bounds from the spatial index, ADR-0008, must lie inside it,
 before and after the change). Users without grants keep their role's rights;
@@ -168,7 +168,7 @@ receives) has the same revision ids. A branch committed in the copy is
 written to a **bundle** (its revisions and blobs, JSON), read back into the
 project — ids and hashes checked — and merged like any branch.
 
-**Server mode**: each version-control action is an `ols_server::Op`, executed
+**Server mode**: each version-control action is an `ohl_server::Op`, executed
 by the authority and replayed by the replicas; ids are content hashes and
 reviews and grants are numbered in the server's order, so replicas stay the
 same.
@@ -188,7 +188,7 @@ same.
 ## Amendment (2026-10-06): project lines
 
 Every **branch is a project line with a working state of its own**
-(`ols_session::lines`, schema 3): `model_object`, `oplog` and
+(`ohl_session::lines`, schema 3): `model_object`, `oplog` and
 `spatial_index` carry the line's name, so several designs of the line (the
 main line and its phases) are edited side by side. This replaces the shared
 working state above:

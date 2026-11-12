@@ -205,7 +205,10 @@ fn the_vertical_clearances_rules_are_one_table_and_the_result_a_banner() {
         if let (Some(_), false) = h.state_mut().ready().unwrap().vertical_clearances.result() {
             break;
         }
-        assert!(started.elapsed().as_secs() < 90, "no report in 90 s");
+        // A guard against a hang only: some 30 s alone in a debug build
+        // since the swing arc is on by default (2026-11-12), longer while
+        // the whole suite runs.
+        assert!(started.elapsed().as_secs() < 300, "no report in 300 s");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
     h.run();

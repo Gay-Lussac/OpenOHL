@@ -13,17 +13,17 @@ Projects can be very large (hundreds of km, many revisions), must open fast with
 4. **SQLite database** — transactional, incremental, spatially indexed, single file, universally readable.
 
 ## Decision
-- **`.ols` = SQLite database** with a documented, versioned schema.
+- **`.ohl` = SQLite database** with a documented, versioned schema.
   - Objects as rows with stable **UUIDv7** IDs (needed for collaboration and diffs).
   - Spatial index on chunks for partial loading/streaming (a tile index, see [ADR-0008](0008-spatial-chunk-index.md)).
   - Command log, revisions, branches and tags stored in the same file.
   - Values always in SI units.
 - **Point clouds** stay in external **COPC** (LAZ 1.4) files, referenced by the project. *Amended by [ADR-0007](0007-point-clouds-in-the-project.md): point clouds are imported into the project file.*
 - **Libraries** (cables, insulators, structures, weather cases) as **text files** (TOML/JSON) — shareable and git-friendly.
-- **`.ols.json` export/import** — full human-readable dump for exchange, archiving and plain-text diffs.
+- **`.ohl.json` export/import** — full human-readable dump for exchange, archiving and plain-text diffs.
 - **Schema versioning** with automatic forward migrations on open.
 
 Version control in the file: [ADR-0010](0010-version-control.md).
 
 ## Consequences
-- Project files are binary (not line-diffable in git); version tracking is provided by OLS CAD itself (DESIGN_GOALS §7) and by the JSON export.
+- Project files are binary (not line-diffable in git); version tracking is provided by OpenOHL itself (DESIGN_GOALS §7) and by the JSON export.

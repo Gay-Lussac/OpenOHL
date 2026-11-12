@@ -14,11 +14,11 @@ Anyone must be able to add calculations, design codes, checks, formats, reports 
 ## Decision
 | Tier | Use | Notes |
 |---|---|---|
-| WASM components | Third-party calculations, design codes, checks, solvers, formats | **Stable public ABI** defined in versioned WIT packages (e.g. `ols:cable-model@1.0`); any language (Rust, C/C++, Zig, Go…); sandboxed |
+| WASM components | Third-party calculations, design codes, checks, solvers, formats | **Stable public ABI** defined in versioned WIT packages (e.g. `ohl:cable-model@1.0`); any language (Rust, C/C++, Zig, Go…); sandboxed |
 | Python (PyO3) | Scripts, reports, importers/exporters, automation | Not intended for hot loops |
 | Native Rust | First-party engines inside this repository | Compiled in; no dynamic loading |
 
-- Manifest `ols-plugin.toml`: name, version, target SDK version, extension points, requested permissions (file system, network). Deny by default.
+- Manifest `ohl-plugin.toml`: name, version, target SDK version, extension points, requested permissions (file system, network). Deny by default.
 - Extension points: `cable_models`, `wire_loads`, `insulator_assemblies`, `design_codes`, `importers`, `exporters`, `checks`, `reports`, `solvers`, `commands`, `gui_tools`.
 - Traceability: the project records the plugin name + version that produced each result.
 - Server mode: plugins run on the server; the server advertises the required plugin set to joining clients; only admins install plugins on a server.

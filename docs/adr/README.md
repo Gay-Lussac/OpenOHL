@@ -1,6 +1,6 @@
 # Architecture decision records
 
-> The project was renamed from "OLS CAD" to **OpenOHL** (the line application **OHL-Design**, `ohl-design`; the structure application **OHL-Structure**, `ohl-structure`; the command line `ohl`). The records below keep the names of the time they were written.
+> The project was renamed from "OLS CAD" to **OpenOHL** (the line application **OHL-Design**, `ohl-design`; the structure application **OHL-Structure**, `ohl-structure`; the command line `ohl`). Renamed on 2026-10-18; since 2026-11-12 the records use today's names (OpenOHL, `.ohl`, `.ohl.json`, `ohl-…` crates and programs) — files with the old extensions are still read, and the project file's table `ols_meta` keeps its name.
 
 | # | Title | Status |
 |---|---|---|
