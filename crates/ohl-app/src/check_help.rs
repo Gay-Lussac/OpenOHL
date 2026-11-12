@@ -307,7 +307,9 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
 /// the steps only (the danger-tree check). `jumpers`: the check includes
 /// jumpers (their band margin then editable; else shown greyed, as the
 /// check leaves them out). `arc`: the swing arc offered. True when
-/// something changed.
+/// something changed. (Only the tests use it since every window takes
+/// [`wind_choice_with`].)
+#[cfg(test)]
 pub fn wind_choice(
     ui: &mut egui::Ui,
     id: &str,
@@ -320,7 +322,7 @@ pub fn wind_choice(
     wind_choice_with(ui, id, wind, sides_all, full, jumpers, arc, true)
 }
 
-/// [`wind_choice`]; `lines` false: the explanations in the **(?)** of
+/// The wind choice; `lines` false: the explanations in the **(?)** of
 /// their row instead of a grey line under it (owner, 2026-11-12, the
 /// vertical and radial clearance windows: "move the grey lines into the
 /// help"). Warnings and the solves stay visible either way.
