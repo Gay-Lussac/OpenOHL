@@ -155,6 +155,17 @@ pub fn consent_key(name: &str, version: &str) -> String {
     format!("{name}@{version}")
 }
 
+/// Forgets what the user allowed plugin `name`, every version of it:
+/// when the plugin is removed or installed again, so that more time or
+/// memory is asked for again (owner, 2026-11-12). Whether anything was
+/// forgotten.
+pub fn forget_consents(allowed: &mut BTreeMap<String, Consent>, name: &str) -> bool {
+    let before = allowed.len();
+    let prefix = format!("{name}@");
+    allowed.retain(|k, _| !k.starts_with(&prefix));
+    allowed.len() != before
+}
+
 /// What the user allowed, for the plugins this program loads (set by the
 /// applications from their settings).
 static CONSENTS: Mutex<BTreeMap<String, Consent>> = Mutex::new(BTreeMap::new());
@@ -263,5 +274,18 @@ mod tests {
             user_dir(Path::new("/data/OLS CAD")),
             Path::new("/data/OLS CAD/plugins")
         );
+    }
+    /// A plugin removed or installed again is asked about again: every
+    /// version's consent goes, another plugin's stays (also one whose name
+    /// starts alike).
+    #[test]
+    fn a_plugin_removed_is_asked_again() {
+        let mut allowed = BTreeMap::new();
+        for k in ["grid@0.1.0", "grid@0.2.0", "grid-more@0.1.0"] {
+            allowed.insert(k.to_owned(), Consent::default());
+        }
+        assert!(forget_consents(&mut allowed, "grid"));
+        assert_eq!(allowed.keys().collect::<Vec<_>>(), ["grid-more@0.1.0"]);
+        assert!(!forget_consents(&mut allowed, "grid"));
     }
 }

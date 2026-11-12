@@ -770,6 +770,7 @@ impl Plugins {
             .clone()
             .ok_or("no plugin directory for this user")?;
         let to = ohl_plugins::install(from, &root, replace).map_err(|e| e.to_string())?;
+        self.forget_consents(&to);
         self.refresh();
         Ok(to)
     }
@@ -782,8 +783,21 @@ impl Plugins {
             return Err(format!("{} is not an installed plugin", dir.display()));
         }
         std::fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        self.forget_consents(dir);
         self.refresh();
         Ok(())
+    }
+
+    /// What the user allowed the plugin installed in `dir` (more time or
+    /// memory) is forgotten: removed or installed again, it asks again.
+    fn forget_consents(&mut self, dir: &Path) {
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()) else {
+            return;
+        };
+        if ohl_plugins::forget_consents(&mut self.allowed, name) {
+            ohl_plugins::set_consents(&self.allowed);
+            self.changed_settings();
+        }
     }
 
     /// Starts the worker (once) and loads the formats again when the
@@ -1157,12 +1171,13 @@ impl Plugins {
                 if asked.unsandboxed {
                     ui.label(
                         "A Python plugin is not sandboxed: allow it only when you trust where \
-                         it comes from. Asked again for another version.",
+                         it comes from. Asked again for \
+                         another version, and after the plugin is removed or installed again.",
                     );
                 } else {
                     ui.label(
                         "Until allowed it runs with the default limits. Asked again for \
-                         another version.",
+                         another version, and after the plugin is removed or installed again.",
                     );
                 }
                 ui.horizontal(|ui| {

@@ -8,6 +8,17 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-12
+
+**A plugin removed or installed again asks again for more time or
+memory** (owner: "if a plugin that requires more time or memory to work
+was accepted. if we uninstall it and reinstall it it should ask again").
+What the user allowed is kept per plugin version in the shared plugin
+settings; removing a plugin in the plugin manager, or installing it
+(again), now forgets it for every version of that plugin
+(`ohl_plugins::forget_consents`), in both applications. A plugin folder
+copied or deleted by hand is not noticed.
+
 ## 2026-11-11
 
 **Completing the code-check plugin interface: decided, not built yet (owner, 2026-11-11)**

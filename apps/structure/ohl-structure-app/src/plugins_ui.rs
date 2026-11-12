@@ -350,6 +350,7 @@ impl PluginsState {
             .clone()
             .ok_or("no plugin directory for this user")?;
         let to = ohl_plugins::install(from, &root, replace).map_err(|e| e.to_string())?;
+        self.forget_consents(&to);
         self.refresh();
         Ok(to)
     }
@@ -361,8 +362,21 @@ impl PluginsState {
             return Err(format!("{} is not an installed plugin", dir.display()));
         }
         std::fs::remove_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        self.forget_consents(dir);
         self.refresh();
         Ok(())
+    }
+
+    /// What the user allowed the plugin installed in `dir` (more time or
+    /// memory) is forgotten: removed or installed again, it asks again.
+    fn forget_consents(&mut self, dir: &Path) {
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()) else {
+            return;
+        };
+        if ohl_plugins::forget_consents(&mut self.allowed, name) {
+            ohl_plugins::set_consents(&self.allowed);
+            self.persist();
+        }
     }
 
     /// Reads what plugin `l` describes, on a thread (compiling a plugin
