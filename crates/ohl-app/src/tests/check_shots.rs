@@ -174,6 +174,29 @@ const SHOTS: &[Shot] = &[
             !r.thermal.running() && r.thermal.checks.is_some()
         }),
     },
+    // The field windows (owner, 2026-11-12: their review): one circuit
+    // given; the electric field's ground the plane (quick).
+    Shot {
+        name: "magnetic-field",
+        title: "Magnetic field",
+        open: |r| {
+            let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+            r.magnetic_field.set_current(&circuits[0].label(), 800.0);
+            r.magnetic_field.show(r.case);
+        },
+        done: Some(|r| r.magnetic_field.common.job.result.is_some()),
+    },
+    Shot {
+        name: "electric-field",
+        title: "Electric field",
+        open: |r| {
+            let circuits = ohl_electrical::magnetic::circuits(&r.model.line);
+            r.electric_field.set_voltage(&circuits[0].label(), 400.0);
+            r.electric_field.set_tiled(false);
+            r.electric_field.show(r.case);
+        },
+        done: Some(|r| r.electric_field.common.job.result.is_some()),
+    },
     Shot {
         name: "performed-checks",
         title: "Performed checks",
@@ -259,7 +282,9 @@ fn check_windows_rendered_for_review() {
             harness.get_by_label("How it is computed").click();
             harness.run_steps(4);
         }
-        for i in 2..=4 {
+        // The field windows' setup is longer: more pages.
+        let pages = if shot.name.ends_with("-field") { 7 } else { 4 };
+        for i in 2..=pages {
             wheel(&mut harness, body, -550.0);
             save(&mut harness, &dir, &format!("{}-setup-{i}", shot.name));
         }

@@ -2466,6 +2466,15 @@ impl App {
         ready.unequal_wind.keep(&mut ready.model, ctx);
         ready.magnetic_field.ui(ctx, &ready.model);
         ready.electric_field.ui(ctx, &ready.model);
+        // A heading's user guide ↗: the window's own page, at its section.
+        if let Some(anchor) = ready.magnetic_field.common.guide.take() {
+            ready.status = Some(
+                match crate::help::open_section(crate::magnetic_field::GUIDE, anchor) {
+                    Ok(m) => (format!("user guide opened: {m}"), false),
+                    Err(e) => (e, true),
+                },
+            );
+        }
         ready
             .building_fields
             .ui(ctx, &ready.model, &self.plugins.field_preset_dirs());

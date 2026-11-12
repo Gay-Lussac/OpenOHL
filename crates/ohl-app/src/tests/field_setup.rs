@@ -493,3 +493,76 @@ fn a_case_not_solved_yet_is_solved_for_the_run() {
         b.field.notes
     );
 }
+
+/// The anchors of the headings of the user guide page `page` (mdBook's:
+/// lower case, spaces as `-`, punctuation dropped).
+fn page_anchors(page: &str) -> Vec<String> {
+    std::fs::read_to_string(crate::tests::root().join(format!("docs/{page}.md")))
+        .unwrap()
+        .lines()
+        .filter_map(|l| l.strip_prefix('#'))
+        .map(|h| {
+            h.trim_start_matches('#')
+                .trim()
+                .to_lowercase()
+                .chars()
+                .filter_map(|c| match c {
+                    ' ' => Some('-'),
+                    c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Clicks every **user guide ↗** of the field window opened in `h`, in
+/// turn (scrolled to each): each opens the window's own page `page`
+/// (owner, 2026-11-12), at a section that is a heading of it.
+fn guide_buttons_open(h: &mut Harness<'_, App>, page: &str, count: usize) {
+    let anchors = page_anchors(page);
+    let name = page.rsplit('/').next().unwrap();
+    for k in 0..count {
+        h.get_all_by_label("user guide ↗")
+            .nth(k)
+            .expect("a heading's link")
+            .scroll_to_me();
+        h.run();
+        h.get_all_by_label("user guide ↗").nth(k).unwrap().click();
+        h.run_steps(2);
+        let (text, error) = h.state_mut().ready().unwrap().status.clone().expect("said");
+        assert!(!error, "{text}");
+        assert!(text.contains(name), "{text}");
+        let anchor = text
+            .rsplit(['#', ' '])
+            .next()
+            .unwrap()
+            .trim_end_matches(')');
+        assert!(
+            anchors.iter().any(|a| a == anchor),
+            "{anchor} not in {anchors:?}"
+        );
+    }
+    assert!(h.get_all_by_label("user guide ↗").nth(count).is_none());
+    let opened = crate::help::OPENED.lock().unwrap().clone();
+    assert!(
+        opened
+            .iter()
+            .any(|p| p.display().to_string().contains(name)),
+        "{opened:?}"
+    );
+}
+
+/// The magnetic field window's five headings open its own page.
+#[test]
+fn the_magnetic_window_opens_its_own_guide_page() {
+    let model = synthetic();
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .build_eframe(|cc| App::with_model(model, cc.wgpu_render_state.clone()));
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    r.magnetic_field.show(r.case);
+    h.run();
+    guide_buttons_open(&mut h, crate::magnetic_field::GUIDE, 5);
+}

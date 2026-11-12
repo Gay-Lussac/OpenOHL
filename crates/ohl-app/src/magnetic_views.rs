@@ -285,7 +285,9 @@ impl MagneticFieldWindow {
                 None => pieces,
             }
         };
-        crate::check_ui::section(ui, 4, "Model", None);
+        if let Some(a) = crate::check_ui::section(ui, 4, "Model", Some("4-model-folded")) {
+            self.common.guide = Some(a);
+        }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
         // each setting with its effect and time when opened.
         egui::CollapsingHeader::new("Wire pieces, the wires modelled")
@@ -408,7 +410,11 @@ impl MagneticFieldWindow {
             crate::field_help::modelled(ui, self.modelled_within);
         });
             });
-        crate::check_ui::section(ui, 5, "Views and levels", None);
+        if let Some(a) =
+            crate::check_ui::section(ui, 5, "Views and levels", Some("5-views-and-levels"))
+        {
+            self.common.guide = Some(a);
+        }
         crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
         ui.label(egui::RichText::new("Levels drawn (µT, display only: none is a limit)").small());

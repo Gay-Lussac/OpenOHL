@@ -39,6 +39,7 @@
 - [Bill of materials and cost estimate (.ohlcost)](user-guide/bom-and-cost.md)
 - [Optimum structure spotting](user-guide/spotting.md)
 - [Analyses: galloping, ice shedding, vegetation, safety volumes, as-built wires, fields](user-guide/analyses.md)
+  - [Magnetic field](user-guide/magnetic-field.md)
 - [Sagging outputs](user-guide/sagging.md)
 - [Drawings and profile exports](user-guide/drawings.md)
   - [Sheet templates (.ohlsheet)](user-guide/sheet-templates.md)

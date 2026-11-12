@@ -45,6 +45,17 @@ short line, then the longer text: `check_help::question_both`,
 false)`); the warnings (the jumpers' note, a band margin below 0.15 m,
 "set the distance", what blocks Run) and the solves of a windy case stay
 written. The vegetation panel and the safety volumes keep their lines.
+**The Magnetic and Electric field windows: a page of their own each,
+the setup reviewed as the vertical clearances' was** (owner: "can you
+also put the magnetic field and electric field too in the list").
+[Magnetic field](../user-guide/magnetic-field.md): what it answers, how
+it works step by step with the theory's drawings, every setting in the
+window's order (default, effect, time), the results, what is and is not
+on the safe side, the command line. Each heading of the window got a
+**user guide ↗** opening its section of that page (the field windows had
+none). The window part of Analyses › Electrical: magnetic field is now a
+summary with the link; the command line, the plugins and the plan
+templates stay there; the theory page links to the new page.
 
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)

@@ -3,8 +3,10 @@
 *Built, in active development, not approved yet* (roadmap O18 step 4,
 first slice). Implemented in `crates/ohl-electrical`
 (`magnetic`). Used by `ohl electrical magnetic` and Checks › Electrical ›
-Magnetic field… ([Electrical: magnetic
-field](../user-guide/analyses.md#electrical-magnetic-field)).
+Magnetic field… ([Magnetic field](../user-guide/magnetic-field.md): the
+window step by step, every setting; [Electrical: magnetic
+field](../user-guide/analyses.md#electrical-magnetic-field): the command
+line).
 
 Every assumption is marked **Assumption** (a value or a model taken where
 the line gives none) or **Simplification** (it changes the result), and

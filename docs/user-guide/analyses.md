@@ -955,275 +955,31 @@ validation: [Magnetic field](../theory/magnetic-field.md).
 
 **What it needs:** the sections' systems and phases (Line › Electrical
 systems; the circuits are the phases of a system in one named circuit;
-sections of no system are earth wires), and **a current per circuit**.
-For the earth wire currents also the wires' electrical data and the
-line's soil resistivity (as for the [line
-parameters](#electrical-line-parameters)). **No limit is built in**: an
-ordinance's values (which current, which places, which limit) are yours
-to give, or come from its plugin's parameter file later.
+sections of no system are earth wires), and **a current per circuit**
+(by default its system's operating current). For the earth wire currents
+also the wires' electrical data and the line's soil resistivity (as for
+the [line parameters](#electrical-line-parameters)). **No limit is built
+in**: an ordinance's values (which current, which places, which limit)
+are yours to give, or come from its plugin's parameter file.
 
-**In OHL-Design:** Checks › Electrical › **Magnetic field…** Its inputs
-— the weather case, the currents and directions, the model, the earth
-wires, the profiles, the limit and the points (the CSV's text) — are kept
-in the project for the project line worked on (2026-10-27): the window
-opens as it was left, for every user of the project. A case or span no
-longer in the line falls back to the default.
+**In OHL-Design:** Checks › Electrical › **Magnetic field…** — the
+window has a page of its own: **[Magnetic field](magnetic-field.md)**:
+what it answers, how it works step by step with drawings, every setting
+with its default, its effect and its time (the currents given per
+circuit, at the end points or per phase; the earth wires; 2D cuts,
+profiles and volumes; the model; the levels), the results, and what is
+and is not on the safe side. Its **user guide ↗** buttons open that page.
+The settings' effects, measured: [Cut-offs and
+grids](../theory/magnetic-field.md#cut-offs-and-grids-measured).
 
-- **Currents**: per circuit its current (A, rms, each phase) and its load
-  flow, *along the line* (from the line's first structure to its last) or
-  *against it* (every phase turned by 180°). The phases are balanced at
-  their systems' phase angles (L1 0°, L2 −120°, L3 +120° unless the
-  system gives others). By default a circuit's current is its system's
-  **operating current** (Line › Electrical systems, column A; 2026-11-04),
-  said *the line's* beside it; a current typed here overrides it (a
-  button brings the line's back).
-  **Given** *the circuit* (one current) or *at its end points*
-  (2026-10-29): the current in at each end (negative: out), one end
-  ticked *the rest*; every section's current follows (branches
-  included; a circuit closing a loop is refused: it needs the load
-  flow). On the command line `--end CIRCUIT@STRUCTURE=A` (or `=rest`),
-  `--ends` lists the end points.
-  Or *per phase* (2026-11-11): each phase's current and angle typed (it
-  starts from the balanced values) — an **unbalanced** circuit. The line
-  under the phases gives their sum, the **net current**: its field falls
-  off as 1/d with the distance, a balanced circuit's as 1/d², so far
-  from the line it governs. A result with a balanced circuit says
-  **NOT ON THE SAFE SIDE far from the line** (it holds no net current);
-  a circuit given per phase has its phases and net current in the notes
-  instead. On the command line `--phase-current CIRCUIT:PHASE=A@DEG`,
-  once for every phase of the circuit (e.g. `North:L2=1000@-120`).
-- **Earth wire currents typed** (2026-11-11, folded under the currents;
-  shown on a line with earth wires): tick an earth wire to give its
-  current and angle instead of a computed one — along the line, the
-  same in every span, also with the earth wire currents off. With them
-  on, the other earth wires are induced by the phases and by it. Not
-  together with *through the structures' earthing* (the run is refused:
-  that network computes every earth wire's current). On the command
-  line `--earth-current SECTION=A@DEG[@HZ]`.
-- **Model**: *3D* — the wires as solved (sag, line angles, the line's
-  length), bundles subconductor by subconductor; *2D* — the wires as
-  infinite straight conductors where they cross the profile (tick *wires
-  at the span's mean height* to take the line parameters' mean instead).
-  2D results warn where the model is not valid: near a line angle over
-  5°, on a span between differently arranged structures.
-- **Earth wires**: tick to let them carry the currents the phases induce
-  (it may raise the field as well as lower it). *Through the structures'
-  earthing* (on by default, 2026-10-29): the earth wires as a network
-  over the line, each structure leading current into the ground through
-  its **earthing resistance** (Structures table, **earthing Ω**, or the
-  structure's window; else the line's, in Line parameters; else 10 Ω
-  assumed, said) — the structures' currents in the field and listed in
-  the results. Unticked: an infinitely long earth wire earthed everywhere
-  (far larger currents on a short line).
-- **Jumpers** (3D, on by default, 2026-10-29): a jumper between two
-  section ends of one phase carries that phase's current; jumpers on taps
-  or between different phases are left out and listed in the notes.
-**Per electrical system** (2026-11-01, in *2 Scope* under *Wires by*;
-the owner: "a weather case per system (e.g. earth wire at 10 °C and
-conductors at 40 °C due to being in use) … best would be per system"):
-each system of the line, and the earthed wires without one, may take
-its own weather case and calculation (*as above*: the window's); each
-case and calculation is solved once for the run and every section taken
-from its system's, the jumpers from the window's case; the notes say
-which ("per system: system ex220: in max temperature").
-
-**Ground from** (2026-11-01, in *2 Scope*; the owner: "choose which
-TIN layer it uses and if none exist which survey data to use to make
-it"): the surface of the checks (default), a terrain surface (TIN layer)
-of the project, or the survey's ground points (the point cloud's ground
-classes within a distance of the spans, 250 m by default, the lowest per
-metre) made into a surface for the run — the electric field's tiles, the
-profiles' height and the cuts' and volumes' bottom stand on it.
-
-**Stretches per span** (Electric field, 4 Model, 2026-11-01): each span's
-charge in this many stretches along it, 24 by default (16 before); its
-effect measured beside it and in [the
-theory](../theory/electric-field.md#the-charges). **The settings'
-effects, measured** — the cut-off distance, the cuts' and volumes'
-steps, the tiles — are tabled in the theory pages ([magnetic
-field](../theory/magnetic-field.md#cut-offs-and-grids-measured), [electric
-field](../theory/electric-field.md#the-tiled-floor-default)).
-
-**Long volumes in parts** (2026-11-01, the owner: "modelled in parts to
-keep the amount of memory used low in long lines"): a volume's lattice
-is computed along its run in parts of at most some 20 million points
-(160 MB) each, the plane where two meet shared — the same surfaces as
-in one piece (tested), far less memory on a long run.
-
-**3 Spans and what to compute in each** (2026-10-31, the owner's
-validated rework; the same in both field windows). **Make** (2026-11-01,
-the owner: "the 3D method to only make the volumes … 2D where you can
-setup cuts … and also ask if we want the profiles"): **2D: cuts and
-profiles** — the cuts at the stations asked in the table and, with
-**profiles too** ticked, the profiles (and the points from CSV) — or
-**3D: volumes** — only the volumes of the spans with *Volume* ticked. A
-run computes each kind one after another, in steps the footer counts
-("step 3 of 7: volume A–B: fine lattice"; since 2026-11-10): a step per
-cut, one for the profiles, two per volume (its coarse lattice, then its
-fine one). The bar is the step's own — it starts at 0 with each step
-and fills as the step's points are computed — with the time gone and
-the time the step's points left take. The
-cuts and the volumes from the wires in 3D, the profiles by their model
-(*Profiles by* 3D or 2D, 4 Model). The isolines *from above* are no
-longer offered (2026-11-01). **The span table**:
-every span a row — per alignment its spans in station order, ticked
-(the spans of the line's run along it, and those out of its first or
-last structure); then the other spans, unticked: on no alignment, of
-another line crossing or running beside it, connections from a structure
-in the middle of the line (owner, 2026-10-31: the main line's spans not
-interrupted by crossing spans) — with its length, its profile, its **2D cuts at** (the
-stations asked: *+ station* at mid-span, at its lowest point or a
-distance from its first structure; a click on a station's chip removes
-it; 2D) and its **Volume** (3D). **A cut is made
-on the alignment** (owner, 2026-10-31: "cuts are made on the alignment
-not the circuits or span"): each chip is placed at the alignment station
-of that place in the span (between its structures' stations; the lowest
-point found by the run, then placed the same way), the cut's plane
-perpendicular to the alignment — at an angle point along the bisector —
-exactly as a cross-section panel opened there. A span on no alignment
-can have no cut: the window says why under the table and the run leaves
-it out. An unticked span
-is greyed and nothing is computed in it. **Press on a tick and drag
-across the rows**: every row passed takes the state the press gave;
-shift-click ticks a range; a filter (part of a span's
-name), *All*, *None* and *Invert* act on the rows shown. The table is as
-tall as you drag its handle. The ticks, the stations and the volumes are
-kept in the project; with no span ticked, Run says so. Under the table:
-
-- **Profiles**: at each ticked span's lowest point, *beside its structures*
-  (2026-10-31: a profile this far into each ticked span from both its
-  structures, 10 m by default), or one span at its
-  lowest point or at a place 0–1 along it; **Across** ± the width every step at a
-  height above the ground (default ±100 m every 1 m at 1 m; ±50 m until
-  2026-11-02: on a real line the 1 µT isoline lay beyond it in most
-  cuts, see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured)). The ground is
-  the project's surface for the checks when there is one, else straight
-  between the structures' feet.
-- **2D cuts** (2D) or **Volumes** (3D): their sizes — the cuts' half width, step and reach over the highest wire
-  (default ±100 m — ±60 m until 2026-11-02 — every 1 m — 0.5 m until 2026-11-01: the low levels' isolines as close, at a quarter of the points; see [Cut-offs and grids](../theory/magnetic-field.md#cut-offs-and-grids-measured) — to 10 m over it); the volumes' width each
-  side of the axis (2026-11-01: their own, so a low level's surface
-  reaching farther than the profiles is inside the box; 100 m by default
-  since 2026-11-02) and step — each with how many the table asks and how
-  long they take (5 Views below).
-
-Beside **Run**, a summary: the spans, profiles, cuts and volumes the run
-will compute and about how long. In **2 Scope**:
-
-- **Limit**: optional, µT: the margin at every point and the limit line's
-  extent on every profile.
-- **Points from CSV…**: places to evaluate (e.g. places of sensitive use),
-  a CSV with a header naming `x`, `y` and `z` (elevation) or `height`
-  (above the ground), optionally `name`.
-
-**Results** (2026-10-31): first a list of everything computed — every
-profile, cut, volume and grid with its largest value and a note — and a
-button on each: **Show plot** picks the profile in the plot below and
-scrolls to it, **Open cut** opens a
-cross-section panel at the cut's alignment station on the wires — on the
-very plane the run computed, the cut drawn in it —, **Show in 3D** turns
-the 3D view to the volume or grid and shows the field's layer. A cut's
-row names its alignment and station (and the span it crosses). The
-**3D** tick of a cut, volume or grid (2026-11-01) draws it in the 3D view
-and the cross-section panels or not; a new run draws all. The volumes'
-surfaces are translucent: the structures, wires and points behind them
-stay visible.
-
-**Save in Performed checks** (2026-11-01; under the list) keeps the run —
-its inputs, the profiles, cuts, grids, points and the volumes' surfaces
-(up to two million triangles; a larger run is kept without them) — in
-Checks › Performed checks; opened from there, the window shows it with
-what changed on the line since.
-
-**4 Model** (3D; 2026-10-29; folded since 2026-10-31: open it to change
-the model). Every setting says beside it what it
-changes in the results and about how long it takes on this computer —
-from the last run's speed, else a short measurement (a laptop slows to
-about half speed after a few seconds of full load; the estimate allows
-for it).
-
-- **Wire pieces**: *as solved* (the solver's 64 pieces per span or part
-  of a span; it says the longest and how far a wire lies off them, a few
-  millimetres) or *at most* a length: the pieces are cut, the new points
-  placed on the curve through the solver's points (on the chord at a
-  kink: a spacer, a clamp). The field changes by about the wire's offset
-  over the distance to it: a few hundredths of a per cent at 10 m.
-  Shorter pieces take longer in proportion.
-- **Modelled**: the *wires within* a distance of each cut and volume —
-  **2 km by default since 2026-11-01** (the defaults reviewed for accuracy
-  and speed). There is no "whole line" choice any more (2026-11-12: far
-  too long to compute); a distance longer than the line takes every wire,
-  and a project kept with "the whole line" opens at 2 km. Profiles and
-  points always take the whole line. Each run then computes the whole
-  line's field at some 200 points of the cut or volume and says how much
-  the wires left out change it (on a real line of 28 km, 2 km changed it
-  by at most 0.03 % and made a volume ten times quicker).
-
-**5 Views and levels** (2026-10-29). The **levels** are a table of
-values (µT) with a colour each, ticked to draw them, **+ level**, **+ the
-limit** (the limit given above) — display only, none is a limit. *Colour
-the cuts by band* fills a cut's cells with the colour of the highest
-level at or below their value. The views, drawn on the layer **Magnetic
-field (isolines, surfaces)** while the window is open:
-
-- **2D cuts**: at the stations asked in the table (*+ station*), computed
-  by the run on the alignment; their size under the table. **Results ›
-  Open cut** opens a cross-section panel at the cut's alignment station:
-  the same plane as the run's cut (one placement for both), on the wires.
-- **Cross-sections**: *also in any cross-section panel I open*
-  (**Cross-section…**, C), every step (default 0.5 m) — open a cut at a
-  building to see the field around it with the ground, the LiDAR points
-  and the line. Computed after a run whenever a panel opens or moves
-  (some seconds each), from the run's wires.
-- **Volume**: isosurfaces of the levels over the spans with *Volume*
-  ticked in the table (one volume along each run of them following each
-  other along their alignment, whatever order the line lists them in,
-  bent at the line angles: no seam at the structures. Where two volumes
-  overlap — two alignments side by side, a branch — the place is
-  computed and drawn once, in the volume computed first: the later one
-  leaves it out and its note says what share of its box that is
-  (2026-11-10; the surfaces meet with an overlap of at most four steps,
-  where a hairline seam may show; no value changes). Its step
-  under the table; **Results › Show in 3D** turns the 3D view to it),
-  ± the width, from the ground to 10 m over the highest wire, the lattice every
-  step (default 2 m), drawn translucent in the 3D view. A coarse lattice
-  first, then the fine one only where a level passes, near the wires and
-  wherever a surface goes on. On a real line (7 circuits, 1000 A each), one
-  span at 2 m took about a minute with the whole line modelled and 6 s
-  with the wires within 2 km; 1 m takes about four times as long. Thin,
-  short pieces of a surface (at most 2 steps across, 20 long: a tube
-  thinner than the lattice, e.g. round an earth wire at a high level, met
-  only here and there) are left out and counted with the results
-  (2026-10-31: drawn, they were beads along the wire); a finer step
-  resolves them.
-
-Every value at a grid or lattice point is computed in full; only the
-lines and surfaces between the points are interpolated. **Each run says
-how far its drawings lie off their levels**: the field computed again at
-up to 200 points of every isoline and surface (half within …, nine in ten
-within …, at most …). A level drawn nowhere is said: *not reached*, or
-*the field is above it everywhere shown* (widen the view). Thin surfaces
-around the conductors (100 µT at 1000 A: some 2 m from a wire) need a
-fine step: at 2 m they lay up to 50 % off their level on a real line, at
-1 m within 4 % for nine points in ten.
-
-Choose the weather case in *2 Scope* (in the footer until 2026-10-27),
-the currents under it, and **Run** (a progress bar and **Stop** while it
-runs; the time left from the points computed so far and, in the electric
-field, the tiled floors still to solve at the speed of those solved —
-every floor of the run counted from the start, 2026-10-30); the results open in the Results tab. The results: the currents used, the earth wires'
-currents, the notes (what was assumed); the chosen profile plotted —
-B against the distance from the axis (right positive), the cycle's
-largest value fainter, the limit dashed, the value under the pointer; a
-table per profile (station, the distance along the line, the largest B
-and where, the limit line's extent, warnings such as a line end nearer
-than five times the limit line's reach); a table of the points with B and
-the margin (red when above the limit). **Export CSV…** writes every point.
-The results are marked out of date when the line or the ground changes;
-the views then draw faded. Under **Views**: per view what was computed
-and how far its drawings lie off their levels. Not yet: the thermal
-rating as the currents (on the command line only), places of sensitive
-use as objects of the project, the structures' magnetic permeability
-(estimated small: theory page).
+The window's shared parts — the span table, the cuts on the alignment,
+the volumes, the weather case per electrical system, the ground — work
+the same in the [electric field](#electrical-electric-field) window. Long volumes
+are computed in parts of some 20 million points each (the same surfaces
+as in one piece, far less memory). Not yet: the thermal rating as the
+currents (on the command line only), places of sensitive use as objects
+of the project, the structures' magnetic permeability (estimated small:
+theory page).
 
 **On the command line:**
 

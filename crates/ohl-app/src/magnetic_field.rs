@@ -187,6 +187,11 @@ pub const SETTING: &str = "app.magnetic_field";
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "magnetic-field-window";
 
+/// The window's own page of the user guide (owner, 2026-11-12: the
+/// field windows reviewed as the vertical clearances were); its headings'
+/// **user guide ↗** open its sections.
+pub const GUIDE: &str = "user-guide/magnetic-field";
+
 /// The wires modelled within this distance of a cut or volume by default,
 /// m (owner, 2026-11-01).
 pub const CUTOFF: f64 = 2000.0;
@@ -1012,7 +1017,11 @@ impl MagneticFieldWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
+                        if let Some(a) =
+                            check_ui::section(ui, 1, "What it checks", Some("1-what-it-checks"))
+                        {
+                            self.common.guide = Some(a);
+                        }
                         help::explain(
                             ui,
                             "The magnetic flux density (µT, the rms of the vector) of the line's \
@@ -1040,7 +1049,9 @@ impl MagneticFieldWindow {
                         // The weather case: in the scope (it was in the
                         // footer until 2026-10-27); the circuits' currents
                         // under it.
-                        check_ui::section(ui, 2, "Scope", None);
+                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some("2-scope")) {
+                            self.common.guide = Some(a);
+                        }
                         check_ui::ScopePicker::new(WINDOW, &model.line)
                             .route_of(model)
                             .cases(check_ui::Cases::One(&names, &mut self.common.case))
@@ -1067,7 +1078,14 @@ impl MagneticFieldWindow {
                         crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
                         self.inputs_ui(ui, model);
                         ui.separator();
-                        check_ui::section(ui, 3, "Spans and what to compute in each", None);
+                        if let Some(a) = check_ui::section(
+                            ui,
+                            3,
+                            "Spans and what to compute in each",
+                            Some("3-spans-and-what-to-compute-in-each"),
+                        ) {
+                            self.common.guide = Some(a);
+                        }
                         self.spans_ui(ui, model);
                         self.views_ui(ui, model);
                     }),

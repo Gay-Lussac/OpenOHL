@@ -133,6 +133,9 @@ pub struct FieldShared<A> {
     pub rate: Option<f64>,
     /// The share of a volume's lattice the last run computed.
     pub volume_share: Option<f64>,
+    /// A section of the window's user guide page to open (a heading's
+    /// **user guide ↗** clicked; the application opens it).
+    pub guide: Option<&'static str>,
     /// The wires' pieces, by line version and case.
     pub pieces_seen: Option<((u64, usize), PieceStats)>,
     /// The overlay as last handed out.
@@ -265,6 +268,7 @@ impl<A> FieldShared<A> {
             panel: PanelCuts::default(),
             rate: None,
             volume_share: None,
+            guide: None,
             pieces_seen: None,
             drawn: None,
             hidden: Default::default(),
