@@ -114,6 +114,17 @@ Plugin manager (both applications) get the plugin's *user guide* /
 6: every check window has its own page) extended to plugins. The public
 example `hello-wasm` ships an overview page with a drawing. [Help
 pages](plugins.md#help-pages).
+**Wire tensions: the same treatment as the vertical clearances** (owner:
+"next do the wire tensions window"). Part 1: [Wire
+tensions](../user-guide/wire-tensions.md) — what it answers, the check
+in five steps (the theory's drawing of T and H and one new,
+`check-windows/wire-tension-check-step-by-step.svg`), every setting
+(default, effect, time), every field of a `[[tension_rule]]` (with the
+optional `tension` and `catenary_constant` limits) and of the `[check]`
+table, what is and is not conservative (the default bimetallic model's
+tension above the knee point said there), the command line. The
+OHL-Design page keeps a summary and links to it; the theory, the rule
+file's section and the design-code page link to it.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

@@ -213,7 +213,7 @@ Wires sharing an end point (adjacent spans, a jumper and the sections it joins) 
 ### Wire tension rules (`[[tension_rule]]`)
 
 Since 2026-10-22 a rule file may hold **tension rules** for the wire
-tension check (Checks › [Wire tensions…](desktop-app.md#wire-tensions)
+tension check (Checks › [Wire tensions…](wire-tensions.md)
 and `ohl tensions`): optional `[[tension_rule]]` tables, beside or
 instead of the clearance rules. A file without them reads as before;
 `ohl line` and the clearance windows ignore them. A preset declares the

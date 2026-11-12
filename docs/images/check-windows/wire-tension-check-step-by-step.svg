@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="g" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+    <marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/></marker>
+  </defs>
+  <rect width="1000" height="430" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">The wire tension check, step by step</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. What one Run does for every span and every rule (docs/user-guide/wire-tensions.md).</text>
+
+  <!-- 1 weather cases -->
+  <rect x="20" y="70" width="180" height="250" fill="none" stroke="#ccc"/>
+  <text x="30" y="90" font-weight="bold">1  Weather cases</text>
+  <rect x="35" y="105" width="150" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="121">min. temperature</text>
+  <rect x="35" y="133" width="150" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="149">ice</text>
+  <rect x="35" y="161" width="150" height="22" fill="#eef3f8" stroke="#7f9bb8"/>
+  <text x="42" y="177">high wind</text>
+  <text x="30" y="210" fill="#555" font-size="12">the cases the rules name</text>
+  <text x="30" y="225" fill="#555" font-size="12">(none named: every case);</text>
+  <text x="30" y="240" fill="#555" font-size="12">temperature, ice, wind</text>
+
+  <!-- 2 wires solved -->
+  <rect x="215" y="70" width="180" height="250" fill="none" stroke="#ccc"/>
+  <text x="225" y="90" font-weight="bold">2  The wires solved</text>
+  <line x1="235" y1="110" x2="235" y2="190" stroke="#555" stroke-width="2"/>
+  <line x1="305" y1="120" x2="305" y2="190" stroke="#555" stroke-width="2"/>
+  <line x1="375" y1="105" x2="375" y2="190" stroke="#555" stroke-width="2"/>
+  <path d="M235,112 Q270,150 305,122" fill="none" stroke="#1f618d" stroke-width="2"/>
+  <path d="M305,122 Q340,160 375,107" fill="none" stroke="#1f618d" stroke-width="2"/>
+  <path d="M235,112 Q270,170 305,122" fill="none" stroke="#1f618d" stroke-dasharray="4,3"/>
+  <path d="M305,122 Q340,180 375,107" fill="none" stroke="#1f618d" stroke-dasharray="4,3"/>
+  <text x="225" y="215" fill="#555" font-size="12">each section in each case,</text>
+  <text x="225" y="230" fill="#555" font-size="12">by its own calculation or</text>
+  <text x="225" y="245" fill="#555" font-size="12">the rule's (initial, after</text>
+  <text x="225" y="260" fill="#555" font-size="12">creep, after load…)</text>
+
+  <!-- 3 tension of each span -->
+  <rect x="410" y="70" width="180" height="250" fill="none" stroke="#ccc"/>
+  <text x="420" y="90" font-weight="bold">3  Tension per span</text>
+  <line x1="430" y1="150" x2="430" y2="195" stroke="#555" stroke-width="2"/>
+  <line x1="570" y1="110" x2="570" y2="195" stroke="#555" stroke-width="2"/>
+  <path d="M430,150 Q480,200 570,112" fill="none" stroke="#1f618d" stroke-width="2"/>
+  <line x1="570" y1="112" x2="540" y2="130" stroke="#c0392b" stroke-width="2" marker-end="url(#a)"/>
+  <text x="525" y="148" fill="#c0392b" font-size="12">T</text>
+  <line x1="570" y1="112" x2="538" y2="112" stroke="#555" marker-end="url(#g)"/>
+  <text x="522" y="108" fill="#555" font-size="12">H</text>
+  <text x="420" y="215" fill="#555" font-size="12">T: at the most tensioned</text>
+  <text x="420" y="230" fill="#555" font-size="12">support, the higher end</text>
+  <text x="420" y="245" fill="#555" font-size="12">(the default); or H, the</text>
+  <text x="420" y="260" fill="#555" font-size="12">horizontal tension</text>
+
+  <!-- 4 the limit -->
+  <rect x="605" y="70" width="180" height="250" fill="none" stroke="#ccc"/>
+  <text x="615" y="90" font-weight="bold">4  The rule's limit</text>
+  <rect x="620" y="105" width="150" height="22" fill="#fef9e7" stroke="#b7950b"/>
+  <text x="627" y="121">factor × RTS</text>
+  <rect x="620" y="133" width="150" height="22" fill="#fef9e7" stroke="#b7950b"/>
+  <text x="627" y="149">or a tension, kN</text>
+  <rect x="620" y="161" width="150" height="22" fill="#fef9e7" stroke="#b7950b"/>
+  <text x="627" y="177">or H/w ≤ C, m</text>
+  <text x="615" y="210" fill="#555" font-size="12">one limit per rule: the</text>
+  <text x="615" y="225" fill="#555" font-size="12">allowed tension of each</text>
+  <text x="615" y="240" fill="#555" font-size="12">wire (RTS from the wire</text>
+  <text x="615" y="255" fill="#555" font-size="12">library; w its bare weight</text>
+  <text x="615" y="270" fill="#555" font-size="12">per metre as strung)</text>
+
+  <!-- 5 results -->
+  <rect x="800" y="70" width="180" height="250" fill="none" stroke="#ccc"/>
+  <text x="810" y="90" font-weight="bold">5  Results</text>
+  <rect x="810" y="105" width="160" height="20" fill="#fdedec" stroke="#c0392b"/>
+  <text x="815" y="120" fill="#c0392b" font-size="12">✖ S1 span 2  104 %  fail</text>
+  <rect x="810" y="130" width="160" height="20" fill="#fff" stroke="#ccc"/>
+  <text x="815" y="145" font-size="12">S1 span 1  87 %  pass</text>
+  <line x1="840" y1="200" x2="840" y2="165" stroke="#555" stroke-width="2"/>
+  <path d="M800,190 Q820,200 840,167" fill="none" stroke="#1f618d" stroke-width="2"/>
+  <circle cx="840" cy="167" r="6" fill="none" stroke="#c0392b" stroke-width="2"/>
+  <text x="852" y="180" fill="#c0392b" font-size="12">mark</text>
+  <text x="810" y="225" fill="#555" font-size="12">usage = tension / allowed;</text>
+  <text x="810" y="240" fill="#555" font-size="12">above 100 %: fail. Every</text>
+  <text x="810" y="255" fill="#555" font-size="12">span listed, the largest</text>
+  <text x="810" y="270" fill="#555" font-size="12">usage first; failing spans</text>
+  <text x="810" y="285" fill="#555" font-size="12">marked in the views</text>
+
+  <!-- arrows -->
+  <line x1="110" y1="340" x2="880" y2="340" stroke="#555" marker-end="url(#g)"/>
+  <text x="20" y="370" fill="#555">Every rule, every weather case it applies in, every span of every wire it takes (its wire types, systems, circuits):</text>
+  <text x="20" y="388" fill="#555">one row with the tension, the allowed tension and the usage. A wire type without a rated tensile strength cannot take a</text>
+  <text x="20" y="406" fill="#555">factor of it: not checked, said in the notes. No limit is built in: the rules' limits are yours or a design-code preset's.</text>
+</svg>
