@@ -83,6 +83,22 @@ Its headings' **user guide ↗** open it; the electric part of Analyses is
 a summary with the link (the command lines stay); the electric field's
 and the surface gradient's theory pages link to it.
 
+The electric window as the magnetic one: Wires by and the voltages'
+paragraph behind their (?) (the voltages keep one line: the highest
+operating voltage by default, else the nominal, not on the safe side);
+**Profiles by**, **Jumpers**, **Stretches per span** and **Ground** with
+its tiles moved into the folded 4 Model (*Profiles by, jumpers, stretches,
+the ground and its tiles, steel, wire pieces*); **Surface gradient**, an
+output, under 3 with what is computed; the tiled floor, the steel, the
+pieces, the cuts, the volumes and the panels keep one line with their
+counts and times, the rest behind the (?); the plane keeps "up to 8 % low
+on bumps: not on the safe side" in view; the volume floor's memory line
+and its red refusal stay as they were. Units in the labels (Limit [kV/m],
+Levels drawn [kV/m]); every size and tile field says on hover what it
+changes. Fixed on the way: *What it checks* said 16 stretches (24 since
+2026-11-01) and the volume floor's help said 2 GB whatever the memory set
+in Line › Calculation options (now that value).
+
 **The manual inside the applications** (owner: "also the guide book
 should be included in the app"). The macOS image (`tools/package-macos.sh`)
 and the release folder (`.github/workflows/release.yml`, so the Windows

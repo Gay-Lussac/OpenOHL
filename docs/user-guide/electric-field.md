@@ -104,7 +104,11 @@ off their levels.
 
 The Setup tab, top to bottom. The inputs are kept in the project for the
 line worked on, written when a run starts or the window closes. Each
-heading's **user guide ↗** opens its section of this page.
+heading's **user guide ↗** opens its section of this page. As in the
+magnetic window, a setting keeps its label (units in brackets), its value
+and at most one short line — its count and its time —; what it does is
+said on hover and behind its **(?)**; warnings, what is not on the safe
+side and why Run is greyed stay in view.
 
 ### 1 What it checks
 
@@ -118,13 +122,6 @@ when chosen).
 |---|---|---|---|
 | **Weather case**, **Wires by**, **Per electrical system**, **Ground from** | as in the [magnetic field](magnetic-field.md#2-scope) | where the wires hang and the ground they stand over | a solve per case |
 | **Voltage between phases [kV]**, per circuit | the system's highest operating voltage (*highest*), else its nominal (*the system's nominal — not on the safe side*, in the warning colour) | the field grows in proportion; **highest** / **nominal** beside a typed value sets it back; **0 kV**: voltage-free (at earth potential, like the earth wires); DC systems are left out (said) | none |
-| **Profiles by** | 3D | 2D: infinite line charges over level ground at the cross-section — quick, not valid near a line angle, a structure or on sloping ground | 2D: a moment; 3D: the profiles' time in 4 Model |
-| **Surface gradient** | on (2D only) | the gradient at the conductors' surfaces at each profile's span, at its lowest point and both ends; changes no field value | some milliseconds per cross-section |
-| **Jumpers** | on | off: left out (not on the safe side near the structures) | none |
-| **Stretches per span** | 24 | fewer: the charge follows the sag less closely (measured beside it and in the [theory](../theory/electric-field.md#the-charges)) | in proportion |
-| **Ground** | tiled floor | *plane under each point*, fitted over **± [m]** (10 m): quick, up to 8 % low on bumps (not on the safe side) and 24 % high in a hollow on a real line | the tiled floor: some seconds per floor, said beside it |
-| **tiles [m]: profiles and points / cuts / volumes** | 2 / 8 / 8 m | finer tiles: a closer floor (8 m under a volume some 3 % off on even ground, 4 m 0.5 %) | finer: far longer (4 m some 20 times as long as 8 m under a volume); the volumes' tile cannot be set below what fits the memory |
-| **reaching [m]** | 100 m | how far a volume's floor reaches beyond it every way | more tiles |
 | **Limit [kV/m]** | none | the margin at every point | none |
 | **Points from CSV…** | none | the field at your places (as in the magnetic field) | a point each |
 
@@ -144,10 +141,25 @@ volumes, their floor: its tiles, its memory while solved and its time;
 when the longest volume needs more than one floor, how many parts; in red
 when it would not fit.
 
+| Setting | Default | What changes in the result | Time |
+|---|---|---|---|
+| **Surface gradient** | on (2D only) | the gradient at the conductors' surfaces at each profile's span, at its lowest point and both ends; changes no field value | some milliseconds per cross-section |
+
 ### 4 Model (folded)
+
+Folded under *Profiles by, jumpers, stretches, the ground and its tiles,
+steel, wire pieces*: the defaults are sound; open it to change the
+model. A floor that would not fit the memory still greys Run, with the
+reason, while it is folded.
 
 | Setting | Default | What changes in the result | Time |
 |---|---|---|---|
+| **Profiles by** | 3D | 2D: infinite line charges over level ground at the cross-section — quick, not valid near a line angle, a structure or on sloping ground | 2D: a moment; 3D: the profiles' time below |
+| **Jumpers** | on | off: left out (not on the safe side near the structures) | none |
+| **Stretches per span** | 24 | fewer: the charge follows the sag less closely (measured beside it and in the [theory](../theory/electric-field.md#the-charges)) | in proportion |
+| **Ground** | tiled floor | *plane under each point*, fitted over **± [m]** (10 m): quick, up to 8 % low on bumps (not on the safe side) and 24 % high in a hollow on a real line | the tiled floor: some seconds per floor, said beside it |
+| **tiles [m]: profiles and points / cuts / volumes** | 2 / 8 / 8 m | finer tiles: a closer floor (8 m under a volume some 3 % off on even ground, 4 m 0.5 %) | finer: far longer (4 m some 20 times as long as 8 m under a volume); the volumes' tile cannot be set below what fits the memory |
+| **reaching [m]** | 100 m | how far a volume's floor reaches beyond it every way | more tiles |
 | **Structures' steel** | off | *earthed (on the tiled floor)*: the members at earth potential, the field lower near the structures, higher at the steel; structures of detail level 1 are left out (counted beside it) | a profile's floor beside two structures longer, said beside it |
 | **Wire pieces** | as solved | *at most [m]*: shorter pieces placed on the curve; the field changes by about the wire's offset over the distance to it | in proportion to the pieces |
 | **Profiles** | — | the profiles' time: points × pieces, each twice (the charges and their images) | said |

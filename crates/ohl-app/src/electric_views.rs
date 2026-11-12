@@ -75,12 +75,15 @@ impl ElectricFieldWindow {
         }
         // Folded by default (owner, 2026-10-31: the setup easy to read):
         // each setting with its effect and time when opened.
-        egui::CollapsingHeader::new("Wire pieces, structures' steel, the ground's tiles")
-            .id_salt("electric-field-model-fold")
-            .default_open(false)
-            .show(ui, |ui| {
-                self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
-            });
+        egui::CollapsingHeader::new(
+            "Profiles by, jumpers, stretches, the ground and its tiles, steel, wire pieces",
+        )
+        .id_salt("electric-field-model-fold")
+        .default_open(false)
+        .show(ui, |ui| {
+            self.model_inputs_ui(ui, model);
+            self.model_ui(ui, model, spans, &st, (pieces, rate, rate_from))
+        });
         if let Some(a) =
             crate::check_ui::section(ui, 5, "Views and levels", Some("5-views-and-levels"))
         {
@@ -129,10 +132,8 @@ impl ElectricFieldWindow {
                         .to_owned()
                 } else {
                     format!(
-                        "{with} structure(s) with members ({members} members, ≈ {per} pieces of steel \
-                         each); {left_out} without (detail level 1) left out. Lowers the field \
-                         near the structures, raises it at the steel; tens of metres away no \
-                         change. A profile's floor beside two structures {} instead of {}.",
+                        "{with} with members, {left_out} left out; a profile's floor beside two \
+                         structures {} instead of {}",
                         duration(self.floor_seconds(tiles + 2 * per)),
                         duration(self.floor_seconds(tiles))
                     )
@@ -140,12 +141,17 @@ impl ElectricFieldWindow {
                 crate::check_help::explain(
                     ui,
                     &text,
-                    "The steel is at earth potential: it takes charges that keep it there, \
+                    &format!(
+                        "{with} structure(s) with members ({members} members, ≈ {per} pieces of \
+                         steel each); {left_out} without (detail level 1) left out. Lowers the \
+                         field near the structures, raises it at the steel; tens of metres away \
+                         no change. The steel is at earth potential: it takes charges that keep it there, \
                      solved together with the floor's tiles (each member in pieces of at most \
                      3 m, its radius from its section). Left out it reads the field near the \
                      ground beside a structure higher — on the safe side; at the steel itself \
                      lower. The line's charges are taken as without the steel. Off by default \
-                     (owner, 2026-10-31). Use the profiles beside the structures to see it.",
+                     (owner, 2026-10-31). Use the profiles beside the structures to see it."
+                    ),
                 );
                 ui.end_row();
                 ui.label("Wire pieces");
@@ -160,6 +166,10 @@ impl ElectricFieldWindow {
                         crate::style::field(
                             ui,
                             egui::DragValue::new(l).range(0.1..=50.0).speed(0.1).suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The longest straight piece of a wire: shorter, a field closer to the \
+                             curved wire's, longer to compute in proportion",
                         );
                     }
                 });
@@ -171,38 +181,57 @@ impl ElectricFieldWindow {
                     st.longest,
                     st.off * 1e3
                 );
-                let text = match self.common.piece_length {
+                // One short line (the counts and the time), the rest behind
+                // its (?) (owner, 2026-11-12: no grey paragraphs).
+                let (short, text) = match self.common.piece_length {
                     Some(l) if st.longest > 0.0 => {
                         let parts = (st.longest / l).ceil().max(1.0);
                         let off = st.off / (parts * parts);
-                        format!(
-                            "{solver} At most {l} m: ≈ {pieces:.0} pieces, at most {:.2} mm off; the \
-                             field changes by about the wire's offset over the distance to it (at \
-                             1 m from a conductor ≈ {:.2} %, at 10 m ≈ {:.3} %, instead of {:.2} % \
-                             and {:.3} %). Time × {:.1}.",
-                            off * 1e3,
-                            off * 100.0,
-                            off * 10.0,
-                            st.off * 100.0,
-                            st.off * 10.0,
-                            pieces / (st.count.max(1) as f64)
+                        let times = pieces / (st.count.max(1) as f64);
+                        (
+                            format!(
+                                "≈ {pieces:.0} pieces, at most {:.2} mm off the wire; time × {times:.1}",
+                                off * 1e3
+                            ),
+                            format!(
+                                "{solver} At most {l} m: ≈ {pieces:.0} pieces, at most {:.2} mm off; the \
+                                 field changes by about the wire's offset over the distance to it (at \
+                                 1 m from a conductor ≈ {:.2} %, at 10 m ≈ {:.3} %, instead of {:.2} % \
+                                 and {:.3} %). Time × {times:.1}.",
+                                off * 1e3,
+                                off * 100.0,
+                                off * 10.0,
+                                st.off * 100.0,
+                                st.off * 10.0,
+                            ),
                         )
                     }
-                    _ => format!(
-                        "{solver} The field changes by about the wire's offset over the distance \
-                         to it: ≈ {:.2} % at 1 m from a conductor, ≈ {:.3} % at 10 m.",
-                        st.off * 100.0,
-                        st.off * 10.0
+                    _ => (
+                        format!(
+                            "{} pieces, at most {:.1} mm off the wire: ≈ {:.3} % at 10 m",
+                            st.count,
+                            st.off * 1e3,
+                            st.off * 10.0
+                        ),
+                        format!(
+                            "{solver} The field changes by about the wire's offset over the \
+                             distance to it: ≈ {:.2} % at 1 m from a conductor, ≈ {:.3} % at 10 m.",
+                            st.off * 100.0,
+                            st.off * 10.0
+                        ),
                     ),
                 };
                 crate::check_help::explain(
                     ui,
-                    &text,
-                    "Each straight piece's field is exact (Coulomb's law in closed form, a \
-                     uniform charge along the piece); the only error of the pieces is how far \
-                     the wire curves away from them (the sagitta, falling with the square of \
-                     the piece's length). Shorter pieces are placed on the curve through the \
-                     solver's points; where it kinks (a spacer, a clamp) on the chord.",
+                    &short,
+                    &format!(
+                        "{text} Each straight piece's field is exact (Coulomb's law in closed \
+                         form, a uniform charge along the piece); the only error of the pieces is \
+                         how far the wire curves away from them (the sagitta, falling with the \
+                         square of the piece's length). Shorter pieces are placed on the curve \
+                         through the solver's points; where it kinks (a spacer, a clamp) on the \
+                         chord."
+                    ),
                 );
                 ui.end_row();
                 // The profiles' and points' time.
@@ -240,7 +269,15 @@ impl ElectricFieldWindow {
     fn levels_ui(&mut self, ui: &mut egui::Ui, rate: f64, rate_from: &str, pieces: f64) {
         crate::field_help::cut(ui, self.common.in_cuts.unwrap_or(1.0));
         // The levels: a rule table.
-        ui.label(egui::RichText::new("Levels drawn (kV/m, display only: none is a limit)").small());
+        ui.horizontal(|ui| {
+            ui.label("Levels drawn [kV/m]");
+            crate::check_help::question(
+                ui,
+                "The isolines and surfaces drawn at these values, each in its colour, ticked to \
+                 draw it: display only, none is a limit (give the limit in 2 Scope; + the limit \
+                 adds it here). More levels: more surfaces to draw in a volume.",
+            );
+        });
         let mut remove = None;
         egui::Grid::new("electric-field-levels")
             .spacing([8.0, 2.0])
@@ -253,7 +290,8 @@ impl ElectricFieldWindow {
                             .range(0.001..=1000.0)
                             .speed(0.01)
                             .suffix(" kV/m"),
-                    );
+                    )
+                    .on_hover_text("An isoline (a surface in a volume) drawn at this value");
                     ui.color_edit_button_srgb(&mut l.rgb);
                     if ui
                         .small_button("×")
@@ -314,6 +352,10 @@ impl ElectricFieldWindow {
                         crate::style::field(
                             ui,
                             egui::DragValue::new(s).range(0.05..=10.0).speed(0.05).suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The step of a panel's points: finer, isolines closer to their levels, \
+                             four times the points at half the step",
                         );
                     }
                 });
@@ -324,18 +366,19 @@ impl ElectricFieldWindow {
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "A cut of ±50 m × 70 m: ≈ {points:.0} points, {} per cut ({rate_from}); \
-                             computed after a run whenever a panel opens or moves. Isolines are \
-                             drawn straight between points {step} m apart (each cut says how far \
-                             they lie off their levels).",
+                            "≈ {points:.0} points, {} per panel ({rate_from})",
                             duration(points * pieces * rate)
                         ),
-                        "Open a cross-section (C) at a building: the panel shows the field in \
+                        &format!(
+                            "A cut of ±50 m × 70 m, computed after a run whenever a panel opens or \
+                             moves. Isolines are drawn straight between points {step} m apart (each \
+                             cut says how far they lie off their levels). Open a cross-section (C) at a building: the panel shows the field in \
                          its plane, the ground, the LiDAR points and the line. Cells coloured by \
                          the highest level at or below their value (optional), the levels' \
                          isolines over them. Not under the ground. The building itself is not \
                          modelled: earthed, it lowers the field beside it and raises it at its \
-                         top.",
+                         top."
+                        ),
                     );
                     ui.end_row();
                 }
@@ -431,6 +474,10 @@ impl ElectricFieldWindow {
                                 .range(5.0..=500.0)
                                 .speed(1.0)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The cut's half width across the line: wider, more points (and a larger \
+                             floor under it)",
                         );
                         ui.label("every");
                         crate::style::field(
@@ -439,6 +486,10 @@ impl ElectricFieldWindow {
                                 .range(0.05..=10.0)
                                 .speed(0.05)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The step between the cut's points: finer, isolines closer to their \
+                             levels, four times the points at half the step",
                         );
                         ui.label("up to");
                         crate::style::field(
@@ -447,6 +498,9 @@ impl ElectricFieldWindow {
                                 .range(0.0..=100.0)
                                 .speed(0.5)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "How far over the highest wire the cut reaches: higher, more points",
                         );
                         ui.label("over the highest wire");
                     });
@@ -457,12 +511,12 @@ impl ElectricFieldWindow {
                     crate::check_help::explain(
                         ui,
                         &format!(
-                            "{cuts} cut(s) asked (+ station in the table): ≈ {points:.0} points \
-                             each, {} per cut ({rate_from}). Each a vertical plane across its span, \
-                             its isolines at the levels (5); Results › Open cut shows it on the wires.",
+                            "{cuts} cut(s) asked: ≈ {points:.0} points each, {} per cut ({rate_from})",
                             duration(points * pieces * rate)
                         ),
-                        "The cut is a vertical plane at the alignment station of its place in the \
+                        "Each cut asked in the table (+ station) is a vertical plane across its \
+                         span, its isolines at the levels (5); Results › Open cut shows it on the \
+                         wires. The cut is a vertical plane at the alignment station of its place in the \
                          span (between its structures' stations), perpendicular to the alignment — \
                          at an angle point along the bisector — as a cross-section panel opened \
                          there; from the lowest ground to this far over the highest wire; on the tiled floor \
@@ -495,6 +549,10 @@ impl ElectricFieldWindow {
                                 .range(1.0..=2000.0)
                                 .speed(1.0)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The volume's half width across the line: wider, more points and a \
+                             larger floor",
                         );
                         ui.label("every");
                         crate::style::field(
@@ -503,6 +561,10 @@ impl ElectricFieldWindow {
                                 .range(0.25..=20.0)
                                 .speed(0.05)
                                 .suffix(" m"),
+                        )
+                        .on_hover_text(
+                            "The lattice step: halving it takes 4 to 8 times as long and places the \
+                             surfaces closer to their levels",
                         );
                     });
                     ui.end_row();
@@ -516,11 +578,8 @@ impl ElectricFieldWindow {
                         crate::check_help::explain(
                             ui,
                             &format!(
-                                "{n:.0} span(s) of ≈ {:.0} m: a lattice of ≈ {:.1} M points, of which \
-                                 ≈ {:.0} % computed ({}), {} ({rate_from}); {} levels. Halving the \
-                                 step takes about 4 to 8 times as long and places the surfaces closer \
-                                 to their levels; thin surfaces around the conductors need a fine \
-                                 step. Results › Show in 3D turns the 3D view to it.",
+                                "{n:.0} span(s) of ≈ {:.0} m: ≈ {:.1} M points, ≈ {:.0} % computed \
+                                 ({}), {} ({rate_from}); {} levels",
                                 st.span(),
                                 full / 1e6,
                                 share * 100.0,
@@ -532,7 +591,10 @@ impl ElectricFieldWindow {
                                 duration(t),
                                 n_levels
                             ),
-                            "A coarse lattice first (4 steps apart), then the fine one only where a \
+                            "Halving the step takes about 4 to 8 times as long and places the \
+                             surfaces closer to their levels; thin surfaces around the conductors \
+                             need a fine step. Results › Show in 3D turns the 3D view to it. A \
+                             coarse lattice first (4 steps apart), then the fine one only where a \
                              level passes, near the wires, and wherever a surface goes on; every \
                              lattice point is computed in full, only the surface between the points \
                              is interpolated. Drawn translucent in the 3D view, each level in its \
@@ -597,14 +659,18 @@ impl ElectricFieldWindow {
                                 crate::check_help::explain(
                                     ui,
                                     &text,
+                                    &format!(
                                     "A volume's floor runs along its whole run of spans and the margin \
-                                     beyond (Ground) while it fits in 2 GB: its memory grows with the \
+                                     beyond (Ground) while it fits in {:.1} GB (Line › Calculation \
+                                     options): its memory grows with the \
                                      run's length squared, its time faster still. A longer run is \
                                      floored in parts as long as the margin, each part's floor over \
                                      the ground within the margin of it (a line angle's other leg \
                                      too), each point of the volume taking its part's floor: measured \
                                      on level ground as close to the exact field as one floor (8 m \
                                      tiles: 2.8 % against 3.1 %).",
+                                    electric::floor_memory() / 1e9
+                                    ),
                                 );
                             }
                             ui.end_row();

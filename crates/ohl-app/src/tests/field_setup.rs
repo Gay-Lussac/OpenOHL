@@ -558,6 +558,30 @@ fn guide_buttons_open(h: &mut Harness<'_, App>, page: &str, count: usize) {
 fn the_electric_window_opens_its_own_guide_page() {
     let mut h = electric();
     guide_buttons_open(&mut h, crate::electric_field::GUIDE, 5);
+    // The modelling settings folded under 4 Model (owner, 2026-11-12),
+    // the surface gradient with what is computed; the plane's note that
+    // it is not on the safe side stays in view once opened.
+    h.get_by_label("Limit [kV/m]");
+    h.get_by_label("Surface gradient");
+    for l in [
+        "Profiles by",
+        "Jumpers",
+        "Stretches per span",
+        "tiled floor",
+    ] {
+        assert!(h.query_by_label(l).is_none(), "{l} folded");
+    }
+    h.get_by_label_contains("Profiles by, jumpers").click();
+    h.run();
+    for l in [
+        "Profiles by",
+        "Jumpers",
+        "Stretches per span",
+        "tiled floor",
+    ] {
+        h.get_by_label(l);
+    }
+    h.get_by_label_contains("up to 8 % low on bumps: not on the safe side");
 }
 
 /// The magnetic field window's five headings open its own page.

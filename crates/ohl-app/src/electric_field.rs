@@ -389,10 +389,271 @@ impl ElectricFieldWindow {
         self.common.span_pick.volume.insert(spans[k].clone());
     }
 
+    /// The modelling settings of the inputs (owner, 2026-11-12: in 4
+    /// Model, folded, with the steel and the wire pieces): the profiles'
+    /// model, the jumpers, the stretches per span, the ground and its
+    /// tiles.
+    pub(super) fn model_inputs_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        egui::Grid::new("electric-field-model-inputs")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Profiles by");
+                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.common.two_d, false, "3D")
+                            .on_hover_text(
+                                "The wires as solved (sag, line angles, the line's length) and the \
+                         jumpers as pieces of uniform charge over the ground (a tiled \
+                         conducting floor by default, 4 Model)",
+                            );
+                        ui.selectable_value(&mut self.common.two_d, true, "2D")
+                        .on_hover_text(
+                            "Infinite line charges where the wires cross the profile, over level \
+                         ground at the cross-section: not valid near a line angle, a structure \
+                         or on sloping ground",
+                        );
+                    })
+                });
+                ui.end_row();
+                ui.label("");
+                help::explain(
+                    ui,
+                    if self.common.two_d {
+                        "2D: a profile's points in a moment"
+                    } else {
+                        "3D: the profiles' time below"
+                    },
+                    "2D: the sag along the span, the line angles and the jumpers not seen \
+                     (under the lowest point close to 3D on a long level span). 3D: every point \
+                     sums every piece of charge twice (the charges and their images). Both take \
+                     the charges of the cross-section where they are (3D: in stretches, 24 by \
+                     default). 3D sees what the span does along it; 2D assumes every span \
+                     infinitely long and straight, its ground level.",
+                );
+                ui.end_row();
+                {
+                    ui.label("Jumpers");
+                    ui.checkbox(&mut self.common.jumpers, "carry their phase's charge")
+                        .on_hover_text(
+                            "A jumper at a section's end at that section's charge per metre, as \
+                             solved in the weather case (3D). Off: left out (not conservative \
+                             near the structures). Jumpers not at a section's end are left out, \
+                             said",
+                        );
+                    ui.end_row();
+                    // Each span's charge along it (owner, 2026-11-01: a
+                    // parameter, its sensitivity in the theory).
+                    ui.label("Stretches per span");
+                    ui.horizontal(|ui| {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut self.stretches)
+                                .range(1..=128)
+                                .speed(0.2),
+                        )
+                        .on_hover_text(
+                            "3D: each span cut into this many stretches along it, each at the \
+                             charge of its own cross-section (the charge follows the sag)",
+                        );
+                        help::explain(ui, "the time hardly changes", STRETCHES_EFFECT);
+                    });
+                    ui.end_row();
+                    ui.label("Ground");
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut self.tiled, true, "tiled floor");
+                        ui.radio_value(&mut self.tiled, false, "plane under each point");
+                        if self.tiled {
+                            ui.label("tiles: profiles and points");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.tile)
+                                    .range(1.0..=8.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(
+                                "The tiles under the profiles and points: finer, a floor closer to the \
+                                 terrain (4 m to 2 m moved the profiles 1–3 %), far longer (1 m about 8 \
+                                 times as long)",
+                            );
+                            ui.label("cuts");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.cut_tile)
+                                    .range(1.0..=32.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(
+                                "The tiles under the cuts: finer, a closer floor, far longer",
+                            );
+                            ui.label("volumes");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.volume_tile)
+                                    .range(self.volume_tile_min.max(2.0)..=32.0)
+                                    .speed(0.1)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(format!(
+                                "The tiles under the volumes. At least {} m here: a smaller \
+                                 tile's floor would not fit the {:.0} GB a floor may take \
+                                 (longest volume, its width and reach).",
+                                self.volume_tile_min.max(2.0),
+                                electric::floor_memory() / 1e9
+                            ));
+                            ui.label("reaching");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.volume_margin)
+                                    .range(20.0..=1000.0)
+                                    .speed(1.0)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(
+                                "How far the floor under a volume reaches beyond it every way",
+                            );
+                        } else {
+                            ui.label("fitted over ±");
+                            crate::style::field(
+                                ui,
+                                egui::DragValue::new(&mut self.ground_radius)
+                                    .range(0.5..=500.0)
+                                    .speed(0.5)
+                                    .suffix(" m"),
+                            )
+                            .on_hover_text(
+                                "The plane under each point fitted over this distance: short, the \
+                                 ground right under the point; long, the slope at large",
+                            );
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("");
+                    if self.tiled {
+                        let floor = electric::TiledFloor {
+                            fine: self.tile,
+                            ..Default::default()
+                        };
+                        let tiles = floor.tiles(self.common.width);
+                        let volume_width = self
+                            .common
+                            .volume
+                            .as_ref()
+                            .map_or(self.common.width, |v| v.width);
+                        let floors = match self.common.stations {
+                            Stations::EverySpan => {
+                                let spans = self.common.spans(model);
+                                self.common.span_pick.chosen(model, &spans).0.len()
+                            }
+                            Stations::Beside { .. } => {
+                                let spans = self.common.spans(model);
+                                2 * self.common.span_pick.chosen(model, &spans).0.len()
+                            }
+                            Stations::One { .. } => 1,
+                        };
+                        help::explain(
+                            ui,
+                            &format!(
+                                "≈ {tiles} tiles, {} per floor, {floors} floor(s) for the \
+                                 profiles; a cut ≈ {} tiles, {}; a volume over one span ≈ {} \
+                                 tiles, {}",
+                                magnetic_duration(self.floor_seconds(tiles)),
+                                electric::TiledFloor {
+                                    fine: self.cut_tile,
+                                    coarse: self.cut_tile.max(8.0),
+                                    ..Default::default()
+                                }
+                                .tiles(self.common.width),
+                                magnetic_duration(
+                                    self.floor_seconds(
+                                        electric::TiledFloor {
+                                            fine: self.cut_tile,
+                                            coarse: self.cut_tile.max(8.0),
+                                            ..Default::default()
+                                        }
+                                        .tiles(self.common.width)
+                                    )
+                                ),
+                                electric::Floor::tiles_under(
+                                    400.0,
+                                    volume_width,
+                                    self.volume_tile,
+                                    self.volume_margin
+                                ),
+                                magnetic_duration(self.floor_seconds(
+                                    electric::Floor::tiles_under(
+                                        400.0,
+                                        volume_width,
+                                        self.volume_tile,
+                                        self.volume_margin
+                                    )
+                                )),
+                            ),
+                            "The terrain as a conducting floor of tiles around each profile, \
+                             group of points and cut (owner, 2026-10-29: \"keep the tiled \
+                             implementation\"). It follows hollows and ridges: on a real line the \
+                             plane read the largest field up to 8 % low on bumps and up to 24 % \
+                             high in a hollow. From 4 m to 2 m tiles the profiles moved 1–3 %; 1 m \
+                             tiles take about 8 times as long. Cuts across the line and volumes on \
+                             coarser tiles by default (owner, 2026-10-29). Measured against the \
+                             exact field on even ground, a volume's floor of 16 m tiles is 9.8 % \
+                             off the largest value, of 8 m 2.9 %, of 4 m 0.5 % (some 20 times as \
+                             long); 2 m tiles need the floor in parts and gain only with the full \
+                             margin (with 50 m beyond: 4 m 1.2 %, 2 m 1.1 % — the margin then the \
+                             limit; see the theory). Square tiles of the fine size within 30 m along the line and 10 m \
+                             beyond the profiles across, 8 m beyond, to 200 m every way, each \
+                             carrying a uniform charge solved so that the floor is at zero \
+                             potential. Volumes take a floor of their own tiles along their \
+                             whole run and 100 m beyond. The times at the speed of the last run's \
+                             floors here (before one: as measured on a laptop). See the theory \
+                             page, Electric field.",
+                        );
+                    } else {
+                        help::explain(
+                            ui,
+                            "Quick; up to 8 % low on bumps: not on the safe side",
+                            "The ground under each point a plane fitted over ± this distance, \
+                             the charges' images in it: quick (no floor to solve), exact for \
+                             level or evenly sloping ground; on a real line it read the largest \
+                             field up to 8 % low on bumps (not conservative) and in a hollow up \
+                             to 24 % high. A short distance follows the ground right under the point (a bank, \
+                             a ditch), a long one the slope at large. See the theory page, \
+                             Electric field.",
+                        );
+                    }
+                    ui.end_row();
+                }
+            });
+    }
+
+    /// The conductor surface gradient asked (section 3: what is
+    /// computed; 2D only).
+    fn gradient_ui(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("electric-field-gradient")
+            .num_columns(2)
+            .spacing([10.0, 4.0])
+            .show(ui, |ui| {
+                // The conductor surface gradient (owner, 2026-11-04: 2D
+                // only, for the noise).
+                ui.label("Surface gradient");
+                ui.add_enabled_ui(self.common.planes, |ui| {
+                    ui.checkbox(
+                        &mut self.gradient,
+                        "2D, per span: lowest point and both ends",
+                    )
+                    .on_hover_text(GRADIENT_EFFECT);
+                });
+                ui.end_row();
+            });
+    }
+
     fn spans_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
         let spans = self.common.spans(model);
         self.common.spans_ui(ui, "electric-field", model, &spans);
         self.sizes_ui(ui, model, &spans);
+        self.gradient_ui(ui);
     }
 
     /// The Results list (owner, 2026-10-31, validated): every profile, cut
@@ -1018,7 +1279,7 @@ impl ElectricFieldWindow {
                              line's voltages, from the wires where they hang in a weather case.",
                             "The charge per metre of every wire from the cross-section where it is \
                              (q = inv(P) · V, the line parameters' potential coefficients; 3D: each \
-                             span in 16 stretches); 3D from the solved wires and jumpers as pieces \
+                             span in stretches, 24 by default); 3D from the solved wires and jumpers as pieces \
                              of uniform charge over the ground as a tiled conducting floor (or a \
                              plane under each point, 4 Model), the structures' steel optional; 2D: \
                              infinite line charges over level ground. Trees and buildings are not \
@@ -1055,15 +1316,9 @@ impl ElectricFieldWindow {
                                 "field-calculation",
                                 &mut self.common.calculation,
                             );
-                            ui.label(
-                                egui::RichText::new(
-                                    "e.g. Max Sag: the lowest wires, the highest field at the \
-                                     ground; another than each section's own solves the case for \
-                                     the run",
-                                )
-                                .small()
-                                .weak(),
-                            );
+                            // Its explanation behind the (?) (owner,
+                            // 2026-11-12: no grey lines between fields).
+                            help::question(ui, field_common::WIRES_BY_HELP);
                         });
                         crate::field_systems::ui(ui, WINDOW, model, &mut self.common.per_system);
                         crate::field_ground::ui(ui, WINDOW, model, &mut self.common.ground_from);
@@ -1215,10 +1470,11 @@ impl ElectricFieldWindow {
             });
         help::explain(
             ui,
+            "Default: the system's highest operating voltage, else its nominal — not on the \
+             safe side, said; 0 kV: voltage-free.",
             "Each circuit at its system's highest operating voltage where the line gives one \
-             (Electrical systems, max kV), else at its nominal — not on the safe side, said — \
-             unless a voltage is given here; 0 kV: voltage-free.",
-            "The NISV guide (BAFU 2007, 8.7.3) asks the highest operating voltage, the largest \
+             (Electrical systems, max kV), else at its nominal, unless a voltage is given here. \
+             The NISV guide (BAFU 2007, 8.7.3) asks the highest operating voltage, the largest \
              sag (the weather case) and, on a double circuit built to compensate, one circuit \
              voltage-free. Which governs is yours to choose; no voltage is built in or filled \
              in: the highest operating voltage is your value. A higher voltage raises the \
@@ -1230,236 +1486,7 @@ impl ElectricFieldWindow {
             .num_columns(2)
             .spacing([10.0, 4.0])
             .show(ui, |ui| {
-                ui.label("Profiles by");
-                ui.add_enabled_ui(self.common.planes && self.common.profiles, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.common.two_d, false, "3D")
-                            .on_hover_text(
-                                "The wires as solved (sag, line angles, the line's length) and the \
-                         jumpers as pieces of uniform charge over the ground (a tiled \
-                         conducting floor by default, 4 Model)",
-                            );
-                        ui.selectable_value(&mut self.common.two_d, true, "2D")
-                        .on_hover_text(
-                            "Infinite line charges where the wires cross the profile, over level \
-                         ground at the cross-section: not valid near a line angle, a structure \
-                         or on sloping ground",
-                        );
-                    })
-                });
-                ui.end_row();
-                ui.label("");
-                help::explain(
-                    ui,
-                    if self.common.two_d {
-                        "2D: a profile's points in a moment; the sag along the span, the line \
-                         angles and the jumpers not seen (under the lowest point close to 3D on \
-                         a long level span)."
-                    } else {
-                        "3D: every point sums every piece of charge twice (the charges and their \
-                         images): the time below (4 Model)."
-                    },
-                    "Both take the charges of the cross-section where they are (3D: 16 \
-                     stretches per span). 3D \
-                     sees what the span does along it; 2D assumes every span infinitely long \
-                     and straight, its ground level.",
-                );
-                ui.end_row();
-                // The conductor surface gradient (owner, 2026-11-04: 2D
-                // only, for the noise).
-                ui.label("Surface gradient");
-                ui.add_enabled_ui(self.common.planes, |ui| {
-                    ui.checkbox(
-                        &mut self.gradient,
-                        "2D, per span: lowest point and both ends",
-                    )
-                    .on_hover_text(GRADIENT_EFFECT);
-                });
-                ui.end_row();
-                {
-                    ui.label("Jumpers");
-                    ui.checkbox(&mut self.common.jumpers, "carry their phase's charge")
-                        .on_hover_text(
-                            "A jumper at a section's end at that section's charge per metre, as \
-                             solved in the weather case (3D). Off: left out (not conservative \
-                             near the structures). Jumpers not at a section's end are left out, \
-                             said",
-                        );
-                    ui.end_row();
-                    // Each span's charge along it (owner, 2026-11-01: a
-                    // parameter, its sensitivity in the theory).
-                    ui.label("Stretches per span");
-                    ui.horizontal(|ui| {
-                        crate::style::field(
-                            ui,
-                            egui::DragValue::new(&mut self.stretches)
-                                .range(1..=128)
-                                .speed(0.2),
-                        )
-                        .on_hover_text(
-                            "3D: each span cut into this many stretches along it, each at the \
-                             charge of its own cross-section (the charge follows the sag)",
-                        );
-                        ui.label(egui::RichText::new(STRETCHES_EFFECT).small().weak());
-                    });
-                    ui.end_row();
-                    ui.label("Ground");
-                    ui.horizontal(|ui| {
-                        ui.radio_value(&mut self.tiled, true, "tiled floor");
-                        ui.radio_value(&mut self.tiled, false, "plane under each point");
-                        if self.tiled {
-                            ui.label("tiles: profiles and points");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.tile)
-                                    .range(1.0..=8.0)
-                                    .speed(0.1)
-                                    .suffix(" m"),
-                            );
-                            ui.label("cuts");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.cut_tile)
-                                    .range(1.0..=32.0)
-                                    .speed(0.1)
-                                    .suffix(" m"),
-                            );
-                            ui.label("volumes");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.volume_tile)
-                                    .range(self.volume_tile_min.max(2.0)..=32.0)
-                                    .speed(0.1)
-                                    .suffix(" m"),
-                            )
-                            .on_hover_text(format!(
-                                "The tiles under the volumes. At least {} m here: a smaller \
-                                 tile's floor would not fit the {:.0} GB a floor may take \
-                                 (longest volume, its width and reach).",
-                                self.volume_tile_min.max(2.0),
-                                electric::floor_memory() / 1e9
-                            ));
-                            ui.label("reaching");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.volume_margin)
-                                    .range(20.0..=1000.0)
-                                    .speed(1.0)
-                                    .suffix(" m"),
-                            )
-                            .on_hover_text(
-                                "How far the floor under a volume reaches beyond it every way",
-                            );
-                        } else {
-                            ui.label("fitted over ±");
-                            crate::style::field(
-                                ui,
-                                egui::DragValue::new(&mut self.ground_radius)
-                                    .range(0.5..=500.0)
-                                    .speed(0.5)
-                                    .suffix(" m"),
-                            );
-                        }
-                    });
-                    ui.end_row();
-                    ui.label("");
-                    if self.tiled {
-                        let floor = electric::TiledFloor {
-                            fine: self.tile,
-                            ..Default::default()
-                        };
-                        let tiles = floor.tiles(self.common.width);
-                        let volume_width = self
-                            .common
-                            .volume
-                            .as_ref()
-                            .map_or(self.common.width, |v| v.width);
-                        let floors = match self.common.stations {
-                            Stations::EverySpan => {
-                                let spans = self.common.spans(model);
-                                self.common.span_pick.chosen(model, &spans).0.len()
-                            }
-                            Stations::Beside { .. } => {
-                                let spans = self.common.spans(model);
-                                2 * self.common.span_pick.chosen(model, &spans).0.len()
-                            }
-                            Stations::One { .. } => 1,
-                        };
-                        help::explain(
-                            ui,
-                            &(format!(
-                                "The terrain as a conducting floor of tiles around each profile, \
-                                 group of points and cut (owner, 2026-10-29: \"keep the tiled \
-                                 implementation\"): ≈ {tiles} tiles, {} per floor, {floors} \
-                                 floor(s) for the profiles. It follows hollows and ridges: on a \
-                                 real line the plane read the largest field up to 8 % low on bumps \
-                                 and up to 24 % high in a hollow. From 4 m to 2 m tiles the \
-                                 profiles moved 1–3 %; 1 m tiles take about 8 times as long.",
-                                magnetic_duration(self.floor_seconds(tiles))
-                            ) + &format!(
-                                " Cuts across the line and volumes on coarser tiles by default \
-                                 (owner, 2026-10-29): a cut ≈ {} tiles, {}; a volume over one \
-                                 span ≈ {} tiles, {}. Measured against the exact field on even \
-                                 ground, a volume's floor of 16 m tiles is 9.8 % off the largest \
-                                 value, of 8 m 2.9 %, of 4 m 0.5 % (some 20 times as long); 2 m \
-                                 tiles need the floor in parts and gain only with the full \
-                                 margin (with 50 m beyond: 4 m 1.2 %, 2 m 1.1 % — the margin then \
-                                 the limit; see the theory).",
-                                electric::TiledFloor {
-                                    fine: self.cut_tile,
-                                    coarse: self.cut_tile.max(8.0),
-                                    ..Default::default()
-                                }
-                                .tiles(self.common.width),
-                                magnetic_duration(
-                                    self.floor_seconds(
-                                        electric::TiledFloor {
-                                            fine: self.cut_tile,
-                                            coarse: self.cut_tile.max(8.0),
-                                            ..Default::default()
-                                        }
-                                        .tiles(self.common.width)
-                                    )
-                                ),
-                                electric::Floor::tiles_under(
-                                    400.0,
-                                    volume_width,
-                                    self.volume_tile,
-                                    self.volume_margin
-                                ),
-                                magnetic_duration(self.floor_seconds(
-                                    electric::Floor::tiles_under(
-                                        400.0,
-                                        volume_width,
-                                        self.volume_tile,
-                                        self.volume_margin
-                                    )
-                                )),
-                            )),
-                            "Square tiles of the fine size within 30 m along the line and 10 m \
-                             beyond the profiles across, 8 m beyond, to 200 m every way, each \
-                             carrying a uniform charge solved so that the floor is at zero \
-                             potential. Volumes take a floor of their own tiles along their \
-                             whole run and 100 m beyond. The times at the speed of the last run's \
-                             floors here (before one: as measured on a laptop). See the theory \
-                             page, Electric field.",
-                        );
-                    } else {
-                        help::explain(
-                            ui,
-                            "The ground under each point a plane fitted over ± this distance, \
-                             the charges' images in it: quick (no floor to solve), exact for \
-                             level or evenly sloping ground; on a real line it read the largest \
-                             field up to 8 % low on bumps (not conservative) and in a hollow up \
-                             to 24 % high.",
-                            "A short distance follows the ground right under the point (a bank, \
-                             a ditch), a long one the slope at large. See the theory page, \
-                             Electric field.",
-                        );
-                    }
-                    ui.end_row();
-                }
-                ui.label("Limit");
+                ui.label("Limit [kV/m]");
                 ui.horizontal(|ui| {
                     let mut given = self.common.limit.is_some();
                     ui.checkbox(&mut given, "given").on_hover_text(
