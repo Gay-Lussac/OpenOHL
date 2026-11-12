@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**Distance between conductors: l_k 0 at every section end** (owner: "for
+tension strings the l_k should be 0", seen wrong on a real line whose
+project marked no string as a tension string, although its export holds
+tension insulators). The conductors' l_k is now 0 at a section's first
+and last point whatever the strings there are marked
+(`phase_distance::conductors`); elsewhere `lk_at` as before (a marked
+tension string 0; a tension string hanging from one suspension string,
+that string's length).
+
 **Vegetation: the swing arc on by default** (owner: "yes swing arc on
 for both"). A new Vegetation window starts with the swing arc on (band
 margin 0.15 m); saved settings keep their choice. **Wire clearances: not

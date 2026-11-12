@@ -119,6 +119,38 @@ mod tests {
         wires.into_iter().zip(results).collect()
     }
 
+    /// l_k is 0 at a section's end even when its strings are not marked
+    /// as tension strings (an import without tension insulators, owner
+    /// 2026-11-12), and the same with them marked.
+    #[test]
+    fn lk_is_zero_at_a_sections_end_whatever_the_strings_are_marked() {
+        use crate::phase_distance::conductors;
+        let (line, library) = example();
+        let shapes = solved(10.0);
+        let mut unmarked = line.clone();
+        for st in &mut unmarked.structures {
+            for x in &mut st.strings {
+                x.strain = false;
+            }
+        }
+        for l in [&line, &unmarked] {
+            let cs = conductors(l, &shapes, &library);
+            assert!(!cs.is_empty());
+            for c in &cs {
+                let section = l.sections.iter().find(|s| s.id == c.wire.section).unwrap();
+                let end = |p: Option<&ohl_line::SectionPoint>| {
+                    p.map(|p| format!("{}:{}", p.structure, p.set))
+                };
+                let (first, last) = (end(section.points.first()), end(section.points.last()));
+                for (k, key) in c.wire.ends.iter().enumerate() {
+                    if Some(key) == first.as_ref() || Some(key) == last.as_ref() {
+                        assert_eq!(c.lk[k], 0.0, "{key}");
+                    }
+                }
+            }
+        }
+    }
+
     /// The LeV distance between conductors on the synthetic line at
     /// 10 °C, still air: every pair between the same two structures is
     /// checked once, with its terms consistent (z from them); the

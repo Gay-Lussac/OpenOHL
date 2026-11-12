@@ -186,7 +186,8 @@ pub struct PhaseDistancePair {
 
 /// l_k at the end of a conductor at `key` (`structure:set`): the length
 /// of a pure suspension I-string; a V, a tension string or a wire clamped
-/// to the structure: 0; a string below a V: its length; a TAK (tension
+/// to the structure: 0 (and at a section's end, whatever its strings are
+/// marked: [`conductors`]); a string below a V: its length; a TAK (tension
 /// strings from a node on a suspension string): that suspension string's
 /// length.
 pub fn lk_at(line: &Line, key: &str) -> f64 {
@@ -239,8 +240,27 @@ pub fn conductors(
         .map(|wire| {
             let section = line.sections.iter().find(|s| s.id == wire.section);
             let cable = section.and_then(|s| library.get(&s.cable));
+            // A section's end is held by tension strings (a dead end), the
+            // strings marked or not (owner, 2026-11-12: "for tension strings
+            // the l_k should be 0"; an import without tension insulators
+            // marks none): l_k 0 there.
+            let section_end = |key: &str| {
+                section.is_some_and(|s| {
+                    [s.points.first(), s.points.last()]
+                        .into_iter()
+                        .flatten()
+                        .any(|p| format!("{}:{}", p.structure, p.set) == key)
+                })
+            };
+            let lk_end = |key: &str| {
+                if section_end(key) {
+                    0.0
+                } else {
+                    lk_at(line, key)
+                }
+            };
             let lk = match wire.ends.as_slice() {
-                [a, b] => [lk_at(line, a), lk_at(line, b)],
+                [a, b] => [lk_end(a), lk_end(b)],
                 _ => [0.0, 0.0],
             };
             // Its span points holding spacers, where solved.

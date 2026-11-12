@@ -35,7 +35,9 @@ case checked on its own, both conductors always from the same case):
    suspension string alone, its length; two strings to one wire point, a
    tension string or a wire clamped straight to the structure, 0; a
    string below two, that string's length; two tension strings from a
-   string's wire point, that string's length.
+   string's wire point, that string's length. **At a section's end
+   always 0** (2026-11-12): a dead end is held by tension strings even
+   when an import marked none as such.
 6. **β**: the angle of PQ from the vertical.
 7. With **phase spacers** joining the two conductors in the span, each
    one's largest sag between its spacer clamps (each spacer taken as an
