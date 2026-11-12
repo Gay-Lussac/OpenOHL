@@ -124,8 +124,13 @@ const SHOTS: &[Shot] = &[
     Shot {
         name: "vegetation",
         title: "Vegetation and danger trees",
-        open: |r| r.vegetation.show(r.case),
-        done: None,
+        // A cloud around the first structure (below), a clearance that
+        // finds some of it: its Results tab with findings.
+        open: |r| {
+            r.vegetation.show(0);
+            r.vegetation.settings.clearance = ohl_clearance::rules::Requirement::Fixed(25.0);
+        },
+        done: Some(|r| matches!(r.vegetation.result(), (Some(_), false))),
     },
     Shot {
         name: "as-built-wires",
@@ -280,6 +285,9 @@ fn check_windows_rendered_for_review() {
                     synthetic_project(&format!("shots-{}", shot.name))
                 } else if shot.name == "lightning" {
                     crate::tests::shielded()
+                } else if shot.name == "vegetation" {
+                    let (file, _) = crate::lidar_tests::project_with_cloud("shots-vegetation", 20);
+                    crate::lidar_tests::load(&file)
                 } else {
                     synthetic()
                 };

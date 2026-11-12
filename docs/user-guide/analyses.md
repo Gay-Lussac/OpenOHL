@@ -355,7 +355,9 @@ poles and wires get vegetation classes: check the result.
 
 ## Vegetation and danger trees
 
-On the example line and its invented LiDAR tile (`synthetic-lidar.las`,
+The desktop window, step by step with every setting: [Vegetation and
+danger trees](vegetation.md). Here the command line `ohl lidar
+vegetation`. On the example line and its invented LiDAR tile (`synthetic-lidar.las`,
 made by `make_synthetic_lidar.py`: tall trees beside span T1–T2, a tree
 under span T4–T5, a stand beside the branch):
 
@@ -493,163 +495,14 @@ of by role.
 
 ### The vegetation panel
 
-**Checks › Vegetation…** opens the danger-tree panel (a window that
-**docks as a panel** like the clearance windows: 📌 Dock as a panel, ⬈
-Float). At its bottom left, in a footer that stays in place while the
-panel scrolls: **Run** (runs in the background) and its status. At its
-top — when what the run was computed from changed — the banner *Out of
-date: … changed since this run* with **Run again**; under the results,
-the name to **save** the run as.
-Below, in the check windows' sections: *2 Scope* (circuits, routes,
-sections, weather cases), *3 Rules* — the **Preset** dropdown, then the
-**Grow-in** and **Fall-in** values (the clearance, growth, buffer and
-allowance; under *Rules* since 2026-10-31, the owner's choice) — and
-*4 Model*, folded: the **wire positions** and the **search**. Each value
-has a short explanation beside it (more on hover), each group a link to
-its section here (**… user guide ↗**), and small drawings follow the
-values typed.
-
-#### Vegetation: wire positions
-
-The **weather cases** ticked (the list stays open while you tick): a case
-without wind as it is, a windy case blown to the left and to the right.
-**Swing arc**: every position between the two blowouts (a band of radii,
-widened by the **band margin**: see above). With the arc ticked, a field
-**band margin** (m, default 0.15 m) follows, with a line saying what it
-is and a longer text on hover (what it covers, that it is conservative,
-that a smaller value is less safe — said in warning colour below the
-default — and a button back to 0.15 m); the run is saved with it and
-marked *out of date* when it changes. Under it the **jumper band
-margin** is shown greyed: this check leaves the jumpers out. **Wind stepped**
-(a step in Pa, the sides): still air and every pressure up to the case's.
-Arc and steps work alone or together — the same wind choice as the
-[vertical and radial clearance windows](desktop-app.md#clearances-wind)
-([Vertical clearances](vertical-clearances.md#3-wind-and-zone) and
-[Radial clearances](radial-clearances.md#3-wind), step by step),
-with the solves a windy case needs said below it and the arc suggested
-when fine steps need many (here the full pressure is solved from both
-sides in any case; the sides apply to the steps). **Unbalanced ice**: off, the case's
-ice on the span alone, more radial ice (mm), more ice load per wire
-(N/m), a load at mid-span (N) — on the spans with vegetation within
-reach. Drawings: the span seen along it with its positions, arc and
-steps; three spans with the middle one iced.
-
-#### Vegetation: grow-in
-
-The **required clearance c**: one distance, a table *up to kV → distance*
-or a base plus an amount per kV, with the same editor and preview (at 0
-kV and the project's voltages) as the clearance rules — each wire checked
-with its own system's voltage. A utility's practice may be higher than
-the law, e.g. 7 m at 220 kV and 9 m at 380 kV. **Growth per year g** and
-**years** until the next cut, the **buffer b** (e.g. the survey's
-accuracy). A point closer than c + g·years + b grows in. Drawing: the
-wire with the three rings.
-
-#### Vegetation: fall-in
-
-**Trees falling in**; the **root-ball fraction k** (the hinge k·h from the
-trunk; default 0.05), the **allowance A** (default 2 m; one distance or by
-voltage like c), **the trunk turns on through the ground** (2026-11-05;
-off by default: the trunk rests on the ground; on: it turns on through
-it, down to straight below its hinge, as some programs count it — more
-trees found below a steep slope, nothing changes on level ground), the
-**smallest and tallest tree** (2 and 40 m), the
-**tree base's ground point** within a distance (ticked, 5 m: else no
-fall-in check for that point). Drawings: the falling tree (trunk, hinge
-at k·h, the sector it sweeps, A to the wire), the tree base and the
-nearest ground point.
-
-#### Vegetation: search
-
-The **classes** checked as vegetation — a tick menu of the project's class
-scheme (number, name, colour; it stays open while you tick), by default
-the classes whose role is vegetation; the **search distance** (half width
-of the corridor read, ± 50 m), the **points kept per span** in the table,
-**isoclearance lines** (interval, hide above, grid).
-
-**Scope** (2026-10-27, the owner: some circuits "we will model but we
-don't need them checked"; built, in active development, not approved
-yet). In the panel's *2 Scope*: the **circuits**, the **routes and
-alignments** and the **sections** checked, and the **weather cases** —
-each a tick menu that stays open (search, All / None / Invert). The line is
-still solved whole (sections solved together stay together); the spans
-of the wires out of scope are left out of the check: no grow-in point or
-danger tree is looked for near them, and the scope is said in the run's
-notes. The panel's setup — settings, cases (by name), scope, **Use local
-conditions** (`local`, 2026-11-03: the wind for clearances) —
-is **kept in the project** for each project line (project setting
-`app.vegetation.<line>`), read again when the project opens.
-
-**Results** (the panel's Results tab, opened by itself after a run; [the
-check windows' layout](desktop-app.md#check-windows-setup-and-results)).
-A verdict first (spans with vegetation, grow-in points and fall-in trees,
-the nearest to the clearance), then the table: per span (named from 1,
-"S1 span 1" the first) the required clearance applied *c [m]*, the
-grow-in and fall-in counts, the nearest point *[m]* and the worst fall-in
-margin *[m]* with their case and position — *Only violations* on by
-default (the spans with grow-in or fall-in), sortable by any column, a
-row clicked goes to its span; **Worst points** folded below lists the
-worst of each span. **Every** grow-in point and **every** danger tree found is
-drawn, on the layers *Vegetation: grow-in* (a dot) and *Vegetation:
-danger trees* (the trunk from base to top) in the 3D view, the plan and
-the profile (within the line width), in two **colours** chosen in the
-panel (the colour tool; kept with this project's view settings), one
-batch each in 3D and one mark a pixel in the plan and the profile (10⁶
-points stay quick; no number is coarsened). No line is drawn to the worst
-point any more: the table names it. *Isoclearance lines* are drawn in the
-colours of their clearance. **The layers show the run of the open panel
-only: closing the panel takes them off the views** (also when ticked in
-View › Layers); reopening it, or reopening a saved run, draws them again.
-Docking or moving the panel keeps them. **Export points CSV…** writes the worst
-points of every span and every point found (with case and position;
-**Export CSV…** under it, the rows of the table as shown),
-**Export lines (CSV)…** the isoclearance lines.
-
-**Questionable trees** (2026-11-11). A vegetation point with no tree
-base — no ground below it, or no ground point within the distance set —
-cannot be checked for fall-in. Where a tree of the tallest height
-checked could reach a span from such a point, it is listed under
-**Questionable trees (n): fall-in not checked**, open below the notes:
-the span it is near (a click goes there), its class, its coordinates,
-its distance in plan from the span's wires and why it has no base. They
-are neither findings nor cleared: the verdict is red while there is one
-("… questionable trees not checked"), a note starting **NOT CHECKED, NOT
-ON THE SAFE SIDE** gives their number, and **Export points CSV…** writes
-a row for each (kind `questionable: …`). Look at them on site or in the
-point cloud, or give the ground there (a surface with ground points
-near them) and run again. At most 10 000 are listed, the nearest to the
-wires first; the number in the heading is of all. A saved run keeps
-them.
-
-**Presets.** The **Preset** dropdown lists the vegetation presets of
-every design-code plugin turned on (a preset with vegetation settings;
-the panel takes only those, its wind steps and its own weather cases,
-never its clearance rules or their cases — see [Presets per
-check](design-codes.md#presets-per-check)), grouped by plugin (the description on
-hover; one that has none for this check says so). A vegetation preset
-sets the classes, the clearance and allowance (by voltage), the growth,
-the danger-tree values, the search distance and the wind steps, and names
-its weather cases. Chosen, it is previewed — every value, and for each of
-its weather cases what applying it does: **uses your case X** (a case of
-the project with the same weather — temperature, ice, wind and the rest
-a solve reads — whatever its name; with several, the first in your list,
-and it says so) or **creates Y** (none is the same; when your project
-already has a case of that name with other values, it is created as
-"Y (preset)" and yours is kept). See [A preset's weather
-cases](design-codes.md#a-presets-weather-cases). **Apply preset** puts
-the values in (edit them freely after), creates the cases to create in
-the project's weather cases (one change of the project, undone by Undo)
-and ticks the preset's cases — your own where they are used.
-The rule tables of the other check windows list them in their one
-**Preset** (a dropdown) (previewed, then **Merge** or **Replace**).
-
-**Saving.** **Save in Performed checks** keeps the run — its settings,
-weather cases, per-span results, worst points and every grow-in and
-fall-in point with its case and position — in Checks › Performed checks
-(one edit, undone by Undo; a name in use is replaced on a second click).
-Opened from there, the panel shows it with its layers, and says *out of
-date* when the line (its objects and library files), the LiDAR points or
-the ground changed since it was saved.
+**Checks › Vegetation…** opens the same check in a window: the weather
+cases and the scope, a design-code **Preset**, the grow-in and fall-in
+values, the wire positions and the search folded under *Model*, the
+colours of the points drawn; **Run** in its footer, the results in a
+table per span with the questionable trees and every point found drawn
+in the views, saved in Performed checks. Every setting and value, step by
+step with drawings, what is and is not conservative: [Vegetation and
+danger trees](vegetation.md).
 
 See the theory: [Danger trees](../theory/lidar-analysis.md#danger-trees).
 
@@ -668,7 +521,7 @@ continuous at the structures; the structures themselves (steel,
 insulators, fittings) are not.
 
 **In the desktop app:** Checks › **Safety volumes…** The window reads
-as the [vegetation panel](#the-vegetation-panel) and the clearance
+as the [vegetation window](vegetation.md) and the clearance
 windows do: the settings in five groups, each with a heading and a link
 **user guide ↗** to its section below, a line under each value saying
 what it does (a longer text on hover), and small drawings that follow

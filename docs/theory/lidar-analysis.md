@@ -111,7 +111,9 @@ design-code plugin's preset may give others, and every one can be set
 line's defaults were 0, 0, no limit and 60 m — its results with the
 defaults change. Every distance is to the conductor's surface, as above. Code:
 `ohl_clearance::fall`, `ohl_clearance::positions`,
-`ohl_clearance::vegetation`, `ohl_clearance::isoclearance`.*
+`ohl_clearance::vegetation`, `ohl_clearance::isoclearance`. The window
+in plain words, every setting and what is and is not conservative:
+[Vegetation and danger trees](../user-guide/vegetation.md).*
 
 ### Wire positions checked
 

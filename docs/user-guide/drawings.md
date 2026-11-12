@@ -246,7 +246,7 @@ coloured by its clearance (red at 0 to green at the top line) and titled
 needs the ground (`--terrain`, `--lidar` or `--pointcloud`). In the
 desktop application the export draws the lines of the last
 Checks › Vegetation run that computed them. See [Vegetation and danger
-trees](analyses.md#vegetation-and-danger-trees).
+trees](vegetation.md).
 
 ## Sheets
 

@@ -42,6 +42,7 @@
 - [Analyses: galloping, ice shedding, vegetation, safety volumes, as-built wires, fields](user-guide/analyses.md)
   - [Magnetic field](user-guide/magnetic-field.md)
   - [Electric field](user-guide/electric-field.md)
+  - [Vegetation and danger trees](user-guide/vegetation.md)
 - [Sagging outputs](user-guide/sagging.md)
 - [Drawings and profile exports](user-guide/drawings.md)
   - [Sheet templates (.ohlsheet)](user-guide/sheet-templates.md)

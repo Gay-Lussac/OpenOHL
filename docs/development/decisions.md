@@ -37,6 +37,19 @@ places to the cuts (their places now computed with the cuts, from the 3D
 model; before, they were left out of a run without profiles). Kept
 inputs: `page` added; older projects open on the page that made what
 they asked ([data model](data-model.md)). The guide pages [Magnetic field](../user-guide/magnetic-field.md) and [Electric field](../user-guide/electric-field.md) in three parts matching the pages (what each gives, how it works, the methods compared, the parameters shown with default, effect and time); each heading's **user guide ↗** opens its page's part.
+**Vegetation: a page of its own, the window as the clearance windows**
+(owner: "do the vegetation next" / "go ahead with the vegetation"). Part
+1: [Vegetation and danger trees](../user-guide/vegetation.md) — what it
+answers, the check in six steps with the existing drawings and one new
+(`check-windows/9-vegetation-check-step-by-step.svg`), every setting
+(default, effect, time), every value of the setup with its key in the
+project setting and its command-line option, what is and is not
+conservative. The window's **user guide ↗** buttons open it (until now
+the analyses page's sections); the analyses page keeps the command line
+and a summary of the window, the OHL-Design page, the drawings page and
+the theory link to it. Without the swing arc and the wind steps (the
+window's default) only still air and the full blowouts are checked:
+written as not on the safe side.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to

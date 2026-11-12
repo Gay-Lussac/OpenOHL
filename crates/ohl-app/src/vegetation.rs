@@ -64,8 +64,10 @@ pub const CHECK_TITLE: &str = "Vegetation and danger trees";
 pub const SAVED_VERSION: u32 = 2;
 /// The version of saved results without questionable points.
 pub const BEFORE_QUESTIONABLE_VERSION: u32 = 1;
-/// The user guide's page of the panel's settings.
-pub const GUIDE: &str = "user-guide/analyses";
+/// The window's own page of the user guide (owner, 2026-11-12: every
+/// check window "with a helper page"); its **user guide ↗** buttons open
+/// its sections.
+pub const GUIDE: &str = "user-guide/vegetation";
 
 /// What a vegetation report is computed from.
 pub(crate) const USES: crate::revision::Uses = crate::revision::Uses::ALL;
@@ -1298,9 +1300,7 @@ impl VegetationWindow {
                             },
                         );
                         ui.separator();
-                        if let Some(a) =
-                            check_ui::section(ui, 2, "Scope", Some("vegetation-wire-positions"))
-                        {
+                        if let Some(a) = check_ui::section(ui, 2, "Scope", Some("2-scope")) {
                             out.guide = Some(a);
                         }
                         let names: Vec<String> =
@@ -1655,7 +1655,7 @@ impl VegetationWindow {
     /// The wire positions (4 Model).
     fn settings_ui(&mut self, ui: &mut egui::Ui, model: &Model, out: &mut Out) {
         // Wire positions.
-        Self::heading(ui, "Wire positions", "vegetation-wire-positions", out);
+        Self::heading(ui, "Wire positions", "wire-positions", out);
         let cases = &mut self.cases;
         let s = &mut self.settings;
         ui.horizontal_top(|ui| {
@@ -1746,7 +1746,7 @@ impl VegetationWindow {
         };
         let s = &mut self.settings;
         // Grow-in.
-        Self::heading(ui, "Grow-in", "vegetation-grow-in", out);
+        Self::heading(ui, "Grow-in", "grow-in", out);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -1792,7 +1792,7 @@ impl VegetationWindow {
         });
         ui.separator();
         // Fall-in.
-        Self::heading(ui, "Fall-in", "vegetation-fall-in", out);
+        Self::heading(ui, "Fall-in", "fall-in", out);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.checkbox(&mut s.fall_in, "trees falling in");
@@ -1875,7 +1875,7 @@ impl VegetationWindow {
         };
         let s = &mut self.settings;
         // Search.
-        Self::heading(ui, "Search", "vegetation-search", out);
+        Self::heading(ui, "Search", "search", out);
         ui.horizontal(|ui| {
             ui.label("classes");
             let chosen: BTreeSet<u8> = s.classes.iter().copied().collect();

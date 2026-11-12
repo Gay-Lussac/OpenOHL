@@ -106,13 +106,13 @@ fn every_setting_is_explained_and_drawn() {
     assert!(
         opened
             .iter()
-            .any(|p| p.display().to_string().contains("analyses")),
+            .any(|p| p.display().to_string().contains("vegetation")),
         "{opened:?} {status:?}"
     );
     assert!(
         status
             .as_ref()
-            .is_some_and(|s| s.0.contains("vegetation-fall-in")),
+            .is_some_and(|s| s.0.contains("#fall-in") || s.0.contains("section fall-in")),
         "{status:?}"
     );
     // The drawings follow the values typed: k and A change, still drawn.
