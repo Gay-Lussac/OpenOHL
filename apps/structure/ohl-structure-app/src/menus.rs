@@ -537,6 +537,10 @@ impl StructureApp {
         });
         // The snap marker and the snap distance (kept between runs).
         ohl_ui::snap_marker::Settings::menu(ui);
+        // How the mouse moves the 3D and Detail views (kept; a tick menu).
+        options_menu(ui, "Navigation", |ui| {
+            ohl_ui::navigation::Scheme::menu(ui, &mut self.navigation);
+        });
         if item(
             ui,
             "Reset layout",
@@ -936,10 +940,14 @@ impl StructureApp {
         ui.menu_button("Controls", |ui| {
             ui.set_max_width(420.0);
             heading(ui, "3D view");
-            ui.label(crate::view::CONTROLS);
+            ui.label(crate::view::controls(ohl_ui::navigation::Mouse::get(
+                ui.ctx(),
+            )));
             ui.separator();
             heading(ui, "Detail view");
-            ui.label(crate::detail_view::CONTROLS);
+            ui.label(crate::detail_view::controls(
+                ohl_ui::navigation::Mouse::get(ui.ctx()),
+            ));
             ui.separator();
             heading(ui, "Keys");
             ui.label(format!(

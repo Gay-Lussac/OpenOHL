@@ -348,6 +348,44 @@ impl Camera {
         self.pitch = (self.pitch + dy).clamp(-1.5, 1.55);
     }
 
+    /// Turns the camera as [`Camera::orbit`] does, but about `pivot` (a
+    /// point under the cursor) instead of the target: the eye and the
+    /// target turn about it together, so it stays where it is on the
+    /// screen.
+    pub fn orbit_about(&mut self, pivot: [f64; 3], dx: f64, dy: f64) {
+        let pitch = self.pitch;
+        self.orbit(dx, dy);
+        let (dyaw, dpitch) = (-dx, self.pitch - pitch);
+        // The target about the pivot: turned about the vertical by the
+        // yaw, then about the (new) horizontal right axis by the pitch.
+        let mut v = [0, 1, 2].map(|k| self.target[k] - pivot[k]);
+        let (c, s) = (dyaw.cos(), dyaw.sin());
+        v = [c * v[0] - s * v[1], s * v[0] + c * v[1], v[2]];
+        let a = [-self.yaw.sin(), self.yaw.cos(), 0.0];
+        // Rodrigues about `a` by −dpitch (raising the eye raises the pitch).
+        let (c, s) = ((-dpitch).cos(), (-dpitch).sin());
+        let axv = [
+            a[1] * v[2] - a[2] * v[1],
+            a[2] * v[0] - a[0] * v[2],
+            a[0] * v[1] - a[1] * v[0],
+        ];
+        let adv: f64 = (0..3).map(|k| a[k] * v[k]).sum();
+        v = [0, 1, 2].map(|k| v[k] * c + axv[k] * s + a[k] * adv * (1.0 - c));
+        self.target = [0, 1, 2].map(|k| pivot[k] + v[k]);
+    }
+
+    /// Zooms by `factor` (< 1 closer) towards `towards` (a point under the
+    /// cursor): the target moves towards it as the distance shrinks, so it
+    /// stays where it is on the screen.
+    pub fn zoom_towards(&mut self, towards: [f64; 3], factor: f64) {
+        let before = self.distance;
+        self.zoom(factor);
+        let f = self.distance / before;
+        // The eye scaled about `towards` (the direction kept): the target
+        // with it.
+        self.target = [0, 1, 2].map(|k| towards[k] + (self.target[k] - towards[k]) * f);
+    }
+
     /// Moves the target by a drag of (`dx`, `dy`) pixels in a view `height`
     /// pixels high, in the screen plane.
     pub fn pan(&mut self, dx: f64, dy: f64, height: f64) {

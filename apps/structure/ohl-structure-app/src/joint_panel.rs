@@ -822,11 +822,18 @@ impl StructureApp {
                         }
                         self.joints.roll_drag = None;
                     }
-                } else if response.dragged() {
+                } else if response.dragged() && turns(ui, &response) {
                     let d = response.drag_delta();
                     self.joints.yaw += d.x * 0.01;
                     self.joints.pitch = (self.joints.pitch + d.y * 0.01).clamp(-1.5, 1.5);
                 }
+                // A double middle-click (CAD): the close-up turned back.
+                if ohl_ui::navigation::Mouse::get(ui.ctx()).fit_asked(&response) {
+                    self.joints.yaw = 0.0;
+                    self.joints.pitch = 0.0;
+                    self.joints.zoom = 0.0;
+                }
+
                 if response.hovered() {
                     let s = ui.input(|i| i.smooth_scroll_delta.y);
                     self.joints.zoom = (self.joints.zoom + s * 0.002).clamp(-1.5, 2.5);
@@ -1435,4 +1442,22 @@ impl crate::app::StructureApp {
         }
         self.apply_joint_acts(vec![act], details);
     }
+}
+
+/// Whether the close-up's drag turns it in the navigation scheme in force
+/// (View › Navigation): in Orbit any drag; in CAD only Shift + middle (the
+/// close-up has no pan, so a plain middle drag and a left drag leave it).
+fn turns(ui: &egui::Ui, response: &egui::Response) -> bool {
+    use ohl_ui::navigation::{Drag, Mouse};
+    let mouse = Mouse::get(ui.ctx());
+    let modifiers = ui.input(|i| i.modifiers);
+    [
+        egui::PointerButton::Primary,
+        egui::PointerButton::Secondary,
+        egui::PointerButton::Middle,
+    ]
+    .into_iter()
+    .filter(|b| response.dragged_by(*b))
+    .map(|b| mouse.drag(b, modifiers))
+    .any(|d| d == Drag::Orbit || (!mouse.orbit_about_cursor && d != Drag::None))
 }

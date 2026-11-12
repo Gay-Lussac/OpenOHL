@@ -15,6 +15,7 @@
 pub mod glyphs;
 pub mod icons;
 pub mod messages;
+pub mod navigation;
 pub mod notices;
 pub mod rows;
 pub mod snap_marker;

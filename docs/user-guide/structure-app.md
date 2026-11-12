@@ -343,7 +343,23 @@ their menu or from View.
   direction looked from stays. The view's notes are written in the
   colour of what they are about, without a box. A click never moves anything: a joint or point
   moves only with the **Move** tool held (below). A drag elsewhere turns
-  the view, a right-drag pans, the wheel zooms. The buttons at the top
+  the view, a right-drag pans, the wheel zooms — the **Orbit** navigation,
+  the default. **View › Navigation** (2026-11-12; built, in active
+  development, not approved yet; kept between runs) also offers **CAD**,
+  as in common CAD programs:
+
+  | Mouse or key | Orbit (default) | CAD |
+  |---|---|---|
+  | left drag | turn the view | nothing (the Move tool: drag a joint or point) |
+  | right drag | pan | nothing (right-click: the menu) |
+  | middle drag | pan | pan |
+  | Shift + middle drag | pan | turn about what is under the cursor (else the plane through the point looked at) |
+  | wheel | zoom | zoom towards the cursor; it never changes the tool |
+  | double middle-click | — | the whole structure (as Fit) |
+  | Detail view, close-up | drag turns, wheel zooms | Shift + middle drag turns, wheel zooms, double middle-click turns it back (it has no pan) |
+  | 1–9, a click on a hotbar slot, E, Escape | hold a tool, the inventory, let go | the same |
+
+  The "?" and Help › Controls describe the scheme chosen. The buttons at the top
   left turn it to a **standard view**: **Front** (looking along +y,
   ahead), **Side** (looking along −x, from the right of the line),
   **Top** (from above, ahead up) — these three in parallel projection —

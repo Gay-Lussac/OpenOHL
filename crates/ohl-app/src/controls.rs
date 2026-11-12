@@ -74,29 +74,8 @@ impl Input {
     }
 }
 
-/// What a mouse drag does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Drag {
-    /// Turn around the point looked at.
-    Orbit,
-    /// Turn the view around the eye (first person).
-    Look,
-    /// Move in the screen plane.
-    Pan,
-    /// Nothing.
-    None,
-}
-
-impl Drag {
-    fn name(self) -> &'static str {
-        match self {
-            Drag::Orbit => "turn around the target",
-            Drag::Look => "look around",
-            Drag::Pan => "pan",
-            Drag::None => "—",
-        }
-    }
-}
+/// What a mouse drag does (shared with OHL-Structure, [`ohl_ui::navigation`]).
+pub use ohl_ui::navigation::{Drag, Mouse};
 
 /// A navigation scheme.
 #[derive(Debug, Clone, PartialEq)]
@@ -105,12 +84,9 @@ pub struct Controls {
     pub name: &'static str,
     /// Keys held to move.
     pub keys: Vec<(Move, Input)>,
-    /// Left drag.
-    pub left: Drag,
-    /// Right drag.
-    pub right: Drag,
-    /// Middle drag.
-    pub middle: Drag,
+    /// What each mouse button's drag does, Shift + middle apart, and
+    /// whether turning and zooming go about the cursor ([`Mouse`]).
+    pub mouse: Mouse,
     /// Moving speed, m/s.
     pub speed: f64,
     /// Speed factor while sprinting.
@@ -183,9 +159,7 @@ impl Controls {
             Controls {
                 name: "Orbit",
                 keys: wasd(),
-                left: Drag::Orbit,
-                right: Drag::Pan,
-                middle: Drag::Pan,
+                mouse: Mouse::ORBIT,
                 speed: 30.0,
                 sprint: 4.0,
                 capture: false,
@@ -194,12 +168,27 @@ impl Controls {
             Controls {
                 name: "Minecraft creative",
                 keys: wasd(),
-                left: Drag::Look,
-                right: Drag::Pan,
-                middle: Drag::Pan,
+                mouse: Mouse {
+                    left: Drag::Look,
+                    ..Mouse::ORBIT
+                },
                 speed: 30.0,
                 sprint: 4.0,
                 capture: true,
+                mouse_sensitivity: 0.003,
+            },
+            // As in common CAD programs (owner, 2026-11-12): middle drag
+            // pans, Shift + middle turns about the point under the cursor,
+            // the wheel zooms towards it, a double middle-click fits; no
+            // movement keys; the hotbar as in the others (the wheel never
+            // steps it: the mouse is never captured).
+            Controls {
+                name: "CAD",
+                keys: Vec::new(),
+                mouse: Mouse::CAD,
+                speed: 30.0,
+                sprint: 4.0,
+                capture: false,
                 mouse_sensitivity: 0.003,
             },
         ]
@@ -233,14 +222,16 @@ impl Controls {
         Some(c)
     }
 
-    /// The drag action for a pointer button.
+    /// The drag action for a pointer button (no modifier held; tests).
+    #[cfg(test)]
     pub fn drag(&self, button: egui::PointerButton) -> Drag {
-        match button {
-            egui::PointerButton::Primary => self.left,
-            egui::PointerButton::Secondary => self.right,
-            egui::PointerButton::Middle => self.middle,
-            _ => Drag::None,
-        }
+        self.mouse.drag(button, egui::Modifiers::NONE)
+    }
+
+    /// The drag action for a pointer button with `modifiers` held
+    /// (Shift + middle in the CAD scheme).
+    pub fn drag_with(&self, button: egui::PointerButton, modifiers: egui::Modifiers) -> Drag {
+        self.mouse.drag(button, modifiers)
     }
 
     /// The movement held down this frame: (forward, right, up) in units of
@@ -289,9 +280,22 @@ impl Controls {
         if !self.capture {
             out.extend(click_rows());
         }
-        out.push(("left drag".into(), self.left.name().into()));
-        out.push(("right drag".into(), self.right.name().into()));
-        out.push(("middle drag".into(), self.middle.name().into()));
+        let m = self.mouse;
+        out.push(("left drag".into(), m.left.name().into()));
+        out.push(("right drag".into(), m.right.name().into()));
+        out.push(("middle drag".into(), m.middle.name().into()));
+        if m.shift_middle.is_some() {
+            out.push((
+                "Shift + middle drag".into(),
+                "turn around the ground under the cursor (nothing there: the target)".into(),
+            ));
+        }
+        if m.middle_double_fits {
+            out.push((
+                "double middle-click".into(),
+                "show the whole line (as View › Fit views)".into(),
+            ));
+        }
         // Box and lasso selection of LiDAR points (the selecting button,
         // [`crate::area`]).
         out.push((
@@ -302,7 +306,16 @@ impl Controls {
             "Alt + Shift + left drag (Select held)".into(),
             "lasso: the same in a free shape (Esc: give up)".into(),
         ));
-        out.push(("scroll".into(), "zoom".into()));
+        out.push((
+            "scroll".into(),
+            if m.zoom_to_cursor {
+                "zoom towards the cursor (it never changes the tool: click a hotbar slot, 1–9 or E)"
+            } else {
+                "zoom"
+            }
+            .into(),
+        ));
+
         out.push((
             "double-click (Select held)".into(),
             "fly to the object".into(),

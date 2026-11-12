@@ -117,10 +117,23 @@ impl Standard {
 }
 
 /// How to move around in the view and what the colours mean (the "?"
-/// button's hover text).
-pub const CONTROLS: &str = "Drag: turn the view. Right-drag: pan. Wheel: zoom.\n\
-     Click: select (Shift + click: select another, or drop it); with a tool of the hotbar \
-     held, a click uses it.\n\
+/// button's hover text, Help › Controls), for the navigation scheme in
+/// force (View › Navigation).
+pub fn controls(mouse: ohl_ui::navigation::Mouse) -> String {
+    let moving = if mouse == ohl_ui::navigation::Mouse::CAD {
+        "Navigation CAD: middle drag pans, Shift + middle drag turns about the point under the \
+         cursor, the wheel zooms towards the cursor, a double middle-click shows the whole \
+         structure; a left drag leaves the view. The wheel never changes the tool: click a \
+         hotbar slot, keys 1-9 or E (the inventory).\n"
+    } else {
+        "Navigation Orbit: drag turns the view, right or middle drag pans, the wheel zooms.\n"
+    };
+    format!("{moving}{CONTROLS_REST}")
+}
+
+/// The part of [`controls`] every scheme shares.
+const CONTROLS_REST: &str = "Click: select (Shift + click: select another, or drop it); with a \
+     tool of the hotbar held, a click uses it.\n\
      Move tool: drag a joint or point to move it (snapped to the grid, or onto a joint; one \
      undo step).\n\
      Hotbar: keys 1-9 hold a tool, E: the inventory, Escape: let go of the tool.\n\
@@ -182,6 +195,12 @@ pub struct View {
     pub snap_hover: ohl_ui::snap_marker::Hover,
     /// How often the scene was built (part of the marker's key).
     scenes_built: u64,
+    /// The point a turn about the cursor goes about, for the drag going
+    /// on (CAD scheme).
+    orbit_pivot: Option<[f64; 3]>,
+    /// A double middle-click asked for the whole structure: fitted at
+    /// the start of the next frame.
+    fit_next: bool,
 }
 
 /// What the view needs to draw and edit.
@@ -307,6 +326,9 @@ impl View {
         let g = v.g;
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
+        if std::mem::take(&mut self.fit_next) {
+            self.camera = None;
+        }
         let camera = self.camera.get_or_insert_with(|| {
             let mut b: Option<Bounds> = None;
             // The structure, its feet and the compass's angles written
@@ -413,6 +435,27 @@ impl View {
         if linking.is_some() {
             self.menu_on = None;
         }
+        // The navigation scheme in force; the point under `at` (screen,
+        // local): what is picked there, else where the ray meets the plane
+        // facing the camera through the target.
+        let mouse = ohl_ui::navigation::Mouse::get(ui.ctx());
+        let on_plane = |here: [f64; 2]| {
+            cam.ray(here, size).and_then(|(a, d)| {
+                let eye = cam.eye();
+                let n = [0, 1, 2].map(|k| eye[k] - cam.target[k]);
+                let dn: f64 = (0..3).map(|k| d[k] * n[k]).sum();
+                (dn.abs() > 1e-12).then(|| {
+                    let s: f64 = (0..3).map(|k| (cam.target[k] - a[k]) * n[k]).sum::<f64>() / dn;
+                    [0, 1, 2].map(|k| a[k] + s * d[k])
+                })
+            })
+        };
+        let under = |here: [f64; 2]| {
+            pick_at(g, &project, here, radius)
+                .and_then(|(h, _)| position(g, &h))
+                .or_else(|| on_plane(here))
+                .unwrap_or(cam.target)
+        };
         // An acting tool: a click acts (on what is under the pointer, or
         // where it meets the plane facing the camera through the target).
         use crate::tools::Tool;
@@ -530,20 +573,57 @@ impl View {
                 file.end();
             }
         } else if response.dragged() {
+            // The navigation scheme (View › Navigation): what this drag does.
+            use ohl_ui::navigation::Drag;
             let d = response.drag_delta();
-            let camera = self.camera.as_mut().expect("set above");
-            if response.dragged_by(egui::PointerButton::Primary) {
-                camera.orbit(f64::from(d.x) * 0.008, f64::from(d.y) * 0.008);
-            } else {
-                camera.pan(f64::from(d.x), f64::from(d.y), size[1]);
+            let modifiers = ui.input(|i| i.modifiers);
+            let action = [
+                egui::PointerButton::Primary,
+                egui::PointerButton::Secondary,
+                egui::PointerButton::Middle,
+            ]
+            .into_iter()
+            .find(|b| response.dragged_by(*b))
+            .map_or(Drag::None, |b| mouse.drag(b, modifiers));
+            // About the point under where the drag started (CAD), kept for
+            // the whole drag.
+            if action == Drag::Orbit && mouse.orbit_about_cursor && self.orbit_pivot.is_none() {
+                let start = ui.input(|i| i.pointer.press_origin());
+                self.orbit_pivot = Some(start.map_or(cam.target, |p| under(local(p))));
             }
+            let camera = self.camera.as_mut().expect("set above");
+            let (dx, dy) = (f64::from(d.x), f64::from(d.y));
+            match action {
+                Drag::Orbit => match self.orbit_pivot {
+                    Some(p) => camera.orbit_about(p, dx * 0.008, dy * 0.008),
+                    None => camera.orbit(dx * 0.008, dy * 0.008),
+                },
+                Drag::Pan => camera.pan(dx, dy, size[1]),
+                Drag::Look | Drag::None => {}
+            }
+        }
+        if !response.dragged() {
+            self.orbit_pivot = None;
         }
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
+                let f = (-f64::from(scroll) * 0.002).exp();
+                let towards = response
+                    .hover_pos()
+                    .filter(|_| mouse.zoom_to_cursor)
+                    .map(|p| under(local(p)));
                 let camera = self.camera.as_mut().expect("set above");
-                camera.zoom((-f64::from(scroll) * 0.002).exp());
+                match towards {
+                    Some(t) => camera.zoom_towards(t, f),
+                    None => camera.zoom(f),
+                }
             }
+        }
+        // A double middle-click (CAD): the whole structure, next frame.
+        if mouse.fit_asked(&response) {
+            self.fit_next = true;
+            ui.ctx().request_repaint();
         }
         // The snap marker: where a dragged joint or point lands; else where
         // a click would pick (none while the view is turned or panned).
@@ -760,7 +840,8 @@ impl View {
                     self.fit();
                     ui.ctx().request_repaint();
                 }
-                ui.small_button("?").on_hover_text(CONTROLS);
+                ui.small_button("?")
+                    .on_hover_text(controls(ohl_ui::navigation::Mouse::get(ui.ctx())));
             },
         );
     }

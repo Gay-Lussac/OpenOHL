@@ -102,6 +102,8 @@ mod load_tests;
 #[cfg(test)]
 mod menu_tests;
 #[cfg(test)]
+mod navigation_tests;
+#[cfg(test)]
 mod placed_tests;
 #[cfg(test)]
 mod pole_extension_ui_tests;

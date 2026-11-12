@@ -1277,6 +1277,13 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
         .show(ctx, |ui| {
             let clicks = crate::controls::click_rows();
             let select_double = "double-click (Select held)";
+            // The 2D views' drags by the scheme chosen (the 3D page).
+            let cad = r.view3d.controls.mouse.middle_double_fits;
+            let drag_2d = if cad {
+                "middle drag (Shift too)"
+            } else {
+                "drag (any button)"
+            };
             match page {
                 ControlsPage::View3d => {
                     let c = &mut r.view3d.controls;
@@ -1317,16 +1324,19 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                     }
                     ui.separator();
                     let mut rows = c.describe();
-                    rows.push(row("1–9, wheel", "choose a tool of the hotbar"));
+                    rows.push(row(
+                        "1–9, a click on a slot (the wheel in first person)",
+                        "choose a tool of the hotbar",
+                    ));
                     rows.push(row("E", "tool inventory"));
                     rows.push(row("C", "cross-section: a cut across the line (a window)"));
                     controls_grid(ui, "controls-3d", &rows);
                 }
                 ControlsPage::Plan => {
-                    let mut rows = vec![
-                        row("drag (any button)", "pan"),
-                        row("scroll", "zoom at the pointer"),
-                    ];
+                    let mut rows = vec![row(drag_2d, "pan"), row("scroll", "zoom at the pointer")];
+                    if cad {
+                        rows.push(row("double middle-click", "show the whole line"));
+                    }
                     rows.extend(clicks);
                     rows.push(row(select_double, "select and centre on it"));
                     rows.push(row("C", "cross-section: a cut across the line (a window)"));
@@ -1334,9 +1344,13 @@ pub(super) fn controls_window(ctx: &egui::Context, r: &mut Ready) {
                 }
                 ControlsPage::Profile => {
                     let mut rows = vec![
-                        row("drag (any button)", "move along the route"),
+                        row(drag_2d, "move along the route"),
                         row("scroll", "zoom along the route at the pointer"),
                     ];
+                    if cad {
+                        rows.push(row("double middle-click", "show the whole route"));
+                    }
+
                     rows.extend(clicks);
                     rows.push(row(select_double, "show the whole route"));
                     rows.push(row(

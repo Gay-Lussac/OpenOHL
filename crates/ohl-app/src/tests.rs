@@ -28,6 +28,7 @@ mod load_case_library;
 mod local_winds;
 mod merge_windows;
 mod multi_select;
+mod navigation;
 mod objects;
 mod plugins_hosting;
 mod project;

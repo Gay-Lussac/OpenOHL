@@ -809,12 +809,15 @@ impl ProfileView {
         // Alt + drag of the selecting button: a box or lasso of the LiDAR
         // points dotted (the view does not move meanwhile).
         let (area_done, drawing) = crate::area::frame(&mut self.area, ui, response, buttons.0);
-        if response.dragged() && !drawing {
-            let ds = -f64::from(response.drag_delta().x) / width * (range[1] - range[0]);
+        // The navigation scheme: a drag pans (Orbit: any button; CAD: the
+        // middle one), a double middle-click shows the whole route (CAD).
+        let mouse = ohl_ui::navigation::Mouse::get(ui.ctx());
+        if let Some(delta) = mouse.pan_2d(ui, response).filter(|_| !drawing) {
+            let ds = -f64::from(delta.x) / width * (range[1] - range[0]);
             range[0] += ds;
             range[1] += ds;
             if let (Some(v), Some(z)) = (vscale(range), self.z_centre.as_mut()) {
-                *z += f64::from(response.drag_delta().y) / v;
+                *z += f64::from(delta.y) / v;
             }
         }
         if response.hovered() {
@@ -839,7 +842,7 @@ impl ProfileView {
             }
         }
         // A double-click of the select button ([`crate::controls::click_buttons`]).
-        if response.double_clicked_by(buttons.0) {
+        if response.double_clicked_by(buttons.0) || mouse.fit_asked(response) {
             *range = [0.0, d.length.max(1.0)];
             self.z_centre = None;
         }

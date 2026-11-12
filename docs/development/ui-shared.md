@@ -18,6 +18,7 @@ OHL-Design (`crates/ohl-app`) and OHL-Structure
 | `rows` | Long tables, only the rows in view | |
 | `icons` | SVG files rasterised and kept as textures, the OpenOHL mark | Its own tools or actions and its application icon |
 | `glyphs` | The helpers of the glyph test | Its test, on its own source files; `ohl-ui` tests its own texts |
+| `navigation` | The mouse of the navigation schemes (2026-11-12): `Drag`, `Mouse` (`ORBIT`, `CAD`: the drag of each button, Shift + middle apart, turning and zooming about the cursor, double middle-click fits), held in the egui context for the 2D and Detail views; `Scheme` (Orbit, CAD) with its menu and storage | OHL-Design its `Controls` (keys, first person, speed) around a `Mouse`; each its storage key |
 | `snap_marker` | The snap marker (2026-11-12): its colour and size, the painter, the settings (shown, snap distance) held in the egui context, their View-menu entries and storage, the per-view `Hover` that finds the point again only when the pointer or the view changed | Its storage key prefix; each view finds the point with its own click search |
 
 The two applications differed in three small ways, now one (2026-11-07): the

@@ -22,12 +22,25 @@ use crate::joint_tools::Act;
 use crate::layout::Panel;
 use crate::member_panel::Subject;
 
-/// How to get around the Detail view (Help › Controls).
-pub const CONTROLS: &str = "Opened from the 3D view: the Edit tool on a tower's joint or \
+/// How to get around the Detail view (Help › Controls), for the
+/// navigation scheme in force (View › Navigation).
+pub fn controls(mouse: ohl_ui::navigation::Mouse) -> String {
+    let close_up = if mouse == ohl_ui::navigation::Mouse::CAD {
+        "Close-up (navigation CAD): Shift + middle drag turns, the wheel zooms, a double \
+         middle-click turns it back (it has no pan)"
+    } else {
+        "Close-up: drag to turn, wheel to zoom"
+    };
+    format!("{CONTROLS_OPEN}{close_up}{CONTROLS_REST}")
+}
+
+const CONTROLS_OPEN: &str = "Opened from the 3D view: the Edit tool on a tower's joint or \
      member (asked first, unless the Detail view is open), or its right-click menu, Open in the \
-     Detail view.\n\
-     Close-up: drag to turn, wheel to zoom; Face view: the joint's plane flat.\n\
-     Its toolbar below the drawing: Edit (a bolt, plate or member clicked: its properties \
+     Detail view.\n";
+
+const CONTROLS_REST: &str = "; Face view: the joint's plane flat.\n\
+     Its toolbar
+ below the drawing: Edit (a bolt, plate or member clicked: its properties \
      below), Add bolt, Move bolt, Remove bolt, Member end.\n\
      Escape: from a member back to its joint, else what is picked let go, else the Edit tool \
      again, else (over the drawing) back to the 3D view. ‹ Joint: back to the joint. ‹ 3D \

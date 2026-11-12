@@ -2039,6 +2039,12 @@ impl eframe::App for App {
             self.applied_scale = Some(self.ui_scale);
         }
         self.snap_marker = ohl_ui::snap_marker::Settings::get(ui.ctx());
+        // The navigation scheme's mouse, for the plan and the profile
+        // (the 3D views read their own controls).
+        match &self.state {
+            State::Ready(r) => r.view3d.controls.mouse.set(ui.ctx()),
+            _ => self.controls.mouse.set(ui.ctx()),
+        }
         self.loading_frame();
         let file = self.sources.file.display().to_string();
         let ctx = ui.ctx().clone();

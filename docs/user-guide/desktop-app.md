@@ -1027,12 +1027,25 @@ The 3D view is navigated with the mouse and the keyboard — like Minecraft in c
 | Alt + Shift + drag (select button) | a lasso: the same in a free shape; Escape gives it up. While Alt is held the keys do not move the camera |
 | left drag on a handle | move a point of the structure being edited ([drag handles](#the-structure-screen)); while dragging: X / Y / Z on that axis of the structure, Shift + X / Y / Z in the plane across it, Alt without snapping, Esc cancels |
 
-Two schemes, chosen in **Help › Controls › 3D** (with the speed, the look sensitivity and every key and mouse action; the 3D view shows no help text over it, only "Esc: free the mouse" in first person). **Help › Controls › Plan**, **Profile** and **Cross-section** list how those views are moved and used (more settings will come there):
+Three schemes, chosen in **Help › Controls › 3D** (with the speed, the look sensitivity and every key and mouse action; the 3D view shows no help text over it, only "Esc: free the mouse" in first person). **Help › Controls › Plan**, **Profile** and **Cross-section** list how those views are moved and used (more settings will come there):
 
 - **Orbit** — left drag turns the view around the point looked at.
 - **Minecraft creative** — first person, as in the game: clicking the 3D view captures the mouse (locked and hidden); moving it looks around (mouse down: look down); a crosshair marks the centre and a click selects what is under it (double-click flies to it); **Ctrl + wheel** sets the speed (the wheel alone scrolls the hotbar). **Escape** frees the mouse to use the panels (switching to another application frees it too; while a wire is strung or an alignment laid out, the first Escape gives that up and the second frees the mouse).
 
-The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit` or `--controls minecraft` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
+- **CAD** (2026-11-12; built, in active development, not approved yet) — as in common CAD programs, for those used to them (table below): the middle button moves the view, the left button is only for clicks and tools, no movement keys.
+
+| Mouse or key (CAD scheme) | 3D view and cross-sections | Plan and profile |
+|---|---|---|
+| middle drag | pan | pan (the profile: along the route) |
+| Shift + middle drag | turn around the ground under the cursor (nothing there: the point looked at) | pan |
+| wheel | zoom towards the ground under the cursor; it never changes the tool | zoom at the pointer |
+| double middle-click | show the whole line (as View › Fit views) | the plan: the whole line; the profile: the whole route |
+| left drag | nothing (Alt + left drag: a box or lasso; on a drag handle with Move held: the handle) | nothing (Alt: box or lasso in the profile) |
+| left-click, right-click, double-click | as in the other schemes (below) | as in the other schemes |
+| W A S D, Space | nothing | — |
+| 1–9, a click on a hotbar slot, E, Escape | hold a tool, the inventory, back to Select — as in every scheme | |
+
+The speed (m/s) and, for the first-person scheme, the look sensitivity are set there too, and the list shows every key of the scheme; Help › Controls › Plan and Profile list the drags of the scheme chosen. The scheme, speed and sensitivity are remembered for the next start; `--controls orbit`, `--controls minecraft` or `--controls cad` chooses one at start. Schemes are data (`controls.rs`: actions bound to keys and mouse buttons), so schemes familiar from other software can be added as presets, and later edited and saved.
 
 ### Clicks and the object's menu
 
@@ -1055,7 +1068,7 @@ The speed (m/s) and, for the first-person scheme, the look sensitivity are set t
 | Escape | back to Select | free the mouse, then back to Select |
 | scroll / Ctrl + wheel | zoom | zoom; captured: hotbar / speed |
 
-The **plan** pans with a drag of any button and the **profile** moves along the route with one; their clicks are the same, and their double-click with Select held (plan: select and centre on it; profile: show the whole route).
+The **plan** pans with a drag of any button and the **profile** moves along the route with one (in the CAD scheme: the middle button only); their clicks are the same, and their double-click with Select held (plan: select and centre on it; profile: show the whole route).
 
 **Edit › Snap: what can be clicked** chooses what can be clicked: structures, spans, jumpers, wire points and string tops (selecting their set), alignment points, LiDAR points (those drawn, see [Point budget](#point-budget)) (more kinds will be added); by default structures, spans and jumpers. At about the same distance, a point wins over the line it sits on and a structure over a wire. The choice is remembered.
 

@@ -15,6 +15,9 @@ pub const SCALE_KEY: &str = "ohl-structure-ui-scale";
 /// Key prefix of the snap marker's settings in the window's storage.
 pub const SNAP_MARKER_KEY: &str = "ohl-structure-snap-marker";
 
+/// Key of the navigation scheme (View › Navigation) in the window's storage.
+pub const NAVIGATION_KEY: &str = "ohl-structure-navigation";
+
 /// The UI scale as kept in `storage` (none, or out of range: 100 %).
 pub fn load_scale(storage: Option<&dyn eframe::Storage>) -> f32 {
     ohl_ui::style::load_scale(storage, SCALE_KEY)

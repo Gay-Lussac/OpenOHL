@@ -194,6 +194,9 @@ pub struct StructureApp {
     pub snap_marker: ohl_ui::snap_marker::Settings,
     /// They were put in force.
     snap_marker_applied: bool,
+    /// The navigation scheme (View › Navigation; kept): its mouse put in
+    /// force each frame for the 3D and Detail views.
+    pub navigation: ohl_ui::navigation::Scheme,
     /// The short "No line values" line of the load panels closed (its ×),
     /// until the program is started again.
     pub line_notice_closed: bool,
@@ -278,6 +281,7 @@ impl StructureApp {
             applied_scale: None,
             snap_marker: Default::default(),
             snap_marker_applied: false,
+            navigation: Default::default(),
             line_notice_closed: false,
             hotbar: Default::default(),
             held: crate::tools::Tool::Select,
@@ -989,6 +993,7 @@ impl StructureApp {
         self.snap_marker =
             ohl_ui::snap_marker::Settings::load(storage, crate::style::SNAP_MARKER_KEY);
         self.snap_marker_applied = false;
+        self.navigation = ohl_ui::navigation::Scheme::load(storage, crate::style::NAVIGATION_KEY);
         self.hotbar = crate::tools::Hotbar::load(storage);
         self.joints.steps = crate::detail_tools::ToolSteps::load(storage);
         self.held = self.hotbar.tool();
@@ -1078,6 +1083,7 @@ impl eframe::App for StructureApp {
         crate::style::save_scale(storage, self.ui_scale);
         self.snap_marker
             .save(storage, crate::style::SNAP_MARKER_KEY);
+        self.navigation.save(storage, crate::style::NAVIGATION_KEY);
         self.hotbar.save(storage);
         self.joints.steps.save(storage);
     }
@@ -1090,6 +1096,8 @@ impl eframe::App for StructureApp {
             self.snap_marker.set(&ctx);
             self.snap_marker_applied = true;
         }
+        self.navigation.mouse().set(&ctx);
+
         if self.applied_scale != Some(self.ui_scale) {
             if self.applied_scale.is_none() {
                 crate::style::apply(&ctx);

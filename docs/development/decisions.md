@@ -40,6 +40,26 @@ height, the page is really laggy").
   the window froze for the comparison of every size at each settled
   change.
 
+**A "CAD" navigation scheme in both applications** (owner: "a way to
+control the view similarly as in [a common commercial CAD program] so
+that people used to it can also switch the controls to them"; and: "the
+user needs to click on the tools of the hotbar to change it but they
+stay and E is still the inventory. It's just that the rolling wheel is
+used to zoom."). Middle drag pans; Shift + middle drag turns about the
+point under the cursor (OHL-Design: the ground there; OHL-Structure:
+what is picked there, else the plane through the target; nothing: the
+target); the wheel zooms towards the cursor and never steps the hotbar;
+a double middle-click fits; a left drag leaves the view (clicks and
+tools), right-click keeps its menu; no movement keys. The hotbar, 1–9,
+E and Escape are unchanged. The mouse part is shared
+(`ohl_ui::navigation::Mouse`, a modifier-aware lookup); OHL-Design adds
+it as a third preset ("CAD") beside Orbit and Minecraft creative,
+OHL-Structure gets View › Navigation with Orbit (its old behaviour, the
+default) and CAD. Plan and profile pan with the middle button only in
+CAD; OHL-Structure's Detail close-up has no pan, so in CAD Shift +
+middle turns it and a double middle-click turns it back. Kept per
+application; the controls help follows the scheme.
+
 **The snap point: a red dot where a click would pick, in both
 applications** (owner: "I would like to have a highlight of what I'm
 clicking on with a transparent red point when I move the mouse that's

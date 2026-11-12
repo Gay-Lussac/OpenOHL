@@ -240,7 +240,7 @@ struct Args {
     /// file and exit (checks, documentation).
     #[arg(long)]
     screenshot: Option<PathBuf>,
-    /// Navigation scheme of the 3D view: orbit or minecraft (default: the
+    /// Navigation scheme of the 3D view: orbit, minecraft or cad (default: the
     /// one used last).
     #[arg(long)]
     controls: Option<String>,
@@ -298,7 +298,7 @@ fn main() -> std::process::ExitCode {
         Some(name) => match controls::Controls::by_name(name) {
             Some(c) => Some(c),
             None => {
-                eprintln!("error: --controls {name}: use orbit or minecraft");
+                eprintln!("error: --controls {name}: use orbit, minecraft or cad");
                 return std::process::ExitCode::FAILURE;
             }
         },

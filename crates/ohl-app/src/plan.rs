@@ -444,6 +444,10 @@ impl PlanView {
         }
         let mid = rect.center();
         self.navigate(ui, &response, mid);
+        // A double middle-click (CAD scheme) asked for the whole line.
+        if self.centre.is_none() {
+            self.fit(model, rect.size());
+        }
         let c = self.centre.expect("fitted");
         let scale = self.scale;
         let fr = Frame {
@@ -482,11 +486,17 @@ impl PlanView {
         used
     }
 
-    /// Moves the view as the pointer says: a drag pans, the wheel zooms
-    /// about the pointer.
+    /// Moves the view as the pointer says and the navigation scheme
+    /// ([`ohl_ui::navigation::Mouse`]): a drag pans (Orbit: any button;
+    /// CAD: the middle one), the wheel zooms about the pointer, a double
+    /// middle-click fits (CAD).
     fn navigate(&mut self, ui: &egui::Ui, response: &egui::Response, mid: egui::Pos2) {
-        if response.dragged() {
-            let d = response.drag_delta();
+        let mouse = ohl_ui::navigation::Mouse::get(ui.ctx());
+        if mouse.fit_asked(response) {
+            self.refit();
+            return;
+        }
+        if let Some(d) = mouse.pan_2d(ui, response) {
             let c = self.centre.as_mut().expect("fitted");
             c[0] -= f64::from(d.x) / self.scale;
             c[1] += f64::from(d.y) / self.scale;

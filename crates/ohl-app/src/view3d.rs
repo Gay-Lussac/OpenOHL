@@ -146,6 +146,12 @@ pub struct View3d {
     /// The cut whose outline the last click picked; taken by the app
     /// (its panel comes to the front).
     pub picked_cut: Option<u32>,
+    /// The point a turn about the cursor goes about, for the drag going
+    /// on (CAD scheme).
+    orbit_pivot: Option<[f64; 3]>,
+    /// A double middle-click asked to show everything (CAD scheme):
+    /// fitted before the next frame.
+    fit_asked: bool,
     /// Where a click under the pointer would pick (the snap marker,
     /// [`ohl_ui::snap_marker`]): found with the click's own search, again
     /// only when the pointer, the view or the model changed.
@@ -873,7 +879,11 @@ impl View3d {
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.rect = Some(rect);
         self.drawn = true;
+        if std::mem::take(&mut self.fit_asked) {
+            self.camera = None;
+        }
         self.fit_camera(model, case, selection);
+
         // Input.
         let size = [f64::from(rect.width()), f64::from(rect.height())];
         let local = |p: egui::Pos2| [f64::from(p.x - rect.min.x), f64::from(p.y - rect.min.y)];
@@ -1298,12 +1308,27 @@ impl View3d {
             crate::area::frame(&mut self.area, ui, response, select_button)
         };
         let area_done = done;
+        // The ground under `pos` (screen), for turning and zooming about
+        // the cursor (CAD scheme); none: the target.
+        let model = fr.model;
+        let clip = fr.clip;
+        let under = |camera: &Camera, pos: egui::Pos2| {
+            camera
+                .ray(local(pos), size)
+                .and_then(|(a, d)| model.ground_hit(a, d, camera.target[2]))
+                .filter(|p| clip.is_none_or(|c| c.contains(*p)))
+        };
+        let mouse = self.controls.mouse;
+        if !response.dragged() {
+            self.orbit_pivot = None;
+        }
         if response.dragged()
             && !drawing
             && !(handle_drag && response.dragged_by(egui::PointerButton::Primary))
         {
             let d = response.drag_delta();
             let (dx, dy) = (f64::from(d.x), f64::from(d.y));
+            let modifiers = ui.input(|i| i.modifiers);
             let action = [
                 egui::PointerButton::Primary,
                 egui::PointerButton::Secondary,
@@ -1311,8 +1336,22 @@ impl View3d {
             ]
             .into_iter()
             .find(|b| response.dragged_by(*b))
-            .map_or(Drag::None, |b| self.controls.drag(b));
+            .map_or(Drag::None, |b| self.controls.drag_with(b, modifiers));
             match action {
+                Drag::Orbit if mouse.orbit_about_cursor => {
+                    // About the ground under where the drag started (kept
+                    // for the whole drag), else the target.
+                    if self.orbit_pivot.is_none() {
+                        let start = ui.input(|i| i.pointer.press_origin());
+                        self.orbit_pivot = Some(
+                            start
+                                .and_then(|p| under(camera, p))
+                                .unwrap_or(camera.target),
+                        );
+                    }
+                    let pivot = self.orbit_pivot.expect("set above");
+                    camera.orbit_about(pivot, dx * 0.008, dy * 0.008);
+                }
                 Drag::Orbit => camera.orbit(dx * 0.008, dy * 0.008),
                 Drag::Look => camera.look(dx * 0.004, -dy * 0.004),
                 Drag::Pan => camera.pan(dx, dy, size[1]),
@@ -1322,8 +1361,20 @@ impl View3d {
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
-                camera.zoom((-f64::from(scroll) * 0.002).exp());
+                let f = (-f64::from(scroll) * 0.002).exp();
+                match response.hover_pos().filter(|_| mouse.zoom_to_cursor) {
+                    Some(pos) => {
+                        let towards = under(camera, pos).unwrap_or(camera.target);
+                        camera.zoom_towards(towards, f);
+                    }
+                    None => camera.zoom(f),
+                }
             }
+        }
+        // A double middle-click: the whole line (CAD scheme).
+        if mouse.fit_asked(response) {
+            log::info!("3D view: double middle-click, fit");
+            self.fit_asked = true;
         }
         Clicks {
             pick_at,

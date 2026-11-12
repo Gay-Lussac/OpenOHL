@@ -294,3 +294,34 @@ fn the_renderer_draws_only_what_is_in_the_clip_box() {
     let (x, y) = screen(at(30.0, 0.0, 15.0));
     assert_eq!(px(x, y), BACKGROUND, "the dot beyond the depth");
 }
+
+/// Turning and zooming about a point under the cursor (the CAD scheme,
+/// 2026-11-12) keep that point where it is on the screen.
+#[test]
+fn turning_and_zooming_about_a_point_keep_it_in_place() {
+    let b = Bounds {
+        min: at(-100.0, -50.0, 0.0),
+        max: at(100.0, 50.0, 30.0),
+    };
+    let mut cam = Camera::fit(&b);
+    let size = [800.0, 600.0];
+    let pivot = at(40.0, 10.0, 5.0);
+    let before = cam.project(pivot, size).unwrap().0;
+    cam.orbit_about(pivot, 0.3, 0.2);
+    let after = cam.project(pivot, size).unwrap().0;
+    assert!(
+        (before[0] - after[0]).hypot(before[1] - after[1]) < 1e-3,
+        "{before:?} {after:?}"
+    );
+    let d = |c: &Camera| {
+        (0..3)
+            .map(|k| (c.eye()[k] - pivot[k]).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    };
+    let far = d(&cam);
+    cam.zoom_towards(pivot, 0.5);
+    let zoomed = cam.project(pivot, size).unwrap().0;
+    assert!((after[0] - zoomed[0]).hypot(after[1] - zoomed[1]) < 1e-3);
+    assert!((d(&cam) - 0.5 * far).abs() < 1e-6 * far);
+}
