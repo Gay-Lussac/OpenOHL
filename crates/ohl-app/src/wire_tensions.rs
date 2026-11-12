@@ -39,6 +39,55 @@ const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
     "the wires' tensions",
 );
 
+/// The window's own page of the user guide (owner, 2026-11-12: "next do
+/// the wire tensions window").
+pub const GUIDE: &str = "user-guide/wire-tensions";
+
+/// The sections of [`GUIDE`] the window's **user guide ↗** buttons
+/// open: *What it checks*, *Rules*, *Scope*, *Results*.
+pub const GUIDE_SECTIONS: [&str; 4] = [
+    "what-it-answers",
+    "2-rules",
+    "3-scope",
+    "5-the-results-and-the-marks",
+];
+
+/// *What it checks*: its short line and its (?).
+const WHAT_HELP: (&str, &str) = (
+    "The tension of every span against the largest a rule allows, in each of the rules' weather \
+     cases.",
+    "Run solves the line in each weather case of the rules. In every span of the wires a rule \
+     applies to, the tension (by default the larger end tension, at the most tensioned support; \
+     or the horizontal tension, as the rule says) is compared with the rule's limit: a factor × \
+     the wire type's rated tensile strength (RTS), or, from a rule file, a tension or a largest \
+     catenary constant. The usage is tension / allowed; above 100 % the span fails. No limit is \
+     built in: the rules' limits are yours or a design-code plugin's preset.",
+);
+
+/// *Rules*: what was the grey line under them, in their (?) (check
+/// pages' guidelines §6).
+const RULES_HELP: (&str, &str) = (
+    "A rule: the largest tension allowed, for which wires, in which weather cases.",
+    "Factor of RTS: the allowed tension is this factor × the wire type's rated tensile strength \
+     (from the wire library); a wire type without one is not checked (said in the notes). A rule \
+     file may give a tension or a largest catenary constant instead (shown as Limit, the factor \
+     greyed). Tension compared: at the span's most tensioned support (the default) or the \
+     horizontal tension. Weather cases: those the rule applies in (none ticked: every case). \
+     Wires: wire types, electrical systems, circuits (none ticked: every wire). Calculation: how \
+     the wires are solved for the rule. A preset (a design code's) brings only its tension \
+     rules, merged (a rule of the same name replaced) or replacing them, its weather cases \
+     matched to the project's. No factor is built in.",
+);
+
+/// *Scope*: what was the grey line under it, in its (?).
+const SCOPE_HELP: (&str, &str) = (
+    "Circuits: those checked. Routes: the routes and alignments checked (none ticked: the whole \
+     line).",
+    "Only the sections of the circuits ticked, on the routes and alignments ticked, are solved \
+     and checked (a section with a structure on one of them, whole). Fewer: fewer sections \
+     solved, faster. Each rule gives its own wires and weather cases besides (2 Rules).",
+);
+
 /// A check's answer: the report and the rules it was made with.
 #[derive(Debug, Clone, Default)]
 pub struct Report {
@@ -62,6 +111,8 @@ pub struct Out {
     /// A design-code plugin's preset loaded (its plugin, the preset): its
     /// weather cases missing from the model to add.
     pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
+    /// A section of its user guide page to open ([`GUIDE_SECTIONS`]).
+    pub guide: Option<&'static str>,
 }
 
 /// The Wire tensions window.
@@ -291,6 +342,7 @@ impl WireTensionsWindow {
         let mut run = false;
         let mut changed = false;
         let stale = self.out_of_date(model);
+        let mut guide = None;
         help::window(
             ctx,
             crate::dockable::Panel::WireTensions,
@@ -322,43 +374,31 @@ impl WireTensionsWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, "wire-tensions-window", |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
-                        help::explain(
+                        guide = guide.or(check_ui::section(
                             ui,
-                            "The tension of every span against the largest a rule allows: a factor of the wire \
-                             type's rated tensile strength (RTS), per weather case.",
-                            "Run solves the line in each weather case of the rules. In every span \
-                             of the wires a rule applies to, the tension (by default the larger \
-                             end tension, at the most tensioned support; or the horizontal \
-                             tension, as the rule says) is compared with the rule's factor × the \
-                             wire type's RTS. The usage is tension / allowed; above 100 % the span \
-                             fails. No factor is built in: the rules' factors are yours or a \
-                             design-code plugin's preset.",
-                        );
+                            1,
+                            "What it checks",
+                            Some(GUIDE_SECTIONS[0]),
+                        ));
+                        help::explain(ui, WHAT_HELP.0, WHAT_HELP.1);
                         check_ui::how_computed(
                             ui,
                             "wire-tensions-window",
-                            "The wires solved in each weather case of the rules; per span the tension at its most tensioned support (or the horizontal tension, as the rule says) against the rule's factor × the wire type's RTS.",
+                            "The wires solved in each weather case of the rules; per span the tension at its most tensioned support (or the horizontal tension, as the rule says) against the rule's limit: its factor × the wire type's RTS, or its tension, or its catenary constant × the wire's bare weight per metre.",
                             help::tension_check,
                         );
                         ui.separator();
-                        check_ui::section(ui, 2, "Scope", None);
-                        if check_ui::ScopePicker::new("wire-tensions-scope", &model.line)
-                            .route_of(model)
-                            .wires(&mut self.scope, true)
-                            .ui(ui)
-                        {
-                            changed = true;
-                        }
-                        ui.label(
-                            egui::RichText::new(
-                                "Each rule gives its own wires and weather cases besides (3 Rules).",
-                            )
-                            .small()
-                            .weak(),
-                        );
-                        ui.separator();
-                        check_ui::section(ui, 3, "Rules", None);
+                        // The rules first, then the scope (owner,
+                        // 2026-11-12: the windows "better designed for a
+                        // human", as the vertical clearances); the grey
+                        // lines in the (?) of their section or field.
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            2,
+                            "Rules",
+                            Some(GUIDE_SECTIONS[1]),
+                            Some(RULES_HELP),
+                        ));
                         changed |= self.rules_ui(ui, model, presets, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
@@ -367,9 +407,29 @@ impl WireTensionsWindow {
                                 ui.label(egui::RichText::new(text).small().weak());
                             }
                         }
+                        ui.separator();
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            3,
+                            "Scope",
+                            Some(GUIDE_SECTIONS[2]),
+                            Some(SCOPE_HELP),
+                        ));
+                        if check_ui::ScopePicker::new("wire-tensions-scope", &model.line)
+                            .route_of(model)
+                            .wires(&mut self.scope, true)
+                            .ui(ui)
+                        {
+                            changed = true;
+                        }
                     }),
                     check_ui::Tab::Results => {
                         check_ui::results_area(ui, "wire-tensions-window", |ui| {
+                            guide = guide.or(help::heading(
+                                ui,
+                                "Results",
+                                "5-the-results-and-the-marks",
+                            ));
                             self.results_ui(ui, &stale, &mut run, &mut out);
                         })
                     }
@@ -398,6 +458,7 @@ impl WireTensionsWindow {
             },
         );
         self.open = open;
+        out.guide = guide;
         if changed {
             self.save(model);
         }
@@ -444,7 +505,11 @@ impl WireTensionsWindow {
                     .num_columns(2)
                     .spacing(help::GRID_SPACING)
                     .show(ui, |ui| {
-                        ui.label("Weather cases");
+                        ui.label("Weather cases").on_hover_text(
+                            "The weather cases this rule is checked in (none ticked: every case). \
+                             Each case a rule names is solved once per calculation: more cases, a \
+                             longer run.",
+                        );
                         crate::menu::options_menu(
                             ui,
                             &crate::rule_table::cases_words(&r.cases),
@@ -455,7 +520,13 @@ impl WireTensionsWindow {
                         );
                         ui.end_row();
                         // How the wires are solved (owner, 2026-11-01).
-                        ui.label("Calculation");
+                        ui.label("Calculation").on_hover_text(
+                            "How every wire is solved for this rule: each section's own \
+                             calculation (the default), or a condition (initial, after creep, after \
+                             load, max sag) and a method (ruling span, finite elements). Another \
+                             calculation solves the rule's cases once more; finite elements are \
+                             slower than ruling span.",
+                        );
                         changed |= crate::rule_table::calculation_combo(
                             ui,
                             "tension-rule-calc",
@@ -474,7 +545,15 @@ impl WireTensionsWindow {
                             );
                             ui.end_row();
                         }
-                        ui.label("Factor of RTS");
+                        ui.label("Factor of RTS").on_hover_text(if r.since_version_2() {
+                            "Greyed: this rule's limit is the tension or the catenary constant of \
+                             its rule file (Limit above); change it there."
+                        } else {
+                            "The allowed tension = this factor × the wire type's rated tensile \
+                             strength (from the wire library). A smaller factor: more spans fail. \
+                             No factor is given for you: take it from the regulation you work to. \
+                             No solve time."
+                        });
                         ui.horizontal(|ui| {
                             if r.since_version_2() {
                                 ui.disable();
@@ -499,27 +578,34 @@ impl WireTensionsWindow {
                             }
                         });
                         ui.end_row();
-                        ui.label("Tension");
-                        egui::ComboBox::from_id_salt("wire-tension-measure")
-                            .selected_text(r.measure.describe())
-                            .show_ui(ui, |ui| {
-                                for m in [TensionMeasure::Max, TensionMeasure::Horizontal] {
-                                    changed |= ui
-                                        .selectable_value(&mut r.measure, m, m.describe())
-                                        .changed();
-                                }
-                            });
+                        ui.label("Tension compared").on_hover_text(
+                            "Maximum: the tension at the span's most tensioned support, its \
+                             higher end (the default, the larger). Horizontal: the horizontal \
+                             tension, the same along the span, never larger. A catenary-constant \
+                             rule always compares the horizontal tension. No solve time.",
+                        );
+                        if r.catenary_constant.is_some() {
+                            // Its measure is the horizontal tension, whatever
+                            // the field says: shown as compared.
+                            ui.add_enabled(false, egui::Label::new(r.measured().describe()));
+                        } else {
+                            egui::ComboBox::from_id_salt("wire-tension-measure")
+                                .selected_text(r.measure.describe())
+                                .show_ui(ui, |ui| {
+                                    for m in [TensionMeasure::Max, TensionMeasure::Horizontal] {
+                                        changed |= ui
+                                            .selectable_value(&mut r.measure, m, m.describe())
+                                            .changed();
+                                    }
+                                });
+                        }
                         ui.end_row();
-                        ui.label("Wires");
+                        ui.label("Wires").on_hover_text(
+                            "The wires the rule applies to: the wire types, electrical systems and \
+                             circuits ticked. None ticked: every wire; a wire counts when it is in \
+                             every list ticked. Fewer wires: fewer rows, nothing else changes.",
+                        );
                         crate::menu::options_menu(ui, &r.targets.describe(), |ui| {
-                            ui.label(
-                                egui::RichText::new(
-                                    "None ticked: every wire; a wire counts when it is in every \
-                                     list ticked",
-                                )
-                                .small()
-                                .weak(),
-                            );
                             ui.label(egui::RichText::new("Wire types").strong());
                             changed |= ticks(ui, types, &mut r.targets.wire_types);
                             ui.label(egui::RichText::new("Electrical systems").strong());
@@ -630,7 +716,12 @@ impl WireTensionsWindow {
             out.case = Some(r.case.clone());
         }
         for n in &report.report.notes {
-            ui.label(egui::RichText::new(n).small().weak());
+            let text = egui::RichText::new(n).small();
+            ui.label(if n.contains("NOT ON THE SAFE SIDE") {
+                text.color(ui.visuals().warn_fg_color)
+            } else {
+                text.weak()
+            });
         }
         // Every row, sorted, filtered, grouped by the user; a row clicked
         // selects its span and draws it in the row's weather case.
@@ -762,6 +853,36 @@ mod tests {
                 .contains("[check]")
         );
     }
+    /// Every section a **user guide ↗** button opens is a heading of the
+    /// window's own page (mdBook's anchors: lower case, spaces as `-`,
+    /// punctuation dropped), the page in the book's summary.
+    #[test]
+    fn the_user_guide_buttons_open_the_pages_sections() {
+        let root = crate::tests::root();
+        let text = std::fs::read_to_string(root.join("docs").join(format!("{GUIDE}.md"))).unwrap();
+        let anchors: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for s in GUIDE_SECTIONS {
+            assert!(anchors.iter().any(|x| x == s), "{s}: {anchors:?}");
+        }
+        let summary = std::fs::read_to_string(root.join("docs/SUMMARY.md")).unwrap();
+        assert!(summary.contains(&format!("({GUIDE}.md)")), "{summary}");
+    }
+
     use eframe::egui;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;

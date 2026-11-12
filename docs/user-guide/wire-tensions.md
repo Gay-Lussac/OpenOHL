@@ -100,8 +100,9 @@ again**.
 The Setup tab, top to bottom. Every change is kept at once in the
 project's rule file of the window (`<model>.tension-rules.ohlr`) and
 marks the results *out of date*. Each section and field explains itself
-in its **(?)** or on hover; what blocks **Run** and every warning stay
-written in the window.
+in its **(?)** or on hover; what blocks **Run**, every warning (*set the
+factor*), the time a run takes and, in the results, every note — a *NOT
+ON THE SAFE SIDE* one in the warning colour — stay written in the window.
 
 ### 1 What it checks
 
@@ -111,8 +112,11 @@ guide ↗** opens this page.
 
 ### 2 Rules
 
-The rules, one row each: name, what is compared, cases, limit, wires.
-**Click a rule to edit it below**: its fields appear under the list.
+The rules, one row each, in the list all rule windows share: **Name**,
+**Target** (the tension compared), **Voltages** (`-`: not used here),
+**Weather cases**, **Distance** (here the limit, e.g. *0.2 × RTS*;
+*not set* while it is 0) and **Wires**. **Click a rule to edit it
+below**: its fields appear under the list, titled *Editing rule n: name*.
 
 - **Preset ▾**: the rules of a design-code plugin or of the project; only
   their tension rules are taken, by **Merge** (by name) or **Replace**,
@@ -154,7 +158,9 @@ narrows its wires further (its **Wires**).
   strength and wire ice on their spans, each case solved again; said in
   the notes. Its hover says the effect and the time it took last.
 - Before **Run**, one line says what a run will do: the sections and
-  spans in the scope, in how many weather cases of the rules.
+  spans in the scope, in how many weather cases of the rules, and the
+  time it should take (measured on the last run; before the first, *time
+  measured on the first run*).
 - **Run** and **Stop**: the check runs in the background; Stop keeps the
   previous results. Its time grows with the cases × the calculations of
   the rules × the sections: one solve of the line each.

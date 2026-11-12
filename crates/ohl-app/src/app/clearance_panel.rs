@@ -464,6 +464,15 @@ pub(crate) fn field_request(
 /// weather cases added, its marks drawn (the spans above their allowed
 /// tension, else the worst; at the most tensioned support) or taken off.
 pub(crate) fn wire_tensions_out(r: &mut Ready, out: crate::wire_tensions::Out) {
+    if let Some(section) = out.guide {
+        // Its own page (2026-11-12).
+        r.status = Some(
+            match crate::help::open_section(crate::wire_tensions::GUIDE, section) {
+                Ok(m) => (format!("user guide opened: {m}"), false),
+                Err(e) => (e, true),
+            },
+        );
+    }
     if let Some(target) = out.go {
         r.go_to(target.clone());
         // The span drawn in the row's weather case (2026-10-27).

@@ -124,7 +124,18 @@ optional `tension` and `catenary_constant` limits) and of the `[check]`
 table, what is and is not conservative (the default bimetallic model's
 tension above the knee point said there), the command line. The
 OHL-Design page keeps a summary and links to it; the theory, the rule
-file's section and the design-code page link to it.
+file's section and the design-code page link to it. Part 2, the
+window: the setup as the vertical's — 1 What it checks, 2 Rules, 3 Scope
+(the rules first; before, the scope came second) — each section with its
+**user guide ↗** and the Results tab with one, opening the page's
+sections (`wire_tensions::GUIDE_SECTIONS`); the grey lines under the
+scope and in the Wires menu moved into the (?) of their section or the
+field's hover; every field's hover says its effect and time; *Tension*
+named *Tension compared*, and for a catenary-constant rule shown as what
+is compared (the horizontal tension) instead of a measure the rule does
+not use. Kept visible: *set the factor*, the status and errors, what
+blocks Run, the footer's time; a result note *NOT ON THE SAFE SIDE* now
+in the warning colour.
 
 **Radial clearances to LiDAR points: said in the results** (owner: "yes
 add the line to the results"). Whenever the radial check measures to
