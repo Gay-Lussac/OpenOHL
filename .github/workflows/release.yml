@@ -133,6 +133,10 @@ jobs:
           ref: ${{ needs.draft.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # The manual is built into the folder (as the CI's docs job does).
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
       # Without the embedded Python console (it would need the user's own
       # Python of the same version): the release notes say so.
       - name: Build
@@ -154,6 +158,9 @@ jobs:
           cp LICENSE README.md "$STAGE/"
           cp -r examples libraries "$STAGE/"
           cp -r docs/user-guide docs/tutorial docs/theory docs/images "$STAGE/docs/"
+          # The manual as the applications open it (Help, the windows'
+          # user guide buttons): the book built, offline.
+          mdbook build -d "$STAGE/book"
           mkdir -p upload
           if [ "${{ runner.os }}" = "Windows" ]; then
             7z a "upload/$STAGE.zip" "$STAGE" > /dev/null

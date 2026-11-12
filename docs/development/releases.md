@@ -40,7 +40,7 @@ Time and cost: about 25 minutes for each system when nothing is cached, and Wind
 | `OpenOHL-<tag>-windows-x86_64.zip` | The same files in a folder, without an installer: unpack anywhere and start `ohl-design.exe`. |
 | `OpenOHL-<tag>-linux-x86_64.tar.gz` | The Linux build, the same folder. |
 
-Each holds `ohl-design`, `ohl-structure` and `ohl` side by side (OHL-Design starts OHL-Structure from its own folder) and, beside them, what the programs look for there: `libraries/`, `examples/`, the manual (`docs/user-guide`, `docs/tutorial`, `docs/theory`, `docs/images`), `LICENSE` and `README.md`.
+Each holds `ohl-design`, `ohl-structure` and `ohl` side by side (OHL-Design starts OHL-Structure from its own folder) and, beside them, what the programs look for there: `libraries/`, `examples/`, the manual — the built book in `book/` (owner, 2026-11-12: the guide included in the application; Help and the windows' user guide buttons open it offline; the formulas of the theory pages need a connection, their script loaded from the internet) and its Markdown sources (`docs/user-guide`, `docs/tutorial`, `docs/theory`, `docs/images`) —, `LICENSE` and `README.md`.
 
 ## The Windows installer
 

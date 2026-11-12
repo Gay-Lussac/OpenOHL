@@ -10,6 +10,15 @@ of Parts A, B and C).
 
 ## 2026-11-12
 
+**The manual inside the applications** (owner: "also the guide book
+should be included in the app"). The macOS image (`tools/package-macos.sh`)
+and the release folder (`.github/workflows/release.yml`, so the Windows
+installer and the Linux archive) carry the built book in `book/` beside
+the programs, where Help and the windows' user guide buttons already
+look first; the Markdown sources stay as the fallback. Offline, the
+theory pages' formulas show as their source (MathJax is loaded from the
+internet); bundling it is offered to the owner, not done.
+
 **Magnetic field: no "whole line"; electric field: memory as a setting,
 checked before Run; sheet layout in the background** (owner: "in the
 magnetic field parameters, I would have the 2000 m limit as default and

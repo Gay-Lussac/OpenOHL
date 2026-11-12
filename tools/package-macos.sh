@@ -22,7 +22,8 @@
 #
 # Each application holds its programs (OHL-Design also OHL-Structure and
 # ohl, so it finds them beside itself), the shipped libraries, the
-# examples, the manual and the licence. Signed ad hoc only (no Apple
+# examples, the manual (the built book, which Help and the windows' user
+# guide buttons open, and its Markdown sources) and the licence. Signed ad hoc only (no Apple
 # developer certificate): on another Mac the first start needs
 # right-click > Open, or System Settings > Privacy & Security > Open
 # anyway. Say so in the release notes.
@@ -32,8 +33,8 @@
 # build takes about 10 to 15 minutes; the folder (several GB) is removed
 # afterwards unless --keep.
 #
-# Needs only what macOS and the Rust toolchain bring: cargo, sips,
-# iconutil, codesign, hdiutil.
+# Needs what macOS and the Rust toolchain bring (cargo, sips, iconutil,
+# codesign, hdiutil) and mdBook for the manual (cargo install mdbook).
 set -euo pipefail
 
 BUILD=1
@@ -58,8 +59,12 @@ if [ "$UNIVERSAL" = 1 ] && [ "$PYTHON" = 1 ]; then
     echo "--universal with --python: not offered (it would need a Python built for both processors)" >&2
     exit 2
 fi
-for t in cargo sips iconutil codesign hdiutil; do
-    command -v "$t" > /dev/null || { echo "missing tool: $t" >&2; exit 2; }
+for t in cargo sips iconutil codesign hdiutil mdbook; do
+    command -v "$t" > /dev/null || {
+        echo "missing tool: $t" >&2
+        [ "$t" = mdbook ] && echo "  install it once: cargo install mdbook" >&2
+        exit 2
+    }
 done
 
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -115,6 +120,12 @@ for b in ohl-design ohl-structure ohl; do
     [ -x "$BIN/$b" ] || { echo "not built: $BIN/$b (run without --no-build)" >&2; exit 1; }
 done
 
+# The manual as the applications open it (Help, the windows' user guide
+# buttons): the book built, offline.
+BOOK="$STAGE/book"
+echo "building the manualâ€¦"
+mdbook build -d "$BOOK" > "$STAGE/mdbook.log" 2>&1 || { cat "$STAGE/mdbook.log" >&2; exit 1; }
+
 # Signs ad hoc, without the note that the linker's own signature is
 # replaced.
 sign() {
@@ -151,8 +162,9 @@ bundle() { # "OHL-Design" org.openohl.design ohl-design icon.svg [more programsâ
     cp -R libraries examples "$app/Contents/Resources/"
     mkdir -p "$app/Contents/Resources/docs"
     cp -R docs/user-guide docs/tutorial docs/theory docs/images "$app/Contents/Resources/docs/" 2> /dev/null || true
+    cp -R "$BOOK" "$app/Contents/Resources/book"
     cp LICENSE "$app/Contents/Resources/"
-    for d in libraries examples docs; do
+    for d in libraries examples docs book; do
         ln -s "../Resources/$d" "$app/Contents/MacOS/$d"
     done
     cat > "$app/Contents/Info.plist" << EOF

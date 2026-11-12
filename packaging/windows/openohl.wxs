@@ -12,7 +12,7 @@
     ohl-design.exe, ohl-structure.exe, ohl.exe   side by side (OHL-Design
                                                   starts OHL-Structure from
                                                   its own folder)
-    libraries\, examples\, docs\, LICENSE, …     everything else in the
+    libraries\, examples\, book\, docs\, LICENSE, …     everything else in the
                                                   staged folder, as it is
   with Start-menu shortcuts for the two applications, the file types
   .ohl (OHL-Design) and .ohls (OHL-Structure), and, if chosen, the folder
