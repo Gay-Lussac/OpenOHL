@@ -45,6 +45,7 @@ short line, then the longer text: `check_help::question_both`,
 false)`); the warnings (the jumpers' note, a band margin below 0.15 m,
 "set the distance", what blocks Run) and the solves of a windy case stay
 written. The vegetation panel and the safety volumes keep their lines.
+
 **The Magnetic and Electric field windows: a page of their own each,
 the setup reviewed as the vertical clearances' was** (owner: "can you
 also put the magnetic field and electric field too in the list").

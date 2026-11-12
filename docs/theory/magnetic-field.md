@@ -589,7 +589,7 @@ of the cut's points, how much the pieces left out change it.
 | 50 m | 144 | 23 % / 28 % | 3 ms |
 | 100 m | 264 | 7.3 % / 9.2 % | 5 ms |
 | 200 m | 444 | 1.2 % / 1.6 % | 8 ms |
-| the whole line (default) | 768 | — | 12 ms |
+| the whole line (`ohl`'s default) | 768 | — | 12 ms |
 
 The field of a long straight conductor falls off slowly (as 1/r), and a
 line's phases nearly cancel only far away: a short cut-off leaves out
@@ -684,7 +684,7 @@ How the computation is made fast, with its measured times: [Performance](../deve
 | Earth wire currents off by default | they need the earthing resistances; their sign depends on the phasing | either sign: run both when it matters |
 | Through the structures' earthing (when the earth wires are on) | the infinitely long earth wire overstates the currents on a short line by far | neither in general; the line's ends **not conservative** (no substation earthing) |
 | 10 Ω when no earthing resistance is given | a common design target, said | neither |
-| The whole line modelled by default | quality before speed; leaving wires out changes values (measured) | none; *wires within* is the user's choice, its effect said |
+| The wires within 2 000 m modelled by default in the window (the whole line in `ohl`; the window's whole-line choice removed 2026-11-12) | a long line's wires far away change the values little and cost time; the difference to the whole line is measured at each run and said | possibly **not conservative** by the measured difference; a longer distance takes more wires |
 | Only the drawing between points interpolated | speed may only coarsen the display, never computed precision | the drawing's offset from its levels measured and said |
 
 ## What is left out
