@@ -9,8 +9,8 @@
 //! the others ([`crate::export_form`]). The **route plan** and the
 //! **situation plans** (north up, over the project's drawings and
 //! orthophotos) and the **phase plan** (the structures where the phase
-//! arrangement changes), written for every route of the Profile sheets
-//! window, each plan with **its own sheet template** and its values
+//! arrangement changes), written for every route or the one chosen in
+//! the window (its own since 2026-11-13), each plan with **its own sheet template** and its values
 //! (owner, 2026-11-08: "they should all have their own template separate
 //! from the profile plan but defined in a similar way"; [`PlanSheet`],
 //! kept in the project) ([`crate::drawings::run_plans`]).
@@ -33,8 +33,22 @@ use serde::{Deserialize, Serialize};
 /// In the Profile sheets window's order.
 const FORMATS: [Format; 4] = [Format::Svg, Format::Dxf, Format::Pdf, Format::Png];
 
+/// The route plan window's own page of the user guide (owner,
+/// 2026-11-13); the other plan windows open the plans' section of the
+/// drawings page.
+pub const ROUTE_GUIDE: &str = "user-guide/route-plan";
+
 /// The papers offered.
 const PAPERS: [&str; 5] = ["A0", "A1", "A2", "A3", "A4"];
+
+/// The paper choice in words.
+fn paper_text(page: &str) -> &str {
+    if page == crate::drawings::AUTOMATIC_PAPER {
+        "Automatic"
+    } else {
+        page
+    }
+}
 
 /// A plan's own sheet template and the values of its fields (title
 /// block, revisions), as the Profile sheets window has its own.
@@ -164,8 +178,9 @@ pub struct PlansWindow {
     /// The phase plans of alignments drawn together (owner, 2026-11-03),
     /// kept in the project (`app.phase_plans.<line>`).
     pub groups: Vec<PhaseGroup>,
-    /// The Profile sheets window asked for (the route is set there).
-    pub open_sheets: bool,
+    /// Only this route (index in the line's routes), else every route
+    /// (its own since 2026-11-13; it took the Profile sheets window's).
+    pub route: Option<usize>,
     /// Its own sheet template and values (none used by the plan set
     /// window: each drawing takes its plan's).
     pub sheet: PlanSheet,
@@ -186,7 +201,12 @@ impl PlansWindow {
         Self {
             open: false,
             kind,
-            page: "A3".into(),
+            // The route plan's paper chosen per route (owner, 2026-11-13).
+            page: if kind == PlanKind::Route {
+                crate::drawings::AUTOMATIC_PAPER.into()
+            } else {
+                "A3".into()
+            },
             scale: if kind == PlanKind::Route {
                 10_000.0
             } else {
@@ -205,7 +225,7 @@ impl PlansWindow {
             one_pdf: false,
             waiting: false,
             groups: Vec::new(),
-            open_sheets: false,
+            route: None,
             sheet: PlanSheet::default(),
             others: Vec::new(),
             action: None,
@@ -247,6 +267,15 @@ impl PlansWindow {
     pub fn request(&self) -> PlanRequest {
         PlanRequest {
             kind: self.kind,
+            // Alignments drawn together: every route read (the window's
+            // one route aside).
+            route: if self.kind == PlanKind::Phase
+                && self.groups.iter().any(|g| !g.alignments.is_empty())
+            {
+                None
+            } else {
+                self.route
+            },
             page: self.page.clone(),
             scale: self.scale,
             drawings: self.drawings,
@@ -468,8 +497,9 @@ impl PlansWindow {
         v
     }
 
-    /// The window; `drawings` the Profile sheets window's settings (routes,
-    /// template, title fields, cases) the plans are made with.
+    /// The window; `drawings` the Profile sheets window's settings (title
+    /// fields, cases, folder) the plans are made with; the route is the
+    /// window's own.
     pub fn ui(
         &mut self,
         ctx: &egui::Context,
@@ -493,13 +523,23 @@ impl PlansWindow {
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &drawings.plugin_templates)
         });
         let routes = model.alignment_views();
-        let route = match drawings.route.and_then(|k| routes.get(k)) {
+        if self.route.is_some_and(|k| k >= routes.len()) {
+            self.route = None;
+        }
+        let route_text = |k: Option<usize>| match k.and_then(|k| routes.get(k)) {
             Some(r) => format!("{} {}", r.id, r.name),
             None => "every route".into(),
         };
         let title = self.title();
+        let guide = match (self.set_mode, self.kind) {
+            (false, PlanKind::Route) => (ROUTE_GUIDE, ""),
+            _ => (
+                "user-guide/drawings",
+                "plans-route-plan-situation-plans-phase-plan",
+            ),
+        };
         crate::export_form::window(ctx, title, &mut open, |ui| {
-            crate::export_form::intro(
+            let opened = crate::export_form::intro(
                 ui,
                 if self.set_mode {
                     "Several drawings in one go, as a plugin's plan set lists them: each with \
@@ -525,7 +565,11 @@ impl PlansWindow {
                         }
                     }
                 },
+                guide,
             );
+            if let Some(e) = opened {
+                self.error = Some(e);
+            }
             ui.add_space(4.0);
             crate::export_form::grid(ui, title, |ui| {
                 ui.label("Template");
@@ -547,9 +591,21 @@ impl PlansWindow {
                     });
                 }
                 ui.end_row();
-                // The route chosen in the sheets window: one way there.
-                if crate::export_form::shown_row(ui, "Route", &route, Some("Profile sheets…")) {
-                    self.open_sheets = true;
+                // Its own route (owner, 2026-11-13: no link to the sheets
+                // window; the plan set takes the Profile sheets window's).
+                if !self.set_mode {
+                    ui.label("Route");
+                    egui::ComboBox::from_id_salt((title, "route"))
+                        .selected_text(route_text(self.route))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.route, None, "every route");
+                            for k in 0..routes.len() {
+                                ui.selectable_value(&mut self.route, Some(k), route_text(Some(k)));
+                            }
+                        })
+                        .response
+                        .on_hover_text("Each route drawn is a plan of its own, in its own files");
+                    ui.end_row();
                 }
                 if self.set_mode {
                     ui.label("Plan set");
@@ -567,13 +623,30 @@ impl PlansWindow {
                     ui.end_row();
                 } else {
                     ui.label("Paper");
-                    egui::ComboBox::from_id_salt((title, "paper"))
-                        .selected_text(self.page.as_str())
+                    let paper = egui::ComboBox::from_id_salt((title, "paper"))
+                        .selected_text(paper_text(&self.page))
                         .show_ui(ui, |ui| {
+                            if self.kind == PlanKind::Route {
+                                ui.selectable_value(
+                                    &mut self.page,
+                                    crate::drawings::AUTOMATIC_PAPER.to_owned(),
+                                    "Automatic",
+                                );
+                            }
                             for p in PAPERS {
                                 ui.selectable_value(&mut self.page, p.to_owned(), p);
                             }
-                        });
+                        })
+                        .response;
+                    if self.kind == PlanKind::Route {
+                        paper.on_hover_text(
+                            "Automatic: for each route the smallest paper, A4 to A0, landscape or \
+                             portrait, that holds the whole route on one sheet at the scale; when \
+                             not even A0 does, A0 the way that needs the fewest sheets. The result \
+                             says which paper each route took. Choosing it takes no time worth \
+                             measuring (the sheets are counted, not drawn)",
+                        );
+                    }
                     ui.end_row();
                 }
                 if !self.set_mode && self.kind != PlanKind::Phase {
@@ -770,13 +843,6 @@ impl PlansWindow {
                 }
                 Some(out) => {
                     let mut w = drawings.clone();
-                    // Alignments drawn together: every route read (the
-                    // Profile sheets window's one route aside).
-                    if self.kind == PlanKind::Phase
-                        && self.groups.iter().any(|g| !g.alignments.is_empty())
-                    {
-                        w.route = None;
-                    }
                     w.formats = self.formats.clone();
                     // Its own template and values.
                     w.sheet.template = self.sheet.template.clone();

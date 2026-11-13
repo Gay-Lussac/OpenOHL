@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>A route plan sheet: the whole route north up over the project's drawings, the corridor, the axis, the wires, the structures numbered, a north arrow, a scale bar, a legend and the title block</title>
+  <rect width="1000" height="520" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">A route plan sheet</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. The whole route north up at a small scale, in the template's frame and title block.</text>
+
+  <!-- paper and frame -->
+  <rect x="30" y="70" width="640" height="430" fill="#fff" stroke="#333" stroke-width="1.5"/>
+  <rect x="45" y="85" width="610" height="400" fill="none" stroke="#333"/>
+  <!-- drawing area: background drawings (e.g. municipal boundaries) -->
+  <path d="M60,150 C150,120 230,200 300,170 S420,110 500,160 S620,210 650,190" fill="none" stroke="#8c8c8c" stroke-width="1" stroke-dasharray="8,3,2,3"/>
+  <path d="M120,470 C170,380 260,350 330,300 S400,230 470,240" fill="none" stroke="#8c8c8c" stroke-width="1" stroke-dasharray="8,3,2,3"/>
+  <text x="70" y="140" fill="#8c8c8c" font-size="11">municipal boundary (project drawing)</text>
+  <!-- corridor -->
+  <path d="M95,412 L215,342 L355,317 L475,232 L585,182" fill="none" stroke="#22aa77" stroke-width="1"/>
+  <path d="M105,428 L223,360 L363,335 L487,250 L597,200" fill="none" stroke="#22aa77" stroke-width="1"/>
+  <!-- axis and wire -->
+  <path d="M100,420 L219,351 L359,326 L481,241 L591,191" fill="none" stroke="#000" stroke-width="1.5"/>
+  <path d="M100,420 L219,351 L359,326 L481,241 L591,191" fill="none" stroke="#c0392b" stroke-width="1" stroke-dasharray="1,0" transform="translate(2,-2)"/>
+  <!-- structures -->
+  <g fill="#fff" stroke="#000">
+    <rect x="96" y="416" width="8" height="8"/>
+    <rect x="156" y="381" width="8" height="8"/>
+    <rect x="215" y="347" width="8" height="8"/>
+    <rect x="285" y="334" width="8" height="8"/>
+    <rect x="355" y="322" width="8" height="8"/>
+    <rect x="416" y="279" width="8" height="8"/>
+    <rect x="477" y="237" width="8" height="8"/>
+    <rect x="533" y="212" width="8" height="8"/>
+    <rect x="587" y="187" width="8" height="8"/>
+  </g>
+  <g font-size="11" font-weight="bold">
+    <text x="108" y="440">T1</text><text x="168" y="404">T2</text><text x="227" y="370">T3</text>
+    <text x="297" y="356">T4</text><text x="367" y="344">T5</text><text x="428" y="302">T6</text>
+    <text x="489" y="260">T7</text><text x="545" y="234">T8</text><text x="599" y="210">T9</text>
+  </g>
+  <!-- north arrow -->
+  <path d="M620,140 L630,105 L640,140 L630,132 z" fill="#333"/>
+  <text x="625" y="100" font-weight="bold">N</text>
+  <!-- scale bar -->
+  <rect x="60" y="460" width="40" height="6" fill="#333"/>
+  <rect x="100" y="460" width="40" height="6" fill="#fff" stroke="#333"/>
+  <text x="60" y="456" font-size="11">0</text><text x="135" y="456" font-size="11">1 km</text>
+  <text x="150" y="467" font-size="11">1:10 000</text>
+  <!-- legend -->
+  <rect x="470" y="300" width="175" height="80" fill="#fff" stroke="#999"/>
+  <text x="478" y="317" font-size="11" font-weight="bold">Legend</text>
+  <line x1="478" y1="332" x2="500" y2="332" stroke="#000" stroke-width="1.5"/><text x="506" y="336" font-size="11">axis</text>
+  <line x1="478" y1="348" x2="500" y2="348" stroke="#22aa77"/><text x="506" y="352" font-size="11">corridor ±</text>
+  <line x1="478" y1="364" x2="500" y2="364" stroke="#8c8c8c" stroke-dasharray="8,3,2,3"/><text x="506" y="368" font-size="11">project drawing</text>
+  <!-- title block -->
+  <rect x="470" y="395" width="185" height="90" fill="#f4f4f4" stroke="#333"/>
+  <text x="480" y="415" font-size="11" font-weight="bold">Route plan — the example line</text>
+  <text x="480" y="433" font-size="11">route main, sheet 1/1</text>
+  <text x="480" y="451" font-size="11">T1–T9, scale 1:10 000</text>
+  <text x="480" y="469" font-size="11">title block of the template</text>
+
+  <!-- notes -->
+  <g fill="#333">
+    <text x="690" y="95" font-weight="bold">What the sheet holds</text>
+    <text x="690" y="120">• north up, at the scale chosen</text>
+    <text x="690" y="142">• the project's drawings under it</text>
+    <text x="690" y="164">• the orthophotos under a white veil</text>
+    <text x="690" y="186">• the corridor's two edges (green)</text>
+    <text x="690" y="208">• the line's axis (black)</text>
+    <text x="690" y="230">• the wires (each in its colour)</text>
+    <text x="690" y="252">• every structure: a square and its</text>
+    <text x="702" y="270">number</text>
+    <text x="690" y="292">• north arrow, scale bar, legend</text>
+    <text x="690" y="314">• the template's frame, title block,</text>
+    <text x="702" y="332">revisions and notes</text>
+    <text x="690" y="370" fill="#555" font-size="12">A route too long for one sheet</text>
+    <text x="690" y="386" fill="#555" font-size="12">continues on the next sheet, the</text>
+    <text x="690" y="402" fill="#555" font-size="12">sheets overlapping (see the steps).</text>
+  </g>
+</svg>

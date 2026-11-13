@@ -1524,6 +1524,10 @@ impl Input {
     }
 }
 
+/// The Profile sheets window's own page of the user guide (owner,
+/// 2026-11-13).
+pub const SHEETS_GUIDE: &str = "user-guide/profile-sheets";
+
 /// Which of the other plans (Plans & sheets › Route plan…, Situation plans…, Phase plan…; owner, 2026-10-24).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanKind {
@@ -1552,7 +1556,10 @@ impl PlanKind {
 pub struct PlanRequest {
     /// Which plan.
     pub kind: PlanKind,
-    /// Its paper (a standard size).
+    /// Only this route (index in the line's routes), else every route.
+    pub route: Option<usize>,
+    /// Its paper (a standard size), or [`AUTOMATIC_PAPER`] (the route
+    /// plan: the smallest that holds each route on one sheet).
     pub page: String,
     /// Its scale (1:…; the route and situation plans).
     pub scale: f64,
@@ -1567,6 +1574,12 @@ pub struct PlanRequest {
     /// plan"); an alignment in none its own plan, as before.
     pub groups: Vec<PhaseGroup>,
 }
+
+/// The route plan's paper chosen per route ([`ohl_drawing::plans::map_paper`]:
+/// the smallest A size, landscape or portrait, that holds the route on one
+/// sheet at the plan's scale; else A0 with the fewest sheets; owner,
+/// 2026-11-13).
+pub const AUTOMATIC_PAPER: &str = "automatic";
 
 /// Alignments drawn in one phase plan.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
@@ -1607,6 +1620,7 @@ impl Input {
         // (These plans draw no profile: no side lines, no still-air case
         // to wait for.)
         let mut w = w.clone();
+        w.route = req.route;
         w.sheet.profile_lines = Some(ohl_drawing::ProfileLines::Corridor.key().into());
         let mut input = Self::prepare(model, case, &w, out, !phase)?;
         if req.kind != PlanKind::Phase {
@@ -1650,8 +1664,16 @@ fn run_plans_kept(
     let started = std::time::Instant::now();
     let budget =
         ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(30 * 60));
-    let page = ohl_drawing::page_format(&req.page)
-        .ok_or_else(|| format!("paper \"{}\": not a size", req.page))?;
+    // The automatic paper is the route plan's only; any other plan given
+    // it (a plan set) takes A3, as before it existed.
+    let automatic = req.page == AUTOMATIC_PAPER;
+    let page = if automatic {
+        ohl_drawing::page_format("A3").ok_or("paper A3: not a size")?
+    } else {
+        ohl_drawing::page_format(&req.page)
+            .ok_or_else(|| format!("paper \"{}\": not a size", req.page))?
+    };
+    let mut notes = Vec::new();
     let options = input.route_options();
     let (mut files, mut warnings) = (0, Vec::new());
     // The phase plans of alignments drawn together first; the others
@@ -1746,6 +1768,30 @@ fn run_plans_kept(
                     photo: req.photo.then_some(0.4),
                     ..MapPlan::new(kind, req.corridor.then_some(options.plan_half_width))
                 };
+                let chosen = (automatic && req.kind == PlanKind::Route)
+                    .then(|| ohl_drawing::plans::map_paper(&d, &options, &plan))
+                    .flatten();
+                let page = match chosen {
+                    Some((p, n)) => {
+                        notes.push(if n == 1 {
+                            format!(
+                                "route {}: paper {}, the smallest that holds it on one sheet at 1:{}",
+                                route.id,
+                                p.name,
+                                ohl_drawing::template::format_number(req.scale, "")
+                            )
+                        } else {
+                            format!(
+                                "route {}: no paper up to A0 holds it on one sheet at 1:{}: {}, {n} sheets",
+                                route.id,
+                                ohl_drawing::template::format_number(req.scale, ""),
+                                p.name
+                            )
+                        });
+                        p
+                    }
+                    None => page.clone(),
+                };
                 (map_plan(&d, &options, &page, &plan), kind.file_name())
             }
         };
@@ -1777,6 +1823,10 @@ fn run_plans_kept(
         input.out.display(),
         started.elapsed()
     );
+    for n in notes {
+        text.push('\n');
+        text.push_str(&n);
+    }
     for w in warnings {
         text.push_str("\n⚠ ");
         text.push_str(&w);
@@ -1910,6 +1960,7 @@ pub fn plan_set_inputs(
                 };
                 let req = PlanRequest {
                     kind,
+                    route: ww.route,
                     page: d.page.clone().unwrap_or_else(|| "A3".into()),
                     scale: d.scale.unwrap_or(match kind {
                         PlanKind::Route => 10_000.0,
@@ -2229,12 +2280,15 @@ impl DrawingsWindow {
         let template =
             crate::sheet_ui::resolve_kept(model, &self.sheet.template, &self.plugin_templates);
         crate::export_form::window(ctx, "Profile sheets", open, |ui| {
-            crate::export_form::intro(
+            if let Some(e) = crate::export_form::intro(
                 ui,
                 "The routes' profile sheets and profile exports. The route plan, \
-                 situation plans and phase plan take this window's routes and weather \
-                 cases, each with its own template.",
-            );
+                 situation plans and phase plan take this window's weather cases, each \
+                 with its own template and route.",
+                (SHEETS_GUIDE, ""),
+            ) {
+                self.error = Some(e);
+            }
             crate::export_form::grid(ui, "drawings-grid", |ui| {
                 ui.label("Template");
                 ui.vertical(|ui| {

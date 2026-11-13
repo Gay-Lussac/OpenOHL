@@ -52,10 +52,24 @@ pub fn window<R>(
 /// The windows' width, points.
 pub const WIDTH: f32 = 540.0;
 
-/// What the window makes, a small line at its top.
-pub fn intro(ui: &mut egui::Ui, text: &str) {
+/// What the window makes, a small line at its top, and **How it works:
+/// user guide ↗** opening its page of the manual (`guide`, e.g.
+/// `user-guide/route-plan`, at `anchor`; owner, 2026-11-13: an
+/// explanation page as for the checks). Why the page did not open, when
+/// clicked and it did not.
+pub fn intro(ui: &mut egui::Ui, text: &str, guide: (&str, &str)) -> Option<String> {
     ui.label(egui::RichText::new(text).small().weak());
+    let mut error = None;
+    if ui
+        .small_button("How it works: user guide ↗")
+        .on_hover_text("What each setting does and how the drawing is made")
+        .clicked()
+        && let Err(e) = crate::help::open_section(guide.0, guide.1)
+    {
+        error = Some(e);
+    }
     ui.add_space(4.0);
+    error
 }
 
 /// The settings grid, its rows two columns: a name, its value.
@@ -65,24 +79,6 @@ pub fn grid<R>(ui: &mut egui::Ui, id: &str, rows: impl FnOnce(&mut egui::Ui) -> 
         .spacing([12.0, 6.0])
         .show(ui, rows)
         .inner
-}
-
-/// A row that only says something (a value taken from elsewhere): its
-/// name, the text and, when given, a button that leads to where it is set.
-pub fn shown_row(ui: &mut egui::Ui, name: &str, text: &str, go: Option<&str>) -> bool {
-    ui.label(name);
-    let mut clicked = false;
-    ui.horizontal_wrapped(|ui| {
-        ui.label(text);
-        if let Some(g) = go {
-            clicked = ui
-                .small_button(g)
-                .on_hover_text("Set there; this window takes it")
-                .clicked();
-        }
-    });
-    ui.end_row();
-    clicked
 }
 
 /// The Formats row: a tick for each of `offered`, in a row, each with what

@@ -763,7 +763,6 @@ pub(super) fn tool_windows(
     r.plans.set.others = r.plans.sheets();
     let plugins = r.drawings.settings().plugin_templates.clone();
     let start = r.drawings.settings().sheet.template.clone();
-    let mut sheets = false;
     for w in r.plans.all() {
         w.keep(&mut r.model, ctx, &start);
         if let Some(a) = w.action.take()
@@ -777,10 +776,6 @@ pub(super) fn tool_windows(
             r.model.want(wanted, ctx);
         }
         w.ui(ctx, &r.model, r.case, r.drawings.settings());
-        sheets |= std::mem::take(&mut w.open_sheets);
-    }
-    if sheets {
-        r.drawings.open();
     }
     measuring_frame(ctx, r);
     if let Some((path, text)) = r.case_groups.ui(ctx, &r.model)

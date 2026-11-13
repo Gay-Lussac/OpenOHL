@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>How the route plan places its sheets: the route is walked from its start, each sheet takes as much of it as fits in 90 % of its drawing area, the next sheet starts a tenth of that stretch back, every sheet north up</title>
+  <defs>
+    <marker id="g" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#555"/></marker>
+  </defs>
+  <rect width="1000" height="470" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">The route plan's sheets along the route</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. The route walked from its start; each sheet north up, at the plan's scale.</text>
+
+  <!-- sheets (drawing areas) -->
+  <rect x="40" y="200" width="300" height="200" fill="#2e86c1" fill-opacity="0.06" stroke="#2e86c1" stroke-dasharray="6,4"/>
+  <rect x="300" y="110" width="300" height="200" fill="#e67e22" fill-opacity="0.06" stroke="#e67e22" stroke-dasharray="6,4"/>
+  <rect x="560" y="80" width="300" height="200" fill="#27ae60" fill-opacity="0.06" stroke="#27ae60" stroke-dasharray="6,4"/>
+  <text x="50" y="220" fill="#2e86c1" font-weight="bold">sheet 1</text>
+  <text x="530" y="300" fill="#e67e22" font-weight="bold">sheet 2</text>
+  <text x="790" y="100" fill="#27ae60" font-weight="bold">sheet 3</text>
+  <!-- inner 90 % of sheet 1 -->
+  <rect x="55" y="210" width="270" height="180" fill="none" stroke="#2e86c1" stroke-width="0.8" stroke-dasharray="2,3"/>
+  <text x="60" y="385" fill="#2e86c1" font-size="11">90 % of the drawing area</text>
+
+  <!-- route -->
+  <path d="M70,370 L140,330 L210,300 L280,270 L320,240 L370,215 L430,190 L500,160 L560,150 L620,140 L690,120 L760,130 L830,110" fill="none" stroke="#000" stroke-width="2"/>
+  <g fill="#fff" stroke="#000">
+    <rect x="66" y="366" width="8" height="8"/><rect x="206" y="296" width="8" height="8"/>
+    <rect x="316" y="236" width="8" height="8"/><rect x="426" y="186" width="8" height="8"/>
+    <rect x="556" y="146" width="8" height="8"/><rect x="686" y="116" width="8" height="8"/>
+    <rect x="826" y="106" width="8" height="8"/>
+  </g>
+  <!-- overlap marker -->
+  <path d="M300,250 L340,250" stroke="#555" marker-start="url(#g)" marker-end="url(#g)"/>
+  <text x="250" y="190" fill="#555" font-size="12">overlap: the next sheet</text>
+  <text x="250" y="205" fill="#555" font-size="12">starts a tenth back</text>
+  <!-- walking arrow -->
+  <path d="M90,420 L860,420" stroke="#555" marker-end="url(#g)"/>
+  <text x="380" y="440" fill="#555" font-size="12">the route walked from its start to its end</text>
+
+  <!-- north -->
+  <path d="M930,140 L940,100 L950,140 L940,131 z" fill="#333"/>
+  <text x="935" y="94" font-weight="bold">N</text>
+  <text x="900" y="165" fill="#555" font-size="12">every sheet</text>
+  <text x="900" y="180" fill="#555" font-size="12">north up,</text>
+  <text x="900" y="195" fill="#555" font-size="12">never turned</text>
+  <text x="900" y="210" fill="#555" font-size="12">to the route</text>
+</svg>

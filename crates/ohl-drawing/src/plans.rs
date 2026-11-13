@@ -1057,6 +1057,57 @@ fn map_frames(line: &[[f64; 2]], w: f64, h: f64, overlap: f64) -> Vec<[f64; 2]> 
     out
 }
 
+/// How many sheets the map plan `m` of route `d` takes on `page`, without
+/// drawing them (the frames [`map_plan`] places).
+pub fn map_sheet_count(d: &RouteDrawing, o: &Options, page: &Page, m: &MapPlan) -> usize {
+    if d.centreline.len() < 2 {
+        return 0;
+    }
+    let k = 1000.0 / m.scale;
+    let scale_text = format!("1:{}", crate::template::format_number(m.scale, ""));
+    let (_, room, _, _) = framed_page(
+        d,
+        o,
+        page,
+        (1, 1),
+        (0.0, d.length),
+        (String::new(), String::new()),
+        (&scale_text, m.kind.label_key()),
+    );
+    let (w, h) = (room[2] / k, room[3] / k);
+    let line = densified(&d.centreline, w.min(h) / 8.0);
+    map_frames(&line, w, h, m.overlap.clamp(0.0, 0.5)).len()
+}
+
+/// The papers the automatic choice tries, smallest first.
+pub const AUTOMATIC_PAPERS: [&str; 5] = ["A4", "A3", "A2", "A1", "A0"];
+
+/// The paper for the map plan `m` of route `d` (the automatic choice):
+/// the smallest of [`AUTOMATIC_PAPERS`], landscape or portrait (landscape
+/// first), that holds the whole route on one sheet at the plan's scale;
+/// when not even A0 does, the A0 orientation with the fewest sheets.
+/// Returns the paper and its number of sheets; none for a route without
+/// a centreline (no sheet on any paper).
+pub fn map_paper(d: &RouteDrawing, o: &Options, m: &MapPlan) -> Option<(Page, usize)> {
+    if d.centreline.len() < 2 {
+        return None;
+    }
+    let mut best: Option<(Page, usize)> = None;
+    for name in AUTOMATIC_PAPERS {
+        let landscape = crate::page_format(name)?;
+        for page in [landscape.clone(), landscape.portrait()] {
+            let n = map_sheet_count(d, o, &page, m);
+            if n == 1 {
+                return Some((page, 1));
+            }
+            if name == "A0" && best.as_ref().is_none_or(|(_, b)| n < *b) {
+                best = Some((page, n));
+            }
+        }
+    }
+    best
+}
+
 /// The route or situation plan of route `d` on pages of `page`: north
 /// up at `m.scale`, the sheets along the route (overlapping), each with
 /// the project's drawings and orthophotos as asked, the corridor, the
@@ -1431,6 +1482,49 @@ mod tests {
         assert!(axis.1 > axis.0, "{axis:?}");
         assert!(edges.0 <= axis.0 + on_paper, "{edges:?} {axis:?}");
         assert!(edges.1 >= axis.1 - on_paper, "{edges:?} {axis:?}");
+    }
+
+    /// The automatic paper (owner, 2026-11-13: "an optimal selection of
+    /// paper" for the route plan): the counted sheets are the drawn ones;
+    /// the paper chosen holds the route on one sheet and no smaller paper
+    /// does; at a scale where not even A0 holds it, A0 with the fewest
+    /// sheets.
+    #[test]
+    fn the_automatic_paper_is_the_smallest_on_one_sheet() {
+        let d = main_route(&Options::default());
+        let o = Options::default();
+        let m = MapPlan::new(MapKind::Route, Some(50.0));
+        for name in AUTOMATIC_PAPERS {
+            let page = crate::page_format(name).unwrap();
+            assert_eq!(
+                map_sheet_count(&d, &o, &page, &m),
+                map_plan(&d, &o, &page, &m).len(),
+                "{name}"
+            );
+        }
+        let (page, n) = map_paper(&d, &o, &m).unwrap();
+        assert_eq!(n, 1, "{}", page.name);
+        assert_eq!(map_plan(&d, &o, &page, &m).len(), 1);
+        let chosen = AUTOMATIC_PAPERS
+            .iter()
+            .position(|p| page.name.starts_with(p))
+            .unwrap();
+        for smaller in &AUTOMATIC_PAPERS[..chosen] {
+            let l = crate::page_format(smaller).unwrap();
+            for p in [l.clone(), l.portrait()] {
+                assert!(map_sheet_count(&d, &o, &p, &m) > 1, "{}", p.name);
+            }
+        }
+        // At 1:500 (below the route plan's range, only to make it long)
+        // not even A0 holds it: A0, the fewer sheets of its two ways.
+        let big = MapPlan { scale: 500.0, ..m };
+        let (page, n) = map_paper(&d, &o, &big).unwrap();
+        assert!(page.name.starts_with("A0"), "{}", page.name);
+        assert!(n > 1);
+        let a0 = crate::page_format("A0").unwrap();
+        let fewest =
+            map_sheet_count(&d, &o, &a0, &big).min(map_sheet_count(&d, &o, &a0.portrait(), &big));
+        assert_eq!(n, fewest);
     }
 
     #[test]

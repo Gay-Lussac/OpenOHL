@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>The optimised paper of the profile sheets: every ticked size in each allowed orientation laid out as the export would, at the scales set, and ranked by warnings, then empty paper, then paper used, then number of sheets, then the largest sheet</title>
+  <rect width="1000" height="400" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Paper: optimised from the ticked sizes</text>
+  <text x="20" y="50" fill="#555">Schematic; the candidates and their counts are an illustration, not a computed result.</text>
+
+  <!-- candidate rows -->
+  <g font-size="12">
+    <text x="30" y="85" font-weight="bold">candidate</text>
+    <text x="250" y="85" font-weight="bold">the route laid out on it</text>
+    <text x="640" y="85" font-weight="bold">ranked by</text>
+
+    <text x="30" y="125">A3 landscape</text>
+    <g fill="#fff" stroke="#999"><rect x="250" y="105" width="60" height="40"/><rect x="315" y="105" width="60" height="40"/><rect x="380" y="105" width="60" height="40"/><rect x="445" y="105" width="60" height="40"/><rect x="510" y="105" width="60" height="40"/></g>
+    <rect x="445" y="105" width="60" height="40" fill="#e67e22" fill-opacity="0.25" stroke="#e67e22"/>
+    <text x="640" y="125" fill="#c0392b">1 warning (a datum step on sheet 4)</text>
+
+    <text x="30" y="185">A3 portrait</text>
+    <g fill="#fff" stroke="#999"><rect x="250" y="160" width="40" height="55"/><rect x="295" y="160" width="40" height="55"/><rect x="340" y="160" width="40" height="55"/><rect x="385" y="160" width="40" height="55"/><rect x="430" y="160" width="40" height="55"/><rect x="475" y="160" width="40" height="55"/><rect x="520" y="160" width="40" height="55"/></g>
+    <text x="640" y="185">no warning, more empty paper</text>
+
+    <text x="30" y="250" font-weight="bold" fill="#1e8449">A2 landscape</text>
+    <g fill="#27ae60" fill-opacity="0.08" stroke="#27ae60" stroke-width="2"><rect x="250" y="228" width="85" height="58"/><rect x="340" y="228" width="85" height="58"/><rect x="430" y="228" width="85" height="58"/></g>
+    <text x="640" y="250" fill="#1e8449" font-weight="bold">no warning, least empty paper: kept</text>
+
+    <text x="30" y="320">A1 landscape</text>
+    <g fill="#fff" stroke="#999"><rect x="250" y="300" width="120" height="80"/><rect x="375" y="300" width="120" height="80"/></g>
+    <rect x="375" y="300" width="120" height="80" fill="#ddd" fill-opacity="0.6" stroke="#999"/>
+    <text x="400" y="345" font-size="11" fill="#555">mostly empty</text>
+    <text x="640" y="320">no warning, much empty paper</text>
+  </g>
+
+  <g fill="#333" font-size="12">
+    <text x="640" y="355">order: 1 fewest warnings, 2 least empty</text>
+    <text x="640" y="371">paper, 3 least paper, 4 fewest sheets,</text>
+    <text x="640" y="387">5 smallest largest sheet. Scales never change.</text>
+  </g>
+</svg>

@@ -16,6 +16,30 @@ since there is only one and with the same name. if we need more we'll
 redesign this later"). The submenu held one item of the same name and a
 short description; the entry opens the window directly and its tooltip
 carries the description. Nothing else changes.
+**Route plan: the paper chosen automatically, its own route, no link to
+the sheets; a user guide page for it and for the profile sheets**
+(owner: "in the route plan i would also like to have an optimal selection
+of paper for the plan and i don't understand why there is a link to the
+sheets in this window. please remove it. also for both the route plan and
+the sheets, add a explanation page as for the checks").
+
+- **Paper › Automatic**, the route plan's default: for each route the
+  smallest of A4, A3, A2, A1, A0, landscape tried before portrait, that
+  holds the whole route on one sheet at the plan's scale; when not even
+  A0 does, A0 the way with the fewest sheets
+  (`ohl_drawing::plans::map_paper`; the sheets are counted, not drawn, so
+  the choice costs no time worth measuring). The result says, per route,
+  the paper taken. The fixed papers stay offered. The command line keeps
+  its `--page` (not automatic).
+- **Route**: each plan window (route, situation, phase) has its own route
+  choice, every route by default; the **Profile sheets…** link button,
+  there because the plans took the Profile sheets window's route, is
+  removed. A phase plan with alignments drawn together reads every route,
+  as before. The plan set still takes the Profile sheets window's route.
+- **User guide pages** [Route plan](../user-guide/route-plan.md) and
+  [Profile sheets](../user-guide/profile-sheets.md), opened by the
+  windows' **How it works: user guide ↗**; the situation and phase plan
+  and plan set windows open the plans' section of the drawings page.
 
 ## 2026-11-12
 

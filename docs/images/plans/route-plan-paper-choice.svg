@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>The automatic paper of the route plan: A4, A3, A2, A1, A0 tried in turn, landscape before portrait; the first that holds the whole route on one sheet at the scale is taken</title>
+  <rect width="1000" height="400" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">Paper: Automatic</text>
+  <text x="20" y="50" fill="#555">Schematic. The same route at the same scale laid on each paper in turn; the sheets are counted, not drawn.</text>
+
+  <!-- A4 landscape: 297x210 * 0.42 = 125x88 -->
+  <g transform="translate(30,90)">
+    <rect width="125" height="88" fill="#fff" stroke="#999"/>
+    <path d="M10,80 L60,50 L110,40 L160,20 L190,5" fill="none" stroke="#000" stroke-width="2"/>
+    <text y="110" font-weight="bold">A4 landscape</text>
+    <text y="128" fill="#c0392b">2 sheets: no</text>
+  </g>
+  <g transform="translate(240,90)">
+    <rect width="88" height="125" fill="#fff" stroke="#999"/>
+    <path d="M10,100 L60,70 L110,60 L160,40 L190,25" fill="none" stroke="#000" stroke-width="2"/>
+    <text y="147" font-weight="bold">A4 portrait</text>
+    <text y="165" fill="#c0392b">3 sheets: no</text>
+  </g>
+  <!-- A3 landscape: 420x297*0.42 = 176x125 -->
+  <g transform="translate(450,90)">
+    <rect width="176" height="125" fill="#fff" stroke="#999"/>
+    <path d="M10,100 L60,70 L110,60 L160,40 L190,25" fill="none" stroke="#000" stroke-width="2"/>
+    <text y="147" font-weight="bold">A3 landscape</text>
+    <text y="165" fill="#c0392b">2 sheets: no</text>
+  </g>
+  <!-- A3 portrait -->
+  <g transform="translate(450,250)">
+    <text y="0" fill="#555" font-size="12">then A3 portrait: 2 sheets: no</text>
+  </g>
+  <!-- A2 landscape: 594x420*0.42 = 249x176 -->
+  <g transform="translate(700,90)">
+    <rect width="249" height="176" fill="#27ae60" fill-opacity="0.08" stroke="#27ae60" stroke-width="2"/>
+    <path d="M30,140 L80,110 L130,100 L180,80 L210,65" fill="none" stroke="#000" stroke-width="2"/>
+    <text y="198" font-weight="bold" fill="#1e8449">A2 landscape</text>
+    <text y="216" fill="#1e8449">1 sheet: taken</text>
+  </g>
+
+  <text x="30" y="320" fill="#333">Tried in this order: A4, A3, A2, A1, A0; each size landscape first, then portrait.</text>
+  <text x="30" y="342" fill="#333">The first that holds the whole route on one sheet is taken. When not even A0 does: A0 the way</text>
+  <text x="30" y="364" fill="#333">(landscape or portrait) that needs the fewest sheets. The export's result names the paper of each route.</text>
+</svg>

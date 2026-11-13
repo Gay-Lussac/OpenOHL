@@ -453,6 +453,9 @@ A simple, open format for the same numbers (version 1):
 
 ## In the desktop app
 
+The window step by step, every setting in its order with its default and
+its effect: [Profile sheets](profile-sheets.md).
+
 **Plans & sheets › Profile sheets…** opens a window: the **sheet template**
 (Built-in, Project, Library or a plugin's; **Load file…** keeps a
 `.ohlsheet` in the project, **Save as file…** writes the one chosen),
@@ -553,13 +556,17 @@ the export writes one continuous drawing.
 
 ## Plans: route plan, situation plans, phase plan
 
+The route plan's window step by step, with its automatic paper:
+[Route plan](route-plan.md).
+
 Beside the profile sheets (2026-10-24, the owner's request,
 roadmap O14; built, in active development (not approved yet)), three
 plans, each with its own menu item and **its own window** (2026-11-08):
 **Plans & sheets › Route plan…**, **Situation plans…** and **Phase
 plan…**, and **Plan set…** for a plugin's set of drawings. Each is
-written for every route with the routes and cases of Plans & sheets ›
-Profile sheets…, on the paper chosen, in PDF, SVG, PNG or DXF, with **its
+written for every route or the one chosen in its own **Route**
+(2026-11-13), with the weather cases of Plans & sheets › Profile
+sheets…, on the paper chosen, in PDF, SVG, PNG or DXF, with **its
 own sheet template** and its values (2026-11-08: apart from the profile
 sheets' and from each other's, chosen the same way — the template list,
 **Load file…**, **Save as file…**, and **Values of the template** for
@@ -574,9 +581,11 @@ takes from the template.
 Every plan window is laid out as the Profile sheets window, and as wide:
 a line saying what it makes, then the same rows in the same order —
 **Template** (its own; the plan set: each drawing its plan's) and
-**Route** (here only shown: set in Profile sheets, the button **Profile
-sheets…** opens it), **Paper** (the plan set: **Plan
-set**), **Scale**, the plan's own rows (**Under it**: the project's
+**Route** (each plan window its own since 2026-11-13: every route or
+one, each route a plan of its own in its own files; the plan set takes
+the Profile sheets window's), **Paper** (the plan set: **Plan
+set**; the route plan's default **Automatic**: per route the smallest
+paper that holds it on one sheet, see [Route plan](route-plan.md#3-the-automatic-paper)), **Scale**, the plan's own rows (**Under it**: the project's
 drawings, orthophotos, the corridor) and **Formats** — then its own
 sections (the plan set's drawings, the phase plan's alignments drawn
 together) and, last (since 2026-11-11, in the Profile sheets window

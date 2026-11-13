@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>A profile sheet: the plan straightened along the route above the profile, both at the horizontal scale and lined up; the profile at the vertical scale with the ground, the clearance line, the structures and the wires; the band rows under it; match lines at the sheet's ends; the template's legend, key map and title block</title>
+  <rect width="1000" height="560" fill="#fff"/>
+  <text x="20" y="30" font-size="18" font-weight="bold">A profile sheet</text>
+  <text x="20" y="50" fill="#555">Schematic, not to scale. The template places the panels (here the plan above the profile, its default).</text>
+
+  <!-- paper / frame -->
+  <rect x="30" y="65" width="700" height="480" fill="#fff" stroke="#333" stroke-width="1.5"/>
+  <rect x="42" y="77" width="676" height="456" fill="none" stroke="#333"/>
+
+  <!-- plan panel -->
+  <rect x="80" y="90" width="520" height="110" fill="#fafafa" stroke="#999"/>
+  <text x="86" y="106" font-size="11" fill="#555">plan, straightened along the route</text>
+  <line x1="80" y1="145" x2="600" y2="145" stroke="#000" stroke-width="1.5"/>
+  <line x1="80" y1="115" x2="600" y2="115" stroke="#22aa77"/>
+  <line x1="80" y1="175" x2="600" y2="175" stroke="#22aa77"/>
+  <text x="520" y="111" font-size="11" fill="#22aa77">corridor ±</text>
+  <line x1="80" y1="141" x2="600" y2="141" stroke="#c0392b"/>
+  <line x1="80" y1="149" x2="600" y2="149" stroke="#2e86c1"/>
+  <g fill="#fff" stroke="#000"><rect x="76" y="141" width="8" height="8"/><rect x="236" y="141" width="8" height="8"/><rect x="406" y="141" width="8" height="8"/><rect x="596" y="141" width="8" height="8"/></g>
+  <!-- elevation (optional) -->
+  <line x1="240" y1="141" x2="240" y2="125" stroke="#777" stroke-dasharray="2,2"/>
+  <path d="M234,125 L240,98 L246,125 M228,108 L252,108" fill="none" stroke="#555"/>
+  <text x="256" y="104" font-size="11" fill="#555">elevation (optional)</text>
+
+  <!-- profile panel -->
+  <rect x="80" y="210" width="520" height="210" fill="#fff" stroke="#999"/>
+  <text x="86" y="226" font-size="11" fill="#555">profile (heights at the vertical scale)</text>
+  <!-- grid -->
+  <g stroke="#e3e3e3"><line x1="80" y1="260" x2="600" y2="260"/><line x1="80" y1="310" x2="600" y2="310"/><line x1="80" y1="360" x2="600" y2="360"/></g>
+  <g font-size="11" fill="#777"><text x="52" y="264">520</text><text x="52" y="314">510</text><text x="52" y="364">500</text></g>
+  <!-- ground -->
+  <path d="M80,395 C140,385 180,400 240,390 S330,370 410,380 S520,400 600,385" fill="none" stroke="#7b5a2b" stroke-width="1.5"/>
+  <!-- clearance line -->
+  <path d="M80,355 C140,345 180,360 240,350 S330,330 410,340 S520,360 600,345" fill="none" stroke="#b9770e" stroke-dasharray="6,3"/>
+  <text x="440" y="337" font-size="11" fill="#b9770e">clearance line</text>
+  <!-- structures -->
+  <g stroke="#000" stroke-width="2"><line x1="80" y1="395" x2="80" y2="245"/><line x1="240" y1="390" x2="240" y2="240"/><line x1="410" y1="380" x2="410" y2="238"/><line x1="600" y1="385" x2="600" y2="242"/></g>
+  <g font-size="11" font-weight="bold"><text x="84" y="240">T4</text><text x="244" y="235">T5</text><text x="414" y="233">T6</text><text x="604" y="237">T7</text></g>
+  <!-- wires -->
+  <path d="M80,250 Q160,300 240,245 Q325,300 410,243 Q505,305 600,247" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+  <path d="M80,250 Q160,320 240,245 Q325,320 410,243 Q505,325 600,247" fill="none" stroke="#c0392b" stroke-dasharray="4,3"/>
+  <text x="300" y="316" font-size="11" fill="#c0392b">another case (dashed)</text>
+
+  <!-- band rows -->
+  <rect x="80" y="425" width="520" height="22" fill="#fff" stroke="#999"/>
+  <rect x="80" y="447" width="520" height="22" fill="#fff" stroke="#999"/>
+  <text x="86" y="440" font-size="11">stations  1+240 … 1+760</text>
+  <text x="86" y="462" font-size="11">spans, heights … (the template's band rows)</text>
+
+  <!-- match lines -->
+  <g stroke="#555" stroke-dasharray="8,4" stroke-width="1.2"><line x1="80" y1="88" x2="80" y2="472"/><line x1="600" y1="88" x2="600" y2="472"/></g>
+  <text x="60" y="490" font-size="11" fill="#555">match line</text>
+  <text x="560" y="490" font-size="11" fill="#555">match line</text>
+
+  <!-- legend, key map, title block -->
+  <rect x="612" y="90" width="98" height="110" fill="#fff" stroke="#999"/>
+  <text x="618" y="106" font-size="11" font-weight="bold">Legend</text>
+  <rect x="612" y="210" width="98" height="90" fill="#fff" stroke="#999"/>
+  <text x="618" y="226" font-size="11" font-weight="bold">Key map</text>
+  <path d="M620,285 L650,260 L680,265 L700,240" fill="none" stroke="#000"/>
+  <rect x="645" y="255" width="25" height="18" fill="none" stroke="#c0392b"/>
+  <rect x="612" y="430" width="98" height="95" fill="#f4f4f4" stroke="#333"/>
+  <text x="618" y="448" font-size="11" font-weight="bold">Title block</text>
+  <text x="618" y="466" font-size="11">sheet 2/5</text>
+  <text x="618" y="482" font-size="11">T4–T7</text>
+  <text x="618" y="498" font-size="11">1:2000 / 1:200</text>
+
+  <!-- notes -->
+  <g fill="#333">
+    <text x="750" y="100" font-weight="bold">On every sheet</text>
+    <text x="750" y="124">• the plan above, the profile</text>
+    <text x="762" y="141">below, lined up station by</text>
+    <text x="762" y="158">station (horizontal scale)</text>
+    <text x="750" y="182">• heights at the vertical</text>
+    <text x="762" y="199">scale, never changed</text>
+    <text x="750" y="223">• the case drawn solid, other</text>
+    <text x="762" y="240">cases dashed (when ticked)</text>
+    <text x="750" y="264">• the band rows under the</text>
+    <text x="762" y="281">profile</text>
+    <text x="750" y="305">• the sheet ends at a</text>
+    <text x="762" y="322">structure (match line); the</text>
+    <text x="762" y="339">structure drawn whole on</text>
+    <text x="762" y="356">both sheets</text>
+    <text x="750" y="380">• legend, key map, revisions,</text>
+    <text x="762" y="397">title block: the template's</text>
+  </g>
+</svg>

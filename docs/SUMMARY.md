@@ -49,6 +49,8 @@
   - [Distance between conductors](user-guide/distance-between-conductors.md)
 - [Sagging outputs](user-guide/sagging.md)
 - [Drawings and profile exports](user-guide/drawings.md)
+  - [Profile sheets](user-guide/profile-sheets.md)
+  - [Route plan](user-guide/route-plan.md)
   - [Sheet templates (.ohlsheet)](user-guide/sheet-templates.md)
 - [Coordinate systems](user-guide/coordinates.md)
 - [Import and export](user-guide/import-export.md)

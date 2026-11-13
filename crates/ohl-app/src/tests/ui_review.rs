@@ -462,21 +462,31 @@ fn the_plan_windows_look_alike() {
         h.state_mut().ready().unwrap().plans.of(kind).open = false;
         h.run_steps(2);
     }
-    // Each keeps its own paper.
+    // Each keeps its own paper and route; the route plan's paper is
+    // chosen automatically by default (owner, 2026-11-13).
     {
         let r = h.state_mut().ready().unwrap();
+        assert_eq!(r.plans.route.page, crate::drawings::AUTOMATIC_PAPER);
         r.plans.route.page = "A1".into();
         assert_eq!(r.plans.situation.page, "A3");
+        r.plans.route.route = Some(0);
+        assert_eq!(r.plans.situation.route, None);
+        assert_eq!(r.plans.route.request().route, Some(0));
     }
-    // The route row leads to the Profile sheets window.
+    // No link to the Profile sheets window (owner, 2026-11-13): the plan's
+    // own route choice instead.
     h.state_mut().ready().unwrap().plans.situation.show();
     h.run_steps(6);
-    h.get_all_by_label("Profile sheets…")
-        .next()
-        .unwrap()
-        .click();
-    h.run_steps(2);
+    assert!(h.query_by_label("Profile sheets…").is_none());
+    assert!(
+        h.query_all_by_value("every route").next().is_some()
+            || h.query_all_by_label_contains("every route")
+                .next()
+                .is_some(),
+        "the window's own route choice"
+    );
     h.state_mut().ready().unwrap().plans.situation.open = false;
+    h.state_mut().ready().unwrap().drawings.open();
     // A window opened is sized first, drawn after.
     h.run_steps(6);
     for row in shared {
