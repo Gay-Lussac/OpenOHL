@@ -32,9 +32,9 @@ Guiding principles:
 - **Multi-user from day one**: every edit is a command applied by a session.
 
 **Contents**
-- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): O1, O3, O13–O16, O18, O22–O26; U7, U8, U10, U11; Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): O4–O8, O10, O12, O19–O21; U1, U2, U4–U6; structure analysis, structures in their own axes, structure–line interaction
-- [Part C — Shared](#part-c--shared): O2, O9, O11, O17; Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
+- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): open O3, O13–O15, O18, O22–O26; U7, U8, U11 (done: O1, O16, U10, U12); Phases 1–5 for the line
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): open O4, O7, O8, O10, O12, O19–O21; U1, U2, U4–U6 (done: O5, O6); structure analysis, structures in their own axes, structure–line interaction
+- [Part C — Shared](#part-c--shared): open O9, O11, O17 (done: O2); Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
 each bullet becomes one or more issues labelled by module (`module:*`).
@@ -43,32 +43,17 @@ each bullet becomes one or more issues labelled by module (`module:*`).
 
 # Part A — OHL-Design (the line)
 
-**Next up** (2026-10-25): the broken-wire case (O9), local winds per
-span (O15), the sheave model for sections in the blocks and the lyre
-pylons' risers are built (in active development, not approved yet);
-next background maps in the project (O16). Still open: O13's dynamic method (the simplified one is built,
-2026-11-02), the
-jumpers' swing band margin (left to the owner, Phase 4) and the items
-not built in the record below (`[ ]`).
-
-**Next up** (2026-11-07): background maps (O16) are built since
-2026-10-25. Built since 2026-11-04, all in active development (not
-approved yet): the thermal rating at a current and the conductor surface
-gradient in 2D cuts (O18 item 7); the vertical and radial clearances
-counted step by step with Stop at once and a faster corridor test
-(2026-11-04), the radial ground clearance kept within the reach
-(2026-11-06); the distance between conductors at 0.1 m stations by
-default and the unequal wind results without lag, saved reports opening
-again (2026-11-04); falling trees stopping at the ground, with a switch
-to let the trunk turn on through it, off by default (2026-11-05); the
-wire solver's relaxation without a clock of its own (2026-11-06); the
-sheet templates explained with drawings in the user guide, the corridor
-on the route and situation plans and the revision order fixed, plan
-headings that say what the plan is and the scale bars' box fitted to its
-bars (O14, 2026-11-07); the electric and magnetic field windows sharing
-their setup (2026-11-07). No next item has been named by the owner since.
-Still open: O13's dynamic method, the jumpers' swing band margin (left
-to the owner, Phase 4) and the items not built (`[ ]`).
+**Next up** (2026-11-14): the owner's "to work on next" of 2026-11-10,
+O22 to O26 — what is left of each is listed under it. Built since
+2026-11-07, all in active development (not approved yet): most of O22
+(cable mechanics), O23 (fields' inputs), O24 item 1 and O25 item 1
+(2026-11-11); every check window with a user guide page of its own, the
+grey lines in its help and the swing arc on by default (2026-11-12); the
+field windows in three pages (2026-11-12); one window per plan with its
+own sheet template (2026-11-08) and the route plan's paper chosen
+automatically (O14, 2026-11-13). Still open beyond O22–O26: O13's
+dynamic method, the jumpers' swing band margin (left to the owner,
+Phase 4) and the items not built in the record below (`[ ]`).
 
 ## Where it stands
 
@@ -79,33 +64,10 @@ are in [Part C](#part-c--shared).
 
 ## Open points — waiting on a decision
 
-### O1. Tutorial "Start from scratch"
-A tutorial of about 10 short chapters on the starter template: route,
-alignment, first basic structures, strings on the structures, the wire type
-file and stringing, jumpers; then results, checks, OHL-Structure, saving.
-Proposed to start once the starter template has landed.
-> **Owner:** Later: the tutorial comes once most features are done, just
-> before a release. Other work goes first.
-
-**Status (2026-10-25):** built at the owner's request, in active
-development (not approved yet): eleven chapters in `docs/tutorial/`
-(Help › Start from scratch), each chapter's steps run by a test
-(`crates/ohl-app/src/tests/tutorial.rs`); chapter 9 on the loads for the
-structures.
-
-*Built (in active development, not approved yet), 2026-10-25, at the
-owner's request: [Start from scratch — your first
-line](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/tutorial/index.md),
-eleven short chapters (0–10) on the starter template — the ground, the
-route and alignment, six structures, their strings, three phases strung
-in two sections, the jumpers, the results, the checks, saving; Help ›
-Start from scratch opens it in both applications. Chapter 9
-(OHL-Structure) is a placeholder until the new structure load cases
-land. An end-to-end test does its steps through the UI
-(`crates/ohl-app/src/tests/tutorial.rs`).*
-
 ### O3. Usability review — items not yet decided
-From the review of 2026-10-18 (quick wins are being done now):
+From the review of 2026-10-18. Done since and taken out of this list:
+tools acting on left-click (since 2026-10-26 always, a right-click opening
+the object's menu) and the searchable coordinate-system picker (Phase 2).
 - **One name per object** across both apps and the docs (string /
   insulator / attachment point / structure point …), with a glossary.
   *Built (in active development, not approved yet): the terms agreed on
@@ -148,20 +110,6 @@ From the review of 2026-10-18 (quick wins are being done now):
   alignment or from one structure to another (preview, undo).
   *Open (owner, 2026-10-27: stays on the roadmap; needs a robust way to
   know which set goes where, see 3. below).*
-- **Tools act on left-click** — *done: since the UI review of 2026-10-26
-  a left-click acts with the tool held (Select held: it selects) and a
-  right-click opens the object's menu, in every view (the option of
-  2026-10-19 is no longer needed).* Before: *Built (in active development,
-  not approved yet): a tick in the Tools menu and Help › Controls; on, a
-  left-click uses the tool held (Select held: it selects) and a
-  right-click selects, in the 3D, plan and profile views; drags unchanged
-  (mapping table in the user guide's Controls).*
-- **A searchable coordinate-system picker** (EPSG list). *Built (in
-  active development, not approved yet): search by code, name, area or
-  unit; rows show code, name, unit and the area of use where the
-  registry's definition gives it; only systems the projection library can
-  compute (geocentric ones left out); in Define, Calculator, Reproject,
-  new project and Import LAS/LAZ.*
 > **Owner:** (2026-10-19)
 > 1. 3D and Plan: leave as is, the layout is fine.
 > 2. One name per object: yes, same object same name everywhere; unify.
@@ -233,6 +181,15 @@ lost the last piece of the centreline, and the revision table drew the
 oldest revision at the top. `{heading}` on the route, situation and
 phase plans now says what the plan is (no longer "plan and profile"),
 and the scale bars' box in the bottom row grows with its bars.
+*Status (2026-11-14), built, in active development (not approved yet):*
+one window per plan, each with its own sheet template (2026-11-08); a
+plan's own name, name and folder last (2026-11-11); the route plan's
+paper chosen automatically — the smallest of A4 to A0 that holds the
+route on one sheet, else A0 with the fewest sheets — and a route of its
+own, with user guide pages for the route plan and the profile sheets
+(2026-11-13). Still to come: links to public map services (also for the
+background maps, O16 done), the corridor's protection zones and land use
+as their own layers, portrait for the papers chosen by hand.
 Proposed (to discuss):
 
 1. **Route plan and situation plans** — the plan alone, the line drawn
@@ -319,22 +276,6 @@ its own, editing on the profile.
 > **Owner:** (2026-10-24) Be able to have local winds, given per span.
 > **Owner:** (2026-10-25) A factor on the case's wind, for every weather
 > case with wind.
-
-### O16. Background maps imported into the project
-The drawings and orthophotos already show on the plan, the sheets'
-plans and the key map. Still to come: background maps imported into
-the project (one or many), each shown on the plan view only or switched
-on the other views and the sheets (the key map, the plan); later, links
-to public map services.
-> **Owner:** (2026-10-23) Asked, with the key map's backgrounds.
-> **Owner:** (2026-10-25) A map loaded into the project is fine; shown on
-> the plan, the sheets and the plans (not draped in 3D).
-
-**Built 2026-10-25, in active development (not approved yet):** an image
-layer is an orthophoto or a map (Terrain › Backgrounds › Import
-orthophotos or maps…, the kind turned in the menu); the route and
-situation plans and the key map take the maps first. Later: links to
-public map services.
 
 ### O18. Electrical module: line parameters, load flow, fields and noise
 Electrical calculations from the line as it is modelled, so the designer
@@ -860,6 +801,18 @@ From a review on 2026-11-10 of what a sheet can hold.
 6. **DXF beyond R12**: line weights, true colours, embedded logos.
 > **Owner:** (2026-11-10) To work on next.
 
+### Done and taken out of this list
+Built, in active development (not approved yet); the details are in the
+user guide, the theory and the [decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md).
+- **O1. Tutorial "Start from scratch"** (2026-10-25): eleven chapters in
+  `docs/tutorial/`, Help › Start from scratch in both applications, each
+  chapter's steps run by a test (`crates/ohl-app/src/tests/tutorial.rs`).
+- **O16. Background maps imported into the project** (2026-10-25): an
+  image layer is an orthophoto or a map (Terrain › Backgrounds › Import
+  orthophotos or maps…), shown on the plan, the sheets and the plans,
+  the maps first on the route and situation plans and the key map; links
+  to public map services stay with O14.
+
 ## Unfinished or approximate (known limitations)
 
 - **U7. Structure screen in OHL-Design**: drag handles for points in the
@@ -900,22 +853,10 @@ From a review on 2026-11-10 of what a sheet can hold.
   answer (the full solve's, or the better converged one).
   > **Owner:** (2026-10-24) Unless it can be fixed fast, keep it as it is,
   > but say it in the docs (done: the jumpers' theory, After an edit).
-- **U10. Named TIN layers in the thermal limit** (2026-10-23; built
-  2026-10-23, in active development, not approved yet): clearance rules
-  may name a terrain surface of their own (the clearance windows, the
-  Clearances page, `ohl zones`, `ohl line --rules`), and the thermal
-  limit (Analysis › Thermal limit, `ohl thermal clearance-limit
-  FILE.ohl`) now reads them too; a name the project does not hold stops
-  the search with an error.
-- **U12. Old names still read** (code review 2026-10-26) — **done:
-  removed 2026-10-26 (owner)**, before the first release: the `ols`,
-  `ols-cad` and `ols-structure` programs, `import ols` (Python),
-  `ols-plugin.toml` manifests, the `ols` extensions and format ids (and
-  OLS XML's), `ols://` invitations, `OLS_BUILD_ID`, `OLS_STRUCTURE_APP`
-  and the other `OLS_…` variables are no longer built or read. The
-  on-disk and protocol names kept on purpose (`ols_meta`, ALPN `ols/2`,
-  the storage ids `OLS CAD` / `OLS Structure` and the window storage keys
-  `ols-structure-…`) were not part of it and stay.
+- *Done and taken out:* U10, named terrain surfaces in the thermal limit
+  (2026-10-23); U12, the old `ols` names no longer read (2026-10-26; the
+  on-disk and protocol names `ols_meta`, ALPN `ols/2` and the storage ids
+  stay on purpose).
 
 ## Proposed stages (to discuss)
 
@@ -992,7 +933,7 @@ From a review on 2026-11-10 of what a sheet can hold.
 - [x] Tools as a Minecraft-style hotbar (1–9, wheel when captured) with an inventory (E, drag and drop), remembered
 - [x] No tool in two menus (2026-10-20, built, in active development): tools live in the Tools menu and the inventory, by theme; the Structures menu keeps libraries, tables, display options, Spot structures and Angles around structures. Structures › Add structure… and Place on alignment points… removed: the Add structure tool on an alignment point does both (its window's **Also on other points of this alignment**: the other points ticked, a row's own type, base on the ground or at the point's height, one command); New structure from a template… moved to the Tools menu's Structures group (a command, also on the quick bar)
 - [x] 3D navigation: fly with W A S D, Space/Shift up/down, Ctrl faster; control schemes as data (Orbit; Minecraft creative with captured mouse, crosshair selection, Escape to free) — more schemes and editing later
-- [x] Option "Tools act on left-click" (Tools menu, Help › Controls; remembered): a left-click uses the tool held, a right-click selects, in the 3D (both schemes), plan and profile views; drags unchanged; off by default
+- [x] Tools act on left-click (an option from 2026-10-19, always so since 2026-10-26): a left-click uses the tool held (Select held: it selects), a right-click opens the object's menu, in the 3D (every scheme), plan and profile views; drags unchanged
 - [ ] Command palette, keyboard workflows, explainable results (click value → inputs & references)
 - [x] Editing through the session in the app: move (drag or typed position) and delete structures (confirmation listing what goes with them), undo/redo, incremental re-solve of every case
 - [x] Structures and strings in the app: Add structure (on the ground, type from the library), Add string, Edit (structure, string in the structure's axes, override of a type's string) and Delete (structures, strings, sections, jumpers) tools, one session command each *(spotting by hand on the profile still open; automatic spotting: Phase 5)*
@@ -1088,21 +1029,14 @@ From a review on 2026-11-10 of what a sheet can hold.
 stage than OHL-Design: built as a base, in active development (not
 approved yet), with the open points and limitations below.
 
-**Next up:** O4, code checks of members (SIA 263 for steel first,
-members before joints): waits for the owner's agreement on the plugin
-interface and for the standard's values from the owner (none typed from
-memory).
-
-**Next up** (2026-11-07): the statement above is out of date. SIA
-263:2013 is built in the core as a member capacity method beside ASCE
-10-97 (2026-11-03, from the standard the owner gave; in active
-development, not approved yet); the plugin interface for code checks
-(O4) is not built. The joint details (O19) took most of the work from
-2026-11-02 to 2026-11-05. No next item has been named by the owner
-since. Open: O19's buckling lengths from what braces a member, end
-releases and bolt slip, the joints' own checks beyond the plates and
-covers, weight and quantities, and the validation; O20's B3 to B5; the
-hotbar's drawing and the check footer into the shared UI crate (Part C).
+**Next up** (2026-11-14): O4's next step, moving ASCE 10-97 and SIA
+263:2013 out of the core into plugins behind the code-check interface
+built on 2026-11-11 (the owner's order of 2026-11-11: the interface
+first, then the codes). Open besides: O19's buckling lengths from what
+braces a member, end releases and bolt slip, the joints' own checks
+beyond the plates and covers, weight and quantities, and the validation;
+O20's B3 to B5; O21 (equipment); the hotbar's drawing and the check
+footer into the shared UI crate (Part C).
 
 ## Where it stands
 
@@ -1143,15 +1077,6 @@ All built, in active development (not approved yet):
 - **One UI crate** shared with OHL-Design, `crates/ohl-ui` (2026-11-07,
   Part C).
 
-### Just finished (2026-10-25)
-- **Load cases of two parts** in the Load case editor (a window of its
-  own): the line's forces with their factors and a tick per attachment
-  point, the loads on the structure itself (self weight, wind on the body
-  in eight directions, ice, point loads), a sentence saying what each
-  case does, Mirror wind.
-- **Materials typed** in the cross-section library (U5); the **volumes on
-  the strings** drawn in the 3D view.
-
 ## Open points — waiting on a decision
 
 ### O4. Code checks of members and joints (e.g. SIA 263)
@@ -1171,18 +1096,11 @@ forces, buckling lengths, sections, joint details), what comes back
 > code: SIA 263 for steel. Members first, then joints. The theory of the
 > checks goes in a theory page of the book.
 
-**Status (2026-11-07):** the member capacities are in the core, not
-through a plugin: ASCE 10-97 the default (2026-10-27) and SIA 263:2013
-as a second method (`[analysis] capacity = "sia263-2013"`, 2026-11-03,
-owner) — buckling curves, section classes and effective widths, single
-angles bolted by one leg, frames, tension, bolts and their minimum
-distances, with every step and its clause in the
-[theory page](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md);
-built, in active development (not approved yet). The joints' plates and
-fillet welds are checked by the structure's capacity method (O19). The
-plugin interface for code checks (what the core hands over, what comes
-back) is not built; whether it is still wanted beside the core methods
-is for the owner.
+Until the move, the member capacities are in the core: ASCE 10-97 the
+default (2026-10-27) and SIA 263:2013 as a second method (`[analysis]
+capacity = "sia263-2013"`, 2026-11-03, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md));
+the joints' plates and fillet welds checked by the structure's capacity
+method (O19).
 
 ### O19. Joint details of towers: show and define them
 A tool in OHL-Structure to see and define, at each joint of a tower:
@@ -1306,95 +1224,14 @@ questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/do
 - [ ] B3 — shown: each angle drawn, the joints see the plies
   *(status 2026-11-07: since 2026-11-05 OHL-Structure's 3D view and the
   joint close-up draw a built-up member by its built-up outline (O19,
-  the profiles as placed); the joint details taking a built-up member's
-  plies and filler plates: not built)*
+  the profiles as placed); since 2026-11-10 each part drawn and the
+  member view for every section, since 2026-11-11 braces seated and cut
+  against built-up legs of angles; the joint details taking a built-up
+  member's plies and filler plates: not built)*
 - [ ] B4 — the rules for built-up members
 - [ ] B5 — joints of built-up members
 > **Owner:** (2026-11-02) "plan the double star and 4 corners to be
 > shown or at least calculable". "Go with A" (B1 first).
-
-### O5. Tension-only parts that stay nearly free
-Today: kept active and flagged *approximate* (see U1). Options when this is
-treated: a very low compression stiffness instead of tension-only (your
-idea), a damped or energy-based active-set update, and telling the user
-which part is nearly free.
-> **Owner:** (2026-10-19) What matters: it always solves, close to
-> reality. In reality such a member takes a very light compression. Also
-> consider treating tension-only members as cables. The complex
-> active-set update can go on the list for later.
-> Decided: a tension-only member carries compression up to its own buckling
-> load (always solves; members at that load shown in the results). Not as
-> sagging cables. The complex active-set update: later.
-
-### O6. Clearances to the structure body (levels 2 and 3)
-None at level 1. The tests for levels 2 and 3 are still to be defined with
-you (what is checked, against which part of the body, in which cases).
-> **Owner:** (2026-10-19)
-> 1. What is checked: the conductors, and **basic volumes on the strings**:
->    spheres, cylinders, boxes and cones, each **grounded**, **insulated**
->    or **electrified**; distances are computed from these as well as from
->    the conductors. Each shape is placed along the string's length, with
->    its rotations (degrees of freedom) **free or blocked** to mimic real
->    strings; the freedoms are along the string's own axis, so they do not
->    depend on how the string is defined in the pylon. For double or triple
->    strings: the attachment point of each, the configuration and the
->    spacing.
-> 2. Against every member of the body.
-> 3. Cases as for the other clearances: weather cases chosen, wind stepped.
-> 4. Distances rule based; a rule may give a different distance with wind
->    than in still air.
-
-**Proposed details for O6 (to confirm):**
-- **The shapes belong to the string type** (the insulator library), so
-  every string of that type has them; a structure may override one.
-- **Position along the string** from its top (fraction or metres), size,
-  and an offset from the string's axis (an arcing horn beside it).
-- **Electrical state:** *grounded* = at the structure's potential (top
-  fittings, tower-side horn); *electrified* = at the line's potential
-  (clamp, conductor-side horn, corona ring, yoke at the bottom);
-  *insulated* = the insulator itself (its length counts as insulation, not
-  as a clearance). Checked: electrified shapes and conductors against
-  grounded shapes and every body member.
-- **Freedoms** in the string's own axes: swing across the line, swing
-  along it, twist about the axis; each free or blocked.
-- **Several strings in one assembly** (double, triple): number,
-  arrangement (side by side across the line, one behind the other along
-  it, triangle), spacing, and the yoke plate as a shape.
-- **The members' real size:** distance to the member's surface (from its
-  section's outer dimensions), not to its centre line.
-- **Jumpers** at tension structures checked against the body too.
-- **Results:** the smallest distance per rule and case, which shape and
-  which member, shown in the 3D view; levels 2 and 3 only (level 1 has no
-  body).
-> Details confirmed by the owner (2026-10-19).
-
-**Status (2026-10-25):** first part in active development — Checks ›
-Internal clearances… and `ohl internal`: the conductors near each
-structure (within a reach along the span), its jumpers and its strings'
-live ends (their wire points, as points) as solved, against every member
-of its body (levels 2 and 3), to the member's surface where its solid is
-known, else its centre line (said: on the unsafe side); rules
-`[[internal_rule]]` (distance fixed or by voltage, plugin presets), the
-cases' structure and section overrides.
-
-**Second part built (2026-10-25), in active development, not approved
-yet: the volumes on the strings.** Shapes on the insulator assembly
-(`.ohli` 4: sphere, cylinder, box, cone; grounded, electrified,
-insulated; position, size, offset), a line's string overriding one by
-name (line file 8); freedoms (swing across, swing along, twist: free or
-blocked — the shapes' orientation; their positions follow the solved
-string); several strings in one assembly (number, arrangement, spacing, a
-shared yoke). The check: electrified shapes and conductors (jumpers,
-string ends) against the grounded shapes and every member, exact on the
-convex solids (GJK, a lower bound: conservative); a rule's `shapes` and
-`distance_wind` (another distance with wind). Structures › String shapes
-and the String library's columns edit them; Structures › Display
-options › Volumes on the strings (3D) draws them. Theory:
-[Internal clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md). OHL-Structure draws
-them too (View › Volumes on the strings: in still air, placed by
-`ohl-structure-link` as the line places them; owner, 2026-10-25). A
-structure type's own strings carry shape overrides too (`.ohls` 7,
-`[[string.shape]]`).
 
 ### O7. Structure–line interaction, levels 3 and 4
 Level 3: a stiffness matrix at each structure's suspension points from
@@ -1455,6 +1292,22 @@ structure carrying equipment is checked without it — on the unsafe side,
 to be said by whoever models it.
 > **Owner:** (2026-11-10) Agreed in principle; kept on the roadmap for
 > now, not built yet.
+
+### Done and taken out of this list
+Built, in active development (not approved yet).
+- **O5. Tension-only parts that stay nearly free** (decided 2026-10-19):
+  a tension-only member carries compression up to its own buckling load,
+  so it always solves (U1); the energy-based active-set update stays for
+  later (U1, Structure analysis — known limitations).
+- **O6. Clearances to the structure body** (2026-10-25, owner's details
+  of 2026-10-19): Checks › Internal clearances… and `ohl internal` — the
+  conductors, jumpers and strings' live ends against every member, to the
+  member's surface; the volumes on the strings (sphere, cylinder, box,
+  cone; grounded, electrified, insulated; freedoms; several strings in
+  one assembly), exact on the convex solids; rules `[[internal_rule]]`,
+  by voltage or by the system's insulation level (2026-11-11), another
+  distance with wind; a user guide page of its own (2026-11-12);
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/internal-clearances.md).
 
 *In Part A:* O3 item 2 (one name per object; attachment points linked
 to joints, the Link tool and rigid links, in both applications). *In
@@ -1551,8 +1404,8 @@ and 3 members drawn with the line).
 
 ## Proposed stages (to discuss)
 
-3. **Structures checked** — the code-check interface (O4) and a first code;
-   clearances to the body (O6); OHL-Structure's open points (U4–U6).
+3. **Structures checked** — the codes moved into plugins behind the
+   code-check interface (O4); OHL-Structure's open points (U4–U6).
 4. **Line and structures together** — interaction levels 3 and 4 (O7).
 
 ## Detailed record
@@ -1590,7 +1443,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported *(since 2026-10-25 a load case of two parts — the line's forces, unfactored and a windy case from both sides, with their factors and a tick per point; the loads on the structure itself: self weight, wind on the body in eight directions, ice, point loads — in the Load case editor; the older form still read; [spec](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/structure-load-cases-spec.md))*
 - [x] **Cross-section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads; sections typed in OHL-Structure (Sections & materials › Cross-section library: the library's shapes, properties computed as typed, what is wrong said, each change an undo step in order with the structure's edits; members pick them); wind factors for structures as data (`[wind]`: drag per shape, a lattice face's drag and shielding by solidity ratio and spacing) from a design-code plugin's optional `structure-wind` (WIT `code-wind-plugin`, interface 0.3 unchanged for older plugins; the code plugins' stubs give none) or typed, with the faces, solidity ratios and shielding computed from the geometry (`docs/theory/structure-wind.md`, validation cases structwind-001/002). Since 2026-10-25: materials typed in the editor, and the load cases' wind on the body takes the member wind with these factors. Later: the codes' factors in their plugins (O9))*
 - [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for steel-detailing programs, SAF 2.2 (xlsx) for analysis programs, CSV tables; checked with free tools (IfcOpenShell validation with the schema's rules, geometry and content; SAF sheets, columns and references; `tools/check_structure_exports.py`, test run when `OHL_IFC_PYTHON` is set) and sample files in `examples/exports/`; a tension-only member that bends is exported as a frame with its tension-only behaviour and `check = false` as information (IFC property set, the analysis member's description, SAF layer, CSV columns) *(not yet: the imports tried in another program; other tower programs)*
-- [ ] Code checks of members and joints as plugins (e.g. SIA 263), interface agreed with the project owner first
+- [ ] Code checks of members and joints as plugins (e.g. SIA 263) *(2026-11-11, built, in active development (not approved yet): the interface — `member-check`, `joint-check`, `bolt-distances` — with an example plugin; not yet: ASCE 10-97 and SIA 263:2013 moved out of the core into plugins, O4)*
 - [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the structure, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike *(base: OHL-Structure, with poles in Body › Pole and Design › Pole, sections and materials typed; still to come: checks per level, the use in the line)*
 
 ### Structure–line interaction — levels of computation
@@ -1620,12 +1473,34 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- **236 validation cases pass** (count of 2026-11-07, `ohl validate
-  benchmarks`; the last added: `electrical-066…073`, the conductor
-  surface gradient, 2026-11-04) and there are 27 theory pages. The
-  count of 2026-10-22 and how it grew to it: 177 validation cases pass (47 textbook and CIGRE TB 324 cases added
-  2026-10-20; 3 on the weight of a heated span, 5 on the swing band and safety volumes, 3 on the band margin and the jumpers' bands, and 3 on the data sheet's weight temperature and the ice per stretched metre 2026-10-21; 2 on attachment points: an offset's moment and a member split at a point, 2026-10-21; 1 on the jumpers' own band margin and 1 on the ice and wind per unstretched metre, 2026-10-21; 2026-10-22: 2 on the curves' range, 5 on tension criteria on the non-linear model, 3 on the sagging outputs, then the 9 Drake-like cross-check cases removed and 5 on both final states and the signed set on an invented cable, 2 more on the curves' range added); the private Swiss plugin and the importers of
-  another program's files live outside the public code.
+- **255 validation cases pass** (count of 2026-11-13, `ohl validate
+  benchmarks`; the last added with O22, 2026-11-11: `tbbim-003`,
+  `finstr-001…004`, `saglim-001…002`, `hotcreep-001…003`,
+  `ptforce-001…002`, `tbgap-001…003`) and there are 27 theory pages; the
+  private Swiss plugin and the importers of another program's files live
+  outside the public code.
+
+### Just finished (2026-11-14)
+All built, in active development (not approved yet):
+- **Check windows** (2026-11-12): each with a user guide page of its own
+  opened by its user guide buttons, the help beside each field (the grey
+  lines behind a (?)), units in the labels, what is not on the safe side
+  said; the swing arc on by default in the clearance, vegetation and
+  safety volume checks; the field windows in three pages (3D volumes, 2D
+  profiles, 2D cuts); plugins' help pages of their own.
+- **The built manual inside the applications** (2026-11-12): Help and
+  the user guide buttons open it offline.
+- **A CAD navigation scheme** and a red snap dot where a click would
+  pick, in both applications (2026-11-12).
+- **Version management** (2026-11-10): one window for every merge,
+  library files merged entry by entry, keep both offered.
+- **Packaging** (2026-11-11): a draft release workflow with the Windows
+  installer, the macOS disk image built locally.
+- **Safe side** (2026-11-08 to 11-09): checks not done are said, never
+  passed; clauses not covered named; clearance distances growing with the
+  altitude.
+- In Part A: O22–O26 in part, the plans (O14). In Part B: level 4 and the
+  joints in the calculation, the code-check plugin interface (O4).
 
 ### Just finished (2026-11-07)
 All built, in active development (not approved yet):
@@ -1657,32 +1532,13 @@ All built, in active development (not approved yet):
   #34 (stable plugin SDK and registry) and #35 (theory manual and
   validation report) still open (Phase 6).
 
-### Just finished (2026-10-25)
-- **The tutorial** (O1), **structure load cases** of two parts (line
-  forces with their factors, the loads on the structure itself; the line
-  sends weather cases unfactored, a windy case from both sides),
-  **clearances to the structure body** with the **volumes on the
-  strings** (O6), **measuring tools and notes**, **plan sets** in one go
-  and as one PDF (O14), **another program's project imported into an
-  existing one**, **weather case groups** per structure and section,
-  plugin presets edited in the project, materials typed (U5), the theory
-  pages illustrated, background maps (O16), the broken-wire case (O9) and
-  local winds per span (O15).
-
-**Just built** (in active development, not approved yet): the sheave
-model for sections in the blocks (the default; equal H an option) and
-the lyre pylons' risers (a jumper given by its tension).
-
 > **Owner:**
 
 ## Open points — waiting on a decision
 
-### O2. Rename the project folder on disk (done)
-`…/Claude/OLS CAD` → `…/Claude/OpenOHL`, as the last step when nothing is
-running and the apps are closed (the agents' worktrees and the saved
-session notes follow the path).
-> **Owner:** Done 2026-10-18 (folder, repository and website renamed;
-> formats, crates, plugins and local data renamed ols → ohl).
+*Done and taken out:* O2, the project folder renamed on disk (2026-10-18;
+folder, repository and website renamed, formats, crates, plugins and
+local data ols → ohl).
 
 ### O9. Design-code loads still to come
 Security / broken-wire and construction loads, and code-specific wind on
@@ -1829,7 +1685,7 @@ owner.
   plugin points`. Still open: 1.0 itself, and how long the host loads the
   previous major version from then.*
 - [ ] Plugin registry / index — GitHub issue #34
-- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-07: 27 theory pages and 236 validation cases, a report from `ohl validate --report`; not complete)*
+- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases, a report from `ohl validate --report`; not complete)*
 - [ ] Translations (i18n)
 - [ ] Public release, governance model, maintainers team
 
