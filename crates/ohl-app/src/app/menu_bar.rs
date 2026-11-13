@@ -785,29 +785,21 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
     // 2026-11-12: "move the internal clearances out of the wire
     // clearances. It should be another line with ground clearances and
     // wire clearances"; it sat at the end of Wire clearances since
-    // 2026-10-27).
-    ui.menu_button("Internal clearances", |ui| {
-        ui.label(
-            egui::RichText::new(
-                "From the wires to the structures: at each structure with a body, by rules \
-                     typed in the window and kept in the project",
-            )
-            .small()
-            .weak(),
-        );
-        if ui
-            .button("Internal clearances…")
-            .on_hover_text(
-                "At each structure with a body (detail 2 or 3): the conductors near it, its \
-                     jumpers and its strings' live ends against its members, by rules, per \
-                     weather case; results in the window",
-            )
-            .clicked()
-        {
-            r.internal_clearances.show(&r.model);
-            ui.close();
-        }
-    });
+    // 2026-10-27). One entry, no submenu of one item under the same name
+    // (owner, 2026-11-13: "if we need more we'll redesign this later").
+    if ui
+        .button("Internal clearances…")
+        .on_hover_text(
+            "From the wires to the structures: at each structure with a body (detail 2 or \
+                 3), the conductors near it, its jumpers and its strings' live ends against \
+                 its members, by rules typed in the window and kept in the project, per \
+                 weather case; results in the window",
+        )
+        .clicked()
+    {
+        r.internal_clearances.show(&r.model);
+        ui.close();
+    }
     ui.separator();
     ui.label(egui::RichText::new("Thermal rating").strong());
     if ui

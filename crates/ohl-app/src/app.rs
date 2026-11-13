@@ -360,7 +360,7 @@ pub struct Ready {
     pub electric_field: crate::electric_field::ElectricFieldWindow,
     /// Checks › String checks….
     pub string_checks: crate::string_checks::StringChecksWindow,
-    /// Checks › Internal clearances › Internal clearances….
+    /// Checks › Internal clearances….
     pub internal_clearances: crate::internal_clearances::InternalClearancesWindow,
     /// Plans & sheets › Route plan, Situation plans, Phase plan, Plan set:
     /// each its own window.

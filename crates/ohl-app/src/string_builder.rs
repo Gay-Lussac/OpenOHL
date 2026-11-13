@@ -330,7 +330,7 @@ pub enum Out {
     None,
     /// Write this assembly's file (path, text) into the string library.
     Save(PathBuf, String),
-    /// Open Checks › Internal clearances › Internal clearances.
+    /// Open Checks › Internal clearances….
     InternalClearances,
 }
 
@@ -539,7 +539,7 @@ impl StringBuilder {
             if ui
                 .button("Internal clearances…")
                 .on_hover_text(
-                    "Checks › Internal clearances › Internal clearances: the electrified shapes and \
+                    "Checks › Internal clearances…: the electrified shapes and \
                      the conductors against the structures and the grounded shapes (save first)",
                 )
                 .clicked()

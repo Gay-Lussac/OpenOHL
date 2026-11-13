@@ -1,7 +1,7 @@
 # Internal clearances
 
 *Built, in active development (not approved yet).* **Checks ›
-Internal clearances › Internal clearances…** in OHL-Design. This page
+Internal clearances…** in OHL-Design. This page
 explains the window for a line designer: what it answers, how it works,
 every setting and every field of a rule. The calculation in detail, with
 its sources: [theory › Internal clearances](../theory/internal-clearances.md).

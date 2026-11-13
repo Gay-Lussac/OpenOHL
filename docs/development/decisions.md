@@ -8,6 +8,15 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-13
+
+**Checks › Internal clearances… is an entry, not a submenu** (owner:
+"there's an internal clearances sub menu. i think it's not necessary
+since there is only one and with the same name. if we need more we'll
+redesign this later"). The submenu held one item of the same name and a
+short description; the entry opens the window directly and its tooltip
+carries the description. Nothing else changes.
+
 ## 2026-11-12
 
 **Distance between conductors and under unequal wind: a user guide page

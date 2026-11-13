@@ -395,28 +395,25 @@ fn a_settings_list_is_made_taller() {
 /// out of the wire clearances. It should be another line with ground
 /// clearances and wire clearances"): a line of the Checks menu's
 /// Clearances group of its own, no more in the Wire clearances submenu;
-/// its entry opens the window.
+/// its entry opens the window. Since 2026-11-13 the entry itself, not a
+/// submenu of the same name holding it (owner).
 #[test]
 fn internal_clearances_is_a_line_of_the_clearances() {
     let mut h = window();
     h.get_by_label("Checks").click();
     h.run();
-    // Not in the Checks menu itself (the submenu is closed).
-    assert!(h.query_by_label("Internal clearances…").is_none());
-    // Nor under Wire clearances any more.
+    // Not under Wire clearances any more.
     h.query_all_by_label_contains("Wire clearances")
         .next()
         .expect("the Wire clearances submenu")
         .hover();
     h.run();
     h.run();
-    assert!(h.query_by_label("Internal clearances…").is_none());
-    h.query_all_by_label_contains("Internal clearances")
-        .next()
-        .expect("the Internal clearances submenu")
-        .hover();
-    h.run();
-    h.run();
+    assert_eq!(
+        h.query_all_by_label_contains("Internal clearances").count(),
+        1,
+        "one Internal clearances line, no submenu of the same name"
+    );
     h.get_by_label("Internal clearances…").click();
     h.run();
     assert!(h.state_mut().ready().unwrap().internal_clearances.open);
