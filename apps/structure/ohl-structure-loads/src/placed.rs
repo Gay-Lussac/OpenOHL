@@ -9,12 +9,13 @@
 //! ```json
 //! {
 //!   "format": "ohl-structure-line-values",
-//!   "version": 6,
+//!   "version": 7,
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
-//!   "cases": ["everyday", "wind", "weather: glaze ice"],
-//!   "sources": ["load_case", "load_case", "weather_case"],
+//!   "cases": ["everyday", "wind", "high wind — wind from the left",
+//!             "high wind — wind from the right"],
+//!   "sources": ["load_case", "load_case", "weather_case", "weather_case"],
 //!   "values": {
 //!     "points": [...], "values": [...],
 //!     "structure_wind": [
@@ -82,6 +83,12 @@ pub const LINE_VALUES_FILE_VERSION: u32 = 7;
 /// The version of a line-values file without a set's part of a point's
 /// value (what an older program still reads).
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS: u32 = 6;
+
+/// How the note of a line-values file without values begins when the
+/// project has no load case library and sends no weather case: the
+/// structure application then says plainly that the project has no load
+/// cases and where to add them.
+pub const NO_LOAD_CASE_FILE: &str = "no load case file";
 
 /// A section or jumper at the placed structure that did not solve in one
 /// of the line's cases: the values of that case lack its forces.

@@ -23,6 +23,14 @@ import and export come later; CSV works today.
 
 ## The flow
 
+A placed structure gets the line's loads two ways ([How load cases
+reach a structure](load-cases-to-structures.md) shows the whole flow):
+its **library cases** — its set of the line's load case library, with
+the library's factors, read-only here ([The line's load cases: the
+library](structure-app.md#the-lines-load-cases-the-library), since
+2026-11-03) — and the **line results** described here, the raw
+ingredients of the structure's own load cases.
+
 ```
  OHL-Design (the line)                      OHL-Structure (a structure)
  weather cases sent ──► line results ──────► load case
@@ -36,7 +44,7 @@ import and export come later; CSV works today.
                                               load table ──► finite-element check
 ```
 
-1. **The line gives forces, nothing else.** Each weather case ticked in
+1. **A line result is forces, nothing else.** Each weather case ticked in
    Line › Criteria › Loads for structures ([Loads for
    structures](desktop-app.md#loads-for-structures)) is a **line
    result**: the wires' and strings' forces at each attachment point,
@@ -49,7 +57,9 @@ import and export come later; CSV works today.
    `high wind — S3 span 2 broken — wind from the left`), unfactored like
    the others; its factors (a code's impact factor on the longitudinal
    load) are the structure load case's.
-2. **All the factors are in the structure load case**, in one place.
+2. **The factors of a line result are in the structure load case**
+   that takes it, in one place. (A library case brings its own: the
+   library's.)
 3. **A load case has two parts**, each with its own factors, with a
    description (several lines) and a strength factor.
 

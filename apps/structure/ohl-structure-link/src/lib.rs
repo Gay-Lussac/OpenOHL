@@ -11,12 +11,13 @@
 //!   (`ohl_loads::structure_loads`) as [`LineValues`].
 //! - [`fe_loads`]: one case of a [`LoadTable`] as the loads of the
 //!   structure's finite-element model (`ohl_structures_fe`).
-//! - [`structure_cases`]: the cases the line sends to the placed
-//!   structures (its `structure_loads` setting): the load cases chosen,
-//!   then the weather cases chosen on their own
-//!   (`ohl_loads::LoadCase::from_weather`, all factors 1);
+//! - [`structure_cases`], [`structure_cases_with`]: the cases the line
+//!   sends to the placed structures — the weather cases chosen in its
+//!   `structure_loads` setting as line results
+//!   (`ohl_loads::LoadCase::from_weather`, all factors 1), and the load
+//!   case library, of which each placed structure takes its set;
 //!   [`structure_case_loads`] computes their loads.
-//! - [`placed_values`]: the same with the placed structure's line, its
+//! - [`placed_values`], [`placed_values_with`]: the same with the placed structure's line, its
 //!   type and the other places of the type, as the line-values file the
 //!   line application hands to the structure application, each case
 //!   marked with its source ([`CaseSource`]) and, per case, the wires at

@@ -1293,7 +1293,7 @@ impl LoadCasesTab {
                 .strip_prefix("no values from the line: ")
                 .unwrap_or(&note)
                 .to_owned();
-            let text = if note.contains("no load case file") {
+            let text = if why.starts_with(ohl_structure_loads::NO_LOAD_CASE_FILE) {
                 format!(
                     "The line gives no values for {id}: the project has no load cases. Add \
                      them in OHL-Design (Criteria › Load cases library, or a design-code \

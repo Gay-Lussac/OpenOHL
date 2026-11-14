@@ -95,20 +95,24 @@ ohl-structure Structures/type-02.ohls --structure T2 \
 - The header says **loads of T2 in *line*** (a link to the
   **Line loads** panel).
 - The line application computes the loads the wires and strings put on
-  T2 in the cases it sends to its structures (Criteria › Loads for
-  structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
-  its load cases (Criteria › Load cases or Design code; all by default),
-  then the weather cases ticked to be sent on their own, each a case
-  `weather: <name>` with every factor 1 (none by default). They are
+  T2 in the cases it sends to its structures
+  ([How load cases reach a structure](load-cases-to-structures.md)):
+  T2's **case set** of the line's load case library (its own, else its
+  type's, else every case; Line › Criteria › Load cases library, or a
+  design-code plugin), as its [library
+  cases](#the-lines-load-cases-the-library), then the weather cases
+  ticked in Criteria › Loads for structures ([Loads for
+  structures](desktop-app.md#loads-for-structures); none by default),
+  each a **line result** with every factor 1 (`<name>`, or with wind
+  `<name> — wind from the left` and `— wind from the right`). They are
   computed as Checks › Structure loads does, in the background, and
   written beside the structure file as
-  `<name>.<structure>.line-values.json` (version 3: each case with its
+  `<name>.<structure>.line-values.json` (version 7: each case with its
   source and, per case, the sections and jumpers at the structure that
-  did not solve; versions 1 and 2 still read — their cases load cases,
-  nothing missing). Until
+  did not solve; older versions still read). Until
   they are there the header says they are being computed; with no load
-  case and no weather case ticked it says so and suggests ticking weather
-  cases; a ticked case no longer in the line is named. When the line changes while the application is open
+  case library and no weather case ticked it says so; a ticked case no
+  longer in the line is named. When the line changes while the application is open
   (and stays unchanged for a second), the line application computes them
   again and rewrites the file; the application reads it again within
   half a second and evaluates the recipes with the new values.
@@ -116,8 +120,9 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   values panels says, in plain words, what the line gave or why not:
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
   line's values for T2 are being computed…*; *The line gives no values
-  for T7: the project has no load cases. Add them in the line
-  application (Criteria › Load cases, or a design-code plugin)…*; a case
+  for T7: the project has no load cases. Add them in OHL-Design
+  (Criteria › Load cases library, or a design-code plugin)…* (no load
+  case library and no weather case sent); a case
   of the line without values (its sections not solved in it); a case
   **incomplete** — *Case ice incomplete: cross-section S12 not solved (why) —
   the line's forces at T2 lack its wires…*: a section or jumper at this

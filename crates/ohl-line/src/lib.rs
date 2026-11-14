@@ -356,10 +356,13 @@ impl HeightDatum {
     }
 }
 
-/// What the line sends to the placed structures, the cases of their
-/// line-values file (Criteria › Loads for structures): the load cases
-/// (`.ohllc`, from a file or a design code) chosen, then the weather
-/// cases chosen on their own (each a case with all factors 1).
+/// What the line sends to the placed structures besides their case sets
+/// (Criteria › Loads for structures): the weather cases chosen, each sent
+/// unfactored (a case with all factors 1), the wires' condition in them,
+/// the broken-wire cases chosen, and the case sets of the structure types
+/// ([`StructureLoads::type_load_cases`]; each placed structure gets its
+/// set of the load case library whatever is chosen here, since
+/// 2026-11-03).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureLoads {

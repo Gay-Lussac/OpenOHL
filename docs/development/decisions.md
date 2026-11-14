@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Load cases between OHL-Design and OHL-Structure: the model, and the
+texts said right** (owner, approving the review of how load cases reach
+the structures, with its recommended answers): *the line transfers what
+the wires do* — forces per load case, per wire set, back and ahead —
+*the structure side decides what acts* (factors, the cases it takes,
+back and ahead shares, points left out) *and checks it*; construction
+stages are load cases of OHL-Structure (a reduced tension set on the
+line side is dropped from the plan). Phase 0: a user-guide page [How
+load cases reach a structure](../user-guide/load-cases-to-structures.md)
+(the words once, the flow as a picture, each window, where the factors
+are applied, the order own set ► type's set ► every case); the texts
+that still said the line's load cases are "no longer sent" or that the
+line gives "forces, nothing else" corrected (Loads for structures, the
+structure load cases' flow, the spec's status, OHL-Structure's start
+for a placed structure, code comments); the Loads for structures menu
+says, with no weather case ticked, that the library cases still arrive;
+OHL-Structure's "the project has no load cases" now shows when the line
+has no load case library and sends no weather case (the line's message
+began with other words: `ohl_structure_loads::NO_LOAD_CASE_FILE`).
+
 **Field cuts and steps fail on their own** (owner: on a real line the 2D
 cuts at buildings "failed because of one unconnected cable and all
 results got aborted … for cuts those that work get their results reported

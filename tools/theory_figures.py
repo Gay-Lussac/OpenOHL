@@ -2756,6 +2756,72 @@ def pole_buckling():
     return f
 
 
+# =====================================================================================
+# Load cases from the line to a structure
+# =====================================================================================
+def load_cases_flow():
+    f = Fig("load-cases-flow", 910, 660, "How load cases reach a structure",
+            "Left, OHL-Design: the weather cases feed the load case library; each structure "
+            "takes its case set (its own, else its type's, else every case, or none); the wires "
+            "are solved in each case and the forces at the attachment points go to the line's "
+            "own check. Two arrows leave the line: the structure's library cases (with the "
+            "library's factors) and, from Loads for structures, the weather cases ticked as "
+            "unfactored line results. Right, OHL-Structure: line results feed the extra load "
+            "cases; the library cases, the extra cases and the typed values all go into the "
+            "load table, which is solved and checked.")
+    f.text(20, 26, "How load cases reach a structure", "t")
+    f.text(295, 52, "OHL-Design — the line", "c t")
+    f.text(740, 52, "OHL-Structure — one placed structure", "c t")
+    f.path("M585,40 L585,600", "dash")
+    edge = {"box": "muted", "acc": "acc", "wire": "wire", "wire2": "wire2"}
+
+    def box(x, y, w, title, a, b, kind="box"):
+        f.add(f'<rect x="{x}" y="{y}" width="{w}" height="62" rx="6" class="box" '
+              f'style="stroke:var({STROKE[edge[kind]]});stroke-width:{1 if kind == "box" else 1.6}"/>')
+        cx = x + w / 2
+        f.text(cx, y + 20, title, "c t")
+        f.text(cx, y + 38, a, "c lab")
+        f.text(cx, y + 54, b, "c lab")
+
+    box(20, 66, 270, "Weather cases (.ohlwc)", "wind, ice, temperature", "no factors")
+    box(20, 156, 270, "Load case library (.ohllc)", "a weather case + the wires + factors",
+        "+ broken, removed wires, ice, snow…", "acc")
+    box(20, 246, 270, "① Case set of each structure", "its own ► its type's ► every case",
+        "(or none: not checked)")
+    box(20, 336, 270, "② Wires solved in each case", "the force at every attachment point",
+        "of every structure taking the case")
+    box(20, 426, 270, "③ The line's check", "Checks › Structure loads: spans,",
+        "allowable loads, fe, pole → usage")
+    box(310, 156, 260, "⑤ Loads for structures", "the weather cases ticked:",
+        "unfactored, a wind case twice", "wire")
+    for y in (128, 218, 308, 398):
+        f.arrow(155, y, 155, y + 26, "muted", 1.4)
+    f.path("M290,97 L440,97 L440,150", "", "stroke:var(--wire);stroke-width:1.8;fill:none")
+    f.arrow(440, 140, 440, 156, "wire", 1.8)
+    box(600, 156, 280, "Line results", "unfactored, to every structure:",
+        "ingredients for extra cases", "wire")
+    box(600, 246, 280, "Extra load cases (yours)", "1. line forces × your factors",
+        "2. loads on the structure itself")
+    box(600, 336, 280, "④ Library cases", "this structure's set, the library's",
+        "factors (read-only here)", "acc")
+    box(600, 426, 280, "Typed values", "numbers typed over the table,",
+        "kept for this placed structure")
+    box(600, 530, 280, "⑥ Load table → structure check", "every case: finite elements,",
+        "members, pole, joints", "wire2")
+    f.arrow(570, 187, 600, 187, "wire", 1.8)
+    f.arrow(740, 218, 740, 246, "muted", 1.4)
+    f.arrow(290, 367, 600, 367, "acc", 1.8)
+    f.text(445, 358, "line-values file", "c sm")
+    f.text(445, 386, "(Open in OHL-Structure…)", "c sm")
+    f.path("M880,277 L896,277 M880,367 L896,367 M880,457 L896,457 M896,277 L896,561", "thin")
+    f.arrow(896, 561, 880, 561, "muted", 1.4)
+    f.text(20, 622, "Factors: a library case takes the library's (② for the line, ④ in OHL-Structure: "
+           "the same numbers). A line result has none (every factor 1);", "lab")
+    f.text(20, 640, "an extra case gives its own. Typed values replace the computed value as typed. "
+           "The two checks (③ and ⑥) are made apart.", "lab")
+    return f
+
+
 FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_shaft, line_parameters, charge_simulation, internal_clearance, pole_buckling, catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
@@ -2763,7 +2829,7 @@ FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_s
            swing_band, fall_in, safety_section, jumper_gap, sheet_ranges, lowest_line,
            vertical_radial, vertical_arc, max_tension, bs_segment, field_pieces, field_cut,
            field_volume, field_blocks, field_cutoff, field_grid_step, field_parts,
-           ice_jump]
+           ice_jump, load_cases_flow]
 
 
 def main(argv):

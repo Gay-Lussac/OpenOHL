@@ -32,6 +32,7 @@
 - [Line files (.ohl.json)](user-guide/line-file.md)
 - [Weather cases (.ohlwc)](user-guide/weather.md)
 - [Load cases and structure loads (.ohllc)](user-guide/loads.md)
+  - [How load cases reach a structure](user-guide/load-cases-to-structures.md)
 - [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.ohls, .ohli)](user-guide/structure-library.md)
 - [Structure analysis (.ohlfe, .ohlp)](user-guide/structure-analysis.md)

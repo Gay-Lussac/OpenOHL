@@ -16,10 +16,11 @@
 //!
 //! On a **placed structure** (Properties › Edit…) the application gets
 //! that place's loads: the line's values there in the cases the line
-//! sends to its structures (Line › Criteria › Loads for structures: the load
-//! cases, all by default, then weather cases chosen on their own with all
-//! factors 1; `ohl_structure_link::structure_cases`,
-//! `ohl_structure_link::placed_values`) written beside the structure
+//! sends to its structures — the structure's case set of the load case
+//! library (its own, else its type's, else every case), with the
+//! library's factors, then the weather cases ticked in Line › Criteria ›
+//! Loads for structures, unfactored (`ohl_structure_link::structure_cases_with`,
+//! `ohl_structure_link::placed_values_with`) — written beside the structure
 //! file as `<stem>.<structure>.line-values.json`
 //! (`ohl_structure_loads::line_values_path`) and passed with
 //! `--line-values FILE --structure ID`; written again (in the background)
@@ -167,10 +168,23 @@ pub fn arguments(
 }
 
 /// Why a line without load cases and without weather cases chosen for the
-/// structures sends no values.
-pub const NO_CASES: &str = "no weather case is sent to the structures: tick weather cases in \
-    Line › Criteria › Loads for structures (each gives the forces unfactored, a wind case twice: the \
-    wind from the left and from the right)";
+/// structures sends no values. It begins with
+/// [`ohl_structure_loads::NO_LOAD_CASE_FILE`]: OHL-Structure then says
+/// plainly that the project has no load cases.
+pub const NO_CASES: &str = "no load case file, and no weather case sent: add load cases in \
+    Line › Criteria › Load cases library (or from a design-code plugin), or tick weather cases in \
+    Line › Criteria › Loads for structures (each gives the forces unfactored, a wind case twice: \
+    the wind from the left and from the right)";
+
+/// The menu's line when no weather case is ticked: what still arrives.
+pub const NO_WEATHER_TICKED: &str = "No weather case ticked: the structures get no line results \
+    (unfactored forces for their own extra load cases). Each still gets its library cases (its set \
+    of the Load cases library, with the library's factors).";
+
+/// The menu's line when no weather case is ticked and the line has no
+/// load case library.
+pub const NOTHING_SENT: &str = "No weather case ticked and no load case library: the structures \
+    get no values from the line.";
 
 /// What the line's structure loads are computed from: a copy of the
 /// line, its cables, weather and load cases (taken on the main thread,
@@ -208,11 +222,12 @@ impl LineInputs {
         }
     }
 
-    /// The structures' loads in the cases the line sends to them
-    /// (Line › Criteria › Loads for structures: its load cases, all by default,
-    /// then the weather cases chosen on their own), as Checks › Structure
-    /// loads computes them (seconds for a long line). Err: no case to send
-    /// (no load case file and no weather case chosen, or none chosen).
+    /// The structures' loads in the cases the line sends to them: the
+    /// load case library's cases (each structure takes its set of them
+    /// in [`Placed::write`]), then the weather cases ticked in Line ›
+    /// Criteria › Loads for structures, unfactored — as Checks ›
+    /// Structure loads computes them (seconds for a long line). Err: no
+    /// case to send (no load case library and no weather case ticked).
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
         let cases = ohl_structure_link::structure_cases_with(
             &self.line.structure_loads,
@@ -1039,10 +1054,11 @@ pub fn report_window(ctx: &egui::Context, apps: &mut StructureApps) {
 }
 
 /// Line › Criteria › Loads for structures: what the line sends to the placed
-/// structures (the cases of the structure application): its load cases
-/// (all by default) and weather cases on their own, all factors 1 (none
-/// by default). A tick menu (it stays open while ticking); each tick is
-/// one undoable edit of the line's settings (`structure_loads`).
+/// structures beside their library cases (each structure's set of the load
+/// case library, sent whatever is ticked here): the weather cases ticked,
+/// unfactored (none by default), and the broken-wire cases ticked. A tick
+/// menu (it stays open while ticking); each tick is one undoable edit of
+/// the line's settings (`structure_loads`).
 pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     crate::menu::options_menu(ui, "Loads for structures", |ui| {
         ui.set_max_width(440.0);
@@ -1145,9 +1161,11 @@ pub fn loads_menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                 });
             if choice.weather_cases.is_empty() && choice.broken_cases.is_empty() {
                 ui.label(
-                    egui::RichText::new(
-                        "No weather case ticked: the structures get no values from the line.",
-                    )
+                    egui::RichText::new(if line_load_cases(&r.model).is_empty() {
+                        NOTHING_SENT
+                    } else {
+                        NO_WEATHER_TICKED
+                    })
                     .small()
                     .color(ui.visuals().warn_fg_color),
                 );
@@ -1554,9 +1572,17 @@ mod tests {
             1
         );
         let v = PlacedValues::load(&placed.values).unwrap();
+        let note = v.note.unwrap();
         assert!(
-            v.note.unwrap().contains(NO_CASES),
+            note.contains(NO_CASES),
             "nothing sent without a load case library or weather cases"
+        );
+        // OHL-Structure knows it by its beginning: "the project has no
+        // load cases" there (F16 of the 2026-11-14 review).
+        assert!(
+            note.strip_prefix("no values from the line: ")
+                .is_some_and(|w| w.starts_with(ohl_structure_loads::NO_LOAD_CASE_FILE)),
+            "{note}"
         );
         // The load case library (owner 2026-11-03: "The library's
         // cases"): T2's set of it — every case, it gives none — as its
