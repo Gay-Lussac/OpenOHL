@@ -38,7 +38,7 @@ fn older_files_read_as_nominal_only_and_high() {
 
 #[test]
 fn the_two_values_round_trip_at_version_15() {
-    assert_eq!(LINE_FILE_VERSION, 15);
+    assert_eq!(LINE_FILE_VERSION, 16);
     let mut line = Line::from_json(&example()).unwrap();
     let id = line.systems[0].id.clone();
     let nominal = line.systems[0].voltage_kv;

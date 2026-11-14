@@ -1853,12 +1853,19 @@ fn object_rows(o: Option<&ohl_line::LineObject>) -> Vec<(String, String)> {
         return vec![("object".into(), "none (a bare point)".into())];
     };
     let mut rows = vec![
-        ("object".to_owned(), o.kind.as_str().to_owned()),
+        ("object".to_owned(), o.kind_text().to_owned()),
         (
             "type".to_owned(),
             o.type_id.clone().unwrap_or_else(|| "own values".into()),
         ),
-        ("weight".to_owned(), format!("{:.1} N", o.weight)),
+        (
+            "weight".to_owned(),
+            if o.per_subconductor {
+                format!("{:.1} N on each subconductor", o.weight)
+            } else {
+                format!("{:.1} N", o.weight)
+            },
+        ),
     ];
     let shape = match o.shape {
         ohl_line::Shape::Point => "point (no wind, no ice)".to_owned(),

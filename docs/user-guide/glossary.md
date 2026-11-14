@@ -234,6 +234,16 @@ end). *Replaces:* line object, point load, warning marker. *German:*
 Feldpunkt, Feldobjekt (to confirm), Flugwarnkugel. *In files:*
 `span_points`, `object`, `kind = "body"` / `"clamp"`.
 
+**Tap clamp** — the clamp a jumper starts from: on a span point, or on a
+point of another jumper. **Spacer clamp** — the clamp an interphase
+spacer's end is held by: on a span point only. On a bundle there is one
+on each subconductor (the tick **per subconductor**: its weight, ice and
+wind counted on each). See [Objects on the
+wires](../theory/line-objects.md#tap-clamp-or-spacer-clamp). *German:*
+Abzweigklemme, Abstandhalterklemme (to confirm). *In files:*
+`"clamp_for": "tap"` / `"spacer"`, `"per_subconductor": true`; library
+`kind = "tap_clamp"` / `"spacer_clamp"`.
+
 **Spacer** — an interphase spacer: an insulator from a span point of one
 section to a span point of another in the same span. *German:*
 Phasenabstandhalter.

@@ -31,6 +31,29 @@ pub enum ObjectKind {
     Clamp,
 }
 
+/// What a clamp holds (owner, 2026-11-14: a kind of its own in the
+/// library of point and spread loads). None on an object: either (files
+/// from before, own values).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClampFor {
+    /// A tap clamp: a jumper starts here (on a span point or a jumper
+    /// point).
+    Tap,
+    /// A spacer clamp: an interphase spacer's end (on a span point only).
+    Spacer,
+}
+
+impl ClampFor {
+    /// In words: "tap clamp", "spacer clamp".
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ClampFor::Tap => "tap clamp",
+            ClampFor::Spacer => "spacer clamp",
+        }
+    }
+}
+
 impl ObjectKind {
     /// In words.
     pub fn as_str(self) -> &'static str {
@@ -334,6 +357,10 @@ struct LineObjectFile {
     force_across: f64,
     #[serde(default, deserialize_with = "si::de::<_, Force>")]
     force_along: f64,
+    #[serde(default)]
+    per_subconductor: bool,
+    #[serde(default)]
+    clamp_for: Option<ClampFor>,
 }
 
 impl TryFrom<LineObjectFile> for LineObject {
@@ -360,6 +387,8 @@ impl TryFrom<LineObjectFile> for LineObject {
             hold: f.hold,
             force_across: f.force_across,
             force_along: f.force_along,
+            per_subconductor: f.per_subconductor,
+            clamp_for: f.clamp_for,
         })
     }
 }
@@ -512,6 +541,17 @@ pub struct LineObject {
         deserialize_with = "si::de::<_, Force>"
     )]
     pub force_along: f64,
+    /// One on each subconductor of a bundle (owner, 2026-11-14: the tick
+    /// "per subconductor"): its weight, ice and wind count once per
+    /// subconductor ([`LineObject::bundle_forces`]), and it is drawn on
+    /// each. Else one on the whole bundle (its values the whole
+    /// bundle's). A single wire: the same. Line file version 16.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub per_subconductor: bool,
+    /// A clamp's use: a tap clamp or a spacer clamp (none: either). Line
+    /// file version 16.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clamp_for: Option<ClampFor>,
 }
 
 /// Whether a force is zero (not written).
@@ -576,6 +616,9 @@ impl LineObject {
         if self.hold.is_some() && self.kind != ObjectKind::Clamp {
             return Err("only a clamp is held (a support)".into());
         }
+        if self.clamp_for.is_some() && self.kind != ObjectKind::Clamp {
+            return Err("only a clamp is a tap or a spacer clamp".into());
+        }
         if !(self.force_across.is_finite() && self.force_along.is_finite()) {
             return Err("force_across and force_along must be numbers".into());
         }
@@ -597,6 +640,52 @@ impl LineObject {
             self.weight + ice * rho * ohl_core::units::STANDARD_GRAVITY,
             case.wind_pressure.si() * self.drag.unwrap_or(1.0) * wind,
         ]
+    }
+
+    /// How many there are on a bundle of `bundle` subconductors: one on
+    /// each when [`LineObject::per_subconductor`], else one.
+    pub fn count(&self, bundle: u32) -> u32 {
+        if self.per_subconductor {
+            bundle.max(1)
+        } else {
+            1
+        }
+    }
+
+    /// [`LineObject::forces`] on a bundle of `bundle` subconductors: those
+    /// of one × [`LineObject::count`] (each subconductor's ice on its own
+    /// clamp, the wind on each without shielding — on the safe side).
+    pub fn bundle_forces(
+        &self,
+        case: &ohl_weather::WeatherCase,
+        wire_diameter: f64,
+        bundle: u32,
+    ) -> [f64; 2] {
+        let n = f64::from(self.count(bundle));
+        self.forces(case, wire_diameter).map(|f| f * n)
+    }
+
+    /// Its weight on a bundle of `bundle` subconductors, N.
+    pub fn bundle_weight(&self, bundle: u32) -> f64 {
+        self.weight * f64::from(self.count(bundle))
+    }
+
+    /// Whether a jumper may start here: a clamp that is not a spacer's.
+    pub fn takes_tap(&self) -> bool {
+        self.kind == ObjectKind::Clamp && self.clamp_for != Some(ClampFor::Spacer)
+    }
+
+    /// Whether a spacer may end here: a clamp that is not a tap's.
+    pub fn takes_spacer(&self) -> bool {
+        self.kind == ObjectKind::Clamp && self.clamp_for != Some(ClampFor::Tap)
+    }
+
+    /// What it is in words: "body", "clamp", "tap clamp", "spacer clamp".
+    pub fn kind_text(&self) -> &'static str {
+        match (self.kind, self.clamp_for) {
+            (ObjectKind::Clamp, Some(c)) => c.as_str(),
+            (k, _) => k.as_str(),
+        }
     }
 }
 
@@ -677,8 +766,10 @@ pub struct ObjectType {
         deserialize_with = "si::de_opt::<_, ForcePerLength>"
     )]
     pub load: Option<f64>,
-    /// A spread type's load is on each subconductor of a bundle (else
-    /// once on the whole bundle).
+    /// One on each subconductor of a bundle: a spread type's load, or a
+    /// body's or clamp's weight, ice and wind (library version 2), taken
+    /// by the objects made from it ([`LineObject::per_subconductor`]).
+    /// Else once on the whole bundle.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub per_subconductor: bool,
 }
@@ -689,22 +780,67 @@ pub struct ObjectType {
 pub enum TypeKind {
     /// A body on a point.
     Body,
-    /// A clamp on a point.
+    /// A clamp on a point, for a tap or a spacer.
     Clamp,
+    /// A tap clamp: a jumper starts at it (library version 2).
+    TapClamp,
+    /// A spacer clamp: an interphase spacer's end (library version 2).
+    SpacerClamp,
     /// A spread object between two points.
     Spread,
+}
+
+impl TypeKind {
+    /// Every kind, in the order offered.
+    pub const ALL: [TypeKind; 5] = [
+        TypeKind::Body,
+        TypeKind::TapClamp,
+        TypeKind::SpacerClamp,
+        TypeKind::Clamp,
+        TypeKind::Spread,
+    ];
+
+    /// In words.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TypeKind::Body => "body",
+            TypeKind::Clamp => "clamp",
+            TypeKind::TapClamp => "tap clamp",
+            TypeKind::SpacerClamp => "spacer clamp",
+            TypeKind::Spread => "spread",
+        }
+    }
+
+    /// The kind of type an object on a point is of.
+    pub fn of(o: &LineObject) -> TypeKind {
+        match (o.kind, o.clamp_for) {
+            (ObjectKind::Body, _) => TypeKind::Body,
+            (ObjectKind::Clamp, None) => TypeKind::Clamp,
+            (ObjectKind::Clamp, Some(ClampFor::Tap)) => TypeKind::TapClamp,
+            (ObjectKind::Clamp, Some(ClampFor::Spacer)) => TypeKind::SpacerClamp,
+        }
+    }
+
+    /// The object kind and clamp use it makes (none: a spread).
+    pub fn object(self) -> Option<(ObjectKind, Option<ClampFor>)> {
+        match self {
+            TypeKind::Body => Some((ObjectKind::Body, None)),
+            TypeKind::Clamp => Some((ObjectKind::Clamp, None)),
+            TypeKind::TapClamp => Some((ObjectKind::Clamp, Some(ClampFor::Tap))),
+            TypeKind::SpacerClamp => Some((ObjectKind::Clamp, Some(ClampFor::Spacer))),
+            TypeKind::Spread => None,
+        }
+    }
 }
 
 impl ObjectType {
     /// The object on a point it makes (none: a spread type).
     pub fn object(&self) -> Option<LineObject> {
-        let kind = match self.kind {
-            TypeKind::Body => ObjectKind::Body,
-            TypeKind::Clamp => ObjectKind::Clamp,
-            TypeKind::Spread => return None,
-        };
+        let (kind, clamp_for) = self.kind.object()?;
         Some(LineObject {
             kind,
+            clamp_for,
+            per_subconductor: self.per_subconductor,
             type_id: Some(self.id.clone()),
             weight: self.weight,
             shape: self.shape.unwrap_or_default(),
@@ -720,8 +856,11 @@ impl ObjectType {
 
 /// File format id of a library of point and spread loads.
 pub const OBJECT_FILE_FORMAT: &str = "ohl-point-spread-loads";
-/// Newest version read.
-pub const OBJECT_FILE_VERSION: u32 = 1;
+/// Newest version read: 2 adds the tap and spacer clamps' kinds
+/// (`kind = "tap_clamp"`, `"spacer_clamp"`) and `per_subconductor` on a
+/// body or a clamp (owner, 2026-11-14), written only by a library that
+/// uses them (else 1).
+pub const OBJECT_FILE_VERSION: u32 = 2;
 /// File extension.
 pub const OBJECT_FILE_EXTENSION: &str = "ohlload";
 
@@ -768,7 +907,12 @@ impl ObjectLibrary {
     pub fn to_text(&self) -> String {
         let mut out = self.clone();
         out.format = Some(OBJECT_FILE_FORMAT.into());
-        out.version = Some(OBJECT_FILE_VERSION);
+        // The oldest version that holds it.
+        let new = self.types.iter().any(|t| {
+            matches!(t.kind, TypeKind::TapClamp | TypeKind::SpacerClamp)
+                || (t.kind != TypeKind::Spread && t.per_subconductor)
+        });
+        out.version = Some(if new { OBJECT_FILE_VERSION } else { 1 });
         toml::to_string(&out).expect("a library serialises")
     }
 
@@ -787,9 +931,6 @@ impl ObjectLibrary {
             }
             let bad = |m: String| format!("type {}: {m}", t.id);
             match t.object() {
-                Some(_) if t.per_subconductor => {
-                    return Err(bad("per_subconductor is for spread types".into()));
-                }
                 Some(o) => o.validate().map_err(bad)?,
                 None => {
                     if !t.load.is_some_and(|l| l.is_finite() && l >= 0.0) {
@@ -885,7 +1026,15 @@ mod tests {
             .unwrap();
         let o = ball.object().unwrap();
         assert_eq!(o.type_id.as_deref(), Some(ball.id.as_str()));
-        assert!(lib.types.iter().any(|t| t.kind == TypeKind::Clamp));
+        // The tap and the spacer clamp: kinds of their own, one on each
+        // subconductor (owner, 2026-11-14); the library written as
+        // version 2 then.
+        for kind in [TypeKind::TapClamp, TypeKind::SpacerClamp] {
+            let t = lib.types.iter().find(|t| t.kind == kind).unwrap();
+            let o = t.object().unwrap();
+            assert!(o.per_subconductor && o.kind == ObjectKind::Clamp);
+        }
+        assert!(lib.to_text().contains("version = 2"));
         assert!(
             lib.types
                 .iter()
@@ -976,8 +1125,10 @@ mod legacy_tests {
         );
     }
 
-    /// A spread type may say its load is on each subconductor; a body
-    /// type may not.
+    /// A spread type may say its load is on each subconductor; a body or
+    /// a clamp too (owner, 2026-11-14: library version 2), its objects
+    /// then counted once per subconductor; a library without them is
+    /// written as version 1, for older programs.
     #[test]
     fn a_spread_type_may_be_per_subconductor() {
         let head = "format = \"ohl-point-spread-loads\"\nversion = 1\n[[type]]\nid = \"x\"\nname = \"x\"\n";
@@ -987,9 +1138,21 @@ mod legacy_tests {
         .unwrap();
         assert!(lib.types[0].per_subconductor);
         assert_eq!(super::ObjectLibrary::parse(&lib.to_text()).unwrap(), lib);
-        assert!(
-            super::ObjectLibrary::parse(&format!("{head}kind = \"body\"\nper_subconductor = true"))
-                .is_err()
+        assert!(lib.to_text().contains("version = 1"));
+        let body = super::ObjectLibrary::parse(&format!(
+            "{head}kind = \"tap_clamp\"\nweight = 30.0\nper_subconductor = true"
+        ))
+        .unwrap();
+        let o = body.types[0].object().unwrap();
+        assert_eq!(o.clamp_for, Some(super::ClampFor::Tap));
+        assert_eq!(
+            (o.count(4), o.bundle_weight(4), o.bundle_weight(1)),
+            (4, 120.0, 30.0)
+        );
+        assert!(body.to_text().contains("version = 2"));
+        assert_eq!(
+            super::ObjectLibrary::parse(&body.to_text()).unwrap().types,
+            body.types
         );
     }
 

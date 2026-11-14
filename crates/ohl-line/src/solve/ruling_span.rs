@@ -608,7 +608,7 @@ pub fn point_loads_left_out(section: &Section) -> Option<String> {
         .map(|(p, o)| {
             let mut parts = Vec::new();
             if o.weight > 0.0 {
-                parts.push(format!("{} N down", o.weight));
+                parts.push(format!("{} N down", o.bundle_weight(section.bundle)));
             }
             if o.has_force() {
                 parts.push(o.force_text());

@@ -51,7 +51,8 @@ pub mod solve;
 
 pub use bimetallic::bimetallic_notes;
 pub use objects::{
-    Axis, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject, TypeKind,
+    Axis, ClampFor, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject,
+    TypeKind,
 };
 
 pub use assembly::{
@@ -71,7 +72,10 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 15 adds a system's highest operating voltage
+/// Latest line file version: 16 adds an object's tap or spacer clamp use
+/// and one on each subconductor (`clamp_for`, `per_subconductor`:
+/// [`LineObject`]; owner, 2026-11-14), written only by a line that uses
+/// them (else 15 or older, [`Line::to_json`]); 15 adds a system's highest operating voltage
 /// and insulation level (`highest_voltage_kv`, `insulation_level`,
 /// [`electrical::System`]; owner 2026-11-11) and a section's stringing
 /// given in a final condition (`condition`: after creep or after load,
@@ -123,7 +127,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 15;
+pub const LINE_FILE_VERSION: u32 = 16;
+
+/// The version before an object's tap or spacer clamp use and one on each
+/// subconductor (`clamp_for`, `per_subconductor`: [`LineObject`]; owner,
+/// 2026-11-14): what a line without them is written as.
+const BEFORE_CLAMP_FOR_VERSION: u32 = 15;
 
 /// The version before a system's highest operating voltage and insulation
 /// level, and before a stringing in a final condition or by catenary
@@ -3648,7 +3657,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 15 with a system's
+    /// line, so an older program still reads it: 16 with an object's tap
+    /// or spacer clamp use or one on each subconductor, else 15 with a system's
     /// highest operating voltage or insulation level, a stringing in a
     /// final condition or by catenary constant, a point's constant force
     /// or a time at high temperature, else 14 with a structure
@@ -3688,8 +3698,18 @@ impl Line {
                 .sections
                 .iter()
                 .any(|s| s.stringing.since_version_15() || s.objects().any(|(_, o)| o.has_force()));
+        let clamps = self.sections.iter().any(|s| {
+            s.objects()
+                .any(|(_, o)| o.per_subconductor || o.clamp_for.is_some())
+        }) || self.jumpers.iter().any(|j| {
+            j.points
+                .iter()
+                .filter_map(|p| p.object.as_ref())
+                .any(|o| o.per_subconductor || o.clamp_for.is_some())
+        });
         let written = match (sheaves, winds, shapes) {
-            _ if system_voltages || final_stringing => LINE_FILE_VERSION,
+            _ if clamps => LINE_FILE_VERSION,
+            _ if system_voltages || final_stringing => BEFORE_CLAMP_FOR_VERSION,
             _ if no_cases => BEFORE_SYSTEM_VOLTAGES_VERSION,
             _ if current => BEFORE_NO_LOAD_CASES_VERSION,
             _ if torus => BEFORE_CURRENT_VERSION,
@@ -4357,6 +4377,15 @@ impl Line {
                             o.force_text()
                         ));
                     }
+                    // Spacers join span points: nothing for a spacer
+                    // clamp to hold on a jumper (owner, 2026-11-14).
+                    if o.clamp_for == Some(ClampFor::Spacer) {
+                        return bad(&format!(
+                            "{} holds a spacer clamp: interphase spacers join span points \
+                             only — a jumper point takes a tap clamp or a support clamp",
+                            p.label
+                        ));
+                    }
                 }
             }
             match (j.rigid, j.length, j.sag, j.tension) {
@@ -4456,15 +4485,20 @@ impl Line {
                         end.point, sec.id
                     ));
                 };
-                if !p
-                    .object
-                    .as_ref()
-                    .is_some_and(|o| o.kind == ObjectKind::Clamp)
-                {
-                    return bad(&format!(
-                        "its end {} on section {} holds no clamp (put a clamp object there)",
-                        end.point, sec.id
-                    ));
+                match p.object.as_ref() {
+                    Some(o) if o.takes_spacer() => {}
+                    Some(o) if o.kind == ObjectKind::Clamp => {
+                        return bad(&format!(
+                            "its end {} on section {} holds a tap clamp, which starts a                              jumper: a spacer ends on a spacer clamp",
+                            end.point, sec.id
+                        ));
+                    }
+                    _ => {
+                        return bad(&format!(
+                            "its end {} on section {} holds no clamp (put a clamp object there)",
+                            end.point, sec.id
+                        ));
+                    }
                 }
                 if sec.calculation.method() != condition::Method::Fe {
                     return bad(&format!(
@@ -4540,7 +4574,12 @@ impl Line {
             Some(Some(o)) if o.kind == ObjectKind::Clamp && o.hold.is_some() => {
                 bad("its clamp holds the jumper up (a support), not a tap".into())
             }
-            Some(Some(o)) if o.kind == ObjectKind::Clamp => Ok(()),
+            Some(Some(o)) if o.takes_tap() => Ok(()),
+            Some(Some(o)) if o.kind == ObjectKind::Clamp => bad(
+                "its point holds a spacer clamp, which holds an interphase spacer's end: a \
+                 jumper starts from a tap clamp"
+                    .into(),
+            ),
             Some(_) => bad("its point holds no clamp (put a clamp object there)".into()),
         }
     }

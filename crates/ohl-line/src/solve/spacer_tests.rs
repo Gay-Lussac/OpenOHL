@@ -195,3 +195,29 @@ fn a_spacer_joins_two_conductors() {
     let inc = crate::incremental::SolvedLine::solve(&line, &lib, &case);
     assert_eq!(inc.shapes(&line), solve(&line));
 }
+
+/// A spacer ends on a spacer clamp or a clamp of either use, never on a
+/// tap clamp (owner, 2026-11-14): refused, saying why.
+#[test]
+fn a_spacer_does_not_end_on_a_tap_clamp() {
+    let mut line = spaced(None, None);
+    let o = line.sections[0]
+        .span_points
+        .last_mut()
+        .unwrap()
+        .object
+        .as_mut()
+        .unwrap();
+    o.clamp_for = Some(crate::ClampFor::Spacer);
+    line.validate().unwrap();
+    let o = line.sections[0]
+        .span_points
+        .last_mut()
+        .unwrap()
+        .object
+        .as_mut()
+        .unwrap();
+    o.clamp_for = Some(crate::ClampFor::Tap);
+    let e = line.validate().unwrap_err().to_string();
+    assert!(e.contains("tap clamp") && e.contains("spacer clamp"), "{e}");
+}

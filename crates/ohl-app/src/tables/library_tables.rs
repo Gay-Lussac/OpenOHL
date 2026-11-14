@@ -715,22 +715,13 @@ pub(super) fn load_type_rows(model: &Model) -> Vec<Row> {
                 }
                 .to_owned(),
                 t.name.clone(),
-                match t.kind {
-                    ohl_line::TypeKind::Body => "body",
-                    ohl_line::TypeKind::Clamp => "clamp",
-                    ohl_line::TypeKind::Spread => "spread",
-                }
-                .to_owned(),
+                t.kind.as_str().to_owned(),
             ];
             cells.extend(c);
             cells.push(t.clamp_length.map_or(String::new(), |l| f(l, 3)));
             cells.push(t.load.map_or(String::new(), |l| f(l, 2)));
             cells.push(t.description.clone());
-            cells.push(if t.kind == ohl_line::TypeKind::Spread {
-                load_on_text(t.per_subconductor)
-            } else {
-                String::new()
-            });
+            cells.push(load_on_text(t.per_subconductor));
             Row {
                 defaulted: Vec::new(),
                 key: t.id.clone(),
@@ -743,15 +734,14 @@ pub(super) fn load_type_rows(model: &Model) -> Vec<Row> {
 
 /// A type as its cells say (columns as [`LOAD_TYPES`]).
 pub(super) fn load_type_from_cells(c: &Cells, id: &str) -> Result<ohl_line::ObjectType, String> {
-    let kind = match c.get(3).trim().to_lowercase().as_str() {
-        "body" => ohl_line::TypeKind::Body,
-        "clamp" => ohl_line::TypeKind::Clamp,
-        "spread" => ohl_line::TypeKind::Spread,
-        other => {
-            return Err(format!(
-                "type {id}: kind \"{other}\": body, clamp or spread"
-            ));
-        }
+    let typed = c.get(3).trim().to_lowercase().replace('_', " ");
+    let Some(kind) = ohl_line::TypeKind::ALL
+        .into_iter()
+        .find(|k| k.as_str() == typed)
+    else {
+        return Err(format!(
+            "type {id}: kind \"{typed}\": body, tap clamp, spacer clamp, clamp or spread"
+        ));
     };
     // The object's columns, shifted to where object_from_cells reads them.
     let shifted: Vec<String> = (0..13)
@@ -787,8 +777,7 @@ pub(super) fn load_type_from_cells(c: &Cells, id: &str) -> Result<ohl_line::Obje
         } else {
             None
         },
-        per_subconductor: kind == ohl_line::TypeKind::Spread
-            && parse_load_on(&c.get(14)).map_err(|e| format!("type {id}: {e}"))?,
+        per_subconductor: parse_load_on(&c.get(14)).map_err(|e| format!("type {id}: {e}"))?,
     })
 }
 

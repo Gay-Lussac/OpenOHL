@@ -752,9 +752,19 @@ fn write_object(out: &mut String, o: &ohl_line::LineObject, indent: &str) {
         hold,
         force_across,
         force_along,
+        per_subconductor,
+        clamp_for,
     } = o;
     let _ = write!(out, "{indent}<object");
     attr(out, "kind", kind.as_str());
+    // A tap or spacer clamp, one on each subconductor (line file version
+    // 16): only when given.
+    if let Some(c) = clamp_for {
+        attr(out, "clamp_for", &enum_name(c));
+    }
+    if *per_subconductor {
+        attr(out, "per_subconductor", "true");
+    }
     opt_text(out, "type", type_id.as_deref());
     attr(out, "weight", &num(*weight));
     attr(out, "shape", shape.as_str());
@@ -906,6 +916,11 @@ fn read_object(e: &Element) -> Result<ohl_line::LineObject, String> {
         hold,
         force_across: optional(e, "force_across")?.unwrap_or(0.0),
         force_along: optional(e, "force_along")?.unwrap_or(0.0),
+        per_subconductor: e.attr("per_subconductor") == Some("true"),
+        clamp_for: e
+            .attr("clamp_for")
+            .map(|c| named("clamp_for", c))
+            .transpose()?,
     })
 }
 
