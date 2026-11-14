@@ -1369,6 +1369,9 @@ fn finite_elements_follow_the_curves() {
         let wire = st.wire_at_set(p.set).unwrap().label.clone();
         st.strings.retain(|s| s.wire != wire);
     }
+    // The wire alone: the jumpers on its clamps, now fixed to the
+    // structures, would load them too (since 2026-11-14).
+    line.jumpers.clear();
     let budget = default_fe_budget();
     let sag = |line: &Line, c: Calculation, t: f64| {
         let mut section = line.sections[0].clone();
@@ -1430,6 +1433,9 @@ fn the_weight_is_the_data_sheets_at_the_stringing_temperature() {
         let wire = st.wire_at_set(p.set).unwrap().label.clone();
         st.strings.retain(|s| s.wire != wire);
     }
+    // The wire alone: the jumpers on its clamps, now fixed to the
+    // structures, would load them too (since 2026-11-14).
+    line.jumpers.clear();
     let cable = lib.get(&line.sections[0].cable).unwrap().clone();
     let alpha = cable.thermal_expansion();
     let t10 = Temperature::from_celsius(10.0);
@@ -1501,6 +1507,9 @@ fn ice_is_carried_per_stretched_metre() {
         let wire = st.wire_at_set(p.set).unwrap().label.clone();
         st.strings.retain(|s| s.wire != wire);
     }
+    // The wire alone: the jumpers on its clamps, now fixed to the
+    // structures, would load them too (since 2026-11-14).
+    line.jumpers.clear();
     let cable = lib.get(&line.sections[0].cable).unwrap();
     let section = &line.sections[0];
     let t = line.sections[0].stringing.temperature();

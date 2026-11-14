@@ -238,9 +238,12 @@ Feldpunkt, Feldobjekt (to confirm), Flugwarnkugel. *In files:*
 (its base, earthed) and holding a wire point at its top as a cantilever,
 rigidly: a station post upright, a line post level. Its load goes to its
 base with the moment of its height; a jumper leaves its clamp at a fixed
-exit angle. See [Post insulators](../theory/post-insulators.md).
-*German:* Stützisolator (to confirm). *In files:* `"post": true` on a
-string; library `kind = "post"`.
+exit angle; its ratings (cantilever load, compression, tension) are
+checked in the string check. A **braced line post** stands on a hinged
+base and is held by a brace string at its top: it only pushes or pulls.
+See [Post insulators](../theory/post-insulators.md). *German:*
+Stützisolator (to confirm). *In files:* `"post": true` on a string
+(braced: `"hinged": true`); library `kind = "post"`.
 
 **Tap clamp** — the clamp a jumper starts from: on a span point, or on a
 point of another jumper. **Spacer clamp** — the clamp an interphase

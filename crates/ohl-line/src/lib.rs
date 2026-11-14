@@ -44,6 +44,7 @@ mod link_tests;
 pub mod links;
 pub mod local;
 pub mod objects;
+pub mod post;
 mod rod;
 pub mod route;
 pub mod sagging;
@@ -3719,6 +3720,7 @@ impl Line {
         let posts = self.structures.iter().any(|s| {
             s.strings.iter().any(|x| {
                 x.post
+                    || x.hinged
                     || x.cantilever_load.is_some()
                     || x.exit_angle_deg.is_some()
                     || x.exit_direction_deg.is_some()

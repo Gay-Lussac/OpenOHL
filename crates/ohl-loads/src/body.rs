@@ -132,6 +132,8 @@ pub fn add_structure_loads(
                     pull_ahead: [0.0; 2],
                     pulls_by_set: Vec::new(),
                     lever: [0.0; 3],
+                    couple: [0.0; 3],
+                    couple_factored: [0.0; 3],
                 });
             }
         }

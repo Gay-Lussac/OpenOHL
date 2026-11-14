@@ -372,6 +372,12 @@ pub struct JumperShape {
     /// clamped ends left out). The sections carry them with
     /// [`crate::JumperLoads::Pull`].
     pub end_forces: [Point; 2],
+    /// The moment it exerts on the clamp at `from` and at `to` (the whole
+    /// bundle's, N·m, line axes; 2026-11-14): its bending stiffness held
+    /// in a clamp's direction — zero at a hinged end, and for a rigid jumper
+    /// or one solved as a plain cable. What a post insulator's clamp passes
+    /// to the post's base.
+    pub end_moments: [Point; 2],
     /// Where it is held: its support clamps in order from `from`, or its
     /// support string (one, without structure and wire point).
     pub supports: Vec<JumperSupportShape>,
@@ -1139,7 +1145,7 @@ fn post_direction(
 ) -> Option<Vector3<f64>> {
     let structure = line.structure(&point.structure)?;
     let wire = structure.wire_at_set(point.set)?;
-    let post = structure.post_at(&wire.label)?;
+    let post = structure.any_post_at(&wire.label)?;
     let up = post.exit_angle_deg.unwrap_or(0.0).to_radians();
     let plan = match post.exit_direction_deg {
         Some(d) => {
@@ -1474,6 +1480,7 @@ pub fn solve_jumper_in(
             low_point: p(low),
             max_tension: 0.0,
             end_forces: ends.map(p),
+            end_moments: [[0.0; 3]; 2],
             supports: Vec::new(),
             taut: false,
             strength_use: 0.0,
@@ -1638,6 +1645,7 @@ pub fn solve_jumper_in(
             low_point: p(low),
             max_tension: shape.max_tension,
             end_forces: shape.end_forces.map(|f| p(f * f64::from(bundle))),
+            end_moments: shape.end_moments.map(|m| p(m * f64::from(bundle))),
             supports: support_shapes(line, jumper, shapes, &shape, bundle),
             point_positions: point_positions(jumper, &shape.points, l0),
             taut,
@@ -1800,6 +1808,7 @@ pub fn solve_jumper_in(
         low_point: p(low),
         max_tension,
         end_forces: end_forces.map(p),
+        end_moments: [[0.0; 3]; 2],
         supports,
         taut,
         strength_use: max_tension / rts,

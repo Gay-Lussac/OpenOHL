@@ -181,10 +181,10 @@ fn a_broken_wire_gives_the_unbalanced_longitudinal_loads() {
     assert!(te.factored[1].abs() >= t2.factored[1].abs() - 1e-6);
     // The CSV says which span.
     let csv = to_csv(&r);
-    assert!(csv.lines().next().unwrap().ends_with(",broken_span"));
+    assert!(csv.lines().next().unwrap().contains(",broken_span,"));
     assert!(
         csv.lines()
-            .any(|l| l.starts_with("broken,T2,") && l.ends_with(",2 2 2"))
+            .any(|l| l.starts_with("broken,T2,") && l.ends_with(",2 2 2,0.0,0.0,0.0"))
     );
     assert!(
         csv.lines()
@@ -246,6 +246,8 @@ fn the_envelope_of_the_breaks_is_no_bound_of_a_combination() {
         pull_ahead: [0.0; 2],
         pulls_by_set: Vec::new(),
         lever: [0.0; 3],
+        couple: [0.0; 3],
+        couple_factored: [0.0; 3],
     };
     let (one, two) = (load(1, 10e3, 1e3), load(2, -9e3, 5e3));
     let mut e = one.clone();
@@ -350,6 +352,8 @@ fn the_envelope_keeps_each_sets_pulls_with_its_component() {
         pull_ahead: [0, 1].map(|i| pulls.iter().map(|p| p.ahead[i]).sum()),
         pulls_by_set: pulls,
         lever: [0.0; 3],
+        couple: [0.0; 3],
+        couple_factored: [0.0; 3],
     };
     let one = load(
         1,

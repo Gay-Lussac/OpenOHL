@@ -10,6 +10,38 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Post insulators, second step** (owner: "go ahead with the next
+steps"):
+
+1. **A jumper's load on a clamp fixed to the structure** (a post's top,
+   a wire point without strings) goes into that clamp's force on the
+   structure; before, it was left out — **not on the safe side**, and a
+   fault for every wire clamped to a structure with a jumper on it, not
+   only posts. And a jumper end where no section ends (a jumper from a
+   dead end to a post's top) is loaded in the structure loads like a
+   riser's (the estimate, or its own pull, as the line says); before,
+   only risers' were.
+2. **The jumper's moment on a post's clamp** (`JumperShape::end_moments`,
+   from the rod's clamped end) is added to the post's base moment — in
+   the structure loads (`AttachmentLoad::couple`, factored by the
+   largest of the case's factors) and in the post's check. With the
+   estimated jumper loads (the default) the forces are the estimate's
+   and the moment the rod's: not one state, said NOT ON THE SAFE SIDE
+   with the jumpers named; exact: the jumpers' own pull.
+3. **The post's ratings checked** in the string check (`load`): its
+   cantilever load (its bending moment at its base over its height, its
+   own wind and the clamp's moment in), its compression and tension, each
+   where given; unfactored against the ratings as given, as the strings'
+   maximum load.
+4. **The structure loads' CSV** gains three columns at the end: the
+   factored moments about each point (a post's lever and clamp moment;
+   0 for the other loads).
+5. **Braced posts**: a post on a hinged base (`hinged`, line file version
+   17 still — the version is not released) is a member of its assembly
+   both ways and needs a brace at its wire point.
+6. Not yet: posts on the ground, the Add post tool, the rigid conductor
+   on posts, a post's deflection.
+
 **Post insulators, first step** (owner: "go ahead with post"; "on the
 post the flexible should come in and have a fixed exit angle"; the
 plan's open questions taken with defaults, said in the plan: a post is

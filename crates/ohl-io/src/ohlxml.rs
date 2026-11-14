@@ -571,6 +571,7 @@ fn write_structure(out: &mut String, s: &Structure) {
             max_swing_along_deg,
             shapes,
             post,
+            hinged,
             cantilever_load,
             exit_angle_deg,
             exit_direction_deg,
@@ -613,6 +614,9 @@ fn write_structure(out: &mut String, s: &Structure) {
         // A post insulator (line file version 17).
         if *post {
             attr(out, "post", "true");
+        }
+        if *hinged {
+            attr(out, "hinged", "true");
         }
         if shapes.is_empty() {
             out.push_str("/>\n");
@@ -1700,6 +1704,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "max_swing_across_deg",
                     "max_swing_along_deg",
                     "post",
+                    "hinged",
                     "cantilever_load",
                     "exit_angle_deg",
                     "exit_direction_deg",
@@ -1725,6 +1730,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 max_swing_across_deg: optional(x, "max_swing_across_deg")?,
                 max_swing_along_deg: optional(x, "max_swing_along_deg")?,
                 post: flag(x, "post")?,
+                hinged: flag(x, "hinged")?,
                 cantilever_load: optional(x, "cantilever_load")?,
                 exit_angle_deg: optional(x, "exit_angle_deg")?,
                 exit_direction_deg: optional(x, "exit_direction_deg")?,

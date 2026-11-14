@@ -1108,6 +1108,16 @@ pub struct AttachmentLoad {
     /// analysis puts the moment of this lever at the point's joint. Zero
     /// for every other load (it acts at the point).
     pub lever: [f64; 3],
+    /// A moment of its own on the point, in the structure's axes (right,
+    /// ahead, up), N·m, unfactored (2026-11-14): the jumpers' moment on a
+    /// post insulator's clamp where it holds them in a fixed direction
+    /// (`ohl_line::jumper::JumperShape::end_moments`), at the post's base
+    /// with its lever. Zero for every other load.
+    pub couple: [f64; 3],
+    /// The same, factored: times the largest of the load case's three
+    /// factors (a moment from weight, ice and wind together; on the safe
+    /// side).
+    pub couple_factored: [f64; 3],
 }
 
 /// The horizontal pulls of the back and ahead spans of one wire set at a
@@ -1448,6 +1458,9 @@ pub fn structure_loads(
             ));
         }
     }
+    // A post's clamp: the jumpers' moment the rod's, their forces
+    // estimated (2026-11-14).
+    set_notes.extend(ohl_line::post::moment_with_estimate_note(&line));
     let mut out = Vec::with_capacity(cases.len());
     for case in cases {
         let w = weather
@@ -1972,36 +1985,17 @@ fn case_loads(
         }
         solved.push(shape);
     }
-    // Post insulators (owner, 2026-11-14): their own weight and the wind
-    // on them (the line's, across it at the structure, its local factor —
-    // as on the strings; no ice, as on the strings), at their middle: the
-    // load of their base point with that lever.
+    // Fixed post insulators (owner, 2026-11-14): their own weight and the
+    // wind on them (the line's, across it at the structure, its local
+    // factor — as on the strings; no ice, as on the strings), at their
+    // middle: the load of their base point with that lever. (A hinged
+    // post is a member of its assembly: its weight and wind are the
+    // solve's.)
     for structure in &line.structures {
-        for x in structure.strings.iter().filter(|x| x.post) {
-            let (Some(base), Some(tip)) = (
-                structure.point(&x.top).map(|p| p.position),
-                structure.wire(&x.wire).map(|w| w.position),
-            ) else {
+        for x in structure.strings.iter().filter(|x| x.post && !x.hinged) {
+            let Some((middle, f)) = ohl_line::post::own_load(line, structure, x, w) else {
                 continue;
             };
-            let middle = [0, 1, 2].map(|k| 0.5 * (base[k] + tip[k]));
-            let mut f = [0.0, 0.0, -x.weight];
-            // The line's direction there, else the structure's ahead.
-            let ahead = line.direction_at([middle[0], middle[1]]).or_else(|| {
-                let a = ohl_line::links::from_structure_axes(
-                    structure.orientation_deg,
-                    [0.0, 1.0, 0.0],
-                );
-                Some([a[0], a[1]])
-            });
-            if let Some(a) = ahead {
-                let push = w.wind_pressure.si()
-                    * line.wind_factor_at_structure(&structure.id)
-                    * x.wind_area
-                    * w.wind_from.to_left();
-                f[0] -= a[1] * push;
-                f[1] += a[0] * push;
-            }
             if f.iter().all(|v| *v == 0.0) {
                 continue;
             }
@@ -2057,31 +2051,75 @@ fn case_loads(
             }
         }
     }
-    // Risers (jumpers given by their tension, 2026-10-25): their pull on
-    // the wire points they are dead-ended at where no section ends (a
-    // section there carries it as a jumper's load). Through the strings to
-    // their tops, shared equally, each with its whole weight; on a wire
-    // point without strings, there. Simplification: the riser's ends are
-    // its wire points as given (its strings are not swung by its pull).
-    if line.jumpers.iter().any(|j| j.tension.is_some()) {
+    // Jumper ends where no section ends (risers since 2026-10-25, every
+    // jumper since 2026-11-14 — before, a jumper from a section's clamp to
+    // a post's top or to a wire point fixed to the structure lost its load
+    // there: not on the safe side): their pull on the wire point, through
+    // its strings to their tops, shared equally, each with its whole
+    // weight; on a wire point without strings, there; on a fixed post's
+    // top, at the post's base with its lever. And on a fixed post's clamp
+    // holding a jumper in a fixed direction, the jumper's moment
+    // ([`AttachmentLoad::couple`]). Simplification: the jumper's ends are
+    // its wire points as given (their strings are not swung by its pull).
+    let section_point =
+        |p: &ohl_line::SectionPoint| line.sections.iter().any(|s| s.points.contains(p));
+    let fixed_post = |p: &ohl_line::SectionPoint| {
+        let s = line.structure(&p.structure)?;
+        let w = s.wire_at_set(p.set)?;
+        Some((s, w, s.post_at(&w.label)?))
+    };
+    let takes = |j: &ohl_line::Jumper| {
+        j.tension.is_some()
+            || [&j.from, &j.to]
+                .into_iter()
+                .filter_map(|e| e.point())
+                .any(|p| !section_point(p) || fixed_post(p).is_some())
+    };
+    if line.jumpers.iter().any(takes) {
         let shapes = ohl_line::jumper::solve_jumpers(line, library, w, &solved);
+        // As the sections take them on their clamps: estimated, or the
+        // jumpers' own pull ([`ohl_line::post::jumper_end_force`]).
+        let estimate = ohl_line::jumper::end_loads(line, w, |id| library.get(id));
         for (j, shape) in line.jumpers.iter().zip(shapes) {
-            if j.tension.is_none() {
+            if !takes(j) {
                 continue;
             }
             let shape = match shape {
                 Ok(shape) => shape,
                 Err(e) => {
-                    failed.push(format!("jumper {}: {e}", j.id));
-                    missing.extend(missing_wires(line, WireKind::Jumper, &j.id, &e.to_string()));
+                    // (One with support clamps is said above.)
+                    if j.supports().is_empty() {
+                        failed.push(format!("jumper {}: {e}", j.id));
+                        missing.extend(missing_wires(
+                            line,
+                            WireKind::Jumper,
+                            &j.id,
+                            &e.to_string(),
+                        ));
+                    }
                     continue;
                 }
             };
-            for (end, force) in [&j.from, &j.to].into_iter().zip(shape.end_forces) {
+            for (k, end) in [&j.from, &j.to].into_iter().enumerate() {
                 let Some(point) = end.point() else {
                     continue;
                 };
-                if line.sections.iter().any(|s| s.points.contains(point)) {
+                let force = ohl_line::post::jumper_end_force(line, j, &shape, k, &estimate);
+                if let Some((_, wire, post)) = fixed_post(point) {
+                    let place = || Place {
+                        structure: &point.structure,
+                        label: &post.top,
+                        at: wire.position,
+                    };
+                    if shape.end_moments[k] != [0.0; 3] {
+                        add_couple(&mut at, line, case, place(), shape.end_moments[k], &j.id);
+                    }
+                    if !section_point(point) {
+                        add(&mut at, line, case, place(), force, &[point.set], &j.id);
+                    }
+                    continue;
+                }
+                if section_point(point) {
                     continue;
                 }
                 let Some(structure) = line.structure(&point.structure) else {
@@ -2247,7 +2285,7 @@ fn add(
     f: Point,
     sets: &[u32],
     source: &str,
-) {
+) -> (String, String) {
     let structure = line.structure(place.structure);
     let (right, ahead) = axes(structure.map_or(0.0, |s| s.orientation_deg));
     // Acting away from its structure point (a post's top, its middle): a
@@ -2275,24 +2313,25 @@ fn add(
             ),
         )
     };
-    let e = loads
-        .entry((place.structure.to_owned(), key))
-        .or_insert_with(|| AttachmentLoad {
-            structure: place.structure.to_owned(),
-            point: place.label.to_owned(),
-            label,
-            lever,
-            sets: Vec::new(),
-            sections: Vec::new(),
-            at: place.at,
-            force: [0.0; 3],
-            local: [0.0; 3],
-            factored: [0.0; 3],
-            broken_span: None,
-            pull_back: [0.0; 2],
-            pull_ahead: [0.0; 2],
-            pulls_by_set: Vec::new(),
-        });
+    let key = (place.structure.to_owned(), key);
+    let e = loads.entry(key.clone()).or_insert_with(|| AttachmentLoad {
+        structure: place.structure.to_owned(),
+        point: place.label.to_owned(),
+        label,
+        lever,
+        sets: Vec::new(),
+        sections: Vec::new(),
+        at: place.at,
+        force: [0.0; 3],
+        local: [0.0; 3],
+        factored: [0.0; 3],
+        broken_span: None,
+        pull_back: [0.0; 2],
+        pull_ahead: [0.0; 2],
+        pulls_by_set: Vec::new(),
+        couple: [0.0; 3],
+        couple_factored: [0.0; 3],
+    });
     if !e.sections.iter().any(|s| s == source) {
         e.sections.push(source.to_owned());
     }
@@ -2313,6 +2352,31 @@ fn add(
     for i in 0..3 {
         e.local[i] += local[i];
         e.factored[i] += local[i] * factors[i];
+    }
+    key
+}
+
+/// Adds moment `m` (line axes, N·m, unfactored) on a point of a structure
+/// acting at `place.at` ([`AttachmentLoad::couple`]), from `source`.
+fn add_couple(
+    loads: &mut BTreeMap<(String, String), AttachmentLoad>,
+    line: &Line,
+    case: &LoadCase,
+    place: Place,
+    m: Point,
+    source: &str,
+) {
+    let o = line
+        .structure(place.structure)
+        .map_or(0.0, |s| s.orientation_deg);
+    let key = add(loads, line, case, place, [0.0; 3], &[], source);
+    let local = ohl_line::links::to_structure_axes(o, m);
+    let factor = case.transverse.max(case.longitudinal).max(case.vertical);
+    if let Some(e) = loads.get_mut(&key) {
+        for (i, m) in local.iter().enumerate() {
+            e.couple[i] += m;
+            e.couple_factored[i] += m * factor;
+        }
     }
 }
 
@@ -2413,6 +2477,8 @@ pub fn add_structure_wind(
                     pull_ahead: [0.0; 2],
                     pulls_by_set: Vec::new(),
                     lever: [0.0; 3],
+                    couple: [0.0; 3],
+                    couple_factored: [0.0; 3],
                 });
             }
         }
@@ -2422,21 +2488,27 @@ pub fn add_structure_wind(
 /// The loads as CSV (one row per load case and point; forces in N):
 /// `case,structure,point,label,sets,x,y,z,transverse,longitudinal,
 /// vertical,factored_transverse,factored_longitudinal,factored_vertical,
-/// broken_span` (`sets` separated by spaces; `broken_span`: in a
-/// broken-wire case the broken span giving each component, transverse
+/// broken_span,factored_moment_transverse,factored_moment_longitudinal,
+/// factored_moment_vertical` (`sets` separated by spaces; `broken_span`: in
+/// a broken-wire case the broken span giving each component, transverse
 /// longitudinal vertical, separated by spaces — the same three for one
-/// span; empty otherwise).
+/// span; empty otherwise; the factored moments, N·m, about the point in
+/// the structure's axes, of a load acting away from it — a post
+/// insulator's, with a jumper's moment on its clamp — 0 for the others;
+/// 2026-11-14, columns added at the end).
 pub fn to_csv(results: &[CaseLoads]) -> String {
     let mut out = String::from(
         "case,structure,point,label,sets,x,y,z,transverse,longitudinal,vertical,\
-         factored_transverse,factored_longitudinal,factored_vertical,broken_span\n",
+         factored_transverse,factored_longitudinal,factored_vertical,broken_span,\
+         factored_moment_transverse,factored_moment_longitudinal,factored_moment_vertical\n",
     );
     let quote = ohl_core::text::csv_field;
     for r in results {
         for l in &r.loads {
+            let moment = capacity::lever_moment(l);
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{}",
+                "{},{},{},{},{},{:.3},{:.3},{:.3},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{},{:.1},{:.1},{:.1}",
                 quote(&r.case.name),
                 quote(&l.structure),
                 quote(&l.point),
@@ -2457,6 +2529,9 @@ pub fn to_csv(results: &[CaseLoads]) -> String {
                 l.factored[2],
                 l.broken_span
                     .map_or(String::new(), |k| format!("{} {} {}", k[0], k[1], k[2])),
+                moment[0],
+                moment[1],
+                moment[2],
             );
         }
     }

@@ -97,6 +97,53 @@ fn rich_line() -> Line {
         weight: 100.0,
         ..Default::default()
     });
+    // A fixed post with its ratings and clamp direction, a hinged one with
+    // its brace (line file version 17).
+    let at = s.wires[0].position;
+    for (label, dz) in [("PB", 4.0), ("HB", 6.0), ("BR", 7.5)] {
+        s.points.push(ohl_line::StructurePoint {
+            description: Default::default(),
+            label: label.into(),
+            position: [at[0] + 1.0, at[1], at[2] + dz],
+            joint: None,
+            offset: [0.0; 3],
+            unlinked: false,
+        });
+    }
+    for (label, dz) in [("PT", 5.5), ("HT", 6.0)] {
+        s.wires.push(ohl_line::WirePoint {
+            description: Default::default(),
+            label: label.into(),
+            position: [at[0] + 1.0, at[1] + 1.5, at[2] + dz],
+            set: None,
+            weight: 0.0,
+        });
+    }
+    s.strings.push(ohl_line::InsulatorString {
+        label: "post".into(),
+        top: "PB".into(),
+        wire: "PT".into(),
+        post: true,
+        cantilever_load: Some(8000.0),
+        compression: Some(20000.0),
+        exit_angle_deg: Some(-15.0),
+        exit_direction_deg: Some(90.0),
+        ..Default::default()
+    });
+    s.strings.push(ohl_line::InsulatorString {
+        label: "braced".into(),
+        top: "HB".into(),
+        wire: "HT".into(),
+        post: true,
+        hinged: true,
+        ..Default::default()
+    });
+    s.strings.push(ohl_line::InsulatorString {
+        label: "brace".into(),
+        top: "BR".into(),
+        wire: "HT".into(),
+        ..Default::default()
+    });
     let ball = line.sections[0].objects_mut().next().unwrap();
     ball.shape = ohl_line::Shape::Areas {
         wind_area: 0.25,

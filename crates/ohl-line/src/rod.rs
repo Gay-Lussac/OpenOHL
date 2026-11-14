@@ -121,6 +121,11 @@ pub(crate) struct RodShape {
     /// The forces the rod exerts on its ends A and B, N (its stiffness's
     /// moments at clamped ends left out).
     pub end_forces: [V; 2],
+    /// The moments the rod exerts on its clamped ends A and B, N·m (zero
+    /// at a hinged end): from the clamp's term \\( 2 EI / ℓ (1 - d \cdot e)
+    /// \\), \\( (2 EI / ℓ)\, e \times d \\) — the clamp turned towards
+    /// the end piece.
+    pub end_moments: [V; 2],
     /// The held points, as the rod's.
     pub holds: Vec<HoldShape>,
     /// Piece directions (to start the next solve from).
@@ -498,6 +503,17 @@ impl Rod {
         [a, -lambda]
     }
 
+    /// The moments the rod exerts on its clamped ends ([`RodShape::end_moments`]).
+    fn end_moments(&self, d: &[V]) -> [V; 2] {
+        let n = self.n();
+        let at = |e: Option<V>, piece: usize| {
+            e.map_or(V::zeros(), |e| {
+                e.cross(&d[piece]) * (2.0 * self.ei / self.pieces[piece])
+            })
+        };
+        [at(self.start, 0), at(self.end, n - 1)]
+    }
+
     /// The largest tension along the rod (at the pieces' middles).
     fn max_tension(&self, d: &[V], lambda: V, mu: &[f64], active: &[(usize, usize)]) -> f64 {
         let nodes = self.nodes(d);
@@ -819,6 +835,7 @@ impl Rod {
             points: nodes,
             max_tension: self.max_tension(&d, lambda, &mu, &active),
             end_forces: self.end_forces(&d, lambda, &mu, &active),
+            end_moments: self.end_moments(&d),
             holds,
             directions: d,
         })

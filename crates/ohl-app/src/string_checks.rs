@@ -197,6 +197,7 @@ impl StringChecksWindow {
             let started = std::time::Instant::now();
             let line = local.line();
             let mut solved = Vec::new();
+            let mut posts = Vec::new();
             let mut notes = local.notes();
             // Each case once per calculation its rules ask (2026-11-01).
             let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
@@ -225,6 +226,12 @@ impl StringChecksWindow {
                         )),
                     }
                 }
+                // The fixed posts' loads (their ratings).
+                posts.push((
+                    case.name.clone(),
+                    calc,
+                    ohl_line::post::post_loads(&line, &library, case, &shapes),
+                ));
                 solved.push((case.name.clone(), calc, shapes));
             }
             let views: Vec<(
@@ -235,7 +242,11 @@ impl StringChecksWindow {
                 .iter()
                 .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
                 .collect();
-            let mut report = strings::check(line, &views, &rules, &Default::default());
+            let post_views: Vec<strings::PostCase> = posts
+                .iter()
+                .map(|(n, c, p)| (n.as_str(), *c, p.as_slice()))
+                .collect();
+            let mut report = strings::check(line, &views, &post_views, &rules, &Default::default());
             report.notes.splice(0..0, notes);
             local.finish(LOCAL.1, started.elapsed());
             Ok(Report { report, rules })
@@ -654,7 +665,7 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
         .map(|r| {
             let rule = &report.rules[r.rule];
             let (value, limit, usage) = match r.measure {
-                Measure::Load => (
+                Measure::Load | Measure::Cantilever | Measure::Compression => (
                     Cell::sorted(format!("{:.2} kN", r.value / 1000.0), r.value),
                     Cell::sorted(format!("{:.2} kN", r.limit / 1000.0), r.limit),
                     Cell::num(Some(100.0 * r.usage), 1),
@@ -702,7 +713,7 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
 /// "62.0° of 45.0°", "slack".
 fn against(r: &strings::StringRow) -> String {
     match r.measure {
-        Measure::Load => format!(
+        Measure::Load | Measure::Cantilever | Measure::Compression => format!(
             "{:.1} kN of {:.1} kN ({:.0} %)",
             r.value / 1000.0,
             r.limit / 1000.0,
