@@ -925,6 +925,14 @@ pub enum PageAction {
     UseForModel(PathBuf),
     /// Edit this structure file in the structure application.
     EditInStructureApp(PathBuf),
+    /// Rename load case `old` of the project's load case library `new`,
+    /// in the structures' sets too, as one command (2026-11-14).
+    RenameLoadCase {
+        /// Its name now.
+        old: String,
+        /// Its new name.
+        new: String,
+    },
 }
 
 /// Whether the model reads `kind` from the project (its working copies).
@@ -1488,6 +1496,8 @@ impl LibraryPage {
                 let fcx = crate::load_case_form::FormContext {
                     weather: cx.weather,
                     line: cx.line,
+                    project: cx.line.is_some() && in_project(sources, LibraryKind::LoadCases),
+                    dirty: self.dirty(),
                 };
                 if let Some(t) = crate::load_case_form::ui(
                     ui,
@@ -1501,6 +1511,9 @@ impl LibraryPage {
                     self.buffers.clear();
                     self.message = None;
                     self.check();
+                }
+                if let Some((old, new)) = self.form.rename.take() {
+                    return Some(PageAction::RenameLoadCase { old, new });
                 }
                 return action;
             }

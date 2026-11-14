@@ -57,6 +57,9 @@ pub struct Inputs {
     pub sections: Result<ohl_sections::SectionLibrary, String>,
     /// The load cases, or why there are none.
     pub cases: Result<Vec<ohl_loads::LoadCase>, String>,
+    /// The names of every case of the load case library (the case sets
+    /// are checked against them, not against the cases ticked).
+    pub known: Vec<String>,
     /// **Use local conditions** ticked.
     pub local: bool,
     /// The structures kept (View › Work on route).
@@ -76,13 +79,16 @@ pub fn compute(i: &Inputs) -> (Outcome, Vec<CaseUsage>) {
     let line = &i.line;
     let r = i.sections.clone().and_then(|sections| {
         let cases = ohl_loads::with_local(i.cases.clone()?, i.local);
-        let mut loads = ohl_loads::structure_loads(
+        let mut loads = ohl_loads::structure_loads_each(
             line,
             &i.library,
             &i.weather,
             &cases,
+            &i.known,
             &ohl_loads::default_budget(),
-        )?;
+        )
+        .into_iter()
+        .collect::<Result<Vec<_>, String>>()?;
         ohl_loads::add_structure_loads(&mut loads, line, &i.types, &sections, &i.weather);
         for c in loads.iter_mut() {
             if let Some(on) = &i.scope {
@@ -187,7 +193,7 @@ impl UsageMark {
             Self::Incomplete => "not checked: a wire not solved",
             Self::Approximate => "approximate (tension-only kept)",
             Self::NotSafe => "not all checked (not safe side)",
-            Self::Unchecked => "no capacity to check",
+            Self::Unchecked => "not checked (no capacity, a case)",
         }
     }
 }
@@ -395,7 +401,12 @@ impl LoadsPage {
         // load cases take the local conditions, one rule).
         let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let ticked = self.cases_ticked.clone();
-        let cases = ohl_loads::LoadCases::load(&path).and_then(|set| {
+        let library = ohl_loads::LoadCases::load(&path);
+        let known: Vec<String> = library
+            .as_ref()
+            .map(|set| set.cases.iter().map(|c| c.name.clone()).collect())
+            .unwrap_or_default();
+        let cases = library.and_then(|set| {
             let cases: Vec<_> = set
                 .cases
                 .into_iter()
@@ -420,6 +431,7 @@ impl LoadsPage {
                 .section_library()
                 .map_err(|e| format!("cross-section library: {e}")),
             cases,
+            known,
             local: self.local,
             // The route worked on only (View › Work on route).
             scope: model.scope().map(|s| s.structures),
@@ -1055,14 +1067,16 @@ impl LoadsPage {
                         )
                     })
                 }
-                k => s.is_incomplete().then(|| {
-                    format!(
-                        "{} in {}",
-                        s.not_checked_text(),
-                        names.get(k - 1).map_or("", String::as_str)
-                    )
-                }),
+                k if s.is_incomplete() => Some(format!(
+                    "{} in {}",
+                    s.not_checked_text(),
+                    names.get(k - 1).map_or("", String::as_str)
+                )),
+                _ => None,
             }
+            // A case of its set not in the library (2026-11-14): not
+            // checked in it, never a pass.
+            .or_else(|| (!s.unknown_cases.is_empty()).then(|| s.not_checked_text()))
         };
         let checked = rows
             .iter()
@@ -1091,8 +1105,26 @@ impl LoadsPage {
         ui.label(
             egui::RichText::new(format!(
                 "{checked} structures checked, {over} over 100 %, {} not checked (a wire not \
-                 solved){}",
+                 solved){}{}",
                 incomplete.len(),
+                {
+                    // A case of its set not in the library (2026-11-14).
+                    let mut seen = std::collections::BTreeSet::new();
+                    for c in &self.usage {
+                        for s in c.structures.iter().filter(|s| !s.unknown_cases.is_empty()) {
+                            seen.insert(s.structure.as_str());
+                        }
+                    }
+                    if seen.is_empty() {
+                        String::new()
+                    } else {
+                        format!(
+                            ", {} not checked (a load case of its set not in the library: {})",
+                            seen.len(),
+                            seen.into_iter().collect::<Vec<_>>().join(", ")
+                        )
+                    }
+                },
                 if checked == 0 {
                     " — give the structure types a [capacity] (allowable spans, \
                      allowable loads) to check them"

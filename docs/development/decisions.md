@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Never silently absent: renamed or deleted load cases, a faulty case**
+(phase 1a of the load cases review, owner's answers 5 and 6): a structure
+whose case set names cases not in the load case library is **not
+checked** — said in every case's notes, in the usage (never a pass; a set
+naming only such cases is listed in every case with no loads), in the
+Structures table (⚠, error colour) and in OHL-Structure's header; before,
+it quietly took fewer cases, or none and dropped out of the usage table
+(**not on the safe side**). The sets are checked against the whole
+library, not the cases ticked in the check (a run of some cases no
+longer calls the others "not in the library"). **Rename** in the Load
+cases library renames the case in the file (comments kept) and in every
+structure's set, type's set and broken-wire tick, one command undone as
+one (`load_case_sets::rename_command`); **Delete** names the structures
+that lose it. A library case that does not compute fails only itself in
+what OHL-Structure gets (`ohl_loads::structure_loads_each`): the others
+are sent, the faulty one is named NOT SENT in the header of the
+structures taking it; before, one faulty case removed every library case
+of every structure. The line's own check still stops at a faulty case
+and says why (visible, nothing passes).
+
 **Load cases between OHL-Design and OHL-Structure: the model, and the
 texts said right** (owner, approving the review of how load cases reach
 the structures, with its recommended answers): *the line transfers what

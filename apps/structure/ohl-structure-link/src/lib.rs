@@ -383,6 +383,10 @@ pub fn structure_cases_with(
 /// The tag of a line result with a broken wire.
 pub const BROKEN_WIRE_TAG: &str = "broken wire";
 
+/// How a library case that does not compute is said in the note of the
+/// line-values file of the structures taking it (2026-11-14).
+pub const NOT_SENT: &str = "NOT SENT";
+
 /// The line results ([`StructureCases`]) of the weather cases `choice`
 /// sends, of `weather` (the line's weather cases, in their order), the
 /// wires in `choice`'s condition (as strung by default). A chosen name
@@ -457,9 +461,13 @@ pub struct StructureCaseLoads {
     pub library: Vec<CaseLoads>,
     /// The line's weather cases (for the ice on the structures).
     pub library_weather: Vec<ohl_weather::WeatherCase>,
-    /// Why the library's cases have no loads (a case naming a weather
-    /// case that is not there…); none: computed.
-    pub library_error: Option<String>,
+    /// The library's cases that do not compute (a case naming a weather
+    /// case that is not there…), each with why: each fails only itself
+    /// (2026-11-14), the others are sent.
+    pub library_failed: Vec<(String, String)>,
+    /// The names of every case of the library (the case sets are checked
+    /// against them).
+    pub library_names: Vec<String>,
 }
 
 /// The structure loads (`ohl_loads::structure_loads`, every case solved
@@ -495,26 +503,33 @@ pub fn structure_case_loads(
             budget,
         )?
     };
-    let (lib, library_error) = if cases.library.is_empty() {
-        (Vec::new(), None)
-    } else {
-        match ohl_loads::structure_loads(
+    // Each case of the library on its own (2026-11-14): a faulty one
+    // fails only itself, named in the header of the structures taking it.
+    let library_names: Vec<String> = cases.library.iter().map(|c| c.name.clone()).collect();
+    let (mut lib, mut library_failed) = (Vec::new(), Vec::new());
+    if !cases.library.is_empty() {
+        let each = ohl_loads::structure_loads_each(
             line,
             library,
             &cases.library_weather,
             &cases.library,
+            &library_names,
             budget,
-        ) {
-            Ok(l) => (l, None),
-            Err(e) => (Vec::new(), Some(e)),
+        );
+        for (c, r) in cases.library.iter().zip(each) {
+            match r {
+                Ok(l) => lib.push(l),
+                Err(e) => library_failed.push((c.name.clone(), e)),
+            }
         }
-    };
+    }
     Ok(StructureCaseLoads {
         weather,
         missing: cases.missing,
         library: lib,
         library_weather: cases.library_weather,
-        library_error,
+        library_failed,
+        library_names,
     })
 }
 
@@ -539,12 +554,46 @@ pub fn placed_values_with(
         .filter(|c| line.takes_load_case(structure, &c.case.name))
         .cloned()
         .collect();
-    let mut missing = sent.missing.clone();
-    if let Some(e) = &sent.library_error {
-        missing.push(format!("the load case library's cases ({e})"));
-    }
-    let mut out = placed_values(&own, &sent.weather, &missing, line, structure, line_name);
+    let mut out = placed_values(
+        &own,
+        &sent.weather,
+        &sent.missing,
+        line,
+        structure,
+        line_name,
+    );
     out.library_cases = library_recipes(&own, &sent.library_weather, line, structure);
+    // Never silently absent (2026-11-14): a case of its set that did not
+    // compute, and the cases of its set not in the library, said first in
+    // the note (OHL-Structure's header).
+    let mut said: Vec<String> = sent
+        .library_failed
+        .iter()
+        .filter(|(name, _)| line.takes_load_case(structure, name))
+        .map(|(name, why)| format!("{NOT_SENT}: library case \"{name}\" does not compute ({why})"))
+        .collect();
+    if let Some(u) = ohl_loads::unknown_case_sets(line, &sent.library_names)
+        .into_iter()
+        .find(|u| u.structure == structure)
+    {
+        said.push(format!(
+            "NOT CHECKED: load case(s) {} of {structure}'s set not in the line's load case \
+             library{}",
+            u.names.join(", "),
+            if u.none_known {
+                " — no library case is sent for it"
+            } else {
+                ""
+            }
+        ));
+    }
+    if !said.is_empty() {
+        let said = said.join(" · ");
+        out.note = Some(match out.note.take() {
+            Some(n) => format!("{said} · {n}"),
+            None => said,
+        });
+    }
     // A structure taking no load case (2026-11-10): none of the library's
     // — said, with the line results still sent (the forces the line
     // transmits; its own load cases in OHL-Structure may take them).

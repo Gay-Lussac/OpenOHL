@@ -18,7 +18,9 @@
 //! - Line › Criteria › **Load cases per structure type…**: a tick list per
 //!   structure type ([`types_window`]).
 //!
-//! Every change is one command of the session (one undo).
+//! Every change is one command of the session (one undo). A case renamed
+//! in the Load cases library is renamed in every set and broken-wire tick
+//! naming it in the same command ([`rename_command`], 2026-11-14).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -63,19 +65,41 @@ pub fn library_names(model: &Model) -> Result<Vec<String>, String> {
 /// Structure `s`'s set in words for the Structures table: the cell (a
 /// count and the names, `2: wind, ice`; the type's `type: 2: …`; none:
 /// `every case`; a structure taking no load case: [`NO_CASE`]) — its hover
-/// shows the whole text.
-pub fn cell(line: &ohl_line::Line, s: &ohl_line::Structure) -> String {
+/// shows the whole text. With `known` (the library's case names), a set
+/// naming cases not there begins with [`UNKNOWN_MARK`] and says which
+/// (2026-11-14: drawn in the error colour; not checked in them).
+pub fn cell(line: &ohl_line::Line, s: &ohl_line::Structure, known: Option<&[String]>) -> String {
     if s.no_load_cases {
         return NO_CASE.to_owned();
     }
     let set = line.load_cases_for(s);
     let names = set.join(", ");
-    match (s.load_cases.is_empty(), set.is_empty()) {
+    let base = match (s.load_cases.is_empty(), set.is_empty()) {
         (false, _) => format!("{}: {names}", set.len()),
         (true, false) => format!("type's {}: {names}", set.len()),
         (true, true) => "every case".into(),
+    };
+    let unknown: Vec<&str> = known.map_or_else(Vec::new, |k| {
+        set.iter()
+            .filter(|n| !k.contains(n))
+            .map(String::as_str)
+            .collect()
+    });
+    if unknown.is_empty() {
+        base
+    } else if unknown.len() == set.len() {
+        format!("{UNKNOWN_MARK}NOT CHECKED: {base} — not in the library")
+    } else {
+        format!(
+            "{UNKNOWN_MARK}{base} — {} not in the library (not checked in it)",
+            unknown.join(", ")
+        )
     }
 }
+
+/// How a cell of the Structures table whose set names a case not in the
+/// library begins (drawn in the error colour).
+pub const UNKNOWN_MARK: &str = "⚠ ";
 
 /// The Structures table's cell of a structure that takes no load case.
 pub const NO_CASE: &str = "none: takes no load case";
@@ -450,4 +474,139 @@ pub fn types_ui(ui: &mut egui::Ui, model: &Model) -> Option<(String, Command)> {
             });
     });
     out
+}
+
+/// The structures of `line` whose set names load case `case` (their own,
+/// or their type's when they have none), in the line's order: those that
+/// lose it when it leaves the library.
+pub fn takers(line: &ohl_line::Line, case: &str) -> Vec<String> {
+    line.structures
+        .iter()
+        .filter(|s| !s.no_load_cases && line.load_cases_for(s).iter().any(|c| c == case))
+        .map(|s| s.id.clone())
+        .collect()
+}
+
+/// `names` with `old` renamed `new` (each name once).
+fn renamed(names: &[String], old: &str, new: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for n in names {
+        let n = if n == old { new.to_owned() } else { n.clone() };
+        if !out.contains(&n) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// The load case file `text` with its case `old` named `new` (its
+/// comments and layout kept). Err: no such case, or `new` taken.
+pub fn renamed_case(text: &str, old: &str, new: &str) -> Result<String, String> {
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    let cases = doc
+        .get_mut("case")
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+        .ok_or("the file has no [[case]]")?;
+    if cases
+        .iter()
+        .any(|c| c.get("name").and_then(toml_edit::Item::as_str) == Some(new))
+    {
+        return Err(format!("another case is called \"{new}\""));
+    }
+    let case = cases
+        .iter_mut()
+        .find(|c| c.get("name").and_then(toml_edit::Item::as_str) == Some(old))
+        .ok_or_else(|| format!("no case \"{old}\" in the file"))?;
+    case["name"] = toml_edit::value(new);
+    Ok(doc.to_string())
+}
+
+/// Load case `old` of the project's load case library renamed `new`, as
+/// one command (2026-11-14: a rename must not drop structures out of the
+/// checks): the library file with the case renamed (comments kept), and
+/// every structure's own set, every type's set and the broken-wire cases
+/// sent (Loads for structures) that name it — undone as one. What it does
+/// in words, and the command.
+pub fn rename_command(model: &Model, old: &str, new: &str) -> Result<(String, Command), String> {
+    let e = model
+        .editing
+        .as_ref()
+        .map_err(|e| format!("read-only: {e}"))?;
+    let session = &e.session;
+    let path = model
+        .sources
+        .load_cases
+        .clone()
+        .ok_or("the project has no load case library")?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or("the load case library has no name")?;
+    let stored = session
+        .library_files("loadcases")
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, t)| t)
+        .ok_or_else(|| {
+            format!(
+                "the load cases come from {}, not one of the project's files: copy it into the \
+                 project first (its Load cases library)",
+                path.display()
+            )
+        })?;
+    let text = renamed_case(&stored, old, new)?;
+    let mut commands = session
+        .library_puts(&e.user, &[("loadcases".to_owned(), name, text)])
+        .map_err(|e| e.to_string())?;
+    let before = session.line();
+    let mut structures = Vec::new();
+    for s in before
+        .structures
+        .iter()
+        .filter(|s| s.load_cases.iter().any(|c| c == old))
+    {
+        let mut s = s.clone();
+        s.load_cases = renamed(&s.load_cases, old, new);
+        commands.push(Command::Put {
+            kind: Kind::Structure,
+            id: s.id.clone(),
+            value: serde_json::to_value(&s).map_err(|e| e.to_string())?,
+            ord: None,
+        });
+        structures.push(s.id);
+    }
+    let mut after = before.clone();
+    let sl = &mut after.structure_loads;
+    let mut types = Vec::new();
+    for (t, set) in sl.type_load_cases.iter_mut() {
+        if set.iter().any(|c| c == old) {
+            *set = renamed(set, old, new);
+            types.push(t.clone());
+        }
+    }
+    let broken = sl.broken_cases.iter().any(|c| c == old);
+    sl.broken_cases = renamed(&sl.broken_cases, old, new);
+    if after.structure_loads != before.structure_loads {
+        commands.push(ohl_session::line_settings_change(before, &after));
+    }
+    let mut also = Vec::new();
+    if !structures.is_empty() {
+        also.push(format!("the sets of {}", structures.join(", ")));
+    }
+    if !types.is_empty() {
+        also.push(format!("the sets of type(s) {}", types.join(", ")));
+    }
+    if broken {
+        also.push("the broken-wire cases sent".to_owned());
+    }
+    let what = format!(
+        "load case \"{old}\" renamed \"{new}\"{}",
+        if also.is_empty() {
+            String::new()
+        } else {
+            format!(", also in {}", also.join(", "))
+        }
+    );
+    Ok((what, Command::Batch { commands }))
 }

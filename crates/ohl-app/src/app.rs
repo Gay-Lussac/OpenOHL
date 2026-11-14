@@ -1362,6 +1362,27 @@ impl Ready {
         action: crate::library::PageAction,
     ) {
         use crate::library::PageAction;
+        // A load case renamed (2026-11-14): one command, the structures'
+        // sets with it; the page reads the file again.
+        if let PageAction::RenameLoadCase { old, new } = &action {
+            match crate::load_case_sets::rename_command(&self.model, old, new) {
+                Ok((what, command)) => {
+                    if self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    }) {
+                        self.status = Some((what, false));
+                    }
+                }
+                Err(e) => self.status = Some((format!("renaming load case \"{old}\": {e}"), true)),
+            }
+            if let Some(page) = self.libraries.get_mut(&kind)
+                && let Some(f) = page.file.clone()
+            {
+                page.open(&f);
+            }
+            return;
+        }
         // Edit… on a structure file: the structure application, nothing
         // saved yet.
         if let PageAction::EditInStructureApp(p) = &action {
@@ -1425,6 +1446,8 @@ impl Ready {
                     Some(before),
                 )
             }
+            // Taken above.
+            PageAction::RenameLoadCase { .. } => return,
         };
         // A library chosen for the model must have the line's cables.
         let reloaded = self.model.reload_libraries().and_then(|report| {

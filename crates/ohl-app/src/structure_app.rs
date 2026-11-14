@@ -1625,7 +1625,13 @@ mod tests {
                 .is_empty()
         );
         let v = PlacedValues::load(&placed.values).unwrap();
-        assert_eq!(v.note, None);
+        // T2's own set names "wind", no longer in a library (there is
+        // none now): said, never silently absent (2026-11-14).
+        let note = v.note.clone().unwrap_or_default();
+        assert!(
+            note.starts_with("NOT CHECKED: load case(s) wind of T2's set"),
+            "{note}"
+        );
         assert_eq!(v.structure_type, "type-02");
         assert_eq!(
             v.cases,

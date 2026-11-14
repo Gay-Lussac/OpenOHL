@@ -239,6 +239,7 @@ fn inputs(model: &model::Model, local: bool) -> crate::loads::Inputs {
         sections: model.section_library(),
         cases: ohl_loads::LoadCases::load(model.sources.load_cases.as_deref().unwrap())
             .map(|s| s.cases),
+        known: crate::load_case_sets::library_names(model).unwrap_or_default(),
         local,
         scope: None,
         structures: None,
@@ -371,4 +372,98 @@ fn a_structure_can_take_no_load_case() {
     // One undo: none again.
     h.state_mut().ready().unwrap().model.undo().unwrap();
     assert_eq!(cell(&mut h), crate::load_case_sets::NO_CASE);
+}
+
+/// A case renamed in the Load cases library (2026-11-14: a rename must not
+/// drop structures out of the checks): Rename › OK renames it in the file
+/// (its comments kept) and in every structure's set, type's set and
+/// broken-wire tick naming it — one command, one undo puts all back.
+/// Deleted from the library, a set still naming it is said in the
+/// Structures table (error colour), not dropped.
+#[test]
+fn a_renamed_load_case_follows_into_the_sets_and_undoes_as_one() {
+    let mut h = app(synthetic_project_with("lc-rename", |l| {
+        l.structures[1].load_cases = vec!["everyday".into(), "wind".into()];
+        l.structure_loads
+            .type_load_cases
+            .insert("type-01".into(), vec!["everyday".into()]);
+        l.structure_loads.broken_cases = vec!["everyday".into()];
+    }));
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .store_libraries()
+        .unwrap();
+    h.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Library(LibraryKind::LoadCases), None));
+    h.run();
+    h.run();
+    // The first case is picked: "everyday".
+    h.get_by_label("Rename").click();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "new name")
+        .focus();
+    h.run();
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "new name")
+        .type_text(" SLS");
+    h.run();
+    h.get_by_label("OK").click();
+    h.run();
+    h.run();
+    let state = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        let line = &r.model.line;
+        let text = std::fs::read_to_string(r.model.sources.load_cases.clone().unwrap()).unwrap();
+        (
+            line.structures[1].load_cases.clone(),
+            line.structure_loads.type_load_cases["type-01"].clone(),
+            line.structure_loads.broken_cases.clone(),
+            text,
+        )
+    };
+    let (own, of_type, broken, text) = state(&mut h);
+    assert_eq!(own, ["everyday SLS", "wind"]);
+    assert_eq!(of_type, ["everyday SLS"]);
+    assert_eq!(broken, ["everyday SLS"]);
+    assert!(text.contains("name = \"everyday SLS\""), "{text}");
+    assert!(
+        text.contains("weather = \"everyday\""),
+        "the weather case kept: {text}"
+    );
+    assert!(
+        text.starts_with("# Synthetic example"),
+        "comments kept: {text}"
+    );
+    assert!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .status
+            .as_ref()
+            .is_some_and(|s| s.0.contains("also in the sets of")),
+    );
+    // One undo: everything back.
+    h.state_mut().ready().unwrap().model.undo().unwrap();
+    h.run();
+    let (own, of_type, broken, text) = state(&mut h);
+    assert_eq!(own, ["everyday", "wind"]);
+    assert_eq!(of_type, ["everyday"]);
+    assert_eq!(broken, ["everyday"]);
+    assert!(text.contains("name = \"everyday\""), "{text}");
+    // A set naming a case the library has not: said in the Structures
+    // table, never silently dropped.
+    let r = h.state_mut().ready().unwrap();
+    let s = r.model.line.structures[1].clone();
+    let known = vec!["wind".to_owned(), "ice".to_owned()];
+    let cell = crate::load_case_sets::cell(&r.model.line, &s, Some(&known));
+    assert!(
+        cell.starts_with(crate::load_case_sets::UNKNOWN_MARK)
+            && cell.contains("everyday not in the library"),
+        "{cell}"
+    );
+    let all = vec!["wind".to_owned()];
+    let mut only = s.clone();
+    only.load_cases = vec!["everyday".into()];
+    assert!(crate::load_case_sets::cell(&r.model.line, &only, Some(&all)).contains("NOT CHECKED"),);
 }

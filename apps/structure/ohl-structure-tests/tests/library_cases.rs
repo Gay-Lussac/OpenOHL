@@ -86,7 +86,11 @@ fn a_placed_structure_takes_its_set_with_an_angled_wind_and_two_broken_wires() {
     );
     let budget = ohl_wirefe::default_fe_budget();
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    assert!(loads.library_error.is_none(), "{:?}", loads.library_error);
+    assert!(
+        loads.library_failed.is_empty(),
+        "{:?}",
+        loads.library_failed
+    );
     let placed = placed_values_with(&loads, &line, "T2", "synthetic");
     let names: Vec<&str> = placed
         .library_cases
@@ -201,4 +205,69 @@ fn a_case_taking_the_local_conditions_puts_the_local_ice_on_the_members() {
         "{}",
         recipes[1].description
     );
+}
+
+/// Never silently absent (2026-11-14). A library case naming a weather
+/// case that is not there fails only itself: the other cases still reach
+/// OHL-Structure, and the note of every structure taking the faulty one
+/// names it (NOT SENT). A structure whose own set names only cases no
+/// longer in the library gets no library case and is told why (NOT
+/// CHECKED); one naming one such case among others gets the others and
+/// is told which is missing.
+#[test]
+fn one_faulty_case_fails_alone_and_a_set_of_missing_cases_is_said() {
+    let (mut line, library, weather) = example();
+    let lc = LoadCases::parse(
+        "format = \"ohl-load-cases\"\nversion = 1\n\
+         [[case]]\nname = \"calm\"\nweather = \"everyday\"\nvertical = 1.2\n\
+         [[case]]\nname = \"faulty\"\nweather = \"no such weather\"\n\
+         [[case]]\nname = \"windy\"\nweather = \"high wind\"\ntransverse = 1.4\n",
+    )
+    .unwrap()
+    .cases;
+    let set = |line: &mut Line, id: &str, cases: &[&str]| {
+        line.structures
+            .iter_mut()
+            .find(|s| s.id == id)
+            .unwrap()
+            .load_cases = cases.iter().map(|c| (*c).to_owned()).collect();
+    };
+    set(&mut line, "T2", &["calm (renamed)"]);
+    set(&mut line, "T3", &["calm", "windy (renamed)"]);
+    let cases = structure_cases_with(&ohl_line::StructureLoads::default(), &weather, &lc);
+    let budget = ohl_wirefe::default_fe_budget();
+    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    assert_eq!(loads.library_failed.len(), 1);
+    assert_eq!(loads.library_failed[0].0, "faulty");
+    let names: Vec<&str> = loads.library.iter().map(|c| c.case.name.as_str()).collect();
+    assert_eq!(names, ["calm", "windy"]);
+    // T1 takes every case: the two that compute, the faulty one named.
+    let t1 = placed_values_with(&loads, &line, "T1", "synthetic");
+    let got: Vec<&str> = t1.library_cases.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(got, ["calm", "windy"]);
+    let note = t1.note.clone().unwrap_or_default();
+    assert!(
+        note.starts_with(ohl_structure_link::NOT_SENT)
+            && note.contains("\"faulty\"")
+            && note.contains("no such weather"),
+        "{note}"
+    );
+    // T2: every case of its set gone from the library.
+    let t2 = placed_values_with(&loads, &line, "T2", "synthetic");
+    assert!(t2.library_cases.is_empty());
+    let note = t2.note.clone().unwrap_or_default();
+    assert!(
+        note.contains("NOT CHECKED: load case(s) calm (renamed) of T2's set")
+            && note.contains("no library case is sent for it"),
+        "{note}"
+    );
+    // Not taking the faulty case: not told of it.
+    assert!(!note.contains("faulty"), "{note}");
+    // T3: "calm" arrives, "windy (renamed)" said.
+    let t3 = placed_values_with(&loads, &line, "T3", "synthetic");
+    let got: Vec<&str> = t3.library_cases.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(got, ["calm"]);
+    let note = t3.note.clone().unwrap_or_default();
+    assert!(note.contains("windy (renamed)"), "{note}");
+    assert!(!note.contains("no library case is sent"), "{note}");
 }

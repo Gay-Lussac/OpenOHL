@@ -1186,6 +1186,10 @@ pub struct CaseLoads {
     /// the local conditions, removed and broken wires, the per-pylon
     /// sets, ice and snow on the structures; empty for a plain case).
     pub notes: Vec<String>,
+    /// The structures whose case set names cases not in the library
+    /// ([`unknown_case_sets`]; the same in every case): never silently
+    /// absent from the checks (2026-11-14).
+    pub unknown_sets: Vec<UnknownCases>,
 }
 
 /// The loads of one break of a broken wire in every span
@@ -1429,12 +1433,35 @@ pub fn structure_loads(
     cases: &[LoadCase],
     budget: &Budget,
 ) -> Result<Vec<CaseLoads>, String> {
+    let known: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+    structure_loads_each(line, library, weather, cases, &known, budget)
+        .into_iter()
+        .collect()
+}
+
+/// [`structure_loads`], each case on its own (2026-11-14): a case that
+/// does not compute (a weather case, section or span it names not there,
+/// ice on the structures without a density…) fails only itself, the
+/// others are computed as usual. `known`: the names of every case of the
+/// line's load case library — the case sets of the structures are
+/// checked against it ([`unknown_case_sets`], [`CaseLoads::unknown_sets`]),
+/// so that a run of some cases only does not call the others missing.
+/// Same cost as [`structure_loads`].
+pub fn structure_loads_each(
+    line: &Line,
+    library: &ohl_cables::Library,
+    weather: &[WeatherCase],
+    cases: &[LoadCase],
+    known: &[String],
+    budget: &Budget,
+) -> Vec<Result<CaseLoads, String>> {
     let mut line = line.clone();
     line.set_weather_cases(weather);
     let has_local = ohl_line::local::has_local(&line);
     let local = (has_local && cases.iter().any(|c| c.use_local))
         .then(|| ohl_line::local::localized(&line, ohl_line::local::Purpose::Strength));
-    let mut set_notes = load_case_set_notes(&line, cases);
+    let unknown = unknown_case_sets(&line, known);
+    let mut set_notes = load_case_set_notes(&line, known);
     // The jumpers' own pull on their clamps with a bending stiffness only
     // estimated (k · EI_max, conservative for the swing, not for the
     // pull): said with every case (2026-11-08).
@@ -1461,8 +1488,7 @@ pub fn structure_loads(
     // A post's clamp: the jumpers' moment the rod's, their forces
     // estimated (2026-11-14).
     set_notes.extend(ohl_line::post::moment_with_estimate_note(&line));
-    let mut out = Vec::with_capacity(cases.len());
-    for case in cases {
+    let one = |case: &LoadCase| -> Result<CaseLoads, String> {
         let w = weather
             .iter()
             .find(|w| w.name == case.weather)
@@ -1638,7 +1664,11 @@ pub fn structure_loads(
                 .iter()
                 .map(|l: &AttachmentLoad| l.structure.as_str())
                 .chain(missing.iter().map(|m| m.structure.as_str()))
-                .filter(|s| !takes(s) && !line.takes_no_load_case(s))
+                .filter(|s| {
+                    !takes(s)
+                        && !line.takes_no_load_case(s)
+                        && !unknown.iter().any(|u| u.none_known && u.structure == *s)
+                })
                 .collect();
             out_of.sort_unstable();
             out_of.dedup();
@@ -1680,7 +1710,7 @@ pub fn structure_loads(
                 case.wind_from.unwrap_or(w.wind_from).as_str()
             ));
         }
-        out.push(CaseLoads {
+        Ok(CaseLoads {
             case: case.clone(),
             loads,
             failed,
@@ -1688,9 +1718,10 @@ pub fn structure_loads(
             structure_wind: body,
             broken_each: each,
             notes,
-        });
-    }
-    Ok(out)
+            unknown_sets: unknown.clone(),
+        })
+    };
+    cases.iter().map(one).collect()
 }
 
 /// `cases` as a check with **Use local conditions** ticked takes them:
@@ -1713,12 +1744,68 @@ pub fn with_local(cases: Vec<LoadCase>, ticked: bool) -> Vec<LoadCase> {
         .collect()
 }
 
+/// A structure whose case set (its own, else its type's) names load cases
+/// that are not in the line's load case library (renamed or deleted
+/// there since): it is not checked in them (2026-11-14, never silently
+/// absent).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownCases {
+    /// The structure.
+    pub structure: String,
+    /// The names of its set not in the library, in the set's order.
+    pub names: Vec<String>,
+    /// No name of its set is in the library: it takes no case at all, has
+    /// no loads and no check — listed as not checked.
+    pub none_known: bool,
+}
+
+impl UnknownCases {
+    /// `not checked: load case(s) ice ULS of its set not in the library
+    /// (…)`.
+    pub fn describe(&self) -> String {
+        format!(
+            "{NOT_IN_LIBRARY}: load case(s) {} of its set not in the library{}",
+            self.names.join(", "),
+            if self.none_known {
+                " (it takes no other: no loads computed, no check made)"
+            } else {
+                " (not checked in them)"
+            }
+        )
+    }
+}
+
+/// How a structure whose case set names cases not in the library is said
+/// (in the usage, the notes, OHL-Structure's header).
+pub const NOT_IN_LIBRARY: &str = "not checked";
+
+/// The structures of `line` whose case set names load cases not among
+/// `known` (the names of the line's load case library), in the line's
+/// order ([`UnknownCases`]). A structure taking no load case, or every
+/// case (no set), is never listed.
+pub fn unknown_case_sets(line: &Line, known: &[String]) -> Vec<UnknownCases> {
+    line.structures
+        .iter()
+        .filter(|s| !s.no_load_cases)
+        .filter_map(|s| {
+            let set = line.load_cases_for(s);
+            let names: Vec<String> = set.iter().filter(|n| !known.contains(n)).cloned().collect();
+            (!names.is_empty()).then(|| UnknownCases {
+                structure: s.id.clone(),
+                none_known: names.len() == set.len(),
+                names,
+            })
+        })
+        .collect()
+}
+
 /// The unknown names of the per-pylon load case sets (a structure's own
-/// or a type's default naming a case not in `cases`), in words; checked
-/// when the loads are computed (the library may change after the line
-/// was written).
-pub fn load_case_set_notes(line: &Line, cases: &[LoadCase]) -> Vec<String> {
-    let known = |n: &String| cases.iter().any(|c| &c.name == n);
+/// or a type's default naming a case not among `known`, the names of the
+/// line's load case library), in words; checked when the loads are
+/// computed (the library may change after the line was written). A
+/// structure taking only unknown cases is said NOT CHECKED.
+pub fn load_case_set_notes(line: &Line, known: &[String]) -> Vec<String> {
+    let known = |n: &String| known.contains(n);
     let mut out = Vec::new();
     for s in &line.structures {
         let unknown: Vec<&str> = s
@@ -1727,9 +1814,19 @@ pub fn load_case_set_notes(line: &Line, cases: &[LoadCase]) -> Vec<String> {
             .filter(|n| !known(n))
             .map(String::as_str)
             .collect();
-        if !unknown.is_empty() {
+        if unknown.is_empty() {
+            continue;
+        }
+        if unknown.len() == s.load_cases.len() && !s.no_load_cases {
             out.push(format!(
-                "structure {}: load case(s) not in the library: {}",
+                "NOT CHECKED: structure {}: every load case of its set is not in the library ({}): \
+                 no loads computed, no check made",
+                s.id,
+                unknown.join(", ")
+            ));
+        } else {
+            out.push(format!(
+                "structure {}: load case(s) not in the library: {} (not checked in them)",
                 s.id,
                 unknown.join(", ")
             ));
@@ -1743,8 +1840,13 @@ pub fn load_case_set_notes(line: &Line, cases: &[LoadCase]) -> Vec<String> {
             .collect();
         if !unknown.is_empty() {
             out.push(format!(
-                "structure type {t}: default load case(s) not in the library: {}",
-                unknown.join(", ")
+                "structure type {t}: default load case(s) not in the library: {}{}",
+                unknown.join(", "),
+                if unknown.len() == names.len() {
+                    " — NOT CHECKED: its structures without a set of their own take no case"
+                } else {
+                    ""
+                }
             ));
         }
     }

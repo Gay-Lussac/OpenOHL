@@ -2514,7 +2514,16 @@ section not solved ends at or hangs on, or whose strings hold a jumper
 not solved: that structure's loads in that case are **incomplete**;
 `CaseLoads::missing_at`, `is_incomplete`) and `structure_wind`
 (`BodyWind` of the case), `notes` (version 4: what the case assumed, in
-words). `add_structure_loads(results, line, types, sections, weather)`
+words), `unknown_sets` (2026-11-14: `UnknownCases` — `structure`,
+`names`, `none_known` — the structures whose case set names cases not in
+the line's load case library, `unknown_case_sets(line, known)`; the same
+in every case). `structure_loads_each(line, cables, weather, cases,
+known, budget) -> Vec<Result<CaseLoads, String>>` (2026-11-14): each case
+on its own — a faulty one fails only itself — the case sets checked
+against `known`, the names of the whole library (a run of some cases
+does not call the others missing); `structure_loads` is it with
+`known` = the cases given, collected (the first error fails the
+list). `add_structure_loads(results, line, types, sections, weather)`
 (2026-11-03): `add_structure_wind` (the bands, by the case's direction,
 × local `wind_static` with `use_local`, only for structures taking the
 case) and the ice and snow per structure as loads without a point ("ice
@@ -2581,14 +2590,18 @@ same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
 `UsageStatus::{NotChecked, Incomplete, Approximate, Pass, Over}` —
 `Incomplete` whenever a wire is missing, whatever the usage;
+`NotChecked` (2026-11-14) whenever `StructureUsage::unknown_cases` is
+not empty — cases of its set not in the library: never a pass, its
+usage in the cases it takes still shown; a structure whose set names
+only such cases is listed in every case, not checked, with the names;
 `Approximate` (after that) when a check has `approximate: true` — the
 FE check of a model whose tension-only members did not settle
 (`ohl_structures_fe::Solution::kept_active`: those members kept active
 as trusses; `StructureUsage::is_approximate`, `approximate_text`). The
 usage CSV (`usage_csv`, `ohl line --usage-csv`) ends with an
 `incomplete` column: `incomplete: section S12 not solved (why); …`,
-then `approximate: fe (…)` for an approximate check, empty when
-neither.
+then `approximate: fe (…)` for an approximate check, then `not
+checked: <cases> not in the library` (2026-11-14), empty when none.
 
 ### Structure load cases (`[[load_case]]`, `.ohlslc`)
 
@@ -2723,15 +2736,26 @@ its cases' values among `cases` as load cases — and `from_deg` on a
 `CaseWind` from an angle): what the line application hands to the structure application
 for **Edit…** on a placed structure — `structure` (placed structure id),
 `line` (project line, or the line file's name), `structure_type`,
-`cases` (the cases the line sends, its `structure_loads`: the load cases
-chosen, then the weather cases chosen on their own, `weather: <name>`),
+`cases` (the cases the line sends: the structure's set of the load case
+library, then the weather cases ticked in its `structure_loads` as line
+results — `<name>`, `<name> — wind from the left` / `— right`; before
+2026-10-25 the load cases chosen and `weather: <name>`; the library's
+cases computed one by one, `ohl_structure_link::StructureCaseLoads::
+library_failed` naming those that do not compute, `library_names` every
+name),
 `sources` (version 2, in the order of `cases`: `load_case` or
 `weather_case`, `ohl_structure_loads::CaseSource`; absent in version 1:
 every case a load case), `values` (`LineValues`), `others`
 (`OtherPlace`: the other placed structures of the type with their
 `LineValues`; each also with its `missing`), `note` (why there are no
-values: being computed, no load case and no weather case chosen;
-sections not solved; chosen cases no longer in the line), `missing`
+values: being computed, no load case and no weather case chosen —
+beginning `no load case file`, `ohl_structure_loads::NO_LOAD_CASE_FILE`;
+sections not solved; chosen cases no longer in the line; since
+2026-11-14, first, `NOT SENT: library case "x" does not compute (why)`
+for a case of its set that failed alone,
+`ohl_structure_link::NOT_SENT`, and `NOT CHECKED: load case(s) … of
+T7's set not in the line's load case library`; parts separated by
+` · `, those beginning `NOT ` shown as warnings), `missing`
 (version 3, absent when empty or in older files: per case the sections
 and jumpers at this placed structure that did not solve,
 `ohl_structure_loads::MissingWire` — `case`, `kind` `"section"` or

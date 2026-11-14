@@ -1552,6 +1552,9 @@ fn fixed_cell(ui: &mut egui::Ui, cx: &Table<'_>, row: &Row, c: usize, deleted: b
     let mut t = egui::RichText::new(original).weak();
     if deleted {
         t = t.strikethrough().color(ui.visuals().error_fg_color);
+    } else if col.0 == "load cases" && original.starts_with(crate::load_case_sets::UNKNOWN_MARK) {
+        // A set naming a case not in the library: not checked in it.
+        t = egui::RichText::new(original).color(ui.visuals().error_fg_color);
     }
     // A colour read-only: on its colour.
     let swatch = (col.0 == "colour" && !deleted)

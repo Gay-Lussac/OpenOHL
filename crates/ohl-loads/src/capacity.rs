@@ -171,6 +171,11 @@ pub struct StructureUsage {
     /// this case: their forces are missing from its loads, and its checks
     /// are incomplete.
     pub missing: Vec<crate::MissingWire>,
+    /// The load cases of its set not in the line's load case library
+    /// ([`crate::UnknownCases`], 2026-11-14): it is not checked in them, so
+    /// it is never a pass — its usage in the cases it takes is still
+    /// shown.
+    pub unknown_cases: Vec<String>,
 }
 
 impl StructureUsage {
@@ -212,11 +217,15 @@ impl StructureUsage {
 
     /// What its checks come to: incomplete whenever a wire is missing
     /// (even with no check, or one over 100 %: the loads are not all
-    /// there), else approximate when a check is, else not checked, over
-    /// or pass.
+    /// there), else not checked when its set names a case not in the
+    /// library (2026-11-14), else approximate when a check is, else not
+    /// checked, over or pass.
     pub fn status(&self) -> UsageStatus {
         if self.is_incomplete() {
             return UsageStatus::Incomplete;
+        }
+        if !self.unknown_cases.is_empty() {
+            return UsageStatus::NotChecked;
         }
         if self.is_approximate() {
             return UsageStatus::Approximate;
@@ -258,20 +267,22 @@ impl StructureUsage {
         }
     }
 
-    /// The missing wires, short: `not checked: S12 not solved` (empty when
-    /// complete).
+    /// The missing wires, short: `not checked: S12 not solved`; and the
+    /// cases of its set not in the library: `not checked: ice ULS not in
+    /// the library` (empty when complete and every case of its set is
+    /// there).
     pub fn not_checked_text(&self) -> String {
-        if self.missing.is_empty() {
+        let mut why: Vec<String> = self.missing.iter().map(crate::MissingWire::short).collect();
+        if !self.unknown_cases.is_empty() {
+            why.push(format!(
+                "{} not in the library",
+                self.unknown_cases.join(", ")
+            ));
+        }
+        if why.is_empty() {
             return String::new();
         }
-        format!(
-            "not checked: {}",
-            self.missing
-                .iter()
-                .map(crate::MissingWire::short)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        format!("not checked: {}", why.join(", "))
     }
 }
 
@@ -582,6 +593,11 @@ fn usage_pass(
             for id in line.structures_without_load_cases() {
                 by_structure.entry(id).or_default();
             }
+            // A structure whose set names only cases not in the library
+            // (2026-11-14): listed, not checked, never silently absent.
+            for u in r.unknown_sets.iter().filter(|u| u.none_known) {
+                by_structure.entry(u.structure.as_str()).or_default();
+            }
             let structures = by_structure
                 .into_iter()
                 .map(|(id, points)| {
@@ -590,6 +606,14 @@ fn usage_pass(
                     if line.takes_no_load_case(id) {
                         let angle = angles.get(id).copied().unwrap_or(0.0);
                         return without_load_case(id, type_id, angle);
+                    }
+                    let unknown = r.unknown_sets.iter().find(|u| u.structure == id);
+                    if let Some(u) = unknown.filter(|u| u.none_known) {
+                        let angle = angles.get(id).copied().unwrap_or(0.0);
+                        let mut out = without_load_case(id, type_id, angle);
+                        out.notes = vec![u.describe()];
+                        out.unknown_cases = u.names.clone();
+                        return out;
                     }
                     let type_def = type_id.as_deref().and_then(|t| types.get(t));
                     let capacity = type_def.and_then(|t| t.capacity.as_ref());
@@ -881,8 +905,12 @@ fn usage_pass(
                         loads: loads_check,
                         fe,
                         pole,
-                        notes,
+                        notes: notes
+                            .into_iter()
+                            .chain(unknown.map(crate::UnknownCases::describe))
+                            .collect(),
                         missing,
+                        unknown_cases: unknown.map_or_else(Vec::new, |u| u.names.clone()),
                     }
                 })
                 .collect();
@@ -913,6 +941,21 @@ fn without_load_case(id: &str, structure_type: Option<String>, angle: f64) -> St
             crate::TAKES_NO_LOAD_CASE
         )],
         missing: Vec::new(),
+        unknown_cases: Vec::new(),
+    }
+}
+
+/// `not checked: ice ULS not in the library` for the CSV's last column
+/// (empty when every case of its set is there).
+fn unknown_text(s: &StructureUsage) -> String {
+    if s.unknown_cases.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{}: {} not in the library",
+            crate::NOT_IN_LIBRARY,
+            s.unknown_cases.join(", ")
+        )
     }
 }
 
@@ -996,7 +1039,7 @@ pub fn usage_csv(cases: &[CaseUsage]) -> String {
                 csv_field(g.map_or("", |g| g.governs.as_str())),
                 csv_field(&s.notes.join("; ")),
                 csv_field(
-                    &[s.incomplete_text(), s.approximate_text()]
+                    &[s.incomplete_text(), s.approximate_text(), unknown_text(s)]
                         .into_iter()
                         .filter(|t| !t.is_empty())
                         .collect::<Vec<_>>()

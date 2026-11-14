@@ -156,6 +156,11 @@ impl TableKind {
             }
         }
         let on_routes = line.structure_routes();
+        // The load case library's names: a set naming a case not there is
+        // said in the load cases column (2026-11-14).
+        let known = (self == TableKind::Structures)
+            .then(|| crate::load_case_sets::library_names(model).ok())
+            .flatten();
         let mut rows: Vec<Row> = match self {
             TableKind::Structures => line
                 .structures
@@ -211,7 +216,7 @@ impl TableKind {
                             .unwrap_or_default(),
                         s.local.snow_altitude.map(|v| f(v, 1)).unwrap_or_default(),
                         s.local.wind_study.map(|v| f(v, 1)).unwrap_or_default(),
-                        crate::load_case_sets::cell(line, s),
+                        crate::load_case_sets::cell(line, s, known.as_deref()),
                     ],
                 })
                 .collect(),

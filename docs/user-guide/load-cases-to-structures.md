@@ -101,8 +101,19 @@ The order is **its own set ► its type's set ► every case**:
   checked: takes no load case* in the usage table and said to
   OHL-Structure. The line results are still sent to it.
 
-A name in a set that is not in the library is said in each case's notes
-(the library may have changed after the set was made).
+A name in a set that is not in the library (renamed or deleted there
+after the set was made) is never dropped silently: the structure is
+**not checked** in that case — said in the usage table (never a pass),
+in the Structures table (⚠, in the error colour) and in OHL-Structure's
+header. A structure whose set names only such cases is listed as not
+checked in every case. **Rename** in the Load cases library renames the
+case in every set at once, so a rename never drops a structure.
+
+A library case that does not compute (it names a weather case, section
+or span that is not there) fails on its own: the others still reach
+OHL-Structure, and the header of each structure taking the faulty one
+says *NOT SENT: library case "x" does not compute* with why. (The line's
+own check stops with the error and says it.)
 
 ## Two checks, apart
 

@@ -117,7 +117,12 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   again and rewrites the file; the application reads it again within
   half a second and evaluates the recipes with the new values.
 - A **status block** at the top of the Load case editor, Load table and Line
-  values panels says, in plain words, what the line gave or why not:
+  values panels says, in plain words, what the line gave or why not
+  (2026-11-14: also, as warnings, a case of the structure's set that does
+  not compute — *NOT SENT: library case "x" does not compute (why)*, the
+  others still sent — and cases of its set no longer in the line's
+  library — *NOT CHECKED: load case(s) … of T7's set not in the line's
+  load case library*):
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
   line's values for T2 are being computed…*; *The line gives no values
   for T7: the project has no load cases. Add them in OHL-Design

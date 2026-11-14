@@ -174,7 +174,11 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     let budget = ohl_wirefe::default_fe_budget();
     let cases = structure_cases_with(&everyday(), &weather, &lc);
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    assert!(loads.library_error.is_none(), "{:?}", loads.library_error);
+    assert!(
+        loads.library_failed.is_empty(),
+        "{:?}",
+        loads.library_failed
+    );
     // The core: no loads at T2 in any library case, said in each.
     for c in &loads.library {
         assert!(!c.loads.iter().any(|l| l.structure == "T2"));

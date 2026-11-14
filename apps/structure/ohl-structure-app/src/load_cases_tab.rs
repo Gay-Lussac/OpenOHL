@@ -1322,6 +1322,14 @@ impl LoadCasesTab {
             ),
             Tone::Good,
         )];
+        // What the line says is not sent or not checked (2026-11-14: a
+        // library case that does not compute, cases of the set not in the
+        // library): each a warning of its own, never only in the note.
+        for part in info.note.as_deref().unwrap_or("").split(" · ") {
+            if part.starts_with("NOT ") {
+                out.push((part.to_owned(), Tone::Warn));
+            }
+        }
         let without: Vec<&str> = info
             .cases
             .iter()

@@ -1138,6 +1138,7 @@ fn an_approximate_fe_check_is_never_a_plain_pass() {
         fe: Some(check(capacity::Method::Fe, false)),
         pole: None,
         notes: Vec::new(),
+        unknown_cases: Vec::new(),
         missing: Vec::new(),
     };
     assert_eq!(s.status(), capacity::UsageStatus::Pass);
