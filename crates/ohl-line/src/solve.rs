@@ -1261,10 +1261,10 @@ fn build(
                 .iter()
                 .filter(|p| p.span == s)
                 .map(|p| {
-                    let [down, across] = p
-                        .object
-                        .as_ref()
-                        .map_or([0.0; 2], |o| o.forces(case, cable.diameter.si()));
+                    let [down, across] = p.object.as_ref().map_or([0.0; 2], |o| {
+                        // One on each subconductor when ticked.
+                        o.bundle_forces(case, cable.diameter.si(), section.bundle)
+                    });
                     let constant = p.object.as_ref().map_or(Vector3::zeros(), |o| {
                         right * o.force_across + ahead * o.force_along
                     });

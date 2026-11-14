@@ -177,7 +177,15 @@ pub fn end_loads<'a>(
         // between an end and its first support (the other end without
         // supports) by where they are.
         let horizontal = d.xy().norm();
-        let mut loads = object_loads(j, c, case, length, horizontal, along);
+        let mut loads = object_loads(
+            j,
+            c,
+            case,
+            length,
+            horizontal,
+            along,
+            line.jumper_bundle(j).count,
+        );
         for p in &j.points {
             if let Some(f) = out.get(&LoadAt::Jumper(j.id.clone(), p.label.clone())) {
                 loads.push((place_fraction(&p.at, length, horizontal), v(*f)));
@@ -428,7 +436,8 @@ fn point_positions(jumper: &Jumper, points: &[Vector3<f64>], length: f64) -> Vec
         .collect()
 }
 
-/// The loads of `jumper`'s objects in `case` (the whole bundle's, N), at
+/// The loads of `jumper`'s objects in `case` (the whole bundle's, N; a
+/// bundle of `bundle` subconductors), at
 /// their shares of its length: weight and ice down, the wind across the
 /// line from the case's side (`along`: the line's direction there).
 fn object_loads(
@@ -438,6 +447,7 @@ fn object_loads(
     length: f64,
     horizontal: f64,
     along: Option<[f64; 2]>,
+    bundle: u32,
 ) -> Vec<(f64, Vector3<f64>)> {
     let left = along.map_or(Vector3::zeros(), |a| {
         Vector3::new(-a[1], a[0], 0.0) * case.wind_from.to_left()
@@ -447,7 +457,8 @@ fn object_loads(
         .iter()
         .filter_map(|q| {
             let o = q.object.as_ref()?;
-            let [down, across] = o.forces(case, cable.diameter.si());
+            // One on each subconductor when ticked (owner, 2026-11-14).
+            let [down, across] = o.bundle_forces(case, cable.diameter.si(), bundle);
             // A support's clamp: its strings hold it; its own weight,
             // ice and wind when it has some.
             if o.hold.is_some() && down == 0.0 && across == 0.0 {
@@ -1388,7 +1399,15 @@ pub fn solve_jumper_in(
         // Its objects shared between the ends by where they are.
         let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
         let mut ends = [Vector3::new(0.0, 0.0, -half); 2];
-        let mut loads = object_loads(jumper, cable, case, d.norm(), d.xy().norm(), along);
+        let mut loads = object_loads(
+            jumper,
+            cable,
+            case,
+            d.norm(),
+            d.xy().norm(),
+            along,
+            line.jumper_bundle(jumper).count,
+        );
         loads.extend(hanging(d.norm()));
         for (f, w) in loads {
             ends[0] += w * (1.0 - f);
@@ -1501,12 +1520,19 @@ pub fn solve_jumper_in(
         )));
     }
     // Its objects, per subconductor.
-    let objects: Vec<(f64, Vector3<f64>)> =
-        object_loads(jumper, cable, case, l0, d.xy().norm(), along)
-            .into_iter()
-            .chain(hanging(l0))
-            .map(|(f, w)| (f, w / f64::from(bundle)))
-            .collect();
+    let objects: Vec<(f64, Vector3<f64>)> = object_loads(
+        jumper,
+        cable,
+        case,
+        l0,
+        d.xy().norm(),
+        along,
+        line.jumper_bundle(jumper).count,
+    )
+    .into_iter()
+    .chain(hanging(l0))
+    .map(|(f, w)| (f, w / f64::from(bundle)))
+    .collect();
     // Support clamps and objects: always the rod (it keeps the jumper
     // straight through its clamps whatever its stiffness, and takes
     // loads at points).
@@ -3544,6 +3570,118 @@ mod tests {
                 l.jumpers[0].edit_supports(|c| c[0].wire = "JX".into());
             })
             .is_ok()
+        );
+    }
+
+    /// Tap and spacer clamps (owner, 2026-11-14): a jumper does not start
+    /// from a spacer clamp, a spacer does not end on a tap clamp, a
+    /// jumper point takes no spacer clamp — each refused saying why; a
+    /// clamp of either use takes both. One on each subconductor: the
+    /// wire carries the clamp's weight × the subconductors (the same as
+    /// one object of that whole weight); the line written as version 16
+    /// only with them.
+    #[test]
+    fn tap_and_spacer_clamps_and_bundles() {
+        use crate::{ClampFor, Tap};
+        let (line, s1) = tapped();
+        let spacer_clamp = |line: &mut Line| {
+            let p = line.sections[0]
+                .span_points
+                .iter_mut()
+                .find(|p| p.label == "TAP")
+                .unwrap();
+            p.object.as_mut().unwrap().clamp_for = Some(ClampFor::Spacer);
+        };
+        let mut bad = line.clone();
+        spacer_clamp(&mut bad);
+        let e = bad.validate().unwrap_err().to_string();
+        assert!(e.contains("spacer clamp") && e.contains("tap clamp"), "{e}");
+        let mut tap = line.clone();
+        tap.sections[0]
+            .span_points
+            .last_mut()
+            .unwrap()
+            .object
+            .as_mut()
+            .unwrap()
+            .clamp_for = Some(ClampFor::Tap);
+        tap.validate().unwrap();
+        // A spacer clamp on a jumper point.
+        let mut on_jumper = line.clone();
+        let j = on_jumper.jumpers.iter_mut().find(|j| j.id == "JT").unwrap();
+        j.points.push(crate::JumperPoint {
+            label: "C".into(),
+            at: crate::JumperPlace::Fraction(0.5),
+            description: String::new(),
+            object: Some(crate::LineObject {
+                clamp_for: Some(ClampFor::Spacer),
+                ..crate::LineObject::clamp(10.0)
+            }),
+        });
+        let e = on_jumper.validate().unwrap_err().to_string();
+        assert!(
+            e.contains("spacer clamp") && e.contains("span points"),
+            "{e}"
+        );
+        // Either use: the line of before, version 15 or older on write.
+        assert!(!line.to_json().contains("\"version\": 16"));
+        assert!(tap.to_json().contains("\"version\": 16"));
+        let back = Line::from_json(&tap.to_json()).unwrap();
+        assert_eq!(back.sections[0].span_points, tap.sections[0].span_points);
+        let _ = (s1, Tap::Span);
+        // On a bundle: per subconductor = the whole weight once.
+        let lib = library();
+        let calm = still(15.0);
+        let sag = |line: &Line| {
+            crate::solve::solve_line(line, &lib, &calm)
+                .into_iter()
+                .map(Result::unwrap)
+                .next()
+                .unwrap()
+                .spans[0]
+                .points
+                .iter()
+                .map(|p| p[2])
+                .fold(f64::INFINITY, f64::min)
+        };
+        let mut quad = crate::tests::example();
+        quad.jumpers.clear();
+        quad.sections[0].bundle = 4;
+        quad.sections[0].bundle_spacing = Some(0.4);
+        quad.sections[0].span_points.push(crate::SpanPoint {
+            label: "W".into(),
+            span: 0,
+            at: crate::SpanPlace::at_fraction(0.5),
+            description: String::new(),
+            object: Some(crate::LineObject {
+                per_subconductor: true,
+                ..crate::LineObject::body(250.0, crate::Shape::Point)
+            }),
+        });
+        let mut whole = quad.clone();
+        let o = whole.sections[0]
+            .span_points
+            .last_mut()
+            .unwrap()
+            .object
+            .as_mut()
+            .unwrap();
+        o.per_subconductor = false;
+        o.weight = 1000.0;
+        let mut one = whole.clone();
+        one.sections[0]
+            .span_points
+            .last_mut()
+            .unwrap()
+            .object
+            .as_mut()
+            .unwrap()
+            .weight = 250.0;
+        let (each, all, single) = (sag(&quad), sag(&whole), sag(&one));
+        assert!((each - all).abs() < 1e-9, "{each} {all}");
+        assert!(
+            each < single - 0.01,
+            "4 × 250 N lower than 250 N: {each} {single}"
         );
     }
 }

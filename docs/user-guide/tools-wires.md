@@ -177,15 +177,20 @@ For an **object**:
 
 | Field | What it does |
 |---|---|
-| **template** | One of the object library's point templates (marker balls, a light, a bird diverter, a weight, a tap clamp, a spacer clamp; typical values, to check), or *own values*. The first body template is offered. |
-| **weight** | The whole bundle's, N. |
-| **advanced: kind, shape and sizes, drag** | Ticked: **kind** (**body**, hanging on the wire; or **clamp**, holding a jumper or a spacer — a hinge, forces only), **shape** (point, sphere, cylinder — along the wire, across the line or vertical —, box, or given wind and ice areas) with its sizes, **drag** (its coefficient; 1: none given) and, for a clamp, its **clamp length**. A value changed from the template makes it *own values*. |
+| **template** | One of the object library's point templates (marker balls, a light, a bird diverter, a weight, a tap clamp, a spacer clamp; typical values, to check), or *own values*. The first body template is offered. On a jumper, no spacer clamp (spacers join span points). |
+| **weight** | The whole bundle's, N — or one object's when *per subconductor* is ticked. |
+| **per subconductor** | Ticked: one on each subconductor of the bundle — drawn on each, its weight, ice and wind counted once per subconductor (the wind on each, without shielding: on the safe side). Not ticked: one object for the whole bundle. On a bundle, the **whole bundle**'s weight is shown (e.g. *120.0 N (4 × 30.0 N)*). The tap and spacer clamp templates come ticked. |
+| **advanced: kind, shape and sizes, drag** | Ticked: **kind** (**body**, hanging on the wire; **tap clamp**, a jumper starts there — on a span point or a jumper point; **spacer clamp**, an interphase spacer's end — on a span point only; **clamp (either)** — a hinge, forces only: see [Tap clamp or spacer clamp](../theory/line-objects.md#tap-clamp-or-spacer-clamp)), **shape** (point, sphere, cylinder — along the wire, across the line or vertical —, box, or given wind and ice areas) with its sizes, **drag** (its coefficient; 1: none given) and, for a clamp, its **clamp length**. A value changed from the template makes it *own values*. |
 
 **Good to know**
 
 - The objects are drawn on the wires by their shape; a bare point as a
-  small blue cross, a spread as an orange stretch. They are listed in
-  Line › Sections › Span points and loads.
+  small blue cross, a spread as an orange stretch. On a bundle a clamp is
+  drawn on every subconductor (a body too, when ticked *per
+  subconductor*). They are listed in Line › Sections › Span points and
+  loads.
+- A jumper does not start from a spacer clamp, and a spacer does not end
+  on a tap clamp: each is refused, saying why.
 - The [Edit](tools-general.md#edit-on-a-span-point) tool on a point
   opens its own window; [Delete](tools-general.md#delete) on a spread
   asks whether its points go too.

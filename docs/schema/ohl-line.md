@@ -74,6 +74,9 @@ The names are those of the line file:
     </span_point>
     <span_point label="C1" span="0" distance="40">
       <object kind="clamp" weight="30" shape="point" clamp_length="0.25"/>  <!-- a tap's or a spacer's clamp -->
+      <!-- version 16: clamp_for="tap" | "spacer" on a clamp (a tap clamp, a spacer clamp; none: either),
+           per_subconductor="true" on a body or a clamp (one on each subconductor: its weight, ice and
+           wind counted on each) -->
       <!-- version 15, on a section's span point: force_across="400" force_along="-120" — a constant horizontal
            force, N (the whole bundle's): across the span's chord in plan (+ right looking ahead), along it (+ ahead) -->
     </span_point>

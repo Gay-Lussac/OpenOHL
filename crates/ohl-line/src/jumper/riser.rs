@@ -187,11 +187,18 @@ pub(super) fn design_length(
     let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
     let bundle = f64::from(line.jumper_bundle(jumper).count.max(1));
     // Placed along it by the chord (its length is within T/EA of it).
-    let points: Vec<(f64, Vector3<f64>)> =
-        object_loads(jumper, cable, &still, d.norm(), d.xy().norm(), along)
-            .into_iter()
-            .map(|(f, w)| (f, w / bundle))
-            .collect();
+    let points: Vec<(f64, Vector3<f64>)> = object_loads(
+        jumper,
+        cable,
+        &still,
+        d.norm(),
+        d.xy().norm(),
+        along,
+        line.jumper_bundle(jumper).count,
+    )
+    .into_iter()
+    .map(|(f, w)| (f, w / bundle))
+    .collect();
     cut_length(
         a,
         b,
@@ -330,12 +337,19 @@ pub(super) fn shape(
     let load = wire_load_in_line_wind(case, cable, d, along)
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     let bundle = f64::from(line.jumper_bundle(jumper).count.max(1));
-    let points: Vec<(f64, Vector3<f64>)> =
-        object_loads(jumper, cable, case, l0, d.xy().norm(), along)
-            .into_iter()
-            .chain(hanging(l0))
-            .map(|(f, w)| (f, w / bundle))
-            .collect();
+    let points: Vec<(f64, Vector3<f64>)> = object_loads(
+        jumper,
+        cable,
+        case,
+        l0,
+        d.xy().norm(),
+        along,
+        line.jumper_bundle(jumper).count,
+    )
+    .into_iter()
+    .chain(hanging(l0))
+    .map(|(f, w)| (f, w / bundle))
+    .collect();
     // Ice and wind per stretched metre (2026-11-08; before per unstressed
     // metre, low by its stretch T/EA, not on the safe side): solved once,
     // then with them times 1 + T_max/EA, its largest stretch (on the safe

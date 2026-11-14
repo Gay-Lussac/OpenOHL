@@ -940,17 +940,27 @@ pub fn wires(
             // Its support clamps: a short bar along it.
             let steel = tint.unwrap_or([205, 205, 210]);
             let def = line.jumpers.iter().find(|d| d.id == j.jumper);
-            // Its points and their objects.
+            // Its points and their objects (on a bundle, each
+            // subconductor's place there).
+            let subs_of = jumper_lines(line, j, &solved.bundles).1;
             for (label, at) in &j.point_positions {
                 let object = def
                     .and_then(|d| d.points.iter().find(|p| &p.label == label))
                     .and_then(|p| p.object.as_ref());
+                let subs = if subs_of.len() >= 2 {
+                    subs_of
+                        .iter()
+                        .map(|l| nearest_on_polyline(l, *at))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 draw_point(
                     out,
                     *at,
                     chord_direction(&j.points),
                     object,
-                    &[],
+                    &subs,
                     [
                         tint.unwrap_or(SPAN_POINT_COLOR),
                         steel,
@@ -1070,6 +1080,29 @@ pub fn subconductors_at(
         .into_iter()
         .map(|o| ohl_line::bundle_point(at, w[0], w[1], o))
         .collect()
+}
+
+/// The point of polyline `line` nearest to `at` (`at` for an empty one).
+pub fn nearest_on_polyline(line: &[[f64; 3]], at: [f64; 3]) -> [f64; 3] {
+    let mut best = (f64::INFINITY, at);
+    for w in line.windows(2) {
+        let d = [0, 1, 2].map(|k| w[1][k] - w[0][k]);
+        let len2: f64 = d.iter().map(|x| x * x).sum();
+        let u = if len2 > 0.0 {
+            ((0..3).map(|k| (at[k] - w[0][k]) * d[k]).sum::<f64>() / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let q = [0, 1, 2].map(|k| w[0][k] + u * d[k]);
+        let dist: f64 = (0..3).map(|k| (q[k] - at[k]).powi(2)).sum();
+        if dist < best.0 {
+            best = (dist, q);
+        }
+    }
+    match line {
+        [only] => *only,
+        _ => best.1,
+    }
 }
 
 /// A rod of diameter `d` from `a` to `b` (12 sides, its ends closed) as
@@ -1197,13 +1230,36 @@ fn draw_point(
             return;
         }
         // A clamp: steel, its own shape or a short cylinder along the
-        // wire.
+        // wire — on a bundle on each subconductor (owner, 2026-11-14: as
+        // fitted; one across the bundle joins them instead).
         Some(o) if o.kind == ohl_line::ObjectKind::Clamp => {
-            (clamp_mesh(o, at, along, subs), colors[1])
+            let across = matches!(
+                o.shape,
+                ohl_line::Shape::Cylinder {
+                    axis: ohl_line::Axis::Across,
+                    ..
+                }
+            );
+            let tris = if subs.len() >= 2 && !across {
+                subs.iter()
+                    .flat_map(|q| clamp_mesh(o, *q, along, &[]))
+                    .collect()
+            } else {
+                clamp_mesh(o, at, along, subs)
+            };
+            (tris, colors[1])
         }
+        // A body: one on each subconductor when ticked so.
         Some(o) => {
             body = true;
-            (body_mesh(&o.shape, at, along), colors[2])
+            let tris = if o.per_subconductor && subs.len() >= 2 {
+                subs.iter()
+                    .flat_map(|q| body_mesh(&o.shape, *q, along))
+                    .collect()
+            } else {
+                body_mesh(&o.shape, at, along)
+            };
+            (tris, colors[2])
         }
     };
     if triangles.is_empty() {

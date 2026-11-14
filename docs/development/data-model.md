@@ -554,9 +554,19 @@ Sections table's condition cell: "tension, after creep", "catenary
 constant", …; the section form: three kinds and "at condition".
 
 `LineObject` (`objects.rs`): `kind` (`body` | `clamp` — a clamp holds a
-jumper or a spacer, a hinge passing forces only), `type` (the library
-type it was taken from; its values are its own), `weight` (N, whole
-bundle), its shape flattened (`shape` = `point` | `sphere` (`diameter`) |
+jumper or a spacer, a hinge passing forces only), `clamp_for` (line file
+version 16, optional, written only when given: `tap` — a jumper starts
+there, on a span point or a jumper point — or `spacer` — an interphase
+spacer's end, on a span point only; none: either; `ClampFor`,
+`LineObject::takes_tap` / `takes_spacer`; validated: a tap on a spacer
+clamp, a spacer end on a tap clamp, a spacer clamp on a jumper point are
+refused), `type` (the library type it was taken from; its values are its
+own), `weight` (N, whole bundle — or one object's with `per_subconductor`),
+`per_subconductor` (line file version 16, optional, written only when
+true; owner 2026-11-14: one on each subconductor of a bundle — its
+weight, ice and wind counted once per subconductor,
+`LineObject::bundle_forces` / `bundle_weight` / `count`, the wind on each
+without shielding; drawn on each), its shape flattened (`shape` = `point` | `sphere` (`diameter`) |
 `cylinder` (`diameter`, `length`, `axis` along / across / vertical) |
 `box` (`along`, `across`, `height`) | `areas` (`wind_area`, `ice_area`)),
 `drag`, `clamp_length`, and on a jumper's clamp `hold` — what holds it up,
@@ -570,7 +580,9 @@ line, times its drag. A clamp's shape is drawn as given — a cylinder
 across the line on a bundle joining its subconductors (drawn only) — and
 takes wind and ice as a body's of that shape and size; without a shape
 (`point`) it is drawn as a short cylinder along the wire, its
-`clamp_length`, and takes no wind nor ice.
+`clamp_length`, and takes no wind nor ice. On a bundle a clamp is drawn
+on each subconductor (since 2026-11-14; one across the line joins them
+instead), a body on each when `per_subconductor`.
 
 Older files (and OHL XML `<load>`, `<spread_load>`) gave point loads
 (`loads`: `legacy::SpanLoad` — `span`, place, `vertical`, `label`, `diameter`,
@@ -582,11 +594,15 @@ between them; written in the new form.
 
 ### Point and spread load library (`.ohlload`)
 
-`ohl-point-spread-loads`, version 1 (`objects::ObjectLibrary`): `name`
-and `[[type]]`s — `id`, `name`, `description`, `kind` (`body`, `clamp`,
-`spread`), `weight`, the shape as on objects, `drag`, `clamp_length`, a
-spread type's `load` (N/m) and `per_subconductor` (optional, spread types
-only: its load on each subconductor); sizes, weights, lengths and loads with their
+`ohl-point-spread-loads`, version 2 (`objects::ObjectLibrary`; 2,
+2026-11-14: the kinds `tap_clamp` and `spacer_clamp`, and
+`per_subconductor` on a body or a clamp — written only by a library that
+uses them, else 1): `name` and `[[type]]`s — `id`, `name`,
+`description`, `kind` (`body`, `tap_clamp`, `spacer_clamp`, `clamp` —
+either use —, `spread`; `TypeKind`), `weight`, the shape as on objects,
+`drag`, `clamp_length`, a spread type's `load` (N/m) and
+`per_subconductor` (optional: a spread's load on each subconductor, or a
+body's or clamp's objects one on each subconductor); sizes, weights, lengths and loads with their
 unit (`"600 mm"`, `"70 N"`, `"12.5 N/m"`) or plain SI numbers. Shipped templates (typical values, to check):
 `libraries/objects/templates.ohlload`. A project's own types are a project library file
 of kind `objects` (`project.ohlload`), over the templates of the same

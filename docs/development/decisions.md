@@ -10,6 +10,32 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Tap and spacer clamps; objects on each subconductor** (owner: "for the
+objects on the line, it doesn't by default adapt to the number of
+conductors in the bundle … it's important to have the theory explain the
+use of a tap clamp vs a spacer clamp and where it can be mounted. As
+well it should be a type of object that can be modified in the load
+object library" — "for bundles it's more visually but also to have the
+option to multiply the weight with a ticked box is nice"):
+
+1. **Tap clamp and spacer clamp are kinds of their own** in the library
+   of point and spread loads (`kind = "tap_clamp"`, `"spacer_clamp"`;
+   `.ohlload` version 2), made and changed in its table like any type;
+   on an object `clamp_for` (line file version 16). A jumper starting on
+   a spacer clamp, a spacer ending on a tap clamp and a spacer clamp on
+   a jumper point are refused, saying why; a clamp of either use
+   (`clamp`, files from before) takes both. Add string gives a bare end
+   the project library's spacer clamp (the template's id, else the first
+   of that kind).
+2. **On a bundle**: a clamp is drawn on every subconductor (a body too
+   when ticked); the tick **per subconductor** (`per_subconductor` on a
+   body or a clamp) counts its weight, ice and wind once per
+   subconductor — the wind on each without shielding, on the safe side;
+   the tap and spacer clamp templates come ticked, bodies not.
+3. **Theory**: [Objects on the wires](../theory/line-objects.md) — the
+   objects, the tap clamp against the spacer clamp and where each may be
+   mounted, bundles, the assumptions marked.
+
 **Imports without opening the project again** (owner: "i wonder if it's
 necessary to have a restart when lidar data, orthophotos or dxf are
 imported. could we avoid it?" — "go ahead"). After a LiDAR import the

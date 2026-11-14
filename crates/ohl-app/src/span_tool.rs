@@ -311,6 +311,7 @@ impl SpanForm {
             jumper: Some(jumper.to_owned()),
             length: shape.unstressed_length,
             by: PlaceBy::Fraction,
+            bundle: model.line.jumper_bundle(j).count.max(1),
             ..Self::base(model, horizontal, from, &taken)
         };
         f.from = from;
@@ -593,14 +594,18 @@ fn place_value(ui: &mut egui::Ui, f: &SpanForm, d: &mut f64) {
     }
 }
 
-/// An object's values: a template of `library` or its own, the advanced
-/// settings (kind, shape and sizes, drag, clamp length) when `advanced`.
+/// An object's values: a template of `library` or its own, one on each
+/// of the `bundle` subconductors or one, the advanced settings (kind,
+/// shape and sizes, drag, clamp length) when `advanced`. `on_jumper`: a
+/// jumper's point (no spacer clamp there).
 pub fn object_ui(
     ui: &mut egui::Ui,
     id: &str,
     o: &mut LineObject,
     library: &ObjectLibrary,
     advanced: &mut bool,
+    bundle: u32,
+    on_jumper: bool,
 ) {
     egui::Grid::new((id, "object"))
         .num_columns(2)
@@ -615,7 +620,12 @@ pub fn object_ui(
                 .selected_text(shown)
                 .height(400.0)
                 .show_ui(ui, |ui| {
-                    for t in library.types.iter().filter(|t| t.kind != TypeKind::Spread) {
+                    // A spacer clamp only on a span point: spacers join
+                    // span points.
+                    for t in library.types.iter().filter(|t| {
+                        t.kind != TypeKind::Spread
+                            && !(on_jumper && t.kind == TypeKind::SpacerClamp)
+                    }) {
                         if ui
                             .selectable_label(o.type_id.as_deref() == Some(t.id.as_str()), &t.name)
                             .on_hover_text(&t.description)
@@ -635,12 +645,49 @@ pub fn object_ui(
                         .range(0.0..=f64::MAX)
                         .suffix(" N"),
                 )
-                .on_hover_text("The whole bundle's")
+                .on_hover_text(if o.per_subconductor {
+                    "One object's: × the subconductors on the bundle"
+                } else {
+                    "The whole bundle's"
+                })
                 .changed()
             {
                 o.type_id = None;
             }
             ui.end_row();
+            // One on each subconductor (owner, 2026-11-14): drawn on each,
+            // its weight, ice and wind counted on each.
+            ui.label("per subconductor");
+            if ui
+                .checkbox(
+                    &mut o.per_subconductor,
+                    if bundle > 1 {
+                        format!("one on each of the {bundle} subconductors")
+                    } else {
+                        "one on each subconductor".to_owned()
+                    },
+                )
+                .on_hover_text(
+                    "Ticked: one on each subconductor of the bundle — drawn on each, its weight, \
+                     ice and wind counted once per subconductor (the wind on each, no shielding: \
+                     on the safe side). Not ticked: one object for the whole bundle, its values \
+                     the whole bundle's. A single wire: the same",
+                )
+                .changed()
+            {
+                o.type_id = None;
+            }
+            ui.end_row();
+            if bundle > 1 {
+                ui.label("whole bundle");
+                ui.label(format!(
+                    "{:.1} N ({} × {:.1} N)",
+                    o.bundle_weight(bundle),
+                    o.count(bundle),
+                    o.weight
+                ));
+                ui.end_row();
+            }
         });
     ui.checkbox(advanced, "advanced: kind, shape and sizes, drag")
         .on_hover_text("More than the templates give: change the object's geometry");
@@ -652,12 +699,31 @@ pub fn object_ui(
         .num_columns(2)
         .show(ui, |ui| {
             ui.label("kind");
+            let mut kind = TypeKind::of(o);
             ui.horizontal(|ui| {
-                ui.radio_value(&mut o.kind, ObjectKind::Body, "body")
+                ui.radio_value(&mut kind, TypeKind::Body, "body")
                     .on_hover_text("A body hanging on the wire: a ball, a light, a weight");
-                ui.radio_value(&mut o.kind, ObjectKind::Clamp, "clamp")
-                    .on_hover_text("Holds a jumper (a tap) or a spacer: a hinge, forces only");
+                ui.radio_value(&mut kind, TypeKind::TapClamp, "tap clamp")
+                    .on_hover_text(
+                        "A jumper starts here (a tap), on a span point or a jumper point: a \
+                         hinge, forces only",
+                    );
+                ui.add_enabled_ui(!on_jumper, |ui| {
+                    ui.radio_value(&mut kind, TypeKind::SpacerClamp, "spacer clamp")
+                        .on_hover_text(
+                            "An interphase spacer's end, on a span point: a hinge, forces only",
+                        )
+                        .on_disabled_hover_text(
+                            "Spacers join span points: a jumper point takes no spacer clamp",
+                        );
+                });
+                ui.radio_value(&mut kind, TypeKind::Clamp, "clamp (either)")
+                    .on_hover_text("A tap or a spacer may use it: a hinge, forces only");
             });
+            if let Some((k, c)) = kind.object() {
+                o.kind = k;
+                o.clamp_for = c;
+            }
             ui.end_row();
             ui.label("shape");
             let names = ["point", "sphere", "cylinder", "box", "areas"];
@@ -954,7 +1020,16 @@ pub fn span_ui(ui: &mut egui::Ui, f: &mut SpanForm) {
     (f.from, f.to) = (from, to);
     if f.what == SpanWhat::Load {
         let library = f.library.clone();
-        object_ui(ui, "span-form", &mut f.object, &library, &mut f.advanced);
+        let on_jumper = f.jumper.is_some();
+        object_ui(
+            ui,
+            "span-form",
+            &mut f.object,
+            &library,
+            &mut f.advanced,
+            f.bundle,
+            on_jumper,
+        );
     }
     if f.regular && f.what != SpanWhat::Spread {
         ui.label(format!("{} places", f.distances().len()));
@@ -1022,11 +1097,20 @@ impl SpacerForm {
             if self.new { "added" } else { "changed" },
             s.id
         );
-        // Its ends are clamps: a bare end point gets the spacer clamp
-        // template (one object for spacers and jumpers).
-        let clamp = model
-            .object_library()
+        // Its ends are clamps: a bare end point gets the project
+        // library's spacer clamp (owner, 2026-11-14: a kind of its own,
+        // made in the library) — the template's id first, else the first
+        // of that kind, else a plain clamp.
+        let library = model.object_library();
+        let clamp = library
             .get("spacer-clamp")
+            .filter(|t| t.kind != TypeKind::Spread)
+            .or_else(|| {
+                library
+                    .types
+                    .iter()
+                    .find(|t| t.kind == TypeKind::SpacerClamp)
+            })
             .and_then(ohl_line::ObjectType::object)
             .unwrap_or_else(|| LineObject::clamp(0.0));
         let stored = model.stored_line().unwrap_or(&model.line);

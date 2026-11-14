@@ -139,7 +139,8 @@ where it is. A jumper given by its sag is cut without its objects
 
 A jumper's end may be a **tap** instead of a section's end: a clamp
 object on a span point (a T-off from a conductor in the span) or on
-another jumper's point. The clamp is a hinge: it passes forces only, so
+another jumper's point — a **tap clamp** (or a clamp of either use; a
+spacer clamp is refused: [Tap clamp or spacer clamp](line-objects.md#tap-clamp-or-spacer-clamp)). The clamp is a hinge: it passes forces only, so
 the jumper leaves it in the direction its own equilibrium gives (no exit
 angle; the rod's end is left free) and the wire takes no moment nor
 torsion (the wires carry none anyway). The end is where the point is

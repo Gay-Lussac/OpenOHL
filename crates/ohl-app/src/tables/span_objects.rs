@@ -169,7 +169,7 @@ pub(super) fn point_kind(o: Option<&ohl_line::LineObject>) -> String {
         None => "point".into(),
         Some(o) => format!(
             "{} ({})",
-            o.kind.as_str(),
+            o.kind_text(),
             o.type_id.clone().unwrap_or_else(|| "own".into())
         ),
     }
@@ -215,7 +215,9 @@ pub(super) fn span_object_rows(model: &Model) -> Vec<Row> {
                     String::new(),
                 ],
                 object_cells(p.object.as_ref()),
-                String::new(),
+                p.object
+                    .as_ref()
+                    .map_or(String::new(), |o| load_on_text(o.per_subconductor)),
             ));
         }
         for (k, l) in s.spreads.iter().enumerate() {
@@ -267,7 +269,9 @@ pub(super) fn span_object_rows(model: &Model) -> Vec<Row> {
                     String::new(),
                 ],
                 object_cells(p.object.as_ref()),
-                String::new(),
+                p.object
+                    .as_ref()
+                    .map_or(String::new(), |o| load_on_text(o.per_subconductor)),
             ));
         }
     }
@@ -446,6 +450,11 @@ pub(super) fn span_object_commands<'a>(
                 p.at = parse_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
                 if let Some(o) = &mut p.object {
                     object_from_cells(o, &c, &name)?;
+                    let each = parse_load_on(&c.get(13)).map_err(|e| format!("{name}: {e}"))?;
+                    if each != o.per_subconductor {
+                        o.type_id = None;
+                        o.per_subconductor = each;
+                    }
                 }
             }
             'j' => {
@@ -455,6 +464,11 @@ pub(super) fn span_object_commands<'a>(
                 p.at = parse_jumper_place(&c.get(4)).map_err(|e| format!("{name}: {e}"))?;
                 if let Some(o) = &mut p.object {
                     object_from_cells(o, &c, &name)?;
+                    let each = parse_load_on(&c.get(13)).map_err(|e| format!("{name}: {e}"))?;
+                    if each != o.per_subconductor {
+                        o.type_id = None;
+                        o.per_subconductor = each;
+                    }
                 }
             }
             _ => {

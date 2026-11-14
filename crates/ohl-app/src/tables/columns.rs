@@ -539,7 +539,7 @@ pub(super) const SPAN_OBJECTS: &[Column] = &[
         "kind",
         110.0,
         Derived,
-        "a bare point, a point with its object (body or clamp, its library type), or a spread between two points",
+        "a bare point, a point with its object (body, tap clamp, spacer clamp or clamp, its library type), or a spread between two points",
     ),
     (
         "label",
@@ -558,7 +558,7 @@ pub(super) const SPAN_OBJECTS: &[Column] = &[
         "load",
         70.0,
         Yes,
-        "an object's weight, N; a spread's load, N/m",
+        "an object's weight, N (one object's when on each subconductor); a spread's load, N/m",
     ),
     (
         "shape",
@@ -590,7 +590,7 @@ pub(super) const SPAN_OBJECTS: &[Column] = &[
         "load on",
         70.0,
         Yes,
-        "a spread's load: on the whole bundle (bundle, empty) or on each subconductor (each)",
+        "on the whole bundle (bundle, empty) or on each subconductor (each): a spread's load, or an object's weight, ice and wind — one on each subconductor, drawn on each",
     ),
 ];
 
@@ -603,8 +603,19 @@ pub(super) const LOAD_TYPES: &[Column] = &[
         "shipped template, or the project's own (a template changed here becomes the project's)",
     ),
     ("name", 150.0, Yes, "name shown"),
-    ("kind", 60.0, Yes, "body, clamp or spread"),
-    ("weight N", 70.0, Yes, "a body's or a clamp's weight"),
+    (
+        "kind",
+        90.0,
+        Yes,
+        "body, tap clamp (a jumper starts there), spacer clamp (an interphase spacer's end), \
+         clamp (either) or spread",
+    ),
+    (
+        "weight N",
+        70.0,
+        Yes,
+        "a body's or a clamp's weight (one object's when on each subconductor)",
+    ),
     ("shape", 70.0, Yes, "point, sphere, cylinder, box or areas"),
     (
         "size 1",
@@ -638,7 +649,8 @@ pub(super) const LOAD_TYPES: &[Column] = &[
         "load on",
         70.0,
         Yes,
-        "a spread type's load: on the whole bundle (bundle, empty) or on each subconductor (each)",
+        "on the whole bundle (bundle, empty) or on each subconductor (each): a spread's load, or a \
+         body's or clamp's weight, ice and wind — one on each subconductor, drawn on each",
     ),
 ];
 

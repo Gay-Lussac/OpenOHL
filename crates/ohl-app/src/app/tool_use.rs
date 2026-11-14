@@ -601,6 +601,20 @@ impl Ready {
             ),
             _ => unreachable!("matched"),
         };
+        if let Some(o) = object
+            .as_ref()
+            .filter(|o| o.kind == ohl_line::ObjectKind::Clamp)
+            && !o.takes_tap()
+        {
+            self.status = Some((
+                format!(
+                    "Add jumper: {} holds a spacer clamp, which holds an interphase spacer's end — a jumper starts from a tap clamp (Edit the point: object, a tap clamp)",
+                    tap.text()
+                ),
+                true,
+            ));
+            return;
+        }
         if !object.is_some_and(|o| o.kind == ohl_line::ObjectKind::Clamp) {
             self.status = Some((
                 format!(

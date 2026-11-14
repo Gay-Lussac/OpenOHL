@@ -1186,3 +1186,54 @@ fn imported_points_are_shown_without_reopening() {
     assert_ne!(r.model.revisions.points, revision, "results out of date");
     assert_eq!(r.selection, Selection::Structure("T3".into()), "kept");
 }
+
+/// On a bundle a clamp is drawn on every subconductor (owner,
+/// 2026-11-14: as fitted), a body on each only when ticked per
+/// subconductor; a single wire keeps one.
+#[test]
+fn a_clamp_is_drawn_on_every_subconductor() {
+    let with = |name: &str, bundle: u32, kind: ohl_line::ObjectKind, each: bool| {
+        synthetic_project_with(name, move |l| {
+            l.sections[0].bundle = bundle;
+            l.sections[0].bundle_spacing = (bundle > 1).then_some(0.45);
+            let o = l.sections[0].objects_mut().next().unwrap();
+            *o = ohl_line::LineObject {
+                kind,
+                per_subconductor: each,
+                ..ohl_line::LineObject::body(
+                    30.0,
+                    ohl_line::Shape::Cylinder {
+                        diameter: 0.08,
+                        length: 0.25,
+                        axis: ohl_line::Axis::Along,
+                    },
+                )
+            };
+        })
+    };
+    // The triangles of the object at the point (12-sided cylinders).
+    let pieces = |m: &model::Model| -> usize {
+        let (p, _) = m.line.sections[0].objects().next().unwrap();
+        let at = m.cases[0].shapes[0]
+            .span_points
+            .iter()
+            .find(|(l, _)| *l == p.label)
+            .unwrap()
+            .1;
+        crate::scene::prims(m, crate::scene::Layer::Wires, 0)
+            .into_iter()
+            .filter(|d| d.filled)
+            .filter(|d| {
+                d.points
+                    .iter()
+                    .all(|q| (0..3).map(|k| (q[k] - at[k]).powi(2)).sum::<f64>().sqrt() < 1.0)
+            })
+            .map(|d| d.points.len() / (12 * 4 * 3))
+            .sum()
+    };
+    use ohl_line::ObjectKind::{Body, Clamp};
+    assert_eq!(pieces(&with("clamp-1", 1, Clamp, false)), 1);
+    assert_eq!(pieces(&with("clamp-4", 4, Clamp, false)), 4);
+    assert_eq!(pieces(&with("body-4", 4, Body, false)), 1);
+    assert_eq!(pieces(&with("body-4-each", 4, Body, true)), 4);
+}
