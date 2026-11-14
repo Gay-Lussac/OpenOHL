@@ -1391,14 +1391,16 @@ pub fn solve_jumper_in(
         // A straight member between the clamps.
         let points: Vec<Vector3<f64>> = (0..=16).map(|k| a + d * (k as f64 / 16.0)).collect();
         let low = if a.z <= b.z { a } else { b };
-        // Held at both ends: half its weight and ice on each.
-        let half = case.wire_load(cable.diameter, cable.weight()).vertical.si()
-            * d.norm()
-            * f64::from(line.jumper_bundle(jumper).count.max(1))
-            / 2.0;
-        // Its objects shared between the ends by where they are.
+        // Held at both ends: half its weight, ice and wind on each — the
+        // wind as on every jumper, the line's from the case's side, the
+        // full pressure square to it in plan (owner, 2026-11-14: before,
+        // the weight and ice only; not on the safe side where its own end
+        // forces are used — its own pull, a tap).
         let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
-        let mut ends = [Vector3::new(0.0, 0.0, -half); 2];
+        let per_metre = crate::solve::wire_load_in_line_wind(case, cable, d, along);
+        let half = per_metre * d.norm() * f64::from(line.jumper_bundle(jumper).count.max(1)) / 2.0;
+        // Its objects shared between the ends by where they are.
+        let mut ends = [half; 2];
         let mut loads = object_loads(
             jumper,
             cable,
@@ -2342,6 +2344,32 @@ mod tests {
                 assert!((q - (a + (b - a) * along)).norm() < 1e-9);
             }
         }
+        // Its end forces: half its weight, ice and wind each (owner,
+        // 2026-11-14: the wind was left out) — the wind as the line's on
+        // every jumper, the vertical as before.
+        let mut windy = still(15.0);
+        windy.wind_pressure = Stress::from_si(500.0);
+        let (_, calm) = solve_all(&line, &still(15.0));
+        let (_, blown) = solve_all(&line, &windy);
+        let cable = library().get(&line.jumpers[0].cable).unwrap().clone();
+        let d = v(blown[0].points[0]) - v(*blown[0].points.last().unwrap());
+        let along = line.direction_at([blown[0].points[0][0], blown[0].points[0][1]]);
+        let q = crate::solve::wire_load_in_line_wind(&windy, &cable, d, along);
+        let bundle = f64::from(line.jumper_bundle(&line.jumpers[0]).count.max(1));
+        let side: f64 = blown[0].end_forces.iter().map(|f| v(*f).xy().norm()).sum();
+        let expected = q.xy().norm() * d.norm() * bundle;
+        assert!(expected > 1.0, "{expected}");
+        assert!(
+            (side - expected).abs() < 1e-6 * expected,
+            "{side} {expected}"
+        );
+        // The vertical per metre as before: its weight and ice.
+        let vertical = windy
+            .wire_load(cable.diameter, cable.weight())
+            .vertical
+            .si();
+        assert!((q.z + vertical).abs() < 1e-9, "{} {vertical}", q.z);
+        assert!(calm[0].end_forces.iter().all(|f| v(*f).xy().norm() < 1e-9));
         line.jumpers[0].sag = Some(0.1);
         assert!(
             line.validate()

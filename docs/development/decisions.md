@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Wind on rigid jumpers' end forces** (owner: "go ahead with post and
+applying wind to jumpers but I thought wind was applied?"). Wind was
+applied to every flexible jumper, and the default estimate of a jumper's
+load on its clamps carried a rigid jumper's wind too; but a rigid
+jumper's own end forces held its weight and ice only, so with *the
+jumper's own pull*, and for a rigid jumper on a tap (*the full loop*,
+the default), its wind did not reach the wires — not on the safe side.
+Its end forces now carry half its weight, ice and wind each, the wind as
+on every jumper ([Jumpers](../theory/jumpers.md#rigid-jumpers)). The
+rigid piece's own tube section moves to the rigid conductor (post
+insulators plan, phase 5).
+
 **Tap and spacer clamps; objects on each subconductor** (owner: "for the
 objects on the line, it doesn't by default adapt to the number of
 conductors in the bundle … it's important to have the theory explain the
