@@ -53,7 +53,9 @@ field windows in three pages (2026-11-12); one window per plan with its
 own sheet template (2026-11-08) and the route plan's paper chosen
 automatically (O14, 2026-11-13). Still open beyond O22–O26: O13's
 dynamic method, the jumpers' swing band margin (left to the owner,
-Phase 4) and the items not built in the record below (`[ ]`).
+Phase 4) and the items not built in the record below (`[ ]`). Then, in
+the owner's order of 2026-11-14: the post insulators' remaining phases,
+the tables' copy, columns and paste, and the equivalence list O27–O39.
 
 ## Where it stands
 
@@ -800,6 +802,133 @@ From a review on 2026-11-10 of what a sheet can hold.
    below the profile as a choice, and a plan detail inset.
 6. **DXF beyond R12**: line weights, true colours, embedded logos.
 > **Owner:** (2026-11-10) To work on next.
+
+### Equivalence with the established line-design program (2026-11-14)
+From a chapter-by-chapter review on 2026-11-14 of the user manual of the
+line-design program most utilities use today, against OpenOHL (the
+review itself is kept privately; the earlier reviews of 2026-11-10 gave
+O22–O26). Owner, 2026-11-14: "close all the gaps … to ensure
+equivalence" — after the post insulators and the tables' copy, columns
+and paste. Ranked by what would keep a utility engineer from switching;
+sizes: S about a session, M two or three, L four or more. Known items
+already on this roadmap are named, not repeated: wind with height and
+direction (O22.4), strain strings as hanging cables (O22.2), the
+clearance report (O24.3), sheets (O26), structure flexibility (O7),
+equipment loads (O21), member code checks (O4), the validation report
+(O11), translations (Phase 6).
+
+### O27. Spotting by station
+1. **A structure placed by station and offset** on an alignment, moved by
+   station; **copies** of a structure, and copies every so many metres
+   from one station to another. (M)
+2. **A structure put into a strung span joins its wires**: a suspension
+   set clamps the wire in, a dead-end set splits the section in two —
+   today the strings are picked again by hand. (M)
+> **Owner:** to decide (2026-11-14): spotting where? The plan and the
+> profile take no tools (2026-11-01): a station window with the 3D view
+> snapping to the alignment, or one spotting tool in the profile with the
+> clearance line, or both.
+
+### O28. Survey points with feature codes
+A survey point's code says what it is — ground, an obstacle (a road, a
+building, a crossing line) with its height and the clearances it needs,
+an aerial obstacle — its symbol and label in the profile and plan. Today
+the codes are kept but **every survey point is ground**: a coded crossing
+is a bump in the terrain, not a target with its own clearance. Codes as
+targets of the clearance rules, a survey-point clearance report,
+obstacles in the clearance line and in spotting. (M)
+> **Owner:** to decide (2026-11-14): the codes as classes with roles, as
+> the LiDAR points have, so one rule set serves both?
+
+### O29. Existing lines from LiDAR
+1. **The as-built fit written into the model**: per span the wire length
+   that gives the surveyed sag at the survey's temperature, kept with the
+   survey's date and temperature (a section "calibrated to the survey");
+   today the fit is reported only. (M)
+2. **A line built from the scan**: wires, structure tops and attachment
+   points found in the cloud, catenaries fitted, structures and sections
+   proposed. (L)
+> **Owner:** to decide (2026-11-14): 1 as proposed? 2 wanted, or are
+> existing lines brought in by import?
+
+### O30. Construction outputs
+1. **Stringing charts** for chosen sections, structures or circuits over a
+   range of temperatures — initial or final, sags, tensions, catenary
+   constants, wave times — as a report (today: one temperature per
+   section in its window, a range through `ohl sagtension` only). (M)
+2. **Clipping offsets for one pull** through several sections or a range
+   of structures. (M with 1)
+3. **Staking, further**: reference stakes (left and right, ahead and
+   back), hubs, guy anchors with lead lengths, offsets at angle
+   structures, a sheet per structure. (M)
+4. **Leg extensions and guy lengths** from the terrain: each leg's length
+   to the ground along its slope, the leg extension to choose. (M with 3)
+> **Owner:** to decide (2026-11-14): which setting-out conventions (the
+> stakes' layout) to follow.
+
+### O31. Material management
+Parts and assemblies on structure types and placed structures; a bill of
+materials per structure; each item's status (new, existing, moved,
+removed) with a bill per status and the difference between two designs;
+on the sheets with O26.4. (L)
+> **Owner:** to decide (2026-11-14): a parts library of OpenOHL's own, or
+> left to the utility's ERP through the exports? Status per object, or
+> two project lines (as built, as planned) and the difference?
+
+### O32. Units other than SI in the application
+Every view, table, report and export in US customary units on request
+(today SI everywhere; US output in `ohl sagtension` only). (L)
+> **Owner:** to decide (2026-11-14): is a North-American audience a goal?
+
+### O33. Automatic spotting, second version
+Several weather cases (clearance, uplift); clearance to obstacles (O28,
+LiDAR classes), not only under the centreline; insulator swing limits;
+required structures and positions (every angle point); extra-cost zones;
+constraints from drawings and terrain slope; tension sections and ruling
+spans iterated until stable; a report of what governed. Then a **pole
+selector** (the lightest pole class for each place) and the **choice of
+body and leg extensions**. (L + M + M)
+
+### O34. Reports as documents
+A line summary (criteria, statistics, structures, attachment points with
+mid-span and low points and the ground under them, sections with sagging
+data, wire lengths, circuits), a criteria report, structure heights with
+a flag above a limit (aviation marking), printed or PDF, and any report
+to KML or shapefile. With O24.3. (M)
+
+### O35. Stations: start station, equations, reversed alignments
+An alignment starting at a given station, station equations (breaks in
+the stationing) shown in the profile, sheets, staking and reports, and an
+alignment reversed. Existing lines are known by their stations. (S)
+
+### O36. Distribution and joint use
+Messenger wires with cables lashed to them (the ice on each cable),
+stringing a bare messenger first; span guys and down guys per pole;
+standard pole-top assemblies combined on a pole; an arm turned square to
+a wire. (M–L)
+> **Owner:** to decide (2026-11-14): distribution in scope, or
+> transmission only?
+
+### O37. Survey and terrain housekeeping
+Survey points edited, turned off and on, filtered on import, codes
+changed inside an area; survey points from DXF, shapefiles and KML;
+shapefile backgrounds and map services (WMS); contour lines of the
+terrain; a terrain from a profile only (old paper profiles); an arbitrary
+profile between two points. (S each; the stringing direction is drawn
+already.)
+> **Owner:** to decide (2026-11-14): map services and web maps send
+> requests to outside servers — allowed (the user's own server, off by
+> default) or kept out?
+
+### O38. Load cases by structure groups
+Groups of structures whose members follow rules — types, line angle
+range, station range, height, elevation, dead end or not — taking a set
+of load cases (today: per structure, per type, or every case). (S)
+
+### O39. Also found, smaller
+A background "design OK" flag per structure and section while editing;
+a temperature typed for a section's display without a weather case;
+reports to KML; draped orthophotos in 3D. (S each)
 
 ### Done and taken out of this list
 Built, in active development (not approved yet); the details are in the
