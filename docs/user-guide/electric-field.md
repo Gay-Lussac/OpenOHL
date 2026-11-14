@@ -144,6 +144,15 @@ CSV). **Export CSV…**, **Save in Performed checks**. The results are
 marked out of date when the line or the ground changes. Drawn on the layer
 **Electric field (isolines, surfaces)** while the window is open.
 
+**A cut or a step that fails** (2026-11-14) does not lose the rest. Each
+cut is computed on its own: one that cannot be computed (its span not
+found or off the alignment, a wire not connected) is listed at the top of
+the notes in red — *NOT COMPUTED: 1 of 12 cut(s) failed … — cut House 7:
+why* — and every other cut keeps its results. The same for a whole step
+(the profiles, the cuts, the volumes run one after another): a step that
+fails is said in red and the steps that worked are shown. Only **Stop**
+ends the run. A run where nothing could be computed gives its errors.
+
 ## 3D volumes
 
 **What it gives:** the surfaces of the levels (1 and 5 kV/m by default)

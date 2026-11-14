@@ -10,6 +10,16 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Field cuts and steps fail on their own** (owner: on a real line the 2D
+cuts at buildings "failed because of one unconnected cable and all
+results got aborted … for cuts those that work get their results reported
+and those that fail get an error"): in the magnetic and electric fields
+each cut is computed on its own and a failed one is listed in a NOT
+COMPUTED note with why; the windows keep the steps that worked (profiles,
+cuts, volumes) when another fails; Stop still ends the run. Notes
+beginning NOT COMPUTED are drawn in the error colour, NOT ON THE SAFE
+SIDE in the warning colour, in both field windows.
+
 **Staking table** (owner: "can you go ahead and make a staking table",
 after the gap list against the established line-design program named a
 staking report as missing; then "it would be better to have it under

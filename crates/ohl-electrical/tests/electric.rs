@@ -599,3 +599,43 @@ fn a_volume_is_floored_in_parts_only_when_one_floor_does_not_fit() {
     assert!(each < 2500, "{each}");
     assert!(electric::floor_bytes(each) < 0.1e9);
 }
+
+/// A cut that cannot be placed does not stop the others (owner,
+/// 2026-11-14): the good cut computed, the other said as not computed.
+#[test]
+fn a_failed_cut_leaves_the_others() {
+    let good = magnetic::CutSpec {
+        at: magnetic::CutAt::Station {
+            alignment: "main".into(),
+            station: 150.0,
+        },
+        width: 20.0,
+        above: 5.0,
+        step: 2.0,
+        label: Some("house A".into()),
+    };
+    let bad = magnetic::CutSpec {
+        at: magnetic::CutAt::InSpan {
+            from: "T1".into(),
+            to: "NOWHERE".into(),
+            fraction: Some(0.5),
+        },
+        label: Some("house B".into()),
+        ..good.clone()
+    };
+    let s = Settings {
+        stations: vec![mid("T1", "T2")],
+        cuts: vec![good, bad],
+        ground_model: electric::GroundModel::Plane,
+        ..Settings::default()
+    };
+    let m = field(&s);
+    assert_eq!(m.cuts.len(), 1);
+    assert!(
+        m.notes
+            .iter()
+            .any(|n| n.starts_with("NOT COMPUTED") && n.contains("house B")),
+        "{:?}",
+        m.notes
+    );
+}

@@ -1163,3 +1163,17 @@ pub fn steps_planned(kinds: &[(usize, usize)], unsolved: bool, more: usize) -> u
             .map(|&(cuts, volumes)| (cuts + 2 * volumes).max(1))
             .sum::<usize>()
 }
+
+/// A note of a field run: what was not computed in the error colour,
+/// what is not on the safe side in the warning colour (both in full,
+/// never faint), the others small and faint (owner, 2026-11-14: a cut
+/// that failed is said, not lost among the notes).
+pub fn note_label(ui: &mut egui::Ui, n: &str) {
+    if n.starts_with("NOT COMPUTED") {
+        ui.colored_label(ui.visuals().error_fg_color, n);
+    } else if n.starts_with("NOT ON THE SAFE SIDE") {
+        ui.colored_label(ui.visuals().warn_fg_color, n);
+    } else {
+        ui.label(egui::RichText::new(n).small().weak());
+    }
+}

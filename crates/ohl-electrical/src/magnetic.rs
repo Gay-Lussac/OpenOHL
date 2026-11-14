@@ -2595,6 +2595,20 @@ fn arrangement_change(src: &Sources<'_>, span: &LineSpan, axis: &Axis) -> f64 {
         .fold(0.0, f64::max)
 }
 
+/// The note saying which of `asked` cuts were not computed and why (none:
+/// every cut computed): each failed cut is said, the others' results kept
+/// (owner, 2026-11-14).
+pub(crate) fn failed_cuts_note(asked: usize, failed: &[String]) -> Option<String> {
+    (!failed.is_empty()).then(|| {
+        format!(
+            "NOT COMPUTED: {} of {asked} cut(s) failed, their results missing (the other cuts \
+             computed) — {}",
+            failed.len(),
+            failed.join("; ")
+        )
+    })
+}
+
 pub(crate) fn check_cancel(progress: Option<&Progress>) -> Result<(), String> {
     match progress {
         Some(p) if p.cancel.load(Ordering::Relaxed) => Err("stopped".into()),
@@ -3327,65 +3341,76 @@ pub fn run_keeping(
             })
         };
         let views = src.line.alignment_views();
+        // Each cut on its own (owner, 2026-11-14: one cut that fails — a
+        // wire not connected, a span off the route — no longer stops the
+        // others): its error said in the notes, the others computed.
+        let mut failed: Vec<String> = Vec::new();
         for (k, c) in settings.cuts.iter().enumerate() {
             check_cancel(progress)?;
             if let Some(p) = progress {
                 p.next_step(format!("cut {} of {}", k + 1, settings.cuts.len()));
             }
-            let placed = place_cut(src, &views, &spans, &axes, c).map_err(|e| {
-                format!(
-                    "cut {}: {e}",
-                    c.label.as_deref().unwrap_or(&c.at.describe())
-                )
-            })?;
-            let i = placed.span;
-            let axis = axes[i]
-                .as_ref()
-                .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
-            let cut = cut_box(src, &spans[i], axis, &placed, c);
-            let ground = |x: f64, y: f64| {
-                let (t, s) = axis.local(&[x, y, 0.0]);
-                Some(axis.ground(src.ground, t, s))
-            };
-            if let Some(p) = progress {
-                p.total.fetch_add(cut.points(), Ordering::Relaxed);
-            }
-            let a = cut.at(-c.width);
-            let b = cut.at(c.width);
-            let w = local(
-                &field_views::Path::new(vec![[a[0], a[1], 0.0], [b[0], b[1], 0.0]])?,
-                0.0,
-            );
-            let wires = w.as_ref().unwrap_or(m);
-            let values = field_views::vertical_cut(
-                &cut,
-                &|ps: &[[f64; 3]]| ut_of(wires, ps),
-                Some(&ground),
-                progress,
-            )?;
-            let pts: Vec<[f64; 3]> = values
-                .elevations
-                .iter()
-                .flat_map(|&z| {
-                    values.offsets.iter().map(move |&s| {
-                        let p = cut.at(s);
-                        [p[0], p[1], z]
+            let name = c.label.clone().unwrap_or_else(|| c.at.describe());
+            let one = || -> Result<FieldCut, String> {
+                let placed = place_cut(src, &views, &spans, &axes, c)?;
+                let i = placed.span;
+                let axis = axes[i]
+                    .as_ref()
+                    .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
+                let cut = cut_box(src, &spans[i], axis, &placed, c);
+                let ground = |x: f64, y: f64| {
+                    let (t, s) = axis.local(&[x, y, 0.0]);
+                    Some(axis.ground(src.ground, t, s))
+                };
+                if let Some(p) = progress {
+                    p.total.fetch_add(cut.points(), Ordering::Relaxed);
+                }
+                let a = cut.at(-c.width);
+                let b = cut.at(c.width);
+                let w = local(
+                    &field_views::Path::new(vec![[a[0], a[1], 0.0], [b[0], b[1], 0.0]])?,
+                    0.0,
+                );
+                let wires = w.as_ref().unwrap_or(m);
+                let values = field_views::vertical_cut(
+                    &cut,
+                    &|ps: &[[f64; 3]]| ut_of(wires, ps),
+                    Some(&ground),
+                    progress,
+                )?;
+                let pts: Vec<[f64; 3]> = values
+                    .elevations
+                    .iter()
+                    .flat_map(|&z| {
+                        values.offsets.iter().map(move |&s| {
+                            let p = cut.at(s);
+                            [p[0], p[1], z]
+                        })
                     })
+                    .collect();
+                Ok(FieldCut {
+                    label: c.label.clone(),
+                    alignment: placed.alignment,
+                    station: placed.station,
+                    angle_point: placed.angle_point,
+                    from: spans[i].from.clone(),
+                    to: spans[i].to.clone(),
+                    at: placed.at,
+                    pieces: wires.count(),
+                    left_out: left_out(&w, &pts),
+                    values,
                 })
-                .collect();
-            cuts.push(FieldCut {
-                label: c.label.clone(),
-                alignment: placed.alignment,
-                station: placed.station,
-                angle_point: placed.angle_point,
-                from: spans[i].from.clone(),
-                to: spans[i].to.clone(),
-                at: placed.at,
-                pieces: wires.count(),
-                left_out: left_out(&w, &pts),
-                values,
-            });
+            };
+            match one() {
+                Ok(cut) => cuts.push(cut),
+                Err(e) => {
+                    // Stopped while in it: the run stops.
+                    check_cancel(progress)?;
+                    failed.push(format!("cut {name}: {e}"));
+                }
+            }
         }
+        notes.extend(failed_cuts_note(settings.cuts.len(), &failed));
         let pieces = if settings.volumes.is_empty() {
             Vec::new()
         } else {

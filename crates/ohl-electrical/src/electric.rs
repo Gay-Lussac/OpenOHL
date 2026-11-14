@@ -1515,67 +1515,76 @@ pub fn run_keeping(
     if model3d.is_some() {
         let kv = |ps: &[[f64; 3]]| -> Vec<f64> { e_at(ps).into_iter().map(|e| e / 1e3).collect() };
         let views = src.line.alignment_views();
+        // Each cut on its own (owner, 2026-11-14): one that fails is said
+        // in the notes, the others computed.
+        let mut failed: Vec<String> = Vec::new();
         for (k, c) in settings.cuts.iter().enumerate() {
             magnetic::check_cancel(progress)?;
             if let Some(p) = progress {
                 p.next_step(format!("cut {} of {}", k + 1, settings.cuts.len()));
             }
-            let placed = magnetic::place_cut(src, &views, &spans, &axes, c).map_err(|e| {
-                format!(
-                    "cut {}: {e}",
-                    c.label.clone().unwrap_or_else(|| c.at.describe())
-                )
-            })?;
-            let i = placed.span;
-            let axis = axes[i]
-                .as_ref()
-                .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
-            let cut = magnetic::cut_box(src, &spans[i], axis, &placed, c);
-            let g = |x: f64, y: f64| Some(ground(x, y));
-            let values: CutValues = match (&model3d, settings.ground_model) {
-                (Some(m), GroundModel::Tiled(floor)) => {
-                    let floor = TiledFloor {
-                        fine: settings.cut_tile,
-                        coarse: settings.cut_tile.max(floor.coarse),
-                        ..floor
-                    };
-                    // The cut's own floor, in the cut's frame (station 0
-                    // on the plane, offsets along it).
-                    let fl = with_floor(
-                        progress,
-                        &format!("cut {}", c.label.clone().unwrap_or_else(|| c.at.describe())),
-                        floor.tiles(c.width),
-                        || {
-                            Floor::solve(
-                                m,
-                                Frame::of_cut(placed.plane.origin, placed.plane.right()),
-                                0.0,
-                                c.width,
-                                &floor,
-                                &ground,
-                            )
-                        },
-                    )?;
-                    let f = |ps: &[[f64; 3]]| -> Vec<f64> {
-                        ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
-                    };
-                    field_views::vertical_cut(&cut, &f, Some(&g), progress)?
-                }
-                _ => field_views::vertical_cut(&cut, &kv, Some(&g), progress)?,
+            let name = c.label.clone().unwrap_or_else(|| c.at.describe());
+            let one = || -> Result<magnetic::FieldCut, String> {
+                let placed = magnetic::place_cut(src, &views, &spans, &axes, c)?;
+                let i = placed.span;
+                let axis = axes[i]
+                    .as_ref()
+                    .ok_or_else(|| format!("span {}–{}: no axis", spans[i].from, spans[i].to))?;
+                let cut = magnetic::cut_box(src, &spans[i], axis, &placed, c);
+                let g = |x: f64, y: f64| Some(ground(x, y));
+                let values: CutValues = match (&model3d, settings.ground_model) {
+                    (Some(m), GroundModel::Tiled(floor)) => {
+                        let floor = TiledFloor {
+                            fine: settings.cut_tile,
+                            coarse: settings.cut_tile.max(floor.coarse),
+                            ..floor
+                        };
+                        // The cut's own floor, in the cut's frame (station
+                        // 0 on the plane, offsets along it).
+                        let fl = with_floor(
+                            progress,
+                            &format!("cut {name}"),
+                            floor.tiles(c.width),
+                            || {
+                                Floor::solve(
+                                    m,
+                                    Frame::of_cut(placed.plane.origin, placed.plane.right()),
+                                    0.0,
+                                    c.width,
+                                    &floor,
+                                    &ground,
+                                )
+                            },
+                        )?;
+                        let f = |ps: &[[f64; 3]]| -> Vec<f64> {
+                            ps.iter().map(|&p| fl.field(p, m) / 1e3).collect()
+                        };
+                        field_views::vertical_cut(&cut, &f, Some(&g), progress)?
+                    }
+                    _ => field_views::vertical_cut(&cut, &kv, Some(&g), progress)?,
+                };
+                Ok(magnetic::FieldCut {
+                    label: c.label.clone(),
+                    alignment: placed.alignment.clone(),
+                    station: placed.station,
+                    angle_point: placed.angle_point,
+                    from: spans[i].from.clone(),
+                    to: spans[i].to.clone(),
+                    at: placed.at,
+                    pieces: model3d.as_ref().map_or(0, Charges3d::count),
+                    left_out: None,
+                    values,
+                })
             };
-            cuts.push(magnetic::FieldCut {
-                label: c.label.clone(),
-                alignment: placed.alignment.clone(),
-                station: placed.station,
-                angle_point: placed.angle_point,
-                from: spans[i].from.clone(),
-                to: spans[i].to.clone(),
-                at: placed.at,
-                pieces: model3d.as_ref().map_or(0, Charges3d::count),
-                left_out: None,
-                values,
-            });
+            match one() {
+                Ok(cut) => cuts.push(cut),
+                Err(e) => {
+                    magnetic::check_cancel(progress)?;
+                    failed.push(format!("cut {name}: {e}"));
+                }
+            }
         }
+        notes.extend(magnetic::failed_cuts_note(settings.cuts.len(), &failed));
         let pieces: Vec<[[f64; 3]; 2]> = if settings.volumes.is_empty() {
             Vec::new()
         } else {
