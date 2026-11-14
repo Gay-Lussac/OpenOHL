@@ -135,6 +135,13 @@ in OHL-Structure and read its results there.
   in turn; each break is a case of its own in OHL-Structure.
 - `wind (library)`: the library case `wind`, renamed because one of your
   extra cases is also called `wind`.
+- `everyday (weather case)`: weather case `everyday` sent as a line
+  result while the library has a load case `everyday`: one name, one
+  meaning (said in OHL-Structure's status block).
+
+A value typed over a row whose case was later renamed lands on no row:
+it is **not run**, and the Load table lists it with **Move** to the case
+it belongs to ([OHL-Structure › Load cases](structure-app.md#load-cases)).
 
 See also: [Load cases](loads.md), [Loads for
 structures](desktop-app.md#loads-for-structures), [OHL-Structure ›

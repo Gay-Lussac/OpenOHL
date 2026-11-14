@@ -73,6 +73,9 @@ struct Evaluated {
     /// The placed structure's cases of the line's load case library
     /// ([`library_cases`]).
     library: Vec<LoadCaseRecipe>,
+    /// Typed values that land on no row (2026-11-14): not applied, shown
+    /// apart to be moved ([`LoadTable::apply_landing`]).
+    stray: Vec<Override>,
 }
 
 /// The state of the Load cases and Load table panels.
@@ -226,8 +229,16 @@ impl LoadCasesTab {
             &self.line,
         );
         evaluated.rows.extend(of_recipes.rows);
+        // The structure's own cases without any load: made to hold typed
+        // values (Make it a load case); typed values of another case land
+        // on its rows only.
+        let typed_cases: Vec<&str> = cases
+            .iter()
+            .map(|c| c.name.as_str())
+            .filter(|n| !evaluated.rows.iter().any(|r| r.case == *n))
+            .collect();
         let mut table = evaluated.clone();
-        table.apply(&self.overrides);
+        let stray = table.apply_landing(&self.overrides, &typed_cases);
         self.cache = Some(Evaluated {
             key,
             recipes,
@@ -236,7 +247,50 @@ impl LoadCasesTab {
             line_cases,
             run_recipes,
             library,
+            stray,
         });
+    }
+
+    /// Typed values that land on no row of the table (as of the last
+    /// [`LoadCasesTab::refresh`]): a case renamed or gone since they were
+    /// typed. Not run; shown apart, to be moved (2026-11-14).
+    pub fn stray(&self) -> &[Override] {
+        self.cache.as_ref().map_or(&[], |c| &c.stray)
+    }
+
+    /// The stray typed values of case `from` ([`LoadCasesTab::stray`])
+    /// moved to case `to`: those then typed over one of its rows land
+    /// there. How many were moved.
+    pub fn move_stray(&mut self, from: &str, to: &str) -> usize {
+        let stray: Vec<Override> = self
+            .stray()
+            .iter()
+            .filter(|o| o.case == from)
+            .cloned()
+            .collect();
+        let mut n = 0;
+        for o in &mut self.overrides {
+            if stray.contains(o) {
+                o.case = to.to_owned();
+                n += 1;
+            }
+        }
+        if n > 0 {
+            self.changed();
+        }
+        n
+    }
+
+    /// The stray typed values of case `case` taken back (deleted).
+    pub fn drop_stray(&mut self, case: &str) {
+        let stray: Vec<Override> = self
+            .stray()
+            .iter()
+            .filter(|o| o.case == case)
+            .cloned()
+            .collect();
+        self.overrides.retain(|o| !stray.contains(o));
+        self.changed();
     }
 
     /// The placed structure's load cases from the line's load case
@@ -705,6 +759,7 @@ impl StructureApp {
         if export {
             self.export_table_dialog();
         }
+        self.stray_ui(ui);
         let shown = self.loads.shown.clone().filter(|s| !s.is_empty());
         // The rows of the case shown, by place (no copy of the rows: a
         // large tower's table has thousands); only those in view drawn
@@ -1324,11 +1379,54 @@ impl LoadCasesTab {
         )];
         // What the line says is not sent or not checked (2026-11-14: a
         // library case that does not compute, cases of the set not in the
-        // library): each a warning of its own, never only in the note.
+        // library) and line results renamed: each a line of its own, never
+        // only in the note.
         for part in info.note.as_deref().unwrap_or("").split(" · ") {
             if part.starts_with("NOT ") {
                 out.push((part.to_owned(), Tone::Warn));
+            } else if part.starts_with(ohl_structure_link::RENAMED) {
+                out.push((part.to_owned(), Tone::Info));
             }
+        }
+        // An extra case taking line forces of a name that is now a
+        // library case, the weather case sent renamed: said (it gets the
+        // library case's forces).
+        let library: Vec<&str> = info.library_cases.iter().map(|c| c.name.as_str()).collect();
+        for r in self.recipes().unwrap_or(&[]) {
+            for l in &r.line {
+                let renamed = format!("{} {}", l.result, ohl_structure_link::WEATHER_CASE_SUFFIX);
+                if library.contains(&l.result.as_str()) && info.cases.contains(&renamed) {
+                    out.push((
+                        format!(
+                            "Case {} takes line forces \"{}\": the library case's (its wires' \
+                             condition, broken or removed wires, local conditions). The weather \
+                             case of that name is sent as \"{renamed}\": pick it there if that \
+                             was meant.",
+                            r.name, l.result
+                        ),
+                        Tone::Warn,
+                    ));
+                }
+            }
+        }
+        // Typed values on no row: not run.
+        let stray = self.stray();
+        if !stray.is_empty() {
+            let mut cases: Vec<&str> = Vec::new();
+            for o in stray {
+                if !cases.contains(&o.case.as_str()) {
+                    cases.push(&o.case);
+                }
+            }
+            out.push((
+                format!(
+                    "{} typed value(s) of case(s) {} on no row of the table: NOT RUN — move them \
+                     to their case (Load table).",
+                    stray.len(),
+                    cases.join(", ")
+                ),
+                Tone::Warn,
+            ));
         }
         let without: Vec<&str> = info
             .cases
@@ -1443,6 +1541,121 @@ impl StructureApp {
     }
 
     /// Loads › Add a load case (+ Case).
+    /// Typed values that land on no row (2026-11-14): said in the warning
+    /// colour, per case, each with **Move to** a case of the table, **Make
+    /// it a load case** (a case of that name holding only typed values) and
+    /// **Take back**. Not run until moved.
+    fn stray_ui(&mut self, ui: &mut egui::Ui) {
+        let stray = self.loads.stray().to_vec();
+        if stray.is_empty() {
+            return;
+        }
+        let table: Vec<String> = self
+            .loads
+            .table()
+            .cases()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let mut cases: Vec<&str> = Vec::new();
+        for o in &stray {
+            if !cases.contains(&o.case.as_str()) {
+                cases.push(&o.case);
+            }
+        }
+        let (mut moved, mut made, mut dropped) = (None, None, None);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                format!(
+                    "{} typed value(s) on no row of the table — NOT RUN. Their case was renamed \
+                     or is gone since they were typed (renamed in the line's library, or called \
+                     \"<name> (library)\" since an extra case took its name): move them to the \
+                     case they belong to.",
+                    stray.len()
+                ),
+            );
+            for c in &cases {
+                let of: Vec<&Override> = stray.iter().filter(|o| o.case == *c).collect();
+                let mut places: Vec<&str> = of.iter().map(|o| o.label.as_str()).collect();
+                places.dedup();
+                let more = places.len() > 6;
+                places.truncate(6);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(format!(
+                        "{c}: {} value(s) at {}{}",
+                        of.len(),
+                        places.join(", "),
+                        if more { ", …" } else { "" }
+                    ));
+                    let key = egui::Id::new(("stray-move-to", *c));
+                    let mut to: String = ui
+                        .data(|d| d.get_temp::<String>(key))
+                        .filter(|t| table.contains(t))
+                        .unwrap_or_else(|| table.first().cloned().unwrap_or_default());
+                    egui::ComboBox::from_id_salt(("stray-to", *c))
+                        .selected_text(to.clone())
+                        .show_ui(ui, |ui| {
+                            for t in &table {
+                                ui.selectable_value(&mut to, t.clone(), t);
+                            }
+                        });
+                    ui.data_mut(|d| d.insert_temp(key, to.clone()));
+                    if ui
+                        .add_enabled(!to.is_empty(), egui::Button::new("Move"))
+                        .on_hover_text(
+                            "These typed values to the case chosen: those typed over one of its \
+                             rows replace it (saved with the typed values)",
+                        )
+                        .clicked()
+                    {
+                        moved = Some(((*c).to_owned(), to.clone()));
+                    }
+                    if !table.iter().any(|t| t == c)
+                        && ui
+                            .button("Make it a load case")
+                            .on_hover_text(
+                                "A load case of this name in the structure file, holding only \
+                                 these typed values (e.g. a client's load tree); one undo step",
+                            )
+                            .clicked()
+                    {
+                        made = Some((*c).to_owned());
+                    }
+                    if ui
+                        .button("Take back")
+                        .on_hover_text("Delete these typed values")
+                        .clicked()
+                    {
+                        dropped = Some((*c).to_owned());
+                    }
+                });
+            }
+        });
+        if let Some((from, to)) = moved {
+            let n = self.loads.move_stray(&from, &to);
+            self.message = Some((
+                format!("{n} typed value(s) moved from \"{from}\" to \"{to}\""),
+                false,
+            ));
+        }
+        if let Some(c) = made
+            && let Some(f) = &mut self.file
+        {
+            f.edit(&format!("add load case {c}"), |doc, _| {
+                edit::add_load_case(doc, &c)
+            });
+            self.message = Some((
+                format!("load case \"{c}\" added for its typed values"),
+                false,
+            ));
+        }
+        if let Some(c) = dropped {
+            self.loads.drop_stray(&c);
+            self.message = Some((format!("typed values of \"{c}\" taken back"), false));
+        }
+    }
+
     pub fn add_case(&mut self) {
         let Some(f) = &mut self.file else {
             return;

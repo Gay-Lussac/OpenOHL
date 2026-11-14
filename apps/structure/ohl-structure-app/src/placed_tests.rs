@@ -197,6 +197,79 @@ fn copy_named(name: &str, tag: &str) -> PathBuf {
     to
 }
 
+/// A value typed over the line case "wind", which the line then sends as
+/// "wind ULS" (renamed in its library): the value lands on no row — NOT
+/// RUN, said in the Load table and the status block, the table has no
+/// case "wind" (2026-11-14; before, a case of its own holding that row
+/// while "wind ULS" ran without it). Moved to "wind ULS" it is typed over
+/// that case's row again.
+#[test]
+fn typed_values_of_a_renamed_case_are_shown_and_moved() {
+    let path = copy_named("type-01.ohls", "stray");
+    let at = line_values_path(&path, "T2");
+    write(&at, [1500.0, -200.0, 6000.0]);
+    let mut h = harness(&path, &at);
+    menu(&mut h, "Loads", "Load table");
+    refresh(&mut h);
+    let wind = h
+        .state()
+        .loads
+        .table()
+        .rows
+        .iter()
+        .find(|r| r.case == "wind" && r.label == "A1")
+        .cloned()
+        .unwrap();
+    h.state_mut().loads.type_value(&wind, [9000.0, 0.0, 0.0]);
+    refresh(&mut h);
+    assert!(h.state().loads.stray().is_empty());
+    // The line renames its case.
+    let mut v = PlacedValues::load(&at).unwrap();
+    v.cases = vec!["wind ULS".into(), "ice".into()];
+    for x in &mut v.values.values {
+        if x.case == "wind" {
+            x.case = "wind ULS".into();
+        }
+    }
+    h.state_mut().loads.set_line_values(v);
+    refresh(&mut h);
+    h.run();
+    assert_eq!(h.state().loads.stray().len(), 1);
+    assert!(
+        !h.state().loads.table().cases().contains(&"wind"),
+        "not run"
+    );
+    let typed = |h: &Harness<'static, StructureApp>| {
+        h.state()
+            .loads
+            .table()
+            .rows
+            .iter()
+            .filter(|r| r.source == Source::Typed)
+            .count()
+    };
+    assert_eq!(typed(&h), 0);
+    h.get_by_label_contains("1 typed value(s) on no row of the table — NOT RUN");
+    h.get_by_label_contains("typed value(s) of case(s) wind on no row of the table");
+    // Moved to "wind ULS" (the first case of the table, chosen).
+    h.get_by_label("Move").click();
+    h.run();
+    refresh(&mut h);
+    assert!(h.state().loads.stray().is_empty());
+    let r = h
+        .state()
+        .loads
+        .table()
+        .rows
+        .iter()
+        .find(|r| r.case == "wind ULS" && r.label == "A1")
+        .cloned()
+        .unwrap();
+    assert_eq!((r.source, r.force), (Source::Typed, [9000.0, 0.0, 0.0]));
+    assert!(h.state().loads.overrides_dirty);
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}
+
 /// The line had no load case file: the status block of the load panels
 /// says so, plainly, with what to do.
 #[test]

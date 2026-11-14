@@ -10,6 +10,25 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**One name, one meaning** (phase 1b of the load cases review, owner's
+answers 4 and 7): a weather case sent to the structures (Loads for
+structures) with the name of a load case of the library is sent as
+`<name> (weather case)` and said in OHL-Structure's status block;
+before, both arrived as `everyday`, OHL-Structure took the first (the
+library's) for both, and an extra case built on the weather case got the
+library case's forces — its wire condition, removed or broken wires,
+local conditions — **not on the safe side**, without a word. An extra
+case still naming `everyday` in its line forces gets the library case's
+and the status block says so. Typed values that land on no row (their
+case renamed or gone since) are **not run** (before, a case of their
+own while the real case ran without them: not on the safe side): the
+Load table lists them with Move (to the case they belong to), Make it a
+load case (a case holding only typed values, e.g. a client's load tree)
+and Take back. Found on the way: the line results were solved with the
+weather cases sent only, so a line result after creep failed when the
+creep-stretch case itself was not sent (its values missing, said in the
+note); the line's own weather cases now go along.
+
 **Never silently absent: renamed or deleted load cases, a faulty case**
 (phase 1a of the load cases review, owner's answers 5 and 6): a structure
 whose case set names cases not in the load case library is **not

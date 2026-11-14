@@ -544,6 +544,24 @@ impl LoadTable {
         }
     }
 
+    /// [`LoadTable::apply`] of the overrides that land (2026-11-14): those
+    /// typed over a row of this table, and those of a case of
+    /// `typed_cases` (cases made to hold typed values: a load case with no
+    /// load of its own). The others — typed over a row no longer there, a
+    /// case renamed or gone since — are not applied and are returned, in
+    /// their order: shown apart, to be moved to the case they belonged to,
+    /// never run as a case of their own (before, such a value became a
+    /// case holding that one row while the real case ran without it: not
+    /// on the safe side).
+    pub fn apply_landing(&mut self, overrides: &[Override], typed_cases: &[&str]) -> Vec<Override> {
+        let (land, stray): (Vec<Override>, Vec<Override>) =
+            overrides.iter().cloned().partition(|o| {
+                typed_cases.contains(&o.case.as_str()) || self.rows.iter().any(|r| o.is_over(r))
+            });
+        self.apply(&land);
+        stray
+    }
+
     /// What this table (read back, e.g. from CSV) types over `evaluated`:
     /// its rows with a value that `evaluated` has not (another value, a
     /// row it lacks, a value where it has none, or a row typed there and

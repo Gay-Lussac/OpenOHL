@@ -271,3 +271,65 @@ fn one_faulty_case_fails_alone_and_a_set_of_missing_cases_is_said() {
     assert!(note.contains("windy (renamed)"), "{note}");
     assert!(!note.contains("no library case is sent"), "{note}");
 }
+
+/// One name, one meaning (2026-11-14): a library with a load case
+/// `everyday` on weather case `everyday`, S1 removed in it (a construction
+/// state); with `everyday` also ticked in Loads for structures (the wires
+/// after creep there), the line result is sent as `everyday (weather
+/// case)`, said in the note — two cases of two names, each with its own
+/// forces (before, both were `everyday` and OHL-Structure took the
+/// library's for both: without S1's pull, not on the safe side).
+#[test]
+fn a_weather_case_sent_with_a_library_case_name_is_renamed() {
+    let (line, library, weather) = example();
+    let lc = LoadCases::parse(
+        "format = \"ohl-load-cases\"\nversion = 4\n\
+         [[case]]\nname = \"everyday\"\nweather = \"everyday\"\n\
+         [[case.removed]]\nsection = \"S1\"\n",
+    )
+    .unwrap()
+    .cases;
+    let choice = ohl_line::StructureLoads {
+        weather_cases: vec!["everyday".into()],
+        condition: Some("creep".into()),
+        ..Default::default()
+    };
+    let cases = structure_cases_with(&choice, &weather, &lc);
+    let sent: Vec<&str> = cases.weather.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(sent, ["everyday (weather case)"]);
+    assert_eq!(cases.weather_cases[0].name, "everyday (weather case)");
+    assert_eq!(cases.renamed.len(), 1);
+    let budget = ohl_wirefe::default_fe_budget();
+    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    let placed = placed_values_with(&loads, &line, "T2", "synthetic");
+    assert!(placed.cases.contains(&"everyday".to_owned()));
+    assert!(placed.cases.contains(&"everyday (weather case)".to_owned()));
+    let note = placed.note.clone().unwrap_or_default();
+    assert!(
+        note.contains(ohl_structure_link::RENAMED) && note.contains("\"everyday (weather case)\""),
+        "{note}"
+    );
+    // Solved after creep although the creep case is sent renamed (the
+    // line's own weather cases go along).
+    assert!(!note.contains("not solved"), "{note}");
+    // Each its own forces: S1 removed (the library's) or there, at T1 (a
+    // line end of S1: its pull along the line).
+    let t1 = placed_values_with(&loads, &line, "T1", "synthetic");
+    let pull = |case: &str| -> f64 {
+        t1.values
+            .points
+            .iter()
+            .filter_map(|p| {
+                t1.values
+                    .get(case, &p.label, &p.sets, LineQuantity::Longitudinal)
+            })
+            .map(f64::abs)
+            .sum()
+    };
+    let (removed, sent) = (pull("everyday"), pull("everyday (weather case)"));
+    assert!(sent > 1000.0, "{sent}");
+    assert!(
+        (removed - sent).abs() > 1000.0,
+        "the two cases have their own forces: {removed} N, {sent} N"
+    );
+}

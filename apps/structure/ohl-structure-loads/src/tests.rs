@@ -373,6 +373,51 @@ fn typed_values_are_kept_and_marked() {
     assert_eq!(again, t);
 }
 
+/// Typed values that land on no row (2026-11-14): typed over a row whose
+/// case was renamed since, or of a case that is gone, they are not run as a
+/// case of their own (the real case would run without them); they are
+/// given back, to be moved. Those of a case made to hold typed values land.
+#[test]
+fn typed_values_on_no_row_are_kept_apart() {
+    let f = StructureLoadCases::parse(RECIPES).unwrap();
+    let evaluated = evaluate(&f.cases, &structure(), &line());
+    let typed = vec![
+        Override {
+            case: "unbalanced".into(),
+            load: Some(1),
+            at: At::Point,
+            label: "S".into(),
+            force: [0.0, 0.0, 15_000.0],
+        },
+        // Typed when the case was called "unbalanced (old)".
+        Override {
+            case: "unbalanced (old)".into(),
+            load: Some(1),
+            at: At::Point,
+            label: "S".into(),
+            force: [0.0, 0.0, 20_000.0],
+        },
+        Override {
+            case: "client".into(),
+            load: None,
+            at: At::Point,
+            label: "E".into(),
+            force: [1.0, 2.0, 3.0],
+        },
+    ];
+    let mut t = evaluated.clone();
+    let stray = t.apply_landing(&typed, &[]);
+    assert_eq!(stray, typed[1..]);
+    assert_eq!(row(&t, "unbalanced", 1, "S").force, [0.0, 0.0, 15_000.0]);
+    assert!(t.case("unbalanced (old)").next().is_none(), "not run");
+    assert!(t.case("client").next().is_none(), "not run");
+    // "client" made a case of typed values: its value lands.
+    let mut t = evaluated.clone();
+    let stray = t.apply_landing(&typed, &["client"]);
+    assert_eq!(stray, typed[1..2]);
+    assert_eq!(t.case("client").count(), 1);
+}
+
 #[test]
 fn the_table_round_trips_through_csv_and_json() {
     let f = StructureLoadCases::parse(RECIPES).unwrap();

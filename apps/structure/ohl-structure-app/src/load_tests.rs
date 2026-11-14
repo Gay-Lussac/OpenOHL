@@ -211,6 +211,12 @@ fn the_table_goes_out_and_back_as_csv() {
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();
+    // Typed values on no row are not run until their case is made
+    // (2026-11-14): a case of typed values only, from the Load table.
+    menu(&mut h, "Loads", "Load table");
+    h.get_by_label("Make it a load case").click();
+    h.run();
+    assert!(h.state().loads.stray().is_empty());
     let table = h.state().loads.table().clone();
     let csv = path.with_file_name("table.csv");
     h.state().loads.export_table(&csv).unwrap();
@@ -254,8 +260,16 @@ fn results_of_a_typed_case() {
         };
         h.state_mut().loads.type_value(&own, force);
     }
-    // The editor's window closed (it lies over the panels).
+    h.run();
+    // Typed values on no row are not run until their case is made
+    // (2026-11-14): a case of typed values only, from the Load table.
+    menu(&mut h, "Loads", "Load table");
+    h.get_by_label("Make it a load case").click();
+    h.run();
+    // The editor's and the table's windows closed (they lie over the
+    // panels).
     crate::layout::close_panel(&mut h.state_mut().dock, crate::layout::Panel::LoadRecipes);
+    crate::layout::close_panel(&mut h.state_mut().dock, crate::layout::Panel::LoadTable);
     h.run();
     menu(&mut h, "Results", "FE results");
     h.state_mut().results.case = "typed".into();

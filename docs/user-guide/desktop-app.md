@@ -408,6 +408,8 @@ weather cases ticked here ──► line results: the wires' and strings' forces
                                  left" and "<case> — wind from the right"
                                ingredients for the structure's own (extra)
                                load cases, which give their factors
+                               · one with the name of a library case:
+                                 "<case> (weather case)"
 ```
 
 **Line › Criteria › Loads for structures** is a tick menu (it stays open while

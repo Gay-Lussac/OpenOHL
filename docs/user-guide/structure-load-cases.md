@@ -50,7 +50,8 @@ ingredients of the structure's own load cases.
    result**: the wires' and strings' forces at each attachment point,
    unfactored. A weather case with wind is two line results, `<case> —
    wind from the left` and `<case> — wind from the right`; without wind,
-   one, named as the weather case. A broken wire (roadmap O9) is a line
+   one, named as the weather case — `<case> (weather case)` when the
+   load case library has a case of that name (2026-11-14). A broken wire (roadmap O9) is a line
    result too: a load case of the line with a broken wire ticked there
    is sent as its weather case with that wire broken, named
    `<weather case> — <section> span <n> broken` (with wind, twice:
@@ -309,7 +310,7 @@ One row per case, load and point (or member, or joint):
 
 | Column | Meaning |
 |---|---|
-| `case`, `load` | The case and the row's number in it: an older load 1 to 999, the line forces from 1001, the wind on the body from 2001, the ice from 3001, the point loads from 4001 (each part's first item, second, …: a value typed over a row keeps matching when another part changes); shown as load 2, line 1, wind 1, …; empty: a typed row of its own |
+| `case`, `load` | The case and the row's number in it: an older load 1 to 999, the line forces from 1001, the wind on the body from 2001, the ice from 3001, the point loads from 4001 (each part's first item, second, …: a value typed over a row keeps matching when another part changes); shown as load 2, line 1, wind 1, …; empty: a typed row of its own (of a load case holding typed values only; a typed value on no row of the table is not run, 2026-11-14) |
 | `at`, `label` | `point`, `member` or `joint`, and its label or id (empty: the load picks nothing) |
 | `transverse`, `longitudinal`, `vertical` | N; vertical down |
 | `source` | The part the row comes from: `line` (line forces, or an older load taking a line value), `wind`, `ice`, `point`, `recipe` (an older load's own value or pressure), `typed` |

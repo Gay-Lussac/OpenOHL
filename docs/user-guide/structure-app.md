@@ -1251,7 +1251,7 @@ structure has no line: every load taking a line value shows **no line
 value**. Type the
 values (drag or click a number), or **Import table…** a CSV with the
 table's columns (from **Export table…**, another program or a client's
-load tree): what it has beyond the evaluation becomes typed values.
+load tree): what it has beyond the evaluation becomes typed values (values of a case the table has not wait, not run, until **Make it a load case** or **Move**, below).
 
 **Typed values** stay when the recipes change and the table is
 evaluated again; ⟲ takes one back. They are not part of the structure
@@ -1260,6 +1260,19 @@ file: **Save** writes them beside it as `<name>.loads.csv` (for
 only), and opening the file reads them again; started for a placed
 structure, as `<name>.<structure>.loads.csv`. Unsaved typed values count
 as unsaved changes.
+
+**Typed values on no row** (2026-11-14): a value typed over a row that
+is no longer in the table — its case renamed in the line's library,
+called `<name> (library)` since an extra case took its name, or gone —
+is **not run** (before, it became a case of its own holding that one row
+while the real case ran without it: not on the safe side). The Load
+table lists such values in a box in the warning colour, per case (*wind:
+1 value(s) at A1*), with **Move** to a case of the table chosen in the
+list (those then typed over one of its rows replace it), **Make it a
+load case** (a load case of that name in the structure file, holding
+only typed values — e.g. a client's load tree imported; one undo step)
+and **Take back**; the status block says how many are not run. They stay
+in the typed values file until moved or taken back.
 
 **Surface loads** (a `pressure` on `members`) take each member's area
 from the cross-section library (`--sections`, else the `Sections` folder
@@ -1300,7 +1313,13 @@ library* (read here, changed in OHL-Design), then the structure's own
 cases as **extra** load cases — for loads the line's cases do not give.
 The line's values of a library case are taken by that case only (no row
 of its own in the load table). An own case with a library case's name
-makes the library's `<name> (library)`. Older line-values files (version
+makes the library's `<name> (library)`. A weather case sent with the
+name of a library case (Loads for structures) arrives as `<name>
+(weather case)` (2026-11-14, one name one meaning: before, OHL-Structure
+took the library case's forces for both), said in the status block; an
+extra case still taking line forces `<name>` gets the library case's
+and the status block says so, to pick `<name> (weather case)` there if
+that was meant. Older line-values files (version
 4 and before) and lines without a load case library give none: the own
 cases as before. The weather cases ticked in Criteria › Loads for
 structures still come as line results (unfactored, for the own cases),

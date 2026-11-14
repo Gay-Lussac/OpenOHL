@@ -2639,7 +2639,13 @@ per line load case, point or set and quantity) into a `LoadTable`
 transverse/longitudinal/vertical down N, `source`
 recipe/line/wind/ice/point/typed — the part a row comes from —,
 `evaluated`, `missing`, `note`, `area` — a surface load's member area,
-m²). Row numbers (`load`) per part, so typed values keep matching
+m²). Typed values (`Override`) land through
+`LoadTable::apply_landing(overrides, typed_cases)` (2026-11-14): those
+typed over a row of the table, or of a case of `typed_cases` (an own
+load case with no load: made to hold typed values); the others are
+returned, not applied — shown apart, moved by the user — never a case of
+their own (`LoadTable::apply` still adds them, for the typed values file
+itself). Row numbers (`load`) per part, so typed values keep matching
 (`ohl_structure_loads::Part`, `PART_BLOCK` = 1000): older loads 1–999,
 line forces 1001…, wind 2001…, ice 3001…, point loads 4001…; a point
 turned off keeps its row (force 0, note "off"). The self weight has no
@@ -2738,7 +2744,11 @@ for **Edit…** on a placed structure — `structure` (placed structure id),
 `line` (project line, or the line file's name), `structure_type`,
 `cases` (the cases the line sends: the structure's set of the load case
 library, then the weather cases ticked in its `structure_loads` as line
-results — `<name>`, `<name> — wind from the left` / `— right`; before
+results — `<name>`, `<name> — wind from the left` / `— right`; a line
+result with a library case's name is `<name> (weather case)`
+(`ohl_structure_link::WEATHER_CASE_SUFFIX`, 2026-11-14, said in the note
+as `RENAMED: …`; the line results are solved with the line's own weather
+cases too, for the creep-stretch criteria); before
 2026-10-25 the load cases chosen and `weather: <name>`; the library's
 cases computed one by one, `ohl_structure_link::StructureCaseLoads::
 library_failed` naming those that do not compute, `library_names` every

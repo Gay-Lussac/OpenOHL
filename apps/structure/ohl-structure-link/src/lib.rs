@@ -258,6 +258,10 @@ pub struct StructureCases {
     pub library: Vec<LoadCase>,
     /// The line's weather cases (those the library's cases name).
     pub library_weather: Vec<ohl_weather::WeatherCase>,
+    /// Line results renamed because a case of the library has their name
+    /// (2026-11-14, one name one meaning: `everyday` →
+    /// `everyday (weather case)`), in words.
+    pub renamed: Vec<String>,
 }
 
 impl StructureCases {
@@ -377,8 +381,41 @@ pub fn structure_cases_with(
             out.weather_cases.push(case);
         }
     }
+    // One name, one meaning (2026-11-14): a line result with the name of
+    // a case of the library would be mixed up with it (the first of the
+    // name taken, not on the safe side): renamed, and said.
+    for (c, w) in out.weather.iter_mut().zip(out.weather_cases.iter_mut()) {
+        if !load_cases.iter().any(|l| l.name == c.name) {
+            continue;
+        }
+        let mut name = format!("{} {WEATHER_CASE_SUFFIX}", c.name);
+        while load_cases.iter().any(|l| l.name == name) {
+            name = format!("{name} {WEATHER_CASE_SUFFIX}");
+        }
+        out.renamed.push(format!(
+            "line result \"{}\" sent as \"{name}\" (the load case library has a case \
+             \"{}\")",
+            c.name, c.name
+        ));
+        c.description = format!(
+            "{} — renamed: the load case library has a case \"{}\"",
+            c.description, c.name
+        );
+        c.name = name.clone();
+        c.weather = name.clone();
+        w.name = name;
+    }
     out
 }
+
+/// What a line result with the name of a case of the line's load case
+/// library is given after its name (2026-11-14): `everyday (weather
+/// case)`.
+pub const WEATHER_CASE_SUFFIX: &str = "(weather case)";
+
+/// How a line result renamed for a library case's name is said in the
+/// note of the line-values file.
+pub const RENAMED: &str = "RENAMED";
 
 /// The tag of a line result with a broken wire.
 pub const BROKEN_WIRE_TAG: &str = "broken wire";
@@ -455,6 +492,9 @@ pub struct StructureCaseLoads {
     pub weather: Vec<CaseLoads>,
     /// What was chosen and is not there ([`StructureCases::missing`]).
     pub missing: Vec<String>,
+    /// Line results renamed for a library case's name
+    /// ([`StructureCases::renamed`]).
+    pub renamed: Vec<String>,
     /// The loads of the line's load case library's cases, factored as
     /// the library says ([`StructureCases::library`]); a structure not
     /// taking a case has no loads in it.
@@ -495,13 +535,17 @@ pub fn structure_case_loads(
             s.load_cases.clear();
             s.no_load_cases = false;
         }
-        ohl_loads::structure_loads(
-            &every,
-            library,
-            &cases.weather_cases,
-            &cases.weather,
-            budget,
-        )?
+        // The line's own weather cases too, after the results' (the
+        // creep-stretch criteria name them: a line result after creep
+        // needs its final case even when it is not sent, or is sent
+        // renamed — 2026-11-14).
+        let mut known = cases.weather_cases.clone();
+        for w in &cases.library_weather {
+            if !known.iter().any(|k| k.name == w.name) {
+                known.push(w.clone());
+            }
+        }
+        ohl_loads::structure_loads(&every, library, &known, &cases.weather, budget)?
     };
     // Each case of the library on its own (2026-11-14): a faulty one
     // fails only itself, named in the header of the structures taking it.
@@ -526,6 +570,7 @@ pub fn structure_case_loads(
     Ok(StructureCaseLoads {
         weather,
         missing: cases.missing,
+        renamed: cases.renamed,
         library: lib,
         library_weather: cases.library_weather,
         library_failed,
@@ -572,6 +617,7 @@ pub fn placed_values_with(
         .filter(|(name, _)| line.takes_load_case(structure, name))
         .map(|(name, why)| format!("{NOT_SENT}: library case \"{name}\" does not compute ({why})"))
         .collect();
+    said.extend(sent.renamed.iter().map(|r| format!("{RENAMED}: {r}")));
     if let Some(u) = ohl_loads::unknown_case_sets(line, &sent.library_names)
         .into_iter()
         .find(|u| u.structure == structure)
