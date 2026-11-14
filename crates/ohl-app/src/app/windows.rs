@@ -1039,6 +1039,7 @@ pub(crate) fn menu_tools(target: &Selection) -> Vec<(crate::tools::Tool, &'stati
             (Tool::Move, "Move…", false),
             (Tool::Replace, "Replace structure…", false),
             (Tool::AddString, "Add string…", false),
+            (Tool::AddPost, "Add post insulator…", false),
             (Tool::AddJumper, "Add jumper", true),
         ],
         Selection::Span { .. } => vec![
@@ -1056,6 +1057,7 @@ pub(crate) fn menu_tools(target: &Selection) -> Vec<(crate::tools::Tool, &'stati
         ],
         Selection::Point { .. } => vec![
             (Tool::AddString, "Add string…", false),
+            (Tool::AddPost, "Add post insulator…", false),
             (Tool::Link, "Link to a joint…", true),
         ],
         Selection::AlignmentPoint { .. } => vec![

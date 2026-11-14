@@ -106,6 +106,11 @@ const SHOTS: &[Shot] = &[
         open: |h| use_tool(h, Tool::AddString, Selection::Structure("T7".into()), None),
     },
     Shot {
+        name: "add-post",
+        title: "Add post insulator to T7",
+        open: |h| use_tool(h, Tool::AddPost, Selection::Structure("T7".into()), None),
+    },
+    Shot {
         name: "add-alignment-point",
         title: "New alignment point",
         open: |h| {

@@ -1,12 +1,12 @@
 # Tools: Structures
 
-*Built, in active development (not approved yet).* The five tools of the
+*Built, in active development (not approved yet).* The six tools of the
 **Structures** theme place and change structures: **Add structure**
 stands a new one on the line, **Move structure** moves one, **Replace
 structure** puts another structure type in its place, **Link attachment
-point** links an attachment point to a joint of its type, and **Add
+point** links an attachment point to a joint of its type, **Add
 string** hangs a new string on a structure (or puts a spacer between two
-wires). This page explains each tool, its windows and every field. The
+wires), and **Add post insulator** stands a post insulator on it. This page explains each tool, its windows and every field. The
 words structure, structure type, attachment point, string, wire point and
 set are those of the [Glossary](glossary.md#structures). The tutorial
 places structures and looks at their strings in [3. The first
@@ -256,7 +256,7 @@ top for a new string:
 | Field | What it does |
 |---|---|
 | **set** | The set number of its wire point (the next free one is offered). Apply is refused when the structure has a wire point with this set already. |
-| **shape** | **replace with…**: replaces the strings by a shape — *One string*, *Two strings to one wire point*, *Two strings to one wire point, a string below*, *A string, two tension strings from its wire point*. |
+| **shape** | **replace with…**: replaces the strings by a shape — *One string*, *Two strings to one wire point*, *Two strings to one wire point, a string below*, *A string, two tension strings from its wire point*, and the three post insulators ([Add post insulator](#add-post-insulator)). |
 
 **Add spacer.** Click a span point, then a span point of another wire of
 the same span: the **Add spacer** window opens, with the fields
@@ -277,3 +277,61 @@ by finite elements (not the ruling span).
 - On a structure with a type, the strings added are the structure's own,
   over its type's.
 - **Undo**: Apply is one step.
+
+## Add post insulator
+
+![The Add post insulator window: the post standing on the point clicked, its ratings, its jumper exit angle, its direction and length, its wire point](../images/tools/tool-add-post.png)
+
+**What it is for.** Add post insulator (2026-11-14) stands a **post
+insulator** on a structure: an insulator standing on a point of the
+structure — its base, earthed — and holding a wire point at its top. A
+**fixed** post holds the wire point rigidly as a cantilever (a station
+post upright, a line post horizontal); a **hinged** post (a braced line
+post) turns about its base and is held by a brace string to its top. How
+a post carries its load and how it is checked is explained in [Post
+insulators](../theory/post-insulators.md).
+
+**How to use it**
+
+1. Hold **Add post insulator** (Edit › Tools › Structures, or the
+   inventory; put it in a hotbar slot to keep it at hand). While it is
+   held, structures and their points can be clicked.
+2. Click:
+
+   | Clicked | What opens |
+   |---|---|
+   | a point of a structure | **Add post insulator to *structure***: an upright post standing on it, its wire point 1.5 m above, at the next free set |
+   | a structure, or one of its strings | the same, on the first point no string hangs from yet (a structure without points: a new point 20 m up) |
+
+   The right-click menu of a structure or a point offers **Add post
+   insulator…** too.
+3. Choose its **shape**, set its length, direction and ratings, then
+   **Apply** (Enter).
+
+**The window** is the strings window ([Edit on a
+string](tools-general.md#edit-on-a-string)) with the post's own fields:
+
+| Field | What it does |
+|---|---|
+| **shape** | **Post insulator, upright** (a station post: its wire point straight above), **horizontal** (a line post: its wire point level, out to the side of the structure the point is on) or **braced** (a hinged horizontal post and a brace from a point 1.5 m above its base to its top). 1.5 m is a length to start from: set the real one. |
+| **stands on** | The point its base stands on. |
+| **weight**, **wind area** | Its own weight and the area the wind blows on: at its middle for a fixed post (a load of its base with half its length as lever), half at each end for a hinged one. |
+| **ratings along it**: **compression**, **tension** | What it is rated for along its axis (its data sheet). Ticked: checked in Checks › String checks; unticked: not given (a library post's, when the string names one). |
+| **post insulator** | Ticked: it is a post. Unticked, it becomes an ordinary string (its post fields cleared). |
+| **hinged base (braced)** | It turns about its base and only pushes or pulls: another string at its wire point (its brace) must hold it — Apply is refused without one. |
+| **cantilever rating** | The load across it at its top it is rated for; compared with its bending moment at its base over its length (Checks › String checks). Fixed posts only. |
+| **jumper exit angle**, **in plan** | Where its clamp holds a jumper ending at its wire point: the angle from the horizontal (negative: down; unticked: level) and the direction in plan in the structure's axes (0 ahead, 90 right; unticked: towards the jumper's other end). Fixed to the structure: it does not turn with the wind. |
+| **down/up**, **direction**, **length** | Where its wire point is from its base: 180° straight up, 90° level; the direction in plan; its length. |
+| **wire point**, **set**, **clamp** | Its wire point at its top, with the set a section or jumper ends at. |
+
+**Good to know**
+
+- A fixed post holds its wire point alone: another string ending at the
+  same wire point is refused (a braced post is a hinged one).
+- A post is never a tension string.
+- Opening a post with **Edit** shows the same fields: they are kept when
+  you Apply.
+- A post standing on the ground (on a pedestal of its own) and a rigid
+  conductor carried on posts are not built yet.
+- **Undo**: Apply is one step.
+

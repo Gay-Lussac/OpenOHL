@@ -167,6 +167,7 @@ own: **M** holds Move structure, **G** opens the Go to structure window.
 | [Replace structure](tools-structures.md#replace-structure) | Structures | another structure type in the structure's place |
 | [Link attachment point](tools-structures.md#link-attachment-point) | Structures | links an attachment point to a joint of its type |
 | [Add string](tools-structures.md#add-string) | Structures | a new string hanging from the point clicked; or a spacer |
+| [Add post insulator](tools-structures.md#add-post-insulator) | Structures | a post insulator standing on the point clicked (upright, horizontal or braced) |
 | [String wire](tools-wires.md#string-wire) | Wires | picks strings in line order; Enter makes a section |
 | [Add jumper](tools-wires.md#add-jumper) | Wires | the missing jumpers at a structure, or a jumper between two strings |
 | [Add on span](tools-wires.md#add-on-span) | Wires | a point, an object or a spread load on a span or jumper |

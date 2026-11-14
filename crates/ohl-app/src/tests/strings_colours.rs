@@ -363,7 +363,8 @@ fn local_jumper_failures() {
 }
 
 /// The string editor's presets put on a structure give a valid line: an
-/// I-string, a V, a V with a string below, a TAK (two sets); opened again
+/// I-string, a V, a V with a string below, a TAK (two sets), the three
+/// post insulators (upright, horizontal, braced); opened again
 /// at their set, the same strings come back; a V with a string below
 /// strung into a section solves.
 #[test]
@@ -384,11 +385,25 @@ fn string_editor_presets_make_valid_assemblies() {
         let w = t2.wire_at_set(set).unwrap();
         let c = t2.component(&w.label);
         let strings = match preset {
-            Preset::I => 1,
-            Preset::V => 2,
+            Preset::I | Preset::StationPost | Preset::LinePost => 1,
+            Preset::V | Preset::BracedPost => 2,
             Preset::VAndString | Preset::Tak => 3,
         };
         assert_eq!(c.strings.len(), strings, "{preset:?}");
+        // The post shapes (2026-11-14): a post standing on the point, its
+        // wire point 1.5 m up or out; braced: hinged, with its brace.
+        if Preset::POSTS.contains(&preset) {
+            let post = t2.strings.iter().find(|x| x.wire == w.label && x.post);
+            let post = post.unwrap_or_else(|| panic!("{preset:?}: no post"));
+            assert_eq!(post.hinged, preset == Preset::BracedPost);
+            let base = t2.point(&post.top).unwrap().position;
+            let d = (0..3)
+                .map(|k| (w.position[k] - base[k]).powi(2))
+                .sum::<f64>();
+            assert!((d.sqrt() - 1.5).abs() < 1e-9, "{preset:?}");
+            let up = w.position[2] - base[2];
+            assert_eq!(up > 1.0, preset == Preset::StationPost, "{preset:?}");
+        }
         if preset == Preset::Tak {
             assert!(t2.wire_at_set(set + 1).is_some());
             assert_eq!(
