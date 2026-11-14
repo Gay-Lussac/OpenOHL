@@ -1301,7 +1301,9 @@ as its **load cases**, with the library's factors: each case takes
 2. the structure's self weight × its vertical factor; the wind on the body
    from the case's direction — any angle (`from = 30.0`, 0° from the
    right, 90° from ahead) — its pressure on the structures (with
-   `use_local`, × this structure's `wind_static`) × its factor; ice on
+   `use_local`, × this structure's `wind_static`; every case takes it
+   when Checks › Structure loads › Use local conditions is ticked in
+   OHL-Design, 2026-11-14, said in the status block) × its factor; ice on
    every member (the case's thickness or this structure's local ice — also
    when the case takes the local conditions, gives no ice of its own and
    its weather case has ice, said in its description —, its density) and snow on every member's plan (q = μ·C_e·C_T·s_k), × the

@@ -262,6 +262,9 @@ pub struct StructureCases {
     /// (2026-11-14, one name one meaning: `everyday` →
     /// `everyday (weather case)`), in words.
     pub renamed: Vec<String>,
+    /// Every case takes the structures' local conditions (the line's
+    /// check's **Use local conditions**, [`StructureCases::with_local`]).
+    pub local: bool,
 }
 
 impl StructureCases {
@@ -269,7 +272,27 @@ impl StructureCases {
     pub fn is_empty(&self) -> bool {
         self.weather.is_empty() && self.library.is_empty()
     }
+
+    /// These cases as the line's check takes them with **Use local
+    /// conditions** ticked (`on`; owner's answer 3 of 2026-11-14): every
+    /// library case and every line result as if it said `use_local = true`
+    /// (`ohl_loads::with_local`: the wires on the localized line, the body
+    /// wind × each structure's `wind_static` once, the structures' local
+    /// ice) — so OHL-Structure checks with the loads of the line's check.
+    /// Unticked: as they are (a case's own `use_local` kept).
+    pub fn with_local(mut self, on: bool) -> Self {
+        if on {
+            self.library = ohl_loads::with_local(self.library, true);
+            self.weather = ohl_loads::with_local(self.weather, true);
+            self.local = true;
+        }
+        self
+    }
 }
+
+/// How OHL-Structure is told that the line's cases take the local
+/// conditions (the note of the line-values file).
+pub const WITH_LOCAL: &str = "With the local conditions";
 
 /// What a line result of load case `lc` changes in the wires, for its
 /// name: its removed and broken wires (`S3 removed, S1 span 2 broken`).
@@ -495,6 +518,9 @@ pub struct StructureCaseLoads {
     /// Line results renamed for a library case's name
     /// ([`StructureCases::renamed`]).
     pub renamed: Vec<String>,
+    /// Every case takes the structures' local conditions
+    /// ([`StructureCases::with_local`]).
+    pub local: bool,
     /// The loads of the line's load case library's cases, factored as
     /// the library says ([`StructureCases::library`]); a structure not
     /// taking a case has no loads in it.
@@ -571,6 +597,7 @@ pub fn structure_case_loads(
         weather,
         missing: cases.missing,
         renamed: cases.renamed,
+        local: cases.local,
         library: lib,
         library_weather: cases.library_weather,
         library_failed,
@@ -618,6 +645,12 @@ pub fn placed_values_with(
         .map(|(name, why)| format!("{NOT_SENT}: library case \"{name}\" does not compute ({why})"))
         .collect();
     said.extend(sent.renamed.iter().map(|r| format!("{RENAMED}: {r}")));
+    if sent.local {
+        said.push(format!(
+            "{WITH_LOCAL} (Checks › Structure loads › Use local conditions in the line): every \
+             case takes the structures' local wind and ice, as the line's check"
+        ));
+    }
     if let Some(u) = ohl_loads::unknown_case_sets(line, &sent.library_names)
         .into_iter()
         .find(|u| u.structure == structure)

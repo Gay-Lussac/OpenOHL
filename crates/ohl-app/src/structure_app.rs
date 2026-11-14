@@ -197,6 +197,10 @@ pub struct LineInputs {
     /// structures (each its set), and its broken-wire cases chosen are
     /// sent as line results.
     load_cases: Vec<ohl_loads::LoadCase>,
+    /// Every case with the structures' local conditions, as the line's
+    /// check with **Use local conditions** ticked (owner's answer 3 of
+    /// 2026-11-14; [`ohl_structure_link::StructureCases::with_local`]).
+    pub local: bool,
 }
 
 /// The line's load cases (its `.ohllc` file; none when there is none or
@@ -219,6 +223,17 @@ impl LineInputs {
             library: model.library.clone(),
             weather: model.cases.iter().map(|c| c.case.clone()).collect(),
             load_cases: line_load_cases(model),
+            local: false,
+        }
+    }
+
+    /// [`LineInputs::of`] with the line's check's **Use local conditions**
+    /// (`local`): OHL-Structure then gets the cases as that check takes
+    /// them.
+    pub fn of_with_local(model: &Model, local: bool) -> Self {
+        Self {
+            local,
+            ..Self::of(model)
         }
     }
 
@@ -233,7 +248,8 @@ impl LineInputs {
             &self.line.structure_loads,
             &self.weather,
             &self.load_cases,
-        );
+        )
+        .with_local(self.local);
         if cases.is_empty() {
             return Err(NO_CASES.into());
         }
@@ -598,6 +614,8 @@ pub struct StructureApps {
     /// The line's version the placed structures' values were last
     /// computed from.
     values_version: Option<u64>,
+    /// The line check's Use local conditions they were written with.
+    values_local: bool,
     /// The line's version seen last, and since when.
     seen: Option<(u64, Instant)>,
     /// A computation of the values running: what went wrong, when done.
@@ -931,8 +949,10 @@ impl StructureApps {
     /// While placed structures are open in a structure application: their
     /// line-values files written again when the line changed (once it has
     /// been unchanged for a second; computed on a thread of their own, one
-    /// computation at a time). What went wrong in a computation finished.
-    pub fn refresh_values(&mut self, model: &Model) -> Vec<String> {
+    /// computation at a time), and when the line's check's **Use local
+    /// conditions** (`local`) changed. What went wrong in a computation
+    /// finished.
+    pub fn refresh_values(&mut self, model: &Model, local: bool) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(rx) = &self.computing {
             match rx.try_recv() {
@@ -949,8 +969,14 @@ impl StructureApps {
         }
         let placed = self.placed();
         let version = model.line_version;
-        if placed.is_empty() || self.values_version == Some(version) {
+        if placed.is_empty() || (self.values_version == Some(version) && self.values_local == local)
+        {
             return out;
+        }
+        // The switch changed, the line not: at once.
+        if self.values_version == Some(version) {
+            self.seen = None;
+            self.values_version = None;
         }
         // A new place is computed at once; a changed line once it settles.
         match self.seen {
@@ -964,7 +990,8 @@ impl StructureApps {
         }
         self.seen = Some((version, Instant::now()));
         self.values_version = Some(version);
-        let inputs = LineInputs::of(model);
+        self.values_local = local;
+        let inputs = LineInputs::of_with_local(model, local);
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let _ = tx.send(inputs.write_all(&placed));

@@ -40,7 +40,9 @@ const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
     "every load case as if it said use_local = true: the wires solved with their spans' wind \
      and ice for strength, and the wind on the structures' bodies (wind bands, the members of \
      the usage check, the poles) times each structure's factor, once; a case's own \
-     [case.structure] ice = true takes each structure's ice",
+     [case.structure] ice = true takes each structure's ice. Kept with the project: the loads \
+     sent to OHL-Structure (Open in OHL-Structure…) follow it, so both checks take the same \
+     cases",
 );
 
 /// What a run computes from (taken on the main thread).
@@ -343,9 +345,37 @@ pub struct LoadsPage {
     /// How much the last run computed (cases × structures): its time
     /// estimates the next.
     units: (usize, usize),
+    /// Its **Use local conditions** kept in the project (2026-11-14: the
+    /// placed structures sent to OHL-Structure follow it, so it must
+    /// outlive the window; [`SETTING`]).
+    kept: crate::check_ui::Kept,
 }
 
+/// The project setting keeping the Structure loads window's setup, per
+/// project line: `{"local": true}`.
+pub const SETTING: &str = "app.structure_loads";
+
 impl LoadsPage {
+    /// Reads **Use local conditions** from the project when not read yet
+    /// for the line worked on, and writes it into it when it changed
+    /// ([`SETTING`]; called every frame, the window open or not: what
+    /// OHL-Structure gets follows it).
+    pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
+        let json = serde_json::json!({ "local": self.local }).to_string();
+        let mut kept = std::mem::take(&mut self.kept);
+        if let crate::check_ui::Step::Load(text) =
+            kept.step(model, ctx, SETTING, "structure loads settings", &json)
+        {
+            self.local = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+                .and_then(|v| v.get("local").and_then(serde_json::Value::as_bool))
+                .unwrap_or(false);
+            kept.loaded(serde_json::json!({ "local": self.local }).to_string());
+        }
+        self.kept = kept;
+    }
+
     /// Whether a computation runs.
     pub fn running(&self) -> bool {
         self.running.is_some()

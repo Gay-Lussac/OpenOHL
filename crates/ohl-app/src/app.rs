@@ -2492,6 +2492,7 @@ impl App {
         ready.wirefit.keep(&mut ready.model, ctx);
         ready.vegetation.keep(&mut ready.model, ctx);
         ready.safety_volume.keep(&mut ready.model, ctx);
+        ready.loads.keep(&mut ready.model, ctx);
         ready.phase_distance.keep(&mut ready.model, ctx);
         ready.unequal_wind.keep(&mut ready.model, ctx);
         ready.magnetic_field.ui(ctx, &ready.model);

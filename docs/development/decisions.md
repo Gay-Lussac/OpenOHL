@@ -10,6 +10,20 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Local conditions reach OHL-Structure** (phase 1c of the load cases
+review, owner's answer 3): Checks › Structure loads › Use local
+conditions is kept with the project (project setting
+`app.structure_loads.<line>`, as the other check windows keep theirs:
+no line file change), and the loads written for a placed structure
+take it — every library case and every line result as if it said
+`use_local = true` (`StructureCases::with_local`), the same loads as the
+line's check; OHL-Structure's status block says "With the local
+conditions". Before, they were computed as written whatever the switch:
+lower than the line check's at a structure with `wind_static` above 1,
+**not on the safe side**, not said. Changing the switch rewrites the
+open structures' line values. The line results take it too (one rule:
+the switch means every case takes the local conditions).
+
 **One name, one meaning** (phase 1b of the load cases review, owner's
 answers 4 and 7): a weather case sent to the structures (Loads for
 structures) with the name of a load case of the library is sent as

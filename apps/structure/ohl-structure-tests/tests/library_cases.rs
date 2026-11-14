@@ -333,3 +333,84 @@ fn a_weather_case_sent_with_a_library_case_name_is_renamed() {
         "the two cases have their own forces: {removed} N, {sent} N"
     );
 }
+
+/// Local conditions reach OHL-Structure (2026-11-14, owner's answer 3):
+/// T2 with `wind_static = 1.3`; with the line check's **Use local
+/// conditions** ticked, what T2 gets equals the line's check — the
+/// library case's forces at its points are those of the core with every
+/// case `use_local` (`ohl_loads::with_local`, as Checks › Structure loads
+/// computes them), its wind on the body 1.3 × the case's pressure, once —
+/// and the note says so. Unticked: the cases as written (1.0 ×).
+#[test]
+fn the_local_conditions_of_the_check_reach_the_placed_structure() {
+    let (mut line, library, weather) = example();
+    line.structures
+        .iter_mut()
+        .find(|s| s.id == "T2")
+        .unwrap()
+        .local
+        .wind_static = Some(1.3);
+    let lc = LoadCases::parse(
+        "format = \"ohl-load-cases\"\nversion = 1\n\
+         [[case]]\nname = \"storm\"\nweather = \"high wind\"\ntransverse = 1.4\n",
+    )
+    .unwrap()
+    .cases;
+    let w = weather.iter().find(|w| w.name == "high wind").unwrap();
+    let budget = ohl_wirefe::default_fe_budget();
+    let choice = ohl_line::StructureLoads::default();
+    let sent = |local: bool| {
+        let cases = structure_cases_with(&choice, &weather, &lc).with_local(local);
+        let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+        placed_values_with(&loads, &line, "T2", "synthetic")
+    };
+    let (on, off) = (sent(true), sent(false));
+    let wind = |p: &PlacedValues| {
+        p.library_cases[0].structure.as_ref().unwrap().wind[0]
+            .pressure
+            .unwrap()
+    };
+    assert!((wind(&on) - 1.3 * w.wind_pressure.si()).abs() < 1e-9);
+    assert!((wind(&off) - w.wind_pressure.si()).abs() < 1e-9);
+    let note = on.note.clone().unwrap_or_default();
+    assert!(note.starts_with(ohl_structure_link::WITH_LOCAL), "{note}");
+    assert!(
+        !off.note
+            .clone()
+            .unwrap_or_default()
+            .contains(ohl_structure_link::WITH_LOCAL)
+    );
+    // The forces at the points: the line check's (every case use_local).
+    let checked = ohl_loads::structure_loads(
+        &line,
+        &library,
+        &weather,
+        &ohl_loads::with_local(lc.clone(), true),
+        &budget,
+    )
+    .unwrap();
+    let core = ohl_structure_link::line_values(&checked, &line, "T2");
+    let plain = ohl_structure_link::line_values(
+        &ohl_loads::structure_loads(&line, &library, &weather, &lc, &budget).unwrap(),
+        &line,
+        "T2",
+    );
+    let mut differs = false;
+    for p in &on.values.points {
+        for q in [
+            LineQuantity::Transverse,
+            LineQuantity::Longitudinal,
+            LineQuantity::Vertical,
+        ] {
+            let got = on.values.get("storm", &p.label, &p.sets, q);
+            assert_eq!(
+                got,
+                core.get("storm", &p.label, &p.sets, q),
+                "{} {q:?}",
+                p.label
+            );
+            differs |= got != plain.get("storm", &p.label, &p.sets, q);
+        }
+    }
+    assert!(differs, "the local conditions change T2's forces");
+}

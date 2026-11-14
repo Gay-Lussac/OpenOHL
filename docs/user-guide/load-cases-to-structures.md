@@ -85,6 +85,12 @@ Each word means one thing, everywhere in OpenOHL.
 - **Typed values:** taken as typed. They replace the computed value of
   that row; they are not multiplied again.
 
+**Local conditions.** Checks › Structure loads › **Use local
+conditions** (kept with the project) applies the structures' local wind
+and ice to every case. OHL-Structure follows it: with it ticked, the
+cases a placed structure gets take the local conditions too, as in the
+line's check, and its status block says so.
+
 A line result run as a case of its own in OHL-Structure has every factor
 1: its usage is not a design check. Read as one it is **NOT ON THE SAFE
 SIDE**. Use the library cases, or an extra case with your factors.

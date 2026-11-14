@@ -1384,7 +1384,9 @@ impl LoadCasesTab {
         for part in info.note.as_deref().unwrap_or("").split(" · ") {
             if part.starts_with("NOT ") {
                 out.push((part.to_owned(), Tone::Warn));
-            } else if part.starts_with(ohl_structure_link::RENAMED) {
+            } else if part.starts_with(ohl_structure_link::RENAMED)
+                || part.starts_with(ohl_structure_link::WITH_LOCAL)
+            {
                 out.push((part.to_owned(), Tone::Info));
             }
         }

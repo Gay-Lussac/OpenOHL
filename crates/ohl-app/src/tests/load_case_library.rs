@@ -467,3 +467,35 @@ fn a_renamed_load_case_follows_into_the_sets_and_undoes_as_one() {
     only.load_cases = vec!["everyday".into()];
     assert!(crate::load_case_sets::cell(&r.model.line, &only, Some(&all)).contains("NOT CHECKED"),);
 }
+
+/// **Use local conditions** of Checks › Structure loads is kept in the
+/// project (2026-11-14): what OHL-Structure gets follows it, so it must
+/// outlive the window; the cases sent to the placed structures then take
+/// the local conditions, as the line's check.
+#[test]
+fn the_local_switch_is_kept_and_reaches_the_placed_structures() {
+    let mut h = app(synthetic_project("lc-local-kept"));
+    h.state_mut().ready().unwrap().loads.local = true;
+    h.run();
+    let r = h.state_mut().ready().unwrap();
+    let session = r.model.session().unwrap();
+    let key = format!("{}.{}", crate::loads::SETTING, session.current_line());
+    let kept = session.setting(&key).unwrap().unwrap();
+    assert!(kept.contains("\"local\":true"), "{kept}");
+    let loads = crate::structure_app::LineInputs::of_with_local(&r.model, true)
+        .compute()
+        .unwrap();
+    assert!(loads.local);
+    assert!(
+        loads
+            .library
+            .iter()
+            .chain(&loads.weather)
+            .all(|c| c.case.use_local)
+    );
+    let plain = crate::structure_app::LineInputs::of(&r.model)
+        .compute()
+        .unwrap();
+    assert!(!plain.local);
+    assert!(plain.library.iter().all(|c| !c.case.use_local));
+}
