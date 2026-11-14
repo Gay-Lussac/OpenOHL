@@ -185,6 +185,13 @@ impl std::fmt::Debug for PlanCache {
 }
 
 impl PlanCache {
+    /// Nothing kept: the tiles read again (the backgrounds changed).
+    pub fn forget(&mut self) {
+        self.store = None;
+        self.textures.clear();
+        self.used.clear();
+    }
+
     fn texture(
         &mut self,
         ctx: &egui::Context,
@@ -547,6 +554,41 @@ pub struct Windows {
     pub remove: Option<Option<String>>,
     /// The import running.
     pub job: Option<crate::survey_io::Job>,
+    /// What the import running brings: its layer and its key (shown when
+    /// it is done).
+    job_shows: Option<Shown>,
+}
+
+/// A background imported: the layer it is drawn on and its key in
+/// [`Model::hidden_backgrounds`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shown {
+    /// The layer (orthophotos, drawings).
+    pub layer: Layer,
+    /// Its key ([`image_key`], [`drawing_key`]).
+    pub key: String,
+}
+
+/// The backgrounds read again from the project after an import or a
+/// removal (`shown`: what was imported, switched on), and what draws
+/// them drawn again — instead of the whole project opened again (owner,
+/// 2026-11-14: a restart after every import).
+pub fn reload(r: &mut crate::app::Ready, shown: Option<Shown>) {
+    let mut log = Vec::new();
+    r.model.backgrounds = load(&r.model.sources.file, &mut log);
+    for l in log {
+        log::info!("{l}");
+    }
+    if let Some(s) = shown {
+        r.visible.insert(s.layer);
+        r.model.hidden_backgrounds.remove(&s.key);
+    }
+    r.plan.forget_backgrounds();
+    r.view3d.dirty.insert(Layer::Drawings);
+    r.view3d.dirty.insert(Layer::Orthophotos);
+    r.profile.invalidate();
+    r.xsections.invalidate();
+    r.drawings.invalidate_preview();
 }
 
 /// The project file to import into, or why not.
@@ -694,10 +736,11 @@ pub fn import_images(
 }
 
 impl Windows {
-    /// The open windows. Returns true when the project should be opened
-    /// again (an import or a removal done).
-    pub fn show(&mut self, ctx: &egui::Context, model: &Model) -> bool {
-        let mut reopen = false;
+    /// The open windows. Returns what changed when the backgrounds are to
+    /// be read again ([`reload`]: an import or a removal done; `Some(Some)`:
+    /// what was imported).
+    pub fn show(&mut self, ctx: &egui::Context, model: &Model) -> Option<Option<Shown>> {
+        let mut changed = None;
         if let Some(w) = &mut self.images {
             let mut open = true;
             let mut start = false;
@@ -845,6 +888,10 @@ impl Windows {
                         model.line.crs.clone(),
                         w.converter.clone(),
                     );
+                    self.job_shows = Some(Shown {
+                        layer: Layer::Orthophotos,
+                        key: image_key(&layer),
+                    });
                     self.job = Some(crate::survey_io::Job::start(
                         format!("Import images into {layer}"),
                         true,
@@ -927,6 +974,10 @@ impl Windows {
                     w.error = Some("give the drawing a name".into());
                 } else if let (Ok(file), Some(dxf)) = (project(model), w.file.clone()) {
                     let (name, crs) = (w.name.trim().to_owned(), model.line.crs.clone());
+                    self.job_shows = Some(Shown {
+                        layer: Layer::Drawings,
+                        key: drawing_key(&name),
+                    });
                     self.job = Some(crate::survey_io::Job::start(
                         format!("Import drawing {name}"),
                         true,
@@ -1025,7 +1076,7 @@ impl Windows {
                     }
                 });
             if removed {
-                reopen = true;
+                changed = Some(None);
                 open = false;
             }
             if !open {
@@ -1035,10 +1086,13 @@ impl Windows {
         if let Some(job) = &mut self.job
             && crate::survey_io::job_window(ctx, job)
         {
-            reopen = matches!(job.done, Some(Ok(_)));
+            let shows = self.job_shows.take();
+            if matches!(job.done, Some(Ok(_))) {
+                changed = Some(shows);
+            }
             self.job = None;
         }
-        reopen
+        changed
     }
 }
 

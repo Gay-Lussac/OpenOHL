@@ -79,8 +79,10 @@ pub struct Job {
     pub progress: (String, f32),
     /// Finished: its report or error.
     pub done: Option<Result<String, String>>,
-    /// Open the project again when it succeeded (an import).
-    pub reopen: bool,
+    /// What it imported is read again into the views when it succeeded
+    /// (an import; owner, 2026-11-14: no longer the whole project opened
+    /// again).
+    pub refresh: bool,
 }
 
 impl std::fmt::Debug for Job {
@@ -93,7 +95,7 @@ impl Job {
     /// Runs `work` in the background, reporting its progress.
     pub(crate) fn start(
         title: String,
-        reopen: bool,
+        refresh: bool,
         ctx: &egui::Context,
         work: impl FnOnce(&dyn Fn(String, f32)) -> Result<String, String> + Send + 'static,
     ) -> Self {
@@ -113,7 +115,7 @@ impl Job {
             rx,
             progress: (String::new(), 0.0),
             done: None,
-            reopen,
+            refresh,
         }
     }
 
@@ -558,8 +560,8 @@ pub fn job_window(ctx: &egui::Context, job: &mut Job) -> bool {
             }
             Some(Ok(report)) => {
                 crate::menu::message(ui, report.as_str(), None);
-                if job.reopen {
-                    ui.label("The project is opened again to show what was imported.");
+                if job.refresh {
+                    ui.label("What was imported is shown in the views now.");
                 }
                 close = ui.button("Close").clicked();
             }

@@ -205,7 +205,11 @@ ohl line project.ohl --pointcloud survey.copc.laz --rules rules.ohlr
 
 The desktop app does the same from **File › Import › LiDAR points
 (LAS/LAZ)…** (files or a folder, into the project's point cloud or a new one,
-in the background; the project is opened again to show them) and **File › Export ›
+in the background; then its points are read again, also in the background,
+and shown — the project stays open, the weather cases solved, the windows,
+the view and the selection kept, and the checks computed from the points
+marked out of date; before 2026-11-14 the whole project was opened again)
+and **File › Export ›
 LiDAR points (LAS/LAZ)…** (every class or the classes shown, the whole survey or around the
 line).
 

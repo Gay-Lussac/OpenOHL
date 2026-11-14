@@ -2287,6 +2287,179 @@ impl Model {
     }
 }
 
+/// What [`read_cloud`] read of a point cloud.
+#[derive(Debug)]
+pub struct CloudRead {
+    /// The point cloud read (`FILE.ohl` or `FILE.ohl#name`), none: none.
+    pub cloud: Option<String>,
+    /// The points shown (thinned by class to the point budget).
+    pub points: Vec<LidarPoint>,
+    /// Points per class of the whole cloud.
+    pub class_counts: Vec<(u8, u64)>,
+    /// The class scheme: this user's, else the cloud's own, else the
+    /// standard classes.
+    pub scheme: ohl_lidar::ClassScheme,
+    /// The ground from the cloud's ground classes along the line
+    /// (asked for with `need_ground`, and enough of them).
+    pub ground: Option<Terrain>,
+}
+
+/// The point cloud of `sources` (given, else the project's own) read for
+/// `line` with its `origin`: the points shown, the classes, the scheme,
+/// and the ground from the ground classes when `need_ground`. Run when
+/// the project opens and again after a LiDAR import (owner, 2026-11-14:
+/// no longer the whole project opened again); `step` hears what it did.
+///
+/// Expected cost: ~1 s per 10⁷ points decoded; exit clause 10 min.
+pub fn read_cloud(
+    sources: &Sources,
+    line: &Line,
+    origin: [f64; 3],
+    need_ground: bool,
+    step: &mut dyn FnMut(String),
+) -> Result<CloudRead, String> {
+    let mut ground: Option<Terrain> = None;
+    let cloud = sources.pointcloud.clone().or_else(|| {
+        let is_project = ohl_core::files::is_project_file(&sources.file);
+        let has = is_project
+            && ohl_pointcloud::Store::open(&sources.file)
+                .and_then(|s| s.clouds())
+                .is_ok_and(|c| !c.is_empty());
+        has.then(|| sources.file.display().to_string())
+    });
+    let mut points = Vec::new();
+    let mut class_counts: Vec<(u8, u64)> = Vec::new();
+    let mut scheme = ohl_lidar::ClassScheme::asprs();
+    if let Some(spec) = cloud.clone() {
+        let t = Instant::now();
+        // A project's cloud or a COPC file.
+        let source = ohl_pointcloud::open_source(&spec)?;
+        // The cloud's own: one that no longer reads (e.g. an old format
+        // kept with the points) never stops the project opening.
+        if let Some(text) = source.class_scheme() {
+            match ohl_lidar::ClassScheme::parse(&text) {
+                Ok(s) => scheme = s,
+                Err(e) => step(format!(
+                    "the point cloud's class scheme is not used ({e}): the standard \
+                         classes; choose one in Class colours"
+                )),
+            }
+        }
+        // This user's scheme (names, roles, colours), if chosen (an empty
+        // path: the cloud's own).
+        if let Some(p) = sources
+            .class_scheme
+            .as_ref()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            match ohl_lidar::ClassScheme::load(p) {
+                Ok(s) => {
+                    step(format!("class scheme {}: {}", s.name, p.display()));
+                    scheme = s;
+                }
+                Err(e) => step(format!("class scheme not read: {e}")),
+            }
+        }
+        let ground_classes = scheme.codes_with_role("ground");
+        let mut is_ground = [false; 256];
+        for &c in &ground_classes {
+            is_ground[c as usize] = true;
+        }
+        // Corridor along the spans' chords.
+        let corridor = ohl_lidar::Corridor::along_spans(line, sources.corridor);
+        // Every class shown, of the whole cloud: a class of up to
+        // SMALL_CLASS points whole, the others every n-th point, n from
+        // the cloud's size. (Thinning every class alike and leaving out the
+        // ground classes, as before, lost whole classes of a real survey:
+        // roads, water, bridges, and classes of 6 to 500 points.)
+        let total = source.points().unwrap_or(0);
+        let stride = (total as usize / sources.point_budget.max(1)).max(1);
+        let known = source.class_counts();
+        class_counts = known.clone().unwrap_or_default();
+        let mut thinning = Thinning::new(&class_counts, stride);
+        // The ground as the surface window builds it from LiDAR.
+        let build = crate::surfaces::LidarBuild::default();
+        let mut ground_points = ohl_lidar::LowestPerCell::new(Some(build.cell));
+        let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
+        // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
+        let budget =
+            ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
+        let stats = if total <= SAMPLED_ABOVE && known.is_some() {
+            // One pass over every point.
+            source.visit(None, None, &budget, &mut |x, y, z, c| {
+                if thinning.keep(c) {
+                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
+                }
+                // The ground surface: ground classes in the corridor.
+                if need_ground && is_ground[c as usize] && corridor.contains(x, y) {
+                    ground_points.add(x, y, z);
+                }
+            })?
+        } else {
+            // A large cloud (or a COPC file): the ground classes in the
+            // corridor, then the points shown from the levels of detail —
+            // a small part of the data, not every point.
+            let mut stats = ohl_pointcloud::Stats::default();
+            if need_ground && !ground_classes.is_empty() {
+                stats = source.visit(
+                    Some(&corridor),
+                    Some(&ground_classes),
+                    &budget,
+                    &mut |x, y, z, _| ground_points.add(x, y, z),
+                )?;
+            }
+            let whole: Vec<u8> = class_counts
+                .iter()
+                .filter(|(_, n)| *n <= SMALL_CLASS)
+                .map(|(c, _)| *c)
+                .collect();
+            let mut seen = [0u64; 256];
+            let sample =
+                source.visit_sample(1.0 / stride as f64, &whole, &budget, &mut |x, y, z, c| {
+                    seen[c as usize] += 1;
+                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
+                })?;
+            if known.is_none() {
+                // Counts estimated from the sample.
+                class_counts = (0..=255u8)
+                    .filter(|c| seen[*c as usize] > 0)
+                    .map(|c| (c, seen[c as usize] * stride as u64))
+                    .collect();
+            }
+            stats.points_read += sample.points_read;
+            stats.points_visited += sample.points_visited;
+            stats
+        };
+        step(format!(
+            "points: {} decoded of {} in {:.1?}; {} shown, {} ground cells",
+            stats.points_read,
+            total,
+            t.elapsed(),
+            points.len(),
+            ground_points.points().len()
+        ));
+        if need_ground && ground_points.points().len() >= 3 {
+            let t = Instant::now();
+            let g = ground_points
+                .terrain(Some(build.max_edge))
+                .map_err(|e| e.to_string())?;
+            step(format!(
+                "ground: {} triangles from LiDAR in {:.1?}",
+                g.num_triangles(),
+                t.elapsed()
+            ));
+            ground = Some(g);
+        }
+    }
+    Ok(CloudRead {
+        cloud,
+        points,
+        class_counts,
+        scheme,
+        ground,
+    })
+}
+
 /// Loads and solves everything; `progress` gets a line per step.
 pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, String> {
     let mut log = Vec::new();
@@ -2468,154 +2641,23 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
             }
         }
     }
-    // Point cloud: given, else the project's own.
-    let cloud = sources.pointcloud.clone().or_else(|| {
-        let is_project = ohl_core::files::is_project_file(&sources.file);
-        let has = is_project
-            && ohl_pointcloud::Store::open(&sources.file)
-                .and_then(|s| s.clouds())
-                .is_ok_and(|c| !c.is_empty());
-        has.then(|| sources.file.display().to_string())
-    });
-    let mut points = Vec::new();
+    // Point cloud: given, else the project's own (read again after a
+    // LiDAR import, `crate::cloud_reload`).
+    let CloudRead {
+        cloud,
+        points,
+        class_counts,
+        scheme,
+        ground: lidar_ground,
+    } = read_cloud(&sources, &line, origin, ground.is_none(), &mut |m| {
+        step(m, &mut log)
+    })?;
     let mut ground_from_lidar = false;
-    let mut class_counts: Vec<(u8, u64)> = Vec::new();
-    let mut scheme = ohl_lidar::ClassScheme::asprs();
-    if let Some(spec) = cloud.clone() {
-        let t = Instant::now();
-        // A project's cloud or a COPC file.
-        let source = ohl_pointcloud::open_source(&spec)?;
-        // The cloud's own: one that no longer reads (e.g. an old format
-        // kept with the points) never stops the project opening.
-        if let Some(text) = source.class_scheme() {
-            match ohl_lidar::ClassScheme::parse(&text) {
-                Ok(s) => scheme = s,
-                Err(e) => step(
-                    format!(
-                        "the point cloud's class scheme is not used ({e}): the standard \
-                         classes; choose one in Class colours"
-                    ),
-                    &mut log,
-                ),
-            }
-        }
-        // This user's scheme (names, roles, colours), if chosen (an empty
-        // path: the cloud's own).
-        if let Some(p) = sources
-            .class_scheme
-            .as_ref()
-            .filter(|p| !p.as_os_str().is_empty())
-        {
-            match ohl_lidar::ClassScheme::load(p) {
-                Ok(s) => {
-                    step(
-                        format!("class scheme {}: {}", s.name, p.display()),
-                        &mut log,
-                    );
-                    scheme = s;
-                }
-                Err(e) => step(format!("class scheme not read: {e}"), &mut log),
-            }
-        }
-        let ground_classes = scheme.codes_with_role("ground");
-        let mut is_ground = [false; 256];
-        for &c in &ground_classes {
-            is_ground[c as usize] = true;
-        }
-        // Corridor along the spans' chords.
-        let corridor = ohl_lidar::Corridor::along_spans(&line, sources.corridor);
-        // Every class shown, of the whole cloud: a class of up to
-        // SMALL_CLASS points whole, the others every n-th point, n from
-        // the cloud's size. (Thinning every class alike and leaving out the
-        // ground classes, as before, lost whole classes of a real survey:
-        // roads, water, bridges, and classes of 6 to 500 points.)
-        let total = source.points().unwrap_or(0);
-        let stride = (total as usize / sources.point_budget.max(1)).max(1);
-        let known = source.class_counts();
-        class_counts = known.clone().unwrap_or_default();
-        let mut thinning = Thinning::new(&class_counts, stride);
-        // The ground as the surface window builds it from LiDAR.
-        let build = crate::surfaces::LidarBuild::default();
-        let mut ground_points = ohl_lidar::LowestPerCell::new(Some(build.cell));
-        let mm = |v: f64, i: usize| ((v - origin[i]) * 1000.0).round() as i32;
-        // A surface or survey file gives the ground: no LiDAR ground then.
-        let need_ground = ground.is_none();
-        // Exit clause: decoding is ~1 s per 10⁷ points; 10 min is far beyond.
-        let budget =
-            ohl_core::budget::Budget::new().time_limit(std::time::Duration::from_secs(600));
-        let stats = if total <= SAMPLED_ABOVE && known.is_some() {
-            // One pass over every point.
-            source.visit(None, None, &budget, &mut |x, y, z, c| {
-                if thinning.keep(c) {
-                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
-                }
-                // The ground surface: ground classes in the corridor.
-                if need_ground && is_ground[c as usize] && corridor.contains(x, y) {
-                    ground_points.add(x, y, z);
-                }
-            })?
-        } else {
-            // A large cloud (or a COPC file): the ground classes in the
-            // corridor, then the points shown from the levels of detail —
-            // a small part of the data, not every point.
-            let mut stats = ohl_pointcloud::Stats::default();
-            if need_ground && !ground_classes.is_empty() {
-                stats = source.visit(
-                    Some(&corridor),
-                    Some(&ground_classes),
-                    &budget,
-                    &mut |x, y, z, _| ground_points.add(x, y, z),
-                )?;
-            }
-            let whole: Vec<u8> = class_counts
-                .iter()
-                .filter(|(_, n)| *n <= SMALL_CLASS)
-                .map(|(c, _)| *c)
-                .collect();
-            let mut seen = [0u64; 256];
-            let sample =
-                source.visit_sample(1.0 / stride as f64, &whole, &budget, &mut |x, y, z, c| {
-                    seen[c as usize] += 1;
-                    points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c));
-                })?;
-            if known.is_none() {
-                // Counts estimated from the sample.
-                class_counts = (0..=255u8)
-                    .filter(|c| seen[*c as usize] > 0)
-                    .map(|c| (c, seen[c as usize] * stride as u64))
-                    .collect();
-            }
-            stats.points_read += sample.points_read;
-            stats.points_visited += sample.points_visited;
-            stats
-        };
-        step(
-            format!(
-                "points: {} decoded of {} in {:.1?}; {} shown, {} ground cells",
-                stats.points_read,
-                total,
-                t.elapsed(),
-                points.len(),
-                ground_points.points().len()
-            ),
-            &mut log,
-        );
-        if ground.is_none() && ground_points.points().len() >= 3 {
-            let t = Instant::now();
-            let g = ground_points
-                .terrain(Some(build.max_edge))
-                .map_err(|e| e.to_string())?;
-            step(
-                format!(
-                    "ground: {} triangles from LiDAR in {:.1?}",
-                    g.num_triangles(),
-                    t.elapsed()
-                ),
-                &mut log,
-            );
-            ground = Some(g);
-            ground_from_lidar = true;
-        }
+    if ground.is_none()
+        && let Some(g) = lidar_ground
+    {
+        ground = Some(g);
+        ground_from_lidar = true;
     }
     // The surface of the checks (the project's choice).
     let check_surface = session.as_ref().and_then(crate::surfaces::check_surface);

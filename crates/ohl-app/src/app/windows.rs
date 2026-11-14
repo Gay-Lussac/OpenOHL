@@ -809,8 +809,8 @@ pub(super) fn tool_windows(
     circuit_join_window(ctx, r);
     defaults_window(ctx, r);
     crs_windows(ctx, r);
-    if r.backgrounds.show(ctx, &r.model) {
-        r.reopen = true;
+    if let Some(changed) = r.backgrounds.show(ctx, &r.model) {
+        crate::backgrounds::reload(r, changed);
     }
     crate::project_lines::window(ctx, r);
     crate::working_tree::window(ctx, r);

@@ -714,6 +714,7 @@ pub(super) fn history_window(ctx: &egui::Context, r: &mut Ready) {
 
 /// The Import / Export LAS/LAZ windows and the job they started.
 pub(super) fn survey_io_windows(ctx: &egui::Context, r: &mut Ready) {
+    crate::cloud_reload::frame(r);
     if let Some(d) = &mut r.survey_import {
         let mut open = true;
         if let Some(job) = d.ui(ctx, &r.model, &mut open) {
@@ -737,8 +738,11 @@ pub(super) fn survey_io_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(job) = &mut r.survey_job
         && crate::survey_io::job_window(ctx, job)
     {
-        // An import succeeded: the project again, with its new points.
-        r.reopen = job.reopen && matches!(job.done, Some(Ok(_)));
+        // An import succeeded: its points read again into the views, the
+        // project left open (owner, 2026-11-14).
+        if job.refresh && matches!(job.done, Some(Ok(_))) {
+            crate::cloud_reload::start(ctx, r);
+        }
         r.survey_job = None;
     }
 }

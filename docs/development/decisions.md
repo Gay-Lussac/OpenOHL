@@ -10,6 +10,30 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Imports without opening the project again** (owner: "i wonder if it's
+necessary to have a restart when lidar data, orthophotos or dxf are
+imported. could we avoid it?" — "go ahead"). After a LiDAR import the
+point cloud is read again on its own thread as the project's opening
+reads it (`model::read_cloud`, split out of `model::load`;
+`crate::cloud_reload`), then put in the model in one frame — points,
+class counts, class scheme — and handed to the views as an edit of
+points is (`lidar_edit::frame`: points drawn again, profile, cuts,
+clearances; the ground built again from the ground classes where it
+comes from them, by the run that already did so after an edit); the
+points' revisions change, so the checks computed from the points show
+they are out of date. After an orthophoto or DXF import, or a removal,
+the backgrounds are read again (`backgrounds::reload`) and what draws
+them drawn again (the plan's tiles, the 3D drawings, the profile, the
+cuts, the sheets' preview); what was imported is switched on. The
+weather cases solved, the windows, the camera and the selection stay.
+Opening the project again stays only for checking out another version.
+
+**Snap marker lag** (owner: "since adding the red dot, the 3d view on
+TR1711 is slower"): the click's search made the list of every clickable
+piece again at each pointer move (16 ms on a real line) and projected
+all of it; the list is now kept per model and culled by boxes — the
+same pick, 30 ms → 1.8 ms a move ([performance](performance.md#measuring-benchmark-desktop-application)).
+
 **Four tool behaviours settled, OHL-Structure's tool windows, the tool
 pages' guidelines** (owner, answering the open points of the tool window
 rework: "1) close it 2) same it should not use tools 3) not an editing
