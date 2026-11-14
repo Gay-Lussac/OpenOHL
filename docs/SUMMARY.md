@@ -74,6 +74,7 @@
 - [Finite-element wire systems](theory/wirefe.md)
 - [Jumpers](theory/jumpers.md)
 - [Objects on the wires](theory/line-objects.md)
+- [Post insulators](theory/post-insulators.md)
 - [Thermal rating](theory/thermal.md)
 - [Line parameters](theory/line-parameters.md)
 - [Magnetic field](theory/magnetic-field.md)

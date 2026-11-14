@@ -276,6 +276,8 @@ impl Line {
                             max_swing: None,
                             max_swing_across: None,
                             max_swing_along: None,
+                            cantilever_load: None,
+                            compression_load: None,
                             volumes: Default::default(),
                         });
                         known.insert(key, id.clone());
@@ -476,6 +478,14 @@ impl Line {
                 }
                 if x.stiffness.is_none() {
                     x.stiffness = Some(i.axial_stiffness.si());
+                }
+                // A post insulator (owner, 2026-11-14): the string is one,
+                // its ratings its own over the assembly's.
+                if i.kind == AssemblyKind::Post {
+                    x.post = true;
+                    x.strain = false;
+                    x.cantilever_load = x.cantilever_load.or(i.cantilever_load.map(|f| f.si()));
+                    x.compression = x.compression.or(i.compression_load.map(|f| f.si()));
                 }
                 // Its limits (not checked): its own over the assembly's.
                 let l = i.limits();

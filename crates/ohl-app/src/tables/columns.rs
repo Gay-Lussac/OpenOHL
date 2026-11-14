@@ -238,7 +238,7 @@ pub(super) const INSULATORS: &[Column] = &[
         "kind",
         90.0,
         Yes,
-        "suspension (one string), strain (a dead end) or two strings (to one wire point: legs = 2 in the file; v_string still read)",
+        "suspension (one string), strain (a dead end), two strings (to one wire point: legs = 2 in the file; v_string still read) or post (a post insulator standing on its point, holding its wire point at its top: length is its height)",
     ),
     (
         "length",
@@ -332,6 +332,18 @@ pub(super) const INSULATORS: &[Column] = &[
         55.0,
         Derived,
         "its volumes: edited in Line › Structures › String shapes",
+    ),
+    (
+        "cantilever",
+        80.0,
+        Yes,
+        "N, a post's rated load across it at its top (the data sheet's cantilever load); empty: not given",
+    ),
+    (
+        "compression",
+        80.0,
+        Yes,
+        "N, a post's rated load in compression along it; empty: not given",
     ),
 ];
 

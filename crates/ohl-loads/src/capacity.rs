@@ -298,6 +298,10 @@ pub(crate) type Key = (String, u32);
 struct AtPoint {
     /// Factored, structure axes, N.
     factored: [f64; 3],
+    /// The moment of the factored loads acting away from the point (a
+    /// post insulator's: [`crate::AttachmentLoad::lever`]) about it,
+    /// structure axes (right, ahead, up), N·m.
+    moment: [f64; 3],
     /// The unfactored vertical load (down), N.
     vertical: f64,
     /// The sections hanging there.
@@ -423,20 +427,40 @@ fn bundle_weight(
     Some(w * f64::from(s.bundle.max(1)))
 }
 
+/// The moment about its point of load `l`'s factored force acting at its
+/// lever (a post's top or middle; zero for the others), structure axes
+/// (right, ahead, up), N·m.
+pub(crate) fn lever_moment(l: &crate::AttachmentLoad) -> [f64; 3] {
+    let r = l.lever;
+    // The force in the same axes: transverse, longitudinal, up.
+    let f = [l.factored[0], l.factored[1], -l.factored[2]];
+    [
+        r[1] * f[2] - r[2] * f[1],
+        r[2] * f[0] - r[0] * f[2],
+        r[0] * f[1] - r[1] * f[0],
+    ]
+}
+
 /// The factored loads at the points of structure `structure` in `loads`,
-/// summed per point, by label (the order of the usage's points).
+/// summed per point, by label (the order of the usage's points), with the
+/// moment of those acting away from it.
 fn factored_at(loads: &[crate::AttachmentLoad], structure: &str) -> Vec<crate::analysis::Factored> {
-    let mut at: BTreeMap<&str, [f64; 3]> = BTreeMap::new();
+    let mut at: BTreeMap<&str, ([f64; 3], [f64; 3])> = BTreeMap::new();
     for l in loads
         .iter()
         .filter(|l| l.structure == structure && !l.point.is_empty())
     {
         let e = at.entry(l.point.as_str()).or_default();
-        for (sum, f) in e.iter_mut().zip(l.factored) {
+        for (sum, f) in e.0.iter_mut().zip(l.factored) {
             *sum += f;
         }
+        for (sum, m) in e.1.iter_mut().zip(lever_moment(l)) {
+            *sum += m;
+        }
     }
-    at.into_iter().map(|(k, v)| (k.to_owned(), v)).collect()
+    at.into_iter()
+        .map(|(k, (f, m))| (k.to_owned(), f, m))
+        .collect()
 }
 
 /// The worse of two checks (the larger usage, one that is not a number
@@ -523,6 +547,9 @@ fn usage_pass(
                     .or_default();
                 for (sum, f) in e.factored.iter_mut().zip(l.factored) {
                     *sum += f;
+                }
+                for (sum, m) in e.moment.iter_mut().zip(lever_moment(l)) {
+                    *sum += m;
                 }
                 e.vertical += l.local[2];
                 for s in &l.sections {
@@ -778,7 +805,7 @@ fn usage_pass(
                     });
                     let factored: Vec<crate::analysis::Factored> = points
                         .iter()
-                        .map(|(label, p)| ((*label).clone(), p.factored))
+                        .map(|(label, p)| ((*label).clone(), p.factored, p.moment))
                         .collect();
                     let (fe, pole) = if r.broken_each.is_empty() {
                         (

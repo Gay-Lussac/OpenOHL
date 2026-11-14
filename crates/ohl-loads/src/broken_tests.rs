@@ -245,6 +245,7 @@ fn the_envelope_of_the_breaks_is_no_bound_of_a_combination() {
         pull_back: [0.0; 2],
         pull_ahead: [0.0; 2],
         pulls_by_set: Vec::new(),
+        lever: [0.0; 3],
     };
     let (one, two) = (load(1, 10e3, 1e3), load(2, -9e3, 5e3));
     let mut e = one.clone();
@@ -348,6 +349,7 @@ fn the_envelope_keeps_each_sets_pulls_with_its_component() {
         pull_back: [0, 1].map(|i| pulls.iter().map(|p| p.back[i]).sum()),
         pull_ahead: [0, 1].map(|i| pulls.iter().map(|p| p.ahead[i]).sum()),
         pulls_by_set: pulls,
+        lever: [0.0; 3],
     };
     let one = load(
         1,

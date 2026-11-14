@@ -40,6 +40,7 @@ pub(super) fn insulator_rows(model: &Model) -> Vec<Row> {
                     ohl_structures::AssemblyKind::Suspension => "suspension",
                     ohl_structures::AssemblyKind::Strain => "strain",
                     ohl_structures::AssemblyKind::VString => "two strings",
+                    ohl_structures::AssemblyKind::Post => "post",
                 }
                 .into(),
                 f(a.length.si(), 3),
@@ -67,6 +68,8 @@ pub(super) fn insulator_rows(model: &Model) -> Vec<Row> {
                     String::new()
                 },
                 a.volumes.shapes.len().to_string(),
+                a.cantilever_load.map_or(String::new(), |v| f(v.si(), 0)),
+                a.compression_load.map_or(String::new(), |v| f(v.si(), 0)),
             ],
             defaulted: Vec::new(),
         })
@@ -103,9 +106,10 @@ pub(super) fn insulator_changes(
             "suspension" => AssemblyKind::Suspension,
             "strain" => AssemblyKind::Strain,
             "two strings" | "v_string" => AssemblyKind::VString,
+            "post" => AssemblyKind::Post,
             other => {
                 return Err(format!(
-                    "{}: kind \"{other}\": suspension, strain or two strings",
+                    "{}: kind \"{other}\": suspension, strain, two strings or post",
                     a.id
                 ));
             }
@@ -153,6 +157,10 @@ pub(super) fn insulator_changes(
         if v.strings <= 1 {
             v.spacing = 0.0;
         }
+        a.cantilever_load =
+            opt_num(&c.get(col("cantilever")), &what("cantilever"))?.map(Force::from_newtons);
+        a.compression_load =
+            opt_num(&c.get(col("compression")), &what("compression"))?.map(Force::from_newtons);
         a.validate().map_err(|e| format!("{}: {e}", a.id))
     };
     let mut out = Changes::default();
@@ -236,6 +244,8 @@ pub(super) fn insulator_changes(
             max_swing: None,
             max_swing_across: None,
             max_swing_along: None,
+            cantilever_load: None,
+            compression_load: None,
             volumes: Default::default(),
         };
         read(&mut a, &c)?;

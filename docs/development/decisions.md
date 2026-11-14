@@ -10,6 +10,29 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Post insulators, first step** (owner: "go ahead with post"; "on the
+post the flexible should come in and have a fixed exit angle"; the
+plan's open questions taken with defaults, said in the plan: a post is
+rigid, posts on structures first, in OHL-Design):
+
+1. The insulator library's `kind = "post"` (version 6) with its height
+   and its optional ratings (`cantilever_load`, `compression_load`,
+   `max_load`); a line's string `post` (line file version 17), set from
+   a library post.
+2. **Rigid**: the wire point a post holds is fixed where the post puts it
+   (on the safe side for the post's load, not for clearances by up to its
+   deflection — said in the theory).
+3. **Its load to its base with the moment of its height**
+   (`AttachmentLoad::lever`; the structure analysis applies the moment
+   at a frame joint, else says NOT ON THE SAFE SIDE), its own weight and
+   wind at its middle.
+4. **A jumper at its top leaves at a fixed exit angle** (`exit_angle_deg`,
+   `exit_direction_deg`, structure axes; default level, towards the
+   jumper's other end).
+5. Not yet: the ratings checked, braced posts, posts on the ground, the
+   Add post tool, the rigid conductor on posts
+   ([Post insulators](../theory/post-insulators.md)).
+
 **Wind on rigid jumpers' end forces** (owner: "go ahead with post and
 applying wind to jumpers but I thought wind was applied?"). Wind was
 applied to every flexible jumper, and the default estimate of a jumper's

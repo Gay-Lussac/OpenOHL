@@ -149,7 +149,7 @@ pub(crate) const POLE_ICE_PIECES: usize = 8;
 
 /// Factored loads at one point of the structure: its label, (transverse,
 /// longitudinal, vertical down), N.
-pub(crate) type Factored = (String, [f64; 3]);
+pub(crate) type Factored = (String, [f64; 3], [f64; 3]);
 
 /// A model's key: the type id and the extension it stands on (none: as
 /// written, also for an extension without a body or legs).
@@ -428,7 +428,7 @@ impl Analyses {
                 not_safe: 0,
             })
         };
-        for (label, [tr, lo, ve]) in loads {
+        for (label, [tr, lo, ve], extra) in loads {
             let force = [*tr, *lo, -ve];
             // The placed structure's attachment point: its own link (a
             // relink, an offset) over the type's (2026-10-21).
@@ -444,7 +444,26 @@ impl Analyses {
                 None => model.point_load(label, force),
             };
             match at {
-                Some(at) => {
+                Some(mut at) => {
+                    // The moment of the loads acting away from the point (a
+                    // post insulator's top and middle, owner 2026-11-14):
+                    // at the joint where a frame member meets it, else left
+                    // out and said (as an offset's).
+                    if extra.iter().any(|m| m.abs() > 1e-9) {
+                        match at.loads.first_mut() {
+                            Some(n) if model.frame_at(n.node) => {
+                                for (sum, m) in n.moment.iter_mut().zip(extra) {
+                                    *sum += m;
+                                }
+                            }
+                            _ => notes.push(format!(
+                                "model: attachment point {label}: the moment of the post \
+                                 insulator on it ({:.2} kN m) left out — NOT ON THE SAFE \
+                                 SIDE: only trusses meet its joint (make it a frame joint)",
+                                extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
+                            )),
+                        }
+                    }
                     nodal.extend(at.loads);
                     notes.extend(at.note.map(|n| format!("model: {n}")));
                 }
@@ -804,7 +823,16 @@ impl Analyses {
             }
         };
         let mut on_pole = Vec::new();
-        for (label, [tr, lo, ve]) in loads {
+        for (label, [tr, lo, ve], extra) in loads {
+            // A post insulator's moment (owner, 2026-11-14): the pole
+            // takes forces at points only — said.
+            if extra.iter().any(|m| m.abs() > 1e-9) {
+                notes.push(format!(
+                    "pole: point {label}: the moment of the post insulator on it ({:.2} kN m) \
+                     left out — NOT ON THE SAFE SIDE",
+                    extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
+                ));
+            }
             match t.point_local(label, None) {
                 Some(point) => on_pole.push(PoleLoad {
                     point,
