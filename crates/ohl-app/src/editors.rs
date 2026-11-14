@@ -86,6 +86,33 @@ pub struct StructureForm {
     /// New on an alignment point: the alignment's other points that get a
     /// structure too, in the same command (made when first shown).
     pub more: Option<crate::placement::MorePoints>,
+    /// New and without a type: a **post support** — a post insulator
+    /// standing on a pedestal (the post plan's phase 4, 2026-11-14).
+    pub post_support: Option<PostSupport>,
+}
+
+/// A post insulator on a pedestal, made with a new structure without a
+/// type ([`StructureForm::post_support`]): a point on top of the pedestal,
+/// an upright post on it, its wire point at its top with a set.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PostSupport {
+    /// The pedestal's height above the structure's base, m.
+    pub pedestal: f64,
+    /// The post's length, m.
+    pub length: f64,
+    /// The set of its wire point.
+    pub set: u32,
+}
+
+impl Default for PostSupport {
+    /// Invented values to start from (2.5 m pedestal, 1.5 m post, set 1).
+    fn default() -> Self {
+        Self {
+            pedestal: 2.5,
+            length: 1.5,
+            set: 1,
+        }
+    }
 }
 
 /// An alignment point a structure can be put on: (alignment, index there,
@@ -463,6 +490,7 @@ impl Form {
     /// Window title.
     pub fn title(&self) -> String {
         match self {
+            Form::Structure(f) if f.new && f.post_support.is_some() => "Add post support".into(),
             Form::Structure(f) if f.new => "Add structure".into(),
             Form::Structure(f) => format!("Structure {}", f.id),
             Form::String(f) if f.new && f.strings.iter().any(|x| x.post.post) => {
@@ -603,6 +631,13 @@ impl Form {
                                 takes it back. Cancel (Escape) changes nothing. Hover a field \
                                 for what it does.";
         match self {
+            Form::Structure(f) if f.new && f.post_support.is_some() => (
+                "A post support where you clicked: a structure without a type with a post \
+                 insulator on its pedestal. Set the pedestal, the post and the set, check \
+                 where it stands, then Apply.",
+                POST_HELP,
+                Tool::AddPost,
+            ),
             Form::Structure(f) if f.new => (
                 "A new structure where you clicked: choose its type (its points and strings \
                  come with it), check where it stands, then Apply.",

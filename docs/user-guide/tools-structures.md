@@ -78,7 +78,9 @@ the wheel zooms, a double-click fits it.
 (?): each attachment point's label, its place **across** (to the right
 looking ahead), **along** (ahead) and **up** (from its base), m, a
 description, **×** to take it away (not while strings hang from it);
-**+ point** adds one.
+**+ point** adds one. A new one may be made a **post support** (a post
+insulator on a pedestal, ticked above the points: [A post on the
+ground](#a-post-on-the-ground-a-post-support)).
 
 **Good to know**
 
@@ -302,6 +304,7 @@ insulators](../theory/post-insulators.md).
    |---|---|
    | a point of a structure | **Add post insulator to *structure***: an upright post standing on it, its wire point 1.5 m above, at the next free set |
    | a structure, or one of its strings | the same, on the first point no string hangs from yet (a structure without points: a new point 20 m up) |
+   | the ground | **Add post support**: a new structure without a type with a post insulator on a pedestal ([below](#a-post-on-the-ground-a-post-support)) |
 
    The right-click menu of a structure or a point offers **Add post
    insulator…** too.
@@ -331,7 +334,34 @@ string](tools-general.md#edit-on-a-string)) with the post's own fields:
 - A post is never a tension string.
 - Opening a post with **Edit** shows the same fields: they are kept when
   you Apply.
-- A post standing on the ground (on a pedestal of its own) and a rigid
-  conductor carried on posts are not built yet.
+- A rigid conductor carried on posts is not built yet.
 - **Undo**: Apply is one step.
+
+### A post on the ground: a post support
+
+![The Add post support window: a structure without a type, the post support ticked with its pedestal, post and set, the warning about the pedestal's own loads](../images/tools/tool-add-post-support.png)
+
+Clicked on the ground, Add post insulator opens **Add post support**:
+the structure window ([Add structure](#add-structure)) for a new
+structure **without a type**, with **a post insulator on a pedestal
+(post support)** ticked. The same tick is offered in Add structure for
+any new structure without a type.
+
+| Field | What it does |
+|---|---|
+| **pedestal** | Its height above the structure's base, m (2.5 m to start from). |
+| **post** | The post insulator's length, m (1.5 m to start from). |
+| **set** | The set of its wire point: a section or a jumper ends there. |
+
+**Apply** makes, in one step, the structure, a point on top of the
+pedestal (`PED`), an upright post insulator standing on it (`P1`) and its
+wire point at its top (`W1`, the set given). Change the post afterwards
+with **Edit** on it (its length, direction, ratings, exit angle).
+
+**NOT ON THE SAFE SIDE for its foundation**, said in the window: the
+pedestal is only a point here. Its loads on the ground are those of the
+post and the wires (the post's moment of its length at the pedestal's
+top included), **not the pedestal's own** weight and the wind on it. A
+structure type for the pedestal (a column member, checked in
+OHL-Structure) gives them — not built yet.
 

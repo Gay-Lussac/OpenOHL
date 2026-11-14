@@ -234,7 +234,7 @@ impl Tool {
                 "click an attachment point or a wire point to hang a new string from it; or two span points: a spacer between them"
             }
             Tool::AddPost => {
-                "click a structure or a point of it: a post insulator standing there, its wire point at its top — upright, a horizontal line post or a braced post, chosen in its window"
+                "click a structure or a point of it: a post insulator standing there, its wire point at its top — upright, a horizontal line post or a braced post, chosen in its window; or the ground: a post support (a post on a pedestal)"
             }
             Tool::StringWire => {
                 "click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"

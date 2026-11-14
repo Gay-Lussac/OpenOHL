@@ -10,6 +10,14 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Post insulators, fourth step: posts on the ground** (the post plan's
+phase 4): Add post insulator clicked on the ground, or the tick in Add
+structure for a new structure without a type, makes a **post support** —
+a point on top of a pedestal (2.5 m), an upright post on it (1.5 m) and
+its wire point with a set — in one step. The pedestal is a point: its own
+weight and wind are not in the loads, said NOT ON THE SAFE SIDE for its
+foundation; a pedestal structure type (OHL-Structure) is left for later.
+
 **Post insulators, third step: the Add post insulator tool** (the post
 plan's phase 3; owner: "go ahead for the rest" — of the posts): a tool of
 the Structures theme (its icon `add-post.svg`), and on the right-click

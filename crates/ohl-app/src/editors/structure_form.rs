@@ -55,6 +55,7 @@ impl StructureForm {
             make_route: None,
             message: None,
             more: None,
+            post_support: None,
         };
         if let Some(on) = on_alignment {
             f.place_on(model, on);
@@ -163,6 +164,7 @@ impl StructureForm {
             make_route: None,
             message: None,
             more: None,
+            post_support: None,
         })
     }
 
@@ -238,6 +240,7 @@ impl StructureForm {
                 earthing_resistance_ohm: self.earthing_resistance_ohm,
                 ..Structure::new(id.clone(), self.position)
             }
+            .with_post_support(self.post_support.filter(|_| self.structure_type.is_none()))?
         } else {
             let old = stored
                 .and_then(|l| l.structure(&id))
@@ -736,6 +739,9 @@ pub(super) fn structure_ui(
             &labels,
         );
     });
+    if f.structure_type.is_none() && f.new {
+        post_support_ui(ui, f);
+    }
     if f.structure_type.is_none() {
         ui.separator();
         crate::tool_ui::heading(
@@ -1049,4 +1055,98 @@ pub(super) fn structure_scene(f: &StructureForm, model: &Model) -> ohl_render::S
         s.point(*p, [90, 200, 255, 255], 9.0);
     }
     s
+}
+
+/// A new structure's post support ([`crate::editors::PostSupport`]).
+trait WithPostSupport: Sized {
+    /// With a post insulator standing on a pedestal: a point on top of the
+    /// pedestal, an upright post on it, its wire point at its top.
+    fn with_post_support(self, p: Option<crate::editors::PostSupport>) -> Result<Self, String>;
+}
+
+impl WithPostSupport for Structure {
+    fn with_post_support(mut self, p: Option<crate::editors::PostSupport>) -> Result<Self, String> {
+        let Some(p) = p else {
+            return Ok(self);
+        };
+        if !(p.pedestal.is_finite() && p.pedestal >= 0.0) {
+            return Err("the pedestal's height must be 0 m or more".into());
+        }
+        if !(p.length.is_finite() && p.length >= 0.01) {
+            return Err("the post's length must be above 0 m".into());
+        }
+        let free = |s: &Structure, stem: &str| {
+            std::iter::once(stem.to_owned())
+                .chain((2..).map(|n| format!("{stem}.{n}")))
+                .find(|l| s.point(l).is_none() && s.wire(l).is_none() && s.string(l).is_none())
+                .expect("a free label")
+        };
+        let base = free(&self, "PED");
+        let at = |z: f64| to_global(self.position, self.orientation_deg, [0.0, 0.0, z]);
+        self.points.push(StructurePoint {
+            description: "top of the pedestal".into(),
+            label: base.clone(),
+            position: at(p.pedestal),
+            joint: None,
+            offset: [0.0; 3],
+            unlinked: false,
+        });
+        let wire = free(&self, &format!("W{}", p.set));
+        self.wires.push(ohl_line::WirePoint {
+            description: "top of the post".into(),
+            label: wire.clone(),
+            position: at(p.pedestal + p.length),
+            set: Some(p.set),
+            weight: 0.0,
+        });
+        let post = free(&self, &format!("P{}", p.set));
+        self.strings.push(ohl_line::InsulatorString {
+            description: "post insulator on its pedestal".into(),
+            label: post,
+            top: base,
+            wire,
+            length: p.length,
+            angle_deg: 180.0,
+            post: true,
+            ..Default::default()
+        });
+        Ok(self)
+    }
+}
+
+/// A new structure without a type as a **post support** (2026-11-14): a
+/// post insulator standing on a pedestal, made with it in one step.
+fn post_support_ui(ui: &mut egui::Ui, f: &mut StructureForm) {
+    ui.separator();
+    let mut on = f.post_support.is_some();
+    if ui
+        .checkbox(&mut on, "a post insulator on a pedestal (post support)")
+        .on_hover_text(
+            "Made with it in one step: a point on top of the pedestal, an upright post \
+             insulator standing on it, its wire point at its top with the set given — a \
+             section or a jumper can end there. Change the post afterwards with Edit on it.",
+        )
+        .changed()
+    {
+        f.post_support = on.then(Default::default);
+    }
+    let Some(p) = &mut f.post_support else {
+        return;
+    };
+    ui.horizontal(|ui| {
+        ui.label("pedestal");
+        value(ui, &mut p.pedestal, 0.1, " m").on_hover_text("Its height above the base");
+        p.pedestal = p.pedestal.max(0.0);
+        ui.label("post");
+        value(ui, &mut p.length, 0.05, " m").on_hover_text("The post insulator's length");
+        p.length = p.length.max(0.01);
+        ui.label("set");
+        crate::style::field(ui, egui::DragValue::new(&mut p.set).range(1..=9999));
+    });
+    ui.colored_label(
+        ui.visuals().warn_fg_color,
+        "NOT ON THE SAFE SIDE for its foundation: the pedestal itself carries no load of its \
+         own here (its weight, the wind on it) — only the post's and the wires'. A structure \
+         type for the pedestal gives them.",
+    );
 }

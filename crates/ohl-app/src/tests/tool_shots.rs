@@ -111,6 +111,14 @@ const SHOTS: &[Shot] = &[
         open: |h| use_tool(h, Tool::AddPost, Selection::Structure("T7".into()), None),
     },
     Shot {
+        name: "add-post-support",
+        title: "Add post support",
+        open: |h| {
+            let p = ground_by(h, "T4", "T5", 40.0);
+            use_tool(h, Tool::AddPost, Selection::None, Some(p));
+        },
+    },
+    Shot {
         name: "add-alignment-point",
         title: "New alignment point",
         open: |h| {

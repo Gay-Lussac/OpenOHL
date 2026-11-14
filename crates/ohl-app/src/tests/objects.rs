@@ -1564,3 +1564,50 @@ fn a_post_insulator_is_added_and_kept() {
         assert!(at.iter().any(|x| !x.post));
     }
 }
+
+/// Add post insulator on the ground (2026-11-14): a post support — a new
+/// structure without a type, a point on top of its 2.5 m pedestal, an
+/// upright 1.5 m post on it, its wire point with set 1 — made in one step.
+#[test]
+fn a_post_support_on_the_ground() {
+    use crate::editors::Form;
+    use crate::tools::Tool;
+    let model = synthetic_project("post-support");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (t4, t5) = {
+        let r = harness.state_mut().ready().unwrap();
+        let l = &r.model.line;
+        (
+            l.structure("T4").unwrap().position,
+            l.structure("T5").unwrap().position,
+        )
+    };
+    let at = [2.0 * t5[0] - t4[0], 2.0 * t5[1] - t4[1], t5[2]];
+    use_tool(&mut harness, Tool::AddPost, Selection::None, Some(at));
+    let id = {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::Structure(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert!(f.structure_type.is_none() && f.post_support.is_some());
+        f.on_ground = false;
+        f.id.clone()
+    };
+    harness.get_by_label("Add post support");
+    press(&mut harness, egui::Key::Enter, egui::Modifiers::NONE);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.editor.is_none(), "{:?}", r.status);
+    let line = r.model.stored_line().unwrap();
+    line.validate().unwrap();
+    let s = line.structure(&id).unwrap();
+    assert!(s.structure_type.is_none());
+    let w = s.wire_at_set(1).expect("its wire point, set 1");
+    let post = s.strings.iter().find(|x| x.wire == w.label).unwrap();
+    assert!(post.post && !post.hinged);
+    let base = s.point(&post.top).unwrap().position;
+    assert!((base[2] - (at[2] + 2.5)).abs() < 1e-9);
+    assert!((w.position[2] - (at[2] + 4.0)).abs() < 1e-9);
+}

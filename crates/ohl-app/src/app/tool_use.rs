@@ -809,6 +809,15 @@ impl Ready {
                 self.editor = StringForm::hanging_from(model, structure, label).map(Form::String);
                 self.select(target);
             }
+            // On the ground: a post support — a new structure without a
+            // type, a post insulator on its pedestal (2026-11-14).
+            (Tool::AddPost, Selection::None) if at.is_some() => {
+                let mut f = StructureForm::new_at(model, at.unwrap_or_default());
+                f.structure_type = None;
+                f.extension = None;
+                f.post_support = Some(Default::default());
+                self.editor = Some(Form::Structure(f));
+            }
             // A post insulator standing on the point clicked, else on a
             // point of the structure (owner, 2026-11-14).
             (Tool::AddPost, Selection::Point { structure, label }) => {

@@ -151,8 +151,14 @@ its plugin) is not built in, as for the strings' maximum load.
 
 ## Not yet
 
-- Posts on the ground and a rigid conductor carried on posts — the
-  [plan](../development/decisions.md#2026-11-14). Posts are placed with
+- A rigid conductor carried on posts — the
+  [plan](../development/decisions.md#2026-11-14).
+- A pedestal's own loads: a post on the ground stands on a **post
+  support** ([Add post insulator](../user-guide/tools-structures.md#a-post-on-the-ground-a-post-support)),
+  a structure without a type whose pedestal is a point — its loads on the
+  ground lack the pedestal's weight and wind (said NOT ON THE SAFE SIDE
+  for its foundation in the window). A pedestal structure type would
+  carry them. Posts are placed with
   the [Add post insulator](../user-guide/tools-structures.md#add-post-insulator)
   tool (2026-11-14).
 - The post's deflection (a spring at its top) and its own ice.
