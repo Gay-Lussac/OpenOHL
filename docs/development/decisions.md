@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Post insulators on pylons in OHL-Structure** (owner: "the post
+insulator might be needed on pylons too"; "decide if its base is hinged or
+not to have moments or not transmitted to the pylon keeping the unsafe
+warnings if a moment is transmitted into a truss"): the line sends a fixed
+post's moment to OHL-Structure split by force component (line-values file
+version 8), its load cases factor it exactly, the finite-element check
+applies it where a frame meets the joint and says NOT ON THE SAFE SIDE
+where only trusses meet (the pole check too); a hinged post sends forces
+only. Fault fixed: the values at a post's base were sent twice and only the
+first read — now summed per point. Next: a type's strings as posts with
+every field; posts drawn in OHL-Structure.
+
 **Post insulators, fourth step: posts on the ground** (the post plan's
 phase 4): Add post insulator clicked on the ground, or the tick in Add
 structure for a new structure without a type, makes a **post support** —

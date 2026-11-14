@@ -125,8 +125,9 @@ pub use parts::{
 };
 pub use placed::{
     CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION,
-    LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS, MissingWire, OtherPlace, PlacedValues, file_part,
-    incomplete_text, line_values_path, overrides_path,
+    LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS, LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS,
+    MissingWire, OtherPlace, PlacedValues, file_part, incomplete_text, line_values_path,
+    overrides_path,
 };
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,
@@ -135,8 +136,8 @@ pub use recipe::{
 };
 pub use table::{
     At, BodyWind, CaseWind, LinePoint, LineValue, LineValues, LoadRow, LoadTable, MemberAreas,
-    NoAreas, Override, Source, Target, evaluate, evaluate_with_areas, line_pressure, model_rows,
-    needs_members, resolve_line_pressures, targets,
+    NoAreas, Override, PointMoments, Source, Target, evaluate, evaluate_with_areas, line_pressure,
+    model_rows, needs_members, resolve_line_pressures, targets,
 };
 
 #[cfg(test)]

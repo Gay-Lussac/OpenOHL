@@ -108,9 +108,63 @@ pub struct LineValues {
     /// file version 4; none in older files).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub structure_wind: Vec<CaseWind>,
+    /// The moments the line's loads put on points of the structure
+    /// (line-values file version 8, 2026-11-14): a **fixed post
+    /// insulator**'s, its loads acting at its top and middle, and a
+    /// jumper's on its clamp. Only points with a moment; none in older
+    /// files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moments: Vec<PointMoments>,
+}
+
+/// The moments at one point in one line case ([`LineValues::moments`]):
+/// structure axes (right, ahead, up), N·m, unfactored, split by the force
+/// component causing them, so that a case's factors apply exactly.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointMoments {
+    /// The line's case.
+    pub case: String,
+    /// The point.
+    pub point: String,
+    /// Of the transverse forces (factored by the transverse factor).
+    pub from_transverse: [f64; 3],
+    /// Of the longitudinal forces.
+    pub from_longitudinal: [f64; 3],
+    /// Of the vertical forces.
+    pub from_vertical: [f64; 3],
+    /// Moments of their own (a jumper's on a post's clamp; factored by the
+    /// largest of the three factors, on the safe side).
+    #[serde(default)]
+    pub couple: [f64; 3],
+}
+
+impl PointMoments {
+    /// The moment with factors `f` (transverse, longitudinal, vertical).
+    pub fn factored(&self, f: [f64; 3]) -> [f64; 3] {
+        let largest = f[0].max(f[1]).max(f[2]);
+        [0, 1, 2].map(|k| {
+            f[0] * self.from_transverse[k]
+                + f[1] * self.from_longitudinal[k]
+                + f[2] * self.from_vertical[k]
+                + largest * self.couple[k]
+        })
+    }
 }
 
 impl LineValues {
+    /// The moment at point `label` in line case `case` with factors `f`
+    /// ([`PointMoments::factored`]); zero where the line gives none.
+    pub fn moment(&self, case: &str, label: &str, f: [f64; 3]) -> [f64; 3] {
+        self.moments
+            .iter()
+            .filter(|m| m.case == case && m.point == label)
+            .fold([0.0; 3], |a, m| {
+                let x = m.factored(f);
+                [a[0] + x[0], a[1] + x[1], a[2] + x[2]]
+            })
+    }
+
     /// The wind on the structure body in line case `case`, if the line
     /// gives it.
     pub fn structure_wind(&self, case: &str) -> Option<&CaseWind> {
@@ -410,6 +464,15 @@ pub struct LoadRow {
     /// A surface load: the member's area it acted on, m².
     #[serde(default)]
     pub area: Option<f64>,
+    /// A moment at the point, structure axes (right, ahead, up), N·m
+    /// (2026-11-14: a fixed post insulator's, sent by the line,
+    /// [`LineValues::moments`]); not typed over.
+    #[serde(default, skip_serializing_if = "is_zero3")]
+    pub moment: [f64; 3],
+}
+
+fn is_zero3(m: &[f64; 3]) -> bool {
+    *m == [0.0; 3]
 }
 
 impl LoadRow {
@@ -425,6 +488,7 @@ impl LoadRow {
             missing: None,
             note: String::new(),
             area: None,
+            moment: [0.0; 3],
         }
     }
 
@@ -1061,6 +1125,23 @@ fn line_force_rows(
         }
         let f = l.factors();
         row.force = [0, 1, 2].map(|k| sent[k] * f[k]);
+        // A fixed post's moment (2026-11-14), its components factored
+        // like the forces causing them; a share of the spans' pull does
+        // not scale it (from the whole pulls).
+        row.moment = line.moment(&l.result, &t.label, f);
+        if row.moment != [0.0; 3] {
+            let m = row.moment.map(|x| x / 1000.0);
+            row.note.push_str(&format!(
+                "; a post insulator's moment ({:.2}, {:.2}, {:.2}) kN m",
+                m[0], m[1], m[2]
+            ));
+        }
+        if row.moment != [0.0; 3] && l.scales_span_pull() {
+            row.note.push_str(
+                "; the post's moment from the whole pulls (not scaled: on the safe side only \
+                 for back and ahead of 100 % or less)",
+            );
+        }
         rows.push(row);
     }
     rows

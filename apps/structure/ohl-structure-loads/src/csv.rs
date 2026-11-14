@@ -23,8 +23,9 @@ use crate::table::{At, LoadRow, LoadTable, Source};
 const TABLE_HEADER: &str = "case,load,at,label,transverse,longitudinal,vertical,source,\
 evaluated_transverse,evaluated_longitudinal,evaluated_vertical,missing,note";
 
-/// Columns of the load table a file may leave out (older files).
-const TABLE_OPTIONAL: &str = "area";
+/// Columns of the load table a file may leave out (older files; the
+/// moments since 2026-11-14).
+const TABLE_OPTIONAL: &str = "area,moment_right,moment_ahead,moment_up";
 
 /// Columns of the recipes.
 const RECIPE_HEADER: &str = "case,description,line_case,strength,self_weight,load,what,value,\
@@ -143,7 +144,7 @@ impl LoadTable {
             let e = r.evaluated.map(|e| e.map(|x| x.to_string()));
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 csv_field(&r.case),
                 opt(r.load),
                 r.at.as_str(),
@@ -158,6 +159,9 @@ impl LoadTable {
                 csv_field(r.missing.as_deref().unwrap_or("")),
                 csv_field(&r.note),
                 opt(r.area),
+                r.moment[0],
+                r.moment[1],
+                r.moment[2],
             );
         }
         out
@@ -206,6 +210,15 @@ impl LoadTable {
                     missing: Some(g("missing").to_owned()).filter(|m| !m.is_empty()),
                     note: g("note").to_owned(),
                     area: opt_number(g("area"), "area")?,
+                    moment: ["moment_right", "moment_ahead", "moment_up"]
+                        .map(|c| opt_number(g(c), c))
+                        .into_iter()
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .map(Option::unwrap_or_default)
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .expect("three"),
                 })
             })()
             .map_err(at_line)?;

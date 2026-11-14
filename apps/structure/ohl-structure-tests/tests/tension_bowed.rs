@@ -89,6 +89,7 @@ fn the_formerly_unsettled_structure_settles_with_bowed_halves() {
             missing: None,
             note: String::new(),
             area: None,
+            moment: [0.0; 3],
         }],
     };
     let cases = [CaseToRun {

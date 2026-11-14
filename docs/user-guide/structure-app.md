@@ -1285,6 +1285,16 @@ as its **load cases**, with the library's factors: each case takes
    vertical factor;
 3. its strength factor φ.
 
+**Post insulators** (2026-11-14): at the base point of a fixed post, the
+line's forces come with the post's **moment** (the force at its top times
+its length, its own wind at half of it, a jumper's moment on its clamp),
+each part factored like the force causing it; the load table's row says
+it in its note (*a post insulator's moment (…) kN m*). The structure check
+applies it at the joint carrying the point where a frame member meets it;
+where only trusses meet, it is left out and the results say **NOT ON THE
+SAFE SIDE** — make that joint a frame joint, or brace the post (a hinged
+post sends forces only). See [Post insulators](../theory/post-insulators.md#in-ohl-structure-the-moment-on-the-pylon).
+
 The Load cases panel lists them first, *From the line's load case
 library* (read here, changed in OHL-Design), then the structure's own
 cases as **extra** load cases — for loads the line's cases do not give.

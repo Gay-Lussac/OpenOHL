@@ -2700,8 +2700,25 @@ file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
-`format = "ohl-structure-line-values"`, version 6 or 7; versions 1 to 5
-are read too; 7 (2026-11-11, roadmap O22 item 7) adds, at a point
+`format = "ohl-structure-line-values"`, version 6, 7 or 8; versions 1 to 5
+are read too; 8 (2026-11-14, the post insulators in OHL-Structure) adds
+`LineValues::moments` — per case and point with a moment, a
+`PointMoments` (`case`, `point`, `from_transverse`, `from_longitudinal`,
+`from_vertical`: the moments, structure axes right / ahead / up, N·m,
+unfactored, of the force components acting at a fixed post's lever,
+`AttachmentLoad::moments_by_component`; `couple`: moments of their own, a
+jumper's on a post's clamp), written only when some point has one
+(`LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS` 7); a case's line forces take
+`PointMoments::factored(f)` = fT·T + fL·L + fV·V + max(f)·couple
+(`LineValues::moment`) into `LoadRow::moment` (structure axes, N·m;
+CSV columns `moment_right`, `moment_ahead`, `moment_up`, optional), and
+`fe_loads` puts it at the attach joint with `Model::point_load_with`
+(applied where a frame meets the joint, else left out with a NOT ON THE
+SAFE SIDE note; the pole check says the same). Since 2026-11-14 too the
+values are **summed per point** (`ohl_structure_link::line_values`): a
+post's base carries a load for its top and one for its own weight and
+wind at its middle, and before only the first was read (`LineValues::get`
+takes the first row) — a fault, not on the safe side; 7 (2026-11-11, roadmap O22 item 7) adds, at a point
 holding more than one wire set, each set's part of the four pull
 quantities — `LineValue`s with both `point` and `set`
 (`LineValues::get_set`; `AttachmentLoad::pulls_by_set`), which a case's

@@ -123,6 +123,7 @@ fn line(pulls: bool) -> LineValues {
         points: Vec::new(),
         values,
         structure_wind: Vec::new(),
+        moments: Vec::new(),
     }
 }
 
@@ -403,9 +404,9 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let json = serde_json::to_string(&t).unwrap();
     assert_eq!(serde_json::from_str::<LoadTable>(&json).unwrap(), t);
     // The line-values file.
-    // (Version 7 is the newest read; a file without a set's part of a
-    // point's pulls is still written at 6.)
-    assert_eq!(LINE_VALUES_FILE_VERSION, 7);
+    // (Version 8 is the newest read; a file without a set's part of a
+    // point's pulls nor moments is still written at 6.)
+    assert_eq!(LINE_VALUES_FILE_VERSION, 8);
     let mut placed = PlacedValues::pending("T2", "line", "type", "");
     placed.note = None;
     placed.cases = vec!["calm".into()];
@@ -490,6 +491,7 @@ fn two_sets(per_set: bool) -> LineValues {
         points: Vec::new(),
         values,
         structure_wind: Vec::new(),
+        moments: Vec::new(),
     }
 }
 

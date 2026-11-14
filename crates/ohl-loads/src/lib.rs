@@ -1120,6 +1120,32 @@ pub struct AttachmentLoad {
     pub couple_factored: [f64; 3],
 }
 
+impl AttachmentLoad {
+    /// The moment about its point of each of its force's components acting
+    /// at its lever, unfactored, structure axes (right, ahead, up), N·m:
+    /// of the transverse, the longitudinal and the vertical part (zero
+    /// for a load at its point). With the factors of a case, the factored
+    /// moment is `fT·[0] + fL·[1] + fV·[2]` plus its own moment
+    /// ([`AttachmentLoad::couple`]) — what OHL-Structure takes
+    /// (2026-11-14).
+    pub fn moments_by_component(&self) -> [[f64; 3]; 3] {
+        let r = self.lever;
+        let cross = |f: [f64; 3]| {
+            [
+                r[1] * f[2] - r[2] * f[1],
+                r[2] * f[0] - r[0] * f[2],
+                r[0] * f[1] - r[1] * f[0],
+            ]
+        };
+        [
+            cross([self.local[0], 0.0, 0.0]),
+            cross([0.0, self.local[1], 0.0]),
+            // Vertical: down positive in `local`, up in these axes.
+            cross([0.0, 0.0, -self.local[2]]),
+        ]
+    }
+}
+
 /// The horizontal pulls of the back and ahead spans of one wire set at a
 /// structure point ([`AttachmentLoad::pulls_by_set`]): in the structure's
 /// axes (transverse, longitudinal), N, unfactored.

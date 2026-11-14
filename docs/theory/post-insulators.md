@@ -66,6 +66,29 @@ post is not counted**, as on the insulator strings: a simplification,
 small next to the wires' ice, not on the safe side. Exact: the ice on
 the post's sheds.
 
+## In OHL-Structure: the moment on the pylon
+
+*2026-11-14.* A fixed post's moment reaches **OHL-Structure** too: the
+line sends, per point and case, the moment of each force component (across,
+along, vertical) at the post's lever and the jumpers' moment on its clamp
+(the line-values file, version 8); a structure load case's line forces take
+them with **their own factors** — the moment of the transverse force times
+the transverse factor, and so on, the clamp's moment times the largest
+factor — so the factored moment is exact, not estimated. The finite-element
+check puts it at the post's base joint **where a frame member meets it**;
+where only trusses meet, it is left out and the result says **NOT ON THE
+SAFE SIDE**. The pole check takes forces at points only and says the same.
+A **hinged** (braced) post sends no moment: its force and its brace's reach
+their points as plain forces. A share of the spans' pull (back / ahead below
+100 %) does not scale the post's moment: from the whole pulls, on the safe
+side for shares of 100 % or less (said on the row).
+
+**A fault fixed on the way:** at a post's base the line has two loads —
+what acts at the post's top, and the post's own weight and wind at its
+middle. OHL-Structure read only the first of them: forces were missing (not
+on the safe side) between 2026-11-14's first step and this one. The values
+are now summed per point.
+
 ## A jumper at its top: a fixed exit angle
 
 The clamp on a post's top holds a jumper (or a conductor's end) **in a

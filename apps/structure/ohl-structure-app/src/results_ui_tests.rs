@@ -179,6 +179,7 @@ fn the_pole_check_and_the_report() {
         missing: None,
         note: String::new(),
         area: None,
+        moment: [0.0; 3],
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();

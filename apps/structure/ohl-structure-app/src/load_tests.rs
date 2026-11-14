@@ -208,6 +208,7 @@ fn the_table_goes_out_and_back_as_csv() {
         missing: None,
         note: String::new(),
         area: None,
+        moment: [0.0; 3],
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();
@@ -251,6 +252,7 @@ fn results_of_a_typed_case() {
             missing: None,
             note: String::new(),
             area: None,
+            moment: [0.0; 3],
         };
         h.state_mut().loads.type_value(&own, force);
     }

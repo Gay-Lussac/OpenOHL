@@ -1119,6 +1119,7 @@ pub fn line_rows(
                 missing: None,
                 note: note.join("; "),
                 area: None,
+                moment: [0.0; 3],
             });
         }
         names.push((name, c));

@@ -75,10 +75,14 @@ pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `version` of a line-values file (2: `sources`; 3: `missing`; 4:
 /// `structure_wind` in the values; 5: `library_cases`; 6: the spans'
 /// pulls among the values; 7: each set's part of the pulls at a point
-/// holding several sets; older files are read too). The newest version
+/// holding several sets; 8: the moments at points — a fixed post
+/// insulator's, 2026-11-14; older files are read too). The newest version
 /// read; a file is written at the lowest its values need
 /// ([`PlacedValues::needed_version`]).
-pub const LINE_VALUES_FILE_VERSION: u32 = 7;
+pub const LINE_VALUES_FILE_VERSION: u32 = 8;
+/// The version before the moments at points (what a line without fixed
+/// posts is written as).
+pub const LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS: u32 = 7;
 /// The version of a line-values file without a set's part of a point's
 /// value (what an older program still reads).
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS: u32 = 6;
@@ -250,8 +254,12 @@ impl PlacedValues {
     pub fn needed_version(&self) -> u32 {
         let set_parts =
             self.values.has_set_parts() || self.others.iter().any(|o| o.values.has_set_parts());
-        if set_parts {
+        let moments = !self.values.moments.is_empty()
+            || self.others.iter().any(|o| !o.values.moments.is_empty());
+        if moments {
             LINE_VALUES_FILE_VERSION
+        } else if set_parts {
+            LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS
         } else {
             LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS
         }

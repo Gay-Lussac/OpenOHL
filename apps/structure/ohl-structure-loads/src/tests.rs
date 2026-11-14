@@ -148,6 +148,7 @@ fn line() -> LineValues {
             origin: String::new(),
             from_deg: None,
         }],
+        moments: Vec::new(),
     }
 }
 

@@ -169,6 +169,7 @@ fn line() -> LineValues {
                 from_deg: None,
             })
             .to_vec(),
+        moments: Vec::new(),
     }
 }
 

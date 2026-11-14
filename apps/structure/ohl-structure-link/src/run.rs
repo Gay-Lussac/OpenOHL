@@ -637,6 +637,21 @@ fn pole_case(
     let mut notes = Vec::new();
     let mut loads = Vec::new();
     let mut elsewhere = 0;
+    // A fixed post's moment at a point (2026-11-14): the pole check takes
+    // forces at points only.
+    let moments: Vec<&str> = input
+        .table
+        .case(&case.name)
+        .filter(|r| r.missing.is_none() && r.moment != [0.0; 3])
+        .map(|r| r.label.as_str())
+        .collect();
+    if !moments.is_empty() {
+        notes.push(format!(
+            "NOT ON THE SAFE SIDE: the moment of a post insulator at {} left out (the pole \
+             check takes forces at points only)",
+            moments.join(", ")
+        ));
+    }
     for r in input.table.case(&case.name).filter(|r| r.missing.is_none()) {
         match r.at {
             At::Point => match t.point_local(&r.label, None) {

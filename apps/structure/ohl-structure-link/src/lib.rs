@@ -106,7 +106,7 @@ use ohl_loads::{CaseLoads, LoadCase};
 pub use ohl_sections::SectionLibrary;
 use ohl_structure_loads::{
     At, CaseSource, CaseWind, Direction, LinePoint, LineQuantity, LineValue, LineValues, LoadTable,
-    MemberAreas, MissingWire, OtherPlace, PlacedValues,
+    MemberAreas, MissingWire, OtherPlace, PlacedValues, PointMoments,
 };
 use ohl_structures::StructureType;
 /// The one usage classification (over / near / pass, a usage that is not
@@ -156,11 +156,81 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
             origin: w.origin().to_owned(),
             from_deg: w.has_longitudinal().then(|| w.direction.degrees()),
         });
+        // Per point, its loads summed (2026-11-14): a post's base has a
+        // load of its own for what acts at the post's top and one for its
+        // own weight and wind at its middle — before, each was sent and
+        // only the first was read (forces missing, not on the safe side).
+        let mut at_points: Vec<ohl_loads::AttachmentLoad> = Vec::new();
+        let mut moments: Vec<PointMoments> = Vec::new();
         for l in case
             .loads
             .iter()
             .filter(|l| l.structure == structure && !l.point.is_empty())
         {
+            let by = l.moments_by_component();
+            if by.iter().flatten().chain(&l.couple).any(|m| *m != 0.0) {
+                let m = match moments.iter_mut().find(|m| m.point == l.point) {
+                    Some(m) => m,
+                    None => {
+                        moments.push(PointMoments {
+                            case: case.case.name.clone(),
+                            point: l.point.clone(),
+                            ..PointMoments::default()
+                        });
+                        moments.last_mut().expect("pushed")
+                    }
+                };
+                let parts = [
+                    &mut m.from_transverse,
+                    &mut m.from_longitudinal,
+                    &mut m.from_vertical,
+                ];
+                for (sum, part) in parts.into_iter().zip(by) {
+                    for (s, x) in sum.iter_mut().zip(part) {
+                        *s += x;
+                    }
+                }
+                for (s, x) in m.couple.iter_mut().zip(l.couple) {
+                    *s += x;
+                }
+            }
+            match at_points.iter_mut().find(|a| a.point == l.point) {
+                Some(a) => {
+                    for k in 0..3 {
+                        a.local[k] += l.local[k];
+                        a.factored[k] += l.factored[k];
+                    }
+                    for k in 0..2 {
+                        a.pull_back[k] += l.pull_back[k];
+                        a.pull_ahead[k] += l.pull_ahead[k];
+                    }
+                    for p in &l.pulls_by_set {
+                        match a.pulls_by_set.iter_mut().find(|q| q.set == p.set) {
+                            Some(q) => {
+                                for k in 0..2 {
+                                    q.back[k] += p.back[k];
+                                    q.ahead[k] += p.ahead[k];
+                                }
+                            }
+                            None => a.pulls_by_set.push(*p),
+                        }
+                    }
+                    for set in &l.sets {
+                        if !a.sets.contains(set) {
+                            a.sets.push(*set);
+                        }
+                    }
+                    for x in &l.sections {
+                        if !a.sections.contains(x) {
+                            a.sections.push(x.clone());
+                        }
+                    }
+                }
+                None => at_points.push(l.clone()),
+            }
+        }
+        out.moments.extend(moments);
+        for l in &at_points {
             if !out.points.iter().any(|p| p.label == l.point) {
                 let mut phases: Vec<String> = Vec::new();
                 for s in &l.sections {
@@ -1132,12 +1202,14 @@ pub fn fe_loads(
         match r.at {
             At::Point => {
                 // At its joint, or shared to the ends of its member.
+                // With a fixed post's moment (2026-11-14): at a frame
+                // joint, else left out (said with the case).
                 let loads = model
-                    .point_loads(&r.label, [r.force[0], r.force[1], -r.force[2]])
+                    .point_load_with(&r.label, [r.force[0], r.force[1], -r.force[2]], r.moment)
                     .ok_or_else(|| {
                         format!("point {}: no joint of the model carries it", r.label)
                     })?;
-                nodal.extend(loads);
+                nodal.extend(loads.loads);
             }
             At::Joint => {
                 let n = node_of
@@ -1536,7 +1608,9 @@ fn analyse_one(
         .case(&case.name)
         .filter(|r| r.missing.is_none() && r.at == At::Point)
     {
-        let Some(at) = model.point_load(&r.label, [r.force[0], r.force[1], -r.force[2]]) else {
+        let Some(at) =
+            model.point_load_with(&r.label, [r.force[0], r.force[1], -r.force[2]], r.moment)
+        else {
             continue;
         };
         if at.moment != [0.0; 3] {
@@ -1563,9 +1637,13 @@ fn analyse_one(
             None if at.moment_applied => {
                 let m = at.moment;
                 notes.push(format!(
-                    "attachment point {}: the moment of its offset ({:.2}, {:.2}, {:.2}) kN m \
-                     applied at its joint",
+                    "attachment point {}: {} ({:.2}, {:.2}, {:.2}) kN m applied at its joint",
                     r.label,
+                    if r.moment == [0.0; 3] {
+                        "the moment of its offset"
+                    } else {
+                        "its moment (a post insulator's, with its offset's)"
+                    },
                     m[0] / 1000.0,
                     m[1] / 1000.0,
                     m[2] / 1000.0

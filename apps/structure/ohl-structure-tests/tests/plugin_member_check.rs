@@ -138,6 +138,7 @@ fn solve(dir: &Path) -> Result<CaseResult, String> {
             missing: None,
             note: String::new(),
             area: None,
+            moment: [0.0; 3],
         }],
     };
     let cases = [CaseToRun {
@@ -280,6 +281,7 @@ fn the_link_calls_the_plugin_once_for_all_cases() {
         missing: None,
         note: String::new(),
         area: None,
+        moment: [0.0; 3],
     };
     let table = LoadTable {
         rows: vec![row("one", -20e3), row("two", -40e3), row("three", -20e3)],

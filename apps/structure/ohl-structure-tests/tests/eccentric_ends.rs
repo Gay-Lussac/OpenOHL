@@ -97,6 +97,7 @@ fn solved(text: &str) -> CaseResult {
             missing: None,
             note: String::new(),
             area: None,
+            moment: [0.0; 3],
         }],
     };
     let cases = [CaseToRun {

@@ -142,6 +142,7 @@ fn shapes() -> ExportStructure {
         missing: None,
         note: String::new(),
         area: Some(1.0),
+        moment: [0.0; 3],
     });
     ohl_structure_link::export_structure(SHAPES, &library, Some(&table), &recipes).unwrap()
 }

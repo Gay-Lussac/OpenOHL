@@ -165,8 +165,21 @@ impl Model {
     /// axes), linked as the structure file (or the separate model's
     /// node) says. None: no such point in the model.
     pub fn point_load(&self, label: &str, force: [f64; 3]) -> Option<PointLoad> {
+        self.point_load_with(label, force, [0.0; 3])
+    }
+
+    /// [`Model::point_load`] with a moment of the load's own at the point
+    /// (N·m, structure axes; a fixed post insulator's, 2026-11-14), added
+    /// to its offset's: applied where a frame member meets the joint, else
+    /// left out and said NOT ON THE SAFE SIDE.
+    pub fn point_load_with(
+        &self,
+        label: &str,
+        force: [f64; 3],
+        moment: [f64; 3],
+    ) -> Option<PointLoad> {
         let (node, offset) = self.place_of(label)?;
-        Some(self.load_at(label, node, offset, force))
+        Some(self.load_at_with(label, node, offset, force, moment))
     }
 
     /// The load of point `label` linked to joint `joint` at `offset`
@@ -205,11 +218,23 @@ impl Model {
     }
 
     fn load_at(&self, label: &str, n: usize, offset: [f64; 3], force: [f64; 3]) -> PointLoad {
-        let moment = if is_zero(offset) {
+        self.load_at_with(label, n, offset, force, [0.0; 3])
+    }
+
+    fn load_at_with(
+        &self,
+        label: &str,
+        n: usize,
+        offset: [f64; 3],
+        force: [f64; 3],
+        own: [f64; 3],
+    ) -> PointLoad {
+        let lever = if is_zero(offset) {
             [0.0; 3]
         } else {
             cross(offset, force)
         };
+        let moment = [0, 1, 2].map(|k| lever[k] + own[k]);
         let some = !is_zero(moment);
         let frame = self.frame_at(n);
         PointLoad {
@@ -221,9 +246,14 @@ impl Model {
             moment,
             moment_applied: frame && some,
             note: (some && !frame).then(|| {
+                let what = if is_zero(own) {
+                    "the moment of its offset"
+                } else {
+                    "its moment (a post insulator's, with its offset's)"
+                };
                 format!(
-                    "attachment point {label}: the moment of its offset ({:.2} kN m) left out \
-                     at joint {}: only trusses meet it (make it a frame joint to carry it)",
+                    "NOT ON THE SAFE SIDE: attachment point {label}: {what} ({:.2} kN m) left \
+                     out at joint {}: only trusses meet it (make it a frame joint to carry it)",
                     kn_m(moment),
                     self.nodes[n].id
                 )
