@@ -718,7 +718,10 @@ and not undone.
   the tiles in sight at the level of the zoom (a coarse level first). Plain
   black or white tiles (no data) are not kept. Importing an image of the
   same name in the same layer replaces it. It runs in the background;
-  the project opens again to show them. An image is decoded whole (3 bytes
+  when it is done, the layer is shown in the views at once — the project
+  stays open (the weather cases solved, the windows, the view and the
+  selection kept; before 2026-11-14 the whole project was opened again).
+  An image is decoded whole (3 bytes
   per pixel: 10 000 × 10 000 pixels need 300 MB).
 - **TIFF variants read**: uncompressed, LZW, deflate, PackBits and
   **JPEG-compressed** TIFFs, in strips or tiled, grey, RGB or RGBA of 8 or
@@ -753,9 +756,11 @@ and not undone.
   Hatches, dimensions, splines, faces and meshes are counted and not
   drawn (the import says which). Layers switched off in the file are not
   drawn. Coordinates are taken as they are (the project's system and
-  units).
+  units). Shown in the plan and 3D views as soon as it is imported (the
+  project stays open), switched on even if a drawing of that name was
+  hidden.
 - **Remove backgrounds…** — an orthophoto layer or a drawing, after a
-  second click.
+  second click; the views follow at once.
 
 What is shown is yours (remembered on this computer, like the other view
 choices): **Orthophotos** and **Drawings** on or off, and each orthophoto

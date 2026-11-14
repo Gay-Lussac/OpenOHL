@@ -392,6 +392,9 @@ pub struct Ready {
     /// The ground built again from the LiDAR ground classes after their
     /// points changed ([`crate::lidar_edit::frame`]).
     pub lidar_ground: crate::job::Job<Option<ohl_terrain::Terrain>>,
+    /// The point cloud read again after a LiDAR import
+    /// ([`crate::cloud_reload`]).
+    pub cloud_reload: crate::job::Job<crate::cloud_reload::Read>,
     /// The check whose clearance violations the views draw.
     pub marks_from: MarksFrom,
     /// The Clearances window's violations drawn (the window open with a
@@ -581,6 +584,7 @@ impl Ready {
             safety_volume: Default::default(),
             wirefit: Default::default(),
             lidar_ground: Default::default(),
+            cloud_reload: Default::default(),
             lidar_ground_again: false,
             marks_from: MarksFrom::Clearances,
             clearances_drawn: None,

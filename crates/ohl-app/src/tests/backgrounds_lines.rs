@@ -1286,3 +1286,68 @@ fn the_working_tree_draws_a_line_below_its_origin() {
     assert_eq!(lanes["live"], ["live work"]);
     assert_eq!(lanes["a variant"], ["variant work"]);
 }
+
+/// A DXF imported into the project open: the backgrounds read again and
+/// drawn, the project not opened again (owner, 2026-11-14); what was
+/// imported shown even when it was hidden before.
+#[test]
+fn an_imported_drawing_is_shown_without_reopening() {
+    use crate::scene::Layer;
+    let model = synthetic_project("dxf-in-place");
+    let file = model.sources.file.clone();
+    let dxf = file.parent().unwrap().join("in-place.dxf");
+    std::fs::write(
+        &dxf,
+        "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nRoads\n10\n100\n20\n-40\n11\n600\n21\n40\n\
+         0\nENDSEC\n0\nEOF\n",
+    )
+    .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    {
+        let ctx = harness.ctx.clone();
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.backgrounds.drawings.is_empty());
+        r.selection = Selection::Structure("T3".into());
+        r.model
+            .hidden_backgrounds
+            .insert(crate::backgrounds::drawing_key("roads"));
+        r.visible.remove(&Layer::Drawings);
+        let (f, d) = (file.clone(), dxf.clone());
+        r.backgrounds.job = Some(crate::survey_io::Job::start(
+            "Import drawing roads".into(),
+            true,
+            &ctx,
+            move |_| {
+                ohl_background::Store::open(&f)
+                    .and_then(|s| s.import_dxf("roads", &d, ""))
+                    .map(|_| "Drawing roads".to_owned())
+                    .map_err(|e| e.to_string())
+            },
+        ));
+    }
+    run_until(&mut harness, |a| {
+        let j = a.ready().unwrap().backgrounds.job.as_mut().unwrap();
+        j.poll();
+        j.done.is_some()
+    });
+    harness.run();
+    harness.get_by_label("Close").click();
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(!r.reopen, "the project is not opened again");
+    assert_eq!(r.model.backgrounds.drawings.len(), 1);
+    assert_eq!(r.selection, Selection::Structure("T3".into()), "kept");
+    // What an import brings is switched on.
+    crate::backgrounds::reload(
+        r,
+        Some(crate::backgrounds::Shown {
+            layer: Layer::Drawings,
+            key: crate::backgrounds::drawing_key("roads"),
+        }),
+    );
+    assert!(r.visible.contains(&Layer::Drawings));
+    assert!(r.model.hidden_backgrounds.is_empty());
+}

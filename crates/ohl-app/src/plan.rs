@@ -404,6 +404,12 @@ impl PlanView {
         self.centre = None;
     }
 
+    /// The image tiles read again (the backgrounds changed: an import, a
+    /// removal).
+    pub fn forget_backgrounds(&mut self) {
+        self.backgrounds.forget();
+    }
+
     /// Centres the view on a point.
     pub fn centre_on(&mut self, p: [f64; 3]) {
         self.centre = Some([p[0], p[1]]);

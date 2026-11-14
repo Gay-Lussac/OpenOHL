@@ -32,6 +32,7 @@ mod circuit_join;
 mod class_colors;
 mod clearance;
 mod clearance_zones;
+mod cloud_reload;
 mod codes;
 mod color_tool;
 mod controls;

@@ -1132,3 +1132,57 @@ fn a_cloud_with_an_unreadable_class_scheme_opens() {
     model.use_class_scheme(None).unwrap();
     assert_eq!(model.scheme, ohl_lidar::ClassScheme::asprs());
 }
+
+/// A survey imported into the project open: its points read again on
+/// their own thread and drawn, the project not opened again (owner,
+/// 2026-11-14), the selection kept, the points' results out of date.
+#[test]
+fn imported_points_are_shown_without_reopening() {
+    use crate::scene::Layer;
+    let model = synthetic_project("survey-in-place");
+    let file = model.sources.file.clone();
+    let laz = file.parent().unwrap().join("tile.laz");
+    write_survey(&laz, 600.0, 200);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let revision = {
+        let ctx = harness.ctx.clone();
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.model.cloud.is_none() && r.model.points.is_empty());
+        r.selection = Selection::Structure("T3".into());
+        let f = file.clone();
+        r.survey_job = Some(crate::survey_io::Job::start(
+            "Importing".into(),
+            true,
+            &ctx,
+            move |report| {
+                crate::survey_io::import(&f, &[laz], "lidar", "EPSG:2056", 64.0, None, report)
+            },
+        ));
+        r.model.revisions.points
+    };
+    run_until(&mut harness, |a| {
+        let j = a.ready().unwrap().survey_job.as_mut().unwrap();
+        j.poll();
+        j.done.is_some()
+    });
+    harness.run();
+    harness.get_by_label("Close").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        !r.cloud_reload.running() && r.model.cloud.is_some()
+    });
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(!r.reopen, "the project is not opened again");
+    assert_eq!(
+        r.model.class_counts.iter().map(|c| c.1).sum::<u64>(),
+        32_000
+    );
+    assert!(!r.model.points.is_empty());
+    assert!(r.visible.contains(&Layer::Points));
+    assert_ne!(r.model.revisions.points, revision, "results out of date");
+    assert_eq!(r.selection, Selection::Structure("T3".into()), "kept");
+}
