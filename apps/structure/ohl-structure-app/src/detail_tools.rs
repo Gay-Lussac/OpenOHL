@@ -88,6 +88,16 @@ impl DetailTool {
     }
 
     /// Its name (the slot's hover text, the strip).
+    /// Its section of the tools' page of the manual
+    /// ([`crate::help::TOOLS_PAGE`]; Edit's is "Edit in the Detail view",
+    /// the 3D view's Edit having its own).
+    pub fn guide(self) -> String {
+        match self {
+            DetailTool::Edit => "edit-in-the-detail-view".into(),
+            t => ohl_ui::tool_window::anchor(t.name()),
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             DetailTool::Edit => "Edit",
@@ -497,6 +507,10 @@ pub fn strip(ui: &mut egui::Ui, tool: DetailTool, active: bool, steps: &mut Tool
              member in the joint's close-up"
         };
         ui.label(egui::RichText::new(text).small().weak());
+        let key = tool.guide();
+        ohl_ui::tool_window::guide_button(ui, &key, || {
+            crate::help::open_section(crate::help::TOOLS_PAGE, &key)
+        });
     });
 }
 

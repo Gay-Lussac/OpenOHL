@@ -56,8 +56,9 @@ snap to:
 
 All three are needed, as numbers (an apostrophe as thousands separator,
 `2'600'000`, is read). Type other values to put the point elsewhere.
-**Add the point** adds it; **Cancel** (or the window's ×) leaves it out.
-This window takes no Enter: click **Add the point**.
+**Add the point** (Enter) adds it; **Cancel**, **Escape** or the
+window's × closes the window and leaves the point out — the points laid
+out so far stay, and the tool goes on.
 
 ![The New alignment: its route window: the line's routes, a new route's name, Make the alignment and Back](../images/tools/tool-new-alignment.png)
 
@@ -72,8 +73,8 @@ to one route.
 
 **Make the alignment** makes it on the route chosen; with a new route's
 name typed the button reads **Create the route and the alignment** and
-makes both. **Back** (or the window's ×) returns to laying out the
-points, the points kept.
+makes both (Enter does the same). **Back**, **Escape** or the window's
+× returns to laying out the points, the points kept.
 
 **Good to know**
 

@@ -1009,55 +1009,22 @@ to the view it acts in; Escape goes back to Edit). **Member end**,
 under the pointer — the end drawn blue, the bolt ringed blue, with a thin
 outline on what a click would pick — and a drag moves only what is
 picked; a drag started on something else picks that and moves nothing,
-so it is always clear what a drag will change:
+so it is always clear what a drag will change (each tool step by step:
+[The Detail view's tools](structure-tools.md#the-detail-views-tools)):
 
-- **Edit**: a **bolt** clicked — its properties at the top of the details
-  below (its place, its kind, the library bolt's values, whether it keeps
-  the code's distances) with the **bolt libraries** to change it (a
-  member end's bolts are of one kind: the bolt chosen is that end's; one
-  undo step), **Bolt layout…** and **Remove this bolt**; it is ringed in
-  the face view. A **plate** clicked — what it is welded to (its Welded
-  to menu) and the welded plate it belongs to, its thickness, the leg it
-  lies on, the members onto it, and its **Plate details / outline**
-  (below). A **member** clicked (face view) —
-  the member in detail (‹ Joint, Escape: back); in the member view, a
-  click beside the bolts opens that end's bolt layout form. Escape lets
-  go of what was picked;
-- **Add bolt**: a click on a member's leg bolted — a bolt there, placed
-  by the **design code of the capacity method** (ASCE 10-97: its minimum
-  end distance, spacing and edge distance, 4.5): onto the nearest gauge
-  line, at the place clicked or the nearest place along it that keeps the
-  distances; where that line has no room near the click, a **new gauge
-  line is offered** at the nearest gauge that keeps them (up to three
-  lines) — written only when you confirm ("Add the line and the bolt");
-  where there is no room at all, it says why. With the simple check
-  (no code) the bolt goes on the nearest line, along to 5 mm;
-- **Move bolt**: click a bolt to pick it, then drag it — it moves and is
-  placed as Add bolt places it (in the face view along the member only;
-  in the member view along and across). **To the other leg** (a button
-  above the drawing while a bolt is picked, or the key **L**; 2026-11-08)
-  puts the picked bolt on the angle's other leg, where it was along the
-  member and across from the heel (within that leg): the end is then
-  bolted by **both** legs; the last bolt taken off a leg leaves it bolted
-  by the other alone. The bolt stays picked, so L takes it back. In the
-  member view the other leg is drawn **folded out below the heel**: a bolt
-  dragged across the heel line goes onto it, and Add bolt and Remove bolt
-  work there too (the code's distances are marked on the leg bolted
-  only);
-- **Remove bolt**: a bolt clicked goes;
-- **Member end**: click a member to pick its end (in the member view, a
-  click on its half picks that end), then drag it — along it, where its
-  steel stops; across it (in the face view), its end's shift; both
-  snapped to the tool's **step** (5 mm unless set in the strip above the
-  drawing while the tool is held; kept between runs);
-- **Rotate member** (the close-up): click a member to pick it — its axis
-  drawn blue, its **Roll** row above the drawing (degrees, quarter turns,
-  Lay flat) — then drag it sideways: it rolls about its axis, half a
-  degree a point snapped to the tool's **step** (5° unless set in the
-  strip; kept between runs), the member and its bolts drawn turned as
-  you drag (the plates and the other members follow once it is set); let
-  go, the roll is set (one undo step, the member's `roll`). A drag on
-  nothing turns the view;
+- [**Edit**](structure-tools.md#edit-in-the-detail-view): a bolt, a
+  plate or a member clicked — its properties in the details (a member:
+  the member in detail);
+- [**Add bolt**](structure-tools.md#add-bolt): a bolt where clicked, by
+  the design code's distances (a new gauge line offered when there is no
+  room);
+- [**Move bolt**](structure-tools.md#move-bolt): a picked bolt dragged,
+  or put on the angle's other leg (**L**);
+- [**Remove bolt**](structure-tools.md#remove-bolt): a bolt clicked goes;
+- [**Member end**](structure-tools.md#member-end): where a member's steel
+  stops, and its end's shift;
+- [**Rotate member**](structure-tools.md#rotate-member) (the close-up): a
+  member rolled about its axis;
 - **Plate around the bolts** (above the drawing, when a plate has no
   outline in the file): the outline it is drawn with — round its bolts
   with the code's distances kept — written into the file, to be edited;

@@ -78,6 +78,13 @@ impl Tool {
         Tool::Symmetry,
     ];
 
+    /// Its section of the tools' page of the manual
+    /// ([`crate::help::TOOLS_PAGE`]): its name as the book makes a
+    /// heading's anchor.
+    pub fn guide(self) -> String {
+        ohl_ui::tool_window::anchor(self.name())
+    }
+
     /// Its name (the slot's hover text, the strip, the inventory).
     pub fn name(self) -> &'static str {
         match self {
@@ -475,7 +482,15 @@ impl StructureApp {
             .resizable(false)
             .default_pos(screen.center_bottom() + egui::vec2(-220.0, -320.0))
             .show(ctx, |ui| {
-                ui.label("Drag a tool onto a hotbar slot; drag a slot here to empty it.");
+                crate::help::tool_intro(
+                    ui,
+                    "Every tool: drag one onto a hotbar slot to keep it at hand; drag a slot \
+                     here to empty it.",
+                    "The hotbar under the 3D view holds nine tools (keys 1–9). Drag a slot \
+                     onto another to swap them; right-click a slot to empty it. The slots are \
+                     kept for the next start. E or Escape closes the inventory.",
+                    "holding-and-using-a-tool",
+                );
                 let (_, dropped) =
                     ui.dnd_drop_zone::<Dragged, _>(egui::Frame::group(ui.style()), |ui| {
                         egui::Grid::new("inventory").show(ui, |ui| {
@@ -578,6 +593,10 @@ impl StructureApp {
                 _ => {}
             }
             ui.label(egui::RichText::new(tool.help()).weak().small());
+            let key = tool.guide();
+            ohl_ui::tool_window::guide_button(ui, &key, || {
+                crate::help::open_section(crate::help::TOOLS_PAGE, &key)
+            });
         });
     }
 

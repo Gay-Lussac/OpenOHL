@@ -2299,6 +2299,65 @@ mod keep_tests {
     use crate::selection::{Selection, Use};
     use crate::tools::Tool;
 
+    /// A viewer writes notes (owner, 2026-11-14): the Note tool works in
+    /// a project they only view, the note is kept, ⌘Z takes it back; the
+    /// line stays closed to them.
+    #[test]
+    fn a_viewer_keeps_a_note() {
+        let mut model = crate::tests::synthetic_project("viewer-note");
+        let e = std::mem::replace(&mut model.editing, Err(String::new())).unwrap();
+        e.session
+            .set_user(&e.user, "vic", ohl_session::Role::Viewer)
+            .unwrap();
+        model.editing = Err("user vic is a viewer of this project".into());
+        model.viewer_session = Some(e.session);
+        model.sources.user = Some("vic".into());
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1400.0, 900.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        let kept = |h: &mut Harness<'_, crate::app::App>| {
+            let r = h.state_mut().ready().unwrap();
+            r.model.session().unwrap().annotations().len()
+        };
+        {
+            let r = h.state_mut().ready().unwrap();
+            assert!(r.model.can_edit().is_err());
+            let t1 = r.model.line.structures[0].id.clone();
+            r.hotbar.hold(Tool::Note);
+            r.use_tool(Use {
+                target: Selection::Structure(t1),
+                at: None,
+                on: None,
+            });
+            let note = r
+                .measuring
+                .note
+                .as_mut()
+                .expect("the note window, read-only too");
+            note.text = "access road".into();
+            let user = r.model.user_name();
+            r.measuring.keep_note(&user, String::new());
+        }
+        h.run();
+        assert_eq!(kept(&mut h), 1);
+        {
+            let r = h.state_mut().ready().unwrap();
+            assert_eq!(r.model.session().unwrap().annotations()[0].author, "vic");
+            r.perform(crate::edit::Action::Undo);
+        }
+        h.run();
+        assert_eq!(kept(&mut h), 0);
+        // The line: still read-only.
+        let r = h.state_mut().ready().unwrap();
+        let t1 = r.model.line.structures[0].id.clone();
+        assert!(!r.perform(crate::edit::Action::Delete {
+            kind: ohl_session::Kind::Structure,
+            id: t1,
+            confirm: true,
+        }));
+    }
+
     #[test]
     fn kept_measurements_and_notes() {
         let mut h = Harness::builder()

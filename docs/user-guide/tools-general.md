@@ -288,7 +288,7 @@ with whatever cannot stay without it.
    | a string (or its wire point) | the strings of its set, with what goes with them (the sections through it and their jumpers) |
    | a span | its whole **section** |
    | a jumper | the jumper |
-   | a span point | the point, with the spacers clamped on it |
+   | a span point | the point, with everything hanging on it: the spacers clamped on it and the jumpers tapped on it (with those hanging on them) |
    | a jumper point | the point, with the jumpers hanging on it |
    | a spacer | the spacer |
    | a spread load | asked: see below |

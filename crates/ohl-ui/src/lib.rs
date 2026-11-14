@@ -20,3 +20,4 @@ pub mod notices;
 pub mod rows;
 pub mod snap_marker;
 pub mod style;
+pub mod tool_window;

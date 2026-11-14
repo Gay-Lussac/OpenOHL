@@ -551,6 +551,23 @@ impl StructureApp {
     /// The keys: undo, redo, save, save as, new, open, quit, Delete (not
     /// while typing in a field, which has its own undo and its own
     /// Delete).
+    /// Escape on a tool's window (Delete, Open in the Detail view?, New
+    /// gauge line?, Continuous members) or the inventory: closed, nothing
+    /// done. False: none was open.
+    fn close_tool_window(&mut self) -> bool {
+        let open = self.confirm.is_some()
+            || self.joints.ask_open.is_some()
+            || self.joint_tools.offer.is_some()
+            || self.joint_tools.continuous.is_some()
+            || self.inventory;
+        self.confirm = None;
+        self.joints.ask_open = None;
+        self.joint_tools.offer = None;
+        self.joint_tools.continuous = None;
+        self.inventory = false;
+        open
+    }
+
     fn keys(&mut self, ctx: &egui::Context) {
         if ctx.egui_wants_keyboard_input() {
             return;
@@ -597,9 +614,11 @@ impl StructureApp {
             // chosen dropped first); 1-9: a slot of the hotbar; E: the
             // inventory.
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
-                // Over the Detail view (or with it in front): back from a
-                // member to its joint first.
-                if !self.detail_escape(ctx) {
+                // A tool's window open (or the inventory): it is closed,
+                // nothing done (owner, 2026-11-14). Else over the Detail
+                // view (or with it in front): back from a member to its
+                // joint first.
+                if !self.close_tool_window() && !self.detail_escape(ctx) {
                     self.let_go_of_tool();
                 }
             }

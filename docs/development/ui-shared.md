@@ -20,6 +20,7 @@ OHL-Design (`crates/ohl-app`) and OHL-Structure
 | `glyphs` | The helpers of the glyph test | Its test, on its own source files; `ohl-ui` tests its own texts |
 | `navigation` | The mouse of the navigation schemes (2026-11-12): `Drag`, `Mouse` (`ORBIT`, `CAD`: the drag of each button, Shift + middle apart, turning and zooming about the cursor, double middle-click fits), held in the egui context for the 2D and Detail views; `Scheme` (Orbit, CAD) with its menu and storage | OHL-Design its `Controls` (keys, first person, speed) around a `Mouse`; each its storage key |
 | `snap_marker` | The snap marker (2026-11-12): its colour and size, the painter, the settings (shown, snap distance) held in the egui context, their View-menu entries and storage, the per-view `Hover` that finds the point again only when the pointer or the view changed | Its storage key prefix; each view finds the point with its own click search |
+| `tool_window` | The tool windows' shape (2026-11-14, [Tool pages](tool-pages.md)): the top sentence with its (?) and User guide button, a label or heading with a visible (?), the button row (action first, Cancel last), a heading's anchor as the book makes it | Each opens its own manual (the closure given to `intro`); OHL-Design's tools by theme page, OHL-Structure's one tools page |
 
 The two applications differed in three small ways, now one (2026-11-07): the
 box long errors scroll in is 160 points high in both (OHL-Structure's was 120),

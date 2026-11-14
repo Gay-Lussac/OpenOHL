@@ -2287,9 +2287,51 @@ impl Session {
 
     /// Applies a command of `user`.
     pub fn apply(&mut self, user: &str, command: Command) -> Result<Applied, SessionError> {
-        self.require(user, Role::Designer)?;
+        self.require_to_apply(user, &command)?;
         self.check_line_write(user)?;
         self.apply_as(user, command, "do", None, false, true)
+    }
+
+    /// A designer (or an admin) applies any command; a viewer only one
+    /// that adds, changes or deletes annotations of their own — notes and
+    /// kept measurements (owner, 2026-11-14: a viewer may write notes).
+    fn require_to_apply(&self, user: &str, command: &Command) -> Result<(), SessionError> {
+        if self.role(user)? == Some(Role::Viewer) {
+            let existing = |id: &str| {
+                self.objects
+                    .get(&(Kind::Annotation, id.to_owned()))
+                    .map(|o| &*o.value)
+            };
+            if annotations::own_only(command, user, &existing) {
+                return Ok(());
+            }
+        }
+        self.require(user, Role::Designer)
+    }
+
+    /// The same for undoing or redoing `user`'s log entry `seq`: a viewer
+    /// only an entry that changed annotations alone (theirs: a viewer's
+    /// entries are of nothing else).
+    fn require_to_reverse(&self, user: &str, seq: Option<i64>) -> Result<(), SessionError> {
+        if self.role(user)? == Some(Role::Viewer)
+            && let Some(seq) = seq
+        {
+            let objects: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT objects FROM oplog WHERE seq = ?1",
+                    params![seq],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let changed: Vec<(Kind, String, i64)> = objects
+                .and_then(|t| serde_json::from_str(&t).ok())
+                .unwrap_or_default();
+            if !changed.is_empty() && changed.iter().all(|(k, ..)| *k == Kind::Annotation) {
+                return Ok(());
+            }
+        }
+        self.require(user, Role::Designer)
     }
 
     /// Alignment `id` (`"line"`, the line's own alignment of older
@@ -3886,19 +3928,19 @@ impl Session {
 
     /// Undoes `user`'s last command that is not undone yet.
     pub fn undo(&mut self, user: &str) -> Result<Applied, SessionError> {
-        self.require(user, Role::Designer)?;
+        let seq = self.undo_entry(user, &self.current)?;
+        self.require_to_reverse(user, seq)?;
         self.check_line_write(user)?;
-        let seq = self
-            .undo_entry(user, &self.current)?
-            .ok_or_else(|| refused(format!("{user} has nothing to undo")))?;
+        let seq = seq.ok_or_else(|| refused(format!("{user} has nothing to undo")))?;
         self.reverse(user, seq, "undo")
     }
 
     /// Redoes `user`'s last undo (if nothing of theirs happened since).
     pub fn redo(&mut self, user: &str) -> Result<Applied, SessionError> {
-        self.require(user, Role::Designer)?;
+        let seq = self.redo_entry(user, &self.current)?;
+        self.require_to_reverse(user, seq)?;
         self.check_line_write(user)?;
-        match self.redo_entry(user, &self.current)? {
+        match seq {
             Some(seq) => self.reverse(user, seq, "redo"),
             None => Err(refused(format!("{user} has nothing to redo"))),
         }

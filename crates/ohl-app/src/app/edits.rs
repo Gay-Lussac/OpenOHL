@@ -636,6 +636,18 @@ pub(super) fn span_delete_action(
                 .any(|e| e.section == section && points.contains(&e.point))
         })
         .collect();
+    // The jumpers tapped on the points go too (with those hanging on
+    // them, the session's jumper deletion): a point deleted takes
+    // everything hanging on it (owner, 2026-11-14).
+    let tapped: Vec<&ohl_line::Jumper> = line
+        .jumpers
+        .iter()
+        .filter(|j| {
+            j.taps().any(|t| {
+                matches!(t, ohl_line::Tap::Span(r) if r.section == section && points.contains(&r.point))
+            })
+        })
+        .collect();
     let mut commands: Vec<ohl_session::Command> = spacers
         .iter()
         .map(|x| ohl_session::Command::Delete {
@@ -643,6 +655,11 @@ pub(super) fn span_delete_action(
             id: x.id.clone(),
             confirm: true,
         })
+        .chain(tapped.iter().map(|j| ohl_session::Command::Delete {
+            kind: Kind::Jumper,
+            id: j.id.clone(),
+            confirm: true,
+        }))
         .collect();
     commands.push(ohl_session::Command::Put {
         kind: Kind::Section,
@@ -661,6 +678,16 @@ pub(super) fn span_delete_action(
         what.push(format!(
             "spacers {}",
             spacers
+                .iter()
+                .map(|x| x.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !tapped.is_empty() {
+        what.push(format!(
+            "the jumpers on them {}",
+            tapped
                 .iter()
                 .map(|x| x.id.as_str())
                 .collect::<Vec<_>>()

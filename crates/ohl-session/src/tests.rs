@@ -2084,6 +2084,61 @@ fn annotations_are_kept_apart_and_go_with_their_object() {
     assert!(s.line().structure("T3").is_some());
 }
 
+/// A viewer writes notes (owner, 2026-11-14): they add, change, delete,
+/// undo and redo annotations of their own; another user's annotation and
+/// the line stay closed to them.
+#[test]
+fn a_viewer_keeps_notes_of_their_own() {
+    use crate::annotations::{Anchor, Annotation, AnnotationKind};
+    let (_, mut s) = project("viewer-notes");
+    let note = |id: &str, author: &str, text: &str| Annotation {
+        id: id.into(),
+        kind: AnnotationKind::Note,
+        tool: String::new(),
+        anchors: vec![Anchor::Structure {
+            structure: "T1".into(),
+        }],
+        text: text.into(),
+        author: author.into(),
+        time: String::new(),
+        last: None,
+    };
+    let ids = |s: &Session| -> Vec<String> { s.annotations().into_iter().map(|x| x.id).collect() };
+    s.apply("vic", note("vic-1", "vic", "look here").put())
+        .unwrap();
+    s.apply("vic", note("vic-1", "vic", "look again").put())
+        .unwrap();
+    assert_eq!(s.annotations()[0].text, "look again");
+    s.undo("vic").unwrap();
+    assert_eq!(s.annotations()[0].text, "look here");
+    s.redo("vic").unwrap();
+    assert_eq!(s.annotations()[0].text, "look again");
+    // Another's: neither written in their name nor changed or deleted.
+    assert!(s.apply("vic", note("vic-2", "ben", "x").put()).is_err());
+    s.apply("ben", note("ben-1", "ben", "mine").put()).unwrap();
+    assert!(s.apply("vic", note("ben-1", "vic", "taken").put()).is_err());
+    assert!(s.apply("vic", crate::annotations::delete("ben-1")).is_err());
+    // The line: closed.
+    let mut moved = s.line().structure("T2").unwrap().clone();
+    moved.position[0] += 1.0;
+    assert!(
+        s.apply(
+            "vic",
+            Command::Put {
+                kind: Kind::Structure,
+                id: "T2".into(),
+                value: serde_json::to_value(&moved).unwrap(),
+                ord: None,
+            }
+        )
+        .is_err()
+    );
+    s.apply("vic", crate::annotations::delete("vic-1")).unwrap();
+    assert_eq!(ids(&s), vec!["ben-1"]);
+    s.undo("vic").unwrap();
+    assert_eq!(ids(&s), vec!["vic-1", "ben-1"]);
+}
+
 /// Local winds (roadmap O15): a factor set on a run of spans is one
 /// command (one undo), solves the section again, is kept in the project
 /// and in its export; 1 takes them back; refused out of range, changing

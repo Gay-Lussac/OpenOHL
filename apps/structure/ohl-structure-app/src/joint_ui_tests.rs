@@ -864,6 +864,7 @@ fn bolt_tools_keep_the_code() {
         h.state_mut().apply_joint_acts(vec![act.clone()], &details);
         h.run();
         assert!(h.state().joint_tools.offer.is_some());
+        crate::tool_window_tests::window_shot(&mut h, "New gauge line?", "gauge-line");
         // Not written before it is confirmed.
         let c = h
             .state()

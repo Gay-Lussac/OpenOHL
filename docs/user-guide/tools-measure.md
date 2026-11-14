@@ -5,7 +5,8 @@
 stations, clearances, angles — and **Follow and snap** measures to the
 LiDAR along an object, **Note** writes a note on it. The measuring tools
 change nothing in the line and need no editing rights; a measurement
-kept, or a note, is put into the project, apart from the line. This page explains each tool,
+kept, or a note, is put into the project, apart from the line — a viewer
+of the project keeps their own too. This page explains each tool,
 what it gives, and the **Measurements** panel where the results go. More
 on the measuring tools: [Measuring](desktop-app.md#measuring).
 
@@ -248,6 +249,9 @@ the project for everyone working on it.
   with what it is attached to**.
 - On a wire it is attached to the point of the wire clicked (its share
   of the span).
+- **A viewer writes notes too**: Note needs no editing rights. A viewer
+  keeps, deletes and undoes their own notes and measurements, never
+  another's, and nothing of the line.
 - The Edit tool on a note changes its text or deletes it; notes are
   listed under **Kept in the project** in the Measurements panel.
 - **Undo**: keeping a note is one step.

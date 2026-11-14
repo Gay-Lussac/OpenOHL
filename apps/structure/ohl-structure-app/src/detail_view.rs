@@ -204,15 +204,30 @@ impl StructureApp {
             .open(&mut open)
             .default_pos(ctx.content_rect().center() - egui::vec2(170.0, 60.0))
             .show(ctx, |ui| {
-                ui.label(format!(
-                    "Open {what} in the Detail view, its details on the left? Stay: its fields in \
-                     the Inspector only."
-                ));
+                crate::help::tool_intro(
+                    ui,
+                    &format!(
+                        "Open {what} in the Detail view, or stay with its fields in the Inspector."
+                    ),
+                    "The Detail view draws a tower's joint with its bolts and plates, its details \
+                     on the left, and has its own tools (Add bolt, Move bolt, Member end…). \
+                     Stay: the object stays selected, its fields in the Inspector. With the \
+                     Detail view open already, Edit shows it there without asking.",
+                    &crate::tools::Tool::Edit.guide(),
+                );
+                ui.separator();
                 ui.horizontal(|ui| {
-                    if ui.button("Open the Detail view").clicked() {
+                    if ui
+                        .button(egui::RichText::new("Open the Detail view").strong())
+                        .clicked()
+                    {
                         answer = Some(true);
                     }
-                    if ui.button("Stay").clicked() {
+                    if ui
+                        .button("Stay")
+                        .on_hover_text("Escape: its fields in the Inspector only")
+                        .clicked()
+                    {
                         answer = Some(false);
                     }
                 });

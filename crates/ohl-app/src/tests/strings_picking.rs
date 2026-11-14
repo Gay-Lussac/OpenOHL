@@ -1556,3 +1556,53 @@ fn spreads_are_picked_and_deleted_with_or_without_their_points() {
     let last = l.sections[0].spreads.last().unwrap();
     assert!(last.per_subconductor && last.load == 8.0, "{last:?}");
 }
+
+/// A span point deleted takes everything hanging on it (owner,
+/// 2026-11-14): the jumpers tapped on it go in the same step, and one
+/// undo brings the point and them back.
+#[test]
+fn a_span_point_deleted_takes_the_jumpers_tapped_on_it() {
+    let model = synthetic_project_with("tap-deleted", |l| {
+        let section = l.sections[0].id.clone();
+        l.sections[0].span_points.push(ohl_line::SpanPoint {
+            label: "TP".into(),
+            span: 0,
+            at: ohl_line::SpanPlace::at_fraction(0.05),
+            description: String::new(),
+            object: Some(ohl_line::LineObject::clamp(20.0)),
+        });
+        let mut tap = l.jumpers[0].clone();
+        tap.id = "J-tap".into();
+        tap.from = ohl_line::JumperEnd::tap(ohl_line::Tap::Span(ohl_line::SpanPointRef {
+            section,
+            point: "TP".into(),
+        }));
+        tap.to = ohl_line::JumperEnd::wire(l.sections[0].points[0].structure.clone(), 1);
+        (tap.sag, tap.length) = (None, Some(25.0));
+        l.jumpers.push(tap);
+    });
+    model.line.validate().unwrap();
+    let section = model.line.sections[0].id.clone();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let r = harness.state_mut().ready().unwrap();
+    assert!(r.delete_object(&Selection::SpanPoint {
+        section: section.clone(),
+        label: "TP".into(),
+    }));
+    let gone = |r: &crate::app::Ready| {
+        (
+            !r.model.line.sections[0]
+                .span_points
+                .iter()
+                .any(|p| p.label == "TP"),
+            !r.model.line.jumpers.iter().any(|j| j.id == "J-tap"),
+        )
+    };
+    assert_eq!(gone(r), (true, true), "{:?}", r.status);
+    r.model.line.validate().unwrap();
+    r.model.undo().unwrap();
+    assert_eq!(gone(r), (false, false));
+}

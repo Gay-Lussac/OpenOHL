@@ -629,10 +629,7 @@ pub fn explain(ui: &mut egui::Ui, short: &str, long: &str) {
 
 /// A small **(?)**: `long` on hover.
 pub fn question(ui: &mut egui::Ui, long: &str) -> egui::Response {
-    ui.add(
-        egui::Label::new(egui::RichText::new("(?)").small().strong()).sense(egui::Sense::hover()),
-    )
-    .on_hover_text(long)
+    ohl_ui::tool_window::question(ui, long)
 }
 
 /// The colours of a drawing in the theme: lines, faint lines, the thing

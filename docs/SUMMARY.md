@@ -134,6 +134,7 @@
   - [OHL-Design UI review (2026-10-27)](development/ui-review-2026-10-27.md)
 - [Measuring tools and annotations (proposal)](development/measuring-tools-spec.md)
 - [Check pages: design guidelines](development/check-pages.md)
+- [Tool pages: design guidelines](development/tool-pages.md)
 - [Structure detail levels in checks](development/structure-detail.md)
 - [Building structures, levels 1 to 3](development/structure-building.md)
 - [Structure application crates](development/structure-app.md)

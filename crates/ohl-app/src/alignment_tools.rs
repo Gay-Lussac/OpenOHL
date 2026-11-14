@@ -140,7 +140,7 @@ impl CoordDialog {
                 "Add the point",
                 point.is_ok(),
                 Some("Give all three coordinates"),
-                crate::tool_ui::Keys::None,
+                crate::tool_ui::Keys::Both,
             ) {
                 Some(crate::tool_ui::Pressed::Action) => {
                     if let Ok(p) = point {
@@ -149,6 +149,20 @@ impl CoordDialog {
                 }
                 Some(crate::tool_ui::Pressed::Cancel) => out = Some(Err(())),
                 None => {}
+            }
+            // Enter adds the point, Escape closes the window (nothing
+            // added; the alignment laid out stays) — owner, 2026-11-14.
+            let (enter, escape) = ui.input_mut(|i| {
+                use egui::{Key, Modifiers};
+                (
+                    i.consume_key(Modifiers::NONE, Key::Enter),
+                    i.consume_key(Modifiers::NONE, Key::Escape),
+                )
+            });
+            if escape {
+                out = Some(Err(()));
+            } else if enter && let Ok(p) = point {
+                out = Some(Ok(p));
             }
         });
         if !open {
@@ -298,10 +312,21 @@ impl RouteChoice {
                     } else {
                         "Create the route and the alignment"
                     };
+                    // Enter makes it (a field focused too), Escape goes
+                    // back to the points.
+                    let (enter, escape) = ui.input_mut(|i| {
+                        use egui::{Key, Modifiers};
+                        (
+                            i.consume_key(Modifiers::NONE, Key::Enter),
+                            i.consume_key(Modifiers::NONE, Key::Escape),
+                        )
+                    });
                     if ui
                         .add_enabled(ok, egui::Button::new(egui::RichText::new(label).strong()))
+                        .on_hover_text("Enter")
                         .on_disabled_hover_text("Choose its route, or name a new one")
                         .clicked()
+                        || (enter && ok)
                     {
                         out = Some(if new.is_empty() {
                             RouteChoiceAction::Make {
@@ -317,8 +342,9 @@ impl RouteChoice {
                     }
                     if ui
                         .button("Back")
-                        .on_hover_text("Go on laying out its points")
+                        .on_hover_text("Escape: go on laying out its points")
                         .clicked()
+                        || escape
                     {
                         out = Some(RouteChoiceAction::Back);
                     }

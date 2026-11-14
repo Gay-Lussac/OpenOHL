@@ -60,6 +60,12 @@ impl Model {
         self.editing.as_ref().map(|_| ()).map_err(Clone::clone)
     }
 
+    /// Whether undo and redo may be asked: an editor's, or a viewer's of
+    /// their own notes and kept measurements (the session decides).
+    pub fn may_undo(&self) -> bool {
+        self.editing.is_ok() || self.viewer_session.is_some() || self.remote.is_some()
+    }
+
     /// The session's line, structure types resolved.
     fn session_line(&self) -> Result<Line, EditError> {
         // A read-only replica follows the server too.
@@ -182,13 +188,6 @@ impl Model {
         ))
     }
 
-    fn user(&self) -> Result<String, EditError> {
-        self.editing
-            .as_ref()
-            .map(|e| e.user.clone())
-            .map_err(|why| EditError::ReadOnly(why.clone()))
-    }
-
     /// Applies a command as the editing user.
     pub fn apply(&mut self, what: &str, command: Command) -> Result<String, EditError> {
         // (A drag ends with a command, done or refused.)
@@ -197,14 +196,35 @@ impl Model {
             return self.remote_request(what, ohl_server::Op::Do { command });
         }
         let started = Instant::now();
-        let user = self.user()?;
-        let applied = self
-            .editing
-            .as_mut()
-            .map_err(|why| EditError::ReadOnly(why.clone()))?
-            .session
-            .apply(&user, command)?;
+        let viewer = ohl_session::annotations::only(&command);
+        let (session, user) = self.session_as(viewer)?;
+        let applied = session.apply(&user, command)?;
         self.sync(what, applied, started)
+    }
+
+    /// The session edited and the user editing it — for `viewer` work
+    /// (notes and kept measurements, undo and redo), a viewer's session
+    /// too: the session lets a viewer change their own annotations only
+    /// (owner, 2026-11-14).
+    fn session_as(
+        &mut self,
+        viewer: bool,
+    ) -> Result<(&mut ohl_session::Session, String), EditError> {
+        let name = self.user_name();
+        match (&mut self.editing, &mut self.viewer_session) {
+            (Ok(e), _) => Ok((&mut e.session, e.user.clone())),
+            (Err(_), Some(s)) if viewer => Ok((s, name)),
+            (Err(why), _) => Err(EditError::ReadOnly(why.clone())),
+        }
+    }
+
+    /// A viewer's undo or redo refused: read-only, with the session's
+    /// reason (nothing of theirs to take back, or not a note).
+    fn viewer_refusal(&self, e: ohl_session::SessionError) -> EditError {
+        match &self.editing {
+            Err(why) => EditError::ReadOnly(format!("{why}: {e}")),
+            Ok(_) => e.into(),
+        }
     }
 
     /// Undoes the user's last command.
@@ -213,13 +233,9 @@ impl Model {
             return self.remote_request("undo", ohl_server::Op::Undo);
         }
         let started = Instant::now();
-        let user = self.user()?;
-        let applied = self
-            .editing
-            .as_mut()
-            .map_err(|why| EditError::ReadOnly(why.clone()))?
-            .session
-            .undo(&user)?;
+        let (session, user) = self.session_as(true)?;
+        let applied = session.undo(&user);
+        let applied = applied.map_err(|e| self.viewer_refusal(e))?;
         self.sync("undo", applied, started)
     }
 
@@ -229,13 +245,9 @@ impl Model {
             return self.remote_request("redo", ohl_server::Op::Redo);
         }
         let started = Instant::now();
-        let user = self.user()?;
-        let applied = self
-            .editing
-            .as_mut()
-            .map_err(|why| EditError::ReadOnly(why.clone()))?
-            .session
-            .redo(&user)?;
+        let (session, user) = self.session_as(true)?;
+        let applied = session.redo(&user);
+        let applied = applied.map_err(|e| self.viewer_refusal(e))?;
         self.sync("redo", applied, started)
     }
 

@@ -7,8 +7,10 @@
 //! measurements, notes and leaders, each a project object of kind
 //! [`Kind::Annotation`] — **stored apart from the line** (like a check
 //! report: no part of the line, its hash or its checks' state; not in the
-//! line file), **shared by everyone** (each carries its author; every
-//! user may add and change them, as reports), and **deleted with the
+//! line file), **shared by everyone** (each carries its author; a
+//! designer or admin may add and change any, as reports; a viewer adds,
+//! changes, deletes and undoes only their own — owner 2026-11-14), and
+//! **deleted with the
 //! object it is attached to**: a command that leaves an anchor without
 //! its object deletes the annotation in the same log entry
 //! (`orphaned`), so one undo brings both back.
@@ -195,6 +197,51 @@ pub fn delete(id: &str) -> Command {
         kind: Kind::Annotation,
         id: id.to_owned(),
         confirm: false,
+    }
+}
+
+/// Whether `command` only puts or deletes annotations (a batch of them
+/// too).
+pub fn only(command: &Command) -> bool {
+    match command {
+        Command::Put {
+            kind: Kind::Annotation,
+            ..
+        }
+        | Command::Delete {
+            kind: Kind::Annotation,
+            ..
+        } => true,
+        Command::Batch { commands } => !commands.is_empty() && commands.iter().all(only),
+        _ => false,
+    }
+}
+
+/// Whether `command` only adds, changes or deletes annotations `user`
+/// wrote — what a viewer may do (owner, 2026-11-14). `existing`: the
+/// annotation kept now under an id.
+pub(crate) fn own_only<'a>(
+    command: &Command,
+    user: &str,
+    existing: &dyn Fn(&str) -> Option<&'a Value>,
+) -> bool {
+    let by_user = |v: &Value| v.get("author").and_then(Value::as_str) == Some(user);
+    match command {
+        Command::Put {
+            kind: Kind::Annotation,
+            id,
+            value,
+            ..
+        } => by_user(value) && existing(id).is_none_or(by_user),
+        Command::Delete {
+            kind: Kind::Annotation,
+            id,
+            ..
+        } => existing(id).is_some_and(by_user),
+        Command::Batch { commands } => {
+            !commands.is_empty() && commands.iter().all(|c| own_only(c, user, existing))
+        }
+        _ => false,
     }
 }
 

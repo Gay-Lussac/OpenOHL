@@ -155,6 +155,30 @@ pub fn open(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens the manual's `page` (e.g. `user-guide/structure-tools`) at
+/// `anchor`: the built book's page, else its Markdown source.
+pub fn open_section(page: &str, anchor: &str) -> Result<(), String> {
+    for b in ["target/book", "book"] {
+        if let Some(p) = shipped(&format!("{b}/{page}.html")) {
+            let url = format!("file://{}#{anchor}", p.display());
+            return open(Path::new(&url));
+        }
+    }
+    let p = shipped(&format!("docs/{page}.md"))
+        .ok_or_else(|| format!("the manual is not on this computer ({page})"))?;
+    open(&p)
+}
+
+/// The tools' page of the manual (OHL-Structure's tools, the Detail
+/// view's).
+pub const TOOLS_PAGE: &str = "user-guide/structure-tools";
+
+/// A tool window's top ([`ohl_ui::tool_window::intro`]): `what` it does,
+/// `more` behind a (?), User guide ↗ opening the tools' page at `anchor`.
+pub fn tool_intro(ui: &mut egui::Ui, what: &str, more: &str, anchor: &str) {
+    ohl_ui::tool_window::intro(ui, what, more, anchor, || open_section(TOOLS_PAGE, anchor));
+}
+
 /// The Help menu's entries for the manual: one per [`Page`] (greyed out,
 /// with where it looked, when the manual is not on this computer). What
 /// went wrong goes to `status`.

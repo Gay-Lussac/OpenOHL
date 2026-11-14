@@ -10,6 +10,36 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Four tool behaviours settled, OHL-Structure's tool windows, the tool
+pages' guidelines** (owner, answering the open points of the tool window
+rework: "1) close it 2) same it should not use tools 3) not an editing
+tool. Viewer can use it 4) removes anything hanging of it 5) go ahead
+with structure next. Also write this in the design as for the checks
+pages, how the tool pages should be"):
+
+1. **Escape on the Point coordinates window closes it** (the point left
+   out, the alignment laid out kept); Enter adds the point. The route
+   window takes Enter (make it) and Escape (back to the points). While
+   either is open, the alignment's own keys wait.
+2. **The plan and the profile use no tool**: as built since 2026-11-01 (a
+   left-click selects, whatever tool is held); the code's stale comments
+   corrected.
+3. **Note is not an editing tool; a viewer uses it**: the session lets a
+   viewer put, change, delete, undo and redo annotations whose author is
+   them, nothing else (`Session::apply`, `undo`, `redo`;
+   `annotations::own_only`) — measurements kept by a viewer too.
+4. **A span point deleted takes everything hanging on it**: the spacers
+   clamped on it and, new, the jumpers tapped on it (with those hanging
+   on them), one undo step. Before, such a deletion was refused (a tap
+   left on nothing).
+5. **OHL-Structure's tool windows** (the inventory, Delete, Edit's *Open
+   in the Detail view?*, Add bolt's *New gauge line?*, Continuous
+   members) have the same shape, Escape closes them first; its strips a
+   User guide button; the Detail view's tools got sections of their own
+   on its tools page. The shared parts moved to `ohl_ui::tool_window`.
+6. **[Tool pages: design guidelines](tool-pages.md)**: how a tool window
+   and a tool's section of the user guide are built.
+
 **Tool windows made friendlier, tool pages in the book, the tutorial
 with screenshots** (owner: "improve the tutorial with screenshots and
 create the tool pages in the book to make it easier to understand what

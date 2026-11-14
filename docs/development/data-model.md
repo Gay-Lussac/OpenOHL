@@ -3250,7 +3250,11 @@ project line, **apart from the line** like a report — not in
 compare (`check_state` leaves them out), kept by `replace_line`, not
 limited by restricted edit grants; **shared** (every user's, each with
 its author); put and deleted by the ordinary `put` / `delete` commands
-(logged, undoable). **Deleted with what they are attached to**: a command
+(logged, undoable). **Who** (2026-11-14): a designer or admin puts and
+deletes any; a **viewer** only those whose `author` is them — a command
+of nothing but such puts and deletes (`annotations::own_only`), and
+undo or redo of a log entry that changed annotations alone
+(`Session::apply`, `undo`, `redo`; on a server the same). **Deleted with what they are attached to**: a command
 that leaves an anchor without its object (a structure, section, span,
 jumper, wire point, span point or alignment point deleted) deletes the
 annotation in the same log entry, so one undo brings both back.

@@ -88,8 +88,10 @@ the survey and LiDAR points shown can be clicked. See [Clicks and the
 object's menu](desktop-app.md#clicks-and-the-objects-menu) for the mouse
 in each control scheme.
 
-**Editing rights.** Select, Go to structure and the measuring tools only
-look: they work in a read-only project too. The other tools change the
+**Editing rights.** Select, Go to structure, the measuring tools and
+Note only look or annotate: they work in a read-only project too — a
+viewer keeps measurements and notes of their own (and undoes them), but
+changes nothing of the line. The other tools change the
 project and need editing rights (a project opened by a user with the
 designer or admin role). Held without them, a click says *read-only* in
 the status bar, with the reason.
@@ -111,8 +113,9 @@ Most tools open a window. Every tool window has the same shape:
 - **Enter** applies, where the window takes it (the action's hover says
   "Enter"); a deletion's confirmation does not take Enter. **Escape**
   cancels where the window takes it (Cancel's hover says "Escape"):
-  nothing changes. The Point coordinates window takes neither key: click
-  its buttons.
+  nothing changes. While a tool's window is open, these keys are the
+  window's: Escape on the Point coordinates window closes it, the points
+  of the alignment laid out so far kept.
 - A window opened from the 3D view frees a captured mouse and opens next
   to the click (in first person, at the crosshair). It can be dragged
   anywhere.

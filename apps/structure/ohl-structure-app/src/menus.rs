@@ -1035,7 +1035,15 @@ impl StructureApp {
             .open(&mut open)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                ui.label("Delete, with everything that goes with it:");
+                crate::help::tool_intro(
+                    ui,
+                    "Delete what was clicked, with everything that cannot stay without it.",
+                    "A joint takes its members and the points on it; a point takes its \
+                     strings; with a symmetry set, the mirror images go too. It is one change \
+                     of the structure: Edit › Undo (⌘Z) brings it all back.",
+                    &crate::tools::Tool::Delete.guide(),
+                );
+                ui.strong("Deleted:");
                 egui::ScrollArea::vertical()
                     .max_height(160.0)
                     .id_salt("removal")
@@ -1044,8 +1052,9 @@ impl StructureApp {
                             ui.label(l);
                         }
                     });
-                ui.horizontal(|ui| {
-                    if ui.button("Delete").clicked() {
+                use ohl_ui::tool_window::{Keys, Pressed, buttons};
+                match buttons(ui, "Delete", true, None, Keys::Escape) {
+                    Some(Pressed::Action) => {
                         if let Some(f) = &mut self.file {
                             f.edit("delete", |doc, _| ohl_structure_edit::remove(doc, &r));
                             self.selected.clear();
@@ -1056,10 +1065,9 @@ impl StructureApp {
                         }
                         done = true;
                     }
-                    if ui.button("Cancel").clicked() {
-                        done = true;
-                    }
-                });
+                    Some(Pressed::Cancel) => done = true,
+                    None => {}
+                }
             });
         if !open || done {
             self.confirm = None;

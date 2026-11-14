@@ -1908,9 +1908,10 @@ impl Picker<'_> {
     fn pick_at(&self, pos: egui::Pos2) -> (Selection, Option<egui::Pos2>) {
         let (d, snaps, radius) = (self.d, self.snaps, self.radius);
         let to_screen = self.fr.to_screen();
-        // Picking: structures by station, wires by nearest point. Select
-        // held, a left-click selects; another tool, a left-click uses it
-        // and a right-click selects ([`crate::controls::click_buttons`]).
+        // Picking: structures by station, wires by nearest point. A
+        // left-click selects, whatever tool is held; a right-click selects
+        // and opens the object's menu (the profile uses no tool, owner
+        // 2026-11-01 and 2026-11-14; [`crate::controls::click_buttons`]).
         let mut best: Option<(f32, Selection, egui::Pos2)> = None;
         let mut consider = |d: f32, s: Selection, at: egui::Pos2| {
             let on = s.kind().is_some_and(|k| snaps.on(k));

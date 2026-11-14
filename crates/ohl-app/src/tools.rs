@@ -279,7 +279,8 @@ impl Tool {
 
     /// Whether it changes the model (needs editing rights).
     pub fn edits(self) -> bool {
-        !matches!(self, Tool::Select | Tool::GoTo) && !self.measuring()
+        // A note is kept by a viewer too (owner, 2026-11-14).
+        !matches!(self, Tool::Select | Tool::GoTo | Tool::Note) && !self.measuring()
     }
 
     /// A measuring tool (the views find what is under the cursor).

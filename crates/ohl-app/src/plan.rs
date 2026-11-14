@@ -535,10 +535,12 @@ impl PlanView {
         let Frame { model, case, .. } = *fr;
         let to_screen = fr.to_screen();
         let use_at = |pos: egui::Pos2| find_use(fr, pos);
-        // The button whose click selects, the one whose click uses the
-        // held tool ([`crate::controls::click_buttons`]).
+        // The button whose click selects, the one whose click "uses" a
+        // tool ([`crate::controls::click_buttons`]; the plan is given
+        // Select's: it uses no tool — owner 2026-11-01 and 2026-11-14 —
+        // its right-click selects and opens the object's menu).
         let (select_button, tool_button) = buttons;
-        // A click of the tool button uses the held tool on what is there.
+        // A click of that button: what is there, for the menu.
         let used = if response.clicked_by(tool_button)
             && let Some(pos) = response.interact_pointer_pos()
         {

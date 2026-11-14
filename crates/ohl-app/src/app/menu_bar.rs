@@ -274,9 +274,12 @@ fn item(ui: &mut egui::Ui, c: Command, out: &mut Vec<Command>) {
 /// Edit: undo and redo, the selection, Snap and Tools.
 fn edit_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
     let editable = r.model.can_edit().is_ok();
-    ui.add_enabled_ui(editable, |ui| {
+    // A viewer undoes their own notes and kept measurements.
+    ui.add_enabled_ui(r.model.may_undo(), |ui| {
         item(ui, Command::Undo, out);
         item(ui, Command::Redo, out);
+    });
+    ui.add_enabled_ui(editable, |ui| {
         item(ui, Command::DeleteSelected, out);
     });
     item(ui, Command::ClearSelection, out);
@@ -1025,10 +1028,10 @@ pub(super) fn run_command(
     use crate::menu::Command;
     let editable = r.model.can_edit().is_ok();
     match c {
-        Command::Undo if editable => {
+        Command::Undo if r.model.may_undo() => {
             r.perform(Action::Undo);
         }
-        Command::Redo if editable => {
+        Command::Redo if r.model.may_undo() => {
             r.perform(Action::Redo);
         }
         Command::Undo | Command::Redo => {}

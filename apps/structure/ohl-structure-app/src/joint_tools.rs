@@ -174,6 +174,12 @@ pub enum Act {
 /// thickness).
 pub const COVER_THICKNESS: f64 = 0.008;
 
+/// The manual's section the Continuous members window opens (page,
+/// anchor): the joint details, where Design › Continuous members… is
+/// explained.
+pub const CONTINUOUS_PAGE: (&str, &str) = ("user-guide/structure-app", CONTINUOUS_ANCHOR);
+const CONTINUOUS_ANCHOR: &str = "joint-details-towers";
+
 /// A new gauge line offered by the bolt tools, waiting for the user.
 pub type Offer = Act;
 
@@ -401,21 +407,26 @@ impl StructureApp {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
-                ui.label(format!(
-                    "{member} at {joint}: the bolt has no room on the gauge lines near where \
-                     it was put. A new gauge line at {:.0} mm from the heel keeps the code's \
-                     distances:",
-                    gauge * 1000.0
-                ));
+                crate::help::tool_intro(
+                    ui,
+                    &format!(
+                        "No room for the bolt on {member}'s gauge lines at {joint}: add a new \
+                         gauge line at {:.0} mm from the heel, with the bolt on it?",
+                        gauge * 1000.0
+                    ),
+                    "The bolt is placed where the design code's end distance, spacing and edge \
+                     distance hold. The gauge lines near where it was put have no room, so the \
+                     nearest gauge that keeps them is offered (up to three lines). Nothing is \
+                     written before you add it; it is one undo step.",
+                    &crate::detail_tools::DetailTool::AddBolt.guide(),
+                );
                 ui.label(egui::RichText::new(&words).small());
-                ui.horizontal(|ui| {
-                    if ui.button("Add the line and the bolt").clicked() {
-                        answer = Some(true);
-                    }
-                    if ui.button("Cancel").clicked() {
-                        answer = Some(false);
-                    }
-                });
+                use ohl_ui::tool_window::{Keys, Pressed, buttons};
+                match buttons(ui, "Add the line and the bolt", true, None, Keys::Escape) {
+                    Some(Pressed::Action) => answer = Some(true),
+                    Some(Pressed::Cancel) => answer = Some(false),
+                    None => {}
+                }
             });
         match answer {
             Some(true) => {
@@ -2676,23 +2687,29 @@ impl StructureApp {
     }
 
     /// The Continuous members window ([`Self::open_continuous_window`]).
+    /// Its section of the manual: [`CONTINUOUS_PAGE`].
     pub(crate) fn continuous_window(&mut self, ctx: &egui::Context) {
         let Some(mut list) = self.joint_tools.continuous.take() else {
             return;
         };
         let mut open = true;
         let mut apply = false;
+        let mut cancel = false;
         egui::Window::new("Continuous members")
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .default_width(420.0)
             .show(ctx, |ui| {
-                ui.label(
+                ohl_ui::tool_window::intro(
+                    ui,
+                    "Tick the pairs of members that run on through their joint as one part.",
                     "Members in line (within 1°) of the same section, roll and reference at a \
                      joint can run on through it as one part: no cut, no shift, no bolts there; \
                      the analysis joins them rigidly; one solid drawn; one part in the lists. \
-                     Ticked: one part. Nothing is written before Apply.",
+                     Nothing is written before Apply (one undo step).",
+                    CONTINUOUS_ANCHOR,
+                    || crate::help::open_section(CONTINUOUS_PAGE.0, CONTINUOUS_PAGE.1),
                 );
                 if list.is_empty() {
                     ui.label(egui::RichText::new("No pair in line of the same section.").weak());
@@ -2719,13 +2736,17 @@ impl StructureApp {
                         }
                     });
                 let changes = list.iter().filter(|x| x.3 != x.4).count();
-                if ui
-                    .add_enabled(changes > 0, egui::Button::new(format!("Apply ({changes})")))
-                    .on_hover_text("The ticks written on both ends of each pair: one undo step")
-                    .on_disabled_hover_text("Nothing changed")
-                    .clicked()
-                {
-                    apply = true;
+                use ohl_ui::tool_window::{Keys, Pressed, buttons};
+                match buttons(
+                    ui,
+                    &format!("Apply ({changes})"),
+                    changes > 0,
+                    Some("Nothing changed"),
+                    Keys::Escape,
+                ) {
+                    Some(Pressed::Action) => apply = true,
+                    Some(Pressed::Cancel) => cancel = true,
+                    None => {}
                 }
             });
         if apply {
@@ -2741,7 +2762,7 @@ impl StructureApp {
             }
             return;
         }
-        if open {
+        if open && !cancel {
             self.joint_tools.continuous = Some(list);
         }
     }

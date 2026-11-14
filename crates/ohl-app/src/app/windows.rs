@@ -253,7 +253,12 @@ pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         }
         r.status = Some(("drag cancelled: nothing changed".into(), false));
     }
-    let windows = r.editor.is_some() || r.goto.is_some() || r.move_dialog.is_some();
+    // (The alignment tools' windows take Enter and Escape themselves.)
+    let windows = r.editor.is_some()
+        || r.goto.is_some()
+        || r.move_dialog.is_some()
+        || r.coord_dialog.is_some()
+        || r.route_choice.is_some();
     if !r.chain.is_empty()
         && !windows
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
@@ -361,10 +366,11 @@ pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         if save {
             r.save_all();
         }
-        if undo && editable {
+        // (A viewer's undo: their own notes and kept measurements.)
+        if undo && r.model.may_undo() {
             r.perform(crate::edit::Action::Undo);
         }
-        if redo && editable {
+        if redo && r.model.may_undo() {
             r.perform(crate::edit::Action::Redo);
         }
         if move_key {
