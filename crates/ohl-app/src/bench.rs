@@ -1225,6 +1225,14 @@ fn measuring_benchmark() {
         let max = times.iter().copied().fold(0.0, f64::max);
         (median(&mut times), max)
     };
+    // The snap marker off (View > Show the snap point), then on: the
+    // pick it runs at every pointer move (owner, 2026-11-14: slower since).
+    let mut marker = ohl_ui::snap_marker::Settings::get(&h.ctx);
+    marker.show = false;
+    marker.set(&h.ctx);
+    let (plain, plain_max) = run(&mut h);
+    marker.show = true;
+    marker.set(&h.ctx);
     let (select, select_max) = run(&mut h);
     {
         let r = h.state_mut().ready().unwrap();
@@ -1238,8 +1246,9 @@ fn measuring_benchmark() {
     let (measuring, measuring_max) = run(&mut h);
     let r = h.state_mut().ready().unwrap();
     println!(
-        "measuring: frames with Select {select:.1} ms (slowest {select_max:.1}), with Distance \
-         held {measuring:.1} ms (slowest {measuring_max:.1}); live value {}",
+        "measuring: frames with Select, no snap marker {plain:.1} ms (slowest {plain_max:.1}), \
+         with the marker {select:.1} ms (slowest {select_max:.1}), with Distance held \
+         {measuring:.1} ms (slowest {measuring_max:.1}); live value {}",
         r.measuring
             .live
             .as_ref()

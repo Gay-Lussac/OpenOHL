@@ -1341,15 +1341,19 @@ pub fn pick_shown_at(
     lidar: &LidarShown<'_>,
 ) -> (Selection, Option<usize>, Option<[f64; 2]>) {
     let project = |p: [f64; 3]| project3(p).map(|q| q.0);
-    let mut best = pick_scored(&candidates(model, case, snaps), at, radius, &project);
+    // What can be clicked, kept while the line, the cases drawn and the
+    // snaps stay the same (owner, 2026-11-14: made again at every pointer
+    // move, the snap marker made the 3D view of a long line lag).
+    let set = pick_set(model, case, snaps);
+    let mut best = set
+        .best(&set.here, at, radius, &project)
+        .map(|(score, r, on)| (score, r.sel.clone(), on));
     let mut picked_case = None;
-    let others = other_case_candidates(model, case, snaps);
-    let pieces: Vec<Candidate> = others.iter().map(|x| x.0.clone()).collect();
-    if let Some((score, i, on)) = pick_scored_index(&pieces, at, radius, &project)
+    if let Some((score, r, on)) = set.best(&set.others, at, radius, &project)
         && best.as_ref().is_none_or(|b| score < b.0)
     {
-        best = Some((score, pieces[i].0.clone(), on));
-        picked_case = Some(others[i].1);
+        best = Some((score, r.sel.clone(), on));
+        picked_case = Some(r.case);
     }
     // Inside a pole's outline on the screen (a pole at level 2 or 3 drawn
     // as a solid): its structure, when no line is near.
@@ -1405,33 +1409,200 @@ pub fn nearest_on_segment(at: [f64; 2], a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
     [a[0] + u * ab[0], a[1] + u * ab[1]]
 }
 
-/// The candidate nearest to `at` within `radius` (as [`pick_scored`]):
-/// its score and index.
-fn pick_scored_index(
-    candidates: &[Candidate],
+/// How much a candidate of `s` is preferred, px taken off its distance:
+/// points over the lines they sit on, structures over wires ([`Snap`]
+/// priorities).
+fn bonus(s: &Selection) -> f64 {
+    match s {
+        // A string's body under the structure it hangs on (where it
+        // crosses the mast or an arm) and the points at its ends, over
+        // the wires.
+        Selection::String { .. } => 2.5,
+        // Points on the wire over the wire; a spacer over both wires it
+        // joins.
+        Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
+        // A spread over the wire it lies on, under its points.
+        Selection::Spread { .. } => 2.0,
+        Selection::Spacer(_) => 1.0,
+        _ => s.kind().map_or(0.0, Snap::priority),
+    }
+}
+
+/// At most this many segments in one [`PickRun`]: boxes small enough to
+/// leave most of a long line out of a pick.
+const RUN_LEN: usize = 32;
+
+/// Consecutive segments of one object (in one weather case) and their
+/// box: the pick looks at them only when the box, as projected, comes
+/// within the pick radius of the pointer.
+#[derive(Debug)]
+pub struct PickRun {
+    sel: Selection,
+    case: usize,
+    lo: [f64; 3],
+    hi: [f64; 3],
+    segs: std::ops::Range<usize>,
+}
+
+/// What can be clicked of a model ([`candidates`], and the copies drawn in
+/// other cases), in runs with their boxes ([`pick_set`]).
+#[derive(Debug, Default)]
+pub struct PickSet {
+    segs: Vec<([f64; 3], [f64; 3])>,
+    /// The case picked in ([`candidates`]).
+    here: Vec<PickRun>,
+    /// The copies drawn in the other cases ([`other_case_candidates`]).
+    others: Vec<PickRun>,
+}
+
+/// What [`PickSet`] is made from besides the line's objects: the line's
+/// version, the case, the snaps, the cases drawn (with their solutions'
+/// serials), each section's case, the structure bodies and the ground.
+#[derive(Debug, PartialEq)]
+pub struct PickKey {
+    line: u64,
+    case: usize,
+    snaps: BTreeSet<Snap>,
+    drawn: Vec<(usize, (u64, u64))>,
+    sections: Vec<usize>,
+    bodies: usize,
+    ground: usize,
+}
+
+/// What can be clicked in `case` with `snaps`, made again only when
+/// what it is made from changed ([`PickKey`]).
+pub fn pick_set(model: &Model, case: usize, snaps: &Snaps) -> std::sync::Arc<PickSet> {
+    let mut drawn: BTreeSet<usize> = model.shown(case).into_iter().collect();
+    let mut sections = Vec::with_capacity(model.line.sections.len());
+    for s in &model.line.sections {
+        let cases = model.section_cases(&s.id, case);
+        sections.push(cases.first().copied().unwrap_or(case));
+        drawn.extend(cases);
+    }
+    drawn.retain(|k| *k < model.cases.len());
+    let key = PickKey {
+        line: model.line_version,
+        case,
+        snaps: snaps.0.clone(),
+        drawn: drawn
+            .into_iter()
+            .map(|k| (k, model.drawn_serials(k)))
+            .collect(),
+        sections,
+        bodies: std::sync::Arc::as_ptr(&model.bodies) as usize,
+        ground: model
+            .ground
+            .as_ref()
+            .map_or(0, |g| std::sync::Arc::as_ptr(g) as usize),
+    };
+    model.kept.pick_set.get(key, || {
+        #[cfg(test)]
+        PICK_SETS_MADE.with(|n| n.set(n.get() + 1));
+        let mut set = PickSet::default();
+        set.here = set.runs(
+            candidates(model, case, snaps)
+                .into_iter()
+                .map(|c| (c, case)),
+        );
+        set.others = set.runs(other_case_candidates(model, case, snaps).into_iter());
+        std::sync::Arc::new(set)
+    })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread made a [`PickSet`].
+    pub(crate) static PICK_SETS_MADE: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+impl PickSet {
+    /// `list` in runs (its segments added to the set's).
+    fn runs(&mut self, list: impl Iterator<Item = (Candidate, usize)>) -> Vec<PickRun> {
+        let mut out: Vec<PickRun> = Vec::new();
+        for ((sel, a, b), case) in list {
+            let k = self.segs.len();
+            self.segs.push((a, b));
+            if let Some(r) = out.last_mut()
+                && r.case == case
+                && r.segs.len() < RUN_LEN
+                && r.sel == sel
+            {
+                r.segs.end = k + 1;
+                for i in 0..3 {
+                    r.lo[i] = r.lo[i].min(a[i]).min(b[i]);
+                    r.hi[i] = r.hi[i].max(a[i]).max(b[i]);
+                }
+                continue;
+            }
+            out.push(PickRun {
+                sel,
+                case,
+                lo: [0, 1, 2].map(|i| a[i].min(b[i])),
+                hi: [0, 1, 2].map(|i| a[i].max(b[i])),
+                segs: k..k + 1,
+            });
+        }
+        out
+    }
+
+    /// The candidate of `runs` nearest to `at` within `radius` (distance
+    /// less [`bonus`]; the first of equals): its score, its run, the
+    /// point it snapped to. A run whose box, all in front of the camera,
+    /// projects farther than `radius` from `at` is left out: its segments
+    /// project inside that box's outline.
+    fn best<'a>(
+        &self,
+        runs: &'a [PickRun],
+        at: [f64; 2],
+        radius: f64,
+        project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
+    ) -> Option<(f64, &'a PickRun, [f64; 2])> {
+        let mut best: Option<(f64, &PickRun, [f64; 2])> = None;
+        for r in runs {
+            if box_far(r.lo, r.hi, at, radius, project) {
+                continue;
+            }
+            let bonus = bonus(&r.sel);
+            for &(a, b) in &self.segs[r.segs.clone()] {
+                let (Some(pa), Some(pb)) = (project(a), project(b)) else {
+                    continue;
+                };
+                let d = ohl_core::geometry::distance_to_segment(at, pa, pb);
+                if d <= radius && best.as_ref().is_none_or(|x| d - bonus < x.0) {
+                    best = Some((d - bonus, r, nearest_on_segment(at, pa, pb)));
+                }
+            }
+        }
+        best
+    }
+}
+
+/// Whether the box `lo`–`hi`, projected, lies farther than `radius` from
+/// `at` on every side (false when a corner does not project: looked at).
+fn box_far(
+    lo: [f64; 3],
+    hi: [f64; 3],
     at: [f64; 2],
     radius: f64,
     project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
-) -> Option<(f64, usize, [f64; 2])> {
-    candidates
-        .iter()
-        .enumerate()
-        .filter_map(|(i, (s, a, b))| {
-            let (pa, pb) = (project(*a)?, project(*b)?);
-            let d = ohl_core::geometry::distance_to_segment(at, pa, pb);
-            let bonus = match s {
-                Selection::String { .. } => 2.5,
-                // Points on the wire over the wire; a spacer over both
-                // wires it joins.
-                Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
-                // A spread over the wire it lies on, under its points.
-                Selection::Spread { .. } => 2.0,
-                Selection::Spacer(_) => 1.0,
-                _ => s.kind().map_or(0.0, Snap::priority),
-            };
-            (d <= radius).then(|| (d - bonus, i, nearest_on_segment(at, pa, pb)))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0))
+) -> bool {
+    let (mut a, mut b) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for k in 0..8 {
+        let p = [
+            if k & 1 == 0 { lo[0] } else { hi[0] },
+            if k & 2 == 0 { lo[1] } else { hi[1] },
+            if k & 4 == 0 { lo[2] } else { hi[2] },
+        ];
+        let Some(q) = project(p) else {
+            return false;
+        };
+        for i in 0..2 {
+            a[i] = a[i].min(q[i]);
+            b[i] = b[i].max(q[i]);
+        }
+    }
+    (0..2).any(|i| at[i] < a[i] - radius || at[i] > b[i] + radius)
 }
 
 /// The candidate nearest to `at` on screen within `radius` pixels, given a
@@ -1445,38 +1616,10 @@ pub fn pick(
     radius: f64,
     project: impl Fn([f64; 3]) -> Option<[f64; 2]>,
 ) -> Selection {
-    pick_scored(candidates, at, radius, &project).map_or(Selection::None, |b| b.1)
-}
-
-/// The best candidate with its score (distance less priority).
-fn pick_scored(
-    candidates: &[Candidate],
-    at: [f64; 2],
-    radius: f64,
-    project: &impl Fn([f64; 3]) -> Option<[f64; 2]>,
-) -> Option<(f64, Selection, [f64; 2])> {
-    candidates
-        .iter()
-        .filter_map(|(s, a, b)| {
-            let (pa, pb) = (project(*a)?, project(*b)?);
-            let d = ohl_core::geometry::distance_to_segment(at, pa, pb);
-            // A string's body under the structure it hangs on (where it
-            // crosses the mast or an arm) and the points at its ends, over
-            // the wires.
-            let bonus = match s {
-                Selection::String { .. } => 2.5,
-                // Points on the wire over the wire; a spacer over both
-                // wires it joins.
-                Selection::SpanPoint { .. } | Selection::JumperPoint { .. } => 7.0,
-                // A spread over the wire it lies on, under its points.
-                Selection::Spread { .. } => 2.0,
-                Selection::Spacer(_) => 1.0,
-                _ => s.kind().map_or(0.0, Snap::priority),
-            };
-            (d <= radius).then(|| (d - bonus, s, nearest_on_segment(at, pa, pb)))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(d, s, on)| (d, s.clone(), on))
+    let mut set = PickSet::default();
+    let here = set.runs(candidates.iter().map(|c| (c.clone(), 0)));
+    set.best(&here, at, radius, &project)
+        .map_or(Selection::None, |(_, r, _)| r.sel.clone())
 }
 
 #[cfg(test)]

@@ -466,7 +466,9 @@ it is for now (owner, 2026-10-24: unless a fix is fast), said in the
 `cargo test --release -p ohl-app measuring_benchmark -- --ignored
 --nocapture` (with `OHL_BENCH_FILE` for a project of your own, else the
 synthetic line) moves the pointer across the 3D view for 120 frames, first
-with Select held, then with **Distance** held after a first pick — every
+with Select held and the snap marker off (View › Show the snap point),
+then with the marker on (it runs the click's search at every move), then
+with **Distance** held after a first pick — every
 frame then finds what is under the cursor (the tool click's own search)
 and measures to it (owner, 2026-10-25: the measuring tools responsive
 first).
@@ -478,6 +480,24 @@ first).
 
 The search runs only when the pointer moved; the alignments' centre lines
 for the stations are kept until the line changes.
+
+**What can be clicked is kept** (owner, 2026-11-14: since the snap marker,
+the 3D view of a real line lagged). The search made the list of every
+clickable piece again at each pointer move — on a real line of 78
+structures and 99 cases, 268 103 pieces in 16 ms, then all of them
+projected: 30 ms a frame. Now the list is kept per model
+(`selection::pick_set`: made again when the line's version, the case,
+the snaps, the cases drawn or their solutions, the structure bodies or
+the ground change), in runs of up to 32 segments of one object with
+their box; a run whose box, projected, lies farther than the snap
+distance from the pointer is left out (its segments project inside the
+box's outline, so nothing nearer is missed). The pick is the same as
+before, to the piece.
+
+| A real line (78 structures, LiDAR) | Select, no marker | Select, marker | Distance held |
+|---|---|---|---|
+| before | 0.8 ms (10.9) | 30.0 ms (31.6) | 30.2 ms (45.4) |
+| pieces kept, boxes | 0.8 ms (6.5) | 1.8 ms (31.2: the list made once) | 1.9 ms (2.5) |
 
 **Kept measurements and notes**: `cargo test -p ohl-app
 kept_annotations_benchmark -- --ignored --nocapture` keeps 300 annotations

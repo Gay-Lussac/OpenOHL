@@ -78,6 +78,15 @@ fn the_snap_marker_shows_what_a_click_picks_in_the_plan() {
         h.state_mut().ready().unwrap().selection,
         Selection::Structure("T3".into())
     );
+    // What can be clicked is kept while the pointer moves (owner,
+    // 2026-11-14: made again at every move, the 3D view of a long line
+    // lagged); made again when the snaps change.
+    let made = || crate::selection::PICK_SETS_MADE.with(std::cell::Cell::get);
+    let before = made();
+    for k in 0..10 {
+        hover(&mut h, near + egui::vec2(k as f32, 2.0));
+    }
+    assert_eq!(made(), before, "the pick set made again on a pointer move");
     // Structures off in Edit › Snap: not there any more.
     tick(
         &mut h,
@@ -94,6 +103,7 @@ fn the_snap_marker_shows_what_a_click_picks_in_the_plan() {
     );
     hover(&mut h, near + egui::vec2(0.0, 1.0));
     hover(&mut h, near);
+    assert!(made() > before, "made again with the snaps changed");
     assert!(marker(&mut h) != Some(m), "{:?}", marker(&mut h));
     click_at(&mut h, near, egui::PointerButton::Primary);
     assert_ne!(

@@ -1250,6 +1250,11 @@ pub struct ModelKept {
     /// Where the strings are drawn, by weather case
     /// ([`crate::selection::string_pieces`]).
     pub string_pieces: crate::selection::KeptPieces,
+    /// What can be clicked in a case, by what it is made from
+    /// ([`crate::selection::pick_set`]; owner, 2026-11-14: made again at
+    /// every pointer move for the snap marker).
+    pub pick_set:
+        crate::kept::Kept<crate::selection::PickKey, std::sync::Arc<crate::selection::PickSet>>,
 }
 
 #[cfg(test)]
