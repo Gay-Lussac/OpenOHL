@@ -1499,6 +1499,13 @@ All built, in active development (not approved yet):
 - **Safe side** (2026-11-08 to 11-09): checks not done are said, never
   passed; clauses not covered named; clearance distances growing with the
   altitude.
+- **Post insulators** (2026-11-14): on structures, fixed or braced, their
+  load to their base with its moment, their ratings checked, a jumper at
+  their top at a fixed exit angle; a jumper's load on a clamp fixed to the
+  structure no longer dropped.
+- **Staking table** (2026-11-14): Line › Structures › Staking table… and
+  `ohl staking` — stations, offsets, line angles, spans, coordinates,
+  ground, bearings, and the feet of the typed structures.
 - In Part A: O22–O26 in part, the plans (O14). In Part B: level 4 and the
   joints in the calculation, the code-check plugin interface (O4).
 

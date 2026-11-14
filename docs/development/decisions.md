@@ -10,6 +10,22 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Staking table** (owner: "can you go ahead and make a staking table",
+after the gap list against the established line-design program named a
+staking report as missing; then "it would be better to have it under
+structure"): Line › Structures › Staking table… and `ohl
+staking` (`ohl_line::staking`) — per structure and alignment its station,
+offset, line angle, back and ahead span, coordinates, ground and the
+difference, height adjustment and the bearing of its ahead axis; per foot
+of a typed structure modelled to its feet (supported joints, the
+extension and leg extensions applied) its leg A–D, offset in the
+structure's axes, coordinates and its height above the ground. Choices
+made without asking (to confirm): bearings from grid north of the line's
+CRS; a structure on two alignments listed on each; the feet as the
+type's supported joints (guy anchors included, unlabelled); no reference
+stakes, foundation sizes or excavation ([Staking
+table](../user-guide/staking-table.md)).
+
 **Post insulators, second step** (owner: "go ahead with the next
 steps"):
 

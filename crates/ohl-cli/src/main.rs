@@ -24,6 +24,7 @@ mod project;
 mod safety_run;
 mod sagtension_job;
 mod sheet_run;
+mod staking_run;
 mod strings_run;
 mod structure_app_run;
 mod structure_fe;
@@ -78,6 +79,10 @@ enum Command {
     /// Optimum structure spotting along a route: the least-cost structures
     /// (types, extensions, positions) keeping the ground clearance.
     Spot(Box<cost_run::SpotArgs>),
+    /// Staking table: every structure's station, offset, line angle,
+    /// spans, coordinates, ground and bearing, and the feet of the typed
+    /// structures, for setting them out on site.
+    Staking(Box<staking_run::StakingArgs>),
     /// Plan and profile drawings and profile exports of a solved line:
     /// SVG, DXF, PDF, PNG sheets and the profile as CSV or XML, for a
     /// station range at chosen scales; the route, situation and phase
@@ -1213,6 +1218,7 @@ fn main() -> ExitCode {
         Some(Command::SafetyVolume(args)) => report(safety_run::run(*args)),
         Some(Command::Bom(args)) => report(cost_run::bom(&args)),
         Some(Command::Spot(args)) => report(cost_run::spot(&args)),
+        Some(Command::Staking(args)) => report(staking_run::run(&args)),
         Some(Command::Drawing(args)) => drawing_command(&args),
         Some(Command::SheetTemplates {
             project,

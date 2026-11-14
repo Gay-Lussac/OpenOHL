@@ -1033,6 +1033,28 @@ fields split at `; `).
 | `BimetallicModel.behavior` | enum | — | bird cage or compression (default) |
 | `BimetallicModel.max_virtual_compression` | stress? | Pa | compression limit |
 
+### Staking table (`staking.rs`, computed, not stored)
+
+`ohl_line::staking::staking(line, types, ground)` (2026-11-14) reads the
+line, optionally the structure library (for the feet) and a ground
+height function (easting, northing → elevation) and gives a `Staking`:
+
+| Entity.field | Type | Unit | Meaning |
+|---|---|---|---|
+| `StakingRow.alignment`, `.structure`, `.structure_type`, `.extension` | string, string, string?, string? | — | per structure and alignment (`AlignmentView::stations`), in station order; on no alignment: alignment empty, listed last |
+| `StakingRow.station`, `.offset` | f64? | m | along and from the alignment (offset positive right); none off every alignment; below 10⁻⁶ written 0 |
+| `StakingRow.line_angle_deg` | f64 | ° | positive turning right; 0 at the ends and off the run |
+| `StakingRow.back_span`, `.ahead_span` | f64? | m | horizontal, along the alignment's run (`Station::ahead_span`) |
+| `StakingRow.position`, `.ground`, `.height_adjust` | point, f64?, f64 | m | the structure's centre as placed, the ground there, its height adjustment; `above_ground()` = z − ground |
+| `StakingRow.bearing_deg` | f64 | ° | its ahead axis clockwise from grid north (`bearing_ahead`: −orientation, 0–360) |
+| `StakingFoot.structure`, `.joint`, `.leg` | string | — | a supported joint of the type with the extension (`StructureType::extended`); leg A–D by quarter (`extensions::LEGS`), empty on an axis |
+| `StakingFoot.local`, `.position`, `.ground` | [f64; 2], point, f64? | m | its offset (right, ahead), where it is (`links::feet`, `to_global`, the extension's lift), the ground there |
+| `Staking.notes` | `[string]` | — | the CRS and height datum, structures on no alignment, without ground, without feet |
+
+`Staking::csv`, `feet_csv`, `text`; serialised as JSON by `ohl staking
+--json`. Read by Line › Structures › Staking table… (`crate::staking` in the
+app, the model's line, types and ground) and `ohl staking`.
+
 ## References and ownership
 
 ### How objects point at each other

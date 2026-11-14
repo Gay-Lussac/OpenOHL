@@ -336,6 +336,8 @@ pub struct Ready {
     pub thermal: crate::thermal::ThermalWindow,
     /// Plans & sheets › Bill of materials › Cables.
     pub bom: crate::bom::BomWindow,
+    /// Line › Structures › Staking table… (2026-11-14).
+    pub staking: crate::staking::StakingWindow,
     /// Line › Structures › Spot structures.
     pub spot: crate::spot::SpotWindow,
     /// Line › Structures › String builder (2026-10-31).
@@ -557,6 +559,7 @@ impl Ready {
             loads: Default::default(),
             thermal: Default::default(),
             bom: Default::default(),
+            staking: Default::default(),
             spot: Default::default(),
             string_builder: Default::default(),
             pylon_builder: None,

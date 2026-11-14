@@ -485,6 +485,18 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
         item(ui, Command::Table(TableKind::Strings), out);
         item(ui, Command::Table(TableKind::Insulators), out);
         item(ui, Command::Table(TableKind::StringShapes), out);
+        // Under the structures (owner, 2026-11-14), not Plans & sheets.
+        if ui
+            .button("Staking table…")
+            .on_hover_text(
+                "Where each structure is set out on site: station, offset, line angle, spans, \
+                 coordinates, ground and bearing, and the feet of the typed structures",
+            )
+            .clicked()
+        {
+            r.staking.open(&r.model, ui.ctx());
+            ui.close();
+        }
         ui.separator();
         crate::menu::options_menu(ui, "Display options", |ui| {
             ui.label(
