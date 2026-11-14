@@ -498,6 +498,13 @@
                   <xs:attribute name="max_swing_deg" type="ohl:degrees180"/>
                   <xs:attribute name="max_swing_across_deg" type="ohl:degrees180"/>
                   <xs:attribute name="max_swing_along_deg" type="ohl:degrees180"/>
+                  <!-- Version 17: a post insulator standing on its top, holding its
+                       wire point rigidly; its rating across it; the direction its clamp
+                       holds a jumper in (structure axes). -->
+                  <xs:attribute name="post" type="xs:boolean" default="false"/>
+                  <xs:attribute name="cantilever_load" type="xs:double"/>
+                  <xs:attribute name="exit_angle_deg" type="xs:double"/>
+                  <xs:attribute name="exit_direction_deg" type="xs:double"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="attachment" minOccurs="0" maxOccurs="unbounded">

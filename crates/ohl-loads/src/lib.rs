@@ -1102,6 +1102,12 @@ pub struct AttachmentLoad {
     /// structure load case scale the pulls of some sets only at a point
     /// holding several.
     pub pulls_by_set: Vec<SetPulls>,
+    /// From the point to where the load acts, in the structure's axes
+    /// (right, ahead, up), m: a **post insulator**'s top, or its middle
+    /// for its own weight and wind (owner, 2026-11-14) — the structure
+    /// analysis puts the moment of this lever at the point's joint. Zero
+    /// for every other load (it acts at the point).
+    pub lever: [f64; 3],
 }
 
 /// The horizontal pulls of the back and ahead spans of one wire set at a
@@ -1966,6 +1972,47 @@ fn case_loads(
         }
         solved.push(shape);
     }
+    // Post insulators (owner, 2026-11-14): their own weight and the wind
+    // on them (the line's, across it at the structure, its local factor —
+    // as on the strings; no ice, as on the strings), at their middle: the
+    // load of their base point with that lever.
+    for structure in &line.structures {
+        for x in structure.strings.iter().filter(|x| x.post) {
+            let (Some(base), Some(tip)) = (
+                structure.point(&x.top).map(|p| p.position),
+                structure.wire(&x.wire).map(|w| w.position),
+            ) else {
+                continue;
+            };
+            let middle = [0, 1, 2].map(|k| 0.5 * (base[k] + tip[k]));
+            let mut f = [0.0, 0.0, -x.weight];
+            // The line's direction there, else the structure's ahead.
+            let ahead = line.direction_at([middle[0], middle[1]]).or_else(|| {
+                let a = ohl_line::links::from_structure_axes(
+                    structure.orientation_deg,
+                    [0.0, 1.0, 0.0],
+                );
+                Some([a[0], a[1]])
+            });
+            if let Some(a) = ahead {
+                let push = w.wind_pressure.si()
+                    * line.wind_factor_at_structure(&structure.id)
+                    * x.wind_area
+                    * w.wind_from.to_left();
+                f[0] -= a[1] * push;
+                f[1] += a[0] * push;
+            }
+            if f.iter().all(|v| *v == 0.0) {
+                continue;
+            }
+            let place = Place {
+                structure: &structure.id,
+                label: &x.top,
+                at: middle,
+            };
+            add(&mut at, line, case, place, f, &[], &x.label);
+        }
+    }
     // Jumpers' support clamps: their strings pull on their tops (the
     // string's force towards the clamp, half its weight and wind).
     for j in line.jumpers.iter().filter(|j| !j.supports().is_empty()) {
@@ -2201,16 +2248,40 @@ fn add(
     sets: &[u32],
     source: &str,
 ) {
-    let (right, ahead) = axes(
-        line.structure(place.structure)
-            .map_or(0.0, |s| s.orientation_deg),
-    );
+    let structure = line.structure(place.structure);
+    let (right, ahead) = axes(structure.map_or(0.0, |s| s.orientation_deg));
+    // Acting away from its structure point (a post's top, its middle): a
+    // load of its own with its lever, so the analysis takes its moment.
+    let lever = structure
+        .and_then(|s| Some((s.orientation_deg, s.point(place.label)?.position)))
+        .map(|(o, q)| {
+            let d = [0, 1, 2].map(|k| place.at[k] - q[k]);
+            ohl_line::links::to_structure_axes(o, d)
+        })
+        .filter(|d| d.iter().map(|x| x * x).sum::<f64>().sqrt() > 1e-3)
+        .unwrap_or([0.0; 3]);
+    let (key, label) = if lever == [0.0; 3] {
+        (place.label.to_owned(), place.label.to_owned())
+    } else {
+        (
+            format!(
+                "{} @{:.3},{:.3},{:.3}",
+                place.label, lever[0], lever[1], lever[2]
+            ),
+            format!(
+                "{} (post, {:.2} m)",
+                place.label,
+                lever.iter().map(|x| x * x).sum::<f64>().sqrt()
+            ),
+        )
+    };
     let e = loads
-        .entry((place.structure.to_owned(), place.label.to_owned()))
+        .entry((place.structure.to_owned(), key))
         .or_insert_with(|| AttachmentLoad {
             structure: place.structure.to_owned(),
             point: place.label.to_owned(),
-            label: place.label.to_owned(),
+            label,
+            lever,
             sets: Vec::new(),
             sections: Vec::new(),
             at: place.at,
@@ -2341,6 +2412,7 @@ pub fn add_structure_wind(
                     pull_back: [0.0; 2],
                     pull_ahead: [0.0; 2],
                     pulls_by_set: Vec::new(),
+                    lever: [0.0; 3],
                 });
             }
         }
@@ -2403,5 +2475,7 @@ mod v4_tests;
 #[cfg(test)]
 mod local_tests;
 
+#[cfg(test)]
+mod post_tests;
 #[cfg(test)]
 mod pull_tests;

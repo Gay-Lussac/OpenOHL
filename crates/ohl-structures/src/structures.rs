@@ -1384,7 +1384,10 @@ impl StructureType {
                     },
                     (None, None) => local,
                     (Some(i), _) => match i.kind {
-                        AssemblyKind::Suspension | AssemblyKind::VString => [local[0], local[1], local[2] - i.vertical_drop()],
+                        // A post: its clamp above its base (its drop negative).
+                        AssemblyKind::Suspension | AssemblyKind::VString | AssemblyKind::Post => {
+                            [local[0], local[1], local[2] - i.vertical_drop()]
+                        }
                         AssemblyKind::Strain => {
                             let sign = match a.side {
                                 Some(Side::Back) => -1.0,

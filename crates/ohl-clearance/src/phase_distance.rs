@@ -210,6 +210,10 @@ fn lk_of(s: &Structure, wire: &str) -> f64 {
         return 0.0;
     };
     let length = s.string_length(x).unwrap_or(0.0);
+    // A post insulator holds its wire point rigidly: nothing swings.
+    if x.post {
+        return 0.0;
+    }
     if !x.strain {
         // An I-string, or the string below a V.
         return length;

@@ -570,6 +570,10 @@ fn write_structure(out: &mut String, s: &Structure) {
             max_swing_across_deg,
             max_swing_along_deg,
             shapes,
+            post,
+            cantilever_load,
+            exit_angle_deg,
+            exit_direction_deg,
         } = x;
         out.push_str("    <string");
         attr(out, "label", label);
@@ -595,6 +599,9 @@ fn write_structure(out: &mut String, s: &Structure) {
             ("max_swing_deg", max_swing_deg),
             ("max_swing_across_deg", max_swing_across_deg),
             ("max_swing_along_deg", max_swing_along_deg),
+            ("cantilever_load", cantilever_load),
+            ("exit_angle_deg", exit_angle_deg),
+            ("exit_direction_deg", exit_direction_deg),
         ] {
             if let Some(v) = v {
                 attr(out, name, &num(*v));
@@ -602,6 +609,10 @@ fn write_structure(out: &mut String, s: &Structure) {
         }
         if *strain {
             attr(out, "strain", "true");
+        }
+        // A post insulator (line file version 17).
+        if *post {
+            attr(out, "post", "true");
         }
         if shapes.is_empty() {
             out.push_str("/>\n");
@@ -1688,6 +1699,10 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "max_swing_deg",
                     "max_swing_across_deg",
                     "max_swing_along_deg",
+                    "post",
+                    "cantilever_load",
+                    "exit_angle_deg",
+                    "exit_direction_deg",
                 ],
                 &["shape"],
             )?;
@@ -1709,6 +1724,10 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 max_swing_deg: optional(x, "max_swing_deg")?,
                 max_swing_across_deg: optional(x, "max_swing_across_deg")?,
                 max_swing_along_deg: optional(x, "max_swing_along_deg")?,
+                post: flag(x, "post")?,
+                cantilever_load: optional(x, "cantilever_load")?,
+                exit_angle_deg: optional(x, "exit_angle_deg")?,
+                exit_direction_deg: optional(x, "exit_direction_deg")?,
                 shapes: x
                     .children_named("shape")
                     .map(read_shape)

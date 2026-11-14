@@ -10,7 +10,12 @@
 //!   `legs = 2` (version 3), two strings from points at ±`half_width`
 //!   (transverse) to one clamp below, each carrying tension only;
 //! - `strain`: a dead-end assembly along the line from the attachment point
-//!   to the clamp.
+//!   to the clamp;
+//! - `post` (version 6, owner 2026-11-14): a **post insulator** standing on
+//!   its attachment point (its base, earthed) and holding the clamp at its
+//!   top as a cantilever: `length` is its height, `cantilever_load` the
+//!   load across it at its top it is rated for, `compression_load` along
+//!   it, `max_load` the tension along it — each optional, as the limits.
 //!
 //! Strings combine; their combinations are not types (owner decision
 //! 2026-10-21). Files before version 3 gave two strings to one clamp as
@@ -55,7 +60,9 @@ use serde::Deserialize;
 pub const INSULATOR_FILE_EXTENSION: &str = "ohli";
 /// Format identifier.
 pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
-/// Newest format version read: 5 adds the torus among the shapes on the
+/// Newest format version read: 6 adds the post insulator (`kind =
+/// "post"`, `cantilever_load`, `compression_load`; owner 2026-11-14),
+/// written only by a post (else 5 or older); 5 adds the torus among the shapes on the
 /// strings (`kind = "torus"`, `tube`: a grading ring; owner 2026-10-31),
 /// written only by an assembly with one (else 4 or older, as before); 4 adds the optional volumes on the strings
 /// (`[[shape]]`, the freedoms, several strings: [`StringVolumes`]); 3 writes two strings to one clamp as
@@ -63,7 +70,7 @@ pub const INSULATOR_FILE_FORMAT: &str = "ohl-insulator";
 /// versions before still read); 2 adds the optional limits (`max_load`,
 /// `max_swing`, `max_swing_across`, `max_swing_along`,
 /// [`InsulatorLimits`]); version 1 files read as before.
-pub const INSULATOR_FILE_VERSION: u32 = 5;
+pub const INSULATOR_FILE_VERSION: u32 = 6;
 
 /// The version that brought `legs` (written only by an assembly of two
 /// strings).
@@ -74,6 +81,8 @@ const LIMITS_VERSION: u32 = 2;
 const VOLUMES_VERSION: u32 = 4;
 /// The version that brought the torus.
 const TORUS_VERSION: u32 = 5;
+/// The version that brought the post insulator.
+const POST_VERSION: u32 = 6;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ohl_line::solve::DEFAULT_INSULATOR_STIFFNESS`).
@@ -94,6 +103,9 @@ pub enum AssemblyKind {
     VString,
     /// Dead-end (strain) assembly.
     Strain,
+    /// A post insulator: standing on its attachment point, holding the
+    /// clamp at its top as a cantilever (version 6).
+    Post,
 }
 
 /// An insulator assembly as its file gives it: `legs` (version 3) is
@@ -143,6 +155,10 @@ struct AssemblyFile {
     spacing: Option<Length>,
     #[serde(default)]
     shape: Vec<StringShape>,
+    #[serde(default)]
+    cantilever_load: Option<Force>,
+    #[serde(default)]
+    compression_load: Option<Force>,
 }
 
 impl TryFrom<AssemblyFile> for InsulatorAssembly {
@@ -154,6 +170,10 @@ impl TryFrom<AssemblyFile> for InsulatorAssembly {
             (AssemblyKind::Suspension, Some(1)) => AssemblyKind::Suspension,
             (AssemblyKind::Suspension | AssemblyKind::VString, Some(2)) => AssemblyKind::VString,
             (AssemblyKind::Strain, Some(1)) => AssemblyKind::Strain,
+            (AssemblyKind::Post, Some(1)) => AssemblyKind::Post,
+            (AssemblyKind::Post, Some(2)) => {
+                return Err("legs = 2 is for a suspension assembly only".into());
+            }
             (AssemblyKind::Strain, Some(2)) => {
                 return Err("legs = 2 is for a suspension assembly only".into());
             }
@@ -175,6 +195,8 @@ impl TryFrom<AssemblyFile> for InsulatorAssembly {
             max_swing: f.max_swing,
             max_swing_across: f.max_swing_across,
             max_swing_along: f.max_swing_along,
+            cantilever_load: f.cantilever_load,
+            compression_load: f.compression_load,
             volumes: StringVolumes {
                 shapes: f.shape,
                 swing_across: f.swing_across.unwrap_or_default(),
@@ -237,6 +259,13 @@ pub struct InsulatorAssembly {
     /// The swing it may take along the line, either way (not checked).
     #[serde(default)]
     pub max_swing_along: Option<Angle>,
+    /// A post's rating across it at its top, N (version 6; not given:
+    /// not checked).
+    #[serde(default)]
+    pub cantilever_load: Option<Force>,
+    /// A post's rating in compression along it, N (version 6).
+    #[serde(default)]
+    pub compression_load: Option<Force>,
     /// The volumes on its strings, their freedoms, several strings in one
     /// assembly (version 4; none given: [`StringVolumes::is_empty`]).
     #[serde(skip)]
@@ -356,12 +385,30 @@ impl InsulatorAssembly {
         }
         self.limits().check()?;
         self.volumes.check(self.length.si())?;
+        for (name, l) in [
+            ("cantilever_load", self.cantilever_load),
+            ("compression_load", self.compression_load),
+        ] {
+            if self.kind != AssemblyKind::Post && l.is_some() {
+                return Err(format!("{name} is for a post insulator (kind = \"post\")"));
+            }
+            if l.is_some_and(|l| !(l.si().is_finite() && l.si() > 0.0)) {
+                return Err(format!("{name} must be > 0"));
+            }
+        }
+        if self.kind == AssemblyKind::Post
+            && (self.max_swing.is_some()
+                || self.max_swing_across.is_some()
+                || self.max_swing_along.is_some())
+        {
+            return Err("a post insulator does not swing: no swing limits".into());
+        }
         match (self.kind, self.half_width) {
             (AssemblyKind::VString, None) => Err("legs = 2 needs half_width".into()),
             (AssemblyKind::VString, Some(hw)) if !(hw.si() > 0.0 && hw < self.length) => {
                 Err("half_width must be positive and shorter than the string length".into())
             }
-            (AssemblyKind::Suspension | AssemblyKind::Strain, Some(_)) => {
+            (AssemblyKind::Suspension | AssemblyKind::Strain | AssemblyKind::Post, Some(_)) => {
                 Err("half_width is only for an assembly of two strings (legs = 2)".into())
             }
             _ => Ok(()),
@@ -380,8 +427,11 @@ impl InsulatorAssembly {
         let kind = match self.kind {
             AssemblyKind::Suspension | AssemblyKind::VString => "suspension",
             AssemblyKind::Strain => "strain",
+            AssemblyKind::Post => "post",
         };
-        let version = if self.volumes.has_torus() {
+        let version = if self.kind == AssemblyKind::Post {
+            POST_VERSION
+        } else if self.volumes.has_torus() {
             TORUS_VERSION
         } else if !self.volumes.is_empty() {
             VOLUMES_VERSION
@@ -414,13 +464,21 @@ impl InsulatorAssembly {
             out += &format!("half_width = \"{} m\"\n", h.si());
         }
         out += &self.limits().to_toml();
+        for (key, l) in [
+            ("cantilever_load", self.cantilever_load),
+            ("compression_load", self.compression_load),
+        ] {
+            if let Some(l) = l {
+                out += &format!("{key} = \"{} N\"\n", l.si());
+            }
+        }
         out += &self.volumes.to_toml();
         out
     }
 
     /// Vertical drop from the attachment point to the clamp in still air,
     /// m: the string length for suspension, the depth of two strings to one
-    /// clamp, 0
+    /// clamp, minus the height of a post (its clamp above), 0
     /// for strain assemblies — whose direction and droop are not properties
     /// of the assembly: they follow the conductor tension (a strain string
     /// on a steep down-lead hangs 47° below horizontal in real data), so the
@@ -431,6 +489,7 @@ impl InsulatorAssembly {
                 (self.length.si().powi(2) - hw.si().powi(2)).sqrt()
             }
             (AssemblyKind::Strain, _) => 0.0,
+            (AssemblyKind::Post, _) => -self.length.si(),
             _ => self.length.si(),
         }
     }
@@ -472,6 +531,8 @@ mod tests {
             max_swing: None,
             max_swing_across: None,
             max_swing_along: None,
+            cantilever_load: None,
+            compression_load: None,
             volumes: Default::default(),
         };
         let b: InsulatorAssembly = toml::from_str(&a.to_toml()).unwrap();
@@ -602,7 +663,7 @@ mod tests {
         ] {
             assert!(parse(&format!("{base}{bad}\n")).is_err(), "{bad}");
         }
-        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 6\n{base}")).unwrap_err();
+        let e = parse(&format!("format = \"ohl-insulator\"\nversion = 7\n{base}")).unwrap_err();
         assert!(e.to_string().contains("newer"), "{e}");
     }
 
@@ -671,6 +732,44 @@ mod tests {
             parse("id = \"I\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"500 m\"").is_err()
         );
         assert!(parse("id = \"I\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"5 m\"\nhalf_width = \"1 m\"").is_err());
-        assert!(parse("id = \"I\"\nname = \"I\"\nkind = \"post\"\nlength = \"5 m\"").is_err());
+        // A post: no legs, no half width, no swing limits; its ratings
+        // only on a post.
+        let post = "id = \"P\"\nname = \"P\"\nkind = \"post\"\nlength = \"1.6 m\"\n";
+        assert!(parse(&format!("{post}half_width = \"1 m\"")).is_err());
+        assert!(parse(&format!("{post}legs = 2")).is_err());
+        assert!(parse(&format!("{post}max_swing = \"10 deg\"")).is_err());
+        assert!(parse(&format!("{post}cantilever_load = \"0 N\"")).is_err());
+        assert!(
+            parse("id = \"I\"\nname = \"I\"\nkind = \"suspension\"\nlength = \"5 m\"\ncantilever_load = \"8 kN\"")
+                .is_err()
+        );
+    }
+
+    /// A post insulator (owner, 2026-11-14): its height, its ratings
+    /// across, in compression and in tension, written as version 6 and
+    /// read back; its clamp above its base.
+    #[test]
+    fn a_post_insulator_is_read_and_written() {
+        let p = parse(
+            "id = \"P\"\nname = \"Station post\"\nkind = \"post\"\nlength = \"1.6 m\"\n\
+             weight = \"450 N\"\nwind_area = \"0.3 m²\"\ncantilever_load = \"8 kN\"\n\
+             compression_load = \"40 kN\"\nmax_load = \"30 kN\"\n",
+        )
+        .unwrap();
+        assert_eq!(p.kind, AssemblyKind::Post);
+        assert_eq!(p.cantilever_load.map(|f| f.si()), Some(8000.0));
+        assert_eq!(p.compression_load.map(|f| f.si()), Some(40_000.0));
+        assert!((p.vertical_drop() + 1.6).abs() < 1e-12);
+        let text = p.to_toml();
+        assert!(
+            text.contains("version = 6") && text.contains("kind = \"post\""),
+            "{text}"
+        );
+        let back = parse(&text).unwrap();
+        assert_eq!(
+            (back.kind, back.cantilever_load),
+            (p.kind, p.cantilever_load)
+        );
+        assert_eq!(back.compression_load, p.compression_load);
     }
 }

@@ -72,7 +72,10 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 16 adds an object's tap or spacer clamp use
+/// Latest line file version: 17 adds the post insulators (a string's
+/// `post`, `cantilever_load`, `exit_angle_deg`, `exit_direction_deg`:
+/// [`InsulatorString`]; owner, 2026-11-14), written only by a line that has
+/// one (else 16 or older, [`Line::to_json`]); 16 adds an object's tap or spacer clamp use
 /// and one on each subconductor (`clamp_for`, `per_subconductor`:
 /// [`LineObject`]; owner, 2026-11-14), written only by a line that uses
 /// them (else 15 or older, [`Line::to_json`]); 15 adds a system's highest operating voltage
@@ -127,7 +130,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 16;
+pub const LINE_FILE_VERSION: u32 = 17;
+
+/// The version before the post insulators (`post`, `cantilever_load`,
+/// `exit_angle_deg`, `exit_direction_deg` on a string; owner, 2026-11-14):
+/// what a line without them is written as.
+const BEFORE_POST_VERSION: u32 = 16;
 
 /// The version before an object's tap or spacer clamp use and one on each
 /// subconductor (`clamp_for`, `per_subconductor`: [`LineObject`]; owner,
@@ -3657,7 +3665,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 16 with an object's tap
+    /// line, so an older program still reads it: 17 with a post insulator,
+    /// else 16 with an object's tap
     /// or spacer clamp use or one on each subconductor, else 15 with a system's
     /// highest operating voltage or insulation level, a stringing in a
     /// final condition or by catenary constant, a point's constant force
@@ -3707,8 +3716,17 @@ impl Line {
                 .filter_map(|p| p.object.as_ref())
                 .any(|o| o.per_subconductor || o.clamp_for.is_some())
         });
+        let posts = self.structures.iter().any(|s| {
+            s.strings.iter().any(|x| {
+                x.post
+                    || x.cantilever_load.is_some()
+                    || x.exit_angle_deg.is_some()
+                    || x.exit_direction_deg.is_some()
+            })
+        });
         let written = match (sheaves, winds, shapes) {
-            _ if clamps => LINE_FILE_VERSION,
+            _ if posts => LINE_FILE_VERSION,
+            _ if clamps => BEFORE_POST_VERSION,
             _ if system_voltages || final_stringing => BEFORE_CLAMP_FOR_VERSION,
             _ if no_cases => BEFORE_SYSTEM_VOLTAGES_VERSION,
             _ if current => BEFORE_NO_LOAD_CASES_VERSION,

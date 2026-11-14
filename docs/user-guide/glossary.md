@@ -234,6 +234,14 @@ end). *Replaces:* line object, point load, warning marker. *German:*
 Feldpunkt, Feldobjekt (to confirm), Flugwarnkugel. *In files:*
 `span_points`, `object`, `kind = "body"` / `"clamp"`.
 
+**Post insulator** — an insulator standing on a point of the structure
+(its base, earthed) and holding a wire point at its top as a cantilever,
+rigidly: a station post upright, a line post level. Its load goes to its
+base with the moment of its height; a jumper leaves its clamp at a fixed
+exit angle. See [Post insulators](../theory/post-insulators.md).
+*German:* Stützisolator (to confirm). *In files:* `"post": true` on a
+string; library `kind = "post"`.
+
 **Tap clamp** — the clamp a jumper starts from: on a span point, or on a
 point of another jumper. **Spacer clamp** — the clamp an interphase
 spacer's end is held by: on a span point only. On a bundle there is one

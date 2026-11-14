@@ -266,7 +266,7 @@ files](../user-guide/line-file.md).
 | Field | Type | Unit | Meaning | References |
 |---|---|---|---|---|
 | `format` | string | — | `"ohl-line"` | — |
-| `version` | u32 | — | file version (now 12, 2026-10-31: a torus among a string's own `shapes` (`ShapeKind::Torus`, `tube`), written only when one is (`BEFORE_TORUS_VERSION` 11) — 11, 2026-10-27: the electrical settings `electrical`, written only when not the defaults (`BEFORE_ELECTRICAL_VERSION` 10) — 10, 2026-10-25: the simplified in-the-blocks option `solver.blocks = "equal_h"` and a jumper's `tension` (a riser) — 9, 2026-10-25: a section's `wind_factors` and `structure_loads.broken_cases` — 8: a string's own `shapes` — each written only when used, `Line::to_json` writing the oldest version that holds the line (7, 8, 9 or 10; `BEFORE_SHEAVES_VERSION` 9); 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
+| `version` | u32 | — | file version (now 17, 2026-11-14: a post insulator — `post`, `cantilever_load`, `exit_angle_deg`, `exit_direction_deg` on a string, `BEFORE_POST_VERSION` 16; 16: an object's `clamp_for` / `per_subconductor`; 15, 14, 13: see their fields; 12, 2026-10-31: a torus among a string's own `shapes` (`ShapeKind::Torus`, `tube`), written only when one is (`BEFORE_TORUS_VERSION` 11) — 11, 2026-10-27: the electrical settings `electrical`, written only when not the defaults (`BEFORE_ELECTRICAL_VERSION` 10) — 10, 2026-10-25: the simplified in-the-blocks option `solver.blocks = "equal_h"` and a jumper's `tension` (a riser) — 9, 2026-10-25: a section's `wind_factors` and `structure_loads.broken_cases` — 8: a string's own `shapes` — each written only when used, `Line::to_json` writing the oldest version that holds the line (7, 8, 9 or 10; `BEFORE_SHEAVES_VERSION` 9); 7: the optional `height_datum`, `circuits` — 6: a string's optional limits `max_load`, `max_swing_deg`, `max_swing_across_deg`, `max_swing_along_deg`, not checked — 5: jumper ends as `JumperEnd`, places with one key, jumper supports as points, a section's `circuit_name`; versions 1–6 are read and upgraded — version 4 files' `from_tap` / `to_tap`, `support` / `supports`, places with several keys, and `loads` / `spread_loads` of before points and objects) | — |
 | `name` | string | — | line name | — |
 | `crs` | string | — | coordinate reference system, e.g. an EPSG code (informative) | — |
 | `height_datum` | `HeightDatum?` | — | version 7: the heights' vertical datum, `{name, epsg}` — its name (`"LN02"`), the EPSG code of its vertical system (`5728`), either or both (an empty one refused; informative, nothing converted; `HeightDatum::parse` reads them as typed, `label()` → `LN02 (EPSG:5728)`); left out when none. Set in Terrain › Coordinate system › Define… with the CRS (one line-settings edit) or `put` `meta` `line`; the sheets' `{height_datum}` takes `Line::height_datum_label()` (`SheetInfo::height_datum`) first, then the CRS's vertical part (`ohl_drawing::height_datum_of`), then the template's `[if_empty]` | — |
@@ -443,6 +443,7 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |
 | `InsulatorString.compression` | f64? | N | compression it may take (then two-way, flagged beyond); none: tension only | — |
 | `InsulatorString.max_load` | f64? | N | version 6: the tension it is rated for — **not checked** by OpenOHL (`StringLimits`, `InsulatorString::limits`); none: not given; a resolved line fills it from its assembly's `max_load` where none is given | — |
+| `InsulatorString.post`, `.cantilever_load`, `.exit_angle_deg`, `.exit_direction_deg` | bool, f64?, f64?, f64? | —, N, °, ° | line file version 17 (2026-11-14, owner; written only by a line with one, `BEFORE_POST_VERSION` 16): a **post insulator** — standing on its `top` (its base, a structure point; refused on a wire point), holding its `wire` point alone (refused: another string at it, `strain`) rigidly: the solver fixes the wire point where the post puts it (`Structure::post_at`, `Structure::moving_component`: the wire point moves with nothing; `solve::holders_of`'s fixed holder labelled with the **base** point, at the top), its load reported as the base's with the lever top − base. Set from a library post on resolve (its ratings taken where the string gives none: `cantilever_load`; its `compression_load` into `compression`). `exit_angle_deg` (−90…90, none: level) and `exit_direction_deg` (structure axes, 0 ahead, 90 right; none: towards the jumper's other end as given, else ahead): the direction its clamp holds a jumper ending there in, fixed to the structure (`jumper::post_direction`, the rod's clamped end) — a post's only. The swing length of the distance between conductors is 0 at a post (`phase_distance::lk_of`) |
 | `InsulatorString.max_swing_deg`, `.max_swing_across_deg`, `.max_swing_along_deg` | f64? | ° | version 6: the swings it may take (from straight down any direction; across; along the line), 0–180 — not checked; none: not given; filled from its assembly's on resolve. Reported with the solved string (`solve::StringState::{limits, swing}`, `jumper::JumperStringShape::{limits, swing}`; `ohl_line::swing(orientation, top, bottom) -> Swing {total_deg, across_deg, along_deg}`) and `Line::string_limits(structure, label)` | — |
 | `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
@@ -2344,7 +2345,8 @@ Source: `crates/ohl-structures/src/insulators.rs`.
 | Field | Type | Unit | Meaning |
 |---|---|---|---|
 | `id`, `name`, `source` | string | — | referred to by `insulator` of strings |
-| `kind` | `suspension` / `strain` (`v_string` of files before version 3 read as `suspension` with `legs = 2`) | — | basic kind |
+| `kind` | `suspension` / `strain` / `post` (`v_string` of files before version 3 read as `suspension` with `legs = 2`) | — | basic kind; `post` (version 6, 2026-11-14, `AssemblyKind::Post`): a **post insulator** standing on its attachment point, holding the clamp at its top as a cantilever — `length` its height, its clamp above (`vertical_drop` negative); no legs, half width or swing limits; strings naming it become posts (`InsulatorString::post`) when the line is read |
+| `cantilever_load`, `compression_load` | force? | N | version 6, posts only: the ratings across it at its top and in compression along it (with `max_load` in tension) — optional, as the limits; written only when given |
 | `legs` | u32? | — | version 3 (`INSULATOR_FILE_VERSION`): 2 = two strings to one clamp (suspension only; with `half_width`), read into `AssemblyKind::VString` through `AssemblyFile`; 1 or absent: one string |
 | `length` | length | m | attachment point to clamp (two strings: each one's) |
 | `weight` | force | N | whole assembly |
@@ -2466,7 +2468,19 @@ words). `add_structure_loads(results, line, types, sections, weather)`
 case) and the ice and snow per structure as loads without a point ("ice
 on the structure", "snow on the structure"; `analysis::body_weights` on
 the model's members with a profile, `analysis::pole_ice` on a pole's
-shaft). `AttachmentLoad::pulls_by_set` (`Vec<SetPulls>`: `set`, `back`,
+shaft). `AttachmentLoad::lever` (`[f64; 3]`, structure axes right,
+ahead, up, m; 2026-11-14): from the point to where the load acts — a
+**post insulator**'s top (the wire's load) or middle (its own weight and
+the wind on it, the line's across the line, the structure's local wind
+factor; no ice, as the strings) — a load of its own, keyed apart and
+labelled "A1 (post, 1.60 m)"; zero for every other load. The capacity
+check sums `lever × factored force` per point (`capacity::lever_moment`,
+`AtPoint::moment`) and hands it on with the force
+(`analysis::Factored` = label, force, moment): the structure analysis
+puts it at the point's joint where a frame member meets it, else leaves
+it out and says **NOT ON THE SAFE SIDE** (as an offset's moment); the
+pole check takes forces at points only and says the same.
+`AttachmentLoad::pulls_by_set` (`Vec<SetPulls>`: `set`, `back`,
 `ahead`; 2026-11-11): the two pulls below per wire set held at the
 point, in order of the sets, adding up to them (the same shares; the
 envelope of a broken wire in every span keeps each set's with the

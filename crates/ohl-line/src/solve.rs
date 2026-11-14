@@ -696,10 +696,16 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                 ))
             })?;
             let middle = k > 0 && k < n - 1;
-            let component = structure.component(&wire.label);
+            // A wire point a post holds is fixed where the post puts it;
+            // its load is the post's base's (labelled so, at the post's top:
+            // the structure analysis takes the moment of its length).
+            let component = structure.moving_component(&wire.label);
             if component.strings.is_empty() {
+                let label = structure
+                    .post_at(&wire.label)
+                    .map_or_else(|| wire.label.clone(), |p| p.top.clone());
                 return Ok(Holder {
-                    fixed: vec![(wire.label.clone(), v(wire.position), None)],
+                    fixed: vec![(label, v(wire.position), None)],
                     free: Vec::new(),
                     clamp: At::Fixed(0),
                     members: Vec::new(),

@@ -1099,26 +1099,76 @@ fn rod_ends(
 ) -> Stiff {
     let ei = jumper_bending_stiffness(jumper, cable, &line.defaults);
     let angle = line.defaults.jumper_exit_angle_deg;
+    // At a post insulator's top the clamp holds it in a direction fixed to
+    // the structure (owner, 2026-11-14), else as at a section's end.
+    let (from, to) = (jumper.from.point(), jumper.to.point());
     Stiff {
-        start: jumper.from.point().and_then(|p| {
-            clamp_direction(
-                line,
-                shapes,
-                p,
-                jumper.angle_from_deg.unwrap_or(angle),
-                load,
-            )
+        start: from.and_then(|p| {
+            post_direction(line, p, to).or_else(|| {
+                clamp_direction(
+                    line,
+                    shapes,
+                    p,
+                    jumper.angle_from_deg.unwrap_or(angle),
+                    load,
+                )
+            })
         }),
         // Arriving at the clamp: against the direction it holds.
-        end: jumper
-            .to
-            .point()
+        end: to
             .and_then(|p| {
-                clamp_direction(line, shapes, p, jumper.angle_to_deg.unwrap_or(angle), load)
+                post_direction(line, p, from).or_else(|| {
+                    clamp_direction(line, shapes, p, jumper.angle_to_deg.unwrap_or(angle), load)
+                })
             })
             .map(|d| -d),
         ei,
     }
+}
+
+/// The direction a post insulator's clamp holds a jumper in at the wire
+/// point of `point` (owner, 2026-11-14: "a fixed exit angle"), fixed to the
+/// structure whatever the weather: its `exit_angle_deg` from the horizontal
+/// (none: level) and its `exit_direction_deg` in plan in the structure's
+/// axes (none: towards the wire point of the jumper's `other` end as given;
+/// without one, ahead along the line). `None` where no post holds it.
+fn post_direction(
+    line: &Line,
+    point: &SectionPoint,
+    other: Option<&SectionPoint>,
+) -> Option<Vector3<f64>> {
+    let structure = line.structure(&point.structure)?;
+    let wire = structure.wire_at_set(point.set)?;
+    let post = structure.post_at(&wire.label)?;
+    let up = post.exit_angle_deg.unwrap_or(0.0).to_radians();
+    let plan = match post.exit_direction_deg {
+        Some(d) => {
+            let d = d.to_radians();
+            crate::links::from_structure_axes(structure.orientation_deg, [d.sin(), d.cos(), 0.0])
+        }
+        None => other
+            .and_then(|o| line.structure(&o.structure)?.wire_at_set(o.set))
+            .map(|o| {
+                [
+                    o.position[0] - wire.position[0],
+                    o.position[1] - wire.position[1],
+                    0.0,
+                ]
+            })
+            .filter(|d| d[0].hypot(d[1]) > 1e-6)
+            .unwrap_or_else(|| {
+                crate::links::from_structure_axes(structure.orientation_deg, [0.0, 1.0, 0.0])
+            }),
+    };
+    let h = plan[0].hypot(plan[1]);
+    if h < 1e-12 {
+        return None;
+    }
+    Some(Vector3::new(
+        plan[0] / h * up.cos(),
+        plan[1] / h * up.cos(),
+        up.sin(),
+    ))
 }
 
 /// A jumper's support clamps to solve: each clamp's strings from the
@@ -3711,5 +3761,42 @@ mod tests {
             each < single - 0.01,
             "4 × 250 N lower than 250 N: {each} {single}"
         );
+    }
+
+    /// At a post insulator's top the clamp holds a jumper in a direction
+    /// fixed to the structure (owner, 2026-11-14): level and towards the
+    /// jumper's other end by default; its exit angle and direction when
+    /// given (structure axes); no post: none.
+    #[test]
+    fn a_post_holds_the_jumper_in_a_fixed_direction() {
+        let mut line = crate::tests::example();
+        let t = line.structures[1].clone();
+        let (a, w) = (t.points[0].clone(), t.wires[0].clone());
+        let s = &mut line.structures[1];
+        s.strings.retain(|x| x.wire != w.label && x.top != w.label);
+        s.strings.push(crate::InsulatorString {
+            label: "POST".into(),
+            top: a.label.clone(),
+            wire: w.label.clone(),
+            length: 1.5,
+            angle_deg: 180.0,
+            post: true,
+            ..Default::default()
+        });
+        let at = SectionPoint::new(t.id.clone(), w.set.unwrap());
+        let other = SectionPoint::new(line.structures[2].id.clone(), 1);
+        let d = post_direction(&line, &at, Some(&other)).expect("a post there");
+        assert!(d.z.abs() < 1e-12 && (d.norm() - 1.0).abs() < 1e-12);
+        let s = &mut line.structures[1];
+        s.strings.last_mut().unwrap().exit_angle_deg = Some(30.0);
+        s.strings.last_mut().unwrap().exit_direction_deg = Some(90.0);
+        let o = s.orientation_deg;
+        let d = post_direction(&line, &at, None).unwrap();
+        let right = crate::links::from_structure_axes(o, [1.0, 0.0, 0.0]);
+        let want = Vector3::new(right[0], right[1], 0.0) * 30f64.to_radians().cos()
+            + Vector3::z() * 30f64.to_radians().sin();
+        assert!((d - want).norm() < 1e-12, "{d:?} {want:?}");
+        let plain = SectionPoint::new(line.structures[2].id.clone(), 1);
+        assert!(post_direction(&line, &plain, None).is_none());
     }
 }

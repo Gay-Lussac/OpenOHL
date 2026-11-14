@@ -222,6 +222,30 @@ pub struct InsulatorString {
     /// assembly's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shapes: Vec<ohl_structures::StringShape>,
+    /// A **post insulator** (line file version 17; owner, 2026-11-14): it
+    /// stands on its top — its base, the earthed end — and holds its wire
+    /// point at the other end as a cantilever, rigidly: the wire point is
+    /// fixed to the structure where the post puts it, and its load goes to
+    /// the base with the moment of the post's length
+    /// ([`Structure::post_at`]). Set from a library post (`kind =
+    /// "post"`) when the line is read.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub post: bool,
+    /// A post's rated load across it at its top, N (its own, else its
+    /// assembly's; not given: not checked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cantilever_load: Option<f64>,
+    /// Where a jumper ending at a post's wire point leaves its clamp (owner,
+    /// 2026-11-14: "a fixed exit angle"): the angle from the horizontal,
+    /// degrees (negative: down), fixed to the structure whatever the
+    /// weather. None: level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_angle_deg: Option<f64>,
+    /// The same clamp's direction in plan, in the structure's axes,
+    /// degrees (0 ahead along the line, 90 to the right). None: towards the
+    /// jumper's other end as given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_direction_deg: Option<f64>,
 }
 
 impl InsulatorString {
@@ -424,6 +448,23 @@ impl Structure {
         self.strings.iter().filter(move |s| s.wire == label)
     }
 
+    /// The post insulator holding wire point `label`, if one does: the
+    /// wire point is then fixed to the structure where the post puts it
+    /// (its load to the post's base).
+    pub fn post_at(&self, label: &str) -> Option<&InsulatorString> {
+        self.strings.iter().find(|s| s.post && s.wire == label)
+    }
+
+    /// [`Structure::component`] as the solver moves it: a wire point a
+    /// post holds moves with nothing (empty).
+    pub fn moving_component(&self, label: &str) -> Component {
+        if self.post_at(label).is_some() {
+            Component::default()
+        } else {
+            self.component(label)
+        }
+    }
+
     /// Whether wire point `label` hangs on strings (else it is fixed to the
     /// structure).
     pub fn is_held(&self, label: &str) -> bool {
@@ -580,6 +621,55 @@ impl Structure {
             }
             if let Err(m) = s.limits().check() {
                 return bad(&m);
+            }
+            if s.post {
+                // A post stands on the structure and holds its wire point
+                // alone: rigid, the point fixed where it puts it.
+                if s.strain {
+                    return bad("a post insulator is not a strain string");
+                }
+                if self.wire(&s.top).is_some() {
+                    return bad(
+                        "a post insulator stands on a structure point, not on a wire point",
+                    );
+                }
+                let others = self
+                    .strings
+                    .iter()
+                    .filter(|o| o.label != s.label && (o.wire == s.wire || o.top == s.wire))
+                    .map(|o| o.label.as_str())
+                    .collect::<Vec<_>>();
+                if !others.is_empty() {
+                    return bad(&format!(
+                        "a post insulator holds its wire point {} alone (also: {}; braced posts \
+                         are not modelled yet)",
+                        s.wire,
+                        others.join(", ")
+                    ));
+                }
+                if s.cantilever_load
+                    .is_some_and(|c| !(c.is_finite() && c > 0.0))
+                {
+                    return bad("the cantilever load must be > 0");
+                }
+            } else if s.cantilever_load.is_some() {
+                return bad("a cantilever load is for a post insulator");
+            }
+            for (name, a) in [
+                ("exit_angle_deg", s.exit_angle_deg),
+                ("exit_direction_deg", s.exit_direction_deg),
+            ] {
+                if a.is_some() && !s.post {
+                    return bad(&format!("{name} is for a post insulator's clamp"));
+                }
+                if a.is_some_and(|a| !a.is_finite()) {
+                    return bad(&format!("{name} must be a number"));
+                }
+            }
+            if s.exit_angle_deg
+                .is_some_and(|a| !(-90.0..=90.0).contains(&a))
+            {
+                return bad("exit_angle_deg must be from -90 to 90°");
             }
         }
         // Every wire point on strings must reach the structure through them.

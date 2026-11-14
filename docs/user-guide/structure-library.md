@@ -652,7 +652,7 @@ format = "ohl-insulator"
 version = 1
 id = "I-380-double"
 name = "380 kV double suspension string"
-kind = "suspension"          # suspension | strain
+kind = "suspension"          # suspension | strain | post (version 6)
 # legs = 2                   # version 3: two strings to one clamp (suspension only)
 length = "5.2 m"             # attachment point to clamp (each string's, with legs = 2)
 weight = "1.4 kN"            # total weight (default 0)
@@ -664,6 +664,9 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 # max_swing = "60 deg"       # from straight down, any direction
 # max_swing_across = "55 deg"
 # max_swing_along = "30 deg"
+# version 6, a post only: its ratings across it at its top and in compression
+# cantilever_load = "8 kN"
+# compression_load = "40 kN"
 ```
 
 | Kind | Geometry | In the solver |
@@ -671,6 +674,7 @@ wind_area = "0.6 m²"         # projected area for wind (default 0)
 | `suspension` | clamp `length` below the attachment point | free clamp on a tension-only member (swings) |
 | `suspension` with `legs = 2` | two strings from ±`half_width` (along the structure's local x, across the line) to a clamp below | two tension-only strings to a free clamp; the leeward one goes slack in strong wind (a version 1 attachment; in structure files of version 2 and later each of the two is a string naming the assembly, which gives each half its wind area) |
 | `strain` | clamp `length` from the attachment point, along its conductor | free member of that length: direction and droop follow the conductor tension and the assembly weight |
+| `post` (version 6, 2026-11-14, *built, in active development — not approved yet*) | a **post insulator**: clamp `length` **above** the attachment point (its base), or in the direction its string gives (a horizontal line post) | the clamp **fixed** where the post puts it (rigid); its load to the base point with the moment of its height, its own weight and wind at its middle ([Post insulators](../theory/post-insulators.md)); no legs, half width or swing limits; `cantilever_load` and `compression_load` its ratings (not checked yet) |
 
 ### String limits
 
