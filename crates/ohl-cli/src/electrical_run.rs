@@ -1651,7 +1651,8 @@ fn magnetic(a: &MagneticArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)?;
+    not_computed(&[&m.notes])
 }
 
 fn electric(a: &ElectricArgs) -> Result<(), String> {
@@ -1709,7 +1710,8 @@ fn electric(a: &ElectricArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)?;
+    not_computed(&[&e.notes])
 }
 
 /// `ohl electrical fields`: both fields on the same places and ground,
@@ -1798,7 +1800,24 @@ fn fields(a: &FieldsArgs) -> Result<(), String> {
         name,
         t,
     );
-    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)
+    write_results(&a.common, &s.line.name, json, preset, plan.as_ref(), ground)?;
+    not_computed(&[&m.notes, &e.notes])
+}
+
+/// A run that left something not computed (a cut that failed, the
+/// others written; 2026-11-14) ends as an error, so that a script sees it.
+fn not_computed(notes: &[&Vec<String>]) -> Result<(), String> {
+    let failed: Vec<&str> = notes
+        .iter()
+        .flat_map(|n| n.iter())
+        .filter(|n| n.starts_with("NOT COMPUTED"))
+        .map(String::as_str)
+        .collect();
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("\n"))
+    }
 }
 
 /// A cut's line of the summary: its label, alignment station (said when

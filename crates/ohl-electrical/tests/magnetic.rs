@@ -598,14 +598,25 @@ fn a_span_place_becomes_an_alignment_station() {
         })],
         ..s.clone()
     };
-    let e = run_result(&line, &library, &beyond).unwrap_err();
+    // (A cut that fails is said, the rest of the run kept: 2026-11-14.)
+    let not_computed = |m: &magnetic::MagneticField| {
+        m.notes
+            .iter()
+            .find(|n| n.starts_with("NOT COMPUTED"))
+            .cloned()
+            .unwrap_or_default()
+    };
+    let m = run_result(&line, &library, &beyond).unwrap();
+    assert!(m.cuts.is_empty());
+    let e = not_computed(&m);
     assert!(e.contains("beyond"), "{e}");
     // No alignment: no cut, said.
     let mut bare = line.clone();
     bare.alignments.clear();
     bare.alignment_points.clear();
     bare.routes.clear();
-    let e = run_result(&bare, &library, &s).unwrap_err();
+    let m = run_result(&bare, &library, &s).unwrap();
+    let e = not_computed(&m);
     assert!(e.contains("on no alignment"), "{e}");
 }
 

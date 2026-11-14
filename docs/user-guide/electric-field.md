@@ -152,6 +152,9 @@ why* — and every other cut keeps its results. The same for a whole step
 (the profiles, the cuts, the volumes run one after another): a step that
 fails is said in red and the steps that worked are shown. Only **Stop**
 ends the run. A run where nothing could be computed gives its errors.
+On the command line (`ohl electrical`), the cuts that worked are written
+and the command then ends with the failed cuts as its error (a non-zero
+exit), so that a script notices.
 
 ## 3D volumes
 
