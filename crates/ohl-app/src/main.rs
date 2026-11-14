@@ -119,6 +119,7 @@ mod sheet_ui;
 mod span_pick;
 mod span_tool;
 mod spot;
+mod staking;
 mod starter;
 mod string_builder;
 mod string_checks;

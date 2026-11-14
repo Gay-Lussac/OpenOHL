@@ -84,6 +84,8 @@ pub enum Panel {
     Loads,
     /// Bill of materials › Wires.
     BillOfMaterials,
+    /// Line › Structures › Staking table (2026-11-14).
+    Staking,
     /// Checks › Wire clearances › Show results (a page until 2026-10-27).
     Clearances,
     /// Line › Structures › Spot structures.
@@ -94,7 +96,7 @@ pub enum Panel {
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 30] = [
+    pub const ALL: [Panel; 31] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -122,6 +124,7 @@ impl Panel {
         Panel::CheckLibrary,
         Panel::Loads,
         Panel::BillOfMaterials,
+        Panel::Staking,
         Panel::Clearances,
         Panel::Spot,
         Panel::StringBuilder,
@@ -157,6 +160,7 @@ impl Panel {
             Panel::CheckLibrary => "Performed checks",
             Panel::Loads => "Structure loads",
             Panel::BillOfMaterials => "Bill of materials: wires",
+            Panel::Staking => "Staking table",
             Panel::Clearances => "Clearances",
             Panel::Spot => "Spot structures",
             Panel::StringBuilder => "String builder",

@@ -49,6 +49,7 @@ mod rod;
 pub mod route;
 pub mod sagging;
 pub mod solve;
+pub mod staking;
 
 pub use bimetallic::bimetallic_notes;
 pub use objects::{

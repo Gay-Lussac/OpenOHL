@@ -47,6 +47,7 @@
 - [Wire tensions](user-guide/wire-tensions.md)
 - [Thermal rating (.ohlta)](user-guide/thermal.md)
 - [Bill of materials and cost estimate (.ohlcost)](user-guide/bom-and-cost.md)
+- [Staking table](user-guide/staking-table.md)
 - [Optimum structure spotting](user-guide/spotting.md)
 - [Analyses: galloping, ice shedding, vegetation, safety volumes, as-built wires, fields](user-guide/analyses.md)
   - [Magnetic field](user-guide/magnetic-field.md)

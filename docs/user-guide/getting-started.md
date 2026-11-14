@@ -89,6 +89,7 @@ cargo run -p ohl-cli -- plugin info plugins/examples/hello-wasm   # the example 
 | `ohl thermal` | ampacity and clearance-limited temperature | [Thermal rating](thermal.md) |
 | `ohl bom` | bill of materials and cost estimate | [Bill of materials](bom-and-cost.md) |
 | `ohl spot` | optimum structure spotting along a route | [Spotting](spotting.md) |
+| `ohl staking` | the staking table: each structure's station, offset, line angle, spans, coordinates, ground and bearing, and the feet of the typed structures | [Staking table](staking-table.md#without-the-window-ohl-staking) |
 | `ohl clearance` | galloping ellipses, blowout against the right of way | [Analyses](analyses.md) |
 | `ohl lidar` | LAS/LAZ information, classification, vegetation, as-built wires | [Analyses](analyses.md), [Terrain](terrain.md) |
 | `ohl project`, `ohl pointcloud`, `ohl surface` | the project file: commands, undo, versions, point clouds, terrain surfaces | [Project files](project.md), [Versions](versions.md) |

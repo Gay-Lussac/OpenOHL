@@ -840,6 +840,7 @@ pub(super) fn tool_windows(
         }
     }
     r.bom.show(ctx, &r.model);
+    r.staking.show(ctx, &r.model);
     r.spot.show(ctx, &r.model);
     string_builder_window(ctx, r);
     pylon_windows(ctx, r);

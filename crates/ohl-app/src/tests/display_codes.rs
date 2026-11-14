@@ -150,6 +150,66 @@ fn thermal_rating_window() {
     harness.get_by_label("Clearance limit [°C]");
 }
 
+/// Line › Structures › Staking table lists the typed example's structures
+/// along its alignments with the survey's ground under them, and the four
+/// feet of each lattice tower (type-02, T2 and T4) in the Feet tab.
+#[test]
+fn staking_table_window() {
+    let ex = root().join("examples/synthetic-line");
+    let model = model::load(
+        Sources {
+            file: ex.join("synthetic-line-typed.ohl.json"),
+            library: Some(root().join("libraries/cables")),
+            structures: Some(ex.join("Structures")),
+            terrain: Some(ex.join("synthetic-survey.csv")),
+            point_budget: 1000,
+            corridor: 60.0,
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    crate::tests::line_menu(&mut harness, "Structures");
+    harness.get_by_label("Staking table…").click();
+    run_until(&mut harness, |a| {
+        let r = a.ready().unwrap();
+        r.staking.result.is_some() && !r.staking.running()
+    });
+    harness.step();
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let t = r.staking.result.as_ref().unwrap().as_ref().unwrap();
+        for s in &r.model.line.structures {
+            assert!(t.rows.iter().any(|x| x.structure == s.id), "{}", s.id);
+        }
+        assert!(t.rows.iter().all(|x| x.ground.is_some()), "{:?}", t.notes);
+        assert_eq!(t.feet.len(), 8, "{:?}", t.notes);
+    }
+    // The table (cells are painted) with its exports; the feet in their
+    // tab. With OHL_RENDER_PNG: both tabs as pictures for the docs.
+    let shot = |h: &mut Harness<'_, App>, name: &str| {
+        h.run();
+        if let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG")
+            && let Ok(image) = h.render()
+        {
+            let path = std::path::PathBuf::from(dir).join(name);
+            crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+        }
+    };
+    harness.get_by_label("Full report (CSV)…");
+    harness.get_by_label("Staking table: user guide ↗");
+    shot(&mut harness, "staking-structures.png");
+    harness.get_by_label("Feet").click();
+    harness.run();
+    assert!(harness.query_by_label_contains("No feet").is_none());
+    harness.get_by_label("Export CSV…");
+    shot(&mut harness, "staking-feet.png");
+}
+
 /// Checks › Bill of materials prices the typed example with the cost file
 /// next to it; Tools › Spot structures proposes structures along the main
 /// route on the survey, in the background.
