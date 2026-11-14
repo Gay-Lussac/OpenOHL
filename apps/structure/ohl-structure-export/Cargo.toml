@@ -27,7 +27,7 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # The SAF workbook (a zip of XML parts), as ohl-io's XLSX writer.
-zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [lints]
 workspace = true

@@ -35,7 +35,7 @@ fn unzip(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
             let mut f = zip.by_index(k).unwrap();
             let mut v = Vec::new();
             f.read_to_end(&mut v).unwrap();
-            (f.name().to_owned(), v)
+            (f.name().unwrap().into_owned(), v)
         })
         .collect()
 }

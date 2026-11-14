@@ -413,7 +413,7 @@ fn zip_members(
     let mut left = total;
     for k in 0..zip.len() {
         let mut f = zip.by_index(k).map_err(|e| e.to_string())?;
-        let name = f.name().to_ascii_lowercase();
+        let name = f.name().map_err(|e| e.to_string())?.to_ascii_lowercase();
         if [".shp", ".dbf", ".prj"].iter().any(|e| name.ends_with(e)) {
             if files.len() >= max_files {
                 return Err(format!(
