@@ -174,7 +174,11 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     let budget = ohl_wirefe::default_fe_budget();
     let cases = structure_cases_with(&everyday(), &weather, &lc);
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    assert!(loads.library_error.is_none(), "{:?}", loads.library_error);
+    assert!(
+        loads.library_failed.is_empty(),
+        "{:?}",
+        loads.library_failed
+    );
     // The core: no loads at T2 in any library case, said in each.
     for c in &loads.library {
         assert!(!c.loads.iter().any(|l| l.structure == "T2"));
@@ -190,11 +194,18 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     assert!(t2.library_cases.is_empty());
     let note = t2.note.as_deref().unwrap();
     assert!(note.contains("T2 takes no load case"), "{note}");
-    assert_eq!(t2.cases, ["everyday"]);
+    // The weather case sent has the name of a library case: renamed
+    // (2026-11-14, one name one meaning).
+    assert_eq!(t2.cases, ["everyday (weather case)"]);
     assert!(!t2.values.values.is_empty());
     let t3 = placed_values_with(&loads, &line, "T3", "synthetic");
     assert_eq!(t3.library_cases.len(), lc.len());
-    assert!(t3.note.is_none(), "{:?}", t3.note);
+    // Only the rename said.
+    let note = t3.note.clone().unwrap_or_default();
+    assert!(
+        note.starts_with(ohl_structure_link::RENAMED) && !note.contains(" · "),
+        "{note}"
+    );
 }
 
 /// Two sections on one attachment point: at T2 the point A1 holds set 1

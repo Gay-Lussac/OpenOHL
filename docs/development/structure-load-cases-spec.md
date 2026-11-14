@@ -6,6 +6,16 @@ active development (not approved yet): decisions taken within it in the
 line's loads reach a structure and how a structure load case is put
 together; the load table, its typed values and the solve stay.
 
+**Changed since** (read this spec with it): on 2026-11-03 the owner
+chose "the library's cases" — each placed structure also gets its set of
+the line's load case library as load cases of its own, with the
+library's factors, beside the line results described here. So "the line
+gives forces, nothing else" below holds for the line results only. On
+2026-11-14 the owner set the model: the line transfers what the wires do
+(forces per load case, per set, back and ahead); the structure side
+decides what acts and checks it. The flow as it is today: [How load
+cases reach a structure](../user-guide/load-cases-to-structures.md).
+
 ## Why
 
 Today a structure load case is a flat list of "loads": each takes a line
@@ -47,7 +57,8 @@ things are applied and when").
    weather case with wind gives **two line results**, the wind from the
    left and from the right ("storm — wind from the left"); without wind,
    one. The line's `.ohllc` load cases are no longer sent (they stay for
-   the line's own checks: structure usage, etc.).
+   the line's own checks: structure usage, etc.). *Since 2026-11-03 they
+   are sent again, each structure its set, as library cases (above).*
 2. **All factors are in the structure load case** — one place.
 3. **A structure load case has two parts**, each with its own factors:
    - **Line forces**: one row per line result taken, with a vertical, a
@@ -71,7 +82,8 @@ things are applied and when").
 - Criteria › **Loads for structures**: the weather cases sent (and their
   groups), the wire condition, and a line explaining that a wind case is
   sent twice. The load-case list goes (a project that ticked load cases:
-  said once, the choice kept in the file but not used).
+  said once, the choice kept in the file but not used). *Since
+  2026-11-03 the case sets choose the library cases each structure gets.*
 - Line results named `<weather case> — wind from the left` / `— wind from
   the right` (no wind: `<weather case>`); each solved as that weather case
   with the wind on that side. Cost: a wind case is solved twice (seconds

@@ -40,6 +40,10 @@ pub struct Form {
     pub unreadable: Option<String>,
     /// A case being renamed: the name typed.
     renaming: Option<String>,
+    /// A rename asked of the project (old name, new name): one command
+    /// renaming the case in the file and in the structures' sets
+    /// ([`crate::load_case_sets::rename_command`]); taken by the page.
+    pub rename: Option<(String, String)>,
     /// Numbers being typed, by field (a number half typed does not read).
     buffers: HashMap<String, String>,
 }
@@ -51,6 +55,12 @@ pub struct FormContext<'a> {
     /// The line (its sections for the removed and broken wires; none: a
     /// file opened alone).
     pub line: Option<&'a ohl_line::Line>,
+    /// The file is the project's own: a rename is one command of the
+    /// project, renaming the case in the structures' sets too.
+    pub project: bool,
+    /// The page has changes not saved (a rename of the project waits for
+    /// them to be saved or discarded).
+    pub dirty: bool,
 }
 
 impl Form {
@@ -164,6 +174,7 @@ pub fn ui(
         return None;
     };
     let mut changed = false;
+    let mut request = None;
     let buffers = &mut form.buffers;
     egui::Panel::left(egui::Id::new("load-case-form-list"))
         .resizable(true)
@@ -204,12 +215,21 @@ pub fn ui(
                     buffers.clear();
                     changed = true;
                 }
+                let takers = match (cx.line, cases.cases.get(*item)) {
+                    (Some(line), Some(c)) => crate::load_case_sets::takers(line, &c.name),
+                    _ => Vec::new(),
+                };
                 if ui
                     .add_enabled(*item < cases.cases.len(), egui::Button::new("Delete"))
-                    .on_hover_text(
-                        "Delete the case picked (the structures' sets naming it say so when the \
-                         loads are computed)",
-                    )
+                    .on_hover_text(if takers.is_empty() {
+                        "Delete the case picked (no structure's set names it)".to_owned()
+                    } else {
+                        format!(
+                            "Delete the case picked: {} name it in their set and are then not \
+                             checked in it (said in the usage and the Structures table)",
+                            takers.join(", ")
+                        )
+                    })
                     .clicked()
                 {
                     cases.cases.remove(*item);
@@ -219,7 +239,13 @@ pub fn ui(
                 }
                 if ui
                     .add_enabled(*item < cases.cases.len(), egui::Button::new("Rename"))
-                    .on_hover_text("Give the case picked another name")
+                    .on_hover_text(if cx.project {
+                        "Give the case picked another name: in the file and in every structure's \
+                         and type's set and broken-wire tick naming it, one change (undone as one)"
+                    } else {
+                        "Give the case picked another name (a file outside a project: the \
+                         structures' sets naming it are not renamed)"
+                    })
                     .clicked()
                 {
                     form.renaming = Some(cases.cases[*item].name.clone());
@@ -240,6 +266,11 @@ pub fn ui(
                     Some("a name, please")
                 } else if taken {
                     Some("another case has this name")
+                } else if cx.project && cx.dirty {
+                    Some(
+                        "Save or discard the changes first: the rename is one change of the \
+                         project, with the structures' sets",
+                    )
                 } else {
                     None
                 };
@@ -259,8 +290,14 @@ pub fn ui(
                 if done == Some(true)
                     && let Some(c) = cases.cases.get_mut(*item)
                 {
-                    c.name = name.trim().to_owned();
-                    changed = true;
+                    if cx.project {
+                        // One command of the project (the page reads the
+                        // file again after it).
+                        request = Some((c.name.clone(), name.trim().to_owned()));
+                    } else {
+                        c.name = name.trim().to_owned();
+                        changed = true;
+                    }
                 }
                 if done.is_some() {
                     form.renaming = None;
@@ -314,6 +351,9 @@ pub fn ui(
                 changed |= case_ui(ui, case, *item, cx, buffers);
             });
     });
+    if request.is_some() {
+        form.rename = request;
+    }
     if changed { form.written() } else { None }
 }
 

@@ -95,29 +95,39 @@ ohl-structure Structures/type-02.ohls --structure T2 \
 - The header says **loads of T2 in *line*** (a link to the
   **Line loads** panel).
 - The line application computes the loads the wires and strings put on
-  T2 in the cases it sends to its structures (Criteria › Loads for
-  structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
-  its load cases (Criteria › Load cases or Design code; all by default),
-  then the weather cases ticked to be sent on their own, each a case
-  `weather: <name>` with every factor 1 (none by default). They are
+  T2 in the cases it sends to its structures
+  ([How load cases reach a structure](load-cases-to-structures.md)):
+  T2's **case set** of the line's load case library (its own, else its
+  type's, else every case; Line › Criteria › Load cases library, or a
+  design-code plugin), as its [library
+  cases](#the-lines-load-cases-the-library), then the weather cases
+  ticked in Criteria › Loads for structures ([Loads for
+  structures](desktop-app.md#loads-for-structures); none by default),
+  each a **line result** with every factor 1 (`<name>`, or with wind
+  `<name> — wind from the left` and `— wind from the right`). They are
   computed as Checks › Structure loads does, in the background, and
   written beside the structure file as
-  `<name>.<structure>.line-values.json` (version 3: each case with its
+  `<name>.<structure>.line-values.json` (version 7: each case with its
   source and, per case, the sections and jumpers at the structure that
-  did not solve; versions 1 and 2 still read — their cases load cases,
-  nothing missing). Until
+  did not solve; older versions still read). Until
   they are there the header says they are being computed; with no load
-  case and no weather case ticked it says so and suggests ticking weather
-  cases; a ticked case no longer in the line is named. When the line changes while the application is open
+  case library and no weather case ticked it says so; a ticked case no
+  longer in the line is named. When the line changes while the application is open
   (and stays unchanged for a second), the line application computes them
   again and rewrites the file; the application reads it again within
   half a second and evaluates the recipes with the new values.
 - A **status block** at the top of the Load case editor, Load table and Line
-  values panels says, in plain words, what the line gave or why not:
+  values panels says, in plain words, what the line gave or why not
+  (2026-11-14: also, as warnings, a case of the structure's set that does
+  not compute — *NOT SENT: library case "x" does not compute (why)*, the
+  others still sent — and cases of its set no longer in the line's
+  library — *NOT CHECKED: load case(s) … of T7's set not in the line's
+  load case library*):
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
   line's values for T2 are being computed…*; *The line gives no values
-  for T7: the project has no load cases. Add them in the line
-  application (Criteria › Load cases, or a design-code plugin)…*; a case
+  for T7: the project has no load cases. Add them in OHL-Design
+  (Criteria › Load cases library, or a design-code plugin)…* (no load
+  case library and no weather case sent); a case
   of the line without values (its sections not solved in it); a case
   **incomplete** — *Case ice incomplete: cross-section S12 not solved (why) —
   the line's forces at T2 lack its wires…*: a section or jumper at this
@@ -1241,7 +1251,7 @@ structure has no line: every load taking a line value shows **no line
 value**. Type the
 values (drag or click a number), or **Import table…** a CSV with the
 table's columns (from **Export table…**, another program or a client's
-load tree): what it has beyond the evaluation becomes typed values.
+load tree): what it has beyond the evaluation becomes typed values (values of a case the table has not wait, not run, until **Make it a load case** or **Move**, below).
 
 **Typed values** stay when the recipes change and the table is
 evaluated again; ⟲ takes one back. They are not part of the structure
@@ -1250,6 +1260,19 @@ file: **Save** writes them beside it as `<name>.loads.csv` (for
 only), and opening the file reads them again; started for a placed
 structure, as `<name>.<structure>.loads.csv`. Unsaved typed values count
 as unsaved changes.
+
+**Typed values on no row** (2026-11-14): a value typed over a row that
+is no longer in the table — its case renamed in the line's library,
+called `<name> (library)` since an extra case took its name, or gone —
+is **not run** (before, it became a case of its own holding that one row
+while the real case ran without it: not on the safe side). The Load
+table lists such values in a box in the warning colour, per case (*wind:
+1 value(s) at A1*), with **Move** to a case of the table chosen in the
+list (those then typed over one of its rows replace it), **Make it a
+load case** (a load case of that name in the structure file, holding
+only typed values — e.g. a client's load tree imported; one undo step)
+and **Take back**; the status block says how many are not run. They stay
+in the typed values file until moved or taken back.
 
 **Surface loads** (a `pressure` on `members`) take each member's area
 from the cross-section library (`--sections`, else the `Sections` folder
@@ -1278,7 +1301,9 @@ as its **load cases**, with the library's factors: each case takes
 2. the structure's self weight × its vertical factor; the wind on the body
    from the case's direction — any angle (`from = 30.0`, 0° from the
    right, 90° from ahead) — its pressure on the structures (with
-   `use_local`, × this structure's `wind_static`) × its factor; ice on
+   `use_local`, × this structure's `wind_static`; every case takes it
+   when Checks › Structure loads › Use local conditions is ticked in
+   OHL-Design, 2026-11-14, said in the status block) × its factor; ice on
    every member (the case's thickness or this structure's local ice — also
    when the case takes the local conditions, gives no ice of its own and
    its weather case has ice, said in its description —, its density) and snow on every member's plan (q = μ·C_e·C_T·s_k), × the
@@ -1300,7 +1325,13 @@ library* (read here, changed in OHL-Design), then the structure's own
 cases as **extra** load cases — for loads the line's cases do not give.
 The line's values of a library case are taken by that case only (no row
 of its own in the load table). An own case with a library case's name
-makes the library's `<name> (library)`. Older line-values files (version
+makes the library's `<name> (library)`. A weather case sent with the
+name of a library case (Loads for structures) arrives as `<name>
+(weather case)` (2026-11-14, one name one meaning: before, OHL-Structure
+took the library case's forces for both), said in the status block; an
+extra case still taking line forces `<name>` gets the library case's
+and the status block says so, to pick `<name> (weather case)` there if
+that was meant. Older line-values files (version
 4 and before) and lines without a load case library give none: the own
 cases as before. The weather cases ticked in Criteria › Loads for
 structures still come as line results (unfactored, for the own cases),

@@ -5,7 +5,9 @@ structure's load case is made from them in OHL-Structure.
 
 How it works, in one line: **the line gives forces** at each attachment
 point, unfactored; **the structure's load cases** take them with their
-factors and add the loads on the structure itself.
+factors and add the loads on the structure itself. (Each structure also
+gets its cases of the load case library, with the library's factors:
+[How load cases reach a structure](../user-guide/load-cases-to-structures.md).)
 
 ```
 weather cases ticked ──► line results (forces at each attachment point, unfactored)
@@ -46,8 +48,10 @@ weather cases ticked ──► line results (forces at each attachment point, un
 
 ## What you should see
 
-In OHL-Design, the line sends three **line results**: *everyday*, and
-*high wind — wind from the left* and *high wind — wind from the right*.
+In OHL-Design, the line sends three **line results**: *everyday
+(weather case)* — so named because the project's load case library has a
+load case *everyday* too: one name, one meaning —, and *high wind — wind
+from the left* and *high wind — wind from the right*.
 In OHL-Structure, two cases whose sentences read like *high wind — wind
 from the left: vertical × 1.35, transverse × 1.5, longitudinal × 1.0 at
 every point*, and their rows in the load table.

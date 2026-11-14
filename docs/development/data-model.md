@@ -2514,7 +2514,16 @@ section not solved ends at or hangs on, or whose strings hold a jumper
 not solved: that structure's loads in that case are **incomplete**;
 `CaseLoads::missing_at`, `is_incomplete`) and `structure_wind`
 (`BodyWind` of the case), `notes` (version 4: what the case assumed, in
-words). `add_structure_loads(results, line, types, sections, weather)`
+words), `unknown_sets` (2026-11-14: `UnknownCases` — `structure`,
+`names`, `none_known` — the structures whose case set names cases not in
+the line's load case library, `unknown_case_sets(line, known)`; the same
+in every case). `structure_loads_each(line, cables, weather, cases,
+known, budget) -> Vec<Result<CaseLoads, String>>` (2026-11-14): each case
+on its own — a faulty one fails only itself — the case sets checked
+against `known`, the names of the whole library (a run of some cases
+does not call the others missing); `structure_loads` is it with
+`known` = the cases given, collected (the first error fails the
+list). `add_structure_loads(results, line, types, sections, weather)`
 (2026-11-03): `add_structure_wind` (the bands, by the case's direction,
 × local `wind_static` with `use_local`, only for structures taking the
 case) and the ice and snow per structure as loads without a point ("ice
@@ -2581,14 +2590,18 @@ same per structure (`StructureUsage::missing`), marks each `Check` from
 such loads `incomplete: true`, and `StructureUsage::status()` gives
 `UsageStatus::{NotChecked, Incomplete, Approximate, Pass, Over}` —
 `Incomplete` whenever a wire is missing, whatever the usage;
+`NotChecked` (2026-11-14) whenever `StructureUsage::unknown_cases` is
+not empty — cases of its set not in the library: never a pass, its
+usage in the cases it takes still shown; a structure whose set names
+only such cases is listed in every case, not checked, with the names;
 `Approximate` (after that) when a check has `approximate: true` — the
 FE check of a model whose tension-only members did not settle
 (`ohl_structures_fe::Solution::kept_active`: those members kept active
 as trusses; `StructureUsage::is_approximate`, `approximate_text`). The
 usage CSV (`usage_csv`, `ohl line --usage-csv`) ends with an
 `incomplete` column: `incomplete: section S12 not solved (why); …`,
-then `approximate: fe (…)` for an approximate check, empty when
-neither.
+then `approximate: fe (…)` for an approximate check, then `not
+checked: <cases> not in the library` (2026-11-14), empty when none.
 
 ### Structure load cases (`[[load_case]]`, `.ohlslc`)
 
@@ -2626,7 +2639,13 @@ per line load case, point or set and quantity) into a `LoadTable`
 transverse/longitudinal/vertical down N, `source`
 recipe/line/wind/ice/point/typed — the part a row comes from —,
 `evaluated`, `missing`, `note`, `area` — a surface load's member area,
-m²). Row numbers (`load`) per part, so typed values keep matching
+m²). Typed values (`Override`) land through
+`LoadTable::apply_landing(overrides, typed_cases)` (2026-11-14): those
+typed over a row of the table, or of a case of `typed_cases` (an own
+load case with no load: made to hold typed values); the others are
+returned, not applied — shown apart, moved by the user — never a case of
+their own (`LoadTable::apply` still adds them, for the typed values file
+itself). Row numbers (`load`) per part, so typed values keep matching
 (`ohl_structure_loads::Part`, `PART_BLOCK` = 1000): older loads 1–999,
 line forces 1001…, wind 2001…, ice 3001…, point loads 4001…; a point
 turned off keeps its row (force 0, note "off"). The self weight has no
@@ -2740,15 +2759,33 @@ its cases' values among `cases` as load cases — and `from_deg` on a
 `CaseWind` from an angle): what the line application hands to the structure application
 for **Edit…** on a placed structure — `structure` (placed structure id),
 `line` (project line, or the line file's name), `structure_type`,
-`cases` (the cases the line sends, its `structure_loads`: the load cases
-chosen, then the weather cases chosen on their own, `weather: <name>`),
+`cases` (the cases the line sends: the structure's set of the load case
+library, then the weather cases ticked in its `structure_loads` as line
+results — `<name>`, `<name> — wind from the left` / `— right`; a line
+result with a library case's name is `<name> (weather case)`
+(`ohl_structure_link::WEATHER_CASE_SUFFIX`, 2026-11-14, said in the note
+as `RENAMED: …`; the line results are solved with the line's own weather
+cases too, for the creep-stretch criteria; with the line check's Use
+local conditions ticked every case, library case and line result, takes
+the local conditions, `StructureCases::with_local`, said in the note as
+`With the local conditions …`, `ohl_structure_link::WITH_LOCAL`); before
+2026-10-25 the load cases chosen and `weather: <name>`; the library's
+cases computed one by one, `ohl_structure_link::StructureCaseLoads::
+library_failed` naming those that do not compute, `library_names` every
+name),
 `sources` (version 2, in the order of `cases`: `load_case` or
 `weather_case`, `ohl_structure_loads::CaseSource`; absent in version 1:
 every case a load case), `values` (`LineValues`), `others`
 (`OtherPlace`: the other placed structures of the type with their
 `LineValues`; each also with its `missing`), `note` (why there are no
-values: being computed, no load case and no weather case chosen;
-sections not solved; chosen cases no longer in the line), `missing`
+values: being computed, no load case and no weather case chosen —
+beginning `no load case file`, `ohl_structure_loads::NO_LOAD_CASE_FILE`;
+sections not solved; chosen cases no longer in the line; since
+2026-11-14, first, `NOT SENT: library case "x" does not compute (why)`
+for a case of its set that failed alone,
+`ohl_structure_link::NOT_SENT`, and `NOT CHECKED: load case(s) … of
+T7's set not in the line's load case library`; parts separated by
+` · `, those beginning `NOT ` shown as warnings), `missing`
 (version 3, absent when empty or in older files: per case the sections
 and jumpers at this placed structure that did not solve,
 `ohl_structure_loads::MissingWire` — `case`, `kind` `"section"` or
@@ -3199,6 +3236,7 @@ once, the server logs who changed which key).
 | `app.electric_field.<project line>` | `ohl-design` (Checks › Electrical › Electric field…) | JSON: the window's inputs (2026-10-29) — `case` (name), `voltages` (circuit label → kV between phases; absent: the system's nominal; 0: voltage-free), `jumpers`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: the spans ticked), `spans_off` / `spans_on` (2026-10-30: `[[from, to]]`, the spans on an alignment unticked and those on none ticked, the changes from the default), `limit` (kV/m), `two_d`, `ground_radius` (m), `tiled` (the tiled floor, default; else the plane), `tile` (its fine tiles, m), `cut_tile`, `volume_tile` (m), `volume_margin` (m, 2026-11-01: how far a volume's floor reaches; absent: 100), `points` (`[file name, CSV text]`), `piece_length` (m), `levels` (`[{value kV/m, rgb, on}]`), `fill`, `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`; since 2026-10-30 only its step read, the spans the ticked ones), `volume_step` (m, 2026-10-30), `volume_width` (m, 2026-11-01; absent: `width`), `calculation`, `planes`, `profiles`, `page` (2026-11-12), `per_system`, `ground_from` (2026-11-01, as the magnetic field's), `stretches` (3D: the stretches per span, 2026-11-01; absent: 24), `steel` (the structures' steel earthed, 2026-10-31), `beside` (profiles beside the structures: the distance into the spans, m; 2026-10-31), `cuts`, `volume_spans`, `cut_width`, `cut_step`, `cut_above` (the span table, 2026-10-31: as the magnetic field's); written when a run starts or the window closes; missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`), Galloping's with `local` (bool, 2026-11-03: Use local conditions) beside them; missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` read and ignored); missing or unreadable fields keep the panel's values |
+| `app.structure_loads.<project line>` | `ohl-design` (Checks › Structure loads) | JSON: `local` (bool, 2026-11-14: Use local conditions; kept so that the loads sent to OHL-Structure follow it, `LineInputs::of_with_local`, `ohl_structure_link::StructureCases::with_local`) |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name) (2026-10-27), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored) |
 | `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `calculation` (2026-11-01), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored); missing fields keep the window's values |
 | `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |

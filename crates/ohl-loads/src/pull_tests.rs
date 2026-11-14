@@ -194,6 +194,113 @@ fn a_structure_taking_no_load_case_is_skipped_and_said() {
     }
 }
 
+/// A structure whose case set names only cases no longer in the library
+/// (a case renamed there): never silently absent (2026-11-14) — no loads,
+/// every case's notes say NOT CHECKED, and the usage lists it as not
+/// checked with the names, never a pass. A set naming one case that is
+/// there and one that is not: its loads in the one, but its usage is
+/// not a pass, saying which case is missing.
+#[test]
+fn a_set_naming_cases_not_in_the_library_is_listed_not_checked() {
+    let mut line = three_spans();
+    line.structures[1].load_cases = vec!["wind (old name)".into()];
+    line.structures[2].load_cases = vec!["weather: calm".into(), "ice (old name)".into()];
+    let (lib, weather, budget) = (library(), weather(), default_budget());
+    let r = structure_loads(&line, &lib, &weather, &cases(), &budget).unwrap();
+    let types = ohl_structures::StructureLibrary::default();
+    let usage = capacity::usage(&line, &types, &lib, &weather, &r);
+    for (c, u) in r.iter().zip(&usage) {
+        assert!(!c.loads.iter().any(|l| l.structure == "T2"));
+        assert_eq!(c.unknown_sets.len(), 2, "{:?}", c.unknown_sets);
+        assert!(
+            c.notes.iter().any(
+                |n| n.starts_with("NOT CHECKED: structure T2") && n.contains("wind (old name)")
+            ),
+            "{:?}",
+            c.notes
+        );
+        // Said on its own, not again among those out of the case's set.
+        assert!(
+            !c.notes
+                .iter()
+                .any(|n| n.contains("not in the load case set") && n.contains("T2")),
+            "{:?}",
+            c.notes
+        );
+        let t2 = u
+            .structures
+            .iter()
+            .find(|s| s.structure == "T2")
+            .expect("listed, never silently absent");
+        assert_eq!(t2.status(), capacity::UsageStatus::NotChecked);
+        assert!(t2.governing().is_none());
+        assert_eq!(t2.unknown_cases, ["wind (old name)"]);
+        assert!(t2.notes[0].starts_with(NOT_IN_LIBRARY), "{:?}", t2.notes);
+        assert!(
+            t2.not_checked_text()
+                .contains("wind (old name) not in the library")
+        );
+    }
+    // T3 takes "calm" (loads there) and names a case not there.
+    let calm = r
+        .iter()
+        .position(|c| c.case.name == "weather: calm")
+        .unwrap();
+    assert!(r[calm].loads.iter().any(|l| l.structure == "T3"));
+    let t3 = usage[calm]
+        .structures
+        .iter()
+        .find(|s| s.structure == "T3")
+        .unwrap();
+    assert_eq!(t3.unknown_cases, ["ice (old name)"]);
+    assert_eq!(t3.status(), capacity::UsageStatus::NotChecked);
+    assert!(
+        t3.notes.iter().any(|n| n.contains("(not checked in them)")),
+        "{:?}",
+        t3.notes
+    );
+    // The CSV says it too.
+    let csv = capacity::usage_csv(&usage);
+    assert!(
+        csv.contains("not checked: ice (old name) not in the library"),
+        "{csv}"
+    );
+    // A run of one case only (the check's 2 Scope): the others of the
+    // library are not "missing".
+    let known: Vec<String> = cases().iter().map(|c| c.name.clone()).collect();
+    let mut both = line.clone();
+    both.structures[1].load_cases = vec!["weather: wind".into()];
+    both.structures[2].load_cases = Vec::new();
+    let one = structure_loads_each(&both, &lib, &weather, &cases()[..1], &known, &budget);
+    assert!(one[0].as_ref().unwrap().unknown_sets.is_empty());
+}
+
+/// One faulty case fails only itself (2026-11-14): a case naming a
+/// weather case that is not there is an error of its own, the other
+/// cases computed as they are alone; [`structure_loads`] still fails the
+/// whole list (the line's check says why).
+#[test]
+fn one_faulty_case_fails_only_itself() {
+    let line = three_spans();
+    let (lib, weather, budget) = (library(), weather(), default_budget());
+    let mut all = cases();
+    let mut bad = LoadCase::from_weather("storm (gone)");
+    bad.name = "storm".into();
+    all.insert(1, bad);
+    let known: Vec<String> = all.iter().map(|c| c.name.clone()).collect();
+    let each = structure_loads_each(&line, &lib, &weather, &all, &known, &budget);
+    assert_eq!(each.len(), 3);
+    let e = each[1].as_ref().unwrap_err();
+    assert!(
+        e.contains("load case storm") && e.contains("storm (gone)"),
+        "{e}"
+    );
+    let alone = structure_loads(&line, &lib, &weather, &cases(), &budget).unwrap();
+    assert_eq!(each[0].as_ref().unwrap(), &alone[0]);
+    assert_eq!(each[2].as_ref().unwrap(), &alone[1]);
+    assert!(structure_loads(&line, &lib, &weather, &all, &budget).is_err());
+}
+
 /// [`three_spans`] with a second wire (set 2, section R, strung at
 /// 12 kN) hanging from the same point A1 of T2 and T3 by its own string.
 /// INVENTED.

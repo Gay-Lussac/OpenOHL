@@ -161,7 +161,11 @@ impl Ready {
                 }
             }
         }
-        if let Some(e) = self.structure_apps.refresh_values(&self.model).pop() {
+        if let Some(e) = self
+            .structure_apps
+            .refresh_values(&self.model, self.loads.local)
+            .pop()
+        {
             self.status = Some((e, true));
         }
     }

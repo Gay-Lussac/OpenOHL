@@ -126,8 +126,8 @@ pub use parts::{
 pub use placed::{
     CaseSource, Governing, LINE_VALUES_FILE_FORMAT, LINE_VALUES_FILE_VERSION,
     LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS, LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS,
-    MissingWire, OtherPlace, PlacedValues, file_part, incomplete_text, line_values_path,
-    overrides_path,
+    MissingWire, NO_LOAD_CASE_FILE, OtherPlace, PlacedValues, file_part, incomplete_text,
+    line_values_path, overrides_path,
 };
 pub use recipe::{
     Direction, LineQuantity, LoadCaseRecipe, LoadRecipe, MODEL_CASE, Pick,

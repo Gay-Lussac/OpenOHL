@@ -654,7 +654,8 @@ fn the_tutorial_builds_a_first_line() {
 
     // Chapter 9: Criteria › Loads for structures: everyday and high wind
     // ticked (the menu stays open), as strung; the line results: everyday
-    // once, high wind from the left and from the right.
+    // once (renamed, the library has a load case of its name), high wind
+    // from the left and from the right.
     crate::tests::line_menu(&mut h, "Criteria");
     h.get_by_label_contains("Loads for structures").hover();
     h.run();
@@ -676,10 +677,12 @@ fn the_tutorial_builds_a_first_line() {
             .compute()
             .unwrap();
         let names: Vec<&str> = loads.weather.iter().map(|c| c.case.name.as_str()).collect();
+        // The library has a load case "everyday": the weather case is
+        // sent as "everyday (weather case)" (one name, one meaning).
         assert_eq!(
             names,
             [
-                "everyday",
+                "everyday (weather case)",
                 "high wind — wind from the left",
                 "high wind — wind from the right"
             ]

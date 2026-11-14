@@ -183,6 +183,11 @@ fn the_pole_check_and_the_report() {
     };
     h.state_mut().loads.type_value(&own, own.force);
     h.run();
+    // Typed values on no row are not run until their case is made
+    // (2026-11-14): a case of typed values only, from the Load table.
+    menu(&mut h, "Loads", "Load table");
+    h.get_by_label("Make it a load case").click();
+    h.run();
     menu(&mut h, "Results", "FE results");
     assert!(!h.state().can_write_report());
     h.get_by_label("▶ Run").click();

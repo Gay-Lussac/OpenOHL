@@ -23,6 +23,14 @@ import and export come later; CSV works today.
 
 ## The flow
 
+A placed structure gets the line's loads two ways ([How load cases
+reach a structure](load-cases-to-structures.md) shows the whole flow):
+its **library cases** — its set of the line's load case library, with
+the library's factors, read-only here ([The line's load cases: the
+library](structure-app.md#the-lines-load-cases-the-library), since
+2026-11-03) — and the **line results** described here, the raw
+ingredients of the structure's own load cases.
+
 ```
  OHL-Design (the line)                      OHL-Structure (a structure)
  weather cases sent ──► line results ──────► load case
@@ -36,20 +44,23 @@ import and export come later; CSV works today.
                                               load table ──► finite-element check
 ```
 
-1. **The line gives forces, nothing else.** Each weather case ticked in
+1. **A line result is forces, nothing else.** Each weather case ticked in
    Line › Criteria › Loads for structures ([Loads for
    structures](desktop-app.md#loads-for-structures)) is a **line
    result**: the wires' and strings' forces at each attachment point,
    unfactored. A weather case with wind is two line results, `<case> —
    wind from the left` and `<case> — wind from the right`; without wind,
-   one, named as the weather case. A broken wire (roadmap O9) is a line
+   one, named as the weather case — `<case> (weather case)` when the
+   load case library has a case of that name (2026-11-14). A broken wire (roadmap O9) is a line
    result too: a load case of the line with a broken wire ticked there
    is sent as its weather case with that wire broken, named
    `<weather case> — <section> span <n> broken` (with wind, twice:
    `high wind — S3 span 2 broken — wind from the left`), unfactored like
    the others; its factors (a code's impact factor on the longitudinal
    load) are the structure load case's.
-2. **All the factors are in the structure load case**, in one place.
+2. **The factors of a line result are in the structure load case**
+   that takes it, in one place. (A library case brings its own: the
+   library's.)
 3. **A load case has two parts**, each with its own factors, with a
    description (several lines) and a strength factor.
 
@@ -299,7 +310,7 @@ One row per case, load and point (or member, or joint):
 
 | Column | Meaning |
 |---|---|
-| `case`, `load` | The case and the row's number in it: an older load 1 to 999, the line forces from 1001, the wind on the body from 2001, the ice from 3001, the point loads from 4001 (each part's first item, second, …: a value typed over a row keeps matching when another part changes); shown as load 2, line 1, wind 1, …; empty: a typed row of its own |
+| `case`, `load` | The case and the row's number in it: an older load 1 to 999, the line forces from 1001, the wind on the body from 2001, the ice from 3001, the point loads from 4001 (each part's first item, second, …: a value typed over a row keeps matching when another part changes); shown as load 2, line 1, wind 1, …; empty: a typed row of its own (of a load case holding typed values only; a typed value on no row of the table is not run, 2026-11-14) |
 | `at`, `label` | `point`, `member` or `joint`, and its label or id (empty: the load picks nothing) |
 | `transverse`, `longitudinal`, `vertical` | N; vertical down |
 | `source` | The part the row comes from: `line` (line forces, or an older load taking a line value), `wind`, `ice`, `point`, `recipe` (an older load's own value or pressure), `typed` |

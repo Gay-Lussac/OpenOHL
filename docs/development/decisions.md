@@ -42,6 +42,79 @@ first step, fixed). A post's window says *stands on*, shows no swing
 limits. The limits' help no longer says they are not checked (the string
 check checks them since 2026-10-24).
 
+**Local conditions reach OHL-Structure** (phase 1c of the load cases
+review, owner's answer 3): Checks › Structure loads › Use local
+conditions is kept with the project (project setting
+`app.structure_loads.<line>`, as the other check windows keep theirs:
+no line file change), and the loads written for a placed structure
+take it — every library case and every line result as if it said
+`use_local = true` (`StructureCases::with_local`), the same loads as the
+line's check; OHL-Structure's status block says "With the local
+conditions". Before, they were computed as written whatever the switch:
+lower than the line check's at a structure with `wind_static` above 1,
+**not on the safe side**, not said. Changing the switch rewrites the
+open structures' line values. The line results take it too (one rule:
+the switch means every case takes the local conditions).
+
+**One name, one meaning** (phase 1b of the load cases review, owner's
+answers 4 and 7): a weather case sent to the structures (Loads for
+structures) with the name of a load case of the library is sent as
+`<name> (weather case)` and said in OHL-Structure's status block;
+before, both arrived as `everyday`, OHL-Structure took the first (the
+library's) for both, and an extra case built on the weather case got the
+library case's forces — its wire condition, removed or broken wires,
+local conditions — **not on the safe side**, without a word. An extra
+case still naming `everyday` in its line forces gets the library case's
+and the status block says so. Typed values that land on no row (their
+case renamed or gone since) are **not run** (before, a case of their
+own while the real case ran without them: not on the safe side): the
+Load table lists them with Move (to the case they belong to), Make it a
+load case (a case holding only typed values, e.g. a client's load tree)
+and Take back. Found on the way: the line results were solved with the
+weather cases sent only, so a line result after creep failed when the
+creep-stretch case itself was not sent (its values missing, said in the
+note); the line's own weather cases now go along.
+
+**Never silently absent: renamed or deleted load cases, a faulty case**
+(phase 1a of the load cases review, owner's answers 5 and 6): a structure
+whose case set names cases not in the load case library is **not
+checked** — said in every case's notes, in the usage (never a pass; a set
+naming only such cases is listed in every case with no loads), in the
+Structures table (⚠, error colour) and in OHL-Structure's header; before,
+it quietly took fewer cases, or none and dropped out of the usage table
+(**not on the safe side**). The sets are checked against the whole
+library, not the cases ticked in the check (a run of some cases no
+longer calls the others "not in the library"). **Rename** in the Load
+cases library renames the case in the file (comments kept) and in every
+structure's set, type's set and broken-wire tick, one command undone as
+one (`load_case_sets::rename_command`); **Delete** names the structures
+that lose it. A library case that does not compute fails only itself in
+what OHL-Structure gets (`ohl_loads::structure_loads_each`): the others
+are sent, the faulty one is named NOT SENT in the header of the
+structures taking it; before, one faulty case removed every library case
+of every structure. The line's own check still stops at a faulty case
+and says why (visible, nothing passes).
+
+**Load cases between OHL-Design and OHL-Structure: the model, and the
+texts said right** (owner, approving the review of how load cases reach
+the structures, with its recommended answers): *the line transfers what
+the wires do* — forces per load case, per wire set, back and ahead —
+*the structure side decides what acts* (factors, the cases it takes,
+back and ahead shares, points left out) *and checks it*; construction
+stages are load cases of OHL-Structure (a reduced tension set on the
+line side is dropped from the plan). Phase 0: a user-guide page [How
+load cases reach a structure](../user-guide/load-cases-to-structures.md)
+(the words once, the flow as a picture, each window, where the factors
+are applied, the order own set ► type's set ► every case); the texts
+that still said the line's load cases are "no longer sent" or that the
+line gives "forces, nothing else" corrected (Loads for structures, the
+structure load cases' flow, the spec's status, OHL-Structure's start
+for a placed structure, code comments); the Loads for structures menu
+says, with no weather case ticked, that the library cases still arrive;
+OHL-Structure's "the project has no load cases" now shows when the line
+has no load case library and sends no weather case (the line's message
+began with other words: `ohl_structure_loads::NO_LOAD_CASE_FILE`).
+
 **Field cuts and steps fail on their own** (owner: on a real line the 2D
 cuts at buildings "failed because of one unconnected cable and all
 results got aborted … for cuts those that work get their results reported
