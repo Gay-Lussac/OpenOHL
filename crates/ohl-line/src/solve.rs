@@ -773,7 +773,11 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     weight: st.weight / bundle,
                     wind_area: st.wind_area / bundle,
                     stiffness: st.stiffness.unwrap_or(line.defaults.insulator_stiffness),
-                    compression: st.compression,
+                    // A hinged (braced) post pushes as well as pulls: a
+                    // member both ways, flagged beyond its rating only.
+                    compression: st
+                        .compression
+                        .or((st.post && st.hinged).then_some(f64::INFINITY)),
                     limits: st.limits(),
                     strain: st.strain,
                     orientation_deg: structure.orientation_deg,
@@ -2914,9 +2918,19 @@ fn solve_fe(
         })),
     };
     let bundle = f64::from(section.bundle.max(1));
-    for (h, point) in loaded.iter_mut().zip(&section.points) {
-        if let (Some(f), At::Free(i)) = (jumpers.get(&LoadAt::Clamp(point.clone())), h.clamp) {
-            h.free[i].2 += Vector3::new(f[0], f[1], f[2]) / bundle;
+    // A clamp fixed to the structure (a wire point without strings, a
+    // post's top) passes the jumpers' load straight to it: added to its
+    // support's force (the whole bundle's) — it was left out before
+    // 2026-11-14, not on the safe side.
+    let mut on_fixed: Vec<Vector3<f64>> = vec![Vector3::zeros(); section.points.len()];
+    for (k, (h, point)) in loaded.iter_mut().zip(&section.points).enumerate() {
+        let Some(f) = jumpers.get(&LoadAt::Clamp(point.clone())) else {
+            continue;
+        };
+        let f = Vector3::new(f[0], f[1], f[2]);
+        match h.clamp {
+            At::Free(i) => h.free[i].2 += f / bundle,
+            At::Fixed(_) => on_fixed[k] = f,
         }
     }
     // (A gap-type conductor: with its outer strands unloaded in this
@@ -3298,10 +3312,16 @@ fn solve_fe(
                 }
                 nodes
                     .iter()
-                    .map(|(label, n)| Support {
-                        label: label.clone(),
-                        at: p(pos[*n]),
-                        force: p(-solution.reactions[*n] * bundle),
+                    .map(|(label, n)| {
+                        let mut force = -solution.reactions[*n] * bundle;
+                        if *n == built.clamps[k] {
+                            force += on_fixed[k];
+                        }
+                        Support {
+                            label: label.clone(),
+                            at: p(pos[*n]),
+                            force: p(force),
+                        }
                     })
                     .collect()
             })

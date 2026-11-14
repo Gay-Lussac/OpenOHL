@@ -502,6 +502,7 @@
                        wire point rigidly; its rating across it; the direction its clamp
                        holds a jumper in (structure axes). -->
                   <xs:attribute name="post" type="xs:boolean" default="false"/>
+                  <xs:attribute name="hinged" type="xs:boolean" default="false"/>
                   <xs:attribute name="cantilever_load" type="xs:double"/>
                   <xs:attribute name="exit_angle_deg" type="xs:double"/>
                   <xs:attribute name="exit_direction_deg" type="xs:double"/>

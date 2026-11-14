@@ -67,10 +67,16 @@ fn a_broken_wire_load_case_from_the_command_line() {
         "{stdout}"
     );
     let text = std::fs::read_to_string(&csv).unwrap();
-    assert!(text.lines().next().unwrap().ends_with(",broken_span"));
+    // `broken_span`, then the three moment columns (2026-11-14).
     assert!(
         text.lines()
-            .any(|l| l.starts_with("S1 span 2 broken,") && l.ends_with(",2 2 2")),
+            .next()
+            .unwrap()
+            .contains(",broken_span,factored_moment_")
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("S1 span 2 broken,") && l.ends_with(",2 2 2,0.0,0.0,0.0")),
         "{text}"
     );
     // Every span: each row names a span of S1 (1 to 4) per component.
@@ -80,7 +86,7 @@ fn a_broken_wire_load_case_from_the_command_line() {
         .collect();
     assert!(!every.is_empty());
     for l in every {
-        let spans = l.rsplit(',').next().unwrap();
+        let spans = l.rsplit(',').nth(3).unwrap();
         assert!(
             spans
                 .split(' ')

@@ -58,7 +58,34 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
         .iter()
         .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
         .collect();
-    let report = strings::check(&line, &views, &set.string_rules, &Default::default());
+    // The fixed posts' loads in the same cases (their ratings).
+    let posts: Vec<(
+        &str,
+        ohl_clearance::calculation::Calc,
+        Vec<ohl_line::post::PostLoad>,
+    )> = solved
+        .iter()
+        .filter_map(|(n, c, s)| {
+            let case = chosen.iter().find(|w| &w.name == n)?;
+            let l = ohl_clearance::calculation::line_for(&line, *c);
+            Some((
+                n.as_str(),
+                *c,
+                ohl_line::post::post_loads(&l, &library, case, s),
+            ))
+        })
+        .collect();
+    let post_views: Vec<strings::PostCase> = posts
+        .iter()
+        .map(|(n, c, p)| (*n, *c, p.as_slice()))
+        .collect();
+    let report = strings::check(
+        &line,
+        &views,
+        &post_views,
+        &set.string_rules,
+        &Default::default(),
+    );
     for n in &report.notes {
         println!("  note: {n}");
     }
@@ -68,7 +95,7 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
     );
     for r in &report.rows {
         let (value, limit) = match r.measure {
-            Measure::Load => (
+            Measure::Load | Measure::Cantilever | Measure::Compression => (
                 format!("{:.2} kN", r.value / 1000.0),
                 format!("{:.2} kN", r.limit / 1000.0),
             ),

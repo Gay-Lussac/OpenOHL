@@ -231,6 +231,14 @@ pub struct InsulatorString {
     /// "post"`) when the line is read.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub post: bool,
+    /// A post on a **hinged** base (line file version 17; a braced line
+    /// post): it turns about its base and takes its load along it only —
+    /// tension or compression, a member both ways — so another string at
+    /// its wire point (its brace) must hold it. Its wire point then moves
+    /// with its strings as an assembly's does; not given: a fixed
+    /// (cantilever) post.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hinged: bool,
     /// A post's rated load across it at its top, N (its own, else its
     /// assembly's; not given: not checked).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -448,10 +456,20 @@ impl Structure {
         self.strings.iter().filter(move |s| s.wire == label)
     }
 
-    /// The post insulator holding wire point `label`, if one does: the
-    /// wire point is then fixed to the structure where the post puts it
-    /// (its load to the post's base).
+    /// The fixed post insulator holding wire point `label`, if one does
+    /// (a hinged one is a member of the assembly): the wire point is then
+    /// fixed to the structure where the post puts it (its load to the
+    /// post's base).
     pub fn post_at(&self, label: &str) -> Option<&InsulatorString> {
+        self.strings
+            .iter()
+            .find(|s| s.post && !s.hinged && s.wire == label)
+    }
+
+    /// The post insulator at wire point `label`, fixed ([`Structure::post_at`])
+    /// or hinged (braced): the one whose clamp holds a jumper in a fixed
+    /// direction.
+    pub fn any_post_at(&self, label: &str) -> Option<&InsulatorString> {
         self.strings.iter().find(|s| s.post && s.wire == label)
     }
 
@@ -639,10 +657,24 @@ impl Structure {
                     .filter(|o| o.label != s.label && (o.wire == s.wire || o.top == s.wire))
                     .map(|o| o.label.as_str())
                     .collect::<Vec<_>>();
-                if !others.is_empty() {
+                if s.hinged {
+                    // Turning about its base, it needs a brace; never two
+                    // posts at one wire point (the other a fixed one would
+                    // hold it rigidly alone).
+                    if !self
+                        .strings
+                        .iter()
+                        .any(|o| o.label != s.label && o.wire == s.wire)
+                    {
+                        return bad(&format!(
+                            "a hinged post needs a brace: another string at its wire point {}",
+                            s.wire
+                        ));
+                    }
+                } else if !others.is_empty() {
                     return bad(&format!(
-                        "a post insulator holds its wire point {} alone (also: {}; braced posts \
-                         are not modelled yet)",
+                        "a fixed post insulator holds its wire point {} alone (also: {}; a \
+                         braced post is a hinged one)",
                         s.wire,
                         others.join(", ")
                     ));
@@ -654,6 +686,8 @@ impl Structure {
                 }
             } else if s.cantilever_load.is_some() {
                 return bad("a cantilever load is for a post insulator");
+            } else if s.hinged {
+                return bad("hinged is for a post insulator");
             }
             for (name, a) in [
                 ("exit_angle_deg", s.exit_angle_deg),

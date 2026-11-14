@@ -443,7 +443,7 @@ A structure without a type holds its own `points`, `wires`, `strings` and `membe
 | `InsulatorString.stiffness` | f64? | N (EA) | default `solve::DEFAULT_INSULATOR_STIFFNESS` | — |
 | `InsulatorString.compression` | f64? | N | compression it may take (then two-way, flagged beyond); none: tension only | — |
 | `InsulatorString.max_load` | f64? | N | version 6: the tension it is rated for — **not checked** by OpenOHL (`StringLimits`, `InsulatorString::limits`); none: not given; a resolved line fills it from its assembly's `max_load` where none is given | — |
-| `InsulatorString.post`, `.cantilever_load`, `.exit_angle_deg`, `.exit_direction_deg` | bool, f64?, f64?, f64? | —, N, °, ° | line file version 17 (2026-11-14, owner; written only by a line with one, `BEFORE_POST_VERSION` 16): a **post insulator** — standing on its `top` (its base, a structure point; refused on a wire point), holding its `wire` point alone (refused: another string at it, `strain`) rigidly: the solver fixes the wire point where the post puts it (`Structure::post_at`, `Structure::moving_component`: the wire point moves with nothing; `solve::holders_of`'s fixed holder labelled with the **base** point, at the top), its load reported as the base's with the lever top − base. Set from a library post on resolve (its ratings taken where the string gives none: `cantilever_load`; its `compression_load` into `compression`). `exit_angle_deg` (−90…90, none: level) and `exit_direction_deg` (structure axes, 0 ahead, 90 right; none: towards the jumper's other end as given, else ahead): the direction its clamp holds a jumper ending there in, fixed to the structure (`jumper::post_direction`, the rod's clamped end) — a post's only. The swing length of the distance between conductors is 0 at a post (`phase_distance::lk_of`) |
+| `InsulatorString.post`, `.hinged`, `.cantilever_load`, `.exit_angle_deg`, `.exit_direction_deg` | bool, bool, f64?, f64?, f64? | —, —, N, °, ° | line file version 17 (2026-11-14, owner; written only by a line with one, `BEFORE_POST_VERSION` 16): a **post insulator** — standing on its `top` (its base, a structure point; refused on a wire point). **`hinged`** (a braced post): a member of its assembly both ways (the solver's `Member::compression` its rating, else unlimited), refused without another string at its wire point; its weight and wind the solve's, as a string's; `Structure::any_post_at` finds it (its clamp's exit direction). **Fixed** (not hinged): holding its `wire` point alone (refused: another string at it, `strain`) rigidly: the solver fixes the wire point where the post puts it (`Structure::post_at`, `Structure::moving_component`: the wire point moves with nothing; `solve::holders_of`'s fixed holder labelled with the **base** point, at the top), its load reported as the base's with the lever top − base. Set from a library post on resolve (its ratings taken where the string gives none: `cantilever_load`; its `compression_load` into `compression`). `exit_angle_deg` (−90…90, none: level) and `exit_direction_deg` (structure axes, 0 ahead, 90 right; none: towards the jumper's other end as given, else ahead): the direction its clamp holds a jumper ending there in, fixed to the structure (`jumper::post_direction`, the rod's clamped end) — a post's only. The swing length of the distance between conductors is 0 at a post (`phase_distance::lk_of`) |
 | `InsulatorString.max_swing_deg`, `.max_swing_across_deg`, `.max_swing_along_deg` | f64? | ° | version 6: the swings it may take (from straight down any direction; across; along the line), 0–180 — not checked; none: not given; filled from its assembly's on resolve. Reported with the solved string (`solve::StringState::{limits, swing}`, `jumper::JumperStringShape::{limits, swing}`; `ohl_line::swing(orientation, top, bottom) -> Swing {total_deg, across_deg, along_deg}`) and `Line::string_limits(structure, label)` | — |
 | `InsulatorString.strain` | bool | — | a strain (dead-end) string, else suspension: its set is a strain point | — |
 | `InsulatorString.description` | string | — | free text | — |
@@ -640,6 +640,28 @@ A jumper ends at wire points with sets, usually the end points of two
 sections (a dead-end jumper) or a branch end and a through wire (a tap).
 It refers to the wire point, not to a section; it takes its defaults from
 whichever section passes through `from`.
+
+A solved jumper (`jumper::JumperShape`, not stored) carries
+`end_forces` (on its two clamps, N, the whole bundle's) and, since
+2026-11-14, `end_moments` (N·m, line axes): the moment its bending
+stiffness puts on a clamp holding it in a direction (`rod::RodShape::
+end_moments`, \( (2EI/ℓ)\, e \times d \) from the clamp's energy term);
+zero at a hinged end, for a rigid jumper and for one solved as a cable.
+A jumper's estimated load on a clamp **fixed to the structure** (a wire
+point without strings, a fixed post's top) goes straight into that
+clamp's `Support` force (`solve_fe`: `on_fixed`; before 2026-11-14 it was
+left out — only clamps on strings took it).
+
+`post::PostLoad` (not stored; `ohl_line::post::post_loads(line, library,
+case, shapes)`, 2026-11-14): per fixed post in a weather case, its
+`structure`, `label`, first `section` held there (and the point's index),
+`base`, `top`, `top_force` (the sections' supports at its top, with the
+jumpers on their clamps, plus the jumpers ending there where no section
+does), `own` (its weight and wind at its middle, `post::own_load`, which
+the structure loads use too), `clamp_moment` (the jumpers' `end_moments`
+there) and `missing` (jumpers there that did not solve). Derived:
+`base_moment`, `bending`, `torsion` (not checked), `cantilever`
+(bending / length), `tension`, `compression` (the worse of top and base).
 
 ### Electrical systems and circuits (`electrical.rs`)
 
@@ -1567,7 +1589,15 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `RuleSet::string_rules` (`ohl_clearance::strings`); a preset declares
   the check with `checks = ["strings"]`. The solved strings
   (`SectionShape::strings`, `StringState`) carry `strain` (a dead end as
-  the solve treats it), new.
+  the solve treats it), new. Since 2026-11-14 `load` also checks **post
+  ratings**: `strings::check(line, solved, posts, rules, filter)` takes
+  the fixed posts' loads per case (`PostCase` = case, calculation,
+  `&[ohl_line::post::PostLoad]`, from `ohl_line::post::post_loads`), and
+  `Measure` gains `Cantilever` and `Compression` (`Measure::is_force`): a
+  fixed post's cantilever load (`PostLoad::cantilever`, its bending at
+  its base over its length), compression and tension (`max_load`), each
+  against its rating where given; a hinged post's compression from its
+  solved force, and no uplift row for any post.
 - **Internal clearance rules** (2026-10-25, additive): a rule file may
   hold optional `[[internal_rule]]` tables — `name`, `cases` (patterns;
   none: every case), `voltages` (kV of the parts' sections; none: every
@@ -2474,12 +2504,22 @@ ahead, up, m; 2026-11-14): from the point to where the load acts — a
 the wind on it, the line's across the line, the structure's local wind
 factor; no ice, as the strings) — a load of its own, keyed apart and
 labelled "A1 (post, 1.60 m)"; zero for every other load. The capacity
-check sums `lever × factored force` per point (`capacity::lever_moment`,
+check sums `lever × factored force` per point, with `couple_factored`
+(`capacity::lever_moment`,
 `AtPoint::moment`) and hands it on with the force
 (`analysis::Factored` = label, force, moment): the structure analysis
 puts it at the point's joint where a frame member meets it, else leaves
 it out and says **NOT ON THE SAFE SIDE** (as an offset's moment); the
 pole check takes forces at points only and says the same.
+`AttachmentLoad::couple` and `couple_factored` (`[f64; 3]`, structure
+axes, N·m; 2026-11-14): a moment of the load's own — the jumpers' moment
+on a fixed post's clamp (`JumperShape::end_moments`) at the post's base
+with its lever; factored by the largest of the case's three factors;
+zero for every other load. Jumper ends where no section ends (every
+jumper since 2026-11-14, risers before) put their force on the wire
+point's strings' tops, the wire point, or a fixed post's base
+(`ohl_line::post::jumper_end_force`: the estimate, as the sections take
+it, or the jumper's own pull with `JumperLoads::Pull` and for a riser).
 `AttachmentLoad::pulls_by_set` (`Vec<SetPulls>`: `set`, `back`,
 `ahead`; 2026-11-11): the two pulls below per wire set held at the
 point, in order of the sets, adding up to them (the same shares; the
@@ -2500,7 +2540,9 @@ CSV; sent to OHL-Structure as four line quantities.
 span (from 1) giving each component (transverse, longitudinal,
 vertical) — with `"every"` the envelope's (the largest factored of each
 component by size over the spans, sign kept, the line-axes force made
-again of them); the loads CSV's last column `broken_span`.
+again of them); the loads CSV's column `broken_span` (its last until
+2026-11-14, when the three `factored_moment_*` columns — `capacity::
+lever_moment`, the lever's and the couple's — were added after it).
 `CaseLoads::broken_each` (`Vec<BrokenLoads>`, 2026-10-26): with
 `"every"` (more than one span) each break's own loads (`span` from 1,
 `loads`), empty otherwise; the finite-element and pole checks take each

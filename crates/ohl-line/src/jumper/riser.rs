@@ -400,6 +400,7 @@ pub(super) fn shape(
         low_point: p(low),
         max_tension,
         end_forces: solved.ends.map(|f| p(f * bundle)),
+        end_moments: [[0.0; 3]; 2],
         supports: Vec::new(),
         taut: true,
         strength_use: max_tension / rts,

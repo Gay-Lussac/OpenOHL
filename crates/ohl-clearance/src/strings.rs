@@ -24,6 +24,15 @@
 //!   compression limit given), pushed beyond that limit (owner: some
 //!   strings hang upside down by design, so not the geometry).
 //!
+//! - **post ratings** (with `load`; owner, 2026-11-14): a post
+//!   insulator's load against its own ratings, each where given — its
+//!   **cantilever load** (the load across it at its top giving its bending
+//!   moment at its base: the wires' force at its top, its own wind at its
+//!   middle, the jumpers' moment on its clamp; [`ohl_line::post::PostLoad`]),
+//!   its **compression** and its **tension** (`max_load`) along it. A
+//!   hinged (braced) post: its axial force as solved, against its
+//!   compression and tension ratings (no uplift row: it may push).
+//!
 //! Every string at every point of every section is checked in each case
 //! of the rule ([`check`]): the value, the limit, the usage (value /
 //! limit) and pass or fail, the largest usage first ([`StringRow`]). No
@@ -306,6 +315,11 @@ pub enum Measure {
     SwingAlong,
     /// A suspension string slack or pushed beyond its compression limit.
     Uplift,
+    /// A post's cantilever load (across it at its top, from its bending
+    /// moment at its base) against its rating, N.
+    Cantilever,
+    /// A post's compression along it against its rating, N.
+    Compression,
 }
 
 impl Measure {
@@ -317,7 +331,17 @@ impl Measure {
             Self::SwingAcross => "across",
             Self::SwingAlong => "along",
             Self::Uplift => "uplift",
+            Self::Cantilever => "cantilever",
+            Self::Compression => "compression",
         }
+    }
+
+    /// Whether its value and limit are forces, N (else degrees).
+    pub fn is_force(self) -> bool {
+        matches!(
+            self,
+            Self::Load | Self::Uplift | Self::Cantilever | Self::Compression
+        )
     }
 
     /// In words, for tables.
@@ -328,6 +352,8 @@ impl Measure {
             Self::SwingAcross => "swing across the line",
             Self::SwingAlong => "swing along the line",
             Self::Uplift => "uplift",
+            Self::Cantilever => "post cantilever load",
+            Self::Compression => "post compression",
         }
     }
 }
@@ -418,10 +444,7 @@ impl StringReport {
             "rule,case,structure,string,kind,section,point,measure,limit_from,value,limit,unit,usage_pct,status,x,y,z\n",
         );
         for r in &self.rows {
-            let unit = match r.measure {
-                Measure::Load | Measure::Uplift => "N",
-                _ => "deg",
-            };
+            let unit = if r.measure.is_force() { "N" } else { "deg" };
             let _ = writeln!(
                 out,
                 "{},{},{},{},{},{},{},{},{},{:.2},{:.2},{unit},{:.2},{},{:.3},{:.3},{:.3}",
@@ -450,16 +473,31 @@ impl StringReport {
     }
 }
 
+/// The fixed posts' loads of one weather case (its name) solved by one
+/// calculation ([`ohl_line::post::post_loads`]), for [`check`].
+pub type PostCase<'a> = (
+    &'a str,
+    crate::calculation::Calc,
+    &'a [ohl_line::post::PostLoad],
+);
+
 /// Checks `solved` — per weather case (its name), the line's sections
-/// solved in it — against `rules`. A string shared by two sections (a
-/// TAK's) is checked once per case, rule and limit (the larger usage).
+/// solved in it — and `posts`, the fixed posts' loads in the same cases,
+/// against `rules`. A string shared by two sections (a TAK's) is checked
+/// once per case, rule and limit (the larger usage).
 pub fn check(
     line: &Line,
     solved: &[(&str, crate::calculation::Calc, &[SectionShape])],
+    posts: &[PostCase],
     rules: &[StringRule],
     filter: &ohl_weather::CaseFilter,
 ) -> StringReport {
     let mut report = StringReport::default();
+    if posts.iter().any(|(_, _, p)| !p.is_empty()) {
+        report
+            .notes
+            .extend(ohl_line::post::moment_with_estimate_note(line));
+    }
     // Each section's nominal voltage, by its id (a list of the distinct
     // potentials indexed by the section's place gave another section's).
     let potentials = line.potentials().unwrap_or_default();
@@ -478,6 +516,7 @@ pub fn check(
         let mut any = false;
         let mut no_load: BTreeSet<(String, String)> = BTreeSet::new();
         let mut no_swing: BTreeSet<(String, String)> = BTreeSet::new();
+        let mut no_rating: BTreeSet<(String, String)> = BTreeSet::new();
         for (case, calc, shapes) in solved {
             if !rule.applies(case) || rule.calculation != *calc {
                 continue;
@@ -565,6 +604,28 @@ pub fn check(
                             let a = swing(m);
                             rows.push(row(m, Source::Rule, a, max, a / max, a <= max));
                         }
+                        // A hinged (braced) post: its compression rating;
+                        // no uplift (it may push).
+                        let post = line
+                            .structure(&structure)
+                            .and_then(|s| s.string(&st.label))
+                            .filter(|x| x.post);
+                        if let Some(x) = post {
+                            if rule.load
+                                && let Some(max) = x.compression.filter(|c| *c > 0.0)
+                            {
+                                let c = (-st.force).max(0.0);
+                                rows.push(row(
+                                    Measure::Compression,
+                                    Source::String,
+                                    c,
+                                    max,
+                                    c / max,
+                                    c <= max,
+                                ));
+                            }
+                            continue;
+                        }
                         if rule.uplift && !st.strain {
                             let fails = st.slack || st.over;
                             rows.push(row(
@@ -577,6 +638,67 @@ pub fn check(
                             ));
                         }
                     }
+                }
+            }
+            // Fixed posts: their ratings.
+            let loads = posts
+                .iter()
+                .filter(|(c, k, _)| c == case && k == calc)
+                .flat_map(|(_, _, p)| p.iter());
+            for p in loads {
+                if !rule.load || !rule.strings.takes(false) {
+                    break;
+                }
+                let section = p.section.as_ref().map(|(s, _)| s.as_str());
+                if !rule.takes_voltage(section.and_then(kv_of))
+                    || !filter.takes(Some(&p.structure), section, case)
+                {
+                    continue;
+                }
+                let Some(x) = line
+                    .structure(&p.structure)
+                    .and_then(|s| s.string(&p.label))
+                else {
+                    continue;
+                };
+                for m in &p.missing {
+                    let note = format!(
+                        "\"{}\": post {} on {} in \"{case}\": {m} — its load incomplete",
+                        rule.name, p.label, p.structure
+                    );
+                    if !report.notes.contains(&note) {
+                        report.notes.push(note);
+                    }
+                }
+                let ratings = [
+                    (Measure::Cantilever, x.cantilever_load, p.cantilever()),
+                    (Measure::Compression, x.compression, p.compression()),
+                    (Measure::Load, x.max_load, p.tension()),
+                ];
+                if ratings.iter().all(|(_, r, _)| r.is_none()) {
+                    no_rating.insert((p.structure.clone(), p.label.clone()));
+                }
+                for (measure, rating, value) in ratings {
+                    let Some(max) = rating.filter(|r| *r > 0.0) else {
+                        continue;
+                    };
+                    rows.push(StringRow {
+                        rule: k,
+                        case: (*case).to_owned(),
+                        calculation: *calc,
+                        section: section.unwrap_or_default().to_owned(),
+                        point: p.section.as_ref().map_or(0, |(_, i)| *i),
+                        structure: p.structure.clone(),
+                        string: p.label.clone(),
+                        strain: false,
+                        measure,
+                        source: Source::String,
+                        value,
+                        limit: max,
+                        usage: value / max,
+                        pass: value <= max,
+                        at: p.top,
+                    });
                 }
             }
             // A string held by two sections (a TAK's): once, the larger
@@ -604,6 +726,13 @@ pub fn check(
                 "\"{}\": {} string(s) without a maximum load: their load not checked",
                 rule.name,
                 no_load.len()
+            ));
+        }
+        if !no_rating.is_empty() {
+            report.notes.push(format!(
+                "\"{}\": {} fixed post(s) without ratings: not checked",
+                rule.name,
+                no_rating.len()
             ));
         }
         if !no_swing.is_empty() && rule.swing {
@@ -698,6 +827,7 @@ mod tests {
         let r = check(
             &line,
             &[("still", None, &a), ("wind", None, &b)],
+            &[],
             &rules,
             &Default::default(),
         );
@@ -756,6 +886,7 @@ mod tests {
         let r = check(
             &line,
             &[("still", None, &c)],
+            &[],
             &[StringRule::blank("u")],
             &Default::default(),
         );
@@ -789,7 +920,13 @@ mod tests {
             voltages: vec![v],
             ..StringRule::blank("one voltage")
         };
-        let r = check(&line, &[("still", None, &a)], &[rule], &Default::default());
+        let r = check(
+            &line,
+            &[("still", None, &a)],
+            &[],
+            &[rule],
+            &Default::default(),
+        );
         assert!(!r.rows.is_empty());
         for row in &r.rows {
             let sec = line
@@ -838,5 +975,91 @@ mod tests {
             .unwrap_err();
             assert!(e.contains("string rule"), "{e}");
         }
+    }
+
+    /// A conductor on an upright post 1.6 m tall (T2), INVENTED ratings:
+    /// a cantilever load far above its load (passes), a compression
+    /// rating of 1 N (fails), no tension rating (no row); in the wind.
+    fn on_a_post() -> Line {
+        Line::from_json(
+            r#"{
+  "format": "ohl-line", "version": 17, "name": "post", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 30], "set": 1}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "points": [{"label": "A1", "position": [300, 0, 28.4]}],
+     "strings": [{"label": "P1", "top": "A1", "wire": "W1", "length": 1.6,
+                  "angle_deg": 180.0, "weight": 450.0, "wind_area": 0.3,
+                  "post": true, "cantilever_load": 80000.0, "compression": 1.0}],
+     "wires": [{"label": "W1", "position": [300, 0, 30], "set": 1}]},
+    {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [600, 0, 30], "set": 1}]}
+  ],
+  "sections": [{"id": "S", "cable": "acsr-drake-26-7", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1},
+               {"structure": "T3", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 20000.0, "temperature": 15.0}}]
+}"#,
+        )
+        .unwrap()
+    }
+
+    /// A fixed post's ratings: a row for each rating given (its
+    /// cantilever load from its base moment, its compression), none for
+    /// uplift or swing; the value the post's load gives.
+    #[test]
+    fn a_post_is_checked_against_its_ratings() {
+        let line = on_a_post();
+        line.validate().unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let mut windy = WeatherCase::still("wind", Temperature::from_celsius(10.0));
+        windy.wind_pressure = Stress::from_pascals(500.0);
+        let shapes = solved(&line, &windy);
+        let posts = ohl_line::post::post_loads(&line, &library, &windy, &shapes);
+        assert_eq!(posts.len(), 1);
+        let p = &posts[0];
+        // The wind across: bending; the wire's weight and its own: pushed.
+        assert!(p.cantilever() > 300.0 && p.compression() > 450.0, "{p:?}");
+        assert_eq!(p.tension(), 0.0);
+        let r = check(
+            &line,
+            &[("wind", None, &shapes)],
+            &[("wind", None, &posts)],
+            &[StringRule::blank("own")],
+            &Default::default(),
+        );
+        let of_post: Vec<&StringRow> = r.rows.iter().filter(|x| x.string == "P1").collect();
+        assert_eq!(of_post.len(), 2, "{of_post:?}");
+        let cantilever = of_post
+            .iter()
+            .find(|x| x.measure == Measure::Cantilever)
+            .unwrap();
+        assert!(cantilever.pass && (cantilever.value - p.cantilever()).abs() < 1e-9);
+        let pushed = of_post
+            .iter()
+            .find(|x| x.measure == Measure::Compression)
+            .unwrap();
+        assert!(!pushed.pass && (pushed.value - p.compression()).abs() < 1e-9);
+        assert_eq!(pushed.at, p.top);
+        // Without ratings: said.
+        let mut bare = line.clone();
+        let x = &mut bare.structures[1].strings[0];
+        x.cantilever_load = None;
+        x.compression = None;
+        let r = check(
+            &bare,
+            &[("wind", None, &shapes)],
+            &[("wind", None, &posts)],
+            &[StringRule::blank("own")],
+            &Default::default(),
+        );
+        assert!(r.rows.iter().all(|x| x.string != "P1"));
+        assert!(
+            r.notes.iter().any(|n| n.contains("without ratings")),
+            "{:?}",
+            r.notes
+        );
     }
 }

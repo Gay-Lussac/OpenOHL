@@ -428,16 +428,18 @@ fn bundle_weight(
 }
 
 /// The moment about its point of load `l`'s factored force acting at its
-/// lever (a post's top or middle; zero for the others), structure axes
-/// (right, ahead, up), N·m.
+/// lever (a post's top or middle; zero for the others), with its own
+/// factored moment ([`crate::AttachmentLoad::couple_factored`]: a jumper's
+/// on a post's clamp), structure axes (right, ahead, up), N·m.
 pub(crate) fn lever_moment(l: &crate::AttachmentLoad) -> [f64; 3] {
     let r = l.lever;
     // The force in the same axes: transverse, longitudinal, up.
     let f = [l.factored[0], l.factored[1], -l.factored[2]];
+    let c = l.couple_factored;
     [
-        r[1] * f[2] - r[2] * f[1],
-        r[2] * f[0] - r[0] * f[2],
-        r[0] * f[1] - r[1] * f[0],
+        r[1] * f[2] - r[2] * f[1] + c[0],
+        r[2] * f[0] - r[0] * f[2] + c[1],
+        r[0] * f[1] - r[1] * f[0] + c[2],
     ]
 }
 
