@@ -821,12 +821,24 @@ impl MagneticFieldWindow {
             };
             let mut field: Option<MagneticField> = None;
             let mut wires = None;
+            let mut step_errors: Vec<String> = Vec::new();
             for (what, s) in &steps {
                 // The engine steps through cuts and volumes itself.
                 if s.cuts.is_empty() && s.volumes.is_empty() {
                     progress.next_step(what.clone());
                 }
-                let (f, w) = magnetic::run_keeping(&src, s, Some(&progress))?;
+                // A step that fails (one kind of output) is said; the
+                // others keep their results (owner, 2026-11-14: "those
+                // that work get their results reported"). Stopped: the
+                // run stops.
+                let (f, w) = match magnetic::run_keeping(&src, s, Some(&progress)) {
+                    Ok(x) => x,
+                    Err(e) if progress.cancel.load(Ordering::Relaxed) => return Err(e),
+                    Err(e) => {
+                        step_errors.push(format!("{what}: {e}"));
+                        continue;
+                    }
+                };
                 if w.is_some() {
                     wires = w;
                 }
@@ -850,7 +862,16 @@ impl MagneticFieldWindow {
                 });
             }
             progress.set_stage(String::new());
-            let mut field = field.ok_or("nothing asked: tick a span, a cut or a volume")?;
+            let mut field = match field {
+                Some(f) => f,
+                None if !step_errors.is_empty() => return Err(step_errors.join("; ")),
+                None => return Err("nothing asked: tick a span, a cut or a volume".into()),
+            };
+            for e in step_errors.into_iter().rev() {
+                field
+                    .notes
+                    .insert(0, format!("NOT COMPUTED (the other outputs kept): {e}"));
+            }
             let work = progress.total.load(Ordering::Relaxed) as f64
                 * wires.as_ref().map_or(0, |w| w.count()) as f64;
             field_common::add_run_notes(
@@ -1729,7 +1750,7 @@ impl MagneticFieldWindow {
             );
         }
         for n in &m.notes {
-            ui.label(egui::RichText::new(n).small().weak());
+            crate::field_common::note_label(ui, n);
         }
         self.views_results_ui(ui, m, &answer.meshes);
         if !m.profiles.is_empty() {

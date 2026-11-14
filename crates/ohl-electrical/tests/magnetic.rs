@@ -1378,3 +1378,48 @@ fn an_earth_wire_current_typed() {
     });
     assert!(e.contains("is a phase conductor"), "{e}");
 }
+
+/// A cut that cannot be placed (a span that does not exist) does not stop
+/// the others (owner, 2026-11-14): the good cut computed, the bad one said
+/// in the notes as not computed, with why.
+#[test]
+fn a_failed_cut_leaves_the_others() {
+    let (line, library) = example();
+    let good = magnetic::CutSpec {
+        at: magnetic::CutAt::Station {
+            alignment: "main".into(),
+            station: 150.0,
+        },
+        width: 20.0,
+        above: 5.0,
+        step: 2.0,
+        label: Some("house A".into()),
+    };
+    let bad = magnetic::CutSpec {
+        at: magnetic::CutAt::InSpan {
+            from: "T1".into(),
+            to: "NOWHERE".into(),
+            fraction: Some(0.5),
+        },
+        label: Some("house B".into()),
+        ..good.clone()
+    };
+    let s = Settings {
+        currents: both(1000.0, false),
+        stations: vec![mid("T1", "T2")],
+        cuts: vec![bad, good],
+        ..Settings::default()
+    };
+    let (m, _) = field_keeping(&line, &library, &s);
+    assert_eq!(m.cuts.len(), 1);
+    assert_eq!(m.cuts[0].label.as_deref(), Some("house A"));
+    let note = m
+        .notes
+        .iter()
+        .find(|n| n.starts_with("NOT COMPUTED"))
+        .expect("the failed cut said");
+    assert!(
+        note.contains("1 of 2") && note.contains("house B"),
+        "{note}"
+    );
+}
