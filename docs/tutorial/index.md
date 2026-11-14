@@ -2,7 +2,7 @@
 
 This tutorial builds a small overhead line in OHL-Design, step by step,
 from an empty project made from the **starter template**: the ground, a
-route and its alignment, five structures, the strings on them, three
+route and its alignment, six structures, the strings on them, three
 phases strung in two sections, the jumpers between the sections, then
 the results, the checks and saving. It takes about an hour.
 
@@ -13,13 +13,17 @@ pre-alpha and in active development (not approved yet); every result
 must be checked by a qualified engineer.
 
 **Help › Start from scratch (tutorial)…** opens this page from the
-program.
+program. Each chapter shows the windows of its steps as they look on
+the screen (made by the test that does the tutorial's steps, so they
+stay current). Every tool it uses is explained on its own in
+[Tools](../user-guide/tools.md); the **User guide ↗** button at the top
+of a tool's window opens its section.
 
 | Chapter | What you do |
 |---|---|
 | [0. Before you start](00-before-you-start.md) | what you need; the views, the tools, Next steps |
 | [1. A new project and its ground](01-new-project.md) | a project from the starter template; the ground from its survey points |
-| [2. The route and the alignment](02-route-and-alignment.md) | the route; five alignment points with New alignment |
+| [2. The route and the alignment](02-route-and-alignment.md) | the route; six alignment points with New alignment |
 | [3. The first structures](03-structures.md) | Add structure: tension and suspension structures, in one command |
 | [4. Strings on the structures](04-strings.md) | the strings the structure types bring; looking at one |
 | [5. Stringing the wires](05-stringing.md) | the wire type; String wire, section by section; the weather case shown |

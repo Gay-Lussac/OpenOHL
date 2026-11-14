@@ -189,6 +189,12 @@ pub(super) fn goto_window(ctx: &egui::Context, r: &mut Ready) {
     let mut go = false;
     let mut close = false;
     tool_window(r, "goto", "Go to structure").show(ctx, |ui| {
+        crate::tool_ui::intro_of(
+            ui,
+            "Choose a structure: the views turn to it and it is selected.",
+            "G opens this window too. The list shows each structure with its type.",
+            crate::tools::Tool::GoTo,
+        );
         egui::ComboBox::from_id_salt("goto-structure")
             .selected_text(&chosen)
             .width(220.0)
@@ -202,10 +208,11 @@ pub(super) fn goto_window(ctx: &egui::Context, r: &mut Ready) {
                     ui.selectable_value(&mut chosen, s.id.clone(), text);
                 }
             });
-        ui.horizontal(|ui| {
-            go |= ui.button("Go").clicked();
-            close |= ui.button("Close").clicked();
-        });
+        match crate::tool_ui::buttons(ui, "Go", true, None, crate::tool_ui::Keys::Both) {
+            Some(crate::tool_ui::Pressed::Action) => go = true,
+            Some(crate::tool_ui::Pressed::Cancel) => close = true,
+            None => {}
+        }
     });
     go |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
     close |= ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -835,7 +842,16 @@ pub(super) fn tool_windows(
     };
     let mut decision: Option<bool> = None;
     tool_window(r, "confirm", format!("Delete {}?", impact.what())).show(ctx, |ui| {
-        ui.label("This also deletes or changes:");
+        crate::tool_ui::intro_of(
+            ui,
+            "Deleting it also deletes or changes what is listed below. Check the list, then \
+             Delete all or Cancel.",
+            "What depends on it cannot stay without it (a section without its strings, a \
+             jumper without its section ends…), so it goes in the same step. It is one \
+             change of the project: Edit › Undo (⌘Z) brings everything back.",
+            crate::tools::Tool::Delete,
+        );
+        ui.label(egui::RichText::new("This also deletes or changes:").strong());
         egui::ScrollArea::vertical()
             .max_height(300.0)
             .show(ui, |ui| {
@@ -849,15 +865,12 @@ pub(super) fn tool_windows(
                     }
                 }
             });
-        ui.label("It is one log entry: undo brings everything back.");
-        ui.horizontal(|ui| {
-            if ui.button("Delete all").clicked() {
-                decision = Some(true);
-            }
-            if ui.button("Cancel").clicked() {
-                decision = Some(false);
-            }
-        });
+        ui.label(egui::RichText::new("Undo (⌘Z) brings everything back.").weak());
+        match crate::tool_ui::buttons(ui, "Delete all", true, None, crate::tool_ui::Keys::Escape) {
+            Some(crate::tool_ui::Pressed::Action) => decision = Some(true),
+            Some(crate::tool_ui::Pressed::Cancel) => decision = Some(false),
+            None => {}
+        }
     });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         decision = Some(false);

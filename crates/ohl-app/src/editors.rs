@@ -490,6 +490,8 @@ impl Form {
         extra: &mut FormExtra<'_>,
     ) -> Option<Outcome> {
         let mut out = None;
+        let (what, more, tool) = self.intro();
+        crate::tool_ui::intro_of(ui, what, more, tool);
         match self {
             Form::Structure(f) => {
                 if structure_ui(ui, f, model, extra) {
@@ -514,22 +516,125 @@ impl Form {
         }
         // Read-only (a viewer's LiDAR point): nothing to apply.
         let editable = !matches!(self, Form::Points(f) if f.read_only.is_some());
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(editable, egui::Button::new("Apply"))
-                .on_hover_text("Enter")
-                .clicked()
-            {
-                out = Some(Outcome::Apply);
-            }
-            if ui.button("Cancel").on_hover_text("Escape").clicked() {
-                out = Some(Outcome::Cancel);
-            }
-        });
+        match crate::tool_ui::buttons(
+            ui,
+            "Apply",
+            editable,
+            Some("Read-only: nothing to apply"),
+            crate::tool_ui::Keys::Both,
+        ) {
+            Some(crate::tool_ui::Pressed::Action) => out = Some(Outcome::Apply),
+            Some(crate::tool_ui::Pressed::Cancel) => out = Some(Outcome::Cancel),
+            None => {}
+        }
         out
     }
+
+    /// The window's opening sentence, its longer help and the tool whose
+    /// page of the manual explains it.
+    fn intro(&self) -> (&'static str, &'static str, crate::tools::Tool) {
+        use crate::tools::Tool;
+        const ONE_STEP: &str = "Apply makes it one change of the project: Edit › Undo (⌘Z) \
+                                takes it back. Cancel (Escape) changes nothing. Hover a field \
+                                for what it does.";
+        match self {
+            Form::Structure(f) if f.new => (
+                "A new structure where you clicked: choose its type (its points and strings \
+                 come with it), check where it stands, then Apply.",
+                "Clicked on an alignment point, it stands on it, turned along the line; \
+                 \"Also on other points of this alignment\" puts structures on the \
+                 alignment's other points in the same step. Everything can be changed \
+                 later with the Edit tool.\n\nApply makes it one change of the project: \
+                 Edit › Undo (⌘Z) takes it back. Cancel (Escape) changes nothing. Hover a \
+                 field for what it does.",
+                Tool::AddStructure,
+            ),
+            Form::Structure(_) => (
+                "This structure: its type, where it stands, how it is turned and the \
+                 points its strings hang from.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+            Form::String(f) if f.new => (
+                "New strings hanging from the point you clicked: what each hangs from, \
+                 its length and direction, and the wire point at its end.",
+                STRING_HELP,
+                Tool::AddString,
+            ),
+            Form::String(_) => (
+                "The strings of this place on the structure: what each hangs from, its \
+                 length, weight and limits, and the wire point at its end.",
+                STRING_HELP,
+                Tool::Edit,
+            ),
+            Form::Section(f) if f.new => (
+                "The new section through the strings you clicked: choose its wire type, \
+                 circuit and phase, and how it is sagged, then Apply to string it.",
+                "A section is a wire strung in one piece between two tension points, over \
+                 the suspension strings between them. Its spans are solved in every \
+                 weather case as soon as it is strung.\n\nApply makes it one change of the \
+                 project: Edit › Undo (⌘Z) takes it back. Cancel (Escape) gives this wire \
+                 up; String wire stays held.",
+                Tool::StringWire,
+            ),
+            Form::Section(_) => (
+                "This section (the wire strung in one piece between two tension points): \
+                 its wire type, circuit, phase and how it is sagged.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+            Form::Alignment(_) => (
+                "This alignment point: where it is, and the alignments that run through it.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+            Form::Jumper(f) if f.new => (
+                "A new jumper, the slack wire joining two section ends at a structure: its \
+                 wire, its length or sag, and the clamps that hold it.",
+                ONE_STEP,
+                Tool::AddJumper,
+            ),
+            Form::Jumper(_) => (
+                "This jumper, the slack wire joining two section ends at a structure: its \
+                 wire, its length or sag, and the clamps that hold it.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+            Form::Span(f) if f.editing.is_some() => (
+                "This point on the wire: where it is along the span, and the object on it.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+            Form::Span(_) => (
+                "Something on this wire: a bare point, an object (a spacer, a marker ball, \
+                 a weight…) or a load spread along it. Choose what and where, then Apply.",
+                ONE_STEP,
+                Tool::OnSpan,
+            ),
+            Form::Spacer(f) if f.new => (
+                "A spacer between the two span points you clicked.",
+                ONE_STEP,
+                Tool::AddString,
+            ),
+            Form::Spacer(_) => ("This spacer between two span points.", ONE_STEP, Tool::Edit),
+            Form::Points(_) => (
+                "This LiDAR point: its coordinates and its class.",
+                ONE_STEP,
+                Tool::Edit,
+            ),
+        }
+    }
 }
+
+/// What a string is (the strings' windows' help).
+pub(crate) const STRING_HELP: &str = "A string is one straight insulating member: from the point it hangs \
+     from (on the structure, or the bottom of another string) to its wire point, which it \
+     makes; placed from its top by an angle from straight down, a direction and its length \
+     (where it is before the wire is strung; once strung it is drawn where the calculation \
+     puts it). With a set number a wire is clamped at the wire point (sections and jumpers \
+     end on it); without one, other strings may hang from it. A second leg of a V ends at \
+     another string's wire point.\n\nApply makes it one change of the project: Edit › Undo \
+     (⌘Z) takes it back. Cancel (Escape) changes nothing. Hover a field for what it does.";
 
 /// String `x`'s own limits (as stored; not those its insulator gives,
 /// which the resolved line has too); a type's string: as resolved.

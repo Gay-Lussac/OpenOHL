@@ -16,6 +16,11 @@ each wire point has — the numbers you string the wires to in chapter 5.
    length and weight (the type's own values; a string can take them from
    an insulator assembly of the library instead), and its wire point with
    the set and the clamp (suspension). Click **Cancel**.
+
+   ![The window Strings of set 1 of T2: the string S-L1 hanging from
+   its crossarm point, its length and weight, its wire point with set 1
+   and a suspension clamp](../images/tutorial/tutorial-string-window.png)
+
 4. **Line › Structures › Strings table** lists every string of the line, one
    row each. Close the table.
 

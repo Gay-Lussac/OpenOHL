@@ -1374,13 +1374,15 @@ impl Measuring {
             window,
             Some(&mut open),
             |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Hold a measuring tool (the hotbar, or Edit › Tools) and click the \
-                         points; values shown to 0.01, copied in full.",
-                    )
-                    .small()
-                    .weak(),
+                crate::tool_ui::intro(
+                    ui,
+                    "Your measurements, the latest first. Keep one to save it in the \
+                     project; Copy puts it on the clipboard.",
+                    "Hold a measuring tool (the hotbar, or Edit › Tools) and click the \
+                     points. Values are shown to 0.01 and copied in full. A measurement \
+                     kept is shared with the others working on the project, computed again \
+                     when the line changes, and deleted with what it is attached to.",
+                    ("user-guide/tools-measure", "the-measurements-panel"),
                 );
                 ui.horizontal(|ui| {
                     if ui.button("Copy all").clicked() {
@@ -1458,9 +1460,11 @@ impl Measuring {
                         }
                         for (k, m) in self.done.iter().enumerate().rev() {
                             ui.push_id(k, |ui| {
+                                // The kind above, the value and its buttons below
+                                // (the buttons covered a long kind's name).
+                                ui.label(egui::RichText::new(m.kind.name()).weak());
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new(m.label()).strong().size(16.0));
-                                    ui.label(m.kind.name());
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
@@ -1569,6 +1573,21 @@ impl Measuring {
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
+                crate::tool_ui::intro(
+                    ui,
+                    if ann.tool.is_empty() {
+                        "This note, kept in the project: change its text, or delete it."
+                    } else {
+                        "This measurement, kept in the project: change its label, or delete it."
+                    },
+                    "Kept measurements and notes are shared with the others working on the \
+                     project and deleted with what they are attached to. Save and Delete are \
+                     each one change: Edit › Undo (⌘Z) takes it back.",
+                    (
+                        "user-guide/tools-general",
+                        "edit-on-a-kept-measurement-or-a-note",
+                    ),
+                );
                 if let Some(v) = &value {
                     ui.label(egui::RichText::new(v).strong().size(16.0));
                 }
@@ -1632,24 +1651,29 @@ impl Measuring {
             .pivot(egui::Align2::CENTER_CENTER)
             .default_pos(ctx.content_rect().center())
             .show(ctx, |ui| {
-                ui.label(format!("On {}", n.what));
+                crate::tool_ui::intro_of(
+                    ui,
+                    &format!("A note on {}: type it, then Keep.", n.what),
+                    "Kept in the project and shared with the others working on it; drawn \
+                     where it is attached in the views; deleted with what it is attached \
+                     to. The Edit tool on a note changes or deletes it.",
+                    crate::tools::Tool::Note,
+                );
                 let r = ui.text_edit_singleline(&mut n.text);
                 r.request_focus();
                 keep |= r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 cancel |= ui.input(|i| i.key_pressed(egui::Key::Escape));
-                ui.horizontal(|ui| {
-                    keep |= ui
-                        .add_enabled(!n.text.trim().is_empty(), egui::Button::new("Keep"))
-                        .clicked();
-                    cancel |= ui.button("Cancel").clicked();
-                });
-                ui.label(
-                    egui::RichText::new(
-                        "Kept in the project, shared; deleted with what it is attached to.",
-                    )
-                    .small()
-                    .weak(),
-                );
+                match crate::tool_ui::buttons(
+                    ui,
+                    "Keep",
+                    !n.text.trim().is_empty(),
+                    Some("Type the note first"),
+                    crate::tool_ui::Keys::Both,
+                ) {
+                    Some(crate::tool_ui::Pressed::Action) => keep = true,
+                    Some(crate::tool_ui::Pressed::Cancel) => cancel = true,
+                    None => {}
+                }
             });
         if keep {
             self.keep_note(user, now());

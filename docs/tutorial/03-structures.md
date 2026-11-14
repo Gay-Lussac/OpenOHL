@@ -21,9 +21,9 @@ structures at both ends and at the angle, suspension structures between.
    too.
 6. Click **Apply** (or press **Enter**).
 
-![The Add structure window on P1: the type starter-tension, the other
-points of the alignment ticked, starter-suspension at P2, P3 and
-P5](../images/tutorial/tutorial-add-structure.png)
+![The Add structure window on P1: the type starter-tension; under Also
+on other points of this alignment, every point ticked and
+starter-suspension at P2, P3 and P5](../images/tutorial/tutorial-add-structure.png)
 
 ## What you should see
 
@@ -32,6 +32,9 @@ T6 are tension structures, T2, T3 and T5 suspension structures. The plan
 and the 3D view fit to them. Each is turned along the line: T4, at the
 angle, has its crossarms on the bisector of the line angle. Next steps has *Structures
 on the line* and *Strings on the structures* done.
+
+![The six structures in the 3D view, standing on the ground along the
+alignment; T1's properties on the right, the profile below](../images/tutorial/tutorial-structures.png)
 
 **What just happened:** each structure is a **structure type** placed
 at one spot: the type (`.ohls`, in the project's structure library)

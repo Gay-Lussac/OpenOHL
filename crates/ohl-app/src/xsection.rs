@@ -1768,6 +1768,15 @@ pub fn dialog_ui(
     views: &[AlignmentView],
 ) -> DialogOut {
     let mut out = DialogOut::None;
+    crate::tool_ui::intro(
+        ui,
+        "Where to cut the line across: at a station of an alignment or at a structure. \
+         Open cut shows the cut in a panel of its own.",
+        "The cut is a thin slab of the 3D view, square to the line (or in a structure's \
+         cross-arm plane), seen from the front at 1:1. C opens this window; a structure \
+         clicked in a view while it is open is taken.",
+        ("user-guide/desktop-app", "cross-section-view"),
+    );
     ui.horizontal(|ui| {
         ui.radio_value(&mut d.at_structure, false, "At a station");
         ui.radio_value(&mut d.at_structure, true, "At a structure");

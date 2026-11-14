@@ -21,6 +21,10 @@ weather cases ticked ──► line results (forces at each attachment point, un
    while you tick).
    - **Wires**: leave *as strung*.
    - **Weather cases sent**: tick **everyday** and **high wind**.
+
+   ![Line › Criteria › Loads for structures open: Wires as strung,
+   everyday and high wind ticked under Weather cases sent](../images/tutorial/tutorial-loads-for-structures.png)
+
 2. Close the menu (a click beside it, or Escape).
 3. Hold **Edit** and click **T2** (a suspension structure);
    in its Properties, **Open in OHL-Structure…** opens it with the loads

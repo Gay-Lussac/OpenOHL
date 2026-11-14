@@ -709,9 +709,15 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
         .default_pos(ctx.content_rect().left_top() + egui::vec2(40.0, 60.0));
     let panel = crate::dockable::Panel::Replace;
     crate::dockable::show(ctx, panel, title, window, Some(&mut open), |ui| {
-        ui.label(
-            "Which wire point of the new structure each wire point of the old one goes to \
-                 (what ends there moves with it); none: what ends there is removed.",
+        crate::tool_ui::intro_of(
+            ui,
+            "For each wire point of the old structure, choose where its wires go on the new \
+             one.",
+            "A wire point is where a string holds a wire (its set number). What ends there \
+             (sections, jumpers) moves to the new set chosen; \"none\" removes it, after a \
+             list. Matching points are chosen already. It is one change of the project: \
+             Edit › Undo (⌘Z) takes it back.",
+            crate::tools::Tool::Replace,
         );
         if let Some(note) = &m.note {
             ui.colored_label(ui.visuals().warn_fg_color, note);
@@ -798,28 +804,25 @@ pub fn mapping_window(ctx: &egui::Context, m: &mut Mapping, model: &Model) -> St
                     });
             }
         }
-        ui.label(
-            egui::RichText::new("It is one log entry: undo brings everything back.")
-                .small()
-                .weak(),
-        );
         let chosen = m.points_chosen();
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(ok && chosen, egui::Button::new("Replace"))
-                .on_disabled_hover_text(if chosen {
-                    "Not possible as chosen: see above"
-                } else {
-                    "Choose what becomes of every attachment point first"
-                })
-                .clicked()
-            {
+        let why = if chosen {
+            "Not possible as chosen: see above"
+        } else {
+            "Choose what becomes of every attachment point first"
+        };
+        match crate::tool_ui::buttons(
+            ui,
+            "Replace",
+            ok && chosen,
+            Some(why),
+            crate::tool_ui::Keys::Escape,
+        ) {
+            Some(crate::tool_ui::Pressed::Action) => {
                 step = Step::Apply(rewired_words(m, model), m.command());
             }
-            if ui.button("Cancel").clicked() {
-                step = Step::Cancel;
-            }
-        });
+            Some(crate::tool_ui::Pressed::Cancel) => step = Step::Cancel,
+            None => {}
+        }
     });
     if !open || ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
         step = Step::Cancel;

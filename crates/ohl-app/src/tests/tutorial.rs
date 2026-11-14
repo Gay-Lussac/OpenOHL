@@ -57,6 +57,26 @@ fn shot(h: &mut Harness<'_, App>, name: &str) {
     }
 }
 
+/// Saves the window titled `title` alone as `name`.png in
+/// `OHL_RENDER_PNG` (when set and a GPU renders): the tutorial's pictures
+/// of a step's window.
+fn shot_of(h: &mut Harness<'_, App>, name: &str, title: &str) {
+    let Some(dir) = ohl_core::env::var_os("OHL_RENDER_PNG") else {
+        return;
+    };
+    h.run();
+    let Ok(image) = h.render() else {
+        return;
+    };
+    assert_eq!(crate::files::user(), "tester", "made with USER=tester");
+    let rect = super::tool_shots::window_rect(h, title)
+        .unwrap_or_else(|| panic!("{name}: no window titled {title}"));
+    let ppp = image.width() as f32 / 1500.0;
+    let image = super::tool_shots::crop(&image, rect, ppp);
+    let path = std::path::PathBuf::from(dir).join(format!("tutorial-{name}.png"));
+    crate::write_png(&path, image.width(), image.height(), image.as_raw()).unwrap();
+}
+
 /// Clicks `label` (the only one of that name).
 fn click(h: &mut Harness<'_, App>, label: &str) {
     h.get_by_label(label).click();
@@ -148,6 +168,7 @@ fn the_tutorial_builds_a_first_line() {
     assert_eq!(h.state_mut().failed(), None);
     // The first steps window asks for the route: Later (chapter 2).
     h.get_by_label("New project: first steps");
+    shot_of(&mut h, "first-steps", "New project: first steps");
     click(&mut h, "Later");
     {
         let r = h.state_mut().ready().unwrap();
@@ -185,6 +206,7 @@ fn the_tutorial_builds_a_first_line() {
         a.ready().unwrap().model.ground_source == "surface starter-survey"
     });
     assert!(h.state_mut().ready().unwrap().model.ground.is_some());
+    shot_of(&mut h, "terrain-surfaces", "Terrain surfaces (TIN)");
     h.state_mut().ready().unwrap().surfaces.open = false;
     h.run();
 
@@ -194,6 +216,7 @@ fn the_tutorial_builds_a_first_line() {
     h.run();
     click(&mut h, "Next: Name the route…");
     h.get_by_label("New project: first steps");
+    shot_of(&mut h, "name-the-route", "New project: first steps");
     click(&mut h, "Create the route");
     {
         let r = h.state_mut().ready().unwrap();
@@ -214,12 +237,16 @@ fn the_tutorial_builds_a_first_line() {
             .unwrap();
         use_tool(&mut h, Tool::NewAlignment, Selection::None, Some([x, y, z]));
         h.get_by_label("Point coordinates");
+        if (x, y) == POINTS[1] {
+            shot_of(&mut h, "point-coordinates", "Point coordinates");
+        }
         click(&mut h, "Add the point");
         assert!(h.state_mut().ready().unwrap().coord_dialog.is_none());
     }
     // Enter: its route (the only one), Make the alignment.
     press(&mut h, egui::Key::Enter, egui::Modifiers::NONE);
     h.get_by_label("New alignment: its route");
+    shot_of(&mut h, "alignment-route", "New alignment: its route");
     click(&mut h, "Make the alignment");
     let points: Vec<(String, [f64; 3])> = {
         let r = h.state_mut().ready().unwrap();
@@ -238,6 +265,14 @@ fn the_tutorial_builds_a_first_line() {
     // The plan in front (chapter 2, step 3).
     h.state_mut().show_tab(crate::app::Tab::Plan);
     h.run();
+    // (The plan on the new points for the picture, about 1 100 m wide:
+    // the reader zooms there with the wheel.)
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .plan
+        .set_view([500.0, 100.0], 0.68);
+    shot(&mut h, "alignment-plan");
 
     // Chapter 3: Add structure, a right-click on the first alignment
     // point: the strain type there; Also on other points of this
@@ -283,7 +318,7 @@ fn the_tutorial_builds_a_first_line() {
         }
     }
     h.run();
-    shot(&mut h, "add-structure");
+    shot_of(&mut h, "add-structure", "Add structure");
     click(&mut h, "Apply");
     let ids: Vec<String> = {
         let r = h.state_mut().ready().unwrap();
@@ -296,6 +331,8 @@ fn the_tutorial_builds_a_first_line() {
             .collect()
     };
     assert_eq!(ids, ["T1", "T2", "T3", "T4", "T5", "T6"]);
+    h.state_mut().show_tab(crate::app::Tab::View3d);
+    shot(&mut h, "structures");
     {
         let r = h.state_mut().ready().unwrap();
         let line = &r.model.line;
@@ -315,6 +352,7 @@ fn the_tutorial_builds_a_first_line() {
     // and its values; Cancel.
     use_tool(&mut h, Tool::Edit, string_at("T2", 1), None);
     h.get_by_label("Strings of set 1 of T2");
+    shot_of(&mut h, "string-window", "Strings of set 1 of T2");
     // Cancel (here Escape, the same: the window opens where the pointer
     // was, partly below the harness's screen).
     h.get_by_label("Cancel");
@@ -368,7 +406,7 @@ fn the_tutorial_builds_a_first_line() {
             }
             h.run();
             if phase == 1 && k == 0 {
-                shot(&mut h, "string-wire");
+                shot_of(&mut h, "string-wire", "String wire: new section");
             }
             // Apply (here Enter, the same: the window opens where the
             // pointer was, partly below the harness's screen).
@@ -477,6 +515,7 @@ fn the_tutorial_builds_a_first_line() {
         assert_eq!(rep.rules.len(), 3, "{:?}", rep.notes);
         assert!(rep.findings.is_empty(), "{:?}", rep.rules);
     }
+    shot_of(&mut h, "wire-clearances", "Clearances");
     // Checks › Ground clearances › Vertical clearances…: the first rule's
     // distance set (7 m, as the starter's rule file; typed in its field),
     // Run.
@@ -541,7 +580,7 @@ fn the_tutorial_builds_a_first_line() {
             rep.zone.findings
         );
     }
-    shot(&mut h, "vertical-clearances");
+    shot_of(&mut h, "vertical-clearances", "Vertical clearances");
     press(&mut h, egui::Key::Z, egui::Modifiers::COMMAND);
     assert_eq!(vertical(&mut h), 0);
     h.state_mut().ready().unwrap().vertical_clearances.open = false;
@@ -586,8 +625,9 @@ fn the_tutorial_builds_a_first_line() {
         // RTS.
         assert_eq!(rep.report.rows.len(), 3 * 5 * r.model.cases.len());
         assert_eq!(rep.report.failures().count(), 0);
-        r.wire_tensions.open = false;
     }
+    shot_of(&mut h, "wire-tensions", "Wire tensions");
+    h.state_mut().ready().unwrap().wire_tensions.open = false;
     h.run();
     // Checks › String checks…: the window's first rule (the strings' own
     // limits and uplift), Run.
@@ -624,6 +664,7 @@ fn the_tutorial_builds_a_first_line() {
     h.run();
     h.get_by_role_and_label(tick, "high wind").click();
     h.run();
+    shot(&mut h, "loads-for-structures");
     {
         let r = h.state_mut().ready().unwrap();
         assert_eq!(

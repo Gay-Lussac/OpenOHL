@@ -16,6 +16,10 @@ the starter's invented values, not those of any regulation.
    starter's rule file *starter-clearance-rules* chosen: per rule its
    lowest clearance — *Ground* (7 m) and *Phase to phase* (2 m) — and no
    violation. Close the window.
+
+   ![The Clearances window's results: a green banner, every rule met in
+   the five weather cases](../images/tutorial/tutorial-wire-clearances.png)
+
 2. **Vertical clearances.** **Checks › Ground clearances › Vertical
    clearances…**. The window has two tabs, **Setup** and **Results**.
    It starts with one rule, *Ground*, its distance still to set (Run is
@@ -39,6 +43,10 @@ the starter's invented values, not those of any regulation.
    is empty while **Only violations** is ticked (the default); untick it
    to see every span in every weather case, with its tension, the
    allowed tension and the usage. Click a header to sort by it.
+
+   ![The Wire tensions results: a green banner, every span within its
+   allowed tension, the highest usage 54 %](../images/tutorial/tutorial-wire-tensions.png)
+
 5. **String checks.** **Checks › String checks…**. The window starts
    with a rule checking each string against its own limits and the
    suspension strings' uplift. Click **Run**: the uplift passes; the notes
@@ -46,8 +54,9 @@ the starter's invented values, not those of any regulation.
    their own, so those are not checked. Limits come with insulator
    assemblies, or are typed in the Strings table.
 
-![The Vertical clearances window with S1 at 10 kN: one span below the
-7 m rule at the maximum temperature, marked in the profile](../images/tutorial/tutorial-vertical-clearances.png)
+![The Vertical clearances results with S1 at 10 kN: a red banner, S1
+span 3 below the 7 m rule at the maximum temperature (6.27 m, a margin
+of −0.73 m)](../images/tutorial/tutorial-vertical-clearances.png)
 
 **What just happened:** the wire clearances check one weather case
 against a **rule file** (`.ohlr`) — the starter's, kept in the project.

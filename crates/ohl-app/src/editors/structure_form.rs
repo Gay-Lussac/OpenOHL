@@ -408,8 +408,7 @@ pub(super) fn structure_ui(
                 ui.label("id");
                 ui.add_enabled(f.new, egui::TextEdit::singleline(&mut f.id).desired_width(140.0));
                 ui.end_row();
-                ui.label("type").on_hover_text(
-                    "A structure type of the library (its points and strings come from it), \
+                crate::tool_ui::label(ui, "type", "A structure type of the library (its points and strings come from it), \
                      or none: its points given here, its strings added with Add string",
                 );
                 if crate::structure_picker::button(
@@ -511,8 +510,7 @@ pub(super) fn structure_ui(
                 });
                 ui.end_row();
                 // Its routes: from the alignment it stands on, or its own.
-                ui.label("routes").on_hover_text(
-                    "The routes it is on. Standing on an alignment (a point, or within 5 m of \
+                crate::tool_ui::label(ui, "routes", "The routes it is on. Standing on an alignment (a point, or within 5 m of \
                      it): that alignment's routes, by itself. Away from every alignment (a \
                      crossing line): tick its route(s) here",
                 );
@@ -701,7 +699,12 @@ pub(super) fn structure_ui(
                 f.position[2] = z;
             }
             ui.separator();
-            ui.strong("Orientation");
+            crate::tool_ui::heading(
+                ui,
+                "Orientation",
+                "Its right (the cross-arms), counter-clockwise from east; ahead is a quarter \
+                 turn to the left of it.",
+            );
             ui.horizontal(|ui| {
                 if ui
                     .checkbox(&mut f.along_line, "along the line")
@@ -719,7 +722,6 @@ pub(super) fn structure_ui(
                     );
                 });
             });
-            help(ui, "Its right (the cross-arms), counter-clockwise from east; ahead is a quarter turn to the left of it.");
         });
         // The preview, in its own axes, with the compass.
         extra.preview.shows(&format!("{} {}", f.id, f.new));
@@ -736,9 +738,9 @@ pub(super) fn structure_ui(
     });
     if f.structure_type.is_none() {
         ui.separator();
-        ui.strong("Points where strings hang");
-        help(
+        crate::tool_ui::heading(
             ui,
+            "Points where strings hang",
             "In its axes: across (to the right looking ahead), along (ahead), up from its base. \
              Strings are added on them with the Add string tool (or Edit on a string).",
         );

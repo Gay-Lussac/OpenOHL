@@ -85,15 +85,25 @@ impl CoordDialog {
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.label(
-                egui::RichText::new(if add {
-                    "Its coordinates (all three required; a structure, survey or LiDAR \
-                         point clicked gives them)."
+            let tool = match self.purpose {
+                CoordFor::AddAlignment => crate::tools::Tool::AddAlignment,
+                CoordFor::Reroute => crate::tools::Tool::EditAlignment,
+                _ => crate::tools::Tool::NewAlignment,
+            };
+            crate::tool_ui::intro_of(
+                ui,
+                if add {
+                    "Where the new alignment point goes: check its coordinates, then Add the \
+                     point."
                 } else {
-                    "No survey point, alignment point or structure near where you clicked: \
-                         give the point's coordinates (all three required)."
-                })
-                .small(),
+                    "Nothing to snap to where you clicked: check the point's coordinates, \
+                     then Add the point."
+                },
+                "The values are where you clicked, the height that of the ground there. \
+                 All three are needed; type others to put the point elsewhere. A \
+                 structure, a survey point or a LiDAR point clicked gives its own \
+                 coordinates (and no window).",
+                tool,
             );
             if let Some(st) = self.structure.clone() {
                 let mut tied = true;
@@ -125,18 +135,21 @@ impl CoordDialog {
             if let Err(e) = &point {
                 crate::menu::error_label(ui, egui::RichText::new(e).small());
             }
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(point.is_ok(), egui::Button::new("Add the point"))
-                    .clicked()
-                    && let Ok(p) = point
-                {
-                    out = Some(Ok(p));
+            match crate::tool_ui::buttons(
+                ui,
+                "Add the point",
+                point.is_ok(),
+                Some("Give all three coordinates"),
+                crate::tool_ui::Keys::None,
+            ) {
+                Some(crate::tool_ui::Pressed::Action) => {
+                    if let Ok(p) = point {
+                        out = Some(Ok(p));
+                    }
                 }
-                if ui.button("Cancel").clicked() {
-                    out = Some(Err(()));
-                }
-            });
+                Some(crate::tool_ui::Pressed::Cancel) => out = Some(Err(())),
+                None => {}
+            }
         });
         if !open {
             out = Some(Err(()));
@@ -209,6 +222,15 @@ impl RouteChoice {
             .collapsible(false)
             .resizable(false)
             .show(ctx, |ui| {
+                crate::tool_ui::intro_of(
+                    ui,
+                    "Which route the new alignment belongs to: choose one, or name a new \
+                     route.",
+                    "A line is made of routes (the main line, a branch…); each route has \
+                     one or more alignments, the polylines its structures stand along. \
+                     Back returns to laying out the points.",
+                    crate::tools::Tool::NewAlignment,
+                );
                 let shared = self.points.iter().filter(|p| !p.id.is_empty()).count();
                 ui.label(format!(
                     "{} point(s){}. An alignment belongs to one route.",
@@ -269,13 +291,18 @@ impl RouteChoice {
                             .weak(),
                     );
                 }
+                ui.separator();
                 ui.horizontal(|ui| {
                     let label = if new.is_empty() {
                         "Make the alignment"
                     } else {
                         "Create the route and the alignment"
                     };
-                    if ui.add_enabled(ok, egui::Button::new(label)).clicked() {
+                    if ui
+                        .add_enabled(ok, egui::Button::new(egui::RichText::new(label).strong()))
+                        .on_disabled_hover_text("Choose its route, or name a new one")
+                        .clicked()
+                    {
                         out = Some(if new.is_empty() {
                             RouteChoiceAction::Make {
                                 route: self.route.clone(),

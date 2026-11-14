@@ -39,6 +39,7 @@ mod strings_colours;
 mod strings_picking;
 mod structures_menus;
 mod thermal_pages;
+mod tool_shots;
 mod tutorial;
 mod types_drawings;
 mod ui_review;

@@ -8,6 +8,29 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-14
+
+**Tool windows made friendlier, tool pages in the book, the tutorial
+with screenshots** (owner: "improve the tutorial with screenshots and
+create the tool pages in the book to make it easier to understand what
+they do as well as improving the small windows that open from the tools
+when something is clicked to make it user friendlier for humans that
+don't know the programm … functionality stays the same it's just the
+cosmetics and placements that change a bit"). Every window a tool opens
+starts with one plain sentence of what it does, a (?) with more and a
+**User guide ↗** button to the tool's section; help that was only on
+hover got a visible (?); small grey lines under a section went behind a
+(?) at its title; one button row at the bottom, the action first,
+Cancel last (the rule: [Desktop app conventions](ui.md#tool-windows),
+the code `crate::tool_ui`). The Measurements panel's kind of
+measurement moved above its value (its buttons covered it). No command,
+field, default or result changed; the button labels stayed (Apply,
+Cancel…). New pages: [Tools](../user-guide/tools.md) and one per theme
+of the inventory, and OHL-Structure's tools; every tool has a section,
+checked by a test. The tutorial shows the windows of its steps, made by
+the test that does its steps. Before and after pictures of the windows
+for the owner: local-data/reviews/tool-windows/.
+
 ## 2026-11-13
 
 **Checks › Internal clearances… is an entry, not a submenu** (owner:

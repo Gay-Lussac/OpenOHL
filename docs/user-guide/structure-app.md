@@ -416,7 +416,8 @@ their menu or from View.
   it is drawn. On a large tower the profiles follow an edit after a
   moment (worked out beside the window). View › Display options ›
   Profiles as placed turns them off.
-- **Hotbar and tools** (as in OHL-Design): nine slots at the bottom of
+- **Hotbar and tools** (as in OHL-Design; each tool step by step:
+  [OHL-Structure tools](structure-tools.md)): nine slots at the bottom of
   the 3D view, each a tool; a click on a slot or the keys **1–9** hold
   one, **Escape** lets go of it (Select again), **E** (or the slots'
   **E** button, or Edit › Tools › Tool inventory) opens the **inventory** of

@@ -977,11 +977,6 @@ pub(super) fn string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) ->
     reset
 }
 
-/// A small, weak line of explanation.
-fn help(ui: &mut egui::Ui, text: &str) {
-    ui.label(egui::RichText::new(text).small().weak());
-}
-
 /// A new string's set, and a shape to replace its strings with.
 fn preset_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) {
     ui.horizontal(|ui| {
@@ -1087,17 +1082,7 @@ fn strings_ui(
     point_names: &[String],
     ahead: f64,
 ) {
-    ui.strong("Strings");
-    help(
-        ui,
-        "A string is one straight insulating member: from the point it hangs from (on the structure, \
-                 or the bottom of another string) to its wire point, which it makes: placed from \
-                 its top by an angle from straight down, a direction and its length (where it is \
-                 before the wire is strung; once strung it is drawn where the calculation puts \
-                 it). With a set number a wire is clamped at the wire point (sections and jumpers \
-                 end on it); without one, other strings may hang from it. A second leg of a V \
-                 ends at another string's wire point.",
-    );
+    crate::tool_ui::heading(ui, "Strings", super::STRING_HELP);
     // (name, a V's leg, what the string takes).
     let library = library_strings(model);
     let tops: Vec<Option<[f64; 3]>> = f
@@ -1293,8 +1278,7 @@ fn string_ends_ui(ui: &mut egui::Ui, x: &mut StringRow, cx: &Row<'_>, asks: &mut
         ..
     } = *cx;
     ui.horizontal(|ui| {
-                        ui.label("hangs from")
-                            .on_hover_text("The point of the structure it is attached to");
+                        crate::tool_ui::label(ui, "hangs from", "The point of the structure it is attached to");
                         egui::ComboBox::from_id_salt(("string-top", k))
                             .selected_text(&x.top)
                             .height(300.0)
@@ -1319,8 +1303,7 @@ fn string_ends_ui(ui: &mut egui::Ui, x: &mut StringRow, cx: &Row<'_>, asks: &mut
                                     }
                                 }
                             });
-                        ui.label("ends at").on_hover_text(
-                            "Its own wire point (made by it), or another wire point of the structure: \
+                        crate::tool_ui::label(ui, "ends at", "Its own wire point (made by it), or another wire point of the structure: \
                              where a string ends already, two strings end at one wire point (both keep their lengths); \
                              strings chain (a string below two)",
                         );
@@ -1699,12 +1682,12 @@ fn add_string_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model, point_nam
 /// The new points on the structure: a row each, "+ point".
 fn new_points_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model, new_points: &[usize]) {
     ui.separator();
-    ui.strong("New points on the structure");
-    help(
+    crate::tool_ui::heading(
         ui,
+        "New points on the structure",
         "A string hangs from a point of the structure; the structure's points are listed \
-                 under \"hangs from\". Add one here where none fits (across: to the right looking \
-                 ahead, along: ahead, up: from the base).",
+         under \"hangs from\". Add one here where none fits (across: to the right looking \
+         ahead, along: ahead, up: from the base).",
     );
     let mut drop = None;
     // A typed structure: each new point on one of its type's attach

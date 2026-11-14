@@ -130,6 +130,7 @@ mod survey_io;
 mod tables;
 mod thermal;
 mod tick_list;
+mod tool_ui;
 mod tools;
 mod type_workspace;
 mod vegetation;

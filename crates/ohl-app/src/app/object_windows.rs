@@ -167,10 +167,11 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
             .small()
             .weak(),
         );
-        ui.horizontal(|ui| {
-            apply |= ui.button("Apply").on_hover_text("Enter").clicked();
-            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
-        });
+        match crate::tool_ui::buttons(ui, "Apply", true, None, crate::tool_ui::Keys::Both) {
+            Some(crate::tool_ui::Pressed::Action) => apply = true,
+            Some(crate::tool_ui::Pressed::Cancel) => cancel = true,
+            None => {}
+        }
     });
     cancel |= shown == crate::dockable::Shown::Closed;
     apply |= ctx.input(|i| i.key_pressed(egui::Key::Enter));
@@ -399,6 +400,15 @@ pub(super) fn point_delete_window(ctx: &egui::Context, r: &mut Ready) {
     // (Read where it is: not copied on every frame the window is open.)
     let stored = r.model.stored_line().unwrap_or(&r.model.line);
     tool_window(r, "point-delete", format!("Delete alignment point {id}")).show(ctx, |ui| {
+        crate::tool_ui::intro_of(
+            ui,
+            "This point is shared by several alignments: delete it, or only take it off \
+             some of them.",
+            "A point where alignments meet (a junction) is one point. Deleted, it goes from \
+             every alignment; taken off the ticked ones, it stays on the others. It is one \
+             change of the project: Edit › Undo (⌘Z) brings it back.",
+            crate::tools::Tool::Delete,
+        );
         ui.label(format!(
             "{id} is on {} alignments. Delete it from all of them, or take it off the ones ticked \
              (it stays on the others; the points around keep their order).",
@@ -527,6 +537,14 @@ pub(super) fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
                 .collect();
             let title = format!("Delete spread {}?", crate::properties::spread_name(sec, *k));
             tool_window(r, "spread-delete", title).show(ctx, |ui| {
+                crate::tool_ui::intro_of(
+                    ui,
+                    "Delete the spread load alone, or with the points it runs between.",
+                    "A spread is a load along the wire between two span points. Its points \
+                     may stay as bare points, or go with it when nothing else uses them. It \
+                     is one change of the project: Edit › Undo (⌘Z) brings it back.",
+                    crate::tools::Tool::Delete,
+                );
                 ui.label(format!("Spread {} of section {section}.", spread_text(*k)));
                 ui.label("Its points:");
                 egui::ScrollArea::vertical()
@@ -583,6 +601,13 @@ pub(super) fn spread_delete_window(ctx: &egui::Context, r: &mut Ready) {
                 .map(|x| x.id.clone())
                 .collect();
             tool_window(r, "spread-delete", format!("Delete span point {p}?")).show(ctx, |ui| {
+                crate::tool_ui::intro_of(
+                    ui,
+                    "A spread load ends on this point: deleting the point deletes that spread too.",
+                    "A spread needs both its points. Its other point stays. It is one change \
+                     of the project: Edit › Undo (⌘Z) brings it back.",
+                    crate::tools::Tool::Delete,
+                );
                 ui.label(format!(
                     "Span point {p} of section {section} ends {} spread(s): a spread needs both \
                      its points. Delete the point and the whole spread(s)?",
@@ -645,8 +670,18 @@ pub(super) fn move_window(ctx: &egui::Context, r: &mut Ready) {
     };
     let (mut apply, mut cancel) = (false, false);
     tool_window(r, "move", format!("Move structure {}", d.id)).show(ctx, |ui| {
+        crate::tool_ui::intro_of(
+            ui,
+            "Type where the structure goes: the views show it there at once. Apply keeps it, \
+             Cancel puts it back.",
+            "E and N are the project's coordinates (east, north), z the height of its base. \
+             \"Base on the ground\" keeps the base on the terrain wherever it goes. Its wires \
+             are solved again as you type. Apply is one change of the project: Edit › Undo \
+             (⌘Z) takes it back.",
+            crate::tools::Tool::Move,
+        );
         egui::Grid::new("move-grid").num_columns(3).show(ui, |ui| {
-            for (k, name) in ["E", "N", "z"].into_iter().enumerate() {
+            for (k, name) in ["E (m)", "N (m)", "z (m)"].into_iter().enumerate() {
                 ui.label(name);
                 let enabled = k < 2 || !d.on_ground;
                 ui.add_enabled(
@@ -664,10 +699,11 @@ pub(super) fn move_window(ctx: &egui::Context, r: &mut Ready) {
         ui.checkbox(&mut d.on_ground, "base on the ground");
         let horizontal = (d.position[0] - d.start[0]).hypot(d.position[1] - d.start[1]);
         ui.label(egui::RichText::new(format!("moved {horizontal:.3} m horizontally")).small());
-        ui.horizontal(|ui| {
-            apply |= ui.button("Apply").on_hover_text("Enter").clicked();
-            cancel |= ui.button("Cancel").on_hover_text("Escape").clicked();
-        });
+        match crate::tool_ui::buttons(ui, "Apply", true, None, crate::tool_ui::Keys::Both) {
+            Some(crate::tool_ui::Pressed::Action) => apply = true,
+            Some(crate::tool_ui::Pressed::Cancel) => cancel = true,
+            None => {}
+        }
     });
     if d.on_ground
         && let Some(z) = r.model.ground_at(d.position[0], d.position[1])

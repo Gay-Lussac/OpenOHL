@@ -314,7 +314,9 @@ pub(super) fn clamps_ui(
     model: &Model,
 ) {
     ui.separator();
-    ui.label("Suspension strings holding it").on_hover_text(
+    crate::tool_ui::label(
+        ui,
+        "Suspension strings holding it",
         "Strings of the structure holding the jumper between its tension clamps, \
          like suspension strings on the line: one or two to a wire point without a set. \
          Each holds the jumper in a clamp that swings and turns freely; the jumper runs \
@@ -573,7 +575,8 @@ pub fn new_jumper_through(
 }
 
 /// A new jumper from `from` to `to`: the cable of the section at `from`,
-/// a sag of 15 % of the distance (0.3–3 m) at 15 °C, the next free id.
+/// a sag of 15 % of the distance (0.3–3 m) at the stringing default
+/// temperature ([`ohl_line::DEFAULT_STRINGING_TEMPERATURE`]), the next free id.
 pub fn new_jumper(
     model: &Model,
     from: &SectionPoint,

@@ -685,10 +685,21 @@ impl Follow {
             window,
             None,
             |ui| {
-                ui.label(match &self.subject {
-                    Some(s) => format!("Following {}", s.name()),
-                    None => "Click the object to follow".into(),
-                });
+                crate::tool_ui::intro_of(
+                    ui,
+                    "Click a wire, a jumper or a structure, then move the cursor along it: \
+                     the nearest LiDAR point of the classes ticked is measured as you go.",
+                    "A click keeps the measurement in the project. N jumps to the closest \
+                     spot along the whole object. Escape lets you choose another object.",
+                    crate::tools::Tool::Follow,
+                );
+                ui.label(
+                    egui::RichText::new(match &self.subject {
+                        Some(s) => format!("Following {}", s.name()),
+                        None => "Click the object to follow".into(),
+                    })
+                    .strong(),
+                );
                 ui.label(egui::RichText::new(&self.status).small());
                 ui.separator();
                 ui.label(egui::RichText::new("Snap to the LiDAR classes").strong());

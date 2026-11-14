@@ -110,9 +110,10 @@ fn add_string_hangs_from_the_point_clicked() {
         let r = harness.state_mut().ready().unwrap();
         assert!(matches!(r.editor, Some(Form::Section(_))), "{:?}", r.editor);
         // At the mouse; a window taller than the room below it moved
-        // up just enough to show whole.
+        // up just enough to show whole (since 2026-11-14 its opening
+        // sentence makes it taller: further up).
         assert_eq!(r.popup_at.x, 700.0);
-        assert!((480.0..=500.0).contains(&r.popup_at.y), "{:?}", r.popup_at);
+        assert!((400.0..=500.0).contains(&r.popup_at.y), "{:?}", r.popup_at);
     }
     use_tool(&mut harness, Tool::Edit, Selection::None, None);
     let r = harness.state_mut().ready().unwrap();
@@ -269,9 +270,10 @@ fn a_tool_window_opens_at_the_click_not_where_it_was_before() {
     let state = egui::AreaState::load(&harness.ctx, egui::Id::new(("editor".to_owned(), 1_u64)))
         .expect("the window");
     let at = state.pivot_pos.unwrap();
-    // Next to the click (moved up as much as it reaches past the bottom).
+    // Next to the click (moved up as much as it reaches past the bottom;
+    // since 2026-11-14 its opening sentence makes it taller).
     assert!(
-        (at.x - 516.0).abs() < 1.0 && (396.0..=417.0).contains(&at.y),
+        (at.x - 516.0).abs() < 1.0 && (316.0..=417.0).contains(&at.y),
         "{at:?}"
     );
 }

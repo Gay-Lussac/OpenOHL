@@ -211,10 +211,12 @@ impl Tool {
             Tool::Select => "click an object to select it",
             Tool::Move => "click a structure to move it",
             Tool::Delete => {
-                "click a structure, string, span, jumper, span point or spacer to delete it"
+                "click a structure, string, span, jumper, alignment point, span point, spread or spacer to delete it (what goes with it is listed first)"
             }
             Tool::GoTo => "click to open the Go to window",
-            Tool::Edit => "click a structure, a string or a span to edit it",
+            Tool::Edit => {
+                "click an object to edit it in its window: a structure, string, span (its section), jumper, alignment point, span point, spacer, LiDAR point, kept measurement or note"
+            }
             Tool::AddStructure => {
                 "click an alignment point (the structure stands on it; its window puts others on the alignment's other points too) or the ground to add a structure there"
             }
@@ -642,7 +644,15 @@ pub fn inventory_ui(ctx: &egui::Context, open: &mut bool, hotbar: &mut Hotbar) {
         // larger screen before would leave it out of sight).
         .default_pos(screen.center_bottom() + egui::vec2(-200.0, -300.0))
         .show(ctx, |ui| {
-            ui.label("Drag a tool onto a hotbar slot; drag a slot here to empty it.");
+            crate::tool_ui::intro(
+                ui,
+                "Every tool, by theme. Drag one onto a slot of the hotbar to have it at hand; \
+                 drag a slot here to empty it.",
+                "Hover a tool for what a click with it does. 1–9 choose a slot, a click in a \
+                 view uses the tool held, a right-click opens the object's menu and Escape \
+                 holds Select again. E opens and closes this window.",
+                ("user-guide/tools", "the-inventory"),
+            );
             let (_, dropped) =
                 ui.dnd_drop_zone::<Dragged, _>(egui::Frame::group(ui.style()), |ui| {
                     for theme in THEMES {

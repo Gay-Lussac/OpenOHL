@@ -10,6 +10,10 @@ fourth.
 2. Keep the name *route 1* (or type your own), a description if you
    like, and click **Create the route**. The **New alignment** tool is
    now held; the status bar says so.
+
+   ![The first steps window again: the route's name route 1, Create
+   the route](../images/tutorial/tutorial-name-the-route.png)
+
 3. Bring the **Plan** page to the front (its tab, next to 3D): the
    ground seen from above, north up. Scroll to zoom, drag to move.
 4. Click the ground at each of these points, in this order:
@@ -28,10 +32,17 @@ fourth.
    Elsewhere the window **Point coordinates** opens with the place you
    clicked and the ground's height there: type E and N from the table,
    keep the height, click **Add the point**.
+
+   ![The Point coordinates window at the second point: E 200, N 0 and
+   the ground's height there, Add the point](../images/tutorial/tutorial-point-coordinates.png)
+
    **Backspace** takes the last point back; **Escape** gives the
    alignment up.
 5. Press **Enter**. The window **New alignment: its route** has *route 1*
    chosen. Click **Make the alignment**.
+
+   ![The window New alignment: its route, with route 1 chosen and Make
+   the alignment](../images/tutorial/tutorial-alignment-route.png)
 
 ## What you should see
 
@@ -40,6 +51,9 @@ A line of six points in the plan, named P1 to P6: straight east for
 last 447 m. Line › Terrain › Alignment points lists
 them with their E, N and height. A point placed a little off can be put
 right there: type its E and N and apply the change (the table's **Apply** button).
+
+![The Plan page with the six alignment points: straight east, then
+turning left at the fourth; the profile of the ground below](../images/tutorial/tutorial-alignment-plan.png)
 
 **What just happened:** a **route** is the path of the line; its
 **alignments** are the polylines the structures stand on, each through
