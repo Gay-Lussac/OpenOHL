@@ -30,6 +30,7 @@ tools = {
  "edit": ('<path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 0 1 3 3L8 18.5z"/><path d="M13.5 7l3 3"/>', "Edit"),
  "add-structure": (pylon(10, 21, 17, 13) + '<path d="M19.5 3.5v5M17 6h5"/>', "Add structure"),
  "add-string": ('<path d="M2.5 3.5h12"/><path d="M8.5 3.5v3.5"/><path d="M5 7.5h7M5 10.5h7M5 13.5h7" stroke-width="2.2"/><path d="M8.5 7.5v7.5"/><circle cx="8.5" cy="16.5" r="1.5" fill="currentColor"/><path d="M2.5 18.5c4 1.4 8 1.4 12 0" opacity="0.6"/><path d="M19.5 9v5M17 11.5h5"/>', "Add string"),
+ "add-post": ('<path d="M2.5 19.5h12"/><path d="M8.5 19.5v-2"/><path d="M5.5 15.5h6M5.5 12.5h6M5.5 9.5h6" stroke-width="2.2"/><path d="M8.5 17.5v-11"/><circle cx="8.5" cy="5" r="1.5" fill="currentColor"/><path d="M2.5 3.5c4 1.2 8 1.2 12 0" opacity="0.6"/><path d="M19.5 9v5M17 11.5h5"/>', "Add post insulator"),
  "_old_add_string": ('<path d="M10 3v3"/><ellipse cx="10" cy="8" rx="3.6" ry="1.2"/><ellipse cx="10" cy="11.5" rx="3.6" ry="1.2"/><ellipse cx="10" cy="15" rx="3.6" ry="1.2"/><path d="M10 16.2V20"/><circle cx="10" cy="20.6" r="0.9"/><path d="M19 4v5M16.5 6.5h5"/>', "Add string"),
  "string-wire": ('<path d="M3 5v14M21 5v14"/><path d="M3 7c4 7 14 7 18 0"/><path d="M3 11.5c4 6 14 6 18 0" opacity="0.55"/>', "String wire"),
  "add-alignment": ('<path d="M3 18l6-6 5 3 7-9" stroke-dasharray="2.2 2.6"/><circle cx="14" cy="15" r="2.2" fill="currentColor"/><path d="M19 15v5M16.5 17.5h5"/>', "Add alignment point"),

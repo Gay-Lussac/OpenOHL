@@ -1466,3 +1466,101 @@ fn a_systems_highest_voltage_and_insulation_are_typed_in_its_table() {
     let back = ohl_line::Line::from_json(&text).unwrap();
     assert_eq!(back.systems[0], line.systems[0]);
 }
+
+/// Add post insulator (2026-11-14): a click on T7 opens an upright post on
+/// its point, at the next free set; given a cantilever rating and an exit
+/// angle and applied, the line holds the post; opened again with Edit and
+/// applied unchanged, it is still a post with its values (before, Apply in
+/// the strings window made it an ordinary string). The braced shape makes
+/// a hinged post with its brace.
+#[test]
+fn a_post_insulator_is_added_and_kept() {
+    use crate::editors::{Form, Preset};
+    use crate::tools::Tool;
+    let model = synthetic_project("post");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 900.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let enter = |h: &mut Harness<'_, App>| press(h, egui::Key::Enter, egui::Modifiers::NONE);
+    use_tool(
+        &mut harness,
+        Tool::AddPost,
+        Selection::Structure("T7".into()),
+        None,
+    );
+    let set = {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        let p = &mut f.strings[0].post;
+        assert!(p.post && !p.hinged);
+        p.cantilever_load = Some(8000.0);
+        p.exit_angle_deg = Some(-10.0);
+        f.set
+    };
+    harness.get_by_label_contains("Add post insulator to T7");
+    enter(&mut harness);
+    let check = |h: &mut Harness<'_, App>| {
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let line = r.model.stored_line().unwrap();
+        let t7 = line.structure("T7").unwrap();
+        let w = t7.wire_at_set(set).unwrap().label.clone();
+        let p = t7.strings.iter().find(|x| x.wire == w).unwrap();
+        assert!(p.post && !p.hinged);
+        assert_eq!(p.cantilever_load, Some(8000.0));
+        assert_eq!(p.exit_angle_deg, Some(-10.0));
+    };
+    check(&mut harness);
+    // Opened again with Edit and applied: still a post with its values.
+    use_tool(&mut harness, Tool::Edit, string_at("T7", set), None);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        let Some(Form::String(f)) = &mut r.editor else {
+            panic!("{:?}", r.editor);
+        };
+        assert!(f.strings.iter().any(|x| x.post.post));
+        // Touched, so Apply makes a change.
+        f.strings[0].weight = 300.0;
+    }
+    enter(&mut harness);
+    check(&mut harness);
+    // The braced shape: a hinged post and its brace.
+    use_tool(
+        &mut harness,
+        Tool::AddPost,
+        Selection::Structure("T7".into()),
+        None,
+    );
+    let set = {
+        let r = harness.state_mut().ready().unwrap();
+        let mut editor = r.editor.take();
+        let Some(Form::String(f)) = &mut editor else {
+            panic!("{editor:?}");
+        };
+        let top = f
+            .points
+            .iter()
+            .find(|p| p.label == f.strings[0].top)
+            .unwrap()
+            .at;
+        f.preset(Preset::BracedPost, top, &r.model);
+        let set = f.set;
+        r.editor = editor;
+        set
+    };
+    enter(&mut harness);
+    {
+        let r = harness.state_mut().ready().unwrap();
+        assert!(r.editor.is_none(), "{:?}", r.status);
+        let line = r.model.stored_line().unwrap();
+        let t7 = line.structure("T7").unwrap();
+        let w = t7.wire_at_set(set).unwrap().label.clone();
+        let at: Vec<_> = t7.strings.iter().filter(|x| x.wire == w).collect();
+        assert_eq!(at.len(), 2);
+        assert!(at.iter().any(|x| x.post && x.hinged));
+        assert!(at.iter().any(|x| !x.post));
+    }
+}

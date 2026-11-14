@@ -30,6 +30,10 @@ pub enum Tool {
     /// Click an attachment point or a wire point: a new string
     /// hanging from it (a structure elsewhere: from its top).
     AddString,
+    /// Click a structure or one of its points: a post insulator standing
+    /// on it (upright, a horizontal line post or a braced post; owner,
+    /// 2026-11-14), its wire point at its top.
+    AddPost,
     /// Click strings in line order, Enter: a new section.
     StringWire,
     /// Click a survey or LiDAR point, a structure or the ground: a
@@ -85,7 +89,7 @@ pub enum Tool {
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Edit › Tools list them in this order.
-    pub const ALL: [Tool; 24] = [
+    pub const ALL: [Tool; 25] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -98,6 +102,7 @@ impl Tool {
         Tool::Replace,
         Tool::Link,
         Tool::AddString,
+        Tool::AddPost,
         Tool::StringWire,
         Tool::AddJumper,
         Tool::OnSpan,
@@ -117,9 +122,12 @@ impl Tool {
         match self {
             Tool::Select | Tool::Edit | Tool::Delete | Tool::GoTo => "General",
             Tool::NewAlignment | Tool::AddAlignment | Tool::EditAlignment => "Alignments",
-            Tool::AddStructure | Tool::Move | Tool::Replace | Tool::Link | Tool::AddString => {
-                "Structures"
-            }
+            Tool::AddStructure
+            | Tool::Move
+            | Tool::Replace
+            | Tool::Link
+            | Tool::AddString
+            | Tool::AddPost => "Structures",
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
             Tool::MeasureDistance
             | Tool::MeasureHeight
@@ -143,6 +151,7 @@ impl Tool {
             Tool::Edit => "Edit",
             Tool::AddStructure => "Add structure",
             Tool::AddString => "Add string",
+            Tool::AddPost => "Add post insulator",
             Tool::StringWire => "String wire",
             Tool::AddAlignment => "Add alignment point",
             Tool::NewAlignment => "New alignment",
@@ -176,6 +185,7 @@ impl Tool {
             Tool::Edit => "🖊",
             Tool::AddStructure => "‡",
             Tool::AddString => "⛓",
+            Tool::AddPost => "⬆",
             Tool::StringWire => "≈",
             Tool::AddAlignment => "⛶",
             Tool::NewAlignment => "📍",
@@ -222,6 +232,9 @@ impl Tool {
             }
             Tool::AddString => {
                 "click an attachment point or a wire point to hang a new string from it; or two span points: a spacer between them"
+            }
+            Tool::AddPost => {
+                "click a structure or a point of it: a post insulator standing there, its wire point at its top — upright, a horizontal line post or a braced post, chosen in its window"
             }
             Tool::StringWire => {
                 "click strings in line order, Enter: new section (Backspace: undo a point, Escape: cancel)"
@@ -307,14 +320,19 @@ impl Tool {
     pub fn picks_strings(self) -> bool {
         matches!(
             self,
-            Tool::Delete | Tool::Edit | Tool::AddString | Tool::StringWire | Tool::AddJumper
+            Tool::Delete
+                | Tool::Edit
+                | Tool::AddString
+                | Tool::AddPost
+                | Tool::StringWire
+                | Tool::AddJumper
         )
     }
 
     /// Structure points and wire points can be clicked while it is
     /// held.
     pub fn picks_points(self) -> bool {
-        matches!(self, Tool::AddString | Tool::Link)
+        matches!(self, Tool::AddString | Tool::AddPost | Tool::Link)
     }
 
     /// Jumpers (their points) can be clicked while it is held.
@@ -357,6 +375,7 @@ impl Tool {
             Tool::Edit => "edit",
             Tool::AddStructure => "add_structure",
             Tool::AddString => "add_string",
+            Tool::AddPost => "add_post",
             Tool::StringWire => "string_wire",
             Tool::AddAlignment => "add_alignment",
             Tool::NewAlignment => "new_alignment",

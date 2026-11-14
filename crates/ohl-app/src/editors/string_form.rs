@@ -45,6 +45,25 @@ impl StringForm {
         Some(form)
     }
 
+    /// A new upright post insulator on structure `id` (the Add post
+    /// insulator tool, 2026-11-14): standing on its point `label`, else on
+    /// the point a new string would hang from ([`Self::new_on`]); the next
+    /// free set at its top. The window offers the horizontal and the
+    /// braced post (its shapes).
+    pub fn post_on(model: &Model, id: &str, label: Option<&str>) -> Option<Self> {
+        let mut form = Self::new_on(model, id)?;
+        let top = match label {
+            Some(l) => form.points.iter().find(|p| p.label == l)?.at,
+            None => form
+                .strings
+                .first()
+                .and_then(|x| form.points.iter().find(|p| p.label == x.top))
+                .map_or([0.0, 0.0, 20.0], |p| p.at),
+        };
+        form.preset(Preset::StationPost, top, model);
+        Some(form)
+    }
+
     /// A new string hanging from point `label` of structure `id`: a
     /// structure point (a new set, its wire point 3 m straight down), or a
     /// wire point (its strings' window, the new string added below it with
@@ -147,6 +166,7 @@ impl StringForm {
                     stiffness: x.stiffness,
                     strain: x.strain,
                     limits: own_limits(model, id, x),
+                    post: crate::editors::PostRow::of(model, id, x),
                 }
             })
             .collect();
@@ -296,6 +316,26 @@ impl StringForm {
                 string(self, &format!("S{set}"), &a, &n, false);
                 string(self, &format!("S{set}-B"), &n, &b, true);
                 string(self, &format!("S{set}-F"), &n, &f, true);
+            }
+            // Post insulators (2026-11-14): 1.5 m long, an invented length
+            // to change; standing out to the side of the structure the
+            // point is on (its right for a point on the axis).
+            Preset::StationPost | Preset::LinePost | Preset::BracedPost => {
+                let side = if top[0] < 0.0 { -1.0 } else { 1.0 };
+                let base = point(self, &format!("A{set}"), [0.0; 3]);
+                let tip = match preset {
+                    Preset::StationPost => [0.0, 0.0, 1.5],
+                    _ => [1.5 * side, 0.0, 0.0],
+                };
+                let w = wire(self, &format!("W{set}"), tip, Some(set));
+                string(self, &format!("P{set}"), &base, &w, false);
+                let p = self.strings.last_mut().expect("the post");
+                p.post.post = true;
+                p.post.hinged = preset == Preset::BracedPost;
+                if preset == Preset::BracedPost {
+                    let b = point(self, &format!("A{set}-B"), [0.0, 0.0, 1.5]);
+                    string(self, &format!("B{set}"), &b, &w, false);
+                }
             }
         }
         // Its strain strings' wire points are dead ends.
@@ -452,6 +492,7 @@ impl StringForm {
                 stiffness: x.stiffness,
                 strain: x.strain,
                 limits: own_limits(model, &self.structure, x),
+                post: crate::editors::PostRow::of(model, &self.structure, x),
             });
             self.opened.0.push(x.label.clone());
         }
@@ -873,6 +914,11 @@ impl StringForm {
                 max_swing_across_deg: x.limits.max_swing_across_deg,
                 max_swing_along_deg: x.limits.max_swing_along_deg,
                 shapes: own_shapes.get(&x.label).cloned().unwrap_or_default(),
+                post: x.post.post,
+                hinged: x.post.post && x.post.hinged,
+                cantilever_load: x.post.cantilever_load.filter(|_| x.post.post),
+                exit_angle_deg: x.post.exit_angle_deg.filter(|_| x.post.post),
+                exit_direction_deg: x.post.exit_direction_deg.filter(|_| x.post.post),
                 // From its wire point as placed here.
                 ..Default::default()
             });
@@ -993,6 +1039,10 @@ fn preset_ui(ui: &mut egui::Ui, f: &mut StringForm, model: &Model) {
             .selected_text("replace with…")
             .show_ui(ui, |ui| {
                 for p in Preset::ALL {
+                    if p == Preset::POSTS[0] {
+                        ui.separator();
+                        ui.label(egui::RichText::new("post insulators").small().weak());
+                    }
                     if ui.selectable_label(false, p.name()).clicked() {
                         chosen = Some(p);
                     }
@@ -1169,6 +1219,7 @@ fn string_row_ui(
     string_head_ui(ui, x, cx, asks, remove);
     string_ends_ui(ui, x, cx, asks);
     string_loads_ui(ui, x);
+    post_ui(ui, x);
     // A V's leg (strings meeting at one wire point): its
     // length only; where the legs meet follows from both.
     let legs = f
@@ -1278,7 +1329,11 @@ fn string_ends_ui(ui: &mut egui::Ui, x: &mut StringRow, cx: &Row<'_>, asks: &mut
         ..
     } = *cx;
     ui.horizontal(|ui| {
-                        crate::tool_ui::label(ui, "hangs from", "The point of the structure it is attached to");
+                        if x.post.post {
+                            crate::tool_ui::label(ui, "stands on", "The point of the structure its base stands on (earthed)");
+                        } else {
+                            crate::tool_ui::label(ui, "hangs from", "The point of the structure it is attached to");
+                        }
                         egui::ComboBox::from_id_salt(("string-top", k))
                             .selected_text(&x.top)
                             .height(300.0)
@@ -1327,8 +1382,48 @@ fn string_ends_ui(ui: &mut egui::Ui, x: &mut StringRow, cx: &Row<'_>, asks: &mut
                     });
 }
 
-/// A string's weight, wind area, compression and limits.
+/// A string's weight, wind area, compression and limits; a post's: its
+/// weight, wind area and its ratings along it (compression, tension) —
+/// no swing (2026-11-14).
 fn string_loads_ui(ui: &mut egui::Ui, x: &mut StringRow) {
+    if x.post.post {
+        ui.horizontal(|ui| {
+            ui.label("weight");
+            value(ui, &mut x.weight, 1.0, " N").on_hover_text(
+                "Its own weight: at its middle (a fixed post), half at each end (a hinged one)",
+            );
+            ui.label("wind area");
+            value(ui, &mut x.wind_area, 0.01, " m²")
+                .on_hover_text("Area the wind blows on (0: its assembly's, if any)");
+        });
+        ui.horizontal(|ui| {
+            ui.label("ratings along it").on_hover_text(
+                "Compared with its load by Checks › String checks; unticked: not given (its \
+                 library post's, if it names one)",
+            );
+            crate::editors::optional_value(
+                ui,
+                "compression",
+                &mut x.compression,
+                20_000.0,
+                false,
+                "The compression along it it is rated for. A hinged post beyond it is flagged \
+                 in the solve too",
+            );
+            crate::editors::optional_value(
+                ui,
+                "tension",
+                &mut x.limits.max_load,
+                20_000.0,
+                false,
+                "The tension along it it is rated for",
+            );
+        });
+        x.limits.max_swing_deg = None;
+        x.limits.max_swing_across_deg = None;
+        x.limits.max_swing_along_deg = None;
+        return;
+    }
     ui.horizontal(|ui| {
                         ui.label("weight");
                         value(ui, &mut x.weight, 1.0, " N")
@@ -1354,6 +1449,85 @@ fn string_loads_ui(ui: &mut egui::Ui, x: &mut StringRow) {
                         }
                     });
     limits_ui(ui, &mut x.limits);
+}
+
+/// A string as a post insulator (2026-11-14): standing on the point it
+/// starts from, holding its wire point; hinged (braced), its rating across
+/// it, its clamp's fixed exit direction.
+fn post_ui(ui: &mut egui::Ui, x: &mut StringRow) {
+    let p = &mut x.post;
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut p.post, "post insulator").on_hover_text(
+            "It stands on the point it starts from (its base, earthed) and holds its wire point \
+             at its other end: rigidly (fixed), or turning about its base and held by a brace \
+             (hinged). Not a tension string. Its load goes to its base with the moment of its \
+             length; its ratings are checked in Checks › String checks.",
+        );
+        if p.post {
+            ui.checkbox(&mut p.hinged, "hinged base (braced)")
+                .on_hover_text(
+                    "A braced line post: it turns about its base and only pushes or pulls; another \
+                 string at its wire point (its brace) must hold it",
+                );
+        }
+    });
+    if !p.post {
+        p.hinged = false;
+        p.cantilever_load = None;
+        p.exit_angle_deg = None;
+        p.exit_direction_deg = None;
+        return;
+    }
+    ui.horizontal(|ui| {
+        let mut rated = p.cantilever_load.is_some();
+        if ui
+            .checkbox(&mut rated, "cantilever rating")
+            .on_hover_text(
+                "The load across it at its top it is rated for (its data sheet); compared with \
+                 its bending moment at its base over its length. Unticked: not checked (its \
+                 library post's, if it names one)",
+            )
+            .changed()
+        {
+            p.cantilever_load = rated.then_some(8000.0);
+        }
+        if let Some(c) = &mut p.cantilever_load {
+            value(ui, c, 100.0, " N");
+            *c = c.max(1.0);
+        }
+    });
+    ui.horizontal(|ui| {
+        let mut exit = p.exit_angle_deg.is_some();
+        if ui
+            .checkbox(&mut exit, "jumper exit angle")
+            .on_hover_text(
+                "The angle from the horizontal at which its clamp holds a jumper ending here \
+                 (negative: down), fixed to the structure. Unticked: level",
+            )
+            .changed()
+        {
+            p.exit_angle_deg = exit.then_some(0.0);
+        }
+        if let Some(a) = &mut p.exit_angle_deg {
+            value(ui, a, 1.0, "°");
+            *a = a.clamp(-90.0, 90.0);
+        }
+        let mut dir = p.exit_direction_deg.is_some();
+        if ui
+            .checkbox(&mut dir, "in plan")
+            .on_hover_text(
+                "Its direction in plan, in the structure's axes (0 ahead along the line, 90 to \
+                 the right). Unticked: towards the jumper's other end",
+            )
+            .changed()
+        {
+            p.exit_direction_deg = dir.then_some(0.0);
+        }
+        if let Some(d) = &mut p.exit_direction_deg {
+            value(ui, d, 1.0, "°");
+            *d = d.rem_euclid(360.0);
+        }
+    });
 }
 
 /// A V's leg (one of `legs` strings meeting at one wire point): its

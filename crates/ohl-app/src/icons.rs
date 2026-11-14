@@ -35,6 +35,7 @@ impl Tool {
             Tool::Edit => tool!("edit"),
             Tool::AddStructure => tool!("add-structure"),
             Tool::AddString => tool!("add-string"),
+            Tool::AddPost => tool!("add-post"),
             Tool::StringWire => tool!("string-wire"),
             Tool::AddAlignment => tool!("add-alignment"),
             Tool::NewAlignment => tool!("new-alignment"),

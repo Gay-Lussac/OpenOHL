@@ -809,6 +809,19 @@ impl Ready {
                 self.editor = StringForm::hanging_from(model, structure, label).map(Form::String);
                 self.select(target);
             }
+            // A post insulator standing on the point clicked, else on a
+            // point of the structure (owner, 2026-11-14).
+            (Tool::AddPost, Selection::Point { structure, label }) => {
+                self.editor = StringForm::post_on(model, structure, Some(label)).map(Form::String);
+                self.select(target);
+            }
+            (
+                Tool::AddPost,
+                Selection::Structure(id) | Selection::Attachment { structure: id, .. },
+            ) => {
+                self.editor = StringForm::post_on(model, id, None).map(Form::String);
+                self.select(Selection::Structure(id.clone()));
+            }
             (Tool::Link, Selection::Point { .. }) => self.link_click(target),
             (Tool::Link, _) => {
                 if self.link_from.take().is_some() {

@@ -10,6 +10,18 @@ of Parts A, B and C).
 
 ## 2026-11-14
 
+**Post insulators, third step: the Add post insulator tool** (the post
+plan's phase 3; owner: "go ahead for the rest" — of the posts): a tool of
+the Structures theme (its icon `add-post.svg`), and on the right-click
+menu of a structure or a point; the strings window's shapes *upright*,
+*horizontal* and *braced* post (1.5 m to start from); every string's
+post fields in the window (post, hinged, cantilever rating, exit angle and
+direction, compression and tension ratings) — before, Apply on a post in
+the strings window made it an ordinary string again (a fault of the
+first step, fixed). A post's window says *stands on*, shows no swing
+limits. The limits' help no longer says they are not checked (the string
+check checks them since 2026-10-24).
+
 **Field cuts and steps fail on their own** (owner: on a real line the 2D
 cuts at buildings "failed because of one unconnected cable and all
 results got aborted … for cuts those that work get their results reported

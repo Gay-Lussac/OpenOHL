@@ -7,8 +7,8 @@ a rigid piece".* Implemented in `crates/ohl-line` (`assembly.rs`,
 stands on a point of the structure — its **base**, the earthed end — and
 holds a wire point at its other end, its **top**, as a cantilever: it
 takes the load across it in bending, not as a string that swings. It is
-given as a string with `post` (line file version 17), or a string naming a
-library post (`kind = "post"`, insulator file version 6): an upright
+placed with the **Add post insulator** tool, or given as a string with
+`post` (line file version 17), or a string naming a library post (`kind = "post"`, insulator file version 6): an upright
 station post (`angle_deg` 180), a horizontal line post (90), or any
 direction between.
 
@@ -151,8 +151,10 @@ its plugin) is not built in, as for the strings' maximum load.
 
 ## Not yet
 
-- Posts on the ground, an Add post tool, a rigid conductor carried on
-  posts — the [plan](../development/decisions.md#2026-11-14).
+- Posts on the ground and a rigid conductor carried on posts — the
+  [plan](../development/decisions.md#2026-11-14). Posts are placed with
+  the [Add post insulator](../user-guide/tools-structures.md#add-post-insulator)
+  tool (2026-11-14).
 - The post's deflection (a spring at its top) and its own ice.
 
 *Validation:* `ohl-loads` `post_tests` (the load at the top with its

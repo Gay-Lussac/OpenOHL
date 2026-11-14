@@ -245,6 +245,45 @@ pub struct StringRow {
     pub description: String,
     /// Its limits, kept and shown but not checked (empty: not given).
     pub limits: ohl_line::StringLimits,
+    /// A post insulator's own values (line file version 17; carried
+    /// through the window, never lost on Apply — 2026-11-14).
+    pub post: PostRow,
+}
+
+/// A string's post insulator values in an editor ([`StringRow::post`]):
+/// as on [`ohl_line::InsulatorString`], its own (not those a library
+/// post gives when the line is read).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PostRow {
+    /// A post insulator.
+    pub post: bool,
+    /// On a hinged base (a braced post).
+    pub hinged: bool,
+    /// Its rated load across it at its top, N.
+    pub cantilever_load: Option<f64>,
+    /// Its clamp's exit angle from the horizontal, degrees.
+    pub exit_angle_deg: Option<f64>,
+    /// Its clamp's direction in plan, structure axes, degrees.
+    pub exit_direction_deg: Option<f64>,
+}
+
+impl PostRow {
+    /// String `x`'s own post values: the stored line's (a library post's
+    /// `post` flag as resolved).
+    pub fn of(model: &Model, structure: &str, x: &ohl_line::InsulatorString) -> Self {
+        let own = model
+            .stored_line()
+            .and_then(|l| l.structure(structure))
+            .and_then(|s| s.string(&x.label));
+        let o = own.unwrap_or(x);
+        Self {
+            post: x.post,
+            hinged: o.hinged,
+            cantilever_load: o.cantilever_load,
+            exit_angle_deg: o.exit_angle_deg,
+            exit_direction_deg: o.exit_direction_deg,
+        }
+    }
 }
 
 /// Shapes of the strings of a new wire point.
@@ -259,11 +298,31 @@ pub enum Preset {
     /// A string to a wire point, two strain strings from it to two sets
     /// (back and ahead).
     Tak,
+    /// An upright post insulator (a station post) standing on the point,
+    /// its wire point 1.5 m above (2026-11-14).
+    StationPost,
+    /// A horizontal line post standing out 1.5 m from the point, to the
+    /// side of the structure the point is on.
+    LinePost,
+    /// A braced line post: a hinged horizontal post and a brace from a
+    /// point 1.5 m above to its top.
+    BracedPost,
 }
 
 impl Preset {
     /// All, in menus' order.
-    pub const ALL: [Preset; 4] = [Preset::I, Preset::V, Preset::VAndString, Preset::Tak];
+    pub const ALL: [Preset; 7] = [
+        Preset::I,
+        Preset::V,
+        Preset::VAndString,
+        Preset::Tak,
+        Preset::StationPost,
+        Preset::LinePost,
+        Preset::BracedPost,
+    ];
+
+    /// The post insulator shapes ([`Preset::ALL`]'s last three).
+    pub const POSTS: [Preset; 3] = [Preset::StationPost, Preset::LinePost, Preset::BracedPost];
 
     /// Name in menus.
     pub fn name(self) -> &'static str {
@@ -272,6 +331,9 @@ impl Preset {
             Preset::V => "Two strings to one wire point",
             Preset::VAndString => "Two strings to one wire point, a string below",
             Preset::Tak => "A string, two tension strings from its wire point",
+            Preset::StationPost => "Post insulator, upright (station post)",
+            Preset::LinePost => "Post insulator, horizontal (line post)",
+            Preset::BracedPost => "Post insulator, braced (hinged post and brace)",
         }
     }
 }
@@ -403,6 +465,9 @@ impl Form {
         match self {
             Form::Structure(f) if f.new => "Add structure".into(),
             Form::Structure(f) => format!("Structure {}", f.id),
+            Form::String(f) if f.new && f.strings.iter().any(|x| x.post.post) => {
+                format!("Add post insulator to {}", f.structure)
+            }
             Form::String(f) if f.new => format!("Add strings to {}", f.structure),
             Form::String(f) if f.set == 0 => {
                 format!(
@@ -555,6 +620,13 @@ impl Form {
                 ONE_STEP,
                 Tool::Edit,
             ),
+            Form::String(f) if f.new && f.strings.iter().any(|x| x.post.post) => (
+                "A new post insulator standing on the point you clicked, its wire point at \
+                 its top: choose upright, horizontal or braced (shape), its length and \
+                 direction, its ratings, then Apply.",
+                POST_HELP,
+                Tool::AddPost,
+            ),
             Form::String(f) if f.new => (
                 "New strings hanging from the point you clicked: what each hangs from, \
                  its length and direction, and the wire point at its end.",
@@ -626,6 +698,18 @@ impl Form {
     }
 }
 
+/// What a post insulator is (the Add post insulator window's help).
+pub(crate) const POST_HELP: &str = "A post insulator stands on a point of the structure — its \
+     base, earthed — and holds a wire point at its other end. Fixed (bolted), it holds the \
+     wire point rigidly as a cantilever: its load goes to its base with the moment of its \
+     length. Hinged (a braced line post), it turns about its base and only pushes or pulls: \
+     a brace string to its top holds it. The shapes: upright (a station post), horizontal \
+     (a line post) or braced; 1.5 m long to start with — set its length and direction. Its \
+     ratings (the load across its top, compression, tension) are checked in Checks › String \
+     checks; a jumper ending at its top leaves its clamp at a fixed exit angle.\n\nApply \
+     makes it one change of the project: Edit › Undo (⌘Z) takes it back. Cancel (Escape) \
+     changes nothing. Hover a field for what it does.";
+
 /// What a string is (the strings' windows' help).
 pub(crate) const STRING_HELP: &str = "A string is one straight insulating member: from the point it hangs \
      from (on the structure, or the bottom of another string) to its wire point, which it \
@@ -687,9 +771,10 @@ pub(crate) fn optional_value(
 /// it is rated for and the swings it may take, each optional. Whether one
 /// changed.
 pub(crate) fn limits_ui(ui: &mut egui::Ui, l: &mut ohl_line::StringLimits) -> bool {
-    const NOTE: &str = "Not checked by OpenOHL: kept with the string for a plugin or a report \
-                        that checks it. Unticked: not given (its insulator's, if the library \
-                        entry gives one)";
+    const NOTE: &str = "Compared with the string as solved by Checks › String checks (and \
+                        `ohl strings`) in the weather cases of its rules; a plugin may read \
+                        it too. Unticked: not given (its insulator's, if the library entry \
+                        gives one)";
     let mut changed = false;
     ui.horizontal(|ui| {
         ui.label("limits").on_hover_text(NOTE);
