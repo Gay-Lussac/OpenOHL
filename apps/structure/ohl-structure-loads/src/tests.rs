@@ -528,8 +528,8 @@ fn line_values_files_mark_the_source_of_each_case() {
     assert_eq!(read, new);
     assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
     assert_eq!(read.source("wind").label(), "load case");
-    // (Version 7 is read since 2026-11-11: the next one is the newer.)
-    let newer = text.replace("\"version\": 6", "\"version\": 8");
+    // (Version 8 is read since 2026-11-14: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 9");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 

@@ -422,8 +422,8 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let read = PlacedValues::parse(&old_text).unwrap();
     assert_eq!(read.values.get("calm", "A1", &[1], BL), None);
     assert_eq!(read.values.get("calm", "A1", &[1], L), Some(0.0));
-    // (Version 7 is read since 2026-11-11: the next one is the newer.)
-    let newer = text.replace("\"version\": 6", "\"version\": 8");
+    // (Version 8 is read since 2026-11-14: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 9");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 
@@ -604,6 +604,6 @@ fn the_file_is_version_7_only_with_parts_per_set() {
     });
     assert_eq!(other.at_needed_version().version, 7);
     // A newer file is refused.
-    let newer = text.replace("\"version\": 7", "\"version\": 8");
+    let newer = text.replace("\"version\": 7", "\"version\": 9");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
