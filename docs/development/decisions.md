@@ -192,6 +192,132 @@ of some 2300 members with frames takes 0.5–1.2 s to condense (its
 reference solve about half), not the tens of milliseconds first
 estimated — once per type, extension and reference, kept by its key.
 
+**A jumper-held pivoting post is solved together with its jumper; the
+hinge stays frictionless, with an optional friction** (owner's answers to
+the two questions left by the pivoting post below: *"No friction moment"*;
+*"Should the jumper be solved together with the post? — yes"*; then, on the
+hinge, *"keep that written for the pylon but keep it frictionless for now
+with an option to add it if needed"*).
+
+- **Solved together** (`post::jumper_pivots`, `post::settle_turn`,
+  `jumper::couple_pivots`): a pivoting post holding jumpers' ends only has
+  one degree of freedom, its turn about its free line; for each turn every
+  jumper ending at its top is solved again by the jumper solver with that
+  end on the turned clamp (`jumper::TapContext::moved`), the clamp's fixed
+  exit direction turned with the post, and the post settles where its hinge
+  holds the moment about the axis of the jumpers' pull and moment, half its
+  members' weight and wind and a counterweight — found from where it is
+  given, stepping out the way that moment drives it and then the Illinois
+  method: the first (stable) balance on its way. Posts sharing a jumper are
+  settled in turn, pass after pass. Exit clauses: a whole turn without a
+  balance, 120 evaluations, 20 passes — then not solved, said, loads not
+  computed. The jumpers' shapes are those with the post settled
+  (`JumperShape::pivots`); the post's and brace's forces the statics at
+  that top (`post::hinged_post_loads`), the jumper's own pull taken there
+  whatever the jumper loads option (one state with the balance). The
+  decoupled model and its note (NOT ON THE SAFE SIDE for the forces'
+  directions in plan) are gone. Hand check and benchmark tbins-007
+  (against an independent quadrature catenary and bisection): a jumper
+  without bending stiffness to a point fixed at (3, −2.5, 9) m turns the
+  post to \( \arctan(3/2.5) = 50.194° \) (the top, the axis and that point
+  in one vertical plane), to 10⁻⁶ degrees; the decoupled model gave
+  71.57°. A pull towards a point inside the post's circle, which the
+  decoupled model refused, now settles (the jumper's length holds it). In
+  the loads test (wind 500 Pa, the jumper across the line) the post
+  settles about 107° round — the structure's body in the way of so large a
+  turn is not modelled (said in the theory).
+- **The jumper's wind with the post turned** keeps the direction and size
+  it has on the jumper as given: the full pressure square to the jumper in
+  plan, turned with it, drives the post round without end (found: no
+  balance within a whole turn) — no real wind does that; the full pressure
+  kept is on the safe side for the jumper's swing.
+- **Rigid jumpers** (tubes) ending at a pivoting post: a rigid jumper holds
+  the post as a brace would, with a force along it its model does not
+  carry: not solved, said. A jumper's support clamp on a pivoting post's
+  strings is solved within that jumper (the hinged post now pushes there as
+  well as pulls; before it hung as a tension-only string — not on the safe
+  side).
+- **A cable jumper's end forces are exact** (`ElementState::force_i`,
+  `force_j`): before, its tension along the first and last of its 64
+  pieces, off by up to half a piece's turn (~0.5° on a slack jumper) —
+  found while checking the coupled balance against the reference.
+- **Hinge friction** (`hinge_friction_nm`, N·m, a hinged post's; line file
+  version **19**, `.ohls` **15** — each written only when a string gives
+  one): frictionless by default (the owner's choice: safe for the post and
+  for its swing); with a value, **stick and slip** about the free line from
+  where the post is given in every solve — the hinge holds the post there
+  while the moment needed is at most the friction, else the post turns
+  until the moment is the friction. In a section (`solve::with_hinge_friction`):
+  a stiff bar across the post holds a sticking one, a force
+  \( M_f/\rho \) across it a slipping one, at most 12 solves. The hinge's
+  force and moment reach the structure at the post's base
+  (`solve::Support::moment`, `SectionShape::hinges`; with jumpers
+  `PivotTurn::hinge_moment`); the string check compares the hinge's moment
+  with the post's cantilever rating (\( M/h \)). The note for the pylon
+  stays — frictionless: NOT ON THE SAFE SIDE for the longitudinal load (a
+  hinge that sticks passes part of the pull difference into the
+  structure); with a friction: the longitudinal load includes the hinge's
+  moment up to that value, NOT ON THE SAFE SIDE where the real hinge holds
+  more. Not modelled: a friction moment depending on the pin's load, and
+  the order of the cases. UI: Add post / string form (**hinge friction**)
+  and OHL-Structure's post column (**friction**), each with a hover saying
+  its effect.
+- **Unchanged** (the tests above, bit for bit where they ran before):
+  fixed posts, posts a section holds without a friction, posts held by two
+  braces off the line.
+
+**A pivoting post is held by what is attached to it** (owner: "Pivoting
+should simply be tied to the jumper or piece it's attached to. And while
+nothing is attached to it it should just move freely. It's not the best
+solution but it should represent the truth. If braced then some degrees
+of freedom are locked."; the question found earlier today below). A
+hinged post turns about its hinge freely in every direction its braces
+leave free; with one brace (or braces in line with its base) it turns
+about the line through their bases.
+
+- **Cause of the failure found**: in a section in the blocks (strung by
+  tension, rolled over sheaves in every weather case) each clamp's
+  assembly was solved alone under the sheave's pull; a post and one brace
+  taken as a V there have nothing holding them along the line about a
+  vertical axis (no weight to swing them back, as a hanging V has), so
+  that solve turned the post without end and the rolling never settled.
+- **Model chosen**: the section's solve already holds the post's top as
+  the owner decided — a free node held by the post and brace as bars and
+  by the wire clamped there: it swings along the line until the spans'
+  pulls balance, as a suspension string swings (`solve::Shape::Pivot`,
+  `pivot_axis`). Only the sharing in the blocks changes: there the post
+  is taken where it is given to point (`pivot_back`), the swing comes in
+  the solve that follows. Hand check (`ohl-line` `pivot_tests`): two
+  level spans clipped in with 0.3 m more wire in the first, a 1.5 m level
+  post braced from straight above its base — 5.70° of swing (14.9 cm
+  along the line), the bisection on two elastic catenaries and the solve
+  agree to 1 µm, the post's and brace's forces to 10⁻⁶. The example line
+  with the braced shape on type-02 (T2, T4) now solves in every weather
+  case (swings of up to 5 mm there: the spans' pulls nearly balance).
+- **A jumper only on its top**: the post and brace solved alone under the
+  jumper's pull (`post::hinged_alone`), turned first to the stable balance
+  (the pull's part across the free line pointing away from it; along the
+  line only: as given); before, the jumper's load was shared equally
+  between their two bases as for plain strings — not the statics of a
+  post and brace (the brace carries some 1.4 times the load at 45°): not
+  on the safe side. The jumper is not solved again with the post swung:
+  said with every case (NOT ON THE SAFE SIDE for the forces' directions in
+  plan where it swings far). Where the pull points back towards the hinge
+  nothing near its position holds it: its loads not computed, said.
+- **Nothing on its top**: free; its loads are not computed and every case
+  and the string checks say so (`post::free_hinged_posts`) — before,
+  nothing was said (its and its brace's weight silently missing).
+- **The hinge is frictionless**: NOT ON THE SAFE SIDE for the structure's
+  longitudinal load (a hinge that sticks passes part of the spans'
+  difference into it), said with every case for each pivoting post a
+  section ends at (`post::pivoting_notes`).
+- **Unchanged**: fixed posts, hinged posts held by two braces off the
+  line (their holder is not a pivot), every other string; in the
+  simplified sharing (equal H) and the stringing reference a pivoting post
+  was turned back across the line as a V and is now turned back to where
+  it is given to point (the same for a post given across the line). No
+  file changes.
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —
@@ -413,7 +539,8 @@ turns freely along the line, both members being pinned; with unbalanced
 pulls the section's rolling does not settle and the section is reported
 not solved (its loads missing, said — nothing unsafe is computed). How
 pivoting line posts are to be modelled is the owner's question; two
-braces hold it. Not yet: posts on the type in OHL-Design's type workspace
+braces hold it (*answered the same day: [a pivoting post is held by what
+is attached to it](#2026-11-15), above*). Not yet: posts on the type in OHL-Design's type workspace
 table (they are kept there, not shown as a column), a post's ratings
 shown in OHL-Structure.
 

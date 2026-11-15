@@ -331,6 +331,24 @@ string](tools-general.md#edit-on-a-string)) with the post's own fields:
 
 - A fixed post holds its wire point alone: another string ending at the
   same wire point is refused (a braced post is a hinged one).
+- **The braced shape pivots** (owner, 2026-11-15): its one brace from
+  straight above its base leaves it free to turn about the vertical
+  through its base, so its top swings along the line until the spans'
+  pulls on it balance — the conductor holds it there, as it holds a
+  suspension string; a jumper alone holds it, solved together with the
+  post (the jumper's end moves with the post's top); with nothing
+  attached it is free, and the loads say so instead of computing any. A
+  second brace (one ahead, one back of the post's base) locks it. The
+  hinge is frictionless by default: every load case says the structure's
+  longitudinal load is NOT ON THE SAFE SIDE there ([Structure
+  library](structure-library.md#post-insulators-on-a-type), [theory](../theory/post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it)).
+- **Hinge friction** (a hinged post's, ticked to give it, N·m): the moment
+  its hinge holds before the post turns. The post stays where it is given
+  while the moment needed is at most this (stick), else it turns until the
+  moment is this (slip); the moment goes into the structure at the post's
+  base, and the load cases say the longitudinal load includes it up to
+  this value. Unticked: frictionless. The hover over the box says the
+  same; OHL-Structure's post column has it too (**friction**).
 - A post is never a tension string.
 - Opening a post with **Edit** shows the same fields: they are kept when
   you Apply.

@@ -311,8 +311,47 @@ fn post_cell(
                     .then(|| "exit direction".into()),
             );
         }
+        if !s.hinged {
+            return;
+        }
+        // Owner, 2026-11-15: frictionless by default, a friction moment
+        // when needed.
+        let mut on = s.hinge_friction_nm.is_some();
+        let mut f = s.hinge_friction_nm.unwrap_or(100.0);
+        let tick = ui
+            .checkbox(&mut on, "friction")
+            .on_hover_text(HINGE_FRICTION_HELP);
+        let d = ui
+            .add_enabled_ui(on, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut f)
+                        .range(0.0..=1e7)
+                        .speed(1.0)
+                        .max_decimals(1)
+                        .suffix(" N·m"),
+                )
+            })
+            .inner;
+        if tick.changed() || (on && d.changed()) {
+            put(
+                StringChange::HingeFriction(on.then_some(f)),
+                d.is_pointer_button_down_on()
+                    .then(|| "hinge friction".into()),
+            );
+        }
     });
 }
+
+/// What a hinged post's hinge friction does (the post column's hover; the
+/// line's string form says the same).
+const HINGE_FRICTION_HELP: &str = "Its hinge friction, N·m: the moment the hinge holds before \
+     the post turns. Unticked: frictionless (the default) — the post turns freely about the line \
+     through its base and its brace's until the wires (or a jumper) balance it, and the pylon \
+     takes no longitudinal load from the hinge (NOT ON THE SAFE SIDE for the pylon if the real \
+     hinge sticks). Ticked: the hinge holds the post where it is given while the moment needed is \
+     at most this (stick), else the post turns until that moment is reached (slip); the moment \
+     goes into the pylon at the post's base, so its longitudinal load includes the hinge's \
+     friction up to this value.";
 
 /// The kind of a joint, chosen in the Joints table: `given` as written,
 /// `worked_out` as read (attach when a point is linked to it, support

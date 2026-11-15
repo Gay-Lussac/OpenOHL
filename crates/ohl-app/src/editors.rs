@@ -292,6 +292,9 @@ pub struct PostRow {
     pub exit_angle_deg: Option<f64>,
     /// Its clamp's direction in plan, structure axes, degrees.
     pub exit_direction_deg: Option<f64>,
+    /// A hinged post's hinge friction, N·m (none: frictionless; owner,
+    /// 2026-11-15).
+    pub hinge_friction_nm: Option<f64>,
 }
 
 impl PostRow {
@@ -309,6 +312,7 @@ impl PostRow {
             cantilever_load: o.cantilever_load,
             exit_angle_deg: o.exit_angle_deg,
             exit_direction_deg: o.exit_direction_deg,
+            hinge_friction_nm: o.hinge_friction_nm,
         }
     }
 }

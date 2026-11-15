@@ -318,11 +318,9 @@ fn a_typed_posts_moment_reaches_the_pylon() {
 }
 
 /// A **hinged** post given by the type, level outwards from A1 and braced
-/// by two strings from points 1.5 m above A1, 1 m ahead and back (a
-/// post and a single brace in one vertical plane turn freely along the
-/// line about the line through their bases: the section's rolling does not
-/// settle, and says so): the line sends forces at A1 and at the braces'
-/// points, no moment.
+/// by two strings from points 1.5 m above A1, 1 m ahead and back (they
+/// hold it in every direction; with a single brace it pivots: below): the
+/// line sends forces at A1 and at the braces' points, no moment.
 #[test]
 fn a_typed_hinged_post_sends_forces_only() {
     let post = "length = \"1.5 m\"\nangle = \"90 deg\"\ndirection = \"90 deg\"\n\
@@ -357,6 +355,99 @@ fn a_typed_hinged_post_sends_forces_only() {
                 .find(|c| c.case.name == "wind")
                 .map(|c| (&c.failed, &c.missing, &c.notes)),
             w1
+        );
+    }
+}
+
+/// A hinged post given by the type braced by **one** string from a point
+/// 1.5 m straight above A1 (the shape of OHL-Design's braced preset): the
+/// pair turns freely about the vertical through their bases, and the
+/// conductor clamped at its top holds it (owner, 2026-11-15). The section
+/// is solved in every case — before 2026-11-15 its rolling over the
+/// sheaves did not settle and its loads were missing — each post (T2's
+/// and T4's, both of type-02) swung along the line until the wires' pull
+/// on its top has no part along its circle; the line sends forces at A1
+/// and at the brace's point, no moment.
+#[test]
+fn a_typed_post_with_one_brace_pivots_and_sends_forces() {
+    let post = "length = \"1.5 m\"\nangle = \"90 deg\"\ndirection = \"90 deg\"\n\
+        weight = \"300 N\"\npost = true\nhinged = true\n\n\
+        [[point]]\nlabel = \"A1B\"\npoint = [\"6 m\", \"0 m\", \"31.5 m\"]\n\n\
+        [[string]]\nlabel = \"B1\"\ntop = \"A1B\"\nwire = \"W1\"\nlength = \"2.121320 m\"\n\
+        weight = \"200 N\"\n";
+    let (line, loads) = typed_with(&type_02_with(post));
+    for c in &loads {
+        assert!(
+            c.failed.is_empty() && c.missing.is_empty(),
+            "{}: {:?} {:?}",
+            c.case.name,
+            c.failed,
+            c.missing
+        );
+        // Its frictionless hinge said, not on the safe side.
+        let note = c
+            .notes
+            .iter()
+            .find(|n| n.starts_with("hinged post S1 at T2 pivots"))
+            .unwrap_or_else(|| panic!("{:?}", c.notes));
+        assert!(note.contains("NOT ON THE SAFE SIDE"), "{note}");
+    }
+    let library = ohl_cables::Library::load(&ex().join("../../libraries/cables")).unwrap();
+    let weather = ohl_weather::WeatherCases::load(&ex().join("weather-cases.ohlwc"))
+        .unwrap()
+        .cases;
+    let section = &line.sections[0];
+    for w in &weather {
+        let solved = ohl_line::solve::solve_line(&line, &library, w);
+        let s = solved[0].as_ref().unwrap();
+        for (k, p) in section.points.iter().enumerate() {
+            let t = line.structure(&p.structure).unwrap();
+            if t.structure_type.as_deref() != Some("type-02") {
+                continue;
+            }
+            let a1 = t.point("A1").unwrap().position;
+            let at = s.clamps[k];
+            let r = [at[0] - a1[0], at[1] - a1[1]];
+            let radius = (r[0] * r[0] + r[1] * r[1]).sqrt();
+            // On its circle (but for the members' stretch).
+            assert!(
+                (radius - 1.5).abs() < 1e-3,
+                "{} {}: {at:?}",
+                w.name,
+                p.structure
+            );
+            let tangent = [-r[1] / radius, r[0] / radius];
+            let pull = s.pulls[k];
+            let size = (pull[0] * pull[0] + pull[1] * pull[1] + pull[2] * pull[2]).sqrt();
+            let along = pull[0] * tangent[0] + pull[1] * tangent[1];
+            assert!(
+                along.abs() < 1e-6 * size,
+                "{} {}: {pull:?}",
+                w.name,
+                p.structure
+            );
+            let force = |label: &str| {
+                s.strings[k]
+                    .iter()
+                    .find(|x| x.label == label)
+                    .unwrap()
+                    .force
+            };
+            assert!(force("S1") < 0.0 && force("B1") > 0.0, "{}", w.name);
+        }
+    }
+    let values = line_values(&loads, &line, "T2");
+    assert!(
+        values.moments.iter().all(|m| !m.point.starts_with("A1")),
+        "{:?}",
+        values.moments
+    );
+    for point in ["A1", "A1B"] {
+        assert!(
+            values.values.iter().any(|v| v.case == "wind"
+                && v.point.as_deref() == Some(point)
+                && v.value.abs() > 1.0),
+            "{point}"
         );
     }
 }

@@ -88,8 +88,10 @@
 //! **Post insulators** (version 13): a string with `post = true` stands on
 //! its top (a point: its base) and holds its wire point as a cantilever;
 //! `hinged = true` makes it a braced post (another string to its wire
-//! point holds it), `cantilever_load` its rating across it, `exit_angle`
-//! and `exit_direction` its clamp's fixed direction for a jumper — the
+//! point holds it; `hinge_friction_nm` the moment, N·m, its hinge holds
+//! before it turns — none: frictionless), `cantilever_load` its rating
+//! across it, `exit_angle` and `exit_direction` its clamp's fixed
+//! direction for a jumper — the
 //! line's string fields of the same meaning ([`TypeString::post`]):
 //!
 //! ```toml
@@ -253,12 +255,20 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// Version 14 (2026-11-15) adds `[analysis] tension_compression` (what
 /// the tension-only members carry in compression, read by
 /// `ohl_structures_fe`; [`TENSION_COMPRESSION_VERSION`]); a file is
-/// written at 14 only when it gives the key.
-pub const STRUCTURE_FILE_VERSION: u32 = 14;
+/// written at 14 only when it gives the key. Version 15 (2026-11-15) adds
+/// a hinged post's hinge friction (`hinge_friction_nm`:
+/// [`TypeString::hinge_friction_nm`], [`HINGE_FRICTION_VERSION`]), written
+/// only when a string gives one (an older program must not read such a
+/// post as frictionless).
+pub const STRUCTURE_FILE_VERSION: u32 = 15;
 
 /// The structure file version of `[analysis] tension_compression`
 /// (2026-11-15): `"buckling"` (the default) or `"none"`.
 pub const TENSION_COMPRESSION_VERSION: u32 = 14;
+
+/// The structure file version of a hinged post's hinge friction
+/// (`hinge_friction_nm`; owner, 2026-11-15).
+pub const HINGE_FRICTION_VERSION: u32 = 15;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -777,6 +787,11 @@ pub struct TypeString {
     /// other end). The line's `exit_direction_deg`.
     #[serde(default)]
     pub exit_direction: Option<ohl_core::units::Angle>,
+    /// Version 15 (owner, 2026-11-15): a hinged post's hinge friction, the moment its hinge holds before it turns, N·m (a plain
+    /// number: no moment unit). None: frictionless. The line's
+    /// `hinge_friction_nm`.
+    #[serde(default)]
+    pub hinge_friction_nm: Option<f64>,
 }
 
 /// The structure file version of a string's post fields (`post`, `hinged`,
@@ -792,6 +807,12 @@ impl TypeString {
             || self.cantilever_load.is_some()
             || self.exit_angle.is_some()
             || self.exit_direction.is_some()
+    }
+
+    /// Whether it gives a hinge friction (version 15,
+    /// [`HINGE_FRICTION_VERSION`]).
+    pub fn uses_hinge_friction(&self) -> bool {
+        self.hinge_friction_nm.is_some()
     }
 
     /// Its clamp's exit angle from the horizontal and direction in plan,
@@ -1610,6 +1631,9 @@ pub struct PlacedString {
     pub exit_angle_deg: Option<f64>,
     /// Its clamp's direction in plan, type's axes, degrees.
     pub exit_direction_deg: Option<f64>,
+    /// A hinged post's hinge friction, N·m ([`TypeString::hinge_friction_nm`];
+    /// none: frictionless).
+    pub hinge_friction_nm: Option<f64>,
 }
 
 /// The points, strings and wire points of a placed structure (version 2
@@ -1719,6 +1743,8 @@ pub fn post_problem_among(
             Some("a cantilever load is for a post insulator".into())
         } else if st.exit_angle.is_some() || st.exit_direction.is_some() {
             Some("an exit angle is for a post insulator's clamp".into())
+        } else if st.hinge_friction_nm.is_some() {
+            Some("a hinge friction is for a hinged post insulator".into())
         } else {
             None
         };
@@ -1765,6 +1791,14 @@ pub fn post_problem_among(
     }
     if direction.is_some_and(|d| !d.is_finite()) {
         return Some("the exit direction must be a number".into());
+    }
+    if let Some(f) = st.hinge_friction_nm {
+        if !st.hinged {
+            return Some("a hinge friction is for a hinged post insulator".into());
+        }
+        if !(f.is_finite() && f >= 0.0) {
+            return Some("the hinge friction must be ≥ 0 N·m".into());
+        }
     }
     None
 }
@@ -2145,6 +2179,7 @@ impl StructureType {
                         cantilever_load: s.cantilever_load.map(|f| f.si()),
                         exit_angle_deg: s.exit_deg().0,
                         exit_direction_deg: s.exit_deg().1,
+                        hinge_friction_nm: s.hinge_friction_nm.filter(|_| s.post && s.hinged),
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -2860,6 +2895,16 @@ mod tests {
         );
         const { assert!(POST_VERSION <= STRUCTURE_FILE_VERSION) };
         assert!(parse(&newer).is_err());
+        // A hinge friction (version 15): read; on a fixed post refused.
+        let friction = POSTS.replace(
+            "post = true\nhinged = true\n",
+            "post = true\nhinged = true\nhinge_friction_nm = 250.0\n",
+        );
+        assert_ne!(friction, POSTS);
+        let t = parse(&friction).unwrap();
+        let hinged = t.strings.iter().find(|s| s.hinged).unwrap();
+        assert_eq!(hinged.hinge_friction_nm, Some(250.0));
+        assert!(hinged.uses_hinge_friction() && !t.strings[0].uses_hinge_friction());
     }
 
     /// Points at a joint follow it; one written along a member is on a

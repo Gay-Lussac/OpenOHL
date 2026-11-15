@@ -254,6 +254,15 @@ pub struct InsulatorString {
     /// jumper's other end as given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_direction_deg: Option<f64>,
+    /// A hinged post's **hinge friction**: the moment its hinge holds before
+    /// it turns, N·m (line file version 19; owner, 2026-11-15: "keep it frictionless for now with an option to
+    /// add it if needed"). Stick and slip about the line its post and
+    /// braces turn about: the hinge holds the post where it is given while
+    /// the moment needed is at most this, else the post turns until the
+    /// moment is this, the hinge holding it (passed into the structure at
+    /// the post's base). None: frictionless (the default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hinge_friction_nm: Option<f64>,
 }
 
 impl InsulatorString {
@@ -688,6 +697,14 @@ impl Structure {
                 return bad("a cantilever load is for a post insulator");
             } else if s.hinged {
                 return bad("hinged is for a post insulator");
+            }
+            if let Some(f) = s.hinge_friction_nm {
+                if !(s.post && s.hinged) {
+                    return bad("a hinge friction is for a hinged post insulator");
+                }
+                if !(f.is_finite() && f >= 0.0) {
+                    return bad("the hinge friction must be ≥ 0 N·m");
+                }
             }
             for (name, a) in [
                 ("exit_angle_deg", s.exit_angle_deg),

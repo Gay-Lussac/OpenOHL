@@ -404,6 +404,18 @@ fn insulators_are_made_posts() {
     assert!(t.strings[0].post && t.strings[0].hinged);
     let g = geometry(&t, &none);
     assert!(g.posts[0].hinged && g.posts[0].exit.is_none());
+    // A hinge friction (2026-11-15): written as a moment, the file raised
+    // to version 15; below 0 refused; made a fixed post, it goes.
+    change(&mut doc, &s, StringChange::HingeFriction(Some(250.0))).unwrap();
+    let text = doc.to_string();
+    assert!(
+        text.contains("hinge_friction_nm = 250") && text.contains("version = 15"),
+        "{text}"
+    );
+    assert_eq!(read(&doc).strings[0].hinge_friction_nm, Some(250.0));
+    assert!(change(&mut doc, &s, StringChange::HingeFriction(Some(-1.0))).is_err());
+    change(&mut doc, &s, StringChange::HingeFriction(None)).unwrap();
+    assert!(!doc.to_string().contains("hinge_friction_nm"));
     // Saved to the library: a post, rated as the string.
     change(&mut doc, &s, StringChange::CantileverLoad(Some(5000.0))).unwrap();
     let t = read(&doc);

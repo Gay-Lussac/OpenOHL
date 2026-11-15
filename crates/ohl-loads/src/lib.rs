@@ -1563,6 +1563,11 @@ pub fn structure_loads_each(
     // A post's clamp: the jumpers' moment the rod's, their forces
     // estimated (2026-11-14).
     set_notes.extend(ohl_line::post::moment_with_estimate_note(&line));
+    // A hinged post holding nothing: free to pivot, no load path
+    // (2026-11-15).
+    set_notes.extend(ohl_line::post::free_hinged_notes(&line));
+    set_notes.extend(ohl_line::post::jumper_held_hinged_notes(&line));
+    set_notes.extend(ohl_line::post::pivoting_notes(&line));
     let one = |case: &LoadCase| -> Result<CaseLoads, String> {
         let w = weather
             .iter()
@@ -2154,6 +2159,16 @@ fn case_loads(
                     &sets,
                     &section.id,
                 );
+                // A pivoting post's hinge holding it by friction: its
+                // moment on the post's base (2026-11-15).
+                if support.moment != [0.0; 3] {
+                    let place = Place {
+                        structure: &point.structure,
+                        label: &support.label,
+                        at: support.at,
+                    };
+                    add_couple(&mut at, line, case, place, support.moment, &section.id);
+                }
             }
         }
         solved.push(shape);
@@ -2253,6 +2268,9 @@ fn case_loads(
         // As the sections take them on their clamps: estimated, or the
         // jumpers' own pull ([`ohl_line::post::jumper_end_force`]).
         let estimate = ohl_line::jumper::end_loads(line, w, |id| library.get(id));
+        // The hinged posts holding jumpers only: every jumper's pull and
+        // moment there summed, one solve of the post (2026-11-15).
+        let mut on_hinged: BTreeMap<(String, String), HingedTop> = BTreeMap::new();
         for (j, shape) in line.jumpers.iter().zip(shapes) {
             if !takes(j) {
                 continue;
@@ -2301,6 +2319,44 @@ fn case_loads(
                 let Some(wire) = structure.wire_at_set(point.set) else {
                     continue;
                 };
+                // A hinged post's clamp (2026-11-15): its jumpers' pulls and
+                // moments summed, the post solved once below — a pivoting
+                // one where it settled with its jumpers.
+                if structure
+                    .strings_to(&wire.label)
+                    .any(|s| s.post && s.hinged)
+                {
+                    let e = on_hinged
+                        .entry((point.structure.clone(), wire.label.clone()))
+                        .or_insert_with(|| HingedTop {
+                            set: point.set,
+                            force: [0.0; 3],
+                            moment: [0.0; 3],
+                            pivot: None,
+                            jumpers: Vec::new(),
+                        });
+                    // A pivoting post settled with the jumper's own pull:
+                    // that pull on it, whatever the jumper loads option
+                    // (one state with its balance).
+                    let pivot = shape
+                        .pivots
+                        .iter()
+                        .find(|p| p.structure == point.structure && p.set == point.set);
+                    let force = if pivot.is_some() {
+                        shape.end_forces[k]
+                    } else {
+                        force
+                    };
+                    for (c, f) in force.iter().enumerate() {
+                        e.force[c] += f;
+                        e.moment[c] += shape.end_moments[k][c];
+                    }
+                    if let Some(p) = pivot {
+                        e.pivot = Some(p.clone());
+                    }
+                    e.jumpers.push(j.id.clone());
+                    continue;
+                }
                 let strings: Vec<_> = structure.strings_to(&wire.label).collect();
                 if strings.is_empty() {
                     let place = Place {
@@ -2327,6 +2383,57 @@ fn case_loads(
                 }
             }
         }
+        for ((id, wire), top) in &on_hinged {
+            let Some(structure) = line.structure(id) else {
+                continue;
+            };
+            let source = top.jumpers.join(", ");
+            // The wind on its members: across the line from the case's
+            // side, its structure's local wind (N per m² of wind area).
+            let wind = line
+                .direction_at([structure.position[0], structure.position[1]])
+                .map_or([0.0; 3], |a| {
+                    let push = w.wind_pressure.si()
+                        * line.wind_factor_at_structure(id)
+                        * w.wind_from.to_left();
+                    [-a[1] * push, a[0] * push, 0.0]
+                });
+            match ohl_line::post::hinged_post_loads(
+                structure,
+                wire,
+                top.force,
+                top.moment,
+                top.pivot.as_ref(),
+                wind,
+                line.defaults.insulator_stiffness,
+            ) {
+                Ok((members, (base, base_at, force, moment))) => {
+                    for m in members {
+                        let place = Place {
+                            structure: id,
+                            label: &m.top,
+                            at: m.at,
+                        };
+                        add(&mut at, line, case, place, m.on_top, &[top.set], &source);
+                    }
+                    let place = || Place {
+                        structure: id,
+                        label: &base,
+                        at: base_at,
+                    };
+                    if force != [0.0; 3] {
+                        add(&mut at, line, case, place(), force, &[top.set], &source);
+                    }
+                    if moment != [0.0; 3] {
+                        add_couple(&mut at, line, case, place(), moment, &source);
+                    }
+                }
+                Err(e) => failed.push(format!(
+                    "jumper {source}: the hinged post at {id} {wire}: {e} — free to pivot; its \
+                     loads not computed"
+                )),
+            }
+        }
     }
     if span_of.is_some() {
         for l in at.values_mut() {
@@ -2335,6 +2442,18 @@ fn case_loads(
     }
     add_span_pulls(&mut at, line, &pulls);
     (at, failed, missing)
+}
+
+/// What the jumpers put on a hinged post's clamp where no section ends
+/// (their sums, the whole bundle's; 2026-11-15).
+struct HingedTop {
+    /// The clamp's section point's set.
+    set: u32,
+    force: Point,
+    moment: Point,
+    /// A pivoting post as it settled with its jumpers.
+    pivot: Option<ohl_line::post::PivotTurn>,
+    jumpers: Vec<String>,
 }
 
 /// The spans' horizontal pulls on one section point's clamp, for

@@ -198,6 +198,10 @@ pub struct SectionShape {
     /// Its stiffness at the structure points holding it, when asked
     /// ([`Coupling::stiffness`]; finite elements only, else none).
     pub support_stiffness: Option<SupportStiffness>,
+    /// At every point of the section, a pivoting post's hinge holding it by
+    /// its friction, as solved (none: frictionless, no pivoting post, or
+    /// not solved by finite elements; owner, 2026-11-15).
+    pub hinges: Vec<Option<HingeState>>,
 }
 
 /// A string as solved.
@@ -238,6 +242,10 @@ pub struct Support {
     pub at: Point,
     /// Force on the structure, N (the whole bundle's).
     pub force: Point,
+    /// Moment on the structure there, N·m (the whole bundle's; line axes):
+    /// a pivoting post's hinge holding it by friction, at the post's base
+    /// (2026-11-15); else zero.
+    pub moment: Point,
 }
 
 struct Built {
@@ -261,7 +269,250 @@ struct Built {
     /// next to a broken span): its holder is left out of the model, its
     /// strings hang under their own weight ([`hanging_loads`]).
     dead: Vec<bool>,
+    /// For each section point, a pivoting post's hinge holding it by
+    /// friction, as solved ([`with_hinge_friction`]; none: frictionless or
+    /// no pivoting post).
+    hinges: Vec<Option<HingeHold>>,
 }
+
+/// A pivoting post's hinge as solved with its friction
+/// ([`with_hinge_friction`]), per subconductor as the model.
+#[derive(Clone, Debug)]
+struct HingeHold {
+    /// The force the hinge passes to the clamp through the post (across the
+    /// post and brace's plane), N: in the model a load on the clamp; on the
+    /// structure, reversed, at the post's base with its moment.
+    force: Vector3<f64>,
+    /// Its moment about the axis on the post, N·m (signed).
+    moment: f64,
+    /// It sticks (the post where it is given), else it slips (the post
+    /// turned, the hinge holding its friction moment).
+    stuck: bool,
+    /// The post's turn from where it is given about `axis`, radians.
+    turn: f64,
+    /// The post's label and its base's (its top on the structure).
+    post: String,
+    base: String,
+    base_at: Vector3<f64>,
+}
+
+/// A pivoting post's hinge as solved, for the string check and the loads
+/// ([`SectionShape::hinges`]; the whole bundle's).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HingeState {
+    /// The post's label.
+    pub post: String,
+    /// Its base (its top on the structure).
+    pub base: String,
+    /// The moment the hinge holds about the line it turns about, N·m (its
+    /// size; at most the hinge friction).
+    pub moment: f64,
+    /// It sticks: the post where it is given.
+    pub stuck: bool,
+    /// The post's turn from where it is given, degrees (signed about its
+    /// axis).
+    pub turn_deg: f64,
+}
+
+/// Solves `built` with the hinge friction of its pivoting posts (owner,
+/// 2026-11-15: "keep it frictionless for now with an option to add it if
+/// needed"): stick and slip about each post's axis. Every hinge first
+/// sticks — the post held where it is given to point by a stiff bar across
+/// it (only its turning held, as the hinge holds it) — and its moment is
+/// the bar's force times its distance from the axis; a hinge whose moment
+/// is more than its friction slips: the bar goes and the hinge holds its
+/// friction moment against the turn (a force across the post at the clamp,
+/// kept across it as the post turns), and a slipping post turned back past
+/// where it is given sticks again. Path: from the post as given in every
+/// solve (the stringing state, where the crew clamps it), not from the
+/// case before.
+///
+/// Expected cost: 2–3 section solves (one when every hinge sticks). Exit
+/// clause: [`HINGE_PASSES`] solves, then an error naming the post.
+fn with_hinge_friction(
+    section: &Section,
+    layout: &[Holder],
+    mut built: Built,
+    budget: &Budget,
+) -> Result<(Built, ohl_wirefe::Solution), LineError> {
+    struct Hinge {
+        k: usize,
+        friction: f64,
+        origin: Vector3<f64>,
+        axis: Vector3<f64>,
+        /// Unit radial towards where the post is given to point.
+        given: Vector3<f64>,
+        radius: f64,
+        stiffness: f64,
+        /// The post among the holder's members.
+        post: usize,
+        /// Slipping: the sign of the hinge's moment and the clamp's offset
+        /// from the axis the force across is taken square to and over (the
+        /// last solve's).
+        slip: Option<(f64, Vector3<f64>)>,
+    }
+    let mut hinges: Vec<Hinge> = Vec::new();
+    for (k, holder) in layout.iter().enumerate() {
+        let Some(friction) = holder.friction else {
+            continue;
+        };
+        if holder.shape != Shape::Pivot || built.dead[k] {
+            continue;
+        }
+        let tops: Vec<Vector3<f64>> = holder
+            .members
+            .iter()
+            .map(|m| holder.position(m.top))
+            .collect();
+        let Some((origin, axis)) = pivot_axis(&tops) else {
+            continue;
+        };
+        let Some(post) = holder.members.iter().position(|m| m.hinged_post) else {
+            continue;
+        };
+        let r = holder.position(holder.clamp) - origin;
+        let radial = r - axis * r.dot(&axis);
+        if radial.norm() < 1e-9 {
+            continue;
+        }
+        let stiffness = holder
+            .members
+            .iter()
+            .map(|m| m.stiffness)
+            .fold(0.0, f64::max);
+        hinges.push(Hinge {
+            k,
+            friction,
+            origin,
+            axis,
+            given: radial.normalize(),
+            radius: radial.norm(),
+            stiffness,
+            post,
+            slip: None,
+        });
+    }
+    let solve = |model: &Model| {
+        model
+            .solve(budget)
+            .map_err(|e| LineError::Invalid(format!("section {}: {e}", section.id)))
+    };
+    if hinges.is_empty() {
+        let solution = solve(&built.model)?;
+        return Ok((built, solution));
+    }
+    // The stiff bar holding a sticking post: 100 m long across it from
+    // where its clamp is given (its turn held, its stretch free), 10× its
+    // stiffest member.
+    const BAR: f64 = 100.0;
+    for pass in 0..HINGE_PASSES {
+        let mut model = built.model.clone();
+        let mut bars = Vec::with_capacity(hinges.len());
+        for h in &hinges {
+            let clamp = built.clamps[h.k];
+            match h.slip {
+                None => {
+                    let at = model.nodes[clamp].position;
+                    let across = h.axis.cross(&h.given);
+                    model.nodes.push(Node::fixed(at + across * BAR));
+                    model.trusses.push(TrussElement {
+                        i: clamp,
+                        j: model.nodes.len() - 1,
+                        unstressed_length: BAR,
+                        axial_stiffness: 10.0 * h.stiffness * BAR,
+                        tension_only: false,
+                        weight: 0.0,
+                    });
+                    bars.push(Some(model.trusses.len() - 1));
+                }
+                Some((sign, radial)) => {
+                    model.nodes[clamp].load += slip_force(h.axis, radial, sign * h.friction);
+                    bars.push(None);
+                }
+            }
+        }
+        let solution = solve(&model)?;
+        let mut changed = false;
+        let mut states = Vec::with_capacity(hinges.len());
+        for (h, bar) in hinges.iter_mut().zip(&bars) {
+            let clamp = built.clamps[h.k];
+            let r = solution.positions[clamp] - h.origin;
+            let radial = r - h.axis * r.dot(&h.axis);
+            let e = radial.normalize();
+            let turn = h.given.cross(&e).dot(&h.axis).atan2(h.given.dot(&e));
+            match (h.slip, bar) {
+                (None, Some(t)) => {
+                    let j = model.trusses[*t].j;
+                    let d = model.nodes[j].position - solution.positions[clamp];
+                    let force = d.normalize() * solution.truss_forces[*t];
+                    let moment = h.axis.dot(&r.cross(&force));
+                    if moment.abs() > h.friction * (1.0 + 1e-9) {
+                        h.slip = Some((moment.signum(), radial));
+                        changed = true;
+                    }
+                    states.push((force, moment, true, turn));
+                }
+                (Some((sign, before)), _) => {
+                    // The hinge's moment turns against the post's turn: a
+                    // post turned back past where it is given sticks.
+                    if turn * sign > 1e-12 {
+                        h.slip = None;
+                        changed = true;
+                    } else if (radial - before).norm() > 1e-10 * h.radius {
+                        h.slip = Some((sign, radial));
+                        changed = true;
+                    }
+                    let force = slip_force(h.axis, before, sign * h.friction);
+                    states.push((force, sign * h.friction, false, turn));
+                }
+                (None, None) => unreachable!("a sticking hinge has its bar"),
+            }
+        }
+        if !changed {
+            for (h, (force, moment, stuck, turn)) in hinges.iter().zip(states) {
+                let holder = &layout[h.k];
+                let post = &holder.members[h.post];
+                let At::Fixed(i) = post.top else {
+                    unreachable!("a pivot's members stand on the structure")
+                };
+                built.hinges[h.k] = Some(HingeHold {
+                    force,
+                    moment,
+                    stuck,
+                    turn,
+                    post: post.label.clone(),
+                    base: holder.fixed[i].0.clone(),
+                    base_at: holder.fixed[i].1,
+                });
+            }
+            built.model = model;
+            return Ok((built, solution));
+        }
+        if pass + 1 == HINGE_PASSES {
+            break;
+        }
+    }
+    let names: Vec<String> = hinges
+        .iter()
+        .map(|h| layout[h.k].members[h.post].label.clone())
+        .collect();
+    Err(LineError::Invalid(format!(
+        "section {}: the hinge friction of the pivoting post(s) {} did not settle in \
+         {HINGE_PASSES} solves (sticking and slipping)",
+        section.id,
+        names.join(", ")
+    )))
+}
+
+/// The force across a pivoting post at its clamp, offset `radial` from its
+/// axis `axis`, whose moment about the axis is `moment`.
+fn slip_force(axis: Vector3<f64>, radial: Vector3<f64>, moment: f64) -> Vector3<f64> {
+    axis.cross(&radial) * (moment / radial.norm_squared())
+}
+
+/// Section solves at most for the hinge friction of pivoting posts
+/// ([`with_hinge_friction`]).
+const HINGE_PASSES: usize = 12;
 
 fn is_suspension(insulator: Vector3<f64>, wire: Vector3<f64>) -> bool {
     let d = wire - insulator;
@@ -621,6 +872,8 @@ struct Member {
     strain: bool,
     /// Its structure's orientation, degrees (for its swing).
     orientation_deg: f64,
+    /// A hinged post.
+    hinged_post: bool,
 }
 
 /// The shape of a holder, for the passes that treat the usual ones as
@@ -636,6 +889,12 @@ enum Shape {
     Strain,
     /// Two strings from the structure to the clamp, in the middle.
     VString,
+    /// A **pivoting post** in the middle (owner, 2026-11-15): a hinged post
+    /// and its brace(s) from the structure to the clamp, their bases on one
+    /// line — the axis it turns about freely, nothing in the assembly
+    /// holding it there (one brace, or braces whose bases line up with the
+    /// post's). The wire clamped at its top holds it ([`settled`]).
+    Pivot,
     /// Anything else.
     General,
 }
@@ -661,6 +920,9 @@ struct Holder {
     reports: bool,
     /// Other sections end on the assembly too.
     shared: bool,
+    /// A pivoting post's hinge friction, N·m per subconductor (none:
+    /// frictionless; [`with_hinge_friction`]).
+    friction: Option<f64>,
 }
 
 impl Holder {
@@ -718,6 +980,7 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     estimate: false,
                     reports: true,
                     shared: false,
+                    friction: None,
                 });
             }
             // Other sections' clamps in the assembly are held where given.
@@ -786,10 +1049,35 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                     limits: st.limits(),
                     strain: st.strain,
                     orientation_deg: structure.orientation_deg,
+                    hinged_post: st.post && st.hinged,
                 })
                 .collect();
             let from_structure = |m: &Member| matches!(m.top, At::Fixed(i) if fixed[i].2.is_none());
+            // A hinged post whose members all stand on the structure and
+            // hold the clamp, their bases on one line: it turns about that
+            // line freely (2026-11-15).
+            let pivots = middle
+                && members.len() >= 2
+                && members.iter().any(|m| {
+                    structure
+                        .string(&m.label)
+                        .is_some_and(|s| s.post && s.hinged)
+                })
+                && members
+                    .iter()
+                    .all(|m| from_structure(m) && m.bottom == clamp)
+                && {
+                    let tops: Vec<Vector3<f64>> = members
+                        .iter()
+                        .map(|m| match m.top {
+                            At::Fixed(i) => fixed[i].1,
+                            At::Free(i) => free[i].1,
+                        })
+                        .collect();
+                    pivot_axis(&tops).is_some()
+                };
             let shape = match members.as_slice() {
+                _ if pivots => Shape::Pivot,
                 [m] if from_structure(m) && m.bottom == clamp => {
                     let top = match m.top {
                         At::Fixed(i) => fixed[i].1,
@@ -852,6 +1140,19 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                 });
                 first.is_none_or(|x| x.id == section.id)
             };
+            // A pivoting post's hinge friction (owner, 2026-11-15), per
+            // subconductor as the model's loads.
+            let friction = (shape == Shape::Pivot)
+                .then(|| {
+                    members.iter().find_map(|m| {
+                        structure
+                            .string(&m.label)
+                            .filter(|s| s.post && s.hinged)
+                            .and_then(|s| s.hinge_friction_nm)
+                    })
+                })
+                .flatten()
+                .map(|f| f / bundle);
             Ok(Holder {
                 fixed,
                 free,
@@ -861,6 +1162,7 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                 estimate,
                 reports,
                 shared: shares,
+                friction,
             })
         })
         .collect()
@@ -895,6 +1197,7 @@ fn pulled(layout: &[Holder], section: &Section, coupling: &Coupling) -> Vec<Hold
                     estimate: false,
                     reports: false,
                     shared: true,
+                    friction: None,
                 };
             }
             let freed: Vec<(usize, Vector3<f64>)> = h
@@ -1060,6 +1363,58 @@ impl Extras {
                 .collect(),
         }
     }
+}
+
+/// The line the members of an assembly turn about, from their tops (on the
+/// structure): a point on it and its direction (unit), where every top lies
+/// on the line through the two farthest apart (within 1 µm); none
+/// otherwise (they hold the clamp in every direction) or where they meet in
+/// one point.
+pub(crate) fn pivot_axis(tops: &[Vector3<f64>]) -> Option<(Vector3<f64>, Vector3<f64>)> {
+    let mut far = (0.0, 0, 0);
+    for (i, a) in tops.iter().enumerate() {
+        for (j, b) in tops.iter().enumerate().skip(i + 1) {
+            let d = (b - a).norm();
+            if d > far.0 {
+                far = (d, i, j);
+            }
+        }
+    }
+    if far.0 < 1e-6 {
+        return None;
+    }
+    let (origin, axis) = (tops[far.1], (tops[far.2] - tops[far.1]) / far.0);
+    tops.iter()
+        .all(|t| {
+            let r = t - origin;
+            (r - axis * r.dot(&axis)).norm() < 1e-6
+        })
+        .then_some((origin, axis))
+}
+
+/// A pivoting post's clamp ([`Shape::Pivot`]) turned about its axis back to
+/// where the post is given to point, keeping its distance from the axis and
+/// its place along it as solved (`position`): how it is held while the
+/// section's length is shared out in the blocks — the clamped wire, not
+/// the assembly, holds it along its free direction, and it swings there in
+/// the solve that follows.
+fn pivot_back(holder: &Holder, position: Vector3<f64>) -> Vector3<f64> {
+    let tops: Vec<Vector3<f64>> = holder
+        .members
+        .iter()
+        .map(|m| holder.position(m.top))
+        .collect();
+    let Some((origin, axis)) = pivot_axis(&tops) else {
+        return position;
+    };
+    let r = position - origin;
+    let radial = r - axis * r.dot(&axis);
+    let given = holder.position(holder.clamp) - origin;
+    let towards = given - axis * given.dot(&axis);
+    if towards.norm() < 1e-9 {
+        return position;
+    }
+    origin + axis * r.dot(&axis) + towards.normalize() * radial.norm()
 }
 
 /// The clamp's position to start from: plumb below a suspension string's
@@ -1394,6 +1749,7 @@ fn build(
         spacers,
         span_points,
         dead,
+        hinges: vec![None; n],
     })
 }
 
@@ -1456,6 +1812,11 @@ fn solve_built(
         loads.is_some(),
         loads.unwrap_or(&none),
     )?;
+    // A pivoting post with a hinge friction: stick and slip (2026-11-15);
+    // without, one solve as before.
+    if layout.iter().any(|h| h.friction.is_some()) {
+        return with_hinge_friction(section, layout, built, budget);
+    }
     let solution = built
         .model
         .solve(budget)
@@ -1499,6 +1860,7 @@ fn estimate_strain_weights(
                     estimate: false,
                     reports: false,
                     shared: false,
+                    friction: None,
                 }
             } else {
                 h.clone()
@@ -1698,6 +2060,9 @@ fn settled(
                     let across = radial - along * radial.dot(&along);
                     centre + axis * r.dot(&axis) + across * (radial.norm() / across.norm())
                 }
+                // A pivoting post: turned back about its axis to where it
+                // is given to point (the crew clamps it there).
+                Shape::Pivot => pivot_back(holder, position),
                 // Strings hanging from strings: where the assembly hangs
                 // under the clamp's load with its part along the line taken
                 // away (the same neutral direction).
@@ -1756,6 +2121,7 @@ fn hanging_loads(
             at: p(*at),
             // On the structure: the weight down, the wind's push.
             force: p((Vector3::new(0.0, 0.0, -weight) + wind) * share * bundle),
+            moment: [0.0; 3],
         })
         .collect()
 }
@@ -1776,6 +2142,11 @@ fn clamp_pull(built: &Built, solution: &ohl_wirefe::Solution, k: usize) -> Vecto
         let d = solution.positions[other] - solution.positions[c];
         on_clamp += d.normalize() * solution.truss_forces[*t];
         on_clamp.z -= truss.weight / 2.0;
+    }
+    // A sticking hinge's bar holds the clamp too (a slipping one's force
+    // is in the node's load).
+    if let Some(h) = built.hinges[k].as_ref().filter(|h| h.stuck) {
+        on_clamp += h.force;
     }
     -on_clamp
 }
@@ -1947,6 +2318,13 @@ fn settled_over_sheaves(
             let position = solution.positions[built.clamps[k]];
             let middle = k > 0 && k + 1 < n;
             match layout[k].shape {
+                // A pivoting post has nothing in its assembly holding it
+                // along its free direction (2026-11-15): solved alone under
+                // the sheave's pull it would turn without end (the rolling
+                // did not settle). Held where it is given to point while
+                // the length is shared out; the clamped wire holds it in
+                // the solve that follows, where it swings.
+                Shape::Pivot => pivot_back(&layout[k], position),
                 Shape::Suspension | Shape::VString | Shape::General if middle => {
                     let unit = |a: usize, b: usize| {
                         let d = (clamps[b] - clamps[a]).xy();
@@ -3341,17 +3719,29 @@ fn solve_fe(
                 if *dead {
                     return hanging_loads(holder, &reference, k, cases, bundle);
                 }
+                // A hinge holding its post by friction (2026-11-15): in the
+                // model a force across the post at the clamp; on the
+                // structure it is the post's base's, with its moment there
+                // (the force reversed, carried down the post).
+                let hinge = built.hinges[k].as_ref();
                 nodes
                     .iter()
                     .map(|(label, n)| {
                         let mut force = -solution.reactions[*n] * bundle;
+                        let mut moment = Vector3::zeros();
                         if *n == built.clamps[k] {
                             force += on_fixed[k];
+                        }
+                        if let Some(h) = hinge.filter(|h| h.base == *label) {
+                            let lever = pos[built.clamps[k]] - h.base_at;
+                            force -= h.force * bundle;
+                            moment -= lever.cross(&h.force) * bundle;
                         }
                         Support {
                             label: label.clone(),
                             at: p(pos[*n]),
                             force: p(force),
+                            moment: p(moment),
                         }
                     })
                     .collect()
@@ -3377,6 +3767,19 @@ fn solve_fe(
             .map(|(label, n)| (label.clone(), p(pos[*n])))
             .collect(),
         spacers: spacer_states,
+        hinges: built
+            .hinges
+            .iter()
+            .map(|h| {
+                h.as_ref().map(|h| HingeState {
+                    post: h.post.clone(),
+                    base: h.base.clone(),
+                    moment: h.moment.abs() * bundle,
+                    stuck: h.stuck,
+                    turn_deg: h.turn.to_degrees(),
+                })
+            })
+            .collect(),
     })
 }
 
@@ -3615,6 +4018,9 @@ mod hot_creep_tests;
 mod gap_tests;
 #[cfg(test)]
 mod support_tests;
+
+#[cfg(test)]
+mod pivot_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

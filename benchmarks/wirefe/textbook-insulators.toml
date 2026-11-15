@@ -1,7 +1,9 @@
 # Wind blowout of a span, the swing of a suspension string with weight,
-# and the forces of two strings to one wire point, by the line's finite elements
+# the forces of two strings to one wire point, and the swing of a pivoting
+# post, by the line's finite elements
 # (line.section). The textbook cable (EA = 30 MN, alpha = 20e-6 /K,
-# 1.6 kg/m, 28 mm), strung at H = 25 kN at 10 °C, solved at 10 °C.
+# 1.6 kg/m, 28 mm), strung at H = 25 kN at 10 °C (the pivoting post:
+# clipped in with given lengths), solved at 10 °C.
 # The line runs along +x; wind from the right (the default) blows the
 # wires to +y. Structure axes: x to the right of the line (-y here), so a
 # string blown to +y swings to negative `across_deg`.
@@ -231,5 +233,119 @@ line = '''
  "sections": [{"id": "S", "cable": "tb", "bundle": 1,
   "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
   "stringing": {"kind": "tension", "horizontal_tension": 25000.0, "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-006"
+title = "A pivoting post: a hinged post braced from straight above its base swings along the line until the spans balance"
+calculation = "line.section"
+reference = "Independent 3D quadrature + Newton on the clamp (benchmarks/reference/textbook_reference.py pivot)"
+notes = """Owner decision 2026-11-15: a hinged post turns freely in every direction its braces leave
+free; the wire attached to its top holds it. Two spans clipped in with 300.70 m and 300.40 m of wire
+between dead-ends in line with the post's top; the post (450 N, pushing as well as pulling) stands
+level 1.5 m out from A1, its brace (200 N) from A2 1.5 m straight above A1: the pair turns about the
+vertical through A1 and A2. Hand: the first span, with more wire, pulls less; the post swings
+towards the second until the pulls balance along its circle — no part of the wires' pull on the top
+along the tangent (cos phi, sin phi, 0); the post can then take along the line only what its swing
+turns of the spans' small outward pull (the top moves in towards the structure by
+1.5 (1 - cos phi)): the two spans' H end within a fraction of a newton. The vertical load on the top
+V (half of each span's weight, 2 x 15.69 x 300.55 / 2 = 4716 N, and half the members' weights,
+325 N: 5041 N) is carried by the brace at about 45 degrees: sqrt(2) x 5041 = 7129 N (exact 7131.0 N,
+the top 0.58 mm low); the post pushes with about V (exact 5040.2 N: V less the outward pull).
+Solved: swung 5.7008 degrees, the top 14.90 cm along the line and 7.6 mm in; H 19295.64 N and
+19295.74 N (0.1 N apart; held across the line, as a fixed post holds it, 17756.8 N and
+21248.4 N: 3.5 kN apart, which a fixed post would pass to the structure). The reference starts its Newton
+iteration where the rigid post balances (a bisection on the swing) with the brace taut."""
+max_seconds = 5.0
+expected.h_0_n = { value = 19295.63991, rel_tol = 1e-7 }
+expected.h_1_n = { value = 19295.73711, rel_tol = 1e-7 }
+expected.clamp_x_1_m = { value = 300.1489843, abs_tol = 1e-6 }
+expected.clamp_y_1_m = { value = -1.49243082, abs_tol = 1e-6 }
+expected.clamp_z_1_m = { value = 28.39942091, abs_tol = 1e-6 }
+expected.string_1_0_n = { value = -5040.203125, rel_tol = 1e-7 }
+expected.string_1_1_n = { value = 7131.043084, rel_tol = 1e-7 }
+
+[case.inputs]
+weather = { name = "still", temperature = "10 °C" }
+cable = { id = "tb", name = "Textbook cable", kind = "aaac", source = "Invented textbook data", diameter = "28 mm", mass_per_length = "1.6 kg/m", rated_tensile_strength = "120 kN", outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 } }
+line = '''
+{"format": "ohl-line", "version": 17, "name": "pivoting post", "crs": "local",
+ "structures": [
+  {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [0, -1.5, 28.4], "set": 1}]},
+  {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [300, 0, 28.4]}, {"label": "A2", "position": [300, 0, 29.9]}],
+   "strings": [{"label": "P1", "top": "A1", "wire": "W1", "length": 1.5, "angle_deg": 90.0, "direction_deg": 90.0,
+                "weight": 450.0, "post": true, "hinged": true, "stiffness": 5e7},
+               {"label": "B1", "top": "A2", "wire": "W1", "weight": 200.0, "stiffness": 5e7}],
+   "wires": [{"label": "W1", "position": [300, -1.5, 28.4], "set": 1}]},
+  {"id": "T3", "position": [600, 0, 0], "orientation_deg": -90,
+   "wires": [{"label": "W1", "position": [600, -1.5, 28.4], "set": 1}]}
+ ],
+ "sections": [{"id": "S", "cable": "tb", "bundle": 1,
+  "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}, {"structure": "T3", "set": 1}],
+  "stringing": {"kind": "unstressed_lengths", "lengths": [300.70, 300.40], "temperature": 10.0}}]
+}
+'''
+
+[[case]]
+id = "tbins-007"
+title = "A pivoting post held by a jumper only, solved together with it: the post turns until the jumper's pull has no moment about its axis"
+calculation = "line.jumper_pivot"
+reference = "Independent 3D quadrature catenary + stepping and bisection on the turn, statics of the post and brace (benchmarks/reference/textbook_reference.py pivot)"
+notes = """Owner decision 2026-11-15: a jumper-held hinged post is solved together with its jumper. A
+hinged post (450 N) stands level 1.5 m out from A1 (0, 0, 10) to -y, braced (200 N) from A2 1.5 m
+straight above A1: it turns about the vertical through A1 and A2. A jumper of 4.0 m of unstressed
+wire, no bending stiffness, runs from its top to a point fixed at (3, -2.5, 9). Hand: in still air
+the jumper hangs in the vertical plane through its ends, so its pull on the top points in plan
+straight at the fixed point; the post settles where that pull has no part along its circle — the
+top, the axis and the fixed point in one vertical plane: turned atan(3 / 2.5) = 50.194 degrees.
+Solved together: 50.1944 degrees (the top at (1.1523, -0.9603, 10)). The decoupled answer before
+(the jumper solved to the top as given and its pull held fixed while the post turned) put it at
+71.57 degrees, 21 degrees too far. The members' forces from the statics at the top: the brace pulls
+515.77 N, the post pushes 354.04 N."""
+max_seconds = 5.0
+expected.turn_deg = { value = 50.19442891, abs_tol = 1e-6 }
+expected.clamp_x_m = { value = 1.152331919, abs_tol = 1e-7 }
+expected.clamp_y_m = { value = -0.9602765995, abs_tol = 1e-7 }
+expected.clamp_z_m = { value = 10.0, abs_tol = 1e-9 }
+expected.pull_x_n = { value = 8.191271435, rel_tol = 1e-6 }
+expected.pull_y_n = { value = -6.826059529, rel_tol = 1e-6 }
+expected.pull_z_n = { value = -39.70338419, rel_tol = 1e-6 }
+expected.J_max_tension_n = { value = 41.11022661, rel_tol = 1e-6 }
+expected.member_P1_n = { value = -354.0407383, rel_tol = 1e-6 }
+expected.member_B1_n = { value = 515.7684722, rel_tol = 1e-6 }
+
+[case.inputs]
+weather = { name = "still", temperature = "10 °C" }
+library = '''
+format = "ohl-wire"
+version = 1
+
+[[cable]]
+id = "tb"
+name = "Textbook cable"
+kind = "aaac"
+source = "Invented textbook data"
+diameter = "28 mm"
+mass_per_length = "1.6 kg/m"
+rated_tensile_strength = "120 kN"
+outer = { area = "400 mm²", modulus = "75 GPa", thermal_expansion = 20e-6 }
+'''
+line = '''
+{"format": "ohl-line", "version": 17, "name": "pivoting post held by a jumper", "crs": "local",
+ "structures": [
+  {"id": "T", "position": [0, 0, 0], "orientation_deg": -90,
+   "points": [{"label": "A1", "position": [0, 0, 10]}, {"label": "A2", "position": [0, 0, 11.5]}],
+   "strings": [{"label": "P1", "top": "A1", "wire": "W1", "length": 1.5, "angle_deg": 90.0, "direction_deg": 90.0,
+                "weight": 450.0, "post": true, "hinged": true, "stiffness": 1e11},
+               {"label": "B1", "top": "A2", "wire": "W1", "weight": 200.0, "stiffness": 1e11}],
+   "wires": [{"label": "W1", "position": [0, -1.5, 10], "set": 1},
+             {"label": "W2", "position": [3, -2.5, 9], "set": 2}]}
+ ],
+ "jumpers": [{"id": "J", "cable": "tb", "from": {"structure": "T", "set": 1}, "to": {"structure": "T", "set": 2},
+              "length": 4.0, "temperature": 10.0, "bending_stiffness": 0.0}],
+ "sections": []
 }
 '''

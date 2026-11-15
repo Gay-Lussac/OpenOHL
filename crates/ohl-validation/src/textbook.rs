@@ -14,6 +14,7 @@ use crate::{Calculation, Inputs, Outputs, Registry};
 
 pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(LineSection));
+    registry.register(Box::new(JumperPivot));
     registry.register(Box::new(SagToLimits));
     registry.register(Box::new(HotCreepLaw));
     registry.register(Box::new(CableProperties));
@@ -179,6 +180,102 @@ impl Calculation for LineSection {
                     out.insert(format!("string_{k}_{j}_{axis}_m"), s.bottom[a]);
                 }
             }
+        }
+        Ok(out)
+    }
+}
+
+/// `line.jumper_pivot`: a pivoting post holding jumpers only, solved
+/// together with them (owner, 2026-11-15; [`ohl_line::post::JumperPivot`]):
+/// the line (`.ohl.json` text; its sections solved first, as the jumpers
+/// are), its wire types (`library`, `.ohlw` text) and one weather case.
+///
+/// Outputs, for the first pivoting post the jumpers end at: `turn_deg`
+/// (its turn from where it is given about its axis), `clamp_{x,y,z}_m`
+/// (its top where it settled), `hinge_moment_nm` (the moment its hinge
+/// holds), `pull_{x,y,z}_n` (its jumpers' pull on its top, summed),
+/// `member_{label}_n` (each member's axial force, tension positive:
+/// [`ohl_line::post::hinged_post_loads`]); per jumper `{id}_max_tension_n`
+/// and `{id}_sag_m`.
+struct JumperPivot;
+
+impl Calculation for JumperPivot {
+    fn id(&self) -> &'static str {
+        "line.jumper_pivot"
+    }
+
+    fn description(&self) -> &'static str {
+        "A pivoting post holding jumpers only, solved together with them (inputs: line = \
+         .ohl.json text, library = .ohlw text, weather = one weather case); outputs turn_deg, \
+         clamp_{x,y,z}_m, hinge_moment_nm, pull_{x,y,z}_n, member_{label}_n, per jumper \
+         {id}_max_tension_n, {id}_sag_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let mut line =
+            ohl_line::Line::from_json(string_input(inputs, "line")?).map_err(|e| e.to_string())?;
+        let mut library = ohl_cables::Library::default();
+        library
+            .add_toml(
+                std::path::Path::new("library"),
+                string_input(inputs, "library")?,
+            )
+            .map_err(|e| e.to_string())?;
+        let weather: ohl_weather::WeatherCase = table_input(inputs, "weather")?;
+        weather.validate()?;
+        line.set_weather_cases(std::slice::from_ref(&weather));
+        let shapes = ohl_line::solve::solve_line(&line, &library, &weather)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        let jumpers = ohl_line::jumper::solve_jumpers(&line, &library, &weather, &shapes)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        let mut out = Outputs::new();
+        for (j, s) in line.jumpers.iter().zip(&jumpers) {
+            out.insert(format!("{}_max_tension_n", j.id), s.max_tension);
+            out.insert(format!("{}_sag_m", j.id), s.sag);
+        }
+        let pivot = jumpers
+            .iter()
+            .find_map(|s| s.pivots.first())
+            .ok_or("no pivoting post holding jumpers")?;
+        let xyz = ["x", "y", "z"];
+        out.insert("turn_deg".to_owned(), pivot.turn_deg);
+        out.insert("hinge_moment_nm".to_owned(), pivot.hinge_moment);
+        let (mut force, mut moment) = ([0.0; 3], [0.0; 3]);
+        for (j, s) in line.jumpers.iter().zip(&jumpers) {
+            for (k, end) in [&j.from, &j.to].into_iter().enumerate() {
+                if end
+                    .point()
+                    .is_some_and(|p| p.structure == pivot.structure && p.set == pivot.set)
+                {
+                    for c in 0..3 {
+                        force[c] += s.end_forces[k][c];
+                        moment[c] += s.end_moments[k][c];
+                    }
+                }
+            }
+        }
+        for (k, axis) in xyz.iter().enumerate() {
+            out.insert(format!("clamp_{axis}_m"), pivot.clamp[k]);
+            out.insert(format!("pull_{axis}_n"), force[k]);
+        }
+        let structure = line
+            .structure(&pivot.structure)
+            .ok_or("the post's structure")?;
+        let (members, _) = ohl_line::post::hinged_post_loads(
+            structure,
+            &pivot.wire,
+            force,
+            moment,
+            Some(pivot),
+            [0.0; 3],
+            line.defaults.insulator_stiffness,
+        )?;
+        for m in members {
+            out.insert(format!("member_{}_n", m.label), m.force);
         }
         Ok(out)
     }

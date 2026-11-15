@@ -498,6 +498,15 @@ pub fn check(
             .notes
             .extend(ohl_line::post::moment_with_estimate_note(line));
     }
+    // A hinged post holding nothing (2026-11-15): free to pivot, not
+    // checked.
+    report.notes.extend(
+        ohl_line::post::free_hinged_posts(line)
+            .into_iter()
+            .map(|(s, p)| {
+                format!("hinged post {p} at {s}: nothing holds it (free to pivot): not checked")
+            }),
+    );
     // Each section's nominal voltage, by its id (a list of the distinct
     // potentials indexed by the section's place gave another section's).
     let potentials = line.potentials().unwrap_or_default();
@@ -617,6 +626,32 @@ pub fn check(
                                 let c = (-st.force).max(0.0);
                                 rows.push(row(
                                     Measure::Compression,
+                                    Source::String,
+                                    c,
+                                    max,
+                                    c / max,
+                                    c <= max,
+                                ));
+                            }
+                            // A pivoting post's hinge holding it by
+                            // friction (2026-11-15): the moment at its base,
+                            // as the load across its top giving it.
+                            let held = shape
+                                .hinges
+                                .get(p)
+                                .and_then(Option::as_ref)
+                                .filter(|h| h.post == st.label && h.moment > 0.0);
+                            let length = line
+                                .structure(&structure)
+                                .and_then(|s| s.string_length(x))
+                                .filter(|l| *l > 0.0);
+                            if rule.load
+                                && let (Some(h), Some(length), Some(max)) =
+                                    (held, length, x.cantilever_load.filter(|c| *c > 0.0))
+                            {
+                                let c = h.moment / length;
+                                rows.push(row(
+                                    Measure::Cantilever,
                                     Source::String,
                                     c,
                                     max,

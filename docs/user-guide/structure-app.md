@@ -512,7 +512,11 @@ rating across it at its top, N; unticked: its library post's, else not
 checked), **exit** (the angle from the horizontal at which its clamp
 holds a jumper; unticked: level) and **in plan** (that clamp's direction,
 clockwise seen from above as the strings' directions; unticked: towards
-the jumper's other end). Its compression rating is the **compression**
+the jumper's other end), and for a hinged post **friction** (its hinge
+friction, N·m: the moment its hinge holds before the post turns — stick,
+then slip —, the moment going into the structure at the post's base;
+unticked: frictionless; the hover says its effect; the file is raised to
+version 15 when it gets one). Its compression rating is the **compression**
 column. Its length and direction are the string's (**angle** 180°:
 upright). Every change is one undo step; the file is raised to version
 13 when it gets a post field (an older program then says *newer

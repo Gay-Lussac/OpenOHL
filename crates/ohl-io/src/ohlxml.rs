@@ -575,6 +575,7 @@ fn write_structure(out: &mut String, s: &Structure) {
             cantilever_load,
             exit_angle_deg,
             exit_direction_deg,
+            hinge_friction_nm,
         } = x;
         out.push_str("    <string");
         attr(out, "label", label);
@@ -603,6 +604,7 @@ fn write_structure(out: &mut String, s: &Structure) {
             ("cantilever_load", cantilever_load),
             ("exit_angle_deg", exit_angle_deg),
             ("exit_direction_deg", exit_direction_deg),
+            ("hinge_friction_nm", hinge_friction_nm),
         ] {
             if let Some(v) = v {
                 attr(out, name, &num(*v));
@@ -1857,6 +1859,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                     "cantilever_load",
                     "exit_angle_deg",
                     "exit_direction_deg",
+                    "hinge_friction_nm",
                 ],
                 &["shape"],
             )?;
@@ -1883,6 +1886,7 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
                 cantilever_load: optional(x, "cantilever_load")?,
                 exit_angle_deg: optional(x, "exit_angle_deg")?,
                 exit_direction_deg: optional(x, "exit_direction_deg")?,
+                hinge_friction_nm: optional(x, "hinge_friction_nm")?,
                 shapes: x
                     .children_named("shape")
                     .map(read_shape)
