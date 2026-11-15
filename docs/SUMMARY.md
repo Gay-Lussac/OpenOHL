@@ -78,6 +78,7 @@
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
 - [Finite-element wire systems](theory/wirefe.md)
+- [Structure flexibility in the line solve](theory/structure-flexibility.md)
 - [Jumpers](theory/jumpers.md)
 - [Objects on the wires](theory/line-objects.md)
 - [Post insulators](theory/post-insulators.md)

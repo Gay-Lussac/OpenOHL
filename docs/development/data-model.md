@@ -2445,6 +2445,40 @@ line's structure check, the structure application's notes) and
 `ohl_structure_link::MemberResult::eccentric` (OHL-Structure's FE
 results: the member marked *(eccentric)*). Nothing stored.
 
+A structure condensed to its attachment points (2026-11-15, calculation
+levels 3 and 4 of the line solve, phase 1; in memory only, read by no
+result yet; [theory](../theory/structure-flexibility.md)):
+`ohl_structures_fe::condense::condense(model, points, linearisation,
+budget) -> Result<Condensed, Rigid>` — `points`: `[Attachment { label,
+link }]`, `Link::{Type, Joint { joint, offset }, Unlinked}` (a placed
+structure's link, mapped by `Model::attachment_load`, the one rule the
+structure check's loads use too); `Linearisation::{Unloaded,
+Tangent(Loads)}` (the elastic structure, or the tangent at the solution
+under those loads: its active set, P-Delta, stabilisations).
+`Condensed`: `labels`, `place_of` (per label its place), `places`
+(`Place { node, offset, labels }`: points with the same unit loads share
+one), `flexibility` (3 × places square, m/N, structure axes unless
+turned), `stiffness` (its inverse, N/m; none when singular — two points
+of one rigid link, a fixed joint), `approximate`, `notes`,
+`linearisation` (words); `flexibility_between`, `deflection`,
+`turned(R)` (blocks R B Rᵀ). `Rigid` (why a structure stays rigid:
+`NoModel`, `ModelNotRead`, `PoleWithoutElasticity`, `NoPoints`,
+`Unlinked`, `NotInModel`, `FreeAcross`, `HeldToGround`, `Reference`,
+`Mechanism`, `Unstable`, `Stopped`; `Display` in words).
+`condense_pole(pole, points, reference, budget)`: the pole check's frame
+model (`pole::frame_model`, shared with the P-Delta amplification), a
+node at each point's height. **Memo key** `CondenseKey { structure_type,
+extension, inputs }`, `inputs` a 128-bit `Fingerprint` of the `Debug`
+text of the model (or pole), the points with their links and the
+linearisation (`CondenseKey::of_model`, `of_pole`; the orientation is not
+in it). In `ohl-loads` (`flexibility`, crate-internal):
+`Analyses::flexibility(t, placed, labels, reference, budget) ->
+Result<Flexible { key, condensed }, Rigid>` — the model the structure
+check takes (`model_of`: the extension's own), else its pole, turned to
+line axes by the placed structure's orientation (`to_line_axes`, from
+`ohl_line::links::from_structure_axes`); `placed_link` is the point-link
+rule `Analyses::fe` uses. Nothing stored.
+
 ### Insulator assembly (`.ohli`)
 
 Source: `crates/ohl-structures/src/insulators.rs`.
@@ -2511,6 +2545,27 @@ library, case, section, span, budget)` (the other sections as
 `spans[span]` with no points and no tension, the flag `span n: the wire
 broken`; the ends next to the break that hold no wire report their
 strings' hanging weight as their `attachment_loads`.
+
+**Moved structure points and a section's support stiffness** (2026-11-15,
+calculation levels 3 and 4, phase 2 of the plan; in memory only, no
+setting, no file field; [theory](../theory/structure-flexibility.md)):
+`ohl_line::solve::Coupling::moved` (`PointMoves` =
+`BTreeMap<(structure id, point label), Point>`: displacements in line
+axes, m, measured from the structures as strung — the labels of
+`SectionShape::attachment_loads`; a string's top, a wire point fixed to
+the structure, a post's top; another section's clamp held where given is
+not moved; empty or zero: the solve unchanged bit for bit) and
+`Coupling::stiffness` (bool): the section's stiffness at its structure
+points in `SectionShape::support_stiffness`
+(`Option<SupportStiffness>`: `points` — `SupportPoint { point, structure,
+label }`, the holders that report their loads —, `matrix` — 3 × points
+square, N/m, line axes, the whole bundle's: moving the points by δ
+changes the force on the structures by −K δ; none from the ruling span or
+when not asked; a failure only a flag `support stiffness not found: …`).
+Computed by `ohl_wirefe::Model::support_stiffness(solution, nodes)` (the
+converged tangent condensed to fixed nodes, K_ss − K_sf K_ff⁻¹ K_fs, each
+cable at its solved load; Err for a node not fixed or given twice, or a
+singular free block). Nothing stored.
 
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors

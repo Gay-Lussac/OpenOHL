@@ -53,11 +53,13 @@ mod coupled;
 mod final_stringing;
 mod memo;
 mod ruling_span;
+mod support;
 pub use coupled::*;
 pub use final_stringing::{WORK_BACK_SOLVES, WorkedBack, final_stringing_notes, worked_back};
 pub(crate) use memo::live_memo;
 pub use memo::{forget_solves, solve_line_memo, solve_line_memo_default};
 pub use ruling_span::*;
+pub use support::{PointMoves, SupportPoint, SupportStiffness};
 
 /// Point loads closer than this to a span's end (along the wire), m, are
 /// applied to the clamp. A marker ball 0.45 m from a free strain clamp
@@ -193,6 +195,9 @@ pub struct SectionShape {
     /// Every span solved with its wire gone, in order (empty: the section
     /// whole).
     pub broken_spans: Vec<usize>,
+    /// Its stiffness at the structure points holding it, when asked
+    /// ([`Coupling::stiffness`]; finite elements only, else none).
+    pub support_stiffness: Option<SupportStiffness>,
 }
 
 /// A string as solved.
@@ -965,6 +970,15 @@ pub struct Coupling {
     /// sections' span points), and the spacers' forces on its span points
     /// ([`solve_spacer_group`]).
     pub spacers: SpacerCoupling,
+    /// The structure points holding it moved by these displacements
+    /// (line axes, m; by structure and label), measured from the
+    /// structures as strung: the structures' deflection (calculation
+    /// levels 3 and 4, in active development). Empty: as given (the solve
+    /// unchanged bit for bit).
+    pub moved: PointMoves,
+    /// Also find its stiffness at those points
+    /// ([`SectionShape::support_stiffness`]).
+    pub stiffness: bool,
 }
 
 /// The spacers on a section in a pass of [`solve_spacer_group`] (the
@@ -2909,6 +2923,9 @@ fn solve_fe(
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
+    // Its structure points moved by the structures' deflection (none: as
+    // given).
+    support::move_points(&mut loaded, section, &coupling.moved);
     // The jumpers hanging on its clamps, in the weather case (as the
     // line's calculation options say).
     let jumpers = match &coupling.jumpers {
@@ -3288,7 +3305,21 @@ fn solve_fe(
         let broken = n - (left * f64::from(n)).round() as u32;
         flags.push(partial_break_flag(*k, broken, n));
     }
+    // Its stiffness at its structure points, when asked (calculation
+    // levels 3 and 4).
+    let support_stiffness = if coupling.stiffness {
+        match support::stiffness(&built, &solution, &loaded, section, bundle) {
+            Ok(k) => Some(k),
+            Err(e) => {
+                flags.push(format!("support stiffness not found: {e}"));
+                None
+            }
+        }
+    } else {
+        None
+    };
     Ok(SectionShape {
+        support_stiffness,
         broken: cases.broken.first().copied(),
         broken_spans: cases.broken.to_vec(),
         section: section.id.clone(),
@@ -3582,6 +3613,8 @@ mod hot_creep_tests;
 
 #[cfg(test)]
 mod gap_tests;
+#[cfg(test)]
+mod support_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]

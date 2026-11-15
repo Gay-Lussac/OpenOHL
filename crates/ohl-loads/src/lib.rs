@@ -79,6 +79,10 @@
 mod analysis;
 mod body;
 pub mod capacity;
+// The structures' stiffness for the line's coupled solve (in active
+// development: only its link rule is used by a check yet).
+#[cfg_attr(not(test), allow(dead_code))]
+mod flexibility;
 mod options;
 mod write;
 

@@ -413,25 +413,26 @@ pub struct Solution {
     pub rounded_stabilisation: bool,
 }
 
-/// Per member: what does not change between iterations.
-struct Prepared {
-    l: f64,
+/// Per member: what does not change between iterations (also built by
+/// [`crate::condense`] for the tangent it condenses).
+pub(crate) struct Prepared {
+    pub(crate) l: f64,
     /// Local axes (rows).
-    r: Matrix3<f64>,
-    t: Mat12,
+    pub(crate) r: Matrix3<f64>,
+    pub(crate) t: Mat12,
     /// Elastic stiffness, local (frames).
-    ke: Mat12,
+    pub(crate) ke: Mat12,
     /// EA/L.
-    ea_l: f64,
+    pub(crate) ea_l: f64,
     /// Consistent self-weight loads, local (frames).
-    weight_local: [f64; 12],
+    pub(crate) weight_local: [f64; 12],
     /// Equation numbers of the 12 degrees of freedom.
-    eq: [Option<usize>; 12],
+    pub(crate) eq: [Option<usize>; 12],
     /// The rigid end offset transformation ([`crate::offsets::rigid`]) of
     /// a member with an eccentric end in this solve (none: its ends at
     /// its joints); `t` includes it, `l` and `r` are between its offset
     /// ends.
-    rigid: Option<Mat12>,
+    pub(crate) rigid: Option<Mat12>,
 }
 
 /// Solves `model` under `loads`.
@@ -1998,8 +1999,9 @@ fn add_upper(k: &mut Skyline, eq: &[Option<usize>; 12], kg: &Mat12) {
     }
 }
 
-/// Assembles the tangent stiffness at axial forces `axial`.
-fn assemble(
+/// Assembles the tangent stiffness at axial forces `axial` (also the
+/// tangent [`crate::condense`] condenses).
+pub(crate) fn assemble(
     model: &Model,
     prepared: &[Prepared],
     node_eq: &[[Option<usize>; 6]],

@@ -33,6 +33,7 @@ pub mod asce48;
 pub mod bolt_rules;
 pub mod capacity;
 pub mod check;
+pub mod condense;
 pub mod design;
 pub mod drawn;
 mod element;
@@ -369,6 +370,8 @@ pub fn kept_active_note(model: &Model, solution: &Solution) -> Option<String> {
 
 #[cfg(test)]
 mod bending_tests;
+#[cfg(test)]
+mod condense_tests;
 #[cfg(test)]
 mod guard_tests;
 #[cfg(test)]
