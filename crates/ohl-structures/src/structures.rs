@@ -264,8 +264,20 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// member a redundant member braces) and `climbing_load` (a load on flat
 /// members at mid-length, alone), read by `ohl_structures_fe`
 /// ([`REDUNDANT_FORCE_VERSION`], [`CLIMBING_LOAD_VERSION`]); a file is
-/// written at 16 only when it gives one.
-pub const STRUCTURE_FILE_VERSION: u32 = 16;
+/// written at 16 only when it gives one. Version 17 (2026-11-15) adds an
+/// attachment point standing alone, linked to no joint (`[[point]]`
+/// `unlinked = true` with its `point`: [`TypePoint::unlinked`],
+/// [`UNLINKED_POINT_VERSION`]); a file is written at 17 only when a point
+/// says so.
+pub const STRUCTURE_FILE_VERSION: u32 = 17;
+
+/// The structure file version of an attachment point linked to no joint
+/// (`[[point]] unlinked = true`; owner, 2026-11-15: "an attachment point
+/// by itself then linked"). Such a point belongs to the level-1
+/// description (points only): it never takes a joint by its position or
+/// its name, its loads reach no member of the 3D structure (said, not on
+/// the safe side) until it is linked.
+pub const UNLINKED_POINT_VERSION: u32 = 17;
 
 /// The structure file version of `[analysis] tension_compression`
 /// (2026-11-15): `"buckling"` (the default) or `"none"`.
@@ -455,10 +467,17 @@ pub struct TypePoint {
     /// on the joint).
     #[serde(default)]
     pub offset: Option<[Length; 3]>,
+    /// Linked to no joint (version 17, with its `point`; owner
+    /// 2026-11-15): an attachment point standing alone — not on the joint
+    /// at its position, not on its own joint. Its strings belong to the
+    /// level-1 description; their loads reach no member of the 3D
+    /// structure until it is linked (said, not on the safe side).
+    #[serde(default)]
+    pub unlinked: bool,
     /// The joint it is linked to, filled when the type is read
     /// ([`StructureType::joints`]): its `node`, else (a point at a
     /// position of its own) the joint at the same position, else its own
-    /// joint.
+    /// joint; empty for an [`TypePoint::unlinked`] point.
     #[serde(skip)]
     pub joint: String,
 }
@@ -564,6 +583,31 @@ pub const SAME_JOINT: f64 = 1e-6;
 /// linked to it (owner decision 2026-10-21: only attach joints take
 /// links; a joint's kind is set in OHL-Structure).
 pub const NOT_ATTACH: &str = "not an attach joint: set its kind to attach in OHL-Structure";
+
+/// The warning for attachment points `labels` linked to no joint, strings
+/// hanging from them (owner 2026-11-15): their loads do not reach the 3D
+/// structure.
+pub fn unlinked_words(labels: &[&str]) -> String {
+    format!(
+        "NOT ON THE SAFE SIDE: attachment point{} {} linked to no joint: the strings hanging \
+         from {} are not attached to the 3D structure (their loads do not reach the members) \
+         until {} linked",
+        if labels.len() == 1 { "" } else { "s" },
+        labels.join(", "),
+        if labels.len() == 1 { "it" } else { "them" },
+        if labels.len() == 1 {
+            "it is"
+        } else {
+            "they are"
+        },
+    )
+}
+
+/// Within this distance a point linked to a joint goes onto it without a
+/// question (rounding, a snapped drag), m; farther, the user is asked
+/// whether to move the point onto the joint or to keep its position at
+/// an offset (owner 2026-11-15).
+pub const ON_JOINT: f64 = 1e-3;
 
 /// The joint each point is linked to, in order: the joint it is on; for
 /// a point at a position of its own, the joint that names it as its
@@ -1334,6 +1378,11 @@ impl LibraryItem for StructureType {
                 None => a,
                 Some(o) => [a[0] + o[0].si(), a[1] + o[1].si(), a[2] + o[2].si()],
             };
+            if p.unlinked && (p.node.is_some() || p.offset.is_some() || p.point.is_none()) {
+                return Err(bad(
+                    "an unlinked point stands alone: give its point, no node or offset".into(),
+                ));
+            }
             let at = match (&p.point, &p.node) {
                 (Some(_), None) => {
                     if p.offset.is_some() {
@@ -1353,6 +1402,8 @@ impl LibraryItem for StructureType {
                 p.point = Some(at.map(Length::from_meters));
             }
         }
+        // An unlinked point takes no joint (not by its position, not by
+        // its name): left out of the rule.
         let ids = point_joints(
             &self
                 .nodes
@@ -1368,11 +1419,17 @@ impl LibraryItem for StructureType {
             &self
                 .points
                 .iter()
+                .filter(|p| !p.unlinked)
                 .map(|p| (p.label.as_str(), p.place()))
                 .collect::<Vec<_>>(),
         );
-        for (p, id) in self.points.iter_mut().zip(ids) {
-            p.joint = id;
+        let mut ids = ids.into_iter();
+        for p in &mut self.points {
+            p.joint = if p.unlinked {
+                String::new()
+            } else {
+                ids.next().unwrap_or_default()
+            };
         }
         Ok(())
     }
@@ -1695,6 +1752,15 @@ impl StructureType {
                 return bad("empty label or given twice");
             }
             if !labels.contains(st.top.as_str()) {
+                // A string hangs from an attachment point, never from a
+                // joint (owner 2026-11-15).
+                if self.nodes.iter().any(|n| n.id == st.top) {
+                    return bad(&format!(
+                        "its top \"{}\" is a joint: a string hangs from an attachment point, \
+                         never from a joint (add a point on joint {} and hang it there)",
+                        st.top, st.top
+                    ));
+                }
                 return bad(&format!("no point \"{}\" for its top", st.top));
             }
             if !self.wires.iter().any(|w| w.label == st.wire) {
@@ -1839,8 +1905,12 @@ impl StructureType {
     /// joints the points make themselves (a point at a position of its
     /// own: [`JointSource::Point`]), in the order of the points.
     pub fn joints(&self) -> Vec<Joint> {
-        let linked_ids: std::collections::HashSet<&str> =
-            self.points.iter().map(|p| p.joint.as_str()).collect();
+        let linked_ids: std::collections::HashSet<&str> = self
+            .points
+            .iter()
+            .filter(|p| !p.unlinked)
+            .map(|p| p.joint.as_str())
+            .collect();
         let linked = |id: &str| linked_ids.contains(id);
         let mut out: Vec<Joint> = self
             .nodes
@@ -1860,7 +1930,7 @@ impl StructureType {
             .collect();
         let mut seen: std::collections::HashSet<String> =
             out.iter().map(|j| j.id.clone()).collect();
-        for p in &self.points {
+        for p in self.points.iter().filter(|p| !p.unlinked) {
             if !seen.insert(p.joint.clone()) {
                 continue;
             }
@@ -1930,7 +2000,36 @@ impl StructureType {
     /// attachment's point has no joint).
     pub fn point_link(&self, label: &str) -> Option<(&str, [f64; 3])> {
         let p = self.points.iter().find(|p| p.label == label)?;
+        if p.unlinked {
+            return None;
+        }
         Some((p.joint.as_str(), self.point_offset(p)))
+    }
+
+    /// The attachment points linked to no joint ([`TypePoint::unlinked`]),
+    /// in order: their strings are not attached to the 3D structure.
+    pub fn unlinked_points(&self) -> Vec<&str> {
+        self.points
+            .iter()
+            .filter(|p| p.unlinked)
+            .map(|p| p.label.as_str())
+            .collect()
+    }
+
+    /// The warning for the unlinked attachment points that strings hang
+    /// from, on a structure with members (owner 2026-11-15: allowed, said;
+    /// none: no such point). The strings' loads do not reach the members:
+    /// not on the safe side for the 3D check.
+    pub fn unlinked_warning(&self) -> Option<String> {
+        if self.members.is_empty() && self.model.is_none() {
+            return None;
+        }
+        let hanging: Vec<&str> = self
+            .unlinked_points()
+            .into_iter()
+            .filter(|l| self.strings.iter().any(|s| s.top == *l))
+            .collect();
+        (!hanging.is_empty()).then(|| unlinked_words(&hanging))
     }
 
     /// The label a capacity entry refers to (version 1: the attachment's

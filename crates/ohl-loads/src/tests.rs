@@ -588,8 +588,9 @@ fn every_span_broken_checks_each_break_on_its_own() {
 }
 
 /// The placed structure's links reach the structure check (2026-10-21):
-/// T2's attachment point A1 unlinked refuses its finite-element check
-/// (the loads not applied: usage infinite, said why); linked again to its
+/// T2's attachment point A1 unlinked: its loads left out of the
+/// finite-element check, said not on the safe side (owner 2026-11-15:
+/// allowed, with a warning); linked again to its
 /// joint at an offset, the check runs, and since only trusses meet the
 /// joint the offset's moment is left out with a note.
 #[test]
@@ -626,9 +627,19 @@ fn the_structure_check_follows_the_links() {
         unlinked: true,
         ..at.clone()
     });
+    // Allowed with a warning (owner 2026-11-15): A1's loads left out, the
+    // check runs on the linked points' loads, said not on the safe side.
     let fe = unlinked.fe.unwrap();
-    assert!(fe.usage.is_infinite(), "{fe:?}");
-    assert!(fe.governs.contains("A1 is not linked"), "{fe:?}");
+    assert!(fe.usage.is_finite(), "{fe:?}");
+    assert!(
+        unlinked
+            .notes
+            .iter()
+            .any(|n| n.contains("attachment point A1 linked to no joint")
+                && n.contains("NOT ON THE SAFE SIDE")),
+        "{:?}",
+        unlinked.notes
+    );
     let offset = t2(ohl_line::StructurePoint {
         joint: Some("A1".into()),
         offset: [0.0, 0.5, 0.0],

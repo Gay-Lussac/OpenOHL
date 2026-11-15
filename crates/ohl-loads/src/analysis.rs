@@ -364,7 +364,8 @@ impl Analyses {
     /// The finite-element check of a structure of type `t` (none: the
     /// type has no model, or no member a capacity); `placed`: the
     /// structure as resolved — the extension it stands on, and its
-    /// attachment points' links (an unlinked one refuses the check). Members with a
+    /// attachment points' links (an unlinked one's loads left out, said not
+    /// on the safe side — owner 2026-11-15). Members with a
     /// profile from the section library take the structures' wind of the
     /// case ([`LoadCase::structure_wind`]: across the line, its pressure
     /// times its factor — by default the weather case's pressure and the
@@ -436,11 +437,18 @@ impl Analyses {
             // crate::flexibility.)
             let point = placed.and_then(|s| s.point(label));
             let link = crate::flexibility::placed_link(placed, label);
-            if link == ohl_structures_fe::condense::Link::Unlinked {
-                return refused(format!(
-                    "attachment point {label} is not linked to a joint of the type: its \
-                     loads are refused until it is linked"
-                ));
+            // Linked to no joint (the placed structure's point unlinked, or
+            // the type's point standing alone): allowed, its loads left out
+            // and said not on the safe side (owner 2026-11-15).
+            let alone = link == ohl_structures_fe::condense::Link::Unlinked
+                || (link == ohl_structures_fe::condense::Link::Type
+                    && model.unlinked_points.iter().any(|l| l == label));
+            if alone {
+                let n = format!("model: {}", ohl_structures::unlinked_words(&[label]));
+                if !notes.contains(&n) {
+                    notes.push(n);
+                }
+                continue;
             }
             let at = model.attachment_load(label, &link, force);
             match at {

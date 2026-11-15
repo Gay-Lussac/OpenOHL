@@ -297,6 +297,8 @@ pub fn write(
     for (label, joint) in &body.points {
         if let Some(p) = entry(doc, "point", "label", label) {
             p.remove("point");
+            // Linked to the tip now: no longer standing alone.
+            p.remove("unlinked");
             p.insert("node", toml_edit::value(joint.clone()));
         }
     }

@@ -889,6 +889,10 @@ pub struct Model {
     /// The structure type's points on nodes (2026-10-21; a separate
     /// model's nodes name theirs by [`Node::attachment`]).
     pub joint_points: Vec<JointPoint>,
+    /// The structure type's attachment points linked to no joint
+    /// (`unlinked = true`, owner 2026-11-15): their loads reach no member
+    /// — left out by the structure checks, said not on the safe side.
+    pub unlinked_points: Vec<String>,
     /// Whether the joint details of a structure file were taken into the
     /// members' ends and end offsets (owner 2026-11-11).
     pub joint_use: JointUse,
@@ -1258,6 +1262,7 @@ impl Model {
             members,
             loads,
             joint_points: Vec::new(),
+            unlinked_points: Vec::new(),
             joint_use: JointUse::default(),
             capacity_plugin,
         };
