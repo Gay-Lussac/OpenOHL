@@ -23,44 +23,45 @@ import and export come later; CSV works today.
 
 ## The flow
 
-A placed structure gets the line's loads two ways ([How load cases
-reach a structure](load-cases-to-structures.md) shows the whole flow):
-its **library cases** — its set of the line's load case library, with
-the library's factors, read-only here ([The line's load cases: the
-library](structure-app.md#the-lines-load-cases-the-library), since
-2026-11-03) — and the **line results** described here, the raw
-ingredients of the structure's own load cases.
+A placed structure gets the line's loads as its **library cases** — the
+cases of its structure groups of the line's load case library, with the
+library's factors, read-only here ([The line's load cases: the
+library](structure-app.md#the-lines-load-cases-the-library); [Load cases
+per group](load-cases-per-group.md)) — and **nothing else** since
+2026-11-15 (owner: the weather cases once sent unfactored from Line ›
+Criteria › Loads for structures are gone; [How load cases reach a
+structure](load-cases-to-structures.md) shows the whole flow). The
+structure's own (extra) load cases described here take the **unfactored**
+forces of any of these library cases as their raw ingredient.
 
 ```
  OHL-Design (the line)                      OHL-Structure (a structure)
- weather cases sent ──► line results ──────► load case
-  (Line › Criteria › Loads      unfactored forces    1. line forces: a line result,
-   for structures)       at each point           V / T / L factors, points off
-                         a wind case twice:   2. loads on the structure itself:
-                         from the left and       self weight, wind on the body,
-                         from the right          ice and weight, point loads
+ its groups' library cases ──► line cases ─────► load case
+  (Structures › Load cases      unfactored forces    1. line forces: a line case,
+   per group)                   at each point        V / T / L factors, points off
+                                + the library's      2. loads on the structure itself:
+                                  factors (its own     self weight, wind on the body,
+                                  library case)        ice and weight, point loads
                                                         │
                                                         ▼
                                               load table ──► finite-element check
 ```
 
-1. **A line result is forces, nothing else.** Each weather case ticked in
-   Line › Criteria › Loads for structures ([Loads for
-   structures](desktop-app.md#loads-for-structures)) is a **line
-   result**: the wires' and strings' forces at each attachment point,
-   unfactored. A weather case with wind is two line results, `<case> —
-   wind from the left` and `<case> — wind from the right`; without wind,
-   one, named as the weather case — `<case> (weather case)` when the
-   load case library has a case of that name (2026-11-14). A broken wire (roadmap O9) is a line
-   result too: a load case of the line with a broken wire ticked there
-   is sent as its weather case with that wire broken, named
-   `<weather case> — <section> span <n> broken` (with wind, twice:
-   `high wind — S3 span 2 broken — wind from the left`), unfactored like
-   the others; its factors (a code's impact factor on the longitudinal
-   load) are the structure load case's.
-2. **The factors of a line result are in the structure load case**
-   that takes it, in one place. (A library case brings its own: the
-   library's.)
+1. **A line case is forces, nothing else, here.** Each library case the
+   structure takes comes with the wires' and strings' forces at each
+   attachment point **unfactored** (and factored, for the library case
+   itself): an extra case names it in its line forces and takes the
+   unfactored ones. A broken-wire case of the library (roadmap O9) comes
+   the same way: its wires broken as the library says (several
+   together; one breaking every span in turn: a case per break,
+   `ice (span 2 broken)`), its factors (a code's impact factor on the
+   longitudinal load) given again in the extra case. Older line-values
+   files may still hold weather cases sent on their own (`<case> — wind
+   from the left`, `<case> (weather case)`, `<weather case> — <section>
+   span <n> broken`): OHL-Structure says they are no longer sent.
+2. **The factors of an extra case are in the extra case** that takes
+   the line case's forces, in one place. (A library case brings its own:
+   the library's.)
 3. **A load case has two parts**, each with its own factors, with a
    description (several lines) and a strength factor.
 
@@ -114,11 +115,11 @@ Every key is checked: a mistyped one is refused, naming it.
 
 ## 1. Line forces (`[[load_case.line]]`)
 
-One table per line result taken:
+One table per line case taken:
 
 | Field | Default | Notes |
 |---|---|---|
-| `result` | | The line result, by its name (as the line sent it). |
+| `result` | | The line case, by its name (a library case of the placed structure, as the line sent it: its **unfactored** forces). A name the line does not send gets no value — said in OHL-Structure's status block, NOT ON THE SAFE SIDE. |
 | `vertical`, `transverse`, `longitudinal` | 1 | The factor on each axis (vertical down, transverse right of the line, longitudinal ahead). |
 | `sets` | every point | Only the points carrying these sets. With `back` / `ahead`: at a point holding several sets, only these sets' pulls are scaled ([below](#some-sets-of-a-shared-point)). |
 | `off` | none | Points (labels) whose line forces are left out — works on the line with a conductor removed. |
@@ -175,9 +176,9 @@ of the solved pull — not an equilibrium state. With one side really
 slack the strings swing and the tensions change: the real one-sided pull
 can be smaller or larger. Every row of such line forces says so in its
 note, as do the solved case's notes, the report and the exports'
-notes. The exact treatment is a line result solved with the one-sided
-condition (a broken or removed wire, [Loads for
-structures](desktop-app.md#loads-for-structures)); the theory is in
+notes. The exact treatment is a library case solved with the one-sided
+condition (a broken or removed wire, [Load
+cases](loads.md#a-broken-wire-casebroken)); the theory is in
 [Structure analysis](../theory/structures-fe.md#a-share-of-the-spans-pull-a-load-assumption).
 
 #### Some sets of a shared point
@@ -220,7 +221,7 @@ per point and case.
 | Sub-part | Fields | In the load table |
 |---|---|---|
 | `self_weight` | a factor (0 or more) | No rows: the solve puts each member's own weight (× its dead-load factor) × this factor on the members. |
-| `[[…wind]]` | `from`: `left`, `right`, `ahead`, `back`, or 45° between them `ahead_left`, `ahead_right`, `back_left`, `back_right`; `pressure` (Pa) **or** `pressure_of` (a line result: its weather case's wind pressure, unfactored); `factor` (default 1) | One row per member (source `wind`, rows 2001, …). |
+| `[[…wind]]` | `from`: `left`, `right`, `ahead`, `back`, or 45° between them `ahead_left`, `ahead_right`, `back_left`, `back_right`; `pressure` (Pa) **or** `pressure_of` (a line case: its wind pressure on the structures, unfactored); `factor` (default 1) | One row per member (source `wind`, rows 2001, …). |
 | `[[…ice]]` | `thickness` and `density`, **or** `load` (N/m); `members` (`"all"`, the default, or ids); `factor` (default 1) | One row per member (source `ice`, rows 3001, …), down. |
 | `[[…point]]` | `value` (a force), `direction`, `points` / `sets` / `phases` (as in the older form) | One row per point (source `point`, rows 4001, …). |
 
@@ -292,14 +293,15 @@ library](structure-app.md#the-lines-load-cases-the-library)).
   phase — one line forces table per line case and points (an axis given
   twice: its factors added; one not given: factor 0); a `value` at points
   — a point load; the case's `self_weight` — the structure's self
-  weight. A line case `weather: X` becomes the line result `X`; a weather
-  case the line now sends twice (wind from the left and from the right)
-  stays, said ("choose one"). The rest stays in the older form, said: the
+  weight. A line case `weather: X` becomes the line case `X` (a library
+  case of that name is then needed); one sent twice (wind from the left
+  and from the right) in files of before 2026-11-15 stays, said ("choose
+  one"). The rest stays in the older form, said: the
   factored values (the line sends its forces unfactored now), shares and
   sides, the pressures (the wind on the body is the member wind now, not
   the same rule). One undo step.
 - **Mirror wind** copies a case with the wind from the other side:
-  "left" and "right" swapped in its name, description, line results and
+  "left" and "right" swapped in its name, description, line cases and
   wind on the body (`ahead_left` ↔ `ahead_right`, …; ahead and back
   stay); the points turned off and any loads in the older form stay as
   they are. A case of the mirrored name there already is not replaced.
@@ -447,15 +449,13 @@ using one is version 6, a `.ohlslc` version 2 (OHL-Structure raises the
 file when a load takes one; older programs say "newer version").
 
 The line's [structure loads](loads.md#structure-loads) give the first six
-at every point, in each **line result** the line sends (Line › Criteria › Loads
-for structures, see [Loads for structures](desktop-app.md#loads-for-structures)):
-each weather case ticked there, unfactored (factored = unfactored), named
-as the weather case; one with wind twice, `<case> — wind from the left`
-and `<case> — wind from the right` (since 2026-10-25; before, the line's
-load cases and `weather: <name>`); a broken-wire case ticked there as
-`<weather case> — <section> span <n> broken` (the section solved with
-that wire gone, [Load cases](loads.md#a-broken-wire-casebroken)). A
-recipe names the line result by that name. A value the line does not give makes a row marked **no
+at every point, in each **line case** the line sends: since 2026-11-15
+the library cases of the structure's groups ([Load cases per
+group](load-cases-per-group.md)), unfactored and factored; a broken-wire
+case as the library says (the section solved with that wire gone,
+[Load cases](loads.md#a-broken-wire-casebroken)). A recipe names the
+line case by that name. (2026-10-25 to 2026-11-15 the line also sent
+weather cases unfactored, `<case> — wind from the left`…; no longer.) A value the line does not give makes a row marked **no
 line value** (its force 0); so does every line value of a structure
 opened on its own. Such values can be typed into the table.
 

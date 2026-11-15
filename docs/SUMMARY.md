@@ -34,6 +34,7 @@
   - [The Weather cases window](user-guide/weather-cases-window.md)
 - [Load cases and structure loads (.ohllc)](user-guide/loads.md)
   - [How load cases reach a structure](user-guide/load-cases-to-structures.md)
+  - [Load cases per group](user-guide/load-cases-per-group.md)
 - [Design codes](user-guide/design-codes.md)
 - [Structure and insulator libraries (.ohls, .ohli)](user-guide/structure-library.md)
 - [Structure analysis (.ohlfe, .ohlp)](user-guide/structure-analysis.md)

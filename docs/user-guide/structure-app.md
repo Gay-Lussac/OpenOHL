@@ -97,22 +97,20 @@ ohl-structure Structures/type-02.ohls --structure T2 \
 - The line application computes the loads the wires and strings put on
   T2 in the cases it sends to its structures
   ([How load cases reach a structure](load-cases-to-structures.md)):
-  T2's **case set** of the line's load case library (its own, else its
-  type's, else every case; Line › Criteria › Load cases library, or a
-  design-code plugin), as its [library
-  cases](#the-lines-load-cases-the-library), then the weather cases
-  ticked in Criteria › Loads for structures ([Loads for
-  structures](desktop-app.md#loads-for-structures); none by default),
-  each a **line result** with every factor 1 (`<name>`, or with wind
-  `<name> — wind from the left` and `— wind from the right`). They are
+  the cases of T2's **structure groups** of the line's load case library
+  (the union of its groups' cases; in no group, every case; Line ›
+  Structures › [Load cases per group](load-cases-per-group.md), the
+  library in Line › Structures › Load cases… or from a design-code
+  plugin), as its [library cases](#the-lines-load-cases-the-library) —
+  since 2026-11-15 nothing else (the weather cases once sent unfactored
+  from Line › Criteria › Loads for structures are gone). They are
   computed as Checks › Structure loads does, in the background, and
   written beside the structure file as
   `<name>.<structure>.line-values.json` (version 7: each case with its
   source and, per case, the sections and jumpers at the structure that
   did not solve; older versions still read). Until
   they are there the header says they are being computed; with no load
-  case library and no weather case ticked it says so; a ticked case no
-  longer in the line is named. When the line changes while the application is open
+  case library it says so. When the line changes while the application is open
   (and stays unchanged for a second), the line application computes them
   again and rewrites the file; the application reads it again within
   half a second and evaluates the recipes with the new values.
@@ -120,14 +118,23 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   values panels says, in plain words, what the line gave or why not
   (2026-11-14: also, as warnings, a case of the structure's set that does
   not compute — *NOT SENT: library case "x" does not compute (why)*, the
-  others still sent — and cases of its set no longer in the line's
-  library — *NOT CHECKED: load case(s) … of T7's set not in the line's
-  load case library*):
+  others still sent — and cases of its groups no longer in the line's
+  library — *NOT CHECKED: load case(s) … of T7's groups not in the line's
+  load case library*; 2026-11-15: its groups — *Groups: T7 is in
+  suspension, angle — it takes their load cases: …*, or *in no structure
+  group … every case* —, and, as a warning, a case of the structure
+  taking the line forces of a case the line does not send — *Case X takes
+  the line forces of "storm — wind from the left", which the line does
+  not send: their rows have no value and are left out of the run — NOT ON
+  THE SAFE SIDE …*, naming the cases sent; an older line-values file
+  with unfactored weather cases sent on their own says they run as cases
+  of every factor 1, their body wind without drag or shielding, **NOT ON
+  THE SAFE SIDE**, and to open the structure again from OHL-Design):
   *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
   line's values for T2 are being computed…*; *The line gives no values
   for T7: the project has no load cases. Add them in OHL-Design
-  (Criteria › Load cases library, or a design-code plugin)…* (no load
-  case library and no weather case sent); a case
+  (Line › Structures › Load cases…, or a design-code plugin)…* (no load
+  case library); a case
   of the line without values (its sections not solved in it); a case
   **incomplete** — *Case ice incomplete: cross-section S12 not solved (why) —
   the line's forces at T2 lack its wires…*: a section or jumper at this
@@ -161,12 +168,12 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   the same names are replaced (asked first: **Replace and store**).
 - **Take the line's load cases** (Loads menu; *as they are* in the
   Load case editor while the structure has no case) writes instead one
-  load case per line result: its line forces at every point, every
-  factor 1, and (a structure with members) the wind on the body at the
-  pressure of its weather case from its side: the forces then follow the
-  line.
-- **Line loads** lists, with each case's **source** (load case, or a
-  weather case sent on its own: factored = unfactored), the line's values per point (with its sets and
+  load case per line case not rebuilt as a library case (in older
+  line-values files only, since 2026-11-15): its line forces at every
+  point, every factor 1, and (a structure with members) the wind on the
+  body at the pressure of its weather case from its side.
+- **Line loads** lists, with each case's **source** (load case; in older
+  files also a weather case sent on its own: factored = unfactored), the line's values per point (with its sets and
   phases) and load case: transverse, longitudinal, vertical, unfactored
   and factored by the line's load case, in kN, and (2026-11-10) the
   horizontal pull of its back and of its ahead spans, across and along
@@ -476,7 +483,7 @@ their menu or from View.
 | **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add a joint** (above the joint picked), **Add a member** between two joints picked, **Point on the joint** (not on a support joint: strings hang from attach joints), **Delete selected…**; the symmetry's icon (its option on hover; set in Body › Symmetry or with the Symmetry tool), **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
-| **Loads** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line result, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
+| **Loads** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line case: a library case's unfactored forces, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **Loads**: **Line loads** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
 
@@ -1193,9 +1200,10 @@ case on the right:
   a frame the sentence of what the case does, made from it (*storm — wind
   from the left: vertical × 1.35, transverse × 1.5, longitudinal × 1.0
   at every point (without A3) · self weight × 1.35 · …*).
-- **1. Line forces** (collapsible): a row per line result taken — the
-  **line result** (a list of those the line sent, each with its weather
-  case's wind on hover; opened on its own, typed by name), the
+- **1. Line forces** (collapsible): a row per line case taken — the
+  **line case** (a list of those the line sent: the structure's library
+  cases, their **unfactored** forces, broken-wire cases too; each with its
+  wind on hover; opened on its own, typed by name), the
   **vertical**, **transverse** and **longitudinal** factors, **at**
   (empty: every point, or set numbers), **Back %** and **Ahead %**
   (2026-11-10; empty: 100) — the share of the back and of the ahead
@@ -1207,12 +1215,14 @@ case on the right:
   —, **Points (n off)** — a tick per
   attachment point (its label, sets and phases) turning its line forces
   on or off; the menu stays open on a tick — and 🗑; **Add line forces**.
-  Without line results a line says where they come from (OHL-Design ›
-  Criteria › Loads for structures).
+  Without line cases a line says where they come from (the placed
+  structure's library cases: OHL-Design › Structures › Load cases per
+  group). A case naming a line case the line does not send is said in
+  the status block (NOT ON THE SAFE SIDE: its rows have no value).
 - **2. Loads on the structure itself** (collapsible): **Self weight**
   (its factor), **Wind on the body** (from ▾ — left, right, ahead,
   behind and the four between —, its own pressure or the pressure of a
-  line result ▾, × factor), **Ice and additional weight** (a thickness
+  line case ▾, × factor), **Ice and additional weight** (a thickness
   and density, or a load per metre; on `all` or member ids; × factor),
   **Point loads** (a force, a direction ▾, at points or sets), each with
   **Add** and one line saying what it does and where it lands in the
@@ -1225,7 +1235,7 @@ case on the right:
   the message says what stayed).
 
 Case buttons: **+ Case** (new), **Duplicate**, **🗑 Case**, **Mirror
-wind** (a copy with left and right swapped in its name, line results and
+wind** (a copy with left and right swapped in its name, line cases and
 body wind). A value typed in the new parts takes its unit or the one
 shown (Pa, mm, kg/m³, N/m, kN). A field is written when it is left
 (Enter, Tab or a click elsewhere), each change one undo step; the file
@@ -1291,10 +1301,12 @@ their point (a member's at its middle), **m per kN** long.
 ### The line's load cases: the library
 
 Owner, 2026-11-03: "The library's cases" (built, in active development,
-not approved yet). A placed structure opened from the line gets **its set
-of the line's load case library** (its own, else its type's, else every
-case; [Per-pylon sets](loads.md#version-4-removed-conductors-several-broken-wires-the-winds-direction-ice-and-snow-on-the-structures))
-as its **load cases**, with the library's factors: each case takes
+not approved yet). A placed structure opened from the line gets **the
+cases of its structure groups** of the line's load case library (the
+union of its groups' cases; in no group, every case; [Load cases per
+group](load-cases-per-group.md), 2026-11-15) as its **load cases**, with
+the library's factors — and since 2026-11-15 nothing else: each case
+takes
 
 1. the case's own forces at the attachment points (unfactored) × its
    vertical, transverse and longitudinal factors;
@@ -1325,24 +1337,30 @@ library* (read here, changed in OHL-Design), then the structure's own
 cases as **extra** load cases — for loads the line's cases do not give.
 The line's values of a library case are taken by that case only (no row
 of its own in the load table). An own case with a library case's name
-makes the library's `<name> (library)`. A weather case sent with the
-name of a library case (Loads for structures) arrives as `<name>
-(weather case)` (2026-11-14, one name one meaning: before, OHL-Structure
-took the library case's forces for both), said in the status block; an
-extra case still taking line forces `<name>` gets the library case's
-and the status block says so, to pick `<name> (weather case)` there if
-that was meant. Older line-values files (version
-4 and before) and lines without a load case library give none: the own
-cases as before. The weather cases ticked in Criteria › Loads for
-structures still come as line results (unfactored, for the own cases),
-to every structure whatever its set; a broken-wire case sent breaks every
-wire it lists, all together, and leaves out its removed conductors
-(`high wind — S1 span 1 broken, S1 span 2 broken — wind from the left`).
+makes the library's `<name> (library)`. An extra case takes the
+**unfactored** forces of any library case of the structure in its *1.
+line forces* (broken-wire cases too: every wire the case lists broken,
+all together, its removed conductors left out) with its own factors.
+Older line-values files (version 4 and before) and lines without a load
+case library give none: the own cases as before.
+
+**Gone since 2026-11-15** (owner: Loads for structures is gone): the
+weather cases once sent unfactored to every structure (`storm — wind
+from the left`, `everyday (weather case)`, `high wind — S1 span 2
+broken`). An older line-values file still holding some runs them as
+before, and the status block says they are not a design check and **NOT
+ON THE SAFE SIDE** (every factor 1; their body wind as below, without
+drag or shielding); an extra case naming one gets no value there once
+the file is written again, said in the warning colour. Open the
+structure again from OHL-Design to get its library cases.
 
 ### The line's wind on the structure body
 
-Each line case comes with the wind on the structure's own body as the
-line's checks take it: the load case's own values for the structures
+A library case puts its wind on the members as the line's **fe** check
+does (the member wind: the cross-section library's drag and shielding;
+the one rule since 2026-11-15). In an **older line-values file**, a line
+case not rebuilt as a library case comes with the wind on the
+structure's own body as the line's checks take it: the load case's own values for the structures
 (`[case.structure]` of the `.ohllc`,
 [Load cases](loads.md#wind-on-the-structures-apart-from-the-wires-casestructure))
 or its weather case's pressure and transverse factor. A line case with
@@ -1355,7 +1373,9 @@ same pressure as the line's **fe** and **pole** checks. (How the
 pressure becomes member forces still differs: the line's member wind
 takes the cross-section library's drag and shielding factors, the surface
 loads here the projected area without drag or shielding,
-[theory](../theory/structures-fe.md#the-structures-wind-of-a-load-case).) Recipes take it with `what = "structure_wind_factored"` (or
+[theory](../theory/structures-fe.md#the-structures-wind-of-a-load-case):
+**NOT ON THE SAFE SIDE** for a lattice body, said in the status block.)
+Recipes take it with `what = "structure_wind_factored"` (or
 `structure_wind`, unfactored) on `members`; **Take the line's load
 cases** adds that load to a case taken from a line case with wind, and
 **Store in the structure file** stores it as a `pressure` on every

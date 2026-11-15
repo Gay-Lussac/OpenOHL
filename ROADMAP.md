@@ -921,9 +921,14 @@ already.)
 > default) or kept out?
 
 ### O38. Load cases by structure groups
-Groups of structures whose members follow rules — types, line angle
-range, station range, height, elevation, dead end or not — taking a set
-of load cases (today: per structure, per type, or every case). (S)
+Built 2026-11-15 (in active development, not approved yet): Line ›
+Structures › Load cases per group — groups picked or by rules (types,
+line angle, station on an alignment, dead end), a structure taking the
+union of its groups' cases (in none: every case); the per-structure and
+per-type sets read into groups; see the user guide's *Load cases per
+group*. Still open: rules on the height and the ground elevation, and
+the design-code plugins tagging their cases so a group takes cases by
+tag. (S)
 
 ### O39. Also found, smaller
 A background "design OK" flag per structure and section while editing;
@@ -1687,9 +1692,10 @@ the worst of each force kept) and optionally the set (`[case.broken]`,
 by their strings alone (the strings next to the break swing to the spans
 left), giving the unbalanced longitudinal loads at the structures
 (validation `brokenwire-001…003`, hand-checked); `ohl line
---load-cases`, the Load cases library, and Criteria › Loads for
-structures sends such a case to OHL-Structure as a line result
-`<weather case> — S3 span 2 broken`. Still to come: the codes' security
+--load-cases`, the Load cases library; such a case reaches
+OHL-Structure as a library case of the structure's groups (since
+2026-11-15; before, also as an unfactored line result from Criteria ›
+Loads for structures, now gone). Still to come: the codes' security
 and construction cases written by their plugins (the format is
 documented for them), a single subconductor of a bundle broken, the
 dynamic impact beyond a factor.
