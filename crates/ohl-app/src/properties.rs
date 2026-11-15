@@ -169,7 +169,7 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
     let routes_of = model.routes_of();
     let routes: &[String] = routes_of.structures.get(&id).map_or(&[], Vec::as_slice);
     // Attachment points whose joint is gone (or unlinked): drawn red,
-    // the structure's loads refused until they are linked again.
+    // their loads left out of the structure check (said) until linked.
     let lost: Vec<String> = crate::link_tool::unlinked_points(line)
         .into_iter()
         .filter(|(st, _, _)| *st == id)
@@ -179,8 +179,9 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
         ui.colored_label(
             ui.visuals().warn_fg_color,
             format!(
-                "Unlinked attachment point(s) {}: drawn red; its loads are refused \
-                         until they are linked again (Link tool, or Replace's Attachment points)",
+                "Unlinked attachment point(s) {}: drawn red; NOT ON THE SAFE SIDE: their \
+                         loads are left out of the structure check until they are linked again \
+                         (Link or Move attachment point tool, or Replace's Attachment points)",
                 lost.join(", ")
             ),
         );
@@ -528,8 +529,8 @@ fn point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label:
             if ui
                 .add_enabled(typed && p.is_linked(), egui::Button::new("Unlink"))
                 .on_hover_text(
-                    "It stays where it is; the structure's loads are refused until it \
-                             is linked again",
+                    "It stays where it is; its loads are left out of the structure check \
+                             (said, not on the safe side) until it is linked again",
                 )
                 .clicked()
             {
@@ -563,8 +564,8 @@ fn point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label:
                     && ui
                         .button("Unlink")
                         .on_hover_text(
-                            "It stays where it is; the structure's loads are refused \
-                                     until it is linked again",
+                            "It stays where it is; its loads are left out of the structure \
+                                     check (said, not on the safe side) until it is linked again",
                         )
                         .clicked()
                     && let Ok((what, command)) =

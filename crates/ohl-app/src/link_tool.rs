@@ -11,9 +11,20 @@
 //!   structure chooses it; the attach joints of its type are ringed in
 //!   the 3D view (only attach joints take links: owner decision
 //!   2026-10-21), the one under the pointer showing the offset's length
-//!   and its moment arm; the tool click on one links the point there
-//!   where it is, the distance kept as its offset
+//!   and its moment arm; the tool click on one links the point there —
+//!   on the joint at once; farther than [`ohl_structures::ON_JOINT`] (1
+//!   mm) the [`LinkWindow`] asks (owner 2026-11-15) onto the joint (the
+//!   default) or its position kept, the distance its offset
 //!   ([`ohl_session::Command::LinkPoint`]: one command, one undo).
+//! - **Move attachment point** ([`crate::tools::Tool::MovePoint`], owner
+//!   2026-11-15): the same two clicks (a [`PointChooser`] first when
+//!   several points share the place clicked), the window always — the
+//!   question above when needed, and **this structure only** (the same
+//!   command) or **the type** ([`type_edit`]: its file edited with
+//!   `ohl_structure_edit::links::relink_point`, read again). The
+//!   structure's own links go to OHL-Structure in its line-values file
+//!   ([`placed_links`]); a type saved there is compared here
+//!   ([`type_links`], [`type_links_changed`]) and said.
 //!   Another joint is neither ringed nor clickable: under the pointer it
 //!   says "not an attach joint: set its kind to attach in OHL-Structure".
 //!   Relinking a linked point is the same. Escape, or the tool click
@@ -27,7 +38,8 @@
 //!   its length and its moment per load case (when Checks › Structure
 //!   loads has computed them).
 //! - **Unlinked points** (their joint gone from the type, or unlinked)
-//!   are drawn red: their structure's loads are refused until they are
+//!   are drawn red: their loads are left out of the structure check (said,
+//!   not on the safe side; owner 2026-11-15) until they are
 //!   linked again.
 
 use ohl_line::links::{PlacedJoint, linked, placed_joints, rigid_links, unlinked};
@@ -277,8 +289,321 @@ pub fn link_at(
     ))
 }
 
+/// Where a move of an attachment point goes (owner 2026-11-15): this
+/// placed structure only (its own relink, a command of the line), or its
+/// structure type (the `.ohls` file: every structure of the type).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    /// This structure only: the line's relink (one command, one undo).
+    ThisStructure,
+    /// The structure type: its file edited as OHL-Structure edits it, read
+    /// again (every structure of the type follows).
+    Type,
+}
+
+/// The Link or Move attachment point window: the point, the joint, how
+/// it goes there (asked when it is not on it) and, for a move, where.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkWindow {
+    /// The structure.
+    pub structure: String,
+    /// The attachment point.
+    pub label: String,
+    /// The joint of its type.
+    pub joint: String,
+    /// From the joint to the point as it is, in the structure's axes, m.
+    pub offset: [f64; 3],
+    /// The point is not on the joint (farther than
+    /// [`ohl_structures::ON_JOINT`]): onto it or its position kept is
+    /// asked.
+    pub ask_how: bool,
+    /// The answer (default: onto the joint).
+    pub how: ohl_structure_edit::links::LinkHow,
+    /// The Move attachment point tool: the scope is offered.
+    pub moving: bool,
+    /// This structure only (default) or the type.
+    pub scope: Scope,
+    /// Why the last Apply was refused.
+    pub error: Option<String>,
+}
+
+/// Several attachment points at the place clicked (Move attachment
+/// point): one to choose.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointChooser {
+    /// The structure.
+    pub structure: String,
+    /// Its points there.
+    pub labels: Vec<String>,
+}
+
+/// The attachment points of structure `id` at the place of its point
+/// `label` (within [`ohl_structures::ON_JOINT`]), `label` first: more
+/// than one, the Move attachment point tool asks which.
+pub fn sharing(model: &Model, id: &str, label: &str) -> Vec<String> {
+    let Some(s) = model.line.structure(id) else {
+        return Vec::new();
+    };
+    let Some(p) = s.point(label) else {
+        return Vec::new();
+    };
+    let mut out = vec![label.to_owned()];
+    for q in s.points.iter().filter(|q| q.label != label) {
+        let d = (0..3)
+            .map(|k| (q.position[k] - p.position[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        if d <= ohl_structures::ON_JOINT {
+            out.push(q.label.clone());
+        }
+    }
+    out
+}
+
+/// What hangs from attachment point `label` of structure `id`: its
+/// strings and their sets, in words.
+pub fn hanging(model: &Model, id: &str, label: &str) -> String {
+    let Some(s) = model.line.structure(id) else {
+        return String::new();
+    };
+    let strings: Vec<&ohl_line::InsulatorString> =
+        s.strings.iter().filter(|x| x.top == label).collect();
+    if strings.is_empty() {
+        return "nothing hangs from it".into();
+    }
+    let mut sets: Vec<u32> = strings
+        .iter()
+        .filter_map(|x| s.wires.iter().find(|w| w.label == x.wire)?.set)
+        .collect();
+    sets.sort_unstable();
+    sets.dedup();
+    let names: Vec<&str> = strings.iter().map(|x| x.label.as_str()).collect();
+    if sets.is_empty() {
+        format!("string {}", names.join(", "))
+    } else {
+        format!(
+            "string {} (set {})",
+            names.join(", "),
+            sets.iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+/// The window for linking (or moving, `moving`) attachment point `label`
+/// of structure `id` to joint `joint`: refused when the joint takes no
+/// link. None: nothing to ask (Link, the point on the joint).
+pub fn window_for(
+    model: &Model,
+    id: &str,
+    label: &str,
+    joint: &str,
+    moving: bool,
+) -> Result<Option<LinkWindow>, String> {
+    model.can_edit()?;
+    let (s, t) = typed(model, id)?;
+    let p = s
+        .point(label)
+        .ok_or_else(|| format!("{id} has no attachment point {label}"))?;
+    let j = placed_joints(t, s)
+        .into_iter()
+        .find(|j| j.joint.id == joint && j.joint.source == ohl_structures::JointSource::Node)
+        .ok_or_else(|| format!("{id}: type {} has no joint {joint}", t.id))?;
+    if j.joint.kind != Some(JointKind::Attach) {
+        return Err(format!("joint {joint}: {}", ohl_structures::NOT_ATTACH));
+    }
+    let o = offset(s.orientation_deg, j.position, p.position);
+    let ask_how = o.iter().map(|v| v * v).sum::<f64>().sqrt() > ohl_structures::ON_JOINT;
+    if !moving && !ask_how {
+        return Ok(None);
+    }
+    Ok(Some(LinkWindow {
+        structure: id.to_owned(),
+        label: label.to_owned(),
+        joint: joint.to_owned(),
+        offset: o,
+        ask_how,
+        how: ohl_structure_edit::links::LinkHow::Onto,
+        moving,
+        scope: Scope::ThisStructure,
+        error: None,
+    }))
+}
+
+/// The command linking attachment point `label` of structure `id` to
+/// joint `joint` as `how` says: onto it (no offset: the point and the
+/// strings hanging from it move there), or kept where it is at an offset
+/// — this structure's own link, one command.
+pub fn move_command(
+    model: &Model,
+    id: &str,
+    label: &str,
+    joint: &str,
+    how: ohl_structure_edit::links::LinkHow,
+) -> Result<(String, Command), String> {
+    match how {
+        ohl_structure_edit::links::LinkHow::KeepPosition => link_command(model, id, label, joint),
+        ohl_structure_edit::links::LinkHow::Onto => {
+            let (what, c) = link_at(model, id, label, joint, [0.0; 3])?;
+            Ok((
+                format!("{what} (moved onto the joint, its strings with it)"),
+                c,
+            ))
+        }
+    }
+}
+
+/// Attachment point `label` of structure `id`'s type moved to joint
+/// `joint` in the type's file (every structure of the type follows), as
+/// `how` says, with the edit functions OHL-Structure uses: the file, its
+/// new text and what was done. Refused while the type is open in
+/// OHL-Structure (`open_there`: its own copy would overwrite this one).
+pub fn type_edit(
+    model: &Model,
+    id: &str,
+    label: &str,
+    joint: &str,
+    how: ohl_structure_edit::links::LinkHow,
+    open_there: bool,
+) -> Result<(std::path::PathBuf, String, String), String> {
+    model.can_edit()?;
+    let (_, t) = typed(model, id)?;
+    if open_there {
+        return Err(format!(
+            "type {} is open in OHL-Structure: move the point there (its Move attachment point \
+             tool), or close it first",
+            t.id
+        ));
+    }
+    let path = model
+        .types
+        .as_ref()
+        .and_then(|(types, _)| types.path(&t.id))
+        .ok_or_else(|| format!("type {}: no file read", t.id))?
+        .to_path_buf();
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| format!("{}: {e}", path.display()))?;
+    ohl_structure_edit::links::relink_point(&mut doc, t, label, joint, how)?;
+    let users: Vec<&str> = model
+        .line
+        .structures
+        .iter()
+        .filter(|s| s.structure_type.as_deref() == Some(t.id.as_str()))
+        .map(|s| s.id.as_str())
+        .collect();
+    Ok((
+        path,
+        doc.to_string(),
+        format!(
+            "type {}: attachment point {label} moved to joint {joint}{} — {} structure(s) follow \
+             ({})",
+            t.id,
+            match how {
+                ohl_structure_edit::links::LinkHow::Onto => " (onto it)",
+                ohl_structure_edit::links::LinkHow::KeepPosition => " (its position kept)",
+            },
+            users.len(),
+            users.join(", ")
+        ),
+    ))
+}
+
+/// The links of type `id`'s attachment points (label, joint, offset; a
+/// point standing alone: no joint), to tell what a save elsewhere
+/// changed.
+pub fn type_links(model: &Model, id: &str) -> Vec<(String, Option<String>, [f64; 3])> {
+    let Some(t) = model.types.as_ref().and_then(|(types, _)| types.get(id)) else {
+        return Vec::new();
+    };
+    t.points
+        .iter()
+        .map(|p| match t.point_link(&p.label) {
+            Some((j, o)) => (p.label.clone(), Some(j.to_owned()), o),
+            None => (p.label.clone(), None, [0.0; 3]),
+        })
+        .collect()
+}
+
+/// What changed between type links `before` and `after` for the
+/// structures `users` of the type, in words (`T7, T9: point A1 linked to
+/// joint 42Y`).
+pub fn type_links_changed(
+    users: &[String],
+    before: &[(String, Option<String>, [f64; 3])],
+    after: &[(String, Option<String>, [f64; 3])],
+) -> Vec<String> {
+    let whose = if users.is_empty() {
+        "no structure of the line".to_owned()
+    } else {
+        users.join(", ")
+    };
+    after
+        .iter()
+        .filter(|a| !before.contains(a))
+        .map(|(l, j, o)| match j {
+            Some(j) if *o == [0.0; 3] => format!("{whose}: point {l} linked to joint {j}"),
+            Some(j) => format!(
+                "{whose}: point {l} linked to joint {j} (offset {:.3}, {:.3}, {:.3} m)",
+                o[0], o[1], o[2]
+            ),
+            None => format!("{whose}: point {l} linked to no joint"),
+        })
+        .collect()
+}
+
+/// The placed structures' own links that differ from their types' (the
+/// stored line: a relink, a move, an unlink made here), per structure
+/// id — sent to OHL-Structure in the line-values file (version 9).
+pub fn placed_links(
+    model: &Model,
+) -> std::collections::HashMap<String, Vec<ohl_structure_loads::PlacedLink>> {
+    let mut out = std::collections::HashMap::new();
+    let Some((types, _)) = &model.types else {
+        return out;
+    };
+    let stored = model.stored_line().unwrap_or(&model.line);
+    for s in &stored.structures {
+        let Some(t) = s.structure_type.as_deref().and_then(|t| types.get(t)) else {
+            continue;
+        };
+        let resolved = model.line.structure(&s.id);
+        let mut links = Vec::new();
+        for own in &s.points {
+            if !t.points.iter().any(|p| p.label == own.label) {
+                continue;
+            }
+            // As resolved (its joint found, unlinked when its joint went).
+            let p = resolved.and_then(|r| r.point(&own.label)).unwrap_or(own);
+            let link = ohl_structure_loads::PlacedLink {
+                label: p.label.clone(),
+                joint: (!p.unlinked).then(|| p.joint.clone()).flatten(),
+                offset: if p.unlinked { [0.0; 3] } else { p.offset },
+                unlinked: p.unlinked || p.joint.is_none(),
+            };
+            let same = match (t.point_link(&p.label), &link.joint) {
+                (Some((j, o)), Some(lj)) => {
+                    j == lj && (0..3).all(|k| (o[k] - link.offset[k]).abs() <= 1e-9)
+                }
+                (None, None) => true,
+                _ => false,
+            };
+            if !same {
+                links.push(link);
+            }
+        }
+        if !links.is_empty() {
+            out.insert(s.id.clone(), links);
+        }
+    }
+    out
+}
+
 /// The command unlinking attachment point `label` of structure `id`: it
-/// stays where it is, its structure's loads refused until it is linked
+/// stays where it is, its loads left out of the structure check until it is linked
 /// again.
 pub fn unlink_command(model: &Model, id: &str, label: &str) -> Result<(String, Command), String> {
     model.can_edit()?;
@@ -289,8 +614,8 @@ pub fn unlink_command(model: &Model, id: &str, label: &str) -> Result<(String, C
     let u = unlinked(p);
     Ok((
         format!(
-            "unlinked attachment point {label} of {id}: it stays where it is, the structure's \
-             loads are refused until it is linked again"
+            "unlinked attachment point {label} of {id}: it stays where it is; NOT ON THE SAFE \
+             SIDE: its loads are left out of the structure check until it is linked again"
         ),
         Command::UnlinkPoint {
             structure: id.to_owned(),
@@ -352,7 +677,8 @@ pub fn point_rows(
     if p.unlinked {
         rows.push((
             "joint".to_owned(),
-            "unlinked: the structure's loads are refused until it is linked again (Link tool)"
+            "unlinked: its loads are left out of the structure check (not on the safe side) until \
+             it is linked again (Link or Move attachment point tool)"
                 .to_owned(),
         ));
         return rows;
@@ -360,7 +686,9 @@ pub fn point_rows(
     if p.joint.is_none() {
         rows.push((
             "joint".to_owned(),
-            "none named: its type gives it as an attachment (version 1), found by it".to_owned(),
+            "none named: as its type links it (a type's point standing alone, or a version 1 \
+             attachment found by it)"
+                .to_owned(),
         ));
         return rows;
     }

@@ -91,7 +91,9 @@ pub(super) fn popups(ctx: &egui::Context, r: &mut Ready) {
         || r.replace.is_some()
         || r.editor.is_some()
         || r.display_window.is_some()
-        || r.lines_window.is_some();
+        || r.lines_window.is_some()
+        || r.link_window.is_some()
+        || r.point_chooser.is_some();
     if open && !r.popup_open {
         let crosshair = r.view3d.rect.map(|x| x.center());
         let at = if r.view3d.captured {
@@ -119,8 +121,9 @@ pub(super) fn popups(ctx: &egui::Context, r: &mut Ready) {
 }
 
 /// The keys of the tool windows ([`tool_window`]).
-const TOOL_WINDOWS: [&str; 8] = [
+const TOOL_WINDOWS: [&str; 9] = [
     "xsection",
+    "link",
     "move",
     "goto",
     "confirm",
@@ -275,9 +278,12 @@ pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
         r.jumper_via.clear();
         r.status = Some(("Add jumper: cancelled".into(), false));
     }
-    // An attachment point chosen with the Link tool: Escape gives it up.
+    // An attachment point chosen with the Link (or Move attachment point)
+    // tool: Escape gives it up.
     if r.link_from.is_some()
         && !windows
+        && r.link_window.is_none()
+        && r.point_chooser.is_none()
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         r.link_from = None;
@@ -415,6 +421,8 @@ pub(super) fn edit_keys(ctx: &egui::Context, r: &mut Ready) {
             || r.jumper_from.is_some()
             || r.jumper_tap.is_some()
             || r.link_from.is_some()
+            || r.link_window.is_some()
+            || r.point_chooser.is_some()
             || r.spacer_from.is_some();
         if (r.selection != Selection::None || !r.model.selected_also.is_empty())
             && !busy
@@ -764,6 +772,7 @@ pub(super) fn tool_windows(
     first_steps_window(ctx, r);
     alignment_windows(ctx, r);
     crate::replace::window(ctx, r, rs);
+    link_windows::link_windows(ctx, r);
     editor_window(ctx, r, rs);
     crate::lidar_edit::frame(ctx, r);
     display_window(ctx, r);
@@ -1059,6 +1068,7 @@ pub(crate) fn menu_tools(target: &Selection) -> Vec<(crate::tools::Tool, &'stati
             (Tool::AddString, "Add string…", false),
             (Tool::AddPost, "Add post insulator…", false),
             (Tool::Link, "Link to a joint…", true),
+            (Tool::MovePoint, "Move to a joint…", true),
         ],
         Selection::AlignmentPoint { .. } => vec![
             (Tool::Edit, "Edit…", false),
@@ -1230,6 +1240,8 @@ pub(super) fn escape_busy(ctx: &egui::Context, r: &Ready) -> bool {
         || r.jumper_from.is_some()
         || r.jumper_tap.is_some()
         || r.link_from.is_some()
+        || r.link_window.is_some()
+        || r.point_chooser.is_some()
         || r.spacer_from.is_some()
         || !r.measuring.picks.is_empty()
         || r.view3d.handles.drag.is_some()
