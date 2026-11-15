@@ -584,11 +584,26 @@ pub fn condense(
                 }
             }
             let internal = full.k.mul(&ux);
+            // The unit load of this column: at its place's node, force
+            // e_k and its offset's moment.
+            let (place, k) = (&places[col / 3], col % 3);
+            let mut unit = [0.0; 6];
+            unit[k] = 1.0;
+            unit[3..].copy_from_slice(&place_moments[col / 3][k]);
             for h in &ground {
                 let base = if h.rotation { 3 } else { 0 };
                 let force: f64 = match h.axis {
-                    // A removed direction: what the members put on it.
-                    Some(a) => full.eq[h.node][base + a].map_or(0.0, |q| internal[q]),
+                    // A removed direction: what the members put on it,
+                    // less the load there (all of it taken by the hold
+                    // when only the hold resists it).
+                    Some(a) => {
+                        let load = if h.node == place.node {
+                            unit[base + a]
+                        } else {
+                            0.0
+                        };
+                        full.eq[h.node][base + a].map_or(0.0, |q| internal[q]) - load
+                    }
                     // A spring: its force.
                     None => {
                         h.stiffness
@@ -606,7 +621,6 @@ pub fn condense(
                         1.0
                     };
                 if share > HELD_LIMIT {
-                    let place = &places[col / 3];
                     return Err(Rigid::HeldToGround {
                         label: place.labels[0].clone(),
                         joint: model.node_name(h.node),

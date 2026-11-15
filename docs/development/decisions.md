@@ -10,6 +10,46 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Structure flexibility in the line solve: plan approved, phases 0–2
+built** (owner, on the plan for calculation levels 3 and 4: "keep the
+larger of rigid and flexible, otherwise your recommendations"). Decided:
+calculation level 3
+first, level 4 on the same loop; wires and structures coupled by an
+iteration on the attachment points' displacements (each keeps its own
+solver), not one combined model; the drawn geometry is the structure as
+strung; level 3's matrix is the tangent at the stringing state; three
+translations per attachment point with every coupling between points;
+the structure's own wind and ice included; the interaction at unfactored
+loads, the load case's factors on the resulting forces; one line setting
+with a per-run override (later per check and per structure group);
+structures without a computable model rigid and listed; internal
+clearances rigid until the structure body is drawn deflected; a case
+whose iteration does not converge fails; a structure failing at level 4
+is reported failing and taken linear; the whole line coupled; ruling-span
+sections rigid; a pole fixed at the ground line, said not on the safe
+side; the default stays rigid. **Structure loads and usage are never
+below rigid**: the structure check keeps, per structure, point and case,
+the larger of the rigid and the flexible result, the change shown; the
+other results take the flexible solve where it is less favourable, or
+check both. Calculation level (1–4: rigid … full coupled) is kept apart
+from a structure's detail level. Built (internal, no setting, no result
+changed): the theory page [Structure flexibility in the line
+solve](../theory/structure-flexibility.md) (phase 0); a structure, a pole
+and a placed structure condensed to their attachment points by static
+condensation of the tangent at a reference state, with the reasons a
+structure stays rigid and a memo key (phase 1,
+`ohl_structures_fe::condense`, `ohl-loads` `flexibility`; the structure
+check's point mapping now one function shared with it,
+`Model::attachment_load`); a section solved with its structure points
+moved and its stiffness there (phase 2, `ohl_wirefe::Model::support_stiffness`,
+`Coupling::moved`, `SectionShape::support_stiffness`; without a move,
+bit for bit as before). Found on the way: the condensed stiffness does
+not exist when two points sit on one rigid link (their flexibility is
+singular), so the loop is planned in its flexibility form; a real tower
+of some 2300 members with frames takes 0.5–1.2 s to condense (its
+reference solve about half), not the tens of milliseconds first
+estimated — once per type, extension and reference, kept by its key.
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —
