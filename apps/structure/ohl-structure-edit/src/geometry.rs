@@ -61,6 +61,48 @@ pub struct Geometry {
     /// The rigid links: from a joint to an attachment point at an offset
     /// (none drawn at zero offset), [`RigidLink`].
     pub links: Vec<RigidLink>,
+    /// The strings that are post insulators, as drawn ([`PostDrawn`];
+    /// 2026-11-15).
+    pub posts: Vec<PostDrawn>,
+}
+
+/// A post insulator drawn (a string with `post`, structure file version
+/// 13): from its base (its top point) to its wire point, in the
+/// structure's axes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PostDrawn {
+    /// The string's label.
+    pub label: String,
+    /// Its base, m.
+    pub base: [f64; 3],
+    /// Its top (its wire point), m.
+    pub top: [f64; 3],
+    /// On a hinged base (braced: its brace is another string to its wire
+    /// point).
+    pub hinged: bool,
+    /// The direction its clamp holds a jumper in, a unit vector (its exit
+    /// angle from the horizontal, level when not given, and its direction
+    /// in plan); none when no direction in plan is given (it then points
+    /// towards the jumper's other end, not known here).
+    pub exit: Option<[f64; 3]>,
+}
+
+impl PostDrawn {
+    /// Its length, m.
+    pub fn length(&self) -> f64 {
+        (0..3)
+            .map(|k| (self.top[k] - self.base[k]).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
+}
+
+/// The unit vector of a post's clamp at `angle` from the horizontal and
+/// `direction` in plan (0 ahead, 90 right), degrees, structure axes — as
+/// the line holds a jumper there (`ohl_line` `post_direction`).
+pub fn exit_vector(angle: f64, direction: f64) -> [f64; 3] {
+    let (e, d) = (angle.to_radians(), direction.to_radians());
+    [e.cos() * d.sin(), e.cos() * d.cos(), e.sin()]
 }
 
 /// A rigid link drawn: from a joint to an attachment point at an offset
@@ -162,6 +204,29 @@ pub fn geometry_with(
             .strings
             .iter()
             .filter_map(|s| Some((s.label.clone(), at(&s.top)?, at(&s.wire)?)))
+            .collect();
+        // Posts: a string with `post`, or one naming a library post.
+        g.posts = placed
+            .strings
+            .iter()
+            .filter(|s| {
+                s.post
+                    || s.insulator
+                        .as_deref()
+                        .and_then(|i| insulators.get(i))
+                        .is_some_and(|a| a.kind == ohl_structures::AssemblyKind::Post)
+            })
+            .filter_map(|s| {
+                Some(PostDrawn {
+                    label: s.label.clone(),
+                    base: at(&s.top)?,
+                    top: at(&s.wire)?,
+                    hinged: s.hinged,
+                    exit: s
+                        .exit_direction_deg
+                        .map(|d| exit_vector(s.exit_angle_deg.unwrap_or(0.0), d)),
+                })
+            })
             .collect();
     } else {
         g.points = t

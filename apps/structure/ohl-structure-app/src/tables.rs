@@ -181,6 +181,122 @@ pub(crate) fn row(
     r
 }
 
+/// The post cell of string `s` in the Strings table (structure file
+/// version 13, 2026-11-15): none, fixed or hinged; a post's cantilever
+/// rating and its clamp's exit angle and direction in plan (shown with
+/// the view's `ahead`, as the strings' directions are), each ticked to
+/// give it. `library`: its assembly is a library post (a post whatever
+/// the string says). Each change goes to `put` (a value dragged: held).
+fn post_cell(
+    ui: &mut egui::Ui,
+    s: &ohl_structures::TypeString,
+    library: bool,
+    ahead: f64,
+    put: &mut impl FnMut(StringChange, Option<String>),
+) {
+    ui.horizontal(|ui| {
+        let words = |p: Option<bool>| match p {
+            None if library => "library post",
+            None => "—",
+            Some(false) => "fixed",
+            Some(true) => "hinged",
+        };
+        let now = s.post.then_some(s.hinged);
+        let mut pick = now;
+        egui::ComboBox::from_id_salt(("string-post", &s.label))
+            .selected_text(words(now))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut pick, None, words(None))
+                    .on_hover_text("Not a post (or as its library post says)");
+                ui.selectable_value(&mut pick, Some(false), "fixed")
+                    .on_hover_text(
+                        "On a fixed base: a cantilever; its moment goes to the pylon with its \
+                         force (NOT ON THE SAFE SIDE where only trusses meet its joint: said)",
+                    );
+                ui.selectable_value(&mut pick, Some(true), "hinged")
+                    .on_hover_text(
+                        "On a hinged base: it only pushes or pulls, another string to its wire \
+                         point (its brace) holds it; no moment to the pylon",
+                    );
+            });
+        if pick != now {
+            put(StringChange::Post(pick), None);
+        }
+        if !s.post {
+            return;
+        }
+        let mut rated = s.cantilever_load.is_some();
+        let mut c = s.cantilever_load.map_or(8000.0, |f| f.si());
+        let tick = ui
+            .checkbox(&mut rated, "rating")
+            .on_hover_text("Its cantilever rating, N: the load across it at its top");
+        let d = ui
+            .add_enabled_ui(rated, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut c)
+                        .range(1.0..=1e8)
+                        .speed(10.0)
+                        .max_decimals(0)
+                        .suffix(" N"),
+                )
+            })
+            .inner;
+        if tick.changed() || (rated && d.changed()) {
+            put(
+                StringChange::CantileverLoad(rated.then_some(c)),
+                d.is_pointer_button_down_on().then(|| "post rating".into()),
+            );
+        }
+        let (angle, direction) = s.exit_deg();
+        let mut on = angle.is_some();
+        let mut a = angle.unwrap_or(0.0);
+        let tick = ui
+            .checkbox(&mut on, "exit")
+            .on_hover_text("Its clamp's exit angle from the horizontal (negative: down)");
+        let d = ui
+            .add_enabled_ui(on, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut a)
+                        .range(-90.0..=90.0)
+                        .speed(0.5)
+                        .max_decimals(2)
+                        .suffix("°"),
+                )
+            })
+            .inner;
+        if tick.changed() || (on && d.changed()) {
+            put(
+                StringChange::ExitAngle(on.then_some(a)),
+                d.is_pointer_button_down_on().then(|| "exit angle".into()),
+            );
+        }
+        let mut on = direction.is_some();
+        let mut dr = (direction.unwrap_or(0.0) + ahead).rem_euclid(360.0);
+        let tick = ui.checkbox(&mut on, "in plan").on_hover_text(
+            "Its clamp's direction in plan, clockwise seen from above (as the strings' \
+             directions)",
+        );
+        let d = ui
+            .add_enabled_ui(on, |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut dr)
+                        .range(0.0..=360.0)
+                        .speed(0.5)
+                        .max_decimals(2)
+                        .suffix("°"),
+                )
+            })
+            .inner;
+        if tick.changed() || (on && d.changed()) {
+            put(
+                StringChange::ExitDirection(on.then(|| (dr - ahead).rem_euclid(360.0))),
+                d.is_pointer_button_down_on()
+                    .then(|| "exit direction".into()),
+            );
+        }
+    });
+}
+
 /// The kind of a joint, chosen in the Joints table: `given` as written,
 /// `worked_out` as read (attach when a point is linked to it, support
 /// with a support). The kind chosen (none: auto) when it changed.
@@ -1091,7 +1207,19 @@ impl StructureApp {
                 ),
                 (
                     "compression [N]",
-                    "The push it may take (two strings to one wire point); none: tension only",
+                    "The push it may take (two strings to one wire point); none: tension only. \
+                     A post's compression rating",
+                ),
+                (
+                    "post",
+                    "A post insulator: it stands on the point it starts from (its base, earthed) \
+                     and holds its wire point at its other end — fixed: rigidly, a cantilever, \
+                     its moment sent to the pylon with its force; hinged: turning about its base, \
+                     held by a brace (another string to its wire point), forces only. Then its \
+                     cantilever rating (the load across it at its top; unticked: its library \
+                     post's, else not checked) and the direction its clamp holds a jumper in: \
+                     the exit angle from the horizontal (negative: down; unticked: level) and in \
+                     plan (unticked: towards the jumper's other end)",
                 ),
                 (
                     "limits",
@@ -1284,6 +1412,8 @@ impl StructureApp {
                         );
                     }
                 });
+                let library = a.is_some_and(|a| a.kind == AssemblyKind::Post);
+                post_cell(ui, s, library, ahead, &mut put);
                 ui.horizontal(|ui| {
                     let own = s.limits();
                     let from = a.map(|a| a.limits()).unwrap_or_default();

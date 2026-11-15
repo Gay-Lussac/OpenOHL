@@ -40,19 +40,19 @@ pub use body::{
     Plan, Redundants, Symmetry,
 };
 pub use edits::{
-    LIMITS_VERSION, LimitField, MEMBER_KINDS, Removal, StringChange, TENSION_VERSION, add_item,
-    add_joint, add_member, add_point, add_point_at_joint, add_set, add_strings, assembly_text,
-    delete_string, drop_set, is_tower, item_fields, item_ids, kind_change_note, limit_fields,
-    member_roll, move_set, move_to, new_string, next_id, raise_version, removal, remove,
-    remove_extension, remove_item, set_analysis_field, set_counterweight, set_extension,
+    LIMITS_VERSION, LimitField, MEMBER_KINDS, POST_KEYS, Removal, StringChange, TENSION_VERSION,
+    add_item, add_joint, add_member, add_point, add_point_at_joint, add_set, add_strings,
+    assembly_text, delete_string, drop_set, is_tower, item_fields, item_ids, kind_change_note,
+    limit_fields, member_roll, move_set, move_to, new_string, next_id, raise_version, removal,
+    remove, remove_extension, remove_item, set_analysis_field, set_counterweight, set_extension,
     set_item_field, set_member_k, set_member_kind, set_member_roll, set_member_section, set_set,
     set_string, set_structure_kind, set_support, set_top_field,
 };
 pub use file::StructureFile;
 pub use generators::{Body, generate};
 pub use geometry::{
-    Geometry, Handle, RigidLink, compass_radius, geometry, geometry_with, pick, pick_at, polar,
-    position,
+    Geometry, Handle, PostDrawn, RigidLink, compass_radius, exit_vector, geometry, geometry_with,
+    pick, pick_at, polar, position,
 };
 pub use groups::{Group, groups, set_group, set_group_field, set_group_kind, set_group_section};
 pub use load_cases::{
