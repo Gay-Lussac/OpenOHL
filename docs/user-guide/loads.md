@@ -182,7 +182,7 @@ In the application: Line › Structures › **Load cases per group…** makes th
 
 ### The Load cases library, a form
 
-Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria › Load cases library) shows the file as a **form** (owner: "design it so that it's easy to understand and use for a human"; built, in active development, not approved yet): the cases on the left — **Add** (the first weather case, every factor 1), **Duplicate**, **Delete** (its hover names the structure groups ticking the case: deleted, their structures are not checked in it, said in the usage and the Structures table), **Rename** (2026-11-14: in a project, one change of the project — the case renamed in the file, comments kept, and in every structure group ticking it, undone as one; with unsaved changes on the page, save or discard them first; a file outside a project: the file only) (a case that does not check is marked ⚠) — and the case picked on the right, in plain sections:
+Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria › Load cases library) shows the file as a **form** (owner: "design it so that it's easy to understand and use for a human"; built, in active development, not approved yet): the cases on the left — **Add** (the first weather case, every factor 1), **Duplicate**, **Delete** (its hover names the structure groups ticking the case and its own list when it picks structures: deleted, their structures are not checked in it, said in the usage and the Structures table), **Rename** (2026-11-14: in a project, one change of the project — the case renamed in the file, comments kept, and in every structure group ticking it and in its own list, undone as one; with unsaved changes on the page, save or discard them first; a file outside a project: the file only) (a case that does not check is marked ⚠) — and the case picked on the right, in plain sections:
 
 1. **Weather** — the weather case, picked from the project's weather cases only (a case naming another says so in red), and the wires' condition (as strung, after creep, after the heaviest load, the one that sags more).
 2. **Wind on the wires** — shown only when the weather case has wind: *as the weather case*, *from the left* or *from the right* (`wind_from`).
@@ -191,6 +191,36 @@ Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria �
 5. **Ice and snow on the structures** — ice *default* (the structures' local ice when the case takes the local conditions and its weather case has ice, else none), *none* (not even the local ice), *the structures' local ice*, *the wires' ice* (the weather case's thickness, version 6) or *a thickness* (mm); *factor on the thickness* (version 6, any of them; unticked 1); with *own density* (else the weather case's; when it gives none the form says a density is needed); **Snow on the structures** with μ, C_e and C_T (0.8, 1.0, 1.0 by default; the hover cites SIA 261:2014 5.3.4, 5.2.4 and 5.2.5, and says that μ = 0.8 for a pylon's horizontal surfaces is an assumption the engineer is to confirm).
 6. **Factors** — vertical, transverse, longitudinal and the strength factor φ; **Use local conditions** (what it takes and its cost in the hover).
 7. **Tags and description**.
+8. **Applies to** — which structures of the line take the case, how each gets it, and ticks to change it right there ([below](#applies-to-which-structures-take-the-case)).
+
+#### Applies to: which structures take the case
+
+*Built, in active development, not approved yet* (owner, 2026-11-15: "manual should always be available where load cases rules are defined and on which pylon they apply with a list of them. Not per type but per position: if 2 pylons are the same type they can still get different load cases based on the location").
+
+- **The summary**: *Taken by 5 of 8 structure(s): T1, T2, …* — or, in the warning colour, *No structure takes this case: it gives no loads and no check anywhere* (a case naming nothing is said, never silent).
+- **The list**: every structure of the line, in the line's order, one row each — its id, its station on its alignment, its type, and **how it gets the case**:
+
+| The row says | Meaning |
+|---|---|
+| `in no group: every case` | in no [structure group](load-cases-per-group.md): it takes every case of the library |
+| `group angle by rule (line angle 10–30°)` | a group ticking the case holds it by a rule of the group (type, line angle, station, dead end) |
+| `group crossing (picked)` | a group ticking the case holds it picked by hand |
+| `picked here` | picked in the case's **own list** (below): it takes the case on top of its groups' cases |
+| `excluded here (else: …)` | excluded in the case's own list: it does **not** take the case, whatever its groups give; *else* says how it would get it |
+| `not taken: its groups suspension do not tick it` | it is in groups, none of which gives the case |
+
+The row is ticked when the structure takes the case. The list is a tick list as elsewhere in OpenOHL: a **search** field filtering the rows (by id, station, type or the *how* text: type `rule` or a group's name), **All**, **None** and **Invert** acting on the rows shown, a press dragged across rows giving them all one state, shift-click for a range.
+
+- **Tick a structure** that does not take the case: it is **picked** in the case's own list and takes the case on top of its groups' cases. Its groups and their other cases are not touched.
+- **Untick a structure** that takes the case:
+  - picked here only: it is **taken out** of the own list;
+  - taken through a group (by a **rule**, or picked in that group) or by being in no group: it is **excluded** in the case's own list — exactly this case leaves it, nothing else (its groups and their rules unchanged). The status line says how it took the case: *T5 excluded here (it took it: group angle by rule (line angle 10–30°)) — change the rule in Load cases per group, or keep the exclusion*. To take it out for good, change the rule in Line › Structures › [Load cases per group…](load-cases-per-group.md#5-rules-optional) instead.
+- **Add the N selected** / **Remove the N selected** do the same for the structures selected in the Structures table or a view (Shift or Cmd/Ctrl + click for several).
+- Below the list: *Its own list: 2 picked here (T2, T4), 1 excluded (T5) — also in Line › Structures › Load cases per group as "wind (own list)"*.
+
+Each change — a click, a drag across rows, All, None, Invert, Add, Remove — is **one step of Edit › Undo**, a change of the line (not of the `.ohllc` file: no Save needed). Nothing is solved again: the case is solved once for the whole line. A case added on the page but not saved yet cannot be given to structures (*Save the file first*: structures take a case by its saved name). A library file that is not the one the line uses shows no list (its cases are not the line's). Read-only, the list is shown greyed.
+
+**Two structures of the same type** take different cases simply by ticking one and not the other: the per-type rule of a group is only an optional automatic helper.
 
 The form writes the file with OpenOHL's own writer, at the lowest version its cases need (a file using nothing of version 4 stays at its version); **Save** keeps it — in a project, one change of the project, undone as one. A file written from the form keeps no comments: **Fields (expert)** edits the file's fields as before (comments kept). Why the file does not check is said above the case, in a box of its own height.
 

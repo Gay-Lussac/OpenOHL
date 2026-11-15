@@ -31,7 +31,8 @@ Each word means one thing, everywhere in OpenOHL.
 |---|---|---|
 | **Weather case** | Wind, ice and temperature. No factors. | The weather case file (`.ohlwc`) of the project ([Weather cases](weather.md)). |
 | **Load case** | A weather case, the wires' condition (as strung, after creep…) and factors (vertical, transverse, longitudinal, strength φ); optionally the wind, ice and snow on the structures, broken or removed wires, *use local conditions*. Written in the Load cases library form or by a design-code plugin. | The load case library (`.ohllc`) of the project ([Load cases](loads.md)). |
-| **Structure group** | Structures — picked by hand, or by rules (types, line angle, station, dead end) — and the load cases of the library they take. A structure takes the cases of all its groups; in no group, every case; in groups ticking none, none. | The line file (`structure_groups`, version 18). |
+| **Structure group** | Structures — picked by hand (per position, the first way), or by rules (types, line angle, station, dead end: an optional helper) — and the load cases of the library they take. A structure takes the cases of all its groups; in no group, every case; in groups ticking none, none. | The line file (`structure_groups`, version 18). |
+| **Own list** (of a load case) | The structures picked for, or excluded from, one load case, ticked where the case is defined (Load cases… › 8 Applies to). Picked: the case on top of their groups'; excluded: not that case, whatever their groups give. | The line file, as a structure group with `load_case` (version 18). |
 | **Library case** (in OHL-Structure) | A load case of the structure's groups, rebuilt as a load case of OHL-Structure with the library's factors (the wires' forces, the self weight, the wind, ice and snow on the body). Read-only there. | The line-values file `<type>.<structure>.line-values.json`, written by OHL-Design. |
 | **Extra load case** | A load case you make in OHL-Structure: *1. line forces* (a library case's **unfactored** forces × your factors, at the points you choose, with shares of the back and ahead pull — broken-wire cases too) and *2. loads on the structure itself*. | The structure type file (`.ohls`); `.ohlslc` only to copy cases. |
 | **Typed values** | Numbers typed over the load table (a client's load tree, a value checked by hand). They replace the computed value of that row. | `<type>.<structure>.loads.csv`, per placed structure, kept in the project. |
@@ -69,7 +70,7 @@ Each word means one thing, everywhere in OpenOHL.
 | Window | What you do there |
 |---|---|
 | Line › Criteria › **Weather cases** | The weather. No factors here. |
-| Line › Structures › **Load cases…** | The load cases: weather case, wires, factors, broken and removed wires, wind, ice and snow on the structures, *use local conditions* ([the form](loads.md#the-load-cases-library-a-form)). |
+| Line › Structures › **Load cases…** | The load cases: weather case, wires, factors, broken and removed wires, wind, ice and snow on the structures, *use local conditions* ([the form](loads.md#the-load-cases-library-a-form)); and in its **8 Applies to**, which structures take each case — a list of every structure with how it gets the case, ticked on or off per structure ([Applies to](loads.md#applies-to-which-structures-take-the-case)). |
 | Line › Structures › **Load cases per group…** | The groups of structures and the cases each takes ([its page](load-cases-per-group.md)). The Structures table's **load cases** column and a structure's **Properties › Load cases** show its groups and cases. |
 | Checks › **Structure loads** | The line's check of every structure, in the cases ticked there. **Use local conditions** applies the structures' local factors to every case. |
 | **Open in OHL-Structure…** (a placed structure) | Starts OHL-Structure with this place's loads. |
@@ -120,6 +121,14 @@ group](load-cases-per-group.md)):
   station, dead end) gains or loses structures as the line is edited;
   the usage notes and OHL-Structure's status block say which groups a
   structure is in.
+- Then each case's **own list** (Load cases… › 8 Applies to): picked
+  there, a structure takes that case too (in no group it has every case
+  already); excluded there, it does not take that case — exactly that
+  one, said in the Structures table, its Properties, the groups window
+  and OHL-Structure's status block
+  ([A load case's own list](load-cases-per-group.md#a-load-cases-own-list)).
+- Per position, not per type: two structures of the same type take
+  different cases when ticked differently.
 
 A case ticked in a group but no longer in the library (renamed or
 deleted there after the group was made) is never dropped silently: the

@@ -10,6 +10,64 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Which structures take a case: manual, where the case is defined, per
+position** (owner: "Okay for automatic grouping but manual should always
+be available where load cases rules are defined and on which pylon they
+apply with a list of them. Not per type but per position: if 2 pylons are
+the same type they can still get different load cases based on the
+location." Accepted as built: old sets read with the union; the angle
+rule the largest over the alignments; dead end = a section ends there;
+no height or elevation rule for now). Built, in active development, not
+approved yet:
+
+- **The Load cases form's section 8 Applies to**: every structure of the
+  line in the line's order (id, station on its alignment, type) with how
+  it gets the case — through a group, picked or by a rule (the rule in
+  words), in no group (every case), picked here, excluded here — ticked
+  when it takes it; a tick list as elsewhere (search, All / None / Invert
+  on the rows shown, press-and-drag, shift for a range) and *Add / Remove
+  the N selected* from the Structures table or a view. A case taken by no
+  structure is said in the warning colour.
+- **One model, no second concept: a load case's own list** — a structure
+  group with `load_case` set (no name, no rules, no other case; one per
+  case), shown in Load cases per group as *wind (own list)*. Its picked
+  structures take the case **on top of** their groups' cases; its
+  **excluded** structures do not take it, whatever their groups give. It
+  does not count as a group for "in no group: every case", so it only
+  ever adds its case or takes away exactly that case (the safe side: a
+  structure never loses another case through it). Ticking writes it
+  (`Line::give_case`): tick → picked (an exclusion taken away); untick →
+  taken out of the picks, and **excluded** when a group (by rule or by
+  pick) or being in no group still gives the case — the status line names
+  the rule and says "change the rule in Load cases per group, or keep the
+  exclusion". The groups and their rules are never changed from the form.
+  Each change (a click, a drag, a button) is one command, one undo, in
+  both windows (the groups window's own-list view uses the same command).
+- **An exclusion is never hidden**: the case's list, the groups window
+  (the own list's row and lists; *Who is in* in the warning colour), the
+  Structures table (*— wind excluded in the own list*, *no group: every
+  case but wind …*), the Properties (warning colour) and OHL-Structure's
+  status block. Excluded from every case it had: *takes no load case*,
+  listed as not checked. A case renamed in the library renames its own
+  list in the same command (joined to an own list the new name had: picks
+  kept); a deleted case's own list stays, in the error colour, its picked
+  structures said not checked in it.
+- **Per position, not per type**: picking (in a group or in a case's own
+  list) is the first way in both windows; the groups window's rules are
+  titled *5 Rules (optional)*, an automatic helper. No UI path assigns
+  cases per type only.
+- **Formats**: a structure group's `load_case` and `excluded`, its `name`
+  optional on an own list — in the line file, the project's
+  `structure_groups` row and OHL XML (`<structure_group load_case>` with
+  `<excluded id/>`, the XSD) — in the same, unreleased line file version
+  18 (a line with any group is written at 18 already). `CaseSet::EveryBut`
+  (in no group, excluded from some cases), `CaseSets::why` / `takers` /
+  `picked_for` / `excluded_from` / `excluded` / `own_list`.
+- **Fault fixed:** renaming a structure picked in a structure group was
+  refused in a project with an internal error (the groups' settings row
+  was sent as a nested batch); now the group follows the new name, as do
+  an own list's picks and exclusions (tested).
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —

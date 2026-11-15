@@ -379,6 +379,15 @@ group, every case ([Load cases per group](load-cases-per-group.md)).
 *Replaces:* case set, per-pylon set, load cases per structure type.
 *German:* Mastgruppe (to confirm).
 
+**Own list (of a load case)** — the structures picked for, or excluded
+from, one load case where the case is defined (Line › Structures › Load
+cases… › Applies to, 2026-11-15); shown in Load cases per group as
+*wind (own list)*, kept in the line file as a structure group with
+`load_case`. Picked: they take the case on top of their groups' cases;
+excluded: they do not take it, whatever their groups give
+([A load case's own list](load-cases-per-group.md#a-load-cases-own-list)).
+*German:* eigene Liste des Lastfalls (to confirm).
+
 **Broken wire** — a load case's wire gone in one span of a section
 (`[case.broken]`): the section solved without it, the strings next to the
 break swung to the spans left ([Load
