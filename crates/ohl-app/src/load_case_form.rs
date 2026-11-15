@@ -406,7 +406,7 @@ fn snow_by_structure(case: &LoadCase, line: Option<&ohl_line::Line>) -> String {
         .filter_map(|s| {
             case.structure_snow_at(Some(s)).map(|o| {
                 format!(
-                    "{} s_k {:.2} → q {:.2} kN/m²",
+                    "{} s_k {:.2} kN/m², q {:.2} kN/m²",
                     s.id,
                     o.ground / 1000.0,
                     o.load() / 1000.0
