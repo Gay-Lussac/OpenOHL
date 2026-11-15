@@ -1231,7 +1231,9 @@ pub struct WindSteps {
     pub stepped: bool,
     /// Step of the wind pressure, Pa.
     pub step: f64,
-    /// Sides the wind blows from.
+    /// Sides the wind blows from. A weather case with its own direction
+    /// (owner 2026-11-15): both, the direction and its mirror about the
+    /// line; one side, the direction alone (never turned to that side).
     pub sides: WindSides,
     /// Each span also anywhere on its **swing arc** (2026-10-20): the span
     /// swung as one about its attachment axis between still air and the

@@ -69,6 +69,46 @@ pub fn groups(cases: &[WeatherCase]) -> Vec<Group> {
         .collect()
 }
 
+/// `case` without its wind's direction: from the right, no direction of
+/// its own ([`different_directions`]).
+fn without_direction(case: &WeatherCase) -> WeatherCase {
+    WeatherCase {
+        wind_from: ohl_weather::WindSide::Right,
+        wind_direction: None,
+        ..case.clone()
+    }
+}
+
+/// The groups of two or more of `cases` that only the wind's direction
+/// keeps apart (owner, 2026-11-15: two winds from different directions are
+/// never merged), each name with its wind in words — said in the window
+/// so that it is clear why they are not offered.
+pub fn different_directions(cases: &[WeatherCase]) -> Vec<Vec<String>> {
+    let mut out: Vec<(WeatherCase, Vec<&WeatherCase>)> = Vec::new();
+    for c in cases.iter().filter(|c| c.wind_pressure.si() > 0.0) {
+        let bare = without_direction(c);
+        match out.iter_mut().find(|(first, _)| first.same_physics(&bare)) {
+            Some((_, all)) => all.push(c),
+            None => out.push((bare, vec![c])),
+        }
+    }
+    out.into_iter()
+        .map(|(_, all)| all)
+        .filter(|all| all.iter().skip(1).any(|c| !all[0].same_physics(c)))
+        .map(|all| {
+            all.into_iter()
+                .map(|c| {
+                    let wind = match c.wind_direction {
+                        Some(d) => d.words(),
+                        None => "without a direction (follows the display)".into(),
+                    };
+                    format!("\"{}\" {wind}", c.name)
+                })
+                .collect()
+        })
+        .collect()
+}
+
 /// Each case merged away and the case it becomes, of the groups ticked.
 pub fn renames(groups: &[Group]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
@@ -300,6 +340,9 @@ pub struct MergeCasesWindow {
     pub open: bool,
     /// The groups found when opened (none: found again).
     pub groups: Option<Vec<Group>>,
+    /// The cases only their wind's direction keeps apart, found with the
+    /// groups ([`different_directions`]).
+    pub apart: Vec<Vec<String>>,
     /// The last outcome, an error or not.
     pub status: Option<(String, bool)>,
 }
@@ -370,9 +413,20 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     if !r.merge_cases.open {
         return;
     }
-    let cases: Vec<WeatherCase> = r.model.cases.iter().map(|c| c.case.clone()).collect();
     let mut w = std::mem::take(&mut r.merge_cases);
-    let groups = w.groups.get_or_insert_with(|| groups(&cases));
+    if w.groups.is_none() {
+        // The cases as in their file (the display's side is the view's).
+        let cases: Vec<WeatherCase> = r
+            .model
+            .cases
+            .iter()
+            .map(|c| crate::model::side_shown(c.case.clone(), ohl_weather::WindSide::Right))
+            .collect();
+        w.apart = different_directions(&cases);
+        w.groups = Some(groups(&cases));
+    }
+    let apart = w.apart.clone();
+    let groups = w.groups.get_or_insert_with(Vec::new);
     let mut open = true;
     let mut merge = false;
     egui::Window::new("Merge duplicate weather cases")
@@ -397,6 +451,28 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
             ui.separator();
             if groups.is_empty() {
                 ui.label("No two weather cases have the same weather.");
+            }
+            if !apart.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "Not offered — the same weather but the wind from different \
+                         directions (two winds, never merged; a case without a direction \
+                         follows the display's side, one with its own direction never does):",
+                    )
+                    .small()
+                    .weak(),
+                );
+                crate::check_help::list(
+                    ui,
+                    "merge-cases-apart",
+                    120.0,
+                    egui::ScrollArea::vertical().id_salt("merge-cases-apart"),
+                    |ui| {
+                        for names in &apart {
+                            ui.label(egui::RichText::new(names.join(", ")).small().weak());
+                        }
+                    },
+                );
             }
             crate::check_help::list(
                 ui,
@@ -469,6 +545,54 @@ mod tests {
 
     fn case(name: &str, t: f64) -> WeatherCase {
         WeatherCase::still(name, Temperature::from_celsius(t))
+    }
+
+    /// The owner's report (2026-11-15): "the duplicate detection doesnt
+    /// recognise the angle for the winds and offers to merge 2 winds
+    /// coming from different directions". A wind imported as two cases,
+    /// from 90° and from 270°, is never offered — whatever the display
+    /// shows (the window takes the cases as in their file) — and the
+    /// window says why; two cases from 90° are; a case without a direction
+    /// is not merged with one of its own direction.
+    #[test]
+    fn winds_from_different_directions_are_not_offered() {
+        use crate::model::{WindDisplay, side_shown};
+        let text = "format = \"ohl-weather-cases\"\nversion = 2\n\
+             [[case]]\nname = \"storm — from the right (90°)\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = 90\n\
+             [[case]]\nname = \"storm — from the left (270°)\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = 270\n\
+             [[case]]\nname = \"storm again\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = \"right\"\n\
+             [[case]]\nname = \"storm\"\ntemperature = \"10 °C\"\nwind_pressure = \"500 Pa\"\n";
+        let file = ohl_weather::WeatherCases::parse(text).unwrap().cases;
+        for wind in WindDisplay::ALL {
+            // As the model holds them, then as the window takes them.
+            let cases: Vec<WeatherCase> = file
+                .iter()
+                .map(|c| side_shown(wind.shown(c.clone()), ohl_weather::WindSide::Right))
+                .collect();
+            let g = groups(&cases);
+            let names: Vec<Vec<String>> = g.iter().map(|g| g.names.clone()).collect();
+            assert_eq!(
+                names,
+                vec![vec!["storm — from the right (90°)", "storm again"]],
+                "{wind:?}"
+            );
+            let apart = different_directions(&cases);
+            assert_eq!(apart.len(), 1, "{wind:?}");
+            assert_eq!(
+                apart[0],
+                vec![
+                    "\"storm — from the right (90°)\" from 90° (from the right)",
+                    "\"storm — from the left (270°)\" from 270° (from the left)",
+                    "\"storm again\" from 90° (from the right)",
+                    "\"storm\" without a direction (follows the display)",
+                ]
+            );
+        }
+        // Calm cases: nothing said.
+        assert!(different_directions(&[case("a", 10.0), case("b", 10.0)]).is_empty());
     }
 
     #[test]

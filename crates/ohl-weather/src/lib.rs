@@ -76,16 +76,20 @@ pub struct WeatherCase {
     /// wires to the left.
     #[serde(default)]
     pub wind_from: WindSide,
-    /// Where the wind comes from at an angle to the line (weather file
+    /// Where the wind comes from, given by the case itself (weather file
     /// version 2; owner 2026-11-15): none — the across rule, every span
     /// the full pressure square to itself from [`WeatherCase::wind_from`]'s
-    /// side, as before. A direction across the line (`"right"`, `"left"`,
-    /// 90°, 270°) is read as that side with the across rule (bit for bit
-    /// the same results): it is never kept here. Any other direction
-    /// ([`WindDirection`]: from; 0° from ahead, 90° from the right,
-    /// clockwise, relative to the line at each place) is **one wind**,
-    /// each wire piece taking the part normal to it
-    /// ([`oblique_wire_force`]).
+    /// side, as before (in the desktop application such a case follows
+    /// the display's side). A direction across the line (`"right"`,
+    /// `"left"`, 90°, 270°) is kept here as given and its side put in
+    /// [`WeatherCase::wind_from`]: the across rule from that side (bit for
+    /// bit the results of that side), the direction marking it as the
+    /// case's own (owner 2026-11-15: two cases from 90° and 270° are two
+    /// winds, never one; the desktop application does not turn it to the
+    /// display's side). Any other direction ([`WindDirection`]: from; 0°
+    /// from ahead, 90° from the right, clockwise, relative to the line at
+    /// each place) is **one wind**, each wire piece taking the part normal
+    /// to it ([`oblique_wire_force`]).
     #[serde(default)]
     pub wind_direction: Option<WindDirection>,
     /// Air density factor Q, Pa/(m/s)²: the wind pressure of a wind
@@ -149,12 +153,13 @@ fn de_direction<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<WindDir
 
 impl From<WeatherCaseFile> for WeatherCase {
     fn from(f: WeatherCaseFile) -> Self {
-        // A direction across the line is its side with the across rule.
-        let (wind_from, wind_direction) = match f.wind_direction.map(|d| (d, d.across_side())) {
-            Some((_, Some(side))) => (side, None),
-            Some((d, None)) => (f.wind_from, Some(d)),
-            None => (f.wind_from, None),
-        };
+        // A direction across the line is its side with the across rule,
+        // the direction kept (the case's own side).
+        let wind_from = f
+            .wind_direction
+            .and_then(WindDirection::across_side)
+            .unwrap_or(f.wind_from);
+        let wind_direction = f.wind_direction;
         Self {
             name: f.name,
             description: f.description,
@@ -229,6 +234,13 @@ impl WeatherCase {
             air_density_factor: None,
             ambient_temperature: None,
         }
+    }
+
+    /// The side of its own direction across the line (90°: right, 270°:
+    /// left, [`WeatherCase::wind_direction`]); none without a direction or
+    /// at an angle.
+    pub fn own_side(&self) -> Option<WindSide> {
+        self.wind_direction.and_then(WindDirection::across_side)
     }
 
     /// Its wind at an angle to the line: the direction when it has wind
@@ -554,10 +566,15 @@ impl WeatherCase {
     ///   loads take it. A thickness and a load are never the same: the
     ///   load of a thickness depends on the wire's diameter;
     /// - the wind pressure; with wind, also the side it comes from, its
-    ///   direction at an angle (none the same only as none) and the
-    ///   air density factor (one not given is the project's: the same only
-    ///   as another not given). Without wind neither matters (no side, a
-    ///   velocity of 0);
+    ///   own direction (none the same only as none; 90° and `"right"` the
+    ///   same; 90° and 270° never — owner 2026-11-15: "offers to merge 2
+    ///   winds coming from different directions") and the air density
+    ///   factor (one not given is the project's: the same only as another
+    ///   not given). A case without a direction and one with its own
+    ///   direction across the line from the same side are **not** the
+    ///   same: the desktop application turns the first to the display's
+    ///   side, never the second. Without wind none of these matters (no
+    ///   side, a velocity of 0);
     /// - the ambient temperature (not given is the same only as not
     ///   given).
     pub fn same_physics(&self, other: &Self) -> bool {
@@ -1451,6 +1468,45 @@ air_density_factor = 0.6
             ..hot.clone()
         };
         assert!(hot.same_physics(&hot_too) && hot_too.same_physics(&hot));
+    }
+
+    /// The owner's report (2026-11-15): "the duplicate detection doesnt
+    /// recognise the angle for the winds". A wind written as two cases,
+    /// from 90° and from 270° (and as names), keeps each direction as its
+    /// own: never the same physics; 90° and "right" are; a case without a
+    /// direction is not the same as one with its own direction.
+    #[test]
+    fn explicit_directions_across_are_kept_and_compared() {
+        let set = WeatherCases::parse(
+            "format = \"ohl-weather-cases\"\nversion = 2\n\
+             [[case]]\nname = \"storm — from the right (90°)\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = 90\n\
+             [[case]]\nname = \"storm — from the left (270°)\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = 270\n\
+             [[case]]\nname = \"storm right\"\ntemperature = \"10 °C\"\n\
+             wind_pressure = \"500 Pa\"\nwind_direction = \"right\"\n\
+             [[case]]\nname = \"storm\"\ntemperature = \"10 °C\"\nwind_pressure = \"500 Pa\"\n",
+        )
+        .unwrap();
+        let [right, left, named, plain] = &set.cases[..] else {
+            panic!("four cases")
+        };
+        assert_eq!(right.wind_direction, Some(WindDirection::Angle(90.0)));
+        assert_eq!(left.wind_direction, Some(WindDirection::Angle(270.0)));
+        assert_eq!(
+            (right.wind_from, left.wind_from),
+            (WindSide::Right, WindSide::Left)
+        );
+        assert_eq!(
+            (right.own_side(), left.own_side()),
+            (Some(WindSide::Right), Some(WindSide::Left))
+        );
+        // The across rule (no wind at an angle): the old right and left.
+        assert_eq!((right.oblique(), left.oblique()), (None, None));
+        assert!(!right.same_physics(left) && !left.same_physics(right));
+        assert!(right.same_physics(named) && named.same_physics(right));
+        assert!(!right.same_physics(plain) && !plain.same_physics(right));
+        assert_eq!(plain.own_side(), None);
     }
 }
 

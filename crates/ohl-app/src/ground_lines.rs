@@ -293,13 +293,11 @@ fn windy(case: &WeatherCase) -> bool {
     case.wind_pressure.si() > 0.0
 }
 
-/// `case` with the wind from the other side (a wind at an angle mirrored
-/// about the line, [`crate::model::side_shown`]).
+/// `case` with the wind from the other side: mirrored about the line
+/// ([`crate::model::side_shown`]; a case with its own direction across
+/// the line from the other side, one at an angle θ from 360° − θ).
 pub fn other_side(case: &WeatherCase) -> WeatherCase {
-    let side = match case.wind_from {
-        WindSide::Left => WindSide::Right,
-        WindSide::Right => WindSide::Left,
-    };
+    let side = crate::model::shown_side(case).opposite();
     crate::model::side_shown(case.clone(), side)
 }
 
