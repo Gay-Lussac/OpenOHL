@@ -89,10 +89,17 @@ pub fn as_type(s: &Structure) -> DocumentMut {
     let local = |p: [f64; 3]| to_local(s.position, s.orientation_deg, p);
     let mut doc = DocumentMut::new();
     doc.insert("format", toml_edit::value("ohl-structure"));
-    // Version 4 only where a string gives limits (an older program reads
-    // the rest).
+    // Version 4 only where a string gives limits, 13 where one is a post
+    // (an older program reads the rest).
     let limits = s.strings.iter().any(|x| !x.limits().is_empty());
-    doc.insert("version", toml_edit::value(if limits { 4 } else { 2 }));
+    let version = if s.strings.iter().any(|x| x.post) {
+        i64::from(ohl_structures::structures::POST_VERSION)
+    } else if limits {
+        4
+    } else {
+        2
+    };
+    doc.insert("version", toml_edit::value(version));
     doc.insert("id", toml_edit::value(type_id(&s.id)));
     doc.insert("name", toml_edit::value(format!("structure {}", s.id)));
     doc.insert("kind", toml_edit::value("other"));
@@ -152,6 +159,25 @@ pub fn as_type(s: &Structure) -> DocumentMut {
         ] {
             if let Some(a) = a {
                 t.insert(k, toml_edit::value(format!("{a} deg")));
+            }
+        }
+        // A post insulator (2026-11-15): its fields, as the line has them
+        // (before, the editor dropped them: Apply made a post a string).
+        if x.post {
+            t.insert("post", toml_edit::value(true));
+            if x.hinged {
+                t.insert("hinged", toml_edit::value(true));
+            }
+            if let Some(c) = x.cantilever_load {
+                t.insert("cantilever_load", toml_edit::value(format!("{c} N")));
+            }
+            for (k, a) in [
+                ("exit_angle", x.exit_angle_deg),
+                ("exit_direction", x.exit_direction_deg),
+            ] {
+                if let Some(a) = a {
+                    t.insert(k, toml_edit::value(format!("{a} deg")));
+                }
             }
         }
         text(&mut t, "description", &x.description);
@@ -281,6 +307,11 @@ impl PlacedEditor {
                 max_swing_deg: x.limits.max_swing_deg,
                 max_swing_across_deg: x.limits.max_swing_across_deg,
                 max_swing_along_deg: x.limits.max_swing_along_deg,
+                post: x.post,
+                hinged: x.hinged,
+                cantilever_load: x.cantilever_load,
+                exit_angle_deg: x.exit_angle_deg,
+                exit_direction_deg: x.exit_direction_deg,
                 // From its wire point as placed here.
                 ..Default::default()
             })
@@ -516,5 +547,69 @@ impl PlacedEditor {
         );
         self.workspace.ui(ui, &mut self.doc, rs, insulators, &note);
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A structure without a type holding an upright fixed post (rated,
+    /// its clamp's exit angles given) and a hinged post with its brace:
+    /// its editor's document is a structure type of version 13 with every
+    /// post field, and put back on the structure the posts are as they
+    /// were (2026-11-15; before, the editor dropped the post fields).
+    #[test]
+    fn the_structure_editor_keeps_posts() {
+        let line = Line::from_json(
+            r#"{
+  "format": "ohl-line", "version": 17, "name": "posts", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [100, 50, 0], "orientation_deg": 30,
+     "points": [{"label": "A1", "position": [100, 50, 28.4]},
+                {"label": "A2", "position": [100, 50, 26]},
+                {"label": "A3", "position": [100, 50, 27.5]}],
+     "strings": [{"label": "P1", "top": "A1", "wire": "W1", "length": 1.6,
+                  "angle_deg": 180.0, "weight": 450.0, "post": true,
+                  "cantilever_load": 8000.0, "exit_angle_deg": -15.0,
+                  "exit_direction_deg": 90.0},
+                 {"label": "P2", "top": "A2", "wire": "W2", "length": 1.5,
+                  "angle_deg": 90.0, "post": true, "hinged": true, "compression": 20000.0},
+                 {"label": "B2", "top": "A3", "wire": "W2", "length": 2.1213}],
+     "wires": [{"label": "W1", "position": [100, 50, 30], "set": 1},
+               {"label": "W2", "position": [100, 51.5, 26], "set": 2}]}
+  ],
+  "sections": []
+}"#,
+        )
+        .unwrap();
+        line.validate().unwrap();
+        let p = PlacedEditor::open(&line, "T1").unwrap();
+        let text = p.doc.to_string();
+        assert!(text.contains("version = 13"), "{text}");
+        let t = p.read().unwrap();
+        assert!(t.strings[0].post && !t.strings[0].hinged);
+        assert!(t.strings[1].post && t.strings[1].hinged && !t.strings[2].post);
+        let s = p.structure(&line, &InsulatorLibrary::default()).unwrap();
+        let before = &line.structure("T1").unwrap().strings;
+        for (a, b) in before.iter().zip(&s.strings) {
+            assert_eq!(
+                (a.post, a.hinged, a.cantilever_load, a.compression),
+                (b.post, b.hinged, b.cantilever_load, b.compression),
+                "{}",
+                a.label
+            );
+            for (x, y) in [
+                (a.exit_angle_deg, b.exit_angle_deg),
+                (a.exit_direction_deg, b.exit_direction_deg),
+            ] {
+                assert_eq!(x.is_some(), y.is_some(), "{}", a.label);
+                assert!((x.unwrap_or(0.0) - y.unwrap_or(0.0)).abs() < 1e-9);
+            }
+        }
+        let mut back = line.clone();
+        back.structures[0] = s;
+        back.place_strings().unwrap();
+        back.validate().unwrap();
     }
 }

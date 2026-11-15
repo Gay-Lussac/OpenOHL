@@ -400,6 +400,14 @@ impl Line {
                 max_swing_across_deg: x.limits.max_swing_across_deg,
                 max_swing_along_deg: x.limits.max_swing_along_deg,
                 shapes: x.shapes,
+                // A post (structure file version 13, 2026-11-15): as a
+                // string made by hand, its exit direction in the
+                // structure's axes.
+                post: x.post,
+                hinged: x.hinged,
+                cantilever_load: x.cantilever_load,
+                exit_angle_deg: x.exit_angle_deg,
+                exit_direction_deg: x.exit_direction_deg,
                 ..Default::default()
             }));
             // Sets replaced by the structure's own wire points, or left out.
@@ -984,6 +992,67 @@ mod tests {
             .unwrap();
         assert_eq!(resolved.structures[1].string("S1").unwrap().wind_area, 0.35);
         assert!(StructureType::parse(Path::new("w.ohls"), &text.replace("0.35", "-1")).is_err());
+    }
+
+    /// A type's post insulators (structure file version 13, 2026-11-15)
+    /// reach the line as strings made by hand would be: a fixed upright
+    /// post with its rating and exit angles, a hinged post with its brace;
+    /// the line validates them (a fixed post given a second string at its
+    /// wire point is refused with the type, as on the line).
+    #[test]
+    fn a_type_strings_posts_reach_the_line() {
+        let text = "id = \"P\"\nname = \"p\"\nkind = \"lattice\"\n\
+            [[point]]\nlabel = \"A1\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+            [[point]]\nlabel = \"A2\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
+            [[point]]\nlabel = \"A3\"\npoint = [\"6 m\", \"0 m\", \"32 m\"]\n\
+            [[wire]]\nlabel = \"W1\"\nset = 1\n\
+            [[wire]]\nlabel = \"W2\"\nset = 2\n\
+            [[string]]\nlabel = \"P1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"1.5 m\"\n\
+            angle = \"180 deg\"\nweight = \"450 N\"\nwind_area = \"0.3 m²\"\npost = true\n\
+            cantilever_load = \"8 kN\"\nexit_angle = \"-15 deg\"\nexit_direction = \"90 deg\"\n\
+            [[string]]\nlabel = \"P2\"\ntop = \"A2\"\nwire = \"W2\"\nlength = \"2 m\"\n\
+            angle = \"90 deg\"\ndirection = \"90 deg\"\npost = true\nhinged = true\n\
+            [[string]]\nlabel = \"B2\"\ntop = \"A3\"\nwire = \"W2\"\nlength = \"2.8284 m\"\n";
+        let mut structures = StructureLibrary::default();
+        structures
+            .insert(
+                Path::new("p.ohls"),
+                StructureType::parse(Path::new("p.ohls"), text).unwrap(),
+            )
+            .unwrap();
+        let mut line = crate::tests::example();
+        line.structures[1].strings.clear();
+        line.structures[1].points.clear();
+        line.structures[1].wires.clear();
+        line.structures[1].structure_type = Some("P".into());
+        line.sections.retain(|s| {
+            s.points
+                .iter()
+                .all(|p| p.structure != line.structures[1].id)
+        });
+        line.jumpers.clear();
+        let resolved = line
+            .resolve(&structures, &InsulatorLibrary::default())
+            .unwrap();
+        let s = &resolved.structures[1];
+        let p1 = s.string("P1").unwrap();
+        assert!(p1.post && !p1.hinged && !p1.strain);
+        assert_eq!(p1.cantilever_load, Some(8000.0));
+        assert!((p1.exit_angle_deg.unwrap() + 15.0).abs() < 1e-9);
+        assert!((p1.exit_direction_deg.unwrap() - 90.0).abs() < 1e-9);
+        assert!((p1.weight - 450.0).abs() < 1e-12 && (p1.wind_area - 0.3).abs() < 1e-12);
+        // Upright, 1.5 m, standing on A1: the post the line knows.
+        assert!((p1.angle_deg - 180.0).abs() < 1e-6 && (p1.length - 1.5).abs() < 1e-9);
+        assert_eq!(s.post_at("W1").map(|x| x.label.as_str()), Some("P1"));
+        let a1 = s.point("A1").unwrap().position;
+        let w1 = s.wire("W1").unwrap().position;
+        assert!((w1[2] - a1[2] - 1.5).abs() < 1e-9);
+        let p2 = s.string("P2").unwrap();
+        assert!(p2.post && p2.hinged && p2.cantilever_load.is_none());
+        assert!(!s.string("B2").unwrap().post);
+        // Refused with the type, as on the line.
+        let shared = text.replace("top = \"A3\"\nwire = \"W2\"", "top = \"A3\"\nwire = \"W1\"");
+        assert!(StructureType::parse(Path::new("p.ohls"), &shared).is_err());
     }
 
     /// A type's string's own volumes (`[[string.shape]]`, values with

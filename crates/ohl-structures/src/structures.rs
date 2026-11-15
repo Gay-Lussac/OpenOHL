@@ -85,6 +85,24 @@
 //! weight = "50 N"
 //! ```
 //!
+//! **Post insulators** (version 13): a string with `post = true` stands on
+//! its top (a point: its base) and holds its wire point as a cantilever;
+//! `hinged = true` makes it a braced post (another string to its wire
+//! point holds it), `cantilever_load` its rating across it, `exit_angle`
+//! and `exit_direction` its clamp's fixed direction for a jumper — the
+//! line's string fields of the same meaning ([`TypeString::post`]):
+//!
+//! ```toml
+//! [[string]]
+//! label = "P1"
+//! top = "A1"
+//! wire = "W1"
+//! length = "1.5 m"
+//! angle = "180 deg"          # upright
+//! post = true
+//! cantilever_load = "8 kN"
+//! ```
+//!
 //! Version 1 files give each string as an `[[attachment]]` (set, phase,
 //! point, insulator or string): read as before, their points labelled by
 //! the string's top label or `A<set>-<phase>`.
@@ -229,7 +247,10 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// `made_by`, `[[symmetry]]` and `[[generator]]` (and `[[load_case]]`),
 /// the `[pole]` table and an extension's `node`, `member` and `leg`
 /// tables; versions 1 to 5 read as before.
-pub const STRUCTURE_FILE_VERSION: u32 = 12;
+/// Version 13 (2026-11-15) adds a string's post fields (`post`, `hinged`,
+/// `cantilever_load`, `exit_angle`, `exit_direction`: [`TypeString::post`],
+/// [`POST_VERSION`]); a file is written at 13 only when a string gives one.
+pub const STRUCTURE_FILE_VERSION: u32 = 13;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -719,9 +740,59 @@ pub struct TypeString {
     /// every structure of the type takes them.
     #[serde(default, rename = "shape")]
     pub shapes: Vec<crate::StringShape>,
+    /// Version 13 (2026-11-15): a **post insulator** — it stands on its
+    /// top (a point of the structure: its base, the earthed end) and holds
+    /// its wire point at its other end as a cantilever, rigidly; its load
+    /// goes to its base with the moment of its length. As a line's string's
+    /// `post` (`ohl_line::InsulatorString::post`); a string naming a library
+    /// post (`kind = "post"`) is one whatever this says.
+    #[serde(default)]
+    pub post: bool,
+    /// Version 13: a post on a **hinged** base (a braced line post): it
+    /// turns about its base and takes its load along it only, so another
+    /// string at its wire point (its brace) must hold it. Not given: a
+    /// fixed (cantilever) post.
+    #[serde(default)]
+    pub hinged: bool,
+    /// Version 13: a post's rated load across it at its top (default: its
+    /// library post's; none: not checked).
+    #[serde(default)]
+    pub cantilever_load: Option<ohl_core::units::Force>,
+    /// Version 13: the angle from the horizontal at which a post's clamp
+    /// holds a jumper ending at its wire point (negative: down), fixed to
+    /// the structure, from −90° to 90° (none: level). The line's
+    /// `exit_angle_deg`.
+    #[serde(default)]
+    pub exit_angle: Option<ohl_core::units::Angle>,
+    /// Version 13: the same clamp's direction in plan in the type's axes
+    /// (0 ahead along the line, 90 to the right; none: towards the jumper's
+    /// other end). The line's `exit_direction_deg`.
+    #[serde(default)]
+    pub exit_direction: Option<ohl_core::units::Angle>,
 }
 
+/// The structure file version of a string's post fields (`post`, `hinged`,
+/// `cantilever_load`, `exit_angle`, `exit_direction`; 2026-11-15).
+pub const POST_VERSION: u32 = 13;
+
 impl TypeString {
+    /// Whether it gives any of the post fields of version 13
+    /// ([`POST_VERSION`]).
+    pub fn uses_post_fields(&self) -> bool {
+        self.post
+            || self.hinged
+            || self.cantilever_load.is_some()
+            || self.exit_angle.is_some()
+            || self.exit_direction.is_some()
+    }
+
+    /// Its clamp's exit angle from the horizontal and direction in plan,
+    /// degrees (none: not given).
+    pub fn exit_deg(&self) -> (Option<f64>, Option<f64>) {
+        let deg = |a: Option<ohl_core::units::Angle>| a.map(|a| a.si().to_degrees());
+        (deg(self.exit_angle), deg(self.exit_direction))
+    }
+
     /// Its own limits (not its insulator's; not checked by OpenOHL).
     pub fn limits(&self) -> crate::InsulatorLimits {
         crate::InsulatorLimits::of(
@@ -1519,6 +1590,18 @@ pub struct PlacedString {
     pub limits: crate::InsulatorLimits,
     /// Its own volumes over its assembly's ([`TypeString::shapes`]).
     pub shapes: Vec<crate::StringShape>,
+    /// A post insulator ([`TypeString::post`]; a library post makes it one
+    /// on resolve too).
+    pub post: bool,
+    /// A post on a hinged base ([`TypeString::hinged`]).
+    pub hinged: bool,
+    /// A post's rated load across it at its top, N (its own; its library
+    /// post's is taken on resolve where it gives none).
+    pub cantilever_load: Option<f64>,
+    /// Its clamp's exit angle from the horizontal, degrees.
+    pub exit_angle_deg: Option<f64>,
+    /// Its clamp's direction in plan, type's axes, degrees.
+    pub exit_direction_deg: Option<f64>,
 }
 
 /// The points, strings and wire points of a placed structure (version 2
@@ -1593,10 +1676,92 @@ impl StructureType {
             if let Err(m) = st.limits().check() {
                 return bad(&m);
             }
+            if let Some(m) = self.post_problem(st) {
+                return bad(&m);
+            }
         }
         Ok(())
     }
 
+    /// Why string `st` cannot be what its post fields say, as a line's
+    /// string is refused (`ohl_line::Structure::validate`; none: it can): a
+    /// post stands on a point, not on a wire point, and is not a strain
+    /// string; a fixed post holds its wire point alone (no other string
+    /// ends there or hangs from it); a hinged post needs a brace (another
+    /// string to its wire point); its cantilever load > 0; its exit angle
+    /// from −90° to 90°; the hinge, the rating and the exit angles are a
+    /// post's only. The other strings are this type's (`st` may be one of
+    /// them changed: it is compared by label).
+    pub fn post_problem(&self, st: &TypeString) -> Option<String> {
+        post_problem_among(&self.strings, &self.wires, st)
+    }
+}
+
+/// [`StructureType::post_problem`] among `strings` and `wires` (an editor's
+/// strings as they would be after a change).
+pub fn post_problem_among(
+    strings: &[TypeString],
+    wires: &[TypeWire],
+    st: &TypeString,
+) -> Option<String> {
+    if !st.post {
+        return if st.hinged {
+            Some("hinged is for a post insulator".into())
+        } else if st.cantilever_load.is_some() {
+            Some("a cantilever load is for a post insulator".into())
+        } else if st.exit_angle.is_some() || st.exit_direction.is_some() {
+            Some("an exit angle is for a post insulator's clamp".into())
+        } else {
+            None
+        };
+    }
+    if st.strain {
+        return Some("a post insulator is not a strain string".into());
+    }
+    if wires.iter().any(|w| w.label == st.top) {
+        return Some(
+            "a post insulator stands on a point of the structure, not on a wire point".into(),
+        );
+    }
+    let others = || strings.iter().filter(|o| o.label != st.label);
+    if st.hinged {
+        if !others().any(|o| o.wire == st.wire) {
+            return Some(format!(
+                "a hinged post needs a brace: another string to its wire point {}",
+                st.wire
+            ));
+        }
+    } else {
+        let also: Vec<&str> = others()
+            .filter(|o| o.wire == st.wire || o.top == st.wire)
+            .map(|o| o.label.as_str())
+            .collect();
+        if !also.is_empty() {
+            return Some(format!(
+                "a fixed post insulator holds its wire point {} alone (also: {}; a braced \
+                 post is a hinged one)",
+                st.wire,
+                also.join(", ")
+            ));
+        }
+    }
+    if st
+        .cantilever_load
+        .is_some_and(|c| !(c.si().is_finite() && c.si() > 0.0))
+    {
+        return Some("the cantilever load must be > 0".into());
+    }
+    let (angle, direction) = st.exit_deg();
+    if angle.is_some_and(|a| !(-90.0..=90.0).contains(&a)) {
+        return Some("the exit angle must be from -90 to 90°".into());
+    }
+    if direction.is_some_and(|d| !d.is_finite()) {
+        return Some("the exit direction must be a number".into());
+    }
+    None
+}
+
+impl StructureType {
     /// The attachment points' links: no point on a joint of kind
     /// `support` (strings hang from attach joints).
     fn check_links(&self) -> Result<(), String> {
@@ -1967,6 +2132,11 @@ impl StructureType {
                         strain: s.strain || a.is_some_and(|a| a.kind == AssemblyKind::Strain),
                         limits: s.limits(),
                         shapes: s.shapes.clone(),
+                        post: s.post,
+                        hinged: s.post && s.hinged,
+                        cantilever_load: s.cantilever_load.map(|f| f.si()),
+                        exit_angle_deg: s.exit_deg().0,
+                        exit_direction_deg: s.exit_deg().1,
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -2601,6 +2771,84 @@ mod tests {
         }
         let typo = text.replace("max_swing_across", "max_swing_sideways");
         assert!(StructureType::parse(Path::new("t.ohls"), &typo).is_err());
+    }
+
+    /// A type with a fixed upright post on A and a hinged post on B braced
+    /// by a string from C (version 13).
+    const POSTS: &str = "format = \"ohl-structure\"\nversion = 13\nid = \"T\"\nname = \"t\"\n\
+        kind = \"lattice\"\n\
+        [[point]]\nlabel = \"A\"\npoint = [\"-6 m\", \"0 m\", \"30 m\"]\n\
+        [[point]]\nlabel = \"B\"\npoint = [\"6 m\", \"0 m\", \"30 m\"]\n\
+        [[point]]\nlabel = \"C\"\npoint = [\"6 m\", \"0 m\", \"32 m\"]\n\
+        [[wire]]\nlabel = \"W1\"\nset = 1\n\
+        [[wire]]\nlabel = \"W2\"\nset = 2\n\
+        [[string]]\nlabel = \"P1\"\ntop = \"A\"\nwire = \"W1\"\nlength = \"1.5 m\"\n\
+        angle = \"180 deg\"\nweight = \"450 N\"\npost = true\ncantilever_load = \"8 kN\"\n\
+        exit_angle = \"-15 deg\"\nexit_direction = \"90 deg\"\n\
+        [[string]]\nlabel = \"P2\"\ntop = \"B\"\nwire = \"W2\"\nlength = \"2 m\"\n\
+        angle = \"90 deg\"\ndirection = \"90 deg\"\npost = true\nhinged = true\n\
+        compression = \"20 kN\"\n\
+        [[string]]\nlabel = \"S2\"\ntop = \"C\"\nwire = \"W2\"\nlength = \"2.8284 m\"\n";
+
+    /// Post fields (version 13, 2026-11-15): read with their units, placed
+    /// (the fixed post's wire point 1.5 m up, the hinged one's where it
+    /// and its brace meet), carried into the placed strings; refused as a
+    /// line's strings are: a post's fields on a string, a strain post, a
+    /// post on a wire point, a fixed post sharing its wire point, a hinged
+    /// one without a brace, a rating ≤ 0, an exit angle beyond 90°; read at
+    /// 12 too (the version only says what an older program refuses), a
+    /// typo refused.
+    #[test]
+    fn version_13_post_strings() {
+        let parse = |text: &str| StructureType::parse(Path::new("t.ohls"), text);
+        let t = parse(POSTS).unwrap();
+        let (p1, p2) = (&t.strings[0], &t.strings[1]);
+        assert!(p1.post && !p1.hinged && p2.post && p2.hinged);
+        assert!(p1.uses_post_fields() && !t.strings[2].uses_post_fields());
+        assert_eq!(p1.cantilever_load.map(|f| f.si()), Some(8000.0));
+        let (a, d) = p1.exit_deg();
+        assert!((a.unwrap() + 15.0).abs() < 1e-9 && (d.unwrap() - 90.0).abs() < 1e-9);
+        assert_eq!(p2.exit_deg(), (None, None));
+        let placed = t.place_strings([0.0; 3], 0.0, None, &insulators()).unwrap();
+        let w1 = placed.wires.iter().find(|w| w.label == "W1").unwrap();
+        assert!((w1.position[2] - 31.5).abs() < 1e-9 && (w1.position[0] + 6.0).abs() < 1e-9);
+        let w2 = placed.wires.iter().find(|w| w.label == "W2").unwrap();
+        assert!((w2.position[0] - 8.0).abs() < 1e-3 && (w2.position[2] - 30.0).abs() < 1e-3);
+        let (q1, q2) = (&placed.strings[0], &placed.strings[1]);
+        assert!(q1.post && !q1.hinged && q2.post && q2.hinged && !placed.strings[2].post);
+        assert_eq!(q1.cantilever_load, Some(8000.0));
+        assert!((q1.exit_angle_deg.unwrap() + 15.0).abs() < 1e-9);
+        assert!((q1.exit_direction_deg.unwrap() - 90.0).abs() < 1e-9);
+        assert_eq!(q2.compression, Some(20_000.0));
+        assert!(parse(&POSTS.replace("version = 13", "version = 12")).is_ok());
+        let refused = [
+            // A post's fields on a plain string.
+            POSTS.replacen("post = true\ncantilever", "cantilever", 1),
+            POSTS.replacen("post = true\nhinged = true", "hinged = true", 1),
+            POSTS.replacen("post = true\ncantilever_load = \"8 kN\"\n", "", 1),
+            // A strain post, a post on a wire point.
+            POSTS.replacen(
+                "post = true\ncantilever",
+                "post = true\nstrain = true\ncantilever",
+                1,
+            ),
+            POSTS.replace("top = \"B\"", "top = \"W1\""),
+            // A string hanging from a fixed post's wire point.
+            POSTS.replace("top = \"C\"", "top = \"W1\""),
+            // A fixed post sharing its wire point; a hinged one alone.
+            POSTS.replace("hinged = true\n", ""),
+            POSTS.replace("top = \"C\"\nwire = \"W2\"", "top = \"C\"\nwire = \"W1\""),
+            POSTS.replace("cantilever_load = \"8 kN\"", "cantilever_load = \"0 kN\""),
+            POSTS.replace("-15 deg", "-95 deg"),
+            POSTS.replace("exit_direction", "exit_bearing"),
+        ];
+        for (k, text) in refused.iter().enumerate() {
+            assert!(parse(text).is_err(), "{k}: read");
+        }
+        // The version only an older program needs: a newer one refused.
+        let newer = POSTS.replace("version = 13", &format!("version = {}", POST_VERSION + 1));
+        assert_eq!(POST_VERSION, STRUCTURE_FILE_VERSION);
+        assert!(parse(&newer).is_err());
     }
 
     /// Points at a joint follow it; one written along a member is on a

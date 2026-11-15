@@ -63,7 +63,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `description` | no | What it is, in words (free text; shown in the structure picker). |
 | `point` | no | Points where strings hang (each, like wire points and strings, may have a `description`, free text, carried into the line): `label` and `point` (local), or `node` (at a joint) — then it moves with its joint. A point cannot be put on a member: insert a joint on it (OHL-Structure) and put the point there. Files written before that give `member` and `at` (along a member, 0–1 from its first joint) are read with a joint inserted there, the member split (below). Labels are unique among points and wire points. |
 | `wire` | no | Wire points: `label`, optional `set` (a wire is clamped here; unique), optional `point` (local; default: placed from its strings, below), optional `weight` (a counterweight hanging at it). |
-| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its assembly's, else none), optional `compression` (what it may take; none: tension only), `strain` (a strain string, else suspension), `angle` (from straight down, default 0: hanging) and `direction` (in plan, default 0: ahead); version 4: optional **limits** `max_load`, `max_swing`, `max_swing_across`, `max_swing_along` (default: its assembly's; checked by String checks, [String limits](#string-limits)). Files written before gave a strain string a `side` (`ahead`/`back`): read as level, direction 0° or 180°. |
+| `string` | no | Strings: `label`, `top` (a point or a wire point), `wire` (a wire point), an `insulator` from the library or a `length` (and `weight`), optional `wind_area` (default: its assembly's, else none), optional `compression` (what it may take; none: tension only), `strain` (a strain string, else suspension), `angle` (from straight down, default 0: hanging) and `direction` (in plan, default 0: ahead); version 4: optional **limits** `max_load`, `max_swing`, `max_swing_across`, `max_swing_along` (default: its assembly's; checked by String checks, [String limits](#string-limits)); version 13: a **post insulator** — `post = true`, optional `hinged = true` (a braced post), `cantilever_load` (its rating across it at its top), `exit_angle` and `exit_direction` (its clamp's fixed direction for a jumper) — [Post insulators on a type](#post-insulators-on-a-type). Files written before gave a strain string a `side` (`ahead`/`back`): read as level, direction 0° or 180°. |
 | `attachment` | no | Files of version 1: attachment points (`set`, `phase`, `point`, `insulator` or `string`, `side`), read as before (below). |
 | `extension` | no | Named extensions: `dz` lengthens the body below z = 0, so everything above the feet rises by it. Version 3: an extension may carry its own joints, members and leg extensions ([Extensions](#extensions-and-leg-extensions)). |
 | `foot` | no | Level of the feet in local z (default 0: z = 0 is the ground). |
@@ -85,6 +85,70 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 A string hangs from its top — a point of the structure, or another string's wire point — to a wire point, so any assembly is built from single strings ([line file](line-file.md#points-strings-and-wire-points), [drawing](glossary.md#strings)): two strings to one wire point; a third from that wire point down to a wire point with a set; a string down to a wire point and two tension strings from it to two sets.
 
 A wire point is placed from its strings (their tops placed first): at its one string's length (a library assembly: its length) in the string's direction (`angle`, `direction`); with two or more strings from other tops, where the first two's lengths meet: of the circle both reach, the point nearest where the first string's direction points (hanging: the lowest). A wire point no string reaches is clamped where its `point` says. A string's weight, stiffness and wind area are its own, else its assembly's (the weight and wind area of an assembly of two strings shared by them).
+
+### Post insulators on a type
+
+*Version 13, 2026-11-15.* A string of a type can be a **post insulator**,
+with the same meaning as a line's string made with the
+[Add post insulator](tools-structures.md#add-post-insulator) tool
+([theory](../theory/post-insulators.md)): it stands on its `top` — a
+point of the structure, its base — and holds its wire point at its other
+end. Every structure of the type then has that post, and its loads,
+checks and the moment sent to OHL-Structure are those of a post made by
+hand.
+
+```toml
+[[string]]                           # an upright station post on A1
+label = "P1"
+top = "A1"
+wire = "W1"
+length = "1.5 m"
+angle = "180 deg"                    # 180 upright, 90 level, between: upswept
+weight = "450 N"
+post = true
+cantilever_load = "8 kN"             # its rating across it at its top (optional)
+exit_angle = "-15 deg"               # its clamp holds a jumper 15° down (optional)
+exit_direction = "90 deg"            # …to the right (optional; in plan, type axes)
+
+[[string]]                           # a braced line post on A2: hinged…
+label = "P2"
+top = "A2"
+wire = "W2"
+length = "2 m"
+angle = "90 deg"
+direction = "90 deg"
+post = true
+hinged = true
+compression = "20 kN"                # its compression rating (optional)
+
+[[string]]                           # …and its brace, to the same wire point
+label = "B2"
+top = "A3"
+wire = "W2"
+length = "2.83 m"
+```
+
+| Field | Meaning |
+|---|---|
+| `post` | A post insulator: rigid, a cantilever — its wire point is fixed where it puts it, its load goes to its base with the moment of its length. A string naming a library post (`kind = "post"`) is one whatever this says. |
+| `hinged` | A post on a hinged base (a braced line post): it turns about its base and only pushes or pulls; another string to its wire point (its brace) must hold it. No moment goes to the structure. |
+| `cantilever_load` | Its rating across it at its top (a force; default: its library post's; none: not checked). |
+| `exit_angle` | The angle from the horizontal at which its clamp holds a jumper ending at its wire point, −90° to 90° (negative: down; none: level), fixed to the structure. |
+| `exit_direction` | The same clamp's direction in plan, in the type's axes (0 ahead, 90 right; none: towards the jumper's other end). |
+
+A post's compression rating is its `compression`, as for a string. The
+type is refused, as a line's strings are, when a post is a strain string,
+stands on a wire point, is fixed and shares its wire point with another
+string (a braced post is a hinged one), or is hinged without a brace; and
+when `hinged`, `cantilever_load` or an exit angle is given on a string
+that is not a post. A file is written at version 13 only when a string
+uses one of these fields (OHL-Structure raises it when it writes one); a
+program older than version 13 refuses such a file instead of dropping the
+post. `angle` defaults to 0 (hanging) for a post as for any string: give
+`angle = "180 deg"` for an upright post. A hinged post with a single brace
+whose base is straight above the post's turns freely along the line (both
+are pinned): with unbalanced pulls its section does not solve (said); two
+braces, one ahead and one back, hold it ([theory](../theory/post-insulators.md#a-braced-post-hinged)).
 
 **Version 1 files** gave each string as an `[[attachment]]` with a set and phase; they are read as before: an attachment's point is labelled by its string's `top` label, else `A<set>-<phase>`, and its set is the set itself for phase 1, else `set + 1000 · (phase + 1)` ([line file](line-file.md#points-strings-and-wire-points)).
 
