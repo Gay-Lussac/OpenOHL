@@ -208,7 +208,7 @@ span = 1
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = \"lots\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = -0.01\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\nwind_from = \"ahead\"\n",
-        "version = 6\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+        "version = 7\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
     ] {
         assert!(LoadCases::parse(bad).is_err(), "{bad}");
     }
@@ -955,6 +955,82 @@ fn subconductors_of_a_broken_wire_are_version_5() {
     let e = LoadCases::parse(&zero).unwrap_err();
     assert!(e.contains("subconductors = 0"), "{e}");
     // A newer file is refused as newer.
-    let newer = text.replace("version = 5", "version = 6");
+    let newer = text.replace("version = 5", "version = 7");
+    assert!(LoadCases::parse(&newer).is_err());
+}
+
+/// Version 6 (owner 2026-11-15: "a factor as for the wind to change the
+/// value compared to the conductor weather cases"): `ice = "weather"` puts
+/// the weather case's ice on the wires on the structures, `ice_factor`
+/// scales the thickness whichever it is; read, written back the same, a
+/// file without either at its old version; refused: a factor with `ice =
+/// false` or below 0, the weather case's ice given as a load per metre.
+#[test]
+fn ice_on_the_structures_from_the_weather_case_with_a_factor() {
+    let text = "format = \"ohl-load-cases\"\nversion = 6\n\n[[case]]\nname = \"a\"\n\
+                weather = \"ice\"\n\n[case.structure]\nice = \"weather\"\nice_factor = 0.5\n";
+    let set = LoadCases::parse(text).unwrap();
+    let a = &set.cases[0];
+    assert_eq!(a.on_structure.ice, Some(StructureIce::Weather));
+    assert_eq!(a.on_structure.ice_factor, Some(0.5));
+    assert!(a.uses_version_6());
+    assert_eq!(set.written_version(), 6);
+    let written = set.to_toml();
+    assert!(written.contains("version = 6"), "{written}");
+    assert_eq!(LoadCases::parse(&written).unwrap(), set);
+    // Half the wires' 10 mm, at the weather case's 900 kg/m³.
+    let w = weather();
+    let s = ohl_line::Structure::new("T".to_owned(), [0.0; 3]);
+    assert!(a.ices_or_snows(&w[2]));
+    let on = a.structure_ice_at(&w[2], Some(&s)).unwrap().unwrap();
+    assert!((on.thickness - 0.005).abs() < 1e-12, "{on:?}");
+    assert_eq!(on.density, 900.0);
+    // A weather case without ice: none, and nothing to say.
+    assert!(!a.ices_or_snows(&w[1]));
+    assert_eq!(a.structure_ice_at(&w[1], Some(&s)), Ok(None));
+    // No density given anywhere: glaze ice, as on the wires.
+    let mut no_density = w[2].clone();
+    no_density.ice_density = None;
+    let glaze = a.structure_ice_at(&no_density, Some(&s)).unwrap().unwrap();
+    assert_eq!(glaze.density, no_density.ice_density_or_glaze().si());
+    // The ice as a load per metre of wire: no thickness, refused, said.
+    let mut by_load = w[2].clone();
+    by_load.ice_thickness = ohl_core::units::Length::ZERO;
+    by_load.ice_load = Some(ohl_core::units::ForcePerLength::from_si(10.0));
+    let e = a.structure_ice_at(&by_load, Some(&s)).unwrap_err();
+    assert!(
+        e.contains("load per metre") && e.contains("none is made up"),
+        "{e}"
+    );
+    // The factor on the other sources too: a thickness, the local ice.
+    let mut given = a.clone();
+    given.on_structure.ice = Some(StructureIce::Thickness(0.02));
+    given.on_structure.ice_factor = Some(1.5);
+    let on = given.structure_ice_at(&w[2], Some(&s)).unwrap().unwrap();
+    assert!((on.thickness - 0.03).abs() < 1e-12, "{on:?}");
+    let mut local = given.clone();
+    local.on_structure.ice = Some(StructureIce::Local);
+    let mut iced = s.clone();
+    iced.local.structure_ice = Some(0.01);
+    let on = local.structure_ice_at(&w[2], Some(&iced)).unwrap().unwrap();
+    assert!((on.thickness - 0.015).abs() < 1e-12, "{on:?}");
+    // Without either: the version of before.
+    let mut plain = set.clone();
+    plain.cases[0].on_structure.ice = Some(StructureIce::Local);
+    plain.cases[0].on_structure.ice_factor = None;
+    assert_eq!(plain.written_version(), 4);
+    assert!(!plain.to_toml().contains("ice_factor"));
+    // Refused: a factor with no ice, a factor below 0.
+    let no_ice = text.replace("ice = \"weather\"", "ice = false");
+    let e = LoadCases::parse(&no_ice).unwrap_err();
+    assert!(e.contains("ice_factor with ice = false"), "{e}");
+    let negative = text.replace("ice_factor = 0.5", "ice_factor = -1");
+    assert!(
+        LoadCases::parse(&negative)
+            .unwrap_err()
+            .contains("ice_factor")
+    );
+    // A newer file is refused.
+    let newer = text.replace("version = 6", "version = 7");
     assert!(LoadCases::parse(&newer).is_err());
 }

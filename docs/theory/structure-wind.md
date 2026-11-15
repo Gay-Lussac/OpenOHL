@@ -312,9 +312,21 @@ the structure bodies' only.
 
 A radial thickness \\( t \\) (the case's, or each structure's local
 `structure_ice` — also, without ice of the case's own, in a case taking
-the local conditions whose weather case has ice) of density \\( \rho \\) (the case's `ice_density`, else
+the local conditions whose weather case has ice —, or the weather case's
+ice thickness on the wires with `ice = "weather"`, load case file
+version 6) of density \\( \rho \\) (the case's `ice_density`, else
 the weather case's; without either the case is refused — no density is
-assumed).
+assumed; with the wires' ice, glaze ice as on the wires).
+The thickness is times the case's `ice_factor` \\( k_i \\) (version 6,
+owner 2026-11-15; none: 1), whichever its source:
+\\[ t = k_i\, t_0 . \\]
+\\( k_i \\) changes the amount of ice; the weight it gives is then times
+the vertical load factor as every load on the structure.
+**Not checked:** a factor below 1 puts less ice on the bodies than on the
+wires — the engineer's choice by the design code, the program does not
+judge it. A weather case giving its ice as a load per metre of wire has
+no thickness for a structure: `ice = "weather"` is refused there (no
+thickness is derived from a wire's diameter).
 
 - **Members (fe check):** on every member with a profile from the
   cross-section library, the ice all round its outline of perimeter

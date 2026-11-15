@@ -69,6 +69,12 @@
 //! break some subconductors of its bundle only (`subconductors = k` in a
 //! `[[case.broken]]` table, [`BrokenWire::subconductors`]); none given:
 //! the whole phase, as before.
+//!
+//! **Version 6** (2026-11-15, owner: "a factor as for the wind to change
+//! the value compared to the conductor weather cases"): the ice on the
+//! structures may be the weather case's ice on the wires (`[case.structure]
+//! ice = "weather"`, [`StructureIce::Weather`]) and its thickness, whichever
+//! it is, times a factor (`ice_factor`, [`StructureOptions::ice_factor`]).
 
 mod analysis;
 mod body;
@@ -104,7 +110,7 @@ pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
 /// version 2 a case's `[case.structure]` table ([`StructureWind`]); each
 /// written only when a case has one ([`LoadCases::written_version`]);
 /// older files read as before.
-pub const LOAD_CASE_FILE_VERSION: u32 = 5;
+pub const LOAD_CASE_FILE_VERSION: u32 = 6;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
@@ -269,6 +275,8 @@ struct StructureFile {
     direction: Option<WindDirection>,
     #[serde(default)]
     ice: Option<StructureIce>,
+    #[serde(default)]
+    ice_factor: Option<f64>,
     #[serde(
         default,
         deserialize_with = "ohl_core::units::si::de_opt::<_, ohl_core::units::Density>"
@@ -318,6 +326,7 @@ impl From<LoadCaseFile> for LoadCase {
                 StructureOptions {
                     direction: s.direction,
                     ice: s.ice,
+                    ice_factor: s.ice_factor,
                     ice_density: s.ice_density,
                     snow: s.snow,
                     snow_shape: s.snow_shape,
@@ -699,6 +708,13 @@ impl LoadCase {
         }
     }
 
+    /// Whether the case uses anything of file version 6: the weather
+    /// case's ice on the structures, or a factor on their ice.
+    pub fn uses_version_6(&self) -> bool {
+        self.on_structure.ice == Some(StructureIce::Weather)
+            || self.on_structure.ice_factor.is_some()
+    }
+
     /// Whether the case uses anything of file version 5: a broken wire
     /// with some subconductors of its bundle only.
     pub fn uses_version_5(&self) -> bool {
@@ -761,16 +777,21 @@ impl LoadCase {
     }
 
     /// The ice on structure `s` in this case with weather case `weather`
-    /// ([`StructureOptions::ice`]): a thickness given, or with `ice =
-    /// true` the structure's local `structure_ice`; with `ice = false`
-    /// none. Not given (owner 2026-11-04: "yes apply local ice too"): a
-    /// case taking the local conditions ([`LoadCase::use_local`], or a
-    /// check's switch, [`with_local`]) whose weather case has ice
+    /// ([`StructureOptions::ice`]): a thickness given, with `ice = true`
+    /// the structure's local `structure_ice`, with `ice = "weather"` the
+    /// weather case's ice thickness on the wires (version 6); with `ice =
+    /// false` none. Not given (owner 2026-11-04: "yes apply local ice
+    /// too"): a case taking the local conditions ([`LoadCase::use_local`],
+    /// or a check's switch, [`with_local`]) whose weather case has ice
     /// ([`WeatherCase::has_ice`]) puts the structure's local
     /// `structure_ice` on it ([`LoadCase::takes_local_ice`]); else none.
+    /// The thickness times [`StructureOptions::ice_factor`] (version 6).
     /// None too where the structure gives no local ice, or a thickness 0.
     /// Err: ice to put and no density — neither the case's `ice_density`
-    /// nor the weather case's (none is made up).
+    /// nor the weather case's (none is made up; the weather case's ice
+    /// takes glaze ice where it gives none, as the wires do) —, or `ice =
+    /// "weather"` with a weather case giving its ice as a load per metre
+    /// of wire, which is no thickness for a structure (none is made up).
     pub fn structure_ice_at(
         &self,
         weather: &WeatherCase,
@@ -780,6 +801,18 @@ impl LoadCase {
         let thickness = match self.on_structure.ice {
             Some(StructureIce::NoIce) => return Ok(None),
             Some(StructureIce::Thickness(t)) => t,
+            Some(StructureIce::Weather) => {
+                if weather.ice_load.is_some_and(|l| l.si() > 0.0) {
+                    return Err(format!(
+                        "load case {}: ice on the structures \"the weather case's\", but \
+                         weather case \"{}\" gives its ice as a load per metre of wire, no \
+                         thickness for a structure: give a thickness in the weather case or \
+                         on the structures (none is made up)",
+                        self.name, weather.name
+                    ));
+                }
+                weather.ice_thickness.si()
+            }
             Some(StructureIce::Local) => match local() {
                 Some(t) => t,
                 None => return Ok(None),
@@ -790,10 +823,17 @@ impl LoadCase {
             },
             None => return Ok(None),
         };
+        let thickness = thickness * self.on_structure.ice_factor.unwrap_or(1.0);
         if thickness <= 0.0 {
             return Ok(None);
         }
-        let density = self.ice_density(weather)?;
+        let density = if self.on_structure.ice == Some(StructureIce::Weather) {
+            self.on_structure
+                .ice_density
+                .unwrap_or_else(|| weather.ice_density_or_glaze().si())
+        } else {
+            self.ice_density(weather)?
+        };
         Ok(Some(IceOn { thickness, density }))
     }
 
@@ -810,7 +850,8 @@ impl LoadCase {
         matches!(
             self.on_structure.ice,
             Some(StructureIce::Local | StructureIce::Thickness(_))
-        ) || self.on_structure.snow
+        ) || (self.on_structure.ice == Some(StructureIce::Weather) && weather.has_ice())
+            || self.on_structure.snow
             || self.takes_local_ice(weather)
     }
 
@@ -1030,7 +1071,9 @@ impl LoadCases {
 /// The version a load case file holding `cases` is written at
 /// ([`LoadCases::written_version`]).
 pub fn written_version(cases: &[LoadCase]) -> u32 {
-    if cases.iter().any(LoadCase::uses_version_5) {
+    if cases.iter().any(LoadCase::uses_version_6) {
+        6
+    } else if cases.iter().any(LoadCase::uses_version_5) {
         5
     } else if cases.iter().any(LoadCase::uses_version_4) {
         4

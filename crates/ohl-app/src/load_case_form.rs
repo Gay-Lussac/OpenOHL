@@ -976,6 +976,8 @@ enum Ice {
     None,
     Local,
     Thickness,
+    /// The weather case's ice on the wires (version 6).
+    Weather,
 }
 
 /// Section 5.
@@ -997,12 +999,13 @@ fn ice_snow_ui(
         Some(StructureIce::NoIce) => Ice::None,
         Some(StructureIce::Local) => Ice::Local,
         Some(StructureIce::Thickness(_)) => Ice::Thickness,
+        Some(StructureIce::Weather) => Ice::Weather,
     };
     ui.horizontal_wrapped(|ui| {
         ui.label("Ice");
         for (label, m, hover) in [
             (
-                "by the weather case",
+                "default",
                 Ice::ByWeather,
                 "Each structure's local ice when the case takes the local conditions (its Use \
                  local conditions, or a check's switch) and its weather case has ice; else no \
@@ -1021,6 +1024,13 @@ fn ice_snow_ui(
                  ice on the structure); none where it gives none",
             ),
             (
+                "the wires' ice",
+                Ice::Weather,
+                "The weather case's ice thickness on the wires, on every structure taking this \
+                 case (with a factor below to make it more or less); refused when the weather \
+                 case gives its ice as a load per metre of wire",
+            ),
+            (
                 "a thickness",
                 Ice::Thickness,
                 "The same radial thickness on every structure taking this case",
@@ -1032,9 +1042,11 @@ fn ice_snow_ui(
                     Ice::None => Some(StructureIce::NoIce),
                     Ice::Local => Some(StructureIce::Local),
                     Ice::Thickness => Some(StructureIce::Thickness(0.01)),
+                    Ice::Weather => Some(StructureIce::Weather),
                 };
                 if m == Ice::None || (m == Ice::ByWeather && !local_ice) {
                     o.ice_density = None;
+                    o.ice_factor = None;
                 }
                 changed = true;
             }
@@ -1047,11 +1059,45 @@ fn ice_snow_ui(
             changed = true;
         }
     });
-    if matches!(
+    let iced = matches!(
         o.ice,
-        Some(StructureIce::Local | StructureIce::Thickness(_))
-    ) || (o.ice.is_none() && (local_ice || o.ice_density.is_some()))
-    {
+        Some(StructureIce::Local | StructureIce::Thickness(_) | StructureIce::Weather)
+    ) || (o.ice.is_none()
+        && (local_ice || o.ice_density.is_some() || o.ice_factor.is_some()));
+    if iced {
+        let wires = weather.map_or(String::new(), |w| {
+            format!(" (the wires': {:.0} mm)", w.ice_thickness.si() * 1000.0)
+        });
+        ui.horizontal(|ui| {
+            let mut has = o.ice_factor.is_some();
+            if ui
+                .checkbox(&mut has, "factor on the thickness")
+                .on_hover_text(format!(
+                    "The structures' ice thickness, whichever it is above, times this factor \
+                     (unticked: 1) — e.g. 0.5 with the wires' ice: half the wires' thickness on \
+                     the bodies{wires}. Its weight is then times the vertical factor as before."
+                ))
+                .changed()
+            {
+                o.ice_factor = has.then_some(1.0);
+                changed = true;
+            }
+            if let Some(f) = o.ice_factor
+                && let Some(v) = number(ui, buffers, &key("ice factor"), "×", f, 50.0)
+                && v != f
+                && v >= 0.0
+            {
+                o.ice_factor = Some(v);
+                changed = true;
+            }
+            if let (Some(StructureIce::Weather), Some(w)) = (o.ice, weather) {
+                let t = w.ice_thickness.si() * o.ice_factor.unwrap_or(1.0) * 1000.0;
+                ui.label(egui::RichText::new(format!("= {t:.1} mm on the structures")).small());
+            }
+        });
+    }
+    if iced && !(o.ice.is_none() && !local_ice && o.ice_density.is_none()) {
+        let by_weather = o.ice == Some(StructureIce::Weather);
         let theirs = weather.and_then(|w| w.ice_density).map(|d| d.si());
         ui.horizontal(|ui| {
             let mut has = o.ice_density.is_some();
@@ -1059,6 +1105,9 @@ fn ice_snow_ui(
                 .checkbox(&mut has, "own density")
                 .on_hover_text(match theirs {
                     Some(d) => format!("Unticked: the weather case's, {d:.0} kg/m³"),
+                    None if by_weather => "Unticked: the wires' — glaze ice, the weather case \
+                                           giving no density"
+                        .to_owned(),
                     None => "Unticked: the weather case's — it gives none, so a density is \
                              needed here (none is made up)"
                         .to_owned(),
@@ -1077,7 +1126,7 @@ fn ice_snow_ui(
                         changed = true;
                     }
                 }
-                None if theirs.is_none() => {
+                None if theirs.is_none() && !by_weather => {
                     crate::menu::error_label(
                         ui,
                         egui::RichText::new("the weather case gives no density: tick own density")

@@ -31,6 +31,7 @@
 - [Wire library files (.ohlw)](user-guide/wire-library.md)
 - [Line files (.ohl.json)](user-guide/line-file.md)
 - [Weather cases (.ohlwc)](user-guide/weather.md)
+  - [The Weather cases window](user-guide/weather-cases-window.md)
 - [Load cases and structure loads (.ohllc)](user-guide/loads.md)
   - [How load cases reach a structure](user-guide/load-cases-to-structures.md)
 - [Design codes](user-guide/design-codes.md)

@@ -193,6 +193,11 @@ pub enum StructureIce {
     /// No ice on the structures (`ice = false` or `ice = "none"`), the
     /// local ice not taken either.
     NoIce,
+    /// The weather case's ice on the wires, its radial thickness on every
+    /// structure (`ice = "weather"`, version 6; owner 2026-11-15: "a factor
+    /// as for the wind to change the value compared to the conductor
+    /// weather cases", with [`StructureOptions::ice_factor`]).
+    Weather,
 }
 
 impl<'de> Deserialize<'de> for StructureIce {
@@ -208,13 +213,15 @@ impl<'de> Deserialize<'de> for StructureIce {
             Raw::Flag(true) => Ok(Self::Local),
             Raw::Flag(false) => Ok(Self::NoIce),
             Raw::Text(t) if t.trim() == "none" => Ok(Self::NoIce),
+            Raw::Text(t) if t.trim() == "weather" => Ok(Self::Weather),
             Raw::Text(t) => t
                 .parse::<ohl_core::units::Length>()
                 .map(|l| Self::Thickness(ohl_core::units::Quantity::si(l)))
                 .map_err(|_| {
                     serde::de::Error::custom(format!(
-                        "ice \"{t}\": true (the structures' local ice), a thickness, or false \
-                         (\"none\": no ice on the structures)"
+                        "ice \"{t}\": true (the structures' local ice), \"weather\" (the weather \
+                         case's ice on the wires), a thickness, or false (\"none\": no ice on \
+                         the structures)"
                     ))
                 }),
             Raw::Thickness(t) => Ok(Self::Thickness(ohl_core::units::Quantity::si(t))),
@@ -250,6 +257,9 @@ pub fn snow_load(s_k: f64, shape: f64, exposure: f64, thermal: f64) -> f64 {
 /// direction = 90          # "left", "right", "ahead", "back" or degrees
 /// ice = true              # the structures' local ice; or "20 mm"; or
 ///                         # false: none (not even the local ice)
+///                         # or "weather": the weather case's ice on
+///                         # the wires (version 6)
+/// ice_factor = 0.5        # on the ice thickness, whichever (version 6)
 /// ice_density = "900 kg/m³"   # default: the weather case's
 /// snow = true             # the structures' snow on the ground
 /// snow_shape = 0.8        # μ (default 0.8, SIA 261 5.3.4)
@@ -265,8 +275,15 @@ pub struct StructureOptions {
     /// structure's local ice where the case takes the local conditions and
     /// its weather case has ice, [`crate::LoadCase::structure_ice_at`]).
     pub ice: Option<StructureIce>,
+    /// A factor on the ice's thickness on the structures, whichever it is
+    /// — the weather case's, the local, the one given (version 6; owner
+    /// 2026-11-15; none: 1). E.g. 0.5 with `ice = "weather"`: half the
+    /// wires' thickness on the bodies.
+    pub ice_factor: Option<f64>,
     /// The ice's density, kg/m³ (none: the weather case's; refused when
-    /// it gives none and ice is put on a structure).
+    /// it gives none and ice is put on a structure — except with `ice =
+    /// "weather"`, which takes the wires' ice, glaze ice where the weather
+    /// case gives no density, as on the wires).
     pub ice_density: Option<f64>,
     /// Snow on the structures' horizontal surfaces, from their snow on
     /// the ground ([`ohl_line::local::LocalConditions::snow`]).
@@ -307,6 +324,14 @@ impl StructureOptions {
             && !(t.is_finite() && t >= 0.0)
         {
             return Err(format!("structure ice {t} m (0 or more)"));
+        }
+        if let Some(f) = self.ice_factor {
+            if self.ice == Some(StructureIce::NoIce) {
+                return Err("structure ice_factor with ice = false".into());
+            }
+            if !(f.is_finite() && (0.0..=100.0).contains(&f)) {
+                return Err(format!("structure ice_factor {f} (0 to 100)"));
+            }
         }
         if let Some(r) = self.ice_density {
             if self.ice == Some(StructureIce::NoIce) {

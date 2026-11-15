@@ -408,6 +408,9 @@ pub enum TableAction {
     CrossSection(String),
     /// Open the String builder on this assembly ([`crate::string_builder`]).
     StringBuilder(String),
+    /// Open this page of the manual at this section (the table's
+    /// **user guide ↗** or **theory ↗**, [`TableKind::guide`]).
+    OpenGuide(&'static str, &'static str),
 }
 
 impl TablePage {
@@ -755,6 +758,28 @@ impl TablePage {
             }
             if !editable {
                 ui.label(egui::RichText::new("read-only").small().weak());
+            }
+            // The table's own pages of the manual (2026-11-15).
+            if let Some(g) = kind.guide() {
+                ui.separator();
+                if ui
+                    .small_button("user guide ↗")
+                    .on_hover_text(format!(
+                        "Help › User guide: the {} table — every column, and where each value \
+                         is used",
+                        kind.title()
+                    ))
+                    .clicked()
+                {
+                    asks.action = Some(TableAction::OpenGuide(g.page, g.anchor));
+                }
+                if ui
+                    .small_button("theory ↗")
+                    .on_hover_text("Help › Theory: how the calculations take these values")
+                    .clicked()
+                {
+                    asks.action = Some(TableAction::OpenGuide(g.theory, g.theory_anchor));
+                }
             }
         });
     }

@@ -8,6 +8,24 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-15
+
+**Ice on the structures from the wires' ice, with a factor** (owner: "for
+the ice on the load cases can you also add a factor as for the wind to
+change the value compared to the conductor weather cases"; asked which
+factor, the owner chose a factor on the conductor ice): load case file
+version 6 — `[case.structure] ice = "weather"` puts the weather case's
+ice thickness on the wires on every structure taking the case (density:
+the case's, the weather case's, else glaze ice as on the wires; a weather
+case giving its ice as a load per metre is refused there — no thickness
+made up), and `ice_factor` multiplies the structures' ice thickness
+whichever its source (the wires', the local, one given). The weight then
+takes the vertical factor as before. A factor below 1 is the engineer's
+choice, not judged. The Load cases library form: *the wires' ice* and
+*factor on the thickness*; its first choice *by the weather case* renamed
+*default* (it never took the weather case's ice). Written at 6 only when a
+case uses either.
+
 ## 2026-11-14
 
 **Post insulators on pylons in OHL-Structure** (owner: "the post

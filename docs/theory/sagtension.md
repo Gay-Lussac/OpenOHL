@@ -159,6 +159,35 @@ Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \
 
 *Validation:* `weather-001`; `tbwx-001…003` (ice per metre, wind on the iced diameter, blowout), `tb324-014` ([Textbook and published cases](../validation/textbook.md)).
 
+## Weather cases in the calculations
+
+A weather case gives three things to every solve of the wires, unfactored
+(the user guide's [Weather cases window](../user-guide/weather-cases-window.md#where-each-value-is-used)
+lists each calculation that takes them):
+
+1. the **wire temperature**, into the change of state ([above](#change-of-state));
+2. the **ice**, a radial thickness \\( t \\) or a weight per metre with
+   its density, giving the ice weight \\( w_i \\) and the iced diameter
+   \\( D \\) ([Weather loads](#weather-loads));
+3. the **wind pressure** \\( q \\) on \\( D \\), perpendicular to each span.
+
+What a weather case does not do, and where it is done instead:
+
+- **load factors**: on the force components at the structures, in the
+  load cases ([Load cases](../user-guide/loads.md); worked example in
+  [Structure analysis](structures-fe.md#load-factors-on-components-not-on-actions));
+- **the wind and ice on the structure bodies**: in the load cases, from
+  this case's pressure and — with `ice = "weather"` — its ice thickness
+  times a factor ([Wind on the structure](structure-wind.md));
+- **local conditions**: factors on the wind and the wires' ice per span,
+  from the structures, taken when a check's *Use local conditions* is
+  ticked ([Local conditions](../user-guide/weather.md#local-conditions));
+- **the wind's side**: chosen where the wires are shown (View › Display
+  weather cases).
+
+The air density factor \\( Q \\) only relates a velocity to a pressure,
+\\( q = Q V^2 \\); no calculation takes the velocity.
+
 ## Point and distributed loads
 
 Between loads the wire is a catenary with the common \\( H \\); with \\( y' = \sinh\psi \\), \\( \psi \\) grows linearly in each segment, and a point load \\( P \\) makes the slope jump: \\( \sinh\psi^+ = \sinh\psi^- + P/H \\). The start angle is found by bisection so the wire reaches the far support; the change of state iterates on \\( H \\) around it. Vertical loads only: transverse and longitudinal components are rejected rather than ignored. The 3D finite-element model (`ohl-wirefe`) takes loads in any direction at its nodes; point loads in a line file are weights, bodies with a size (marker balls) also take wind and ice, and a point may carry a constant horizontal force across or along the line (see [Point loads: marker balls and other bodies](wirefe.md#point-loads-marker-balls-and-other-bodies)). **NOT ON THE SAFE SIDE:** the line's ruling-span method leaves every point load out (smaller sags, no pull across or along); a section solved by it with such loads says so in each weather case and names them — use the finite elements.

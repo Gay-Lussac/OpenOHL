@@ -1611,3 +1611,55 @@ fn a_post_support_on_the_ground() {
     assert!((base[2] - (at[2] + 2.5)).abs() < 1e-9);
     assert!((w.position[2] - (at[2] + 4.0)).abs() < 1e-9);
 }
+
+/// The Weather cases table's **user guide ↗** and **theory ↗** (owner,
+/// 2026-11-15: "make it as for the checks with an explanation page of
+/// what's done where") open headings that are on their pages (mdBook's
+/// anchors), and clicked, the page is opened and said.
+#[test]
+fn the_weather_cases_table_opens_its_guide_and_theory() {
+    use crate::tables::TableKind;
+    let anchor_of = |h: &str| -> String {
+        h.trim_start_matches('#')
+            .trim()
+            .to_lowercase()
+            .chars()
+            .filter_map(|c| match c {
+                ' ' => Some('-'),
+                c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                _ => None,
+            })
+            .collect()
+    };
+    let g = TableKind::WeatherCases.guide().expect("its pages");
+    for (page, anchor) in [(g.page, g.anchor), (g.theory, g.theory_anchor)] {
+        let text = std::fs::read_to_string(root().join(format!("docs/{page}.md"))).unwrap();
+        assert!(
+            text.lines()
+                .filter(|l| l.starts_with('#'))
+                .any(|l| anchor_of(l) == anchor),
+            "{anchor} not a heading of {page}"
+        );
+    }
+    let model = synthetic_project("weather-guide");
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    h.run();
+    h.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Table(TableKind::WeatherCases), None));
+    h.run();
+    h.run();
+    for (button, page) in [("user guide ↗", g.page), ("theory ↗", g.theory)] {
+        h.query_all_by_label(button)
+            .next()
+            .unwrap_or_else(|| panic!("a {button} button"))
+            .click();
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        let (said, error) = r.status.take().expect("what was opened");
+        assert!(!error, "{said}");
+        let file = page.rsplit('/').next().unwrap();
+        assert!(said.contains(file), "{said}");
+    }
+}

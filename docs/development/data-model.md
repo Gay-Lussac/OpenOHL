@@ -2474,6 +2474,16 @@ subconductors }` for `solve_section_breaks` / `solve_line_breaks`;
 `partial_note(line)` the case's note; no stored result changes: the
 span's tensions in `SpanShape` are per wire left, its flag
 `partial_break_flag`);
+**version 6** (2026-11-15, owner: "a factor as for the wind to change the
+value compared to the conductor weather cases"; `LoadCase::uses_version_6`,
+written at 6 only then): `StructureOptions.ice` may be
+`StructureIce::Weather` (`ice = "weather"`: the weather case's
+`ice_thickness` on the wires on every structure; its density the case's
+`ice_density`, else the weather case's, else glaze ice as on the wires;
+a weather case giving its ice as `ice_load` refused — no thickness is made
+up) and `StructureOptions.ice_factor` f64? (0 to 100; none: 1; refused
+with `ice = false`) multiplies the structures' ice thickness, whichever
+source (`LoadCase::structure_ice_at`);
 **version 4** (2026-11-03; `LoadCase::uses_version_4`, written at 4 only
 then): `broken_also` (`[[case.broken]]` after the first, in `broken`;
 `broken_wires()`, `has_broken()`, `set_broken(vec)`; the v3 table reads

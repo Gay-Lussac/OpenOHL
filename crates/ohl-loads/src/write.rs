@@ -87,7 +87,13 @@ impl LoadCase {
                 Some(StructureIce::Thickness(t)) => {
                     let _ = writeln!(out, "ice = {}   # m", number(t));
                 }
+                Some(StructureIce::Weather) => {
+                    out.push_str("ice = \"weather\"   # the weather case's, as on the wires\n");
+                }
                 None => {}
+            }
+            if let Some(f) = o.ice_factor {
+                let _ = writeln!(out, "ice_factor = {}   # on the ice's thickness", number(f));
             }
             if let Some(r) = o.ice_density {
                 let _ = writeln!(out, "ice_density = {}   # kg/m³", number(r));

@@ -135,10 +135,36 @@ span = 3
 | `[[case.removed]]` | none | **Removed conductors** (owner: "a removed conductor option and broken is only used for actually broke cables"): a construction state, e.g. a tension mast with some phases not yet strung. The section's wire is absent in that case: all its spans are left out of the solve, its loads on every structure are 0; the other sections solve as usual. Jumpers with an end on its wire points only (or on its span points) and spacers on it are left out too. `set`: a check that one of the section's points is of that set. A section not in the line, or removed twice, or both removed and broken, is refused. |
 | `[[case.broken]]` | none | **Broken wires** (actual breaks): several per case; all the spans listed are broken **together**, in one solve per section — two spans of one section broken: both gone in that solve, a point between two broken spans then holds no wire (its strings hang under their own weight). `span = "every"` keeps its meaning (each span of that section in turn, the envelope and each break on its own as above), the other broken wires broken in each of those solves; it may not be combined with another broken span of the same section, nor given twice in a case (refused: give them in separate cases). The version-3 single `[case.broken]` table still reads as one broken wire. |
 | `direction` | the wires' side | Where the wind on the structure bodies comes **from**, looking ahead along the line: `"right"` (0°), `"ahead"` (90°), `"left"` (180°), `"back"` (270°), or an angle in degrees, 0° from the right counted towards ahead — the structure's axes are x to the right of the line, y ahead, so the wind blows towards (−cos θ, −sin θ). The names are those of OHL-Structure's wind on the body. The wires keep their side (`wind_from`): a wind along the line on the wires is not modelled. |
-| `ice` | by the weather case | Ice on the structure bodies: `true`, each structure's local ice (`structure_ice` of its local conditions; none where it gives none), a radial thickness for every structure, or `false` (also `"none"`, 2026-11-04): no ice on them, not even the local ice. Not given: none — except in a case taking the local conditions whose weather case has ice, where each structure's local ice ([below](#the-structures-local-ice)). |
-| `ice_density` | the weather case's | kg/m³. Without it and without the weather case's `ice_density` the case is refused when computed — no density is made up. |
+| `ice` | by the weather case | Ice on the structure bodies: `true`, each structure's local ice (`structure_ice` of its local conditions; none where it gives none), `"weather"` (version 6, below): the weather case's ice on the wires, a radial thickness for every structure, or `false` (also `"none"`, 2026-11-04): no ice on them, not even the local ice. Not given: none — except in a case taking the local conditions whose weather case has ice, where each structure's local ice ([below](#the-structures-local-ice)). |
+| `ice_density` | the weather case's | kg/m³. Without it and without the weather case's `ice_density` the case is refused when computed — no density is made up (with `ice = "weather"`: glaze ice, as on the wires). |
+| `ice_factor` | 1 | Version 6: a factor on the structures' ice **thickness**, whichever it is (the wires', the local, the one given) — below. |
 | `snow` | false | Snow on the structures' horizontal surfaces: q = μ · C_e · C_T · s_k (SIA 261:2014 (9)), s_k each structure's snow on the ground (its local `snow_ground`, or SIA 261 (10) from its `snow_altitude`); none where it gives neither (the notes list them). |
 | `snow_shape`, `snow_exposure`, `snow_thermal` | 0.8, 1.0, 1.0 | μ, C_e and C_T: μ = 0.8 is SIA 261 5.3.4's coefficient where the snow cannot slide off, taken for a pylon's horizontal surfaces as an assumption; C_e = 1.0 normal exposure (5.2.4), C_T = 1.0 (5.2.5). Give them only with `snow = true`. |
+
+### Version 6: the wires' ice on the structures, with a factor
+
+*Built, in active development, not approved yet* (owner 2026-11-15: "a factor as for the wind to change the value compared to the conductor weather cases"). As the wind on the bodies has its own factor (`wind_factor`), the ice on them can now be taken from the wires' and changed by a factor:
+
+```toml
+format = "ohl-load-cases"
+version = 6
+
+[[case]]
+name = "ice, half on the towers"
+weather = "heavy ice"        # 40 mm on the wires
+
+[case.structure]
+ice = "weather"              # the weather case's ice thickness on the wires
+ice_factor = 0.5             # times this: 20 mm on the structure bodies
+```
+
+- `ice = "weather"` puts the weather case's radial ice thickness on every structure taking the case, of the case's `ice_density`, else the weather case's, else glaze ice (as on the wires). A weather case that gives its ice as a **load per metre of wire** (`ice_load`) has no thickness for a structure: the case's ice on the structures is then refused, and the case's notes say why (none is made up). A weather case without ice puts none.
+- `ice_factor` multiplies the **thickness**, whichever source: the wires' ice, the structures' local ice, or a thickness given (0 to 100; refused with `ice = false`). The ice's weight follows from the factored thickness (ρ g (P t + π t²) per metre of member) and is then times the case's **vertical** factor, as before — so `ice_factor` changes the amount of ice, the vertical factor stays the load factor on it.
+- The wires keep the weather case's ice: the factor acts on the structure bodies only.
+- **The engineer's choice:** a factor below 1 puts less ice on the bodies than on the wires — not checked by the program; give it as your design code says.
+- A file is written at version 6 only when a case uses one of these; older programs refuse it as "newer".
+
+In the Load cases library form, section 5: ice **the wires' ice** (the hover gives the rule), and **factor on the thickness** (shown with any ice; with the wires' ice the form shows the thickness it gives, e.g. *= 20.0 mm on the structures*). The first choice, formerly *by the weather case*, is now called **default** (the same rule: the local ice when the case takes the local conditions and its weather case has ice, else none).
 
 **Where the wind on the bodies blows from another direction:** the wind bands give one area, the one a wind across the line meets; a wind from another direction takes that same area, its force along the direction it blows (|F| = q · c · A), so a wind from ahead gives a longitudinal load. This is an approximation and **not on the safe side** where the structure shows more area along the line (its crossarms seen in full). The member wind of the **fe** check and the wind on a pole follow the direction exactly as their own models do ([theory](../theory/structure-wind.md#direction-ice-and-snow-on-the-structure)).
 
@@ -160,7 +186,7 @@ Line › Criteria › **Load cases library** shows the file as a **form** (owner
 2. **Wind on the wires** — shown only when the weather case has wind: *as the weather case*, *from the left* or *from the right* (`wind_from`).
 3. **Wires removed and wires broken** — per section of the line (open when the line has four or fewer, else click its name): **removed (not strung)** — a construction state, every span of that section left out, it puts no load anywhere — and, for a real break, a tick per span (*S1 span 2 (T2–T3) broken*; several break together) or **every span broken, one at a time** (its cost in the hover: one solve per span), with the **set checked** when the section has several sets. A section with a broken span cannot be removed too (its tick greyed).
 4. **Wind on the structures** — *off*, *the weather case's* (its pressure shown) or *own pressure* (Pa); the direction: *as the wires*, *from the left*, *from the right*, *from ahead*, *from behind* or *at an angle* with its degrees (0° from the right, 90° from ahead); *own factor* (else the transverse one).
-5. **Ice and snow on the structures** — ice *by the weather case* (the default: the structures' local ice when the case takes the local conditions and its weather case has ice, else none), *none* (not even the local ice), *the structures' local ice* or *a thickness* (mm), with *own density* (else the weather case's; when it gives none the form says a density is needed); **Snow on the structures** with μ, C_e and C_T (0.8, 1.0, 1.0 by default; the hover cites SIA 261:2014 5.3.4, 5.2.4 and 5.2.5, and says that μ = 0.8 for a pylon's horizontal surfaces is an assumption the engineer is to confirm).
+5. **Ice and snow on the structures** — ice *default* (the structures' local ice when the case takes the local conditions and its weather case has ice, else none), *none* (not even the local ice), *the structures' local ice*, *the wires' ice* (the weather case's thickness, version 6) or *a thickness* (mm); *factor on the thickness* (version 6, any of them; unticked 1); with *own density* (else the weather case's; when it gives none the form says a density is needed); **Snow on the structures** with μ, C_e and C_T (0.8, 1.0, 1.0 by default; the hover cites SIA 261:2014 5.3.4, 5.2.4 and 5.2.5, and says that μ = 0.8 for a pylon's horizontal surfaces is an assumption the engineer is to confirm).
 6. **Factors** — vertical, transverse, longitudinal and the strength factor φ; **Use local conditions** (what it takes and its cost in the hover).
 7. **Tags and description**.
 

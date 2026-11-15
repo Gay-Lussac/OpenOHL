@@ -46,6 +46,19 @@ pub(crate) use page::*;
 use points_circuits::*;
 use span_objects::*;
 
+/// A table's own pages of the manual ([`TableKind::guide`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TableGuide {
+    /// Its user guide page (e.g. `user-guide/weather-cases-window`).
+    pub page: &'static str,
+    /// The section that page opens at.
+    pub anchor: &'static str,
+    /// Its theory page.
+    pub theory: &'static str,
+    /// The section the theory page opens at.
+    pub theory_anchor: &'static str,
+}
+
 /// A table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TableKind {
@@ -318,6 +331,23 @@ impl TableKind {
         TableKind::SpanObjects,
         TableKind::LoadTypes,
     ];
+
+    /// The table's own pages of the manual (owner, 2026-11-15: "make it as
+    /// for the checks with an explanation page of what's done where"): its
+    /// user guide page and its theory page with their sections, opened by
+    /// the **user guide ↗** and **theory ↗** buttons above the table. None:
+    /// a table without a page of its own yet.
+    pub fn guide(self) -> Option<TableGuide> {
+        match self {
+            TableKind::WeatherCases => Some(TableGuide {
+                page: "user-guide/weather-cases-window",
+                anchor: "the-weather-cases-window",
+                theory: "theory/sagtension",
+                theory_anchor: "weather-cases-in-the-calculations",
+            }),
+            _ => None,
+        }
+    }
 
     /// Title of its page.
     pub fn title(self) -> &'static str {

@@ -386,6 +386,12 @@ impl TabViewer for Viewer<'_> {
                     Some(crate::tables::TableAction::StringBuilder(id)) => {
                         r.string_builder.open_on(&id);
                     }
+                    Some(crate::tables::TableAction::OpenGuide(page, anchor)) => {
+                        r.status = Some(match crate::help::open_section(page, anchor) {
+                            Ok(m) => (format!("manual opened: {m}"), false),
+                            Err(e) => (e, true),
+                        });
+                    }
                     Some(crate::tables::TableAction::ShowCase(_)) | None => {}
                 }
                 None
