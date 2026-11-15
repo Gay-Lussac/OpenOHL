@@ -44,6 +44,38 @@ rigid limit, the exit clauses, the example line. Measured on them: the
 hot-case sag of rigid larger (conservative, slightly), the longitudinal
 load next to an unbalance lower when flexible.
 
+**The Load cases library shows the values a case does not give, and
+"as the wires" says the wires' actual direction** (owner: "on the load
+case library, the default should show what the value is even if greyed
+out for example the ice and snow on the structure or the wind factor";
+and "the default cases for the wind ahead and back said 'as for the
+wires right' which isn't accurate anymore if we have the wind on an
+angle defined in the weather case. this should be removed"). Built, in
+active development, not approved yet:
+
+- Where a case gives no value (an unticked *own …* box, a *default*
+  choice, a factor at 1) the form shows the value that applies, greyed,
+  with its source: the bodies' pressure and factor
+  (`LoadCase::structure_wind`), the ice on the structures — per
+  structure for the local ice, the thickness after the factor for the
+  wires' ice and a thickness (`LoadCase::structure_ice_at`,
+  `LoadCase::takes_local_ice`) —, its density (`LoadCase::ice_density`,
+  glaze ice for the wires' ice as `structure_ice_at` takes it), the snow's
+  μ C_e C_T and each structure's snow load
+  (`StructureOptions::snow_factor`, `LoadCase::structure_snow_at`), the
+  factors at 1 and the condition *as strung*. Each value comes from the
+  function the loads use — no copy of a rule in the form. A greyed field
+  is not editable; ticking *own …* starts from the value shown.
+- The structures' wind direction *as the wires* names the direction the
+  wires take in the case: the case's `wind_direction`, else the weather
+  case's at an angle, else across from the side (the bodies' default of
+  `LoadCase::structure_wind`): *as the wires: from ahead (0°)* for the
+  default case with the wind from ahead. Before, the form showed the side
+  only (`wind_from`), "from the right" for the cases along the line.
+  The same in the case notes of the structure loads (a `wind_from` given
+  says the direction taken, and that it has no effect beside the case's
+  own `wind_direction`) and in the doc comments of `ohl-loads`.
+
 **Member wind on inclined members: SIA 261 inclination factors and
 force coefficients** (owner: "go ahead with your recommendations"). A
 review found the member wind of the structures **not on the safe side**:

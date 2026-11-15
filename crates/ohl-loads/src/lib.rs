@@ -711,8 +711,9 @@ pub struct BodyWind {
     /// gives both parts).
     pub towards: f64,
     /// Where the wind comes from (version 4, `[case.structure]
-    /// direction`; [`WindDirection`]: 0° from the right, 90° from
-    /// ahead); by default the side of the wind on the wires.
+    /// direction`; [`WindDirection`]: 0° from ahead, 90° from the
+    /// right); by default the direction of the wind on the wires (at an
+    /// angle, or across from their side).
     pub direction: WindDirection,
     /// The pressure is the case's own (`[case.structure]`), not the
     /// weather case's.
@@ -1886,13 +1887,30 @@ pub fn structure_loads_each(
         let mut notes = set_notes.clone();
         if let Some(side) = case.wind_from {
             if w.wind_pressure.si() > 0.0 {
-                notes.push(format!(
-                    "the wind on the wires from the {} (the load case's; weather case \"{}\": \
-                     from the {})",
-                    side.as_str(),
-                    w.name,
-                    w.wind_from.as_str()
-                ));
+                // The directions actually taken (owner 2026-11-15: never
+                // a side alone when the wind is at an angle): the wires'
+                // in this case, and the weather case's own.
+                let direction = |w: &WeatherCase| {
+                    w.oblique()
+                        .unwrap_or(WindDirection::of_side(w.wind_from))
+                        .words()
+                };
+                let used = direction(&case.wire_weather(w));
+                if case.wind_direction.is_some() {
+                    notes.push(format!(
+                        "wind_from = \"{}\" has no effect: the case's wind_direction gives the \
+                         wind on the wires, {used}",
+                        side.as_str()
+                    ));
+                } else {
+                    notes.push(format!(
+                        "the wind on the wires {used} (the load case's wind_from = \"{}\"; \
+                         weather case \"{}\": {})",
+                        side.as_str(),
+                        w.name,
+                        direction(w)
+                    ));
+                }
             } else {
                 notes.push(format!(
                     "wind_from = \"{}\" has no effect: weather case \"{}\" has no wind",
@@ -3029,7 +3047,8 @@ fn add_couple(
 /// Adds the wind on the structures themselves to `results`: for every
 /// structure whose type gives wind bands (`[[wind.band]]`), one load per
 /// band — the structures' wind pressure of the load case × drag × area,
-/// across the line (the wind side of the weather case), at the band's
+/// from the case's direction for the bodies (by default the wires':
+/// across from their side, or at an angle), at the band's
 /// mid-height on the structure's centre line — without a point, labelled
 /// "wind on the structure". Factored by the structures' wind factor. Both
 /// are [`LoadCase::structure_wind`]: the case's `[case.structure]` values

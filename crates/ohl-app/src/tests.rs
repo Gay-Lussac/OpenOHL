@@ -25,6 +25,7 @@ mod display_codes;
 mod field_setup;
 mod kept;
 mod lidar;
+mod load_case_defaults;
 mod load_case_library;
 mod local_winds;
 mod merge_windows;
