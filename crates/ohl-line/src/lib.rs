@@ -53,7 +53,7 @@ pub mod solve;
 pub mod staking;
 
 pub use bimetallic::bimetallic_notes;
-pub use groups::{CaseSet, CaseSets, Facts, GroupRules, StructureGroup};
+pub use groups::{CaseSet, CaseSets, CaseWhy, Facts, Given, GroupRules, GroupWhy, StructureGroup};
 pub use objects::{
     Axis, ClampFor, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject,
     TypeKind,
@@ -78,7 +78,9 @@ use legacy::{SpanLoad, SpreadLoad};
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// Latest line file version: 18 adds the structure groups (`structure_groups`:
 /// [`StructureGroup`], which load cases each structure takes; owner,
-/// 2026-11-15), written only by a line that has one (else 17 or older,
+/// 2026-11-15) and, the same unreleased raise, a load case's own list (a
+/// group's `load_case` and `excluded`, its `name` optional for it: the
+/// Load cases form's Applies to), written only by a line that has one (else 17 or older,
 /// [`Line::to_json`]: an older program must not read such a line and give
 /// every structure every case); 17 adds the post insulators (a string's
 /// `post`, `cantilever_load`, `exit_angle_deg`, `exit_direction_deg`:

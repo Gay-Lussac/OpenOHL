@@ -129,6 +129,10 @@ The names are those of the line file:
     </rules>
     <case name="wind"/>                         <!-- the load cases taken; none: its structures take none from it -->
   </structure_group>
+  <structure_group load_case="ice">             <!-- the same raise: load case "ice"'s own list (Load cases… › Applies to); no name, no rules -->
+    <structure id="T4"/>                        <!-- takes ice on top of its groups' cases -->
+    <excluded id="T5"/>                         <!-- does not take ice, whatever its groups give -->
+  </structure_group>
   <electrical soil_resistivity_ohm_m="100" earthing_resistance_ohm="10" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>
 ```

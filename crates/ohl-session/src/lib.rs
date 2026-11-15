@@ -1213,21 +1213,27 @@ pub(crate) fn rename_references(
             out.extend(starts_renamed_in(line, |p| {
                 (p.structure == id).then(|| ohl_line::SectionPoint::new(new_id.clone(), p.set))
             }));
-            // The structure groups picking it (2026-11-15).
+            // The structure groups picking it, the load cases' own lists
+            // picking or excluding it (2026-11-15).
             if line
                 .structure_groups
                 .iter()
-                .any(|g| g.structures.contains(&id))
+                .any(|g| g.structures.contains(&id) || g.excluded.contains(&id))
             {
                 let mut after = line.clone();
                 for g in &mut after.structure_groups {
-                    for s in &mut g.structures {
+                    for s in g.structures.iter_mut().chain(&mut g.excluded) {
                         if *s == id {
                             *s = new_id.clone();
                         }
                     }
                 }
-                out.push(line_settings_change(line, &after));
+                // Its puts, not a batch: the rename's commands are
+                // expanded one level only (a nested batch was refused).
+                match line_settings_change(line, &after) {
+                    Command::Batch { commands } => out.extend(commands),
+                    c => out.push(c),
+                }
             }
         }
         // A section renamed: its spacers follow.

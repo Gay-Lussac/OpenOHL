@@ -483,17 +483,40 @@ pub fn placed_values_with(
             }
         ));
     }
-    // Its groups, live (2026-11-15): which it is in and what that gives.
+    // Its groups, live (2026-11-15): which it is in and what that gives;
+    // the load cases' own lists picking or excluding it.
     let groups = sets.groups_of(structure);
+    let mut own = Vec::new();
+    if !sets.picked_for(structure).is_empty() {
+        own.push(format!(
+            "picked for {}",
+            sets.picked_for(structure).join(", ")
+        ));
+    }
+    if !sets.excluded_from(structure).is_empty() {
+        own.push(format!(
+            "excluded from {}",
+            sets.excluded_from(structure).join(", ")
+        ));
+    }
+    let own = if own.is_empty() {
+        String::new()
+    } else {
+        format!(" ({} in the load cases' own lists)", own.join("; "))
+    };
     said.push(if groups.is_empty() {
         format!(
-            "{GROUPS}: {structure} is in no structure group of the line — it takes every case of \
-             the load case library"
+            "{GROUPS}: {structure} is in no structure group of the line{own} — it takes {} of \
+             the load case library",
+            match sets.of(structure) {
+                ohl_line::CaseSet::EveryBut(c) => format!("every case but {}", c.join(", ")),
+                _ => "every case".to_owned(),
+            }
         )
     } else {
         format!(
-            "{GROUPS}: {structure} is in {} — it takes {} (Structures › Load cases per group in \
-             OHL-Design)",
+            "{GROUPS}: {structure} is in {}{own} — it takes {} (Structures › Load cases per group \
+             in OHL-Design)",
             groups.join(", "),
             match sets.of(structure) {
                 ohl_line::CaseSet::These(c) => format!("their load cases: {}", c.join(", ")),
