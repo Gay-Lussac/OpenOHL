@@ -631,6 +631,12 @@ enum Shape {
     Strain,
     /// Two strings from the structure to the clamp, in the middle.
     VString,
+    /// A **pivoting post** in the middle (owner, 2026-11-15): a hinged post
+    /// and its brace(s) from the structure to the clamp, their bases on one
+    /// line — the axis it turns about freely, nothing in the assembly
+    /// holding it there (one brace, or braces whose bases line up with the
+    /// post's). The wire clamped at its top holds it ([`settled`]).
+    Pivot,
     /// Anything else.
     General,
 }
@@ -784,7 +790,31 @@ fn holders_of(line: &Line, section: &Section) -> Result<Vec<Holder>, LineError> 
                 })
                 .collect();
             let from_structure = |m: &Member| matches!(m.top, At::Fixed(i) if fixed[i].2.is_none());
+            // A hinged post whose members all stand on the structure and
+            // hold the clamp, their bases on one line: it turns about that
+            // line freely (2026-11-15).
+            let pivots = middle
+                && members.len() >= 2
+                && members.iter().any(|m| {
+                    structure
+                        .string(&m.label)
+                        .is_some_and(|s| s.post && s.hinged)
+                })
+                && members
+                    .iter()
+                    .all(|m| from_structure(m) && m.bottom == clamp)
+                && {
+                    let tops: Vec<Vector3<f64>> = members
+                        .iter()
+                        .map(|m| match m.top {
+                            At::Fixed(i) => fixed[i].1,
+                            At::Free(i) => free[i].1,
+                        })
+                        .collect();
+                    pivot_axis(&tops).is_some()
+                };
             let shape = match members.as_slice() {
+                _ if pivots => Shape::Pivot,
                 [m] if from_structure(m) && m.bottom == clamp => {
                     let top = match m.top {
                         At::Fixed(i) => fixed[i].1,
@@ -1046,6 +1076,58 @@ impl Extras {
                 .collect(),
         }
     }
+}
+
+/// The line the members of an assembly turn about, from their tops (on the
+/// structure): a point on it and its direction (unit), where every top lies
+/// on the line through the two farthest apart (within 1 µm); none
+/// otherwise (they hold the clamp in every direction) or where they meet in
+/// one point.
+pub(crate) fn pivot_axis(tops: &[Vector3<f64>]) -> Option<(Vector3<f64>, Vector3<f64>)> {
+    let mut far = (0.0, 0, 0);
+    for (i, a) in tops.iter().enumerate() {
+        for (j, b) in tops.iter().enumerate().skip(i + 1) {
+            let d = (b - a).norm();
+            if d > far.0 {
+                far = (d, i, j);
+            }
+        }
+    }
+    if far.0 < 1e-6 {
+        return None;
+    }
+    let (origin, axis) = (tops[far.1], (tops[far.2] - tops[far.1]) / far.0);
+    tops.iter()
+        .all(|t| {
+            let r = t - origin;
+            (r - axis * r.dot(&axis)).norm() < 1e-6
+        })
+        .then_some((origin, axis))
+}
+
+/// A pivoting post's clamp ([`Shape::Pivot`]) turned about its axis back to
+/// where the post is given to point, keeping its distance from the axis and
+/// its place along it as solved (`position`): how it is held while the
+/// section's length is shared out in the blocks — the clamped wire, not
+/// the assembly, holds it along its free direction, and it swings there in
+/// the solve that follows.
+fn pivot_back(holder: &Holder, position: Vector3<f64>) -> Vector3<f64> {
+    let tops: Vec<Vector3<f64>> = holder
+        .members
+        .iter()
+        .map(|m| holder.position(m.top))
+        .collect();
+    let Some((origin, axis)) = pivot_axis(&tops) else {
+        return position;
+    };
+    let r = position - origin;
+    let radial = r - axis * r.dot(&axis);
+    let given = holder.position(holder.clamp) - origin;
+    let towards = given - axis * given.dot(&axis);
+    if towards.norm() < 1e-9 {
+        return position;
+    }
+    origin + axis * r.dot(&axis) + towards.normalize() * radial.norm()
 }
 
 /// The clamp's position to start from: plumb below a suspension string's
@@ -1684,6 +1766,9 @@ fn settled(
                     let across = radial - along * radial.dot(&along);
                     centre + axis * r.dot(&axis) + across * (radial.norm() / across.norm())
                 }
+                // A pivoting post: turned back about its axis to where it
+                // is given to point (the crew clamps it there).
+                Shape::Pivot => pivot_back(holder, position),
                 // Strings hanging from strings: where the assembly hangs
                 // under the clamp's load with its part along the line taken
                 // away (the same neutral direction).
@@ -1933,6 +2018,13 @@ fn settled_over_sheaves(
             let position = solution.positions[built.clamps[k]];
             let middle = k > 0 && k + 1 < n;
             match layout[k].shape {
+                // A pivoting post has nothing in its assembly holding it
+                // along its free direction (2026-11-15): solved alone under
+                // the sheave's pull it would turn without end (the rolling
+                // did not settle). Held where it is given to point while
+                // the length is shared out; the clamped wire holds it in
+                // the solve that follows, where it swings.
+                Shape::Pivot => pivot_back(&layout[k], position),
                 Shape::Suspension | Shape::VString | Shape::General if middle => {
                     let unit = |a: usize, b: usize| {
                         let d = (clamps[b] - clamps[a]).xy();
@@ -3582,6 +3674,9 @@ mod hot_creep_tests;
 
 #[cfg(test)]
 mod gap_tests;
+
+#[cfg(test)]
+mod pivot_tests;
 
 /// The two-span line of the local tests (for other modules' tests).
 #[cfg(test)]
