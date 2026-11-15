@@ -169,3 +169,38 @@ fn p_delta_stopped_just_above_the_tolerance_is_accepted() {
         other => panic!("{other:?}"),
     }
 }
+
+/// A joint moving far relative to its own members (owner 2026-11-15): the
+/// star 2° off its plane under 150 kN moves J about 0.2 m down (3 EA/L
+/// sin² 2° ≈ 0.77 MN/m) — a fifth of its 1 m members, far below the
+/// structure's own limit (half of its 2.3 m): solved, and said in a
+/// warning naming J; the star 30° off its plane moves it a millimetre and
+/// says nothing.
+#[test]
+fn a_joint_moving_far_against_its_members_is_said() {
+    let loads = at(0, [0.0, 0.0, -150e3]);
+    let m = star(2.0);
+    let s = solve(&m, &loads, &first_order(true), &crate::default_budget()).unwrap();
+    let d = -s.displacements[0][2];
+    assert!(d > 0.15 && d < 0.25, "{d}");
+    let note = crate::local_displacement_note(&m, &s).unwrap();
+    assert!(
+        note.starts_with(
+            "WARNING, NOT ON THE SAFE SIDE until checked: 1 joint(s) moved more than 10 % of \
+             their shortest member"
+        ),
+        "{note}"
+    );
+    assert!(
+        note.contains(&format!(
+            ": J {:.0} mm ({:.0} % of 1.00 m)",
+            d * 1000.0,
+            100.0 * d / 2f64.to_radians().cos().recip()
+        )),
+        "{note}"
+    );
+    let stiff = star(30.0);
+    let s = solve(&stiff, &loads, &first_order(true), &crate::default_budget()).unwrap();
+    assert!(-s.displacements[0][2] < 0.01);
+    assert!(crate::local_displacement_note(&stiff, &s).is_none());
+}

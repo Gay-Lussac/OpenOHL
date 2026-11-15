@@ -126,7 +126,7 @@ fn the_formerly_unsettled_structure_settles_with_bowed_halves() {
     }
     assert!(
         r.notes.iter().any(|n| n
-            == "tension-only members: 0 of 4 slack, 2 bowed (3 solve(s)); bowed (carry their \
+            == "tension-only members (compression up to their buckling load): 0 of 4 slack, 2 bowed (3 solve(s)); bowed (carry their \
                 buckling load): MC 0.33 kN, BM 0.33 kN"),
         "{:?}",
         r.notes

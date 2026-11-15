@@ -263,7 +263,7 @@ pub fn convergence_note(solution: &Solution) -> Option<String> {
 /// none): how many of them went slack and how many are bowed (at their
 /// buckling load, [`MemberForces::bowed`]) and how many solves the
 /// active-set iterations took, with the first slack ones named and the
-/// first bowed ones with their load: `tension-only members: 0 of 2
+/// first bowed ones with their load: `tension-only members (compression up to their buckling load): 0 of 2
 /// slack, 1 bowed (2 solve(s)); bowed (carry their buckling load): BD
 /// 0.83 kN`. A model whose tension-only members carry no compression
 /// (`[analysis] tension_compression = "none"`) says so:
@@ -291,12 +291,10 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
             )
         })
         .collect();
-    let law = match model.analysis.tension_compression {
-        TensionCompression::Buckling => "",
-        TensionCompression::None => " (no compression)",
-    };
+    // The law, the default too (owner 2026-11-15).
+    let law = model.analysis.tension_compression.words();
     let mut text = format!(
-        "tension-only members{law}: {} of {} slack{} ({} solve(s))",
+        "tension-only members ({law}): {} of {} slack{} ({} solve(s))",
         slack.len(),
         tension.len(),
         if bowed.is_empty() {
@@ -338,7 +336,142 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
             }
         ));
     }
+    let held = held_by_shortened(model, solution);
+    if !held.is_empty() {
+        let names: Vec<String> = held
+            .iter()
+            .take(NOTE_NAMES)
+            .map(|&n| model.node_name(n))
+            .collect();
+        text.push_str(&format!(
+            "; WARNING: {} joint(s) held by the stabilisation where their shortened tension-only \
+             members would hold them (within its limits, not refused — check them): {}{}",
+            held.len(),
+            names.join(", "),
+            if held.len() > NOTE_NAMES { ", …" } else { "" }
+        ));
+    }
     Some(text)
+}
+
+/// A tension-only member stiffens a held direction when its axis has at
+/// least this component along it (the sine of 1°).
+const ALONG_HELD: f64 = 0.017_452_406;
+
+/// The joints of a solution held by the stabilisation in a direction one
+/// of their tension-only members would hold if it were not shortened
+/// (slack or bowed: out of the stiffness): its axis at least
+/// [`ALONG_HELD`] along a held translation (owner 2026-11-15: such a
+/// joint is held only by shortened tension-only members, within the
+/// stabilisation's limits — not refused, but no longer quiet). In node
+/// order.
+pub fn held_by_shortened(model: &Model, solution: &Solution) -> Vec<usize> {
+    let mut out: Vec<usize> = Vec::new();
+    for h in solution.stabilised.iter().filter(|h| !h.at.rotation) {
+        let n = h.at.node;
+        if out.contains(&n) {
+            continue;
+        }
+        let d = h.at.direction;
+        let shortened = model.members.iter().enumerate().any(|(k, m)| {
+            let f = &solution.members[k];
+            if m.kind != MemberKind::Tension || !(f.slack || f.bowed) || (m.i != n && m.j != n) {
+                return false;
+            }
+            let (a, b) = (model.nodes[m.i].point, model.nodes[m.j].point);
+            let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let l = (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+            l > 0.0 && (e[0] * d[0] + e[1] * d[1] + e[2] * d[2]).abs() / l >= ALONG_HELD
+        });
+        if shortened {
+            out.push(n);
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// A joint moving more than this share of its shortest member's length
+/// relative to the mean of its members' far ends is said
+/// ([`local_displacement_note`]; owner 2026-11-15).
+pub const LOCAL_MOVE_SHARE: f64 = 0.1;
+
+/// The joints that moved far relative to their own members, in words
+/// (none: none did): a joint whose displacement less the mean of its
+/// members' far ends' displacements is more than [`LOCAL_MOVE_SHARE`] of
+/// the shortest of its members, the joint itself having moved at least as
+/// far as that mean (the joint that moved, not its neighbours, nor a
+/// support next to it) — a local near-mechanism (a flat grillage
+/// sagging, a joint held almost only in one plane), which the structure's
+/// own limit ([`solve::IMPLAUSIBLE_SHARE`] of its size) does not see. A
+/// warning, not a refusal: the results there rest on large displacements
+/// of a small-displacement analysis (P-Delta at most) — NOT ON THE SAFE
+/// SIDE until those joints are checked. Joints named largest share first.
+pub fn local_displacement_note(model: &Model, solution: &Solution) -> Option<String> {
+    let mut far: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
+    let mut shortest = vec![f64::INFINITY; model.nodes.len()];
+    for m in &model.members {
+        let l = model.length(m);
+        far[m.i].push(m.j);
+        far[m.j].push(m.i);
+        shortest[m.i] = shortest[m.i].min(l);
+        shortest[m.j] = shortest[m.j].min(l);
+    }
+    let d = &solution.displacements;
+    let mut moved: Vec<(usize, f64, f64)> = Vec::new();
+    for (n, ends) in far.iter().enumerate() {
+        if ends.is_empty() || shortest[n].is_nan() || shortest[n] <= 0.0 || n >= d.len() {
+            continue;
+        }
+        let mut mean = [0.0; 3];
+        for &e in ends {
+            for (k, m) in mean.iter_mut().enumerate() {
+                *m += d[e][k] / ends.len() as f64;
+            }
+        }
+        let r = (0..3)
+            .map(|k| (d[n][k] - mean[k]).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        // The joint that moved, not its neighbours: it moved at least as
+        // far as the mean of its members' other ends.
+        let own = (0..3).map(|k| d[n][k].powi(2)).sum::<f64>().sqrt();
+        let around = (0..3).map(|k| mean[k].powi(2)).sum::<f64>().sqrt();
+        if r.is_nan() || (r > LOCAL_MOVE_SHARE * shortest[n] && own >= around) {
+            moved.push((n, r, shortest[n]));
+        }
+    }
+    if moved.is_empty() {
+        return None;
+    }
+    moved.sort_by(|a, b| check::usage_order(b.1 / b.2, a.1 / a.2));
+    let names: Vec<String> = moved
+        .iter()
+        .take(NOTE_NAMES)
+        .map(|(n, r, l)| {
+            format!(
+                "{} {:.0} mm ({:.0} % of {:.2} m)",
+                model.node_name(*n),
+                r * 1000.0,
+                100.0 * r / l,
+                l
+            )
+        })
+        .collect();
+    Some(format!(
+        "WARNING, NOT ON THE SAFE SIDE until checked: {} joint(s) moved more than {:.0} % of \
+         their shortest member relative to their members' other ends (a local near-mechanism, \
+         e.g. a flat grillage sagging; large displacements in a small-displacement analysis): \
+         {}{}",
+        moved.len(),
+        LOCAL_MOVE_SHARE * 100.0,
+        names.join(", "),
+        if moved.len() > NOTE_NAMES {
+            ", …"
+        } else {
+            ""
+        }
+    ))
 }
 
 /// The tension-only members kept active because the active set did not

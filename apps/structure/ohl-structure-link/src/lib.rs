@@ -1597,6 +1597,11 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
         notes.push(note);
     }
+    // Joints moved far relative to their own members (a local
+    // near-mechanism; owner 2026-11-15): a warning.
+    if let Some(note) = ohl_structures_fe::local_displacement_note(model, &solution) {
+        notes.push(note);
+    }
     // Eccentric member ends (connection shifts, rigid end offsets): how
     // many, and those left out where only bars meet the joint.
     if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
