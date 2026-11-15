@@ -203,6 +203,8 @@ impl StructureApp {
         self.selected.clear();
         self.confirm = None;
         self.link = None;
+        self.link_ask = None;
+        self.placed_links.clear();
         self.buffers.clear();
         self.results = Default::default();
         self.line_values = None;

@@ -397,6 +397,9 @@ impl StructureApp {
             self.loads.info = None;
             self.loads.values_error = None;
             self.loads.line = Default::default();
+            // The placed structure's links go with its loads, not to
+            // another file.
+            self.placed_links.clear();
         }
         self.open(path);
     }
