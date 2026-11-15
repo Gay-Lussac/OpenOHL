@@ -196,3 +196,46 @@ fn a_turned_structure_takes_the_wind_in_its_axes() {
     let body = c.structure_wind(w).on_structure(&line, &s);
     assert!((body.direction.degrees() - 40.0).abs() < 1e-9);
 }
+
+/// The case's notes word the wind on the wires as the direction actually
+/// taken (owner 2026-11-15: never a side alone when the wind is at an
+/// angle): `wind_from` with the case's own wind direction has no effect
+/// and says the direction used; on a weather case blowing at an angle,
+/// the weather case's direction is said as its angle, not a side.
+#[test]
+fn the_notes_say_the_wires_direction_actually_taken() {
+    let line = two_wires();
+    let lib = library();
+    let mut weather = weather();
+    let mut oblique = weather[1].with_direction(WindDirection::Angle(30.0));
+    oblique.name = "oblique".into();
+    weather.push(oblique);
+    let budget = default_budget();
+    let over = LoadCase {
+        name: "ahead, left given".into(),
+        wind_from: Some(ohl_weather::WindSide::Left),
+        wind_direction: Some(WindDirection::Ahead),
+        ..LoadCase::from_weather("wind")
+    };
+    let side = LoadCase {
+        name: "left on an oblique wind".into(),
+        wind_from: Some(ohl_weather::WindSide::Left),
+        ..LoadCase::from_weather("oblique")
+    };
+    let r = structure_loads(&line, &lib, &weather, &[over, side], &budget).unwrap();
+    assert!(
+        r[0].notes.iter().any(
+            |n| n.contains("has no effect") && n.contains("from 0° (from ahead: blowing back)")
+        ),
+        "{:?}",
+        r[0].notes
+    );
+    assert!(
+        r[1].notes.iter().any(
+            |n| n.contains("the wind on the wires from 270° (from the left)")
+                && n.contains("weather case \"oblique\": from 30°")
+        ),
+        "{:?}",
+        r[1].notes
+    );
+}

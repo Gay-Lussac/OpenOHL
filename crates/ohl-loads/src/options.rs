@@ -164,8 +164,11 @@ pub fn snow_load(s_k: f64, shape: f64, exposure: f64, thermal: f64) -> f64 {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct StructureOptions {
-    /// Where the wind on the bodies comes from (none: the side of the
-    /// wires' wind, [`crate::LoadCase::wind_from`] or the weather case's).
+    /// Where the wind on the bodies comes from (none: the direction the
+    /// wires take in the case — the case's `wind_direction`, else the
+    /// weather case's at an angle, else across from the side,
+    /// [`crate::LoadCase::wind_from`] or the weather case's;
+    /// [`crate::LoadCase::structure_wind`]).
     pub direction: Option<WindDirection>,
     /// Ice on the structures (none: no ice on them, except each
     /// structure's local ice where the case takes the local conditions and
