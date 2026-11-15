@@ -528,8 +528,8 @@ fn line_values_files_mark_the_source_of_each_case() {
     assert_eq!(read, new);
     assert_eq!(read.source("weather: glaze ice"), CaseSource::WeatherCase);
     assert_eq!(read.source("wind").label(), "load case");
-    // (Version 8 is read since 2026-11-14: the next one is the newer.)
-    let newer = text.replace("\"version\": 6", "\"version\": 9");
+    // (Version 9 is read since 2026-11-15: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 10");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 
@@ -675,4 +675,49 @@ fn line_values_files_carry_the_structure_wind() {
     assert!(text.contains("\"structure_wind\""), "{text}");
     assert!(text.contains("\"towards\": \"-x\""), "{text}");
     assert_eq!(PlacedValues::parse(&text).unwrap(), new);
+}
+
+/// Version 9 (2026-11-15): the placed structure's own links of its
+/// attachment points go with its values; a file is written at 9 only
+/// with links, read back the same; what changed between two readings in
+/// words.
+#[test]
+fn the_placed_structures_links_go_with_its_values() {
+    let mut v = PlacedValues::pending("T7", "line", "type-02", "");
+    assert_eq!(
+        v.needed_version(),
+        LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS
+    );
+    assert!(!v.to_json().contains("links"));
+    let moved = PlacedLink {
+        label: "A1".into(),
+        joint: Some("42Y".into()),
+        offset: [0.0; 3],
+        unlinked: false,
+    };
+    v.links = vec![moved.clone()];
+    let v = v.at_needed_version();
+    assert_eq!(v.version, 9);
+    let text = v.to_json();
+    assert!(text.contains("\"links\""), "{text}");
+    assert_eq!(PlacedValues::parse(&text).unwrap(), v);
+    assert_eq!(
+        links_changed("T7", &[], &v.links),
+        ["T7: point A1 linked to joint 42Y"]
+    );
+    assert!(links_changed("T7", &v.links, &v.links).is_empty());
+    let alone = PlacedLink {
+        label: "A1".into(),
+        joint: None,
+        offset: [0.0; 3],
+        unlinked: true,
+    };
+    assert_eq!(
+        links_changed("T7", &[moved.clone()], &[alone]),
+        ["T7: point A1 unlinked"]
+    );
+    assert_eq!(
+        links_changed("T7", &[moved], &[]),
+        ["T7: point A1 linked as its type links it again"]
+    );
 }

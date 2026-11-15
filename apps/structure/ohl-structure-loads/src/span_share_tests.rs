@@ -404,9 +404,9 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let json = serde_json::to_string(&t).unwrap();
     assert_eq!(serde_json::from_str::<LoadTable>(&json).unwrap(), t);
     // The line-values file.
-    // (Version 8 is the newest read; a file without a set's part of a
+    // (Version 9 is the newest read; a file without a set's part of a
     // point's pulls nor moments is still written at 6.)
-    assert_eq!(LINE_VALUES_FILE_VERSION, 8);
+    assert_eq!(LINE_VALUES_FILE_VERSION, 9);
     let mut placed = PlacedValues::pending("T2", "line", "type", "");
     placed.note = None;
     placed.cases = vec!["calm".into()];
@@ -422,8 +422,8 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let read = PlacedValues::parse(&old_text).unwrap();
     assert_eq!(read.values.get("calm", "A1", &[1], BL), None);
     assert_eq!(read.values.get("calm", "A1", &[1], L), Some(0.0));
-    // (Version 8 is read since 2026-11-14: the next one is the newer.)
-    let newer = text.replace("\"version\": 6", "\"version\": 9");
+    // (Version 9 is read since 2026-11-15: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 10");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }
 
@@ -604,6 +604,6 @@ fn the_file_is_version_7_only_with_parts_per_set() {
     });
     assert_eq!(other.at_needed_version().version, 7);
     // A newer file is refused.
-    let newer = text.replace("\"version\": 7", "\"version\": 9");
+    let newer = text.replace("\"version\": 7", "\"version\": 10");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }

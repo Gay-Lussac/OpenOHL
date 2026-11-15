@@ -63,6 +63,16 @@
 //! file is written at version 7 only when it holds such values, else at 6
 //! ([`PlacedValues::needed_version`]).
 //!
+//! Version 9 (2026-11-15, owner: "2 two apps should communicate with
+//! each other when attachment points are linked to a joint or moved")
+//! adds `links`: the placed structure's own links of its attachment
+//! points where they differ from its type's (a relink or a move made in
+//! OHL-Design: `label`, `joint`, `offset` in the structure's axes, m, or
+//! `unlinked`). OHL-Structure says what changed when the file is read
+//! again and solves the placed structure with them (the line's link wins
+//! over the type's, as in the line's structure check). A file is written
+//! at 9 only when it holds links.
+//!
 //! Since 2026-11-15 (owner: Line › Criteria › Loads for structures is
 //! gone) the line sends the placed structure's library cases only, each
 //! `load_case`; a case of source `weather_case` (an unfactored weather case
@@ -81,10 +91,14 @@ pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// `structure_wind` in the values; 5: `library_cases`; 6: the spans'
 /// pulls among the values; 7: each set's part of the pulls at a point
 /// holding several sets; 8: the moments at points — a fixed post
-/// insulator's, 2026-11-14; older files are read too). The newest version
+/// insulator's, 2026-11-14; 9: the placed structure's own links of its
+/// attachment points, 2026-11-15; older files are read too). The newest version
 /// read; a file is written at the lowest its values need
 /// ([`PlacedValues::needed_version`]).
-pub const LINE_VALUES_FILE_VERSION: u32 = 8;
+pub const LINE_VALUES_FILE_VERSION: u32 = 9;
+/// The version before the placed structure's own links (what a file
+/// without links is written as at most).
+pub const LINE_VALUES_FILE_VERSION_WITHOUT_LINKS: u32 = 8;
 /// The version before the moments at points (what a line without fixed
 /// posts is written as).
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS: u32 = 7;
@@ -173,6 +187,64 @@ impl CaseSource {
     }
 }
 
+/// A placed structure's own link of one of its attachment points, where
+/// it differs from its structure type's (version 9; made in OHL-Design:
+/// a relink, a move, an unlink).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacedLink {
+    /// The attachment point's label (a point of the type).
+    pub label: String,
+    /// The joint of the type it is linked to (none: unlinked).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint: Option<String>,
+    /// From the joint to the point, in the structure's axes, m.
+    #[serde(default)]
+    pub offset: [f64; 3],
+    /// Linked to no joint: its strings are not attached to the 3D
+    /// structure.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unlinked: bool,
+}
+
+impl PlacedLink {
+    /// In words: `A1 → joint 42Y (offset 0.000, 0.300, 0.000 m)`, `A1
+    /// unlinked`.
+    pub fn describe(&self) -> String {
+        match (&self.joint, self.unlinked) {
+            (Some(j), false) if self.offset == [0.0; 3] => {
+                format!("point {} linked to joint {j}", self.label)
+            }
+            (Some(j), false) => format!(
+                "point {} linked to joint {j} (offset {:.3}, {:.3}, {:.3} m)",
+                self.label, self.offset[0], self.offset[1], self.offset[2]
+            ),
+            _ => format!("point {} unlinked", self.label),
+        }
+    }
+}
+
+/// What changed from links `before` to links `now` of placed structure
+/// `structure`, in words, one line per point (`T7: point A1 linked to
+/// joint 42Y`; a link gone: back to its type's).
+pub fn links_changed(structure: &str, before: &[PlacedLink], now: &[PlacedLink]) -> Vec<String> {
+    let mut out = Vec::new();
+    for l in now {
+        if !before.contains(l) {
+            out.push(format!("{structure}: {}", l.describe()));
+        }
+    }
+    for b in before {
+        if !now.iter().any(|l| l.label == b.label) {
+            out.push(format!(
+                "{structure}: point {} linked as its type links it again",
+                b.label
+            ));
+        }
+    }
+    out
+}
+
 /// Another placed structure using the same structure file, with its
 /// values (for the envelope over the places, a reporting option only).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -237,6 +309,10 @@ pub struct PlacedValues {
     /// (older files, a line without a library): the own recipes only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub library_cases: Vec<LoadCaseRecipe>,
+    /// The placed structure's own links of its attachment points, where
+    /// they differ from its type's (version 9; [`PlacedLink`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<PlacedLink>,
 }
 
 impl PlacedValues {
@@ -255,6 +331,7 @@ impl PlacedValues {
             note: Some(note.into()),
             missing: Vec::new(),
             library_cases: Vec::new(),
+            links: Vec::new(),
         }
     }
 
@@ -267,8 +344,10 @@ impl PlacedValues {
             self.values.has_set_parts() || self.others.iter().any(|o| o.values.has_set_parts());
         let moments = !self.values.moments.is_empty()
             || self.others.iter().any(|o| !o.values.moments.is_empty());
-        if moments {
+        if !self.links.is_empty() {
             LINE_VALUES_FILE_VERSION
+        } else if moments {
+            LINE_VALUES_FILE_VERSION_WITHOUT_LINKS
         } else if set_parts {
             LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS
         } else {
