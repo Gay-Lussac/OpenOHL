@@ -4,8 +4,9 @@
 shielding check: Checks › Electrical › Lightning
 shielding… in OHL-Design and `ohl lightning` (`crates/ohl-electrical`:
 `lightning`; the rules in `crates/ohl-clearance`: `lightning`). How to
-use it: [OHL-Design › Lightning shielding](../user-guide/desktop-app.md#lightning-shielding)
-and [Lightning shielding rules](../user-guide/terrain.md#lightning-shielding-rules-lightning_rule).
+use it, setting by setting: the user guide's
+[Lightning shielding](../user-guide/lightning-shielding.md) and
+[Lightning shielding rules](../user-guide/terrain.md#lightning-shielding-rules-lightning_rule).
 
 It answers one question per phase and span: do the shielding wires keep
 a lightning stroke off this phase? Two methods are offered, chosen per
@@ -41,7 +42,18 @@ rule's (5 m by default). In each cut:
 
 Each cut stands for its step: the length exposed of a phase in a span
 is the sum of the steps of the cuts where it is exposed, the first and
-last reaching the structures. A wire that does not reach a cut — near a
+last reaching the structures.
+
+![A span seen from the side, cross-sections at the middle of each step; the phase exposed at three of them: the length exposed is three steps](../images/theory/lightning-exposed-length.svg)
+
+**Limitation (not on the safe side): the phase is looked at in the cuts
+only.** An exposure shorter than a step, between two cuts or within half
+a step of a structure (where the phases hang highest), can be missed,
+and a phase exposed nowhere else is then said covered. Every result says
+so (*NOT ON THE SAFE SIDE: each cross-section stands for its step …*,
+since 2026-11-15). A smaller step finds it, at a time in proportion to
+the number of cuts. Exact: the exposed intervals along the wire, found
+between the cuts where the depth changes sign. A wire that does not reach a cut — near a
 dead-end the strain string reaches into the span — is left out of that
 cut, said once in the notes. For a shielding wire this is
 **conservative** (the phase is checked without it there).
@@ -64,9 +76,19 @@ with \\( (s, z) \\) across and up in the cut and \\( r_P \\) the
 phase's outer radius: measured to the far side of the bundle, which
 makes \\( \theta \\) larger — **conservative**. The phase is covered
 when, for some shielding wire, \\( \theta \\) is at most the rule's
-angle: the **inner** angle when the phase lies on the side of that wire
-towards another shielding wire, the **outer** angle otherwise. A phase
-with no shielding wire above it needs 90° and is exposed.
+angle: the **inner** angle when the phase lies **between** that wire
+and another shielding wire across the cut (the other wire on the
+phase's side, at least as far across as the phase), the **outer** angle
+otherwise. A phase with no shielding wire above it needs 90° and is
+exposed.
+
+Until 2026-11-15 the inner angle was taken whenever another shielding
+wire lay on the phase's side of the wire, however far: a phase *outside*
+the outer shielding wire, beyond its outer line, could be said covered
+by the inner angle of the wire farther away — not on the safe side, and
+unlike the covered zone drawn (whose inner lines end where they meet).
+Corrected to the classical reading, the inner angle between the
+shielding wires only (decision log, 2026-11-15).
 
 The margin is the largest angle the phase needs along the span,
 compared with the rule's.
@@ -92,10 +114,14 @@ ground must not touch what they protect (Lee 1978).
 In each cut the program decides it exactly, without sampling sphere
 positions:
 
-1. The **free region** is the set of sphere centres the sphere can
-   reach: at least \\( r \\) from the axis of every shielding wire and
-   at least \\( \beta r \\) from the ground (\\( \beta \\): the rule's
-   ground factor, 1 by default), and above it.
+1. The **free region** is the set of sphere centres at least \\( r \\)
+   from the axis of every shielding wire and at least \\( \beta r \\)
+   from the ground (\\( \beta \\): the rule's ground factor, 1 by
+   default), and above it. **Conservative:** every such centre counts,
+   also one in a pocket enclosed by the shielding wires' circles and
+   the ground that a sphere coming down from above could not reach (a
+   stroke would end on a shielding wire first); exact: the part of the
+   region connected to the sky.
 2. The phase is **exposed** when a free centre lies within \\( r + r_P
    \\) of the phase's centre (the sphere touches its surface).
 
@@ -126,9 +152,10 @@ Choices, and whether each is conservative:
   would intercept strokes are not counted — **conservative** for the
   line.
 - No terrain loaded: the ground straight between the structures' feet
-  and level across — **not conservative** in a valley seen from the
-  side (the real ground lower: the sphere comes in lower), said in the
-  notes and the window.
+  and level across — **not conservative** where the real ground falls
+  away across the line (the sphere comes in lower), said in the
+  notes and the window (*NOT ON THE SAFE SIDE: no terrain for the
+  checks …*).
 
 ### Striking distance
 
@@ -171,7 +198,11 @@ the centres of spheres resting on two objects. The 3D view's layer
 *Lightning shielding* draws the exposed parts of the phases in red and
 the covered zone's boundary stitched between the cuts of each span,
 translucent. Both are for the eye: the verdict and the lengths come
-from the exact test above.
+from the exact test above. Only the cuts of the **last rule × case pair
+checked** are kept (the cuts of every pair would take some tens of
+megabytes on a long line); a row of another pair draws that pair's cut
+of its span, and the window says so above the drawing (since
+2026-11-15; before, only with several rules, not with several cases).
 
 ## Validation
 

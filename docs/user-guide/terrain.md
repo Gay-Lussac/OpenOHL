@@ -289,12 +289,13 @@ line](../theory/sagtension.md#sag-to-limits-on-the-line).
 ### Lightning shielding rules (`[[lightning_rule]]`)
 
 Since 2026-10-31 a rule file may hold **lightning shielding rules** for
-the shielding check (Checks › Electrical › [Lightning shielding…](desktop-app.md#lightning-shielding)
+the shielding check (Checks › Electrical › [Lightning shielding…](lightning-shielding.md)
 and `ohl lightning`): optional `[[lightning_rule]]` tables. A file
 without them reads as before; the other checks ignore them. A preset
 declares the check with `checks = ["lightning"]` (or holds lightning
-rules). Built, in active development (not approved yet). The theory:
-[Lightning shielding](../theory/lightning-shielding.md).
+rules). Built, in active development (not approved yet). The window,
+setting by setting: [Lightning shielding](lightning-shielding.md); the
+theory: [Lightning shielding](../theory/lightning-shielding.md).
 
 ```toml
 [[lightning_rule]]
@@ -304,8 +305,8 @@ shield_cases = ["everyday"]   # optional: the shielding wires in these cases; no
 calculation = "max-sag-fe"    # optional: how the phases are solved; none: each section's own
 shield_calculation = "initial-fe"  # optional: how the shielding wires are solved; none: each section's own
 method = "angle"
-outer_angle = 30.0            # degrees from the vertical, away from another shielding wire
-inner_angle = 45.0            # towards another shielding wire (default: the outer one)
+outer_angle = 30.0            # degrees from the vertical, not between two shielding wires
+inner_angle = 45.0            # between two shielding wires (default: the outer one)
 
 [[lightning_rule]]
 name = "rolling sphere (invented 8 kA)"
@@ -325,7 +326,7 @@ targets = { circuits = ["North"] }  # optional: the phases protected; none: ever
 | `shield_cases` | (2026-11-01) the shielding wires' own weather cases (wildcards): each case of `cases` is checked with the shielding wires solved in each of these (e.g. the phases at their highest temperature, the earth wires carrying no load current at an everyday temperature); none: the shielding wires in the phases' case. `ohl lightning` reads them from the same weather file as the cases checked |
 | `calculation`, `shield_calculation` | (2026-11-01) how the phases and the shielding wires are solved: a condition and a method as a section's calculation is named (`initial-fe`, `creep-rs`, `load-fe`, `max-sag-fe`, …; or as listed, `Max Sag FE`); none: each section's own calculation. A row names the calculation when one is given |
 | `method` | `angle` (a fixed shielding angle) or `sphere` (the rolling sphere of the electrogeometric model) |
-| `outer_angle`, `inner_angle` | (angle) degrees from the vertical through a shielding wire: towards another shielding wire the inner angle, elsewhere the outer; above 0 and below 90 |
+| `outer_angle`, `inner_angle` | (angle) degrees from the vertical through a shielding wire: for a phase between two shielding wires the inner angle, elsewhere the outer; above 0 and below 90 |
 | `striking_distance` | (sphere) the striking distance to the wires, m |
 | `stroke_current`, `distance_a`, `distance_b` | (sphere) instead: a stroke current I (kA), the distance r = A·I^b (A = 10, b = 0.65 by default) |
 | `ground_factor` | (sphere) β: the striking distance to the ground is β·r (default 1) |

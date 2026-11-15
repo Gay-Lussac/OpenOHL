@@ -302,7 +302,7 @@ files:* a lightning rule's `shields`.
 
 **Shielding angle** — the angle from the vertical through a shielding
 wire to the line to a phase; a lightning rule's limit for it, **outer**
-(away from another shielding wire) and **inner** (towards one).
+(away from another shielding wire) and **inner** (between two).
 *Replaces:* protective angle, shield angle. *German:* Schutzwinkel. *In
 files:* `outer_angle`, `inner_angle`.
 
