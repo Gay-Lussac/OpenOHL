@@ -331,6 +331,16 @@ string](tools-general.md#edit-on-a-string)) with the post's own fields:
 
 - A fixed post holds its wire point alone: another string ending at the
   same wire point is refused (a braced post is a hinged one).
+- **The braced shape pivots** (owner, 2026-11-15): its one brace from
+  straight above its base leaves it free to turn about the vertical
+  through its base, so its top swings along the line until the spans'
+  pulls on it balance — the conductor holds it there, as it holds a
+  suspension string; a jumper alone holds it by its pull; with nothing
+  attached it is free, and the loads say so instead of computing any. A
+  second brace (one ahead, one back of the post's base) locks it. The
+  hinge is taken frictionless: every load case says the structure's
+  longitudinal load is NOT ON THE SAFE SIDE there ([Structure
+  library](structure-library.md#post-insulators-on-a-type), [theory](../theory/post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it)).
 - A post is never a tension string.
 - Opening a post with **Edit** shows the same fields: they are kept when
   you Apply.

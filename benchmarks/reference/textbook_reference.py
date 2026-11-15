@@ -533,16 +533,18 @@ def bimetallic_strain(EAo, ao, EAc, ac, limit, t_ref=20.0):
 class Bar:
     """A string: from node `a` to node `b`, unstressed length l0, axial
     stiffness k (N), weight W (half at each end), wind force vector at the
-    whole string (half at each free end), tension-only."""
+    whole string (half at each free end), tension-only (`pushes`: a hinged
+    post, compression too)."""
 
-    def __init__(self, a, b, l0, k, W, wind=(0.0, 0.0, 0.0)):
+    def __init__(self, a, b, l0, k, W, wind=(0.0, 0.0, 0.0), pushes=False):
         self.a, self.b, self.l0, self.k, self.W, self.wind = a, b, l0, k, W, wind
+        self.pushes = pushes
 
     def force(self, pos):
         d = [pos[self.b][i] - pos[self.a][i] for i in range(3)]
         L = norm(d)
         N = self.k / self.l0 * (L - self.l0)
-        if N < 0:
+        if N < 0 and not self.pushes:
             N = 0.0
         u = [x / L for x in d]
         return N, u
@@ -1002,6 +1004,57 @@ def insulator_cases():
     for q, name in ((0.0, "tbins-003 two strings still air"), (300.0, "tbins-004 two strings 300 Pa"),
                     (1000.0, "tbins-005 two strings 1000 Pa")):
         show(name, v_section(q, mass))
+    show("tbins-006 pivoting post (hinged, one brace straight above)", pivot_section(mass))
+
+
+def pivot_section(mass):
+    """A pivoting post (owner decision 2026-11-15): two spans along x from
+    fixed dead-ends at (0, -1.5, 28.4) and (600, -1.5, 28.4), clipped in
+    with 300.70 m and 300.40 m of wire at 10 degC, solved at 10 degC in
+    still air. At x = 300 a hinged post from A1 (300, 0, 28.4) to the clamp
+    (given at (300, -1.5, 28.4)), 450 N, pushing as well as pulling, and a
+    brace from A2 (300, 0, 29.9) to the clamp, 200 N, tension only; both EA
+    5e7 N, unstressed lengths as drawn. Nothing but the wire holds the
+    clamp along the circle about the vertical through A1 and A2: it swings
+    until the spans' pulls balance. `mass`: per metre of unstressed cable
+    at 10 degC."""
+    EA = CABLE["EA"]
+    w = mass * G
+    k = 5e7
+    nodes = [[0.0, -1.5, 28.4], [300.0, -1.5, 28.4], [600.0, -1.5, 28.4],
+             [300.0, 0.0, 28.4], [300.0, 0.0, 29.9]]
+    lengths = [300.70, 300.40]
+    spans = [Span(0, 1, lengths[0], EA, [0.0, 0.0, -w]), Span(1, 2, lengths[1], EA, [0.0, 0.0, -w])]
+    bars = [Bar(3, 1, 1.5, k, 450.0, pushes=True), Bar(4, 1, math.sqrt(4.5), k, 200.0)]
+
+    # Start where the rigid post balances (Newton has no stiffness along
+    # the circle but the wire's): bisection on the swing phi, the spans'
+    # pull on the top at (300 + 1.5 sin phi, -1.5 cos phi) along the circle.
+    def along(phi):
+        p = [list(n) for n in nodes]
+        p[1] = [300.0 + 1.5 * math.sin(phi), -1.5 * math.cos(phi), 28.4]
+        _, F1a = spans[0].forces(p)
+        F0b, _ = spans[1].forces(p)
+        return (-F1a[0] + F0b[0]) * math.cos(phi) + (-F1a[1] + F0b[1]) * math.sin(phi)
+
+    phi = bisect(along, 0.0, 0.5)
+    # 0.3 mm low: the brace taut from the start (unstretched, a forward
+    # difference upwards sees it slack and no stiffness).
+    nodes[1] = [300.0 + 1.5 * math.sin(phi), -1.5 * math.cos(phi), 28.4 - 3e-4]
+    pos = equilibrium(nodes, [1], spans, bars)
+    out = {"h_0_n": horizontal_tension(spans[0], pos), "h_1_n": horizontal_tension(spans[1], pos),
+           "clamp_x_1_m": pos[1][0], "clamp_y_1_m": pos[1][1], "clamp_z_1_m": pos[1][2]}
+    for j, br in enumerate(bars):
+        out[f"string_1_{j}_n"] = br.force(pos)[0]
+    r = math.hypot(pos[1][0] - 300.0, pos[1][1])
+    out["swing_deg"] = math.degrees(math.atan2(pos[1][0] - 300.0, -pos[1][1]))
+    out["radius_m"] = r
+    # The wires' pull on the clamp along the circle (nil at the balance).
+    _, F1a = spans[0].forces(pos)
+    F0b, _ = spans[1].forces(pos)
+    t = [-pos[1][1] / r, (pos[1][0] - 300.0) / r]
+    out["pull_along_circle_n"] = (-F1a[0] + F0b[0]) * t[0] + (-F1a[1] + F0b[1]) * t[1]
+    return out
 
 
 def v_section(q, mass):
@@ -1657,6 +1710,10 @@ def main():
         return
     if sys.argv[1:] == ["gap"]:
         gap_cases()
+        return
+    if sys.argv[1:] == ["pivot"]:
+        show("tbins-006 pivoting post",
+             pivot_section(strung_mass(CABLE["mass"], CABLE["alpha"], 10.0)))
         return
     self_check()
     textbook_catenary()

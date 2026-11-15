@@ -161,17 +161,95 @@ at 45° above a level post, the brace carries the load on the clamp
 divided by \( \sin 45° \) and the post pushes with its horizontal part —
 the statics the test checks.
 
-**A post and one brace turn along the line.** Both are pinned at their
-ends, so a hinged post and a single brace whose bases lie on one vertical
-line (the brace straight above the post's base) can turn about that line
-together: nothing holds the wire point along the line but the spans'
-pulls — as a pivoting line post does. Where the pulls are unbalanced the
-section's rolling then does not settle and the section is reported as not
-solved (*rolling did not settle*), its loads missing and said; nothing is
-computed from it. A second brace (one ahead and one back), or a brace
-whose base is off that line, holds the wire point (*found 2026-11-15
-while testing the posts on structure types; to confirm with the owner
-how pivoting line posts are to be modelled*).
+### A pivoting post: held by what is attached to it
+
+*Owner, 2026-11-15: "Pivoting should simply be tied to the jumper or
+piece it's attached to. And while nothing is attached to it it should just
+move freely. It's not the best solution but it should represent the
+truth. If braced then some degrees of freedom are locked."*
+
+The post and its braces are pinned at both ends: the post turns about its
+hinge in **every direction its braces leave free**, and nothing in the
+assembly gives it a stiffness there. With **one brace** (or braces whose
+bases lie on one line with the post's base, e.g. straight above it) the
+pair turns freely about the line through their bases — for the usual
+braced line post, the vertical through its base: its top can move along
+the circle of its length, along the line. With two braces off that line
+(one ahead and one back) every direction is locked.
+
+**What holds it is what is attached to its top.**
+
+- **The conductor** (a section ends at its top): its top is a free node of
+  the section's solve, held by the post and the brace as bars (each its
+  axial stiffness, the post pushing as well as pulling) and by the spans
+  clamped there. Along the free direction only the wire holds it: the post
+  **swings along the line until the wires' pulls balance**, as a
+  suspension string swings — at the solved top the wires' pull has no part
+  along the circle,
+  \( (\mathbf F_{back} + \mathbf F_{ahead}) \cdot \mathbf t = 0 \)
+  (\( \mathbf t \) the circle's tangent; the members' weights act down,
+  across it for a vertical axis). The spans' tension difference is relieved
+  by that swing: a post free to turn about a vertical line takes along the
+  line only what its swing turns of the spans' pull across the line
+  \( F_\perp \): \( H_{ahead} - H_{back} \approx F_\perp \tan\varphi \). The
+  test's hand check: two level 300 m spans clipped in with 300.70 m and
+  300.40 m of wire, a 1.5 m level post braced from 1.5 m above its base:
+  the angle at which the two elastic catenaries' pulls on the top at
+  \( (1.5 \sin\varphi, -1.5\cos\varphi) \) have no part along the circle,
+  found by bisection — \( \varphi = 5.70° \), the top 14.9 cm along the
+  line, the spans' \( H \) then within 0.1 N; the brace's force from the
+  vertical balance, the post's from the horizontal one: the solve agrees
+  to 1 µm and 10⁻⁶.
+- **In the blocks** (a section strung by tension rolls over sheaves in
+  every weather case, [Wire finite elements](wirefe.md)): a suspension
+  string swings to the sheave's resultant there. A pivoting post has no
+  such position of its own — solved alone under the sheave's pull it
+  turns without end (before 2026-11-15 the rolling then did not settle and
+  the section was reported not solved). While the length is shared out
+  over the sheaves the post is taken where it is given to point (as the
+  crew clamps it); the swing comes in the solve that follows, where the
+  clamped wire holds it. **Simplification**: the sheave on its top shares
+  the length as at its given position, not at its swung one (millimetres
+  to centimetres along the line); exact: the post's swing in the sharing.
+  Not shown to be on either side; the swing in the solve is exact for the
+  lengths shared.
+- **A jumper only** (no section ends at its top): the post and its brace
+  are solved alone under the jumper's pull on the clamp
+  (`post::hinged_alone`): turned about its free line until the pull's part
+  across that line points away from it — the post hangs in the load as a
+  pendulum, the stable one of the two balances; a load along the line
+  only turns it nowhere (every turn balances; it stays as given) — then
+  the members' forces from statics, each on its base with half its weight.
+  Where the pull points back towards the hinge (a balance that does not
+  hold) nothing near its given position holds it: its loads are not
+  computed and the case says so. **Simplification, NOT ON THE SAFE SIDE
+  for the directions** (said with every case): the jumper is solved to the
+  post's top where given, not again with the post swung; a small push
+  along the line turns a free post a long way (in the test the jumper's
+  28 N of wind along the line turns it 90°). The sizes of the post's and
+  the brace's forces stand (the same in every turn about a vertical line);
+  their directions in plan do not where it swings far.
+- **Nothing**: free. No load path — no stiffness is made up for it; its
+  loads (its own and its brace's weight and wind) are not computed, and
+  every load case says so (*hinged post P at T: nothing holds it (free to
+  pivot); its loads not computed — NOT ON THE SAFE SIDE*), as do the
+  string checks (not checked).
+
+**The hinge is taken frictionless** (the owner's free pivot). **NOT ON THE
+SAFE SIDE for the structure's longitudinal load**, said with every load
+case for each pivoting post a section ends at: free, the post passes
+along the line only what its swing turns of the pull across it, and the
+spans' pull difference stays in the wire; a hinge that sticks (friction,
+corrosion, ice) holds the post where it is and passes part of that
+difference into the structure, as a fixed post passes all of it. Exact: a
+hinge with its friction moment. The post's and brace's own forces are
+those of the swung geometry, a little different from the unswung one.
+
+**Its loads on the structure**: the post's axial force at its hinge and
+each brace's at its base, each with half its weight — as for strings
+(`SectionShape::attachment_loads`); they reach the structure loads and
+the line values sent to OHL-Structure as plain forces at those points (no
+moment: the hinge passes none).
 
 ## Its ratings checked
 
@@ -227,4 +305,15 @@ library's round trip; on a structure type: `ohl-structures`
 `version_13_post_strings`, `ohl-line` `a_type_strings_posts_reach_the_line`,
 `ohl-loads` `a_typed_post_loads_as_one_made_by_hand`, `ohl-structure-tests`
 `a_typed_posts_moment_reaches_the_pylon` and
-`a_typed_hinged_post_sends_forces_only`.
+`a_typed_hinged_post_sends_forces_only`; a pivoting post: `ohl-line`
+`pivot_tests` (one brace pivots, two do not; the swing against the hand
+check; in the blocks over sheaves and with equal H, an inclined span, wind,
+a weight in one span: settled and balanced along the circle) and
+`post::tests` (alone under a load: the swing atan(300 / 400) and the
+statics; nothing attached said), `ohl-loads`
+`a_jumper_holds_a_pivoting_post`, `ohl-structure-tests`
+`a_typed_post_with_one_brace_pivots_and_sends_forces` (the example line in
+every weather case); benchmark `tbins-006` (`benchmarks/wirefe/textbook-insulators.toml`:
+the swing, the spans' tensions and the members' forces against an
+independent reference — quadrature catenaries and Newton on the clamp,
+`benchmarks/reference/textbook_reference.py pivot` — to 10⁻⁷).

@@ -10,6 +10,58 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**A pivoting post is held by what is attached to it** (owner: "Pivoting
+should simply be tied to the jumper or piece it's attached to. And while
+nothing is attached to it it should just move freely. It's not the best
+solution but it should represent the truth. If braced then some degrees
+of freedom are locked."; the question found earlier today below). A
+hinged post turns about its hinge freely in every direction its braces
+leave free; with one brace (or braces in line with its base) it turns
+about the line through their bases.
+
+- **Cause of the failure found**: in a section in the blocks (strung by
+  tension, rolled over sheaves in every weather case) each clamp's
+  assembly was solved alone under the sheave's pull; a post and one brace
+  taken as a V there have nothing holding them along the line about a
+  vertical axis (no weight to swing them back, as a hanging V has), so
+  that solve turned the post without end and the rolling never settled.
+- **Model chosen**: the section's solve already holds the post's top as
+  the owner decided — a free node held by the post and brace as bars and
+  by the wire clamped there: it swings along the line until the spans'
+  pulls balance, as a suspension string swings (`solve::Shape::Pivot`,
+  `pivot_axis`). Only the sharing in the blocks changes: there the post
+  is taken where it is given to point (`pivot_back`), the swing comes in
+  the solve that follows. Hand check (`ohl-line` `pivot_tests`): two
+  level spans clipped in with 0.3 m more wire in the first, a 1.5 m level
+  post braced from straight above its base — 5.70° of swing (14.9 cm
+  along the line), the bisection on two elastic catenaries and the solve
+  agree to 1 µm, the post's and brace's forces to 10⁻⁶. The example line
+  with the braced shape on type-02 (T2, T4) now solves in every weather
+  case (swings of up to 5 mm there: the spans' pulls nearly balance).
+- **A jumper only on its top**: the post and brace solved alone under the
+  jumper's pull (`post::hinged_alone`), turned first to the stable balance
+  (the pull's part across the free line pointing away from it; along the
+  line only: as given); before, the jumper's load was shared equally
+  between their two bases as for plain strings — not the statics of a
+  post and brace (the brace carries some 1.4 times the load at 45°): not
+  on the safe side. The jumper is not solved again with the post swung:
+  said with every case (NOT ON THE SAFE SIDE for the forces' directions in
+  plan where it swings far). Where the pull points back towards the hinge
+  nothing near its position holds it: its loads not computed, said.
+- **Nothing on its top**: free; its loads are not computed and every case
+  and the string checks say so (`post::free_hinged_posts`) — before,
+  nothing was said (its and its brace's weight silently missing).
+- **The hinge is frictionless**: NOT ON THE SAFE SIDE for the structure's
+  longitudinal load (a hinge that sticks passes part of the spans'
+  difference into it), said with every case for each pivoting post a
+  section ends at (`post::pivoting_notes`).
+- **Unchanged**: fixed posts, hinged posts held by two braces off the
+  line (their holder is not a pivot), every other string; in the
+  simplified sharing (equal H) and the stringing reference a pivoting post
+  was turned back across the line as a V and is now turned back to where
+  it is given to point (the same for a post given across the line). No
+  file changes.
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —
@@ -231,7 +283,8 @@ turns freely along the line, both members being pinned; with unbalanced
 pulls the section's rolling does not settle and the section is reported
 not solved (its loads missing, said — nothing unsafe is computed). How
 pivoting line posts are to be modelled is the owner's question; two
-braces hold it. Not yet: posts on the type in OHL-Design's type workspace
+braces hold it (*answered the same day: [a pivoting post is held by what
+is attached to it](#2026-11-15), above*). Not yet: posts on the type in OHL-Design's type workspace
 table (they are kept there, not shown as a column), a post's ratings
 shown in OHL-Structure.
 

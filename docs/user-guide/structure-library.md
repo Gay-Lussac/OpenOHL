@@ -145,10 +145,33 @@ that is not a post. A file is written at version 13 only when a string
 uses one of these fields (OHL-Structure raises it when it writes one); a
 program older than version 13 refuses such a file instead of dropping the
 post. `angle` defaults to 0 (hanging) for a post as for any string: give
-`angle = "180 deg"` for an upright post. A hinged post with a single brace
-whose base is straight above the post's turns freely along the line (both
-are pinned): with unbalanced pulls its section does not solve (said); two
-braces, one ahead and one back, hold it ([theory](../theory/post-insulators.md#a-braced-post-hinged)).
+`angle = "180 deg"` for an upright post.
+
+**A hinged post with one brace pivots** (owner, 2026-11-15). The post and
+its brace are pinned at both ends, so with a single brace (or braces whose
+bases line up with the post's, e.g. straight above it) the pair turns
+freely about the line through their bases — for a braced line post, the
+vertical through its base: its top can swing along the line. What holds
+it there is what is attached to its top:
+
+- **the conductor**: the post swings along the line until the spans'
+  pulls on its top balance, as a suspension string swings (the solve finds
+  the swing; the spans' tension difference is relieved by it). Every load
+  case says *hinged post … pivots … NOT ON THE SAFE SIDE for … longitudinal
+  load*: the hinge is taken frictionless, while one that sticks would pass
+  part of the spans' difference into the structure;
+- **a jumper only**: the post swings under the jumper's pull until it
+  balances, and its and its brace's forces follow from that; said with
+  every case (the jumper is not solved again with the post swung: the
+  forces' directions in plan are not on the safe side where it swings
+  far);
+- **nothing**: it is free — its loads are not computed and every case says
+  so (*hinged post … nothing holds it (free to pivot)*).
+
+Two braces off that line — one ahead and one back — lock every direction:
+the post is then held by its braces, whatever is attached. The post's
+force reaches the structure at its hinge and each brace's at its base,
+plain forces, no moment ([theory](../theory/post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it)).
 
 **Version 1 files** gave each string as an `[[attachment]]` with a set and phase; they are read as before: an attachment's point is labelled by its string's `top` label, else `A<set>-<phase>`, and its set is the set itself for phase 1, else `set + 1000 · (phase + 1)` ([line file](line-file.md#points-strings-and-wire-points)).
 
