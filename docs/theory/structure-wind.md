@@ -111,19 +111,32 @@ At 45° the sharp-edged factor is 0.88 against the former
 \\( \sin^2 45^\circ = 0.5 \\); at \\( \theta = 30^\circ \\) (β = 60°) 0.8
 against 0.25. Round bars: 0.708 at 45°.
 
-**Conservative:** SIA 261 gives nothing beyond \\( \beta = 60^\circ \\)
-(\\( \theta < 30^\circ \\), a member nearly along the wind): the factor at
-60° is **held** there (0.8 sharp-edged, 0.5 round), where the true force
-falls towards 0 with the projected area (owner, 2026-11-15); the notes
-count the members. A curve given as data is held beyond its last angle the
-same way. Exact: a code's values beyond 60°. **Simplification, either
-side:** the held force acts normal to the member in the plane of the
-member and the wind — for a member nearly along the wind mostly *across*
-the wind (its part along the wind is only \\( k \sin\theta \\)): a crossarm
-chord under a wind along the arm takes a sideways force the standard does
-not give. It adds to the member's own bending and, on a structure not
-symmetric about the wind, to a resultant across the wind; a load added
-can lower another member's force, so this part is not a bound.
+**Assumption, conservative against the projected area:** SIA 261 gives
+nothing beyond \\( \beta = 60^\circ \\) (\\( \theta < 30^\circ \\), a member
+nearly along the wind). There the factor at 60° is **tapered** with the
+projected area (owner, 2026-11-15):
+
+\\[ k(\theta) = k(60^\circ)\,\frac{\sin\theta}{\sin 30^\circ}, \qquad \text{at least } \sin\theta , \\]
+
+continuous at 30° and 0 along the wind: \\( 1.6\sin\theta \\) for
+sharp-edged profiles, \\( \sin\theta \\) itself for round bars (whose
+60° factor is 0.5). A curve given as data is tapered beyond its last angle
+\\( \beta_n \\) the same way, \\( k(\beta_n)\cos\beta / \cos\beta_n \\).
+Exact: a code's values beyond 60°.
+
+Holding the 60° factor down to \\( \theta = 0 \\) (the first rule of the
+same day) was **rejected**: the force normal to a member nearly along the
+wind is mostly *across* the wind (its part along the wind only
+\\( k\sin\theta \\)), so a held 0.8 put unphysical sideways forces on such
+members — crossarm chords under a wind along the arm. On a reviewed real
+suspension tower with crossarms not symmetric about the wind it gave a
+resultant of 17 kN across a wind of 220 kN (0.2 kN with the taper), and a
+reviewed tension tower's model was refused as unstable at a crossarm
+joint. That tower stays refused with the taper (its chord at about 15° to
+the wind now takes \\( 1.6 \sin 15^\circ = 0.41 \\) of its broadside force
+against \\( \sin^2 15^\circ = 0.07 \\) before; the joint, held only in the
+crossarm's face, moves 0.29 m in a first-order run): a weakness of that
+model the larger, standard's force shows, not of the law.
 
 **Conservative:** a sharp-edged factor at least \\( \cos\beta \\) (the
 projected area): the straight line from 1.0 at 0° to 0.98 at 15° lies up
@@ -606,12 +619,12 @@ sin²θ with `[analysis] drag = 1` (the member wind before 2026-11-15,
 with a plan diagonal (the plane through the body dropped), the face drag
 by solidity, a spacing axis, the table's range, and the members shielded
 at 45°; `wind_law_tests.rs` the inclination factor against Tableau 74 at
-its angles and between them, held below 30°, round against sharp-edged
+its angles and between them, tapered below 30°, round against sharp-edged
 shapes, a curve given as data, the comparison law against the former
 formula bit for bit, the built-in coefficients per shape of the example
 section library, and the synthetic example's type-02 model (178 members,
 invented angle profiles): every member's force at least the former one;
-the total along the wind +12.9 % (wind along x) and +9.5 % (along y) by
+the total along the wind +12.4 % (wind along x) and +9.5 % (along y) by
 the inclination law alone with the example's drag 1.8, and +10.9 % more
 with the built-in 2.1 on the leg in place of that drag on the projected
 width.

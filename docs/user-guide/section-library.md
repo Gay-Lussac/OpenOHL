@@ -216,7 +216,8 @@ Every part is optional. `drag` and `inclination` keys are the shapes of
 the table above. `inclination` (format version 2, 2026-11-15: a file using
 it or `member_law` says `version = 2`) is the factor on the force normal
 to a member at the angle β between the wind and the member's normal,
-linear between the angles, the last factor held beyond the last angle; a
+linear between the angles, beyond the last angle its factor tapered with
+the projected area (× cos β / cos β_last); a
 shape without a curve takes the built-in one (SIA 261:2014 Tableau 74).
 `member_law = "sin2"` puts back the cross-flow law sin²θ for comparison —
 not on the safe side, said in every result.

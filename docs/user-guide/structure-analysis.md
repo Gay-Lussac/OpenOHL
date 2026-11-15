@@ -182,7 +182,8 @@ of its joints. β is the angle between the wind and the member's normal
 to the wind and, for a member at an angle, SIA 261:2014 Tableau 74's
 (p. 112) — for every profile that is not round 1.0, 0.98, 0.93, 0.88, 0.8
 at β = 0°, 15°, 30°, 45°, 60°, for round bars and tubes sin θ — linear
-between, the 60° value held for members nearer the wind's direction
+between, and for members nearer the wind's direction than 30° the 60°
+value tapered with the projected area (1.6 sin θ; round sin θ)
 (owner 2026-11-15; before, sin²θ: 0.5 at 45° where the standard gives
 0.88 for an angle — **not on the safe side**; member wind now rises,
 inclined bracing most, by about +10–25 % in all on lattice towers). A

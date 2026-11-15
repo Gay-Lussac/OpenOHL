@@ -27,9 +27,23 @@ points; built, in active development, not approved yet:
    area: the straight line lies up to 0.3 % below it under 9°); sin θ for
    round bars and tubes, raised to Tableau 74's own ratios c_β/c_β(0) where
    larger (up to 2 %, at 30°).
-2. **Below θ = 30°** (β > 60°, no value in the standard): the 30° factor
-   is held (0.8, round 0.5) — on the safe side; the notes count the
-   members.
+2. **Below θ = 30°** (β > 60°, no value in the standard): first decided
+   as the 30° factor held (0.8, round 0.5); the same day, on the
+   recheck, the owner chose instead (again "go ahead with your
+   recommendations") to **taper** it with the projected area,
+   k(θ) = k(60°) · sin θ / sin 30° — 1.6 sin θ sharp-edged, sin θ round —
+   continuous at 30°, 0 along the wind, never below sin θ; a curve given as
+   data tapered the same way beyond its last angle. An assumption,
+   conservative against the projected-area law. The hold was rejected
+   because the force normal to a member nearly along the wind is mostly
+   across it: on a reviewed real tower with unsymmetric crossarms it gave a
+   resultant of 17 kN across a wind of 220 kN (0.2 kN with the taper), and
+   it made a reviewed tension tower's model unstable at a crossarm joint —
+   that model stays refused with the taper (the joint, held only in the
+   crossarm's face, now takes its chord's standard force: 0.41 of the
+   broadside force at about 15° to the wind against 0.07 under sin²θ; it
+   moves 0.29 m in a first-order run; solved under sin²θ), a weakness of
+   the model to fix there. The note counting held members is gone.
 3. **Inclination data per shape** in the cross-section library's `[wind]`
    (`[wind.inclination.<shape>]`: `angle`, `factor`) so that a code plugin
    gives its own curve; the built-in one applies without. The section
@@ -60,7 +74,7 @@ angle to the wind goes up: on the reviewed real towers about +16–24 % with
 the inclination law alone (about +10 % for a wind along the line), and
 about twice that again with the drag default where no drag was given (the
 default was 1 on the projected width, now 2.1 on an angle's longer leg). The synthetic example's
-type-02 model with invented angle profiles: +12.9 % (wind across the
+type-02 model with invented angle profiles: +12.4 % (wind across the
 faces) and +9.5 % (the other direction) by the law alone, with its drag
 1.8; +10.9 % more with the built-in 2.1 on the leg. Benchmarks
 `structwind-001` 2910.915 → 3009.235 N (the side diagonals' factor 0.902
