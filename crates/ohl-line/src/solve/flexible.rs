@@ -324,8 +324,8 @@ pub fn reference_forces(
                                 .forces
                                 .entry((section.points[k].structure.clone(), s.label.clone()))
                                 .or_insert([0.0; 3]);
-                            for c in 0..3 {
-                                e[c] += s.force[c];
+                            for (x, f) in e.iter_mut().zip(s.force) {
+                                *x += f;
                             }
                         }
                     }
@@ -516,8 +516,9 @@ pub fn solve_line_flexible(
 /// (listed in the result), `notes`: said with the result.
 ///
 /// Expected cost: one rigid line solve per pass (2–5 passes; the
-/// estimate after pass 0 is in the result) plus a dense LU of the
-/// interface system (3 × flexible points square) per pass.
+/// estimate after pass 0 is in the result) plus a banded elimination of
+/// the interface system (3 × flexible points square, within its band)
+/// per pass.
 #[allow(clippy::too_many_arguments)]
 pub fn solve_line_coupled(
     line: &Line,
@@ -563,7 +564,20 @@ pub fn solve_line_coupled(
             ));
         }
     }
-    let solve = |u: &DVector<f64>| {
+    // The passes with moved points solve the line about a local origin
+    // (pass 0, the rigid solve, as given): in projected coordinates of
+    // millions of metres a moved point leaves some sections' Newton
+    // iterations at a force noise of about 10⁻³ N (the rounding of the
+    // coordinates, ~5·10⁻¹⁰ m, times the wires' stiffness), above their
+    // tolerance (found on a real line, 2026-11-15); about a local origin
+    // the same sections converge. Their results are moved back.
+    let origin = local_origin(line);
+    let local_line = (origin != [0.0; 2]).then(|| translated(line, origin));
+    let solve = |u: &DVector<f64>, pass: usize| {
+        let on = match &local_line {
+            Some(l) if pass > 0 => l,
+            _ => line,
+        };
         let mut moved = PointMoves::new();
         for (i, key) in points.iter().enumerate() {
             let d = [u[3 * i], u[3 * i + 1], u[3 * i + 2]];
@@ -576,7 +590,7 @@ pub fn solve_line_coupled(
             stiffness: true,
             ..Coupling::default()
         };
-        solve_line_based(line, library, case, budget, &base)
+        solve_line_based(on, library, case, budget, &base)
     };
     // The forces at the points, which points have one, K_w.
     let gather = |results: &[Result<SectionShape, LineError>]| {
@@ -660,7 +674,7 @@ pub fn solve_line_coupled(
             ));
         }
         let pass_started = Instant::now();
-        let results = solve(&u);
+        let results = solve(&u, pass);
         if pass == 0 {
             rigid_results = stripped(&results);
             for (s, r) in line.sections.iter().zip(&results) {
@@ -682,9 +696,25 @@ pub fn solve_line_coupled(
                 _ => None,
             })
         {
+            // How far the points were moved (the step that led there).
+            let (mut most, mut at) = (0.0_f64, None);
+            for i in 0..np {
+                let x = norm3(&u, i);
+                if x > most {
+                    (most, at) = (x, Some(i));
+                }
+            }
+            let moved = at.map_or(String::new(), |i| {
+                format!(
+                    " (the points moved by up to {:.1} mm, most at {} {})",
+                    most * 1e3,
+                    points[i].0,
+                    points[i].1
+                )
+            });
             return Err(fail(
                 format!(
-                    "section {} did not solve with its points moved in pass {pass}: {e}",
+                    "section {} did not solve with its points moved in pass {pass}{moved}: {e}",
                     s.id
                 ),
                 passes,
@@ -713,9 +743,10 @@ pub fn solve_line_coupled(
                 }
             }
         }
-        // The structures' answers, C block by block.
+        // The structures' answers, C block by block (its rows in the
+        // unknowns, its matrix).
         let mut us = DVector::<f64>::zeros(n);
-        let mut c = DMatrix::<f64>::zeros(n, n);
+        let mut blocks: Vec<(Vec<usize>, DMatrix<f64>)> = Vec::with_capacity(responses.len());
         for (r, s) in responses.iter().enumerate() {
             let ids: Vec<Option<usize>> = s
                 .labels()
@@ -740,27 +771,29 @@ pub fn solve_line_coupled(
                     ));
                 }
             };
-            for (a, ia) in ids.iter().enumerate() {
-                let Some(ia) = *ia else { continue };
-                if owner[ia] != (r, a) {
-                    continue;
-                }
+            // Its points the loop owns (a label given twice: once).
+            let own: Vec<(usize, usize)> = ids
+                .iter()
+                .enumerate()
+                .filter_map(|(a, ia)| ia.filter(|&ia| owner[ia] == (r, a)).map(|ia| (a, ia)))
+                .collect();
+            let mut rows = Vec::with_capacity(3 * own.len());
+            let mut block = DMatrix::<f64>::zeros(3 * own.len(), 3 * own.len());
+            for (p, &(a, ia)) in own.iter().enumerate() {
                 for k in 0..3 {
                     us[3 * ia + k] = answer.displacement[a][k];
+                    rows.push(3 * ia + k);
                 }
-                for (b, ib) in ids.iter().enumerate() {
-                    let Some(ib) = *ib else { continue };
-                    if owner[ib] != (r, b) {
-                        continue;
-                    }
+                for (q, &(b, _)) in own.iter().enumerate() {
                     for i in 0..3 {
                         for j in 0..3 {
-                            c[(3 * ia + i, 3 * ib + j)] =
+                            block[(3 * p + i, 3 * q + j)] =
                                 answer.flexibility[(3 * a + i, 3 * b + j)];
                         }
                     }
                 }
             }
+            blocks.push((rows, block));
         }
         let r = &u - &us;
         let (mut residual, mut worst) = (0.0_f64, None);
@@ -820,7 +853,12 @@ pub fn solve_line_coupled(
                     }
                 })
                 .collect();
-            let sections = stripped(&results);
+            let mut sections = stripped(&results);
+            if pass > 0 && origin != [0.0; 2] {
+                for shape in sections.iter_mut().flatten() {
+                    moved_by(shape, origin);
+                }
+            }
             let mut spans = Vec::new();
             for (a, b) in rigid_results.iter().zip(&sections) {
                 let (Ok(a), Ok(b)) = (a, b) else { continue };
@@ -912,9 +950,21 @@ pub fn solve_line_coupled(
         accepted_f = Some(f);
         accepted_residual = residual;
         halved = 0;
-        // Newton: (I + C K_w) Δu = −r.
-        let a = DMatrix::<f64>::identity(n, n) + &c * &kw;
-        let Some(delta) = a.lu().solve(&(-&r)) else {
+        // Newton: (I + C K_w) Δu = −r, C block by block.
+        let mut a = DMatrix::<f64>::identity(n, n);
+        for (rows, block) in &blocks {
+            let mut kr = DMatrix::<f64>::zeros(rows.len(), n);
+            for (k, &row) in rows.iter().enumerate() {
+                kr.row_mut(k).copy_from(&kw.row(row));
+            }
+            let product = block * kr;
+            for (k, &row) in rows.iter().enumerate() {
+                for col in 0..n {
+                    a[(row, col)] += product[(k, col)];
+                }
+            }
+        }
+        let Some(delta) = solve_banded(a, -&r) else {
             return Err(fail(
                 format!(
                     "the interface system is singular in pass {pass}{}",
@@ -935,4 +985,175 @@ pub fn solve_line_coupled(
         u = &accepted_u + &step;
     }
     unreachable!("the loop returns")
+}
+
+/// Coordinates beyond this (m, x or y of the first structure) are solved
+/// about a local origin in the passes with moved points.
+const FAR_FROM_ORIGIN: f64 = 1e4;
+
+/// The local origin of the passes with moved points: the first
+/// structure's x and y rounded to whole kilometres (whole numbers: the
+/// shift and its reversal are exact for the given points), none ([0, 0])
+/// when it is near the origin already.
+fn local_origin(line: &Line) -> [f64; 2] {
+    let Some(first) = line.structures.first() else {
+        return [0.0; 2];
+    };
+    let [x, y, _] = first.position;
+    if x.abs().max(y.abs()) < FAR_FROM_ORIGIN || !x.is_finite() || !y.is_finite() {
+        return [0.0; 2];
+    }
+    [(x / 1e3).round() * 1e3, (y / 1e3).round() * 1e3]
+}
+
+/// `line` with every coordinate less `origin` (x, y; the structures'
+/// orientations as given: a translation turns nothing).
+fn translated(line: &Line, origin: [f64; 2]) -> Line {
+    let mut out = line.clone();
+    // A translation never fails; the orientations kept exactly (the
+    // transform would work them out again from a point 1 m away).
+    let _ = out.transform_coordinates(|points| {
+        for p in points.iter_mut() {
+            p[0] -= origin[0];
+            p[1] -= origin[1];
+        }
+        Ok(())
+    });
+    for (s, given) in out.structures.iter_mut().zip(&line.structures) {
+        s.orientation_deg = given.orientation_deg;
+    }
+    out
+}
+
+/// A section's solved positions moved by `d` (x, y): back from the local
+/// origin.
+fn moved_by(shape: &mut SectionShape, d: [f64; 2]) {
+    let add = |p: &mut Point| {
+        p[0] += d[0];
+        p[1] += d[1];
+    };
+    shape.clamps.iter_mut().for_each(add);
+    for s in &mut shape.spans {
+        s.points.iter_mut().for_each(add);
+        add(&mut s.mid_point);
+        add(&mut s.low_point);
+    }
+    for st in shape.strings.iter_mut().flatten() {
+        add(&mut st.top);
+        add(&mut st.bottom);
+    }
+    for a in shape.attachment_loads.iter_mut().flatten() {
+        add(&mut a.at);
+    }
+    for (_, p) in shape.nodes.iter_mut().flatten() {
+        add(p);
+    }
+    for (_, p) in &mut shape.span_points {
+        add(p);
+    }
+    for s in &mut shape.spacers {
+        s.ends.iter_mut().for_each(add);
+    }
+}
+
+/// Solves A x = b by Gaussian elimination with partial pivoting within
+/// A's band (its lower and upper bandwidths found from its entries: the
+/// interface system couples only the points of structures a section
+/// reaches, banded along the line), the dense LU when the band is wide.
+/// None: singular. Cost n · kl · (kl + ku) against the dense n³.
+fn solve_banded(mut a: DMatrix<f64>, mut b: DVector<f64>) -> Option<DVector<f64>> {
+    let n = a.nrows();
+    let (mut kl, mut ku) = (0_usize, 0_usize);
+    for j in 0..n {
+        for i in 0..n {
+            if a[(i, j)] != 0.0 {
+                if i > j {
+                    kl = kl.max(i - j);
+                } else {
+                    ku = ku.max(j - i);
+                }
+            }
+        }
+    }
+    if 3 * (kl + ku) >= n {
+        return a.lu().solve(&b);
+    }
+    // With row exchanges the upper band grows to kl + ku.
+    let upper = kl + ku;
+    let mut factors = vec![0.0; kl + 1];
+    for j in 0..n {
+        let last = (j + kl).min(n - 1);
+        let (p, size) = (j..=last)
+            .map(|i| (i, a[(i, j)].abs()))
+            .fold((j, -1.0), |best, x| if x.1 > best.1 { x } else { best });
+        // Zero, or NaN (a NaN pivot is never taken).
+        if size <= 0.0 || !size.is_finite() {
+            return None;
+        }
+        let end = (j + upper).min(n - 1);
+        if p != j {
+            for c in j..=end {
+                a.swap((p, c), (j, c));
+            }
+            b.swap_rows(p, j);
+        }
+        let pivot = a[(j, j)];
+        for i in j + 1..=last {
+            factors[i - j] = a[(i, j)] / pivot;
+            a[(i, j)] = 0.0;
+            b[i] -= factors[i - j] * b[j];
+        }
+        for c in j + 1..=end {
+            let ajc = a[(j, c)];
+            if ajc == 0.0 {
+                continue;
+            }
+            for i in j + 1..=last {
+                a[(i, c)] -= factors[i - j] * ajc;
+            }
+        }
+    }
+    let mut x = DVector::<f64>::zeros(n);
+    for j in (0..n).rev() {
+        let end = (j + upper).min(n - 1);
+        let mut s = b[j];
+        for c in j + 1..=end {
+            s -= a[(j, c)] * x[c];
+        }
+        x[j] = s / a[(j, j)];
+    }
+    x.iter().all(|v| v.is_finite()).then_some(x)
+}
+
+#[cfg(test)]
+mod band_tests {
+    use super::*;
+
+    /// The banded elimination gives the dense LU's answer on a banded
+    /// unsymmetric matrix that needs row exchanges (a zero on the
+    /// diagonal), and refuses a singular one.
+    #[test]
+    fn the_banded_solve_is_the_dense_one() {
+        let n = 40;
+        let mut a = DMatrix::<f64>::zeros(n, n);
+        for i in 0..n {
+            for j in i.saturating_sub(2)..(i + 4).min(n) {
+                let x = ((i * 7 + j * 13) % 11) as f64 - 5.0;
+                a[(i, j)] = x + if i == j { 0.5 } else { 0.0 };
+            }
+        }
+        a[(3, 3)] = 0.0;
+        let b = DVector::from_fn(n, |i, _| (i as f64).sin());
+        let dense = a.clone().lu().solve(&b).unwrap();
+        let banded = solve_banded(a.clone(), b.clone()).unwrap();
+        assert!(
+            (&dense - &banded).amax() < 1e-9 * dense.amax(),
+            "{dense} {banded}"
+        );
+        let mut singular = a;
+        for i in 0..n {
+            singular[(i, 5)] = 0.0;
+        }
+        assert!(solve_banded(singular, b).is_none());
+    }
 }

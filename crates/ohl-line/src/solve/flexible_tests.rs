@@ -622,3 +622,72 @@ fn the_rigid_solve_is_unchanged_bit_for_bit() {
         assert_eq!(format!("{plain:?}"), format!("{:?}", solved.sections));
     }
 }
+
+/// A line in projected coordinates of millions of metres: the passes with
+/// moved points solve about a local origin (whole kilometres) and give
+/// the results back where the line is — the same as the line near the
+/// origin to rounding (1e-6 m, 1e-3 N), pass 0 still the rigid solve bit
+/// for bit.
+#[test]
+fn a_line_far_from_the_origin_solves_as_near_it() {
+    let (near, cable) = unbalanced();
+    let lib = library_of(&cable, TWO_SPANS_WIRE);
+    let offset = [2_600_123.25, 1_120_456.5];
+    let mut far = near.clone();
+    far.transform_coordinates(|points| {
+        for p in points.iter_mut() {
+            p[0] += offset[0];
+            p[1] += offset[1];
+        }
+        Ok(())
+    })
+    .unwrap();
+    for (s, given) in far.structures.iter_mut().zip(&near.structures) {
+        s.orientation_deg = given.orientation_deg;
+    }
+    let budget = default_fe_budget();
+    let case = iced(-5.0, 15.0);
+    let k = [5e4, 5e4, 5e6];
+    let a = solve_line_flexible(
+        &near,
+        &lib,
+        &case,
+        &budget,
+        &on_springs(&near, &lib, "T2", "A1", k),
+        &FlexibleOptions::default(),
+    )
+    .unwrap();
+    let b = solve_line_flexible(
+        &far,
+        &lib,
+        &case,
+        &budget,
+        &on_springs(&far, &lib, "T2", "A1", k),
+        &FlexibleOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        format!("{:?}", b.rigid),
+        format!("{:?}", solve_line_with(&far, &lib, &case, &budget))
+    );
+    let (x, y) = (
+        a.sections[0].as_ref().unwrap(),
+        b.sections[0].as_ref().unwrap(),
+    );
+    for (p, q) in x.clamps.iter().zip(&y.clamps) {
+        let d = [
+            q[0] - offset[0] - p[0],
+            q[1] - offset[1] - p[1],
+            q[2] - p[2],
+        ];
+        assert!(d.iter().all(|c| c.abs() < 1e-6), "{p:?} {q:?}");
+    }
+    for (s, t) in x.spans.iter().zip(&y.spans) {
+        assert!((s.horizontal_tension - t.horizontal_tension).abs() < 1e-3);
+    }
+    for (p, q) in a.points.iter().zip(&b.points) {
+        for c in 0..3 {
+            assert!((p.displacement[c] - q.displacement[c]).abs() < 1e-6);
+        }
+    }
+}
