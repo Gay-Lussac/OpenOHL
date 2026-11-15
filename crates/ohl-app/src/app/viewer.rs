@@ -405,12 +405,17 @@ impl TabViewer for Viewer<'_> {
                     .or_insert_with(|| crate::library::LibraryPage::new(kind, &sources));
                 let weather: Vec<ohl_weather::WeatherCase> =
                     r.model.cases.iter().map(|c| c.case.clone()).collect();
+                let selected = crate::structure_groups::selected_structures(&r.selection, &r.model);
+                let read_only = r.model.can_edit().err();
                 let cx = crate::library::PageContext {
                     rs: self.rs,
                     line: Some(&r.model.line),
                     insulators: r.model.types.as_ref().map(|t| &t.1),
                     ahead: r.model.line.display.ahead_deg,
                     weather: &weather,
+                    selected: &selected,
+                    line_version: r.model.line_version,
+                    read_only: read_only.as_deref(),
                 };
                 // The hotbar's Link tool held: the structure screen's too.
                 page.workspace.link_held = r.hotbar.tool() == crate::tools::Tool::Link;

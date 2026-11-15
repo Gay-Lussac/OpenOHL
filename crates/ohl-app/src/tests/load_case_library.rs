@@ -555,6 +555,140 @@ fn a_renamed_load_case_follows_into_the_groups_and_undoes_as_one() {
     assert!(crate::load_case_sets::cell(&sets, &t1, Some(&all)).contains("NOT CHECKED"));
 }
 
+/// The Load cases form's **8 Applies to** (owner, 2026-11-15: "manual
+/// should always be available where load cases rules are defined and on
+/// which pylon they apply with a list of them. Not per type but per
+/// position"): every structure listed with how it gets the case; ticking
+/// one that does not take it picks it in the case's own list (one
+/// command), unticking one a group's RULE gives excludes it (one command,
+/// the status naming the rule); the Structures table and the groups
+/// window show both; one undo each.
+#[test]
+fn the_applies_to_list_ticks_structures_one_command_each() {
+    let mut h = app(synthetic_project_with("lc-applies", |l| {
+        let mut s = ohl_line::StructureGroup::new("suspension");
+        s.structures = vec!["T2".into(), "T4".into()];
+        s.load_cases = vec!["everyday".into()];
+        let mut d = ohl_line::StructureGroup::new("dead ends");
+        d.rules.dead_end = Some(true);
+        d.load_cases = vec!["everyday".into(), "wind".into()];
+        l.structure_groups = vec![s, d];
+    }));
+    h.state_mut()
+        .ready()
+        .unwrap()
+        .model
+        .store_libraries()
+        .unwrap();
+    h.state_mut().ready().unwrap().open_page =
+        Some((crate::app::Tab::Library(LibraryKind::LoadCases), None));
+    h.run();
+    h.run();
+    h.get_by_label("wind").click();
+    h.run();
+    // The list: T2 (suspension: everyday only) does not take wind, T3 (a
+    // dead end) takes it by the rule, T6 (in no group) every case.
+    h.get_by_label_contains("Taken by 5 of 7 structure(s)");
+    // A row by its structure (an alignment's name may hold "T3 · " too).
+    macro_rules! node {
+        ($id:expr, $act:ident) => {{
+            let prefix = format!("{} · ", $id);
+            h.query_all_by_label_contains(&prefix)
+                .find(|n| {
+                    n.accesskit_node()
+                        .label()
+                        .is_some_and(|l| l.starts_with(&prefix))
+                })
+                .expect("its row")
+                .$act();
+        }};
+    }
+    let row = |h: &Harness<'_, App>, id: &str| {
+        let prefix = format!("{id} · ");
+        h.query_all_by_label_contains(&prefix)
+            .filter_map(|n| n.accesskit_node().label())
+            .find(|l| l.starts_with(&prefix))
+            .unwrap_or_default()
+    };
+    let t2 = row(&h, "T2");
+    assert!(
+        t2.contains("not taken: its group suspension does not tick it"),
+        "{t2}"
+    );
+    let t3 = row(&h, "T3");
+    assert!(t3.contains("group dead ends by rule (dead end)"), "{t3}");
+    let t6 = row(&h, "T6");
+    assert!(t6.contains("in no group: every case"), "{t6}");
+    // Tick T2: picked in wind's own list, one command. (The list's own
+    // box shows every row: the form scrolled to the button below it.)
+    h.get_by_label("Add the 0 selected").scroll_to_me();
+    h.run();
+    node!("T2", click);
+    h.run();
+    {
+        let line = &h.state_mut().ready().unwrap().model.line;
+        assert!(line.takes_load_case("T2", "wind"));
+        let own = line
+            .structure_groups
+            .iter()
+            .find(|g| g.load_case.as_deref() == Some("wind"))
+            .expect("wind's own list");
+        assert_eq!(own.structures, ["T2"]);
+        assert_eq!(line.structure_groups[0].structures, ["T2", "T4"]);
+    }
+    assert_eq!(
+        cases_cell(&mut h, "T2"),
+        "suspension, wind (own list): 2: everyday, wind"
+    );
+    // T4, the same group, does not: per position.
+    assert_eq!(cases_cell(&mut h, "T4"), "suspension: 1: everyday");
+    // Untick T3 (by the rule): excluded, the rule named; the rule kept.
+    h.get_by_label("Add the 0 selected").scroll_to_me();
+    h.run();
+    node!("T3", click);
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(!r.model.line.takes_load_case("T3", "wind"));
+        assert!(r.model.line.takes_load_case("T3", "everyday"));
+        assert_eq!(r.model.line.structure_groups[1].rules.dead_end, Some(true));
+        let (said, error) = r.status.clone().unwrap();
+        assert!(!error, "{said}");
+        assert!(
+            said.contains("T3 excluded here")
+                && said.contains("group dead ends by rule (dead end)")
+                && said.contains("change the rule"),
+            "{said}"
+        );
+    }
+    assert_eq!(
+        cases_cell(&mut h, "T3"),
+        format!(
+            "dead ends: 1: everyday — wind {}",
+            crate::load_case_sets::EXCLUDED
+        )
+    );
+    let t3 = row(&h, "T3");
+    assert!(t3.contains("excluded here (else: group dead ends"), "{t3}");
+    // The groups window lists the own list.
+    h.state_mut().ready().unwrap().structure_groups.open = true;
+    h.run();
+    h.get_by_label("wind (own list)");
+    // One undo each: T3's exclusion, then T2's pick.
+    h.state_mut().ready().unwrap().model.undo().unwrap();
+    h.run();
+    {
+        let line = &h.state_mut().ready().unwrap().model.line;
+        assert!(line.takes_load_case("T3", "wind"));
+        assert!(line.takes_load_case("T2", "wind"));
+    }
+    h.state_mut().ready().unwrap().model.undo().unwrap();
+    h.run();
+    let line = &h.state_mut().ready().unwrap().model.line;
+    assert!(!line.takes_load_case("T2", "wind"));
+    assert!(line.structure_groups.iter().all(|g| !g.is_own_list()));
+}
+
 /// **Use local conditions** of Checks › Structure loads is kept in the
 /// project (2026-11-14): what OHL-Structure gets follows it, so it must
 /// outlive the window; the cases sent to the placed structures then take

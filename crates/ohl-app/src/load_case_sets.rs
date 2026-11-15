@@ -15,7 +15,12 @@
 //! - a structure's Properties: **Load cases** — shown only, with a button
 //!   to the groups window ([`structure_ui`]);
 //! - a case renamed in the Load cases library is renamed in every group
-//!   ticking it in the same command ([`rename_command`], 2026-11-14).
+//!   ticking it and in its own list in the same command
+//!   ([`rename_command`], 2026-11-14);
+//! - the Load cases form's *8 Applies to* and the groups window's own-list
+//!   view change which structures take a case through the case's own
+//!   list, one command each ([`give_command`], 2026-11-15), said in words
+//!   ([`why_words`], [`given_words`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -69,12 +74,21 @@ pub fn cell(
     s: &ohl_line::Structure,
     known: Option<&[String]>,
 ) -> String {
-    let groups = sets.groups_of(&s.id).join(", ");
+    let groups = groups_words(sets, &s.id);
+    let excluded = sets.excluded_from(&s.id);
+    let but = if excluded.is_empty() {
+        String::new()
+    } else {
+        format!(" — {} {EXCLUDED}", excluded.join(", "))
+    };
     let set = sets.of(&s.id);
     let base = match set {
         ohl_line::CaseSet::Every => return NO_GROUP.to_owned(),
-        ohl_line::CaseSet::NoCase => return format!("{NO_CASE} ({groups})"),
-        ohl_line::CaseSet::These(c) => format!("{groups}: {}: {}", c.len(), c.join(", ")),
+        ohl_line::CaseSet::EveryBut(c) => {
+            return format!("{NO_GROUP_BUT}{} ({EXCLUDED})", c.join(", "));
+        }
+        ohl_line::CaseSet::NoCase => return format!("{NO_CASE} ({groups}){but}"),
+        ohl_line::CaseSet::These(c) => format!("{groups}: {}: {}{but}", c.len(), c.join(", ")),
     };
     let names = set.names();
     let unknown: Vec<&str> = known.map_or_else(Vec::new, |k| {
@@ -106,6 +120,172 @@ pub const NO_CASE: &str = "none: takes no load case";
 /// The Structures table's cell of a structure in no group.
 pub const NO_GROUP: &str = "no group: every case";
 
+/// The Structures table's cell of a structure in no group excluded from
+/// some cases begins so (the cases follow).
+pub const NO_GROUP_BUT: &str = "no group: every case but ";
+
+/// How an exclusion in a load case's own list is said.
+pub const EXCLUDED: &str = "excluded in the own list";
+
+/// Structure `id`'s groups and the load cases' own lists picking it, in
+/// words: `suspension, wind (own list)`.
+pub fn groups_words(sets: &ohl_line::CaseSets, id: &str) -> String {
+    sets.groups_of(id)
+        .iter()
+        .map(|g| (*g).to_owned())
+        .chain(
+            sets.picked_for(id)
+                .iter()
+                .map(|c| format!("{c} (own list)")),
+        )
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// How a structure gets a load case, or why not, in words (the Load
+/// cases form's *Applies to*): `picked here`, `in no group: every case`,
+/// `group angle by rule (line angle 10–30°)`, `excluded here (else: group
+/// angle by rule …)`, `not taken: its groups suspension do not tick it`.
+pub fn why_words(line: &ohl_line::Line, why: &ohl_line::CaseWhy) -> String {
+    let by = |why: &ohl_line::CaseWhy| by_words(line, why);
+    if why.takes {
+        match (why.by_groups(), why.picked_here) {
+            (true, true) => format!("{}; also picked here", by(why)),
+            (true, false) => by(why),
+            _ => "picked here".to_owned(),
+        }
+    } else if why.excluded_here {
+        if why.by_groups() {
+            format!("excluded here (else: {})", by(why))
+        } else {
+            "excluded here".to_owned()
+        }
+    } else {
+        format!(
+            "not taken: its group{} {} {} not tick it",
+            if why.groups.len() == 1 { "" } else { "s" },
+            why.groups.join(", "),
+            if why.groups.len() == 1 { "does" } else { "do" }
+        )
+    }
+}
+
+/// How a structure gets a load case without the case's own list, in
+/// words: `in no group: every case`, or its groups ticking it — `group
+/// angle by rule (line angle 10–30°)`, `group crossing (picked)`.
+pub fn by_words(line: &ohl_line::Line, why: &ohl_line::CaseWhy) -> String {
+    let alignment_name = |id: &str| {
+        line.alignments.iter().find(|a| a.id == id).map_or_else(
+            || id.to_owned(),
+            |a| {
+                if a.name.is_empty() {
+                    a.id.clone()
+                } else {
+                    a.name.clone()
+                }
+            },
+        )
+    };
+    if why.no_group {
+        return "in no group: every case".to_owned();
+    }
+    why.by
+        .iter()
+        .map(|g| {
+            let rules = line
+                .structure_groups
+                .iter()
+                .find(|x| !x.is_own_list() && x.name == g.group)
+                .map(|x| x.rules.words(alignment_name))
+                .unwrap_or_default();
+            match (g.picked, g.rules) {
+                (true, true) => format!("group {} (picked; by rule: {rules})", g.group),
+                (true, false) => format!("group {} (picked)", g.group),
+                _ => format!("group {} by rule ({rules})", g.group),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// What [`ohl_line::Line::give_case`] did, in words (the command's name
+/// and the status line): a structure excluded although a group's rule
+/// gives it the case says which rule and what to do.
+pub fn given_words(line: &ohl_line::Line, case: &str, given: &ohl_line::Given) -> String {
+    let mut out = Vec::new();
+    if !given.picked.is_empty() {
+        out.push(format!("{} picked", given.picked.join(", ")));
+    }
+    if !given.unexcluded.is_empty() {
+        out.push(format!(
+            "{} no longer excluded",
+            given.unexcluded.join(", ")
+        ));
+    }
+    if !given.unpicked.is_empty()
+        && given
+            .unpicked
+            .iter()
+            .any(|id| !given.excluded.iter().any(|(x, _)| x == id))
+    {
+        let only: Vec<&str> = given
+            .unpicked
+            .iter()
+            .filter(|id| !given.excluded.iter().any(|(x, _)| x == *id))
+            .map(String::as_str)
+            .collect();
+        out.push(format!("{} taken out of its own list", only.join(", ")));
+    }
+    for (id, why) in &given.excluded {
+        let ruled = why.by.iter().any(|g| g.rules);
+        out.push(format!(
+            "{id} excluded here (it took it: {}){}",
+            by_words(line, why),
+            if ruled {
+                " — change the rule in Load cases per group, or keep the exclusion"
+            } else {
+                ""
+            }
+        ));
+    }
+    format!("load case \"{case}\": {}", out.join("; "))
+}
+
+/// Structures `take` made to take load case `case` and `drop` not to
+/// ([`ohl_line::Line::give_case`]: the case's own list, its groups
+/// untouched), as one command of the session (one undo); none when
+/// nothing changes. What it did in words, and the command.
+pub fn give_command(
+    model: &Model,
+    case: &str,
+    take: &[String],
+    drop: &[String],
+) -> Result<Option<(String, Command)>, String> {
+    let e = model
+        .editing
+        .as_ref()
+        .map_err(|e| format!("read-only: {e}"))?;
+    let mut line = model.line.clone();
+    if let Some(stored) = model.stored_line() {
+        line.structure_groups = stored.structure_groups.clone();
+    }
+    let mut given = line.give_case(case, take, true);
+    let dropped = line.give_case(case, drop, false);
+    given.unpicked.extend(dropped.unpicked);
+    given.excluded.extend(dropped.excluded);
+    if given.is_empty() {
+        return Ok(None);
+    }
+    if let Some(p) = line.groups_problem() {
+        return Err(p);
+    }
+    let what = given_words(&model.line, case, &given);
+    Ok(Some((
+        what,
+        e.session.structure_groups_command(line.structure_groups),
+    )))
+}
+
 /// What "takes no load case" does, for its hover.
 pub const NO_CASE_HOVER: &str = "A structure whose groups tick no load case takes none: no \
     loads are computed for it and no structure check is made (Checks › Structure loads lists it \
@@ -130,6 +310,11 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
     let groups = sets.groups_of(id);
     let text = match sets.of(id) {
         ohl_line::CaseSet::Every => "In no group: it takes every case of the library.".to_owned(),
+        ohl_line::CaseSet::EveryBut(c) => format!(
+            "In no group: it takes every case of the library but {} (excluded in the case's own \
+             list).",
+            c.join(", ")
+        ),
         ohl_line::CaseSet::NoCase => format!(
             "Groups {}: they tick no case — it takes none (no loads, no structure check).",
             groups.join(", ")
@@ -145,6 +330,31 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
     let r = ui.label(egui::RichText::new(text).small());
     if sets.takes_none(id) {
         r.on_hover_text(NO_CASE_HOVER);
+    }
+    // The load cases' own lists (2026-11-15): picked or excluded there.
+    let picked = sets.picked_for(id);
+    if !picked.is_empty() && !groups.is_empty() {
+        ui.label(
+            egui::RichText::new(format!(
+                "Picked in the own list of {} (Load cases… › Applies to): taken on top of its \
+                 groups' cases.",
+                picked.join(", ")
+            ))
+            .small(),
+        );
+    }
+    let excluded = sets.excluded_from(id);
+    if !excluded.is_empty() && !groups.is_empty() {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(format!(
+                "Excluded from {} in the case's own list (Load cases… › Applies to): it does not \
+                 take {} whatever its groups give.",
+                excluded.join(", "),
+                if excluded.len() == 1 { "it" } else { "them" }
+            ))
+            .small(),
+        );
     }
     if let Ok(known) = library_names(model) {
         let gone: Vec<&String> = sets
@@ -178,12 +388,16 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
 }
 
 /// The structure groups of `line` ticking load case `case`, in their
-/// order: their structures lose it when it leaves the library.
+/// order, and its own list when it picks a structure: their structures
+/// lose it when it leaves the library.
 pub fn takers(line: &ohl_line::Line, case: &str) -> Vec<String> {
     line.structure_groups
         .iter()
-        .filter(|g| g.load_cases.iter().any(|c| c == case))
-        .map(|g| g.name.clone())
+        .filter(|g| {
+            g.load_cases.iter().any(|c| c == case)
+                || (g.load_case.as_deref() == Some(case) && !g.structures.is_empty())
+        })
+        .map(ohl_line::StructureGroup::label)
         .collect()
 }
 
@@ -265,6 +479,37 @@ pub fn rename_command(model: &Model, old: &str, new: &str) -> Result<(String, Co
         if g.load_cases.iter().any(|c| c == old) {
             g.load_cases = renamed(&g.load_cases, old, new);
             named.push(g.name.clone());
+        }
+    }
+    // The case's own list follows (2026-11-15), joined to one the new
+    // name had (a case once deleted): its picks kept (more cases, the safe
+    // side), its exclusions where it is not picked.
+    if let Some(k) = groups
+        .iter()
+        .position(|g| g.load_case.as_deref() == Some(old))
+    {
+        let mut own = groups.remove(k);
+        own.load_case = Some(new.to_owned());
+        named.push(format!("{new} (own list)"));
+        match groups
+            .iter_mut()
+            .find(|g| g.load_case.as_deref() == Some(new))
+        {
+            Some(there) => {
+                for id in own.structures {
+                    if !there.structures.contains(&id) {
+                        there.structures.push(id);
+                    }
+                }
+                for id in own.excluded {
+                    if !there.excluded.contains(&id) {
+                        there.excluded.push(id);
+                    }
+                }
+                let picked = there.structures.clone();
+                there.excluded.retain(|id| !picked.contains(id));
+            }
+            None => groups.insert(k, own),
         }
     }
     if !named.is_empty() {
