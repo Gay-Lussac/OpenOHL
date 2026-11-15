@@ -76,7 +76,9 @@ fn the_load_case_form_writes_a_version_4_case_and_undo_restores_it() {
     h.get_by_label("Save").click();
     h.run();
     let read = ohl_loads::LoadCases::load(&path).unwrap();
-    assert_eq!(read.version, Some(4));
+    // An angle typed is in the program's convention since 2026-11-15:
+    // version 7.
+    assert_eq!(read.version, Some(7));
     let c = read.cases.iter().find(|c| c.name == "new case-1").unwrap();
     assert_eq!(c.weather, "high wind");
     let broken: Vec<String> = c.broken_wires().map(|b| b.describe()).collect();

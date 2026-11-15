@@ -361,6 +361,10 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
         .resizable(false)
         .default_width(560.0)
         .show(ctx, |ui| {
+            // Scrolled, its OK and Cancel always in view (2026-11-15: the
+            // window grew past a small screen).
+            let tall = ui.ctx().content_rect().height() * 0.55;
+            egui::ScrollArea::vertical().max_height(tall).show(ui, |ui| {
             ui.strong("Jumpers on the clamps");
             ui.label(
                 "What the sections at a jumper's ends carry at their clamps (clamps hanging \
@@ -558,33 +562,36 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .weak(),
             );
             ui.separator();
-            ui.strong("Wind at an angle on the wires");
-            ui.label(
+            // Folded by default (the window keeps its OK in view).
+            egui::CollapsingHeader::new("Wind at an angle on the wires")
+                .id_salt("wind-at-an-angle")
+                .show(ui, |ui| {
+                    ui.label(
                 "For weather or load cases with a wind direction other than across the line \
                  (Weather cases: Wind direction). Cases without a direction, or from the right or \
                  the left, keep the across rule and are not affected.",
             );
-            for law in ohl_weather::ObliqueLaw::ALL {
-                let help = match law {
-                    ohl_weather::ObliqueLaw::Projected => {
-                        "The force normal to the wire on the area it shows to the wind, \
+                    for law in ohl_weather::ObliqueLaw::ALL {
+                        let help = match law {
+                            ohl_weather::ObliqueLaw::Projected => {
+                                "The force normal to the wire on the area it shows to the wind, \
                          q·D·sin θ (SIA 261 Table 74 for round bars): the larger, on the safe side"
-                    }
-                    ohl_weather::ObliqueLaw::CrossFlow => {
-                        "The force of the wind's speed normal to the wire, q·D·sin² θ (the \
+                            }
+                            ohl_weather::ObliqueLaw::CrossFlow => {
+                                "The force of the wind's speed normal to the wire, q·D·sin² θ (the \
                          cross-flow principle): lighter than the projected area"
+                            }
+                        };
+                        let text = match law {
+                            ohl_weather::ObliqueLaw::Projected => "Projected area (default)",
+                            ohl_weather::ObliqueLaw::CrossFlow => "Cross-flow principle",
+                        };
+                        ui.radio_value(&mut draft.wind.law, law, text)
+                            .on_hover_text(help);
                     }
-                };
-                let text = match law {
-                    ohl_weather::ObliqueLaw::Projected => "Projected area (default)",
-                    ohl_weather::ObliqueLaw::CrossFlow => "Cross-flow principle",
-                };
-                ui.radio_value(&mut draft.wind.law, law, text)
-                    .on_hover_text(help);
-            }
-            ui.horizontal(|ui| {
-                let mut on = draft.wind.friction.is_some();
-                if ui
+                    ui.horizontal(|ui| {
+                        let mut on = draft.wind.friction.is_some();
+                        if ui
                     .checkbox(&mut on, "Friction along the wire, c_t")
                     .on_hover_text(
                         "A force along the wire, c_t · q · D · cos² θ, with the wind's part along \
@@ -595,15 +602,15 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 {
                     draft.wind.friction = on.then_some(ohl_line::wind::Friction(0.0));
                 }
-                if let Some(f) = draft.wind.friction.as_mut() {
-                    ui.add(
-                        egui::DragValue::new(&mut f.0)
-                            .speed(0.001)
-                            .range(0.0..=10.0),
-                    );
-                }
-            });
-            ui.label(
+                        if let Some(f) = draft.wind.friction.as_mut() {
+                            ui.add(
+                                egui::DragValue::new(&mut f.0)
+                                    .speed(0.001)
+                                    .range(0.0..=10.0),
+                            );
+                        }
+                    });
+                    ui.label(
                 egui::RichText::new(
                     "The effect, a 300 m span of a 30 mm wire at 500 Pa: across 4500 N either \
                      way; at 45° to the wire 3182 N (projected area) or 2250 N (cross-flow). \
@@ -612,11 +619,13 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+                });
             // Not the project's: the application's, for every project
             // (owner, 2026-11-12), taken at once.
             ui.separator();
             ui.strong("Memory (every project, this computer)");
             crate::memory_limit::ui(ui);
+            });
             ui.separator();
             if let Err(why) = r.model.can_edit() {
                 crate::menu::error_label(ui, format!("read-only: {why}"));
