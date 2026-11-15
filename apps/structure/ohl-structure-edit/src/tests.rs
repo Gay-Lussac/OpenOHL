@@ -516,6 +516,42 @@ fn analysis_settings_are_edited() {
     assert!(doc.get("analysis").is_none());
 }
 
+/// What the tension-only members carry in compression (owner
+/// 2026-11-15): no compression writes `tension_compression = "none"` and
+/// raises a file of a version to 14 (one without a version stays
+/// without), read back by the structure; back to the default removes
+/// the key (and the table when it is the last), the version kept.
+#[test]
+fn tension_compression_is_edited() {
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 8\n{PYLON}")
+        .parse()
+        .unwrap();
+    set_tension_compression(&mut doc, true).unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("version = 14"), "{text}");
+    assert!(
+        text.contains("[analysis]\ntension_compression = \"none\""),
+        "{text}"
+    );
+    let t = read(&doc);
+    assert_eq!(
+        t.analysis
+            .as_ref()
+            .and_then(|a| a.get("tension_compression"))
+            .and_then(toml::Value::as_str),
+        Some("none")
+    );
+    set_tension_compression(&mut doc, false).unwrap();
+    let text = doc.to_string();
+    assert!(!text.contains("tension_compression"), "{text}");
+    assert!(doc.get("analysis").is_none());
+    assert!(text.contains("version = 14"), "{text}");
+    // Without a version: none written (it reads as the newest).
+    let mut doc: DocumentMut = PYLON.parse().unwrap();
+    set_tension_compression(&mut doc, true).unwrap();
+    assert!(doc.get("version").is_none());
+}
+
 /// A member's analysis fields typed (one member, or every member of a
 /// group), read back by the structure; empty removes them.
 #[test]

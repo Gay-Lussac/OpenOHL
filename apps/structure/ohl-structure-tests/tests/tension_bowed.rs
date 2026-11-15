@@ -8,7 +8,8 @@
 //! solved through the link as the structure application does: it
 //! settles, the shortened halves bowed at their buckling load — marked
 //! so in the member results, named in the notes and in what governs —
-//! and nothing kept active.
+//! and nothing kept active. Set to no compression (`[analysis]
+//! tension_compression = "none"`), the same halves slack, the law said.
 
 use std::path::Path;
 
@@ -142,6 +143,74 @@ fn the_formerly_unsettled_structure_settles_with_bowed_halves() {
         );
         if bowed {
             assert!((m.axial + 331.7).abs() < 0.5, "{m:?}");
+        } else {
+            assert!(m.axial > 5e3, "{m:?}");
+        }
+    }
+}
+
+/// The same structure, its tension-only members set to carry no
+/// compression (`[analysis] tension_compression = "none"`, structure file
+/// version 14; owner 2026-11-15), solved through the link: the shortened
+/// halves slack — not bowed —, the law said in the note and in what
+/// governs; AM and MD take the pull.
+#[test]
+fn without_compression_the_shortened_halves_are_slack() {
+    let text = format!(
+        "format = \"ohl-structure\"\nversion = 14\n{}",
+        TYPE.replacen(
+            "[analysis]\n",
+            "[analysis]\ntension_compression = \"none\"\n",
+            1
+        )
+    );
+    let structure = StructureType::parse(Path::new("k.ohls"), &text).unwrap();
+    let table = LoadTable {
+        rows: vec![LoadRow {
+            case: "pull".into(),
+            load: None,
+            at: At::Joint,
+            label: "M".into(),
+            force: [10e3, 0.0, 0.0],
+            source: Source::Typed,
+            evaluated: None,
+            missing: None,
+            note: String::new(),
+            area: None,
+            moment: [0.0; 3],
+        }],
+    };
+    let cases = [CaseToRun {
+        name: "pull".into(),
+        strength: 1.0,
+        self_weight: 0.0,
+    }];
+    let results = analyse_cases(
+        &structure,
+        &text,
+        None,
+        &Default::default(),
+        &table,
+        &cases,
+        &ohl_structures_fe::default_budget(),
+    )
+    .unwrap();
+    let r = results[0].1.as_ref().unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("tension-only members (no compression): 2 of 4 slack")),
+        "{:?}",
+        r.notes
+    );
+    assert!(!r.notes.iter().any(|n| n.contains("kept active")));
+    for m in &r.members {
+        let shortened = m.id == "MC" || m.id == "BM";
+        assert!(!m.bowed, "{m:?}");
+        assert_eq!(m.slack, shortened, "{m:?}");
+        if shortened {
+            assert_eq!(m.axial, 0.0, "{m:?}");
+            assert_eq!(m.governs, ohl_structures_fe::check::SLACK_NO_COMPRESSION);
         } else {
             assert!(m.axial > 5e3, "{m:?}");
         }

@@ -46,7 +46,7 @@ pub use edits::{
     limit_fields, member_roll, move_set, move_to, new_string, next_id, raise_version, removal,
     remove, remove_extension, remove_item, set_analysis_field, set_counterweight, set_extension,
     set_item_field, set_member_k, set_member_kind, set_member_roll, set_member_section, set_set,
-    set_string, set_structure_kind, set_support, set_top_field,
+    set_string, set_structure_kind, set_support, set_tension_compression, set_top_field,
 };
 pub use file::StructureFile;
 pub use generators::{Body, generate};

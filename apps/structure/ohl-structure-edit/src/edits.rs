@@ -1443,6 +1443,25 @@ pub fn set_analysis_field(doc: &mut DocumentMut, field: &str, typed: &str) -> Re
     Ok(())
 }
 
+/// What the structure's tension-only members carry in compression
+/// (`[analysis] tension_compression`, owner 2026-11-15): `none` writes
+/// `"none"` (no compression: slack once shortened) and raises the file to
+/// version 14 ([`ohl_structures::structures::TENSION_COMPRESSION_VERSION`],
+/// so that an older program says the file is newer instead of refusing
+/// the key); otherwise the key is removed — the default, compression up
+/// to their buckling load — and the version left as it is.
+pub fn set_tension_compression(doc: &mut DocumentMut, none: bool) -> Result<(), String> {
+    if none {
+        raise_version(
+            doc,
+            i64::from(ohl_structures::structures::TENSION_COMPRESSION_VERSION),
+        );
+        set_analysis_field(doc, "tension_compression", "\"none\"")
+    } else {
+        set_analysis_field(doc, "tension_compression", "")
+    }
+}
+
 /// Removes the table of `key` whose `field` is `value`.
 pub fn remove_item(doc: &mut DocumentMut, key: &str, field: &str, value: &str) {
     if let Some(a) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {
