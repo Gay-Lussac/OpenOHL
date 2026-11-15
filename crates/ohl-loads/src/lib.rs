@@ -144,6 +144,29 @@ pub const LOAD_CASE_FILE_VERSION: u32 = 7;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
+/// The text of OpenOHL's **default load cases** for the structures
+/// (`libraries/loadcases/default-load-cases.ohllc`; owner, 2026-11-15:
+/// "these values are arbitrary but needed to check the codes"): −20 °C,
+/// 10 °C and 40 °C (factors 1); 10 °C with 300 Pa of wind from the left
+/// and from the right (a factor 1.5 on the wind: transverse 1.5 and
+/// `[case.structure] wind_factor = 1.5`); 0 °C with 20 N/m of ice
+/// (vertical 1.3); and the wind along the line, from ahead and from
+/// behind, on the structure bodies only (the weather case "10 °C": the
+/// wires take no wind; the bodies the case's own 300 Pa × 1.5). They name
+/// the default weather cases ([`ohl_weather::DEFAULT_CASES_TEXT`]).
+/// **Arbitrary values for checking, not from a design code.**
+pub const DEFAULT_LOAD_CASES_TEXT: &str =
+    include_str!("../../../libraries/loadcases/default-load-cases.ohllc");
+
+/// The file name the default load cases are shipped under (and kept under
+/// in a project that starts with them alone).
+pub const DEFAULT_LOAD_CASES_FILE: &str = "default-load-cases.ohllc";
+
+/// OpenOHL's default load cases ([`DEFAULT_LOAD_CASES_TEXT`]), read.
+pub fn default_load_cases() -> LoadCases {
+    LoadCases::parse(DEFAULT_LOAD_CASES_TEXT).expect("the default load cases read")
+}
+
 fn one() -> f64 {
     1.0
 }
@@ -2020,11 +2043,29 @@ pub fn structure_loads_each(
         }
         let body = case.structure_wind(w);
         if case.on_structure.direction.is_some() && body.factored() > 0.0 {
-            notes.push(format!(
-                "the wind on the structure bodies {} (the wires' from the {})",
-                body.direction.words(),
-                case.wind_from.unwrap_or(w.wind_from).as_str()
-            ));
+            if w.wind_pressure.si() > 0.0 {
+                notes.push(format!(
+                    "the wind on the structure bodies {} (the wires' from the {})",
+                    body.direction.words(),
+                    case.wind_from.unwrap_or(w.wind_from).as_str()
+                ));
+            } else {
+                // The body wind only (e.g. a wind along the line, 2026-11-15):
+                // the wires take none — said, with what that leaves out.
+                notes.push(format!(
+                    "the wind on the structure bodies {}; the wires, strings and jumpers take no \
+                     wind (weather case \"{}\" has none){}",
+                    body.direction.words(),
+                    w.name,
+                    if body.has_longitudinal() {
+                        " — a wind along the line on the wires is not modelled: exact on a \
+                         straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share \
+                         of it, the strings' and jumpers' wind along the line left out)"
+                    } else {
+                        ""
+                    }
+                ));
+            }
         }
         Ok(CaseLoads {
             case: case.clone(),
@@ -3089,6 +3130,9 @@ mod tests;
 
 #[cfg(test)]
 mod broken_tests;
+
+#[cfg(test)]
+mod default_tests;
 
 #[cfg(test)]
 mod v4_tests;

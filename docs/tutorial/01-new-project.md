@@ -10,7 +10,12 @@ invented ground as its terrain surface.
    and tick **Starter template (for learning)**).
 2. In the **New project** window keep the line name *My first line* (or
    type your own) and **Local coordinates (metres, no geographic
-   reference)**. Units are SI.
+   reference)**. Units are SI. Untick **Start with the default weather
+   and load cases (arbitrary values for checking)**: this tutorial works
+   with the starter's own five weather cases (the default cases are for
+   checking the design codes; add them later with **Add the default
+   cases…** in Line › Criteria › Weather cases and in the Load cases
+   library).
 3. Click **Choose where to save it and create…** and choose a new, empty
    folder for the project file (`My first line.ohl`). The project opens.
 4. The window **New project: first steps** asks for the route. Click

@@ -421,6 +421,48 @@ impl TablePage {
             + self.deleted.len()
     }
 
+    /// Weather cases table: OpenOHL's default weather cases that the
+    /// table lacks — by name, its rows as edited (a row marked for
+    /// deletion does not count) and the rows added — put in as new rows
+    /// (pending until Apply: one change, one undo); a case of the same
+    /// name is never replaced. Returns the names added and those kept.
+    pub fn add_default_weather_rows(
+        &mut self,
+        model: &Model,
+        rows: &[Row],
+    ) -> (Vec<String>, Vec<String>) {
+        let mut taken: Vec<String> = rows
+            .iter()
+            .filter(|r| !self.deleted.contains(&r.key))
+            .map(|r| {
+                self.edits
+                    .get(&r.key)
+                    .and_then(|e| e.get(&W_NAME))
+                    .unwrap_or(&r.cells[W_NAME])
+                    .trim()
+                    .to_owned()
+            })
+            .chain(self.added.iter().map(|c| c[W_NAME].trim().to_owned()))
+            .collect();
+        let (mut added, mut kept) = (Vec::new(), Vec::new());
+        for w in ohl_weather::default_cases().cases {
+            if taken.contains(&w.name) {
+                kept.push(w.name);
+                continue;
+            }
+            let order = model.cases.len() + self.added.len() + 1;
+            self.added.push(super::rows::weather_cells(
+                &w,
+                order,
+                model.line.defaults.air_density_factor,
+            ));
+            taken.push(w.name.clone());
+            added.push(w.name);
+        }
+        self.confirm = None;
+        (added, kept)
+    }
+
     /// Drops every pending change.
     pub fn clear(&mut self) {
         self.edits.clear();
@@ -737,6 +779,52 @@ impl TablePage {
                     .small()
                     .weak(),
             );
+            // OpenOHL's default weather cases (owner, 2026-11-15): those
+            // missing, by name, as new rows — Apply keeps them.
+            if kind == TableKind::WeatherCases {
+                ui.separator();
+                if ui
+                    .add_enabled(
+                        editable,
+                        egui::Button::new(crate::default_cases::ADD_BUTTON),
+                    )
+                    .on_hover_text(format!(
+                        "OpenOHL's default weather cases — {} — arbitrary values for checking \
+                         (not from a design code). Those the table lacks (by name) are added as \
+                         new rows; a case of the same name is never replaced. Apply keeps them \
+                         (one change, one undo).",
+                        ohl_weather::default_cases()
+                            .cases
+                            .iter()
+                            .map(|c| c.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                    .on_disabled_hover_text("Read-only")
+                    .clicked()
+                {
+                    let (added, kept) = self.add_default_weather_rows(model, rows);
+                    self.message = Some((
+                        if added.is_empty() {
+                            "The default weather cases are all there (by name): nothing added"
+                                .to_owned()
+                        } else {
+                            format!(
+                                "{} default weather case(s) added as new rows: {}{} — Apply \
+                                 keeps them (one change, one undo)",
+                                added.len(),
+                                added.join(", "),
+                                if kept.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("; already there by name, kept: {}", kept.join(", "))
+                                }
+                            )
+                        },
+                        false,
+                    ));
+                }
+            }
             // The String builder on an assembly (2026-10-31): the shapes
             // built in a window of their own, with a preview.
             if matches!(kind, TableKind::StringShapes | TableKind::Insulators)

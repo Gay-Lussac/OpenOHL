@@ -71,6 +71,61 @@ wind_direction = 180        # from behind: blowing ahead
 
 Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).
 
+## The default weather cases
+
+*Built, in active development, not approved yet* (owner, 2026-11-15: "can
+you have in the software by default a few weather cases … these values are
+arbitrary but needed to check the codes"). OpenOHL ships nine weather cases,
+`libraries/weather/default-weather-cases.ohlwc`. **Their values are the
+owner's arbitrary choice for checking the program and the design codes —
+not taken from a design code or a standard.** Replace them with the cases
+of the code you use.
+
+| Name | Wire temperature | Wind | Ice | Tags |
+|---|---|---|---|---|
+| `-20 °C` | −20 °C | — | — | default, loads |
+| `0 °C` | 0 °C | — | — | default |
+| `10 °C` | 10 °C | — | — | default, loads |
+| `20 °C` | 20 °C | — | — | default |
+| `40 °C` | 40 °C | — | — | default, loads, clearance |
+| `80 °C` | 80 °C | — | — | default, clearance |
+| `10 °C + 300 Pa wind` | 10 °C | 300 Pa (the side: right by default, chosen where the wires are shown; a load case may give it) | — | default, loads, clearance |
+| `0 °C + 20 N/m ice` | 0 °C | — | 20 N/m | default, loads, clearance |
+| `0 °C + 60 N/m ice` | 0 °C | — | 60 N/m | default, loads, clearance |
+
+Each case's description begins "default case, arbitrary values for checking
+(not from a design code)".
+
+**The ice cases give no density** (the owner gave the ice as a weight per
+metre only): the program takes them as glaze ice, 913 kg/m³ ([How ice loads
+a wire](#how-ice-loads-a-wire)) — of all ice of that weight the smallest
+iced diameter, so **NOT ON THE SAFE SIDE for the clearances measured to the
+iced surface** (and for the wind on the iced wire, were wind added to these
+cases). Their descriptions say so; the Weather cases table's note under the
+table asks for a density only for cases with wind, which these have none.
+For lighter ice give its density.
+
+**Where they appear:**
+
+- **Every new project** starts with them: File › New project… has the tick
+  **Start with the default weather and load cases (arbitrary values for
+  checking)**, on by default. An empty project gets this file as its
+  weather case file; the starter template's own weather case file gets the
+  default cases added after its own ([Starting from
+  nothing](desktop-app.md#starting-from-nothing)). The default load cases
+  come with them ([Load cases: the default load
+  cases](loads.md#the-default-load-cases)).
+- **An existing project**: Line › Criteria › Weather cases › **Add the
+  default cases…** puts those the project lacks — by name: a case of the
+  same name is never replaced — into the table as new rows; **Apply** keeps
+  them (one change, one undo; [The Weather cases
+  window](weather-cases-window.md#the-default-cases)).
+- **The command line** does not take them by itself: without `--weather`,
+  `ohl line` still runs its one case of `--temperature` and the other
+  options (results unchanged). Give the file to take them:
+  `ohl line project.ohl --weather libraries/weather/default-weather-cases.ohlwc
+  --load-cases libraries/loadcases/default-load-cases.ohllc`.
+
 ## How ice loads a wire
 
 On a bare wire of diameter *d* and weight *w*:

@@ -610,6 +610,25 @@ pub const WEATHER_FILE_FORMAT: &str = "ohl-weather-cases";
 /// written only by a file with one; version 1 files read as before.
 pub const WEATHER_FILE_VERSION: u32 = 2;
 
+/// The text of OpenOHL's **default weather cases**
+/// (`libraries/weather/default-weather-cases.ohlwc`; owner, 2026-11-15:
+/// "these values are arbitrary but needed to check the codes"): wire
+/// temperatures −20, 0, 10, 20, 40 and 80 °C, 10 °C with 300 Pa of wind,
+/// 0 °C with 20 N/m and with 60 N/m of ice. **Arbitrary values for
+/// checking, not from a design code.** A new project starts with them;
+/// the desktop app adds those a project lacks (by name).
+pub const DEFAULT_CASES_TEXT: &str =
+    include_str!("../../../libraries/weather/default-weather-cases.ohlwc");
+
+/// The file name the default weather cases are shipped under (and kept
+/// under in a project that starts with them alone).
+pub const DEFAULT_CASES_FILE: &str = "default-weather-cases.ohlwc";
+
+/// OpenOHL's default weather cases ([`DEFAULT_CASES_TEXT`]), read.
+pub fn default_cases() -> WeatherCases {
+    WeatherCases::parse(DEFAULT_CASES_TEXT).expect("the default weather cases read")
+}
+
 /// A set of weather cases (`*.ohlwc`).
 ///
 /// ```toml
@@ -903,6 +922,49 @@ mod tests {
             ((actual - expected) / expected).abs() <= rel_tol,
             "actual {actual}, expected {expected}"
         );
+    }
+
+    /// The default weather cases (owner, 2026-11-15) read, check, and are
+    /// exactly the owner's values: names, temperatures, wind, ice (no
+    /// density: glaze, said in their descriptions), each described as
+    /// arbitrary and not from a design code.
+    #[test]
+    fn the_default_weather_cases_are_the_owners_values() {
+        let set = default_cases();
+        assert_eq!(set.format.as_deref(), Some(WEATHER_FILE_FORMAT));
+        // (name, wire temperature °C, wind Pa, ice load N/m)
+        let want: [(&str, f64, f64, Option<f64>); 9] = [
+            ("-20 °C", -20.0, 0.0, None),
+            ("0 °C", 0.0, 0.0, None),
+            ("10 °C", 10.0, 0.0, None),
+            ("20 °C", 20.0, 0.0, None),
+            ("40 °C", 40.0, 0.0, None),
+            ("80 °C", 80.0, 0.0, None),
+            ("10 °C + 300 Pa wind", 10.0, 300.0, None),
+            ("0 °C + 20 N/m ice", 0.0, 0.0, Some(20.0)),
+            ("0 °C + 60 N/m ice", 0.0, 0.0, Some(60.0)),
+        ];
+        assert_eq!(set.cases.len(), want.len());
+        for (c, (name, t, p, ice)) in set.cases.iter().zip(want) {
+            assert_eq!(c.name, name);
+            assert!((c.temperature.celsius() - t).abs() < 1e-9, "{name}");
+            assert!((c.wind_pressure.si() - p).abs() < 1e-9, "{name}");
+            assert_eq!(c.ice_load.map(|l| l.si()), ice, "{name}");
+            assert_eq!(c.ice_thickness.si(), 0.0, "{name}");
+            assert_eq!(c.ice_density, None, "{name}");
+            assert_eq!(c.wind_from, WindSide::Right, "{name}");
+            assert!(
+                c.description.starts_with(
+                    "default case, arbitrary values for checking (not from a design code)"
+                ),
+                "{name}"
+            );
+            assert!(c.tags.iter().any(|t| t == "default"), "{name}");
+            if ice.is_some() {
+                assert!(c.description.contains("NOT ON THE SAFE SIDE"), "{name}");
+            }
+            c.validate().unwrap();
+        }
     }
 
     /// The physics review's example (2026-10-26): 20 N/m of ice on a

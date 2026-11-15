@@ -226,7 +226,7 @@ In the application: Line › Structures › **Load cases per group…** makes th
 
 ### The Load cases library, a form
 
-Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria › Load cases library) shows the file as a **form** (owner: "design it so that it's easy to understand and use for a human"; built, in active development, not approved yet): the cases on the left — **Add** (the first weather case, every factor 1), **Duplicate**, **Delete** (its hover names the structure groups ticking the case and its own list when it picks structures: deleted, their structures are not checked in it, said in the usage and the Structures table), **Rename** (2026-11-14: in a project, one change of the project — the case renamed in the file, comments kept, and in every structure group ticking it and in its own list, undone as one; with unsaved changes on the page, save or discard them first; a file outside a project: the file only) (a case that does not check is marked ⚠) — and the case picked on the right, in plain sections:
+Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria › Load cases library) shows the file as a **form** (owner: "design it so that it's easy to understand and use for a human"; built, in active development, not approved yet): the cases on the left — **Add** (the first weather case, every factor 1), **Duplicate**, **Delete** (its hover names the structure groups ticking the case and its own list when it picks structures: deleted, their structures are not checked in it, said in the usage and the Structures table), **Rename** (2026-11-14: in a project, one change of the project — the case renamed in the file, comments kept, and in every structure group ticking it and in its own list, undone as one; with unsaved changes on the page, save or discard them first; a file outside a project: the file only), **Add the default cases…** (2026-11-15: OpenOHL's default load cases the file lacks, [below](#the-default-load-cases)) (a case that does not check is marked ⚠) — and the case picked on the right, in plain sections:
 
 1. **Weather** — the weather case, picked from the project's weather cases only (a case naming another says so in red), and the wires' condition (as strung, after creep, after the heaviest load, the one that sags more).
 2. **Wind on the wires** — shown only when the weather case has wind: *as the weather case*, *from the left* or *from the right* (`wind_from`).
@@ -281,6 +281,40 @@ A check's **Use local conditions** switch (Checks › Structure loads) and a cas
 Design codes (EN 50341 with a national annex, the Swiss LeV…) supply their combinations and partial factors as such files: a design-code plugin writes them from your parameter file ([Design codes](design-codes.md)). OpenOHL ships no code tables: the factors come from the standard you hold. `examples/synthetic-line/load-cases.ohllc` only shows the format.
 
 In a project, the load case files are kept in the project like the other libraries (Line › Structures › Load cases… edits them).
+
+### The default load cases
+
+*Built, in active development, not approved yet* (owner, 2026-11-15: "then also have some default load cases for pylons like -20°, 10°, 40°, 10° + 300 Pa wind left, and right and 0° + 20N/m ice with a factor 1.5 on wind for the pylons and 1.3 on the ice. these values are arbitrary but needed to check the codes. also i would like to have the option to have wind along the line forward and backward to test the pylons"). OpenOHL ships eight load cases for the structures, `libraries/loadcases/default-load-cases.ohllc` (file version 4). **Their values and factors are the owner's arbitrary choice for checking the program and the design codes — not taken from a design code or a standard.** They name the [default weather cases](weather.md#the-default-weather-cases). Every case: the wires as strung (`condition = "initial"`: it needs no creep-stretch criteria of the line; the owner gave no condition), strength factor 1, tag `default`, a description beginning "default case, arbitrary values for checking (not from a design code)".
+
+| Name | Weather case | V | T | L | Wind on the wires | Wind on the structure bodies |
+|---|---|---|---|---|---|---|
+| `-20 °C` | `-20 °C` | 1 | 1 | 1 | — | — |
+| `10 °C` | `10 °C` | 1 | 1 | 1 | — | — |
+| `40 °C` | `40 °C` | 1 | 1 | 1 | — | — |
+| `10 °C + 300 Pa wind left` | `10 °C + 300 Pa wind` | 1 | 1.5 | 1 | 300 Pa from the left (`wind_from = "left"`) | 300 Pa from the left × 1.5 (`wind_factor = 1.5`) |
+| `10 °C + 300 Pa wind right` | `10 °C + 300 Pa wind` | 1 | 1.5 | 1 | 300 Pa from the right (`wind_from = "right"`) | 300 Pa from the right × 1.5 |
+| `0 °C + 20 N/m ice` | `0 °C + 20 N/m ice` | 1.3 | 1 | 1 | — | — (no ice on the bodies) |
+| `10 °C + 300 Pa wind ahead` | `10 °C` | 1 | 1 | 1 | none | 300 Pa from ahead × 1.5 (`wind_pressure = "300 Pa"`, `direction = "ahead"`) |
+| `10 °C + 300 Pa wind back` | `10 °C` | 1 | 1 | 1 | none | 300 Pa from behind × 1.5 (`direction = "back"`) |
+
+**What the factors mean** (they act on the load components, [above](#load-case-files-ohllc)):
+
+- *"A factor 1.5 on wind for the pylons"*: `transverse = 1.5` multiplies the wires' and strings' loads across the line, and `[case.structure] wind_factor = 1.5` the wind on the structure bodies (the wind bands, the **fe** check's member wind, a pole). The transverse factor acts on the whole transverse component — at a line angle also the wires' pull across the structure — so it is **above** a factor on the wind alone: on the safe side. Vertical and longitudinal stay 1.
+- *"1.3 on the ice"*: `vertical = 1.3`. It acts on the whole vertical component — the wires' and strings' own weight with the ice — so it is above a factor on the ice alone: on the safe side for the downward loads (an uplift is made larger too). The structure bodies take no ice in this case: the weather case gives its ice per metre of wire, which is no thickness for a structure (`ice = "weather"` refuses such a case, [version 6](#version-6-the-wires-ice-on-the-structures-with-a-factor)). **Not on the safe side** where a code puts ice on the structure too: give it in the case's section 5.
+
+**The wind along the line, forward and backward** (`… wind ahead`, `… wind back`): the wind blows along the line on the **structure bodies** only, from ahead (towards the back) or from behind (towards ahead), 300 Pa × 1.5 — a **longitudinal** load on each structure with a body that takes wind (wind bands, members with profiles, a pole). **The wires take no wind** in these cases: they name the still weather case `10 °C` (the same temperature as the wind case), and the body's 300 Pa is the case's own pressure (`[case.structure] wind_pressure`), equal to that of `10 °C + 300 Pa wind` — change both together. Why: the program models the wind on the wires across the line only (from the left or the right); a wind along the line meets the spans end-on and puts (nearly) nothing on them, while giving the wires the weather case's cross wind as well would load the structures with a wind they do not get at the same time. What this leaves out — **NOT ON THE SAFE SIDE**, said in each such case's notes:
+
+- at a **line angle** the spans are not quite along the wind, and their share of it (small for small angles) is not taken;
+- the **strings', jumpers' and posts'** own wind along the line is not taken (they take no wind in these cases);
+- the wind bands give the area a wind **across** the line meets; a wind along the line takes that same area ([above](#version-6-the-wires-ice-on-the-structures-with-a-factor), "Where the wind on the bodies blows from another direction") — not on the safe side where a structure shows more area along the line.
+
+The load case format needed nothing new for this. A weather case with wind at any angle (wires and bodies alike) is being planned separately.
+
+**Where they appear:**
+
+- **Every new project** starts with them, with the default weather cases (File › New project…, the tick **Start with the default weather and load cases (arbitrary values for checking)**, on by default): an empty project gets this file as its load case library; the starter template's load case file gets them after its own.
+- **An existing project**: Line › Structures › **Load cases…** › **Add the default cases…** (beside Add, Duplicate, Delete, Rename) lists the default cases the file lacks — by name: a case of the same name is kept as it is, never replaced — and the weather cases they name that the project lacks (add those with Line › Criteria › Weather cases › **Add the default cases…**); **Add N case(s)** puts them into the form, **Save** keeps them (one change, one undo).
+- **The command line**: `ohl line … --weather libraries/weather/default-weather-cases.ohlwc --load-cases libraries/loadcases/default-load-cases.ohllc`; without `--load-cases` nothing changes.
 
 ## Structure loads
 
