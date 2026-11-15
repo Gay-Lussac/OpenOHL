@@ -75,18 +75,23 @@ to any phase is a shielding failure.
 
 ### 3. Cross-sections square to the span
 
-![A span in plan divided into equal steps, a cross-section square to the span at the middle of each step](../images/theory/lightning-cuts.svg)
+![A span in plan divided into equal steps, a cross-section square to the span at each structure and at the middle of each step](../images/theory/lightning-cuts.svg)
 
 Each span is cut by vertical planes **square to the span** (to the
 straight line between its two structures in plan), at the **middle of
-each step**: ⌈span length / step⌉ equal steps, the step being the
-rule's (**Step along the span**, 5 m by default). Each cut takes the
-wires where they cross it, as solved, and the **ground across** it every
-1 m from the terrain of the checks (none loaded: straight between the
-structures' feet and level across — see
+each step** — ⌈span length / step⌉ equal steps, the step being the
+rule's (**Step along the span**, 5 m by default) — and **at each of its
+two structures** (since 2026-11-15), where the phases hang highest. Each
+cut takes the wires where they cross it, as solved, and the **ground
+across** it every 1 m from the terrain of the checks (none loaded:
+straight between the structures' feet and level across — see
 [below](#what-is-conservative-and-what-is-not)). A bundle is taken by its
-centre and its outer radius. A wire still on its strings at a cut (near a
-dead-end) is left out of that cut, said once in the notes.
+centre and its outer radius. At a structure, a wire whose clamp lies a
+little off the plane (its suspension string swung along the line, a
+short strain string) is taken at its clamp, when that is within half a
+step of the plane. A wire still on its strings at a cut (near a
+dead-end, its strain string reaching further into the span) is left out
+of that cut, said once in the notes.
 
 Each span is checked in its own plane, also at an angle structure: a
 phase is shielded by the wires of its own span.
@@ -121,14 +126,15 @@ between the shielding wires and the ground.
 
 ### 6. The length exposed, the worst place, the margin
 
-![A span seen from the side, cross-sections at the middle of each step, three exposed: the length exposed is three steps](../images/theory/lightning-exposed-length.svg)
+![A span seen from the side, cross-sections at each structure and at the middle of each step, the first structure and three cuts next to it exposed: the length exposed is three steps](../images/theory/lightning-exposed-length.svg)
 
-Each cut stands for its step (the first and last ones for the ends up to
-the structures): the **length exposed** of a phase in a span is the sum
-of the steps of the cuts where it is exposed. **Worst at** is the cut
-where it is most exposed (the angle furthest beyond the rule's, or the
-sphere reaching deepest into it), in metres along the span from its
-first structure. The **margin**:
+Each cut stands for half the way to its neighbours — a cut in the span
+for its step, a cut at a structure for the quarter step next to it: the
+**length exposed** of a phase in a span is the sum of the lengths the
+cuts where it is exposed stand for. **Worst at** is the cut where it is
+most exposed (the angle furthest beyond the rule's, or the sphere
+reaching deepest into it), in metres along the span from its first
+structure (0 or the span's length: at a structure). The **margin**:
 
 - shielding angle: the **largest angle the phase needs** along the span,
   against the rule's;
@@ -148,7 +154,8 @@ phase × spans exposed, 124 m in all — the longest S2 span 2: 25 m of
 covered — then the notes, then the table, one row per phase, span, rule
 and case, the exposed first. A row clicked (or the verdict) selects its
 span, draws it in the row's weather case and draws its **cross-section
-at the worst place** below the table: the ground, the shielding wires,
+at the worst place** below the table (its title says *at structure …*
+for a cut at a structure): the ground, the shielding wires,
 the phases (red exposed, green covered, the row's ringed), the covered
 zone's boundary dashed and the centres of spheres resting on two
 objects. The 3D view's layer *Lightning shielding* draws the exposed
@@ -214,7 +221,7 @@ its fields appear under the list.
 | **Inner angle** (angle) | 0° (to set) | the largest angle allowed between two shielding wires: larger, fewer phases exposed | none |
 | **Striking distance** (sphere) | typed, 0 m (to set) | *typed*: r in m; *from a current*: I in kA (10 kA offered) with **A** and **b** of r = A·I^b (10 and 0.65); the resulting r is written beside it. A smaller r (a weaker stroke) reaches further in: more exposure | none |
 | **Ground factor β** (sphere) | 1 | the ground's striking distance β·r: below 1, the sphere comes nearer the ground, so the ground shields less: more exposure | none |
-| **Step along the span** | 5 m | the cuts' spacing: smaller, the length exposed found more finely, a short exposure less likely missed | about in proportion to the number of cuts: rolling sphere 2.5 s at 10 m, 3.4 s at 5 m, 6.5 s at 1 m; shielding angle 0.2 to 0.3 s at any step (measured below) |
+| **Step along the span** | 5 m | the cuts' spacing (one more cut at each structure): smaller, the length exposed found more finely, a short exposure between the cuts less likely missed | about in proportion to the number of cuts: rolling sphere 2.5 s at 10 m, 3.4 s at 5 m, 6.5 s at 1 m; shielding angle 0.2 to 0.3 s at any step (measured below) |
 | **Phases protected** | none ticked: every phase | only the phases of the wire types, systems and circuits ticked (in every list ticked) | fewer phases: a little faster |
 | **Shielding wires** | none ticked: every earthed wire | only the wire types ticked shield; the others, if earthed, are left out | none worth noting |
 
@@ -225,7 +232,14 @@ included). They grow with the line's length
 and with the rule × case pairs. On the same example (no terrain given:
 the ground level across) the length exposed by the 8 kA sphere was
 158.5 m at a 10 m step, 144.4 m at 5 m and 145.9 m at 1 m: a step of a few metres is enough there; each exposure
-lay next to a structure.
+lay next to a structure. The cuts at the structures (2026-11-15) added
+2.5 % computing time on the example (two cuts per span beside some 64;
+a release build, both rules: 0.28 s against 0.29 s of computing time,
+under 0.02 s more) and left the 5 m results' lengths exposed as they
+were (144.4 m), the worst places moving onto the structures; at a 100 m
+step, where the cuts in the spans lie 38.75 m to 50 m from the
+structures, the 8 kA sphere found no phase exposed before and finds 6
+now, each at a structure.
 
 The fields of the rule file are in the [table below](#every-field-of-a-rule).
 
@@ -312,14 +326,20 @@ On the safe side ([theory](../theory/lightning-shielding.md)):
 - the **other phases and the structures never shield**, and trees and
   buildings are not counted as intercepting strokes;
 - a wire still on its strings at a cut is left out there: a shielding
-  wire so left out does not shield.
+  wire so left out does not shield;
+- a cut at each structure, where the phases hang highest: an exposure
+  next to a structure, shorter than a step, is no longer missed (since
+  2026-11-15).
 
 Not on the safe side, and said in the results each time it applies:
 
-- **The step**: each cut stands for its step. An exposure shorter than a
-  step, between two cuts or within half a step of a structure, can be
-  missed: *NOT ON THE SAFE SIDE: each cross-section stands for its step
-  …* in every result. A smaller step finds it and takes longer.
+- **The step**: the phases are looked at in the cuts only, at the middle
+  of each step and at each structure. An exposure shorter than a step,
+  between two cuts away from the structures, can be missed: *NOT ON THE
+  SAFE SIDE: the phases are looked at in the cross-sections only …* in
+  every result. A smaller step finds it and takes longer. (Until
+  2026-11-15 an exposure within half a step of a structure could be
+  missed too.)
 - **No terrain loaded**: the ground straight between the structures'
   feet and level across — where the real ground falls away across the
   line the sphere comes in lower: *NOT ON THE SAFE SIDE: no terrain for

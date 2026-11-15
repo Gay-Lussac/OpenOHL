@@ -16,12 +16,14 @@ case, in cross-sections along every span.
 
 ## Cross-sections
 
-![A span in plan divided into equal steps, a cross-section square to the span at the middle of each step](../images/theory/lightning-cuts.svg)
+![A span in plan divided into equal steps, a cross-section square to the span at each structure and at the middle of each step](../images/theory/lightning-cuts.svg)
 
 Each span is cut by vertical planes **square to its chord** (the
 straight line between its two structures in plan), at the **middle of
 each of n equal steps**, n = ⌈span length / step⌉, the step being the
-rule's (5 m by default). In each cut:
+rule's (5 m by default), and **at each of its two structures** (owner,
+2026-11-15: "yes if fast else only as today" — kept, as it measured 2.5 %
+more computing time on the example). In each cut:
 
 - the **wires** where they cross it, as solved in the rule's weather
   case and each section's calculation — the shielding
@@ -40,20 +42,32 @@ rule's (5 m by default). In each cut:
   them) and which are **shielding wires** (by default every earthed wire,
   a section without a system; or the wire types the rule names).
 
-Each cut stands for its step: the length exposed of a phase in a span
-is the sum of the steps of the cuts where it is exposed, the first and
-last reaching the structures.
+Each cut stands for half the way to its neighbours: a cut in the span
+for its step, a cut at a structure for the quarter step next to it. The
+length exposed of a phase in a span is the sum of the lengths the cuts
+where it is exposed stand for.
 
-![A span seen from the side, cross-sections at the middle of each step; the phase exposed at three of them: the length exposed is three steps](../images/theory/lightning-exposed-length.svg)
+![A span seen from the side, cross-sections at each structure and at the middle of each step; the phase exposed at the first structure and the three cuts next to it: the length exposed is three steps](../images/theory/lightning-exposed-length.svg)
+
+At a structure the plane passes through the structure's place; a wire's
+clamp may lie a little off it (a suspension string swung along the line
+by unequal spans, a short strain string): such a wire is taken at its
+clamp — its end nearest the plane — when that lies within half a step of
+the plane along the span (`cross_section::cross_section_at_structure`),
+else left out as below. The first cut inside the span is half a step in,
+so no wire is taken at a place another cut stands for.
 
 **Limitation (not on the safe side): the phase is looked at in the cuts
-only.** An exposure shorter than a step, between two cuts or within half
-a step of a structure (where the phases hang highest), can be missed,
-and a phase exposed nowhere else is then said covered. Every result says
-so (*NOT ON THE SAFE SIDE: each cross-section stands for its step …*,
-since 2026-11-15). A smaller step finds it, at a time in proportion to
-the number of cuts. Exact: the exposed intervals along the wire, found
-between the cuts where the depth changes sign. A wire that does not reach a cut — near a
+only.** An exposure shorter than a step, between two cuts away from the
+structures, can be missed, and a phase exposed nowhere else is then said
+covered. Every result says so (*NOT ON THE SAFE SIDE: the phases are
+looked at in the cross-sections only …*, since 2026-11-15). A smaller
+step finds it, at a time in proportion to the number of cuts. Exact: the
+exposed intervals along the wire, found between the cuts where the depth
+changes sign. Next to the structures, where the phases hang highest and
+an exposure is likeliest, the cut at each structure looks at the phase
+there (since 2026-11-15; before, an exposure within half a step of a
+structure could be missed too). A wire that does not reach a cut — near a
 dead-end the strain string reaches into the span — is left out of that
 cut, said once in the notes. For a shielding wire this is
 **conservative** (the phase is checked without it there).

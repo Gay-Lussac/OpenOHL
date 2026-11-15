@@ -445,7 +445,7 @@ pub fn cross_section(
     span: &LineSpan,
     at: StationAt,
 ) -> Result<CrossSection, String> {
-    cross_section_of(src, span, at, false)
+    cross_section_of(src, span, at, Reach::Exact)
 }
 
 /// [`cross_section`], a wire that does not reach the station (its strain
@@ -456,14 +456,44 @@ pub fn cross_section_reached(
     span: &LineSpan,
     at: StationAt,
 ) -> Result<CrossSection, String> {
-    cross_section_of(src, span, at, true)
+    cross_section_of(src, span, at, Reach::LeftOut)
+}
+
+/// The cross-section of `span` at one of its two structures (`end`: at
+/// its second, `to`; else at `from`), in the plane square to the span
+/// through the structure (the lightning check, 2026-11-15). A wire whose
+/// clamp lies off that plane — a suspension string swung a little along
+/// the line, a short strain string — is taken at its clamp when the clamp
+/// is within `reach` m of the plane along the span; one farther in (its
+/// strain string reaching into the span) is left out, said, as by
+/// [`cross_section_reached`].
+pub fn cross_section_at_structure(
+    src: &Sources<'_>,
+    span: &LineSpan,
+    end: bool,
+    reach: f64,
+) -> Result<CrossSection, String> {
+    let at = StationAt::Fraction(if end { 1.0 } else { 0.0 });
+    cross_section_of(src, span, at, Reach::Clamp(reach))
+}
+
+/// What a cross-section does with a wire that does not cross its plane.
+#[derive(Clone, Copy)]
+enum Reach {
+    /// Fails.
+    Exact,
+    /// Left out, said.
+    LeftOut,
+    /// Taken at its end nearest the plane when within this many metres of
+    /// it along the span, else left out, said.
+    Clamp(f64),
 }
 
 fn cross_section_of(
     src: &Sources<'_>,
     span: &LineSpan,
     at: StationAt,
-    reached_only: bool,
+    reach: Reach,
 ) -> Result<CrossSection, String> {
     let line = src.line;
     let axis = Axis::of(line, span)?;
@@ -527,9 +557,12 @@ fn cross_section_of(
                     0.5 * (a.3 + b.3) - drop,
                 )
             }
-            StationAt::Fraction(_) => match at_along(&samples, t_station) {
+            StationAt::Fraction(_) => match at_along(&samples, t_station).or_else(|| match reach {
+                Reach::Clamp(tol) => nearest_end(&samples, t_station, tol),
+                _ => None,
+            }) {
                 Some(v) => v,
-                None if reached_only => {
+                None if !matches!(reach, Reach::Exact) => {
                     notes.push(format!(
                         "section {} span {}: the wire does not reach the cross-sections next to its structures (its strings do), left out there",
                         section.id,
@@ -663,6 +696,18 @@ fn mean_along(samples: &[(f64, f64, f64, f64)]) -> (f64, f64, f64) {
 
 /// Offset, height and elevation where the samples pass `t` along the
 /// axis (linear between the solved points).
+/// The wire's end (its clamp) nearest the place `t` along the span, when
+/// within `tol` m of it: (offset, height, elevation).
+fn nearest_end(samples: &[(f64, f64, f64, f64)], t: f64, tol: f64) -> Option<(f64, f64, f64)> {
+    let (a, b) = (samples.first()?, samples.last()?);
+    let e = if (a.0 - t).abs() <= (b.0 - t).abs() {
+        a
+    } else {
+        b
+    };
+    ((e.0 - t).abs() <= tol).then_some((e.1, e.2, e.3))
+}
+
 fn at_along(samples: &[(f64, f64, f64, f64)], t: f64) -> Option<(f64, f64, f64)> {
     samples.windows(2).find_map(|w| {
         let (a, b) = (w[0], w[1]);
