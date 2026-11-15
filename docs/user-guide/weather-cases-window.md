@@ -38,7 +38,7 @@ Every column, as the table shows it (its hover says the same):
 | **Ice density** | kg/m³ | With a thickness: the ice's weight. With a load: the iced diameter for the wind and the clearances. | glaze ice, 913 |
 | **Ice load** | N/m | Or: the ice's weight per metre of wire, instead of a thickness (not both). | none |
 | **Wire temp** | °C | The wires' temperature in the case. | refused |
-| **Wind direction** | ° from | Where the wind comes from, relative to the line: 0 from ahead, 90 from the right, 180 from behind, 270 from the left, clockwise (or a name: ahead, right, back, left). 90 and 270 are across ([Wind on the line](../theory/wind.md)); another angle is one wind, each span its part normal to it. The file is written as version 2. | across: every span the full pressure, the side as View › Display weather cases shows it |
+| **Wind direction** | ° from | Where the wind comes from, relative to the line: 0 from ahead, 90 from the right, 180 from behind, 270 from the left, clockwise (or a name: ahead, right, back, left). 90 and 270 are across ([Wind on the line](../theory/wind.md)); another angle is one wind, each span its part normal to it. A direction given is the case's own: never turned by View › Display weather cases (2026-11-15). The file is written as version 2. | across: every span the full pressure, the side as View › Display weather cases shows it |
 | **Ambient temp** | °C | The air temperature, kept with the case for ratings. | not given |
 
 Under the table: where the cases are kept (the project's file), and each
@@ -112,9 +112,9 @@ cases with wind).
 | Menu | What |
 |---|---|
 | Line › Criteria › Weather cases | this table |
-| Line › Criteria › Merge duplicate weather cases… | cases with the same weather under other names merged into one, everything naming them following |
+| Line › Criteria › Merge duplicate weather cases… | cases with the same weather under other names merged into one, everything naming them following; cases the wind's direction alone keeps apart (e.g. a wind from 90° and from 270°, or a case without a direction and one with its own) are not offered — listed under the groups with their directions |
 | Line › Criteria › Weather case groups… | named groups of cases, picked as one in the checks' case lists ([Groups of cases](weather.md#groups-of-cases)) |
-| View › Display weather cases | the cases shown, each named with its wind (e.g. *high wind — from the right (90°)*), and the wind: each case as it is (across: from the right, 90°), mirrored about the line (across: from the left, 270°; at an angle θ: 360° − θ), or both |
+| View › Display weather cases | the cases shown, each named with its wind (e.g. *high wind — from the right (90°)*), and the wind of the cases **without** a direction: from the right (90°, *as each case*), from the left (270°), or both; a case with its own direction always as it is, its mirror (across: the other side; at an angle θ: 360° − θ) drawn with *both* |
 
 ## On the safe side
 
