@@ -63,6 +63,17 @@ impl LoadCase {
         if let Some(side) = self.wind_from {
             let _ = writeln!(out, "wind_from = {}", quoted(side.as_str()));
         }
+        if let Some(d) = self.wind_direction {
+            let _ = writeln!(
+                out,
+                "wind_direction = {}   # from: 0 ahead, 90 right, 180 behind, 270 left",
+                d.text()
+            );
+        }
+        if !self.wind_directions.is_empty() {
+            let all: Vec<String> = self.wind_directions.iter().map(|d| d.text()).collect();
+            let _ = writeln!(out, "wind_directions = [{}]", all.join(", "));
+        }
         if self.use_local {
             out.push_str("use_local = true\n");
         }
@@ -77,7 +88,10 @@ impl LoadCase {
                 let _ = writeln!(out, "wind_factor = {}", number(f));
             }
             if let Some(d) = o.direction {
-                let _ = writeln!(out, "direction = {}", d.text());
+                // Up to version 6 in the old convention (an old angle as
+                // read), from 7 in the program's.
+                let text = if version >= 7 { d.text() } else { d.old_text() };
+                let _ = writeln!(out, "direction = {text}");
             }
             match o.ice {
                 Some(StructureIce::Local) => out.push_str("ice = true\n"),

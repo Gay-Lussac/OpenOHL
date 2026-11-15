@@ -1235,8 +1235,13 @@ fn structure_wind_ui(
         ui.horizontal_wrapped(|ui| {
             ui.label("Direction");
             let d = case.on_structure.direction;
+            // Shown and typed in the program's convention (an angle read
+            // from an older file shown converted, kept as read until
+            // changed).
             let angle = match d {
-                Some(WindDirection::Angle(a)) => Some(a),
+                Some(a @ (WindDirection::Angle(_) | WindDirection::OldAngle(_))) => {
+                    Some(a.degrees())
+                }
                 _ => None,
             };
             for (label, value) in [
@@ -1254,9 +1259,10 @@ fn structure_wind_ui(
             if ui
                 .selectable_label(angle.is_some(), "at an angle")
                 .on_hover_text(
-                    "The angle the wind comes from: 0° from the right, 90° from ahead, 180° \
-                     from the left, 270° from behind. A wind band's area is taken all along the \
-                     direction (an approximation, see the theory: Structure wind)",
+                    "The angle the wind comes from, in the structure's axes: 0° from ahead, \
+                     90° from the right, 180° from behind, 270° from the left (clockwise). A \
+                     wind band's area is taken all along the direction (an approximation, see \
+                     the theory: Structure wind)",
                 )
                 .clicked()
                 && angle.is_none()

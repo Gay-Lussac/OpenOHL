@@ -65,7 +65,7 @@ pub fn add_structure_loads(
         let mut without: Vec<&str> = Vec::new();
         let mut no_snow: Vec<&str> = Vec::new();
         for s in &line.structures {
-            if !sets.takes(&s.id, &r.case.name) {
+            if !sets.takes(&s.id, r.case.set_name()) {
                 continue;
             }
             let ice = match r.case.structure_ice_at(w, Some(s)) {

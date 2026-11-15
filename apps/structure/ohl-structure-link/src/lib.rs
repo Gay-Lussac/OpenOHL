@@ -143,7 +143,12 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
     for case in loads {
         // This structure's: with use_local, times its wind_static (the one
         // rule, ohl_loads::CaseLoads::structure_wind_at).
-        let w = case.structure_wind_at(line.structure(structure));
+        let placed = line.structure(structure);
+        let mut w = case.structure_wind_at(placed);
+        // A wind relative to the line, in a turned structure's axes.
+        if let Some(s) = placed {
+            w = w.on_structure(line, s);
+        }
         out.structure_wind.push(CaseWind {
             case: case.case.name.clone(),
             pressure: w.pressure,
@@ -154,7 +159,9 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
                 Direction::Right
             },
             origin: w.origin().to_owned(),
-            from_deg: w.has_longitudinal().then(|| w.direction.degrees()),
+            // OHL-Structure's convention: 0° from the right, 90° from
+            // ahead (an old angle as read, bit for bit).
+            from_deg: w.has_longitudinal().then(|| w.direction.old_degrees()),
         });
         // Per point, its loads summed (2026-11-14): a post's base has a
         // load of its own for what acts at the post's top and one for its
@@ -406,18 +413,21 @@ pub fn structure_case_loads(
     let library_names: Vec<String> = cases.library.iter().map(|c| c.name.clone()).collect();
     let (mut lib, mut library_failed) = (Vec::new(), Vec::new());
     if !cases.library.is_empty() {
+        // A set of wind directions: one case per direction (OHL-Structure
+        // gets one case each).
+        let expanded = ohl_loads::expand_directions(&cases.library);
         let each = ohl_loads::structure_loads_each(
             line,
             library,
             &cases.library_weather,
-            &cases.library,
+            &expanded,
             &library_names,
             budget,
         );
-        for (c, r) in cases.library.iter().zip(each) {
+        for (c, r) in expanded.iter().zip(each) {
             match r {
                 Ok(l) => lib.push(l),
-                Err(e) => library_failed.push((c.name.clone(), e)),
+                Err(e) => library_failed.push((c.set_name().to_owned(), e)),
             }
         }
     }
@@ -448,7 +458,7 @@ pub fn placed_values_with(
     let own: Vec<CaseLoads> = sent
         .library
         .iter()
-        .filter(|c| sets.takes(structure, &c.case.name))
+        .filter(|c| sets.takes(structure, c.case.set_name()))
         .cloned()
         .collect();
     let mut out = placed_values(&own, line, structure, line_name);
@@ -604,10 +614,15 @@ pub fn library_recipes(
                 self_weight: Some(lc.vertical),
                 ..OwnLoads::default()
             };
-            let body = c.structure_wind_at(placed);
+            let mut body = c.structure_wind_at(placed);
+            if let Some(s) = placed {
+                body = body.on_structure(line, s);
+            }
             if body.factored() > 0.0 {
                 own.wind.push(BodyWindLoad {
-                    from: WindFrom::from_degrees(body.direction.degrees()),
+                    // OHL-Structure's convention (0° from the right, 90°
+                    // from ahead; an old angle as read, bit for bit).
+                    from: WindFrom::from_degrees(body.direction.old_degrees()),
                     pressure: Some(body.pressure),
                     pressure_of: None,
                     factor: body.factor,
