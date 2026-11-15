@@ -31,6 +31,9 @@
 use ohl_core::units::{Angle, Area, Density, ForcePerLength, Length, Speed, Stress, Temperature};
 use serde::Deserialize;
 
+mod direction;
+pub use direction::{ObliqueLaw, WindDirection, oblique_wire_force};
+
 /// Density of glaze ice commonly used in line design, kg/m³.
 pub const GLAZE_ICE_DENSITY: f64 = 913.0;
 
@@ -43,7 +46,7 @@ fn default_ice_density() -> Density {
 
 /// A weather case.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(from = "WeatherCaseFile")]
 pub struct WeatherCase {
     /// Name, e.g. `"heavy ice + wind"`.
     pub name: String,
@@ -73,6 +76,18 @@ pub struct WeatherCase {
     /// wires to the left.
     #[serde(default)]
     pub wind_from: WindSide,
+    /// Where the wind comes from at an angle to the line (weather file
+    /// version 2; owner 2026-11-15): none — the across rule, every span
+    /// the full pressure square to itself from [`WeatherCase::wind_from`]'s
+    /// side, as before. A direction across the line (`"right"`, `"left"`,
+    /// 90°, 270°) is read as that side with the across rule (bit for bit
+    /// the same results): it is never kept here. Any other direction
+    /// ([`WindDirection`]: from; 0° from ahead, 90° from the right,
+    /// clockwise, relative to the line at each place) is **one wind**,
+    /// each wire piece taking the part normal to it
+    /// ([`oblique_wire_force`]).
+    #[serde(default)]
+    pub wind_direction: Option<WindDirection>,
     /// Air density factor Q, Pa/(m/s)²: the wind pressure of a wind
     /// velocity V is Q·V² (default [`DEFAULT_AIR_DENSITY_FACTOR`], ½ρ of air
     /// at 15 °C at sea level). Only relates pressure and velocity: the
@@ -82,6 +97,79 @@ pub struct WeatherCase {
     /// Ambient (air) temperature, for ratings; the wires use `temperature`.
     #[serde(default)]
     pub ambient_temperature: Option<Temperature>,
+}
+
+/// A weather case as files give it (the wind's direction normalised by
+/// [`WeatherCase`]'s `From`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WeatherCaseFile {
+    name: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    temperature: Temperature,
+    #[serde(default)]
+    ice_thickness: Length,
+    #[serde(default)]
+    ice_load: Option<ForcePerLength>,
+    #[serde(default)]
+    ice_density: Option<Density>,
+    #[serde(default)]
+    wind_pressure: Stress,
+    #[serde(default)]
+    wind_from: WindSide,
+    #[serde(default, deserialize_with = "de_direction")]
+    wind_direction: Option<WindDirection>,
+    #[serde(default)]
+    air_density_factor: Option<f64>,
+    #[serde(default)]
+    ambient_temperature: Option<Temperature>,
+}
+
+/// `wind_direction`: a direction, or `"across"` (none).
+fn de_direction<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<WindDirection>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Raw {
+        Number(f64),
+        Text(String),
+    }
+    match Raw::deserialize(d)? {
+        Raw::Text(t) if t.trim() == "across" => Ok(None),
+        Raw::Number(a) => WindDirection::from_number(a)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+        Raw::Text(t) => WindDirection::parse(&t)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+impl From<WeatherCaseFile> for WeatherCase {
+    fn from(f: WeatherCaseFile) -> Self {
+        // A direction across the line is its side with the across rule.
+        let (wind_from, wind_direction) = match f.wind_direction.map(|d| (d, d.across_side())) {
+            Some((_, Some(side))) => (side, None),
+            Some((d, None)) => (f.wind_from, Some(d)),
+            None => (f.wind_from, None),
+        };
+        Self {
+            name: f.name,
+            description: f.description,
+            tags: f.tags,
+            temperature: f.temperature,
+            ice_thickness: f.ice_thickness,
+            ice_load: f.ice_load,
+            ice_density: f.ice_density,
+            wind_pressure: f.wind_pressure,
+            wind_from,
+            wind_direction,
+            air_density_factor: f.air_density_factor,
+            ambient_temperature: f.ambient_temperature,
+        }
+    }
 }
 
 /// Air density factor when a case gives none, Pa/(m/s)² (½ · 1.225 kg/m³).
@@ -137,8 +225,41 @@ impl WeatherCase {
             ice_density: None,
             wind_pressure: Stress::ZERO,
             wind_from: WindSide::Right,
+            wind_direction: None,
             air_density_factor: None,
             ambient_temperature: None,
+        }
+    }
+
+    /// Its wind at an angle to the line: the direction when it has wind
+    /// and a direction that is not across the line (none: the across
+    /// rule, as before).
+    pub fn oblique(&self) -> Option<WindDirection> {
+        self.wind_direction
+            .filter(|d| d.across_side().is_none() && self.wind_pressure.si() > 0.0)
+    }
+
+    /// Where its wind at an angle blows, a horizontal unit vector in the
+    /// project's axes, at a place where the line runs along `ahead` (a
+    /// unit vector in plan): none for the across rule
+    /// ([`WeatherCase::oblique`]).
+    pub fn towards_at(&self, ahead: [f64; 2]) -> Option<[f64; 2]> {
+        self.oblique().map(|d| d.towards_in(ahead))
+    }
+
+    /// The case with its wind from `direction` (a load case's override):
+    /// across the line, its side with the across rule.
+    pub fn with_direction(&self, direction: WindDirection) -> Self {
+        match direction.across_side() {
+            Some(side) => Self {
+                wind_from: side,
+                wind_direction: None,
+                ..self.clone()
+            },
+            None => Self {
+                wind_direction: Some(direction),
+                ..self.clone()
+            },
         }
     }
 
@@ -383,7 +504,13 @@ impl WeatherCase {
             )),
             None => {}
         }
-        if self.wind_pressure.si() > 0.0 {
+        if let Some(d) = self.oblique() {
+            parts.push(format!(
+                "wind {:.0} Pa {}",
+                self.wind_pressure.pascals(),
+                d.words()
+            ));
+        } else if self.wind_pressure.si() > 0.0 {
             parts.push(format!(
                 "wind {:.0} Pa from the {}",
                 self.wind_pressure.pascals(),
@@ -426,7 +553,8 @@ impl WeatherCase {
     ///   density not given is glaze ice ([`GLAZE_ICE_DENSITY`]), as the
     ///   loads take it. A thickness and a load are never the same: the
     ///   load of a thickness depends on the wire's diameter;
-    /// - the wind pressure; with wind, also the side it comes from and the
+    /// - the wind pressure; with wind, also the side it comes from, its
+    ///   direction at an angle (none the same only as none) and the
     ///   air density factor (one not given is the project's: the same only
     ///   as another not given). Without wind neither matters (no side, a
     ///   velocity of 0);
@@ -458,6 +586,10 @@ impl WeatherCase {
         let windy = self.wind_pressure.si() > 0.0 || other.wind_pressure.si() > 0.0;
         if windy
             && (self.wind_from != other.wind_from
+                || !same_option(
+                    self.wind_direction.map(WindDirection::degrees),
+                    other.wind_direction.map(WindDirection::degrees),
+                )
                 || !same_option(self.air_density_factor, other.air_density_factor))
         {
             return false;
@@ -473,8 +605,10 @@ impl WeatherCase {
 pub const WEATHER_FILE_EXTENSION: &str = "ohlwc";
 /// Format identifier.
 pub const WEATHER_FILE_FORMAT: &str = "ohl-weather-cases";
-/// Newest format version read.
-pub const WEATHER_FILE_VERSION: u32 = 1;
+/// Newest format version read: 2 adds a case's wind direction
+/// (`wind_direction`, [`WeatherCase::wind_direction`]; owner 2026-11-15),
+/// written only by a file with one; version 1 files read as before.
+pub const WEATHER_FILE_VERSION: u32 = 2;
 
 /// The text of OpenOHL's **default weather cases**
 /// (`libraries/weather/default-weather-cases.ohlwc`; owner, 2026-11-15:

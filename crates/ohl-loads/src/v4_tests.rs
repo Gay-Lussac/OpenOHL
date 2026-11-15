@@ -11,7 +11,7 @@ use std::path::Path;
 
 use super::*;
 
-fn library() -> ohl_cables::Library {
+pub(super) fn library() -> ohl_cables::Library {
     ohl_cables::Library::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"))
         .unwrap()
 }
@@ -19,7 +19,7 @@ fn library() -> ohl_cables::Library {
 /// Three level 300 m spans with two wires: set 1 (S1) at 27 m and set 2
 /// (S2) at 22 m, each on a 3 m suspension string at T2 and T3, dead-ended
 /// at T1 and T4. INVENTED.
-fn two_wires() -> Line {
+pub(super) fn two_wires() -> Line {
     let structure = |id: &str, x: f64, suspension: bool| {
         let strings = if suspension {
             format!(
@@ -61,7 +61,7 @@ fn two_wires() -> Line {
     .unwrap()
 }
 
-fn weather() -> Vec<WeatherCase> {
+pub(super) fn weather() -> Vec<WeatherCase> {
     ohl_weather::WeatherCases::parse(
         "[[case]]\nname = \"calm\"\ntemperature = \"10 °C\"\n\
          [[case]]\nname = \"wind\"\ntemperature = \"10 °C\"\nwind_pressure = \"500 Pa\"\n\
@@ -150,7 +150,10 @@ span = 1
     assert_eq!(a.removed[0].describe(), "S3 set 2 removed");
     assert_eq!(a.broken_wires().count(), 2);
     assert_eq!(a.broken.as_ref().unwrap().span, BrokenSpan::One(2));
-    assert_eq!(a.on_structure.direction, Some(WindDirection::Angle(30.0)));
+    assert_eq!(
+        a.on_structure.direction,
+        Some(WindDirection::OldAngle(30.0))
+    );
     assert_eq!(a.on_structure.ice, Some(StructureIce::Thickness(0.02)));
     assert_eq!(a.on_structure.ice_density, Some(900.0));
     assert!(a.on_structure.snow);
@@ -208,7 +211,7 @@ span = 1
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = \"lots\"\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\n[case.structure]\nice = -0.01\n",
         "[[case]]\nname = \"a\"\nweather = \"w\"\nwind_from = \"ahead\"\n",
-        "version = 7\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
+        "version = 8\n[[case]]\nname = \"a\"\nweather = \"w\"\n",
     ] {
         assert!(LoadCases::parse(bad).is_err(), "{bad}");
     }
@@ -454,8 +457,8 @@ fn structure_wind_at_90_degrees_is_longitudinal() {
         &weather,
         &[
             case("across", None),
-            case("ahead", Some(WindDirection::Angle(90.0))),
-            case("30", Some(WindDirection::Angle(30.0))),
+            case("ahead", Some(WindDirection::OldAngle(90.0))),
+            case("30", Some(WindDirection::OldAngle(30.0))),
         ],
         &budget,
     )
@@ -492,7 +495,7 @@ fn structure_wind_at_90_degrees_is_longitudinal() {
     );
     assert!(!band(&r[0]).label.contains("NOT ON THE SAFE SIDE"));
     assert!(
-        r[1].notes.iter().any(|n| n.contains("from 90°")),
+        r[1].notes.iter().any(|n| n.contains("from 0° (from ahead")),
         "{:?}",
         r[1].notes
     );
@@ -960,7 +963,7 @@ fn subconductors_of_a_broken_wire_are_version_5() {
     let e = LoadCases::parse(&zero).unwrap_err();
     assert!(e.contains("subconductors = 0"), "{e}");
     // A newer file is refused as newer.
-    let newer = text.replace("version = 5", "version = 7");
+    let newer = text.replace("version = 5", "version = 8");
     assert!(LoadCases::parse(&newer).is_err());
 }
 
@@ -1036,6 +1039,6 @@ fn ice_on_the_structures_from_the_weather_case_with_a_factor() {
             .contains("ice_factor")
     );
     // A newer file is refused.
-    let newer = text.replace("version = 6", "version = 7");
+    let newer = text.replace("version = 6", "version = 8");
     assert!(LoadCases::parse(&newer).is_err());
 }

@@ -75,6 +75,27 @@
 //! structures may be the weather case's ice on the wires (`[case.structure]
 //! ice = "weather"`, [`StructureIce::Weather`]) and its thickness, whichever
 //! it is, times a factor (`ice_factor`, [`StructureOptions::ice_factor`]).
+//!
+//! **Version 7** (2026-11-15, owner: wind at any direction): a case's wind
+//! direction for the wires and the bodies (`wind_direction`, replacing the
+//! weather case's) or a set of them (`wind_directions`, one case per
+//! direction, [`expand_directions`]); and `[case.structure] direction`
+//! angles in the program's one convention — from; 0° from ahead, 90° from
+//! the right, clockwise ([`WindDirection`]). A file up to version 6 is read
+//! in its old convention (0° from the right, counted towards ahead): the
+//! same forces bit for bit.
+//!
+//! ```toml
+//! [[case]]
+//! name = "wind along the line, forward"
+//! weather = "high wind"
+//! wind_direction = 180          # from behind: blowing ahead
+//!
+//! [[case]]
+//! name = "wind, every direction"
+//! weather = "high wind"
+//! wind_directions = [0, 45, 90, 135, 180, 225, 270, 315]
+//! ```
 
 mod analysis;
 mod body;
@@ -103,7 +124,12 @@ use serde::Deserialize;
 
 /// `format` of a load case file.
 pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
-/// Newest format version read. Version 5 (2026-11-11) adds a broken
+/// Newest format version read. Version 7 (2026-11-15) adds a case's wind
+/// direction for the wires and bodies (`wind_direction`) and sets of
+/// directions (`wind_directions`), and counts `[case.structure]
+/// direction` angles in the program's convention (from; 0° from ahead, 90°
+/// from the right, clockwise; files up to 6: 0° from the right, counted
+/// towards ahead, read as such — [`WindDirection::OldAngle`]). Version 5 (2026-11-11) adds a broken
 /// wire's `subconductors` (some subconductors of a bundle broken,
 /// [`BrokenWire::subconductors`]). Version 4 (2026-11-03) adds several
 /// broken wires per case (`[[case.broken]]`), removed conductors
@@ -114,7 +140,7 @@ pub const LOAD_CASE_FILE_FORMAT: &str = "ohl-load-cases";
 /// version 2 a case's `[case.structure]` table ([`StructureWind`]); each
 /// written only when a case has one ([`LoadCases::written_version`]);
 /// older files read as before.
-pub const LOAD_CASE_FILE_VERSION: u32 = 6;
+pub const LOAD_CASE_FILE_VERSION: u32 = 7;
 /// File extension of load case files.
 pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 
@@ -124,9 +150,10 @@ pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 /// 10 °C and 40 °C (factors 1); 10 °C with 300 Pa of wind from the left
 /// and from the right (a factor 1.5 on the wind: transverse 1.5 and
 /// `[case.structure] wind_factor = 1.5`); 0 °C with 20 N/m of ice
-/// (vertical 1.3); and the wind along the line, from ahead and from
-/// behind, on the structure bodies only (the weather case "10 °C": the
-/// wires take no wind; the bodies the case's own 300 Pa × 1.5). They name
+/// (vertical 1.3); and the wind along the line, from ahead (0°) and from
+/// behind (180°): the weather case "10 °C + 300 Pa wind" with the case's
+/// `wind_direction` (file version 7, 2026-11-15) on the wires and the
+/// bodies, transverse, longitudinal and the bodies' factor 1.5. They name
 /// the default weather cases ([`ohl_weather::DEFAULT_CASES_TEXT`]).
 /// **Arbitrary values for checking, not from a design code.**
 pub const DEFAULT_LOAD_CASES_TEXT: &str =
@@ -253,6 +280,21 @@ pub struct LoadCase {
     /// The version-4 values for the structure bodies: the wind's
     /// direction, ice and snow on them ([`StructureOptions`]).
     pub on_structure: StructureOptions,
+    /// Where the wind comes from in this case, for the wires and the
+    /// structure bodies (version 7, owner 2026-11-15; none: the weather
+    /// case's): replaces the weather case's direction
+    /// ([`WeatherCase::with_direction`]); across the line (`"right"`,
+    /// `"left"`, 90°, 270°) the across rule from that side.
+    /// `[case.structure] direction` still overrides it for the bodies.
+    pub wind_direction: Option<WindDirection>,
+    /// A set of directions (version 7): the case solved once per
+    /// direction, each as its own case named `<case> (wind from θ°)`
+    /// ([`expand_directions`]) — the checks keep the worst, naming it.
+    pub wind_directions: Vec<WindDirection>,
+    /// For a case made of a set's direction ([`expand_directions`]): the
+    /// set case's name (the structures' groups list that one). Not in
+    /// files.
+    pub of_set: Option<String>,
 }
 
 /// A load case as files give it (versions 1 to 4).
@@ -285,6 +327,10 @@ struct LoadCaseFile {
     wind_from: Option<ohl_weather::WindSide>,
     #[serde(default)]
     use_local: bool,
+    #[serde(default)]
+    wind_direction: Option<WindDirection>,
+    #[serde(default)]
+    wind_directions: Vec<WindDirection>,
 }
 
 /// The `[case.structure]` table as files give it.
@@ -379,6 +425,9 @@ impl From<LoadCaseFile> for LoadCase {
             wind_from: f.wind_from,
             use_local: f.use_local,
             on_structure,
+            wind_direction: f.wind_direction,
+            wind_directions: f.wind_directions,
+            of_set: None,
         }
     }
 }
@@ -619,6 +668,10 @@ pub struct BodyWind {
     pub own_pressure: bool,
     /// The factor is the case's own, not its transverse factor.
     pub own_factor: bool,
+    /// The direction is the wires' at an angle, relative to the line at
+    /// the structure (version 7), not in the structure's axes
+    /// ([`BodyWind::on_structure`] turns it for a turned structure).
+    pub relative_to_line: bool,
 }
 
 impl Default for BodyWind {
@@ -631,8 +684,18 @@ impl Default for BodyWind {
             direction: WindDirection::Right,
             own_pressure: false,
             own_factor: false,
+            relative_to_line: false,
         }
     }
+}
+
+/// How far structure `s` is turned off the line's direction at it,
+/// degrees clockwise from the line's ahead to the structure's (−180 to
+/// 180); none where the line gives no direction there.
+pub fn structure_turn(line: &Line, s: &ohl_line::Structure) -> Option<f64> {
+    let a = line.bisected_direction_at([s.position[0], s.position[1]])?;
+    let line_deg = a[1].atan2(a[0]).to_degrees();
+    Some((s.orientation_deg + 90.0 - line_deg + 180.0).rem_euclid(360.0) - 180.0)
 }
 
 impl BodyWind {
@@ -651,6 +714,23 @@ impl BodyWind {
     /// across).
     pub fn has_longitudinal(&self) -> bool {
         self.towards_xy()[1].abs() > 1e-12
+    }
+
+    /// For the body of structure `s` of `line`: a direction relative to
+    /// the line ([`BodyWind::relative_to_line`]) in the structure's axes
+    /// when it is turned off the line's direction (more than 1e-9°); else
+    /// as it is.
+    pub fn on_structure(mut self, line: &Line, s: &ohl_line::Structure) -> Self {
+        if !self.relative_to_line {
+            return self;
+        }
+        if let Some(turn) = structure_turn(line, s).filter(|t| t.abs() >= 1e-9) {
+            self.direction =
+                WindDirection::Angle((self.direction.degrees() + turn).rem_euclid(360.0));
+            self.towards = self.direction.towards()[0];
+            self.relative_to_line = false;
+        }
+        self
     }
 
     /// The case gives a value of its own for the structures.
@@ -702,7 +782,16 @@ impl LoadCase {
             wind_from: None,
             use_local: false,
             on_structure: StructureOptions::default(),
+            wind_direction: None,
+            wind_directions: Vec::new(),
+            of_set: None,
         }
+    }
+
+    /// The name the structures' groups know it by: a set's direction case
+    /// ([`LoadCase::of_set`]) the set case's, else its own.
+    pub fn set_name(&self) -> &str {
+        self.of_set.as_deref().unwrap_or(&self.name)
     }
 
     /// Every broken wire of the case: [`LoadCase::broken`] and
@@ -725,14 +814,38 @@ impl LoadCase {
 
     /// The weather case `weather` as this case takes it for the wires:
     /// its wind from [`LoadCase::wind_from`] when given.
+    ///
+    /// Version 7: its direction from [`LoadCase::wind_direction`] when
+    /// given ([`WeatherCase::with_direction`]); `wind_from` on a weather
+    /// case with a direction at an angle: across from that side.
     pub fn wire_weather(&self, weather: &WeatherCase) -> WeatherCase {
-        match self.wind_from {
+        let w = match self.wind_from {
+            Some(side) if weather.wind_direction.is_some() => {
+                weather.with_direction(WindDirection::of_side(side))
+            }
             Some(side) if side != weather.wind_from => WeatherCase {
                 wind_from: side,
                 ..weather.clone()
             },
             _ => weather.clone(),
+        };
+        match self.wind_direction {
+            Some(d) => w.with_direction(d),
+            None => w,
         }
+    }
+
+    /// Whether the case uses anything of file version 7: a wind direction
+    /// or a set of them, or a body direction in the program's convention
+    /// (an angle given since version 7; an old angle stays at its
+    /// version).
+    pub fn uses_version_7(&self) -> bool {
+        self.wind_direction.is_some()
+            || !self.wind_directions.is_empty()
+            || self
+                .on_structure
+                .direction
+                .is_some_and(WindDirection::is_new_angle)
     }
 
     /// Whether the case uses anything of file version 6: the weather
@@ -767,12 +880,21 @@ impl LoadCase {
     /// Version 4: the side is the case's `wind_from` when given, and the
     /// direction `[case.structure] direction` when given
     /// ([`BodyWind::direction`]).
+    ///
+    /// Version 7 (2026-11-15): without `[case.structure] direction`, the
+    /// wires' direction at an angle ([`LoadCase::wire_weather`],
+    /// [`WeatherCase::oblique`]), relative to the line — in the
+    /// structure's axes for a structure turned off the line's direction
+    /// ([`LoadCase::in_structure_axes`]).
     pub fn structure_wind(&self, weather: &WeatherCase) -> BodyWind {
         let own = self.structure.unwrap_or_default();
-        let side = self.wind_from.unwrap_or(weather.wind_from);
+        let wires = self.wire_weather(weather);
+        let side = wires.wind_from;
+        let relative_to_line = self.on_structure.direction.is_none() && wires.oblique().is_some();
         let direction = self
             .on_structure
             .direction
+            .or(wires.oblique())
             .unwrap_or(WindDirection::of_side(side));
         BodyWind {
             pressure: own
@@ -783,6 +905,7 @@ impl LoadCase {
             direction,
             own_pressure: own.wind_pressure.is_some(),
             own_factor: own.wind_factor.is_some(),
+            relative_to_line,
         }
     }
 
@@ -801,6 +924,33 @@ impl LoadCase {
             body.pressure *= f;
         }
         body
+    }
+
+    /// The case for the body of structure `s` turned off the line's
+    /// direction: a body wind taken from the wires' direction at an angle
+    /// (relative to the line, [`LoadCase::structure_wind`]) given in the
+    /// structure's axes as its `[case.structure] direction` (owner
+    /// 2026-11-15, question 11). None — the case as it is — without such a
+    /// direction, or where the structure's axes are the line's (within
+    /// 1e-9°), or the line gives no direction there.
+    pub fn in_structure_axes(
+        &self,
+        weather: &WeatherCase,
+        line: &Line,
+        s: &ohl_line::Structure,
+    ) -> Option<LoadCase> {
+        if self.on_structure.direction.is_some() {
+            return None;
+        }
+        let d = self.wire_weather(weather).oblique()?;
+        let turn = structure_turn(line, s)?;
+        if turn.abs() < 1e-9 {
+            return None;
+        }
+        let mut case = self.clone();
+        case.on_structure.direction =
+            Some(WindDirection::Angle((d.degrees() + turn).rem_euclid(360.0)));
+        Some(case)
     }
 
     /// The ice on structure `s` in this case with weather case `weather`
@@ -1000,6 +1150,37 @@ impl LoadCase {
         self.on_structure
             .check()
             .map_err(|e| format!("{}: {e}", self.name))?;
+        if self.wind_direction.is_some() && !self.wind_directions.is_empty() {
+            return Err(format!(
+                "{}: give wind_direction or wind_directions, not both",
+                self.name
+            ));
+        }
+        if self.wind_from.is_some()
+            && (self.wind_direction.is_some() || !self.wind_directions.is_empty())
+        {
+            return Err(format!(
+                "{}: give wind_from or a wind direction, not both (wind_from = \"right\" is \
+                 wind_direction = 90, \"left\" 270)",
+                self.name
+            ));
+        }
+        for d in self.wind_direction.iter().chain(&self.wind_directions) {
+            if !d.degrees().is_finite() {
+                return Err(format!("{}: wind direction not a number", self.name));
+            }
+        }
+        let mut seen: Vec<f64> = Vec::new();
+        for d in &self.wind_directions {
+            if seen.contains(&d.degrees()) {
+                return Err(format!(
+                    "{}: wind direction {}° given twice in wind_directions",
+                    self.name,
+                    d.degrees()
+                ));
+            }
+            seen.push(d.degrees());
+        }
         if let Some(s) = &self.structure {
             if let Some(p) = s.wind_pressure
                 && !(p.is_finite() && p >= 0.0)
@@ -1041,9 +1222,11 @@ pub struct LoadCases {
 }
 
 impl LoadCases {
-    /// Parses and checks a file.
+    /// Parses and checks a file. A file up to version 6 (or without a
+    /// version) gives the bodies' angles in the old convention: kept as
+    /// read ([`WindDirection::OldAngle`]).
     pub fn parse(text: &str) -> Result<Self, String> {
-        let set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
         ohl_core::files::check_header(
             set.format.as_deref(),
             set.version,
@@ -1051,6 +1234,7 @@ impl LoadCases {
             LOAD_CASE_FILE_VERSION,
             "load case",
         )?;
+        set.read_old_angles();
         let mut names = std::collections::BTreeSet::new();
         for c in &set.cases {
             c.validate()?;
@@ -1066,7 +1250,7 @@ impl LoadCases {
     /// filled in); the TOML and its header must read. [`LoadCases::parse`]
     /// checks.
     pub fn read_unchecked(text: &str) -> Result<Self, String> {
-        let set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
+        let mut set: Self = toml::from_str(text).map_err(|e| e.to_string())?;
         ohl_core::files::check_header(
             set.format.as_deref(),
             set.version,
@@ -1074,7 +1258,24 @@ impl LoadCases {
             LOAD_CASE_FILE_VERSION,
             "load case",
         )?;
+        set.read_old_angles();
         Ok(set)
+    }
+
+    /// A file up to version 6 (or without a version): its cases' body
+    /// angles (`[case.structure] direction = 30`) are in the old
+    /// convention (0° from the right, counted towards ahead), kept as read
+    /// ([`WindDirection::OldAngle`]; \\( \theta = 90° - \theta_{old} \\)).
+    /// Names mean the same in both.
+    fn read_old_angles(&mut self) {
+        if self.version.unwrap_or(1) >= 7 {
+            return;
+        }
+        for c in &mut self.cases {
+            if let Some(WindDirection::Angle(a)) = c.on_structure.direction {
+                c.on_structure.direction = Some(WindDirection::OldAngle(a));
+            }
+        }
     }
 
     /// Reads a file.
@@ -1098,7 +1299,9 @@ impl LoadCases {
 /// The version a load case file holding `cases` is written at
 /// ([`LoadCases::written_version`]).
 pub fn written_version(cases: &[LoadCase]) -> u32 {
-    if cases.iter().any(LoadCase::uses_version_6) {
+    if cases.iter().any(LoadCase::uses_version_7) {
+        7
+    } else if cases.iter().any(LoadCase::uses_version_6) {
         6
     } else if cases.iter().any(LoadCase::uses_version_5) {
         5
@@ -1535,6 +1738,31 @@ pub fn structure_loads(
         .collect()
 }
 
+/// The cases with each set of wind directions ([`LoadCase::wind_directions`],
+/// version 7) as one case per direction, in the set's order: named `<case>
+/// (wind from θ°)`, its [`LoadCase::wind_direction`] that one,
+/// [`LoadCase::of_set`] the set case's name. The other cases as they are.
+/// The checks then take each direction as its own case and keep the worst,
+/// naming it (as a broken wire in every span).
+pub fn expand_directions(cases: &[LoadCase]) -> Vec<LoadCase> {
+    let mut out = Vec::with_capacity(cases.len());
+    for c in cases {
+        if c.wind_directions.is_empty() {
+            out.push(c.clone());
+            continue;
+        }
+        for d in &c.wind_directions {
+            let mut one = c.clone();
+            one.name = format!("{} (wind {})", c.name, d.words());
+            one.wind_direction = Some(*d);
+            one.wind_directions = Vec::new();
+            one.of_set = Some(c.name.clone());
+            out.push(one);
+        }
+    }
+    out
+}
+
 /// [`structure_loads`], each case on its own (2026-11-14): a case that
 /// does not compute (a weather case, section or span it names not there,
 /// ice on the structures without a density…) fails only itself, the
@@ -1551,6 +1779,8 @@ pub fn structure_loads_each(
     known: &[String],
     budget: &Budget,
 ) -> Vec<Result<CaseLoads, String>> {
+    // A set of wind directions: one case per direction.
+    let cases = &expand_directions(cases);
     let mut line = line.clone();
     line.set_weather_cases(weather);
     let has_local = ohl_line::local::has_local(&line);
@@ -1620,6 +1850,13 @@ pub fn structure_loads_each(
                 ));
             }
         }
+        if let Some(d) = case.wire_weather(w).oblique() {
+            notes.push(format!(
+                "the wind {} (one direction, relative to the line at each place): not the \
+                 across envelope — a wind across the line is not checked by this case",
+                d.words()
+            ));
+        }
         let wires_weather = case.wire_weather(w);
         let base = match (&local, case.use_local) {
             (Some(l), true) => {
@@ -1655,7 +1892,7 @@ pub fn structure_loads_each(
         // time: the weather case may give it).
         let mut local_ice: Vec<String> = Vec::new();
         for s in &solving.structures {
-            if sets.takes(&s.id, &case.name)
+            if sets.takes(&s.id, case.set_name())
                 && let Some(ice) = case.structure_ice_at(w, Some(s)).map_err(fail)?
                 && case.takes_local_ice(w)
             {
@@ -1762,7 +1999,7 @@ pub fn structure_loads_each(
         // The structure groups: a structure not taking the case has no
         // loads in it.
         if sets.has_groups() {
-            let takes = |s: &str| sets.takes(s, &case.name);
+            let takes = |s: &str| sets.takes(s, case.set_name());
             let mut out_of: Vec<&str> = loads
                 .iter()
                 .map(|l: &AttachmentLoad| l.structure.as_str())
@@ -2262,7 +2499,17 @@ fn case_loads(
                 let mut f = towards.map(|v| if d > 0.0 { v / d * x.force } else { 0.0 });
                 f[2] -= string.weight / 2.0;
                 // Half the wind on the string, across the line.
-                if let Some(a) = line.direction_at([x.top[0], x.top[1]]) {
+                let ahead = line.direction_at([x.top[0], x.top[1]]);
+                if let Some([tx, ty]) = w
+                    .oblique()
+                    .and_then(|_| line.bisected_direction_at([x.top[0], x.top[1]]))
+                    .and_then(|a| w.towards_at(a))
+                {
+                    // At an angle: the full pressure along where it blows.
+                    let q = 0.5 * w.wind_pressure.si() * local * string.wind_area;
+                    f[0] += tx * q;
+                    f[1] += ty * q;
+                } else if let Some(a) = ahead {
                     let push = 0.5
                         * w.wind_pressure.si()
                         * local
@@ -2434,6 +2681,21 @@ fn case_loads(
             let wind = line
                 .direction_at([structure.position[0], structure.position[1]])
                 .map_or([0.0; 3], |a| {
+                    // At an angle: the full pressure along where it blows
+                    // (Conservative: no reduction for a member's angle).
+                    if let Some([tx, ty]) = w
+                        .oblique()
+                        .and_then(|_| {
+                            line.bisected_direction_at([
+                                structure.position[0],
+                                structure.position[1],
+                            ])
+                        })
+                        .and_then(|b| w.towards_at(b))
+                    {
+                        let q = w.wind_pressure.si() * line.wind_factor_at_structure(id);
+                        return [tx * q, ty * q, 0.0];
+                    }
                     let push = w.wind_pressure.si()
                         * line.wind_factor_at_structure(id)
                         * w.wind_from.to_left();
@@ -2755,10 +3017,15 @@ pub fn add_structure_wind(
             continue;
         }
         for s in &line.structures {
-            if !sets.takes(&s.id, &r.case.name) {
+            if !sets.takes(&s.id, r.case.set_name()) {
                 continue;
             }
-            let body = r.case.structure_wind_at(w, Some(s));
+            // A wind relative to the line, in a turned structure's axes.
+            let turned = r.case.in_structure_axes(w, line, s);
+            let body = turned
+                .as_ref()
+                .unwrap_or(&r.case)
+                .structure_wind_at(w, Some(s));
             let q = body.pressure;
             let [tx, ty] = body.towards_xy();
             let Some(t) = s.structure_type.as_deref().and_then(|t| types.get(t)) else {
@@ -2883,6 +3150,9 @@ mod default_tests;
 
 #[cfg(test)]
 mod v4_tests;
+
+#[cfg(test)]
+mod direction_tests;
 
 #[cfg(test)]
 mod local_tests;

@@ -999,6 +999,7 @@ pub(super) const W_ICE_DENSITY: usize = 8;
 pub(super) const W_ICE_LOAD: usize = 9;
 pub(super) const W_TEMP: usize = 10;
 pub(super) const W_AMBIENT: usize = 11;
+pub(super) const W_DIRECTION: usize = 12;
 
 pub(super) const WEATHER: &[Column] = &[
     (
@@ -1057,5 +1058,13 @@ pub(super) const WEATHER: &[Column] = &[
         90.0,
         Yes,
         "air temperature, for ratings (empty: not given)",
+    ),
+    (
+        "Wind direction\n° from",
+        100.0,
+        Yes,
+        "where the wind comes from, relative to the line: 0 ahead, 90 right, 180 behind, 270 left \
+         (clockwise; or ahead, right, back, left). Empty, 90 or 270: across, every span the full \
+         pressure (the side as View › Display weather cases shows it)",
     ),
 ];

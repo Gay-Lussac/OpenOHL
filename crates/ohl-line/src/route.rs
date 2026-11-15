@@ -1444,6 +1444,25 @@ impl Line {
         self.nearest_on(views, at).map(|n| n.2)
     }
 
+    /// The line's direction at `at` (plan) for a wind at an angle (owner
+    /// 2026-11-15): as [`Self::direction_at`], but at an angle point of the
+    /// route (within [`AT_VERTEX`] of it along the route) the **bisector**
+    /// of its two segments ([`direction_at`]) — a structure standing there.
+    pub fn bisected_direction_at(&self, at: [f64; 2]) -> Option<[f64; 2]> {
+        self.bisected_direction_at_in(&self.alignment_views(), at)
+    }
+
+    /// [`Self::bisected_direction_at`] on the routes `views`.
+    pub fn bisected_direction_at_in(
+        &self,
+        views: &[AlignmentView],
+        at: [f64; 2],
+    ) -> Option<[f64; 2]> {
+        let (k, station, d) = self.nearest_on(views, at)?;
+        let centre = views.get(k)?.centreline(self);
+        Some(direction_at(&centre, station).map_or(d, |x| x.0))
+    }
+
     /// Where `at` (plan) is along the line: the route nearest to it (its
     /// index in [`Line::alignment_views`]) and the distance along that
     /// route's centreline (from its start) of the point nearest to it.

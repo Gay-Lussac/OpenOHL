@@ -32,6 +32,7 @@
 mod builtin;
 mod electrical;
 mod textbook;
+mod wind_direction;
 
 use std::collections::BTreeMap;
 use std::fmt::{self, Write as _};
@@ -78,6 +79,7 @@ impl Registry {
         builtin::register(&mut registry);
         textbook::register(&mut registry);
         electrical::register(&mut registry);
+        wind_direction::register(&mut registry);
         registry
     }
 

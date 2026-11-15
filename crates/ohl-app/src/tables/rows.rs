@@ -744,5 +744,16 @@ pub(super) fn weather_cells(w: &ohl_weather::WeatherCase, order: usize, q: f64) 
     c[W_AMBIENT] = w
         .ambient_temperature
         .map_or(String::new(), |t| f(t.celsius(), 1));
+    // As in the file (the display may show it mirrored).
+    c[W_DIRECTION] = crate::model::side_shown(w.clone(), ohl_weather::WindSide::Right)
+        .wind_direction
+        .map_or(String::new(), |d| {
+            let a = d.degrees();
+            if a.fract() == 0.0 {
+                format!("{a:.0}")
+            } else {
+                format!("{a}")
+            }
+        });
     c
 }

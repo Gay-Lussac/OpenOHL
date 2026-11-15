@@ -275,17 +275,28 @@ Built, in active development (not approved yet).
 ### The wind's direction
 
 The structure's axes: \\( x \\) to the right of the line looking ahead,
-\\( y \\) ahead, \\( z \\) up. A load case gives where the wind on the
-structure bodies comes **from** as an angle \\( \theta \\): 0° from the
-right, counted towards ahead (90° from ahead, 180° from the left, 270°
-from behind); the names `right`, `ahead`, `left`, `back` are 0°, 90°,
-180°, 270°, as OHL-Structure's wind on the body. It blows towards
+\\( y \\) ahead, \\( z \\) up. Where the wind on the structure bodies
+comes **from** is an angle \\( \theta \\) in the program's one convention
+(since 2026-11-15, [Wind on the line](wind.md#where-the-wind-comes-from)):
+0° from ahead, 90° from the right, 180° from behind, 270° from the left,
+**clockwise**; the names `ahead`, `right`, `back`, `left`. It blows
+towards
 
-\\[ \hat{\mathbf w} = (-\cos\theta,\; -\sin\theta,\; 0). \\]
+\\[ \hat{\mathbf w} = (-\sin\theta,\; -\cos\theta,\; 0). \\]
 
-Without a direction the wind blows across the line from the side of the
-wind on the wires, as before. The wires keep that side: the direction is
-the structure bodies' only.
+Load case files up to version 6 gave the angle the other way (0° from the
+right, counted towards ahead: \\( \hat{\mathbf w} = (-\cos\theta_{old},
+-\sin\theta_{old}, 0) \\), as OHL-Structure's wind on the body still
+does): such an angle is kept as read, \\( \theta = 90° - \theta_{old} \\),
+its forces the old ones bit for bit ([Wind on the line › Where the wind
+comes from](wind.md#where-the-wind-comes-from)).
+
+The direction on the bodies, in order: the load case's `[case.structure]
+direction` (structure axes); else the wires' direction at an angle (the
+load case's `wind_direction` or the weather case's, version 7), relative
+to the line at the structure and turned into a turned structure's axes;
+else across the line from the side of the wind on the wires, as before
+([Wind on the line › The structure bodies](wind.md#the-structure-bodies)).
 
 - **Member wind (fe check):** the force of [Member force](#member-force)
   for \\( \hat{\mathbf w} \\), faces and shielding found for it — exact

@@ -77,6 +77,7 @@
 
 - [Conventions and units](theory/conventions.md)
 - [Sag-tension](theory/sagtension.md)
+- [Wind on the line: direction and load](theory/wind.md)
 - [Finite-element wire systems](theory/wirefe.md)
 - [Structure flexibility in the line solve](theory/structure-flexibility.md)
 - [Jumpers](theory/jumpers.md)

@@ -59,121 +59,14 @@ impl RemovedWire {
     }
 }
 
-/// Where the wind on the structure bodies comes from (`[case.structure]
-/// direction`, version 4), looking ahead along the line: `"right"`,
-/// `"left"`, `"ahead"`, `"back"`, or an angle in degrees.
-///
-/// **Convention** (the structure's axes: +x to the right of the line,
-/// +y ahead, z up): the angle θ is the direction the wind comes **from**,
-/// 0° from the right, counted towards ahead — 90° from ahead, 180° from
-/// the left, 270° from behind. The wind blows towards
-/// (−cos θ, −sin θ). The names are those of OHL-Structure's wind on the
-/// body (`WindFrom`): right 0°, ahead 90°, left 180°, back 270°.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum WindDirection {
-    /// From the right (blowing to −x), 0°.
-    Right,
-    /// From ahead (blowing to −y), 90°.
-    Ahead,
-    /// From the left (blowing to +x), 180°.
-    Left,
-    /// From behind (blowing to +y), 270°.
-    Back,
-    /// From the angle given, degrees (0 from the right, towards ahead).
-    Angle(f64),
-}
-
-impl WindDirection {
-    /// The angle the wind comes from, degrees (0 from the right, 90 from
-    /// ahead).
-    pub fn degrees(self) -> f64 {
-        match self {
-            Self::Right => 0.0,
-            Self::Ahead => 90.0,
-            Self::Left => 180.0,
-            Self::Back => 270.0,
-            Self::Angle(a) => a,
-        }
-    }
-
-    /// The direction a wind from the weather case's side gives.
-    pub fn of_side(side: ohl_weather::WindSide) -> Self {
-        match side {
-            ohl_weather::WindSide::Right => Self::Right,
-            ohl_weather::WindSide::Left => Self::Left,
-        }
-    }
-
-    /// Where it blows to, a unit vector (x right of the line, y ahead):
-    /// exact for the four names.
-    pub fn towards(self) -> [f64; 2] {
-        match self {
-            Self::Right => [-1.0, 0.0],
-            Self::Ahead => [0.0, -1.0],
-            Self::Left => [1.0, 0.0],
-            Self::Back => [0.0, 1.0],
-            Self::Angle(a) => {
-                let r = a.to_radians();
-                [-r.cos(), -r.sin()]
-            }
-        }
-    }
-
-    /// As written in files: the name, or the angle.
-    pub fn text(self) -> String {
-        match self {
-            Self::Right => "\"right\"".into(),
-            Self::Ahead => "\"ahead\"".into(),
-            Self::Left => "\"left\"".into(),
-            Self::Back => "\"back\"".into(),
-            Self::Angle(a) => format!("{a:?}"),
-        }
-    }
-
-    /// In words: `from the right`, `from 30° (0° from the right, towards
-    /// ahead)`.
-    pub fn words(self) -> String {
-        match self {
-            Self::Right => "from the right".into(),
-            Self::Ahead => "from ahead".into(),
-            Self::Left => "from the left".into(),
-            Self::Back => "from behind".into(),
-            Self::Angle(a) => format!("from {a}° (0° from the right, 90° from ahead)"),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for WindDirection {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Raw {
-            Number(f64),
-            Text(String),
-        }
-        match Raw::deserialize(d)? {
-            Raw::Number(a) if a.is_finite() => Ok(Self::Angle(a)),
-            Raw::Number(a) => Err(serde::de::Error::custom(format!(
-                "direction {a}: an angle in degrees"
-            ))),
-            Raw::Text(t) => match t.as_str() {
-                "right" => Ok(Self::Right),
-                "ahead" => Ok(Self::Ahead),
-                "left" => Ok(Self::Left),
-                "back" => Ok(Self::Back),
-                other => other
-                    .parse::<ohl_core::units::Angle>()
-                    .map(|a| Self::Angle(a.degrees()))
-                    .map_err(|_| {
-                        serde::de::Error::custom(format!(
-                            "direction \"{other}\": \"left\", \"right\", \"ahead\", \"back\" or \
-                             an angle in degrees (0 from the right, 90 from ahead)"
-                        ))
-                    }),
-            },
-        }
-    }
-}
+/// Where the wind comes from (one type for the program, in its
+/// convention since 2026-11-15: from; 0° from ahead, 90° from the right,
+/// clockwise — [`ohl_weather::WindDirection`]). `[case.structure]
+/// direction` is in the structure's axes (x to the right of the line, y
+/// ahead); an angle read from a load case file up to version 6 (0° from
+/// the right, counted towards ahead) is kept as read
+/// ([`WindDirection::OldAngle`]), its forces the old ones bit for bit.
+pub use ohl_weather::WindDirection;
 
 /// The ice on the structure bodies of a load case (`[case.structure]
 /// ice`, version 4): `true` — each structure's local ice
@@ -254,7 +147,10 @@ pub fn snow_load(s_k: f64, shape: f64, exposure: f64, thermal: f64) -> f64 {
 ///
 /// ```toml
 /// [case.structure]
-/// direction = 90          # "left", "right", "ahead", "back" or degrees
+/// direction = 0           # "left", "right", "ahead", "back" or degrees
+///                         # from (version 7: 0 from ahead, 90 from the
+///                         # right; up to 6: 0 from the right, 90 from
+///                         # ahead)
 /// ice = true              # the structures' local ice; or "20 mm"; or
 ///                         # false: none (not even the local ice)
 ///                         # or "weather": the weather case's ice on
@@ -315,7 +211,7 @@ impl StructureOptions {
     /// the density of the local ice a case taking the local conditions
     /// puts on the structures).
     pub fn check(&self) -> Result<(), String> {
-        if let Some(WindDirection::Angle(a)) = self.direction
+        if let Some(WindDirection::Angle(a) | WindDirection::OldAngle(a)) = self.direction
             && !a.is_finite()
         {
             return Err(format!("structure direction {a}°: a number"));

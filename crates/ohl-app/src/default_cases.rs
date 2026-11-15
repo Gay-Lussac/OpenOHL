@@ -69,6 +69,13 @@ pub fn merge(text: &str, defaults: &str) -> Result<(String, Vec<String>, Vec<Str
         }
     }
     if !new.is_empty() {
+        // A load case file raised to version 7 by the defaults: its own
+        // body angles from the old convention first (2026-11-15; θ = 90° −
+        // θ_old), the defaults' already in the new one.
+        let version = |d: &toml_edit::DocumentMut| d.get("version").and_then(|v| v.as_integer());
+        if version(&from).is_some_and(|v| v >= 7) && version(&doc).is_some_and(|w| w < 7) {
+            crate::library::convert_old_directions(&mut doc);
+        }
         if doc.get("case").is_none() {
             doc.insert(
                 "case",
@@ -82,7 +89,6 @@ pub fn merge(text: &str, defaults: &str) -> Result<(String, Vec<String>, Vec<Str
         for t in new {
             cases.push(t);
         }
-        let version = |d: &toml_edit::DocumentMut| d.get("version").and_then(|v| v.as_integer());
         if let Some(v) = version(&from)
             && version(&doc).is_some_and(|w| w < v)
         {
@@ -182,6 +188,24 @@ mod tests {
     /// kept, the version raised to the defaults'; merged again, nothing
     /// more.
     #[test]
+    fn merging_converts_the_files_old_body_angles() {
+        // A version-4 file's body angle (0° from the right, towards ahead)
+        // raised to 7 by the defaults: converted, the same wind.
+        let text = "format = \"ohl-load-cases\"\nversion = 4\n\n[[case]]\nname = \"mine\"\n\
+                    weather = \"10 °C\"\n[case.structure]\ndirection = 30\n";
+        let before = ohl_loads::LoadCases::parse(text).unwrap().cases[0]
+            .on_structure
+            .direction
+            .unwrap();
+        let (out, _, _) = merge_load_cases(text).unwrap();
+        let read = ohl_loads::LoadCases::parse(&out).unwrap();
+        assert_eq!(read.version, Some(7));
+        let after = read.cases[0].on_structure.direction.unwrap();
+        assert_eq!(after, ohl_loads::WindDirection::Angle(60.0));
+        assert_eq!(after.degrees(), before.degrees());
+    }
+
+    #[test]
     fn merging_adds_only_the_missing_cases() {
         let text = "# my cases\nformat = \"ohl-load-cases\"\nversion = 1\n\n[[case]]\n\
                     name = \"10 °C\"\n# mine\nweather = \"10 °C\"\nvertical = 2.0\n";
@@ -190,7 +214,7 @@ mod tests {
         assert_eq!(added.len(), ohl_loads::default_load_cases().cases.len() - 1);
         assert!(out.starts_with("# my cases") && out.contains("# mine"));
         let read = ohl_loads::LoadCases::parse(&out).unwrap();
-        assert_eq!(read.version, Some(4));
+        assert_eq!(read.version, Some(7));
         let mine = read.cases.iter().find(|c| c.name == "10 °C").unwrap();
         assert_eq!(mine.vertical, 2.0);
         assert_eq!(read.cases[0].name, "10 °C");
@@ -200,8 +224,8 @@ mod tests {
             .find(|c| c.name == "10 °C + 300 Pa wind ahead")
             .unwrap();
         assert_eq!(
-            wind.on_structure.direction,
-            Some(ohl_loads::WindDirection::Ahead)
+            wind.wind_direction,
+            Some(ohl_loads::WindDirection::Angle(0.0))
         );
         let (again, added, _) = merge_load_cases(&out).unwrap();
         assert!(added.is_empty());

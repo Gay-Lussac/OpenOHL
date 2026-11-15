@@ -122,7 +122,11 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
                 crate::properties::cases_box(ui, "display-cases-list", |ui| {
                     for (k, c) in r.model.cases.iter().enumerate() {
                         if let Some(t) = w.ticks.get_mut(k) {
-                            ui.checkbox(t, &c.case.name).on_hover_text(c.case.summary());
+                            // Named with its wind as shown (owner
+                            // 2026-11-15: the angles, named as the old
+                            // cases).
+                            ui.checkbox(t, crate::model::shown_name(&c.case))
+                                .on_hover_text(c.case.summary());
                         }
                     }
                 });
@@ -157,8 +161,11 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
         })
         .response
         .on_hover_text(
-            "Looking ahead along the line. Both: each case with wind drawn twice; the wind from \
-             the right is the one reported, checked and clicked",
+            "The wind's direction, where it comes from looking ahead along the line: 0° from \
+             ahead, 90° from the right, 180° from behind, 270° from the left (clockwise). A case \
+             without a direction blows across: 90° as it is, 270° mirrored. A case with a \
+             direction: as it is, or mirrored about the line (θ → 360° − θ). Both: each case \
+             with wind drawn twice; the case as it is is the one reported, checked and clicked",
         );
         ui.label(
             egui::RichText::new(

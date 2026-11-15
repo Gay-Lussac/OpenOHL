@@ -835,13 +835,20 @@ fn usage_pass(
                         .iter()
                         .map(|(label, p)| ((*label).clone(), p.factored, p.moment))
                         .collect();
+                    // A wind relative to the line, in a turned
+                    // structure's axes (2026-11-15).
+                    let turned = match (case, structure) {
+                        (Some(w), Some(s)) => r.case.in_structure_axes(w, line, s),
+                        _ => None,
+                    };
+                    let body_case = turned.as_ref().unwrap_or(&r.case);
                     let (fe, pole) = if r.broken_each.is_empty() {
                         (
                             type_def.and_then(|t| {
-                                analyses.fe(t, structure, &factored, &r.case, case, &mut notes)
+                                analyses.fe(t, structure, &factored, body_case, case, &mut notes)
                             }),
                             type_def.and_then(|t| {
-                                analyses.pole(t, structure, &factored, &r.case, case, &mut notes)
+                                analyses.pole(t, structure, &factored, body_case, case, &mut notes)
                             }),
                         )
                     } else {
@@ -861,14 +868,21 @@ fn usage_pass(
                                 })
                             };
                             let f = mark(type_def.and_then(|t| {
-                                analyses.fe(t, structure, &factored, &r.case, case, &mut each_notes)
+                                analyses.fe(
+                                    t,
+                                    structure,
+                                    &factored,
+                                    body_case,
+                                    case,
+                                    &mut each_notes,
+                                )
                             }));
                             let p = mark(type_def.and_then(|t| {
                                 analyses.pole(
                                     t,
                                     structure,
                                     &factored,
-                                    &r.case,
+                                    body_case,
                                     case,
                                     &mut each_notes,
                                 )

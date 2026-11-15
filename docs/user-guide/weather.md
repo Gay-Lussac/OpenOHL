@@ -38,10 +38,36 @@ wind_pressure = "200 Pa"
 | `ice_thickness` | no | Radial ice thickness. |
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | Default glaze ice, 913 kg/m³. With a thickness: the ice weight. With a load: the iced diameter, for the wind and the clearances. |
-| `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span. |
+| `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span (the across rule), or with a `wind_direction` its part normal to each span. |
+| `wind_direction` | no | Version 2 (2026-11-15). Where the wind comes **from**, relative to the line at each place, clockwise: `0` from ahead, `90` from the right, `180` from behind, `270` from the left (any angle in degrees, or `"ahead"`, `"right"`, `"back"`, `"left"`, `"ahead_right"` 45, `"back_right"` 135, `"back_left"` 225, `"ahead_left"` 315; `"across"` = not given). Not given, `right`/90 or `left`/270: the **across rule**, every span the full pressure square to itself — the same results as a case without it, bit for bit (right/90 is the old "from the right", left/270 the old "from the left"). Another angle: **one wind**, each span the part normal to it ([Wind on the line](../theory/wind.md)). A file with a direction is written as version 2. |
 | `air_density_factor` | no | Q, Pa/(m/s)²: the wind pressure of a wind velocity V is Q·V² (default 0.613, ½ρ of air at 15 °C at sea level). Only relates pressure and velocity (the Weather cases table shows and takes both); the loads use `wind_pressure`. |
 | `ambient_temperature` | no | Air temperature, e.g. `"35 °C"`, for ratings; the wires use `temperature`. |
-| `wind_from` | no | Files of earlier versions only: the side is now chosen where the wires are shown (desktop app: View › Display weather cases — right, left or both; the command line still reads it, right by default, and `ohl line --wind-from` sets it for a single case). A project's weather case file loses it when the project is opened; a file read directly is not changed (its value is not used by the app). |
+| `wind_from` | no | Files of earlier versions only: the side is now chosen where the wires are shown (desktop app: View › Display weather cases — each case as it is, 90° from the right across; mirrored, 270° from the left; or both; the command line still reads it, right by default, and `ohl line --wind-from` sets it for a single case). A project's weather case file loses it when the project is opened; a file read directly is not changed (its value is not used by the app). |
+
+**One source case as two directed cases.** A case the wind may hit from
+either side is written as two cases with a `wind_direction` each — e.g.
+`"… right"` with `wind_direction = 90` and `"… left"` with
+`wind_direction = 270`: each is the across rule from its side, exactly
+the old `wind_from = "right"` / `"left"` (an importer converting another
+program's wind case does this). In the desktop application the side of a
+case across the line follows View › Display weather cases, as before.
+
+```toml
+format = "ohl-weather-cases"
+version = 2
+
+[[case]]
+name = "10 °C + 300 Pa wind ahead"
+temperature = "10 °C"
+wind_pressure = "300 Pa"
+wind_direction = 0          # from ahead: blowing back along the line
+
+[[case]]
+name = "10 °C + 300 Pa wind back"
+temperature = "10 °C"
+wind_pressure = "300 Pa"
+wind_direction = 180        # from behind: blowing ahead
+```
 
 Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).
 

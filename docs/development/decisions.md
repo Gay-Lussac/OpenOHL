@@ -65,6 +65,40 @@ backward to test the pylons." Built (not approved yet):
 - The tutorial unticks the defaults (it works with the starter's five
   weather cases and its screenshots).
 
+**Wind at any direction** (owner). Asked: *"it would be nice to be able
+to have in the weather cases the possibility to have any angle with 0°
+being along the alignment and 90° right of the alignment and a given value
+of wind"*; on the drafted plan: *"yes go ahead and the current cases need
+to be identical. (please add an option for the friction on the wire."*;
+then *"On the display weather cases in view, the wind will not have left
+or right anymore but the angles and the name should be written to
+correspond to the old weather cases."* and *"Also don't forget the theory
+page about the wind"*. Decided, all of the plan's 15 questions as
+recommended: the angle names where the wind comes **from**, 0° from
+ahead, 90° from the right, clockwise, relative to the line at each place
+(the bisector at an angle point); no direction, `right`/90° and
+`left`/270° keep today's across rule bit for bit; a wind at an angle loads
+each span with its normal part by the projected area (q·D·sin θ, the
+default) or the cross-flow principle (q·D·sin² θ, the option), with the
+vertical part on inclined spans; a **friction along the wire** as an
+option, off by default, with the user's coefficient (no value given by
+the program); the direction in the weather case (weather file version 2)
+and per load case with sets of directions (load case file version 7, the
+worst kept); the bodies take the wires' direction, in a turned
+structure's axes; old body angles (load case files up to 6, 0° from the
+right) kept as read, θ = 90° − θ_old, the same forces bit for bit;
+OHL-Structure keeps its convention, the link converts; the display shows
+each case as it is or mirrored (across: from the right, 90°, from the
+left, 270°) or both. Built (not approved yet): phases P1–P3 of the plan
+and the display; P4 (the clearance checks with a direction and its
+mirror) and the rest of P5 (arrows, the load case form's wind direction,
+the command line) to come. Every existing case gives identical results:
+proved on the example lines against the program before the change (a
+test with digests of every number written). The single theory page:
+[Wind on the line](../theory/wind.md). The default cases'
+*wind ahead* and *wind back* (below) became real winds along the line on
+the wires too (see the entry for the defaults).
+
 **Tension-only members: a per-model setting for their compression**
 (owner). The owner first asked that "the tension only members should be
 assumed to hold no compression, not even until buckling". Made the rule

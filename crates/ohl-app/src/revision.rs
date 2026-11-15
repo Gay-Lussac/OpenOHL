@@ -418,7 +418,9 @@ impl Model {
                     .cases
                     .iter()
                     .map(|c| {
-                        let mut case = c.case.clone();
+                        // (A wind at an angle as in its file.)
+                        let mut case =
+                            crate::model::side_shown(c.case.clone(), ohl_weather::WindSide::Right);
                         case.wind_from = ohl_weather::WindSide::Left;
                         case
                     })
