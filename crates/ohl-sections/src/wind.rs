@@ -198,7 +198,9 @@ impl MemberLaw {
 
 /// An inclination factor by β, the angle between the wind and the
 /// member's normal (90° − θ, θ between the wind and the member), linear
-/// between the points; beyond the last angle the last factor is held.
+/// between the points; beyond the last angle β_n tapered with the
+/// projected area, f_n · cos β / cos β_n (owner 2026-11-15: an
+/// assumption, continuous there, 0 along the wind).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Inclination {
     /// β, degrees, rising from 0, at most 90.
@@ -209,17 +211,24 @@ pub struct Inclination {
 
 impl Inclination {
     /// The factor at `beta` degrees (0–90): linear between the table's
-    /// angles; beyond the last one, the last factor (held).
+    /// angles; beyond the last one β_n, its factor f_n × cos β / cos β_n.
     pub fn at(&self, beta: f64) -> f64 {
         let last = self.angle.len() - 1;
-        if beta >= self.angle[last] {
-            return self.factor[last];
+        let (b_n, f_n) = (self.angle[last], self.factor[last]);
+        if beta >= b_n {
+            let c_n = b_n.to_radians().cos();
+            return if c_n > 0.0 {
+                f_n * beta.min(90.0).to_radians().cos().max(0.0) / c_n
+            } else {
+                f_n
+            };
         }
         interpolate(&self.angle, &self.factor, beta.max(0.0)).unwrap_or(self.factor[0])
     }
 
-    /// Whether `beta` is beyond the table's last angle (its factor held).
-    pub fn held(&self, beta: f64) -> bool {
+    /// Whether `beta` is beyond the table's last angle (its factor
+    /// tapered).
+    pub fn beyond(&self, beta: f64) -> bool {
         self.angle.last().is_some_and(|a| beta > *a + 1e-9)
     }
 }

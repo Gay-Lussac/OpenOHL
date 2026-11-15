@@ -4,7 +4,7 @@
 
 //! The member wind's force law (owner 2026-11-15): the inclination factor
 //! against SIA 261:2014 Tableau 74 (p. 112) at its angles and between
-//! them, held below θ = 30°, round against sharp-edged shapes, a curve
+//! them, tapered below θ = 30°, round against sharp-edged shapes, a curve
 //! given as data, the comparison law sin²θ reproducing the member wind
 //! before 2026-11-15 bit for bit, the built-in force coefficients
 //! (Tableaux 71 and 72), and a full tower (the synthetic example's
@@ -82,7 +82,7 @@ fn the_sharp_edged_factor_is_tableau_74() {
         let k = inclination("equal_angle", sin_of(*b), None);
         assert!(close(k.k, f, 1e-9), "β {b}: {}", k.k);
         assert_eq!(k.from, InclinationFrom::Sharp);
-        assert!(!k.held);
+        assert!(!k.beyond);
     }
     assert_eq!(TAB74_SHARP, table);
     // Linear between them, at least cos β (near 0° the straight line from
@@ -109,16 +109,28 @@ fn the_sharp_edged_factor_is_tableau_74() {
 }
 
 /// Below θ = 30° (β above 60°) SIA 261 gives nothing: the 60° factor is
-/// held, said.
+/// tapered with the projected area, k(60°) sin θ / sin 30° (owner
+/// 2026-11-15) — sharp-edged 1.6 sin θ, round sin θ — continuous at 30°,
+/// 0 along the wind, never below sin θ.
 #[test]
-fn below_30_degrees_the_factor_is_held() {
-    for beta in [60.5, 70.0, 80.0, 89.0] {
-        let k = inclination("equal_angle", sin_of(beta), None);
-        assert!(close(k.k, 0.8, 1e-12) && k.held, "β {beta}: {k:?}");
-        let r = inclination("circular_hollow", sin_of(beta), None);
-        assert!(close(r.k, 0.5, 1e-9) && r.held, "β {beta}: {r:?}");
+fn below_30_degrees_the_factor_is_tapered() {
+    for beta in [60.5, 70.0, 80.0, 89.0, 90.0] {
+        let s = sin_of(beta);
+        let k = inclination("equal_angle", s, None);
+        assert!(close(k.k, 1.6 * s, 1e-9) && k.beyond, "β {beta}: {k:?}");
+        assert!(k.k >= s);
+        let r = inclination("circular_hollow", s, None);
+        assert!(close(r.k, s, 1e-9) && r.beyond, "β {beta}: {r:?}");
     }
-    assert!(!inclination("equal_angle", sin_of(59.0), None).held);
+    // Continuous at 60°.
+    for shape in ["equal_angle", "round_bar"] {
+        let below = inclination(shape, sin_of(60.0 - 1e-7), None).k;
+        let above = inclination(shape, sin_of(60.0 + 1e-7), None).k;
+        assert!((below - above).abs() < 1e-6, "{shape}: {below} {above}");
+    }
+    assert!(close(sharp_factor(60.0), 0.8, 1e-12));
+    assert!(sharp_factor(90.0).abs() < 1e-12 && round_factor(90.0).abs() < 1e-12);
+    assert!(!inclination("equal_angle", sin_of(59.0), None).beyond);
 }
 
 /// Round bars: sin θ (= cos β), raised to Tableau 74's own ratio c_β /
@@ -165,8 +177,10 @@ fn a_curve_given_as_data_and_the_comparison_law() {
     let k = inclination("equal_angle", sin_of(20.0), Some(w));
     assert_eq!(k.from, InclinationFrom::Data);
     assert!(close(k.k, 0.8, 1e-9));
-    let held = inclination("equal_angle", sin_of(50.0), Some(w));
-    assert!(close(held.k, 0.6, 1e-12) && held.held);
+    // Beyond its last angle (40°): 0.6 · cos β / cos 40°, tapered.
+    let beyond = inclination("equal_angle", sin_of(50.0), Some(w));
+    let taper = 0.6 * 50f64.to_radians().cos() / 40f64.to_radians().cos();
+    assert!(close(beyond.k, taper, 1e-9) && beyond.beyond, "{beyond:?}");
     // Other shapes: the built-in law.
     assert_eq!(
         inclination("round_bar", sin_of(20.0), Some(w)).from,

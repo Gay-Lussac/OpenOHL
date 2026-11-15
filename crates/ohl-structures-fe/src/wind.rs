@@ -1140,8 +1140,6 @@ struct LawTally<'a> {
     data_shapes: BTreeSet<&'a str>,
     /// Members under the comparison law sin²θ.
     sin2: usize,
-    /// Members beyond the curve's last angle (its factor held).
-    held: usize,
     /// The members taking a built-in force coefficient, with it.
     code: Vec<(&'a str, CodeDrag)>,
 }
@@ -1156,9 +1154,6 @@ impl<'a> LawTally<'a> {
                 self.data_shapes.insert(shape);
             }
             InclinationFrom::Sin2 => self.sin2 += 1,
-        }
-        if k.held {
-            self.held += 1;
         }
     }
 
@@ -1206,7 +1201,8 @@ impl<'a> LawTally<'a> {
         if self.sharp > 0 {
             parts.push(format!(
                 "{} member(s) not round by {} Tab. 74 (p. 112), sharp-edged profiles: c_red 1.0, \
-                 0.98, 0.93, 0.88, 0.8 at β = 0, 15, 30, 45, 60°",
+                 0.98, 0.93, 0.88, 0.8 at β = 0, 15, 30, 45, 60°, beyond 60° (no value given) \
+                 1.6 sin θ (an assumption: tapered with the projected area)",
                 self.sharp,
                 wind_law::SIA261
             ));
@@ -1219,7 +1215,8 @@ impl<'a> LawTally<'a> {
         }
         if self.data > 0 {
             parts.push(format!(
-                "{} member(s) by the curves of {} for {}",
+                "{} member(s) by the curves of {} for {} (beyond a curve's last angle its last \
+                 factor tapered with the projected area)",
                 self.data,
                 factors.map_or("[wind]", |f| f.source_name()),
                 self.data_shapes
@@ -1229,18 +1226,10 @@ impl<'a> LawTally<'a> {
                     .join(", ")
             ));
         }
-        let mut s = format!(
+        format!(
             "member wind on inclined members: the force normal to the member × k(β), β between \
              the wind and the member's normal (90° − θ), linear between the tabulated angles: {}",
             parts.join("; ")
-        );
-        if self.held > 0 {
-            s.push_str(&format!(
-                "; {} member(s) beyond β = 60° (or the curve's last angle) take the factor there, \
-                 held (no value given beyond: on the safe side)",
-                self.held
-            ));
-        }
-        s
+        )
     }
 }

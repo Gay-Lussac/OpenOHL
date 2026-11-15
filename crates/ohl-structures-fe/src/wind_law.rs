@@ -14,7 +14,11 @@
 //!   profiles' reduction factor c_red for every shape that is not round,
 //!   sin θ (= cos β) for round bars and tubes, raised to Tableau 74's own
 //!   ratio c_β / c_β(0) where that is larger. SIA 261 gives nothing beyond
-//!   β = 60°: the factor at 60° is held there (on the safe side).
+//!   β = 60° (θ < 30°): there the factor at 60° is tapered with the
+//!   projected area, k(60°) · sin θ / sin 30° (owner 2026-11-15, an
+//!   assumption: continuous at 30°, 0 along the wind, never below sin θ;
+//!   holding it was rejected — it put unphysical sideways forces on members
+//!   nearly along the wind).
 //!   `[wind] member_law = "sin2"` keeps the cross-flow law (k = sin²θ) for
 //!   comparison only.
 //! - **Force coefficient** of a profile when no drag factor is given at
@@ -115,8 +119,9 @@ pub struct Inclined {
     pub k: f64,
     /// Where it comes from.
     pub from: InclinationFrom,
-    /// β is beyond the curve's last angle: its last factor held.
-    pub held: bool,
+    /// β is beyond the curve's last angle (60° built in): its factor
+    /// there tapered with the projected area.
+    pub beyond: bool,
 }
 
 /// β in degrees from sin θ (θ between the wind and the member's axis).
@@ -126,21 +131,34 @@ pub fn beta_degrees(sin_theta: f64) -> f64 {
 
 /// The built-in factor of round bars at β (degrees): sin θ = cos β, raised
 /// to the larger of Tableau 74's two ratios c_β / c_β(0) where that is
-/// larger (they differ from cos β by up to 2 %), held beyond 60°.
+/// larger (they differ from cos β by up to 2 %); beyond 60° tapered
+/// ([`taper`]: there cos β itself).
 pub fn round_factor(beta: f64) -> f64 {
     let b = beta.clamp(0.0, 60.0);
     let ratio = tab74(&TAB74_ROUND_LOW, b) / TAB74_ROUND_LOW[0];
     let high = tab74(&TAB74_ROUND_HIGH, b) / TAB74_ROUND_HIGH[0];
-    b.to_radians().cos().max(ratio).max(high)
+    taper(b.to_radians().cos().max(ratio).max(high), beta)
+}
+
+/// Beyond β = 60° (θ < 30°, no value in SIA 261): the factor at 60°,
+/// `at_60`, times sin θ / sin 30° = cos β / cos 60° — continuous at 60°, 0
+/// along the wind — and never below cos β (the projected area); within
+/// 60°, `at_60` itself (the caller's factor at β).
+pub fn taper(at_60: f64, beta: f64) -> f64 {
+    if beta <= TAB74_BETA[4] {
+        return at_60;
+    }
+    let c = beta.min(90.0).to_radians().cos().max(0.0);
+    (at_60 * c / TAB74_BETA[4].to_radians().cos()).max(c)
 }
 
 /// The built-in factor of every shape that is not round at β (degrees):
-/// Tableau 74's c_red, held beyond 60°, at least cos β (the projected
-/// area: the straight line from 1.0 at 0° to 0.98 at 15° lies up to 0.3 %
-/// below cos β between 0° and about 9°).
+/// Tableau 74's c_red, at least cos β (the projected area: the straight
+/// line from 1.0 at 0° to 0.98 at 15° lies up to 0.3 % below cos β between
+/// 0° and about 9°); beyond 60° tapered ([`taper`]: 1.6 cos β = 1.6 sin θ).
 pub fn sharp_factor(beta: f64) -> f64 {
     let b = beta.clamp(0.0, 60.0);
-    tab74(&TAB74_SHARP, b).max(b.to_radians().cos())
+    taper(tab74(&TAB74_SHARP, b).max(b.to_radians().cos()), beta)
 }
 
 /// The inclination factor of a member of shape `shape` (its name in
@@ -151,7 +169,7 @@ pub fn inclination(shape: &str, sin_theta: f64, data: Option<&StructureWind>) ->
         return Inclined {
             k: sin_theta * sin_theta,
             from: InclinationFrom::Sin2,
-            held: false,
+            beyond: false,
         };
     }
     let beta = beta_degrees(sin_theta);
@@ -159,21 +177,21 @@ pub fn inclination(shape: &str, sin_theta: f64, data: Option<&StructureWind>) ->
         return Inclined {
             k: curve.at(beta),
             from: InclinationFrom::Data,
-            held: curve.held(beta),
+            beyond: curve.beyond(beta),
         };
     }
-    let held = beta > TAB74_BETA[4] + 1e-9;
+    let beyond = beta > TAB74_BETA[4] + 1e-9;
     if is_round(shape) {
         Inclined {
             k: round_factor(beta),
             from: InclinationFrom::Round,
-            held,
+            beyond,
         }
     } else {
         Inclined {
             k: sharp_factor(beta),
             from: InclinationFrom::Sharp,
-            held,
+            beyond,
         }
     }
 }
