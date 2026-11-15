@@ -435,8 +435,9 @@ impl Generated {
                 }
             ),
             None => format!(
-                "{} gives no wind factors for structures: the member wind keeps the generic \
-                 drag factor and no shielding",
+                "{} gives no wind factors for structures: the member wind takes the built-in \
+                 SIA 261 force coefficients and inclination factors (or the model's drag) and no \
+                 shielding",
                 self.plugin
             ),
         }

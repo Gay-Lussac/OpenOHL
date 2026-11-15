@@ -14,19 +14,27 @@
 //! diagonals of √20 m → Σ L = 20 + 4√20 = 37.8885 m; the members' area
 //! d Σ L = 1.894427 m² over the 2 × 8 = 16 m² outline: φ = 0.1184017.
 //!
-//! Wind along +y, q = 1000 Pa, drag c, the members' force along y
-//! (q c d L sin³θ, sin θ = 1 for the faces y = 0 and 2):
+//! Wind along +y, q = 1000 Pa, drag c, the members' force normal to them
+//! q c d L k(β) (the round bars' inclination factor, SIA 261 Tab. 74,
+//! 2026-11-15), its part along y × sin θ (sin θ = 1 for the faces y = 0
+//! and 2):
 //! - face y = 0 (in front): q c d (16 + 4 + 4√20) = c × 1894.427 N;
 //! - face y = 2 (behind): the same × η;
-//! - the 8 diagonals of the faces x = 0 and 2 (sin²θ = 4/5): each
-//!   q c d √20 (4/5)^1.5 = c × 160 N, 1280 c N;
-//! - the plan diagonal (sin²θ = 1/2): q c d 2√2 (1/2)^1.5 = c × 50 N;
+//! - the 8 diagonals of the faces x = 0 and 2 (sin θ = 2/√5, β = 26.57°):
+//!   each q c d √20 k sin θ ([`side`]: c × 180.48 N; before, with sin²θ,
+//!   c × 160 N);
+//! - the plan diagonal (sin θ = 1/√2, β = 45°, k = 0.85/1.2): q c d 2√2 k
+//!   sin θ = c × 70.83 N ([`plan`]; before c × 50 N);
 //! - the horizontals along y: none (along the wind).
+//!
+//! Without a drag factor given anywhere the round bars take SIA 261 Tab.
+//! 72's 1.2 (on their diameter).
 
 use ohl_sections::SectionLibrary;
 
 use crate::model::Model;
 use crate::wind::{DragFrom, MemberWindSetup, faces};
+use crate::wind_law::{beta_degrees, round_factor};
 
 const LIBRARY: &str = r#"
 [[material]]
@@ -42,6 +50,18 @@ d = "50 mm"
 "#;
 
 const SQRT20: f64 = 4.47213595499958;
+
+/// The 8 side diagonals' force along y, drag 1: 8 q d √20 k sin θ.
+fn side() -> f64 {
+    let sin = 2.0 / 5f64.sqrt();
+    8.0 * 1000.0 * 0.05 * SQRT20 * round_factor(beta_degrees(sin)) * sin
+}
+
+/// The plan diagonal's force along y, drag 1: q d 2√2 k sin θ.
+fn plan() -> f64 {
+    let sin = 0.5f64.sqrt();
+    1000.0 * 0.05 * 2.0 * 2f64.sqrt() * round_factor(beta_degrees(sin)) * sin
+}
 
 fn close(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * b.abs().max(1e-12)
@@ -212,7 +232,9 @@ fn a_gusset_plate_takes_wind_at_its_joint() {
         .with_plates(vec![plate])
         .wind(1000.0, [0.5, 3f64.sqrt() / 2.0, 0.0]);
     assert_eq!(w.plates.len(), 1);
-    let f = 1000.0 * 1.0 * 0.1 * 3f64.sqrt() / 2.0;
+    // The member takes the built-in 1.2; the plate at least Tab. 71's flat
+    // plate, 2.0.
+    let f = 1000.0 * 2.0 * 0.1 * 3f64.sqrt() / 2.0;
     assert!(close(w.plates[0].force, f, 1e-12));
     let l = w.loads.last().unwrap();
     assert_eq!(l.node, node);
@@ -229,13 +251,19 @@ fn a_gusset_plate_takes_wind_at_its_joint() {
             .iter()
             .any(|n| n.starts_with("NOT ON THE SAFE SIDE: gusset"))
     );
-    // No drag factor given: every member with a wind row (33) takes 1,
-    // said not on the safe
-    // side; with [analysis] drag given, not said.
+    // No drag factor given: every member with a wind row (33) takes its
+    // shape's built-in coefficient, said with its source; none the
+    // generic 1 (2026-11-15). With [analysis] drag given, that one, the
+    // plate the members' 1.0.
     assert!(
+        w.notes.iter().any(|n| n
+            .starts_with("member wind: 33 member(s) with no drag factor given")
+            && n.contains("round_bar (33): 1.2 — Tab. 72 (p. 110)")),
+        "{:?}",
         w.notes
-            .iter()
-            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: 33 member(s) take the drag factor 1")),
+    );
+    assert!(
+        !w.notes.iter().any(|n| n.contains("take the drag factor 1")),
         "{:?}",
         w.notes
     );
@@ -245,9 +273,21 @@ fn a_gusset_plate_takes_wind_at_its_joint() {
         &lib,
     )
     .unwrap();
-    let w = MemberWindSetup::new(&given, None).wind(1000.0, [0.5, 3f64.sqrt() / 2.0, 0.0]);
+    let plate = crate::wind::WindPlate {
+        id: "N01/p".into(),
+        node,
+        area: 0.1,
+        normal: [0.0, 1.0, 0.0],
+        members: vec![leg],
+    };
+    let w = MemberWindSetup::new(&given, None)
+        .with_plates(vec![plate])
+        .wind(1000.0, [0.5, 3f64.sqrt() / 2.0, 0.0]);
+    assert!(close(w.plates[0].force, 0.5 * f, 1e-12));
     assert!(
-        !w.notes.iter().any(|n| n.contains("take the drag factor 1")),
+        !w.notes.iter().any(
+            |n| n.contains("take the drag factor 1") || n.contains("with no drag factor given")
+        ),
         "{:?}",
         w.notes
     );
@@ -294,8 +334,10 @@ fn the_tower_has_four_side_faces_and_a_top() {
     assert!(close(top.area, 4.0, 1e-12));
 }
 
+/// Without factors: the round bars' built-in coefficient 1.2 (SIA 261
+/// Tab. 72), nothing shielded; with `[analysis] drag` that drag.
 #[test]
-fn without_factors_the_wind_is_as_before() {
+fn without_factors_the_built_in_coefficient() {
     let m = model();
     let plain = m.member_wind(1000.0, [0.0, 1.0, 0.0]);
     let with = m.member_wind_with(1000.0, [0.0, 1.0, 0.0], None);
@@ -304,15 +346,30 @@ fn without_factors_the_wind_is_as_before() {
         MemberWindSetup::new(&m, None).faces().is_empty(),
         "no faces needed"
     );
-    // Generic drag 1: 2 × 1894.427 + 1280 + 50 N.
-    let expected = 2.0 * 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20) + 1280.0 + 50.0;
+    // 1.2 × (2 × 1894.427 + side + plan) N.
+    let expected = 1.2 * (2.0 * 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20) + side() + plan());
     assert!(close(total_y(&with), expected, 1e-12), "{}", total_y(&with));
+    assert!(with.members.iter().all(|r| r.drag_from == DragFrom::Code));
     assert!(
-        with.members
-            .iter()
-            .all(|r| r.drag_from == DragFrom::Generic)
+        with.notes[0].contains("built-in force coefficient")
+            && with.notes[0].contains("no shielding"),
+        "{:?}",
+        with.notes
     );
-    assert!(with.notes[0].contains("generic drag") && with.notes[0].contains("no shielding"));
+    let lib = SectionLibrary::parse(LIBRARY).unwrap();
+    let given = Model::parse_with(
+        &tower().replace("[analysis]\n", "[analysis]\ndrag = 1.0\n"),
+        &lib,
+    )
+    .unwrap();
+    let w = given.member_wind_with(1000.0, [0.0, 1.0, 0.0], None);
+    assert!(close(total_y(&w), expected / 1.2, 1e-12));
+    assert!(w.members.iter().all(|r| r.drag_from == DragFrom::Generic));
+    assert!(
+        w.notes[0].contains("[analysis] drag") && w.notes[0].contains("no shielding"),
+        "{:?}",
+        w.notes
+    );
 }
 
 #[test]
@@ -332,7 +389,7 @@ fn the_face_behind_is_shielded_by_the_one_in_front() {
     let phi = front_low(setup.faces(), phi);
     let eta = 1.0 - phi;
     let face = 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20);
-    let expected = 1.2 * (face * (1.0 + eta) + 1280.0 + 50.0);
+    let expected = 1.2 * (face * (1.0 + eta) + side() + plan());
     assert!(
         close(total_y(&w), expected, 1e-12),
         "{} vs {expected}",
@@ -369,7 +426,7 @@ fn the_face_behind_is_shielded_by_the_one_in_front() {
          spacing = [2, 3]\nfactor = [[0.9, 0.4], [1, 0.6]]\n",
     );
     let w3 = MemberWindSetup::new(&m, Some(&f)).wind(1000.0, [0.0, 1.0, 0.0]);
-    let unshielded = 1.2 * (2.0 * face + 1280.0 + 50.0);
+    let unshielded = 1.2 * (2.0 * face + side() + plan());
     assert!(close(total_y(&w3), unshielded, 1e-12));
     assert!(
         w3.notes[1].contains("outside the shielding table"),
@@ -394,7 +451,7 @@ fn a_face_drag_by_solidity_takes_over_on_the_faces() {
     let face = 1000.0 * 0.05 * (20.0 + 4.0 * SQRT20);
     // Faces y = 0 and 2 (facing the wind) by their solidity; the side
     // diagonals (edge-on faces) and the plan diagonal by their shape.
-    let expected = c * 2.0 * face + 1.2 * (1280.0 + 50.0);
+    let expected = c * 2.0 * face + 1.2 * (side() + plan());
     assert!(
         close(total_y(&w), expected, 1e-12),
         "{} vs {expected}",
@@ -429,9 +486,23 @@ fn a_face_drag_by_solidity_takes_over_on_the_faces() {
         "{on_faces:?}"
     );
     assert!(w.notes[0].contains("table's largest"), "{:?}", w.notes);
-    // A shape without a factor: the generic one, named.
+    // A shape without a factor: its built-in coefficient (2026-11-15);
+    // with [analysis] drag given, that one, the shape named.
     let f = factors("[wind]\ndrag = { equal_angle = 2.0 }\n");
     let w = m.member_wind_with(1000.0, [0.0, 1.0, 0.0], Some(&f));
+    assert!(w.members.iter().all(|r| r.drag_from == DragFrom::Code));
+    assert!(
+        w.notes[0].contains("29 by their shape's built-in force coefficient"),
+        "{:?}",
+        w.notes
+    );
+    let lib = SectionLibrary::parse(LIBRARY).unwrap();
+    let given = Model::parse_with(
+        &tower().replace("[analysis]\n", "[analysis]\ndrag = 1.0\n"),
+        &lib,
+    )
+    .unwrap();
+    let w = given.member_wind_with(1000.0, [0.0, 1.0, 0.0], Some(&f));
     assert!(w.members.iter().all(|r| r.drag_from == DragFrom::Generic));
     assert!(
         w.notes[0].contains("no drag factor given for round_bar"),

@@ -975,9 +975,13 @@ fn library_sections_resolve_first() {
 
 /// Member wind on a vertical cantilever: pressure × drag × width × length
 /// in all, half at each joint; the base reacts with the force and q·d·L²/2
-/// (the uniform load's moment). The width follows the wind's direction in
-/// the section (300 mm across y, 100 mm across z), and a wind at 45° to the
-/// member gives sin²θ of it.
+/// (the uniform load's moment). No drag given: the shape's built-in
+/// coefficient (a tube 1.2 on its diameter, SIA 261 Tab. 72; a box 2.1 on
+/// its longer side, Tab. 71, whatever the wind's direction in the
+/// section); a drag given: on the width across the wind (300 mm across y,
+/// 100 mm across z). A wind at 45° to the member gives the inclination
+/// factor of it (a tube: 0.85 / 1.2, SIA 261 Tab. 74), normal to the
+/// member (2026-11-15; before, sin²θ = 0.5).
 #[test]
 fn member_wind_on_a_cantilever() {
     let lib = ohl_sections::SectionLibrary::parse(LIBRARY).unwrap();
@@ -994,32 +998,41 @@ fn member_wind_on_a_cantilever() {
         let sol = solve(m, &nodal(wind), &first_order(), &default_budget()).unwrap();
         sol.reactions[0]
     };
-    // A tube: 200 mm whatever the direction.
+    // A tube: 200 mm whatever the direction, 1.2 by default.
     let m = Model::parse_with(&text("T200", ""), &lib).unwrap();
     assert!(m.has_profiles());
     let wind = m.member_wind(q, [1.0, 0.0, 0.0]);
     assert_eq!(wind.len(), 2);
     for w in &wind {
-        assert!(close(w.force[0], 0.5 * q * 0.2 * l, 1e-12), "{w:?}");
+        assert!(close(w.force[0], 0.5 * q * 1.2 * 0.2 * l, 1e-12), "{w:?}");
     }
     let r = base(&m, wind);
-    assert!(close(r.force[0], -q * 0.2 * l, 1e-9), "{r:?}");
-    assert!(close(r.moment[1], -q * 0.2 * l * l / 2.0, 1e-9), "{r:?}");
+    assert!(close(r.force[0], -q * 1.2 * 0.2 * l, 1e-9), "{r:?}");
+    assert!(
+        close(r.moment[1], -q * 1.2 * 0.2 * l * l / 2.0, 1e-9),
+        "{r:?}"
+    );
     // Drag factor 1.5.
     let m = Model::parse_with(&text("T200", "drag = 1.5\n"), &lib).unwrap();
     let r = base(&m, m.member_wind(q, [1.0, 0.0, 0.0]));
     assert!(close(r.force[0], -1.5 * q * 0.2 * l, 1e-9), "{r:?}");
-    // The rectangular tube: a vertical member's local y is the structure's
-    // x, so a wind along x sees the 300 mm side, along y the 100 mm one.
-    let m = Model::parse_with(&text("R300", ""), &lib).unwrap();
+    // The rectangular tube, drag 1 given: a vertical member's local y is
+    // the structure's x, so a wind along x sees the 300 mm side, along y
+    // the 100 mm one.
+    let m = Model::parse_with(&text("R300", "drag = 1.0\n"), &lib).unwrap();
     let r = base(&m, m.member_wind(q, [1.0, 0.0, 0.0]));
     assert!(close(r.force[0], -q * 0.3 * l, 1e-9), "{r:?}");
     let r = base(&m, m.member_wind(q, [0.0, -1.0, 0.0]));
     assert!(close(r.force[1], q * 0.1 * l, 1e-9), "{r:?}");
-    // A wind at 45° to the member: half of it (sin²θ), normal to the member.
+    // No drag given: 2.1 on the 300 mm side from both directions.
+    let m = Model::parse_with(&text("R300", ""), &lib).unwrap();
+    let r = base(&m, m.member_wind(q, [0.0, -1.0, 0.0]));
+    assert!(close(r.force[1], q * 2.1 * 0.3 * l, 1e-9), "{r:?}");
+    // A wind at 45° to the member: the tube's inclination factor 0.85 /
+    // 1.2, normal to the member.
     let m = Model::parse_with(&text("T200", ""), &lib).unwrap();
     let r = base(&m, m.member_wind(q, [1.0, 0.0, 1.0]));
-    assert!(close(r.force[0], -0.5 * q * 0.2 * l, 1e-9), "{r:?}");
+    assert!(close(r.force[0], -0.85 * q * 0.2 * l, 1e-9), "{r:?}");
     assert!(r.force[2].abs() < 1e-9, "{r:?}");
     // Along the member: none. A table section: none.
     assert!(m.member_wind(q, [0.0, 0.0, 1.0]).is_empty());
@@ -1032,7 +1045,8 @@ fn member_wind_on_a_cantilever() {
 }
 
 /// Member wind on a horizontal truss bar between two pins, the wind
-/// across it: each support takes half of q·d·L.
+/// across it: each support takes half of q·c·d·L (c = 1.2, the tube's
+/// built-in coefficient, SIA 261 Tab. 72).
 #[test]
 fn member_wind_on_a_truss_bar() {
     let lib = ohl_sections::SectionLibrary::parse(LIBRARY).unwrap();
@@ -1044,7 +1058,10 @@ fn member_wind_on_a_truss_bar() {
     let wind = m.member_wind(700.0, [-1.0, 0.0, 0.0]);
     let sol = solve(&m, &nodal(wind), &first_order(), &default_budget()).unwrap();
     for r in &sol.reactions {
-        assert!(close(r.force[0], 0.5 * 700.0 * 0.2 * 8.0, 1e-9), "{r:?}");
+        assert!(
+            close(r.force[0], 0.5 * 700.0 * 1.2 * 0.2 * 8.0, 1e-9),
+            "{r:?}"
+        );
     }
 }
 

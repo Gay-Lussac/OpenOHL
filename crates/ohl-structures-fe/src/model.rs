@@ -13,7 +13,7 @@
 //! [analysis]
 //! nonlinear = true          # P-Delta (default); false: first order
 //! self_weight = true        # members' weight (default)
-//! drag = 1.0                # member wind: drag factor on the profiles (none: 1, said not on the safe side)
+//! drag = 1.0                # member wind: drag factor on the profiles (none: the shape's SIA 261 coefficient)
 //! stabilise = true          # hold joint directions without stiffness (default)
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
@@ -695,10 +695,13 @@ pub struct Analysis {
     pub nonlinear: bool,
     /// Members' self-weight.
     pub self_weight: bool,
-    /// Drag factor of the member wind on the profiles (none given: 1).
+    /// Drag factor of the member wind on the profiles (none given: 1, used
+    /// only by a section without a shape; the others take their shape's
+    /// built-in coefficient, [`crate::wind_law::code_drag`]).
     pub drag: f64,
-    /// The drag factor given (none given: 1 — said not on the safe side
-    /// on the members that take it, [`crate::wind`]).
+    /// The drag factor given (none given: the shapes' built-in
+    /// coefficients; 1 on a `general` section, said not on the safe side,
+    /// [`crate::wind`]).
     pub drag_given: bool,
     /// Joint stabilisation ([`crate::stabilise`]) when the model would
     /// otherwise be a mechanism.
@@ -1562,14 +1565,16 @@ impl Model {
     }
 
     /// The wind on the members whose section has a profile, as loads at
-    /// their joints. Per member: `pressure` (Pa) × the drag factor × the
-    /// profile's width × its length × sin²θ (θ between the wind and the
-    /// member: the wind's component normal to the member), normal to the
-    /// member in the plane of the member and the wind, half at each
-    /// joint. The width is the profile's for the wind's direction in the
-    /// member's local y–z plane (the section's y and z). `direction`:
-    /// where the wind blows to, structure axes. No member shields
-    /// another.
+    /// their joints. Per member: `pressure` (Pa) × the drag factor (the
+    /// model's `drag` when given, else the shape's built-in force
+    /// coefficient, [`crate::wind_law::code_drag`]) × the profile's width
+    /// × its length × the inclination factor k(β) (β between the wind and
+    /// the member's normal, [`crate::wind_law::inclination`]; 2026-11-15,
+    /// before sin²θ), normal to the member in the plane of the member and
+    /// the wind, half at each joint. The width is the profile's for the
+    /// wind's direction in the member's local y–z plane (the section's y
+    /// and z). `direction`: where the wind blows to, structure axes. No
+    /// member shields another.
     pub fn member_wind(&self, pressure: f64, direction: [f64; 3]) -> Vec<NodalLoad> {
         self.member_wind_with(pressure, direction, None).loads
     }

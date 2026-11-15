@@ -15,14 +15,17 @@
 //! library, from a design-code plugin or the user): a drag factor per
 //! shape, a face's drag factor by its solidity ratio, a shielding factor
 //! by the solidity ratio of the face in front (and the spacing ratio).
-//! Without them every profile takes the model's one `drag` and nothing is
-//! shielded, as before; the notes say which.
+//! Without them a profile takes the model's `drag` when given, else its
+//! shape's built-in force coefficient ([`crate::wind_law::code_drag`]), and
+//! nothing is shielded; the notes say which. The force on an inclined
+//! member follows the inclination law of [`crate::wind_law`].
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use ohl_sections::StructureWind;
 
 use crate::model::{Model, NodalLoad, cross, dot, norm, sub};
+use crate::wind_law::{self, CodeDrag, InclinationFrom};
 
 /// Two members at a joint closer to parallel than this (sine of the
 /// angle) do not define a plane.
@@ -534,6 +537,10 @@ pub enum DragFrom {
     Shape,
     /// The data's face drag by the solidity ratio of its face.
     Face,
+    /// No drag given anywhere: its shape's built-in force coefficient
+    /// ([`wind_law::code_drag`], SIA 261:2014 Tableaux 71 and 72), as a
+    /// factor on its projected width.
+    Code,
 }
 
 /// The wind on one member.
@@ -541,7 +548,7 @@ pub enum DragFrom {
 pub struct MemberWindRow {
     /// The member (index into [`Model::members`]).
     pub member: usize,
-    /// Drag factor applied.
+    /// Drag factor applied (on the member's projected width).
     pub drag: f64,
     /// Where it comes from.
     pub drag_from: DragFrom,
@@ -551,7 +558,10 @@ pub struct MemberWindRow {
     /// computed with, [`MemberWindSetup::faces`]) when it is shielded,
     /// with the spacing ratio.
     pub shielded_by: Option<(usize, f64)>,
-    /// The force on it, N.
+    /// The inclination factor applied ([`wind_law::inclination`]: 1 for a
+    /// member normal to the wind; sin²θ under the comparison law).
+    pub inclination: f64,
+    /// The force on it, N (normal to it, in the plane of it and the wind).
     pub force: f64,
 }
 
@@ -719,10 +729,13 @@ impl<'a> MemberWindSetup<'a> {
 
     /// The wind of `pressure` (Pa) blowing in `direction` (structure
     /// axes) on the members with a profile: per member q × c × η × d × L ×
-    /// sin²θ ([`Model::member_wind`]), c the drag factor (the face's by
-    /// its solidity, else the shape's, else the model's `drag`), η the
-    /// shielding factor of a member every face of which facing the wind
-    /// stands behind another face (1 otherwise).
+    /// k(β) normal to the member in the plane of it and the wind
+    /// ([`Model::member_wind`]), c the drag factor (the face's by its
+    /// solidity, else the shape's, else the model's `drag`, else the
+    /// shape's built-in force coefficient), η the shielding factor of a
+    /// member every face of which facing the wind stands behind another
+    /// face (1 otherwise), k the inclination factor
+    /// ([`wind_law::inclination`]).
     pub fn wind(&self, pressure: f64, direction: [f64; 3]) -> MemberWind {
         self.wind_iced(pressure, direction, &[])
     }
@@ -755,18 +768,17 @@ impl<'a> MemberWindSetup<'a> {
         let mut missing_shapes: BTreeSet<&str> = BTreeSet::new();
         let mut outside_face_drag = 0usize;
         let mut outside_shielding = 0usize;
+        let mut tally = LawTally::default();
         for (k, m) in model.members.iter().enumerate() {
-            let Some((normal, sin, width)) = model.across(m, w) else {
+            let Some((normal, sin, bare)) = model.across(m, w) else {
                 continue;
             };
             let width = match extra_width.get(k) {
-                Some(&e) if e != 0.0 => width + e,
-                _ => width,
+                Some(&e) if e != 0.0 => bare + e,
+                _ => bare,
             };
-            let shape = model.sections[m.section]
-                .profile
-                .as_ref()
-                .map_or("", |p| p.shape.as_str());
+            let profile = model.sections[m.section].profile.as_ref();
+            let shape = profile.map_or("", |p| p.shape.as_str());
             let mine = faces_of.get(&k).map_or(&[][..], Vec::as_slice);
             // Drag: its face's (the one facing the wind most), else its
             // shape's, else the generic one.
@@ -797,12 +809,23 @@ impl<'a> MemberWindSetup<'a> {
             if drag.is_none() {
                 drag = match self.factors.and_then(|f| f.drag_of(shape)) {
                     Some(c) => Some((c, DragFrom::Shape)),
-                    None => {
-                        if self.factors.is_some() {
-                            missing_shapes.insert(shape);
+                    // No drag given anywhere: the shape's built-in force
+                    // coefficient on its reference width (2026-11-15).
+                    None => match profile
+                        .filter(|_| !model.analysis.drag_given)
+                        .and_then(wind_law::code_drag)
+                    {
+                        Some(code) => {
+                            tally.code.push((shape, code));
+                            Some((code.on_width(bare), DragFrom::Code))
                         }
-                        Some((generic, DragFrom::Generic))
-                    }
+                        None => {
+                            if self.factors.is_some() {
+                                missing_shapes.insert(shape);
+                            }
+                            Some((generic, DragFrom::Generic))
+                        }
+                    },
                 };
             }
             let (drag, drag_from) = drag.unwrap_or((generic, DragFrom::Generic));
@@ -858,12 +881,23 @@ impl<'a> MemberWindSetup<'a> {
                     }
                 }
             }
-            // q·c·η·d·L·sin²θ along the unit normal: q·c·η·d·L·sin θ × normal.
-            let f = pressure * drag * shielding * width * model.length(m) * sin;
+            let inclined = wind_law::inclination(shape, sin, self.factors);
+            tally.add(shape, inclined);
+            let (f, force, scale) = if inclined.from == InclinationFrom::Sin2 {
+                // The comparison law, as before 2026-11-15: q·c·η·d·L·sin²θ
+                // along the unit normal, q·c·η·d·L·sin θ × normal (of length
+                // sin θ).
+                let f = pressure * drag * shielding * width * model.length(m) * sin;
+                (f, f * sin, 1.0)
+            } else {
+                // q·c·η·d·L·k(β) along the unit normal (normal / sin θ).
+                let f = pressure * drag * shielding * width * model.length(m) * inclined.k;
+                (f, f, 1.0 / sin)
+            };
             for node in [m.i, m.j] {
                 out.loads.push(NodalLoad {
                     node,
-                    force: normal.map(|c| 0.5 * f * c),
+                    force: normal.map(|c| 0.5 * f * c * scale),
                     moment: [0.0; 3],
                 });
             }
@@ -873,7 +907,8 @@ impl<'a> MemberWindSetup<'a> {
                 drag_from,
                 shielding,
                 shielded_by,
-                force: f * sin,
+                inclination: inclined.k,
+                force,
             });
         }
         // The gusset plates, after the members (whose loads come two per
@@ -883,21 +918,32 @@ impl<'a> MemberWindSetup<'a> {
             if plate.area <= 0.0 || facing <= FACING {
                 continue;
             }
+            // The largest drag of the members, and whether one of them
+            // takes a built-in coefficient.
             let largest = |pick: &dyn Fn(usize) -> bool| {
                 out.members
                     .iter()
                     .filter(|r| pick(r.member))
-                    .map(|r| r.drag)
-                    .fold(None, |m: Option<f64>, c| Some(m.map_or(c, |m| m.max(c))))
+                    .map(|r| (r.drag, r.drag_from == DragFrom::Code))
+                    .fold(None, |m: Option<(f64, bool)>, (c, code)| {
+                        Some(m.map_or((c, code), |(m, any)| (m.max(c), any || code)))
+                    })
             };
-            let drag = largest(&|k| plate.members.contains(&k))
+            let (drag, code) = largest(&|k| plate.members.contains(&k))
                 .or_else(|| {
                     largest(&|k| {
                         let m = &model.members[k];
                         m.i == plate.node || m.j == plate.node
                     })
                 })
-                .unwrap_or(model.analysis.drag);
+                .unwrap_or((model.analysis.drag, false));
+            // A plate among members taking the built-in coefficients takes
+            // at least Tableau 71's flat plate (2026-11-15).
+            let drag = if code {
+                drag.max(wind_law::TAB71_PLATE)
+            } else {
+                drag
+            };
             let f = pressure * drag * plate.area * facing;
             out.loads.push(NodalLoad {
                 node: plate.node,
@@ -916,6 +962,12 @@ impl<'a> MemberWindSetup<'a> {
         }
         if let Some(n) = self.drag_note(&out) {
             out.notes.push(n);
+        }
+        if let Some(n) = tally.code_note() {
+            out.notes.push(n);
+        }
+        if !out.members.is_empty() {
+            out.notes.push(tally.law_note(self.factors));
         }
         out
     }
@@ -944,8 +996,9 @@ impl<'a> MemberWindSetup<'a> {
             }
             format!(
                 "{NOT_SAFE_WIND}: {} member(s) take the drag factor 1 — no drag factor given for \
-                 their shape ([wind] of the cross-section library) and no [analysis] drag; a \
-                 code's drag factor for the profile may be larger: {first}",
+                 their shape ([wind] of the cross-section library), no [analysis] drag and no \
+                 built-in coefficient for it (a general section); a code's drag factor for the \
+                 profile may be larger: {first}",
                 generic.len()
             )
         })
@@ -981,11 +1034,29 @@ impl<'a> MemberWindSetup<'a> {
         let generic = self.model.analysis.drag;
         let count = |from: DragFrom| out.members.iter().filter(|r| r.drag_from == from).count();
         let mut notes = Vec::new();
-        let Some(f) = self.factors.filter(|f| !f.is_empty()) else {
-            notes.push(format!(
-                "member wind: drag factor {generic} on every profile (the model's generic drag: \
-                 no code drag factors given); no shielding (no shielding factors given)"
-            ));
+        let by_code = count(DragFrom::Code);
+        let Some(f) = self
+            .factors
+            .filter(|f| !f.drag.is_empty() || f.face_drag.is_some() || f.shielding.is_some())
+        else {
+            notes.push(if by_code == 0 {
+                format!(
+                    "member wind: drag factor {generic} on every profile (the model's {}: no \
+                     code drag factors given); no shielding (no shielding factors given)",
+                    if self.model.analysis.drag_given {
+                        "[analysis] drag"
+                    } else {
+                        "generic drag"
+                    }
+                )
+            } else {
+                format!(
+                    "member wind: no code drag factors given: {by_code} member(s) by their \
+                     shape's built-in force coefficient (below), {} the generic drag {generic}; \
+                     no shielding (no shielding factors given)",
+                    count(DragFrom::Generic)
+                )
+            });
             return notes;
         };
         let source = f.source_name();
@@ -996,7 +1067,8 @@ impl<'a> MemberWindSetup<'a> {
         );
         let mut drag = format!(
             "member wind: drag factors from {source}: {by_face} member(s) by their face's \
-             solidity, {by_shape} by their shape, {by_generic} the generic {generic}"
+             solidity, {by_shape} by their shape, {by_code} by their shape's built-in force \
+             coefficient (below), {by_generic} the generic {generic}"
         );
         let missing: Vec<&str> = missing_shapes
             .iter()
@@ -1053,5 +1125,122 @@ impl<'a> MemberWindSetup<'a> {
             }
         }
         notes
+    }
+}
+
+/// What the force law did on the members of one wind, for the notes.
+#[derive(Default)]
+struct LawTally<'a> {
+    /// Members by the built-in sharp-edged factors.
+    sharp: usize,
+    /// Members by the built-in round factor.
+    round: usize,
+    /// Members by a curve of the data, with the shapes.
+    data: usize,
+    data_shapes: BTreeSet<&'a str>,
+    /// Members under the comparison law sin²θ.
+    sin2: usize,
+    /// Members beyond the curve's last angle (its factor held).
+    held: usize,
+    /// The members taking a built-in force coefficient, with it.
+    code: Vec<(&'a str, CodeDrag)>,
+}
+
+impl<'a> LawTally<'a> {
+    fn add(&mut self, shape: &'a str, k: wind_law::Inclined) {
+        match k.from {
+            InclinationFrom::Sharp => self.sharp += 1,
+            InclinationFrom::Round => self.round += 1,
+            InclinationFrom::Data => {
+                self.data += 1;
+                self.data_shapes.insert(shape);
+            }
+            InclinationFrom::Sin2 => self.sin2 += 1,
+        }
+        if k.held {
+            self.held += 1;
+        }
+    }
+
+    /// The built-in force coefficients taken, per shape (none: none).
+    fn code_note(&self) -> Option<String> {
+        if self.code.is_empty() {
+            return None;
+        }
+        let mut per: Vec<(&str, usize, CodeDrag)> = Vec::new();
+        for (shape, c) in &self.code {
+            match per.iter_mut().find(|p| p.0 == *shape) {
+                Some(p) => p.1 += 1,
+                None => per.push((shape, 1, *c)),
+            }
+        }
+        per.sort_by(|a, b| a.0.cmp(b.0));
+        let list = per
+            .iter()
+            .map(|(shape, n, c)| format!("{shape} ({n}): {} — {}", c.coefficient, c.source))
+            .collect::<Vec<_>>()
+            .join("; ");
+        Some(format!(
+            "member wind: {} member(s) with no drag factor given (no face or shape drag in [wind], \
+             no [analysis] drag) take the force coefficient of their shape from {}: {list}. The \
+             force is q·c·h·L on the table's reference width h whatever the wind's angle to the \
+             profile: the largest over the wind's angle to the profile, the slenderness (end \
+             effects: c_red 1.0) and, for bars and tubes, the Reynolds number (on the safe side; \
+             the table gives nothing between its angles)",
+            self.code.len(),
+            wind_law::SIA261
+        ))
+    }
+
+    /// The inclination law in words.
+    fn law_note(&self, factors: Option<&StructureWind>) -> String {
+        if self.sin2 > 0 {
+            return format!(
+                "{NOT_SAFE_WIND}: member wind by the cross-flow law sin²θ ([wind] member_law = \
+                 \"sin2\", for comparison): below {} Tab. 74 (p. 112) on every member inclined \
+                 to the wind",
+                wind_law::SIA261
+            );
+        }
+        let mut parts = Vec::new();
+        if self.sharp > 0 {
+            parts.push(format!(
+                "{} member(s) not round by {} Tab. 74 (p. 112), sharp-edged profiles: c_red 1.0, \
+                 0.98, 0.93, 0.88, 0.8 at β = 0, 15, 30, 45, 60°",
+                self.sharp,
+                wind_law::SIA261
+            ));
+        }
+        if self.round > 0 {
+            parts.push(format!(
+                "{} round member(s) by sin θ (raised to Tab. 74's c_β/c_β(0) where larger)",
+                self.round
+            ));
+        }
+        if self.data > 0 {
+            parts.push(format!(
+                "{} member(s) by the curves of {} for {}",
+                self.data,
+                factors.map_or("[wind]", |f| f.source_name()),
+                self.data_shapes
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        let mut s = format!(
+            "member wind on inclined members: the force normal to the member × k(β), β between \
+             the wind and the member's normal (90° − θ), linear between the tabulated angles: {}",
+            parts.join("; ")
+        );
+        if self.held > 0 {
+            s.push_str(&format!(
+                "; {} member(s) beyond β = 60° (or the curve's last angle) take the factor there, \
+                 held (no value given beyond: on the safe side)",
+                self.held
+            ));
+        }
+        s
     }
 }

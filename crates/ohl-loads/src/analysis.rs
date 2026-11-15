@@ -561,7 +561,7 @@ impl Analyses {
             // are the structures' of the load case
             // (LoadCase::structure_wind_at); drag and shielding factors
             // from the section library's [wind] when given (else the
-            // model's generic drag, no shielding).
+            // model's drag, else the shapes' built-in SIA 261 coefficients, no shielding).
             let body = case.structure_wind_at(w, placed);
             let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
                 model,

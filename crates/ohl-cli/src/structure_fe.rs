@@ -83,6 +83,13 @@ pub struct FeArgs {
     /// axis (right of the line) towards y (ahead).
     #[arg(long, default_value_t = 0.0, allow_hyphen_values = true)]
     wind_dir: f64,
+    /// The member wind's law on members inclined to the wind:
+    /// `inclination` (default: the cross-section library's [wind]
+    /// member_law, else the inclination factors of SIA 261 Tab. 74) or
+    /// `sin2` (the cross-flow law sin²θ, for comparison only: not on the
+    /// safe side).
+    #[arg(long)]
+    member_wind_law: Option<String>,
     /// The structure standing on its extension (by name): the
     /// extension's joints and members added, its leg extensions lowering
     /// their supports (a structure file only).
@@ -317,8 +324,17 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     let a = args.wind_dir.to_radians();
     // Drag and shielding factors from the cross-section library's [wind] when
     // given; else the model's generic drag and no shielding (said).
-    let member_wind =
-        model.member_wind_with(args.wind, [a.cos(), a.sin(), 0.0], sections.wind.as_ref());
+    // --member-wind-law replaces the library's member law.
+    let factors = match &args.member_wind_law {
+        None => sections.wind.clone(),
+        Some(law) => {
+            let mut f = sections.wind.clone().unwrap_or_default();
+            f.member_law = ohl_sections::MemberLaw::parse(law)
+                .map_err(|e| format!("--member-wind-law: {e}"))?;
+            Some(f)
+        }
+    };
+    let member_wind = model.member_wind_with(args.wind, [a.cos(), a.sin(), 0.0], factors.as_ref());
     if args.wind != 0.0 {
         if !model.has_profiles() {
             return Err(

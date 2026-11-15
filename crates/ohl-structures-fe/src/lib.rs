@@ -50,6 +50,7 @@ pub mod solve;
 pub mod stabilise;
 mod units;
 pub mod wind;
+pub mod wind_law;
 
 pub use check::{MemberUsage, member_usage};
 pub use links::PointLoad;
@@ -394,5 +395,7 @@ mod stabilise_tests;
 mod tension_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod wind_law_tests;
 #[cfg(test)]
 mod wind_tests;
