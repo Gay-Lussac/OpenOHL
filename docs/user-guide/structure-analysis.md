@@ -30,7 +30,7 @@ name = "Example tower"
 [analysis]
 nonlinear = true          # P-Delta (default); false: first order
 self_weight = true        # members' weight × the load case's vertical factor (default)
-drag = 1.0                # member wind: drag factor on the profiles (default 1)
+drag = 1.0                # member wind: drag factor on the profiles (none: the shape's SIA 261 coefficient)
 stabilise = true          # hold joint directions no member stiffens (default; below)
 dead_load_factor = 1.0    # members' self-weight × this: bolts, plates (default 1; below)
 # single_angle_moments = true  # also check a single angle's frame end moments (version 4; below)
@@ -175,10 +175,21 @@ A joint counts as free across a plane (or a line) when its members lie within ab
 When members have profiles from the cross-section library, the wind of the load
 case blows on them: per member, the weather case's wind pressure × the
 load case's transverse factor × `drag` × the profile's **width** seen by
-the wind × the member's length × sin²θ (θ between the wind and the
-member: only the wind's component normal to the member counts), normal to
-the member in the plane of the member and the wind; half goes to each of
-its joints. The width is the profile's outline across the wind's
+the wind × the member's length × the **inclination factor** k(β), normal
+to the member in the plane of the member and the wind; half goes to each
+of its joints. β is the angle between the wind and the member's normal
+(90° − θ, θ between the wind and the member): k is 1 for a member normal
+to the wind and, for a member at an angle, SIA 261:2014 Tableau 74's
+(p. 112) — for every profile that is not round 1.0, 0.98, 0.93, 0.88, 0.8
+at β = 0°, 15°, 30°, 45°, 60°, for round bars and tubes sin θ — linear
+between, the 60° value held for members nearer the wind's direction
+(owner 2026-11-15; before, sin²θ: 0.5 at 45° where the standard gives
+0.88 for an angle — **not on the safe side**; member wind now rises,
+inclined bracing most, by about +10–25 % in all on lattice towers). A
+`[wind]` table can give its own curve per shape, and `member_law =
+"sin2"` (or `ohl structures fe --member-wind-law sin2`) keeps the old law
+for comparison, said not on the safe side ([Inclination
+factor](../theory/structure-wind.md#inclination-factor)). The width is the profile's outline across the wind's
 direction in the member's local y–z plane (the cross-section's y and z, the
 same axes as `iy`, `iz`: set by `reference` and `roll`). In the line run
 the wind blows across the line from the weather case's wind side, as on
@@ -191,9 +202,17 @@ profile's shape, or of its lattice face by the face's solidity ratio, and
 a member behind another face of the lattice (the far face of a body) the
 shielding factor of the face in front — OpenOHL finds the faces, their
 solidity ratios and which face is in front of which member ([Wind on
-lattice structures](../theory/structure-wind.md)). Without the table,
-`drag` (one factor for the whole structure, default 1) is the only one
-and no member shields another, as the notes say.
+lattice structures](../theory/structure-wind.md)). Without a drag factor
+anywhere — no `[wind]` drag for the shape and no `drag` in `[analysis]`
+(one factor for the whole structure) — a member takes the **force
+coefficient of its shape** from SIA 261:2014 Tableau 71 (p. 109; angles
+2.1 on the longer leg, channels and I sections 2.05, boxes 2.1, …) or
+Tableau 72 (p. 110; bars and tubes 1.2), the largest the table gives for
+any wind angle to the profile, on the table's reference width (owner
+2026-11-15; before, 1: [Force
+coefficient](../theory/structure-wind.md#force-coefficient-when-no-drag-is-given));
+a `general` cross-section keeps 1, said not on the safe side. No member
+shields another without shielding factors; the notes say all of it.
 
 Approximations: an angle's legs do not shield each other ([Wind on the
 profile](section-library.md#wind-on-the-profile)); the load is lumped at
@@ -205,9 +224,12 @@ structure: they are in the structure loads (and the CSV), never in the FE
 model, so the body wind is not counted twice. The usage notes say when
 the member wind was used: `model: member wind from the cross-section profiles,
 12.3 kN across the line (the type's wind bands not in the model)`, then
-which drag factors and shielding it took (`model: member wind: drag
-factor 1 on every profile (the model's generic drag: no code drag factors
-given); no shielding (no shielding factors given)`).
+which drag factors, shielding and inclination factors it took (`model:
+member wind: no code drag factors given: 178 member(s) by their shape's
+built-in force coefficient (below), 0 the generic drag 1; no shielding (no
+shielding factors given)`, the coefficients with their table and page,
+and `member wind on inclined members: the force normal to the member ×
+k(β) …`).
 Without profiles (cross-sections from the tables only) there is no member wind
 and nothing changes.
 
@@ -271,4 +293,4 @@ ohl structures pole Structures/steel-pole-30m.ohlp --type Structures/type-05.ohl
     --loads loads.csv --structure T6 --wind-pressure 840
 ```
 
-`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--tension-compression buckling|none` (what the tension-only members carry in compression, whatever the model says; [above](#tension-only-members)), `--top N` (members printed per case), `--sections` (a `.ohlsec` file or folder: the cross-section library, looked up first), `--bolts` (a `.ohlb` file or folder: the bolt library the structure's connections name their bolts from; default the `Bolts` folder next to the structure file), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles; the drag and shielding factors of the cross-section library's `[wind]` table when it has one, the notes printed) and `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.
+`ohl structure …` works too. Options: `--strength` (factor on the capacities), `--weight-factor` (self-weight), `--linear` (first order), `--tension-compression buckling|none` (what the tension-only members carry in compression, whatever the model says; [above](#tension-only-members)), `--top N` (members printed per case), `--sections` (a `.ohlsec` file or folder: the cross-section library, looked up first), `--bolts` (a `.ohlb` file or folder: the bolt library the structure's connections name their bolts from; default the `Bolts` folder next to the structure file), `--wind` (member wind: factored pressure, Pa, added to every case; needs members with profiles; the drag and shielding factors of the cross-section library's `[wind]` table when it has one, the notes printed) `--wind-dir` (where it blows to, degrees from x — right of the line — towards y, ahead; default 0) and `--member-wind-law inclination|sin2` (the law on inclined members; `sin2`, the cross-flow law before 2026-11-15, for comparison only, said not on the safe side); `ohl line` takes `--sections` too (default: the `Sections` folder next to the line or project file); for poles `--wind-pressure` (factored, Pa), `--wind-from left|right`, `--no-p-delta`. Each case prints the iterations and time, the largest displacement, the sum of the reactions and the members using most of their capacity.

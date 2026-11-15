@@ -195,7 +195,11 @@ extension without a piece or legs behaves as before.
 6. **Wind on the body in the FE model** — *built for the FE check*: the
    member wind on profiles from the cross-section library (pressure × drag ×
    width × length × sin²θ, half to each joint; no shielding, one `drag`
-   per structure); the wind bands stay out of the model. Load-case
+   per structure; since 2026-11-15 × the SIA 261 Tab. 74 inclination
+   factor in place of sin²θ, and each shape's SIA 261 force coefficient
+   where no drag is given, [Wind on lattice
+   structures](../theory/structure-wind.md#inclination-factor)); the wind
+   bands stay out of the model. Load-case
    recipes (surface loads per case) still to come.
 7. ~~**Extensions are not in the FE model.**~~ *Built* (phase 3):
    extension pieces and leg extensions in the model of each placed

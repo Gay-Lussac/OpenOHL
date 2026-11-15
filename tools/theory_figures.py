@@ -954,8 +954,9 @@ def member_wind():
     f = Fig("member-wind", 760, 350, "The wind on a member",
             "A member at an angle to the wind: the wind's unit vector w, the member's axis x, the "
             "angle theta between them, the wind's part normal to the member w_n of length sin "
-            "theta, and the force F along w_n, half at each joint.")
-    f.text(20, 26, "The cross-flow force on one member", "t")
+            "theta, and the force F along w_n, times the inclination factor k(beta), half at "
+            "each joint.")
+    f.text(20, 26, "The wind on one inclined member", "t")
     a = math.radians(-58)
     ox, oy = 290, 190
     L = 125
@@ -981,13 +982,14 @@ def member_wind():
     f.arc(ox, oy, 40, math.degrees(a), 0, "thin")
     f.text(ox + 46, oy - 12, "θ")
     x = 470
-    f.text(x, 90, "F = q c η d L sin θ  w_{n}", "t")
-    f.text(x, 112, "|F| = q c η d L sin²θ", "")
+    f.text(x, 90, "F = q c η d L k(β)  w_{n} / sin θ", "t")
+    f.text(x, 112, "|F| = q c η d L k(β),  β = 90° − θ", "")
     f.text(x, 140, "q: the wind pressure; c: the drag factor;", "lab")
     f.text(x, 156, "η: the shielding factor (1 unless", "lab")
     f.text(x, 172, "behind a face); d: the profile's width", "lab")
-    f.text(x, 188, "across w_{n}; L: the length.", "lab")
-    f.text(x, 214, "Half of F at each joint.", "lab")
+    f.text(x, 188, "across w_{n}; L: the length; k: the", "lab")
+    f.text(x, 204, "inclination factor (SIA 261 Tab. 74).", "lab")
+    f.text(x, 230, "Half of F at each joint.", "lab")
     for p in (p0, p1):
         f.arrow(p[0], p[1], p[0] + 40 * nx, p[1] + 40 * ny, "wire", 1.8, 7)
         f.text(p[0] + 46 * nx + 6, p[1] + 46 * ny + 4, "F/2", "lab")

@@ -1,7 +1,9 @@
 # Wind on lattice structures: faces, solidity and shielding
 
 Implemented in `crates/ohl-structures-fe/src/wind.rs` (`faces`,
-`MemberWindSetup`, `Model::member_wind_with`), with the factors read by
+`MemberWindSetup`, `Model::member_wind_with`) and
+`crates/ohl-structures-fe/src/wind_law.rs` (the force law on one member:
+`inclination`, `code_drag`), with the factors read by
 `crates/ohl-sections/src/wind.rs` (`StructureWind`, the `[wind]` table of
 the cross-section library). Built, in active development (not approved yet);
 pre-alpha: results must be verified by a qualified engineer.
@@ -17,15 +19,17 @@ function of the front face's solidity ratio and the spacing ratio — are
 file (the optional `structure-wind` export, see [Writing
 plugins](../development/plugins.md#wind-factors-for-structures)), or the
 user types them into a `[wind]` table of the cross-section library ([Cross-section
-library](../user-guide/section-library.md#wind-factors-for-structures-wind)).
-OpenOHL ships no such values. Without them the member wind is the one of
-[Structure analysis](structures-fe.md#member-wind): one generic drag
-factor, nothing shielded — and the results say so.
+library](../user-guide/section-library.md#wind-factors-for-structures-wind)),
+as is the inclination factor of a member at an angle to the wind (version
+2, below). Without data two things are built in (owner, 2026-11-15, on the
+safe side): the **inclination factor** of SIA 261:2014 Tableau 74 and,
+where no drag factor is given at all, the **force coefficient** of the
+profile's shape from SIA 261:2014 Tableaux 71 and 72 (below); nothing is
+shielded — and the results say which.
 
 **Conservative:** without shielding factors nothing is shielded: every
 member takes its full wind, as if it stood alone. Exact: the code's
-shielding factors as data. (The generic drag factor 1 is a
-**Simplification**, see [Member wind](structures-fe.md#member-wind).)
+shielding factors as data.
 
 ## Member force
 
@@ -34,19 +38,25 @@ pressure \\( q \\) blowing along the unit vector \\( \hat{\mathbf w} \\)
 gives, with the member's axis \\( \hat{\mathbf x} \\) and the wind's
 component normal to it
 \\( \mathbf w_n = \hat{\mathbf w} - (\hat{\mathbf w}\cdot\hat{\mathbf x})\hat{\mathbf x} \\)
-(length \\( \sin\theta \\)),
+(length \\( \sin\theta \\), \\( \theta \\) the angle between the wind and
+the member's axis, in 3D),
 
-\\[ \mathbf F = q\, c\, \eta\, d\, L \sin\theta \; \mathbf w_n \qquad (|\mathbf F| = q\, c\, \eta\, d\, L \sin^2\theta), \\]
+\\[ \mathbf F = q\, c\, \eta\, d\, L\; k(\beta)\; \frac{\mathbf w_n}{\sin\theta} \qquad (|\mathbf F| = q\, c\, \eta\, d\, L\, k(\beta),\ \ \beta = 90^\circ - \theta), \\]
 
+normal to the member in the plane of the member and the wind,
 \\( d \\) the profile's outline width across \\( \mathbf w_n \\) in the
 member's local y–z plane, \\( L \\) its length, half of \\( \mathbf F \\)
-at each joint. Two factors:
+at each joint. Three factors:
 
+- **inclination** \\( k(\beta) \\), \\( \beta \\) the angle between the wind
+  and the member's **normal** ([below](#inclination-factor));
 - **drag** \\( c \\): the face drag \\( c_f(\varphi) \\) of the member's
   face (when the data give a face drag and the member lies in a face
   facing the wind: the one facing it most, \\( \max |\hat{\mathbf n}\cdot\hat{\mathbf w}| \\)),
   else the drag of the profile's shape (`drag.<shape>`), else the
-  model's generic `drag` (default 1). A face whose solidity is outside the
+  model's `[analysis] drag` when given, else the **force coefficient of
+  the profile's shape** ([below](#force-coefficient-when-no-drag-is-given));
+  a `general` section (no shape) takes the generic 1. A face whose solidity is outside the
   face drag table takes the table's **largest** face drag (or the shape's
   drag when larger), and the notes count it.
 
@@ -60,7 +70,147 @@ at each joint. Two factors:
 
 ![A member at an angle theta to the wind: the wind's unit vector, the member's axis, the wind's part normal to the member and the force along it, half at each joint](../images/theory/member-wind.svg)
 
-*The cross-flow force on a member: along the wind's part normal to it, proportional to \\( \sin^2\theta \\).*
+*The force on an inclined member: along the wind's part normal to it, times the inclination factor \\( k(\beta) \\).*
+
+### Inclination factor
+
+Owner, 2026-11-15. Before, \\( k = \sin^2\theta \\) (the cross-flow law):
+**not on the safe side** against the standard below for every member not
+normal to the wind (0.5 against 0.88 at 45° for an angle). Now the shape's
+curve when the cross-section library's `[wind]` gives one
+(`[wind.inclination.<shape>]`, \\( \beta \\) → factor, version 2: a
+design-code plugin's curve), else built in from **SIA 261:2014, Tableau
+74 "Coefficients pour treillis spatiaux" (p. 112)**. The table's
+\\( Q_\beta \\) is the force **perpendicular to the inclined bar**,
+\\( \beta \\) the angle between the wind and the bar's normal, on the bar's
+full length times its width (\\( h\,l \\) or \\( d\,l \\)): the same force
+as \\( \mathbf F \\) above.
+
+| β | 0° | 15° | 30° | 45° | 60° |
+|---|---|---|---|---|---|
+| sharp-edged profiles: \\( c_{red} \\) | 1.0 | 0.98 | 0.93 | 0.88 | 0.8 |
+| round bars, \\( d\sqrt{q_{p0}}\,(z/10)^{\alpha_r} \le 0.07 \\): \\( c_\beta \\) | 1.2 | 1.16 | 1.04 | 0.85 | 0.6 |
+| round bars, \\( d\sqrt{q_{p0}}\,(z/10)^{\alpha_r} > 0.07 \\): \\( c_\beta \\) | 0.6 | 0.58 | 0.53 | 0.42 | 0.28 |
+
+*SIA 261:2014, Tableau 74 (p. 112), the values as read; for sharp-edged
+profiles ("profilés à arêtes vives") \\( c_\beta = c_{red}\,c_{f1} \\) (or
+\\( c_{red}\,c_{f2} \\)), \\( c_{f1}, c_{f2} \\) from Tableau 71; the global
+force \\( Q_1 = \sum \alpha\, Q_\beta \cos\beta \\).*
+
+- **Every shape that is not round** (angles, channels, I sections, boxes,
+  built-up angles, polygonal tubes, `general` sections):
+  \\( k = c_{red}(\beta) \\), linear between the tabulated angles.
+- **Round bars and tubes** (`round_bar`, `circular_hollow`):
+  \\( k = \sin\theta = \cos\beta \\) (the projected area), raised to the
+  larger of the table's two ratios \\( c_\beta / c_\beta(0^\circ) \\)
+  (interpolated linearly) where that is larger: at 30° the second row's
+  0.883 against \\( \cos 30^\circ = 0.866 \\); at the other angles they
+  agree within 0.1 %.
+
+At 45° the sharp-edged factor is 0.88 against the former
+\\( \sin^2 45^\circ = 0.5 \\); at \\( \theta = 30^\circ \\) (β = 60°) 0.8
+against 0.25. Round bars: 0.708 at 45°.
+
+**Conservative:** SIA 261 gives nothing beyond \\( \beta = 60^\circ \\)
+(\\( \theta < 30^\circ \\), a member nearly along the wind): the factor at
+60° is **held** there (0.8 sharp-edged, 0.5 round), where the true force
+falls towards 0 with the projected area (owner, 2026-11-15); the notes
+count the members. A curve given as data is held beyond its last angle the
+same way. Exact: a code's values beyond 60°. **Simplification, either
+side:** the held force acts normal to the member in the plane of the
+member and the wind — for a member nearly along the wind mostly *across*
+the wind (its part along the wind is only \\( k \sin\theta \\)): a crossarm
+chord under a wind along the arm takes a sideways force the standard does
+not give. It adds to the member's own bending and, on a structure not
+symmetric about the wind, to a resultant across the wind; a load added
+can lower another member's force, so this part is not a bound.
+
+**Conservative:** a sharp-edged factor at least \\( \cos\beta \\) (the
+projected area): the straight line from 1.0 at 0° to 0.98 at 15° lies up
+to 0.3 % below \\( \cos\beta \\) between 0° and about 9°. Round bars take
+the larger of \\( \cos\beta \\) and both rows' ratios, whichever row the
+bar's Reynolds number puts it in.
+
+**Assumption:** a profile that is not round is taken as sharp-edged
+(Tableau 74 knows only the two kinds); a polygonal tube of many sides is
+nearer a round one and then takes more (on the safe side for it).
+
+**Simplification:** the factor multiplies the force of the member normal
+to the wind, with the drag and the width of the member's own section
+across \\( \mathbf w_n \\) (or the force coefficient below on its
+reference width), as Tableau 74 multiplies Tableau 71's coefficient.
+
+The cross-flow law stays as an option for comparison: `[wind] member_law
+= "sin2"` (section library version 2), or `ohl structures fe
+--member-wind-law sin2`. With a drag given (`[analysis] drag = 1`, the
+former default) it reproduces the member wind before 2026-11-15 bit for
+bit; every result under it says *NOT ON THE SAFE SIDE: member wind by the
+cross-flow law sin²θ*.
+
+### Force coefficient when no drag is given
+
+Owner, 2026-11-15 (before, the generic drag 1, said not on the safe side).
+When a member has a profile of known shape and no drag is given
+anywhere — no face drag for its face, no `drag.<shape>` in `[wind]`, no
+`[analysis] drag` — it takes the force coefficient of its shape from
+**SIA 261:2014, Tableau 71 "Coefficients pour profilés" (p. 109)** and,
+for bars and tubes, **Tableau 72 (p. 110)**, on the table's reference
+width \\( h \\): the force on the member normal to the wind is
+\\( q\, c_f\, h\, L \\), times \\( k(\beta) \\) and \\( \eta \\). As a drag
+factor on the projected width \\( d \\) it is \\( c = c_f\, h / d \\) (the
+row's `drag`); with ice, that \\( c \\) on the iced width.
+
+Tableau 71 gives, per profile, the force coefficients \\( c_{f1} \\) (along
+the wind's 0° direction) and \\( c_{f2} \\) (normal to it) for wind angles
+φ to the profile of 0°, 45°, 90° (and 135°, 180° for the profiles without
+double symmetry), on \\( h\,l \\), and a reduction factor for the
+slenderness \\( l/h \\) (0.6 at 5 … 0.95 at 100, 1.0 for an infinite
+member). Tableau 74 takes \\( c_{f1} \\) or \\( c_{f2} \\) of it for a space
+truss. The program does not look up the wind's angle to the profile, the
+slenderness, nor (for bars) the Reynolds number: it takes the **largest**.
+
+| shape (files) | SIA 261:2014, profile | \\( c_f \\) taken | on \\( h \\) |
+|---|---|---|---|
+| `equal_angle`, `unequal_angle` | Tab. 71, the two angles (equal legs: 2.1, \\( c_{f1} \\) at φ = 45°; legs 0.5 h × h: 2.0) | 2.1 | the longer leg |
+| `channel` | Tab. 71, the channel (2.05 at 0°) | 2.05 | the larger of height and width |
+| `i_section` | Tab. 71, the two I sections (flanges 0.48 h: 2.05; flanges h: 1.9) | 2.05 | the larger of height and width |
+| `double_channel` | not tabulated: the I sections' and the two channels closed by plates (2.2 at 90°), the larger | 2.2 | the larger extent |
+| `rectangular_hollow` | Tab. 71, the boxes (0.5 h × h: 2.1; h × h: 2.0) | 2.1 | the longer side |
+| `polygonal_hollow` | not tabulated: the boxes' (an assumption) | 2.1 | the width across the corners |
+| `double_angle` | Tab. 71, two angles back to back as a T (1.6), or — back-to-back legs longer than half the width — the T with a plate 1.1 h (2.4, \\( c_{f2} \\) at 135°) | 1.6 or 2.4 | the larger extent |
+| `star_angle`, `cross_angle` | Tab. 71, two angles in a star (a cross: 1.75) | 1.75 | the larger extent |
+| `round_bar`, `circular_hollow` | Tab. 72, bars and tubes, smooth or slightly rough, \\( d\sqrt{q_{p0}}\,(z/10)^{\alpha_r} \le 0.07 \\) (above: 0.5 and 0.7) | 1.2 | the diameter |
+| `general` | no shape: the generic drag 1, said *NOT ON THE SAFE SIDE* | — | — |
+
+*The largest \\( |c_{f1}| \\) or \\( |c_{f2}| \\) over the tabulated wind
+angles, as read from SIA 261:2014 p. 109 and p. 110; "extent": the
+profile's extent along its y or z axis.*
+
+**Conservative:** the largest coefficient over the wind's angle to the
+profile, the slenderness factor 1.0 (no end effects) and, for bars and
+tubes, the subcritical 1.2 (Reynolds number not looked up); the force
+\\( c_f h \\) whatever the wind's angle to the profile, where the
+standard's force at most angles is smaller. A gusset plate among members
+taking these coefficients takes at least Tableau 71's flat plate, 2.0.
+Exact: a code's own drag per shape, given in `[wind]`.
+
+**Not on the safe side, said here:** Tableau 71 gives nothing between its
+angles (every 45°); the coefficient there could exceed the tabulated ones.
+And a profile only near a tabulated one (a double angle of other
+proportions, two channels back to back, a polygonal tube) takes the
+nearest profiles' largest — an assumption.
+
+**Simplification:** the force acts along \\( \mathbf w_n \\) only;
+Tableau 71's force has a part across the wind (an angle's \\( c_{f2} \\)
+at 0°). The larger component taken as the force along the wind keeps the
+member's force; the cross-wind part's direction is left out (over a
+lattice face it cancels in part).
+
+The run's notes say which: *member wind: 248 member(s) with no drag
+factor given (…) take the force coefficient of their shape from SIA
+261:2014: equal_angle (248): 2.1 — Tab. 71 (p. 109), angles: the largest
+c_f over the wind's angles, on the longer leg. …* The former *NOT ON THE
+SAFE SIDE: … take the drag factor 1* stays for `general` sections only.
 
 ## Faces
 
@@ -154,7 +304,8 @@ along the wind at its joint, a row of the load table on that joint.
 \\( A \\) is the area of one face of its outline and
 \\( \hat{\mathbf n} \\) its normal. \\( c \\) is the largest drag
 factor of the members bolted onto it (of the members at its joint when
-none is). Plates are not shielded. Their area also raises the face's
+none is) — at least Tableau 71's flat plate, 2.0, when one of them takes
+a built-in force coefficient (above). Plates are not shielded. Their area also raises the face's
 upper solidity bound (above).
 
 **Conservative:** plates never shielded, and the members' largest drag.
@@ -230,21 +381,25 @@ force, the far ones none.
   load case across the line, the factors of the project line's section
   library; the faces are found once per model. The usage notes say what
   was applied: *member wind: drag factors from …: 12 member(s) by their
-  face's solidity, 30 by their shape, 0 the generic 1* and *shielding
-  from …: 18 member(s) behind another face of 9 face(s) found, factors
-  0.82–0.88*, or *drag factor 1 on every profile (the model's generic
-  drag: no code drag factors given); no shielding (no shielding factors
-  given)*.
+  face's solidity, 30 by their shape, 0 by their shape's built-in force
+  coefficient (below), 0 the generic 1* and *shielding from …: 18
+  member(s) behind another face of 9 face(s) found, factors 0.82–0.88*,
+  or *member wind: no code drag factors given: 42 member(s) by their
+  shape's built-in force coefficient (below), 0 the generic drag 1; no
+  shielding (no shielding factors given)*; then the coefficients taken and
+  the inclination law (*member wind on inclined members: the force normal
+  to the member × k(β) …*).
 - `ohl structures fe --wind … --sections …`: the same, the notes printed.
 - Not (yet) the surface loads of OHL-Structure's load recipes (a
   `pressure` on members takes the members' projected areas without
   factors, as before).
 
-  **Conservative:** that `pressure` acts along its direction with the
-  area width × length × \\( \sin\theta \\) — more than the cross-flow
-  force above (\\( \sin^2\theta \\)) for a member at an angle to the
-  wind — and nothing is shielded. **Simplification, not on the safe
-  side:** no drag factor (1), which can be lower than a code's (unsafe);
+  **Simplification, either side:** that `pressure` acts along its
+  direction with the area width × length × \\( \sin\theta \\) — more than
+  the member force above for round bars, less for sharp-edged profiles
+  (0.71 against 0.88 at 45°) — and nothing is shielded.
+  **Simplification, not on the safe side:** no drag factor (1), which can
+  be lower than a code's (unsafe);
   for the line's wind pressure (`structure_wind`, `structure_wind_factored`)
   each row says so (*NOT ON THE SAFE SIDE: the pressure on the member's
   area without a drag factor (1) …*, 2026-11-08); a `pressure` typed in a
@@ -432,8 +587,20 @@ the two structures', [Finite-element wire systems](wirefe.md)).
 panel with invented factors (drag 1.2 for round bars, η = 1 − φ):
 the faces found (four sides and the top), the solidity ratio
 \\( \varphi = 0.05 \cdot (10 + 2\sqrt{20}) / 8 = 0.1184 \\) by hand, the
-far face shielded, the force along the wind by hand; and the same panel
-without factors (today's generic drag, nothing shielded). Unit tests
-(`wind_tests.rs`) add a two-panel lattice tower with a plan diagonal (the plane
-through the body dropped), the face drag by solidity, a spacing axis,
-the table's range, and the members shielded at 45°.
+far face shielded, the force along the wind by hand with the round bars'
+inclination factor; the same panel without factors (the built-in 1.2 of
+Tableau 72, nothing shielded); and the panel under the comparison law
+sin²θ with `[analysis] drag = 1` (the member wind before 2026-11-15,
+2534.427 N). Unit tests (`wind_tests.rs`) add a two-panel lattice tower
+with a plan diagonal (the plane through the body dropped), the face drag
+by solidity, a spacing axis, the table's range, and the members shielded
+at 45°; `wind_law_tests.rs` the inclination factor against Tableau 74 at
+its angles and between them, held below 30°, round against sharp-edged
+shapes, a curve given as data, the comparison law against the former
+formula bit for bit, the built-in coefficients per shape of the example
+section library, and the synthetic example's type-02 model (178 members,
+invented angle profiles): every member's force at least the former one;
+the total along the wind +12.9 % (wind along x) and +9.5 % (along y) by
+the inclination law alone with the example's drag 1.8, and +10.9 % more
+with the built-in 2.1 on the leg in place of that drag on the projected
+width.

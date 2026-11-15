@@ -10,6 +10,71 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Member wind on inclined members: SIA 261 inclination factors and
+force coefficients** (owner: "go ahead with your recommendations"). A
+review found the member wind of the structures **not on the safe side**:
+the force on a member at an angle θ to the wind was reduced with sin²θ,
+where SIA 261:2014 Tableau 74 (p. 112, "Coefficients pour treillis
+spatiaux") reduces it with ≈ sin θ for round bars and far less for
+sharp-edged profiles (0.88 at 45° against 0.5). The owner decided five
+points; built, in active development, not approved yet:
+
+1. **Default inclination factor** k(β), β = 90° − θ the angle between the
+   wind and the member's normal (θ in 3D, the force normal to the member in
+   the plane of the member and the wind): Tableau 74's sharp-edged factors
+   c_red 1.0, 0.98, 0.93, 0.88, 0.8 at β = 0°, 15°, 30°, 45°, 60° for every
+   shape that is not round, linear between (at least cos β, the projected
+   area: the straight line lies up to 0.3 % below it under 9°); sin θ for
+   round bars and tubes, raised to Tableau 74's own ratios c_β/c_β(0) where
+   larger (up to 2 %, at 30°).
+2. **Below θ = 30°** (β > 60°, no value in the standard): the 30° factor
+   is held (0.8, round 0.5) — on the safe side; the notes count the
+   members.
+3. **Inclination data per shape** in the cross-section library's `[wind]`
+   (`[wind.inclination.<shape>]`: `angle`, `factor`) so that a code plugin
+   gives its own curve; the built-in one applies without. The section
+   library format goes to version 2, written only when the new keys are
+   used. The plugin interface is unchanged: a plugin's `structure-wind`
+   returns a library text, which may now carry them.
+4. **sin²θ kept as an option** for comparison, off by default: `[wind]
+   member_law = "sin2"`, or `ohl structures fe --member-wind-law sin2`;
+   with `[analysis] drag = 1` it reproduces the former member wind bit for
+   bit (tested); every result under it says *NOT ON THE SAFE SIDE*.
+5. **Drag default** (decided by the safe-side rule): a member whose shape
+   is known and for which no drag is given anywhere (face drag, shape drag,
+   `[analysis] drag`) takes the force coefficient of its shape from SIA
+   261:2014 Tableau 71 (p. 109) or, for bars and tubes, Tableau 72 (p. 110)
+   instead of 1 — the largest over what the program does not look up (the
+   wind's angle to the profile, the slenderness, the Reynolds number), on
+   the table's reference width: angles 2.1 on the longer leg, channels and
+   I sections 2.05, boxes 2.1, two channels back to back 2.2, polygonal
+   tubes 2.1 (an assumption), double angles 1.6 (2.4 when the back legs
+   are longer than half the width), star and cross angles 1.75, bars and
+   tubes 1.2; overridable as before. The notes say which coefficient was
+   taken and from where; the former *NOT ON THE SAFE SIDE: … take the drag
+   factor 1* note stays only for `general` sections (no shape). A gusset
+   plate among such members takes at least the flat plate's 2.0.
+
+**Results rise.** The member wind of every structure with members at an
+angle to the wind goes up: on the reviewed real towers about +16–24 % with
+the inclination law alone (about +10 % for a wind along the line), and
+about twice that again with the drag default where no drag was given (the
+default was 1 on the projected width, now 2.1 on an angle's longer leg). The synthetic example's
+type-02 model with invented angle profiles: +12.9 % (wind across the
+faces) and +9.5 % (the other direction) by the law alone, with its drag
+1.8; +10.9 % more with the built-in 2.1 on the leg. Benchmarks
+`structwind-001` 2910.915 → 3009.235 N (the side diagonals' factor 0.902
+for round bars in place of sin²θ = 0.8) and `structwind-002` 2534.427 →
+3139.632 N (no factors: drag 1 → 1.2 of Tableau 72, and the law);
+`structwind-003` new, the comparison law with drag 1, 2534.427 N (the
+former value). Unit tests with sin²θ expectations moved to the new law
+(the cantilever at 45°: 0.85/1.2 of the normal force in place of 0.5).
+Code: `ohl_structures_fe::wind_law` (one function for every caller: the
+line's structure check, `ohl structures fe`, OHL-Structure's wind on the
+body, validation); theory [Inclination
+factor](../theory/structure-wind.md#inclination-factor) and [Force
+coefficient](../theory/structure-wind.md#force-coefficient-when-no-drag-is-given).
+
 **Tension-only members: a per-model setting for their compression**
 (owner). The owner first asked that "the tension only members should be
 assumed to hold no compression, not even until buckling". Made the rule

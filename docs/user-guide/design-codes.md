@@ -186,7 +186,11 @@ weather case file); the finite-element check's member wind then uses it
 the faces, their solidity and which face shelters which member; the
 numbers are the code's, from your parameter file. The plugins in
 `plugins/codes` give **none** yet (their notes and the window say so):
-the member wind keeps its one generic drag factor and no shielding.
+the member wind takes the model's drag, else each shape's built-in
+SIA 261 force coefficient, with SIA 261's inclination factors and no
+shielding. A plugin can also give an inclination curve per shape
+(`inclination`, section library version 2) and, for comparison only, the
+former law (`member_law = "sin2"`).
 
 ## From the command line
 
