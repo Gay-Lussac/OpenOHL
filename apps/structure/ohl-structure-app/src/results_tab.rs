@@ -1046,4 +1046,38 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
                 c.cell(|ui| ui.label(&m.governs));
             });
         });
+    // The optional climbing check (owner 2026-11-15): a list of its own —
+    // the climbing load alone, the same in every case, not in the usage.
+    if !r.climbing.is_empty() {
+        egui::CollapsingHeader::new(format!(
+            "Climbing ({}), alone — not a load case, most used first",
+            r.climbing.len()
+        ))
+        .id_salt("climbing")
+        .default_open(false)
+        .show(ui, |ui| {
+            let mut order: Vec<usize> = (0..r.climbing.len()).collect();
+            order.sort_by(|&a, &b| {
+                ohl_structure_link::usage_order(
+                    r.climbing[b].usage.unwrap_or(f64::NAN),
+                    r.climbing[a].usage.unwrap_or(f64::NAN),
+                )
+            });
+            let mut table = crate::rows::Table::new(ui, "climbing-results", 3);
+            table.header(ui, &[("member", ""), ("usage [%]", ""), ("check", "")]);
+            table.rows(ui, order.len(), None, |c, i| {
+                let m = &r.climbing[order[i]];
+                c.cell(|ui| ui.label(&m.member));
+                c.cell(|ui| {
+                    crate::style::num(ui, |ui| {
+                        ui.colored_label(
+                            rgb(usage_colour(m.usage, "")),
+                            m.usage.map_or("—".into(), |u| format!("{:.0}", u * 100.0)),
+                        )
+                    })
+                });
+                c.cell(|ui| ui.label(&m.words));
+            });
+        });
+    }
 }

@@ -17,6 +17,13 @@
 //!   case of the same name: the Weather cases table's **Add the default
 //!   cases…** (new rows, kept by Apply) and the Load cases library's (the
 //!   form's cases, kept by Save) — each one change, undone as one.
+//!
+//! The 60 N/m ice case goes only to structures at or above 1000 m (owner,
+//! 2026-11-15): its own list in the line with the rule ground elevation ≥
+//! 1000 m ([`ohl_loads::default_case_groups`]) — put in the line of a new
+//! project with the defaults, and by the Load cases library's **Add the
+//! default cases…** when it adds that case (one command of the line, its
+//! own undo step; a line with an own list for that case keeps it).
 
 /// The New project window's tick.
 pub const NEW_PROJECT_TICK: &str =
@@ -24,9 +31,11 @@ pub const NEW_PROJECT_TICK: &str =
 
 /// The tick's hover.
 pub const NEW_PROJECT_TIP: &str = "Nine weather cases (−20, 0, 10, 20, 40, 80 °C; 10 °C + 300 Pa \
-     wind; 0 °C + 20 N/m and + 60 N/m ice) and eight load cases for the structures (−20, 10, \
+     wind; 0 °C + 20 N/m and + 60 N/m ice) and nine load cases for the structures (−20, 10, \
      40 °C; the wind from the left, the right, ahead and behind with a factor 1.5 on the wind; \
-     the 20 N/m ice with 1.3 on the vertical). Arbitrary values for checking the program and the \
+     the 20 N/m and the 60 N/m ice with 1.3 on the vertical — the 60 N/m only for structures at \
+     or above 1000 m of ground elevation, by its own list's rule in the line). Arbitrary values \
+     for checking the program and the \
      design codes, not from a design code: replace them with your code's. With the starter \
      template, added to its own cases.";
 
@@ -144,6 +153,40 @@ pub fn with_defaults(
         }
     }
     Ok(files)
+}
+
+/// The line's structure groups for the default cases (the 60 N/m ice
+/// only at or above 1000 m, [`ohl_loads::default_case_groups`]) those of
+/// `model`'s line lack, as one command of the line (none: nothing to add
+/// — the line has an own list for each of those cases already), with
+/// what it does in words.
+pub fn groups_command(
+    model: &crate::model::Model,
+) -> Result<Option<(String, ohl_session::Command)>, String> {
+    let e = model
+        .editing
+        .as_ref()
+        .map_err(|e| format!("read-only: {e}"))?;
+    let mut line = model.line.clone();
+    if let Some(stored) = model.stored_line() {
+        line.structure_groups = stored.structure_groups.clone();
+    }
+    let (added, _) = ohl_loads::add_default_case_groups(&mut line);
+    if added.is_empty() {
+        return Ok(None);
+    }
+    if let Some(p) = line.groups_problem() {
+        return Err(p);
+    }
+    Ok(Some((
+        format!(
+            "load case \"{}\": only structures at or above {:.0} m of ground elevation (its own \
+             list's rule, default)",
+            added.join("\", \""),
+            ohl_loads::DEFAULT_HIGH_ICE_ELEVATION
+        ),
+        e.session.structure_groups_command(line.structure_groups),
+    )))
 }
 
 /// The default load cases the load case form's `cases` lack (by name),

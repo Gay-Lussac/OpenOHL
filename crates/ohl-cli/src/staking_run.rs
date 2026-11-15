@@ -53,12 +53,12 @@ pub fn run(a: &StakingArgs) -> Result<(), String> {
     let terrain = match (&a.terrain, &a.surface) {
         (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
         (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&a.file)?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }
         (None, None) if project => {
-            let session = ohl_session::Session::open(&a.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&a.file)?;
             match session.setting("app.check_surface").ok().flatten() {
                 Some(name) => {
                     let (points, triangles) = session.surface(&name).map_err(|e| e.to_string())?;

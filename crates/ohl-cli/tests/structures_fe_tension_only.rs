@@ -119,7 +119,7 @@ fn row<'a>(csv: &'a str, id: &str) -> &'a str {
 fn the_formerly_unsettled_model_settles_its_shortened_halves_slack() {
     let (stdout, csv) = run(MODEL, "slack");
     assert!(
-        stdout.contains("tension-only members: 2 of 4 slack (6 solve(s)): MC, BM"),
+        stdout.contains("tension-only members (compression up to their buckling load): 2 of 4 slack (6 solve(s)): MC, BM"),
         "{stdout}"
     );
     assert!(!stdout.contains("kept active"), "{stdout}");
@@ -137,7 +137,7 @@ fn with_a_second_moment_the_shortened_halves_are_bowed() {
     let (stdout, csv) = run(&model, "bowed");
     assert!(
         stdout.contains(
-            "tension-only members: 0 of 4 slack, 2 bowed (3 solve(s)); bowed (carry their \
+            "tension-only members (compression up to their buckling load): 0 of 4 slack, 2 bowed (3 solve(s)); bowed (carry their \
              buckling load): MC 0.33 kN, BM 0.33 kN"
         ),
         "{stdout}"
@@ -190,7 +190,9 @@ fn without_compression_the_shortened_halves_are_slack_too() {
         &["--tension-compression", "buckling"],
     );
     assert!(
-        stdout.contains("tension-only members: 0 of 4 slack, 2 bowed"),
+        stdout.contains(
+            "tension-only members (compression up to their buckling load): 0 of 4 slack, 2 bowed"
+        ),
         "{stdout}"
     );
     // Another word: refused, naming the two.

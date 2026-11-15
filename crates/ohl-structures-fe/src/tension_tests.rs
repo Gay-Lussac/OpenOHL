@@ -124,7 +124,7 @@ fn x_panel_one_diagonal_carries_the_shear() {
     assert!(u[index(&m, "AC")].usage.unwrap() > 0.0);
     assert_eq!(
         tension_only_note(&m, &s).unwrap(),
-        "tension-only members: 1 of 2 slack (2 solve(s)): BD"
+        "tension-only members (compression up to their buckling load): 1 of 2 slack (2 solve(s)): BD"
     );
     // The same panel with truss diagonals: both carry, no passes, no note.
     let t = panel(MemberKind::Truss, false);
@@ -176,6 +176,22 @@ fn a_crossing_joint_between_slack_halves_is_held_without_force() {
         .map(|h| h.force.abs())
         .fold(0.0, f64::max);
     assert!(largest < 1e-9 * H, "{largest}");
+    // Within the stabilisation's limits, not refused — but said (owner
+    // 2026-11-15): M is held where its shortened halves would hold it;
+    // the corners held across the plane are not (no tension-only member
+    // has a part across it).
+    assert_eq!(crate::held_by_shortened(&m, &s), vec![4]);
+    assert_eq!(
+        tension_only_note(&m, &s).unwrap(),
+        "tension-only members (compression up to their buckling load): 2 of 4 slack (2 \
+         solve(s)): BM, MD; WARNING: 1 joint(s) held by the stabilisation where their \
+         shortened tension-only members would hold them (within its limits, not refused — \
+         check them): M"
+    );
+    // The panel without the crossing joint: nothing to say.
+    let plain = panel(MemberKind::Tension, false);
+    let p = solved(&plain, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    assert!(crate::held_by_shortened(&plain, &p).is_empty());
     // The same with the load reversed: the other halves.
     let r = solved(&m, vec![force(3, [-H, 0.0, 0.0])], &first_order());
     for id in ["BM", "MD"] {
@@ -512,7 +528,7 @@ fn x_panel_compressed_diagonal_carries_its_buckling_load() {
     assert!(close(sum, -H), "{sum}");
     assert_eq!(
         tension_only_note(&m, &s).unwrap(),
-        "tension-only members: 0 of 2 slack, 1 bowed (2 solve(s)); bowed (carry their \
+        "tension-only members (compression up to their buckling load): 0 of 2 slack, 1 bowed (2 solve(s)); bowed (carry their \
          buckling load): BD 0.83 kN"
     );
     // Its usage: against the squash load (buckling is in the solve).

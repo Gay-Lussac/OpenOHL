@@ -258,6 +258,8 @@ fn groups_round_trip_at_version_18() {
             station_from: Some(0.0),
             station_to: Some(900.0),
             dead_end: Some(false),
+            elevation_from: Some(0.0),
+            elevation_to: Some(2000.0),
         },
     );
     g.description = "angle towers".into();
@@ -539,11 +541,131 @@ fn own_lists_round_trip_and_wrong_ones_are_refused() {
     assert!(e.contains("both picked and excluded"), "{e}");
     let e = refused(&|l| l.structure_groups.push(StructureGroup::own_list("ice")));
     assert!(e.contains("two own lists"), "{e}");
+    // Rules are an own list's since 2026-11-15 (its case only where they
+    // hold); another case, or a rule that cannot hold, is refused.
     let e = refused(&|l| {
         let k = l.structure_groups.len() - 1;
-        l.structure_groups[k].rules.dead_end = Some(true);
+        l.structure_groups[k].load_cases = vec!["everyday".into()];
     });
-    assert!(e.contains("no rules"), "{e}");
+    assert!(e.contains("no other case"), "{e}");
+    let e = refused(&|l| {
+        let k = l.structure_groups.len() - 1;
+        l.structure_groups[k].rules.elevation_from = Some(900.0);
+        l.structure_groups[k].rules.elevation_to = Some(800.0);
+    });
+    assert!(
+        e.contains("ground elevation: from 900 is above to 800"),
+        "{e}"
+    );
     let e = refused(&|l| l.structure_groups[0].excluded.push("T6".into()));
     assert!(e.contains("only a load case's own list excludes"), "{e}");
+}
+
+/// The ground elevation rule (2026-11-15): a structure's ground elevation
+/// is the z of its position (its origin is the centre at the ground),
+/// bounds inclusive; one not known (not a number) matches — the safe side.
+#[test]
+fn the_elevation_rule_reads_the_ground_at_the_structure() {
+    let mut line = line();
+    line.structures[3].position[2] = 1150.0; // T4
+    line.structures[4].position[2] = 1000.0; // T5: on the bound
+    line.structure_groups.push(group(
+        "high",
+        &["wind"],
+        GroupRules {
+            elevation_from: Some(1000.0),
+            ..GroupRules::default()
+        },
+    ));
+    assert_eq!(members(&line, 0), ["T4", "T5"]);
+    assert_eq!(
+        line.structure_groups[0].rules.words(|a| a.to_owned()),
+        "ground elevation ≥ 1000 m"
+    );
+    line.structure_groups[0].rules.elevation_to = Some(1100.0);
+    assert_eq!(members(&line, 0), ["T5"]);
+    assert_eq!(
+        line.structure_groups[0].rules.words(|a| a.to_owned()),
+        "ground elevation 1000–1100 m"
+    );
+    // Not known: matches.
+    line.structures[6].position[2] = f64::NAN; // T7
+    assert_eq!(members(&line, 0), ["T5", "T7"]);
+    // A bound from above its to is refused.
+    line.structure_groups[0].rules.elevation_from = Some(1200.0);
+    assert!(
+        line.groups_problem()
+            .is_some_and(|p| p.contains("ground elevation: from 1200 is above to 1100")),
+        "{:?}",
+        line.groups_problem()
+    );
+}
+
+/// A load case's own list with a rule (owner 2026-11-15, the 60 N/m ice
+/// only above 1000 m): the case only where the rule holds — a structure
+/// below does not take it whatever its groups give, one above takes it on
+/// top of its groups' cases — and nothing else changes: a structure in no
+/// group still takes every other case. Picked or excluded by hand wins.
+#[test]
+fn an_own_list_with_a_rule_gives_its_case_only_where_it_holds() {
+    let mut line = line();
+    line.structures[3].position[2] = 1150.0; // T4
+    line.structures[4].position[2] = 1000.0; // T5
+    let ice = "0 °C + 60 N/m ice";
+    let mut own = StructureGroup::own_list(ice);
+    own.rules.elevation_from = Some(1000.0);
+    line.structure_groups.push(own);
+    let mut susp = group("suspension", &["wind"], GroupRules::default());
+    susp.structures = vec!["T2".into(), "T4".into()];
+    line.structure_groups.push(susp);
+    assert_eq!(line.groups_problem(), None);
+    let sets = line.case_sets();
+    // In no group, below: every case but the ice.
+    assert_eq!(*sets.of("T1"), CaseSet::EveryBut(vec![ice.into()]));
+    assert!(sets.takes("T1", "everyday") && sets.takes("T1", "0 °C + 20 N/m ice"));
+    assert!(!sets.takes("T1", ice));
+    // In no group, above: every case, the ice too.
+    assert_eq!(*sets.of("T5"), CaseSet::Every);
+    // In a group, above: its group's and the ice; below: its group's.
+    assert_eq!(
+        *sets.of("T4"),
+        CaseSet::These(vec!["wind".into(), ice.into()])
+    );
+    assert_eq!(*sets.of("T2"), CaseSet::These(vec!["wind".into()]));
+    assert_eq!(sets.takers(ice), ["T4", "T5"]);
+    let why = sets.why("T4", ice);
+    assert!(why.takes && why.rule_here && !why.ruled_out_here);
+    let why = sets.why("T1", ice);
+    assert!(!why.takes && why.ruled_out_here && why.no_group);
+    assert_eq!(sets.ruled_out_of("T1"), [ice.to_owned()]);
+    assert_eq!(sets.ruled_into("T4"), [ice.to_owned()]);
+    // The own list stays an own list: T4 and T5 still in no group /
+    // their group only.
+    assert_eq!(sets.groups_of("T4"), ["suspension"]);
+    assert!(sets.in_no_group().contains(&"T5".to_owned()));
+    // By hand: T1 made to take it (picked), T4 not to (excluded).
+    let given = line.give_case(ice, &["T1".into()], true);
+    assert_eq!(given.picked, ["T1"]);
+    let given = line.give_case(ice, &["T4".into()], false);
+    assert_eq!(given.excluded.len(), 1);
+    let sets = line.case_sets();
+    assert_eq!(sets.takers(ice), ["T1", "T5"]);
+    // Read and written with the line (version 18).
+    let text = line.to_json();
+    assert!(text.contains("\"elevation_from\": 1000.0"), "{text}");
+    assert_eq!(
+        Line::from_json(&text).unwrap().structure_groups,
+        line.structure_groups
+    );
+    // A rule-less own list is as before: picks only.
+    let mut plain = self::line();
+    let mut own = StructureGroup::own_list(ice);
+    own.structures = vec!["T2".into()];
+    plain.structure_groups.push(own);
+    assert_eq!(*plain.case_sets().of("T1"), CaseSet::Every);
+    // An own list giving other cases is still refused.
+    let mut bad = StructureGroup::own_list(ice);
+    bad.load_cases = vec!["wind".into()];
+    plain.structure_groups = vec![bad];
+    assert!(plain.groups_problem().is_some());
 }

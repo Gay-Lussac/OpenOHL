@@ -95,7 +95,7 @@ fn open(project: &Path) -> Result<Session, String> {
 pub fn run(command: SurfaceCommand) -> Result<(), String> {
     match command {
         SurfaceCommand::List { project } => {
-            let s = open(&project)?;
+            let s = crate::project::open_read_only(&project)?;
             let list = s.surfaces().map_err(|e| e.to_string())?;
             if list.is_empty() {
                 println!("no surface");
@@ -164,7 +164,7 @@ pub fn run(command: SurfaceCommand) -> Result<(), String> {
             Ok(())
         }
         SurfaceCommand::Export { project, name, out } => {
-            let s = open(&project)?;
+            let s = crate::project::open_read_only(&project)?;
             let (points, triangles) = s.surface(&name).map_err(|e| e.to_string())?;
             let t =
                 ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?;

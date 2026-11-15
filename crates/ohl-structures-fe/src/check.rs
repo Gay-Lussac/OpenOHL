@@ -50,6 +50,12 @@
 //!   while it is in the model (its moments too).
 //! - **Modelling members** (`check = false`, a tower program's fictitious
 //!   members): solved, not checked ([`NOT_CHECKED`], no usage).
+//! - **Optional, off by default** (owner 2026-11-15): redundant members
+//!   also for a share of the compression in the member they brace
+//!   (`[analysis] redundant_force`, [`redundant_supports`],
+//!   [`REDUNDANT_FORCE`]); flat members for a climbing load alone
+//!   (`[analysis] climbing_load`, [`climbing_check`]: a list of its own,
+//!   not in the usage).
 
 use crate::model::{CapacityMethod, MemberKind, Model};
 use crate::solve::Solution;
@@ -313,19 +319,482 @@ pub fn member_usage_with(
             .collect();
     }
     let crossings = unbraced_crossings(model);
+    let supports = model
+        .analysis
+        .redundant_force
+        .map(|share| redundant_supports(model, solution, share));
     (0..model.members.len())
         .map(|idx| {
-            usage_of(
+            let given = given.map(|g| g.get(idx).cloned().unwrap_or_default());
+            let own = usage_of(
                 model,
                 solution,
                 idx,
                 &solution.members[idx],
                 strength,
-                given.map(|g| g.get(idx).cloned().unwrap_or_default()),
-            )
+                given.clone(),
+            );
+            match (&supports, model.analysis.redundant_force) {
+                (Some(s), Some(share)) => {
+                    with_redundant_force(model, solution, strength, given, share, &s[idx], own)
+                }
+                _ => own,
+            }
         })
         .map(|u| with_remarks(model, solution, &crossings, u))
         .collect()
+}
+
+/// The mark before a redundant member's nominal force check in what
+/// governs (`[analysis] redundant_force`, owner 2026-11-15): `[redundant
+/// force: 2.5 % of 37.0 kN, the compression of L12 at N4 (the member it
+/// braces): 0.93 kN, 6 % — own force governs]`.
+pub const REDUNDANT_FORCE: &str = "[redundant force:";
+
+/// Two members at a joint continue one line through it — the member a
+/// redundant member braces there — when their directions from the joint
+/// are opposite within this angle, degrees (a leg's slope changing at a
+/// section joint by a few degrees is still the leg).
+pub const STRAIGHT_THROUGH_DEG: f64 = 10.0;
+
+/// Where a redundant member's nominal force comes from
+/// ([`redundant_supports`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Supported {
+    /// The braced member's piece whose compression gives the force
+    /// (index).
+    pub member: usize,
+    /// The joint where the redundant member braces it (index).
+    pub joint: usize,
+    /// The compression in it, N (≥ 0; 0: in tension, no nominal force):
+    /// its own, or — itself a redundant member — its own design force
+    /// (the larger of its own compression and its nominal force).
+    pub force: f64,
+    /// The braced member is itself a redundant member.
+    pub via_redundant: bool,
+}
+
+/// Per member, for each redundant member ([`MemberClass::Redundant`],
+/// checked): what it braces (ASCE 10-97, 1.0: "members that reduce the
+/// unbraced length of primary members by providing intermediate support")
+/// and the compression there, else why that could not be determined;
+/// none for every other member. `share`: `[analysis] redundant_force`
+/// (0.025: 2.5 %).
+///
+/// The braced member is found from the model: at each end joint of the
+/// redundant member, the members (other than itself, design-checked)
+/// that continue one straight line through the joint (two pieces whose
+/// directions from it are opposite within [`STRAIGHT_THROUGH_DEG`]) —
+/// the member it supports there. Its force: the larger compression of the
+/// two pieces at that joint, in this case. Of every such line at either
+/// end the largest force is taken (on the safe side). A line of redundant
+/// members (a redundant bracing a redundant) gives that member's own
+/// design force — the larger of its own compression and `share` × what it
+/// braces in turn (so a sub-redundant takes `share` of a redundant's
+/// nominal force, as practice designs the hierarchy); a ring of
+/// redundants bracing each other ends at their own forces. No member
+/// passing straight through either end joint: not determined, said.
+///
+/// [`MemberClass::Redundant`]: crate::design::MemberClass::Redundant
+pub fn redundant_supports(
+    model: &Model,
+    solution: &Solution,
+    share: f64,
+) -> Vec<Option<Result<Supported, String>>> {
+    use crate::design::MemberClass;
+    let n = model.members.len();
+    let mut at: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
+    for (k, m) in model.members.iter().enumerate() {
+        at[m.i].push(k);
+        at[m.j].push(k);
+    }
+    let dir = |k: usize, from: usize| -> [f64; 3] {
+        let m = &model.members[k];
+        let other = if m.i == from { m.j } else { m.i };
+        let (a, b) = (model.nodes[from].point, model.nodes[other].point);
+        let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-12);
+        d.map(|x| x / l)
+    };
+    let opposite = -(STRAIGHT_THROUGH_DEG.to_radians().cos());
+    // The straight lines through each joint: pairs of design-checked
+    // members.
+    let lines: Vec<Vec<(usize, usize)>> = (0..model.nodes.len())
+        .map(|j| {
+            let here: Vec<usize> = at[j]
+                .iter()
+                .copied()
+                .filter(|&k| model.members[k].check)
+                .collect();
+            let mut out = Vec::new();
+            for (x, &a) in here.iter().enumerate() {
+                for &b in &here[x + 1..] {
+                    let (da, db) = (dir(a, j), dir(b, j));
+                    if da[0] * db[0] + da[1] * db[1] + da[2] * db[2] < opposite {
+                        out.push((a, b));
+                    }
+                }
+            }
+            out
+        })
+        .collect();
+    let redundant = |k: usize| {
+        let m = &model.members[k];
+        m.check && m.design.class == Some(MemberClass::Redundant)
+    };
+    let compression = |k: usize| (-solution.members[k].axial).max(0.0);
+    // Memoised, with a guard against rings of redundants.
+    #[derive(Clone)]
+    enum State {
+        Todo,
+        Busy,
+        Done(Result<Supported, String>),
+    }
+    fn supported(
+        k: usize,
+        state: &mut Vec<State>,
+        lines: &[Vec<(usize, usize)>],
+        model: &Model,
+        share: f64,
+        redundant: &dyn Fn(usize) -> bool,
+        compression: &dyn Fn(usize) -> f64,
+    ) -> Result<Supported, String> {
+        if let State::Done(r) = &state[k] {
+            return r.clone();
+        }
+        state[k] = State::Busy;
+        let m = &model.members[k];
+        let mut best: Option<Supported> = None;
+        for j in [m.i, m.j] {
+            for &(a, b) in &lines[j] {
+                if a == k || b == k {
+                    continue;
+                }
+                for x in [a, b] {
+                    let (force, via) = if redundant(x) {
+                        // Its own design force; a ring: its own force.
+                        let nominal = match &state[x] {
+                            State::Busy => 0.0,
+                            _ => supported(x, state, lines, model, share, redundant, compression)
+                                .map_or(0.0, |s| share * s.force),
+                        };
+                        (compression(x).max(nominal), true)
+                    } else {
+                        (compression(x), false)
+                    };
+                    if best.as_ref().is_none_or(|s| force > s.force) {
+                        best = Some(Supported {
+                            member: x,
+                            joint: j,
+                            force,
+                            via_redundant: via,
+                        });
+                    }
+                }
+            }
+        }
+        let r = best.ok_or_else(|| {
+            "the member it braces not found: no member passes straight through its end joints"
+                .to_owned()
+        });
+        state[k] = State::Done(r.clone());
+        r
+    }
+    let mut state = vec![State::Todo; n];
+    (0..n)
+        .map(|k| {
+            redundant(k).then(|| {
+                supported(
+                    k,
+                    &mut state,
+                    &lines,
+                    model,
+                    share,
+                    &redundant,
+                    &compression,
+                )
+            })
+        })
+        .collect()
+}
+
+/// A redundant member's usage `own` with its nominal force check
+/// (`[analysis] redundant_force`, owner 2026-11-15): `share` of the
+/// compression in the member it braces (`supported`,
+/// [`redundant_supports`]), checked in compression and in tension (the
+/// direction of the bracing force is not known; a tension-only member or
+/// cable in tension only) by the same capacities as its own force; its
+/// usage the larger of its own and the nominal one, what governs saying
+/// which ([`REDUNDANT_FORCE`]). Where the braced member could not be
+/// determined: said not on the safe side (the nominal check not done).
+/// Every other member: `own`.
+fn with_redundant_force(
+    model: &Model,
+    solution: &Solution,
+    strength: f64,
+    given: Option<crate::asce10::Capacity>,
+    share: f64,
+    supported: &Option<Result<Supported, String>>,
+    mut own: MemberUsage,
+) -> MemberUsage {
+    let Some(supported) = supported else {
+        return own;
+    };
+    let idx = own.member;
+    let pct = share * 100.0;
+    let s = match supported {
+        Err(why) => {
+            own.governs.push_str(&format!(
+                " {NOT_SAFE} redundant force ({pct} %) not checked: {why}]"
+            ));
+            return own;
+        }
+        Ok(s) => s,
+    };
+    let braced = format!(
+        "the compression of {} at {} (the member it braces{})",
+        model.members[s.member].id,
+        model.nodes[s.joint].id,
+        if s.via_redundant {
+            ", itself redundant: its design force"
+        } else {
+            ""
+        }
+    );
+    let nominal = share * s.force;
+    if nominal <= 0.0 {
+        own.governs.push_str(&format!(
+            " {REDUNDANT_FORCE} {braced}: none in this case — none]"
+        ));
+        return own;
+    }
+    let m = &model.members[idx];
+    let f = &solution.members[idx];
+    let pieces = |axial: f64| crate::solve::MemberForces {
+        axial,
+        end_forces: [0.0; 12],
+        slack: false,
+        bowed: false,
+        length: f.length,
+        span_load: [0.0; 3],
+        lumped_load: [0.0; 3],
+    };
+    let mut checks = vec![usage_of(
+        model,
+        solution,
+        idx,
+        &pieces(nominal),
+        strength,
+        given.clone(),
+    )];
+    if !matches!(m.kind, MemberKind::Tension | MemberKind::Cable) {
+        checks.push(usage_of(
+            model,
+            solution,
+            idx,
+            &pieces(-nominal),
+            strength,
+            given,
+        ));
+    }
+    let Some(worst) = checks
+        .into_iter()
+        .filter(|u| u.usage.is_some())
+        .max_by(|a, b| usage_order(a.usage.unwrap_or(0.0), b.usage.unwrap_or(0.0)))
+    else {
+        own.governs.push_str(&format!(
+            " {REDUNDANT_FORCE} {pct} % of {:.2} kN, {braced}: {:.2} kN — no capacity]",
+            s.force / 1000.0,
+            nominal / 1000.0
+        ));
+        return own;
+    };
+    let u_nominal = worst.usage.unwrap_or(0.0);
+    let governs_nominal = match own.usage {
+        Some(u) => usage_order(u_nominal, u) == std::cmp::Ordering::Greater,
+        None => true,
+    };
+    if governs_nominal {
+        MemberUsage {
+            member: idx,
+            usage: worst.usage,
+            governs: format!(
+                "{} {REDUNDANT_FORCE} {pct} % of {:.2} kN, {braced}: {:.2} kN — governs; own \
+                 force {}]",
+                worst.governs,
+                s.force / 1000.0,
+                nominal / 1000.0,
+                own.usage
+                    .map_or("—".to_owned(), |u| format!("{:.0} %", u * 100.0))
+            ),
+        }
+    } else {
+        own.governs.push_str(&format!(
+            " {REDUNDANT_FORCE} {pct} % of {:.2} kN, {braced}: {:.2} kN, {:.0} % — own force \
+             governs]",
+            s.force / 1000.0,
+            nominal / 1000.0,
+            u_nominal * 100.0
+        ));
+        own
+    }
+}
+
+/// Members within this angle of the horizontal are checked for the
+/// climbing load ([`climbing_check`]), degrees: those a climber stands on
+/// (horizontals, flat bracing and arms); steeper ones are hand-holds,
+/// not checked — said in the note.
+pub const CLIMBING_INCLINATION_DEG: f64 = 30.0;
+
+/// One member's climbing check ([`climbing_check`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Climbing {
+    /// Member (index).
+    pub member: usize,
+    /// Share of its first-yield moment used (none: no elastic modulus or
+    /// no yield strength).
+    pub usage: Option<f64>,
+    /// In words.
+    pub words: String,
+}
+
+/// The optional climbing-load check (`[analysis] climbing_load`, owner
+/// 2026-11-15; ASCE 10-97 commentary C2.2: members "that may be used for
+/// support by maintenance personnel when climbing" should carry a
+/// vertical load of 1100 N "applied independently of all other loads
+/// without permanent distortion"): every design-checked member other than
+/// a cable within [`CLIMBING_INCLINATION_DEG`] of the horizontal, the
+/// load at mid-length, **alone** (no load case), the member simply
+/// supported (its ends' restraint — the bolts' friction the commentary
+/// allows — left out: on the safe side), the whole load across it (not
+/// its component normal to the member: on the safe side): M = P L / 4 +
+/// q L² / 8 with q its own weight × its dead-load factor, against first
+/// yield W_el,min · f_y, W_el,min the smallest elastic modulus the
+/// section gives (an angle's about its minor principal axis v: it bends
+/// about its principal axes; a table section's the smaller of wy, wz).
+/// No load or strength factor: the commentary's criterion is no
+/// permanent distortion, i.e. no yield. Empty when the check is off.
+pub fn climbing_check(model: &Model) -> Vec<Climbing> {
+    let Some(p) = model.analysis.climbing_load else {
+        return Vec::new();
+    };
+    let flat = CLIMBING_INCLINATION_DEG.to_radians().sin();
+    let mut out = Vec::new();
+    for (k, m) in model.members.iter().enumerate() {
+        if !m.check || m.kind == MemberKind::Cable {
+            continue;
+        }
+        let (a, b) = (model.nodes[m.i].point, model.nodes[m.j].point);
+        let l = model.length(m);
+        if l <= 0.0 || (b[2] - a[2]).abs() / l > flat + 1e-12 {
+            continue;
+        }
+        let s = &model.sections[m.section];
+        let mut moduli: Vec<f64> = [s.wy, s.wz].into_iter().flatten().collect();
+        if let Some(p) = &s.profile {
+            let q = p.properties();
+            moduli.extend([q.wel_y, q.wel_z, q.wel_u, q.wel_v].into_iter().flatten());
+        }
+        let w = moduli
+            .into_iter()
+            .filter(|w| *w > 0.0)
+            .min_by(|x, y| x.total_cmp(y));
+        let q = s.weight() * model.dead_load_factor(m);
+        let moment = p * l / 4.0 + q * l * l / 8.0;
+        let (usage, words) = match (w, s.yield_strength) {
+            (Some(w), Some(fy)) => (
+                Some(moment / (w * fy)),
+                format!(
+                    "{:.2} kN at mid-length of {:.2} m: M {:.3} kN m (own weight {:.3}) of \
+                     W_el,min {:.2} cm³ × f_y {:.0} MPa = {:.3} kN m",
+                    p / 1000.0,
+                    l,
+                    moment / 1000.0,
+                    q * l * l / 8.0 / 1000.0,
+                    w * 1e6,
+                    fy / 1e6,
+                    w * fy / 1000.0
+                ),
+            ),
+            (None, _) => (
+                None,
+                "not checked: its section gives no elastic modulus".to_owned(),
+            ),
+            (_, None) => (
+                None,
+                "not checked: its section gives no yield strength".to_owned(),
+            ),
+        };
+        out.push(Climbing {
+            member: k,
+            usage,
+            words,
+        });
+    }
+    out
+}
+
+/// The climbing check in words, for the notes (none: off): how many flat
+/// members were checked, how many exceed first yield (the worst named),
+/// those not checked, and that steeper members are not — said apart from
+/// the load cases' usage (owner 2026-11-15: a separate result).
+pub fn climbing_note(model: &Model, climbing: &[Climbing]) -> Option<String> {
+    let p = model.analysis.climbing_load?;
+    let over: Vec<&Climbing> = climbing
+        .iter()
+        .filter(|c| {
+            c.usage
+                .is_some_and(|u| classify_usage(u) == UsageClass::Over)
+        })
+        .collect();
+    let unchecked = climbing.iter().filter(|c| c.usage.is_none()).count();
+    let worst = climbing
+        .iter()
+        .filter(|c| c.usage.is_some())
+        .max_by(|a, b| usage_order(a.usage.unwrap_or(0.0), b.usage.unwrap_or(0.0)));
+    let mut text = format!(
+        "climbing load (alone, not a load case; ASCE 10-97 commentary C2.2): {:.2} kN at \
+         mid-length of each member within {CLIMBING_INCLINATION_DEG:.0}° of the horizontal, \
+         simply supported, against first yield: {} member(s) checked",
+        p / 1000.0,
+        climbing.len()
+    );
+    if let Some(w) = worst {
+        text.push_str(&format!(
+            ", worst {} {:.0} %",
+            model.members[w.member].id,
+            w.usage.unwrap_or(0.0) * 100.0
+        ));
+    }
+    if !over.is_empty() {
+        let names: Vec<String> = over
+            .iter()
+            .take(12)
+            .map(|c| {
+                format!(
+                    "{} {:.0} %",
+                    model.members[c.member].id,
+                    c.usage.unwrap_or(0.0) * 100.0
+                )
+            })
+            .collect();
+        text.push_str(&format!(
+            "; {} OVER first yield: {}{}",
+            over.len(),
+            names.join(", "),
+            if over.len() > 12 { ", …" } else { "" }
+        ));
+    }
+    if unchecked > 0 {
+        text.push_str(&format!(
+            "; NOT ON THE SAFE SIDE: {unchecked} not checked (no elastic modulus or yield strength)"
+        ));
+    }
+    text.push_str(&format!(
+        "; members steeper than {CLIMBING_INCLINATION_DEG:.0}° not checked (NOT ON THE SAFE SIDE \
+         for any a climber stands on)"
+    ));
+    Some(text)
 }
 
 /// A member's usage with what the core says about it whatever method

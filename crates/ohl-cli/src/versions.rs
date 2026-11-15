@@ -388,7 +388,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             println!("[{branch} {}] {}", r.short(), r.message);
         }
         VersionCommand::History { project, limit } => {
-            let s = open(&project)?;
+            let s = crate::project::open_read_only(&project)?;
             let refs = s.refs().map_err(err)?;
             let head = s.head_revision().map_err(err)?;
             let revs = s.revisions().map_err(err)?;
@@ -442,7 +442,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             }
         }
         VersionCommand::Status { project } => {
-            let s = open(&project)?;
+            let s = crate::project::open_read_only(&project)?;
             let st = s.status().map_err(err)?;
             match &st.head {
                 Head::Branch(b) => println!(
@@ -570,7 +570,7 @@ pub fn run(command: VersionCommand) -> Result<(), String> {
             max_sections,
             time_limit,
         } => {
-            let s = open(&project)?;
+            let s = crate::project::open_read_only(&project)?;
             let from = from.unwrap_or_else(|| "HEAD".into());
             let (na, a) = state_of(&s, Some(&from))?;
             let (nb, b) = state_of(&s, to.as_deref())?;

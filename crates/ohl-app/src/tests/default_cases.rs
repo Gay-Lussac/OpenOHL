@@ -143,6 +143,21 @@ fn the_load_case_library_adds_the_missing_default_cases() {
     h.get_by_label(&format!("Add {} case(s)", defaults.len()))
         .click();
     h.run();
+    // The 60 N/m ice only at or above 1000 m: its own list's rule put in
+    // the line at once, one command (owner 2026-11-15).
+    {
+        let r = h.state_mut().ready().unwrap();
+        let groups = &r.model.line.structure_groups;
+        assert_eq!(
+            groups
+                .iter()
+                .filter(|g| g.load_case.as_deref() == Some(ohl_loads::DEFAULT_HIGH_ICE_CASE))
+                .map(|g| g.rules.elevation_from)
+                .collect::<Vec<_>>(),
+            [Some(ohl_loads::DEFAULT_HIGH_ICE_ELEVATION)],
+            "{groups:?}"
+        );
+    }
     h.get_by_label("Save").click();
     h.run();
     let read = ohl_loads::LoadCases::load(&path).unwrap();
@@ -162,4 +177,13 @@ fn the_load_case_library_adds_the_missing_default_cases() {
     let r = h.state_mut().ready().unwrap();
     r.model.undo().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    // Another: the own list out of the line again.
+    r.model.undo().unwrap();
+    assert!(
+        !r.model
+            .line
+            .structure_groups
+            .iter()
+            .any(|g| g.load_case.as_deref() == Some(ohl_loads::DEFAULT_HIGH_ICE_CASE))
+    );
 }

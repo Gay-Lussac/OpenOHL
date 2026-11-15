@@ -232,7 +232,7 @@ fn session_of(file: &Path) -> Result<Option<ohl_session::Session>, String> {
     if !crate::project::is_project(file) {
         return Ok(None);
     }
-    crate::project::open_existing(file).map(Some)
+    crate::project::open_read_only(file).map(Some)
 }
 
 /// The weather cases: given, the preset's (same name as the rule file),

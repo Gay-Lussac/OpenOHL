@@ -76,7 +76,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `template` | no | The structure template it was built from, its role and values ([Structure templates](#structure-templates-ohlpt)). |
 | `node`, `member` | no | The structure's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
-| `section`, `material`, `analysis`, `load` | no | A full design's cross-sections, materials, analysis options (version 14: `tension_compression`) and own loads — see [Structure analysis](structure-analysis.md). |
+| `section`, `material`, `analysis`, `load` | no | A full design's cross-sections, materials, analysis options (version 14: `tension_compression`; version 16: the optional checks `redundant_force`, `climbing_load`) and own loads — see [Structure analysis](structure-analysis.md). |
 | `model` | no | A separate structure model (`.ohlfe`, path relative to this file) for the finite-element check, instead of the members here. |
 | `pole` | no | The pole: `pole = "id"` (a `.ohlp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
 

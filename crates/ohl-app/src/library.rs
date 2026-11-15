@@ -945,6 +945,10 @@ pub enum PageAction {
     /// own list, as one command (the load case form's *Applies to*,
     /// 2026-11-15).
     GiveCase(crate::load_case_form::Give),
+    /// The default load cases' own lists put in the line (the 60 N/m ice
+    /// only at or above 1000 m; Add the default cases…, 2026-11-15), as
+    /// one command.
+    DefaultGroups,
 }
 
 /// Whether the model reads `kind` from the project (its working copies).
@@ -1551,6 +1555,9 @@ impl LibraryPage {
                 }
                 if let Some(give) = self.form.give.take() {
                     return Some(PageAction::GiveCase(give));
+                }
+                if std::mem::take(&mut self.form.default_groups) {
+                    return Some(PageAction::DefaultGroups);
                 }
                 return action;
             }

@@ -51,6 +51,16 @@ pub struct FeArgs {
     /// naming it).
     #[arg(long, value_name = "buckling|none")]
     tension_compression: Option<String>,
+    /// Also check each redundant member for this percentage of the
+    /// compression in the member it braces (1 to 2.5 % is common practice,
+    /// ASCE 10-97 commentary C3.7.4), whatever the model says; 0: off.
+    #[arg(long, value_name = "PERCENT")]
+    redundant_force: Option<f64>,
+    /// Also check each member within 30° of the horizontal for this load
+    /// at mid-length, alone ("1100 N": ASCE 10-97 commentary C2.2),
+    /// whatever the model says; 0: off.
+    #[arg(long, value_name = "FORCE")]
+    climbing_load: Option<String>,
     /// A plugin giving member capacities (its folder; its
     /// `member-capacity` export): `--capacity` names its method.
     #[arg(long, requires = "capacity")]
@@ -254,6 +264,17 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         model.analysis.tension_compression = ohl_structures_fe::TensionCompression::parse(t)
             .map_err(|e| format!("--tension-compression: {e}"))?;
     }
+    if let Some(r) = args.redundant_force {
+        model.analysis.redundant_force = (r != 0.0).then_some(r / 100.0);
+    }
+    if let Some(c) = &args.climbing_load {
+        let f: ohl_core::units::Force =
+            c.parse().map_err(|e| format!("--climbing-load {c}: {e}"))?;
+        model.analysis.climbing_load = (f.si() != 0.0).then_some(f.si());
+    }
+    if args.redundant_force.is_some() || args.climbing_load.is_some() {
+        model.check()?;
+    }
     if let Some(c) = &args.capacity
         && args.capacity_plugin.is_none()
     {
@@ -380,7 +401,20 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             vec![("model".into(), model.loads.clone())]
         }
     };
-    let mut csv = String::from("case,member,kind,section,axial_n,usage,governs\n");
+    // The climbing check (alone, not a load case): a column of its own
+    // when it is on.
+    let climbing = ohl_structures_fe::check::climbing_check(&model);
+    let mut climbing_of: Vec<Option<&ohl_structures_fe::check::Climbing>> =
+        vec![None; model.members.len()];
+    for c in &climbing {
+        climbing_of[c.member] = Some(c);
+    }
+    let climbing_on = model.analysis.climbing_load.is_some();
+    let mut csv = String::from(if climbing_on {
+        "case,member,kind,section,axial_n,usage,governs,climbing\n"
+    } else {
+        "case,member,kind,section,axial_n,usage,governs\n"
+    });
     // Every case solved first: a plugin's member check is one call with
     // all of them.
     let mut solved = Vec::new();
@@ -466,6 +500,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::convergence_note(&s) {
             println!("  {note}");
         }
+        if let Some(note) = ohl_structures_fe::local_displacement_note(&model, &s) {
+            println!("  {note}");
+        }
         if let Some(note) = ohl_structures_fe::eccentricity_note(&model, &s) {
             println!("  {note}");
         }
@@ -522,7 +559,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         }
         for u in &usage {
             let m = &model.members[u.member];
-            let _ = writeln!(
+            let _ = write!(
                 csv,
                 "{},{},{},{},{:.1},{},{}",
                 ohl_core::text::csv_field(&case),
@@ -533,6 +570,36 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
                 u.usage
                     .map_or(String::new(), |x| format!("{:.1}", x * 100.0)),
                 ohl_core::text::csv_field(&u.governs)
+            );
+            if climbing_on {
+                let _ = write!(
+                    csv,
+                    ",{}",
+                    climbing_of[u.member]
+                        .and_then(|c| c.usage)
+                        .map_or(String::new(), |x| format!("{:.1}", x * 100.0))
+                );
+            }
+            csv.push('\n');
+        }
+    }
+    // The climbing check: its own list, apart from the load cases.
+    if let Some(note) = ohl_structures_fe::check::climbing_note(&model, &climbing) {
+        println!("climbing: {note}");
+        let mut worst: Vec<&ohl_structures_fe::check::Climbing> = climbing.iter().collect();
+        worst.sort_by(|a, b| {
+            ohl_structures_fe::check::usage_order(
+                b.usage.unwrap_or(f64::NAN),
+                a.usage.unwrap_or(f64::NAN),
+            )
+        });
+        for c in worst.iter().take(args.top) {
+            println!(
+                "  {:<12} {:>7}  {}",
+                model.members[c.member].id,
+                c.usage
+                    .map_or("—".to_owned(), |u| format!("{:.1} %", u * 100.0)),
+                c.words
             );
         }
     }

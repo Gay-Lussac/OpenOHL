@@ -705,6 +705,22 @@ impl Analyses {
                 if let Some(note) = ohl_structures_fe::convergence_note(&solution) {
                     notes.push(format!("model: {note}"));
                 }
+                // Joints moved far relative to their own members (a local
+                // near-mechanism; owner 2026-11-15): a warning.
+                if let Some(note) = ohl_structures_fe::local_displacement_note(model, &solution) {
+                    notes.push(format!("model: {note}"));
+                }
+                // The climbing check (optional, alone: not a load case,
+                // not in the usage; owner 2026-11-15): said once.
+                if let Some(note) = ohl_structures_fe::check::climbing_note(
+                    model,
+                    &ohl_structures_fe::check::climbing_check(model),
+                ) {
+                    let n = format!("model: {note}");
+                    if !notes.contains(&n) {
+                        notes.push(n);
+                    }
+                }
                 // Eccentric member ends (connection shifts): those whose
                 // moment was left out at a joint only bars meet.
                 if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {

@@ -124,14 +124,17 @@ The names are those of the line file:
   </structure_loads>
   <structure_group name="angle 10–30°" description="…">  <!-- version 18 (2026-11-15): which load cases its structures take -->
     <structure id="T7"/>                        <!-- picked by hand -->
-    <rules angle_from_deg="10" angle_to_deg="30" alignment="main" station_from="0" station_to="5000" dead_end="false">
+    <rules angle_from_deg="10" angle_to_deg="30" alignment="main" station_from="0" station_to="5000" dead_end="false" elevation_from="0" elevation_to="1000">
       <type id="1A"/>                           <!-- every rule given must hold, bounds included -->
     </rules>
     <case name="wind"/>                         <!-- the load cases taken; none: its structures take none from it -->
   </structure_group>
-  <structure_group load_case="ice">             <!-- the same raise: load case "ice"'s own list (Load cases… › Applies to); no name, no rules -->
+  <structure_group load_case="ice">             <!-- the same raise: load case "ice"'s own list (Load cases… › Applies to); no name -->
     <structure id="T4"/>                        <!-- takes ice on top of its groups' cases -->
     <excluded id="T5"/>                         <!-- does not take ice, whatever its groups give -->
+  </structure_group>
+  <structure_group load_case="0 °C + 60 N/m ice">  <!-- an own list with rules (2026-11-15, the same version): the case only where they hold -->
+    <rules elevation_from="1000"/>              <!-- ground elevation (the structure's position z) from 1000 m; not known: matches (the safe side) -->
   </structure_group>
   <electrical soil_resistivity_ohm_m="100" earthing_resistance_ohm="10" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>

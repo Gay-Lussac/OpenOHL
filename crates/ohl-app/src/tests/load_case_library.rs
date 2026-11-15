@@ -245,6 +245,9 @@ fn a_group_ticking_no_case_gives_its_structures_none() {
     }
     h.run();
     assert_eq!(cases_cell(&mut h, "T2"), "dismantled: 1: wind");
+    // Below the Rules (the ground elevation added 2026-11-15): scrolled to.
+    h.get_by_label("None").scroll_to_me();
+    h.run();
     h.get_by_label("None").click();
     h.run();
     {
@@ -715,4 +718,48 @@ fn the_local_switch_is_kept_and_reaches_the_placed_structures() {
         .unwrap();
     assert!(!plain.local);
     assert!(plain.library.iter().all(|c| !c.case.use_local));
+}
+
+/// The ground elevation rule in the groups window's Rules (2026-11-15):
+/// typed as from–to (empty: no bound), one command; the structures whose
+/// ground (the height of their position) is in the range are in the
+/// group — the typed example line at 496–510 m, from 505 m: T2 and T4.
+#[test]
+fn the_groups_window_takes_a_ground_elevation_rule() {
+    let mut model = typed_project("lc-groups-elevation");
+    model.sources.load_cases = Some(root().join("examples/synthetic-line/load-cases.ohllc"));
+    let mut h = app(model);
+    h.state_mut().ready().unwrap().structure_groups.open = true;
+    h.run();
+    h.get_by_label("New group").click();
+    h.run();
+    let input = || egui::accesskit::Role::TextInput;
+    // The last "from m" is the ground elevation's (the station's before).
+    h.get_all_by_role_and_label(input(), "from m")
+        .last()
+        .unwrap()
+        .scroll_to_me();
+    h.run();
+    h.get_all_by_role_and_label(input(), "from m")
+        .last()
+        .unwrap()
+        .focus();
+    h.run();
+    h.get_all_by_role_and_label(input(), "from m")
+        .last()
+        .unwrap()
+        .type_text("505");
+    h.run();
+    press(&mut h, egui::Key::Enter, egui::Modifiers::NONE);
+    h.run();
+    assert_eq!(groups(&mut h)[0].rules.elevation_from, Some(505.0));
+    assert_eq!(groups(&mut h)[0].rules.elevation_to, None);
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert_eq!(r.model.line.case_sets().members(0), ["T2", "T4"]);
+    }
+    // One undo: no rule.
+    h.state_mut().ready().unwrap().model.undo().unwrap();
+    h.run();
+    assert_eq!(groups(&mut h)[0].rules.elevation_from, None);
 }

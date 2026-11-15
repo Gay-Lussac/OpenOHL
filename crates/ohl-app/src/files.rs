@@ -824,13 +824,18 @@ pub fn create_project_from(
                 "the starter template (examples/starter) is not on this computer".to_owned(),
             )?),
         };
-    let line: ohl_line::Line = serde_json::from_value(serde_json::json!({
+    let mut line: ohl_line::Line = serde_json::from_value(serde_json::json!({
         "name": name,
         "crs": crs.trim(),
         "structures": [],
         "sections": [],
     }))
     .map_err(|e| e.to_string())?;
+    // With the default cases: the 60 N/m ice only at or above 1000 m
+    // (its own list's rule, owner 2026-11-15).
+    if defaults {
+        ohl_loads::add_default_case_groups(&mut line);
+    }
     let mut session = ohl_session::Session::open(&path).map_err(|e| e.to_string())?;
     session.import(&line, user).map_err(|e| e.to_string())?;
     // Libraries of its own: none copied in from around it.

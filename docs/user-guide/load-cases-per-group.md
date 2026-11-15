@@ -127,6 +127,7 @@ a structure is in.
 | on alignment | `alignment` (its id) | — | any alignment | The alignment of the station rule; alone: the structure stands on it. |
 | station from / to | `station_from`, `station_to` | m | no bound | Its station on that alignment (any alignment: on any it stands on). |
 | dead end | `dead_end` | — | either | *a dead end*: a section of the line ends at the structure; *not a dead end*: none does. Read from the line's sections, not from the type's name. |
+| ground elevation from / to | `elevation_from`, `elevation_to` | m | no bound | The elevation of the ground at the structure: the height of its position (a structure's origin is the centre at the ground), in the line's heights (its height datum). A structure whose ground elevation is not known matches (the safe side: the group's cases added). 2026-11-15. |
 
 Structures picked by hand join the structures of the rules: a group with
 rule *type 1A* and T7 picked holds every 1A structure and T7.
@@ -168,11 +169,30 @@ the line with two lists and nothing else:
 | **picked** | these structures take the case **on top of** what their groups give |
 | **excluded** | these structures do **not** take the case, whatever their groups give |
 
-It has no rules and gives no other case, and it does **not** count as a
-group for *in no group: every case*: picking a structure in no group
-changes nothing for its other cases (it keeps every case). So an own list
-only ever adds its case, or takes away exactly that case — never more (the
-safe side).
+It gives no other case, and it does **not** count as a group for *in no
+group: every case*: picking a structure in no group changes nothing for its
+other cases (it keeps every case). So an own list only ever adds its case,
+or takes away exactly that case — never more (the safe side).
+
+### A load case's own list with rules
+
+*2026-11-15* (owner: the 60 N/m ice case "should only be applied above
+1000m"). An own list may have **rules** — the same as a group's (types, line
+angle, station, dead end, ground elevation), set in this window on the own
+list's row, **5 Rules (optional)**. With rules, the case applies **only
+where they hold**: every structure for which every rule holds takes the case
+(on top of its groups' cases), every other one does **not** take it,
+whatever its groups give. A structure **picked** in the own list takes it
+and one **excluded** does not, whatever the rules say. **No other case
+changes**: a structure in no group still takes every other case (*in no
+group: every case but 0 °C + 60 N/m ice*), one in groups its groups' cases.
+That is why a rule like "only above 1000 m" belongs to the case's own list,
+not to a group: a group "above 1000 m" ticking only that case would make its
+structures take **only** that case — they would lose every other one.
+*Who is in* says how each structure gets the case (*by this list's rules*)
+or why not (*not taken: this list's rules do not hold here*). The default
+load case `0 °C + 60 N/m ice` comes with such an own list, rule *ground
+elevation from 1000 m* ([Load cases](loads.md#the-default-load-cases)).
 
 Ticking in **Applies to** writes this list: ticking a structure that does
 not take the case **picks** it (and takes an exclusion away); unticking
@@ -262,16 +282,17 @@ unfactored forces of any of them, broken-wire cases included.
 | `name` | unique (absent on a load case's own list) |
 | `description` | free text (optional) |
 | `structures` | ids picked by hand (optional) |
-| `rules` | `types`, `angle_from_deg`, `angle_to_deg`, `alignment`, `station_from`, `station_to`, `dead_end` — each optional, all given must hold |
+| `rules` | `types`, `angle_from_deg`, `angle_to_deg`, `alignment`, `station_from`, `station_to`, `dead_end`, `elevation_from`, `elevation_to` — each optional, all given must hold (on an own list: its case only where they hold) |
 | `load_cases` | names of cases of the load case library; absent or empty: its structures take none from it |
-| `load_case` | set: the group is that case's **own list** (one per case; no `name`, `rules` or `load_cases`) |
+| `load_case` | set: the group is that case's **own list** (one per case; no `name` or `load_cases`; `rules` optional, 2026-11-15) |
 | `excluded` | own list only: ids that do not take its case (an id both picked and excluded is refused) |
 
 A line with a group is written at version 18 (an older program refuses it
 rather than giving every structure every case); the own lists came in the
-same, unreleased raise. In OHL XML:
+same, unreleased raise, and so did the ground elevation rule and an own
+list's rules (2026-11-15, still version 18). In OHL XML:
 `<structure_group name description><structure id/><rules …><type id/></rules><case name/></structure_group>`,
-an own list `<structure_group load_case><structure id/><excluded id/></structure_group>`
+an own list `<structure_group load_case><structure id/><excluded id/><rules …/></structure_group>`
 ([ohl-line.xsd](../schema/ohl-line.md)). Details: [data model](../development/data-model.md).
 
 See also: [How load cases reach a structure](load-cases-to-structures.md),

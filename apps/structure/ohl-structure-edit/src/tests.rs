@@ -564,6 +564,51 @@ fn tension_compression_is_edited() {
     assert!(doc.get("version").is_none());
 }
 
+/// The optional checks (owner 2026-11-15): a redundant force and a
+/// climbing load typed write their keys and raise the file to version 16,
+/// read back by the model; empty removes them (the version kept); a
+/// typing that is not a percentage or a force is refused before anything
+/// changes.
+#[test]
+fn the_optional_checks_are_edited() {
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 8\n{PYLON}")
+        .parse()
+        .unwrap();
+    set_redundant_force(&mut doc, "2.5 %").unwrap();
+    set_climbing_load(&mut doc, "1100").unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("version = 16"), "{text}");
+    assert!(text.contains("redundant_force = 2.5"), "{text}");
+    assert!(text.contains("climbing_load = \"1100 N\""), "{text}");
+    let t = read(&doc);
+    let analysis = t.analysis.as_ref().unwrap();
+    assert_eq!(
+        analysis
+            .get("redundant_force")
+            .and_then(toml::Value::as_float),
+        Some(2.5)
+    );
+    assert_eq!(
+        analysis.get("climbing_load").and_then(toml::Value::as_str),
+        Some("1100 N")
+    );
+    set_climbing_load(&mut doc, "1.2 kN").unwrap();
+    assert!(doc.to_string().contains("climbing_load = \"1.2 kN\""));
+    for bad in ["0", "-1", "150", "a lot"] {
+        assert!(set_redundant_force(&mut doc, bad).is_err(), "{bad}");
+    }
+    for bad in ["0 N", "-3 N", "heavy"] {
+        assert!(set_climbing_load(&mut doc, bad).is_err(), "{bad}");
+    }
+    assert!(doc.to_string().contains("redundant_force = 2.5"));
+    set_redundant_force(&mut doc, "").unwrap();
+    set_climbing_load(&mut doc, " ").unwrap();
+    let text = doc.to_string();
+    assert!(!text.contains("redundant_force") && !text.contains("climbing_load"));
+    assert!(doc.get("analysis").is_none());
+    assert!(text.contains("version = 16"), "{text}");
+}
+
 /// A member's analysis fields typed (one member, or every member of a
 /// group), read back by the structure; empty removes them.
 #[test]

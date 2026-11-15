@@ -1678,6 +1678,32 @@ pub fn is_local_path(value: &str) -> bool {
             && matches!(b[2], b'\\' | b'/'))
 }
 
+/// The SQLite URI reading `path` read-only (`immutable`: as a file no
+/// program changes meanwhile — no locks, no `-wal` or `-shm`): the
+/// characters a URI path gives a meaning (`%`, `?`, `#`) and spaces
+/// escaped, a Windows path's backslashes as slashes.
+fn read_only_uri(path: &Path, immutable: bool) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let mut escaped = String::new();
+    for c in text.chars() {
+        match c {
+            '%' => escaped.push_str("%25"),
+            '?' => escaped.push_str("%3f"),
+            '#' => escaped.push_str("%23"),
+            ' ' => escaped.push_str("%20"),
+            c => escaped.push(c),
+        }
+    }
+    // A drive letter (C:/…) after a slash, as SQLite wants it.
+    if escaped.as_bytes().get(1) == Some(&b':') {
+        escaped.insert(0, '/');
+    }
+    format!(
+        "file:{escaped}?mode=ro{}",
+        if immutable { "&immutable=1" } else { "" }
+    )
+}
+
 /// Settings of every connection to a project file, which may come from
 /// anyone (a mailed project, a server's copy): the views and triggers in
 /// it run no function marked unsafe for schemas (`trusted_schema` off),
@@ -1696,6 +1722,68 @@ impl Session {
     pub fn open(path: &Path) -> Result<Self, SessionError> {
         let conn = Connection::open(path)?;
         harden(&conn)?;
+        Self::open_connection(conn, path, true)
+    }
+
+    /// Opens an existing project file to read it only (2026-11-15, owner:
+    /// commands that compute leave the file as it is): read-only
+    /// (`SQLITE_OPEN_READ_ONLY`), no journal mode set, no table made, no
+    /// upgrade written — its bytes and modification time stay as they
+    /// were. A file no program has open (no `-wal` beside it) is read as
+    /// immutable, so that no `-wal` or `-shm` file is made beside it; one
+    /// open elsewhere is read through its write-ahead log, as a reader
+    /// beside the program writing it. A file that needs something written
+    /// to be read (an older build's, upgraded on opening) is copied into
+    /// memory and upgraded there, the file untouched. A missing file is
+    /// refused (never created). A command that writes fails on such a
+    /// session ("attempt to write a readonly database"), or changes only
+    /// the copy in memory.
+    pub fn open_read_only(path: &Path) -> Result<Self, SessionError> {
+        use rusqlite::OpenFlags;
+        if !path.is_file() {
+            return Err(SessionError::Store(format!(
+                "{}: no such project file",
+                path.display()
+            )));
+        }
+        let mut wal = path.as_os_str().to_owned();
+        wal.push("-wal");
+        let immutable = !Path::new(&wal).exists();
+        let uri = read_only_uri(path, immutable);
+        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        let conn = Connection::open_with_flags(&uri, flags)?;
+        harden(&conn)?;
+        match Self::open_connection(conn, path, false) {
+            Err(SessionError::Store(m)) if m.contains("readonly database") => {
+                // Something to write before it can be read (an upgrade):
+                // done on a copy in memory.
+                let from = Connection::open_with_flags(&uri, flags)?;
+                let mut copy = Connection::open_in_memory()?;
+                rusqlite::backup::Backup::new(&from, &mut copy)?.run_to_completion(
+                    1024,
+                    std::time::Duration::ZERO,
+                    None,
+                )?;
+                drop(from);
+                harden(&copy)?;
+                Self::open_connection(copy, path, true)
+            }
+            other => other,
+        }
+    }
+
+    /// Opens the project of connection `conn` (to `path`): its tables made
+    /// and upgraded, its objects read. `writable`: false for a read-only
+    /// connection — no journal mode set; anything else that would write
+    /// fails with SQLite's "readonly database" error
+    /// ([`Session::open_read_only`]).
+    fn open_connection(
+        conn: Connection,
+        path: &Path,
+        writable: bool,
+    ) -> Result<Self, SessionError> {
         // A newer project file is refused before anything in it changes.
         let has_meta = conn
             .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ols_meta'")?
@@ -1717,9 +1805,11 @@ impl Session {
                 )));
             }
         }
+        if writable {
+            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        }
         conn.execute_batch(
-            "PRAGMA journal_mode = WAL;
-             CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            "CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS session_user (name TEXT PRIMARY KEY, role TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS model_object (
                  line TEXT NOT NULL DEFAULT 'main',
@@ -1797,7 +1887,11 @@ impl Session {
                 )));
             }
         }
-        versions::init(&conn)?;
+        // Read-only: written only when missing (else a readonly error and
+        // the copy in memory, [`Session::open_read_only`]).
+        if writable || !versions::initialised(&conn)? {
+            versions::init(&conn)?;
+        }
         if has_meta {
             migrate_library_files(&conn)?;
         }
@@ -4151,6 +4245,8 @@ mod lines_tests;
 mod link_tests;
 #[cfg(test)]
 mod points_tests;
+#[cfg(test)]
+mod read_only_tests;
 #[cfg(test)]
 mod replace_tests;
 #[cfg(test)]

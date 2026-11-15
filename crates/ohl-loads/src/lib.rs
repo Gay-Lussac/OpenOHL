@@ -150,10 +150,12 @@ pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 /// 10 °C and 40 °C (factors 1); 10 °C with 300 Pa of wind from the left
 /// and from the right (a factor 1.5 on the wind: transverse 1.5 and
 /// `[case.structure] wind_factor = 1.5`); 0 °C with 20 N/m of ice
-/// (vertical 1.3); and the wind along the line, from ahead (0°) and from
-/// behind (180°): the weather case "10 °C + 300 Pa wind" with the case's
-/// `wind_direction` (file version 7, 2026-11-15) on the wires and the
-/// bodies, transverse, longitudinal and the bodies' factor 1.5. They name
+/// (vertical 1.3); 0 °C with 60 N/m of ice (vertical 1.3), only for the
+/// structures at or above 1000 m ([`default_case_groups`]); and the wind
+/// along the line, from ahead (0°) and from behind (180°): the weather case
+/// "10 °C + 300 Pa wind" with the case's `wind_direction` (file version 7,
+/// 2026-11-15) on the wires and the bodies, transverse, longitudinal and the
+/// bodies' factor 1.5. They name
 /// the default weather cases ([`ohl_weather::DEFAULT_CASES_TEXT`]).
 /// **Arbitrary values for checking, not from a design code.**
 pub const DEFAULT_LOAD_CASES_TEXT: &str =
@@ -166,6 +168,55 @@ pub const DEFAULT_LOAD_CASES_FILE: &str = "default-load-cases.ohllc";
 /// OpenOHL's default load cases ([`DEFAULT_LOAD_CASES_TEXT`]), read.
 pub fn default_load_cases() -> LoadCases {
     LoadCases::parse(DEFAULT_LOAD_CASES_TEXT).expect("the default load cases read")
+}
+
+/// The default load case for structures high up (owner, 2026-11-15: "for
+/// the 60 it should only be applied above 1000m"): given only to the
+/// structures whose ground elevation is at least
+/// [`DEFAULT_HIGH_ICE_ELEVATION`] ([`default_case_groups`]).
+pub const DEFAULT_HIGH_ICE_CASE: &str = "0 °C + 60 N/m ice";
+
+/// The ground elevation from which [`DEFAULT_HIGH_ICE_CASE`] applies, m
+/// (bound included).
+pub const DEFAULT_HIGH_ICE_ELEVATION: f64 = 1000.0;
+
+/// The line's structure groups that go with the default load cases: the
+/// own list of [`DEFAULT_HIGH_ICE_CASE`] with the rule "ground elevation
+/// ≥ [`DEFAULT_HIGH_ICE_ELEVATION`]" — that case only where the rule holds,
+/// every other case untouched (an own list never takes other cases away,
+/// as a group ticking only that case would: [`ohl_line::groups`]). A new
+/// project with the default cases and *Add the default cases…* put it in
+/// the line when it has no own list for that case. A structure whose
+/// ground elevation is not known takes the case (the safe side).
+pub fn default_case_groups() -> Vec<ohl_line::StructureGroup> {
+    let mut own = ohl_line::StructureGroup::own_list(DEFAULT_HIGH_ICE_CASE);
+    own.description = format!(
+        "default: the 60 N/m ice only for structures at or above {DEFAULT_HIGH_ICE_ELEVATION:.0} m \
+         of ground elevation (arbitrary values for checking, not from a design code)"
+    );
+    own.rules.elevation_from = Some(DEFAULT_HIGH_ICE_ELEVATION);
+    vec![own]
+}
+
+/// The default groups ([`default_case_groups`]) whose load case `line` has
+/// no own list for, added to it: returns the cases whose own list was
+/// added and those it had already (kept as they are, never replaced).
+pub fn add_default_case_groups(line: &mut ohl_line::Line) -> (Vec<String>, Vec<String>) {
+    let (mut added, mut kept) = (Vec::new(), Vec::new());
+    for g in default_case_groups() {
+        let case = g.load_case.clone().unwrap_or_default();
+        if line
+            .structure_groups
+            .iter()
+            .any(|x| x.load_case.as_deref() == Some(case.as_str()))
+        {
+            kept.push(case);
+        } else {
+            line.structure_groups.push(g);
+            added.push(case);
+        }
+    }
+    (added, kept)
 }
 
 fn one() -> f64 {

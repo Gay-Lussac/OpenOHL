@@ -653,7 +653,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             report(&a);
         }
         ProjectCommand::Export { project, out } => {
-            let s = open(&project)?;
+            let s = open_read_only(&project)?;
             if !s.has_line() {
                 return Err("the project holds no line".into());
             }
@@ -775,7 +775,7 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             tile,
         } => query(&project, area.as_deref(), tile.as_deref())?,
         ProjectCommand::Log { project } => {
-            let s = open(&project)?;
+            let s = open_read_only(&project)?;
             println!(
                 "{:>5}  {:<24} {:<10} {:<9} {:<22} objects",
                 "seq", "time (UTC)", "user", "entry", "state"
@@ -847,6 +847,18 @@ pub fn open_existing(path: &Path) -> Result<Session, String> {
         return Err(format!("{}: no such project file", path.display()));
     }
     Session::open(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Opens an existing project file to read it only (owner 2026-11-15:
+/// every command that only reads or computes): read-only, nothing written
+/// — its bytes and modification time unchanged, no `-wal` or `-shm` made
+/// beside it; an older build's file is upgraded in memory only
+/// ([`Session::open_read_only`]).
+pub fn open_read_only(path: &Path) -> Result<Session, String> {
+    if !path.is_file() {
+        return Err(format!("{}: no such project file", path.display()));
+    }
+    Session::open_read_only(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// The library kinds a project keeps with its line (as the desktop
@@ -927,7 +939,7 @@ impl Libraries {
         let mut stored: Vec<(&str, usize)> = Vec::new();
         let mut work = None;
         if is_project(file) {
-            let session = open_existing(file)?;
+            let session = open_read_only(file)?;
             let mut held = Vec::new();
             for (kind, folder) in PROJECT_LIBRARY_KINDS {
                 let f = session.library_files(kind).map_err(|e| e.to_string())?;
@@ -1103,7 +1115,7 @@ fn working_folder(file: &Path) -> PathBuf {
 /// Loads a line from a line file or a project file (`.ohl`).
 pub fn load_line(path: &Path) -> Result<ohl_line::Line, String> {
     if is_project(path) {
-        let s = open_existing(path)?;
+        let s = open_read_only(path)?;
         if !s.has_line() {
             return Err(format!("{}: the project holds no line", path.display()));
         }
@@ -1165,7 +1177,7 @@ fn tiles(path: &Path, level: i8) -> Result<(), String> {
         ));
     }
     let started = std::time::Instant::now();
-    let s = open(path)?;
+    let s = open_read_only(path)?;
     let grid = *s.grid();
     let homes = s.home_tiles();
     let mut by_level: BTreeMap<i8, usize> = BTreeMap::new();
@@ -1260,7 +1272,7 @@ fn tiles(path: &Path, level: i8) -> Result<(), String> {
 /// `ohl project query`.
 fn query(path: &Path, area: Option<&str>, tile: Option<&str>) -> Result<(), String> {
     use ohl_core::grid::{Bounds, Tile};
-    let s = open(path)?;
+    let s = open_read_only(path)?;
     let area = match (area, tile) {
         (Some(text), _) => {
             let v: Vec<f64> = text

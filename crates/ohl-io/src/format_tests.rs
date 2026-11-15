@@ -411,6 +411,8 @@ fn rich_line() -> Line {
                 station_from: Some(0.0),
                 station_to: Some(1200.0),
                 dead_end: Some(false),
+                elevation_from: Some(450.5),
+                elevation_to: Some(1200.0),
             },
             load_cases: vec!["wind 90°".into(), "ice".into()],
             ..Default::default()
@@ -429,6 +431,16 @@ fn rich_line() -> Line {
             structures: vec![line.structures[1].id.clone()],
             load_case: Some("ice <&>".into()),
             excluded: vec![line.structures[0].id.clone()],
+            ..Default::default()
+        },
+        // An own list with a rule (2026-11-15): the case only above
+        // 1000 m.
+        ohl_line::StructureGroup {
+            load_case: Some("60 N/m ice".into()),
+            rules: ohl_line::GroupRules {
+                elevation_from: Some(1000.0),
+                ..Default::default()
+            },
             ..Default::default()
         },
     ];
