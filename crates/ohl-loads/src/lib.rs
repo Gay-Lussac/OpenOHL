@@ -150,9 +150,10 @@ pub const LOAD_CASE_FILE_EXTENSION: &str = "ohllc";
 /// 10 °C and 40 °C (factors 1); 10 °C with 300 Pa of wind from the left
 /// and from the right (a factor 1.5 on the wind: transverse 1.5 and
 /// `[case.structure] wind_factor = 1.5`); 0 °C with 20 N/m of ice
-/// (vertical 1.3); and the wind along the line, from ahead and from
-/// behind, on the structure bodies only (the weather case "10 °C": the
-/// wires take no wind; the bodies the case's own 300 Pa × 1.5). They name
+/// (vertical 1.3); and the wind along the line, from ahead (0°) and from
+/// behind (180°): the weather case "10 °C + 300 Pa wind" with the case's
+/// `wind_direction` (file version 7, 2026-11-15) on the wires and the
+/// bodies, transverse, longitudinal and the bodies' factor 1.5. They name
 /// the default weather cases ([`ohl_weather::DEFAULT_CASES_TEXT`]).
 /// **Arbitrary values for checking, not from a design code.**
 pub const DEFAULT_LOAD_CASES_TEXT: &str =
@@ -692,7 +693,7 @@ impl Default for BodyWind {
 /// degrees clockwise from the line's ahead to the structure's (−180 to
 /// 180); none where the line gives no direction there.
 pub fn structure_turn(line: &Line, s: &ohl_line::Structure) -> Option<f64> {
-    let a = line.direction_at([s.position[0], s.position[1]])?;
+    let a = line.bisected_direction_at([s.position[0], s.position[1]])?;
     let line_deg = a[1].atan2(a[0]).to_degrees();
     Some((s.orientation_deg + 90.0 - line_deg + 180.0).rem_euclid(360.0) - 180.0)
 }
@@ -2499,7 +2500,11 @@ fn case_loads(
                 f[2] -= string.weight / 2.0;
                 // Half the wind on the string, across the line.
                 let ahead = line.direction_at([x.top[0], x.top[1]]);
-                if let Some([tx, ty]) = ahead.and_then(|a| w.towards_at(a)) {
+                if let Some([tx, ty]) = w
+                    .oblique()
+                    .and_then(|_| line.bisected_direction_at([x.top[0], x.top[1]]))
+                    .and_then(|a| w.towards_at(a))
+                {
                     // At an angle: the full pressure along where it blows.
                     let q = 0.5 * w.wind_pressure.si() * local * string.wind_area;
                     f[0] += tx * q;
@@ -2678,7 +2683,16 @@ fn case_loads(
                 .map_or([0.0; 3], |a| {
                     // At an angle: the full pressure along where it blows
                     // (Conservative: no reduction for a member's angle).
-                    if let Some([tx, ty]) = w.towards_at(a) {
+                    if let Some([tx, ty]) = w
+                        .oblique()
+                        .and_then(|_| {
+                            line.bisected_direction_at([
+                                structure.position[0],
+                                structure.position[1],
+                            ])
+                        })
+                        .and_then(|b| w.towards_at(b))
+                    {
                         let q = w.wind_pressure.si() * line.wind_factor_at_structure(id);
                         return [tx * q, ty * q, 0.0];
                     }

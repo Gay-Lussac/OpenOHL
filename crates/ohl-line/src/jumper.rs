@@ -2116,7 +2116,11 @@ fn couple_pivots(
         };
         // At an angle: the full pressure along where it blows
         // (Conservative: no reduction for a member's angle to it).
-        if let Some([x, y]) = case.towards_at(a) {
+        if let Some([x, y]) = case
+            .oblique()
+            .and_then(|_| line.bisected_direction_at(at))
+            .and_then(|b| case.towards_at(b))
+        {
             let q = case.wind_pressure.si() * line.wind_factor_at_structure(&p.structure);
             return [x * q, y * q, 0.0];
         }

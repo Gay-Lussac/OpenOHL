@@ -2508,7 +2508,7 @@ fn table_ui(
 /// `[case.structure] direction` from the old convention (0° from the
 /// right, counted towards ahead) to the program's (0° from ahead, 90° from
 /// the right, clockwise), θ = 90° − θ_old; names stay (they mean the same).
-fn convert_old_directions(doc: &mut toml_edit::DocumentMut) {
+pub(crate) fn convert_old_directions(doc: &mut toml_edit::DocumentMut) {
     let Some(cases) = doc
         .get_mut("case")
         .and_then(toml_edit::Item::as_array_of_tables_mut)

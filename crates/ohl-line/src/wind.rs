@@ -166,7 +166,10 @@ impl WireWind {
                 .or_else(|| clamps.get(k).map(|c| [c.x, c.y]))
                 .unwrap_or([0.0, 0.0])
         };
-        let along = |at: [f64; 2]| line.direction_at_in(&views, at).unwrap_or(first_to_last);
+        let along = |at: [f64; 2]| {
+            line.bisected_direction_at_in(&views, at)
+                .unwrap_or(first_to_last)
+        };
         let n = section.points.len();
         Self {
             points: (0..n).map(|k| along(place(k))).collect(),

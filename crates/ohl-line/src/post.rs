@@ -152,7 +152,11 @@ pub fn own_load(
         });
     // A wind at an angle: the full pressure on its one area along where it
     // blows (Conservative: no reduction for the post's angle to it).
-    if let Some([x, y]) = case.towards_at(ahead) {
+    if let Some([x, y]) = case
+        .oblique()
+        .and_then(|_| line.bisected_direction_at([structure.position[0], structure.position[1]]))
+        .and_then(|a| case.towards_at(a))
+    {
         let q =
             case.wind_pressure.si() * line.wind_factor_at_structure(&structure.id) * post.wind_area;
         f[0] += x * q;

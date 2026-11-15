@@ -21,7 +21,7 @@ fn the_default_load_cases_are_the_owners_values() {
     let set = default_load_cases();
     let weather = ohl_weather::default_cases();
     // (name, weather, V, T, L, wind from, body pressure Pa, body factor,
-    // body direction)
+    // the case's wind direction)
     type Want = (
         &'static str,
         &'static str,
@@ -65,21 +65,21 @@ fn the_default_load_cases_are_the_owners_values() {
         ),
         (
             "10 °C + 300 Pa wind ahead",
-            "10 °C",
-            [1.0; 3],
+            "10 °C + 300 Pa wind",
+            [1.0, 1.5, 1.5],
             None,
-            Some(300.0),
+            None,
             Some(1.5),
-            Some(WindDirection::Ahead),
+            Some(WindDirection::Angle(0.0)),
         ),
         (
             "10 °C + 300 Pa wind back",
-            "10 °C",
-            [1.0; 3],
+            "10 °C + 300 Pa wind",
+            [1.0, 1.5, 1.5],
             None,
-            Some(300.0),
+            None,
             Some(1.5),
-            Some(WindDirection::Back),
+            Some(WindDirection::Angle(180.0)),
         ),
     ];
     assert_eq!(set.cases.len(), want.len());
@@ -101,7 +101,8 @@ fn the_default_load_cases_are_the_owners_values() {
         let s = c.structure.unwrap_or_default();
         assert_eq!(s.wind_pressure, pressure, "{name}");
         assert_eq!(s.wind_factor, factor, "{name}");
-        assert_eq!(c.on_structure.direction, direction, "{name}");
+        assert_eq!(c.wind_direction, direction, "{name}");
+        assert_eq!(c.on_structure.direction, None, "{name}");
         assert_eq!(c.on_structure.ice, None, "{name}");
         assert!(
             !c.use_local && !c.has_broken() && c.removed.is_empty(),
@@ -118,14 +119,15 @@ fn the_default_load_cases_are_the_owners_values() {
     // Written back by the program's writer, the same cases.
     let again = LoadCases::parse(&set.to_toml()).unwrap();
     assert_eq!(again.cases, set.cases);
-    assert_eq!(set.written_version(), 4);
+    assert_eq!(set.written_version(), 7);
 }
 
 /// Every default load case computes on the synthetic example line with
 /// the default weather cases: loads at the structures in each; the wind
 /// across factored 1.5 (wires and bodies), the ice's vertical 1.3; the
-/// wind along the line a longitudinal load on the bodies only — the wires
-/// as in still air (their loads those of "10 °C"), said in the notes.
+/// wind along the line (2026-11-15: a real wind direction) a longitudinal
+/// load on the bodies and on the wires' strings, the wires' across loads
+/// far below the wind across, said as one direction in the notes.
 #[test]
 fn the_default_load_cases_compute_on_the_example_line() {
     let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
@@ -196,9 +198,17 @@ fn the_default_load_cases_compute_on_the_example_line() {
         assert!((l.factored[0] - l.local[0]).abs() < 1e-6);
     }
     // The wind along the line: the bands' force all along it (from ahead
-    // towards −y, from behind towards +y), 300 Pa × 1.5; the wires as in
-    // still air at 10 °C.
+    // towards −y, from behind towards +y), 300 Pa × 1.5; the wires' loads
+    // along the line × 1.5, their across loads far below the cross wind's
+    // (the spans nearly along the wind), the strings blown along the line.
     let still = wires(by("10 °C"));
+    // The wind's part across: the change from still air (the pull at a
+    // line angle is in both).
+    let across: f64 = wires(by("10 °C + 300 Pa wind right"))
+        .iter()
+        .zip(&still)
+        .map(|(a, s)| (a.local[0] - s.local[0]).abs())
+        .sum();
     for (name, sign) in [
         ("10 °C + 300 Pa wind ahead", -1.0),
         ("10 °C + 300 Pa wind back", 1.0),
@@ -211,7 +221,7 @@ fn the_default_load_cases_compute_on_the_example_line() {
         assert!(!b.is_empty(), "{name}: the types' wind bands");
         for l in &b {
             assert!(
-                l.local[1] * sign > 0.0 && l.local[0].abs() < 1e-9,
+                l.local[1] * sign > 0.0 && l.local[0].abs() < 1e-6 * l.local[1].abs(),
                 "{name}: {l:?}"
             );
             assert!((l.factored[1] - 1.5 * l.local[1]).abs() < 1e-6, "{name}");
@@ -219,19 +229,25 @@ fn the_default_load_cases_compute_on_the_example_line() {
         }
         let w = wires(c);
         assert_eq!(w.len(), still.len(), "{name}");
-        for (a, s) in w.iter().zip(&still) {
-            assert_eq!((&a.structure, &a.point), (&s.structure, &s.point));
-            for k in 0..3 {
-                assert!(
-                    (a.local[k] - s.local[k]).abs() < 1e-6,
-                    "{name}: {a:?} {s:?}"
-                );
-            }
+        for l in &w {
+            assert!((l.factored[1] - 1.5 * l.local[1]).abs() < 1e-6, "{name}");
         }
+        let along: f64 = w
+            .iter()
+            .zip(&still)
+            .map(|(a, s)| a.local[1] - s.local[1])
+            .sum();
+        assert!(along * sign > 0.0, "{name}: the wires blown along: {along}");
+        let here: f64 = w
+            .iter()
+            .zip(&still)
+            .map(|(a, s)| (a.local[0] - s.local[0]).abs())
+            .sum();
+        assert!(here < 0.5 * across, "{name}: {here} vs {across} across");
         assert!(
             c.notes
                 .iter()
-                .any(|n| n.contains("take no wind") && n.contains("NOT ON THE SAFE SIDE")),
+                .any(|n| n.contains("not the across envelope")),
             "{name}: {:?}",
             c.notes
         );
