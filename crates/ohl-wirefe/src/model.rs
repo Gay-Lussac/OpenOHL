@@ -1072,6 +1072,99 @@ impl Model {
     }
 }
 
+impl Model {
+    /// The stiffness of the solved system at its fixed nodes `nodes` as
+    /// the structures holding them feel it (calculation levels 3 and 4 of
+    /// the line solve): how the reactions there change when those nodes
+    /// move, the free nodes staying in equilibrium —
+    /// \\( \mathbf K_w = \mathbf K_{ss} - \mathbf K_{sf}\mathbf K_{ff}^{-1}\mathbf K_{fs} \\)
+    /// of the converged tangent (static condensation of the wire model to
+    /// those nodes). A 3n × 3n symmetric matrix, N/m, in the order of
+    /// `nodes` (x, y, z each): moving the fixed nodes by δ changes their
+    /// reactions (the force each support exerts on the wires) by
+    /// \\( \mathbf K_w \delta \\), so the force on the structures by
+    /// \\( -\mathbf K_w \delta \\).
+    ///
+    /// The tangent at `solution`: each cable element with the load it was
+    /// solved with ([`Solution::cable_loads`]: the ice and wind per
+    /// stretched metre at the solved stretch, not differentiated — a
+    /// change of 10⁻³ of that load per unit of strain change, neglected:
+    /// the matrix is a Newton step's Jacobian, its error costs iterations,
+    /// never accuracy); a slack tension-only bar with its tiny stiffness
+    /// as the solver takes it.
+    ///
+    /// Err: a node out of range, not fixed or given twice
+    /// ([`FeError::InvalidModel`]); an element that cannot be evaluated;
+    /// the free nodes' tangent singular ([`FeError::Singular`]).
+    ///
+    /// Expected cost: one evaluation of the elements (~1 µs each) and one
+    /// LU solve of the free nodes' block with 3n right-hand sides — a
+    /// section with ~30 free nodes: well under a millisecond.
+    pub fn support_stiffness(
+        &self,
+        solution: &Solution,
+        nodes: &[usize],
+    ) -> Result<DMatrix<f64>, FeError> {
+        self.check()?;
+        let n = self.nodes.len();
+        if solution.positions.len() != n || solution.cables.len() != self.cables.len() {
+            return Err(FeError::InvalidModel(
+                "the solution is not of this model".into(),
+            ));
+        }
+        for (k, &s) in nodes.iter().enumerate() {
+            if s >= n || !self.nodes[s].fixed || nodes[..k].contains(&s) {
+                return Err(FeError::InvalidModel(format!(
+                    "support stiffness: node {s} is not a fixed node of the model, or given twice"
+                )));
+            }
+        }
+        // The loads as solved (the stretch frozen).
+        let mut model = self.clone();
+        for (c, load) in model.cables.iter_mut().zip(&solution.cable_loads) {
+            c.properties.load = *load;
+            c.stretched_load = Vector3::zeros();
+        }
+        // The supports first, then every free node.
+        let mut dof = vec![None; n];
+        for (k, &s) in nodes.iter().enumerate() {
+            dof[s] = Some(3 * k);
+        }
+        let ns = 3 * nodes.len();
+        let mut n_dof = ns;
+        for (i, node) in self.nodes.iter().enumerate() {
+            if !node.fixed {
+                dof[i] = Some(n_dof);
+                n_dof += 3;
+            }
+        }
+        let mut guesses: Vec<Option<(f64, f64)>> = solution
+            .cables
+            .iter()
+            .map(|s| Some((s.horizontal, s.v0)))
+            .collect();
+        let k = model
+            .evaluate(&solution.positions, &dof, n_dof, &mut guesses)?
+            .stiffness;
+        let nf = n_dof - ns;
+        let kss = k.view((0, 0), (ns, ns)).into_owned();
+        if nf == 0 {
+            return Ok(kss);
+        }
+        let ksf = k.view((0, ns), (ns, nf)).into_owned();
+        let kfs = k.view((ns, 0), (nf, ns)).into_owned();
+        let kff = k.view((ns, ns), (nf, nf)).into_owned();
+        let x = kff
+            .lu()
+            .solve(&kfs)
+            .filter(|x| x.iter().all(|v| v.is_finite()))
+            .ok_or(FeError::Singular { iteration: 0 })?;
+        let kw = kss - ksf * x;
+        // Symmetric to round-off.
+        Ok((&kw + kw.transpose()) * 0.5)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1313,6 +1406,122 @@ mod tests {
             "{error}"
         );
         assert!(model.solve(&default_fe_budget()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod support_stiffness_check {
+    use super::*;
+
+    fn props(l0: f64) -> CableProperties {
+        CableProperties {
+            unstressed_length: l0,
+            axial_stiffness: 34.64e6,
+            load: Vector3::new(0.0, 0.0, -15.97),
+        }
+    }
+
+    /// The support stiffness against central finite differences of the
+    /// solved reactions: each listed fixed node moved by ±h along each
+    /// axis, the model solved again.
+    fn against_finite_differences(model: &Model, nodes: &[usize], h: f64) -> f64 {
+        let budget = default_fe_budget();
+        let base = model.solve(&budget).unwrap();
+        let k = model.support_stiffness(&base, nodes).unwrap();
+        let mut worst: f64 = 0.0;
+        for (b, &s) in nodes.iter().enumerate() {
+            for axis in 0..3 {
+                let at = |d: f64| {
+                    let mut m = model.clone();
+                    m.nodes[s].position[axis] += d;
+                    // Free nodes from the solution (as a coupled pass would).
+                    for (node, p) in m.nodes.iter_mut().zip(&base.positions) {
+                        if !node.fixed {
+                            node.position = *p;
+                        }
+                    }
+                    m.solve(&budget).unwrap().reactions
+                };
+                let (plus, minus) = (at(h), at(-h));
+                for (a, &r) in nodes.iter().enumerate() {
+                    let fd = (plus[r] - minus[r]) / (2.0 * h);
+                    for c in 0..3 {
+                        let e = (k[(3 * a + c, 3 * b + axis)] - fd[c]).abs();
+                        worst = worst.max(e / k.abs().max());
+                    }
+                }
+            }
+        }
+        worst
+    }
+
+    /// One level span between two supports (no free node): the support
+    /// stiffness is the catenary element's, symmetric, and agrees with
+    /// the finite differences of the reactions; along the span it is
+    /// about the elastic catenary's \\( 1/(L/EA + w^2 L^3/(12 H^3)) \\).
+    #[test]
+    fn a_single_span_matches_finite_differences() {
+        let model = Model {
+            nodes: vec![
+                Node::fixed(Vector3::zeros()),
+                Node::fixed(Vector3::new(300.0, 0.0, 0.0)),
+            ],
+            cables: vec![CableElement::new(0, 1, props(300.4))],
+            trusses: vec![],
+        };
+        let worst = against_finite_differences(&model, &[0, 1], 1e-4);
+        assert!(worst < 1e-6, "{worst:e}");
+        let s = model.solve(&default_fe_budget()).unwrap();
+        let k = model.support_stiffness(&s, &[0, 1]).unwrap();
+        assert!((&k - k.transpose()).abs().max() < 1e-9 * k.abs().max());
+        // Along the span, by the parabola: the chord's change over the
+        // elastic and the sag's (geometric) compliance.
+        let (h, w, l, ea): (f64, f64, f64, f64) = (s.cables[0].horizontal, 15.97, 300.0, 34.64e6);
+        let parabola = 1.0 / (l / ea + w * w * l.powi(3) / (12.0 * h.powi(3)));
+        assert!(
+            (k[(3, 3)] / parabola - 1.0).abs() < 0.02,
+            "{} against {parabola}",
+            k[(3, 3)]
+        );
+        // Moving one end moves the other's reaction the other way.
+        assert!((k[(0, 3)] + k[(3, 3)]).abs() < 1e-6 * k[(3, 3)]);
+    }
+
+    /// Two spans and a suspension string: the free clamp re-balances
+    /// when a support moves (the condensation), which the finite
+    /// differences of whole solves see too.
+    #[test]
+    fn a_suspension_section_matches_finite_differences() {
+        let model = Model {
+            nodes: vec![
+                Node::fixed(Vector3::new(0.0, 0.0, 27.0)),
+                Node::fixed(Vector3::new(300.0, 0.0, 30.0)),
+                Node::free(Vector3::new(300.0, 0.0, 27.0)),
+                Node::fixed(Vector3::new(650.0, 0.0, 25.0)),
+            ],
+            cables: vec![
+                CableElement::new(0, 2, props(300.4)),
+                CableElement::new(2, 3, props(350.6)),
+            ],
+            trusses: vec![TrussElement {
+                i: 1,
+                j: 2,
+                unstressed_length: 3.0,
+                axial_stiffness: 5e7,
+                tension_only: true,
+                weight: 800.0,
+            }],
+        };
+        // A step of 3 mm: the solves' residual (~1e-11 EA ≈ 3.5e-4 N)
+        // over the step stays far below the stiffness, and the step's own
+        // error (second order: 1.3e-4 at 3 cm, 1.4e-3 at 10 cm, falling
+        // with h²) too.
+        let worst = against_finite_differences(&model, &[0, 1, 3], 3e-3);
+        assert!(worst < 1e-5, "{worst:e}");
+        // Not the supports: refused.
+        let s = model.solve(&default_fe_budget()).unwrap();
+        assert!(model.support_stiffness(&s, &[2]).is_err());
+        assert!(model.support_stiffness(&s, &[1, 1]).is_err());
     }
 }
 

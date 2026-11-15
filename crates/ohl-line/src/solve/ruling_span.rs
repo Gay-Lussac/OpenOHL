@@ -592,6 +592,8 @@ pub(super) fn solve_rs(
         spacers: Vec::new(),
         broken: None,
         broken_spans: Vec::new(),
+        // Ruling-span sections stay rigid (no stiffness of their own).
+        support_stiffness: None,
     })
 }
 
