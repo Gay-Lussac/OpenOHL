@@ -157,6 +157,13 @@ fn display_names_the_wind_by_its_angle() {
     let calm =
         ohl_weather::WeatherCase::still("calm", ohl_core::units::Temperature::from_celsius(10.0));
     assert_eq!(shown_name(&calm), "calm");
+    // A name that already says its wind (an import's side copy) is not
+    // said twice.
+    let imported = ohl_weather::WeatherCase {
+        name: "storm — from the left (270°)".into(),
+        ..left.clone()
+    };
+    assert_eq!(shown_name(&imported), "storm — from the left (270°)");
     let ahead_right = across.with_direction(WindDirection::Angle(45.0));
     let mirrored = side_shown(ahead_right.clone(), WindSide::Left);
     assert_eq!(mirrored.wind_direction, Some(WindDirection::Angle(315.0)));

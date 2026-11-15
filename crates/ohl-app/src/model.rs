@@ -289,6 +289,9 @@ pub fn wind_words(case: &WeatherCase) -> String {
 pub fn shown_name(case: &WeatherCase) -> String {
     match wind_words(case) {
         w if w.is_empty() => case.name.clone(),
+        // A name that already says its wind (e.g. a case imported as
+        // "storm — from the left (270°)") is not said twice.
+        w if case.name.ends_with(&w) => case.name.clone(),
         w => format!("{} — {w}", case.name),
     }
 }
