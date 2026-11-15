@@ -255,7 +255,7 @@ impl LineInputs {
 
     /// The structures' loads in the cases the line sends to them: the
     /// load case library's cases (each structure takes those of its
-    /// groups in [`Placed::write`]) — as Checks › Structure loads computes
+    /// groups in [`Placed::write_with`]) — as Checks › Structure loads computes
     /// them (seconds for a long line: one solve per case and section).
     /// Err: no case to send (no load case library).
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
