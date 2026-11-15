@@ -327,7 +327,9 @@ pub struct MemberForces {
     /// Mz), then node j.
     pub end_forces: [f64; 12],
     /// A cable gone slack, or a tension-only member left out as slack
-    /// (its forces 0: it has no buckling load, [`buckling_loads`]).
+    /// (its forces 0: it has no buckling load, [`buckling_loads`], or the
+    /// model's tension-only members carry no compression,
+    /// [`crate::TensionCompression::None`]).
     pub slack: bool,
     /// A tension-only member **bowed**: shortened beyond its own buckling
     /// load, it carries that load ([`buckling_loads`]; `axial` = −N_cr)
@@ -450,9 +452,11 @@ struct Prepared {
 /// A model with **tension-only members** ([`MemberKind::Tension`]) is
 /// solved by active-set iterations ([`TENSION_PASSES`]): a tension-only
 /// member is a truss in tension and in compression up to its own elastic
-/// buckling load N_cr ([`buckling_loads`]; 0 without a second moment);
-/// shortened beyond, it is **bowed**: left out of the stiffness, it
-/// carries N_cr (a constant pair of forces; with N_cr = 0 it is slack).
+/// buckling load N_cr ([`buckling_loads`]; 0 without a second moment, and
+/// 0 for every member when the model says `[analysis]
+/// tension_compression = "none"`, [`compression_caps`]); shortened
+/// beyond, it is **bowed**: left out of the stiffness, it carries N_cr (a
+/// constant pair of forces; with N_cr = 0 it is slack).
 /// Solved, its members beyond their load bowed and its bowed ones that
 /// the structure would load less put back, and solved again, until the
 /// set does not change — first order, then (P-Delta) with the geometric
@@ -619,6 +623,18 @@ pub fn buckling_loads(model: &Model) -> Vec<f64> {
         .collect()
 }
 
+/// The compression each tension-only member carries at most, N, by the
+/// model's law ([`crate::TensionCompression`], `[analysis]
+/// tension_compression`, owner 2026-11-15): its buckling load
+/// ([`buckling_loads`], the default) or none at all (`"none"`: every cap
+/// 0, each member slack as soon as it would be shortened).
+pub fn compression_caps(model: &Model) -> Vec<f64> {
+    match model.analysis.tension_compression {
+        crate::TensionCompression::Buckling => buckling_loads(model),
+        crate::TensionCompression::None => vec![0.0; model.members.len()],
+    }
+}
+
 /// Per member, the compression its tie ([`chains`]) carries at most: the
 /// least buckling load of the tie's members (the force along a tie is
 /// one; its weakest member bows first).
@@ -643,7 +659,7 @@ fn solve_tension_only(
     budget: &Budget,
     threshold: f64,
 ) -> Result<Solution, FeError> {
-    let own = buckling_loads(model);
+    let own = compression_caps(model);
     let run = budget.start();
     let (mut s, passes, kept) = rounds(
         model,

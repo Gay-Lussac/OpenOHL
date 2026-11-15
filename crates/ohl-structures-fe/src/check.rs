@@ -34,7 +34,10 @@
 //! - **Cables**: tension only.
 //! - **Tension-only members**: tension as trusses; their compression —
 //!   never above their own buckling load, which the solver caps
-//!   ([`crate::solve::buckling_loads`]) — against the member's
+//!   ([`crate::solve::buckling_loads`]; none at all when the model says
+//!   `[analysis] tension_compression = "none"`, owner 2026-11-15: then
+//!   every shortened one is slack, "slack (no compression)") — against
+//!   the member's
 //!   `capacity_compression`, else the allowable compression, else area ×
 //!   yield, without the Euler load again (the solve has taken buckling
 //!   into account: a bowed member carries its buckling load and no more,
@@ -194,6 +197,10 @@ pub const KEPT_ACTIVE: &str = "kept active (did not settle)";
 /// ([`crate::MemberForces::bowed`]), followed by its buckling load:
 /// `bowed: carries its buckling load 0.83 kN`.
 pub const BOWED: &str = "bowed: carries its buckling load";
+/// What governs a slack tension-only member of a model whose tension-only
+/// members carry no compression (`[analysis] tension_compression =
+/// "none"`; 2026-11-15).
+pub const SLACK_NO_COMPRESSION: &str = "slack (no compression)";
 
 /// What governs a member not design-checked (`check = false`: a
 /// modelling member): no usage.
@@ -446,7 +453,10 @@ fn usage_of(
                 return MemberUsage {
                     member: idx,
                     usage: Some(0.0),
-                    governs: "slack".into(),
+                    governs: match model.analysis.tension_compression {
+                        crate::TensionCompression::Buckling => "slack".into(),
+                        crate::TensionCompression::None => SLACK_NO_COMPRESSION.into(),
+                    },
                 };
             }
             let n = f.axial;

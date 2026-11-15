@@ -120,6 +120,8 @@ mod snap_marker_tests;
 #[cfg(test)]
 mod solids_tests;
 #[cfg(test)]
+mod tension_compression_ui_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tool_window_tests;

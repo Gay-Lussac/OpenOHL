@@ -850,3 +850,90 @@ expected.r_N1_x = { value = -10000.0, rel_tol = 1e-9 }
 expected.r_N1_z = { value = -66.66666666666667, rel_tol = 1e-9 }
 expected.r_N1_ry = { value = -39800.0, rel_tol = 1e-9 }
 expected.u_N2_x = { value = 0.5041269841269841, rel_tol = 1e-9 }
+
+# The X-braced panel of structfe-011 (diagonals of I_min = 1 cm4, elastic
+# buckling load π²EI/L² = 829.05 N), the model set to no compression in
+# tension-only members ([analysis] tension_compression = "none", owner
+# 2026-11-15): BD, shortened, is slack — it does not carry its buckling
+# load as in structfe-011 — and AC carries the whole shear. Method of
+# joints on the panel with AC alone (statically determinate):
+#   joint D, x: H + N_DC = 0          → N_DC = −H    = −10000 N
+#   joint D, z: −N_AD = 0             → N_AD = 0
+#   joint C, x: −N_DC − 0.8 N_AC = 0  → N_AC = 5H/4  =  12500 N
+#   joint C, z: −N_BC − 0.6 N_AC = 0  → N_BC = −3H/4 =  −7500 N
+#   reactions: A_x = −H, B_x = 0, A_z = −3H/4, B_z = +3H/4.
+[[case]]
+id = "structfe-016"
+title = "X-braced panel, tension-only diagonals with a second moment, the model set to no compression: the compressed diagonal is slack, the other carries the whole shear"
+calculation = "structures.fe"
+reference = "Method of joints (statics) on the panel with the stretched diagonal alone, the compressed one slack whatever its second moment: AC = 5H/4, DC = −H, BC = −3H/4, AD = 0"
+notes = "structfe-011 with [analysis] tension_compression = \"none\" (model file version 6): BD slack, its force 0, not bowed; 2 solves; first order"
+max_seconds = 1.0
+inputs.model = '''
+format = "ohl-structure-model"
+version = 6
+[analysis]
+nonlinear = false
+tension_compression = "none"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+i_min = "1 cm4"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["4 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "C"
+point = ["4 m", "0 m", "3 m"]
+[[node]]
+id = "D"
+point = ["0 m", "0 m", "3 m"]
+[[member]]
+id = "AD"
+nodes = ["A", "D"]
+section = "s"
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "s"
+[[member]]
+id = "DC"
+nodes = ["D", "C"]
+section = "s"
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "s"
+kind = "tension"
+[[member]]
+id = "BD"
+nodes = ["B", "D"]
+section = "s"
+kind = "tension"
+[[load]]
+node = "D"
+force = ["10 kN", "0 N", "0 N"]
+'''
+expected.n_BD = { value = 0.0, abs_tol = 1e-9 }
+expected.bowed_BD = { value = 0.0, abs_tol = 1e-12 }
+expected.slack_BD = { value = 1.0, abs_tol = 1e-12 }
+expected.bowed_AC = { value = 0.0, abs_tol = 1e-12 }
+expected.slack_AC = { value = 0.0, abs_tol = 1e-12 }
+expected.n_AC = { value = 12500.0, rel_tol = 1e-9 }
+expected.n_DC = { value = -10000.0, rel_tol = 1e-9 }
+expected.n_BC = { value = -7500.0, rel_tol = 1e-9 }
+expected.n_AD = { value = 0.0, abs_tol = 1e-6 }
+expected.r_A_x = { value = -10000.0, rel_tol = 1e-9 }
+expected.r_B_x = { value = 0.0, abs_tol = 1e-6 }
+expected.r_A_z = { value = -7500.0, rel_tol = 1e-9 }
+expected.r_B_z = { value = 7500.0, rel_tol = 1e-9 }
+expected.passes = { value = 2.0, abs_tol = 1e-12 }

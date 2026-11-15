@@ -241,6 +241,12 @@ structure editor `placed_editor::as_type`); the line file, OHL XML (types
 are not in it) and the line-values file are unchanged — a typed post
 reaches the line as a hand-made one (line file 17) and OHL-Structure as
 its moments (line-values 8).
+`[analysis] tension_compression` (2026-11-15: `"buckling"`, the default,
+or `"none"`: tension-only members carry no compression) made `.ohls`
+**14** (`structures::TENSION_COMPRESSION_VERSION`; written at 14 only when
+set to none: OHL-Structure's `ohl_structure_edit::set_tension_compression`)
+and `.ohlfe` **6** (`TENSION_COMPRESSION_MODEL_VERSION`); nothing else
+changes.
 
 ### Coordinates and angles
 
@@ -1286,7 +1292,22 @@ with γ_M) or `Simple` (`"simple"`, `check::SIMPLE`);
 with a design class axial unless `single_angle_moments`; bolts with
 `count = 0`: holes only; a material's `ultimate`, `Section::ultimate`; in a
 structure file the same `[analysis]` key, raised to version 8 by
-OHL-Structure when set) and
+OHL-Structure when set; version 6, 2026-11-15: `[analysis]
+tension_compression` — `Analysis::tension_compression`,
+`TensionCompression::Buckling` (`"buckling"`, the default, no key: a
+tension-only member carries compression up to its buckling load,
+`solve::buckling_loads`) or `None` (`"none"`: no compression, every
+tension-only member slack once shortened); `solve::compression_caps`
+gives the solver's caps by it, `tension_only_note` says
+`(no compression)`, a slack member's usage `check::SLACK_NO_COMPRESSION`,
+`refusal_text` adds `NO_COMPRESSION_REFUSAL` to a mechanism, held,
+implausible or unstable refusal of such a model;
+`TENSION_COMPRESSION_MODEL_VERSION` 6, written only when given; in a
+structure file the same key, structure file version 14
+(`ohl_structures::structures::TENSION_COMPRESSION_VERSION`), raised by
+OHL-Structure's switch (`ohl_structure_edit::set_tension_compression`)
+only when set to none; `ohl structures fe --tension-compression`
+overrides it) and
 poles `.ohlp` (`ohl-pole`) next to the `.ohls`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.ohlr`; thermal ambient `.ohlta`; unit costs `.ohlcost`; galloping
@@ -1862,7 +1883,7 @@ Source: `crates/ohl-structures/src/structures.rs`. All positions in
 | `.ohlcp` (`Connections/connection-presets.ohlcp` next to a structure) | `format = "ohl-connection-presets"`, `version = 1`, `[[preset]]` with `name` and the fields of a `[[connection]]` but `member`, `joint`, `onto`, `bolt_points` (`ohl_structure_edit::connection_edits::{parse_presets, presets_text, CARRIED}`; each preset read as a connection to check it) | m | OHL-Structure's connection presets (stage 3, 2026-11-02): an end saved as one, one applied to an end (`put_carried`) |
 | `[[generator]]` | tables (`generators`, kept unread by the core): `id`, `kind` (`panels` / `crossarm` / `peak` / `copy_face`) and its inputs | m | a body generator's record, read by `ohl-structure-edit` (`body::Generator`): panels `bottom?`, `feet`, `waist` (a length or [across, along]), `panel` [{`top`, `bracing` (`single`/`x`/`k`/`diamond`/`warren`), `horizontal`, `width?` (not the last panel; `Panel::width`), `redundants?` (`none`/`one`/`two`, `body::Redundants`), `plan?` (`none`/`x`/`diamond`, `body::Plan`)}], `plan_auto?` (`body::Plan`; slope changes and crossarm levels); crossarm `points`, `shape` (`triangular`/`rectangular`), `one_arm?` (bool); the optional fields are written only when on and read as off when absent (older files read as before, built the same: `generators_tests.rs` keeps a reference); version 6: the structure application raises the file to 6 when it writes a generator using one (`Generator::uses_options`), so an older one says "newer" instead of refusing them as unknown fields; peak `points` or `height`; copy_face `body` (a panels generator), `face` (`x+`/`x-`/`y+`/`y-`) |
 | `[[symmetry]]` | tables (`symmetry`, kept unread by the core): `mirror` (`x`/`y`/`xy`), `groups?` | — | mirror planes the structure application keeps joints and members in step with (`body::Symmetry`); the first one is the Body menu's Symmetry option |
-| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ohl_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the cross-section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1, `Analysis::drag_given` false then: said not on the safe side —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1) |
+| `[[section]]`, `[[material]]`, `[analysis]`, `[[load]]` | tables | — | read by `ohl_structures_fe` for the finite-element check; `[[load]]` is also the structure application's case `model` (a member's section: the cross-section library's first; `[analysis]`: `nonlinear`, `self_weight`, `drag` — the member wind's drag factor, default 1, `Analysis::drag_given` false then: said not on the safe side —, `stabilise` — joint stabilisation, default true —, `dead_load_factor` — on the members' self-weight, default 1 —, `tension_compression` — version 14: `"buckling"` (default) or `"none"`, what the tension-only members carry in compression, `Analysis::tension_compression`) |
 | `[[load_case]]` | tables (`load_cases`, kept unread by the core) | N, Pa | the structure's load-case recipes, read by the structure application (`ohl-structure-loads`; below) |
 | `capacity` | `spans[]` (by line angle: `wind_span`, `weight_span`, `min_weight_span`; between two angles interpolated linearly in sin(θ/2), `Capacity::spans_at` — linearly in θ until 2026-10), `attachment[]` (`point`, `vertical`, `uplift`, `transverse`, `longitudinal`, `interaction`) | m, N | what it can carry (structure axes) |
 | `wind` | `band[]`: `from`, `to`, `area`, `drag` | m, m² | wind on the structure itself; heights above the ground of the structure as written, raised by a placed structure's extension `dz` |

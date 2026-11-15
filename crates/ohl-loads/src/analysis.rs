@@ -626,7 +626,7 @@ impl Analyses {
                 case.strength,
                 &ohl_structures_fe::default_budget(),
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| ohl_structures_fe::refusal_text(model, &e))
         };
         let mut plugin_note = None;
         let solved = if !by_plugin {

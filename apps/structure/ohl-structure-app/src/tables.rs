@@ -62,6 +62,23 @@ pub(crate) fn text_cell(
     None
 }
 
+/// The Analysis row's switch of what the tension-only members carry in
+/// compression (`[analysis] tension_compression = "none"`, owner
+/// 2026-11-15).
+pub(crate) const TENSION_NO_COMPRESSION: &str = "tension-only: no compression";
+
+/// Its hover: what it does to the results.
+const TENSION_NO_COMPRESSION_HELP: &str = "Ticked: the tension-only members (kind tension) \
+     carry no compression at all — each goes slack as soon as it is shortened, not even \
+     carrying its buckling load — and the compression goes to the other members (more load on \
+     those they relieved: on the safe side for them; not a bound for every member, compare both \
+     where it matters). A joint held only by tension-only members that are \
+     shortened is then held by nothing: that load case is refused and the joint named. Not \
+     ticked (the default): a tension-only member carries compression up to its own buckling \
+     load (capped by its design compression resistance), bowed beyond it. Ticking writes \
+     tension_compression = \"none\" in [analysis] (structure file version 14); every check \
+     takes it, OHL-Design's structure usage too";
+
 /// The member fields of the finite-element check typed as text in the
 /// Member sections and Groups tables: (field, heading, what it is, hint).
 pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 5] = [
@@ -1701,7 +1718,9 @@ impl StructureApp {
         );
         // The analysis settings ([analysis]) that go with the members.
         let analysis = t.analysis.clone().unwrap_or_default();
-        ui.horizontal(|ui| {
+        // Wrapped: with the tension-only switch the row is wider than a
+        // narrow panel, and the capacities choice would fall off its edge.
+        ui.horizontal_wrapped(|ui| {
             ui.strong("Analysis")
                 .on_hover_text("The finite-element check's settings ([analysis] of the file)");
             let mut stabilise = analysis
@@ -1718,6 +1737,23 @@ impl StructureApp {
                 .changed()
                 && let Err(e) = f.edit("stabilise joints", |doc, _| {
                     edit::set_analysis_field(doc, "stabilise", if stabilise { "" } else { "false" })
+                })
+            {
+                self.message = Some((e, true));
+            }
+            // What the tension-only members carry in compression (owner
+            // 2026-11-15): up to their buckling load (the default) or
+            // nothing.
+            let mut none = analysis
+                .get("tension_compression")
+                .and_then(toml::Value::as_str)
+                == Some("none");
+            if ui
+                .checkbox(&mut none, TENSION_NO_COMPRESSION)
+                .on_hover_text(TENSION_NO_COMPRESSION_HELP)
+                .changed()
+                && let Err(e) = f.edit(TENSION_NO_COMPRESSION, |doc, _| {
+                    edit::set_tension_compression(doc, none)
                 })
             {
                 self.message = Some((e, true));
@@ -1846,7 +1882,8 @@ impl StructureApp {
                     "kind",
                     "truss (axial only), frame (bending too), cable (tension only, a guy) or \
                      tension (a truss in tension only: in compression up to its own buckling \
-                     load, bowed beyond it; slack without a second moment)",
+                     load, bowed beyond it; slack without a second moment — or slack once \
+                     shortened when Analysis › tension-only: no compression is ticked)",
                 ),
                 ("k", "Effective length factor for buckling (none: 1)"),
             ]

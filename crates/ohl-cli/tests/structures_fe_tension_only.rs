@@ -7,7 +7,10 @@
 //! off the line, the joint held otherwise only by a weak spring): it
 //! settles — without a second moment the shortened halves slack, with
 //! one (0.1 cm⁴) bowed at their buckling load, said in the note, the
-//! member list and the CSV — and nothing is kept active.
+//! member list and the CSV — and nothing is kept active. With
+//! `--tension-compression none` (or the model saying it) the halves with
+//! a second moment slack too, the law said; `buckling` overrides a model
+//! saying none; another word refused.
 
 use std::process::Command;
 
@@ -71,6 +74,12 @@ force = ["10 kN", "0 kN", "0 kN"]
 "#;
 
 fn run(model: &str, name: &str) -> (String, String) {
+    run_with(model, name, &[])
+}
+
+/// `ohl structures fe` on `model` with the options `extra`; its output
+/// (`Err`: it failed, its error output) and its member CSV.
+fn output(model: &str, name: &str, extra: &[&str]) -> Result<(String, String), String> {
     let dir = std::env::temp_dir().join(format!("ohl-fe-{name}-{}", std::process::id()));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).unwrap();
@@ -80,18 +89,24 @@ fn run(model: &str, name: &str) -> (String, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
         .args(["structures", "fe"])
         .arg(&file)
-        .arg("--weight-factor")
-        .arg("0")
-        .arg("--csv")
+        .args(["--weight-factor", "0", "--csv"])
         .arg(&csv)
+        .args(extra)
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(out.status.success(), "{stdout}\n{stderr}");
-    let text = std::fs::read_to_string(&csv).unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let text = std::fs::read_to_string(&csv).unwrap_or_default();
     std::fs::remove_dir_all(&dir).ok();
-    (stdout, text)
+    if out.status.success() {
+        Ok((stdout, text))
+    } else {
+        Err(format!("{stdout}\n{stderr}"))
+    }
+}
+
+fn run_with(model: &str, name: &str, extra: &[&str]) -> (String, String) {
+    output(model, name, extra).unwrap_or_else(|e| panic!("{e}"))
 }
 
 fn row<'a>(csv: &'a str, id: &str) -> &'a str {
@@ -136,4 +151,52 @@ fn with_a_second_moment_the_shortened_halves_are_bowed() {
         );
         assert!(r.contains(",-331."), "{r}");
     }
+}
+
+/// The same model, its second moment given, with `--tension-compression
+/// none` (owner 2026-11-15): the shortened halves slack — not bowed —,
+/// said with the law in the note and in the CSV.
+#[test]
+fn without_compression_the_shortened_halves_are_slack_too() {
+    let model = MODEL.replace(
+        "compression = \"100 kN\"\n",
+        "compression = \"100 kN\"\ni_min = \"0.1 cm4\"\n",
+    );
+    let (stdout, csv) = run_with(&model, "none", &["--tension-compression", "none"]);
+    assert!(
+        stdout.contains("tension-only members (no compression): 2 of 4 slack"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("bowed"), "{stdout}");
+    assert!(!stdout.contains("kept active"), "{stdout}");
+    for id in ["MC", "BM"] {
+        let r = row(&csv, id);
+        assert!(r.ends_with(",slack (no compression)"), "{r}");
+    }
+    // The model file saying it (version 6): the same; the option
+    // `buckling` overrides it, the halves bowed as by default.
+    let file_none = model.replace(
+        "version = 2\n[analysis]\n",
+        "version = 6\n[analysis]\ntension_compression = \"none\"\n",
+    );
+    let (stdout, _) = run(&file_none, "file-none");
+    assert!(
+        stdout.contains("tension-only members (no compression): 2 of 4 slack"),
+        "{stdout}"
+    );
+    let (stdout, _) = run_with(
+        &file_none,
+        "file-none-buckling",
+        &["--tension-compression", "buckling"],
+    );
+    assert!(
+        stdout.contains("tension-only members: 0 of 4 slack, 2 bowed"),
+        "{stdout}"
+    );
+    // Another word: refused, naming the two.
+    let e = output(&model, "zero", &["--tension-compression", "zero"]).unwrap_err();
+    assert!(
+        e.contains("--tension-compression: tension_compression \"zero\""),
+        "{e}"
+    );
 }

@@ -54,7 +54,7 @@ pub use check::{MemberUsage, member_usage};
 pub use links::PointLoad;
 pub use model::{
     Analysis, CapacityMethod, JointPoint, JointUse, Member, MemberKind, Model, NodalLoad, Node,
-    PluginMethod, Section,
+    PluginMethod, Section, TensionCompression,
 };
 pub use offsets::{EccentricEnd, eccentricity_note};
 pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored};
@@ -78,6 +78,36 @@ pub fn analyse(
     let u = member_usage(model, &s, strength);
     Ok((s, u))
 }
+
+/// Why a solve of `model` failed, in words: the error, and when the
+/// model's tension-only members carry no compression (`[analysis]
+/// tension_compression = "none"`, owner 2026-11-15) and the solve found a
+/// part free or unstable, that this is a likely cause — a joint held only
+/// by tension-only members in compression is then held by nothing.
+pub fn refusal_text(model: &Model, error: &FeError) -> String {
+    let text = error.to_string();
+    let free = matches!(
+        error,
+        FeError::Mechanism { .. }
+            | FeError::Held { .. }
+            | FeError::Implausible { .. }
+            | FeError::Unstable { .. }
+    );
+    if free
+        && model.analysis.tension_compression == TensionCompression::None
+        && model.members.iter().any(|m| m.kind == MemberKind::Tension)
+    {
+        format!("{text}; {NO_COMPRESSION_REFUSAL}")
+    } else {
+        text
+    }
+}
+
+/// Said after a refusal of a model whose tension-only members carry no
+/// compression ([`refusal_text`]).
+pub const NO_COMPRESSION_REFUSAL: &str = "the model's tension-only members carry no compression \
+     (tension_compression = \"none\"): a joint held only by them when they are shortened is held \
+     by nothing";
 
 /// At most this many stabilised directions are named in a note.
 const NOTE_NAMES: usize = 12;
@@ -234,7 +264,9 @@ pub fn convergence_note(solution: &Solution) -> Option<String> {
 /// active-set iterations took, with the first slack ones named and the
 /// first bowed ones with their load: `tension-only members: 0 of 2
 /// slack, 1 bowed (2 solve(s)); bowed (carry their buckling load): BD
-/// 0.83 kN`.
+/// 0.83 kN`. A model whose tension-only members carry no compression
+/// (`[analysis] tension_compression = "none"`) says so:
+/// `tension-only members (no compression): 1 of 2 slack (2 solve(s)): BD`.
 pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
     if solution.passes == 0 {
         return None;
@@ -258,8 +290,12 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
             )
         })
         .collect();
+    let law = match model.analysis.tension_compression {
+        TensionCompression::Buckling => "",
+        TensionCompression::None => " (no compression)",
+    };
     let mut text = format!(
-        "tension-only members: {} of {} slack{} ({} solve(s))",
+        "tension-only members{law}: {} of {} slack{} ({} solve(s))",
         slack.len(),
         tension.len(),
         if bowed.is_empty() {
