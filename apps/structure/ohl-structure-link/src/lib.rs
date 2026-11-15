@@ -499,6 +499,18 @@ pub fn placed_values_with(
             sets.excluded_from(structure).join(", ")
         ));
     }
+    if !sets.ruled_out_of(structure).is_empty() {
+        own.push(format!(
+            "not {}: its own list's rules do not hold here",
+            sets.ruled_out_of(structure).join(", ")
+        ));
+    }
+    if !sets.ruled_into(structure).is_empty() {
+        own.push(format!(
+            "{} by its own list's rules",
+            sets.ruled_into(structure).join(", ")
+        ));
+    }
     let own = if own.is_empty() {
         String::new()
     } else {

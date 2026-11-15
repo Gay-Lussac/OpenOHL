@@ -9,8 +9,9 @@
 //!
 //! A group ([`StructureGroup`]) has a name, a description, the structures
 //! **picked** by hand and **rules** ([`GroupRules`]: types, line angle
-//! from–to, station from–to on an alignment, dead end or not — all of
-//! them must hold), and the load cases of the line's load case library
+//! from–to, station from–to on an alignment, dead end or not, ground
+//! elevation from–to — all of them must hold), and the load cases of the
+//! line's load case library
 //! its structures take. Membership is live: the rules are read from the
 //! line as it is (move a structure past 10° and its groups change).
 //!
@@ -28,9 +29,19 @@
 //! picked structures take the case **on top of** what their groups give;
 //! its **excluded** structures do not take it, whatever their groups give
 //! (an exclusion is said wherever the structure's cases are listed). It
-//! has no rules and no other case, and it does not count as a group for
-//! "in no group: every case": it only ever adds its case, or takes away
-//! exactly that case, never more (the safe side; [`Line::give_case`]).
+//! has no other case, and it does not count as a group for "in no group:
+//! every case": it only ever adds its case, or takes away exactly that
+//! case, never more (the safe side; [`Line::give_case`]).
+//!
+//! **An own list with rules** (2026-11-15, owner: the 60 N/m ice case "should
+//! only be applied above 1000m"): the case applies **only where the rules
+//! hold** — every structure for which they hold takes the case (on top of
+//! its groups' cases), every other one does not (whatever its groups
+//! give); a structure picked by hand takes it, one excluded by hand does
+//! not, whatever the rules say. Only that case changes: a group whose
+//! rules tick only that case would take every other case away from its
+//! structures ("in no group: every case" no longer applying to them), an
+//! own list never does.
 //!
 //! Before 2026-11-15 a structure gave its own set (`load_cases`,
 //! `no_load_cases`) and a structure type its default set
@@ -119,6 +130,16 @@ pub struct GroupRules {
     /// none: either. Read from the line, not from the type's name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dead_end: Option<bool>,
+    /// Its ground elevation at least this, m (2026-11-15): the elevation
+    /// of the ground at its centre, the z of its position ([`Facts::ground`],
+    /// in the line's height datum). A structure whose ground elevation is
+    /// not known matches an elevation rule (the safe side: the rule's cases
+    /// added, an own list's case taken), said where its cases are listed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_from: Option<f64>,
+    /// The same, at most this, m.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elevation_to: Option<f64>,
 }
 
 impl GroupRules {
@@ -172,7 +193,18 @@ impl GroupRules {
         {
             return false;
         }
+        // Not known: matches (the safe side).
+        if let Some(z) = facts.ground
+            && !within(z, self.elevation_from, self.elevation_to)
+        {
+            return false;
+        }
         true
+    }
+
+    /// Whether it has an elevation rule.
+    pub fn has_elevation(&self) -> bool {
+        self.elevation_from.is_some() || self.elevation_to.is_some()
     }
 
     /// The rules in words (`types 1A, 1B; line angle 10–30°; dead end`);
@@ -214,6 +246,12 @@ impl GroupRules {
             Some(false) => out.push("not a dead end".into()),
             None => {}
         }
+        if self.has_elevation() {
+            out.push(format!(
+                "ground elevation {}",
+                bounds(self.elevation_from, self.elevation_to, " m")
+            ));
+        }
         out.join("; ")
     }
 
@@ -223,6 +261,7 @@ impl GroupRules {
         for (what, from, to) in [
             ("line angle", self.angle_from_deg, self.angle_to_deg),
             ("station", self.station_from, self.station_to),
+            ("ground elevation", self.elevation_from, self.elevation_to),
         ] {
             if from.into_iter().chain(to).any(|v| !v.is_finite()) {
                 return Some(format!("{what}: give numbers"));
@@ -267,6 +306,9 @@ pub struct Facts {
     pub stations: Vec<(String, f64)>,
     /// A section of the line ends at it.
     pub dead_end: bool,
+    /// Its ground elevation, m: the z of its position (its origin is the
+    /// centre at the ground); none: not known (not a finite number).
+    pub ground: Option<f64>,
 }
 
 impl StructureGroup {
@@ -310,9 +352,12 @@ impl StructureGroup {
     }
 
     /// Whether structure `s` (with its `facts`) is in the group: picked,
-    /// or every rule holds (a load case's own list: picked only).
+    /// or every rule holds (a load case's own list: picked, or its rules
+    /// hold and it is not excluded).
     pub fn holds(&self, s: &Structure, facts: &Facts) -> bool {
-        self.structures.contains(&s.id) || (!self.is_own_list() && self.rules.holds(s, facts))
+        self.structures.contains(&s.id)
+            || (self.rules.holds(s, facts)
+                && !(self.is_own_list() && self.excluded.contains(&s.id)))
     }
 
     /// Whether this group's rules need the stations and line angles.
@@ -385,6 +430,12 @@ pub struct CaseWhy {
     pub picked_here: bool,
     /// The case's own list excludes it.
     pub excluded_here: bool,
+    /// The case's own list has rules and they hold for it: it takes the
+    /// case by them.
+    pub rule_here: bool,
+    /// The case's own list has rules and they do not hold for it: it does
+    /// not take the case (unless picked there).
+    pub ruled_out_here: bool,
     /// Every group it is in (its names), the case's own list left out.
     pub groups: Vec<String>,
 }
@@ -409,6 +460,12 @@ struct Entry {
     picked_for: Vec<String>,
     /// The cases whose own list excludes it (and does not pick it).
     excluded_from: Vec<String>,
+    /// The cases whose own list's rules hold for it (not picked, not
+    /// excluded there): it takes them by those rules.
+    ruled_in: Vec<String>,
+    /// The cases whose own list's rules do not hold for it (not picked
+    /// there): it does not take them.
+    ruled_out: Vec<String>,
 }
 
 /// Every structure's groups and load cases, resolved once from the line
@@ -483,6 +540,21 @@ impl CaseSets {
             .map_or(&[], |x| x.excluded_from.as_slice())
     }
 
+    /// The load cases whose own list's rules do not hold for structure
+    /// `id` (it does not take them, whatever its groups give).
+    pub fn ruled_out_of(&self, id: &str) -> &[String] {
+        self.by_structure
+            .get(id)
+            .map_or(&[], |x| x.ruled_out.as_slice())
+    }
+
+    /// The load cases whose own list's rules give them to structure `id`.
+    pub fn ruled_into(&self, id: &str) -> &[String] {
+        self.by_structure
+            .get(id)
+            .map_or(&[], |x| x.ruled_in.as_slice())
+    }
+
     /// How structure `id` gets load case `case`, or why it does not.
     pub fn why(&self, id: &str, case: &str) -> CaseWhy {
         let Some(e) = self.by_structure.get(id) else {
@@ -507,6 +579,8 @@ impl CaseSets {
                 .collect(),
             picked_here: e.picked_for.iter().any(|c| c == case),
             excluded_here: e.excluded_from.iter().any(|c| c == case),
+            rule_here: e.ruled_in.iter().any(|c| c == case),
+            ruled_out_here: e.ruled_out.iter().any(|c| c == case),
             groups: e
                 .groups
                 .iter()
@@ -586,7 +660,8 @@ impl Given {
 impl Line {
     /// What the rules of the groups read of every structure (by id): its
     /// line angles and stations on the alignments (computed only when a
-    /// group's rule needs them) and whether a section ends at it.
+    /// group's rule needs them), whether a section ends at it and its
+    /// ground elevation.
     pub fn structure_facts(&self) -> BTreeMap<String, Facts> {
         self.facts(
             self.structure_groups
@@ -608,7 +683,16 @@ impl Line {
         let mut out: BTreeMap<String, Facts> = self
             .structures
             .iter()
-            .map(|s| (s.id.clone(), Facts::default()))
+            .map(|s| {
+                let z = s.position[2];
+                (
+                    s.id.clone(),
+                    Facts {
+                        ground: z.is_finite().then_some(z),
+                        ..Facts::default()
+                    },
+                )
+            })
             .collect();
         for sec in &self.sections {
             for p in [sec.points.first(), sec.points.last()]
@@ -675,16 +759,30 @@ impl Line {
             let mut e = Entry::default();
             for (k, g) in groups.iter().enumerate() {
                 if let Some(case) = &g.load_case {
-                    if g.structures.contains(&s.id) {
+                    let picked = g.structures.contains(&s.id);
+                    let excluded = g.excluded.contains(&s.id);
+                    if picked {
                         out.members[k].push(s.id.clone());
                         if !e.picked_for.contains(case) {
                             e.picked_for.push(case.clone());
                         }
                     }
-                    if g.excluded.contains(&s.id) {
+                    if excluded {
                         out.excluded[k].push(s.id.clone());
                         if !e.excluded_from.contains(case) {
                             e.excluded_from.push(case.clone());
+                        }
+                    }
+                    // Rules: the case only where they hold (picked or
+                    // excluded by hand: that, whatever they say).
+                    if !g.rules.is_empty() && !picked && !excluded {
+                        if g.rules.holds(s, f) {
+                            out.members[k].push(s.id.clone());
+                            if !e.ruled_in.contains(case) {
+                                e.ruled_in.push(case.clone());
+                            }
+                        } else if !e.ruled_out.contains(case) {
+                            e.ruled_out.push(case.clone());
                         }
                     }
                     continue;
@@ -700,14 +798,26 @@ impl Line {
             // `Line::groups_problem`): picked — more cases, the safe side.
             let picked_for = e.picked_for.clone();
             e.excluded_from.retain(|c| !picked_for.contains(c));
+            // Not taken: excluded by hand, or ruled out by its own list's
+            // rules.
+            let out_of: Vec<String> =
+                e.excluded_from
+                    .iter()
+                    .chain(&e.ruled_out)
+                    .fold(Vec::new(), |mut v, c| {
+                        if !v.contains(c) {
+                            v.push(c.clone());
+                        }
+                        v
+                    });
             e.set = if e.groups.is_empty() {
                 // An own list's pick does not count as a group: every
                 // case, less the exclusions.
                 out.alone.push(s.id.clone());
-                if e.excluded_from.is_empty() {
+                if out_of.is_empty() {
                     CaseSet::Every
                 } else {
-                    CaseSet::EveryBut(e.excluded_from.clone())
+                    CaseSet::EveryBut(out_of.clone())
                 }
             } else {
                 let mut cases: Vec<String> = Vec::new();
@@ -716,8 +826,9 @@ impl Line {
                     .iter()
                     .flat_map(|&(k, _, _)| &groups[k].load_cases)
                     .chain(&e.picked_for)
+                    .chain(&e.ruled_in)
                 {
-                    if !cases.contains(c) && !e.excluded_from.contains(c) {
+                    if !cases.contains(c) && !out_of.contains(c) {
                         cases.push(c.clone());
                     }
                 }
@@ -777,7 +888,7 @@ impl Line {
                     g.excluded.retain(|x| x != id);
                     given.unexcluded.push(id.clone());
                 }
-                if !why.by_groups() && !g.structures.contains(id) {
+                if (!why.by_groups() || why.ruled_out_here) && !g.structures.contains(id) {
                     g.structures.push(id.clone());
                     given.picked.push(id.clone());
                 }
@@ -789,14 +900,18 @@ impl Line {
                     g.structures.retain(|x| x != id);
                     given.unpicked.push(id.clone());
                 }
-                if why.by_groups() && !g.excluded.contains(id) {
+                if (why.by_groups() || why.rule_here) && !g.excluded.contains(id) {
                     g.excluded.push(id.clone());
                     given.excluded.push((id.clone(), why));
                 }
             }
         }
         let g = &self.structure_groups[k];
-        if g.structures.is_empty() && g.excluded.is_empty() && g.description.is_empty() {
+        if g.structures.is_empty()
+            && g.excluded.is_empty()
+            && g.description.is_empty()
+            && g.rules.is_empty()
+        {
             self.structure_groups.remove(k);
         }
         given
@@ -931,11 +1046,14 @@ impl Line {
                     return Some(format!("load case \"{case}\": two own lists"));
                 }
                 own.push(case);
-                if !g.rules.is_empty() || !g.load_cases.is_empty() {
+                if !g.load_cases.is_empty() {
                     return Some(format!(
-                        "load case \"{case}\"'s own list: it holds picked and excluded structures \
-                         only (no rules, no other case: make a group for them)"
+                        "load case \"{case}\"'s own list: it gives its case only (no other case: \
+                         make a group for them)"
                     ));
+                }
+                if let Some(p) = g.rules.problem() {
+                    return Some(format!("load case \"{case}\"'s own list: {p}"));
                 }
                 if let Some(id) = g.structures.iter().find(|s| g.excluded.contains(s)) {
                     return Some(format!(

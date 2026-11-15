@@ -103,9 +103,25 @@ const RULES_HELP: (&str, &str) = (
      alignments it is on; a structure on no alignment has none and is not taken by an angle \
      rule). Station: its station on the alignment chosen (any alignment: on any it stands on), \
      in metres. Dead end: a section of the line ends at it (read from the line, not from the \
-     type's name); not a dead end: no section ends there. A rule left empty does not count; a \
+     type's name); not a dead end: no section ends there. Ground elevation: the elevation of the \
+     ground at the structure, in metres — the height of its position (its origin is the centre \
+     at the ground), in the line's heights; a structure whose elevation is not known is taken \
+     (the safe side). A rule left empty does not count; a \
      group without rules holds its picked structures only. The rules are read from the line as \
      it is: move a structure past the angle given and its groups change.",
+);
+
+/// *5 Rules (optional)* of a load case's own list: the help.
+const OWN_RULES_HELP: (&str, &str) = (
+    "Optional: the case only where every rule given holds; bounds are included.",
+    "With rules, the load case applies only to the structures for which every rule given holds \
+     (e.g. ground elevation from 1000 m: a heavy ice case only high up). Every such structure \
+     takes it, on top of its groups' cases; every other one does not take it, whatever its \
+     groups give. A structure picked here takes it and one excluded here does not, whatever the \
+     rules say. No other case changes — unlike a group whose rules tick only this case, which \
+     would take every other case away from its structures. The rules are those of a group \
+     (types, line angle, station, dead end, ground elevation), read from the line as it is; a \
+     structure whose ground elevation is not known is taken (the safe side).",
 );
 
 /// *6 Load cases*: the help.
@@ -872,8 +888,10 @@ impl GroupsWindow {
                 "Made where the case is defined: Line › Structures › Load cases… › {case} › 8 \
                  Applies to (ticks there change this list). Its picked structures take {case} on \
                  top of their groups' cases (a structure in no group takes every case already); \
-                 its excluded structures do not take {case}, whatever their groups give. It has \
-                 no rules and gives no other case."
+                 its excluded structures do not take {case}, whatever their groups give. With \
+                 rules (5, optional) {case} applies only where they hold: every structure for \
+                 which they hold takes it, every other one does not (picked or excluded by hand \
+                 wins); no other case changes. It gives no other case."
             ))
             .small(),
         );
@@ -997,6 +1015,18 @@ impl GroupsWindow {
                     out.command = self.give(model, &case, &[], &held);
                 }
             });
+            ui.separator();
+            // 5 Rules: the case only where they hold (2026-11-15).
+            out.guide = out.guide.or(crate::check_ui::section_help(
+                ui,
+                5,
+                "Rules (optional)",
+                Some(anchors::RULES),
+                Some(OWN_RULES_HELP),
+            ));
+            if let Some(c) = self.rules_ui(ui, model, g) {
+                out.command = Some(c);
+            }
         });
         ui.separator();
         // 7 Who is in: who takes the case, and how.
@@ -1243,6 +1273,21 @@ impl GroupsWindow {
         });
         if dead != rules.dead_end {
             out = self.change_picked(model, "dead end rule", |x| x.rules.dead_end = dead);
+        }
+        // The ground elevation (2026-11-15).
+        if let Some(c) = bounds(
+            ui,
+            self,
+            "ground elevation",
+            "m",
+            rules.elevation_from,
+            rules.elevation_to,
+            |r, f, t| {
+                r.elevation_from = f;
+                r.elevation_to = t;
+            },
+        ) {
+            out = Some(c);
         }
         if rules.is_empty() {
             ui.label(egui::RichText::new("No rule: it holds its picked structures only.").weak());

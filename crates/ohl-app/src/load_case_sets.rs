@@ -76,16 +76,27 @@ pub fn cell(
 ) -> String {
     let groups = groups_words(sets, &s.id);
     let excluded = sets.excluded_from(&s.id);
-    let but = if excluded.is_empty() {
-        String::new()
-    } else {
-        format!(" — {} {EXCLUDED}", excluded.join(", "))
-    };
+    let ruled_out = sets.ruled_out_of(&s.id);
+    let mut but = String::new();
+    if !excluded.is_empty() {
+        but.push_str(&format!(" — {} {EXCLUDED}", excluded.join(", ")));
+    }
+    if !ruled_out.is_empty() {
+        but.push_str(&format!(" — {} {RULED_OUT}", ruled_out.join(", ")));
+    }
     let set = sets.of(&s.id);
     let base = match set {
         ohl_line::CaseSet::Every => return NO_GROUP.to_owned(),
         ohl_line::CaseSet::EveryBut(c) => {
-            return format!("{NO_GROUP_BUT}{} ({EXCLUDED})", c.join(", "));
+            let why = |case: &String| {
+                if ruled_out.contains(case) {
+                    RULED_OUT
+                } else {
+                    EXCLUDED
+                }
+            };
+            let named: Vec<String> = c.iter().map(|x| format!("{x} ({})", why(x))).collect();
+            return format!("{NO_GROUP_BUT}{}", named.join(", "));
         }
         ohl_line::CaseSet::NoCase => return format!("{NO_CASE} ({groups}){but}"),
         ohl_line::CaseSet::These(c) => format!("{groups}: {}: {}{but}", c.len(), c.join(", ")),
@@ -127,6 +138,10 @@ pub const NO_GROUP_BUT: &str = "no group: every case but ";
 /// How an exclusion in a load case's own list is said.
 pub const EXCLUDED: &str = "excluded in the own list";
 
+/// How a case a structure does not take because its own list's rules do
+/// not hold for it is said (2026-11-15).
+pub const RULED_OUT: &str = "its own list's rules do not hold here";
+
 /// Structure `id`'s groups and the load cases' own lists picking it, in
 /// words: `suspension, wind (own list)`.
 pub fn groups_words(sets: &ohl_line::CaseSets, id: &str) -> String {
@@ -149,10 +164,21 @@ pub fn groups_words(sets: &ohl_line::CaseSets, id: &str) -> String {
 pub fn why_words(line: &ohl_line::Line, why: &ohl_line::CaseWhy) -> String {
     let by = |why: &ohl_line::CaseWhy| by_words(line, why);
     if why.takes {
-        match (why.by_groups(), why.picked_here) {
-            (true, true) => format!("{}; also picked here", by(why)),
-            (true, false) => by(why),
-            _ => "picked here".to_owned(),
+        match (why.by_groups(), why.picked_here, why.rule_here) {
+            (true, true, _) => format!("{}; also picked here", by(why)),
+            (_, true, _) => "picked here".to_owned(),
+            (true, false, true) => format!("{}; also by this list's rules", by(why)),
+            (false, false, true) => "by this list's rules".to_owned(),
+            _ => by(why),
+        }
+    } else if why.ruled_out_here {
+        if why.by_groups() {
+            format!(
+                "not taken: this list's rules do not hold here (else: {})",
+                by(why)
+            )
+        } else {
+            "not taken: this list's rules do not hold here".to_owned()
         }
     } else if why.excluded_here {
         if why.by_groups() {
@@ -312,7 +338,7 @@ pub fn structure_ui(ui: &mut egui::Ui, model: &Model, id: &str) -> Option<crate:
         ohl_line::CaseSet::Every => "In no group: it takes every case of the library.".to_owned(),
         ohl_line::CaseSet::EveryBut(c) => format!(
             "In no group: it takes every case of the library but {} (excluded in the case's own \
-             list).",
+             list, or its rules do not hold here).",
             c.join(", ")
         ),
         ohl_line::CaseSet::NoCase => format!(

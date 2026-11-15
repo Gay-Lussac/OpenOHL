@@ -1367,8 +1367,8 @@ pub fn to_xml(line: &Line) -> String {
 /// A structure group: `<structure_group name description?>` with its
 /// picked `<structure id/>`, its `<rules …><type id/></rules>` and its
 /// `<case name/>`; a load case's own list `<structure_group load_case
-/// description?>` with its picked `<structure id/>` and its `<excluded
-/// id/>`.
+/// description?>` with its picked `<structure id/>`, its `<excluded
+/// id/>` and its `<rules …/>` (the case only where they hold).
 fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
     let ohl_line::StructureGroup {
         name,
@@ -1409,6 +1409,8 @@ fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
             station_from,
             station_to,
             dead_end,
+            elevation_from,
+            elevation_to,
         } = rules;
         out.push_str("    <rules");
         opt_num(out, "angle_from_deg", *angle_from_deg);
@@ -1419,6 +1421,8 @@ fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
         if let Some(d) = dead_end {
             attr(out, "dead_end", if *d { "true" } else { "false" });
         }
+        opt_num(out, "elevation_from", *elevation_from);
+        opt_num(out, "elevation_to", *elevation_to);
         if types.is_empty() {
             out.push_str("/>\n");
         } else {
@@ -1468,6 +1472,8 @@ fn read_group(e: &Element) -> Result<ohl_line::StructureGroup, String> {
                     "station_from",
                     "station_to",
                     "dead_end",
+                    "elevation_from",
+                    "elevation_to",
                 ],
                 &["type"],
             )?;
@@ -1490,6 +1496,8 @@ fn read_group(e: &Element) -> Result<ohl_line::StructureGroup, String> {
                     Some("false") | Some("0") => Some(false),
                     Some(o) => return Err(format!("<rules> dead_end=\"{o}\": true or false")),
                 },
+                elevation_from: optional(r, "elevation_from")?,
+                elevation_to: optional(r, "elevation_to")?,
             }
         }
     };

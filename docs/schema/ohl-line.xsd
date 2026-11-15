@@ -1118,7 +1118,12 @@
                     angle_to_deg, its station in metres from station_from to
                     station_to on alignment (an alignment id; absent: any
                     alignment it stands on), dead_end (true: a section of the
-                    line ends at it; false: none does).</xs:documentation>
+                    line ends at it; false: none does), its ground elevation
+                    in metres (the z of its position) from elevation_from to
+                    elevation_to (2026-11-15; a structure whose elevation is
+                    not known matches: the safe side). In a load case's own
+                    list (load_case): the case applies only where the rules
+                    hold.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:sequence>
@@ -1134,6 +1139,8 @@
                   <xs:attribute name="station_from" type="xs:double"/>
                   <xs:attribute name="station_to" type="xs:double"/>
                   <xs:attribute name="dead_end" type="xs:boolean"/>
+                  <xs:attribute name="elevation_from" type="xs:double"/>
+                  <xs:attribute name="elevation_to" type="xs:double"/>
                 </xs:complexType>
               </xs:element>
               <xs:element name="case" minOccurs="0" maxOccurs="unbounded">
