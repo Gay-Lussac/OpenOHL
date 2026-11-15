@@ -175,7 +175,7 @@ pub fn compute(i: &Inputs) -> (Outcome, Vec<CaseUsage>) {
     (r.loads, r.usage)
 }
 
-/// [`compute`] in two stages, `stages` telling where it is (none:
+/// The loads and their usage in two stages, `stages` telling where it is (none:
 /// cancelled): **1** the line solved in each load case needed (the cases
 /// in parallel, `threads` at once; 0: as many as the cores) — a case that
 /// does not compute fails only itself ([`Run::failed`]); **2** the

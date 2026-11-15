@@ -17,7 +17,6 @@ use super::plugins_hosting::run_until;
 use super::session_edits::press;
 use super::*;
 use crate::library::LibraryKind;
-use egui_kittest::kittest::NodeT;
 
 fn app(model: model::Model) -> Harness<'static, App> {
     let mut h = Harness::builder()
