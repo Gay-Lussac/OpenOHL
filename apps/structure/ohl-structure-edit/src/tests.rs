@@ -325,6 +325,95 @@ fn insulator_limits_are_edited() {
     assert!(!doc.to_string().contains("max_load"));
 }
 
+/// Post insulators (structure file version 13, 2026-11-15): a string made
+/// a fixed post (upright), its rating and its clamp's exit angles set,
+/// the file raised to 13 and drawn as a post; a second string to its wire
+/// point refused while it is fixed, then a brace added once it is hinged
+/// (made hinged first: refused, no brace); strain refused on a post; saved
+/// to the library as a post with its rating; no longer a post: every post
+/// field goes.
+#[test]
+fn insulators_are_made_posts() {
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 8\n{PYLON}")
+        .parse()
+        .unwrap();
+    let t = read(&doc);
+    let a2 = add_point_at_joint(&mut doc, &t, "N2");
+    let none = InsulatorLibrary::default();
+    let t = read(&doc);
+    let (s, w) = new_string(&mut doc, &t, "A1", None, 1.5, None).unwrap();
+    let change = |doc: &mut DocumentMut, label: &str, c: StringChange| {
+        let t = read(doc);
+        let g = geometry(&t, &none);
+        set_string(doc, &t, &g, &none, label, c)
+    };
+    change(&mut doc, &s, StringChange::Direction(180.0, 0.0)).unwrap();
+    assert!(doc.to_string().contains("version = 8"));
+    // Hinged with no brace: refused, nothing written.
+    let before = doc.to_string();
+    let e = change(&mut doc, &s, StringChange::Post(Some(true))).unwrap_err();
+    assert!(e.contains("brace"), "{e}");
+    assert_eq!(doc.to_string(), before);
+    change(&mut doc, &s, StringChange::Post(Some(false))).unwrap();
+    change(&mut doc, &s, StringChange::CantileverLoad(Some(8000.0))).unwrap();
+    change(&mut doc, &s, StringChange::ExitAngle(Some(-15.0))).unwrap();
+    change(&mut doc, &s, StringChange::ExitDirection(Some(-90.0))).unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("version = 13"), "{text}");
+    assert!(text.contains("cantilever_load = \"8000 N\""), "{text}");
+    assert!(text.contains("exit_direction = \"270 deg\""), "{text}");
+    let t = read(&doc);
+    let x = &t.strings[0];
+    assert!(x.post && !x.hinged);
+    assert!((x.exit_deg().0.unwrap() + 15.0).abs() < 1e-9);
+    // Drawn as a post: from A1 to its wire point 1.5 m up, its clamp
+    // level-ish to the left.
+    let g = geometry(&t, &none);
+    assert_eq!(g.posts.len(), 1);
+    let p = &g.posts[0];
+    assert_eq!((p.label.as_str(), p.hinged), (s.as_str(), false));
+    assert!((p.top[2] - p.base[2] - 1.5).abs() < 1e-9 && (p.length() - 1.5).abs() < 1e-9);
+    let exit = p.exit.unwrap();
+    assert!(exit[0] < -0.9 && exit[2] < 0.0, "{exit:?}");
+    // Bad values and strain refused.
+    for bad in [
+        StringChange::CantileverLoad(Some(0.0)),
+        StringChange::ExitAngle(Some(95.0)),
+        StringChange::Strain(true),
+    ] {
+        assert!(change(&mut doc, &s, bad).is_err());
+    }
+    // A brace to a fixed post's wire point: refused; hinged, then braced.
+    let t = read(&doc);
+    let (b, _) = new_string(&mut doc, &t, &a2, None, 6.5, None).unwrap();
+    let e = change(&mut doc, &b, StringChange::Wire(w.clone())).unwrap_err();
+    assert!(e.contains("alone"), "{e}");
+    // Made hinged first (no brace yet): refused; so the brace's wire point
+    // is taken while it is no post, then it is made hinged.
+    change(&mut doc, &s, StringChange::Post(None)).unwrap();
+    let text = doc.to_string();
+    for k in POST_KEYS {
+        assert!(!text.contains(&format!("{k} =")), "{k}: {text}");
+    }
+    let t = read(&doc);
+    delete_string(&mut doc, &t, &geometry(&t, &none), &b);
+    let t = read(&doc);
+    new_string(&mut doc, &t, &a2, None, 6.5, Some(&w)).unwrap();
+    change(&mut doc, &s, StringChange::Post(Some(true))).unwrap();
+    let t = read(&doc);
+    assert!(t.strings[0].post && t.strings[0].hinged);
+    let g = geometry(&t, &none);
+    assert!(g.posts[0].hinged && g.posts[0].exit.is_none());
+    // Saved to the library: a post, rated as the string.
+    change(&mut doc, &s, StringChange::CantileverLoad(Some(5000.0))).unwrap();
+    let t = read(&doc);
+    let g = geometry(&t, &none);
+    let ohli = assembly_text(&t, &g, &none, &s, "P").unwrap();
+    let a = ohl_structures::InsulatorAssembly::parse(Path::new("P.ohli"), &ohli).unwrap();
+    assert_eq!(a.kind, ohl_structures::AssemblyKind::Post);
+    assert_eq!(a.cantilever_load.map(|f| f.si()), Some(5000.0));
+}
+
 /// Sets: added (next free), renumbered (a taken number refused), moved
 /// to another wire point, taken off; a counterweight.
 #[test]

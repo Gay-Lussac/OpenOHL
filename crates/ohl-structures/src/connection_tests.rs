@@ -252,7 +252,13 @@ fn version_9_is_read() {
     ))
     .unwrap();
     assert_eq!(t.connections.len(), 1);
-    assert!(parse(&format!("format = \"ohl-structure\"\nversion = 13\n{BODY}")).is_err());
+    let newer = crate::structures::STRUCTURE_FILE_VERSION + 1;
+    assert!(
+        parse(&format!(
+            "format = \"ohl-structure\"\nversion = {newer}\n{BODY}"
+        ))
+        .is_err()
+    );
 }
 
 /// The leg L1–L2 in line through N2 with a section, the diagonal D1.

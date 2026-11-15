@@ -8,7 +8,7 @@ stands on a point of the structure — its **base**, the earthed end — and
 holds a wire point at its other end, its **top**, as a cantilever: it
 takes the load across it in bending, not as a string that swings. It is
 placed with the **Add post insulator** tool, or given as a string with
-`post` (line file version 17), or a string naming a library post (`kind = "post"`, insulator file version 6): an upright
+`post` (line file version 17), or a string naming a library post (`kind = "post"`, insulator file version 6), or a structure type's string with `post` (structure file version 13, [below](#in-ohl-structure-the-moment-on-the-pylon)): an upright
 station post (`angle_deg` 180), a horizontal line post (90), or any
 direction between.
 
@@ -83,6 +83,23 @@ their points as plain forces. A share of the spans' pull (back / ahead below
 100 %) does not scale the post's moment: from the whole pulls, on the safe
 side for shares of 100 % or less (said on the row).
 
+**On a structure type** (*2026-11-15*). A structure type's string can be
+a post with the same fields (`post`, `hinged`, `cantilever_load`,
+`exit_angle`, `exit_direction`; structure file version 13, [Post
+insulators on a type](../user-guide/structure-library.md#post-insulators-on-a-type)).
+Resolving the line puts them on the line's strings of every structure of
+the type: the post is then the same object as one made by hand, and
+everything on this page applies to it unchanged — the rigid fixed point,
+the moment of its height, its own weight and wind, the jumper's clamp, the
+checks of its ratings and the moment sent to OHL-Structure, with the same
+NOT ON THE SAFE SIDE notes where they apply. No simplification is added:
+the tests compare a typed post's loads and line values with a hand-made
+one's. The type is refused where the line would refuse its strings (a
+fixed post sharing its wire point, a hinged post without a brace, a strain
+post, a post standing on a wire point). OHL-Structure edits a type's posts
+(fixed or hinged, rating, exit angles) and draws them: a fixed post with
+its base plate, a hinged post with its hinge and its brace.
+
 **A fault fixed on the way:** at a post's base the line has two loads —
 what acts at the post's top, and the post's own weight and wind at its
 middle. OHL-Structure read only the first of them: forces were missing (not
@@ -144,6 +161,18 @@ at 45° above a level post, the brace carries the load on the clamp
 divided by \( \sin 45° \) and the post pushes with its horizontal part —
 the statics the test checks.
 
+**A post and one brace turn along the line.** Both are pinned at their
+ends, so a hinged post and a single brace whose bases lie on one vertical
+line (the brace straight above the post's base) can turn about that line
+together: nothing holds the wire point along the line but the spans'
+pulls — as a pivoting line post does. Where the pulls are unbalanced the
+section's rolling then does not settle and the section is reported as not
+solved (*rolling did not settle*), its loads missing and said; nothing is
+computed from it. A second brace (one ahead and one back), or a brace
+whose base is off that line, holds the wire point (*found 2026-11-15
+while testing the posts on structure types; to confirm with the owner
+how pivoting line posts are to be modelled*).
+
 ## Its ratings checked
 
 **Checks › String checks…** (a rule with `load`) checks each fixed post
@@ -194,4 +223,8 @@ loads; a braced post pushing and its brace pulling against statics),
 `ohl-line` `a_post_holds_the_jumper_in_a_fixed_direction` and
 `post::tests` (the split into bending, torsion, tension and compression),
 `ohl-clearance` `a_post_is_checked_against_its_ratings`, the insulator
-library's round trip.
+library's round trip; on a structure type: `ohl-structures`
+`version_13_post_strings`, `ohl-line` `a_type_strings_posts_reach_the_line`,
+`ohl-loads` `a_typed_post_loads_as_one_made_by_hand`, `ohl-structure-tests`
+`a_typed_posts_moment_reaches_the_pylon` and
+`a_typed_hinged_post_sends_forces_only`.

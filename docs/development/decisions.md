@@ -124,6 +124,45 @@ choice, not judged. The Load cases library form: *the wires' ice* and
 *default* (it never took the weather case's ice). Written at 6 only when a
 case uses either.
 
+**Post insulators on structure types, drawn in OHL-Structure** (the post
+plan's phase 2c, steps 2 and 3; owner, 2026-11-14: "the post insulator
+might be needed on pylons too", "decide if its base is hinged or not"): a
+structure type's string can be a post with every field of a line's post —
+`post`, `hinged`, `cantilever_load`, `exit_angle`, `exit_direction`
+(units in the values, as the type's `angle` and `direction`; the line's
+`exit_angle_deg`, `exit_direction_deg`) — structure file version 13,
+written only when a string gives one. Resolving the line carries them into
+its strings, so a typed post loads, is checked and sends its moment to
+OHL-Structure exactly as one made by hand (the tests compare both). The
+type is refused where the line refuses the strings (a fixed post sharing
+its wire point, a hinged one without a brace, a strain post, a post on a
+wire point, a post's field on a plain string). OHL-Structure's Strings
+table has a **post** column (none, fixed, hinged; its rating and its
+clamp's exit angle and direction), each change one undo step, a change
+that would make a post invalid refused before the file changes; the 3D
+view draws a post thick from its base to its wire point, a fixed post's
+base plate or a hinged post's hinge, and its clamp's exit direction where
+given. A string saved to the insulator library from OHL-Structure is a
+library post when it is a post. **Fault fixed on the way**: OHL-Design's
+structure editor (a structure without a type, *Strings and points…*)
+dropped a post's fields — its Apply made a post an ordinary string, and
+*Make it a type…* wrote it so; it now keeps them. **Choices made, to
+confirm** (nothing here is less safe than before): a post's `angle`
+defaults to 0 (hanging) as for any string, so an upright post needs
+`angle = "180 deg"` (no hidden default); the exit-angle keys are
+`exit_angle` / `exit_direction` (the `.ohls` convention of units in the
+values) rather than the line's `…_deg` names; a hinged post is made in
+OHL-Structure after its brace (a hinged post without one is refused, as
+in the line). **Found, to confirm**: a hinged post with one brace whose
+base is straight above the post's (the shape of the *braced* preset)
+turns freely along the line, both members being pinned; with unbalanced
+pulls the section's rolling does not settle and the section is reported
+not solved (its loads missing, said — nothing unsafe is computed). How
+pivoting line posts are to be modelled is the owner's question; two
+braces hold it. Not yet: posts on the type in OHL-Design's type workspace
+table (they are kept there, not shown as a column), a post's ratings
+shown in OHL-Structure.
+
 ## 2026-11-14
 
 **Post insulators on pylons in OHL-Structure** (owner: "the post

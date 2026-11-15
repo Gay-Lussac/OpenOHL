@@ -6,7 +6,9 @@
 //! (`doc`), given the structure as last read (`t`). Only the tables and
 //! fields concerned change; comments and the rest of the file stay.
 
-use ohl_structures::{AssemblyKind, InsulatorAssembly, InsulatorLibrary, StructureType};
+use ohl_structures::{
+    AssemblyKind, InsulatorAssembly, InsulatorLibrary, StructureType, TypeString,
+};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
 
 use crate::geometry::{Geometry, Handle, polar};
@@ -757,6 +759,20 @@ pub enum StringChange {
     MaxSwingAcross(Option<f64>),
     /// The swing along the line it may take, degrees (none: not given).
     MaxSwingAlong(Option<f64>),
+    /// A post insulator (structure file version 13, 2026-11-15): none,
+    /// not a post (its post fields go too); `Some(hinged)`, a post on a
+    /// fixed base (`false`: a cantilever) or a hinged one (`true`: braced
+    /// by another string to its wire point). A post is no strain string.
+    Post(Option<bool>),
+    /// A post's rated load across it at its top, N (none: not given; its
+    /// library post's then).
+    CantileverLoad(Option<f64>),
+    /// A post's clamp's exit angle from the horizontal, degrees, −90 to 90
+    /// (none: level).
+    ExitAngle(Option<f64>),
+    /// A post's clamp's direction in plan in the structure's axes, degrees
+    /// (none: towards the jumper's other end).
+    ExitDirection(Option<f64>),
 }
 
 /// The structure file version that has a string's limits.
@@ -842,6 +858,56 @@ pub fn raise_version(doc: &mut DocumentMut, version: i64) {
     }
 }
 
+/// A string's post fields (structure file version 13): all go when it is
+/// no longer a post.
+pub const POST_KEYS: [&str; 5] = [
+    "post",
+    "hinged",
+    "cantilever_load",
+    "exit_angle",
+    "exit_direction",
+];
+
+/// String `s` after `change`, in what decides whether it can be a post (its
+/// top, wire point, strain, post fields); none: a change that does not
+/// touch them.
+fn as_changed(
+    s: &TypeString,
+    change: &StringChange,
+    insulators: &InsulatorLibrary,
+) -> Option<TypeString> {
+    use ohl_core::units::{Angle, Force};
+    let mut x = s.clone();
+    match change {
+        StringChange::Top(top) => x.top = top.clone(),
+        StringChange::Wire(wire) => x.wire = wire.clone(),
+        StringChange::Strain(strain) => x.strain = *strain,
+        StringChange::Assembly(id) => {
+            x.strain = id
+                .as_deref()
+                .and_then(|i| insulators.get(i))
+                .is_some_and(|a| a.kind == AssemblyKind::Strain);
+        }
+        StringChange::Post(None) => {
+            x.post = false;
+            x.hinged = false;
+            x.cantilever_load = None;
+            x.exit_angle = None;
+            x.exit_direction = None;
+        }
+        StringChange::Post(Some(hinged)) => {
+            x.post = true;
+            x.hinged = *hinged;
+            x.strain = false;
+        }
+        StringChange::CantileverLoad(v) => x.cantilever_load = v.map(Force::from_newtons),
+        StringChange::ExitAngle(v) => x.exit_angle = v.map(Angle::from_degrees),
+        StringChange::ExitDirection(v) => x.exit_direction = v.map(Angle::from_degrees),
+        _ => return None,
+    }
+    Some(x)
+}
+
 impl StringChange {
     /// Whether it moves the wire point (placed by the insulator again).
     fn moves(&self) -> bool {
@@ -893,6 +959,39 @@ pub fn set_string(
         StringChange::MaxSwingAlong(_) => Some("max_swing_along"),
         _ => None,
     };
+    // A change making a post what a line refuses (a fixed post sharing its
+    // wire point, a hinged one without a brace…), of this string or of a
+    // post another string meets: refused before the file changes.
+    if let Some(after) = as_changed(s, &change, insulators) {
+        let strings: Vec<TypeString> = t
+            .strings
+            .iter()
+            .map(|x| {
+                if x.label == label {
+                    after.clone()
+                } else {
+                    x.clone()
+                }
+            })
+            .collect();
+        for x in &strings {
+            if let Some(m) = ohl_structures::structures::post_problem_among(&strings, &t.wires, x)
+                && t.strings
+                    .iter()
+                    .find(|y| y.label == x.label)
+                    .is_none_or(|y| t.post_problem(y).is_none())
+            {
+                return Err(format!("string {}: {m}", x.label));
+            }
+        }
+    }
+    let post_given = matches!(
+        change,
+        StringChange::Post(Some(_))
+            | StringChange::CantileverLoad(Some(_))
+            | StringChange::ExitAngle(Some(_))
+            | StringChange::ExitDirection(Some(_))
+    );
     let e = entry(doc, "string", "label", label).ok_or_else(|| format!("no string {label}"))?;
     match change {
         StringChange::Top(top) => {
@@ -1000,9 +1099,58 @@ pub fn set_string(
                 }
             }
         }
+        StringChange::Post(None) => {
+            for k in POST_KEYS {
+                e.remove(k);
+            }
+        }
+        StringChange::Post(Some(hinged)) => {
+            e.insert("post", toml_edit::value(true));
+            e.remove("strain");
+            if hinged {
+                e.insert("hinged", toml_edit::value(true));
+            } else {
+                e.remove("hinged");
+            }
+        }
+        StringChange::CantileverLoad(v) => {
+            if v.is_some_and(|c| !(c.is_finite() && c > 0.0)) {
+                return Err("the cantilever load must be > 0".into());
+            }
+            match v {
+                Some(c) => {
+                    e.insert("cantilever_load", toml_edit::value(format!("{c} N")));
+                }
+                None => {
+                    e.remove("cantilever_load");
+                }
+            }
+        }
+        StringChange::ExitAngle(v) => match v {
+            Some(a) => {
+                e.insert("exit_angle", toml_edit::value(format!("{a} deg")));
+            }
+            None => {
+                e.remove("exit_angle");
+            }
+        },
+        StringChange::ExitDirection(v) => match v {
+            Some(d) => {
+                e.insert(
+                    "exit_direction",
+                    toml_edit::value(format!("{} deg", d.rem_euclid(360.0))),
+                );
+            }
+            None => {
+                e.remove("exit_direction");
+            }
+        },
     }
     if limit_given {
         raise_version(doc, LIMITS_VERSION);
+    }
+    if post_given {
+        raise_version(doc, i64::from(ohl_structures::structures::POST_VERSION));
     }
     if moves {
         // The other insulators to it (a V) without a length (written
@@ -1050,8 +1198,16 @@ pub fn assembly_text(
             .map(|(p, q)| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt())
             .ok_or("its length is not known")?,
     };
-    let legs = t.strings.iter().filter(|y| y.wire == x.wire).count();
-    let kind = if legs >= 2 {
+    // A post (fixed or hinged) is one post, never a leg of a V.
+    let post = x.post || a.is_some_and(|a| a.kind == AssemblyKind::Post);
+    let legs = if post {
+        1
+    } else {
+        t.strings.iter().filter(|y| y.wire == x.wire).count()
+    };
+    let kind = if post {
+        "post"
+    } else if legs >= 2 {
         "v_string"
     } else if x.strain {
         "strain"
@@ -1076,10 +1232,32 @@ pub fn assembly_text(
     let limits = x
         .limits()
         .or(a.map(InsulatorAssembly::limits).unwrap_or_default());
+    // A post's ratings (its own, else its assembly's): the insulator file
+    // version of posts.
+    let ratings = [
+        (
+            "cantilever_load",
+            x.cantilever_load
+                .map(|f| f.si())
+                .or(a.and_then(|a| a.cantilever_load.map(|f| f.si()))),
+        ),
+        (
+            "compression_load",
+            x.compression
+                .map(|f| f.si())
+                .or(a.and_then(|a| a.compression_load.map(|f| f.si()))),
+        ),
+    ];
     let mut text = String::new();
     text.push_str(&format!(
         "format = \"ohl-insulator\"\nversion = {}\n",
-        if limits.is_empty() { 1 } else { 2 }
+        if post {
+            ohl_structures::insulators::POST_VERSION
+        } else if limits.is_empty() {
+            1
+        } else {
+            2
+        }
     ));
     text.push_str(&format!("id = {}\n", toml_edit::value(id)));
     text.push_str(&format!(
@@ -1107,6 +1285,13 @@ pub fn assembly_text(
         }
     }
     text.push_str(&limits.to_toml());
+    if post {
+        for (key, v) in ratings {
+            if let Some(v) = v {
+                text.push_str(&format!("{key} = \"{v} N\"\n"));
+            }
+        }
+    }
     <InsulatorAssembly as ohl_structures::LibraryItem>::parse(
         std::path::Path::new("new.ohli"),
         &text,

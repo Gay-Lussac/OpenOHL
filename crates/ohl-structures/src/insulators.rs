@@ -82,7 +82,7 @@ const VOLUMES_VERSION: u32 = 4;
 /// The version that brought the torus.
 const TORUS_VERSION: u32 = 5;
 /// The version that brought the post insulator.
-const POST_VERSION: u32 = 6;
+pub const POST_VERSION: u32 = 6;
 
 /// An insulator's axial stiffness EA when it gives none, N (the line's
 /// default too: `ohl_line::solve::DEFAULT_INSULATOR_STIFFNESS`).

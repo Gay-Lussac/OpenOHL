@@ -473,12 +473,51 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
+| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, **post** — none, fixed or hinged, then its rating and its clamp's exit angle and direction, each ticked to give it ([below](#post-insulators-on-the-structure)) —, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add a joint** (above the joint picked), **Add a member** between two joints picked, **Point on the joint** (not on a support joint: strings hang from attach joints), **Delete selected…**; the symmetry's icon (its option on hover; set in Body › Symmetry or with the Symmetry tool), **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints** and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load, see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
 | **Loads** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line result, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
 | **Results** (level 3): **FE results** | The usage per check (members, pole) with the governing case; per case: the governing member, the largest displacement, Σ loads and Σ reactions, reactions per support, members with axial force and usage, the pole check | **▶ Run** (one case or every case), **Extension** (solved again when changed), **Cancel**, **Report…**; deformed shape (**Deformed ×**), usage colours, reactions in the view |
 | **Loads**: **Line loads** | Started for a placed structure: the line's values per point and case, the other places of the structure with their governing values ([above](#started-for-a-placed-structure)); opened alone: what it would show | — |
+
+## Post insulators on the structure
+
+*2026-11-15.* A string of the structure can be a **post insulator**
+([Post insulators on a type](structure-library.md#post-insulators-on-a-type),
+[theory](../theory/post-insulators.md)): in **Geometry › Points &
+strings › Strings**, its **post** column:
+
+1. **—**: a plain string (or *library post* when its assembly is a post
+   of the insulator library: a post whatever the column says).
+2. **fixed**: a post on a fixed base, a cantilever. Its moment goes to
+   the structure with its force ([Load cases](#load-cases)): at the joint
+   carrying its point where a frame member meets it, else left out and
+   said **NOT ON THE SAFE SIDE**. A fixed post holds its wire point alone:
+   a second string there is refused.
+3. **hinged**: a post on a hinged base (a braced line post): it only
+   pushes or pulls and another string to its wire point, its **brace**,
+   holds it — forces only, no moment. Give the brace first (a string from
+   another point to the post's wire point while it is not yet a post),
+   then choose *hinged*: a hinged post without a brace is refused.
+
+Then, for a post, each ticked to give it: **rating** (its cantilever
+rating across it at its top, N; unticked: its library post's, else not
+checked), **exit** (the angle from the horizontal at which its clamp
+holds a jumper; unticked: level) and **in plan** (that clamp's direction,
+clockwise seen from above as the strings' directions; unticked: towards
+the jumper's other end). Its compression rating is the **compression**
+column. Its length and direction are the string's (**angle** 180°:
+upright). Every change is one undo step; the file is raised to version
+13 when it gets a post field (an older program then says *newer
+version* instead of dropping the post). A strain post and a post standing
+on another string's wire point are refused, as in the line.
+
+**Drawn in the 3D view**: a post as a thick line from its base point to
+its wire point, in the strings' colour; at its base a **fixed** post's
+base plate (a small square across it) or a **hinged** post's **hinge**
+(a small circle about its base) — its brace is drawn as a string to the
+same wire point; where its clamp's direction in plan is given, a thin
+line from its top in that direction (its exit angle).
 
 ## Attachment points, joints and the Link tool
 
@@ -1319,6 +1358,10 @@ applies it at the joint carrying the point where a frame member meets it;
 where only trusses meet, it is left out and the results say **NOT ON THE
 SAFE SIDE** — make that joint a frame joint, or brace the post (a hinged
 post sends forces only). See [Post insulators](../theory/post-insulators.md#in-ohl-structure-the-moment-on-the-pylon).
+Since 2026-11-15 the structure type itself may hold the posts ([Post
+insulators on the structure](#post-insulators-on-the-structure)): every
+structure of the type then sends them as a post made by hand in the line
+does.
 
 The Load cases panel lists them first, *From the line's load case
 library* (read here, changed in OHL-Design), then the structure's own

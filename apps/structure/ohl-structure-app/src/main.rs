@@ -108,6 +108,8 @@ mod placed_tests;
 #[cfg(test)]
 mod pole_extension_ui_tests;
 #[cfg(test)]
+mod post_ui_tests;
+#[cfg(test)]
 mod results_ui_tests;
 #[cfg(test)]
 mod section_editor_tests;

@@ -1123,6 +1123,10 @@ fn scene(
     for (_, a, b) in &g.strings {
         s.polyline(&[*a, *b], STRING, 2.5);
     }
+    // Post insulators over their strings: thick, their base marked.
+    for (line, width) in post_lines(g) {
+        s.polyline(&line, STRING, width);
+    }
     // The volumes on the strings, filled, in the line's colours.
     for m in volumes {
         let c = match m.state {
@@ -1178,6 +1182,80 @@ fn scene(
     sizes.sort_by(f64::total_cmp);
     levels.size = sizes.get(sizes.len() / 2).copied().unwrap_or(0.0);
     (s, levels)
+}
+
+/// The width of a post insulator's line, points (a string's: 2.5).
+pub const POST_WIDTH: f32 = 5.0;
+
+/// The lines drawing the post insulators of `g` (2026-11-15), each with
+/// its width, in the strings' colour: the post from its base to its wire
+/// point, thick ([`POST_WIDTH`]); at its base a **fixed** post's base plate
+/// (a square across its axis) or a **hinged** post's hinge (a circle about
+/// its base, in a plane through its axis — its brace is the other string
+/// to its wire point, drawn as a string); where a direction in plan is
+/// given, its clamp's exit direction from its top (thin). Sized by the
+/// post's length.
+pub fn post_lines(g: &Geometry) -> Vec<(Vec<[f64; 3]>, f32)> {
+    let mut out = Vec::new();
+    for p in &g.posts {
+        let l = p.length();
+        if l < 1e-6 {
+            continue;
+        }
+        let axis = [0, 1, 2].map(|k| (p.top[k] - p.base[k]) / l);
+        // Two directions across the axis: a level one where it can be.
+        let cross = |a: [f64; 3], b: [f64; 3]| {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        };
+        let unit = |v: [f64; 3]| {
+            let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            v.map(|x| x / n)
+        };
+        let level = cross(axis, [0.0, 0.0, 1.0]);
+        let u = if (level[0] * level[0] + level[1] * level[1]).sqrt() > 1e-6 {
+            unit(level)
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let v = unit(cross(axis, u));
+        let r = (0.12 * l).max(0.05);
+        let at = |a: f64, b: f64, c: [f64; 3], d: [f64; 3]| {
+            [0, 1, 2].map(|k| p.base[k] + a * c[k] + b * d[k])
+        };
+        out.push((vec![p.base, p.top], POST_WIDTH));
+        if p.hinged {
+            // The hinge: a circle about the base in the plane of the axis.
+            let ring = (0..=24)
+                .map(|k| {
+                    let t = std::f64::consts::TAU * f64::from(k) / 24.0;
+                    at(r * t.cos(), r * t.sin(), u, axis)
+                })
+                .collect();
+            out.push((ring, 2.0));
+        } else {
+            // The base plate: a square across the axis.
+            let plate = [
+                (1.0, 1.0),
+                (-1.0, 1.0),
+                (-1.0, -1.0),
+                (1.0, -1.0),
+                (1.0, 1.0),
+            ]
+            .iter()
+            .map(|&(a, b)| at(r * a, r * b, u, v))
+            .collect();
+            out.push((plate, 2.0));
+        }
+        if let Some(e) = p.exit {
+            let tip = [0, 1, 2].map(|k| p.top[k] + 0.35 * l * e[k]);
+            out.push((vec![p.top, tip], 1.5));
+        }
+    }
+    out
 }
 
 /// The solids' levels of detail ([`scene`]): what is drawn near (their

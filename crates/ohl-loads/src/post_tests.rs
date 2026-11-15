@@ -117,6 +117,84 @@ fn a_post_is_checked() {
     assert!(on_a_post().to_json().contains("\"version\": 17"));
 }
 
+/// `on_a_post`'s T2 given by a structure type holding the same post
+/// (structure file version 13, 2026-11-15): its point A1 28.4 m up, the
+/// upright post P1 1.6 m tall on it.
+const POST_TYPE: &str = "format = \"ohl-structure\"\nversion = 13\nid = \"PT\"\nname = \"post\"\n\
+    kind = \"pole\"\n\
+    [[point]]\nlabel = \"A1\"\npoint = [\"0 m\", \"0 m\", \"28.4 m\"]\n\
+    [[wire]]\nlabel = \"W1\"\nset = 1\n\
+    [[string]]\nlabel = \"P1\"\ntop = \"A1\"\nwire = \"W1\"\nlength = \"1.6 m\"\n\
+    angle = \"180 deg\"\nweight = \"450 N\"\nwind_area = \"0.3 m²\"\npost = true\n\
+    cantilever_load = \"8 kN\"\n";
+
+/// A typed structure's post loads its structure as the same post made by
+/// hand: every load at T2 — the wires' at the post's top with its lever,
+/// the post's own weight and wind at its middle — and the post's check
+/// values are the same.
+#[test]
+fn a_typed_post_loads_as_one_made_by_hand() {
+    let by_hand = on_a_post();
+    let mut types = ohl_structures::StructureLibrary::default();
+    let path = Path::new("PT.ohls");
+    types
+        .insert(
+            path,
+            <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(path, POST_TYPE)
+                .unwrap(),
+        )
+        .unwrap();
+    let mut typed = on_a_post();
+    let t2 = &mut typed.structures[1];
+    t2.points.clear();
+    t2.strings.clear();
+    t2.wires.clear();
+    t2.structure_type = Some("PT".into());
+    let typed = typed
+        .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+        .unwrap();
+    let p1 = typed.structures[1].string("P1").unwrap();
+    assert!(p1.post && p1.cantilever_load == Some(8000.0));
+    let w = weather();
+    let cases = vec![LoadCase::from_weather("wind")];
+    let at_t2 = |line: &Line| -> Vec<AttachmentLoad> {
+        let r = structure_loads(line, &library(), &w, &cases, &default_budget()).unwrap();
+        r[0].loads
+            .iter()
+            .filter(|l| l.structure == "T2")
+            .cloned()
+            .collect()
+    };
+    let (a, b) = (at_t2(&by_hand), at_t2(&typed));
+    assert_eq!(a.len(), b.len());
+    assert!(a.len() >= 2, "{a:?}");
+    let near =
+        |x: [f64; 3], y: [f64; 3]| (0..3).all(|k| (x[k] - y[k]).abs() < 1e-6 * (1.0 + x[k].abs()));
+    for (x, y) in a.iter().zip(&b) {
+        assert_eq!((&x.point, &x.label), (&y.point, &y.label));
+        assert!(near(x.local, y.local), "{x:?}\n{y:?}");
+        assert!(
+            near(x.lever, y.lever) && near(x.couple, y.couple),
+            "{x:?}\n{y:?}"
+        );
+        assert!(near(
+            x.moments_by_component()[0],
+            y.moments_by_component()[0]
+        ));
+    }
+    // The post's check values.
+    let posts = |line: &Line| {
+        let s = ohl_line::solve::solve_line(line, &library(), &w[0]);
+        let shapes: Vec<_> = s.into_iter().map(Result::unwrap).collect();
+        ohl_line::post::post_loads(line, &library(), &w[0], &shapes)
+    };
+    let (pa, pb) = (posts(&by_hand), posts(&typed));
+    assert_eq!(pa.len(), 1);
+    assert_eq!(pb.len(), 1);
+    assert!((pa[0].cantilever() - pb[0].cantilever()).abs() < 1e-6 * pa[0].cantilever());
+    assert!((pa[0].compression() - pb[0].compression()).abs() < 1e-6 * (1.0 + pa[0].compression()));
+}
+
 /// `on_a_post` with a jumper from the post's top (T2 W1) to a wire point
 /// fixed to T2 3 m to the side and 1.5 m lower (W2, no section ends
 /// there), stiff (400 N·m²; else none: hinged), held level at the post's

@@ -336,6 +336,17 @@ string](tools-general.md#edit-on-a-string)) with the post's own fields:
   you Apply.
 - A rigid conductor carried on posts is not built yet.
 - **Undo**: Apply is one step.
+- On a structure with a type, the post added is the structure's own. To
+  give every structure of a type the post, put it in the type
+  (2026-11-15): in OHL-Structure's Strings table ([Post insulators on the
+  structure](structure-app.md#post-insulators-on-the-structure)) or in the
+  file ([Post insulators on a type](structure-library.md#post-insulators-on-a-type)).
+  A typed structure's posts load and are checked exactly as one made
+  here, and are drawn the same way.
+- The **Structure editor** of a structure without a type (**Strings and
+  points…** in Properties) keeps its posts (2026-11-15; before, its
+  Apply made them plain strings), and **Make it a type…** writes them
+  into the type (structure file version 13).
 
 ### A post on the ground: a post support
 
