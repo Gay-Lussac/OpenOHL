@@ -50,7 +50,7 @@ fn the_load_case_form_writes_a_version_4_case_and_undo_restores_it() {
     h.get_by_label("high wind").click();
     h.run();
     // 2 Wind on the wires: there, the weather case has wind.
-    h.get_by_label_contains("as the weather case (from the");
+    h.get_by_label("as the weather case: from the right (90°)");
     // 3 Wires removed and broken.
     h.get_by_label_contains("S1 span 2 (").click();
     h.run();

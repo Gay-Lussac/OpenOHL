@@ -168,18 +168,38 @@ fn number(
     value: f64,
     width: f32,
 ) -> Option<f64> {
+    number_or_default(ui, buffers, key, label, value, None, width)
+}
+
+/// [`number`] for a value with a default (owner 2026-11-15: "the default
+/// should show what the value is even if greyed out"): at the default
+/// (`default`: its value and where it comes from), its text greyed with
+/// the source in the hover; typing another value gives it.
+fn number_or_default(
+    ui: &mut egui::Ui,
+    buffers: &mut HashMap<String, String>,
+    key: &str,
+    label: &str,
+    value: f64,
+    default: Option<(f64, &str)>,
+    width: f32,
+) -> Option<f64> {
     let l = ui.label(label);
     let mut text = buffers
         .get(key)
         .cloned()
         .unwrap_or_else(|| format_number(value));
-    let r = ui
-        .add(
-            egui::TextEdit::singleline(&mut text)
-                .id_salt(("load-case-number", key))
-                .desired_width(width),
-        )
-        .labelled_by(l.id);
+    let mut edit = egui::TextEdit::singleline(&mut text)
+        .id_salt(("load-case-number", key))
+        .desired_width(width);
+    let at_default = default.filter(|(d, _)| *d == value && !buffers.contains_key(key));
+    if at_default.is_some() {
+        edit = edit.text_color(ui.visuals().weak_text_color());
+    }
+    let mut r = ui.add(edit).labelled_by(l.id);
+    if let Some((_, source)) = at_default {
+        r = r.on_hover_text(format!("{source} — type another value to change it"));
+    }
     let mut out = None;
     if r.changed() {
         if let Ok(v) = text.trim().replace(',', ".").parse::<f64>()
@@ -192,6 +212,228 @@ fn number(
         buffers.remove(key);
     }
     out
+}
+
+/// A value the case does not give, greyed: what applies and where it
+/// comes from (owner 2026-11-15).
+fn inherited(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
+    ui.label(egui::RichText::new(text.into()).small().weak())
+}
+
+/// A greyed, disabled field showing the value that applies where the case
+/// gives none (`label` names it, as the field ticking "own …" opens), with
+/// where it comes from beside it.
+fn shown(ui: &mut egui::Ui, key: &str, label: &str, value: f64, width: f32, source: &str) {
+    let l = ui.label(egui::RichText::new(label).weak());
+    let mut text = format_number(value);
+    ui.add_enabled(
+        false,
+        egui::TextEdit::singleline(&mut text)
+            .id_salt(("load-case-shown", key))
+            .desired_width(width),
+    )
+    .labelled_by(l.id)
+    .on_disabled_hover_text(format!(
+        "{source}: not given by the case (tick to give one)"
+    ));
+    inherited(ui, format!("({source})"));
+}
+
+/// A direction in words, its name first: "from the right (90°)", "from
+/// 30°".
+fn direction_words(d: WindDirection) -> String {
+    let a = d.degrees();
+    let deg = format_number(a);
+    match a {
+        0.0 => "from ahead (0°)".into(),
+        90.0 => "from the right (90°)".into(),
+        180.0 => "from behind (180°)".into(),
+        270.0 => "from the left (270°)".into(),
+        _ => format!("from {deg}°"),
+    }
+}
+
+/// The direction the wind on the wires comes from in case `case` with
+/// weather case `weather` — the case's wind direction (version 7), else
+/// the weather case's at an angle, else across from the side
+/// (`wind_from`, the case's or the weather case's) — as the computation
+/// takes it: [`LoadCase::structure_wind`]'s direction for the bodies when
+/// the case gives them none ("as the wires"; owner 2026-11-15: never a
+/// fixed "right" when the wind is at an angle).
+pub fn wires_direction(case: &LoadCase, weather: &WeatherCase) -> WindDirection {
+    let mut c = case.clone();
+    c.on_structure.direction = None;
+    c.structure_wind(weather).direction
+}
+
+/// A length in m as mm, one decimal.
+fn mm(t: f64) -> String {
+    format!("{:.1} mm", t * 1000.0)
+}
+
+/// The ice case `case` puts on each structure of `line` with weather case
+/// `weather` — [`LoadCase::structure_ice_at`], the computation's own — in
+/// a few words: "T3 20.0 mm, T5 10.0 mm (2 of 8 structures; the others
+/// none)". Err: the computation refuses it (no density).
+fn ice_by_structure(
+    case: &LoadCase,
+    weather: &WeatherCase,
+    line: Option<&ohl_line::Line>,
+) -> Result<String, String> {
+    let Some(line) = line else {
+        return Ok("per structure (Structures table › local conditions)".into());
+    };
+    let mut iced = Vec::new();
+    for s in &line.structures {
+        if let Some(i) = case.structure_ice_at(weather, Some(s))? {
+            iced.push(format!("{} {}", s.id, mm(i.thickness)));
+        }
+    }
+    let n = line.structures.len();
+    Ok(if iced.is_empty() {
+        "no structure gives local ice (Structures table › local conditions): none".into()
+    } else {
+        let more = iced.len().saturating_sub(6);
+        let mut s = iced.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+        if more > 0 {
+            s.push_str(&format!(" and {more} more"));
+        }
+        format!(
+            "{s} ({} of {n} structure(s){}; per structure, see Applies to)",
+            iced.len(),
+            if iced.len() < n {
+                "; the others none"
+            } else {
+                ""
+            }
+        )
+    })
+}
+
+/// What the ice choice of case `case` puts on the structures with weather
+/// case `weather`, in words, from [`LoadCase::structure_ice_at`] and
+/// [`LoadCase::takes_local_ice`] (the computation's own): for *default*
+/// the rule's outcome, for the local ice each structure's, for the wires'
+/// ice the thickness it gives. Err: the computation refuses it (a weather
+/// case giving its ice per metre of wire for the wires' ice).
+fn ice_effect(
+    case: &LoadCase,
+    weather: &WeatherCase,
+    line: Option<&ohl_line::Line>,
+) -> Result<String, String> {
+    // A density refused is said at the density's row.
+    let per_structure = || {
+        ice_by_structure(case, weather, line)
+            .unwrap_or_else(|_| "per structure — it needs a density (below)".into())
+    };
+    let factor = case.on_structure.ice_factor;
+    Ok(match case.on_structure.ice {
+        None if case.takes_local_ice(weather) => {
+            format!("default: each structure's local ice — {}", per_structure())
+        }
+        None if !case.use_local => "default: none here — the case does not take the local \
+                                    conditions (Use local conditions, section 6)"
+            .into(),
+        None => format!(
+            "default: none here — weather case \"{}\" has no ice",
+            weather.name
+        ),
+        Some(StructureIce::NoIce) => "no ice on the structures".into(),
+        Some(StructureIce::Local) => format!("each structure's local ice — {}", per_structure()),
+        Some(StructureIce::Weather) => {
+            let wires = mm(weather.ice_thickness.si());
+            let f = format_number(factor.unwrap_or(1.0));
+            match case.structure_ice_at(weather, None)? {
+                Some(i) => format!(
+                    "the wires' ice: {wires} × {f} = {} on every structure taking the case",
+                    mm(i.thickness)
+                ),
+                None => format!(
+                    "the wires' ice: {wires} × {f} — none: weather case \"{}\" gives no ice \
+                     thickness",
+                    weather.name
+                ),
+            }
+        }
+        Some(StructureIce::Thickness(t)) => match case.structure_ice_at(weather, None) {
+            Ok(Some(i)) => format!(
+                "{} × {} = {} on every structure taking the case",
+                mm(t),
+                format_number(factor.unwrap_or(1.0)),
+                mm(i.thickness)
+            ),
+            Ok(None) => "0 mm: no ice on the structures".into(),
+            Err(_) => format!("{} on every structure taking the case", mm(t)),
+        },
+    })
+}
+
+/// The density of the ice on the structures where the case gives none, as
+/// the computation takes it ([`LoadCase::structure_ice_at`]: with the
+/// wires' ice the weather case's or glaze ice, else
+/// [`LoadCase::ice_density`]), and where it comes from. Err: none (the
+/// computation refuses it).
+fn inherited_density(case: &LoadCase, weather: &WeatherCase) -> Result<(f64, String), String> {
+    if case.on_structure.ice == Some(StructureIce::Weather) {
+        // The computation's value where it puts ice; the same rule's
+        // value (glaze ice where the weather case gives none) where the
+        // weather case has no thickness.
+        let d = match case.structure_ice_at(weather, None) {
+            Ok(Some(i)) => i.density,
+            _ => weather.ice_density_or_glaze().si(),
+        };
+        let source = if weather.ice_density.is_some() {
+            "the weather case's".to_owned()
+        } else {
+            "glaze ice, the weather case gives none".to_owned()
+        };
+        return Ok((d, source));
+    }
+    case.ice_density(weather)
+        .map(|d| (d, "the weather case's".to_owned()))
+}
+
+/// The snow case `case` puts on each structure of `line` —
+/// [`LoadCase::structure_snow_at`], the computation's own — in a few
+/// words.
+fn snow_by_structure(case: &LoadCase, line: Option<&ohl_line::Line>) -> String {
+    let Some(line) = line else {
+        return "s_k per structure (Structures table › local conditions)".into();
+    };
+    let snowed: Vec<String> = line
+        .structures
+        .iter()
+        .filter_map(|s| {
+            case.structure_snow_at(Some(s)).map(|o| {
+                format!(
+                    "{} s_k {:.2} → q {:.2} kN/m²",
+                    s.id,
+                    o.ground / 1000.0,
+                    o.load() / 1000.0
+                )
+            })
+        })
+        .collect();
+    let n = line.structures.len();
+    if snowed.is_empty() {
+        return "s_k per structure (Structures table › local conditions): none gives snow on the \
+                ground, no snow load"
+            .into();
+    }
+    let more = snowed.len().saturating_sub(4);
+    let mut s = snowed
+        .iter()
+        .take(4)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if more > 0 {
+        s.push_str(&format!(" and {more} more"));
+    }
+    format!(
+        "s_k per structure (Structures table): {s} ({} of {n} structure(s))",
+        snowed.len()
+    )
 }
 
 /// A number as typed back: no trailing zeros.
@@ -617,11 +859,17 @@ fn case_ui(
                 "The wires' state: as strung, after creep, after the heaviest load, or the \
                  one that sags more (the line's Creep-Stretch settings)",
             );
+        if case.condition == WireCondition::default() {
+            inherited(ui, "(the default: as strung)");
+        }
     });
     // 2 Wind on the wires: only when the weather case has wind.
     let windy = weather.is_some_and(|w| w.wind_pressure.si() > 0.0);
-    if windy {
-        let side = weather.map_or(WindSide::Right, |w| w.wind_from);
+    if let (true, Some(w)) = (windy, weather) {
+        // The weather case's own direction (at an angle, or across from
+        // its side), as the computation takes it (the body's default:
+        // `LoadCase::structure_wind` of a case giving no direction).
+        let theirs = wires_direction(&LoadCase::from_weather(&w.name), w);
         heading(
             ui,
             2,
@@ -632,7 +880,7 @@ fn case_ui(
         ui.horizontal(|ui| {
             for (label, value) in [
                 (
-                    format!("as the weather case (from the {})", side.as_str()),
+                    format!("as the weather case: {}", direction_words(theirs)),
                     None,
                 ),
                 ("from the left".to_owned(), Some(WindSide::Left)),
@@ -649,6 +897,34 @@ fn case_ui(
                 }
             }
         });
+        // The direction the wires take in this case: the case's wind
+        // direction (version 7, Fields (expert)) over the side above.
+        let used = wires_direction(case, w);
+        if case.wind_direction.is_some() {
+            inherited(
+                ui,
+                format!(
+                    "The wires: {} — the case's wind direction (Fields (expert)), which replaces \
+                     the side above",
+                    direction_words(used)
+                ),
+            );
+        } else {
+            inherited(ui, format!("The wires: {}", direction_words(used)));
+        }
+        if !case.wind_directions.is_empty() {
+            inherited(
+                ui,
+                format!(
+                    "Solved once per direction of the case's set (Fields (expert)): {}",
+                    case.wind_directions
+                        .iter()
+                        .map(|d| direction_words(*d))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            );
+        }
     } else if case.wind_from.is_some() {
         ui.horizontal(|ui| {
             ui.label(
@@ -692,7 +968,7 @@ fn case_ui(
         "Weight on the structures' members (ice all round each member, snow on its plan) and on \
          poles (ice); the wires' ice is the weather case's.",
     );
-    changed |= ice_snow_ui(ui, case, item, weather, buffers);
+    changed |= ice_snow_ui(ui, case, item, weather, cx.line, buffers);
     // 6 Factors and local conditions.
     heading(
         ui,
@@ -708,8 +984,16 @@ fn case_ui(
             ("longitudinal", "longitudinal ×", &mut case.longitudinal),
             ("strength", "strength φ", &mut case.strength),
         ] {
-            if let Some(v) = number(ui, buffers, &key(what), label, *value, 50.0)
-                && v != *value
+            // 1 (no factor) greyed: the value of a case that gives none.
+            if let Some(v) = number_or_default(
+                ui,
+                buffers,
+                &key(what),
+                label,
+                *value,
+                Some((1.0, "1, the default (no factor)")),
+                50.0,
+            ) && v != *value
             {
                 *value = v;
                 changed = true;
@@ -1277,6 +1561,11 @@ fn structure_wind_ui(
         None => Pressure::Weather,
     };
     let theirs = weather.map_or(0.0, |w| w.wind_pressure.si());
+    // What the computation takes (owner 2026-11-15: the defaults shown
+    // with their values): the bodies' wind of the case as it is, and the
+    // wires' direction ("as the wires").
+    let body = weather.map(|w| case.structure_wind(w));
+    let wires = weather.map(|w| wires_direction(case, w));
     ui.horizontal_wrapped(|ui| {
         for (label, m, hover) in [
             ("off", Pressure::Off, "No wind on the structures' bodies"),
@@ -1292,40 +1581,57 @@ fn structure_wind_ui(
                  towers apart)",
             ),
         ] {
-            let text = if m == Pressure::Weather {
-                format!("{label} ({theirs:.0} Pa)")
-            } else {
-                label.to_owned()
-            };
-            if ui.radio(mode == m, text).on_hover_text(hover).clicked() && mode != m {
+            if ui.radio(mode == m, label).on_hover_text(hover).clicked() && mode != m {
                 own.wind_pressure = match m {
                     Pressure::Off => Some(0.0),
                     Pressure::Weather => None,
+                    // Starts from the value shown.
                     Pressure::Own => Some(if theirs > 0.0 { theirs } else { 500.0 }),
                 };
                 changed = true;
             }
         }
-        if mode == Pressure::Own
-            && let Some(v) = number(
-                ui,
-                buffers,
-                &key("pressure"),
-                "Pa",
-                own.wind_pressure.unwrap_or(0.0),
-                60.0,
-            )
-            && v >= 0.0
-        {
-            own.wind_pressure = Some(v);
-            changed = true;
+        match mode {
+            Pressure::Own => {
+                if let Some(v) = number(
+                    ui,
+                    buffers,
+                    &key("pressure"),
+                    "Pa",
+                    own.wind_pressure.unwrap_or(0.0),
+                    60.0,
+                ) && v >= 0.0
+                {
+                    own.wind_pressure = Some(v);
+                    changed = true;
+                }
+                if weather.is_some() {
+                    inherited(ui, format!("(the weather case's: {theirs:.0} Pa)"));
+                }
+            }
+            Pressure::Weather => match &body {
+                Some(b) => shown(
+                    ui,
+                    &key("pressure"),
+                    "Pa",
+                    b.pressure,
+                    60.0,
+                    if b.pressure > 0.0 {
+                        "the weather case's"
+                    } else {
+                        "the weather case's: no wind"
+                    },
+                ),
+                None => {
+                    inherited(ui, "(the weather case is not in the project: no value)");
+                }
+            },
+            Pressure::Off => {
+                inherited(ui, "no wind on the structures' bodies");
+            }
         }
     });
     if mode != Pressure::Off {
-        let side = case
-            .wind_from
-            .or(weather.map(|w| w.wind_from))
-            .unwrap_or_default();
         ui.horizontal_wrapped(|ui| {
             ui.label("Direction");
             let d = case.on_structure.direction;
@@ -1338,8 +1644,15 @@ fn structure_wind_ui(
                 }
                 _ => None,
             };
+            // "as the wires": the direction the wires take in this case
+            // (owner 2026-11-15: never a fixed side when the wind is at
+            // an angle).
+            let as_wires = match wires {
+                Some(w) => format!("as the wires: {}", direction_words(w)),
+                None => "as the wires".to_owned(),
+            };
             for (label, value) in [
-                (format!("as the wires (from the {})", side.as_str()), None),
+                (as_wires, None),
                 ("from the left".to_owned(), Some(WindDirection::Left)),
                 ("from the right".to_owned(), Some(WindDirection::Right)),
                 ("from ahead".to_owned(), Some(WindDirection::Ahead)),
@@ -1372,8 +1685,18 @@ fn structure_wind_ui(
                 case.on_structure.direction = Some(WindDirection::Angle(v));
                 changed = true;
             }
+            if d.is_none() && body.is_some_and(|b| b.relative_to_line) {
+                inherited(
+                    ui,
+                    "(relative to the line at each structure: turned into the axes of a \
+                     structure turned off the line's direction)",
+                );
+            }
         });
-        ui.horizontal(|ui| {
+        // The factor the computation takes: the case's own, else its
+        // transverse factor (`BodyWind::factor`).
+        let factor = body.map_or(case.transverse, |b| b.factor);
+        ui.horizontal_wrapped(|ui| {
             let mut has = own.wind_factor.is_some();
             if ui
                 .checkbox(&mut has, "own factor")
@@ -1384,15 +1707,41 @@ fn structure_wind_ui(
                 ))
                 .changed()
             {
-                own.wind_factor = has.then_some(case.transverse);
+                // Starts from the value shown.
+                own.wind_factor = has.then_some(factor);
                 changed = true;
             }
-            if let Some(f) = own.wind_factor
-                && let Some(v) = number(ui, buffers, &key("wind factor"), "×", f, 50.0)
-                && v != f
-            {
-                own.wind_factor = Some(v);
-                changed = true;
+            match own.wind_factor {
+                Some(f) => {
+                    if let Some(v) = number(ui, buffers, &key("wind factor"), "×", f, 50.0)
+                        && v != f
+                    {
+                        own.wind_factor = Some(v);
+                        changed = true;
+                    }
+                }
+                None => shown(
+                    ui,
+                    &key("wind factor"),
+                    "×",
+                    factor,
+                    50.0,
+                    "the transverse factor",
+                ),
+            }
+            if let Some(b) = body {
+                inherited(
+                    ui,
+                    format!(
+                        "= {} Pa on the bodies{}",
+                        format_number(b.factored()),
+                        if case.use_local {
+                            ", × each structure's wind_static where it gives one"
+                        } else {
+                            ""
+                        }
+                    ),
+                );
             }
         });
     }
@@ -1421,6 +1770,7 @@ fn ice_snow_ui(
     case: &mut LoadCase,
     item: usize,
     weather: Option<&WeatherCase>,
+    line: Option<&ohl_line::Line>,
     buffers: &mut HashMap<String, String>,
 ) -> bool {
     let mut changed = false;
@@ -1428,6 +1778,13 @@ fn ice_snow_ui(
     // The local ice a case taking the local conditions puts on the
     // structures when its weather case has ice (owner 2026-11-04).
     let local_ice = case.use_local && weather.is_some_and(WeatherCase::has_ice);
+    // What applies where the case gives nothing (owner 2026-11-15: the
+    // defaults shown with their values), from the computation's own
+    // functions: the ice on the structures, its density, the snow.
+    let ice_effect = weather.map(|w| ice_effect(case, w, line));
+    let density = weather.map(|w| inherited_density(case, w));
+    let snow_text = snow_by_structure(case, line);
+    let snow_factor = case.on_structure.snow_factor();
     let o = &mut case.on_structure;
     let mode = match o.ice {
         None => Ice::ByWeather,
@@ -1494,6 +1851,15 @@ fn ice_snow_ui(
             changed = true;
         }
     });
+    match ice_effect {
+        Some(Ok(text)) => {
+            inherited(ui, text);
+        }
+        Some(Err(e)) => {
+            crate::menu::error_label(ui, egui::RichText::new(e).small());
+        }
+        None => {}
+    }
     let iced = matches!(
         o.ice,
         Some(StructureIce::Local | StructureIce::Thickness(_) | StructureIce::Weather)
@@ -1503,7 +1869,7 @@ fn ice_snow_ui(
         let wires = weather.map_or(String::new(), |w| {
             format!(" (the wires': {:.0} mm)", w.ice_thickness.si() * 1000.0)
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut has = o.ice_factor.is_some();
             if ui
                 .checkbox(&mut has, "factor on the thickness")
@@ -1514,46 +1880,53 @@ fn ice_snow_ui(
                 ))
                 .changed()
             {
+                // Starts from the value shown (none given: 1).
                 o.ice_factor = has.then_some(1.0);
                 changed = true;
             }
-            if let Some(f) = o.ice_factor
-                && let Some(v) = number(ui, buffers, &key("ice factor"), "×", f, 50.0)
-                && v != f
-                && v >= 0.0
-            {
-                o.ice_factor = Some(v);
-                changed = true;
-            }
-            if let (Some(StructureIce::Weather), Some(w)) = (o.ice, weather) {
-                let t = w.ice_thickness.si() * o.ice_factor.unwrap_or(1.0) * 1000.0;
-                ui.label(egui::RichText::new(format!("= {t:.1} mm on the structures")).small());
+            match o.ice_factor {
+                Some(f) => {
+                    if let Some(v) = number(ui, buffers, &key("ice factor"), "×", f, 50.0)
+                        && v != f
+                        && v >= 0.0
+                    {
+                        o.ice_factor = Some(v);
+                        changed = true;
+                    }
+                }
+                None => shown(ui, &key("ice factor"), "×", 1.0, 50.0, "none given: 1"),
             }
         });
     }
     if iced && !(o.ice.is_none() && !local_ice && o.ice_density.is_none()) {
         let by_weather = o.ice == Some(StructureIce::Weather);
-        let theirs = weather.and_then(|w| w.ice_density).map(|d| d.si());
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let mut has = o.ice_density.is_some();
+            let hover = match &density {
+                Some(Ok((d, source))) => format!("Unticked: {source}, {d:.0} kg/m³"),
+                _ if by_weather => {
+                    "Unticked: the wires' — glaze ice, the weather case giving no density"
+                        .to_owned()
+                }
+                _ => "Unticked: the weather case's — it gives none, so a density is needed \
+                      here (none is made up)"
+                    .to_owned(),
+            };
             if ui
                 .checkbox(&mut has, "own density")
-                .on_hover_text(match theirs {
-                    Some(d) => format!("Unticked: the weather case's, {d:.0} kg/m³"),
-                    None if by_weather => "Unticked: the wires' — glaze ice, the weather case \
-                                           giving no density"
-                        .to_owned(),
-                    None => "Unticked: the weather case's — it gives none, so a density is \
-                             needed here (none is made up)"
-                        .to_owned(),
-                })
+                .on_hover_text(hover)
                 .changed()
             {
-                o.ice_density = has.then_some(theirs.unwrap_or(900.0));
+                // Starts from the value shown.
+                let start = match &density {
+                    Some(Ok((d, _))) => *d,
+                    _ => 900.0,
+                };
+                o.ice_density = has.then_some(start);
                 changed = true;
             }
-            match o.ice_density {
-                Some(d) => {
+            match (o.ice_density, &density) {
+                (Some(d), _) => {
                     if let Some(v) = number(ui, buffers, &key("density"), "kg/m³", d, 60.0)
                         && v != d
                     {
@@ -1561,14 +1934,17 @@ fn ice_snow_ui(
                         changed = true;
                     }
                 }
-                None if theirs.is_none() && !by_weather => {
+                (None, Some(Ok((d, source)))) => {
+                    shown(ui, &key("density"), "kg/m³", *d, 60.0, source);
+                }
+                (None, Some(Err(_))) => {
                     crate::menu::error_label(
                         ui,
                         egui::RichText::new("the weather case gives no density: tick own density")
                             .small(),
                     );
                 }
-                None => {}
+                (None, None) => {}
             }
         });
     }
@@ -1592,13 +1968,34 @@ fn ice_snow_ui(
             changed = true;
         }
         if o.snow {
-            for (what, label, default, value) in [
-                ("mu", "μ", DEFAULT_SNOW_SHAPE, &mut o.snow_shape),
-                ("ce", "C_e", DEFAULT_SNOW_EXPOSURE, &mut o.snow_exposure),
-                ("ct", "C_T", DEFAULT_SNOW_THERMAL, &mut o.snow_thermal),
+            for (what, label, default, source, value) in [
+                (
+                    "mu",
+                    "μ",
+                    DEFAULT_SNOW_SHAPE,
+                    "the default, SIA 261:2014 5.3.4",
+                    &mut o.snow_shape,
+                ),
+                (
+                    "ce",
+                    "C_e",
+                    DEFAULT_SNOW_EXPOSURE,
+                    "the default, SIA 261:2014 5.2.4",
+                    &mut o.snow_exposure,
+                ),
+                (
+                    "ct",
+                    "C_T",
+                    DEFAULT_SNOW_THERMAL,
+                    "the default, SIA 261:2014 5.2.5",
+                    &mut o.snow_thermal,
+                ),
             ] {
+                // Not given: the default, greyed (typing another value
+                // gives it; typing the default back clears it).
                 let now = value.unwrap_or(default);
-                if let Some(v) = number(ui, buffers, &key(what), label, now, 40.0)
+                let at = value.is_none().then_some((default, source));
+                if let Some(v) = number_or_default(ui, buffers, &key(what), label, now, at, 40.0)
                     && v != now
                     && v >= 0.0
                 {
@@ -1609,6 +2006,17 @@ fn ice_snow_ui(
             ui.label("(about)").on_hover_text(sia);
         }
     });
+    if o.snow {
+        let given = o.snow_shape.is_some() || o.snow_exposure.is_some() || o.snow_thermal.is_some();
+        inherited(
+            ui,
+            format!(
+                "μ·C_e·C_T = {}{}; {snow_text}",
+                format_number(snow_factor),
+                if given { "" } else { " (the defaults)" }
+            ),
+        );
+    }
     changed
 }
 
