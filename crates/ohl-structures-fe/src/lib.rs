@@ -391,15 +391,17 @@ pub fn held_by_shortened(model: &Model, solution: &Solution) -> Vec<usize> {
     out
 }
 
-/// A joint moving more than this share of its shortest member's length
-/// relative to the mean of its members' far ends is said
+/// A joint moving more than this share of its members' mean length
+/// relative to the mean of their far ends is said
 /// ([`local_displacement_note`]; owner 2026-11-15).
 pub const LOCAL_MOVE_SHARE: f64 = 0.1;
 
 /// The joints that moved far relative to their own members, in words
 /// (none: none did): a joint whose displacement less the mean of its
 /// members' far ends' displacements is more than [`LOCAL_MOVE_SHARE`] of
-/// the shortest of its members, the joint itself having moved at least as
+/// its members' mean length (the scale of that mean: a short link to an
+/// attachment point among long members does not set it), the joint itself
+/// having moved at least as
 /// far as that mean (the joint that moved, not its neighbours, nor a
 /// support next to it) — a local near-mechanism (a flat grillage
 /// sagging, a joint held almost only in one plane), which the structure's
@@ -409,18 +411,22 @@ pub const LOCAL_MOVE_SHARE: f64 = 0.1;
 /// SIDE until those joints are checked. Joints named largest share first.
 pub fn local_displacement_note(model: &Model, solution: &Solution) -> Option<String> {
     let mut far: Vec<Vec<usize>> = vec![Vec::new(); model.nodes.len()];
-    let mut shortest = vec![f64::INFINITY; model.nodes.len()];
+    let mut total = vec![0.0; model.nodes.len()];
     for m in &model.members {
         let l = model.length(m);
         far[m.i].push(m.j);
         far[m.j].push(m.i);
-        shortest[m.i] = shortest[m.i].min(l);
-        shortest[m.j] = shortest[m.j].min(l);
+        total[m.i] += l;
+        total[m.j] += l;
     }
     let d = &solution.displacements;
     let mut moved: Vec<(usize, f64, f64)> = Vec::new();
     for (n, ends) in far.iter().enumerate() {
-        if ends.is_empty() || shortest[n].is_nan() || shortest[n] <= 0.0 || n >= d.len() {
+        if ends.is_empty() || n >= d.len() {
+            continue;
+        }
+        let length = total[n] / ends.len() as f64;
+        if length.is_nan() || length <= 0.0 {
             continue;
         }
         let mut mean = [0.0; 3];
@@ -437,8 +443,8 @@ pub fn local_displacement_note(model: &Model, solution: &Solution) -> Option<Str
         // far as the mean of its members' other ends.
         let own = (0..3).map(|k| d[n][k].powi(2)).sum::<f64>().sqrt();
         let around = (0..3).map(|k| mean[k].powi(2)).sum::<f64>().sqrt();
-        if r.is_nan() || (r > LOCAL_MOVE_SHARE * shortest[n] && own >= around) {
-            moved.push((n, r, shortest[n]));
+        if r.is_nan() || (r > LOCAL_MOVE_SHARE * length && own >= around) {
+            moved.push((n, r, length));
         }
     }
     if moved.is_empty() {
@@ -460,7 +466,7 @@ pub fn local_displacement_note(model: &Model, solution: &Solution) -> Option<Str
         .collect();
     Some(format!(
         "WARNING, NOT ON THE SAFE SIDE until checked: {} joint(s) moved more than {:.0} % of \
-         their shortest member relative to their members' other ends (a local near-mechanism, \
+         their members' mean length relative to their other ends (a local near-mechanism, \
          e.g. a flat grillage sagging; large displacements in a small-displacement analysis): \
          {}{}",
         moved.len(),

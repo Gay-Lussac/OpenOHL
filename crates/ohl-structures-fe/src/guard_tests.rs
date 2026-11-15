@@ -187,7 +187,7 @@ fn a_joint_moving_far_against_its_members_is_said() {
     assert!(
         note.starts_with(
             "WARNING, NOT ON THE SAFE SIDE until checked: 1 joint(s) moved more than 10 % of \
-             their shortest member"
+             their members' mean length"
         ),
         "{note}"
     );

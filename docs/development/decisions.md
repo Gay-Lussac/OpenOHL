@@ -10,6 +10,72 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Redundant members, climbing, local displacements, tension-only notes,
+read-only CLI, the 60 N/m ice above 1000 m** (owner, after a review of a
+real line's redundant members: "go ahead with your recommendations", then
+"for the 60 it should only be applied above 1000m"). Built (not approved
+yet):
+
+- **The unexplained gap on a cross-arm's plan bracing** (a review on a
+  private line, proposal (d)): found, nothing changed. The candidates were
+  tried one by one on the whole tower — the angle frames' bending axes
+  (principal u/v with the principal angle added to the roll, instead of the
+  geometric y/z OpenOHL uses), tension-only beams as frames, every truss a
+  frame, no roll: each changes the bracing's force by at most 0.1 kN. The
+  cause is an interior joint lying in the plane of its members (the
+  crossing of two redundant lines): the other program puts a share of the
+  section's weight on it and its pinned members carry it by sagging (29
+  mm), the tension pulls the chord joints together and compresses the plan
+  bracing; OpenOHL holds that joint's out-of-plane direction by its joint
+  stabilisation. With the joint lowered by the other program's sag
+  OpenOHL gives nearly its force; with the members as frames (bending, the
+  real continuous angles) the bracing stays nearly unstressed (−1.6 kN
+  against OpenOHL's −1.25 and the other program's −5.05). No clear
+  modelling error and no primary source to change anything: the member
+  results stay; the residual (the membrane share OpenOHL's stabilisation
+  leaves out, about 2 % of usage there) is said in the private review.
+- **Optional redundant-member force**, off by default: `[analysis]
+  redundant_force` (percent): each redundant member also checked for that
+  share of the compression in the member it braces — the member passing
+  straight through its end joint (within 10°), found from the model; its
+  usage the larger, what governs says which; not found: said, not on the
+  safe side. ASCE 10-97 commentary C3.7.4 (PDF p. 45): "Common design
+  practice is to design redundant members for 1 to 2.5% of the load in the
+  supported member" — practice, not a requirement, so the percentage is
+  the user's. Model file 7, structure file 16.
+- **Optional climbing load**, off by default: `[analysis] climbing_load`:
+  members within 30° of the horizontal, the load at mid-length alone,
+  simply supported, own weight added, against first yield (ASCE 10-97
+  commentary C2.2, PDF p. 38: 1100 N "applied independently of all other
+  loads without permanent distortion"); a list of its own, not in the load
+  cases' usage. Steeper members not checked (said).
+- **A joint moving far against its own members**: a warning (not a
+  refusal) when a joint moves more than 10 % of its members' mean length
+  relative to the mean of their other ends — the sagging grillage the
+  structure-wide limit (half its size) did not see. The mean, not the
+  shortest member: on the real towers the shortest (a 0.25 m link to an
+  attachment point) flagged a joint that moves with the tower.
+- **Tension-only notes**: the default law names itself ("tension-only
+  members (compression up to their buckling load): …"); a joint held by the
+  stabilisation where its shortened tension-only members would hold it is
+  named in a warning (within the limits, not refused, no longer quiet).
+- **The command line opens project files read-only** for every command
+  that only reads or computes (`Session::open_read_only`: no journal mode,
+  no table, nothing written; immutable when no program has the file open,
+  so no `-wal`/`-shm`; an older file upgraded in memory only). The review
+  had found `ohl line` changing a real project's modification time.
+- **"0 °C + 60 N/m ice"** added to the default load cases (vertical 1.3, as
+  the 20 N/m case) and given **only to structures at or above 1000 m**: a
+  new structure-group rule, the ground elevation (the structure's position
+  height; unknown: matches, the safe side), and a load case's own list may
+  now have rules (its case only where they hold). A group "above 1000 m"
+  ticking only that case was not used: a structure in a group takes only
+  its groups' cases, so those structures would have lost every other case;
+  the own list restricts that one case and nothing else. New projects with
+  the defaults and Add the default cases… put the own list in the line; a
+  line without it gives the case to every structure (more load). Line file
+  still version 18 (groups and own lists are unreleased).
+
 **Default weather and load cases** (owner): "can you have in the software
 by default a few weather cases like -20° 0° 10° 20° 40° 80° 10° + 300Pa
 wind and 0° + 20N/m Ice and 0° + 60 N/m ice then also have some default
