@@ -36,14 +36,17 @@
 //! along = "sine"                # size along the span: sine (loops) or constant
 //! ```
 //!
-//! D is the wire's sag in the weather case checked (the largest vertical
-//! distance below the chord), L the horizontal span length, d the
-//! conductor diameter, n the number of loops. Along the span the ellipse
-//! is scaled by |sin(nπt)| at the fraction t of the span (`sine`: each
-//! loop largest at its middle) or kept the same (`constant`); its centre
-//! moves with it. Ellipses are drawn in the plane square to the span at
-//! each station, `right` being to the right looking from the span's first
-//! to its last structure of the first wire of the pair.
+//! D is the wire's sag in the weather case checked (the larger of the
+//! largest distance from the chord in the swung wire's plane and the
+//! largest vertical distance below it: [`swung_sag`]), L the horizontal
+//! span length, d the conductor diameter, n the number of loops. Along
+//! the span the ellipse is scaled by |sin(nπt)| at the fraction t of the
+//! span (`sine`: each loop largest at its middle) or kept the same
+//! (`constant`); its centre moves with it. Ellipses are drawn in the
+//! plane square to the span at each station ([`stations_of`]: the even
+//! stations and every loop's middle), `right` being to the right looking
+//! from the span's first to its last structure of the first wire of the
+//! pair.
 //!
 //! Accuracy: ellipses are compared as circumscribed 72-sided polygons
 //! (each holds its ellipse), so the distance is never higher than between
@@ -406,14 +409,49 @@ impl GallopingParams {
 pub struct GallopingWire {
     /// The wire (a span of a section).
     pub wire: Wire,
-    /// Its sag in the weather case, m.
+    /// Its sag in the weather case, m: the larger of the sag in its swung
+    /// plane and its vertical sag ([`swung_sag`]).
     pub sag: f64,
-    /// Conductor diameter, m.
+    /// Conductor diameter, m (0: unknown — its wire type is not in the
+    /// library; a method using the diameter does not check its pairs).
     pub diameter: f64,
 }
 
+/// The sag of a wire in its swung plane, m: the largest distance of its
+/// points from the chord between its ends, measured square to the span
+/// in plan — across and vertically together — at the chord's point of the
+/// same place along the span (owner, 2026-11-15, "make it safe": in a
+/// case with wind the ellipse was sized from the swung wire's vertical
+/// sag, smaller by the cosine of its swing). Without wind (the wire in its
+/// vertical plane) it is the vertical sag below the chord.
+pub fn swung_sag(points: &[P3]) -> f64 {
+    let (Some(a), Some(b)) = (points.first(), points.last()) else {
+        return 0.0;
+    };
+    let chord = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let h2 = chord[0] * chord[0] + chord[1] * chord[1];
+    points
+        .iter()
+        .map(|q| {
+            let t = if h2 > 0.0 {
+                (((q[0] - a[0]) * chord[0] + (q[1] - a[1]) * chord[1]) / h2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let d = [
+                q[0] - a[0] - chord[0] * t,
+                q[1] - a[1] - chord[1] * t,
+                q[2] - a[2] - chord[2] * t,
+            ];
+            (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+        })
+        .fold(0.0, f64::max)
+}
+
 /// The spans of a solved line (jumpers left out), with their sags and
-/// conductor diameters from `library`.
+/// conductor diameters from `library`. The sag is the larger of the
+/// solve's vertical sag and the sag in the swung plane ([`swung_sag`]):
+/// never the smaller one in a case with wind (2026-11-15).
 pub fn galloping_wires(
     line: &Line,
     shapes: &[SectionShape],
@@ -431,8 +469,8 @@ pub fn galloping_wires(
                 .and_then(|s| library.get(&s.cable))
                 .map_or(0.0, |c| c.diameter.si());
             GallopingWire {
+                sag: sag.max(swung_sag(&wire.points)),
                 wire,
-                sag,
                 diameter,
             }
         })
@@ -572,210 +610,290 @@ pub fn ellipse_distance(a: &Ellipse, b: &Ellipse) -> f64 {
     best
 }
 
-/// The largest share of its full size a method's ellipse is compared at,
-/// over the stations, in the loop where that share is smallest (1: the
-/// middle of every loop is a station, or `along = "constant"`). With
-/// `along = "sine"` a loop is largest at t = (2k+1)/(2n); a station
-/// beside it compares a smaller ellipse.
-pub fn largest_share(method: &Method, stations: usize) -> f64 {
-    if method.along == Along::Constant {
-        return 1.0;
-    }
-    let n = f64::from(method.loops);
-    (0..method.loops)
-        .map(|loop_| {
-            let (from, to) = (f64::from(loop_) / n, f64::from(loop_ + 1) / n);
-            (1..stations)
-                .map(|k| k as f64 / stations as f64)
-                .filter(|t| *t >= from - 1e-12 && *t <= to + 1e-12)
-                .map(|t| (n * std::f64::consts::PI * t).sin().abs())
-                .fold(0.0, f64::max)
-        })
-        .fold(1.0, f64::min)
+/// The fractions of the span a method's ellipses are compared at, in
+/// order: the `stations − 1` evenly spaced inner points and the middle of
+/// each of the method's loops, t = (2k+1)/(2n), where its ellipse is
+/// largest (owner, 2026-11-15, "make it safe": before, only the even
+/// stations, and the middles of 3, 4, 6–9 loops fell between the 20
+/// default ones — the largest ellipse compared down to 95.1 % of its
+/// size). A middle that is a station is taken once.
+pub fn stations_of(method: &Method, stations: usize) -> Vec<f64> {
+    let n = method.loops.max(1);
+    let mut ts: Vec<f64> = (1..stations)
+        .map(|k| k as f64 / stations as f64)
+        .chain((0..n).map(|k| f64::from(2 * k + 1) / f64::from(2 * n)))
+        .collect();
+    ts.sort_by(f64::total_cmp);
+    ts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    ts
 }
 
-/// What a check's results must say beside its rows (2026-11-15, the
-/// review of the galloping check): each line where the check is **not
-/// on the safe side** — a method whose largest ellipse falls between the
-/// stations ([`largest_share`]), wires without a conductor diameter where
-/// a method uses it, pairs whose voltage is beyond the requirement's
-/// table (its last row taken), and the vertical sag of swung wires in a
-/// case with wind (`windy`).
-pub fn notes(
+/// Why a pair is not checked by a method.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Unchecked {
+    /// The pair's voltage, kV, is beyond the requirement's table, which
+    /// ends at `end` kV: no distance required for it.
+    BeyondTable {
+        /// The pair's voltage, kV.
+        kv: f64,
+        /// The table's last row, kV.
+        end: f64,
+    },
+    /// A wire of the pair has no conductor diameter (its wire type not in
+    /// the library) and the method's axes use it.
+    NoDiameter,
+}
+
+/// A pair of wires (indices in the wires checked) a method does not
+/// check, and why.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UncheckedPair {
+    /// First wire.
+    pub a: usize,
+    /// Second wire.
+    pub b: usize,
+    /// Method (index in the parameters).
+    pub method: usize,
+    /// Why.
+    pub why: Unchecked,
+}
+
+/// Whether a method's axes use the conductor diameter.
+fn uses_diameter(m: &Method) -> bool {
+    let uses = |a: &AxisFormula| a.diameter != 0.0 || a.log_factor != 0.0;
+    uses(&m.major) || uses(&m.minor)
+}
+
+/// The pairs of wires hanging between the same two structures (each a
+/// span of a different section): (first, second) indices in `wires`.
+fn span_pairs(wires: &[GallopingWire]) -> Vec<(usize, usize)> {
+    let keys: Vec<Option<[String; 2]>> = wires.iter().map(|w| span_key(&w.wire)).collect();
+    let mut out = Vec::new();
+    for i in 0..wires.len() {
+        let Some(key) = &keys[i] else { continue };
+        for j in i + 1..wires.len() {
+            if keys[j].as_ref() == Some(key) && wires[j].wire.section != wires[i].wire.section {
+                out.push((i, j));
+            }
+        }
+    }
+    out
+}
+
+/// Why pair (`a`, `b`) is not checked by method `m` (none: it is).
+fn unchecked_why(
     params: &GallopingParams,
     wires: &[GallopingWire],
-    pairs: &[GallopingPair],
-    windy: bool,
-) -> Vec<String> {
-    let mut out = Vec::new();
-    for m in &params.methods {
-        let share = largest_share(m, params.stations);
-        if share < 1.0 - 1e-9 {
-            out.push(format!(
-                "NOT ON THE SAFE SIDE: method \"{}\" ({} loop{}): the middle of a loop falls \
-                 between the {} stations — the largest ellipse compared is {:.1} % of its full \
-                 size, the gap there larger than at the loop's middle; give stations a multiple \
-                 of {} in the parameter file",
-                m.name,
-                m.loops,
-                if m.loops == 1 { "" } else { "s" },
-                params.stations,
-                share * 100.0,
-                2 * m.loops
-            ));
-        }
-    }
-    let uses_d = |a: &AxisFormula| a.diameter != 0.0 || a.log_factor != 0.0;
-    if params
-        .methods
-        .iter()
-        .any(|m| uses_d(&m.major) || uses_d(&m.minor))
-    {
-        let mut none: Vec<&str> = wires
-            .iter()
-            .filter(|w| w.diameter <= 0.0)
-            .map(|w| w.wire.section.as_str())
-            .collect();
-        none.dedup();
-        if !none.is_empty() {
-            out.push(format!(
-                "NOT ON THE SAFE SIDE: no conductor diameter for the section(s) {} (their wire \
-                 type is not in the library): the axes' diameter and logarithmic terms are left \
-                 out for them",
-                none.join(", ")
-            ));
-        }
-    }
+    a: usize,
+    b: usize,
+    m: usize,
+) -> Option<Unchecked> {
     if let Some(Requirement::ByVoltage(rows)) = &params.required {
+        let kv = params
+            .pair_voltage
+            .of(
+                wires[a].wire.potential.as_ref(),
+                wires[b].wire.potential.as_ref(),
+            )
+            .unwrap_or(0.0);
         let end = rows.last().map_or(0.0, |r| r.0);
-        let beyond = pairs
-            .iter()
-            .filter_map(|p| {
-                params.pair_voltage.of(
-                    wires[p.a].wire.potential.as_ref(),
-                    wires[p.b].wire.potential.as_ref(),
-                )
-            })
-            .filter(|kv| *kv > end)
-            .fold(None, |m: Option<f64>, kv| Some(m.map_or(kv, |m| m.max(kv))));
-        if let Some(kv) = beyond {
-            out.push(format!(
-                "NOT ON THE SAFE SIDE: pairs up to {kv:.0} kV are beyond the requirement's table \
-                 (it ends at {end:.0} kV): its last distance is taken for them"
-            ));
+        if kv > end {
+            return Some(Unchecked::BeyondTable { kv, end });
         }
     }
-    if windy {
-        out.push(
-            "NOT ON THE SAFE SIDE where your method means the sag in the plane of the swung \
-             wire (or the sag without wind): the case has wind, and the ellipses are sized from \
-             the wires' vertical sag, smaller than the sag in their swung plane"
-                .into(),
-        );
+    (uses_diameter(&params.methods[m]) && (wires[a].diameter <= 0.0 || wires[b].diameter <= 0.0))
+        .then_some(Unchecked::NoDiameter)
+}
+
+/// The pairs × methods the check leaves out, and why (owner, 2026-11-15,
+/// "make it safe"): a pair beyond a requirement table by voltage — not
+/// checked, as the internal clearances check does (before, the table's
+/// last row was taken); a pair with a wire without a conductor diameter by
+/// a method whose axes use it (before, computed with d = 0).
+pub fn unchecked(params: &GallopingParams, wires: &[GallopingWire]) -> Vec<UncheckedPair> {
+    let mut out = Vec::new();
+    for (a, b) in span_pairs(wires) {
+        for m in 0..params.methods.len() {
+            if let Some(why) = unchecked_why(params, wires, a, b, m) {
+                out.push(UncheckedPair {
+                    a,
+                    b,
+                    method: m,
+                    why,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// What a check's results must say beside its rows: the pairs × methods
+/// **not checked** ([`unchecked`]), each kind once — "NOT CHECKED: …".
+/// (2026-11-15: the loops' middles are stations and the sag is the larger
+/// of the swung plane's and the vertical, so those notes are gone; a pair
+/// beyond the table and a wire without a diameter are not checked
+/// rather than computed.)
+pub fn notes(params: &GallopingParams, wires: &[GallopingWire]) -> Vec<String> {
+    let skipped = unchecked(params, wires);
+    let mut out = Vec::new();
+    let beyond: Vec<(f64, f64)> = skipped
+        .iter()
+        .filter_map(|u| match u.why {
+            Unchecked::BeyondTable { kv, end } => Some((kv, end)),
+            Unchecked::NoDiameter => None,
+        })
+        .collect();
+    if let Some(&(_, end)) = beyond.first() {
+        let kv = beyond.iter().map(|x| x.0).fold(f64::MIN, f64::max);
+        let n = beyond.len();
+        out.push(format!(
+            "NOT CHECKED: {n} pair{} × method{} up to {kv:.0} kV beyond the requirement's table \
+             (it ends at {end:.0} kV): no distance required for them — give the table a row up \
+             to their voltage",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "" } else { "s" },
+        ));
+    }
+    let no_d: Vec<&UncheckedPair> = skipped
+        .iter()
+        .filter(|u| u.why == Unchecked::NoDiameter)
+        .collect();
+    if !no_d.is_empty() {
+        let mut sections: Vec<&str> = no_d
+            .iter()
+            .flat_map(|u| [u.a, u.b])
+            .filter(|&k| wires[k].diameter <= 0.0)
+            .map(|k| wires[k].wire.section.as_str())
+            .collect();
+        sections.sort_unstable();
+        sections.dedup();
+        let mut methods: Vec<&str> = no_d
+            .iter()
+            .map(|u| params.methods[u.method].name.as_str())
+            .collect();
+        methods.sort_unstable();
+        methods.dedup();
+        let n = no_d.len();
+        out.push(format!(
+            "NOT CHECKED: {n} pair{} × method{} — no conductor diameter for the section(s) {} \
+             (their wire type is not in the library) and the method(s) {} size the ellipse \
+             from it",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "" } else { "s" },
+            sections.join(", "),
+            methods
+                .iter()
+                .map(|m| format!("\"{m}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
     out
 }
 
 /// Checks the ellipses of every pair of wires hanging between the same two
 /// structures, by every method: the smallest distance of each pair and
-/// method. Exit clause: `budget`, one step per pair and method.
+/// method, compared at [`stations_of`]. The pairs × methods of
+/// [`unchecked`] get no row. Exit clause: `budget`, one step per pair and
+/// method.
 ///
-/// Cost: `stations` × 72² point-to-edge distances per pair and method —
-/// about 0.1 ms; a 500-span line with 6 wires a span in well under a
-/// second.
+/// Cost: about `stations` × 72² point-to-edge distances per pair and
+/// method — about 0.1 ms; a 500-span line with 6 wires a span in well
+/// under a second.
 pub fn check(
     params: &GallopingParams,
     wires: &[GallopingWire],
     budget: &Budget,
 ) -> Result<Vec<GallopingPair>, String> {
     let mut run = budget.start();
-    let keys: Vec<Option<[String; 2]>> = wires.iter().map(|w| span_key(&w.wire)).collect();
     let mut out = Vec::new();
-    for i in 0..wires.len() {
-        let Some(key) = &keys[i] else { continue };
-        for j in i + 1..wires.len() {
-            if keys[j].as_ref() != Some(key) || wires[j].wire.section == wires[i].wire.section {
+    let ts: Vec<Vec<f64>> = params
+        .methods
+        .iter()
+        .map(|m| stations_of(m, params.stations))
+        .collect();
+    for (i, j) in span_pairs(wires) {
+        let (wa, wb) = (&wires[i], &wires[j]);
+        let (pa, pb) = (&wa.wire.points, &wb.wire.points);
+        if pa.len() < 2 || pb.len() < 2 {
+            continue;
+        }
+        let (first, last) = (pa[0], pa[pa.len() - 1]);
+        let len = (last[0] - first[0]).hypot(last[1] - first[1]);
+        if len <= 0.0 {
+            continue;
+        }
+        // Right of the first wire's direction, in plan.
+        let right = [(last[1] - first[1]) / len, -(last[0] - first[0]) / len];
+        let flat = |p: &P3, q: &P3| (p[0] - q[0]).hypot(p[1] - q[1]);
+        let reversed = flat(&pb[0], &first) > flat(&pb[0], &last);
+        let span_b = {
+            let (f, l) = (pb[0], pb[pb.len() - 1]);
+            (l[0] - f[0]).hypot(l[1] - f[1])
+        };
+        let kv = params
+            .pair_voltage
+            .of(wa.wire.potential.as_ref(), wb.wire.potential.as_ref());
+        // Beyond a table: not checked ([`unchecked`]), never its last
+        // row (2026-11-15).
+        let required = match params.required.as_ref().map(|r| r.at(kv.unwrap_or(0.0))) {
+            None => None,
+            Some(Ok(d)) => Some(d),
+            Some(Err(_)) => continue,
+        };
+        for (m, method) in params.methods.iter().enumerate() {
+            run.step()
+                .map_err(|e| format!("galloping check stopped: {e}"))?;
+            if unchecked_why(params, wires, i, j, m).is_some() {
                 continue;
             }
-            let (wa, wb) = (&wires[i], &wires[j]);
-            let (pa, pb) = (&wa.wire.points, &wb.wire.points);
-            if pa.len() < 2 || pb.len() < 2 {
-                continue;
-            }
-            let (first, last) = (pa[0], pa[pa.len() - 1]);
-            let len = (last[0] - first[0]).hypot(last[1] - first[1]);
-            if len <= 0.0 {
-                continue;
-            }
-            // Right of the first wire's direction, in plan.
-            let right = [(last[1] - first[1]) / len, -(last[0] - first[0]) / len];
-            let flat = |p: &P3, q: &P3| (p[0] - q[0]).hypot(p[1] - q[1]);
-            let reversed = flat(&pb[0], &first) > flat(&pb[0], &last);
-            let span_b = {
-                let (f, l) = (pb[0], pb[pb.len() - 1]);
-                (l[0] - f[0]).hypot(l[1] - f[1])
-            };
-            let kv = params
-                .pair_voltage
-                .of(wa.wire.potential.as_ref(), wb.wire.potential.as_ref());
-            let required = params.required.as_ref().map(|r| {
-                r.at(kv.unwrap_or(0.0)).unwrap_or_else(|_| match r {
-                    Requirement::ByVoltage(rows) => rows.last().map_or(0.0, |x| x.1),
-                    _ => 0.0,
-                })
-            });
-            for (m, method) in params.methods.iter().enumerate() {
-                run.step()
-                    .map_err(|e| format!("galloping check stopped: {e}"))?;
-                let largest = |w: &GallopingWire, span: f64| {
-                    let e = Method {
-                        along: Along::Constant,
-                        ..method.clone()
-                    }
-                    .ellipse(w.sag, span, w.diameter, 0.5);
-                    [2.0 * e.semi_major, 2.0 * e.semi_minor]
-                };
-                // To the wires' surfaces (bundles: their outer envelope).
-                let off = wa.wire.outer_radius() + wb.wire.outer_radius();
-                let mut best: Option<GallopingPair> = None;
-                for k in 1..params.stations {
-                    let t = k as f64 / params.stations as f64;
-                    let tb = if reversed { 1.0 - t } else { t };
-                    let (ra, rb) = (at_fraction(pa, t), at_fraction(pb, tb));
-                    let ea = method.ellipse(wa.sag, len, wa.diameter, t);
-                    let offset = [
-                        (rb[0] - ra[0]) * right[0] + (rb[1] - ra[1]) * right[1],
-                        rb[2] - ra[2],
-                    ];
-                    let eb = method.ellipse(wb.sag, span_b, wb.diameter, t).moved(offset);
-                    // Quick bound: centres apart by more than both polygons
-                    // (their vertices out to 1/cos(π/n) of the semi-major
-                    // axis) and the surfaces.
-                    let apart = (eb.centre[0] - ea.centre[0]).hypot(eb.centre[1] - ea.centre[1])
-                        - (ea.semi_major + eb.semi_major)
-                            / (std::f64::consts::PI / POLYGON as f64).cos()
-                        - off;
-                    if best.as_ref().is_some_and(|b| apart >= b.distance) {
-                        continue;
-                    }
-                    let d = (ellipse_distance(&ea, &eb) - off).max(0.0);
-                    if best.as_ref().is_none_or(|b| d < b.distance) {
-                        best = Some(GallopingPair {
-                            a: i,
-                            b: j,
-                            method: m,
-                            distance: d,
-                            overlap: d <= 0.0,
-                            at: t,
-                            rest: [ra, rb],
-                            ellipses: [ea, eb],
-                            axes: [largest(wa, len), largest(wb, span_b)],
-                            required,
-                        });
-                    }
+            let largest = |w: &GallopingWire, span: f64| {
+                let e = Method {
+                    along: Along::Constant,
+                    ..method.clone()
                 }
-                out.extend(best);
+                .ellipse(w.sag, span, w.diameter, 0.5);
+                [2.0 * e.semi_major, 2.0 * e.semi_minor]
+            };
+            // To the wires' surfaces (bundles: their outer envelope).
+            let off = wa.wire.outer_radius() + wb.wire.outer_radius();
+            let mut best: Option<GallopingPair> = None;
+            for &t in &ts[m] {
+                let tb = if reversed { 1.0 - t } else { t };
+                let (ra, rb) = (at_fraction(pa, t), at_fraction(pb, tb));
+                let ea = method.ellipse(wa.sag, len, wa.diameter, t);
+                let offset = [
+                    (rb[0] - ra[0]) * right[0] + (rb[1] - ra[1]) * right[1],
+                    rb[2] - ra[2],
+                ];
+                let eb = method.ellipse(wb.sag, span_b, wb.diameter, t).moved(offset);
+                // Quick bound: centres apart by more than both polygons
+                // (their vertices out to 1/cos(π/n) of the semi-major
+                // axis) and the surfaces.
+                let apart = (eb.centre[0] - ea.centre[0]).hypot(eb.centre[1] - ea.centre[1])
+                    - (ea.semi_major + eb.semi_major)
+                        / (std::f64::consts::PI / POLYGON as f64).cos()
+                    - off;
+                if best.as_ref().is_some_and(|b| apart >= b.distance) {
+                    continue;
+                }
+                let d = (ellipse_distance(&ea, &eb) - off).max(0.0);
+                if best.as_ref().is_none_or(|b| d < b.distance) {
+                    best = Some(GallopingPair {
+                        a: i,
+                        b: j,
+                        method: m,
+                        distance: d,
+                        overlap: d <= 0.0,
+                        at: t,
+                        rest: [ra, rb],
+                        ellipses: [ea, eb],
+                        axes: [largest(wa, len), largest(wb, span_b)],
+                        required,
+                    });
+                }
             }
+            out.extend(best);
         }
     }
     Ok(out)
@@ -960,45 +1078,119 @@ mod tests {
         assert!(check(&p, &wires, &Budget::new()).unwrap().is_empty());
     }
 
-    /// The largest ellipse compared, by hand: 20 stations hold the middle
-    /// of 1, 2 and 5 loops; 4 loops' middles (t = 1/8 …) fall between
-    /// 0.10 and 0.15, sin(0.4 π) of the size; 3 loops' 1/6 beside 0.15,
-    /// sin(0.45 π). The notes say it, and the other cases where the check
-    /// is not on the safe side.
+    /// Every loop's middle is a station (owner, 2026-11-15, "make it
+    /// safe"): 20 even stations hold the middles of 1, 2 and 5 loops, not
+    /// those of 3 (t = 1/6 beside 0.15: sin(0.45 π) = 98.8 % of the size)
+    /// or 4 (t = 1/8 between 0.10 and 0.15: sin(0.4 π) = 95.1 %). Two
+    /// wires 5 m apart side by side, a circle of radius 1 m at each
+    /// loop's middle: the gap is the full circles' 5 − 2/cos 2.5°, at the
+    /// first loop's middle — before, 5 − 2 × 0.988/cos 2.5° (3 loops) and
+    /// 5 − 2 × 0.951/cos 2.5° (4 loops) were found.
     #[test]
-    fn notes_where_not_on_the_safe_side() {
-        let p = params(CIRCLE);
-        let m = |loops: u32, along: Along| Method {
-            loops,
-            along,
-            ..p.methods[0].clone()
+    fn the_loops_middles_are_compared() {
+        let sine = "[[method]]\nname = \"c\"\nloops = 1\nmajor = { constant = \"2 m\" }\nminor = { major = 1.0 }\n";
+        let p = params(sine);
+        let with = |loops: u32| GallopingParams {
+            methods: vec![Method {
+                loops,
+                ..p.methods[0].clone()
+            }],
+            ..p.clone()
         };
-        for n in [1, 2, 5, 10] {
-            assert!((largest_share(&m(n, Along::Sine), 20) - 1.0).abs() < 1e-12);
-        }
-        let four = largest_share(&m(4, Along::Sine), 20);
-        assert!((four - (0.4 * std::f64::consts::PI).sin()).abs() < 1e-12);
-        let three = largest_share(&m(3, Along::Sine), 20);
-        assert!((three - (0.45 * std::f64::consts::PI).sin()).abs() < 1e-12);
-        assert_eq!(largest_share(&m(3, Along::Constant), 20), 1.0);
-        assert!(largest_share(&m(1, Along::Sine), 19) < 1.0);
-        // The example's methods at 20 stations, no wind: nothing to say.
         let wires = vec![level("A", 0.0, 30.0, 10.0), level("B", 5.0, 30.0, 10.0)];
-        let pairs = check(&p, &wires, &Budget::new()).unwrap();
-        assert!(notes(&p, &wires, &pairs, false).is_empty());
-        // Wind, 4 loops, a diameter term on a wire without one, a table
-        // by voltage ending below the pair's 110 kV.
-        let mut q = p.clone();
-        q.methods = vec![Method {
-            major: AxisFormula {
-                diameter: 10.0,
-                ..q.methods[0].major
-            },
-            ..m(4, Along::Sine)
-        }];
-        q.required = Some(Requirement::ByVoltage(vec![(60.0, 0.5)]));
+        for (loops, count, before) in [
+            (3, 21, (0.45 * std::f64::consts::PI).sin()),
+            (4, 23, (0.4 * std::f64::consts::PI).sin()),
+        ] {
+            let q = with(loops);
+            let ts = stations_of(&q.methods[0], q.stations);
+            // 19 even stations and the middles not among them.
+            assert_eq!(ts.len(), count, "{ts:?}");
+            for k in 0..loops {
+                let mid = f64::from(2 * k + 1) / f64::from(2 * loops);
+                assert!(ts.iter().any(|t| (t - mid).abs() < 1e-12), "{mid}");
+            }
+            let pair = &check(&q, &wires, &Budget::new()).unwrap()[0];
+            assert!(
+                (pair.distance - (5.0 - 2.0 * out())).abs() < 1e-9,
+                "{loops} loops: {pair:?}"
+            );
+            assert!((pair.at - 1.0 / f64::from(2 * loops)).abs() < 1e-12);
+            // What the even stations alone found: larger.
+            assert!(pair.distance < 5.0 - 2.0 * before * out() - 1e-3);
+        }
+        // 1, 2, 5 and 10 loops: the middles are even stations already.
+        for n in [1, 2, 5, 10] {
+            assert_eq!(stations_of(&with(n).methods[0], 20).len(), 19);
+        }
+        // Nothing to say for the example's kind of file.
+        assert!(notes(&with(3), &wires).is_empty());
+    }
+
+    /// The sag in the swung plane (owner, 2026-11-15, "make it safe"): a
+    /// wire of sag 10 m in its plane swung 30° sideways has a vertical sag
+    /// of 10 cos 30° = 8.66 m; the ellipse is sized from 10 m. Without
+    /// wind both are the vertical sag.
+    #[test]
+    fn a_swung_wire_takes_the_sag_in_its_plane() {
+        let still = level("A", 0.0, 30.0, 10.0);
+        assert!((swung_sag(&still.wire.points) - 10.0).abs() < 1e-12);
+        let swing = 30f64.to_radians();
+        let mut swung = still.clone();
+        for p in &mut swung.wire.points {
+            let drop = 30.0 - p[2];
+            p[1] += drop * swing.sin();
+            p[2] = 30.0 - drop * swing.cos();
+        }
+        let vertical = swung
+            .wire
+            .points
+            .iter()
+            .map(|p| 30.0 - p[2])
+            .fold(0.0, f64::max);
+        assert!((vertical - 10.0 * swing.cos()).abs() < 1e-12);
+        assert!((swung_sag(&swung.wire.points) - 10.0).abs() < 1e-12);
+        // On the example line: in high wind every span's sag is the swung
+        // plane's, above the solve's vertical sag; in still air the same.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let cases = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .cases;
+        for (name, windy) in [("high wind", true), ("everyday", false)] {
+            let case = cases.iter().find(|c| c.name == name).unwrap();
+            let shapes: Vec<SectionShape> = ohl_line::solve::solve_line(&line, &library, case)
+                .into_iter()
+                .map(Result::unwrap)
+                .collect();
+            let vertical: Vec<f64> = shapes
+                .iter()
+                .flat_map(|s| s.spans.iter().map(|x| x.sag))
+                .collect();
+            let wires = galloping_wires(&line, &shapes, &library);
+            assert_eq!(wires.len(), vertical.len());
+            for (w, v) in wires.iter().zip(&vertical) {
+                if windy {
+                    assert!(w.sag > v * 1.05, "{}: {} vs {v}", w.wire.section, w.sag);
+                } else {
+                    assert!((w.sag - v).abs() < 1e-3 * v, "{}: {} vs {v}", w.wire.section, w.sag);
+                }
+            }
+        }
+    }
+
+    /// A pair beyond the requirement's table, or with a wire without a
+    /// diameter under a method using it, is not checked and said (owner,
+    /// 2026-11-15, "make it safe"; before: the table's last row, d = 0).
+    #[test]
+    fn pairs_not_checked_are_said() {
+        let p = params(CIRCLE);
+        let wires = vec![level("A", 0.0, 30.0, 10.0), level("B", 5.0, 30.0, 10.0)];
         let mut w = wires.clone();
-        w[1].diameter = 0.0;
         for x in &mut w {
             x.wire.potential = Some(ohl_line::electrical::Potential {
                 nominal_kv: 110.0,
@@ -1007,12 +1199,56 @@ mod tests {
                 to_earth: [110.0 / 3f64.sqrt(), 0.0],
             });
         }
-        let said = notes(&q, &w, &check(&q, &w, &Budget::new()).unwrap(), true);
-        assert_eq!(said.len(), 4, "{said:?}");
-        assert!(said.iter().all(|s| s.starts_with("NOT ON THE SAFE SIDE")));
-        assert!(said[0].contains("95.1 %") && said[0].contains("multiple of 8"));
-        assert!(said[1].contains("section(s) B"));
-        assert!(said[2].contains("110 kV") && said[2].contains("60 kV"));
+        // A table ending at 60 kV: the 110 kV pair not checked.
+        let mut q = p.clone();
+        q.required = Some(Requirement::ByVoltage(vec![(60.0, 0.5)]));
+        assert!(check(&q, &w, &Budget::new()).unwrap().is_empty());
+        let said = notes(&q, &w);
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].starts_with("NOT CHECKED: 1 pair × method up to 110 kV"));
+        assert!(said[0].contains("ends at 60 kV"));
+        assert_eq!(
+            unchecked(&q, &w),
+            vec![UncheckedPair {
+                a: 0,
+                b: 1,
+                method: 0,
+                why: Unchecked::BeyondTable {
+                    kv: 110.0,
+                    end: 60.0
+                }
+            }]
+        );
+        // Up to 110 kV: checked at its row.
+        q.required = Some(Requirement::ByVoltage(vec![(60.0, 0.5), (110.0, 0.7)]));
+        let rows = check(&q, &w, &Budget::new()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].required, Some(0.7));
+        assert!(notes(&q, &w).is_empty());
+        // No diameter for B: a method with a diameter term does not check
+        // the pair; one without checks it.
+        let mut r = p.clone();
+        r.methods.push(Method {
+            name: "with d".into(),
+            major: AxisFormula {
+                diameter: 10.0,
+                ..r.methods[0].major
+            },
+            ..r.methods[0].clone()
+        });
+        let mut nd = wires.clone();
+        nd[1].diameter = 0.0;
+        let rows = check(&r, &nd, &Budget::new()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].method, 0);
+        let said = notes(&r, &nd);
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(
+            said[0].starts_with("NOT CHECKED: 1 pair × method")
+                && said[0].contains("section(s) B")
+                && said[0].contains("\"with d\""),
+            "{said:?}"
+        );
     }
 
     #[test]

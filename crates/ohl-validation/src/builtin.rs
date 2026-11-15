@@ -50,6 +50,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(StructureWindRule));
     registry.register(Box::new(SectionProperties));
     registry.register(Box::new(GallopingEllipses));
+    registry.register(Box::new(GallopingSpan));
     registry.register(Box::new(CatenaryFit));
     registry.register(Box::new(ClearanceSurface));
     registry.register(Box::new(FallIn));
@@ -1421,6 +1422,106 @@ impl Calculation for GallopingEllipses {
             ("centre_right_m", e.centre[0]),
             ("centre_up_m", e.centre[1]),
             ("distance_m", ellipse_distance(&e, &other)),
+        ]))
+    }
+}
+
+/// `galloping.span`: the whole check on one span of two alike wires side
+/// by side (parabolas of sag `sag` in their own plane, swung `swing_deg`
+/// sideways, `offset_right` apart), by one method (`major = major_sag · D
+/// + major_constant`, `minor = minor_of_major · A`, untilted, centred on
+/// the wire) of `loops` loops compared at `stations`
+/// (`ohl_clearance::galloping::check`): the smallest gap, where, and the
+/// sag and major axis the ellipse was sized from.
+struct GallopingSpan;
+
+impl Calculation for GallopingSpan {
+    fn id(&self) -> &'static str {
+        "galloping.span"
+    }
+
+    fn description(&self) -> &'static str {
+        "Galloping check of one span of two alike wires side by side (inputs: sag in the \
+         wire's plane, span, swing_deg, offset_right, loops, stations, major_sag, \
+         major_constant, minor_of_major); outputs distance_m, at (fraction of the span), \
+         sag_m (the sag sized from), major_m"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_clearance::galloping::{
+            Along, AxisFormula, GallopingParams, GallopingWire, Method, check, swung_sag,
+        };
+        let len = |k: &str| quantity_input::<Length>(inputs, k).map(|l| l.si());
+        let (sag, span, offset) = (len("sag")?, len("span")?, len("offset_right")?);
+        let swing = float_input(inputs, "swing_deg")?.to_radians();
+        let stations = float_input(inputs, "stations")? as usize;
+        let method = Method {
+            name: "validation".into(),
+            loops: float_input(inputs, "loops")? as u32,
+            major: AxisFormula {
+                sag: float_input(inputs, "major_sag")?,
+                constant: len("major_constant")?,
+                ..AxisFormula::default()
+            },
+            minor: AxisFormula {
+                major: float_input(inputs, "minor_of_major")?,
+                ..AxisFormula::default()
+            },
+            tilt_deg: 0.0,
+            centre_above_rest: 0.0,
+            along: Along::Sine,
+        };
+        // Along +x, the right being −y; 401 points, the sag below the
+        // level chord at 30 m in the plane swung by `swing`.
+        let wire = |section: &str, right: f64| {
+            let points: Vec<[f64; 3]> = (0..=400)
+                .map(|k| {
+                    let t = f64::from(k) / 400.0;
+                    let drop = 4.0 * sag * t * (1.0 - t);
+                    [
+                        t * span,
+                        -right + drop * swing.sin(),
+                        30.0 - drop * swing.cos(),
+                    ]
+                })
+                .collect();
+            // As galloping_wires: the larger of the vertical sag and the
+            // swung plane's.
+            let vertical = sag * swing.cos();
+            GallopingWire {
+                sag: vertical.max(swung_sag(&points)),
+                wire: ohl_clearance::checks::Wire {
+                    section: section.into(),
+                    span: 0,
+                    circuit: "c".into(),
+                    phase: section.into(),
+                    potential: None,
+                    bundle: vec![],
+                    points,
+                    ends: vec![format!("T1:{section}"), format!("T2:{section}")],
+                    surface_radius: 0.0,
+                    polyline_error: 0.0,
+                },
+                diameter: 0.03,
+            }
+        };
+        let wires = [wire("A", 0.0), wire("B", offset)];
+        let params = GallopingParams {
+            name: String::new(),
+            methods: vec![method],
+            required: None,
+            pair_voltage: ohl_clearance::rules::PairVoltage::Higher,
+            stations,
+            cases: vec![],
+            calculation: None,
+        };
+        let pairs = check(&params, &wires, &ohl_core::budget::Budget::new())?;
+        let p = pairs.first().ok_or("no pair checked")?;
+        Ok(outputs([
+            ("distance_m", p.distance),
+            ("at", p.at),
+            ("sag_m", wires[0].sag),
+            ("major_m", p.axes[0][0]),
         ]))
     }
 }

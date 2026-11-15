@@ -31,7 +31,9 @@ numbers are invented.
 ### The ellipse
 
 For a span of horizontal length \\( L \\), sag \\( D \\) (in the weather case
-checked: the largest vertical distance below the chord, as solved), conductor
+checked, as solved: the larger of the largest distance from the chord in
+the wire's swung plane and the largest vertical distance below it — see
+[below](#the-sag-in-a-case-with-wind)), conductor
 diameter \\( d \\) (the bare diameter of the section's wire type in the
 library — a subconductor's for a bundle, never iced) and \\( n \\) loops,
 each axis is a sum of terms with user coefficients:
@@ -68,7 +70,8 @@ ellipse at mid-span for the whole span).
 
 Wires hanging between the same two structures are paired (phases of one
 circuit, circuits on one structure, phases and earth wires). At `stations − 1`
-inner points of the span (default 19) both ellipses are drawn in the plane
+evenly spaced inner points of the span (default 19) and at the middle of
+each of the method's loops, \\( t = (2k+1)/(2n) \\), both ellipses are drawn in the plane
 square to the first wire's chord, each around its own wire at rest there,
 and their distance is found: zero when they overlap (a vertex of one inside
 the other, or crossing edges), else the shortest vertex-to-edge distance.
@@ -121,29 +124,45 @@ alike (different sags or heights) the smallest gap may lie between two
 stations and be a little smaller than the one found. Exact: the smallest
 gap over the span, found by refining around the smallest station.
 
-**NOT ON THE SAFE SIDE, said in the results: a loop's middle between two
-stations.** With `along = "sine"` loop \\( k \\) of \\( n \\) is largest at
-\\( t = (2k+1)/(2n) \\). With \\( s \\) stations at \\( t = j/s \\), that
-point is a station only when \\( s \\) is a multiple of \\( 2n \\); else the
-largest ellipse compared is \\( \max_j |\sin(n\pi j/s)| \\) of its full size
-in that loop — with 20 stations \\( \sin 0.45\pi = 98.8\,\% \\) for 3 loops,
-\\( \sin 0.4\pi = 95.1\,\% \\) for 4 — and the gap found is larger than at
-the loop's middle. The results say it per method, with the share and the
-fix (`stations` a multiple of \\( 2n \\)); `galloping::largest_share`.
-Exact: the loops' middles added to the stations (an open question to the
-owner, 2026-11-15).
+**Every loop's middle is a station** (owner, 2026-11-15: "make it
+safe"). With `along = "sine"` loop \\( k \\) of \\( n \\) is largest at
+\\( t = (2k+1)/(2n) \\). With \\( s \\) even stations at \\( t = j/s \\) that
+point is one only when \\( s \\) is a multiple of \\( 2n \\); else the largest
+ellipse compared was \\( \max_j |\sin(n\pi j/s)| \\) of its full size in that
+loop — with 20 stations \\( \sin 0.45\pi = 98.8\,\% \\) for 3 loops,
+\\( \sin 0.4\pi = 95.1\,\% \\) for 4 — and the gap found larger than at the
+loop's middle (said in the results until then). The middles are now
+added to the stations (`galloping::stations_of`): each wire's largest
+ellipse is always compared. Where two wires have the same loops, sag
+and span, their ellipses are largest at the same places and the
+smallest gap is at a loop's middle; else see the simplification above.
 
-**NOT ON THE SAFE SIDE, said in the results: a wire without a diameter.**
-A section whose wire type is not in the library has \\( d = 0 \\): the
-`diameter` and logarithmic terms vanish for it.
+**Not checked, said in the results: a wire without a diameter.** A
+section whose wire type is not in the library has no diameter
+\\( d \\). A method whose axes use it (a `diameter` or logarithmic term)
+does not check that wire's pairs, rather than computing them with
+\\( d = 0 \\) (which made the ellipse smaller; until 2026-11-15, said not on
+the safe side); a method without such terms checks them.
 
-**NOT ON THE SAFE SIDE where the method means another sag, said in the
-results: a case with wind.** In a case with wind the wires are swung,
-and \\( D \\) is the vertical sag of the swung wire, the sag in its plane
-times the cosine of the swing angle: smaller. A method that sizes the
-ellipse from the sag in the wire's plane, or from the sag of the iced
-wire without wind, gets smaller ellipses than it means. Which sag a
-method takes is the method's: choose the weather case accordingly.
+### The sag in a case with wind
+
+In a case with wind the wires are swung sideways, and the vertical sag
+of a swung wire is the sag in its plane times the cosine of the swing
+angle: smaller. The check takes the **larger** of the two (owner,
+2026-11-15: "make it safe"; before, the vertical sag): at each point of
+the wire, its distance from the chord point at the same place along the
+span, measured square to the span in plan — across and vertically
+together, in the swung wire's plane — and the largest over the wire
+(`galloping::swung_sag`), against the solve's largest vertical distance
+below the chord. Without wind the wire hangs in its vertical plane and
+the two are the same; with wind the swung plane's is the larger, so an
+ellipse is never sized from the smaller sag.
+
+**NOT ON THE SAFE SIDE where the method means another case's sag:** a
+method that sizes the ellipse from the sag of the iced wire in another
+case (without wind, or at its largest sag) gets the sag of the case
+checked; which sag a method takes is the method's: choose the weather
+case (or the file's `calculation`) accordingly.
 
 ### The requirement
 
@@ -154,15 +173,21 @@ between the two conductors (`difference`, as in the
 read at 0 kV; a phase and an earth wire at the phase's nominal voltage
 (higher, sum) or its voltage to earth (difference).
 
-**NOT ON THE SAFE SIDE, said in the results:** a pair whose voltage is
-above the last row of a table by voltage takes the last row's distance.
-Exact: the distance for that voltage, which the table does not give.
+**Not checked, said in the results:** a pair whose voltage is above the
+last row of a table by voltage has no required distance: it gets no row
+(never a pass), and the results say how many and up to which voltage —
+as the internal clearances check does for a voltage beyond its table
+(owner, 2026-11-15: "make it safe"; before, the last row's distance was
+taken, said not on the safe side). Give the table a row up to that
+voltage.
 
-Cost: stations × 72² distances per pair and method, about 0.1 ms; one step
+Cost: (stations + loops) × 72² distances at most per pair and method, about 0.1 ms; one step
 of the exit clause (`Budget`) per pair and method.
 
 *Validation:* `galloping-001…004` (axes from the sag, the ellipse along the
-span, gaps between ellipses side by side, tilted and one above the other)
+span, gaps between ellipses side by side, tilted and one above the other),
+`galloping-005…007` (a whole span of 3 and 4 loops compared at its loops'
+middles, and a swung wire's ellipse sized from the sag in its plane)
 against hand calculations and an independent evaluation through the
 difference body (`benchmarks/clearance/reference_clearance.py`).
 
