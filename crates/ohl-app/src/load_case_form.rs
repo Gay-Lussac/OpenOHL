@@ -57,6 +57,11 @@ pub struct Form {
     pub give: Option<Give>,
     /// **Add the default cases…** asked: what it adds, shown to confirm.
     adding_defaults: bool,
+    /// The default cases were added with one that goes only to some
+    /// structures (the 60 N/m ice, at or above 1000 m): its own list to put
+    /// in the line (one command, [`crate::default_cases::groups_command`]);
+    /// taken by the page.
+    pub default_groups: bool,
 }
 
 /// Structures made to take a load case (`take`) and not to (`drop`),
@@ -381,6 +386,11 @@ pub fn ui(
                                 .clicked()
                         {
                             let first = cases.cases.len();
+                            // The 60 N/m ice only at or above 1000 m:
+                            // its own list's rule, a command of the line.
+                            form.default_groups = missing
+                                .iter()
+                                .any(|c| c.name == ohl_loads::DEFAULT_HIGH_ICE_CASE);
                             cases.cases.extend(missing.iter().cloned());
                             *item = first;
                             buffers.clear();

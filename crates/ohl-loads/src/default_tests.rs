@@ -32,7 +32,7 @@ fn the_default_load_cases_are_the_owners_values() {
         Option<WindDirection>,
     );
     use ohl_weather::WindSide::{Left, Right};
-    let want: [Want; 8] = [
+    let want: [Want; 9] = [
         ("-20 °C", "-20 °C", [1.0; 3], None, None, None, None),
         ("10 °C", "10 °C", [1.0; 3], None, None, None, None),
         ("40 °C", "40 °C", [1.0; 3], None, None, None, None),
@@ -57,6 +57,15 @@ fn the_default_load_cases_are_the_owners_values() {
         (
             "0 °C + 20 N/m ice",
             "0 °C + 20 N/m ice",
+            [1.3, 1.0, 1.0],
+            None,
+            None,
+            None,
+            None,
+        ),
+        (
+            "0 °C + 60 N/m ice",
+            "0 °C + 60 N/m ice",
             [1.3, 1.0, 1.0],
             None,
             None,
@@ -236,4 +245,96 @@ fn the_default_load_cases_compute_on_the_example_line() {
             c.notes
         );
     }
+}
+
+/// "For the 60 it should only be applied above 1000m" (owner,
+/// 2026-11-15): with the default groups ([`default_case_groups`]: the own
+/// list of "0 °C + 60 N/m ice" with the rule ground elevation ≥ 1000 m)
+/// the example line — every structure near 500 m, one raised to 1100 m
+/// and one put exactly on 1000 m for the test — gives that case to those
+/// two only; every other default case (the 20 N/m ice too) to every
+/// structure, exactly as without the groups. Without the groups the case
+/// goes to every structure (more load: the safe side).
+#[test]
+fn the_60_n_m_ice_goes_only_to_structures_above_1000_m() {
+    let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut stored = Line::load(&ex().join("synthetic-line-typed.ohl.json")).unwrap();
+    let ids: Vec<String> = stored.structures.iter().map(|s| s.id.clone()).collect();
+    assert!(stored.structures.iter().all(|s| s.position[2] < 1000.0));
+    let (high, edge) = (ids[1].clone(), ids[3].clone());
+    let lift = |line: &mut Line, id: &str, z: f64| {
+        let s = line.structures.iter_mut().find(|s| s.id == id).unwrap();
+        let dz = z - s.position[2];
+        s.position[2] = z;
+        for p in &mut s.points {
+            p.position[2] += dz;
+        }
+        for w in &mut s.wires {
+            w.position[2] += dz;
+        }
+    };
+    lift(&mut stored, &high, 1100.0);
+    lift(&mut stored, &edge, 1000.0);
+    let library = ohl_cables::Library::load(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
+    )
+    .unwrap();
+    let weather = ohl_weather::default_cases().cases;
+    let cases = default_load_cases().cases;
+    let loads = |line: &Line| {
+        let line = line
+            .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+            .unwrap();
+        structure_loads(&line, &library, &weather, &cases, &default_budget()).unwrap()
+    };
+    let at = |r: &[CaseLoads], case: &str| -> std::collections::BTreeSet<String> {
+        r.iter()
+            .find(|c| c.case.name == case)
+            .unwrap()
+            .loads
+            .iter()
+            .filter(|l| !l.point.is_empty())
+            .map(|l| l.structure.clone())
+            .collect()
+    };
+    let without = loads(&stored);
+    let every = at(&without, "0 °C + 20 N/m ice");
+    assert!(every.len() > 2, "{every:?}");
+    // Without the groups: the 60 N/m case at every structure.
+    assert_eq!(at(&without, DEFAULT_HIGH_ICE_CASE), every);
+    let mut grouped = stored.clone();
+    let (added, kept) = add_default_case_groups(&mut grouped);
+    assert_eq!(
+        (added, kept),
+        (vec![DEFAULT_HIGH_ICE_CASE.to_owned()], Vec::<String>::new())
+    );
+    assert_eq!(grouped.groups_problem(), None);
+    let with = loads(&grouped);
+    let high_ones: std::collections::BTreeSet<String> = [high.clone(), edge.clone()]
+        .into_iter()
+        .filter(|id| every.contains(id))
+        .collect();
+    assert!(!high_ones.is_empty());
+    assert_eq!(at(&with, DEFAULT_HIGH_ICE_CASE), high_ones);
+    // Every other case: unchanged, at every structure.
+    for c in cases.iter().filter(|c| c.name != DEFAULT_HIGH_ICE_CASE) {
+        assert_eq!(at(&with, &c.name), at(&without, &c.name), "{}", c.name);
+    }
+    // The 60 N/m loads at a high structure: those of the run without the
+    // groups.
+    let pick = |r: &[CaseLoads]| -> Vec<[f64; 3]> {
+        r.iter()
+            .find(|c| c.case.name == DEFAULT_HIGH_ICE_CASE)
+            .unwrap()
+            .loads
+            .iter()
+            .filter(|l| l.structure == high)
+            .map(|l| l.factored)
+            .collect()
+    };
+    assert_eq!(pick(&with), pick(&without));
+    // Added again: kept, nothing doubled.
+    let (added, kept) = add_default_case_groups(&mut grouped);
+    assert!(added.is_empty() && kept == [DEFAULT_HIGH_ICE_CASE]);
+    assert_eq!(grouped.structure_groups.len(), 1);
 }

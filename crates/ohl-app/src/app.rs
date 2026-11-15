@@ -1386,6 +1386,23 @@ impl Ready {
             }
             return;
         }
+        // The default cases' own lists (the 60 N/m ice only at or above
+        // 1000 m, 2026-11-15): one command of the line.
+        if matches!(action, PageAction::DefaultGroups) {
+            match crate::default_cases::groups_command(&self.model) {
+                Ok(Some((what, command))) => {
+                    if self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    }) {
+                        self.status = Some((what, false));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => self.status = Some((format!("default cases: {e}"), true)),
+            }
+            return;
+        }
         // A load case renamed (2026-11-14): one command, the structures'
         // sets with it; the page reads the file again.
         if let PageAction::RenameLoadCase { old, new } = &action {
@@ -1471,7 +1488,9 @@ impl Ready {
                 )
             }
             // Taken above.
-            PageAction::RenameLoadCase { .. } | PageAction::GiveCase(_) => return,
+            PageAction::RenameLoadCase { .. }
+            | PageAction::GiveCase(_)
+            | PageAction::DefaultGroups => return,
         };
         // A library chosen for the model must have the line's cables.
         let reloaded = self.model.reload_libraries().and_then(|report| {

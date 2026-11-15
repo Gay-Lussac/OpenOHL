@@ -108,6 +108,13 @@ fn a_new_project_starts_with_the_default_cases() {
     );
     assert_eq!(load_cases(&m).cases, loads);
     assert!(m.library.is_empty(), "no wire types for all that");
+    // The 60 N/m ice only at or above 1000 m: its own list's rule in the
+    // line (owner 2026-11-15).
+    assert_eq!(m.line.structure_groups, ohl_loads::default_case_groups());
+    assert_eq!(
+        m.line.structure_groups[0].rules.elevation_from,
+        Some(ohl_loads::DEFAULT_HIGH_ICE_ELEVATION)
+    );
     // Starter template: its five weather cases and three load cases, the
     // defaults after them.
     let path = create_project_from(
@@ -130,6 +137,18 @@ fn a_new_project_starts_with_the_default_cases() {
     let project_weather: Vec<ohl_weather::WeatherCase> =
         m.cases.iter().map(|c| c.case.clone()).collect();
     assert!(crate::default_cases::weather_missing(&l.cases, &project_weather).is_empty());
+    assert_eq!(m.line.structure_groups, ohl_loads::default_case_groups());
+    // Without the defaults: no group.
+    let path = create_project_from(
+        &dir.join("plain"),
+        "Without defaults",
+        crate::files::LOCAL_CRS,
+        "tester",
+        Template::Empty,
+        false,
+    )
+    .unwrap();
+    assert!(load(&path).line.structure_groups.is_empty());
 }
 
 /// A project from the starter template holds the starter's libraries and

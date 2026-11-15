@@ -103,6 +103,17 @@ strength = 1.0
 tags = ["default"]
 
 [[case]]
+name = "0 °C + 60 N/m ice"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"0 °C + 60 N/m ice\", the wires as strung. A factor 1.3 on the ice: vertical 1.3 — it acts on the whole vertical component, the wires' and strings' own weight with the ice, so above a factor on the ice alone; transverse and longitudinal 1. No ice on the structure bodies (the weather case gives its ice per metre of wire, no thickness for a structure). Only for structures above 1000 m: its own list's rule \"ground elevation ≥ 1000 m\" (Load cases… › Applies to), which a new project with the default cases and Add the default cases… put in the line; a line without that rule gives this case to every structure (more load: on the safe side)"
+weather = "0 °C + 60 N/m ice"
+condition = "initial"
+vertical = 1.3
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[[case]]
 name = "10 °C + 300 Pa wind ahead"
 description = "default case, arbitrary values for checking (not from a design code): a wind along the line, from ahead, on the structure bodies: 300 Pa (the case's own pressure, that of weather case \"10 °C + 300 Pa wind\": change both together) × 1.5 (wind_factor), a longitudinal load on them; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line. The wires take no wind (weather case \"10 °C\"): a wind along the line on the wires is not modelled — exact on a straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share, the strings' and jumpers' wind along the line left out). Load factors 1"
 weather = "10 °C"
