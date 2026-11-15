@@ -52,6 +52,7 @@ use crate::{Line, LineError, Point, Section, Stringing};
 
 mod coupled;
 mod final_stringing;
+pub mod flexible;
 mod memo;
 mod ruling_span;
 mod support;
@@ -4115,10 +4116,24 @@ pub fn solve_line_with(
     case: &WeatherCase,
     budget: &Budget,
 ) -> Vec<Result<SectionShape, LineError>> {
+    solve_line_based(line, library, case, budget, &Coupling::default())
+}
+
+/// [`solve_line_with`], every section solve carrying `base`'s moved
+/// structure points and stiffness ([`coupled::carried`]: the coupled
+/// solve of calculation level 3, [`flexible`]). With the default: the
+/// same calls as [`solve_line_with`] always made (bit for bit).
+fn solve_line_based(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    base: &Coupling,
+) -> Vec<Result<SectionShape, LineError>> {
     let estimate = crate::jumper::end_loads(line, case, |id| library.get(id));
-    let mut results = solve_sections_with(line, library, case, budget, &estimate);
+    let mut results = coupled::solve_sections_based(line, library, case, budget, &estimate, base);
     if needs_pull(line) || may_be_taut(line, &results) {
-        jumper_pull(
+        coupled::jumper_pull_based(
             line,
             library,
             case,
@@ -4126,6 +4141,8 @@ pub fn solve_line_with(
             &estimate,
             estimate.clone(),
             &mut results,
+            None,
+            base,
         );
     }
     results
@@ -4164,6 +4181,9 @@ mod hot_creep_tests;
 mod gap_tests;
 #[cfg(test)]
 mod support_tests;
+
+#[cfg(test)]
+mod flexible_tests;
 
 #[cfg(test)]
 mod pivot_tests;
