@@ -38,12 +38,93 @@ wind_pressure = "200 Pa"
 | `ice_thickness` | no | Radial ice thickness. |
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | Default glaze ice, 913 kg/m³. With a thickness: the ice weight. With a load: the iced diameter, for the wind and the clearances. |
-| `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span. |
+| `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span (the across rule), or with a `wind_direction` its part normal to each span. |
+| `wind_direction` | no | Version 2 (2026-11-15). Where the wind comes **from**, relative to the line at each place, clockwise: `0` from ahead, `90` from the right, `180` from behind, `270` from the left (any angle in degrees, or `"ahead"`, `"right"`, `"back"`, `"left"`, `"ahead_right"` 45, `"back_right"` 135, `"back_left"` 225, `"ahead_left"` 315; `"across"` = not given). Not given, `right`/90 or `left`/270: the **across rule**, every span the full pressure square to itself — the same results as a case without it, bit for bit (right/90 is the old "from the right", left/270 the old "from the left"). Another angle: **one wind**, each span the part normal to it ([Wind on the line](../theory/wind.md)). A file with a direction is written as version 2. |
 | `air_density_factor` | no | Q, Pa/(m/s)²: the wind pressure of a wind velocity V is Q·V² (default 0.613, ½ρ of air at 15 °C at sea level). Only relates pressure and velocity (the Weather cases table shows and takes both); the loads use `wind_pressure`. |
 | `ambient_temperature` | no | Air temperature, e.g. `"35 °C"`, for ratings; the wires use `temperature`. |
-| `wind_from` | no | Files of earlier versions only: the side is now chosen where the wires are shown (desktop app: View › Display weather cases — right, left or both; the command line still reads it, right by default, and `ohl line --wind-from` sets it for a single case). A project's weather case file loses it when the project is opened; a file read directly is not changed (its value is not used by the app). |
+| `wind_from` | no | Files of earlier versions only: the side is now chosen where the wires are shown (desktop app: View › Display weather cases — each case as it is, 90° from the right across; mirrored, 270° from the left; or both; the command line still reads it, right by default, and `ohl line --wind-from` sets it for a single case). A project's weather case file loses it when the project is opened; a file read directly is not changed (its value is not used by the app). |
+
+**One source case as two directed cases.** A case the wind may hit from
+either side is written as two cases with a `wind_direction` each — e.g.
+`"… right"` with `wind_direction = 90` and `"… left"` with
+`wind_direction = 270`: each is the across rule from its side, exactly
+the old `wind_from = "right"` / `"left"` (an importer converting another
+program's wind case does this). In the desktop application the side of a
+case across the line follows View › Display weather cases, as before.
+
+```toml
+format = "ohl-weather-cases"
+version = 2
+
+[[case]]
+name = "10 °C + 300 Pa wind ahead"
+temperature = "10 °C"
+wind_pressure = "300 Pa"
+wind_direction = 0          # from ahead: blowing back along the line
+
+[[case]]
+name = "10 °C + 300 Pa wind back"
+temperature = "10 °C"
+wind_pressure = "300 Pa"
+wind_direction = 180        # from behind: blowing ahead
+```
 
 Values take units (`"0.5 in"`, `"4 psf"`, `"1.2 lbf/ft"`, …).
+
+## The default weather cases
+
+*Built, in active development, not approved yet* (owner, 2026-11-15: "can
+you have in the software by default a few weather cases … these values are
+arbitrary but needed to check the codes"). OpenOHL ships nine weather cases,
+`libraries/weather/default-weather-cases.ohlwc`. **Their values are the
+owner's arbitrary choice for checking the program and the design codes —
+not taken from a design code or a standard.** Replace them with the cases
+of the code you use.
+
+| Name | Wire temperature | Wind | Ice | Tags |
+|---|---|---|---|---|
+| `-20 °C` | −20 °C | — | — | default, loads |
+| `0 °C` | 0 °C | — | — | default |
+| `10 °C` | 10 °C | — | — | default, loads |
+| `20 °C` | 20 °C | — | — | default |
+| `40 °C` | 40 °C | — | — | default, loads, clearance |
+| `80 °C` | 80 °C | — | — | default, clearance |
+| `10 °C + 300 Pa wind` | 10 °C | 300 Pa (the side: right by default, chosen where the wires are shown; a load case may give it) | — | default, loads, clearance |
+| `0 °C + 20 N/m ice` | 0 °C | — | 20 N/m | default, loads, clearance |
+| `0 °C + 60 N/m ice` | 0 °C | — | 60 N/m | default, loads, clearance |
+
+Each case's description begins "default case, arbitrary values for checking
+(not from a design code)".
+
+**The ice cases give no density** (the owner gave the ice as a weight per
+metre only): the program takes them as glaze ice, 913 kg/m³ ([How ice loads
+a wire](#how-ice-loads-a-wire)) — of all ice of that weight the smallest
+iced diameter, so **NOT ON THE SAFE SIDE for the clearances measured to the
+iced surface** (and for the wind on the iced wire, were wind added to these
+cases). Their descriptions say so; the Weather cases table's note under the
+table asks for a density only for cases with wind, which these have none.
+For lighter ice give its density.
+
+**Where they appear:**
+
+- **Every new project** starts with them: File › New project… has the tick
+  **Start with the default weather and load cases (arbitrary values for
+  checking)**, on by default. An empty project gets this file as its
+  weather case file; the starter template's own weather case file gets the
+  default cases added after its own ([Starting from
+  nothing](desktop-app.md#starting-from-nothing)). The default load cases
+  come with them ([Load cases: the default load
+  cases](loads.md#the-default-load-cases)).
+- **An existing project**: Line › Criteria › Weather cases › **Add the
+  default cases…** puts those the project lacks — by name: a case of the
+  same name is never replaced — into the table as new rows; **Apply** keeps
+  them (one change, one undo; [The Weather cases
+  window](weather-cases-window.md#the-default-cases)).
+- **The command line** does not take them by itself: without `--weather`,
+  `ohl line` still runs its one case of `--temperature` and the other
+  options (results unchanged). Give the file to take them:
+  `ohl line project.ohl --weather libraries/weather/default-weather-cases.ohlwc
+  --load-cases libraries/loadcases/default-load-cases.ohllc`.
 
 ## How ice loads a wire
 

@@ -578,6 +578,19 @@ pub(super) fn weather_file(
         if touched(W_AMBIENT) {
             set("ambient_temperature", number(W_AMBIENT, "°C")?);
         }
+        // The wind's direction (weather file version 2): its angle in
+        // degrees, a name read as its angle; empty: across.
+        if touched(W_DIRECTION) {
+            let v = c.get(W_DIRECTION).trim().to_owned();
+            let item = if v.is_empty() || v == "across" {
+                None
+            } else {
+                let d =
+                    ohl_weather::WindDirection::parse(&v).map_err(|e| format!("{name}: {e}"))?;
+                Some(toml_edit::value(d.degrees()))
+            };
+            set("wind_direction", item);
+        }
         if touched(W_ICE) {
             set("ice_thickness", number(W_ICE, "mm")?);
         }
@@ -659,6 +672,19 @@ pub(super) fn weather_file(
         array.push(t);
     }
     doc.insert("case", toml_edit::Item::ArrayOfTables(array));
+    // A direction needs version 2 (written only then).
+    let directed = doc
+        .get("case")
+        .and_then(toml_edit::Item::as_array_of_tables)
+        .is_some_and(|a| a.iter().any(|t| t.contains_key("wind_direction")));
+    if directed
+        && doc
+            .get("version")
+            .and_then(toml_edit::Item::as_integer)
+            .is_none_or(|v| v < 2)
+    {
+        doc["version"] = toml_edit::value(2);
+    }
     // The weather case groups name the cases renamed by their new names.
     if let Some(groups) = doc
         .get_mut("group")

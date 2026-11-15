@@ -1115,7 +1115,17 @@ impl LibraryPage {
                 .is_some_and(|v| v < want)
         }) && let Some(doc) = self.edited.edit()
         {
+            let was = doc
+                .get("version")
+                .and_then(toml_edit::Item::as_integer)
+                .unwrap_or(1);
             doc["version"] = toml_edit::value(want);
+            // Raised to 7: the bodies' angles from the old convention (0°
+            // from the right, towards ahead) to the program's (0° from
+            // ahead, 90° from the right): θ = 90° − θ_old (2026-11-15).
+            if was < 7 && want >= 7 {
+                convert_old_directions(doc);
+            }
         }
     }
 
@@ -2494,9 +2504,52 @@ fn table_ui(
     changed
 }
 
+/// A load case file raised to version 7: each case's numeric
+/// `[case.structure] direction` from the old convention (0° from the
+/// right, counted towards ahead) to the program's (0° from ahead, 90° from
+/// the right, clockwise), θ = 90° − θ_old; names stay (they mean the same).
+pub(crate) fn convert_old_directions(doc: &mut toml_edit::DocumentMut) {
+    let Some(cases) = doc
+        .get_mut("case")
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+    else {
+        return;
+    };
+    for case in cases.iter_mut() {
+        let Some(structure) = case
+            .get_mut("structure")
+            .and_then(toml_edit::Item::as_table_like_mut)
+        else {
+            continue;
+        };
+        let Some(old) = structure
+            .get("direction")
+            .and_then(|d| d.as_float().or(d.as_integer().map(|i| i as f64)))
+        else {
+            continue;
+        };
+        let new = ohl_loads::WindDirection::OldAngle(old).degrees();
+        structure.insert("direction", toml_edit::value(new));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A file raised to version 7 has its bodies' angles converted.
+    #[test]
+    fn old_directions_convert_when_raised() {
+        let mut doc: toml_edit::DocumentMut = "version = 6\n[[case]]\nname = \"a\"\n\
+             [case.structure]\ndirection = 30\n[[case]]\nname = \"b\"\n\
+             [case.structure]\ndirection = \"ahead\"\n"
+            .parse()
+            .unwrap();
+        convert_old_directions(&mut doc);
+        let text = doc.to_string();
+        assert!(text.contains("direction = 60.0"), "{text}");
+        assert!(text.contains("direction = \"ahead\""), "{text}");
+    }
 
     fn root() -> PathBuf {
         PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))

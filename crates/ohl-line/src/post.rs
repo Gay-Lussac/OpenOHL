@@ -150,6 +150,19 @@ pub fn own_load(
             let a = crate::links::from_structure_axes(structure.orientation_deg, [0.0, 1.0, 0.0]);
             [a[0], a[1]]
         });
+    // A wind at an angle: the full pressure on its one area along where it
+    // blows (Conservative: no reduction for the post's angle to it).
+    if let Some([x, y]) = case
+        .oblique()
+        .and_then(|_| line.bisected_direction_at([structure.position[0], structure.position[1]]))
+        .and_then(|a| case.towards_at(a))
+    {
+        let q =
+            case.wind_pressure.si() * line.wind_factor_at_structure(&structure.id) * post.wind_area;
+        f[0] += x * q;
+        f[1] += y * q;
+        return Some((middle, f));
+    }
     let push = case.wind_pressure.si()
         * line.wind_factor_at_structure(&structure.id)
         * post.wind_area

@@ -1867,6 +1867,9 @@ fn calculation_options_choose_the_simplified_blocks() {
     harness.run();
     harness.get_by_label("Calculation options…").click();
     harness.run();
+    // (The window's body scrolls, its OK in view.)
+    harness.get_by_label("Simplified (equal H)").scroll_to_me();
+    harness.run();
     harness.get_by_label("Simplified (equal H)").click();
     harness.run();
     harness.get_by_label("OK").click();

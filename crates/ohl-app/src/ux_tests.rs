@@ -74,6 +74,64 @@ fn load(path: &std::path::Path) -> model::Model {
     .unwrap()
 }
 
+/// A new project starts with OpenOHL's default weather and load cases
+/// (owner, 2026-11-15) when the New project window's tick is on (its
+/// default): the empty project with the two default files, the starter
+/// template with them added to its own; opened, the model has them and
+/// every load case names a weather case of the project.
+#[test]
+fn a_new_project_starts_with_the_default_cases() {
+    use crate::files::{NewProject, Template, create_project_from};
+    assert!(NewProject::default().defaults && NewProject::starter().defaults);
+    let dir = temp("defaults");
+    let weather = ohl_weather::default_cases().cases;
+    let loads = ohl_loads::default_load_cases().cases;
+    let names =
+        |m: &model::Model| -> Vec<String> { m.cases.iter().map(|c| c.case.name.clone()).collect() };
+    let load_cases = |m: &model::Model| {
+        ohl_loads::LoadCases::load(m.sources.load_cases.as_ref().unwrap()).unwrap()
+    };
+    // Empty project: the defaults only.
+    let path = create_project_from(
+        &dir.join("empty"),
+        "Empty with defaults",
+        crate::files::LOCAL_CRS,
+        "tester",
+        Template::Empty,
+        true,
+    )
+    .unwrap();
+    let m = load(&path);
+    assert_eq!(
+        names(&m),
+        weather.iter().map(|c| c.name.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(load_cases(&m).cases, loads);
+    assert!(m.library.is_empty(), "no wire types for all that");
+    // Starter template: its five weather cases and three load cases, the
+    // defaults after them.
+    let path = create_project_from(
+        &dir.join("starter"),
+        "Starter with defaults",
+        crate::files::LOCAL_CRS,
+        "tester",
+        Template::Starter,
+        true,
+    )
+    .unwrap();
+    let m = load(&path);
+    let n = names(&m);
+    assert_eq!(n.len(), 5 + weather.len());
+    assert_eq!(n[0], "everyday");
+    assert!(weather.iter().all(|w| n.contains(&w.name)));
+    let l = load_cases(&m);
+    assert_eq!(l.cases.len(), 3 + loads.len());
+    assert!(loads.iter().all(|d| l.cases.contains(d)));
+    let project_weather: Vec<ohl_weather::WeatherCase> =
+        m.cases.iter().map(|c| c.case.clone()).collect();
+    assert!(crate::default_cases::weather_missing(&l.cases, &project_weather).is_empty());
+}
+
 /// A project from the starter template holds the starter's libraries and
 /// nothing else: no route, alignment, structure or wire; its pylon
 /// templates and survey points lie beside it.
@@ -87,6 +145,7 @@ fn a_starter_project_has_the_libraries_and_nothing_else() {
         crate::files::LOCAL_CRS,
         "tester",
         Template::Starter,
+        false,
     )
     .unwrap();
     let session = ohl_session::Session::open(&path).unwrap();

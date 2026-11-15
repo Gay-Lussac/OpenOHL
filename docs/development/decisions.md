@@ -75,6 +75,95 @@ body, validation); theory [Inclination
 factor](../theory/structure-wind.md#inclination-factor) and [Force
 coefficient](../theory/structure-wind.md#force-coefficient-when-no-drag-is-given).
 
+**Default weather and load cases** (owner): "can you have in the software
+by default a few weather cases like -20° 0° 10° 20° 40° 80° 10° + 300Pa
+wind and 0° + 20N/m Ice and 0° + 60 N/m ice then also have some default
+load cases for pylons like -20°, 10°, 40°, 10° + 300 Pa wind left, and
+right and 0° + 20N/m ice with a factor 1.5 on wind for the pylons and 1.3
+on the ice. these values are arbitrary but needed to check the codes. also
+i would like to have the option to have wind along the line forward and
+backward to test the pylons." Built (not approved yet):
+
+- Shipped as `libraries/weather/default-weather-cases.ohlwc` (nine cases)
+  and `libraries/loadcases/default-load-cases.ohllc` (eight, file version
+  4), embedded in `ohl_weather::default_cases` and
+  `ohl_loads::default_load_cases`. Every description says "default case,
+  arbitrary values for checking (not from a design code)": the values are
+  the owner's, not a standard's.
+- The ice cases give no density (the owner gave none): glaze ice, the
+  smallest iced diameter for the weight — NOT ON THE SAFE SIDE for the
+  clearances to the iced surface, said in their descriptions (they have
+  no wind, so the table's note does not show for them).
+- "1.5 on wind for the pylons": `transverse = 1.5` and `[case.structure]
+  wind_factor = 1.5`; "1.3 on the ice": `vertical = 1.3`. The factors act
+  on components, not actions, so each is above a factor on the action
+  alone (the pull at a line angle, the wires' own weight): on the safe
+  side. Every case `condition = "initial"` (none given; needs no
+  creep-stretch criteria), strength 1. The ice case puts no ice on the
+  structure bodies (an ice load per metre is no thickness for a
+  structure).
+- **Wind along the line**: the cases `… wind ahead` and `… wind back`
+  put 300 Pa × 1.5 on the structure bodies from ahead / from behind
+  (`[case.structure] direction`, the case's own `wind_pressure`) and **no
+  wind on the wires**: they name the still weather case `10 °C`. The
+  program models the wind on the wires across the line only; giving the
+  wires the cross wind in a wind-along-the-line case would be a wind they
+  do not get. No format change was needed (a `wires_wind = false` field
+  was considered and not made: the existing format says it). Left out,
+  NOT ON THE SAFE SIDE and said in the case's notes (a new note for a
+  body-only wind case): the spans' share at a line angle, the strings',
+  jumpers' and posts' wind along the line; the wind bands' one area (the
+  one across) is taken, as before. The body pressure is written twice
+  (the weather case and the load case): change both together. A weather
+  case with wind at any angle is being planned separately.
+- **Where**: File › New project… has the tick "Start with the default
+  weather and load cases (arbitrary values for checking)", on by default,
+  for the empty project (the two files) and the starter template (the
+  default cases added to its own two files, so every load case names a
+  weather case of the project). Existing projects: **Add the default
+  cases…** in Line › Criteria › Weather cases (new rows, Apply keeps them:
+  one change) and in the Load cases library (after a look at what it adds
+  and at the weather cases the project lacks; Save keeps them: one
+  change); by name, never replacing a case. The command line is unchanged
+  (no weather file: its one case of `--temperature`); the files are given
+  with `--weather` / `--load-cases`.
+- The tutorial unticks the defaults (it works with the starter's five
+  weather cases and its screenshots).
+
+**Wind at any direction** (owner). Asked: *"it would be nice to be able
+to have in the weather cases the possibility to have any angle with 0°
+being along the alignment and 90° right of the alignment and a given value
+of wind"*; on the drafted plan: *"yes go ahead and the current cases need
+to be identical. (please add an option for the friction on the wire."*;
+then *"On the display weather cases in view, the wind will not have left
+or right anymore but the angles and the name should be written to
+correspond to the old weather cases."* and *"Also don't forget the theory
+page about the wind"*. Decided, all of the plan's 15 questions as
+recommended: the angle names where the wind comes **from**, 0° from
+ahead, 90° from the right, clockwise, relative to the line at each place
+(the bisector at an angle point); no direction, `right`/90° and
+`left`/270° keep today's across rule bit for bit; a wind at an angle loads
+each span with its normal part by the projected area (q·D·sin θ, the
+default) or the cross-flow principle (q·D·sin² θ, the option), with the
+vertical part on inclined spans; a **friction along the wire** as an
+option, off by default, with the user's coefficient (no value given by
+the program); the direction in the weather case (weather file version 2)
+and per load case with sets of directions (load case file version 7, the
+worst kept); the bodies take the wires' direction, in a turned
+structure's axes; old body angles (load case files up to 6, 0° from the
+right) kept as read, θ = 90° − θ_old, the same forces bit for bit;
+OHL-Structure keeps its convention, the link converts; the display shows
+each case as it is or mirrored (across: from the right, 90°, from the
+left, 270°) or both. Built (not approved yet): phases P1–P3 of the plan
+and the display; P4 (the clearance checks with a direction and its
+mirror) and the rest of P5 (arrows, the load case form's wind direction,
+the command line) to come. Every existing case gives identical results:
+proved on the example lines against the program before the change (a
+test with digests of every number written). The single theory page:
+[Wind on the line](../theory/wind.md). The default cases'
+*wind ahead* and *wind back* (below) became real winds along the line on
+the wires too (see the entry for the defaults).
+
 **Tension-only members: a per-model setting for their compression**
 (owner). The owner first asked that "the tension only members should be
 assumed to hold no compression, not even until buckling". Made the rule

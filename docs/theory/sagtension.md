@@ -153,6 +153,14 @@ Radial ice of thickness \\( t \\) and density \\( \rho_i \\) on diameter \\( d \
 
 *Ice and wind on a wire: the resultant lies in a plane swung from the vertical by \\( \arctan(w_h/w_v) \\).*
 
+The wind's **direction** (since 2026-11-15): \\( w_h = qD \\) square to
+each span is the **across rule**, for a case without a direction or
+straight across the line (90°, 270°). A case with another direction is
+one wind: each span takes the part normal to it, \\( qD\sin\theta \\)
+(projected area, the default) or \\( qD\sin^2\theta \\) (cross-flow), with
+a vertical part on inclined spans and an optional friction along the wire
+— [Wind on the line](wind.md).
+
 **Simplification:** in an inclined span the swung plane of the resultant is not the plane through the chord, so the plane-curve solution is approximate there; the error grows with the incline and the wind, either way. Exact: the 3D finite-element span (`ohl-wirefe`), which solves any load direction.
 
 **Simplification:** ice as a concentric cylinder of uniform thickness along the whole span. Real ice is often eccentric (on the windward or top side) and uneven along the span; the weight is what the case gives, but the wind area and the twist of the wire differ. Exact: an ice shape per case (not modelled); uneven ice along a span can be given as distributed loads (below). No design-code factors are applied here: load factors belong to the load cases ([Load cases](../user-guide/loads.md)), and design-code plugins generate weather and load cases ([Design codes](../user-guide/design-codes.md)).
@@ -169,7 +177,9 @@ lists each calculation that takes them):
 2. the **ice**, a radial thickness \\( t \\) or a weight per metre with
    its density, giving the ice weight \\( w_i \\) and the iced diameter
    \\( D \\) ([Weather loads](#weather-loads));
-3. the **wind pressure** \\( q \\) on \\( D \\), perpendicular to each span.
+3. the **wind pressure** \\( q \\) on \\( D \\), perpendicular to each span
+   (the across rule), or with a **direction** its part normal to each span
+   ([Wind on the line](wind.md)).
 
 What a weather case does not do, and where it is done instead:
 

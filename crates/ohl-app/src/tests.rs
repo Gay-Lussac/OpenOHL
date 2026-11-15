@@ -20,6 +20,7 @@ mod check_shots;
 mod check_windows;
 mod checks_spacers;
 mod clearances;
+mod default_cases;
 mod display_codes;
 mod field_setup;
 mod kept;

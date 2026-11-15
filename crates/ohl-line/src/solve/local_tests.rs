@@ -349,7 +349,7 @@ fn jumpers_take_the_full_wind_square_to_each_piece() {
         let a = deg.to_radians();
         // `deg` from the line's direction (ahead).
         let d = Vector3::new(-a.sin(), a.cos(), -0.3);
-        let w = wire_load_in_line_wind(&case, &cable, d, Some(ahead));
+        let w = wire_load_in_line_wind(&case, &cable, d, Some(ahead), &Default::default());
         let h = w.xy();
         assert!(
             (h.norm() - q).abs() < 1e-9 * q,
@@ -365,7 +365,13 @@ fn jumpers_take_the_full_wind_square_to_each_piece() {
         );
     }
     // Across the line exactly: pushed ahead, the full load.
-    let w = wire_load_in_line_wind(&case, &cable, Vector3::new(1.0, 0.0, 0.0), Some(ahead));
+    let w = wire_load_in_line_wind(
+        &case,
+        &cable,
+        Vector3::new(1.0, 0.0, 0.0),
+        Some(ahead),
+        &Default::default(),
+    );
     assert!(
         (w.y - q * to).abs() < 1e-9 * q && w.x.abs() < 1e-12,
         "{w:?}"

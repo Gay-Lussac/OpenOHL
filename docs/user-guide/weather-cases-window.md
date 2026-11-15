@@ -38,6 +38,7 @@ Every column, as the table shows it (its hover says the same):
 | **Ice density** | kg/m³ | With a thickness: the ice's weight. With a load: the iced diameter for the wind and the clearances. | glaze ice, 913 |
 | **Ice load** | N/m | Or: the ice's weight per metre of wire, instead of a thickness (not both). | none |
 | **Wire temp** | °C | The wires' temperature in the case. | refused |
+| **Wind direction** | ° from | Where the wind comes from, relative to the line: 0 from ahead, 90 from the right, 180 from behind, 270 from the left, clockwise (or a name: ahead, right, back, left). 90 and 270 are across ([Wind on the line](../theory/wind.md)); another angle is one wind, each span its part normal to it. The file is written as version 2. | across: every span the full pressure, the side as View › Display weather cases shows it |
 | **Ambient temp** | °C | The air temperature, kept with the case for ratings. | not given |
 
 Under the table: where the cases are kept (the project's file), and each
@@ -61,6 +62,7 @@ undo); **Revert** drops them.
 | Wind pressure | every solve of the wires | the wind load q·D on the iced diameter; the wire hangs in the plane of the resultant ([Weather loads](../theory/sagtension.md#weather-loads)) |
 | Wind pressure | the strings' and jumpers' swing | the internal clearances, the radial clearances, the distance between conductors ([Internal clearances](../theory/internal-clearances.md), [Clearances](../theory/clearances.md)) |
 | Wind pressure | the structure bodies | only through a **load case** naming this weather case: its pressure (or the load case's own) on the wind bands, members and poles, times the load case's factor ([Wind on the structure](../theory/structure-wind.md)) |
+| Wind direction | every solve of the wires; the structure bodies through a load case | empty, 90 or 270: the across rule (as before); another angle: each span, string, object, jumper and post the one wind's part normal to it, the bodies the same direction unless the load case gives one ([Wind on the line](../theory/wind.md)) |
 | Ice | the structure bodies | only through a **load case**: none by default, the structures' local ice, a thickness, or — `ice = "weather"` — this case's ice thickness times a factor ([Load cases, version 6](loads.md#version-6-the-wires-ice-on-the-structures-with-a-factor)) |
 | Air density factor | the table only | turns a velocity into a pressure and back; no calculation takes it |
 | Ambient temperature | kept with the case | no calculation takes it yet: Checks › Thermal rating takes its own ambient cases (`.ohlta`) |
@@ -78,6 +80,33 @@ undo); **Revert** drops them.
 - **Load factors** are never applied here: they belong to the load cases,
   on the force components ([Load cases](loads.md)).
 
+## The default cases
+
+*Built, in active development, not approved yet* (owner, 2026-11-15).
+**Add the default cases…** above the table puts OpenOHL's nine default
+weather cases — −20, 0, 10, 20, 40 and 80 °C; 10 °C + 300 Pa wind; 0 °C +
+20 N/m and + 60 N/m ice, **arbitrary values for checking, not from a design
+code** ([the list](weather.md#the-default-weather-cases)) — that the table
+lacks into it as new rows:
+
+- by **name**: a row of the same name (as edited, or added and not applied
+  yet) is kept as it is, never replaced; a row marked for deletion does not
+  count;
+- the rows are pending like any other: change or delete them, then
+  **Apply** keeps them (one command, one undo) or **Revert** drops them;
+- the message above the table lists the cases added and those kept; when
+  every one is there, it says so and adds nothing.
+
+A new project starts with them (File › New project…, the tick **Start with
+the default weather and load cases**, on by default). The default **load
+cases** name some of them; they are added in the Load cases library
+([Load cases: the default load cases](loads.md#the-default-load-cases)).
+
+The two ice cases give no density: glaze ice, the smallest iced diameter
+for their weight — **NOT ON THE SAFE SIDE** for the clearances to the iced
+surface (their descriptions say so; the note under the table speaks only of
+cases with wind).
+
 ## The menus around it
 
 | Menu | What |
@@ -85,16 +114,23 @@ undo); **Revert** drops them.
 | Line › Criteria › Weather cases | this table |
 | Line › Criteria › Merge duplicate weather cases… | cases with the same weather under other names merged into one, everything naming them following |
 | Line › Criteria › Weather case groups… | named groups of cases, picked as one in the checks' case lists ([Groups of cases](weather.md#groups-of-cases)) |
-| View › Display weather cases | the case shown and the side the wind comes from (right, left or both) |
+| View › Display weather cases | the cases shown, each named with its wind (e.g. *high wind — from the right (90°)*), and the wind: each case as it is (across: from the right, 90°), mirrored about the line (across: from the left, 270°; at an angle θ: 360° − θ), or both |
 
 ## On the safe side
 
 - An ice load without a density is glaze ice: **not on the safe side**
-  for the wind, the swing and the clearances (said under the table).
+  for the wind, the swing and the clearances (said under the table for the
+  cases with wind; the default ice cases, without wind, say it in their
+  descriptions).
+- The default cases are arbitrary values for checking, not a design
+  code's: replace them with your code's.
 - Ice is a concentric shell of one thickness along the whole span — a
   simplification either way ([Weather loads](../theory/sagtension.md#weather-loads)).
 - The wind is one pressure along the whole line except where local
   conditions or local winds say otherwise.
+- A case with a direction is **that one wind only**, not the across
+  envelope: its results say so; the across cases stay the usual worst for
+  transverse loads and side clearances.
 
 ## The command line
 

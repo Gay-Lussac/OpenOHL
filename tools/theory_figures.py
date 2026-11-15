@@ -305,6 +305,129 @@ def weather_loads():
     return f
 
 
+def wind_angles():
+    f = Fig("wind-angles", 760, 420, "The wind's direction, relative to the line",
+            "Plan view of an angle structure: the line deviates by 20° at the structure; the "
+            "angles are counted from the line's direction ahead, the bisector at the structure, "
+            "clockwise: 0° from ahead, 90° from the right, 180° from behind, 270° from the "
+            "left. A wind from 45° comes from ahead right and blows back and to the left. Each "
+            "span takes the direction of its own route segment.")
+    f.text(20, 26, "Where the wind comes from: θ, clockwise from ahead", "t")
+    cx, cy = 250, 215
+    dev = math.radians(20)
+    half = dev / 2
+
+    def sp(a, r):
+        # screen point at bearing a (radians, clockwise from up) and distance r
+        return cx + r * math.sin(a), cy - r * math.cos(a)
+
+    # the route: up the page to the structure, then turned 20° right
+    f.poly([sp(math.pi, 175), (cx, cy)], "inkl")
+    f.poly([(cx, cy), sp(dev, 175)], "inkl")
+    xb, yb = sp(math.pi, 175)
+    f.text(xb, yb + 16, "route (back span)", "c lab")
+    x2, y2 = sp(dev, 182)
+    f.text(x2 + 6, y2 - 4, "route (span ahead)", "lab")
+    # the bisector (ahead at the structure) and right
+    f.arrow(cx, cy, *sp(half, 120), "acc", 1.8, 9)
+    f.arrow(cx, cy, *sp(half + math.pi / 2, 120), "muted", 1.3, 8, dash=True)
+    xa, ya = sp(half, 132)
+    f.text(xa, ya - 4, "ahead â (bisector)", "c lab")
+    xr, yr = sp(half + math.pi / 2, 128)
+    f.text(xr + 4, yr + 4, "right r̂", "lab")
+    # the compass of θ
+    R = 92
+    f.add(f'<circle cx="{cx}" cy="{cy}" r="{R}" class="thin dt" style="fill:none"/>')
+    for deg, name in [(0, "0° from ahead"), (90, "90° from the right"),
+                      (180, "180° from behind"), (270, "270° from the left")]:
+        a = half + math.radians(deg)
+        x0, y0 = sp(a, R - 6)
+        x1, y1 = sp(a, R + 6)
+        f.path(f"M{x0:.1f},{y0:.1f} L{x1:.1f},{y1:.1f}", "inkl")
+    lx, ly = sp(half + math.pi / 2, R + 12)
+    f.text(lx + 2, ly + 22, "90° from the right", "lab")
+    lx, ly = sp(half + math.pi, R + 18)
+    f.text(lx + 8, ly + 6, "180° from behind", "lab")
+    lx, ly = sp(half + 1.5 * math.pi, R + 12)
+    f.text(lx - 6, ly - 8, "270° from the left", "e lab")
+    # clockwise
+    f.poly(arc_pts(cx, cy, R + 30, -90 + math.degrees(half) + 8,
+                   -90 + math.degrees(half) + 70, 30), "thin")
+    ex, ey = arc_pts(cx, cy, R + 30, 0, -90 + math.degrees(half) + 70, 1)[-1]
+    px, py = arc_pts(cx, cy, R + 30, 0, -90 + math.degrees(half) + 64, 1)[-1]
+    f.arrow(px, py, ex, ey, "muted", 1.2, 7)
+    # a wind from 45°: comes from ahead right, blows towards the structure
+    a45 = half + math.radians(45)
+    x0, y0 = sp(a45, 170)
+    x1, y1 = sp(a45, 30)
+    f.arrow(x0, y0, x1, y1, "wire", 2.4, 10)
+    f.text(x0, y0 - 10, "wind from θ = 45°", "c")
+    f.arc(cx, cy, 58, -90 + math.degrees(half), -90 + math.degrees(a45), "acc")
+    tx, ty = sp(half + math.radians(22), 70)
+    f.text(tx, ty, "θ", "c i")
+    f.dot(cx, cy, 4.5)
+    # the right panel: the rules in words
+    x = 500
+    for k, s in enumerate([
+        "θ names where the wind comes FROM:",
+        "  0° from ahead (blowing back along the line)",
+        "  90° from the right (old \"right\": the across rule)",
+        "  180° from behind (blowing ahead, \"forward\")",
+        "  270° from the left (old \"left\": the across rule)",
+        "relative to the line at each place:",
+        "  a span: its route segment's direction",
+        "  a structure: the bisector of its line angle",
+        "no direction, 90° or 270°: the across rule —",
+        "  every span the full q·D square to itself",
+        "old structure angles θ_{old} (0° right, 90° ahead):",
+        "  θ = 90° − θ_{old}",
+    ]):
+        f.text(x, 70 + 22 * k, s, "lab" if s.startswith("  ") else "")
+    return f
+
+
+def wind_normal():
+    f = Fig("wind-normal", 760, 360, "A span at an angle to the wind",
+            "A span's chord with its unit tangent t; the wind blows towards w at the angle θ to "
+            "the wire. Its part normal to the wire, w_n = w − (w·t) t, of length sin θ, gives "
+            "the normal force: q·D·sin θ by the projected area (the default) or q·D·sin² θ by "
+            "the cross-flow principle; the friction option adds c_t·q·D·cos² θ along the wire.")
+    f.text(20, 26, "The span's share of a wind at an angle θ to it", "t")
+    x0, y0, x1, y1 = 30, 250, 400, 250
+    f.poly([(x0, y0), (x1, y1)], "wire")
+    f.dot(x0, y0, 4.5, "wire")
+    f.dot(x1, y1, 4.5, "wire")
+    f.text(x1, y1 - 12, "span chord, tangent t̂", "e lab")
+    th = math.radians(35)
+    ox, oy = 150, 250
+    L = 160
+    wx, wy = ox + L * math.cos(th), oy - L * math.sin(th)
+    f.arrow(ox, oy, wx, wy, "ink", 2.4, 10)
+    f.text(wx - 8, wy - 8, "ŵ: where the wind blows (unit)", "e")
+    # along part and normal part
+    ax = ox + L * math.cos(th)
+    f.arrow(ox, oy + 2, ax, oy + 2, "acc", 2.0, 9)
+    f.text((ox + ax) / 2, oy + 22, "(ŵ·t̂) t̂ = cos θ: along the wire", "c lab")
+    f.arrow(ax, oy, ax, wy, "wire", 2.2, 9)
+    f.text(ax + 8, (oy + wy) / 2, "ŵ_{n}: |ŵ_{n}| = sin θ", "")
+    f.arc(ox, oy, 52, -math.degrees(th), 0, "acc")
+    f.text(ox + 62, oy - 12, "θ", "i")
+    x = 470
+    for k, s in enumerate([
+        "normal force per metre:",
+        "  projected area (default):  q·D·ŵ_{n}  (q·D·sin θ)",
+        "  cross-flow (option):  q·D·|ŵ_{n}|·ŵ_{n}  (q·D·sin² θ)",
+        "friction (option, off by default):",
+        "  c_{t}·q·D·cos² θ along t̂, with the wind",
+        "an inclined span: ŵ_{n} has a vertical part",
+        "  (down blowing uphill, up blowing downhill)",
+    ]):
+        f.text(x, 70 + 22 * k, s, "lab" if s.startswith("  ") else "")
+    f.text(20, 340, "500 Pa on 30 mm, 300 m: across 4500 N; at 45° 3182 N (projected), 2250 N "
+           "(cross-flow); along the wire 0 N (friction: c_{t}·4500 N)", "lab")
+    return f
+
+
 def transit():
     f = Fig("transit", 760, 340, "Sagging by transit",
             "A level span seen from the side: the instrument a below one support, the line of "
@@ -2939,7 +3062,7 @@ def load_cases_flow():
     return f
 
 
-FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_shaft, line_parameters, charge_simulation, internal_clearance, pole_buckling, catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
+FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_shaft, line_parameters, charge_simulation, internal_clearance, pole_buckling, catenary_span, weather_loads, wind_angles, wind_normal, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
            shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, galloping_sag,

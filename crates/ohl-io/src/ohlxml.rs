@@ -1258,6 +1258,7 @@ pub fn to_xml(line: &Line) -> String {
             loads_per,
             blocks,
             local_spans,
+            wind,
         } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
@@ -1272,6 +1273,12 @@ pub fn to_xml(line: &Line) -> String {
         }
         if !local_spans.is_default() {
             attr(&mut out, "local_spans", local_spans.as_str());
+        }
+        if !wind.law.is_default() {
+            attr(&mut out, "wind_law", wind.law.as_str());
+        }
+        if let Some(f) = wind.friction {
+            attr(&mut out, "wire_friction", &format!("{:?}", f.0));
         }
         out.push_str("/>\n");
     }
@@ -2573,7 +2580,15 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         Some(s) => {
             check(
                 s,
-                &["jumper_loads", "taps", "loads_per", "blocks", "local_spans"],
+                &[
+                    "jumper_loads",
+                    "taps",
+                    "loads_per",
+                    "blocks",
+                    "local_spans",
+                    "wind_law",
+                    "wire_friction",
+                ],
                 &[],
             )?;
             let jumper_loads = match owned(s, "jumper_loads") {
@@ -2601,12 +2616,27 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 Some(t) => ohl_line::local::SpanRule::parse(&t)
                     .ok_or_else(|| format!("solver local_spans \"{t}\": worst or mean"))?,
             };
+            let law = match owned(s, "wind_law") {
+                None => ohl_weather::ObliqueLaw::default(),
+                Some(t) => ohl_weather::ObliqueLaw::parse(&t)
+                    .ok_or_else(|| format!("solver wind_law \"{t}\": projected or cross_flow"))?,
+            };
+            let friction = match owned(s, "wire_friction") {
+                None => None,
+                Some(t) => Some(
+                    t.trim()
+                        .parse::<f64>()
+                        .map_err(|_| format!("solver wire_friction \"{t}\": a number"))
+                        .and_then(ohl_line::wind::Friction::new)?,
+                ),
+            };
             ohl_line::SolverOptions {
                 jumper_loads,
                 taps,
                 loads_per,
                 blocks,
                 local_spans,
+                wind: ohl_line::wind::WireWindOptions { law, friction },
             }
         }
     };

@@ -55,6 +55,8 @@ pub struct Form {
     /// (one command, [`crate::load_case_sets::give_command`]); taken by
     /// the page.
     pub give: Option<Give>,
+    /// **Add the default cases…** asked: what it adds, shown to confirm.
+    adding_defaults: bool,
 }
 
 /// Structures made to take a load case (`take`) and not to (`drop`),
@@ -308,7 +310,89 @@ pub fn ui(
                 {
                     form.renaming = Some(cases.cases[*item].name.clone());
                 }
+                // OpenOHL's default load cases (owner, 2026-11-15): those
+                // missing, by name, after a look at what they are.
+                if ui
+                    .button(crate::default_cases::ADD_BUTTON)
+                    .on_hover_text(
+                        "OpenOHL's default load cases for the structures — arbitrary values for \
+                         checking (not from a design code): those this file lacks (by name) \
+                         are added; a case of the same name is never replaced. Save keeps them \
+                         (one change, one undo).",
+                    )
+                    .clicked()
+                {
+                    form.adding_defaults = !form.adding_defaults;
+                }
             });
+            if form.adding_defaults {
+                let (missing, kept) = crate::default_cases::missing_load_cases(cases);
+                let lacking = crate::default_cases::weather_missing(&missing, cx.weather);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    if missing.is_empty() {
+                        ui.label(
+                            egui::RichText::new(
+                                "The default load cases are all there (by name): nothing to add.",
+                            )
+                            .small(),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Adds {} default case(s), arbitrary values for checking (not from \
+                                 a design code): {}",
+                                missing.len(),
+                                missing
+                                    .iter()
+                                    .map(|c| c.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ))
+                            .small(),
+                        );
+                    }
+                    if !kept.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Already there by name, kept as they are: {}",
+                                kept.join(", ")
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                    if !lacking.is_empty() {
+                        crate::menu::message(
+                            ui,
+                            egui::RichText::new(format!(
+                                "They name weather cases the project does not have: {} — add \
+                                 them in Line › Criteria › Weather cases › {}",
+                                lacking.join(", "),
+                                crate::default_cases::ADD_BUTTON
+                            ))
+                            .small(),
+                            Some(ui.visuals().warn_fg_color),
+                        );
+                    }
+                    ui.horizontal(|ui| {
+                        if !missing.is_empty()
+                            && ui
+                                .button(format!("Add {} case(s)", missing.len()))
+                                .clicked()
+                        {
+                            let first = cases.cases.len();
+                            cases.cases.extend(missing.iter().cloned());
+                            *item = first;
+                            buffers.clear();
+                            changed = true;
+                            form.adding_defaults = false;
+                        }
+                        if ui.button("Cancel").clicked() {
+                            form.adding_defaults = false;
+                        }
+                    });
+                });
+            }
             if let Some(name) = &mut form.renaming {
                 ui.horizontal(|ui| {
                     let l = ui.label("new name");
@@ -1235,8 +1319,13 @@ fn structure_wind_ui(
         ui.horizontal_wrapped(|ui| {
             ui.label("Direction");
             let d = case.on_structure.direction;
+            // Shown and typed in the program's convention (an angle read
+            // from an older file shown converted, kept as read until
+            // changed).
             let angle = match d {
-                Some(WindDirection::Angle(a)) => Some(a),
+                Some(a @ (WindDirection::Angle(_) | WindDirection::OldAngle(_))) => {
+                    Some(a.degrees())
+                }
                 _ => None,
             };
             for (label, value) in [
@@ -1254,9 +1343,10 @@ fn structure_wind_ui(
             if ui
                 .selectable_label(angle.is_some(), "at an angle")
                 .on_hover_text(
-                    "The angle the wind comes from: 0° from the right, 90° from ahead, 180° \
-                     from the left, 270° from behind. A wind band's area is taken all along the \
-                     direction (an approximation, see the theory: Structure wind)",
+                    "The angle the wind comes from, in the structure's axes: 0° from ahead, \
+                     90° from the right, 180° from behind, 270° from the left (clockwise). A \
+                     wind band's area is taken all along the direction (an approximation, see \
+                     the theory: Structure wind)",
                 )
                 .clicked()
                 && angle.is_none()

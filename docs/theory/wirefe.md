@@ -36,6 +36,17 @@ For given end positions, \\( (H, V_0) \\) come from a damped Newton iteration (e
 
 **Simplification:** the ice and wind are spread evenly over an element's unstressed length at its mean stretch. The conductor stretches more where its tension is higher (towards the supports), so the real ice per unstressed metre varies along the span by \\( \Delta T/EA \\) (about 10⁻⁵); the element's total ice and wind is exact, its distribution is not. On a level 300 m span under 12 mm of ice (`tbice-001`) the finite elements carry 3.3·10⁻⁷ more tension than an integration of the ice following the local stretch (0.014 N of 42571 N; the sag 2 µm less: on the unsafe side for clearances, the safe side for tensions), the closed form 0.9·10⁻⁷ less (it spreads the own weight evenly instead), so the two differ by 4.2·10⁻⁷ there (2.8·10⁻⁸ on a 100 m span). Exact: the load following the stretch along each element (more elements per span, or an element with a varying load). Wind per metre of conductor (its whole arc, as all of OpenOHL's calculations take it) rather than per metre of span, as codes often give it, is a separate question: on the real arc it is \\( 8f^2/3S^2 \\) more (0.15 % for a sag of 7 m on 300 m), on the safe side.
 
+**The wind's direction on the elements (2026-11-15).** A weather case with
+a direction other than across loads each span's elements with the one
+wind's part normal to the span's 3D chord (and, as an option, a friction
+along it), per metre of the stretched wire as above; its vertical part on
+an inclined span joins the weight in the element's load vector \\( \mathbf
+q \\) — the element solves any load direction. **Simplification:** the
+span's chord for the direction of every element of it (the wire is
+steeper than its chord near the supports, and swung); exact: each element
+its own direction from the previous pass of the stretch fixed point
+(planned). See [Wind on the line](wind.md#one-wind-at-an-angle-the-load-per-span).
+
 ## Truss elements
 
 Strings and links: axial force \\( N = \frac{EA}{L_0}(L - L_0) \\), tangent stiffness \\( \frac{EA}{L_0}\mathbf n\mathbf n^T + \frac{N}{L}(\mathbf I - \mathbf n\mathbf n^T) \\). Tension-only members (strings) go slack when clearly shorter than \\( L_0 \\). Weight is lumped half at each end.

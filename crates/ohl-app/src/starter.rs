@@ -51,16 +51,22 @@ pub fn library_files(dir: &Path) -> Result<Vec<(String, String, String)>, String
 }
 
 /// The starter's files kept in the project `session` (one log entry, by
-/// `user`), its pylon templates and its survey copied beside the project
-/// file `project` (files there already are kept). Returns what was put
-/// where, in words.
+/// `user`) — with `defaults`, its weather and load case files with
+/// OpenOHL's default cases they lack added ([`crate::default_cases`]) —,
+/// its pylon templates and its survey copied beside the project file
+/// `project` (files there already are kept). Returns what was put where,
+/// in words.
 pub fn fill(
     session: &mut ohl_session::Session,
     project: &Path,
     user: &str,
     dir: &Path,
+    defaults: bool,
 ) -> Result<Vec<String>, String> {
-    let files = library_files(dir)?;
+    let mut files = library_files(dir)?;
+    if defaults {
+        files = crate::default_cases::with_defaults(files)?;
+    }
     let changes: Vec<(String, String, Option<String>)> = files
         .iter()
         .map(|(k, n, t)| (k.clone(), n.clone(), Some(t.clone())))

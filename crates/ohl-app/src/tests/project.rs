@@ -53,7 +53,10 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         .click();
     harness.run();
     harness.get_by_label("Display weather cases");
-    harness.get_by_label("high wind").click();
+    // Named with its wind as shown (2026-11-15).
+    harness
+        .get_by_label("high wind — from the right (90°)")
+        .click();
     harness.run();
     harness.get_by_label("Apply").click();
     harness.run();
@@ -129,6 +132,39 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         r.model.cases[wind].case.wind_from,
         ohl_weather::WindSide::Left
     );
+}
+
+/// View › Display weather cases with the angles (owner 2026-11-15): a
+/// case across the line is named from the right (90°) as it is, from the
+/// left (270°) mirrored — the drawing as the old right and left; a case at
+/// an angle is mirrored about the line (θ → 360° − θ), its side marking
+/// it; mirrored twice, as in its file.
+#[test]
+fn display_names_the_wind_by_its_angle() {
+    use crate::model::{shown_name, side_shown, wind_words};
+    use ohl_weather::{WindDirection, WindSide};
+    let across = ohl_weather::WeatherCase {
+        wind_pressure: ohl_core::units::Stress::from_pascals(300.0),
+        ..ohl_weather::WeatherCase::still(
+            "10 °C + 300 Pa",
+            ohl_core::units::Temperature::from_celsius(10.0),
+        )
+    };
+    assert_eq!(shown_name(&across), "10 °C + 300 Pa — from the right (90°)");
+    let left = side_shown(across.clone(), WindSide::Left);
+    assert_eq!(left.wind_direction, None);
+    assert_eq!(shown_name(&left), "10 °C + 300 Pa — from the left (270°)");
+    let calm =
+        ohl_weather::WeatherCase::still("calm", ohl_core::units::Temperature::from_celsius(10.0));
+    assert_eq!(shown_name(&calm), "calm");
+    let ahead_right = across.with_direction(WindDirection::Angle(45.0));
+    let mirrored = side_shown(ahead_right.clone(), WindSide::Left);
+    assert_eq!(mirrored.wind_direction, Some(WindDirection::Angle(315.0)));
+    assert_eq!(wind_words(&mirrored), "from 315°");
+    assert_eq!(side_shown(mirrored, WindSide::Right), ahead_right);
+    // The kept display choice of before reads as the same drawing.
+    let kept: crate::model::WindDisplay = serde_json::from_str("\"left\"").unwrap();
+    assert_eq!(kept.primary(), WindSide::Left);
 }
 
 /// Weather case files of earlier versions: the wind side is dropped.
