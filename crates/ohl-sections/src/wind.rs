@@ -4,16 +4,25 @@
 
 //! Wind factors for structures given as **data** (the `[wind]` table of a
 //! section library): a drag factor per profile shape, a drag factor of a
-//! lattice face by its solidity ratio, and a shielding factor of a face
+//! lattice face by its solidity ratio, a shielding factor of a face
 //! sheltered by another, by the sheltering face's solidity ratio (and the
-//! spacing ratio). OpenOHL ships none of these values: they come from a
-//! design-code plugin (its parameter file) or from the user. Without them
-//! the member wind keeps its one generic drag factor and no shielding.
+//! spacing ratio), and (version 2, 2026-11-15) an inclination factor per
+//! shape: the factor on the force of a member inclined to the wind. They
+//! come from a design-code plugin (its parameter file) or from the user.
+//! Without a drag factor, a member takes the built-in default of its shape
+//! (`ohl_structures_fe::wind_law`), without an inclination factor the
+//! built-in inclination law; nothing is shielded without shielding factors.
 //!
 //! ```toml
 //! [wind]
 //! source = "my parameter file"        # shown with the results
 //! drag = { equal_angle = 2.0, circular_hollow = 1.2 }   # per shape
+//! member_law = "inclination"          # default; "sin2": the cross-flow law
+//!                                     # (comparison only, version 2)
+//!
+//! [wind.inclination.equal_angle]       # version 2: per shape
+//! angle = [0, 30, 60]                  # β, degrees: wind to the member's normal
+//! factor = [1.0, 0.9, 0.7]             # on the force normal to the member
 //!
 //! [wind.face_drag]                     # a face's drag by its solidity
 //! solidity = [0.1, 0.3, 0.5]
@@ -142,6 +151,79 @@ impl Shielding {
     }
 }
 
+/// The section library format version of `[wind] inclination` and
+/// `member_law` (2026-11-15); a file is written at it only when it gives
+/// one of them.
+pub const INCLINATION_VERSION: u32 = 2;
+
+/// The law of the force on a member inclined to the wind (`[wind]
+/// member_law`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MemberLaw {
+    /// `"inclination"` (the default, 2026-11-15): the force normal to the
+    /// member is the force of the member normal to the wind times an
+    /// inclination factor k(β) — the shape's curve given in
+    /// [`StructureWind::inclination`], else the built-in one.
+    #[default]
+    Inclination,
+    /// `"sin2"`: the cross-flow law, the force normal to the member ∝
+    /// sin²θ (θ between the wind and the member) — the member wind before
+    /// 2026-11-15, kept for comparison; below a code's inclined-member
+    /// factors, not on the safe side.
+    Sin2,
+}
+
+impl MemberLaw {
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemberLaw::Inclination => "inclination",
+            MemberLaw::Sin2 => "sin2",
+        }
+    }
+
+    /// The law of a name in files.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name.trim() {
+            "inclination" => Ok(MemberLaw::Inclination),
+            "sin2" => Ok(MemberLaw::Sin2),
+            other => Err(format!(
+                "member_law \"{other}\": inclination (default: the force normal to an inclined \
+                 member times an inclination factor) or sin2 (the cross-flow law sin²θ, for \
+                 comparison only: not on the safe side)"
+            )),
+        }
+    }
+}
+
+/// An inclination factor by β, the angle between the wind and the
+/// member's normal (90° − θ, θ between the wind and the member), linear
+/// between the points; beyond the last angle the last factor is held.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Inclination {
+    /// β, degrees, rising from 0, at most 90.
+    pub angle: Vec<f64>,
+    /// The factor at each, 0 or above (1 at β = 0 for a code's curve).
+    pub factor: Vec<f64>,
+}
+
+impl Inclination {
+    /// The factor at `beta` degrees (0–90): linear between the table's
+    /// angles; beyond the last one, the last factor (held).
+    pub fn at(&self, beta: f64) -> f64 {
+        let last = self.angle.len() - 1;
+        if beta >= self.angle[last] {
+            return self.factor[last];
+        }
+        interpolate(&self.angle, &self.factor, beta.max(0.0)).unwrap_or(self.factor[0])
+    }
+
+    /// Whether `beta` is beyond the table's last angle (its factor held).
+    pub fn held(&self, beta: f64) -> bool {
+        self.angle.last().is_some_and(|a| beta > *a + 1e-9)
+    }
+}
+
 /// Wind factors of a section library's `[wind]` table.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StructureWind {
@@ -154,6 +236,11 @@ pub struct StructureWind {
     pub face_drag: Option<Curve>,
     /// Shielding factor of a sheltered face.
     pub shielding: Option<Shielding>,
+    /// Inclination factor per profile shape (version 2).
+    pub inclination: BTreeMap<String, Inclination>,
+    /// The law of the force on an inclined member (version 2; default
+    /// [`MemberLaw::Inclination`]).
+    pub member_law: MemberLaw,
 }
 
 impl StructureWind {
@@ -162,9 +249,24 @@ impl StructureWind {
         self.drag.get(shape).copied()
     }
 
+    /// The inclination curve of shape `shape`, if given.
+    pub fn inclination_of(&self, shape: &str) -> Option<&Inclination> {
+        self.inclination.get(shape)
+    }
+
     /// Nothing given.
     pub fn is_empty(&self) -> bool {
-        self.drag.is_empty() && self.face_drag.is_none() && self.shielding.is_none()
+        self.drag.is_empty()
+            && self.face_drag.is_none()
+            && self.shielding.is_none()
+            && self.inclination.is_empty()
+            && self.member_law == MemberLaw::Inclination
+    }
+
+    /// Whether it uses a key of version 2 ([`INCLINATION_VERSION`]):
+    /// inclination curves or a member law.
+    pub fn needs_version_2(&self) -> bool {
+        !self.inclination.is_empty() || self.member_law != MemberLaw::Inclination
     }
 
     /// Where the values come from, for notes: the source, else "the
@@ -189,6 +291,17 @@ pub(crate) struct WindFile {
     face_drag: Option<CurveFile>,
     #[serde(default)]
     shielding: Option<ShieldingFile>,
+    #[serde(default)]
+    inclination: BTreeMap<String, InclinationFile>,
+    #[serde(default)]
+    member_law: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InclinationFile {
+    angle: Vec<f64>,
+    factor: Vec<f64>,
 }
 
 #[derive(Deserialize)]
@@ -309,11 +422,44 @@ impl WindFile {
                 })
             }
         };
+        let mut inclination = BTreeMap::new();
+        for (shape, c) in self.inclination {
+            if !SHAPE_NAMES.contains(&shape.as_str()) {
+                return Err(format!(
+                    "inclination: \"{shape}\" is not a shape ({})",
+                    SHAPE_NAMES.join(", ")
+                ));
+            }
+            let at = |e: String| format!("inclination of {shape}: {e}");
+            axis("angle", &c.angle, false).map_err(at)?;
+            if c.angle[0] != 0.0 || c.angle.iter().any(|a| *a > 90.0) {
+                return Err(at("angle starts at 0 and stays within 90 degrees".into()));
+            }
+            if c.factor.len() != c.angle.len() {
+                return Err(at("one factor per angle".into()));
+            }
+            if c.factor.iter().any(|f| !(f.is_finite() && *f >= 0.0)) {
+                return Err(at("factors must be 0 or above".into()));
+            }
+            inclination.insert(
+                shape,
+                Inclination {
+                    angle: c.angle,
+                    factor: c.factor,
+                },
+            );
+        }
+        let member_law = match &self.member_law {
+            None => MemberLaw::default(),
+            Some(m) => MemberLaw::parse(m)?,
+        };
         Ok(StructureWind {
             source: self.source,
             drag: self.drag,
             face_drag,
             shielding,
+            inclination,
+            member_law,
         })
     }
 }
