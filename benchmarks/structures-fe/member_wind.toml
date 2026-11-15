@@ -27,23 +27,34 @@
 # - the face behind (y = 2), shielded: η falls with φ, so the lower bound
 #   governs (on the safe side): η = 1 − 0.1147201 = 0.8852799, 1006.259 N;
 # - the 4 diagonals of the faces x = 0 and 2 (in planes along the wind,
-#   neither in front nor behind): sin²θ = 4/5, each force q c d L sin θ
-#   along the normal, its y part q c d √20 (4/5)^1.5 = 192 N: 768 N;
+#   neither in front nor behind): sin θ = 2/√5, β = 90° − θ = 26.565051°;
+#   the force normal to the member q c d L k(β), k the round bars'
+#   inclination factor (2026-11-15): the largest of cos β = 0.8944272 and
+#   SIA 261:2014 Tab. 74's (p. 112) ratios c_β/c_β(0) interpolated
+#   linearly between 15° and 30° — (1.16 − 0.77100·0.12)/1.2 = 0.8895663,
+#   (0.58 − 0.77100·0.05)/0.6 = 0.9024164 — so k = 0.9024164; its y part
+#   × sin θ: q c d √20 k (2/√5) = 216.5799 N each, 866.3197 N
+#   (before 2026-11-15, sin²θ: q c d √20 (4/5)^1.5 = 192 N, 768 N);
 # - the top horizontals of the side faces lie along the wind: none;
-# Σ Fy = 1136.656 (1 + η) + 768 = 2910.9153 N (2906.7306 N before
-# 2026-11-08, with the overlaps counted twice); Σ Fx = Σ Fz = 0 (the side
-# diagonals' vertical parts cancel in pairs).
+# Σ Fy = 1136.656 (1 + η) + 866.3197 = 3009.2350 N (2910.9153 N with
+# sin²θ; 2906.7306 N before 2026-11-08, with the overlaps counted twice);
+# Σ Fx = Σ Fz = 0 (the side diagonals' vertical parts cancel in pairs).
 # Faces found: the 4 sides and the top (4 horizontals), 5; shielded: the 5
 # members of the face y = 2.
-# Without the [wind] table: the generic drag 1, no shielding:
-# 2 · 1000 · 0.05 · 18.944272 + 640 = 2534.4272 N.
+# Without the [wind] table and no [analysis] drag (case 002): the round
+# bars' built-in force coefficient 1.2 (SIA 261:2014 Tab. 72, p. 110, the
+# largest for bars and tubes), no shielding:
+# 2 · 1136.656 + 866.3197 = 3139.6324 N (before 2026-11-15: drag 1 and
+# sin²θ, 2 · 947.2136 + 640 = 2534.4272 N).
+# Case 003: the comparison law ([wind] member_law = "sin2", version 2)
+# with [analysis] drag = 1 reproduces that former value, 2534.4272 N.
 
 [[case]]
 id = "structwind-001"
 title = "Square lattice panel: the face behind shielded by the one in front (invented factors)"
 calculation = "structures.member_wind"
-reference = "Hand derivation above (cross-flow wind q·c·η·d·L·sin²θ per member; faces, solidity and the face in front by geometry)"
-notes = "Invented tower and factors (see the file's header); wind along +y"
+reference = "Hand derivation above (q·c·η·d·L·k(β) per member, k by SIA 261:2014 Tab. 74 p. 112; faces, solidity and the face in front by geometry)"
+notes = "Invented tower and factors (see the file's header); wind along +y. 2026-11-15: 2910.915 → 3009.235 N, the side diagonals' inclination factor 0.902 in place of sin²θ = 0.8"
 max_seconds = 1.0
 inputs.wind_pressure = "1000 Pa"
 inputs.wind_direction = 90.0
@@ -160,7 +171,7 @@ id = "x3b"
 nodes = ["N00", "N31"]
 section = "B50"
 '''
-expected.fy = { value = 2910.915315466523, rel_tol = 1e-9 }
+expected.fy = { value = 3009.2350425221066, rel_tol = 1e-9 }
 expected.fx = { value = 0.0, abs_tol = 1e-9 }
 expected.fz = { value = 0.0, abs_tol = 1e-9 }
 expected.faces = { value = 5.0, abs_tol = 1e-9 }
@@ -170,10 +181,10 @@ expected.shielding_min = { value = 0.8852799108591848, rel_tol = 1e-9 }
 
 [[case]]
 id = "structwind-002"
-title = "Square lattice panel without wind factors: the generic drag, nothing shielded"
+title = "Square lattice panel without wind factors: the built-in coefficient, nothing shielded"
 calculation = "structures.member_wind"
-reference = "Hand derivation above (cross-flow wind q·c·η·d·L·sin²θ per member; faces, solidity and the face in front by geometry)"
-notes = "The same tower without a [wind] table: today's member wind (drag 1, no shielding)"
+reference = "Hand derivation above (q·c·d·L·k(β) per member, c = 1.2 by SIA 261:2014 Tab. 72 p. 110, k by Tab. 74 p. 112)"
+notes = "The same tower without a [wind] table nor [analysis] drag: the round bars' built-in coefficient 1.2, no shielding. 2026-11-15: 2534.427 → 3139.632 N (drag 1 → 1.2, sin²θ → k)"
 max_seconds = 1.0
 inputs.wind_pressure = "1000 Pa"
 inputs.wind_direction = 90.0
@@ -189,6 +200,133 @@ d = "50 mm"
 '''
 inputs.model = '''
 [analysis]
+nonlinear = false
+self_weight = false
+[[node]]
+id = "N00"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N01"
+point = ["0 m", "0 m", "4 m"]
+[[node]]
+id = "N10"
+point = ["2 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N11"
+point = ["2 m", "0 m", "4 m"]
+[[node]]
+id = "N20"
+point = ["2 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N21"
+point = ["2 m", "2 m", "4 m"]
+[[node]]
+id = "N30"
+point = ["0 m", "2 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "N31"
+point = ["0 m", "2 m", "4 m"]
+[[member]]
+id = "leg0"
+nodes = ["N00", "N01"]
+section = "B50"
+[[member]]
+id = "top0"
+nodes = ["N01", "N11"]
+section = "B50"
+[[member]]
+id = "x0a"
+nodes = ["N00", "N11"]
+section = "B50"
+[[member]]
+id = "x0b"
+nodes = ["N10", "N01"]
+section = "B50"
+[[member]]
+id = "leg1"
+nodes = ["N10", "N11"]
+section = "B50"
+[[member]]
+id = "top1"
+nodes = ["N11", "N21"]
+section = "B50"
+[[member]]
+id = "x1a"
+nodes = ["N10", "N21"]
+section = "B50"
+[[member]]
+id = "x1b"
+nodes = ["N20", "N11"]
+section = "B50"
+[[member]]
+id = "leg2"
+nodes = ["N20", "N21"]
+section = "B50"
+[[member]]
+id = "top2"
+nodes = ["N21", "N31"]
+section = "B50"
+[[member]]
+id = "x2a"
+nodes = ["N20", "N31"]
+section = "B50"
+[[member]]
+id = "x2b"
+nodes = ["N30", "N21"]
+section = "B50"
+[[member]]
+id = "leg3"
+nodes = ["N30", "N31"]
+section = "B50"
+[[member]]
+id = "top3"
+nodes = ["N31", "N01"]
+section = "B50"
+[[member]]
+id = "x3a"
+nodes = ["N30", "N01"]
+section = "B50"
+[[member]]
+id = "x3b"
+nodes = ["N00", "N31"]
+section = "B50"
+'''
+expected.fy = { value = 3139.6323562554835, rel_tol = 1e-9 }
+expected.fx = { value = 0.0, abs_tol = 1e-9 }
+expected.fz = { value = 0.0, abs_tol = 1e-9 }
+expected.faces = { value = 0.0, abs_tol = 1e-9 }
+expected.shielded = { value = 0.0, abs_tol = 1e-9 }
+expected.shielding_min = { value = 1.0, abs_tol = 1e-9 }
+
+[[case]]
+id = "structwind-003"
+title = "Square lattice panel under the comparison law sin²θ with drag 1: the member wind before 2026-11-15"
+calculation = "structures.member_wind"
+reference = "Hand derivation above (the former cross-flow law q·c·d·L·sin²θ per member, drag 1)"
+notes = "[wind] member_law = \"sin2\" (version 2) and [analysis] drag = 1: the former value 2534.427 N, kept for comparison (not on the safe side)"
+max_seconds = 1.0
+inputs.wind_pressure = "1000 Pa"
+inputs.wind_direction = 90.0
+inputs.sections = '''
+version = 2
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "B50"
+shape = "round_bar"
+material = "steel"
+d = "50 mm"
+[wind]
+member_law = "sin2"
+'''
+inputs.model = '''
+[analysis]
+drag = 1.0
 nonlinear = false
 self_weight = false
 [[node]]

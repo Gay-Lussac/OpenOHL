@@ -592,7 +592,7 @@ impl StructureApp {
                 r.plugin
             )),
             None => m.push_str(&format!(
-                "; {} gives no wind factors for structures (generic drag, no shielding)",
+                "; {} gives no wind factors for structures (built-in SIA 261 coefficients, no shielding)",
                 r.plugin
             )),
         }

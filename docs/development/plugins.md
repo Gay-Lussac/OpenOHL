@@ -348,8 +348,16 @@ structure-wind;`), extension point `design-code` as before.
   `polygonal_hollow`, `general`), `face_drag` (`solidity`, `factor`: a
   lattice face's drag by its solidity ratio) and `shielding` (`solidity`,
   optional `spacing`, `factor`: the factor on a face behind another by the
-  front face's solidity ratio and the spacing ratio), each optional — see
+  front face's solidity ratio and the spacing ratio), and since 2026-11-15
+  `inclination` (per shape: `angle` — β in degrees between the wind and
+  the member's normal, from 0 — and `factor`: the factor on an inclined
+  member's force) and `member_law` (`"inclination"`, or `"sin2"` for
+  comparison) — then with `version = 2` in the text (section library
+  format 2) — each optional; a shape without a drag or an inclination
+  curve takes the built-in SIA 261 values. See
   [Cross-section library](../user-guide/section-library.md#wind-factors-for-structures-wind).
+  The interface itself is unchanged: the new keys travel in the text, and
+  a host before 2026-11-15 refuses a text using them (an unknown key).
   An error string is shown to the user, as for `generate`.
 - **OpenOHL measures, the plugin gives the numbers**: the faces of the
   lattice, their solidity ratios, which face is in front of which member

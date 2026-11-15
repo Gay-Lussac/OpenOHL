@@ -12,7 +12,7 @@
 
 use std::collections::BTreeMap;
 
-use ohl_sections::{SECTION_FILE_FORMAT, SECTION_FILE_VERSION, Section, SectionLibrary};
+use ohl_sections::{SECTION_FILE_FORMAT, SECTION_FILE_VERSION_PLAIN, Section, SectionLibrary};
 use toml_edit::{DocumentMut, Item, Table};
 
 /// A shape of the section library: its name in files, a title, its
@@ -642,7 +642,7 @@ pub fn material_table_of<'a>(doc: &'a DocumentMut, id: &str) -> Option<&'a Table
 /// The text of a new, empty section library file.
 pub fn new_library_text(name: &str) -> String {
     format!(
-        "format = \"{SECTION_FILE_FORMAT}\"\nversion = {SECTION_FILE_VERSION}\nname = \"{}\"\n",
+        "format = \"{SECTION_FILE_FORMAT}\"\nversion = {SECTION_FILE_VERSION_PLAIN}\nname = \"{}\"\n",
         name.replace('"', "'")
     )
 }

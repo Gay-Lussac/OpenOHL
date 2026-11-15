@@ -71,7 +71,8 @@
 //!
 //! An optional `[wind]` table holds wind factors for structures given as
 //! data — a drag factor per shape, a lattice face's drag and shielding
-//! factors by solidity ratio ([`wind`]); none are shipped.
+//! factors by solidity ratio, and (version 2) an inclination factor per
+//! shape and the member law ([`wind`]); none are shipped.
 
 mod geometry;
 pub mod wind;
@@ -84,12 +85,18 @@ use ohl_core::units::{Angle, Area, Density, Length, SecondMoment, SectionModulus
 use serde::Deserialize;
 
 use geometry::{Outline, Part};
-pub use wind::{Curve, Shielding, StructureWind};
+pub use wind::{Curve, Inclination, MemberLaw, Shielding, StructureWind};
 
 /// Value of the `format` header of section library files.
 pub const SECTION_FILE_FORMAT: &str = "ohl-sections";
-/// Latest section library format version.
-pub const SECTION_FILE_VERSION: u32 = 1;
+/// Latest section library format version. Version 2 (2026-11-15) adds
+/// `[wind] inclination` and `member_law` ([`wind::INCLINATION_VERSION`]); a
+/// file is written at 2 only when it gives one of them, else at
+/// [`SECTION_FILE_VERSION_PLAIN`].
+pub const SECTION_FILE_VERSION: u32 = 2;
+/// The version a section library without the keys of version 2 is
+/// written at.
+pub const SECTION_FILE_VERSION_PLAIN: u32 = 1;
 /// File extension of section libraries.
 pub const SECTION_FILE_EXTENSION: &str = "ohlsec";
 

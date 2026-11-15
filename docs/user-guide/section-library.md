@@ -196,6 +196,11 @@ standard. OpenOHL ships none.
 [wind]
 source = "my code, parameter file of 2026-10"   # shown with the results
 drag = { equal_angle = 2.0, circular_hollow = 1.2 }   # per shape (invented)
+member_law = "inclination"        # version 2; "sin2": the old law, comparison only
+
+[wind.inclination.equal_angle]    # version 2: factor on an inclined member's force
+angle = [0, 30, 60]               # β, degrees from the member's normal: 0, rising, ≤ 90
+factor = [1.0, 0.9, 0.7]          # invented
 
 [wind.face_drag]                  # a lattice face's drag by its solidity ratio
 solidity = [0.1, 0.3, 0.5]        # rising, 0–1
@@ -207,7 +212,15 @@ spacing = [0.5, 2.0]              # optional: distance between the faces / bread
 factor = [[0.9, 0.7, 0.5], [1.0, 0.8, 0.6]]   # a row per spacing (one flat row without)
 ```
 
-Every part is optional. `drag` keys are the shapes of the table above.
+Every part is optional. `drag` and `inclination` keys are the shapes of
+the table above. `inclination` (format version 2, 2026-11-15: a file using
+it or `member_law` says `version = 2`) is the factor on the force normal
+to a member at the angle β between the wind and the member's normal,
+linear between the angles, beyond the last angle its factor tapered with
+the projected area (× cos β / cos β_last); a
+shape without a curve takes the built-in one (SIA 261:2014 Tableau 74).
+`member_law = "sin2"` puts back the cross-flow law sin²θ for comparison —
+not on the safe side, said in every result.
 Values between the table's points are interpolated linearly (bilinear with
 `spacing`); **outside the table's range nothing is taken**: a face's
 solidity outside `face_drag` falls back to the shape's drag, a member
@@ -220,8 +233,10 @@ it.
 What the member wind does with them — the faces of the lattice found from
 the geometry, their solidity ratios, which face is in front of which
 member — is in [Wind on lattice structures](../theory/structure-wind.md).
-Without a `[wind]` table the member wind keeps one generic drag factor and
-no shielding, and the results say so.
+Without a `[wind]` table (and no `[analysis] drag` in the structure) the
+member wind takes each shape's force coefficient of SIA 261:2014 Tableaux
+71 and 72 and the inclination factors of Tableau 74, nothing shielded,
+and the results say so.
 
 ## Typing cross-sections in OHL-Structure
 

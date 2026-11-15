@@ -723,10 +723,11 @@ impl StructureApp {
     fn wind_summary(&self, ui: &mut egui::Ui) {
         let text = match &self.loads.sections.wind {
             None => "Wind factors for structures: none given — the member wind takes the \
-                     model's generic drag factor and no shielding"
+                     model's drag, else each shape's SIA 261 force coefficient, the SIA 261 \
+                     inclination factors and no shielding"
                 .to_owned(),
             Some(w) => format!(
-                "Wind factors for structures from {}: drag for {} shape(s){}{}",
+                "Wind factors for structures from {}: drag for {} shape(s){}{}{}",
                 w.source_name(),
                 w.drag.len(),
                 if w.face_drag.is_some() {
@@ -738,7 +739,8 @@ impl StructureApp {
                     ", shielding"
                 } else {
                     ""
-                }
+                },
+                w.inclination_words()
             ),
         };
         ui.label(egui::RichText::new(text).weak()).on_hover_text(

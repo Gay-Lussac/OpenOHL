@@ -232,10 +232,12 @@ refused: "the self weight is given twice"); without one here, the older
 
 **Wind on the body**: the same member wind as the line's own structure
 checks ([Wind on lattice structures](../theory/structure-wind.md)): per
-member q × c × η × d × L × sin²θ, the drag c of its face (by solidity) or
-its shape and the shielding η from the cross-section library's `[wind]`
-factors (none given: the model's generic drag, no shielding — the row
-notes say which), for the chosen direction, the pressure × the factor;
+member q × c × η × d × L × k(β), k the inclination factor (SIA 261:2014
+Tableau 74, 2026-11-15; before, sin²θ), the drag c of its face (by
+solidity) or its shape and the shielding η from the cross-section
+library's `[wind]` factors (none given: the model's drag, else the
+shape's SIA 261 force coefficient, no shielding — the row notes say
+which), for the chosen direction, the pressure × the factor;
 the row is the member's whole force (normal to it, as the line's checks
 apply it). A member whose cross-section is not in the library has no
 area (its row says why). The two applications so give the same body
