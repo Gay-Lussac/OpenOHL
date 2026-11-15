@@ -1403,6 +1403,17 @@ structure again from OHL-Design to get its library cases.
 
 ### The line's wind on the structure body
 
+**Its direction** (2026-11-15): OHL-Structure keeps its own convention
+for the wind on the body — the names (`right`, `ahead_left`, …) or an
+angle the wind comes from, 0° from the right, 90° from ahead — and its
+files are unchanged. The line counts the other way since 2026-11-15 (0°
+from ahead, 90° from the right, clockwise, [Wind on the line](../theory/wind.md)):
+a line case sent here is converted, θ_here = 90° − θ_line (a body angle
+read from an older load case file passes as read, bit for bit); a set of
+directions (`wind_directions`) arrives as one case per direction; a wind
+relative to the line at a structure turned off the line's direction is
+given in the structure's axes.
+
 A library case puts its wind on the members as the line's **fe** check
 does (the member wind: the cross-section library's drag and shielding;
 the one rule since 2026-11-15). In an **older line-values file**, a line

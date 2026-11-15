@@ -109,6 +109,7 @@ use_local = true            # take the structures' local conditions
 
 [case.structure]
 direction = 90              # the wind on the structure bodies: "right", "left", "ahead", "back" or degrees
+                            # (up to version 6: 0 from the right, 90 from ahead — here from ahead)
 ice = true                  # the structures' local ice; or a thickness, "20 mm"; false: none
 ice_density = "900 kg/m³"   # default: the weather case's
 snow = true                 # snow on the structures from their snow on the ground
@@ -134,12 +135,55 @@ span = 3
 | `use_local` | false | The case takes the structures' local conditions ([Line file](line-file.md)): the wires solved with each span's local wind and ice for strength (from its two structures' `wind_static` and `wire_ice`, the worst or the mean as the line says), the wind on each structure body times its `wind_static`. |
 | `[[case.removed]]` | none | **Removed conductors** (owner: "a removed conductor option and broken is only used for actually broke cables"): a construction state, e.g. a tension mast with some phases not yet strung. The section's wire is absent in that case: all its spans are left out of the solve, its loads on every structure are 0; the other sections solve as usual. Jumpers with an end on its wire points only (or on its span points) and spacers on it are left out too. `set`: a check that one of the section's points is of that set. A section not in the line, or removed twice, or both removed and broken, is refused. |
 | `[[case.broken]]` | none | **Broken wires** (actual breaks): several per case; all the spans listed are broken **together**, in one solve per section — two spans of one section broken: both gone in that solve, a point between two broken spans then holds no wire (its strings hang under their own weight). `span = "every"` keeps its meaning (each span of that section in turn, the envelope and each break on its own as above), the other broken wires broken in each of those solves; it may not be combined with another broken span of the same section, nor given twice in a case (refused: give them in separate cases). The version-3 single `[case.broken]` table still reads as one broken wire. |
-| `direction` | the wires' side | Where the wind on the structure bodies comes **from**, looking ahead along the line: `"right"` (0°), `"ahead"` (90°), `"left"` (180°), `"back"` (270°), or an angle in degrees, 0° from the right counted towards ahead — the structure's axes are x to the right of the line, y ahead, so the wind blows towards (−cos θ, −sin θ). The names are those of OHL-Structure's wind on the body. The wires keep their side (`wind_from`): a wind along the line on the wires is not modelled. |
+| `direction` | the wires' direction | Where the wind on the structure bodies comes **from**, in the structure's axes (x to the right of the line, y ahead): `"ahead"`, `"right"`, `"back"`, `"left"`, or an angle in degrees. **Version 7 and later:** the program's one convention, 0° from ahead, 90° from the right, 180° from behind, 270° from the left, clockwise ([Wind on the line](../theory/wind.md)). **Files up to version 6:** 0° from the right counted towards ahead (90° from ahead, 180° from the left, 270° from behind — OHL-Structure's convention): read as such, θ = 90° − θ_old, the same forces bit for bit, and written back at its version as read (converted only when the file is raised to 7). Not given: the wires' direction at an angle (version 7), else across from the wires' side. |
 | `ice` | by the weather case | Ice on the structure bodies: `true`, each structure's local ice (`structure_ice` of its local conditions; none where it gives none), `"weather"` (version 6, below): the weather case's ice on the wires, a radial thickness for every structure, or `false` (also `"none"`, 2026-11-04): no ice on them, not even the local ice. Not given: none — except in a case taking the local conditions whose weather case has ice, where each structure's local ice ([below](#the-structures-local-ice)). |
 | `ice_density` | the weather case's | kg/m³. Without it and without the weather case's `ice_density` the case is refused when computed — no density is made up (with `ice = "weather"`: glaze ice, as on the wires). |
 | `ice_factor` | 1 | Version 6: a factor on the structures' ice **thickness**, whichever it is (the wires', the local, the one given) — below. |
 | `snow` | false | Snow on the structures' horizontal surfaces: q = μ · C_e · C_T · s_k (SIA 261:2014 (9)), s_k each structure's snow on the ground (its local `snow_ground`, or SIA 261 (10) from its `snow_altitude`); none where it gives neither (the notes list them). |
 | `snow_shape`, `snow_exposure`, `snow_thermal` | 0.8, 1.0, 1.0 | μ, C_e and C_T: μ = 0.8 is SIA 261 5.3.4's coefficient where the snow cannot slide off, taken for a pylon's horizontal surfaces as an assumption; C_e = 1.0 normal exposure (5.2.4), C_T = 1.0 (5.2.5). Give them only with `snow = true`. |
+
+### Version 7: the wind's direction for the wires, and sets of directions
+
+*Built, in active development, not approved yet* (owner 2026-11-15). A
+case may give where the wind comes from, for the wires **and** the
+structure bodies, or a set of directions solved one by one:
+
+```toml
+format = "ohl-load-cases"
+version = 7
+
+[[case]]
+name = "wind along the line, forward"
+weather = "high wind"
+wind_direction = 180            # from behind: blowing ahead (replaces the weather case's)
+longitudinal = 1.4
+[case.structure]
+wind_factor = 1.4               # the bodies' own factor (else the transverse one)
+
+[[case]]
+name = "wind, every direction"
+weather = "high wind"
+wind_directions = [0, 45, 90, 135, 180, 225, 270, 315]
+```
+
+| Field | Default | Notes |
+|---|---|---|
+| `wind_direction` | the weather case's | Where the wind comes from, relative to the line at each place: 0 from ahead, 90 from the right, 180 from behind, 270 from the left, clockwise (a name, or degrees). 90 and 270 are the across rule from that side (as `wind_from = "right"` / `"left"`, still read); another angle is one wind, each span its part normal to it ([Wind on the line](../theory/wind.md)). The bodies take it too unless `[case.structure] direction` is given (in a structure turned off the line's direction, converted to its axes). Not with `wind_from`. |
+| `wind_directions` | none | A **set**: the case is solved once per direction, each as its own case `<case> (wind from θ°)`. The **fe** and **pole** checks and the allowable loads take each as its own case and keep the worst, naming it; the Structure loads page lists each; the structures' groups (Applies to) know them by the set's name; OHL-Structure gets one case per direction. Cost: one line solve per direction. Not with `wind_direction`. |
+
+- A case with a direction says in its notes that it is **one direction,
+  not the across envelope**: a wind across the line is not checked by
+  that case. The across cases stay the default.
+- **An along-line wind loads the structure longitudinally** through the
+  wires at angle structures and its body: give the factors accordingly
+  (`longitudinal` for the wires' part, `[case.structure] wind_factor`
+  for the body, which otherwise takes `transverse`).
+- **Old files.** Files up to version 6 read and compute as before, bit for
+  bit; their numeric `direction` stays in the old convention. A file is
+  written at version 7 only when a case uses one of these (or gives a
+  body angle in the new convention); older programs refuse it as "newer".
+  In the Load cases library's text page, a file raised to version 7
+  has its body angles converted (θ = 90° − θ_old).
 
 ### Version 6: the wires' ice on the structures, with a factor
 
@@ -187,7 +231,7 @@ Line › Structures › **Load cases…** (until 2026-11-15 Line › Criteria �
 1. **Weather** — the weather case, picked from the project's weather cases only (a case naming another says so in red), and the wires' condition (as strung, after creep, after the heaviest load, the one that sags more).
 2. **Wind on the wires** — shown only when the weather case has wind: *as the weather case*, *from the left* or *from the right* (`wind_from`).
 3. **Wires removed and wires broken** — per section of the line (open when the line has four or fewer, else click its name): **removed (not strung)** — a construction state, every span of that section left out, it puts no load anywhere — and, for a real break, a tick per span (*S1 span 2 (T2–T3) broken*; several break together) or **every span broken, one at a time** (its cost in the hover: one solve per span), with the **set checked** when the section has several sets. A section with a broken span cannot be removed too (its tick greyed).
-4. **Wind on the structures** — *off*, *the weather case's* (its pressure shown) or *own pressure* (Pa); the direction: *as the wires*, *from the left*, *from the right*, *from ahead*, *from behind* or *at an angle* with its degrees (0° from the right, 90° from ahead); *own factor* (else the transverse one).
+4. **Wind on the structures** — *off*, *the weather case's* (its pressure shown) or *own pressure* (Pa); the direction: *as the wires*, *from the left*, *from the right*, *from ahead*, *from behind* or *at an angle* with its degrees (since 2026-11-15 in the program's convention: 0° from ahead, 90° from the right, clockwise; an angle read from an older file is shown converted and kept as read until changed); *own factor* (else the transverse one).
 5. **Ice and snow on the structures** — ice *default* (the structures' local ice when the case takes the local conditions and its weather case has ice, else none), *none* (not even the local ice), *the structures' local ice*, *the wires' ice* (the weather case's thickness, version 6) or *a thickness* (mm); *factor on the thickness* (version 6, any of them; unticked 1); with *own density* (else the weather case's; when it gives none the form says a density is needed); **Snow on the structures** with μ, C_e and C_T (0.8, 1.0, 1.0 by default; the hover cites SIA 261:2014 5.3.4, 5.2.4 and 5.2.5, and says that μ = 0.8 for a pylon's horizontal surfaces is an assumption the engineer is to confirm).
 6. **Factors** — vertical, transverse, longitudinal and the strength factor φ; **Use local conditions** (what it takes and its cost in the hover).
 7. **Tags and description**.

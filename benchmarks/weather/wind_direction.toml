@@ -1,0 +1,96 @@
+# A wind at an angle to a wire (theory: Wind on the line; owner
+# 2026-11-15): the force per metre a horizontal wind puts on a straight
+# piece of wire, by the projected area (q·D·sin θ, the default) or the
+# cross-flow principle (q·D·sin² θ), with the vertical part on an inclined
+# wire and the optional friction along it (c_t·q·D·cos² θ). The plan's hand
+# case: q = 500 Pa on D = 30 mm, so q·D = 15 N/m, a 300 m span.
+# Invented values (no design code); the friction coefficient 0.1 is an
+# INVENTED test value, not a recommendation (the program gives none).
+#
+# By hand: w_n = w − (w·t) t, |w_n| = sin θ (θ between the wind and the
+# wire); projected q·D·w_n, cross-flow q·D·|w_n|·w_n; friction
+# c_t·q·D·(w·t)|w·t| along t. Inclined 30°, the wind along it:
+# |w_n| = sin 30° = 0.5, cross-flow 15 × 0.25 = 3.75 N/m normal, of which
+# 3.75 × cos 30° = 3.2476 N/m vertical (down blowing uphill).
+
+[[case]]
+id = "winddir-001"
+title = "Square to the wire: the full q·D, 4500 N on 300 m, either law"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 500 Pa × 0.030 m = 15 N/m; × 300 m = 4500 N"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 90.0, span_m = 300.0 }
+expected.normal_n_per_m = { value = 15.0, rel_tol = 1e-12 }
+expected.span_normal_n = { value = 4500.0, rel_tol = 1e-12 }
+expected.along_n_per_m = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "winddir-002"
+title = "45° to the wire, projected area: q·D·sin 45° = 10.61 N/m, 3182 N on 300 m"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 15 × sin 45° = 10.6066 N/m; × 300 m = 3181.98 N"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 45.0, span_m = 300.0 }
+expected.normal_n_per_m = { value = 10.6066017178, rel_tol = 1e-9 }
+expected.span_normal_n = { value = 3181.98051534, rel_tol = 1e-9 }
+expected.along_n_per_m = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "winddir-003"
+title = "45° to the wire, cross-flow: q·D·sin² 45° = 7.5 N/m, 2250 N on 300 m"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 15 × 0.5 = 7.5 N/m; × 300 m = 2250 N"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 45.0, law = "cross_flow", span_m = 300.0 }
+expected.normal_n_per_m = { value = 7.5, rel_tol = 1e-12 }
+expected.span_normal_n = { value = 2250.0, rel_tol = 1e-12 }
+
+[[case]]
+id = "winddir-004"
+title = "Along the wire: no force, without friction"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: sin 0° = 0"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 0.0 }
+expected.normal_n_per_m = { value = 0.0, abs_tol = 1e-12 }
+expected.along_n_per_m = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "winddir-005"
+title = "A span rising 30°, the wind blowing up it (cross-flow): 3.75 N/m normal, 3.25 N/m down"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 15 × sin² 30° = 3.75 N/m; × cos 30° = 3.2476 N/m vertical, down"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 0.0, incline_deg = 30.0, law = "cross_flow" }
+expected.normal_n_per_m = { value = 3.75, rel_tol = 1e-12 }
+expected.vertical_n_per_m = { value = -3.24759526419, rel_tol = 1e-9 }
+
+[[case]]
+id = "winddir-006"
+title = "The same span, the wind blowing down it: the span lifted, 3.25 N/m up"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: as winddir-005, the vertical part up"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 180.0, incline_deg = 30.0, law = "cross_flow" }
+expected.normal_n_per_m = { value = 3.75, rel_tol = 1e-12 }
+expected.vertical_n_per_m = { value = 3.24759526419, rel_tol = 1e-9 }
+
+[[case]]
+id = "winddir-007"
+title = "Friction (invented c_t = 0.1), the wind along the wire: c_t·q·D = 1.5 N/m along it"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 0.1 × 15 × cos² 0° = 1.5 N/m"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 0.0, friction = 0.1 }
+expected.along_n_per_m = { value = 1.5, rel_tol = 1e-12 }
+expected.normal_n_per_m = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "winddir-008"
+title = "Friction at 60° to the wire: 0.375 N/m along it, 12.99 N/m normal (projected)"
+calculation = "weather.oblique_wire_load"
+reference = "Hand calculation: 0.1 × 15 × cos² 60° = 0.375 N/m; 15 × sin 60° = 12.9904 N/m"
+max_seconds = 1.0
+inputs = { wind_pressure_pa = 500.0, diameter_mm = 30.0, wind_to_wire_deg = 60.0, friction = 0.1 }
+expected.along_n_per_m = { value = 0.375, rel_tol = 1e-9 }
+expected.normal_n_per_m = { value = 12.9903810568, rel_tol = 1e-9 }
