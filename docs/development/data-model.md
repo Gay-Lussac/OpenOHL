@@ -1526,9 +1526,13 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   ground, the shielding wires and phases, the covered zone's boundary,
   sphere centres); its CSV `rule, method, case, section, span, from, to,
   phase, span_length_m, exposed_m, worst_along_m, worst_depth, margin,
-  current_ka, status`; `ohl lightning --json` writes the `Report`. The app
-  keeps the window's rules in `<model>.lightning-rules.ohlr`; the 3D
-  layer `Layer::Lightning` (`lightning::scene`).
+  current_ka, status`; `ohl lightning --json` writes the `Report`
+  (2026-11-15: but not its `cuts_of`, the rule × case pair the `cuts`
+  belong to — the last checked — kept for the window to say when a row's
+  drawing is another pair's). The app keeps the window's rules in
+  `<model>.lightning-rules.ohlr`, its user guide page is
+  `user-guide/lightning-shielding` (`lightning::GUIDE`); the 3D layer
+  `Layer::Lightning` (`lightning::scene`).
 - **Ice shedding rules** (2026-11-02, additive; roadmap O13): a rule
   file may hold optional `[[ice_shedding_rule]]` tables — `name`,
   `cases` (the iced cases, patterns; none: every case with ice), `bare`
