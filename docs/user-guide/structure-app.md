@@ -194,6 +194,31 @@ ohl-structure Structures/type-02.ohls --structure T2 \
 The structure file itself is the type's: saved here, every structure of
 the type follows in the line.
 
+### The line's links (from OHL-Design)
+
+The two applications tell each other when attachment points are linked
+or moved (owner, 2026-11-15: *"2 two apps should communicate with each
+other when attachment points are linked to a joint or moved"*), through
+the files they already share — no network:
+
+- **From OHL-Design**: a placed structure's own link of a point (made
+  with OHL-Design's Link or Move attachment point tool, *this structure
+  only*) goes into its line-values file (version 9, `links`: the point,
+  its joint and offset, or unlinked — only where it differs from the
+  type). When the file is read again, the message line says what
+  changed, *T2: point A1 linked to joint A2 (from OHL-Design)*; the
+  Attachment points list marks the point **line differs**; and **Results ›
+  Run** solves the placed structure with the line's link over the type's
+  (as the line's structure check does). A link the structure cannot take
+  (its point or joint gone, a joint that takes no strings) refuses the
+  run with the reason, rather than leaving the point's loads on its old
+  joint.
+- **To OHL-Design**: a point linked or moved here reaches the line when
+  the structure file is **saved** (as every change of the type): OHL-Design
+  reads the type again, every structure of the type follows, and its
+  status line says what changed, *T2, T4: point A11 linked to joint A1
+  (from OHL-Structure)*.
+
 ## The window
 
 At the top, the **menus** (2026-11-03: aligned with OHL-Design's; built,
@@ -480,7 +505,7 @@ their menu or from View.
 
 | Menu | Tables | Tools |
 |---|---|---|
-| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint**, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, **post** — none, fixed or hinged, then its rating and its clamp's exit angle and direction, each ticked to give it ([below](#post-insulators-on-the-structure)) —, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
+| **Geometry** (level 1) | Attachment points (where it is — typed: a point on a joint stays on it, its offset follows —, its **joint** — chosen in its cell from the attach joints (with a search, or an id typed): the point moves there, asked onto the joint or its position kept when it is not on it, one undo step; **line differs** when the line links it elsewhere —, its **offset** x, y, z from it — typed for a point on a joint, one undo step —, the offset's length, the strings hanging from it; a right-click on its name: **Link to a joint…**, **Unlink**), Strings (top, wire point, kind, assembly, length, angle, direction, weight, wind area, compression, **post** — none, fixed or hinged, then its rating and its clamp's exit angle and direction, each ticked to give it ([below](#post-insulators-on-the-structure)) —, limits — max load, max swing, across, along, each optional and not checked, an assembly's shown dimmed —, description), Wire points (counterweight), Sets, Structure (name, height, feet, extensions) | **Add a point**, **One string below the point** and **Two strings to one wire point** for the points picked (the string's length: the tool strip of the string tools), **Link** (the Link tool), **Delete selected…** (everything picked, lists what goes with each first; one undo step); the grid a dragged joint or point snaps to is in the Move tool's strip |
 | **Body** (level 2) | Pole (pole structures: the outline by height, [below](#poles-and-extensions)), Joints (x, y, z), Members (ends, length, group, cross-section, made by; a group filter), Generators, Extensions (each one's piece and legs) — Joints: x, y, z, **kind** (*auto* — worked out: attach when a point is linked to it, support with a support —, **attach** or **support**; one undo step; a joint carrying a point cannot be made a support joint), the members meeting it, the points linked to it | **Add a joint** (above the joint picked), **Add a member** between two joints picked, **Point on the joint** (not on a support joint: strings hang from attach joints), **Delete selected…**; the symmetry's icon (its option on hover; set in Body › Symmetry or with the Symmetry tool), **group** of the members picked ([below](#the-body-panels)) |
 | **Design** (level 3) | Pole (pole structures: material, cross-section, wall or solid, strength), Supports (**Support the feet** pins the lowest joints; the button is above the table, and in the Design menu), Members (a right-click on a member's name: **Insert a joint** at a fraction of its length — [below](#attachment-points-joints-and-the-link-tool); the analysis settings **stabilise joints**, **tension-only: no compression** (ticked: the tension-only members carry no compression at all and go slack once shortened, their compression going to the other members; a joint held only by shortened tension-only members is then held by nothing and that load case is refused, the joint named — see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit writing `tension_compression = "none"` in `[analysis]`, which raises the file to version 14; unticked, the default: compression up to their buckling load), the optional checks **redundant force [%]** (redundant members also checked for that percentage of the compression in the member they brace) and **climbing load** (flat members checked for that load at mid-length, alone; listed under *Climbing* in the FE results, apart from the cases' usage) — empty: off; each writes its key in `[analysis]` and raises the file to version 16, see [Optional checks](structure-analysis.md#structure-models-ohlfe) — and the **dead-load factor** — see [Structure models](structure-analysis.md#structure-models-ohlfe) —, each member's cross-section, kind (truss, frame, cable or tension — a truss in tension only, carrying compression up to its own buckling load (or none, with the setting before), see [Tension-only members](structure-analysis.md#tension-only-members); one undoable edit, which raises the file to version 5), buckling factor k, effective length lk, the legs of an angle, its own tension and compression capacities and dead-load factor (DLF) — values typed with units, written when the cell is left), Groups (a cross-section and kind per member group, and lk, the capacities and the dead-load factor for all its members), Cross-sections and Materials (their fields typed with units, e.g. `1500 mm2`), and **Cross-section library** (the cross-section library's cross-sections — new, edit, duplicate, delete, their properties computed as typed, each change one undo step; see [Typing cross-sections](section-library.md#typing-cross-sections-in-ohl-structure)); the cross-section lists of Members and Groups hold the library's cross-sections first, then the file's | — |
 | **Loads** (any level) | **Load case editor**: the structure's load cases (name, description, strength factor, the sentence of what each does), their line forces (a line case: a library case's unfactored forces, vertical / transverse / longitudinal factors, sets, a tick per point) and loads on the structure itself (self weight, wind on the body, ice and additional weight, point loads), and loads in the older form when a case has some. **Load table**: the line's forces, then the cases evaluated, per case and point, member or joint | **+ Case**, **Duplicate**, **🗑 Case**, **Mirror wind**, **Add line forces**, **Add wind**, **Add ice**, **Add point load**, **+ Load** and **Convert** (older form), 🗑; **Import / Export recipes…** (`.ohlslc` or CSV), **Import / Export table…** (CSV), **Store in the structure file…**; the case shown drawn as arrows (**m per kN**) |
@@ -532,10 +557,22 @@ line from its top in that direction (its exit angle).
 
 ## Attachment points, joints and the Link tool
 
-Every attachment point is linked to a **joint** of the structure
-([Glossary](glossary.md#structures)): the joint it sits on, or — a
-stick figure's point — its own joint. A point cannot be put on a member
-(a bar): it needs a joint. It may sit at an **offset** from its joint: a
+An attachment point is linked to a **joint** of the structure
+([Glossary](glossary.md#structures)) — the joint it sits on — or, since
+2026-11-15, **stands alone**, linked to no joint (a new point does, and
+an unlinked one: owner, *"an attachment point by itself then linked"*).
+A point and a joint are **separate objects**, even with the same name:
+a joint is found by its id, a point by its label, never one by the
+other. A **string hangs from an attachment point, never from a joint**
+(a file whose string names a joint as its top is refused, with the
+fix). A point standing alone belongs to the stick figure (level 1):
+on a structure with members, the strings hanging from it are not
+attached to the 3D structure — allowed, with a warning in the header's
+Advice and in the results (their loads left out, **NOT ON THE SAFE
+SIDE**), until it is linked. Files written before may give a point at a
+position of its own: read as before (on the joint at its place, said in
+the Advice, or — a stick figure's point — its own place). A point cannot
+be put on a member (a bar): it needs a joint. It may sit at an **offset** from its joint: a
 **rigid link**, drawn as a magenta rod, whose moment the analysis
 applies at the joint (where a frame member meets it; [Results](#results)).
 A joint has a **kind**: *attach* (strings hang here), *support* (the
@@ -555,10 +592,24 @@ out (*auto*).
   OHL-Structure* — set it in the Joints table (**Kind**), then link. Relinking a linked point is the same two clicks. A
   **right-click** or **Escape** cancels the point chosen; a second one
   lets go of the tool.
+- **The list** (Geometry › Points & strings, the **joint** column): a
+  point's joint is chosen in its row — a list of the attach joints with
+  a search field, or a joint's id typed (**Link to joint …**). Another
+  joint moves the point there; the strings hanging from it follow. One
+  edit, one undo step.
+- **The question** (the list, Link, Move attachment point): a point not
+  on the joint it is linked to (farther than 1 mm) asks **Move the point
+  onto the joint** (the default: the point and its strings move, no
+  offset) or **Keep its position** (its distance kept as its offset);
+  within 1 mm it goes onto the joint without asking. The answer is part
+  of the one edit.
+- **Move attachment point** (the tool): click a joint carrying points
+  (several: a small window lists them, with what hangs from each), then
+  the joint to move the point to — [OHL-Structure tools](structure-tools.md#move-attachment-point).
 - **Unlink** (a point's menu, in the view or the Attachment points
-  table, or the Inspector): the point keeps its place as a joint of its own, on no member
-  (its load then reaches no member: the header lists it until it is
-  linked again).
+  table, or the Inspector): the point keeps its place, standing alone,
+  linked to no joint (its strings' loads then reach no member: the
+  header's Advice and the results say so until it is linked again).
 - **The link follows edits** (2026-10-21): an attachment point on a
   joint that is moved — typed in the Attachment points table or the
   Inspector, or dragged in the view with the Move tool — stays on its joint, its offset recomputed (the new
