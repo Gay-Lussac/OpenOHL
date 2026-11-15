@@ -1559,6 +1559,11 @@ pub fn structure_loads_each(
     // A post's clamp: the jumpers' moment the rod's, their forces
     // estimated (2026-11-14).
     set_notes.extend(ohl_line::post::moment_with_estimate_note(&line));
+    // A hinged post holding nothing: free to pivot, no load path
+    // (2026-11-15).
+    set_notes.extend(ohl_line::post::free_hinged_notes(&line));
+    set_notes.extend(ohl_line::post::jumper_held_hinged_notes(&line));
+    set_notes.extend(ohl_line::post::pivoting_notes(&line));
     let one = |case: &LoadCase| -> Result<CaseLoads, String> {
         let w = weather
             .iter()
@@ -2285,6 +2290,39 @@ fn case_loads(
                 let Some(wire) = structure.wire_at_set(point.set) else {
                     continue;
                 };
+                // A hinged post's clamp (2026-11-15): the post turns about
+                // its hinge, free where its braces leave it free, until the
+                // jumper's pull balances — its members' forces from that
+                // equilibrium, not shared out; where the pull does not hold
+                // it, its loads are not computed (said).
+                if structure
+                    .strings_to(&wire.label)
+                    .any(|s| s.post && s.hinged)
+                {
+                    match ohl_line::post::hinged_alone(
+                        structure,
+                        &wire.label,
+                        force,
+                        line.defaults.insulator_stiffness,
+                    ) {
+                        Ok(members) => {
+                            for m in members {
+                                let place = Place {
+                                    structure: &point.structure,
+                                    label: &m.top,
+                                    at: m.at,
+                                };
+                                add(&mut at, line, case, place, m.on_top, &[point.set], &j.id);
+                            }
+                        }
+                        Err(e) => failed.push(format!(
+                            "jumper {}: the hinged post at {} {}: {e} — free to pivot; its \
+                             loads not computed",
+                            j.id, point.structure, wire.label
+                        )),
+                    }
+                    continue;
+                }
                 let strings: Vec<_> = structure.strings_to(&wire.label).collect();
                 if strings.is_empty() {
                     let place = Place {

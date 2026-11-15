@@ -498,6 +498,15 @@ pub fn check(
             .notes
             .extend(ohl_line::post::moment_with_estimate_note(line));
     }
+    // A hinged post holding nothing (2026-11-15): free to pivot, not
+    // checked.
+    report.notes.extend(
+        ohl_line::post::free_hinged_posts(line)
+            .into_iter()
+            .map(|(s, p)| {
+                format!("hinged post {p} at {s}: nothing holds it (free to pivot): not checked")
+            }),
+    );
     // Each section's nominal voltage, by its id (a list of the distinct
     // potentials indexed by the section's place gave another section's).
     let potentials = line.potentials().unwrap_or_default();
