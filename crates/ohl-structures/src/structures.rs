@@ -2858,7 +2858,7 @@ mod tests {
             "version = 13",
             &format!("version = {}", STRUCTURE_FILE_VERSION + 1),
         );
-        assert!(POST_VERSION <= STRUCTURE_FILE_VERSION);
+        const { assert!(POST_VERSION <= STRUCTURE_FILE_VERSION) };
         assert!(parse(&newer).is_err());
     }
 
