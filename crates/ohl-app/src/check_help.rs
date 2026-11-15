@@ -1568,9 +1568,10 @@ pub fn galloping_ellipses(ui: &mut egui::Ui) {
         ui,
         egui::vec2(180.0, 90.0),
         "drawing: galloping ellipses",
-        "Seen along the line at mid-span: around each wire an ellipse whose axes come from its \
-         sag by the method's coefficients (often tilted, offset upwards); the clearance is the \
-         shortest distance between two wires' ellipses.",
+        "Seen along the line at mid-span: around each wire an ellipse whose axes A and B come \
+         from its sag by the method's coefficients (often tilted, its centre above the wire); \
+         the clearance is the shortest distance between two wires' ellipses, less the wires' \
+         outer radii.",
     );
     let w1 = egui::pos2(r.left() + 52.0, r.top() + 30.0);
     let w2 = egui::pos2(r.left() + 120.0, r.top() + 58.0);
@@ -1593,13 +1594,20 @@ pub fn galloping_ellipses(ui: &mut egui::Ui) {
     let a = egui::pos2(w1.x + 12.0, w1.y + 4.0);
     let b = egui::pos2(w2.x - 12.0, w2.y - 16.0);
     p.line_segment([a, b], egui::Stroke::new(1.4, ink.key));
+    // The theory's names (2026-11-15): A and B the axes, the clearance
+    // between the ellipses (c is the centre's offset there).
     text(
         &p,
         egui::pos2((a.x + b.x) / 2.0 + 4.0, (a.y + b.y) / 2.0 - 4.0),
-        "c",
+        "clearance",
         ink.key,
     );
-    text(&p, w1 + egui::vec2(-46.0, -26.0), "b from sag", ink.faint);
+    text(
+        &p,
+        w1 + egui::vec2(-50.0, -26.0),
+        "A, B from sag",
+        ink.faint,
+    );
 }
 
 /// The ice shedding jump (Ice shedding): seen from the side, the wire

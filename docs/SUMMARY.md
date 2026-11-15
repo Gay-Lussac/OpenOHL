@@ -52,6 +52,7 @@
 - [Staking table](user-guide/staking-table.md)
 - [Optimum structure spotting](user-guide/spotting.md)
 - [Analyses: galloping, ice shedding, vegetation, safety volumes, as-built wires, fields](user-guide/analyses.md)
+  - [Galloping ellipses](user-guide/galloping.md)
   - [Magnetic field](user-guide/magnetic-field.md)
   - [Electric field](user-guide/electric-field.md)
   - [Vegetation and danger trees](user-guide/vegetation.md)

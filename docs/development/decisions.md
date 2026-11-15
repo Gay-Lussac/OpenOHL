@@ -10,6 +10,43 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**The galloping ellipses check reviewed, its own user-guide page**
+(owner: "can you also make a review and explanation page in the books
+for the galloping ellipses check"). The window follows the
+[check pages](check-pages.md): [its own page](../user-guide/galloping.md)
+(what it answers, the check step by step with drawings, every setting,
+every field of the `.ohlg` file, what is and is not on the safe side, the
+command line), **user guide ↗** on every section and on the results,
+the explanations behind each section's (?), *3 Rules: the parameter file*
+with the file's requirement, cases and methods (axes in words) in a
+table, *4 Model* (folded) with what the file sets about the computation
+(stations, calculation, the pair's voltage, tilt, centre, along), hovers
+saying each value's effect. Run is greyed, the footer saying why, without
+a parameter file or with one that is not read (Run failed before); the
+reason a file is refused is in the error colour (it was faint grey); a
+weather case the file does not name is said before Run (the window still
+runs in it; the command line runs only the file's cases); the verdict
+without a requirement says *distances only* (it said *every pair at its
+requirement*). The window's drawing names the axes A and B, as the
+theory does (it said *b* and *c*). Results are unchanged, but for:
+
+- **Fault fixed:** a span carrying a clamp a jumper hangs on (a tap) was
+  left out of the pairs, not said (its wire has a third end after its
+  two structure points); now paired by its structure points. A structure
+  name holding `:` was cut at its first `:`; now at the last.
+- **NOT ON THE SAFE SIDE, now said in the results** (window and `ohl
+  clearance galloping`, `galloping::notes`): a loop's middle between two
+  stations (the largest ellipse compared and the share, with the fix:
+  `stations` a multiple of 2 × loops); a wire whose wire type is not in
+  the library (no diameter: its `diameter` and `log` terms left out); a
+  pair beyond a requirement table by voltage (its last row taken); a
+  weather case with wind (the ellipses sized from the swung wires'
+  vertical sag). The method is not changed; the theory explains each,
+  and the simplification of comparing at the stations only.
+- Open for the owner: the loops' middles as stations; a pair beyond the
+  table checked at the last row or not checked; the window refusing a
+  case the file does not name; which sag in a case with wind.
+
 **Ice on the structures from the wires' ice, with a factor** (owner: "for
 the ice on the load cases can you also add a factor as for the wind to
 change the value compared to the conductor weather cases"; asked which

@@ -1203,6 +1203,121 @@ def galloping_loops():
     return f
 
 
+def galloping_sag():
+    f = Fig("galloping-sag", 760, 360, "The sag the ellipse is sized from",
+            "Left: a span from the side, its supports at different heights, the chord between "
+            "the clamps, the horizontal span length L and the sag D, the largest vertical "
+            "distance of the wire below the chord. Right: across the span at mid-span, the wire "
+            "at rest and its ellipse, whose axes come from D, L and the conductor diameter d.")
+    f.text(20, 26, "The sag D the ellipse is sized from", "t")
+    x0, y0, x1, y1, sag = 50.0, 90.0, 430.0, 130.0, 95.0
+    g = 300
+    ground(f, 30, 450, g)
+    f.path(f"M{x0},{g} L{x0},{y0 - 12} M{x1},{g} L{x1},{y1 - 12}", "st")
+    f.path(f"M{x0},{y0} L{x1},{y1}", "dash")
+    f.poly(parab(x0, y0, x1, y1, sag, 80), "wire")
+    xm = (x0 + x1) / 2
+    ym = (y0 + y1) / 2
+    f.vdim2(xm, ym, ym + sag, "D")
+    f.dim(x0, x1, g + 26, "L (horizontal)")
+    f.label(x0 + 70, y0 + 7.4, 120, 62, "chord between the clamps", "lab")
+    f.label(xm + 90, ym + sag - 30, 330, 250, "the wire in the weather case", "lab")
+    f.text(30, 346, "D: the largest vertical distance below the chord, as solved in the case.", "lab")
+    # across the span at mid-span
+    rx, ry = 600, 250
+    A, B, th, c = 170, 80, 10, 0.3
+    t = math.radians(th)
+    ux, uy = math.sin(t), -math.cos(t)
+    cx, cy = rx + c * A * ux, ry + c * A * uy
+    f.poly(ellipse_pts(cx, cy, A, B, th), "acc", "fill:var(--acc);fill-opacity:.10", close=True)
+    f.ring(rx, ry, 6)
+    f.text(rx, 330, "across the span, at mid-span", "c lab")
+    f.text(500, 62, "A = k_{D} D + k_{L} L + … (the file's terms)", "")
+    f.text(500, 80, "B = … + k_{A} A", "")
+    f.label(rx + 5, ry + 3, 690, 300, "wire at rest", "lab")
+    f.text(500, 346, "With wind: the wire swung, D its vertical sag.", "lab")
+    return f
+
+
+def galloping_steps():
+    f = Fig("galloping-steps", 900, 300, "The galloping check, step by step",
+            "Five steps of one Run: the weather case solved and each span's sag; an ellipse "
+            "around each wire by each method; the ellipses along the span at the stations; "
+            "the pairs of wires between the same two structures and the distance between their "
+            "ellipses; the smallest per pair and method against the requirement, worst first.")
+    f.text(20, 26, "The galloping check, step by step", "t")
+    boxes = [
+        ("1  The case solved", ["the weather case chosen;", "each span's wires at rest", "and their sag D"]),
+        ("2  The ellipses", ["per wire and method:", "A and B from D, L, d;", "tilt θ, centre c A up"]),
+        ("3  Along the span", ["at stations − 1 inner", "points; size × |sin(nπt)|", "or constant"]),
+        ("4  The pairs", ["wires between the same", "two structures: the gap", "less the outer radii"]),
+        ("5  The verdict", ["the smallest gap per", "pair and method against", "the requirement"]),
+    ]
+    w, gap, top = 160, 15, 50
+    for k, (head, lines) in enumerate(boxes):
+        x = 20 + k * (w + gap)
+        f.add(f'<rect x="{x}" y="{top}" width="{w}" height="230" class="box"/>')
+        f.text(x + 8, top + 20, head, "")
+        for j, s in enumerate(lines):
+            f.text(x + 8, top + 186 + 16 * j, s, "lab")
+        if k < len(boxes) - 1:
+            f.arrow(x + w + 1, top + 115, x + w + gap - 1, top + 115, "muted", 1.2, 6)
+    # 1: a span with its sag
+    x = 20
+    f.path(f"M{x + 20},{top + 150} L{x + 20},{top + 50} M{x + 140},{top + 150} L{x + 140},{top + 50}", "st")
+    f.path(f"M{x + 20},{top + 56} L{x + 140},{top + 56}", "dash")
+    f.poly(parab(x + 20, top + 56, x + 140, top + 56, 50, 40), "wire")
+    f.vdim2(x + 80, top + 56, top + 106, "D")
+    # 2: an ellipse around a wire
+    x = 20 + (w + gap)
+    rx, ry = x + 70, top + 150
+    A, B, th = 100, 46, 12
+    t = math.radians(th)
+    cx, cy = rx + 0.3 * A * math.sin(t), ry - 0.3 * A * math.cos(t)
+    f.poly(ellipse_pts(cx, cy, A, B, th), "acc", "fill:var(--acc);fill-opacity:.10", close=True)
+    f.ring(rx, ry, 5)
+    # 3: the envelope along a span
+    x = 20 + 2 * (w + gap)
+    xa, xb, ya = x + 15, x + 145, top + 70
+    up, lo = [], []
+    for k in range(61):
+        tt = k / 60
+        xx = xa + (xb - xa) * tt
+        yy = ya + 4 * 30 * tt * (1 - tt)
+        s = abs(math.sin(math.pi * tt))
+        up.append((xx, yy - 0.8 * 40 * s))
+        lo.append((xx, yy + 0.2 * 40 * s))
+    f.poly(up + lo[::-1], "", "fill:var(--acc);fill-opacity:.12;stroke:var(--acc);stroke-width:1", close=True)
+    f.poly(parab(xa, ya, xb, ya, 30, 40), "wire")
+    for k in range(1, 10):
+        xx = xa + (xb - xa) * k / 10
+        f.path(f"M{xx:.1f},{top + 150} L{xx:.1f},{top + 158}", "thin")
+    # 4: two ellipses and the gap
+    x = 20 + 3 * (w + gap)
+    pts = []
+    for rx in (x + 45, x + 115):
+        ry = top + 150
+        cx, cy = rx + 0.3 * 90 * math.sin(math.radians(10)), ry - 0.3 * 90 * math.cos(math.radians(10))
+        e = ellipse_pts(cx, cy, 90, 40, 10)
+        f.poly(e, "acc", close=True)
+        f.ring(rx, ry, 4)
+        pts.append(e)
+    d, p, q = poly_dist(*pts)
+    f.path(f"M{p[0]:.1f},{p[1]:.1f} L{q[0]:.1f},{q[1]:.1f}", "", "stroke:var(--ink);stroke-width:2")
+    # 5: a small table
+    x = 20 + 4 * (w + gap)
+    rows = [("pair", "gap", "req."), ("S1–S2", "0.21", "0.30"), ("S1–S3", "1.40", "0.30")]
+    for j, (a, b, c_) in enumerate(rows):
+        y = top + 60 + 24 * j
+        cls = "" if j == 0 else "lab"
+        f.text(x + 8, y, a, cls)
+        f.text(x + 92, y, b, "e " + cls if cls else "e")
+        f.text(x + 132, y, c_, "e " + cls if cls else "e")
+    f.text(x + 138, top + 84, "✖", "")
+    f.text(x + 10, top + 150, "worst first", "lab")
+    return f
+
+
 def poly_dist(P, Q):
     """The shortest vertex-to-edge distance between two polygons, and its two points."""
     best = None
@@ -2825,7 +2940,8 @@ def load_cases_flow():
 FIGURES = [conventions_axes, angle_section, joint_plate, laps_splices, polygon_shaft, line_parameters, charge_simulation, internal_clearance, pole_buckling, catenary_span, weather_loads, transit, catenary_element, fe_section, span_cases,
            jumper_rod, jumper_support, heat_balance, temperature_limit, spotting_profile,
            wind_weight_span, capped_law, x_panel, pole_check, member_wind, face_solidity,
-           shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, lidar_classes,
+           shielding_plan, galloping_ellipse, galloping_loops, galloping_gap, galloping_sag,
+           galloping_steps, lidar_classes,
            swing_band, fall_in, safety_section, jumper_gap, sheet_ranges, lowest_line,
            vertical_radial, vertical_arc, max_tension, bs_segment, field_pieces, field_cut,
            field_volume, field_blocks, field_cutoff, field_grid_step, field_parts,
