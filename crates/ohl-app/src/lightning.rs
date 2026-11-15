@@ -130,8 +130,8 @@ const RULES_HELP: (&str, &str) = (
      wire above them — the inner angle between two shielding wires, the outer elsewhere. Rolling \
      sphere: a sphere of the striking distance rolled over the shielding wires and the ground (β \
      times the distance from it) must not touch a phase; smaller distances (weaker strokes) reach \
-     further in. Each cross-section is square to its span at the middle of each step; a smaller \
-     step finds shorter exposed lengths and takes longer (the time grows with the number of \
+     further in. Each cross-section is square to its span, at the middle of each step and at \
+     each structure; a smaller step finds shorter exposed lengths and takes longer (the time grows with the number of \
      cross-sections). No value is built in: the angles, the striking distance or current, A, b and \
      β are yours or a design code's. Click a rule to edit it below; every field says on hover what \
      it changes.",
@@ -419,7 +419,7 @@ impl LightningWindow {
                              fixed shielding angle, or by the rolling sphere of the \
                              electrogeometric model, along every span.",
                             "Run solves the line in each weather case of the rules and cuts every \
-                             span square to it every step: the wires where they cross, the ground \
+                             span square to it every step and at its structures: the wires where they cross, the ground \
                              across. Shielding angle: a phase is covered when the line from a \
                              shielding wire above it leans from the vertical by at most the \
                              rule's angle (inner towards another shielding wire). Rolling sphere: \
@@ -433,7 +433,8 @@ impl LightningWindow {
                         check_ui::how_computed(
                             ui,
                             WINDOW,
-                            "In each cross-section, square to the span at the middle of each step: \
+                            "In each cross-section, square to the span at the middle of each step \
+                             and at each structure: \
                              the shielding angle each phase needs from the shielding wire covering \
                              it best (to the far side of its bundle); or whether a sphere resting \
                              on the shielding wires and the ground can reach its surface — exactly, \
@@ -742,11 +743,15 @@ impl LightningWindow {
                 Some(cut) => {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{} {}, {:.1} m along the span from {} — {}",
+                            "{} {}, {:.1} m along the span from {}{} — {}",
                             Cell::span(&r.section, r.span).text,
                             r.phase,
                             cut.along,
                             r.from,
+                            // A cut at a structure (2026-11-15).
+                            cut.at_structure
+                                .as_ref()
+                                .map_or(String::new(), |s| format!(", at structure {s}")),
                             rule.method.describe()
                         ))
                         .small(),
@@ -982,8 +987,9 @@ fn rule_fields(
                 }
             }
             ui.label("Step along the span").on_hover_text(
-                "The spacing of the cross-sections along each span (default 5 m): smaller, the \
-                 length exposed is found more finely and a short exposure is less likely missed; \
+                "The spacing of the cross-sections along each span (default 5 m; one more at \
+                 each structure): smaller, the length exposed is found more finely and a short \
+                 exposure between the cross-sections is less likely missed; \
                  the time grows with the number of cross-sections (the 1.26 km example, rolling \
                  sphere: 2.5 s at 10 m, 3.4 s at 5 m, 6.5 s at 1 m; the angle 0.3 s at any step)",
             );

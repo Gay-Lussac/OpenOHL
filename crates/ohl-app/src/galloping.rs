@@ -61,9 +61,13 @@ pub struct Report {
     pub case: String,
     /// Notes (the parameters' cases, sections not solved).
     pub notes: Vec<String>,
-    /// Where the check is not on the safe side
-    /// ([`galloping::notes`]): written above the table, never folded.
+    /// The pairs × methods not checked ([`galloping::notes`]): written
+    /// above the table, never folded.
     pub safety: Vec<String>,
+    /// How many pairs × methods were not checked
+    /// ([`galloping::unchecked`], 2026-11-15): the verdict is not a pass
+    /// while there are any.
+    pub unchecked: usize,
     /// Pairs, worst first.
     pub rows: Vec<Row>,
 }
@@ -154,9 +158,8 @@ const RULES_HELP: (&str, &str) = (
 /// *4 Model*'s (?).
 const MODEL_HELP: (&str, &str) = (
     "What the parameter file sets about how the check is computed (read-only).",
-    "Stations: the ellipses compared at stations − 1 inner points along the span; a number \
-     that is not a multiple of 2 × loops misses the middle of a loop, where the ellipse is \
-     largest (said in the results). Calculation: the wires solved by this condition and \
+    "Stations: the ellipses compared at stations − 1 evenly spaced inner points along the \
+     span and at the middle of each loop, where the ellipse is largest. Calculation: the wires solved by this condition and \
      method (one more solve of the line). Pair's voltage: the voltage a requirement by \
      voltage is read at. Per method: the tilt of the major axis, the centre above the wire \
      at rest, and how the size varies along the span.",
@@ -233,8 +236,6 @@ impl GallopingWindow {
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
         let weather = solved.case.clone();
-        // The sag of swung wires (said in the results).
-        let windy = weather.wind_pressure.si() > 0.0;
         let wind = model.wind;
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
@@ -275,12 +276,14 @@ impl GallopingWindow {
             let short = |p: &galloping::GallopingPair| p.distance - p.required.unwrap_or(0.0);
             pairs.sort_by(|a, b| short(a).total_cmp(&short(b)));
             local.finish(LOCAL.1, started.elapsed());
-            let safety = galloping::notes(&params, &wires, &pairs, windy);
+            let safety = galloping::notes(&params, &wires);
+            let unchecked = galloping::unchecked(&params, &wires).len();
             let span = |k: usize| (wires[k].wire.section.clone(), wires[k].wire.span);
             Ok(Report {
                 case,
                 notes,
                 safety,
+                unchecked,
                 rows: pairs
                     .iter()
                     .map(|p| Row {
@@ -683,10 +686,11 @@ impl GallopingWindow {
             .spacing(help::GRID_SPACING)
             .show(ui, |ui| {
                 ui.label("Stations").on_hover_text(
-                    "The ellipses are compared at stations − 1 inner points along the span: more, \
-                     the smallest gap found more closely, in proportion more time (well under a \
-                     second for a whole line); a multiple of 2 × loops compares every loop's \
-                     largest ellipse",
+                    "The ellipses are compared at stations − 1 evenly spaced inner points along \
+                     the span and at the middle of each loop (the largest ellipse, always \
+                     compared): more stations, the smallest gap found more closely where two \
+                     wires are not alike, in proportion more time (well under a second for a \
+                     whole line)",
                 );
                 ui.label(format!("{} ({} inner points)", p.stations, p.stations - 1));
                 ui.end_row();
@@ -793,13 +797,35 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
 fn verdict(report: &Report) -> (bool, String) {
     let n = report.rows.iter().filter(|r| short(r)).count();
     let s = |k: usize| if k == 1 { "" } else { "s" };
+    // Pairs × methods not checked (2026-11-15): never a pass.
+    let u = report.unchecked;
+    let not_checked = if u > 0 {
+        format!(
+            ", {u} pair{} × method not checked (see above the table)",
+            s(u)
+        )
+    } else {
+        String::new()
+    };
     if n > 0 {
         return (
             true,
             format!(
-                "✖ {n} pair{} × method below the requirement in case \"{}\"",
+                "✖ {n} pair{} × method below the requirement in case \"{}\"{not_checked}",
                 s(n),
                 report.case
+            ),
+        );
+    }
+    if u > 0 {
+        return (
+            true,
+            format!(
+                "✖ {u} pair{} × method not checked in case \"{}\" (see above the table); the \
+                 {} checked keep their requirement",
+                s(u),
+                report.case,
+                report.rows.len()
             ),
         );
     }
@@ -1012,6 +1038,34 @@ mod tests {
                     .is_some()
             );
         }
+    }
+
+    /// Pairs × methods not checked (beyond the requirement's table, no
+    /// diameter) are never a pass (2026-11-15, "make it safe").
+    #[test]
+    fn pairs_not_checked_fail_the_verdict() {
+        let row = Row {
+            method: "m".into(),
+            a: ("S1".into(), 0),
+            b: ("S2".into(), 0),
+            distance: 5.0,
+            required: Some(0.3),
+            at: 0.5,
+            axes: [[1.0, 0.4]; 2],
+        };
+        let mut report = Report {
+            case: "glaze ice".into(),
+            rows: vec![row],
+            ..Report::default()
+        };
+        let (failing, text) = verdict(&report);
+        assert!(!failing && text.starts_with('✔'), "{text}");
+        report.unchecked = 2;
+        let (failing, text) = verdict(&report);
+        assert!(failing, "{text}");
+        assert!(text.contains("2 pairs × method not checked"), "{text}");
+        report.rows.clear();
+        assert!(verdict(&report).0);
     }
 
     #[test]

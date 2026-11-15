@@ -56,13 +56,19 @@ only the cases the file names.
 
 ![A span from the side: the chord between the clamps, the horizontal span length L and the sag D; across the span at mid-span the wire at rest and its ellipse](../images/theory/galloping-sag.svg)
 
-Each span's **sag D** is the largest vertical distance of the wire below
-the chord between its clamps, as solved in the case; **L** is the span's
-horizontal length; **d** the diameter of its wire type in the wire
-library (a subconductor's for a bundle; the bare wire's, never the iced
-one); **n** the method's number of loops. In a case with wind the wire
-is swung sideways and D is its **vertical** sag, smaller than the sag in
-the swung wire's plane: said in the results (see [below](#what-is-conservative-and-what-is-not)).
+Each span's **sag D** is the largest distance of the wire from the chord
+between its clamps, as solved in the case, measured square to the span
+in its swung plane — the larger of that and the largest vertical
+distance below the chord (since 2026-11-15). Without wind the wire hangs
+in its vertical plane and the two are the same; in a case with wind the
+wire is swung sideways and the sag in its swung plane is the larger
+(before, the vertical sag was taken: the ellipses smaller). **L** is
+the span's horizontal length; **d** the diameter of its wire type in the
+wire library (a subconductor's for a bundle; the bare wire's, never the
+iced one); **n** the method's number of loops. A wire whose type is not
+in the library has no diameter: its pairs are **not checked** by a
+method whose axes use d (a `diameter` or `log` term), said in the
+results; a method without such terms checks them.
 
 ### 3. The ellipse of each wire
 
@@ -88,12 +94,15 @@ A wire galloping in n loops moves most in the middle of each loop and
 not at all at the supports. With `along = "sine"` (the default) the
 ellipse at the fraction t of the span is scaled by |sin(nπt)| — axes and
 centre offset together; with `along = "constant"` it keeps its full
-size all along. The ellipses are compared at **stations − 1 inner
-points** (the file's `stations`, default 20: 19 points, every 5 % of the
-span). Where the middle of a loop is not a station (3 or 4 loops with
-20 stations, say) the largest ellipse is not compared: the results say
-so (*NOT ON THE SAFE SIDE*, with how much smaller) and the fix — a
-number of stations that is a multiple of 2 n.
+size all along. The ellipses are compared at **stations − 1 evenly
+spaced inner points** (the file's `stations`, default 20: 19 points,
+every 5 % of the span) **and at the middle of each of the method's
+loops** (t = 1/(2n), 3/(2n), …), where the ellipse is largest: the
+largest ellipse is always compared, whatever the number of stations
+(since 2026-11-15; before, the middles of 3, 4 or 6 to 9 loops fell
+between the 20 stations and the largest ellipse compared was up to 5 %
+smaller, said in the results). A middle that is a station already is
+compared once.
 
 ### 5. The pairs
 
@@ -126,9 +135,12 @@ the two wires' nominal voltages by default, their **sum**, or the
 **difference** — the voltage between the two conductors). Two earth
 wires are read at 0 kV; a phase and an earth wire at the phase's voltage
 (higher, sum) or its voltage to earth (difference). A pair above the
-table's last row takes the last row's distance, said in the results
-(*NOT ON THE SAFE SIDE*). Without `required` the check gives the
-distances only.
+table's last row is **not checked** (no row, never a pass) and the
+results say so, with the highest such voltage and where the table ends
+— as the internal clearances check does for a voltage beyond its table
+(since 2026-11-15; before, the last row's distance was taken). Give the
+table a row up to the pair's voltage to check it. Without `required`
+the check gives the distances only.
 
 ### 8. The results
 
@@ -145,7 +157,7 @@ local conditions** are kept in the project, per project line
 the one next to the line file) until another is chosen. A change of the
 line, its weather cases or its library files marks the results *out of
 date*. Each section and field explains itself in its **(?)** or on
-hover; only warnings, *NOT ON THE SAFE SIDE* notes, what blocks **Run**
+hover; only warnings, *NOT CHECKED* notes, what blocks **Run**
 and the time stay written. Each section's **user guide ↗** opens its part
 of this page.
 
@@ -190,7 +202,7 @@ effect:
 
 | Shown | From the file | What changes in the result | Time |
 |---|---|---|---|
-| **Stations** | `stations` (default 20) | the ellipses compared at stations − 1 inner points; more stations, the smallest gap found more closely; a number that is not a multiple of 2 n misses a loop's middle (said) | in proportion to the stations; measured 2026-11-15: the example line (10 spans, 2 methods, 20 stations) 0.1 s for the whole run in the window |
+| **Stations** | `stations` (default 20) | the ellipses compared at stations − 1 evenly spaced inner points and at each loop's middle (always compared); more stations, the smallest gap found more closely where two wires are not alike | in proportion to the stations; measured 2026-11-15: the example line (10 spans, 2 methods, 20 stations) 0.1 s for the whole run in the window |
 | **Calculation** | `calculation` (default: each section's own) | the wires solved by that condition and method (e.g. the final after load) for the sags and positions | one more solve of the line in the case |
 | **Pair's voltage** | `pair_voltage` (default higher) | the voltage a requirement by voltage is read at | none |
 | per method: **tilt**, **centre above the wire**, **along** | `tilt`, `centre_above_rest`, `along` | where the ellipse sits around the wire and how its size varies along the span | none |
@@ -212,11 +224,12 @@ effect:
 ### The results
 
 The **verdict** first: red with the number of pairs × methods below the
-requirement, green when every pair keeps it, or — without a requirement
-in the file — the smallest distance found. Then the **notes** (folded
-above the table: a case the file does not name, sections not solved,
-Use local conditions, and every *NOT ON THE SAFE SIDE* note), then the
-table, one row per pair and method:
+requirement, or not checked (since 2026-11-15: never a pass); green when
+every pair is checked and keeps it; or — without a requirement in the
+file — the smallest distance found. Then the *NOT CHECKED* notes, always
+written in the warning colour, and the other **notes** folded above the
+table (a case the file does not name, sections not solved, Use local
+conditions), then the table, one row per pair and method checked:
 
 | Column | Meaning |
 |---|---|
@@ -244,7 +257,7 @@ A galloping parameter file (`.ohlg`) is a TOML text file. Its top level:
 | `name` | — | empty | the file's name in the window and the output |
 | `required` | m | none: distances only | the distance two ellipses must keep: `"0.3 m"`, `{ by_voltage = [[110, "0.3 m"], [245, "0.5 m"]] }` (up to kV, distance) or `{ base = "0.2 m", per_kv = "0.002 m", above_kv = 50 }` |
 | `pair_voltage` | — | `"higher"` | the pair's voltage for a requirement by voltage: `higher`, `sum` or `difference` |
-| `stations` | — | 20 | the ellipses compared at stations − 1 inner points; 2 to 1000 |
+| `stations` | — | 20 | the ellipses compared at stations − 1 evenly spaced inner points, and at the middle of each loop; 2 to 1000 |
 | `cases` | names (`*` `?`) | every case | the weather cases the wires gallop in |
 | `calculation` | — | each section's own | how the wires are solved: `initial-fe`, `creep-fe`, `load-fe`, `max-sag-fe` or the same with `-rs` |
 | `[[method]]` | — | at least one | a method: each checked on its own, a row per pair |
@@ -272,7 +285,7 @@ below 0:
 | `span` | — | factor × L |
 | `sqrt_sag` | √m | factor × √D |
 | `diameter` | — | factor × d |
-| `log = { factor, scale }` | — | factor × n × d × ln(scale × D / (n² d)); left out when D or d is 0 |
+| `log = { factor, scale }` | — | factor × n × d × ln(scale × D / (n² d)); left out when D is 0 (d unknown: the pair not checked) |
 | `constant` | m | a length (`"0.3 m"`) |
 | `major` | — | factor × A (the minor axis only) |
 
@@ -284,30 +297,38 @@ On the safe side ([theory](../theory/galloping.md#clearance-between-ellipses)):
   found is never more than between the true ellipses;
 - a bundle's ellipse is that of its centre line, widened by the bundle's
   outer radius all round: every subconductor's own ellipse lies inside;
-- every distance is to the wires' surfaces, iced in a case with ice.
+- every distance is to the wires' surfaces, iced in a case with ice;
+- every loop's middle is a station: each wire's largest ellipse is
+  always compared (since 2026-11-15);
+- the sag is the larger of the sag in the wire's swung plane and its
+  vertical sag: in a case with wind the ellipse is never sized from the
+  smaller vertical sag (since 2026-11-15).
 
-Not on the safe side, and said in the results each time it applies
-(*NOT ON THE SAFE SIDE: …*):
+Not checked, and said in the results (*NOT CHECKED: …*; since
+2026-11-15, before computed and said not on the safe side):
 
-- **A loop's middle between two stations**: the largest ellipse is not
-  compared (with 20 stations: 95 % of its size for 4 loops, 99 % for 3).
-  Give `stations` a multiple of 2 n.
-- **A wire without a diameter** (its wire type not in the library): the
-  `diameter` and `log` terms are left out for it.
-- **A pair beyond the requirement's table**: the table's last distance
-  is taken.
-- **A case with wind**: the ellipses are sized from the swung wires'
-  vertical sag. If your method means the sag in the swung wire's plane,
-  or the sag of the iced wire without wind, they are too small: choose
-  the case your method means.
+- **A pair beyond the requirement's table**: no row, never a pass; give
+  the table a row up to its voltage.
+- **A wire without a diameter** (its wire type not in the library), by a
+  method whose axes use the diameter (`diameter` or `log`): its pairs
+  get no row for that method; other methods check them.
+
+Not on the safe side, said here and in the theory:
+
+- Nothing is compared between the stations: where two wires are not
+  alike (different sags, heights), the smallest gap may lie between two
+  stations, a little smaller than found. (The largest ellipses, at the
+  loops' middles, are compared; the gap between them can still be
+  smallest elsewhere when the wires' heights or sags differ.)
+- **Which sag your method means**: the check takes the sag of the case
+  checked (in the swung plane with wind). A method that sizes the
+  ellipse from another case's sag (e.g. the iced wire without wind, or
+  at its largest sag) needs that case or `calculation` chosen.
 
 Simplifications, said here and in the theory:
 
 - Both ellipses are drawn in the plane square to the first wire's span:
   wires that are not parallel are compared at slightly different places.
-- Nothing is compared between the stations: where two wires are not
-  alike (different sags, heights), the smallest gap may lie between two
-  stations, a little smaller than found.
 - Only wires between the same two structures are paired: adjacent spans
   near a structure, and another line's wires, are not compared.
 - The method's coefficients are yours: the check is as safe as the
@@ -324,7 +345,7 @@ ohl clearance galloping synthetic-line.ohl.json \
     --weather weather-cases.ohlwc --params galloping-example.ohlg --csv galloping.csv
 ```
 
-It prints the *NOT ON THE SAFE SIDE* notes and the 20 worst pairs per
+It prints the *NOT CHECKED* notes and the 20 worst pairs per
 case (spans counted from 0 there, from 1 in the window); `--csv` writes
 every pair (with the overlap, both ellipses' axes and the first wire's
 position). It does not apply the window's scope or Use local conditions.

@@ -16,14 +16,23 @@ fn root() -> PathBuf {
 /// Runs the angle rule of the example (`extra` lines added to the rule);
 /// the rows and cross-sections as JSON.
 fn run(dir: &Path, name: &str, extra: &str) -> serde_json::Value {
+    run_rule(
+        dir,
+        name,
+        &format!("method = \"angle\"\nouter_angle = 30.0\ninner_angle = 45.0\n{extra}"),
+    )
+}
+
+/// Runs one rule of the example in "max temperature" (`rule`: its lines
+/// after its name and case); the rows and cross-sections as JSON.
+fn run_rule(dir: &Path, name: &str, rule: &str) -> serde_json::Value {
     let ex = root().join("examples/lightning");
     let rules = dir.join(format!("rules-{name}.ohlr"));
     let mut text = String::from(
         "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"test\"\n\n\
-         [[lightning_rule]]\nname = \"angle\"\ncases = [\"max temperature\"]\n\
-         method = \"angle\"\nouter_angle = 30.0\ninner_angle = 45.0\n",
+         [[lightning_rule]]\nname = \"rule\"\ncases = [\"max temperature\"]\n",
     );
-    text.push_str(extra);
+    text.push_str(rule);
     std::fs::write(&rules, text).unwrap();
     let json = dir.join(format!("out-{name}.json"));
     let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
@@ -109,5 +118,59 @@ fn the_shielding_wires_hang_in_their_own_case() {
         (heights(&rs).1 - phases_hot).abs() < 1e-9,
         "the phases as they were"
     );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A cross-section at each structure (owner, 2026-11-15, "yes if fast
+/// else only as today"): with a 100 m step the cuts at the middle of the
+/// steps lie 38.75 m to 50 m from the structures, beyond the phases'
+/// exposure to the 8 kA sphere next to them (up to 30 m at a 5 m step):
+/// before, every phase was said covered at this step; the cut at the
+/// structure finds them. Every span has its two structure cuts, marked.
+#[test]
+fn a_short_exposure_at_a_structure_is_found() {
+    let dir = std::env::temp_dir().join(format!("ohl-lightning-at-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let v = run_rule(
+        &dir,
+        "step100",
+        "method = \"sphere\"\nstroke_current = 8.0\nstep = 100.0\n",
+    );
+    let rows = v["rows"].as_array().unwrap();
+    let exposed: Vec<&serde_json::Value> = rows
+        .iter()
+        .filter(|r| r["exposed"].as_f64().unwrap() > 0.0)
+        .collect();
+    assert!(exposed.len() >= 4, "{rows:?}");
+    for r in &exposed {
+        let (at, length) = (
+            r["worst_along"].as_f64().unwrap(),
+            r["length"].as_f64().unwrap(),
+        );
+        // Worst at a structure, and exposed only in the structure's cut
+        // (it stands for half the way to the first cut in the span).
+        assert!(at == 0.0 || at == length, "{r}");
+        assert!(r["exposed"].as_f64().unwrap() <= 25.0 + 1e-9, "{r}");
+    }
+    let cuts = v["cuts"].as_array().unwrap();
+    let mut spans: Vec<(String, String)> = cuts
+        .iter()
+        .map(|c| {
+            (
+                c["from"].as_str().unwrap().to_owned(),
+                c["to"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    spans.dedup();
+    assert_eq!(spans.len(), 4);
+    for (from, to) in &spans {
+        let at: Vec<&str> = cuts
+            .iter()
+            .filter(|c| c["from"] == from.as_str() && c["to"] == to.as_str())
+            .filter_map(|c| c["at_structure"].as_str())
+            .collect();
+        assert_eq!(at, [from.as_str(), to.as_str()], "{from}–{to}");
+    }
     std::fs::remove_dir_all(&dir).ok();
 }

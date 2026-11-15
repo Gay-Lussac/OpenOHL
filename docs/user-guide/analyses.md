@@ -65,7 +65,7 @@ version = 1
 name = "My galloping method"
 required = "0.3 m"                  # or { by_voltage = [[0, "0.2 m"], [245, "0.5 m"]] }
 pair_voltage = "higher"             # higher, sum or difference (as in rule files)
-stations = 20                       # ellipses compared at 19 inner stations
+stations = 20                       # 19 inner stations, and every loop's middle
 cases = ["galloping*"]              # weather cases (default: all chosen)
 calculation = "load-fe"             # optional (2026-11-01): how the wires are solved; none: each section's own
 
@@ -92,9 +92,12 @@ along = "sine"                      # or "constant"
 CSV columns: case, method, both spans, distance, required, overlap, where
 (fraction of the span), both ellipses' axes, the first wire's position.
 
-The output starts with the *NOT ON THE SAFE SIDE* notes of the case
-(2026-11-15): a loop's middle between the stations, a wire without a
-diameter, a pair beyond the requirement's table, a case with wind.
+The output starts with the *NOT CHECKED* notes of the case
+(2026-11-15): the pairs beyond the requirement's table, and those with a
+wire without a diameter under a method that uses it, are not checked
+(no row). Every loop's middle is compared, and in a case with wind the
+ellipses are sized from the sag in the swung wire's plane (the larger
+sag).
 
 In the desktop app: **Checks › Galloping ellipses…** — choose the weather
 case (*2 Scope*) and the parameter file (*3 Rules*; the project's `.ohlg`,

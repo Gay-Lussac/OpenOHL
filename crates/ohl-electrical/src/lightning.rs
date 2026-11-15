@@ -12,11 +12,14 @@
 //!
 //! **Cross-sections.** Each span's own vertical plane square to its chord
 //! ([`cross_section::cross_section`] at a fraction of the span), at the
-//! middle of each of the span's steps (n = ⌈length / step⌉ equal steps;
-//! each stands for its step, the ends reaching the structures): the
-//! wires where they cross it (as solved), the ground across it (the
-//! terrain sampled every [`GROUND_STEP`] m, else straight between the
-//! structures' feet and level across).
+//! middle of each of the span's steps (n = ⌈length / step⌉ equal steps)
+//! and at each of its two structures (2026-11-15; each wire there at its
+//! clamp when within half a step of the plane:
+//! [`cross_section::cross_section_at_structure`]); each cut stands for
+//! half the way to its neighbours: the wires where they cross it (as
+//! solved), the ground across it (the terrain sampled every
+//! [`GROUND_STEP`] m, else straight between the structures' feet and
+//! level across).
 //!
 //! **Shielding angle.** A phase is covered by a shielding wire above it
 //! when the line from the wire to the phase leans from the vertical by at
@@ -112,6 +115,10 @@ pub struct Cut {
     pub to: String,
     /// Along the span from `from`, m.
     pub along: f64,
+    /// The structure it is taken at (2026-11-15: a cut at each of the
+    /// span's two structures, beside those at the middle of each step);
+    /// none: at the middle of a step.
+    pub at_structure: Option<String>,
     /// The span's first structure's position (the plane's origin).
     pub origin: [f64; 3],
     /// Along the span (plan, unit).
@@ -768,17 +775,20 @@ pub fn run(
 }
 
 /// The cross-sections' step, said in every result that has rows
-/// (2026-11-15): a phase is looked at in the cuts only, so an exposure
-/// shorter than a step can be missed — not on the safe side.
+/// (2026-11-15): a phase is looked at in the cuts only — at the middle of
+/// each step and at each structure — so an exposure shorter than a step
+/// between two cuts, away from the structures, can be missed: not on the
+/// safe side.
 pub fn step_note(rules: &[LightningRule], rows: &[Row]) -> Option<String> {
     let step = rows
         .iter()
         .map(|r| rules[r.rule].step)
         .max_by(f64::total_cmp)?;
     Some(format!(
-        "NOT ON THE SAFE SIDE: each cross-section stands for its step along the span (up to \
-         {step} m here): an exposure shorter than a step, between two cross-sections or within \
-         half a step of a structure, can be missed — a smaller step finds it (and takes longer)"
+        "NOT ON THE SAFE SIDE: the phases are looked at in the cross-sections only — at the \
+         middle of each step along the span (up to {step} m here) and at each structure: an \
+         exposure shorter than a step, between two cross-sections away from the structures, \
+         can be missed — a smaller step finds it (and takes longer)"
     ))
 }
 
@@ -907,11 +917,26 @@ fn check_span(
     let mut per_phase: std::collections::BTreeMap<(String, usize), Vec<Station>> =
         Default::default();
     let mut cuts = Vec::new();
-    // At the middle of each step (never on a clamp): each stands for one
-    // step.
-    for k in 0..n {
-        let f = (k as f64 + 0.5) / n as f64;
-        let cs = match cross_section::cross_section_reached(src, span, StationAt::Fraction(f)) {
+    // At the middle of each step, each standing for one step, and at the
+    // span's two structures (owner, 2026-11-15, "yes if fast else only as
+    // today": an exposure shorter than a step at a structure, where the
+    // phases hang highest, is no longer missed; measured on the example:
+    // 2.5 % more computing time, under 0.02 s). Each cut stands for half
+    // the way to its neighbours.
+    let places = std::iter::once((0.0, Some(span.from.clone())))
+        .chain((0..n).map(|k| ((k as f64 + 0.5) / n as f64, None)))
+        .chain(std::iter::once((1.0, Some(span.to.clone()))));
+    for (f, at_structure) in places {
+        // At a structure each wire at its clamp when it lies within half a
+        // step of the plane (a string swung along the line, a short strain
+        // string): the first cut in the span is half a step in.
+        let cs = match &at_structure {
+            Some(_) => {
+                cross_section::cross_section_at_structure(src, span, f > 0.5, 0.5 * rule.step)
+            }
+            None => cross_section::cross_section_reached(src, span, StationAt::Fraction(f)),
+        };
+        let cs = match cs {
             Ok(c) => c,
             Err(e) => {
                 notes.push(e);
@@ -1006,6 +1031,7 @@ fn check_span(
             from: span.from.clone(),
             to: span.to.clone(),
             along: t,
+            at_structure,
             origin: axis.a,
             u: axis.u,
             right: axis.right,
@@ -1106,9 +1132,11 @@ fn check_span(
             }
             if (!s.1.exposed || k == m - 1) && !run.is_empty() {
                 if run.len() == 1 {
+                    // Into the span (a cut at its last structure: back).
+                    let d = if s.0 >= axis.length - 1e-9 { -0.2 } else { 0.2 };
                     run.push([
-                        run[0][0] + 0.2 * axis.u[0],
-                        run[0][1] + 0.2 * axis.u[1],
+                        run[0][0] + d * axis.u[0],
+                        run[0][1] + d * axis.u[1],
                         run[0][2],
                     ]);
                 }

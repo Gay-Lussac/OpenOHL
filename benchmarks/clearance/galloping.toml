@@ -58,3 +58,50 @@ inputs = { sag = "10 m", span = "400 m", diameter = "28 mm", loops = 1, major_sa
 expected.major_m = { value = 4.898347, rel_tol = 1e-6 }
 expected.minor_m = { value = 1.959339, rel_tol = 1e-6 }
 expected.distance_m = { value = 6.038794193, abs_tol = 1e-6 }
+
+# The whole check on one span (`galloping.span`, 2026-11-15, the owner's
+# "make it safe"): two alike wires 8 m apart side by side, the ellipses of
+# galloping-001 (A = 1.25 D + 0.3 m, B = 0.4 A, untilted, centred on the
+# wire) swept along the span. At every loop's middle both are at full
+# size, so the smallest gap is galloping-001's, 8 − 5.12/cos 2.5° =
+# 2.875122 m, found at the first loop's middle t = 1/(2n). The loops'
+# middles are compared whatever `stations` is: with the 20 even stations
+# alone, 3 loops compared sin(0.45 π) = 98.8 % of the ellipse
+# (8 − 0.987688 × 5.12/cos 2.5° = 2.938 m) and 4 loops sin(0.4 π) =
+# 95.1 % (3.126 m).
+
+[[case]]
+id = "galloping-005"
+title = "Three loops, 20 stations: the loops' middles compared"
+calculation = "galloping.span"
+reference = "Hand calculation (this file): the gap of galloping-001 at t = 1/6"
+inputs = { sag = "10 m", span = "400 m", swing_deg = 0.0, offset_right = "8 m", loops = 3, stations = 20, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4 }
+expected.distance_m = { value = 2.875122252, abs_tol = 1e-9 }
+expected.at = { value = 0.1666666667, abs_tol = 1e-9 }
+expected.major_m = { value = 12.8, rel_tol = 1e-12 }
+
+[[case]]
+id = "galloping-006"
+title = "Four loops, 20 stations: the loops' middles compared"
+calculation = "galloping.span"
+reference = "Hand calculation (this file): the gap of galloping-001 at t = 1/8"
+inputs = { sag = "10 m", span = "400 m", swing_deg = 0.0, offset_right = "8 m", loops = 4, stations = 20, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4 }
+expected.distance_m = { value = 2.875122252, abs_tol = 1e-9 }
+expected.at = { value = 0.125, abs_tol = 1e-12 }
+
+# A wire of sag 10 m in its plane swung 30° sideways (a case with wind):
+# its vertical sag is 10 cos 30° = 8.660 m. The ellipse is sized from the
+# larger, the sag in the swung plane, 10 m: A = 12.8 m, the gap that of
+# galloping-001. (From the vertical sag, as before 2026-11-15:
+# A = 1.25 × 8.660 + 0.3 = 11.125 m, B = 4.450 m, the gap 3.546 m.)
+
+[[case]]
+id = "galloping-007"
+title = "A swung wire: the ellipse sized from the sag in its plane"
+calculation = "galloping.span"
+reference = "Hand calculation (this file): D = 10 m, not 10 cos 30°"
+inputs = { sag = "10 m", span = "400 m", swing_deg = 30.0, offset_right = "8 m", loops = 1, stations = 20, major_sag = 1.25, major_constant = "0.3 m", minor_of_major = 0.4 }
+expected.sag_m = { value = 10.0, rel_tol = 1e-12 }
+expected.major_m = { value = 12.8, rel_tol = 1e-12 }
+expected.distance_m = { value = 2.875122252, abs_tol = 1e-9 }
+expected.at = { value = 0.5, abs_tol = 1e-12 }

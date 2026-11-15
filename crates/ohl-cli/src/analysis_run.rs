@@ -495,9 +495,8 @@ pub fn clearance(command: ClearanceCommand) -> Result<(), String> {
                     pairs.len(),
                     started.elapsed()
                 );
-                // Where it is not on the safe side (2026-11-15).
-                let windy = case.wind_pressure.si() > 0.0;
-                for note in galloping::notes(&params, &wires, &pairs, windy) {
+                // The pairs × methods not checked (2026-11-15).
+                for note in galloping::notes(&params, &wires) {
                     println!("  {note}");
                 }
                 for p in pairs.iter().take(20) {
