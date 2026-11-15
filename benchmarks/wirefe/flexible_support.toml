@@ -1,0 +1,61 @@
+# A span on a flexible support: the line's interface loop at calculation
+# level 3 (ohl_line::solve::flexible::solve_line_flexible; theory:
+# Structure flexibility in the line solve › Hand cases). One level 300 m
+# span of the span_cases.toml cable (EA = 34.64 MN, alpha = 18.9e-6 /K,
+# 1.6285 kg/m at its data sheet's 20 °C) between wire points fixed at
+# (0, 27) and (300, 27) m, strung at 28 kN at 15 °C (unstressed length
+# 300.1226985733 m at 15 °C); the second support stands on a spring of
+# stiffness k along the span, measured from the structure as strung (at
+# 15 °C the spring carries the 28 kN of the stringing and does not move).
+#
+# Reference: benchmarks/wirefe/reference_flexible_support.py — the level
+# elastic catenary (its own implementation) with the case's unstressed
+# length and the same total weight, on the chord shortened by the spring,
+# L(H) = 300 - (H - 28000) / k, by bisection; independent of the loop.
+# Hand check (001): at -20 °C the rigid span would pull 35.30 kN (the
+# same script with k = 1e15); the spring gives 5.09 cm towards the span,
+# which slackens it to 33.09 kN (k u = 100 kN/m x 0.0509 m = 5.09 kN =
+# H - 28 kN). At 50 °C (002) the rigid 23.37 kN rises to 24.13 kN. The
+# loop stops at its default tolerances (0.1 mm, 1 N); its last Newton step
+# lands far below them: the values agree to 1e-9 (relative).
+
+[[case]]
+id = "flexsupport-001"
+title = "-20 °C on a spring of 100 kN/m: the span slackens"
+calculation = "line.flexible_support"
+reference = "Independent evaluation (benchmarks/wirefe/reference_flexible_support.py), hand check in the file"
+max_seconds = 2.0
+inputs = { temperature = "-20 °C", stiffness = 1e5 }
+expected.h_n = { value = 33089.670264375, rel_tol = 1e-8 }
+expected.move_m = { value = -0.050896702644, abs_tol = 1e-8 }
+
+[[case]]
+id = "flexsupport-002"
+title = "50 °C on a spring of 100 kN/m: the structure springs back and tightens the span"
+calculation = "line.flexible_support"
+reference = "Independent evaluation (benchmarks/wirefe/reference_flexible_support.py)"
+max_seconds = 2.0
+inputs = { temperature = "50 °C", stiffness = 1e5 }
+expected.h_n = { value = 24127.127861022, rel_tol = 1e-8 }
+expected.move_m = { value = 0.038728721390, abs_tol = 1e-8 }
+
+[[case]]
+id = "flexsupport-003"
+title = "-20 °C on a soft support of 7 kN/m (a pole top): decimetres of move"
+calculation = "line.flexible_support"
+reference = "Independent evaluation (benchmarks/wirefe/reference_flexible_support.py)"
+max_seconds = 2.0
+inputs = { temperature = "-20 °C", stiffness = 7e3 }
+expected.h_n = { value = 29127.042599113, rel_tol = 1e-8 }
+expected.move_m = { value = -0.161006085588, abs_tol = 1e-8 }
+
+[[case]]
+id = "flexsupport-004"
+title = "15 °C, the stringing state: nothing moves, one pass"
+calculation = "line.flexible_support"
+reference = "The reference state by definition (benchmarks/wirefe/reference_flexible_support.py)"
+max_seconds = 2.0
+inputs = { temperature = "15 °C", stiffness = 1e5 }
+expected.h_n = { value = 28000.0, rel_tol = 1e-8 }
+expected.move_m = { value = 0.0, abs_tol = 1e-12 }
+expected.passes = { value = 1.0, abs_tol = 0.0 }

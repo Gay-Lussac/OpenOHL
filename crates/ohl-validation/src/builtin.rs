@@ -61,6 +61,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(SpanCasesSection));
     registry.register(Box::new(BrokenWireSection));
     registry.register(Box::new(LocalWindSpan));
+    registry.register(Box::new(FlexibleSupport));
 }
 
 /// The swing band's margin of a case: its `band_margin` (a length, since
@@ -2286,11 +2287,9 @@ outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
     }
 }
 
-/// The cable of the two-span validation sections (`line.span_cases`,
-/// `line.broken_wire`, `line.local_wind`): synthetic, one component.
-fn two_span_cable() -> Result<ohl_cables::Cable, String> {
-    toml::from_str(
-        r#"
+/// The cable of the two-span validation sections, as written
+/// ([`two_span_cable`]).
+const TWO_SPAN_CABLE: &str = r#"
 id = "span-cases"
 name = "Synthetic homogeneous test cable"
 kind = "aaac"
@@ -2299,9 +2298,13 @@ diameter = "28 mm"
 mass_per_length = "1.6285 kg/m"
 rated_tensile_strength = "120 kN"
 outer = { area = "400 mm²", modulus = "86.6 GPa", thermal_expansion = 18.9e-6 }
-"#,
-    )
-    .map_err(|e| e.to_string())
+"#;
+
+/// The cable of the two-span validation sections (`line.span_cases`,
+/// `line.broken_wire`, `line.local_wind`, `line.flexible_support`):
+/// synthetic, one component.
+fn two_span_cable() -> Result<ohl_cables::Cable, String> {
+    toml::from_str(TWO_SPAN_CABLE).map_err(|e| e.to_string())
 }
 
 /// `line.broken_wire`: the section of `line.span_cases` (two level 300 m
@@ -2389,6 +2392,105 @@ impl Calculation for BrokenWireSection {
             ("string_n", string.force),
             ("along_n", on_t2[0]),
             ("down_n", -on_t2[2]),
+        ]))
+    }
+}
+
+/// `line.flexible_support`: one level 300 m span of the `line.span_cases`
+/// cable between wire points fixed at (0, 0, 27) and (300, 0, 27) m,
+/// strung at 28 kN at 15 °C, the second on a spring of `stiffness` N/m
+/// along the span (calculation level 3, the line's interface loop
+/// [`ohl_line::solve::flexible::solve_line_flexible`] with its default
+/// tolerances), in still air at `temperature`. Outputs: the horizontal
+/// tension, the spring's move along the line (negative towards the span)
+/// and the number of passes.
+struct FlexibleSupport;
+
+impl Calculation for FlexibleSupport {
+    fn id(&self) -> &'static str {
+        "line.flexible_support"
+    }
+
+    fn description(&self) -> &'static str {
+        "One level span with one end on a spring along it, solved by the line's interface loop \
+         at calculation level 3 (inputs: temperature, stiffness N/m); outputs h_n, move_m, passes"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        use ohl_line::solve::flexible::{
+            FlexibleOptions, LinearStructure, Structures, reference_forces, solve_line_flexible,
+        };
+        let cable = two_span_cable()?;
+        let line = ohl_line::Line::from_json(
+            r#"{
+  "format": "ohl-line", "version": 6, "name": "spring", "crs": "local",
+  "structures": [
+    {"id": "T1", "position": [0, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [0, 0, 27], "set": 1}]},
+    {"id": "T2", "position": [300, 0, 0], "orientation_deg": -90,
+     "wires": [{"label": "W1", "position": [300, 0, 27], "set": 1}]}
+  ],
+  "sections": [{"id": "S", "cable": "span-cases", "bundle": 1,
+    "points": [{"structure": "T1", "set": 1}, {"structure": "T2", "set": 1}],
+    "stringing": {"kind": "tension", "horizontal_tension": 28000.0, "temperature": 15.0}}]
+}"#,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut library = ohl_cables::Library::default();
+        library
+            .add_toml(
+                std::path::Path::new("span-cases.ohlw"),
+                &format!(
+                    "format = \"ohl-wire\"\nversion = 1\n[[cable]]\n{}",
+                    TWO_SPAN_CABLE
+                ),
+            )
+            .map_err(|e| e.to_string())?;
+        if library.get(&cable.id) != Some(&cable) {
+            return Err("the span-cases cable did not read".into());
+        }
+        let k = float_input(inputs, "stiffness")?;
+        if !(k > 0.0 && k.is_finite()) {
+            return Err("stiffness: a positive number of N/m".into());
+        }
+        let budget = default_fe_budget();
+        let reference = reference_forces(&line, &library, &budget);
+        let f_ref = *reference
+            .forces
+            .get(&("T2".to_owned(), "W1".to_owned()))
+            .ok_or("no force at T2 in the stringing state")?;
+        let mut flexibility = nalgebra::DMatrix::<f64>::zeros(3, 3);
+        flexibility[(0, 0)] = 1.0 / k;
+        let structures = Structures {
+            flexible: vec![LinearStructure {
+                structure: "T2".into(),
+                labels: vec!["W1".into()],
+                flexibility,
+                reference: vec![f_ref],
+                body: vec![[0.0; 3]],
+                approximate: false,
+                notes: Vec::new(),
+            }],
+            ..Structures::default()
+        };
+        let case = WeatherCase::still(
+            "case",
+            quantity_input::<Temperature>(inputs, "temperature")?,
+        );
+        let solved = solve_line_flexible(
+            &line,
+            &library,
+            &case,
+            &budget,
+            &structures,
+            &FlexibleOptions::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        let shape = solved.sections[0].as_ref().map_err(|e| e.to_string())?;
+        Ok(outputs([
+            ("h_n", shape.spans[0].horizontal_tension),
+            ("move_m", solved.points[0].displacement[0]),
+            ("passes", solved.passes.len() as f64),
         ]))
     }
 }
