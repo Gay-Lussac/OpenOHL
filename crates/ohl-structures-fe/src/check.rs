@@ -281,6 +281,57 @@ pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     (s.i_min > 0.0).then(|| std::f64::consts::PI.powi(2) * s.e * s.i_min / (kl * kl))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How often this thread made the member check ([`member_usage_with`]):
+    /// once per solve, after it, never inside its iterations (tested).
+    pub(crate) static CHECKS_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The cross-section properties of the profiles worked out on this thread,
+/// by profile id, each with its profile (2026-11-15: a profile's
+/// properties — its outline's moments, shear centre and warping — were
+/// worked out again for every member, every solve and every load case:
+/// most of a tower check's time). Found by the whole profile, compared
+/// field by field: a profile changed is worked out again.
+type Kept =
+    std::collections::HashMap<String, Vec<(ohl_sections::Section, ohl_sections::Properties)>>;
+
+/// Profiles kept per thread at most (then the store starts again).
+const KEPT_PROFILES: usize = 4096;
+
+thread_local! {
+    static PROFILES: std::cell::RefCell<(usize, Kept)> =
+        std::cell::RefCell::new((0, Kept::new()));
+}
+
+/// The properties of profile `p` ([`ohl_sections::Section::properties`]),
+/// worked out once per thread for each profile (the same answer: the same
+/// function of the same profile).
+pub(crate) fn properties(p: &ohl_sections::Section) -> ohl_sections::Properties {
+    let kept = PROFILES.with(|c| {
+        c.borrow()
+            .1
+            .get(&p.id)
+            .and_then(|v| v.iter().find(|(s, _)| s == p).map(|(_, q)| q.clone()))
+    });
+    if let Some(q) = kept {
+        return q;
+    }
+    let q = p.properties();
+    PROFILES.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.0 >= KEPT_PROFILES {
+            *c = (0, Kept::new());
+        }
+        c.0 += 1;
+        c.1.entry(p.id.clone())
+            .or_default()
+            .push((p.clone(), q.clone()));
+    });
+    q
+}
+
 /// Usage of every member; `strength`: the load case's strength factor.
 pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<MemberUsage> {
     member_usage_with(model, solution, strength, None)
@@ -300,6 +351,8 @@ pub fn member_usage_with(
     strength: f64,
     given: Option<&[crate::asce10::Capacity]>,
 ) -> Vec<MemberUsage> {
+    #[cfg(test)]
+    CHECKS_MADE.with(|n| n.set(n.get() + 1));
     // The file asks for a plugin's member check and none was run here:
     // no member is checked by another method in its place.
     if let (Some(p), None) = (&model.capacity_plugin, given) {
@@ -692,7 +745,7 @@ pub fn climbing_check(model: &Model) -> Vec<Climbing> {
         let s = &model.sections[m.section];
         let mut moduli: Vec<f64> = [s.wy, s.wz].into_iter().flatten().collect();
         if let Some(p) = &s.profile {
-            let q = p.properties();
+            let q = properties(p);
             moduli.extend([q.wel_y, q.wel_z, q.wel_u, q.wel_v].into_iter().flatten());
         }
         let w = moduli

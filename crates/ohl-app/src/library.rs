@@ -949,6 +949,10 @@ pub enum PageAction {
     /// only at or above 1000 m; Add the default cases…, 2026-11-15), as
     /// one command.
     DefaultGroups,
+    /// The default weather cases the default load cases name that the
+    /// project lacks, added to its weather case file (Add the default
+    /// cases…, 2026-11-15): their own change, one undo step.
+    DefaultWeather(Vec<String>),
 }
 
 /// Whether the model reads `kind` from the project (its working copies).
@@ -1558,6 +1562,12 @@ impl LibraryPage {
                 }
                 if std::mem::take(&mut self.form.default_groups) {
                     return Some(PageAction::DefaultGroups);
+                }
+                // (The next frame when the groups went first.)
+                if !self.form.default_weather.is_empty() {
+                    return Some(PageAction::DefaultWeather(std::mem::take(
+                        &mut self.form.default_weather,
+                    )));
                 }
                 return action;
             }

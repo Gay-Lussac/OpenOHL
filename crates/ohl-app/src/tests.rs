@@ -39,6 +39,7 @@ mod snap_marker;
 mod string_builder;
 mod strings_colours;
 mod strings_picking;
+mod structure_loads_window;
 mod structures_menus;
 mod thermal_pages;
 mod tool_shots;

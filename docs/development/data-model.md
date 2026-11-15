@@ -2413,6 +2413,33 @@ the app reads it with `Model::section_library` and gives it to the line's
 structure checks (`ohl_loads::capacity::usage_with_sections`). Member
 groups (one section for many members) come later and resolve the same way.
 
+**Parallel structure checks, the member checks once** (2026-11-15):
+`ohl_loads::capacity::usage_with_progress(line, types, sections, cables,
+weather, loads, &Progress { threads, done, cancel }) -> Option<Vec<CaseUsage>>`
+checks each structure on its own (`threads` at once, 0: the cores; the
+structures taken from a shared counter, each in its cases' order — the
+plugin pass's per-structure order kept), so the answer is identical with
+one thread or many (tested bit for bit); `done(n, of)` reports the
+structures done, `cancel` stops between structures (`None`).
+`usage_with_sections` is it with the defaults. `ohl_structures_fe::analyse`
+solves (`solve`: the tension-only active-set rounds, P-Delta passes and
+stabilisation retries) and then makes the member check (`member_usage`)
+**once, on the converged forces** — never inside a pass (a thread-local
+count in a test). A later loop over the structures' solves (the
+structure flexibility at level 4) keeps this: the checks run once on the
+converged state. A profile's cross-section properties
+(`ohl_sections::Section::properties`) are worked out once per thread and
+profile for the member checks and the tension-only members' compression
+caps (`ohl_structures_fe::check::properties`: kept by profile id, found by
+the whole profile; at most 4096 kept per thread, then started again) —
+before, again for every member, solve and case. The app's Structure loads window solves the line per
+load case in parallel too (`ohl_app::loads::run`: stage 1 one
+`structure_loads_each` per case, stage 2 `usage_with_progress`;
+`Stages` its progress) for the plan of its setup
+(`ohl_app::loads_plan::plan`: per structure, the cases of the groups run,
+of the structures in no group the cases ticked; structures on no
+alignment left out unless ticked).
+
 Solving (`ohl_structures_fe::solve`, `analyse`): with `[analysis]
 stabilise` (default true; `Options::stabilise`), a solve that fails as a
 mechanism or unstable is repeated with the joint directions no member
@@ -3528,7 +3555,7 @@ once, the server logs who changed which key).
 | `app.electric_field.<project line>` | `ohl-design` (Checks › Electrical › Electric field…) | JSON: the window's inputs (2026-10-29) — `case` (name), `voltages` (circuit label → kV between phases; absent: the system's nominal; 0: voltage-free), `jumpers`, `height`, `width`, `step` (m), `span` (`[from, to, fraction or null]`; absent: the spans ticked), `spans_off` / `spans_on` (2026-10-30: `[[from, to]]`, the spans on an alignment unticked and those on none ticked, the changes from the default), `limit` (kV/m), `two_d`, `ground_radius` (m), `tiled` (the tiled floor, default; else the plane), `tile` (its fine tiles, m), `cut_tile`, `volume_tile` (m), `volume_margin` (m, 2026-11-01: how far a volume's floor reaches; absent: 100), `points` (`[file name, CSV text]`), `piece_length` (m), `levels` (`[{value kV/m, rgb, on}]`), `fill`, `in_cuts` (step, m), `volume` (`[[from, to], [from, to], step]`; since 2026-10-30 only its step read, the spans the ticked ones), `volume_step` (m, 2026-10-30), `volume_width` (m, 2026-11-01; absent: `width`), `calculation`, `planes`, `profiles`, `page` (2026-11-12), `per_system`, `ground_from` (2026-11-01, as the magnetic field's), `stretches` (3D: the stretches per span, 2026-11-01; absent: 24), `steel` (the structures' steel earthed, 2026-10-31), `beside` (profiles beside the structures: the distance into the spans, m; 2026-10-31), `cuts`, `volume_spans`, `cut_width`, `cut_step`, `cut_above` (the span table, 2026-10-31: as the magnetic field's); written when a run starts or the window closes; missing fields take the defaults |
 | `app.galloping.<project line>`, `app.wirefit.<project line>` | `ohl-design` (Checks › Galloping ellipses…, As-built wires…) | JSON (2026-10-28): the window's scope (`ohl_app::check_ui::Scope`: `circuits`, `routes`, `alignments`, `sections`, as in `app.vegetation`), Galloping's with `local` (bool, 2026-11-03: Use local conditions) beside them; missing or unreadable: the whole line |
 | `app.vegetation.<project line>` | `ohl-design` (Checks › Vegetation…) | JSON: the panel's setup (2026-10-27) — `settings` (as a saved run's settings: the same keys as the performed check's `settings`, its `cases` the weather cases ticked, by name), `scope` (`circuits`: names, absent or `null` every circuit; `routes`, `alignments`: ids, both empty the whole line; `sections`: ids, `null` every section — `ohl_app::check_ui::Scope`), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` read and ignored); missing or unreadable fields keep the panel's values |
-| `app.structure_loads.<project line>` | `ohl-design` (Checks › Structure loads) | JSON: `local` (bool, 2026-11-14: Use local conditions; kept so that the loads sent to OHL-Structure follow it, `LineInputs::of_with_local`, `ohl_structure_link::StructureCases::with_local`) |
+| `app.structure_loads.<project line>` | `ohl-design` (Checks › Structure loads) | JSON (`ohl_app::loads_plan::Choice`): `local` (bool, 2026-11-14: Use local conditions; kept so that the loads sent to OHL-Structure follow it, `LineInputs::of_with_local`, `ohl_structure_link::StructureCases::with_local`); since 2026-11-15 `groups_off` (the structure groups not run, by name; absent: every group run), `alone_cases` (the load cases run for the structures in no group; absent: every case), `structures_off` (structures on an alignment unticked) and `structures_on` (structures on no alignment ticked: those are left out by default), each written only when not empty; the plan of a run (per structure, the cases computed) is `ohl_app::loads_plan::plan` from it and `Line::case_sets` |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name) (2026-10-27), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored) |
 | `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `calculation` (2026-11-01), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored); missing fields keep the window's values |
 | `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |

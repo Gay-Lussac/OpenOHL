@@ -174,6 +174,18 @@ Benchmark `structfe-015`: a truss shifted 20 mm at the top of a cantilever colum
 
 ## Member usage
 
+**Checked once, on the converged forces** (2026-11-15, owner: "the code
+on the structure side should be checked only once at the end and not
+through every step of the calculations"). The member checks below are
+made after the solve has ended — after the tension-only members'
+active-set rounds, the P-Delta passes and any stabilisation retry —
+on its final member forces, once per structure and load case; no pass
+of the solver calls them. A loop that solves the structures again (the
+structure flexibility at level 4, [Structure flexibility](structure-flexibility.md))
+keeps the same rule: the checks run once, on the converged state. The
+structures of a line are checked in parallel, each on its own, with the
+same result as one after the other.
+
 **Checks not done are said, never passed** (owner, 2026-11-08: "stay on
 the safe side and … explain why and where"). What a capacity method
 assumed for missing data **on the safe side** is listed in what governs

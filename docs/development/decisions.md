@@ -107,6 +107,79 @@ active development, not approved yet:
   says the direction taken, and that it has no effect beside the case's
   own `wind_direction`) and in the doc comments of `ohl-loads`.
 
+**The Structure loads window: Run to compute, the library followed, the
+groups run** (owner reports: "i added the default structure loads in the
+library and it does not appear in the compute structure loads"; "when
+the load cases in the library are edited and saved, the compute load
+case doesn't update the load case library"; "if i restart the project
+it's good"; "the compute structure loads starts immediately when the
+window is opened. i would like to have to click on run to start it";
+"the load cases on the structure should respect the groups defined in
+the load case per group if there are some … it should have a list of
+groups that are to be run and then the loadcases for the structures not
+in these groups under"; "put the structures outside of the alignment by
+default out of the calculations and all at the bottom of the list";
+"i would like to have the structures be computed in parallel with a
+progressbar indicating where we are at. first solve the lines then the
+structures … the code on the structure side should be checked only once
+at the end and not through every step of the calculations"). Built, in
+active development, not approved yet:
+
+1. **The cause**: the window kept the load case library's case names
+   read the first time it was drawn, read again only when the library's
+   *file path* changed — a save in the library page writes the same
+   file, so the list (and the ticks) stayed as they were until the
+   project was opened again. Further, a run failed whole when one case
+   could not be computed (the default load cases name the default
+   weather cases, which a project may lack): one error, no case shown.
+   Now the window reads the library again whenever the libraries'
+   revision (counted up by every library save) or the file's time
+   changes; each case is listed with its state (computed on Run, not
+   computable — its weather case missing —, taken by no structure); a
+   case that fails fails only itself, said with why and the structures
+   not checked in it (never a pass in the governing usage).
+2. **Run computes; opening does not.** Checks › Compute structure loads
+   only opens the window; the results of an earlier run stay, marked out
+   of date when the line or a library changed.
+3. **The setup follows the groups**: *3 Structure groups* — each group
+   run or not (ticked by default), its structures and cases, the cases'
+   own lists shown; *4 Structures in no group* — the load cases run for
+   them (a choice of the window, kept in the project; the line's groups
+   unchanged; *Make these a group…* optional); *5 Before Run* — what is
+   computed and what is left out, with why. A structure in a group run
+   and one not run: the cases of the groups run only (said). Results say
+   which groups gave each case. Structures on no alignment are left out
+   unless ticked, at the bottom of each list.
+4. **Two stages, in parallel, with progress**: the line solved in each
+   load case (the cases in parallel), then the structures checked (in
+   parallel), the bar saying the stage and where it is; the answer
+   identical to one after the other (tested bit for bit); Stop ends it
+   between cases or structures. The member checks are made once per
+   structure and case on the converged forces (they already were:
+   `analyse` checks after `solve`; now tested).
+   **Profiled first** (a real line, 8 load cases, 78 structures with
+   lattice models of about 1000 joints and 2500 members): the line solves
+   took a few seconds; the structures took nearly all the time, and of
+   that most went into the member checks, which worked out each
+   profile's cross-section properties (outline moments, shear centre,
+   warping) again for every member, every solve and every load case.
+   They are now worked out once per profile and thread
+   (`ohl_structures_fe::check::properties`, found by the whole profile:
+   a changed profile is worked out again) — the same numbers. With the
+   structures in parallel, the run there went from minutes to well under
+   half a minute on a 10-core computer; the factorisations of the
+   structures' solves are now most of the rest (their first, unstabilised
+   try of a model that needs holding is a further saving left open: it
+   must give the same answer).
+5. **Add the default cases… with their weather cases**: the load case
+   form's Add the default cases… adds, with a tick on by default, the
+   default weather cases the new load cases name that the project lacks
+   — to the weather case file, at once, as its own change (one undo
+   step; the load cases are kept by Save, their own step). Chosen over
+   one combined command because the two files are saved by different
+   paths (the weather table's write and the library page's Save); the
+   two steps undo in order.
+
 **Member wind on inclined members: SIA 261 inclination factors and
 force coefficients** (owner: "go ahead with your recommendations"). A
 review found the member wind of the structures **not on the safe side**:

@@ -536,6 +536,68 @@ fn structure_analysis_on_the_example_line() {
     assert!(csv.lines().next().unwrap().contains("fe_usage,pole_usage"));
 }
 
+/// The structures checked in parallel (2026-11-15, owner: "i would like to
+/// have the structures be computed in parallel with a progressbar"): the
+/// same usage, bit for bit, as one after the other; every structure
+/// reported done once; a cancelled run gives no answer.
+#[test]
+fn parallel_usage_is_the_sequential_one_with_progress_and_cancel() {
+    let types = ohl_structures::StructureLibrary::load_dir(&ex().join("Structures")).unwrap();
+    let mut line = Line::load(&ex().join("synthetic-line-typed.ohl.json"))
+        .unwrap()
+        .resolve(&types, &ohl_structures::InsulatorLibrary::default())
+        .unwrap();
+    line.creep_stretch.creep_case = Some("everyday".into());
+    let (_, library, weather, cases) = setup();
+    let budget = ohl_wirefe::default_fe_budget();
+    let loads = structure_loads(&line, &library, &weather, &cases.cases, &budget).unwrap();
+    let none = ohl_sections::SectionLibrary::default();
+    let run = |threads: usize, done: Option<&(dyn Fn(usize, usize) + Sync)>| {
+        capacity::usage_with_progress(
+            &line,
+            &types,
+            &none,
+            &library,
+            &weather,
+            &loads,
+            &capacity::Progress {
+                threads,
+                done,
+                cancel: None,
+            },
+        )
+        .unwrap()
+    };
+    let sequential = run(1, None);
+    let seen = std::sync::Mutex::new(Vec::new());
+    let report = |n: usize, of: usize| seen.lock().unwrap().push((n, of));
+    let parallel = run(4, Some(&report));
+    assert_eq!(format!("{sequential:?}"), format!("{parallel:?}"));
+    assert_eq!(sequential, parallel);
+    let mut seen = seen.into_inner().unwrap();
+    seen.sort_unstable();
+    let of = line.structures.len();
+    assert_eq!(seen, (1..=of).map(|n| (n, of)).collect::<Vec<_>>());
+    let cancel = ohl_core::budget::CancelToken::new();
+    cancel.cancel();
+    assert!(
+        capacity::usage_with_progress(
+            &line,
+            &types,
+            &none,
+            &library,
+            &weather,
+            &loads,
+            &capacity::Progress {
+                threads: 4,
+                done: None,
+                cancel: Some(&cancel),
+            },
+        )
+        .is_none()
+    );
+}
+
 /// A broken wire in every span (physics review 2026-10-26): the
 /// finite-element and pole checks take each break as its own load and
 /// keep the worst — the same usage as the cases of each break checked

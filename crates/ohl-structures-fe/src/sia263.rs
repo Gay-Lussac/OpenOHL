@@ -867,7 +867,7 @@ pub fn capacity(
     let a = s.area;
     let mut assumed: Vec<String> = Vec::new();
     let mut limits: Vec<String> = Vec::new();
-    let props = s.profile.as_ref().map(|p| p.properties());
+    let props = s.profile.as_ref().map(crate::check::properties);
     let shape = s.profile.as_ref().map(|p| p.shape.clone());
     let single_angle = matches!(
         shape,

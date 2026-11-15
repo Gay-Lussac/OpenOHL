@@ -1403,6 +1403,25 @@ impl Ready {
             }
             return;
         }
+        // The default weather cases the default load cases name
+        // (2026-11-15): the weather case file written, its own change.
+        if let PageAction::DefaultWeather(names) = &action {
+            match crate::default_cases::weather_with(&self.model, names) {
+                Ok((path, text, added)) => {
+                    if added.is_empty() {
+                        return;
+                    }
+                    if self.write_table_file(&path, &text) {
+                        self.status = Some((
+                            format!("default weather cases added: {}", added.join(", ")),
+                            false,
+                        ));
+                    }
+                }
+                Err(e) => self.status = Some((format!("default weather cases: {e}"), true)),
+            }
+            return;
+        }
         // A load case renamed (2026-11-14): one command, the structures'
         // sets with it; the page reads the file again.
         if let PageAction::RenameLoadCase { old, new } = &action {
@@ -1490,7 +1509,8 @@ impl Ready {
             // Taken above.
             PageAction::RenameLoadCase { .. }
             | PageAction::GiveCase(_)
-            | PageAction::DefaultGroups => return,
+            | PageAction::DefaultGroups
+            | PageAction::DefaultWeather(_) => return,
         };
         // A library chosen for the model must have the line's cables.
         let reloaded = self.model.reload_libraries().and_then(|report| {

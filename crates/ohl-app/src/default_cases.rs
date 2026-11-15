@@ -207,6 +207,39 @@ pub fn missing_load_cases(cases: &ohl_loads::LoadCases) -> (Vec<ohl_loads::LoadC
     (missing, kept)
 }
 
+/// The project's weather case file with the default weather cases named
+/// `names` added (those it lacks, by name; never replacing one): its path,
+/// its new text and the names added. A project without a weather case
+/// file gets its first one (as the Weather cases table makes it).
+pub fn weather_with(
+    model: &crate::model::Model,
+    names: &[String],
+) -> Result<(std::path::PathBuf, String, Vec<String>), String> {
+    let path = crate::tables::weather_path(model)
+        .ok_or_else(|| "the project has no weather case file and cannot get one".to_owned())?;
+    let text = match &model.sources.weather {
+        Some(p) => std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?,
+        None => "format = \"ohl-weather-cases\"\nversion = 1\n".to_owned(),
+    };
+    // The default file with only the cases named.
+    let mut defaults: toml_edit::DocumentMut = ohl_weather::DEFAULT_CASES_TEXT
+        .parse()
+        .map_err(|e| format!("{e}"))?;
+    if let Some(cases) = defaults
+        .get_mut("case")
+        .and_then(toml_edit::Item::as_array_of_tables_mut)
+    {
+        cases.retain(|t| {
+            t.get("name")
+                .and_then(|v| v.as_str())
+                .is_some_and(|n| names.iter().any(|x| x == n))
+        });
+    }
+    let (out, added, _) = merge(&text, &defaults.to_string())?;
+    ohl_weather::WeatherCases::parse(&out)?;
+    Ok((path, out, added))
+}
+
 /// The weather cases the load cases `cases` name that are not among the
 /// project's `weather` (by name), each once.
 pub fn weather_missing(

@@ -520,6 +520,46 @@ pub fn usage_with_sections(
     weather: &[WeatherCase],
     results: &[CaseLoads],
 ) -> Vec<CaseUsage> {
+    usage_with_progress(
+        line,
+        types,
+        sections,
+        library,
+        weather,
+        results,
+        &Progress::default(),
+    )
+    .unwrap_or_default()
+}
+
+/// How a usage run reports and stops ([`usage_with_progress`]).
+#[derive(Default)]
+pub struct Progress<'a> {
+    /// The structures checked at once (0: as many as the computer has
+    /// cores; 1: one after the other). The answer is the same either way:
+    /// each structure is checked on its own.
+    pub threads: usize,
+    /// Called as structures are done: (done, of).
+    pub done: Option<&'a (dyn Fn(usize, usize) + Sync)>,
+    /// Stops the run (between structures): no answer.
+    pub cancel: Option<&'a ohl_core::budget::CancelToken>,
+}
+
+/// [`usage_with_sections`] with its structures checked in parallel (each
+/// structure on its own, in the cases' order: the same answer as one
+/// after the other), reporting how many are done, stopped by `progress`'s
+/// cancel token (`None`: stopped). The member checks are made once per
+/// structure and case on the solved forces ([`ohl_structures_fe::analyse`]:
+/// solve, then check), never inside the solver's iterations.
+pub fn usage_with_progress(
+    line: &Line,
+    types: &StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    library: &ohl_cables::Library,
+    weather: &[WeatherCase],
+    results: &[CaseLoads],
+    progress: &Progress<'_>,
+) -> Option<Vec<CaseUsage>> {
     let mut analyses = crate::analysis::Analyses::load(types, sections);
     // Members checked by a plugin (a structure file's `[analysis]
     // capacity = "plugin:…"`): a first pass solves those structures in
@@ -527,14 +567,24 @@ pub fn usage_with_sections(
     // cases, and the run itself takes what it gave.
     if analyses.find_plugins(types) {
         analyses.collect_for_plugins(true);
-        let _ = usage_pass(line, types, library, weather, results, &analyses);
+        let quiet = Progress {
+            threads: progress.threads,
+            done: None,
+            cancel: progress.cancel,
+        };
+        usage_pass(line, types, library, weather, results, &analyses, &quiet)?;
         analyses.collect_for_plugins(false);
         analyses.check_plugins();
     }
-    usage_pass(line, types, library, weather, results, &analyses)
+    usage_pass(line, types, library, weather, results, &analyses, progress)
 }
 
-/// One pass of [`usage_with_sections`] over every case and structure.
+/// The points of one structure in one case, with the loads summed there.
+type ByPoint<'a> = Vec<(&'a String, &'a AtPoint)>;
+
+/// One pass of [`usage_with_progress`] over every case and structure:
+/// the loads summed per point in each case, then each structure (in
+/// parallel) checked in every case it is in, in the cases' order.
 fn usage_pass(
     line: &Line,
     types: &StructureLibrary,
@@ -542,19 +592,19 @@ fn usage_pass(
     weather: &[WeatherCase],
     results: &[CaseLoads],
     analyses: &crate::analysis::Analyses,
-) -> Vec<CaseUsage> {
+    progress: &Progress<'_>,
+) -> Option<Vec<CaseUsage>> {
     // Which cases each structure takes: resolved once (its groups).
     let sets = line.case_sets();
     let wind = wind_spans(line);
     let position = positions(line);
     let angles = line_angles(line);
-    results
+    // Per case, per point of a structure: the factored loads and the
+    // wires' unfactored vertical load (the wind on the structure body is
+    // at no point).
+    let points: Vec<BTreeMap<(String, String), AtPoint>> = results
         .iter()
         .map(|r| {
-            let case = weather.iter().find(|w| w.name == r.case.weather);
-            // Per point of a structure: the factored loads and the
-            // wires' unfactored vertical load (the wind on the structure
-            // body is at no point).
             let mut at: BTreeMap<(String, String), AtPoint> = BTreeMap::new();
             for l in r.loads.iter().filter(|l| !l.point.is_empty()) {
                 let e = at
@@ -578,9 +628,15 @@ fn usage_pass(
                     }
                 }
             }
-            type ByPoint<'a> = Vec<(&'a String, &'a AtPoint)>;
+            at
+        })
+        .collect();
+    let by_case: Vec<BTreeMap<&str, ByPoint>> = results
+        .iter()
+        .zip(&points)
+        .map(|(r, at)| {
             let mut by_structure: BTreeMap<&str, ByPoint> = BTreeMap::new();
-            for ((structure, label), v) in &at {
+            for ((structure, label), v) in at {
                 by_structure
                     .entry(structure.as_str())
                     .or_default()
@@ -600,342 +656,389 @@ fn usage_pass(
             for u in r.unknown_sets.iter().filter(|u| u.none_known) {
                 by_structure.entry(u.structure.as_str()).or_default();
             }
-            let structures = by_structure
-                .into_iter()
-                .map(|(id, points)| {
-                    let structure = line.structure(id);
-                    let type_id = structure.and_then(|s| s.structure_type.clone());
-                    if sets.takes_none(id) {
-                        let angle = angles.get(id).copied().unwrap_or(0.0);
-                        return without_load_case(id, type_id, angle);
+            by_structure
+        })
+        .collect();
+    // One structure `id` in one case `r`, its points `points`.
+    let one = |r: &CaseLoads, id: &str, points: &ByPoint| -> StructureUsage {
+        let points = points.as_slice();
+        let case = weather.iter().find(|w| w.name == r.case.weather);
+        let structure = line.structure(id);
+        let type_id = structure.and_then(|s| s.structure_type.clone());
+        if sets.takes_none(id) {
+            let angle = angles.get(id).copied().unwrap_or(0.0);
+            return without_load_case(id, type_id, angle);
+        }
+        let unknown = r.unknown_sets.iter().find(|u| u.structure == id);
+        if let Some(u) = unknown.filter(|u| u.none_known) {
+            let angle = angles.get(id).copied().unwrap_or(0.0);
+            let mut out = without_load_case(id, type_id, angle);
+            out.notes = vec![u.describe()];
+            out.unknown_cases = u.names.clone();
+            return out;
+        }
+        let type_def = type_id.as_deref().and_then(|t| types.get(t));
+        let capacity = type_def.and_then(|t| t.capacity.as_ref());
+        let analysed = type_def.is_some_and(|t| {
+            t.members_designed()
+                || t.model.is_some()
+                || t.pole_detail() == Some(ohl_structures::Detail::Design)
+        });
+        let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
+        // Per conductor position (a suspension point, or a
+        // dead-end's back and ahead strings together): its wire
+        // ends, the points they hang on and the strings between.
+        let mut ends: BTreeMap<Key, Vec<u32>> = BTreeMap::new();
+        for (_, p) in points {
+            for set in &p.sets {
+                let k = (id.to_owned(), *set);
+                let pos = position.get(&k).cloned().unwrap_or(k);
+                let e = ends.entry(pos).or_default();
+                if !e.contains(set) {
+                    e.push(*set);
+                }
+            }
+        }
+        // The wind span (summed over its ends) and the weight
+        // span: the wires' vertical load at its points, without
+        // the strings, over their vertical load per metre.
+        let mut by_position: BTreeMap<&Key, (f64, Option<f64>)> = BTreeMap::new();
+        for (pos, sets) in &ends {
+            let e = by_position.entry(pos).or_default();
+            for set in sets {
+                e.0 += wind.get(&(id.to_owned(), *set)).copied().unwrap_or(0.0);
+            }
+            let here: Vec<&AtPoint> = points
+                .iter()
+                .filter(|(_, p)| p.sets.iter().any(|s| sets.contains(s)))
+                .map(|(_, p)| *p)
+                .collect();
+            let vertical: f64 = here.iter().map(|p| p.vertical).sum();
+            let strings: f64 = structure.map_or(0.0, |s| {
+                let mut seen = std::collections::BTreeSet::new();
+                for set in sets {
+                    if let Some(w) = s.wire_at_set(*set) {
+                        seen.extend(s.component(&w.label).strings);
                     }
-                    let unknown = r.unknown_sets.iter().find(|u| u.structure == id);
-                    if let Some(u) = unknown.filter(|u| u.none_known) {
-                        let angle = angles.get(id).copied().unwrap_or(0.0);
-                        let mut out = without_load_case(id, type_id, angle);
-                        out.notes = vec![u.describe()];
-                        out.unknown_cases = u.names.clone();
-                        return out;
-                    }
-                    let type_def = type_id.as_deref().and_then(|t| types.get(t));
-                    let capacity = type_def.and_then(|t| t.capacity.as_ref());
-                    let analysed = type_def.is_some_and(|t| {
-                        t.members_designed()
-                            || t.model.is_some()
-                            || t.pole_detail() == Some(ohl_structures::Detail::Design)
-                    });
-                    let line_angle_deg = angles.get(id).copied().unwrap_or(0.0);
-                    // Per conductor position (a suspension point, or a
-                    // dead-end's back and ahead strings together): its wire
-                    // ends, the points they hang on and the strings between.
-                    let mut ends: BTreeMap<Key, Vec<u32>> = BTreeMap::new();
-                    for (_, p) in &points {
-                        for set in &p.sets {
-                            let k = (id.to_owned(), *set);
-                            let pos = position.get(&k).cloned().unwrap_or(k);
-                            let e = ends.entry(pos).or_default();
-                            if !e.contains(set) {
-                                e.push(*set);
-                            }
-                        }
-                    }
-                    // The wind span (summed over its ends) and the weight
-                    // span: the wires' vertical load at its points, without
-                    // the strings, over their vertical load per metre.
-                    let mut by_position: BTreeMap<&Key, (f64, Option<f64>)> = BTreeMap::new();
-                    for (pos, sets) in &ends {
-                        let e = by_position.entry(pos).or_default();
-                        for set in sets {
-                            e.0 += wind.get(&(id.to_owned(), *set)).copied().unwrap_or(0.0);
-                        }
-                        let here: Vec<&AtPoint> = points
-                            .iter()
-                            .filter(|(_, p)| p.sets.iter().any(|s| sets.contains(s)))
-                            .map(|(_, p)| *p)
-                            .collect();
-                        let vertical: f64 = here.iter().map(|p| p.vertical).sum();
-                        let strings: f64 = structure.map_or(0.0, |s| {
-                            let mut seen = std::collections::BTreeSet::new();
-                            for set in sets {
-                                if let Some(w) = s.wire_at_set(*set) {
-                                    seen.extend(s.component(&w.label).strings);
-                                }
-                            }
-                            seen.iter().map(|&i| s.strings[i].weight).sum()
-                        });
-                        let ws: Vec<f64> = here
-                            .iter()
-                            .flat_map(|p| &p.sections)
-                            .filter_map(|s| bundle_weight(line, library, case?, s))
-                            .collect();
-                        let w = ws.iter().sum::<f64>() / ws.len().max(1) as f64;
-                        if w > 0.0 {
-                            e.1 = Some((vertical - strings) / w);
-                        }
-                    }
-                    let wind_span = by_position.values().map(|v| v.0).fold(0.0, f64::max);
-                    let spans: Vec<f64> = by_position.values().filter_map(|v| v.1).collect();
-                    let weight_span = (!spans.is_empty()).then(|| {
-                        [
-                            spans.iter().copied().fold(f64::INFINITY, f64::min),
-                            spans.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-                        ]
-                    });
-                    let mut notes = Vec::new();
-                    match (&type_id, capacity) {
-                        (None, _) => notes.push("no structure type: not checked".into()),
-                        (Some(t), None) if !analysed => {
-                            notes.push(format!("type {t} gives no capacity"));
-                        }
-                        _ => {}
-                    }
-                    let spans_check = capacity.filter(|c| !c.spans.is_empty()).map(|c| {
-                        match c.spans_at(line_angle_deg) {
-                            None => Check {
-                                method: Method::Spans,
-                                usage: f64::INFINITY,
-                                governs: format!(
-                                    "line angle {line_angle_deg:.1}° beyond the type's {:.1}°",
-                                    c.max_angle().unwrap_or(0.0)
-                                ),
-                                incomplete: false,
-                                approximate: false,
-                                not_safe: 0,
-                            },
-                            Some(allowed) => {
-                                let mut worst = (
-                                    wind_span / allowed.wind_span,
+                }
+                seen.iter().map(|&i| s.strings[i].weight).sum()
+            });
+            let ws: Vec<f64> = here
+                .iter()
+                .flat_map(|p| &p.sections)
+                .filter_map(|s| bundle_weight(line, library, case?, s))
+                .collect();
+            let w = ws.iter().sum::<f64>() / ws.len().max(1) as f64;
+            if w > 0.0 {
+                e.1 = Some((vertical - strings) / w);
+            }
+        }
+        let wind_span = by_position.values().map(|v| v.0).fold(0.0, f64::max);
+        let spans: Vec<f64> = by_position.values().filter_map(|v| v.1).collect();
+        let weight_span = (!spans.is_empty()).then(|| {
+            [
+                spans.iter().copied().fold(f64::INFINITY, f64::min),
+                spans.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            ]
+        });
+        let mut notes = Vec::new();
+        match (&type_id, capacity) {
+            (None, _) => notes.push("no structure type: not checked".into()),
+            (Some(t), None) if !analysed => {
+                notes.push(format!("type {t} gives no capacity"));
+            }
+            _ => {}
+        }
+        let spans_check =
+            capacity
+                .filter(|c| !c.spans.is_empty())
+                .map(|c| match c.spans_at(line_angle_deg) {
+                    None => Check {
+                        method: Method::Spans,
+                        usage: f64::INFINITY,
+                        governs: format!(
+                            "line angle {line_angle_deg:.1}° beyond the type's {:.1}°",
+                            c.max_angle().unwrap_or(0.0)
+                        ),
+                        incomplete: false,
+                        approximate: false,
+                        not_safe: 0,
+                    },
+                    Some(allowed) => {
+                        let mut worst = (
+                            wind_span / allowed.wind_span,
+                            format!("wind span {wind_span:.0} m of {:.0} m", allowed.wind_span),
+                        );
+                        if let Some([lo, hi]) = weight_span {
+                            let r = hi / allowed.weight_span;
+                            if r > worst.0 {
+                                worst = (
+                                    r,
                                     format!(
-                                        "wind span {wind_span:.0} m of {:.0} m",
-                                        allowed.wind_span
+                                        "weight span {hi:.0} m of {:.0} m",
+                                        allowed.weight_span
                                     ),
                                 );
-                                if let Some([lo, hi]) = weight_span {
-                                    let r = hi / allowed.weight_span;
-                                    if r > worst.0 {
-                                        worst = (
-                                            r,
-                                            format!(
-                                                "weight span {hi:.0} m of {:.0} m",
-                                                allowed.weight_span
-                                            ),
-                                        );
-                                    }
-                                    if let Some(min) = allowed.min_weight_span
-                                        && lo < min
-                                    {
-                                        let r = 1.0 + (min - lo) / allowed.weight_span;
-                                        if r > worst.0 {
-                                            worst = (
-                                                r,
-                                                format!(
-                                                    "weight span {lo:.0} m below the minimum \
-                                                     {min:.0} m (uplift)"
-                                                ),
-                                            );
-                                        }
-                                    }
-                                }
-                                Check {
-                                    method: Method::Spans,
-                                    usage: worst.0,
-                                    governs: worst.1,
-                                    incomplete: false,
-                                    approximate: false,
-                                    not_safe: 0,
+                            }
+                            if let Some(min) = allowed.min_weight_span
+                                && lo < min
+                            {
+                                let r = 1.0 + (min - lo) / allowed.weight_span;
+                                if r > worst.0 {
+                                    worst = (
+                                        r,
+                                        format!(
+                                            "weight span {lo:.0} m below the minimum \
+                                         {min:.0} m (uplift)"
+                                        ),
+                                    );
                                 }
                             }
-                        }
-                    });
-                    let loads_check = capacity.filter(|c| !c.attachments.is_empty()).map(|_| {
-                        let phi = r.case.strength;
-                        let mut worst = (0.0, String::new());
-                        for (label, p) in &points {
-                            let Some(cap) = type_def.and_then(|t| t.capacity_at(label)) else {
-                                notes.push(format!("point {label} not in the type's load tree"));
-                                continue;
-                            };
-                            let [t, l, v] = p.factored;
-                            // (ratio, direction, load, allowable), kN in words.
-                            let mut ratios: Vec<(f64, &str, f64, f64)> = Vec::new();
-                            if let Some(ct) = cap.transverse {
-                                ratios.push((t.abs() / (phi * ct.si()), "transverse", t, ct.si()));
-                            }
-                            if let Some(cl) = cap.longitudinal {
-                                ratios.push((
-                                    l.abs() / (phi * cl.si()),
-                                    "longitudinal",
-                                    l,
-                                    cl.si(),
-                                ));
-                            }
-                            if v >= 0.0 {
-                                if let Some(cv) = cap.vertical {
-                                    ratios.push((v / (phi * cv.si()), "vertical", v, cv.si()));
-                                }
-                            } else if let Some(cu) = cap.uplift {
-                                ratios.push((-v / (phi * cu.si()), "uplift", v, cu.si()));
-                            } else if cap.vertical.is_some() {
-                                ratios.push((f64::INFINITY, "uplift (none allowed)", v, 0.0));
-                            }
-                            let (usage, why) = match cap.interaction {
-                                Interaction::Linear => (
-                                    ratios.iter().map(|r| r.0).sum::<f64>(),
-                                    format!(
-                                        "{label} combined {}",
-                                        ratios
-                                            .iter()
-                                            .map(|r| format!("{} {:.0} %", r.1, r.0 * 100.0))
-                                            .collect::<Vec<_>>()
-                                            .join(" + ")
-                                    ),
-                                ),
-                                Interaction::None => ratios
-                                    .iter()
-                                    .max_by(|a, b| a.0.total_cmp(&b.0))
-                                    .map_or((0.0, String::new()), |r| {
-                                        (
-                                            r.0,
-                                            format!(
-                                                "{label} {} {:.1} kN of {:.1} kN × {phi}",
-                                                r.1,
-                                                r.2.abs() / 1000.0,
-                                                r.3 / 1000.0
-                                            ),
-                                        )
-                                    }),
-                            };
-                            if usage > worst.0 || worst.1.is_empty() {
-                                worst = (usage, why);
-                            }
-                        }
-                        // The structure's own ice or snow is at no point: the
-                        // allowable loads are taken to allow for it. Without
-                        // a model or pole that checks it, said not on the
-                        // safe side (2026-11-08).
-                        let own = !analysed && case.is_some_and(|w| r.case.ices_or_snows(w));
-                        let mut governs = worst.1;
-                        if own {
-                            governs.push_str(&format!(
-                                " {} the structure's own ice and snow not in the allowable \
-                                 loads (taken as allowed for by them)]",
-                                ohl_structures_fe::check::NOT_SAFE
-                            ));
                         }
                         Check {
-                            method: Method::Loads,
+                            method: Method::Spans,
                             usage: worst.0,
-                            governs,
+                            governs: worst.1,
                             incomplete: false,
                             approximate: false,
-                            not_safe: usize::from(own),
+                            not_safe: 0,
                         }
-                    });
-                    let factored: Vec<crate::analysis::Factored> = points
-                        .iter()
-                        .map(|(label, p)| ((*label).clone(), p.factored, p.moment))
-                        .collect();
-                    // A wind relative to the line, in a turned
-                    // structure's axes (2026-11-15).
-                    let turned = match (case, structure) {
-                        (Some(w), Some(s)) => r.case.in_structure_axes(w, line, s),
-                        _ => None,
-                    };
-                    let body_case = turned.as_ref().unwrap_or(&r.case);
-                    let (fe, pole) = if r.broken_each.is_empty() {
-                        (
-                            type_def.and_then(|t| {
-                                analyses.fe(t, structure, &factored, body_case, case, &mut notes)
-                            }),
-                            type_def.and_then(|t| {
-                                analyses.pole(t, structure, &factored, body_case, case, &mut notes)
-                            }),
-                        )
-                    } else {
-                        // A broken wire in every span: each break on its
-                        // own (the envelope of the components is not an
-                        // upper bound of a member force), the worst kept.
-                        let mut fe: Option<Check> = None;
-                        let mut pole: Option<Check> = None;
-                        let mut approximate = false;
-                        let mut each_notes: Vec<String> = Vec::new();
-                        for b in &r.broken_each {
-                            let factored = factored_at(&b.loads, id);
-                            let mark = |c: Option<Check>| {
-                                c.map(|mut c| {
-                                    c.governs = format!("{} (span {} broken)", c.governs, b.span);
-                                    c
-                                })
-                            };
-                            let f = mark(type_def.and_then(|t| {
-                                analyses.fe(
-                                    t,
-                                    structure,
-                                    &factored,
-                                    body_case,
-                                    case,
-                                    &mut each_notes,
-                                )
-                            }));
-                            let p = mark(type_def.and_then(|t| {
-                                analyses.pole(
-                                    t,
-                                    structure,
-                                    &factored,
-                                    body_case,
-                                    case,
-                                    &mut each_notes,
-                                )
-                            }));
-                            approximate |= f.as_ref().is_some_and(|c| c.approximate);
-                            fe = worse(fe, f);
-                            pole = worse(pole, p);
-                        }
-                        if let Some(f) = fe.as_mut() {
-                            // Approximate when any break's solve was.
-                            f.approximate |= approximate;
-                        }
-                        for n in each_notes {
-                            if !notes.contains(&n) {
-                                notes.push(n);
-                            }
-                        }
-                        (fe, pole)
-                    };
-                    let missing: Vec<crate::MissingWire> = r.missing_at(id).cloned().collect();
-                    let mark = |c: Option<Check>| {
-                        c.map(|mut c| {
-                            c.incomplete = !missing.is_empty();
-                            c
-                        })
-                    };
-                    let (spans_check, loads_check, fe, pole) =
-                        (mark(spans_check), mark(loads_check), mark(fe), mark(pole));
-                    StructureUsage {
-                        structure: id.to_owned(),
-                        structure_type: type_id,
-                        line_angle_deg,
-                        wind_span,
-                        weight_span,
-                        spans: spans_check,
-                        loads: loads_check,
-                        fe,
-                        pole,
-                        notes: notes
-                            .into_iter()
-                            .chain(unknown.map(crate::UnknownCases::describe))
-                            .collect(),
-                        missing,
-                        unknown_cases: unknown.map_or_else(Vec::new, |u| u.names.clone()),
                     }
-                })
-                .collect();
-            CaseUsage {
-                case: r.case.name.clone(),
-                structures,
+                });
+        let loads_check = capacity.filter(|c| !c.attachments.is_empty()).map(|_| {
+            let phi = r.case.strength;
+            let mut worst = (0.0, String::new());
+            for (label, p) in points {
+                let Some(cap) = type_def.and_then(|t| t.capacity_at(label)) else {
+                    notes.push(format!("point {label} not in the type's load tree"));
+                    continue;
+                };
+                let [t, l, v] = p.factored;
+                // (ratio, direction, load, allowable), kN in words.
+                let mut ratios: Vec<(f64, &str, f64, f64)> = Vec::new();
+                if let Some(ct) = cap.transverse {
+                    ratios.push((t.abs() / (phi * ct.si()), "transverse", t, ct.si()));
+                }
+                if let Some(cl) = cap.longitudinal {
+                    ratios.push((l.abs() / (phi * cl.si()), "longitudinal", l, cl.si()));
+                }
+                if v >= 0.0 {
+                    if let Some(cv) = cap.vertical {
+                        ratios.push((v / (phi * cv.si()), "vertical", v, cv.si()));
+                    }
+                } else if let Some(cu) = cap.uplift {
+                    ratios.push((-v / (phi * cu.si()), "uplift", v, cu.si()));
+                } else if cap.vertical.is_some() {
+                    ratios.push((f64::INFINITY, "uplift (none allowed)", v, 0.0));
+                }
+                let (usage, why) = match cap.interaction {
+                    Interaction::Linear => (
+                        ratios.iter().map(|r| r.0).sum::<f64>(),
+                        format!(
+                            "{label} combined {}",
+                            ratios
+                                .iter()
+                                .map(|r| format!("{} {:.0} %", r.1, r.0 * 100.0))
+                                .collect::<Vec<_>>()
+                                .join(" + ")
+                        ),
+                    ),
+                    Interaction::None => ratios.iter().max_by(|a, b| a.0.total_cmp(&b.0)).map_or(
+                        (0.0, String::new()),
+                        |r| {
+                            (
+                                r.0,
+                                format!(
+                                    "{label} {} {:.1} kN of {:.1} kN × {phi}",
+                                    r.1,
+                                    r.2.abs() / 1000.0,
+                                    r.3 / 1000.0
+                                ),
+                            )
+                        },
+                    ),
+                };
+                if usage > worst.0 || worst.1.is_empty() {
+                    worst = (usage, why);
+                }
             }
+            // The structure's own ice or snow is at no point: the
+            // allowable loads are taken to allow for it. Without
+            // a model or pole that checks it, said not on the
+            // safe side (2026-11-08).
+            let own = !analysed && case.is_some_and(|w| r.case.ices_or_snows(w));
+            let mut governs = worst.1;
+            if own {
+                governs.push_str(&format!(
+                    " {} the structure's own ice and snow not in the allowable \
+                     loads (taken as allowed for by them)]",
+                    ohl_structures_fe::check::NOT_SAFE
+                ));
+            }
+            Check {
+                method: Method::Loads,
+                usage: worst.0,
+                governs,
+                incomplete: false,
+                approximate: false,
+                not_safe: usize::from(own),
+            }
+        });
+        let factored: Vec<crate::analysis::Factored> = points
+            .iter()
+            .map(|(label, p)| ((*label).clone(), p.factored, p.moment))
+            .collect();
+        // A wind relative to the line, in a turned
+        // structure's axes (2026-11-15).
+        let turned = match (case, structure) {
+            (Some(w), Some(s)) => r.case.in_structure_axes(w, line, s),
+            _ => None,
+        };
+        let body_case = turned.as_ref().unwrap_or(&r.case);
+        let (fe, pole) = if r.broken_each.is_empty() {
+            (
+                type_def.and_then(|t| {
+                    analyses.fe(t, structure, &factored, body_case, case, &mut notes)
+                }),
+                type_def.and_then(|t| {
+                    analyses.pole(t, structure, &factored, body_case, case, &mut notes)
+                }),
+            )
+        } else {
+            // A broken wire in every span: each break on its
+            // own (the envelope of the components is not an
+            // upper bound of a member force), the worst kept.
+            let mut fe: Option<Check> = None;
+            let mut pole: Option<Check> = None;
+            let mut approximate = false;
+            let mut each_notes: Vec<String> = Vec::new();
+            for b in &r.broken_each {
+                let factored = factored_at(&b.loads, id);
+                let mark = |c: Option<Check>| {
+                    c.map(|mut c| {
+                        c.governs = format!("{} (span {} broken)", c.governs, b.span);
+                        c
+                    })
+                };
+                let f = mark(type_def.and_then(|t| {
+                    analyses.fe(t, structure, &factored, body_case, case, &mut each_notes)
+                }));
+                let p = mark(type_def.and_then(|t| {
+                    analyses.pole(t, structure, &factored, body_case, case, &mut each_notes)
+                }));
+                approximate |= f.as_ref().is_some_and(|c| c.approximate);
+                fe = worse(fe, f);
+                pole = worse(pole, p);
+            }
+            if let Some(f) = fe.as_mut() {
+                // Approximate when any break's solve was.
+                f.approximate |= approximate;
+            }
+            for n in each_notes {
+                if !notes.contains(&n) {
+                    notes.push(n);
+                }
+            }
+            (fe, pole)
+        };
+        let missing: Vec<crate::MissingWire> = r.missing_at(id).cloned().collect();
+        let mark = |c: Option<Check>| {
+            c.map(|mut c| {
+                c.incomplete = !missing.is_empty();
+                c
+            })
+        };
+        let (spans_check, loads_check, fe, pole) =
+            (mark(spans_check), mark(loads_check), mark(fe), mark(pole));
+        StructureUsage {
+            structure: id.to_owned(),
+            structure_type: type_id,
+            line_angle_deg,
+            wind_span,
+            weight_span,
+            spans: spans_check,
+            loads: loads_check,
+            fe,
+            pole,
+            notes: notes
+                .into_iter()
+                .chain(unknown.map(crate::UnknownCases::describe))
+                .collect(),
+            missing,
+            unknown_cases: unknown.map_or_else(Vec::new, |u| u.names.clone()),
+        }
+    };
+    // Every structure, with the cases it is in (in their order).
+    let mut work: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (k, by) in by_case.iter().enumerate() {
+        for id in by.keys() {
+            work.entry(id).or_default().push(k);
+        }
+    }
+    let work: Vec<(&str, Vec<usize>)> = work.into_iter().collect();
+    let threads = match progress.threads {
+        0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        n => n,
+    }
+    .clamp(1, work.len().max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let stopped = || progress.cancel.is_some_and(|c| c.is_cancelled());
+    // A worker: the next structure not taken, until none is left.
+    let run = || {
+        let mut mine: Vec<(usize, Vec<StructureUsage>)> = Vec::new();
+        loop {
+            if stopped() {
+                break;
+            }
+            let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let Some((id, cases)) = work.get(k) else {
+                break;
+            };
+            let each = cases
+                .iter()
+                .map(|&c| one(&results[c], id, &by_case[c][id]))
+                .collect();
+            mine.push((k, each));
+            let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if let Some(f) = progress.done {
+                f(n, work.len());
+            }
+        }
+        mine
+    };
+    let mut answers: Vec<Option<Vec<StructureUsage>>> = vec![None; work.len()];
+    if threads == 1 {
+        for (k, each) in run() {
+            answers[k] = Some(each);
+        }
+    } else {
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..threads).map(|_| s.spawn(run)).collect();
+            for h in handles {
+                for (k, each) in h.join().expect("a structure check panicked") {
+                    answers[k] = Some(each);
+                }
+            }
+        });
+    }
+    if stopped() {
+        return None;
+    }
+    // Back into the cases, each in its order (the structures by id).
+    let mut out: Vec<CaseUsage> = results
+        .iter()
+        .map(|r| CaseUsage {
+            case: r.case.name.clone(),
+            structures: Vec::new(),
         })
-        .collect()
+        .collect();
+    for ((_, cases), each) in work.iter().zip(answers) {
+        for (&c, u) in cases.iter().zip(each?) {
+            out[c].structures.push(u);
+        }
+    }
+    Some(out)
 }
 
 /// A structure that takes no load case (its structure groups tick
