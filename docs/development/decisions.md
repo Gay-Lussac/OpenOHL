@@ -67,6 +67,47 @@ theory does (it said *b* and *c*). Results are unchanged, but for:
   table checked at the last row or not checked; the window refusing a
   case the file does not name; which sag in a case with wind.
 
+**Lightning shielding: its own user-guide page, and what its review
+found** (owner: "lightning shielding needs a link to its own page too").
+The window gets the check pages' treatment
+([check pages](check-pages.md) §6): its own page
+([Lightning shielding](../user-guide/lightning-shielding.md)), opened by
+the **user guide ↗** buttons of *1 What it checks*, *2 Scope*, *3 Rules*
+and the Results; the grey lines between the fields moved into the
+section's (?) and the fields' hovers (each saying what it changes in the
+result). No *Model* section: every modelling setting (the calculations,
+the step) belongs to a rule, so that a preset brings it. Found while
+writing the page:
+
+- **Fixed (a clear fault, not on the safe side): the inner angle beyond
+  the outer shielding wire.** A phase took a shielding wire's inner
+  angle whenever another shielding wire lay on its side of that wire,
+  however far: a phase *outside* the outer shielding wire, beyond that
+  wire's outer line, could be said covered by the inner angle of the
+  wire farther away (e.g. wires at different heights, the inner angle
+  larger than the outer), while the covered zone drawn showed it
+  outside. Now the inner angle applies only to a phase **between** the
+  wire and another shielding wire across the cut — the classical
+  reading, and what the drawing showed. Results change only for such
+  phases, towards exposed; the example and the benchmarks
+  (`electrical-064`, `-065`) are unchanged.
+- **Said (not on the safe side): the step.** Each cross-section stands
+  for its step: an exposure shorter than a step, between two cuts or
+  within half a step of a structure, can be missed. Every result (the
+  window and `ohl lightning`) now says *NOT ON THE SAFE SIDE: each
+  cross-section stands for its step …*; the method is unchanged.
+- **Said: no terrain loaded.** The ground straight between the
+  structures' feet and level across was noted; the note and the
+  window's warning now say *NOT ON THE SAFE SIDE* (the theory already
+  said so).
+- **Said (presentation): the cross-section drawn.** Only the last rule
+  × case pair's cuts are kept; a row of another pair drew that pair's
+  cut (its colours that pair's verdict), said only with several rules.
+  Now said whenever the row is not of the pair drawn.
+- **Marked conservative in the theory:** every free sphere centre
+  counts, also one in a pocket under the shielding wires that a sphere
+  from above could not reach.
+
 **Ice on the structures from the wires' ice, with a factor** (owner: "for
 the ice on the load cases can you also add a factor as for the wind to
 change the value compared to the conductor weather cases"; asked which

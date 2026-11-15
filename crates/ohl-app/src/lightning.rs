@@ -48,6 +48,12 @@ const LOCAL: (ohl_line::local::Purpose, &str, &str) = (
 /// The id of the window's body, tabs and footer.
 const WINDOW: &str = "lightning-window";
 
+/// Without a terrain for the checks, before Run and in the notes
+/// (2026-11-15: marked, as the theory says it).
+const NO_TERRAIN: &str = "NOT ON THE SAFE SIDE: no terrain for the checks — the ground is taken \
+     straight between the structures' feet and level across (Line › Terrain): where the real \
+     ground falls away across the line, the sphere comes in lower than checked.";
+
 /// A check's answer: the report and the rules it was made with.
 #[derive(Debug, Clone, Default)]
 pub struct Report {
@@ -89,7 +95,47 @@ pub struct Out {
     pub plugin_preset: Option<(String, ohl_io::codes::RulePresetChecked)>,
     /// What the 3D view draws changed (a new report, the window closed).
     pub overlay: Option<Overlay>,
+    /// A section of the window's user guide page to open ([`guide`]).
+    pub guide: Option<&'static str>,
 }
+
+/// The window's own page of the user guide (owner, 2026-11-15:
+/// "lightning shielding needs a link to its own page too").
+pub const GUIDE: &str = "user-guide/lightning-shielding";
+
+/// The sections of [`GUIDE`] the window's **user guide ↗** buttons open
+/// (each a heading of the page: tested).
+pub mod anchors {
+    /// *1 What it checks*.
+    pub const WHAT: &str = "1-what-it-checks";
+    /// *2 Scope*.
+    pub const SCOPE: &str = "2-scope";
+    /// *3 Rules*.
+    pub const RULES: &str = "3-rules";
+    /// The Results tab.
+    pub const RESULTS: &str = "the-results";
+}
+
+/// The page and section a **user guide ↗** button opens.
+pub fn guide(anchor: &'static str) -> (&'static str, &'static str) {
+    (GUIDE, anchor)
+}
+
+/// The (?) of *3 Rules*: what was the grey line under a rule's fields
+/// (check pages' guidelines §6, 2026-11-15).
+const RULES_HELP: (&str, &str) = (
+    "Each rule: the phases it protects, the shielding wires, its weather cases, a method and its \
+     values, the step of the cross-sections.",
+    "Shielding angle: the phases must lie within the angle from the vertical through a shielding \
+     wire above them — the inner angle between two shielding wires, the outer elsewhere. Rolling \
+     sphere: a sphere of the striking distance rolled over the shielding wires and the ground (β \
+     times the distance from it) must not touch a phase; smaller distances (weaker strokes) reach \
+     further in. Each cross-section is square to its span at the middle of each step; a smaller \
+     step finds shorter exposed lengths and takes longer (the time grows with the number of \
+     cross-sections). No value is built in: the angles, the striking distance or current, A, b and \
+     β are yours or a design code's. Click a rule to edit it below; every field says on hover what \
+     it changes.",
+);
 
 /// What the views draw of a report.
 #[derive(Debug, Clone, Default)]
@@ -277,12 +323,7 @@ impl LightningWindow {
                 &cancel,
             )?;
             if ground.is_none() {
-                report.notes.insert(
-                    0,
-                    "no terrain for the checks: the ground straight between the structures' feet \
-                     and level across (Line › Terrain)"
-                        .into(),
-                );
+                report.notes.insert(0, NO_TERRAIN.into());
             }
             report.notes.splice(0..0, local.notes());
             local.finish(LOCAL.1, started.elapsed());
@@ -338,6 +379,7 @@ impl LightningWindow {
         let mut open = true;
         let mut run = false;
         let mut changed = false;
+        let mut guide = None;
         let stale = self.out_of_date(model);
         help::window(
             ctx,
@@ -359,8 +401,18 @@ impl LightningWindow {
                     why.is_some() && !self.job.running(),
                 );
                 match tab {
+                    // The check pages' treatment (2026-11-15): a user
+                    // guide button per section, the grey lines in the
+                    // (?) of their section or the fields' hovers; the
+                    // warnings stay written. No Model section: every
+                    // modelling setting is a rule's (a preset brings it).
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
+                        guide = guide.or(check_ui::section(
+                            ui,
+                            1,
+                            "What it checks",
+                            Some(anchors::WHAT),
+                        ));
                         help::explain(
                             ui,
                             "Whether the shielding wires keep lightning off the phases: by a \
@@ -396,31 +448,40 @@ impl LightningWindow {
                             },
                         );
                         ui.separator();
-                        check_ui::section(ui, 2, "Scope", None);
                         let (pairs, spans) = self.work(model);
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Every span of the line ({spans}); each rule gives its phases, its \
-                                 shielding wires and its weather cases ({pairs} rule × case pair{} \
-                                 to run, 3 Rules).",
-                                if pairs == 1 { "" } else { "s" }
-                            ))
-                            .small()
-                            .weak(),
+                        let scope = format!(
+                            "Every span of the line ({spans}); each rule gives its phases, its \
+                             shielding wires and its weather cases ({pairs} rule × case pair{} to \
+                             run, 3 Rules).",
+                            if pairs == 1 { "" } else { "s" }
                         );
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            2,
+                            "Scope",
+                            Some(anchors::SCOPE),
+                            Some((
+                                scope.as_str(),
+                                "A span is checked when it holds a phase a rule protects; a run \
+                                 takes every span once per rule × case pair (a rule's weather \
+                                 case, with each of its shielding wires' cases). The ground across \
+                                 each cross-section is the terrain of the checks (Line › Terrain).",
+                            )),
+                        ));
                         if model.ground_for_checks().is_none() {
                             ui.colored_label(
                                 ui.visuals().warn_fg_color,
-                                egui::RichText::new(
-                                    "No terrain for the checks: the ground is taken straight \
-                                     between the structures' feet and level across (Line › \
-                                     Terrain). The sphere's verdict depends on the ground.",
-                                )
-                                .small(),
+                                egui::RichText::new(NO_TERRAIN).small(),
                             );
                         }
                         ui.separator();
-                        check_ui::section(ui, 3, "Rules", None);
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            3,
+                            "Rules",
+                            Some(anchors::RULES),
+                            Some(RULES_HELP),
+                        ));
                         changed |= self.rules_ui(ui, model, presets, &mut out);
                         if let Some((text, error)) = &self.status {
                             if *error {
@@ -431,6 +492,7 @@ impl LightningWindow {
                         }
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        guide = guide.or(help::heading(ui, "Results", anchors::RESULTS));
                         self.results_ui(ui, &stale, &mut run, &mut out);
                     }),
                 }
@@ -480,6 +542,7 @@ impl LightningWindow {
             },
         );
         self.open = open;
+        out.guide = guide;
         if changed {
             self.save(model);
         }
@@ -688,16 +751,24 @@ impl LightningWindow {
                         ))
                         .small(),
                     );
-                    paint_cut(ui, cut, rule.method, &r.section);
-                    if report.rules.len() > 1 {
-                        ui.label(
-                            egui::RichText::new(
-                                "The cross-sections drawn are the last rule's of each span.",
-                            )
-                            .small()
-                            .weak(),
+                    // Only the last pair's cuts are kept (2026-11-15: said
+                    // whenever the row is of another pair, not only with
+                    // several rules).
+                    if let Some((k, case)) = &report.report.cuts_of
+                        && (*k != r.rule || *case != r.case)
+                    {
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            egui::RichText::new(format!(
+                                "Drawn: this span's cross-section of rule {}, case {} (the last \
+                                 checked; only its cross-sections are kept) — its colours are \
+                                 that rule's and case's verdict, not this row's.",
+                                report.rules[*k].name, case
+                            ))
+                            .small(),
                         );
                     }
+                    paint_cut(ui, cut, rule.method, &r.section);
                 }
                 None => {
                     ui.label(
@@ -767,14 +838,21 @@ fn rule_fields(
         .num_columns(2)
         .spacing(help::GRID_SPACING)
         .show(ui, |ui| {
-            ui.label("Weather cases");
+            ui.label("Weather cases").on_hover_text(
+                "The cases this rule checks the phases in (none ticked: every case); Run solves \
+                 the line once in every case any rule names: more cases, more time",
+            );
             crate::menu::options_menu(ui, &crate::rule_table::cases_words(&r.cases), |ui| {
                 changed |= crate::case_groups::pick_names(ui, groups, &mut r.cases);
                 changed |= ticks(ui, cases, &mut r.cases);
             });
             ui.end_row();
             // The shielding wires in their own cases (owner, 2026-11-01).
-            ui.label("Shielding wires' cases");
+            ui.label("Shielding wires' cases").on_hover_text(
+                "The shielding wires' own weather cases (none ticked: the phases' case): each \
+                 case above checked with the shielding wires in each case ticked here, one row per \
+                 pair (e.g. the earth wires cooler, higher); one more solve per case ticked",
+            );
             crate::menu::options_menu(ui, &shield_cases_words(r), |ui| {
                 ui.label(
                     egui::RichText::new(
@@ -790,21 +868,34 @@ fn rule_fields(
             ui.end_row();
             // How each is solved (owner, 2026-11-01: "define the
             // computation type for the wires").
-            ui.label("Phases' calculation");
+            ui.label("Phases' calculation").on_hover_text(
+                "How the phases are solved (none: each section's own): a larger sag brings a \
+                 phase lower, nearer the ground; one more solve of each case when given, FE slower \
+                 than RS",
+            );
             changed |= crate::rule_table::calculation_combo(
                 ui,
                 "lightning-phases-calc",
                 &mut r.calculation,
             );
             ui.end_row();
-            ui.label("Shielding wires' calculation");
+            ui.label("Shielding wires' calculation").on_hover_text(
+                "How the shielding wires are solved (none: each section's own): a larger sag \
+                 brings them lower, nearer the phases; one more solve of each case when given",
+            );
             changed |= crate::rule_table::calculation_combo(
                 ui,
                 "lightning-shields-calc",
                 &mut r.shield_calculation,
             );
             ui.end_row();
-            ui.label("Method");
+            ui.label("Method").on_hover_text(
+                "Shielding angle: the phases within the angle from the vertical through a \
+                 shielding wire (the ground and the height not counted). Rolling sphere: no sphere \
+                 of the striking distance, rolled over the shielding wires and the ground, may \
+                 touch a phase (exact in each cross-section; slower: r_max searched per phase and \
+                 span)",
+            );
             ui.horizontal(|ui| {
                 let angle = matches!(r.method, Method::Angle { .. });
                 if ui.selectable_label(angle, "Shielding angle").clicked() && !angle {
@@ -825,10 +916,16 @@ fn rule_fields(
             ui.end_row();
             match &mut r.method {
                 Method::Angle { outer, inner } => {
-                    ui.label("Outer angle");
+                    ui.label("Outer angle").on_hover_text(
+                        "The largest angle allowed from the vertical through a shielding wire, \
+                         for a phase not between two shielding wires: larger, fewer phases exposed",
+                    );
                     changed |= drag(ui, outer, 0.0..=89.9, " °");
                     ui.end_row();
-                    ui.label("Inner angle");
+                    ui.label("Inner angle").on_hover_text(
+                        "The largest angle allowed for a phase between two shielding wires \
+                         (across): larger, fewer phases exposed",
+                    );
                     changed |= drag(ui, inner, 0.0..=89.9, " °");
                     ui.end_row();
                 }
@@ -836,7 +933,11 @@ fn rule_fields(
                     distance,
                     ground_factor,
                 } => {
-                    ui.label("Striking distance");
+                    ui.label("Striking distance").on_hover_text(
+                        "The sphere's radius r to the wires: typed in m, or from a stroke current \
+                         I by r = A·I^b (A = 10, b = 0.65 by default). A smaller r (a weaker \
+                         stroke) reaches further in: more exposure",
+                    );
                     ui.horizontal(|ui| {
                         let typed = matches!(distance, StrikingDistance::Typed(_));
                         if ui.selectable_label(typed, "typed").clicked() && !typed {
@@ -872,15 +973,26 @@ fn rule_fields(
                             .weak(),
                     );
                     ui.end_row();
-                    ui.label("Ground factor β");
+                    ui.label("Ground factor β").on_hover_text(
+                        "The ground's striking distance is β·r: below 1 the sphere comes nearer \
+                         the ground, which then shields less: more exposure",
+                    );
                     changed |= drag(ui, ground_factor, 0.1..=2.0, "");
                     ui.end_row();
                 }
             }
-            ui.label("Step along the span");
+            ui.label("Step along the span").on_hover_text(
+                "The spacing of the cross-sections along each span (default 5 m): smaller, the \
+                 length exposed is found more finely and a short exposure is less likely missed; \
+                 the time grows with the number of cross-sections (the 1.26 km example, rolling \
+                 sphere: 2.5 s at 10 m, 3.4 s at 5 m, 6.5 s at 1 m; the angle 0.3 s at any step)",
+            );
             changed |= drag(ui, &mut r.step, 0.1..=100.0, " m");
             ui.end_row();
-            ui.label("Phases protected");
+            ui.label("Phases protected").on_hover_text(
+                "The phases this rule checks (none ticked: every phase, a section with a \
+                 system); fewer phases, fewer rows",
+            );
             crate::menu::options_menu(ui, &phases_words(r), |ui| {
                 ui.label(
                     egui::RichText::new(
@@ -898,7 +1010,10 @@ fn rule_fields(
                 changed |= ticks(ui, circuits, &mut r.targets.circuits);
             });
             ui.end_row();
-            ui.label("Shielding wires");
+            ui.label("Shielding wires").on_hover_text(
+                "The wires that shield (none ticked: every earthed wire, a section without a \
+                 system); a wire not ticked does not shield",
+            );
             crate::menu::options_menu(ui, &shields_words(r), |ui| {
                 ui.label(
                     egui::RichText::new(
@@ -912,24 +1027,6 @@ fn rule_fields(
             });
             ui.end_row();
         });
-    help::explain(
-        ui,
-        match r.method {
-            Method::Angle { .. } => {
-                "The phases must lie within the angle from the vertical through a shielding wire \
-                 above them: the inner angle towards another shielding wire, the outer elsewhere."
-            }
-            Method::Sphere { .. } => {
-                "A sphere of the striking distance rolled over the shielding wires and the ground \
-                 (β times the distance from it) must not touch a phase; smaller distances (weaker \
-                 strokes) reach further in."
-            }
-        },
-        "Each cross-section is square to its span at the middle of each step; a smaller step \
-         finds shorter exposed lengths and takes longer (the time grows with the number of \
-         cross-sections). No value is built in: the angles, the striking distance or current, \
-         A, b and β are yours or a design code's.",
-    );
     changed
 }
 
@@ -1208,6 +1305,14 @@ pub fn scene(origin: [f64; 3], overlay: &Overlay) -> ohl_render::Scene {
 /// What the window asks of the app: go to a span (drawn in the rule's
 /// case), its preset's weather cases added, the 3D layer redrawn.
 pub fn handle(r: &mut crate::app::Ready, out: Out) {
+    // The window's own page of the user guide (2026-11-15).
+    if let Some(anchor) = out.guide {
+        let (page, anchor) = guide(anchor);
+        r.status = Some(match crate::help::open_section(page, anchor) {
+            Ok(m) => (format!("user guide opened: {m}"), false),
+            Err(e) => (e, true),
+        });
+    }
     if let Some(target) = out.go {
         r.go_to(target.clone());
         if let Some(case) = &out.case {
@@ -1350,6 +1455,69 @@ mod tests {
         harness.run();
         let r = harness.state_mut().ready().unwrap();
         assert!(r.view3d.lightning.report.is_none());
+    }
+
+    /// Every section the window's **user guide ↗** buttons open is a
+    /// heading of its own page (mdBook's anchors: lower case, spaces as
+    /// `-`, punctuation dropped; 2026-11-15), the page in the book's
+    /// summary.
+    #[test]
+    fn each_guide_button_opens_a_heading_of_the_page() {
+        let root = crate::tests::root();
+        let text = std::fs::read_to_string(root.join("docs").join(format!("{GUIDE}.md"))).unwrap();
+        let headings: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for a in [
+            anchors::WHAT,
+            anchors::SCOPE,
+            anchors::RULES,
+            anchors::RESULTS,
+        ] {
+            let (page, s) = guide(a);
+            assert_eq!(page, "user-guide/lightning-shielding");
+            assert!(headings.iter().any(|x| x == s), "{s} not in {headings:?}");
+        }
+        let summary = std::fs::read_to_string(root.join("docs/SUMMARY.md")).unwrap();
+        assert!(summary.contains(&format!("({GUIDE}.md)")), "{summary}");
+    }
+
+    /// The window's first **user guide ↗** (1 What it checks) opens its
+    /// own page, said in the status; the Results' button its section.
+    #[test]
+    fn the_user_guide_button_opens_the_window_page() {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1400.0, 1000.0))
+            .build_eframe(|_| crate::app::App::with_model(crate::tests::shielded(), None));
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.lightning.show(&r.model);
+        }
+        h.run();
+        h.query_all_by_label("user guide ↗")
+            .next()
+            .expect("a user guide button")
+            .click();
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        let (said, error) = r.status.clone().expect("what was opened");
+        assert!(!error, "{said}");
+        assert!(said.contains("lightning-shielding"), "{said}");
+        assert!(said.contains(anchors::WHAT), "{said}");
     }
 
     /// The 3D layer rendered for review (with `OHL_RENDER_PNG` and a GPU;

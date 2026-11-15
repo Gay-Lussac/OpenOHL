@@ -55,6 +55,7 @@
   - [Galloping ellipses](user-guide/galloping.md)
   - [Magnetic field](user-guide/magnetic-field.md)
   - [Electric field](user-guide/electric-field.md)
+  - [Lightning shielding](user-guide/lightning-shielding.md)
   - [Vegetation and danger trees](user-guide/vegetation.md)
   - [Safety volumes](user-guide/safety-volumes.md)
   - [Distance between conductors](user-guide/distance-between-conductors.md)

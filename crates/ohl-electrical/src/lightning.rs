@@ -20,8 +20,8 @@
 //!
 //! **Shielding angle.** A phase is covered by a shielding wire above it
 //! when the line from the wire to the phase leans from the vertical by at
-//! most the rule's angle: the inner angle towards another shielding wire,
-//! the outer one elsewhere. Measured to the far side of the phase's
+//! most the rule's angle: the inner angle for a phase between the wire and
+//! another shielding wire (across), the outer one elsewhere. Measured to the far side of the phase's
 //! bundle (its outer radius added across and taken off the height) —
 //! **conservative**.
 //!
@@ -194,6 +194,11 @@ pub struct Report {
     /// The cross-sections (of the last rule and case checked per span:
     /// for the drawings).
     pub cuts: Vec<Cut>,
+    /// The rule × case pair whose cross-sections [`Self::cuts`] are: the
+    /// rule's index and the rows' case (2026-11-15: a row of another pair
+    /// says its cut is not its own). Not written to the JSON.
+    #[serde(skip)]
+    pub cuts_of: Option<(usize, String)>,
     /// What was assumed or left out.
     pub notes: Vec<String>,
 }
@@ -407,11 +412,17 @@ fn needed_angle(p: CutWire, w: CutWire) -> f64 {
 fn angle_check(p: CutWire, shields: &[CutWire], outer: f64, inner: f64) -> (f64, f64) {
     let mut best = (f64::INFINITY, 90.0);
     for w in shields {
-        // Towards another shielding wire: the inner angle.
+        // Between this wire and another shielding wire across: the inner
+        // angle (2026-11-15: before, any other wire on the phase's side,
+        // also for a phase beyond it — outside the outer wire's outer
+        // line, said covered by the farther wire's inner angle: not on
+        // the safe side, and unlike the zone drawn).
         let side = (p.s - w.s).signum();
-        let towards = shields
-            .iter()
-            .any(|o| (o.s - w.s).abs() > 1e-6 && (o.s - w.s).signum() == side);
+        let towards = shields.iter().any(|o| {
+            (o.s - w.s).abs() > 1e-6
+                && (o.s - w.s).signum() == side
+                && (o.s - w.s).abs() >= (p.s - w.s).abs()
+        });
         let allowed = if towards { inner } else { outer };
         let need = needed_angle(p, *w);
         if need - allowed < best.0 {
@@ -739,6 +750,7 @@ pub fn run(
         report.rows.extend(r.rows);
         // The drawings: the last run's cross-sections.
         report.cuts = r.cuts;
+        report.cuts_of = Some((k, name));
         for n in r.notes {
             if !report.notes.contains(&n) {
                 report.notes.push(n);
@@ -748,8 +760,26 @@ pub fn run(
     if cancel.load(Ordering::Relaxed) {
         return Err("stopped".into());
     }
+    if let Some(n) = step_note(rules, &report.rows) {
+        report.notes.push(n);
+    }
     sort_rows(&mut report.rows);
     Ok(report)
+}
+
+/// The cross-sections' step, said in every result that has rows
+/// (2026-11-15): a phase is looked at in the cuts only, so an exposure
+/// shorter than a step can be missed — not on the safe side.
+pub fn step_note(rules: &[LightningRule], rows: &[Row]) -> Option<String> {
+    let step = rows
+        .iter()
+        .map(|r| rules[r.rule].step)
+        .max_by(f64::total_cmp)?;
+    Some(format!(
+        "NOT ON THE SAFE SIDE: each cross-section stands for its step along the span (up to \
+         {step} m here): an exposure shorter than a step, between two cross-sections or within \
+         half a step of a structure, can be missed — a smaller step finds it (and takes longer)"
+    ))
 }
 
 /// Checks the spans of `src` under `rule` (index `index`) in weather
@@ -1301,5 +1331,23 @@ mod tests {
         assert!(angle_check(big, &shields, 30.0, 45.0).0 > 0.0);
         // No wire above: 90°.
         assert_eq!(angle_check(wire(0.0, 40.0), &shields, 30.0, 30.0).1, 90.0);
+    }
+
+    /// The inner angle only between two shielding wires (2026-11-15): a
+    /// phase beyond the lower right wire, outside its 30° outer line, is
+    /// exposed — not covered by the higher left wire's inner 45°, which it
+    /// is within (34°).
+    #[test]
+    fn the_inner_angle_holds_between_the_wires_only() {
+        let shields = [wire(-5.0, 50.0), wire(5.0, 30.0)];
+        let p = wire(12.0, 25.0);
+        // From the right wire: atan(7 / 5) = 54.5°, beyond 30°; from the
+        // left one atan(17 / 25) = 34.2°, within 45° but not between.
+        let (beyond, need) = angle_check(p, &shields, 30.0, 45.0);
+        assert!(beyond > 0.0, "{beyond}");
+        assert!((need - (17.0f64).atan2(25.0).to_degrees()).abs() < 1e-9);
+        // Between them, the left wire's inner angle still covers.
+        let q = wire(2.0, 25.0);
+        assert!(angle_check(q, &shields, 30.0, 45.0).0 < 0.0);
     }
 }
