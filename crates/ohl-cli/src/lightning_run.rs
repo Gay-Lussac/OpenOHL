@@ -58,7 +58,7 @@ pub fn run(a: &LightningArgs) -> Result<bool, String> {
     let terrain = match (&a.terrain, &a.surface) {
         (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
         (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&a.model.file)?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }

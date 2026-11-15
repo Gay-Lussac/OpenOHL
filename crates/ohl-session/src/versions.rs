@@ -81,6 +81,18 @@ const LEVEL: i32 = 3;
 
 /// Makes the branch `main` and the head when missing (new projects and
 /// files of schema 1).
+/// Whether [`init`] has nothing to add: the main branch and the head
+/// are there.
+pub(crate) fn initialised(conn: &Connection) -> Result<bool, SessionError> {
+    let branch = conn
+        .prepare("SELECT 1 FROM vc_ref WHERE name = ?1 AND kind = 'branch'")?
+        .exists(params![MAIN])?;
+    let head = conn
+        .prepare("SELECT 1 FROM ols_meta WHERE key = 'vc_head'")?
+        .exists([])?;
+    Ok(branch && head)
+}
+
 pub(crate) fn init(conn: &Connection) -> Result<(), SessionError> {
     conn.execute(
         "INSERT OR IGNORE INTO vc_ref (name, kind, revision, user) VALUES (?1, 'branch', NULL, '')",

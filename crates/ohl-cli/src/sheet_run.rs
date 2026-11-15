@@ -32,7 +32,7 @@ fn project_templates(project: &Path) -> Vec<Found> {
     if !crate::project::is_project(project) {
         return Vec::new();
     }
-    let Ok(session) = crate::project::open_existing(project) else {
+    let Ok(session) = crate::project::open_read_only(project) else {
         return Vec::new();
     };
     session
@@ -305,7 +305,7 @@ pub fn version_line(
     insulators: &Path,
 ) -> Result<ohl_line::Line, String> {
     if crate::project::is_project(project) {
-        let session = crate::project::open_existing(project)?;
+        let session = crate::project::open_read_only(project)?;
         if let Ok(line) = session.line_named(name) {
             let types = if line.structures.iter().any(|s| s.structure_type.is_some()) {
                 ohl_structures::StructureLibrary::load_dir(structures).map_err(|e| e.to_string())?

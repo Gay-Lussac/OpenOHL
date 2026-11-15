@@ -561,7 +561,7 @@ fn gradient(a: &GradientArgs) -> Result<(), String> {
     let terrain = match (&a.terrain, &a.surface) {
         (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
         (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&a.model.file)?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }
@@ -683,7 +683,7 @@ fn parameters(a: &ParametersArgs) -> Result<(), String> {
     let terrain = match (&a.terrain, &a.surface) {
         (Some(path), _) => Some(ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?),
         (None, Some(name)) => {
-            let session = ohl_session::Session::open(&a.model.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&a.model.file)?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Some(ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?)
         }
@@ -841,7 +841,7 @@ pub(crate) fn project_ground(
 ) -> Result<Option<ohl_terrain::Terrain>, String> {
     let project = file.extension().is_some_and(|e| e == "ohl");
     if project && !lidar {
-        let session = ohl_session::Session::open(file).map_err(|e| e.to_string())?;
+        let session = crate::project::open_read_only(file)?;
         if let Some(name) = session.setting("app.check_surface").ok().flatten() {
             let (points, triangles) = session.surface(&name).map_err(|e| e.to_string())?;
             println!("  ground: the project's surface of the checks {name}");
@@ -1032,7 +1032,7 @@ fn read_plan(c: &FieldCommonArgs) -> Result<Option<Plan>, String> {
             given.clone(),
         )
     } else {
-        let session = crate::project::open_existing(&c.model.file)?;
+        let session = crate::project::open_read_only(&c.model.file)?;
         let name = given.display().to_string();
         let ext = format!(".{}", ohl_electrical::field_plan::EXTENSION);
         let text = session
@@ -1241,7 +1241,7 @@ fn terrain(
             ohl_terrain::Terrain::load(path).map_err(|e| e.to_string())?,
         )),
         (None, Some(name)) => {
-            let session = ohl_session::Session::open(&c.model.file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(&c.model.file)?;
             let (points, triangles) = session.surface(name).map_err(|e| e.to_string())?;
             Ok(Some(
                 ohl_terrain::Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())?,
@@ -2425,7 +2425,7 @@ fn plan_extras(
     let surface = match plan.cut.background {
         Background::Tin if !plan.cut.surface.is_empty() => {
             in_project("surface", &plan.cut.surface)?;
-            let session = ohl_session::Session::open(file).map_err(|e| e.to_string())?;
+            let session = crate::project::open_read_only(file)?;
             let (pts, tris) = session
                 .surface(&plan.cut.surface)
                 .map_err(|e| format!("field plan: surface {}: {e}", plan.cut.surface))?;

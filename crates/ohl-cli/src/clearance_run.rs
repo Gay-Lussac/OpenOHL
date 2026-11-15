@@ -398,7 +398,7 @@ pub fn prepare(line: &Line, o: &Options) -> Result<Prepared, String> {
         let read = o
             .project
             .ok_or_else(|| "the surfaces are in a project file (.ohl)".to_owned())
-            .and_then(|p| ohl_session::Session::open(p).map_err(|e| e.to_string()))
+            .and_then(crate::project::open_read_only)
             .and_then(|s| s.surface(n).map_err(|e| e.to_string()))
             .and_then(|(points, triangles)| {
                 Terrain::from_mesh(points, triangles).map_err(|e| e.to_string())

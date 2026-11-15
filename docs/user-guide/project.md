@@ -44,11 +44,19 @@ the `Structures` and `Sections` folders next to the file). `--weather`,
 `--load-cases` and `--rules` also take the name of one of the project's
 own files (`--weather cases.ohlwc`), and `ohl zones` falls back on the
 project's first weather case file. The summary says where each library
-came from (`cables: the project's (2 files)`). The commands write nothing
-to the project; opening a project file of an older build upgrades it (as
-the desktop application does, e.g. the library files of session schema 3
-become objects of each project line), and a project file that does not
-exist is not created.
+came from (`cables: the project's (2 files)`).
+
+**Commands that only read or compute open the project read-only**
+(2026-11-15): `ohl line`, `ohl zones`, the checks, drawings and every other
+command taking a project as its line, `ohl project export`, `log`, `tiles`,
+`query`, `history`, `status` and `diff`, `ohl surface list` and `export`
+leave the file as it is — its bytes and its modification time unchanged, no
+`project.ohl-wal` or `project.ohl-shm` made next to it. A project file of an
+older build is upgraded in memory for the run only (the desktop
+application, or a command that writes, upgrades the file itself). A project
+file that does not exist is not created. The commands that change the
+project (`import`, `apply`, `undo`, `redo`, `user`, `commit`, …) open it
+for writing as before.
 
 ## Commands
 

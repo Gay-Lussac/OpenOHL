@@ -3141,9 +3141,9 @@ server (`ohl-server`), which older servers refuse.
 
 #### Opening a file: schema checks and upgrades
 
-`Session::open` (every program that opens a project: `ohl-design`,
-`ohl-structure`, `ohl project …`, `ohl line FILE.ohl`, the server) does,
-in this order:
+`Session::open` (every program that opens a project to write it:
+`ohl-design`, `ohl-structure`, the `ohl project …` commands that change it,
+the server) does, in this order:
 
 1. A file whose `session_schema` is higher than 6 (or not a number) is
    **refused before anything in it changes**.
@@ -3179,6 +3179,26 @@ in this order:
 
 Each step looks for what it changes (a column, a table), so a file of an
 in-between build is upgraded too and a step already done does nothing.
+
+**Read-only opening** (`Session::open_read_only`, owner 2026-11-15): the
+command-line commands that only read or compute (`ohl line FILE.ohl` and
+every other command taking a project as its line — `load_line`, the
+project's libraries, its surfaces and field plans —, `ohl project export`,
+`log`, `tiles`, `query`, `history`, `status`, `diff`, `ohl surface list`
+and `export`) open the file with `SQLITE_OPEN_READ_ONLY`: no journal mode
+set (step 2's `PRAGMA` left out), nothing made or written — the file's
+bytes and modification time stay as they were. A file no program has open
+(no `-wal` beside it) is opened as `immutable` (no locks, so no `-wal` or
+`-shm` made beside it; a program opening it for writing meanwhile is not
+seen); one open elsewhere is read through its write-ahead log, as a reader
+beside the program writing it. A file that needs something written before
+it can be read (an older build's: any step above that writes) is copied
+into memory (SQLite's backup) and opened there with every step, the file
+untouched. A command that writes fails on a read-only session (SQLite's
+"attempt to write a readonly database"); the commands that write
+(`import`, `apply`, `undo`, `redo`, `user`, the version-control commands
+that change it, `ohl surface import`, `rename`, `delete`, writing tensions
+back, …) keep `Session::open`.
 Upgrading rewrites no object of a line: schema 5 and 6 add nothing to
 convert. `ohl_pointcloud::Store::open` refuses a `pointcloud_schema`
 above 2; a file of version 1 is read as it is and gets its levels of
