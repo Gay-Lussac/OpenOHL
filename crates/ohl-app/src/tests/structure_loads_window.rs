@@ -452,6 +452,58 @@ fn structures_on_no_alignment_are_left_out_by_default() {
     );
 }
 
+/// A run in two stages: the line in each case (counted case by case),
+/// then the structures (counted structure by structure), the same answer
+/// with one thread as with all; cancelled, no answer.
+#[test]
+fn a_run_reports_both_stages_and_stops_when_cancelled() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let model = synthetic_project("loads-window-stages");
+    let library = ohl_loads::LoadCases::load(model.sources.load_cases.as_deref().unwrap()).unwrap();
+    let inputs = crate::loads::Inputs {
+        line: model.line.clone(),
+        library: model.library.clone(),
+        types: model
+            .types
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .unwrap_or_default(),
+        weather: model.cases.iter().map(|c| c.case.clone()).collect(),
+        sections: model.section_library(),
+        cases: Ok(library.cases.clone()),
+        known: library.cases.iter().map(|c| c.name.clone()).collect(),
+        local: false,
+        plan: None,
+    };
+    let stages = crate::loads::Stages::default();
+    let all = crate::loads::run(&inputs, &stages, 0).unwrap();
+    assert_eq!(stages.stage.load(Relaxed), 3, "done");
+    let one = crate::loads::run(&inputs, &crate::loads::Stages::default(), 1).unwrap();
+    assert_eq!(format!("{:?}", all.loads), format!("{:?}", one.loads));
+    assert_eq!(format!("{:?}", all.usage), format!("{:?}", one.usage));
+    // Where it is, as the footer says it.
+    let s = crate::loads::Stages::default();
+    s.stage.store(1, Relaxed);
+    s.total.store(3, Relaxed);
+    s.done.store(1, Relaxed);
+    let p = s.progress(std::time::Duration::from_secs(4));
+    assert!(
+        p.text.starts_with("Solving the line: case 2 of 3"),
+        "{}",
+        p.text
+    );
+    s.stage.store(2, Relaxed);
+    s.total.store(7, Relaxed);
+    s.done.store(3, Relaxed);
+    let p = s.progress(std::time::Duration::from_secs(9));
+    assert!(p.text.starts_with("Structures: 3 of 7"), "{}", p.text);
+    assert_eq!(p.fraction, Some(3.0 / 7.0));
+    // Cancelled: no answer.
+    let cancelled = crate::loads::Stages::default();
+    cancelled.cancel.cancel();
+    assert!(crate::loads::run(&inputs, &cancelled, 0).is_none());
+}
+
 /// Every section the window's **user guide ↗** buttons open is a heading
 /// of its own page (mdBook's anchors: lower case, spaces as `-`,
 /// punctuation dropped).
