@@ -71,7 +71,8 @@ pub(crate) const TENSION_NO_COMPRESSION: &str = "tension-only: no compression";
 const TENSION_NO_COMPRESSION_HELP: &str = "Ticked: the tension-only members (kind tension) \
      carry no compression at all — each goes slack as soon as it is shortened, not even \
      carrying its buckling load — and the compression goes to the other members (more load on \
-     them: on the safe side for them). A joint held only by tension-only members that are \
+     those they relieved: on the safe side for them; not a bound for every member, compare both \
+     where it matters). A joint held only by tension-only members that are \
      shortened is then held by nothing: that load case is refused and the joint named. Not \
      ticked (the default): a tension-only member carries compression up to its own buckling \
      load (capped by its design compression resistance), bowed beyond it. Ticking writes \
@@ -1717,7 +1718,9 @@ impl StructureApp {
         );
         // The analysis settings ([analysis]) that go with the members.
         let analysis = t.analysis.clone().unwrap_or_default();
-        ui.horizontal(|ui| {
+        // Wrapped: with the tension-only switch the row is wider than a
+        // narrow panel, and the capacities choice would fall off its edge.
+        ui.horizontal_wrapped(|ui| {
             ui.strong("Analysis")
                 .on_hover_text("The finite-element check's settings ([analysis] of the file)");
             let mut stabilise = analysis

@@ -738,8 +738,9 @@ pub enum TensionCompression {
     #[default]
     Buckling,
     /// `"none"`: no compression at all, not even up to its buckling load —
-    /// slack as soon as it is shortened. On the safe side for the other
-    /// members (they take all the compression); a joint held only by
+    /// slack as soon as it is shortened. On the safe side for the members
+    /// it relieved (they take its compression; not a bound for every
+    /// member of an indeterminate structure); a joint held only by
     /// tension-only members in compression is then free, and the solve
     /// refuses the case naming it.
     None,

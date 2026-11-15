@@ -10,6 +10,34 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Tension-only members: a per-model setting for their compression**
+(owner). The owner first asked that "the tension only members should be
+assumed to hold no compression, not even until buckling". Made the rule
+for every model and measured on a real line, it broke 31 of 73 towers
+(attachment joints held only by tension-only members), so the owner
+chose: "Add a per-model analysis setting… compression up to buckling
+(today, the default) or no compression. You can switch a model to no
+compression and see the towers that then lose a support, named. Nothing
+changes for existing models until you switch." Built (not approved yet):
+`[analysis] tension_compression = "buckling"` (the default, the decision
+of 2026-10-19 with the design-resistance cap of 2026-11-08) or `"none"`
+(slack as soon as shortened) in structure models (version 6) and
+structure types (version 14), each written at that version only when the
+key is given; OHL-Structure's Analysis row *tension-only: no
+compression* (one undoable edit); `ohl structures fe
+--tension-compression`; OHL-Design's structure usage takes the type's
+setting through its model. "none" is on the safe side for the members
+the tension-only ones relieved (they take the compression), not a bound
+for every member of an indeterminate structure (said in the theory); a joint held only by shortened
+tension-only members is then held by nothing — held within the
+stabilisation's limits and listed, refused beyond them naming the joints,
+the refusal adding that the tension-only members carry no compression.
+The notes and a slack member's usage say the law used ("tension-only
+members (no compression): …", "slack (no compression)"). Benchmark
+structfe-016 (the X panel set to none); structfe-011 and every test of
+the default unchanged ([theory](../theory/structures-fe.md#tension-only-members-compression-up-to-their-buckling-load-or-none),
+[user guide](../user-guide/structure-analysis.md#tension-only-members)).
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —
