@@ -243,6 +243,9 @@ fn a_group_ticking_no_case_gives_its_structures_none() {
     }
     h.run();
     assert_eq!(cases_cell(&mut h, "T2"), "dismantled: 1: wind");
+    // Below the Rules (the ground elevation added 2026-11-15): scrolled to.
+    h.get_by_label("None").scroll_to_me();
+    h.run();
     h.get_by_label("None").click();
     h.run();
     {
