@@ -1036,73 +1036,8 @@ fn amplification(
     budget: &Budget,
 ) -> Result<f64, FeError> {
     let top = pole.height();
-    // Node heights: even steps plus every load height.
-    let mut z: Vec<f64> = (0..=ELEMENTS)
-        .map(|k| top * k as f64 / ELEMENTS as f64)
-        .collect();
-    for l in loads {
-        z.push(l.point[2].clamp(0.0, top));
-    }
-    z.sort_by(f64::total_cmp);
-    z.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
-    let mut model = Model {
-        name: pole.id.clone(),
-        analysis: Analysis {
-            nonlinear: true,
-            self_weight: true,
-            // A pole's own weight is its shaft's; what it carries besides
-            // is in the pole check's notes.
-            dead_load_given: true,
-            ..Analysis::default()
-        },
-        ..Model::default()
-    };
-    for (k, h) in z.iter().enumerate() {
-        let id = format!("n{k}");
-        model.nodes.push(if k == 0 {
-            Node::fixed(&id, [0.0, 0.0, *h])
-        } else {
-            Node::free(&id, [0.0, 0.0, *h])
-        });
-    }
-    for k in 0..z.len() - 1 {
-        let d = pole.diameter_at(0.5 * (z[k] + z[k + 1]));
-        let i = pole.second_moment(d);
-        let mut s = Section::elastic(&format!("s{k}"), e, pole.area(d), i);
-        s.density = pole.density;
-        model.sections.push(s);
-        model.members.push(Member::new(
-            &format!("m{k}"),
-            MemberKind::Frame,
-            k,
-            k + 1,
-            k,
-        ));
-    }
-    // Every load height is a node (the loads are finite, checked by the
-    // caller); the nearest node all the same, never a panic.
-    let node_at = |h: f64| {
-        let h = h.clamp(0.0, top);
-        z.iter()
-            .position(|x| (x - h).abs() < 1e-6)
-            .unwrap_or_else(|| {
-                z.iter()
-                    .enumerate()
-                    .min_by(|a, b| (a.1 - h).abs().total_cmp(&(b.1 - h).abs()))
-                    .map_or(0, |(k, _)| k)
-            })
-    };
-    let mut nodal = Vec::new();
-    for l in loads {
-        let r = [l.point[0], l.point[1]];
-        let f = l.force;
-        nodal.push(NodalLoad {
-            node: node_at(l.point[2]),
-            force: f,
-            // The offset from the axis: (r, 0) × F.
-            moment: [r[1] * f[2], -r[0] * f[2], r[0] * f[1] - r[1] * f[0]],
-        });
-    }
+    let (model, z) = frame_model(pole, e, loads.iter().map(|l| l.point[2]));
+    let mut nodal = axis_loads(&z, top, loads);
     if wind != [0.0, 0.0] {
         for k in 0..z.len() - 1 {
             let (a, b) = (z[k], z[k + 1]);
@@ -1141,4 +1076,100 @@ fn amplification(
     let second = solve(&model, &loads, &Options::default(), budget)?;
     let m1 = ground(&linear);
     Ok(if m1 > 0.0 { ground(&second) / m1 } else { 1.0 })
+}
+
+/// The pole's frame model above the ground line ([`ELEMENTS`] tapered
+/// frame elements and more, fixed at the ground line, nodes `n0`, `n1`,
+/// … up the axis): a node at even steps and at each of `heights` (m
+/// above ground, clamped to the pole), the elasticity `e`, each
+/// element's section at its middle (`Section::elastic`: J = 2I,
+/// G = E/2.6), P-Delta and the shaft's own weight on; with the nodes'
+/// heights, rising. The pole check's P-Delta model and the pole's
+/// stiffness at its attachment points
+/// ([`crate::condense::condense_pole`]) are this one model.
+pub(crate) fn frame_model(
+    pole: &Pole,
+    e: f64,
+    heights: impl IntoIterator<Item = f64>,
+) -> (Model, Vec<f64>) {
+    let top = pole.height();
+    // Node heights: even steps plus every load height.
+    let mut z: Vec<f64> = (0..=ELEMENTS)
+        .map(|k| top * k as f64 / ELEMENTS as f64)
+        .collect();
+    for h in heights {
+        z.push(h.clamp(0.0, top));
+    }
+    z.sort_by(f64::total_cmp);
+    z.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    let mut model = Model {
+        name: pole.id.clone(),
+        analysis: Analysis {
+            nonlinear: true,
+            self_weight: true,
+            // A pole's own weight is its shaft's; what it carries besides
+            // is in the pole check's notes.
+            dead_load_given: true,
+            ..Analysis::default()
+        },
+        ..Model::default()
+    };
+    for (k, h) in z.iter().enumerate() {
+        let id = format!("n{k}");
+        model.nodes.push(if k == 0 {
+            Node::fixed(&id, [0.0, 0.0, *h])
+        } else {
+            Node::free(&id, [0.0, 0.0, *h])
+        });
+    }
+    for k in 0..z.len() - 1 {
+        let d = pole.diameter_at(0.5 * (z[k] + z[k + 1]));
+        let i = pole.second_moment(d);
+        let mut s = Section::elastic(&format!("s{k}"), e, pole.area(d), i);
+        s.density = pole.density;
+        model.sections.push(s);
+        model.members.push(Member::new(
+            &format!("m{k}"),
+            MemberKind::Frame,
+            k,
+            k + 1,
+            k,
+        ));
+    }
+    (model, z)
+}
+
+/// The node of [`frame_model`] (node heights `z`, the pole `top` high)
+/// at height `h`: every load height is a node (the loads are finite,
+/// checked by the callers); the nearest node all the same, never a
+/// panic.
+pub(crate) fn node_at(z: &[f64], top: f64, h: f64) -> usize {
+    let h = h.clamp(0.0, top);
+    z.iter()
+        .position(|x| (x - h).abs() < 1e-6)
+        .unwrap_or_else(|| {
+            z.iter()
+                .enumerate()
+                .min_by(|a, b| (a.1 - h).abs().total_cmp(&(b.1 - h).abs()))
+                .map_or(0, |(k, _)| k)
+        })
+}
+
+/// `loads` on the axis of [`frame_model`] (node heights `z`, the pole
+/// `top` high): each at its height's node, its offset from the axis as
+/// the moment (r, 0) × F.
+pub(crate) fn axis_loads(z: &[f64], top: f64, loads: &[PoleLoad]) -> Vec<NodalLoad> {
+    loads
+        .iter()
+        .map(|l| {
+            let r = [l.point[0], l.point[1]];
+            let f = l.force;
+            NodalLoad {
+                node: node_at(z, top, l.point[2]),
+                force: f,
+                // The offset from the axis: (r, 0) × F.
+                moment: [r[1] * f[2], -r[0] * f[2], r[0] * f[1] - r[1] * f[0]],
+            }
+        })
+        .collect()
 }

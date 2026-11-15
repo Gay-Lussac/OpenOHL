@@ -432,17 +432,17 @@ impl Analyses {
             let force = [*tr, *lo, -ve];
             // The placed structure's attachment point: its own link (a
             // relink, an offset) over the type's (2026-10-21).
+            // (One rule with the structure's stiffness at its points:
+            // crate::flexibility.)
             let point = placed.and_then(|s| s.point(label));
-            if point.is_some_and(|p| p.unlinked) {
+            let link = crate::flexibility::placed_link(placed, label);
+            if link == ohl_structures_fe::condense::Link::Unlinked {
                 return refused(format!(
                     "attachment point {label} is not linked to a joint of the type: its \
                      loads are refused until it is linked"
                 ));
             }
-            let at = match point.and_then(|p| Some((p.joint.as_deref()?, p.offset))) {
-                Some((joint, offset)) => model.linked_load(label, joint, offset, force),
-                None => model.point_load(label, force),
-            };
+            let at = model.attachment_load(label, &link, force);
             match at {
                 Some(mut at) => {
                     // The moment of the loads acting away from the point (a
