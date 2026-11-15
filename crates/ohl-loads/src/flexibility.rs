@@ -105,9 +105,11 @@ impl Analyses {
         self.flexibility_cached(t, placed, labels, reference, budget, None)
     }
 
-    /// [`Analyses::flexibility`], the condensations (in the structure's
-    /// axes) kept in `cache` by their key and taken from it (the same
-    /// inputs, the same matrices).
+    /// The stiffness of placed structure `placed` of type `t` at its
+    /// attachment points `labels`, as `Analyses::flexibility` (the form
+    /// without a cache, for tests) says, the condensations (in the
+    /// structure's axes) kept in `cache` by their key and taken from it
+    /// (the same inputs, the same matrices).
     pub(crate) fn flexibility_cached(
         &self,
         t: &StructureType,
@@ -258,7 +260,7 @@ fn over_cores<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<
 /// The structures of `line` for calculation level 3: the wires' forces at
 /// the stringing state ([`reference_forces`]); per placed structure its
 /// points carrying wires solved by finite elements, condensed at the
-/// stringing state ([`Analyses::flexibility`]: the tangent under its
+/// stringing state (`Analyses::flexibility_cached`: the tangent under its
 /// self-weight and those forces), the matrix expanded to its points and
 /// turned to the line's axes; a structure with no type, no model, a
 /// refusal or no such wire: rigid, with why. `budget`: the line solves';
