@@ -37,6 +37,7 @@ mod codes;
 mod color_tool;
 mod controls;
 mod crs;
+mod default_cases;
 mod dockable;
 mod drawings;
 mod edit;

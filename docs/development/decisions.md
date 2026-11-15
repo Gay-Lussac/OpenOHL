@@ -10,6 +10,61 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Default weather and load cases** (owner): "can you have in the software
+by default a few weather cases like -20° 0° 10° 20° 40° 80° 10° + 300Pa
+wind and 0° + 20N/m Ice and 0° + 60 N/m ice then also have some default
+load cases for pylons like -20°, 10°, 40°, 10° + 300 Pa wind left, and
+right and 0° + 20N/m ice with a factor 1.5 on wind for the pylons and 1.3
+on the ice. these values are arbitrary but needed to check the codes. also
+i would like to have the option to have wind along the line forward and
+backward to test the pylons." Built (not approved yet):
+
+- Shipped as `libraries/weather/default-weather-cases.ohlwc` (nine cases)
+  and `libraries/loadcases/default-load-cases.ohllc` (eight, file version
+  4), embedded in `ohl_weather::default_cases` and
+  `ohl_loads::default_load_cases`. Every description says "default case,
+  arbitrary values for checking (not from a design code)": the values are
+  the owner's, not a standard's.
+- The ice cases give no density (the owner gave none): glaze ice, the
+  smallest iced diameter for the weight — NOT ON THE SAFE SIDE for the
+  clearances to the iced surface, said in their descriptions (they have
+  no wind, so the table's note does not show for them).
+- "1.5 on wind for the pylons": `transverse = 1.5` and `[case.structure]
+  wind_factor = 1.5`; "1.3 on the ice": `vertical = 1.3`. The factors act
+  on components, not actions, so each is above a factor on the action
+  alone (the pull at a line angle, the wires' own weight): on the safe
+  side. Every case `condition = "initial"` (none given; needs no
+  creep-stretch criteria), strength 1. The ice case puts no ice on the
+  structure bodies (an ice load per metre is no thickness for a
+  structure).
+- **Wind along the line**: the cases `… wind ahead` and `… wind back`
+  put 300 Pa × 1.5 on the structure bodies from ahead / from behind
+  (`[case.structure] direction`, the case's own `wind_pressure`) and **no
+  wind on the wires**: they name the still weather case `10 °C`. The
+  program models the wind on the wires across the line only; giving the
+  wires the cross wind in a wind-along-the-line case would be a wind they
+  do not get. No format change was needed (a `wires_wind = false` field
+  was considered and not made: the existing format says it). Left out,
+  NOT ON THE SAFE SIDE and said in the case's notes (a new note for a
+  body-only wind case): the spans' share at a line angle, the strings',
+  jumpers' and posts' wind along the line; the wind bands' one area (the
+  one across) is taken, as before. The body pressure is written twice
+  (the weather case and the load case): change both together. A weather
+  case with wind at any angle is being planned separately.
+- **Where**: File › New project… has the tick "Start with the default
+  weather and load cases (arbitrary values for checking)", on by default,
+  for the empty project (the two files) and the starter template (the
+  default cases added to its own two files, so every load case names a
+  weather case of the project). Existing projects: **Add the default
+  cases…** in Line › Criteria › Weather cases (new rows, Apply keeps them:
+  one change) and in the Load cases library (after a look at what it adds
+  and at the weather cases the project lacks; Save keeps them: one
+  change); by name, never replacing a case. The command line is unchanged
+  (no weather file: its one case of `--temperature`); the files are given
+  with `--weather` / `--load-cases`.
+- The tutorial unticks the defaults (it works with the starter's five
+  weather cases and its screenshots).
+
 **Tension-only members: a per-model setting for their compression**
 (owner). The owner first asked that "the tension only members should be
 assumed to hold no compression, not even until buckling". Made the rule

@@ -1,0 +1,135 @@
+# OpenOHL's default load cases for the structures (owner, 2026-11-15:
+# "these values are arbitrary but needed to check the codes"). ARBITRARY
+# values and factors for checking the program and the design codes: NOT
+# taken from a design code or a standard. A design code's combinations and
+# partial factors come from the standard you hold (a design-code plugin
+# writes them).
+#
+# They name the default weather cases (libraries/weather/
+# default-weather-cases.ohlwc). Every new project starts with both (File ›
+# New project…); Line › Structures › Load cases… › Add the default cases…
+# adds those a project lacks (by name). The command line takes this file
+# with --load-cases (and the weather file with --weather).
+#
+# The factors act on the load COMPONENTS (transverse, longitudinal,
+# vertical), not on actions (user guide: Load cases, "The factors act on
+# components"): "1.5 on the wind" is transverse = 1.5 for the wires' loads
+# and wind_factor = 1.5 for the wind on the structure bodies; "1.3 on the
+# ice" is vertical = 1.3. Both act on more than the wind or the ice alone
+# (the wires' pull at a line angle, their own weight): above a factor on
+# the action alone.
+#
+# The wind along the line ("ahead", "back"): only the structure bodies take
+# it. The wires take no wind in those cases (they name the still weather
+# case "10 °C"; a wind along the line on the wires is not modelled): exact
+# on a straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share
+# of it, and the strings' and jumpers' wind along the line, are left out).
+format = "ohl-load-cases"
+version = 4
+name = "Default load cases (arbitrary values for checking)"
+
+[[case]]
+name = "-20 °C"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"-20 °C\", the wires as strung, every factor 1"
+weather = "-20 °C"
+condition = "initial"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[[case]]
+name = "10 °C"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C\", the wires as strung, every factor 1"
+weather = "10 °C"
+condition = "initial"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[[case]]
+name = "40 °C"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"40 °C\", the wires as strung, every factor 1"
+weather = "40 °C"
+condition = "initial"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[[case]]
+name = "10 °C + 300 Pa wind left"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\", the wind from the left, the wires as strung. A factor 1.5 on the wind for the pylons: transverse 1.5 on the wires' and strings' loads across the line (it acts on the whole transverse component, the wires' pull at a line angle too: above a factor on the wind alone) and wind_factor 1.5 on the wind on the structure bodies; vertical and longitudinal 1"
+weather = "10 °C + 300 Pa wind"
+condition = "initial"
+vertical = 1.0
+transverse = 1.5
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+wind_from = "left"
+
+[case.structure]
+wind_factor = 1.5
+
+[[case]]
+name = "10 °C + 300 Pa wind right"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\", the wind from the right, the wires as strung. A factor 1.5 on the wind for the pylons: transverse 1.5 on the wires' and strings' loads across the line (it acts on the whole transverse component, the wires' pull at a line angle too: above a factor on the wind alone) and wind_factor 1.5 on the wind on the structure bodies; vertical and longitudinal 1"
+weather = "10 °C + 300 Pa wind"
+condition = "initial"
+vertical = 1.0
+transverse = 1.5
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+wind_from = "right"
+
+[case.structure]
+wind_factor = 1.5
+
+[[case]]
+name = "0 °C + 20 N/m ice"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"0 °C + 20 N/m ice\", the wires as strung. A factor 1.3 on the ice: vertical 1.3 — it acts on the whole vertical component, the wires' and strings' own weight with the ice, so above a factor on the ice alone; transverse and longitudinal 1. No ice on the structure bodies (the weather case gives its ice per metre of wire, no thickness for a structure)"
+weather = "0 °C + 20 N/m ice"
+condition = "initial"
+vertical = 1.3
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[[case]]
+name = "10 °C + 300 Pa wind ahead"
+description = "default case, arbitrary values for checking (not from a design code): a wind along the line, from ahead, on the structure bodies: 300 Pa (the case's own pressure, that of weather case \"10 °C + 300 Pa wind\": change both together) × 1.5 (wind_factor), a longitudinal load on them; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line. The wires take no wind (weather case \"10 °C\"): a wind along the line on the wires is not modelled — exact on a straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share, the strings' and jumpers' wind along the line left out). Load factors 1"
+weather = "10 °C"
+condition = "initial"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[case.structure]
+wind_pressure = "300 Pa"
+wind_factor = 1.5
+direction = "ahead"
+
+[[case]]
+name = "10 °C + 300 Pa wind back"
+description = "default case, arbitrary values for checking (not from a design code): a wind along the line, from behind, on the structure bodies: 300 Pa (the case's own pressure, that of weather case \"10 °C + 300 Pa wind\": change both together) × 1.5 (wind_factor), a longitudinal load on them; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line. The wires take no wind (weather case \"10 °C\"): a wind along the line on the wires is not modelled — exact on a straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share, the strings' and jumpers' wind along the line left out). Load factors 1"
+weather = "10 °C"
+condition = "initial"
+vertical = 1.0
+transverse = 1.0
+longitudinal = 1.0
+strength = 1.0
+tags = ["default"]
+
+[case.structure]
+wind_pressure = "300 Pa"
+wind_factor = 1.5
+direction = "back"
