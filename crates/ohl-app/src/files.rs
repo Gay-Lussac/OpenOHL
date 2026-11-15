@@ -618,6 +618,9 @@ pub struct NewProject {
     pub local: bool,
     /// The coordinate system chosen (searchable EPSG list, proj4, PRJ).
     pub picker: crate::crs::Picker,
+    /// Start with OpenOHL's default weather and load cases (owner,
+    /// 2026-11-15; on by default): [`crate::default_cases`].
+    pub defaults: bool,
     /// Why the last attempt failed.
     pub error: Option<String>,
 }
@@ -629,6 +632,7 @@ impl Default for NewProject {
             template: Template::Empty,
             local: true,
             picker: crate::crs::Picker::new(""),
+            defaults: true,
             error: None,
         }
     }
@@ -681,6 +685,8 @@ impl NewProject {
                         "The starter template (examples/starter) is not on this computer.",
                     );
                 }
+                ui.checkbox(&mut self.defaults, crate::default_cases::NEW_PROJECT_TICK)
+                    .on_hover_text(crate::default_cases::NEW_PROJECT_TIP);
                 ui.separator();
                 egui::Grid::new("new-project")
                     .num_columns(2)
@@ -752,7 +758,14 @@ impl NewProject {
                         .set_file_name(format!("{}.ohl", self.name.trim()))
                         .save_file()
                 {
-                    match create_project_from(&path, &self.name, &crs, &user(), self.template) {
+                    match create_project_from(
+                        &path,
+                        &self.name,
+                        &crs,
+                        &user(),
+                        self.template,
+                        self.defaults,
+                    ) {
                         Ok(p) => created = Some(p),
                         Err(e) => self.error = Some(e),
                     }
@@ -775,20 +788,23 @@ pub fn user() -> String {
 /// [`create_project_from`].)
 #[cfg(test)]
 pub fn create_project(path: &Path, name: &str, crs: &str, user: &str) -> Result<PathBuf, String> {
-    create_project_from(path, name, crs, user, Template::Empty)
+    create_project_from(path, name, crs, user, Template::Empty, false)
 }
 
 /// Creates the project file `path` (`.ohl`) holding an empty line `name`
 /// in `crs`, `user` its admin, with what the project starts with: the
 /// starter template's libraries kept in it (and its pylon templates and
-/// survey points beside it), or nothing; refuses to replace a file.
-/// Returns the path with its extension.
+/// survey points beside it), or nothing; with `defaults`, OpenOHL's
+/// default weather and load cases too ([`crate::default_cases`]: the
+/// starter's files with those they lack, else the two default files);
+/// refuses to replace a file. Returns the path with its extension.
 pub fn create_project_from(
     path: &Path,
     name: &str,
     crs: &str,
     user: &str,
     template: Template,
+    defaults: bool,
 ) -> Result<PathBuf, String> {
     let path = path.with_extension(ohl_core::files::PROJECT_EXTENSION);
     let name = name.trim();
@@ -822,7 +838,17 @@ pub fn create_project_from(
         .set_setting(crate::model::OWN_LIBRARIES_SETTING, Some("1"))
         .map_err(|e| e.to_string())?;
     if let Some(dir) = starter {
-        crate::starter::fill(&mut session, &path, user, &dir)?;
+        crate::starter::fill(&mut session, &path, user, &dir, defaults)?;
+    } else if defaults {
+        // The default weather and load cases, one log entry.
+        let changes: Vec<(String, String, Option<String>)> =
+            crate::default_cases::with_defaults(Vec::new())?
+                .into_iter()
+                .map(|(k, n, t)| (k, n, Some(t)))
+                .collect();
+        session
+            .keep_library_files(user, &changes)
+            .map_err(|e| e.to_string())?;
     }
     session.checkpoint().map_err(|e| e.to_string())?;
     Ok(path)

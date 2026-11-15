@@ -138,12 +138,17 @@ fn the_tutorial_builds_a_first_line() {
     assert_eq!(np.template, Template::Starter);
     assert_eq!(np.crs().unwrap(), LOCAL_CRS);
     np.name = "My first line".into();
+    // The tutorial unticks the default weather and load cases (step 2):
+    // it works with the starter's five weather cases.
+    assert!(np.defaults);
+    np.defaults = false;
     let path = crate::files::create_project_from(
         &dir.join("My first line"),
         &np.name,
         &np.crs().unwrap(),
         &user,
         np.template,
+        np.defaults,
     )
     .unwrap();
     let template = Sources {

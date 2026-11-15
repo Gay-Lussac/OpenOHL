@@ -545,35 +545,11 @@ impl TableKind {
                 .cases
                 .iter()
                 .enumerate()
-                .map(|(k, c)| {
-                    let w = &c.case;
-                    Row {
-                        defaulted: Vec::new(),
-                        key: k.to_string(),
-                        select: Selection::None,
-                        cells: {
-                            let mut c = vec![String::new(); WEATHER.len()];
-                            c[W_ORDER] = (k + 1).to_string();
-                            c[W_NAME] = w.name.clone();
-                            c[W_DESCRIPTION] = w.description.clone();
-                            c[W_TAGS] = w.tags.join(", ");
-                            c[W_Q] = w.air_density_factor.map_or(String::new(), |q| f(q, 3));
-                            c[W_VELOCITY] = f(
-                                w.wind_velocity_with(model.line.defaults.air_density_factor),
-                                2,
-                            );
-                            c[W_PRESSURE] = f(w.wind_pressure.si(), 1);
-                            c[W_ICE] = f(w.ice_thickness.si() * 1000.0, 1);
-                            c[W_ICE_DENSITY] =
-                                w.ice_density.map_or(String::new(), |v| f(v.si(), 0));
-                            c[W_ICE_LOAD] = w.ice_load.map_or(String::new(), |v| f(v.si(), 2));
-                            c[W_TEMP] = f(w.temperature.celsius(), 1);
-                            c[W_AMBIENT] = w
-                                .ambient_temperature
-                                .map_or(String::new(), |t| f(t.celsius(), 1));
-                            c
-                        },
-                    }
+                .map(|(k, c)| Row {
+                    defaulted: Vec::new(),
+                    key: k.to_string(),
+                    select: Selection::None,
+                    cells: weather_cells(&c.case, k + 1, model.line.defaults.air_density_factor),
                 })
                 .collect(),
             TableKind::Spacers => spacer_rows(model, case),
@@ -748,4 +724,25 @@ impl TableKind {
         }
         cells
     }
+}
+
+/// A weather case's cells in the Weather cases table, `order` its # and
+/// `q` the project's air density factor (for the velocity shown).
+pub(super) fn weather_cells(w: &ohl_weather::WeatherCase, order: usize, q: f64) -> Vec<String> {
+    let mut c = vec![String::new(); WEATHER.len()];
+    c[W_ORDER] = order.to_string();
+    c[W_NAME] = w.name.clone();
+    c[W_DESCRIPTION] = w.description.clone();
+    c[W_TAGS] = w.tags.join(", ");
+    c[W_Q] = w.air_density_factor.map_or(String::new(), |q| f(q, 3));
+    c[W_VELOCITY] = f(w.wind_velocity_with(q), 2);
+    c[W_PRESSURE] = f(w.wind_pressure.si(), 1);
+    c[W_ICE] = f(w.ice_thickness.si() * 1000.0, 1);
+    c[W_ICE_DENSITY] = w.ice_density.map_or(String::new(), |v| f(v.si(), 0));
+    c[W_ICE_LOAD] = w.ice_load.map_or(String::new(), |v| f(v.si(), 2));
+    c[W_TEMP] = f(w.temperature.celsius(), 1);
+    c[W_AMBIENT] = w
+        .ambient_temperature
+        .map_or(String::new(), |t| f(t.celsius(), 1));
+    c
 }
