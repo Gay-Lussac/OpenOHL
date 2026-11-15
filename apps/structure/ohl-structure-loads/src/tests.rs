@@ -713,7 +713,7 @@ fn the_placed_structures_links_go_with_its_values() {
         unlinked: true,
     };
     assert_eq!(
-        links_changed("T7", &[moved.clone()], &[alone]),
+        links_changed("T7", std::slice::from_ref(&moved), &[alone]),
         ["T7: point A1 unlinked"]
     );
     assert_eq!(
