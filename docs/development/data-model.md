@@ -1518,6 +1518,18 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   it from the `[[rule]]`; the tension and string rows carry it
   (`calculation`) and their CSV's case column names it ("everyday,
   Initial RS").
+- **Galloping results** (`ohl_clearance::galloping`, 2026-11-15; the
+  `.ohlg` format unchanged): a pair × method beyond a requirement table
+  by voltage, or with a wire without a conductor diameter under a method
+  whose axes use it, gets no `GallopingPair` (no row in the window, the
+  CLI or its CSV) — `galloping::unchecked` lists them
+  (`UncheckedPair { a, b, method, why: Unchecked }`) and
+  `galloping::notes(params, wires)` says them ("NOT CHECKED: …"; before,
+  the table's last row or d = 0 was taken); the window's `Report` keeps
+  their count (`unchecked`, never a pass). `GallopingWire::sag` is the
+  larger of the solve's vertical sag and `galloping::swung_sag` (the sag
+  in the swung plane); a `GallopingPair`'s `at` may be a loop's middle
+  (`galloping::stations_of`), not only a multiple of 1/`stations`.
 - **Lightning shielding rules** (2026-10-31, additive): a rule file
   may hold optional `[[lightning_rule]]` tables — `name`, `cases`,
   `shield_cases` (2026-11-01: the shielding wires' weather cases; none:
@@ -1538,7 +1550,11 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   depth, margin: the angle needed or r_max with its current, the exposed
   parts as world polylines), a `Cut` per cross-section (its plane, the
   ground, the shielding wires and phases, the covered zone's boundary,
-  sphere centres); its CSV `rule, method, case, section, span, from, to,
+  sphere centres; 2026-11-15, additive: `at_structure`, the structure's
+  id for the cut taken at each of the span's two structures —
+  `cross_section::cross_section_at_structure`, a wire taken at its clamp
+  within half a step of the plane — `null` for a cut at the middle of a
+  step; a `Row`'s `worst_along` may now be 0 or the span's length); its CSV `rule, method, case, section, span, from, to,
   phase, span_length_m, exposed_m, worst_along_m, worst_depth, margin,
   current_ka, status`; `ohl lightning --json` writes the `Report`
   (2026-11-15: but not its `cuts_of`, the rule × case pair the `cuts`

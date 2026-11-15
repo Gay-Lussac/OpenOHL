@@ -1177,7 +1177,12 @@ mod tests {
                 if windy {
                     assert!(w.sag > v * 1.05, "{}: {} vs {v}", w.wire.section, w.sag);
                 } else {
-                    assert!((w.sag - v).abs() < 1e-3 * v, "{}: {} vs {v}", w.wire.section, w.sag);
+                    assert!(
+                        (w.sag - v).abs() < 1e-3 * v,
+                        "{}: {} vs {v}",
+                        w.wire.section,
+                        w.sag
+                    );
                 }
             }
         }

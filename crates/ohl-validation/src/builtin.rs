@@ -1428,9 +1428,10 @@ impl Calculation for GallopingEllipses {
 
 /// `galloping.span`: the whole check on one span of two alike wires side
 /// by side (parabolas of sag `sag` in their own plane, swung `swing_deg`
-/// sideways, `offset_right` apart), by one method (`major = major_sag · D
-/// + major_constant`, `minor = minor_of_major · A`, untilted, centred on
-/// the wire) of `loops` loops compared at `stations`
+/// sideways, `offset_right` apart), by one method (`major_sag` times D
+/// plus `major_constant` for the major axis A, `minor_of_major` times A
+/// for the minor, untilted, centred on the wire) of `loops` loops
+/// compared at `stations`
 /// (`ohl_clearance::galloping::check`): the smallest gap, where, and the
 /// sag and major axis the ellipse was sized from.
 struct GallopingSpan;

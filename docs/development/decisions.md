@@ -10,6 +10,62 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Galloping ellipses made safe** (owner, answering the review's open
+points: "make it safe"). Built, in active development, not approved
+yet:
+
+- **Every loop's middle is a station**: the ellipses are compared at
+  the `stations − 1` even stations and at the middle of each of the
+  method's loops (`galloping::stations_of`), so the largest ellipse is
+  always compared. Before, the middles of 3, 4 and 6 to 9 loops fell
+  between the 20 default stations (98.8 % of the ellipse for 3 loops,
+  95.1 % for 4), said not on the safe side; that note is gone.
+- **The larger sag**: each span's sag is the larger of the solve's
+  vertical sag and the sag in the swung wire's plane
+  (`galloping::swung_sag`: the largest distance from the chord square to
+  the span, across and vertically together). Without wind they are the
+  same; with wind the swung plane's is the larger. The note about the
+  vertical sag of swung wires is gone.
+- **Not checked rather than guessed**: a pair whose voltage is above a
+  requirement table by voltage is not checked (no row, never a pass), as
+  the internal clearances check does for a voltage beyond its table —
+  before, the table's last row was taken; a wire whose type is not in the
+  library (no diameter) is not checked by a method whose axes use the
+  diameter — before, computed with d = 0. Both said: *NOT CHECKED: …*
+  (`galloping::unchecked`, `galloping::notes`); the window's verdict is
+  red while any pair is not checked.
+- On the example line (`ohl clearance galloping` on
+  `examples/synthetic-line`, 1 and 2 loops at 20 stations, glaze ice
+  without wind) the results are unchanged. With the same coefficients for
+  3 and 4 loops the smallest gaps fall (glaze ice, S1–S2 in their
+  second span: 5.28 → 5.20 m for 3 loops, 5.50 → 5.22 m for 4); in the
+  case *rime ice + wind* the ellipses grow with the swung plane's sag
+  (S1's major axis there 11.43 → 12.39 m) and the gaps fall (4 loops
+  6.61 → 5.95 m); a table ending at 60 kV leaves the four 220 kV pairs
+  not checked (before: checked at the last row's 0.3 m).
+- Validation: `galloping-005…007` (a whole span of 3 and 4 loops
+  compared at the loops' middles, a swung wire sized from the sag in its
+  plane), new calculation `galloping.span`.
+
+**Lightning shielding: a cross-section at each structure** (owner: "yes
+if fast else only as today"). Each span is now cut at its two structures
+too, beside the middle of each step; at a structure a wire whose clamp
+lies within half a step of the plane (a suspension string swung along
+the line, a short strain string) is taken at its clamp
+(`cross_section::cross_section_at_structure`); the cut stands for the
+quarter step next to the structure. Measured on the example
+(`examples/lightning`, both rules, a release build, 20 runs each
+alternating): 2.5 % more computing time (0.28 s against 0.29 s), under
+0.02 s more — kept. On the 5 m step the lengths exposed are unchanged
+(144.4 m), the worst places move onto the structures and r_max grows a
+little (46.5 → 47.1 m); at a 100 m step, where the cuts in the spans lie
+38.75 m to 50 m from the structures, the 8 kA sphere found no phase
+exposed before and finds 6 now. The *NOT ON THE SAFE SIDE* note on the
+step now says what is still missed: an exposure shorter than a step
+between two cross-sections away from the structures. The cuts at the
+structures are marked (`Cut::at_structure`, in `ohl lightning --json`;
+the window's cross-section title says *at structure …*).
+
 **"Unstable" says where**: a finite-element solve failing as unstable
 (compression above the elastic buckling load) now names the joints its
 buckling mode moves most and the members in compression at the first —
