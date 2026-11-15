@@ -391,13 +391,23 @@ fn with_pivoting_posts() -> Line {
     line
 }
 
-/// A pivoting post holding only a jumper's end (owner, 2026-11-15:
-/// "pivoting should simply be tied to the jumper or piece it's attached
-/// to"): its loads on A3 and A4 are those of the post and its brace solved
-/// under the jumper's pull on the clamp ([`ohl_line::post::hinged_alone`]:
-/// the post pushes on A3, the brace pulls on A4, each with half its weight
-/// — not the jumper's load shared out between them as for plain strings);
-/// a post to which nothing is attached is said to be free, its loads not
+/// A pivoting post holding only a jumper's end, **solved together with
+/// its jumper** (owner, 2026-11-15: "Should the jumper be solved together
+/// with the post? — yes"). The jumper J runs from the conductor's clamp at
+/// (300, 0, 30) to P3's top: its pull draws the top towards that clamp,
+/// whose place in plan lies inside the post's circle about the vertical
+/// through A3 (300, 1); the wind (500 Pa) pushes the jumper, which lies
+/// across the line, ahead. Turned alone under the jumper's estimated load
+/// as given (before), the 28 N of wind along the line turned it 90° (its
+/// forces' directions noted NOT ON THE SAFE SIDE). Solved together, the
+/// jumper's end moving with the top, it settles about 107° round, where the
+/// wind's push and the pull towards the conductor's clamp balance about the
+/// axis — every direction consistent: the jumper's pull on the top has no
+/// moment about the axis there, and A3 and A4 take
+/// the statics of the post and brace at that top
+/// ([`ohl_line::post::hinged_post_loads`]: the post pushes, the brace
+/// pulls, each with half its weight; frictionless, nothing more at A3). A
+/// post to which nothing is attached is said to be free, its loads not
 /// computed.
 #[test]
 fn a_jumper_holds_a_pivoting_post() {
@@ -413,18 +423,53 @@ fn a_jumper_holds_a_pivoting_post() {
             .filter(|l| l.structure == "T2" && l.point == point)
             .fold([0.0; 3], |a, l| [0, 1, 2].map(|k| a[k] + l.force[k]))
     };
-    // The jumper's end load on W3, as the loads take it (estimated).
     let solved: Vec<_> = ohl_line::solve::solve_line(&line, &lib, &w[0])
         .into_iter()
         .map(Result::unwrap)
         .collect();
-    let shape =
-        ohl_line::jumper::solve_one_jumper(&line, &lib, &w[0], &solved, &line.jumpers[0]).unwrap();
-    let estimate = ohl_line::jumper::end_loads(&line, &w[0], |id| lib.get(id));
-    let pull = ohl_line::post::jumper_end_force(&line, &line.jumpers[0], &shape, 1, &estimate);
+    let shape = ohl_line::jumper::solve_jumpers(&line, &lib, &w[0], &solved)
+        .remove(0)
+        .unwrap();
+    let pivot = &shape.pivots[0];
+    assert_eq!((pivot.post.as_str(), pivot.wire.as_str()), ("P3", "W3"));
+    assert!(!pivot.stuck && pivot.hinge_moment == 0.0, "{pivot:?}");
+    // Turned about 107°: the jumper's wind (its direction as on the
+    // jumper as given, which lies across the line) against its pull
+    // towards the conductor's clamp.
+    assert!(
+        pivot.turn_deg.abs() > 95.0 && pivot.turn_deg.abs() < 120.0,
+        "{pivot:?}"
+    );
+    let c = pivot.clamp;
+    assert!((c[2] - 27.0).abs() < 1e-9, "{c:?}");
+    let radius = (c[0] - 300.0).hypot(c[1] - 1.0);
+    assert!((radius - 1.5).abs() < 1e-9, "{c:?}");
+    // The jumper's end on it; its pull without a moment about the axis.
+    let end = shape.points.last().unwrap();
+    assert!(
+        (0..3).all(|k| (end[k] - c[k]).abs() < 1e-9),
+        "{end:?} {c:?}"
+    );
+    let pull = shape.end_forces[1];
+    let (rx, ry) = (c[0] - 300.0, c[1] - 1.0);
+    let moment = rx * pull[1] - ry * pull[0];
+    assert!(
+        moment.abs() < 1e-6 * (1.0 + pull[0].hypot(pull[1])),
+        "{moment} {pull:?}"
+    );
+    // The loads at A3 and A4: the statics at that top.
     let t2 = line.structure("T2").unwrap();
-    let members =
-        ohl_line::post::hinged_alone(t2, "W3", pull, line.defaults.insulator_stiffness).unwrap();
+    let (members, (_, _, force, couple)) = ohl_line::post::hinged_post_loads(
+        t2,
+        "W3",
+        pull,
+        shape.end_moments[1],
+        Some(pivot),
+        [0.0; 3],
+        line.defaults.insulator_stiffness,
+    )
+    .unwrap();
+    assert!(force.iter().all(|x| x.abs() < 1e-9) && couple.iter().all(|x| x.abs() < 1e-9));
     let (post, brace) = (&members[0], &members[1]);
     assert_eq!((post.top.as_str(), brace.top.as_str()), ("A3", "A4"));
     assert!(post.force < 0.0 && brace.force > 0.0, "{members:?}");
@@ -435,36 +480,25 @@ fn a_jumper_holds_a_pivoting_post() {
             "{point}: {got:?} {expected:?}"
         );
     }
-    // Hand check: the jumper's pull across the line through A3 and A4 (the
-    // vertical) is its horizontal part, 28 N of wind along the line (−x:
-    // the jumper runs across the line): the post turns 90° about its hinge
-    // to point along it, the post then pulled out by it. With half the
-    // members' weights the brace at 45° pulls √2 (V + 200 N) and the post
-    // pushes with V + 200 N less that outward pull.
-    let (h, v) = (
-        (pull[0] * pull[0] + pull[1] * pull[1]).sqrt(),
-        -pull[2] + 200.0,
-    );
-    assert!(
-        h > 10.0 && pull[0] < 0.0 && pull[1].abs() < 1e-6,
-        "{pull:?}"
-    );
-    assert!(
-        (brace.force - 2f64.sqrt() * v).abs() < 1e-3 * v,
-        "{brace:?} {v}"
-    );
-    assert!((post.force - (h - v)).abs() < 1e-3 * v, "{post:?} {h} {v}");
-    // It pushes A3 away from where its top went (+x), not across the line.
+    // The post pushes A3 away from its top: along the post as it settled.
     let a3 = at("A3");
-    assert!(a3[0] > 0.9 * (v - h) && a3[1].abs() < 1e-3 * v, "{a3:?}");
-    // Said with the case: only jumpers hold it, swung under their pull as
-    // solved to its top where given.
+    let along = [300.0 - c[0], 1.0 - c[1]];
+    let n = along[0].hypot(along[1]);
+    let plan = a3[0].hypot(a3[1]);
     assert!(
-        r[0].notes
-            .iter()
-            .any(|n| n.starts_with("hinged post P3 at T2 holds only jumpers")),
-        "{:?}",
-        r[0].notes
+        (a3[0] * along[0] + a3[1] * along[1]) / (n * plan) > 0.999,
+        "{a3:?} {c:?}"
+    );
+    // Said with the case: solved together with its jumpers, its
+    // frictionless hinge NOT ON THE SAFE SIDE for the longitudinal load.
+    let note = r[0]
+        .notes
+        .iter()
+        .find(|n| n.starts_with("hinged post P3 at T2 pivots"))
+        .unwrap_or_else(|| panic!("{:?}", r[0].notes));
+    assert!(
+        note.contains("solved together with it") && note.contains("NOT ON THE SAFE SIDE"),
+        "{note}"
     );
     // The free post: said, nothing at A5 or A6.
     let note = r[0]

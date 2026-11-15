@@ -633,6 +633,32 @@ pub fn check(
                                     c <= max,
                                 ));
                             }
+                            // A pivoting post's hinge holding it by
+                            // friction (2026-11-15): the moment at its base,
+                            // as the load across its top giving it.
+                            let held = shape
+                                .hinges
+                                .get(p)
+                                .and_then(Option::as_ref)
+                                .filter(|h| h.post == st.label && h.moment > 0.0);
+                            let length = line
+                                .structure(&structure)
+                                .and_then(|s| s.string_length(x))
+                                .filter(|l| *l > 0.0);
+                            if rule.load
+                                && let (Some(h), Some(length), Some(max)) =
+                                    (held, length, x.cantilever_load.filter(|c| *c > 0.0))
+                            {
+                                let c = h.moment / length;
+                                rows.push(row(
+                                    Measure::Cantilever,
+                                    Source::String,
+                                    c,
+                                    max,
+                                    c / max,
+                                    c <= max,
+                                ));
+                            }
                             continue;
                         }
                         if rule.uplift && !st.strain {

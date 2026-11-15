@@ -76,14 +76,18 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 18 adds the structure groups (`structure_groups`:
+/// Latest line file version: 19 adds a hinged post's hinge friction (a
+/// string's `hinge_friction_nm`: [`InsulatorString::hinge_friction_nm`];
+/// owner, 2026-11-15), written only by a line that has one (else 18 or
+/// older, [`Line::to_json`]: an older program must not read such a post as
+/// frictionless); 18 adds the structure groups (`structure_groups`:
 /// [`StructureGroup`], which load cases each structure takes; owner,
 /// 2026-11-15), written only by a line that has one (else 17 or older,
 /// [`Line::to_json`]: an older program must not read such a line and give
 /// every structure every case); 17 adds the post insulators (a string's
 /// `post`, `cantilever_load`, `exit_angle_deg`, `exit_direction_deg`:
-/// [`InsulatorString`]; owner, 2026-11-14), written only by a line that has
-/// one (else 16 or older, [`Line::to_json`]); 16 adds an object's tap or spacer clamp use
+/// [`InsulatorString`]; owner, 2026-11-14; `hinged` in the same
+/// unreleased raise), written only by a line that has one (else 16 or older, [`Line::to_json`]); 16 adds an object's tap or spacer clamp use
 /// and one on each subconductor (`clamp_for`, `per_subconductor`:
 /// [`LineObject`]; owner, 2026-11-14), written only by a line that uses
 /// them (else 15 or older, [`Line::to_json`]); 15 adds a system's highest operating voltage
@@ -138,7 +142,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 18;
+pub const LINE_FILE_VERSION: u32 = 19;
+
+/// The version before a hinged post's hinge friction (`hinge_friction_nm`;
+/// owner, 2026-11-15): what a line without one is written as (when it has
+/// structure groups).
+const BEFORE_HINGE_FRICTION_VERSION: u32 = 18;
 
 /// The version before the structure groups (`structure_groups`; owner,
 /// 2026-11-15): what a line without them is written as (when it has a post
@@ -3750,8 +3759,13 @@ impl Line {
                     || x.exit_direction_deg.is_some()
             })
         });
+        let hinge_friction = self
+            .structures
+            .iter()
+            .any(|s| s.strings.iter().any(|x| x.hinge_friction_nm.is_some()));
         let written = match (sheaves, winds, shapes) {
-            _ if groups => LINE_FILE_VERSION,
+            _ if hinge_friction => LINE_FILE_VERSION,
+            _ if groups => BEFORE_HINGE_FRICTION_VERSION,
             _ if posts => BEFORE_GROUPS_VERSION,
             _ if clamps => BEFORE_POST_VERSION,
             _ if system_voltages || final_stringing => BEFORE_CLAMP_FOR_VERSION,

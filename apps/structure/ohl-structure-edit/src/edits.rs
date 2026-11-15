@@ -773,6 +773,9 @@ pub enum StringChange {
     /// A post's clamp's direction in plan in the structure's axes, degrees
     /// (none: towards the jumper's other end).
     ExitDirection(Option<f64>),
+    /// A hinged post's hinge friction, N·m (none: frictionless; owner,
+    /// 2026-11-15).
+    HingeFriction(Option<f64>),
 }
 
 /// The structure file version that has a string's limits.
@@ -860,12 +863,13 @@ pub fn raise_version(doc: &mut DocumentMut, version: i64) {
 
 /// A string's post fields (structure file version 13): all go when it is
 /// no longer a post.
-pub const POST_KEYS: [&str; 5] = [
+pub const POST_KEYS: [&str; 6] = [
     "post",
     "hinged",
     "cantilever_load",
     "exit_angle",
     "exit_direction",
+    "hinge_friction_nm",
 ];
 
 /// String `s` after `change`, in what decides whether it can be a post (its
@@ -894,12 +898,17 @@ fn as_changed(
             x.cantilever_load = None;
             x.exit_angle = None;
             x.exit_direction = None;
+            x.hinge_friction_nm = None;
         }
         StringChange::Post(Some(hinged)) => {
             x.post = true;
             x.hinged = *hinged;
             x.strain = false;
+            if !hinged {
+                x.hinge_friction_nm = None;
+            }
         }
+        StringChange::HingeFriction(v) => x.hinge_friction_nm = *v,
         StringChange::CantileverLoad(v) => x.cantilever_load = v.map(Force::from_newtons),
         StringChange::ExitAngle(v) => x.exit_angle = v.map(Angle::from_degrees),
         StringChange::ExitDirection(v) => x.exit_direction = v.map(Angle::from_degrees),
@@ -992,6 +1001,7 @@ pub fn set_string(
             | StringChange::ExitAngle(Some(_))
             | StringChange::ExitDirection(Some(_))
     );
+    let friction_given = matches!(change, StringChange::HingeFriction(Some(_)));
     let e = entry(doc, "string", "label", label).ok_or_else(|| format!("no string {label}"))?;
     match change {
         StringChange::Top(top) => {
@@ -1111,6 +1121,20 @@ pub fn set_string(
                 e.insert("hinged", toml_edit::value(true));
             } else {
                 e.remove("hinged");
+                e.remove("hinge_friction_nm");
+            }
+        }
+        StringChange::HingeFriction(v) => {
+            if v.is_some_and(|f| !(f.is_finite() && f >= 0.0)) {
+                return Err("the hinge friction must be ≥ 0 N·m".into());
+            }
+            match v {
+                Some(f) => {
+                    e.insert("hinge_friction_nm", toml_edit::value(f));
+                }
+                None => {
+                    e.remove("hinge_friction_nm");
+                }
             }
         }
         StringChange::CantileverLoad(v) => {
@@ -1151,6 +1175,12 @@ pub fn set_string(
     }
     if post_given {
         raise_version(doc, i64::from(ohl_structures::structures::POST_VERSION));
+    }
+    if friction_given {
+        raise_version(
+            doc,
+            i64::from(ohl_structures::structures::HINGE_FRICTION_VERSION),
+        );
     }
     if moves {
         // The other insulators to it (a V) without a length (written

@@ -301,6 +301,7 @@ pub(super) fn shape(
     case: &WeatherCase,
     a: Vector3<f64>,
     b: Vector3<f64>,
+    wind: (Vector3<f64>, Vector3<f64>),
     cut: f64,
     hanging: &dyn Fn(f64) -> Vec<(f64, Vector3<f64>)>,
 ) -> Result<JumperShape, String> {
@@ -331,10 +332,13 @@ pub(super) fn shape(
         .free_thermal_strain(case.temperature.celsius() - jumper.temperature)
         .exp();
     let l0 = cut * thermal;
-    let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
+    // The wind as on the jumper: its direction from its ends as given
+    // (`wind`; turned with a pivoting post, it keeps it).
+    let (wa, wb) = wind;
+    let along = line.direction_at([0.5 * (wa.x + wb.x), 0.5 * (wa.y + wb.y)]);
     // Per unstressed metre: the own weight spread over the length (it
     // weighs the same hot or cold), ice and wind as on the jumper.
-    let load = wire_load_in_line_wind(case, cable, d, along)
+    let load = wire_load_in_line_wind(case, cable, wb - wa, along)
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     let bundle = f64::from(line.jumper_bundle(jumper).count.max(1));
     let points: Vec<(f64, Vector3<f64>)> = object_loads(
@@ -406,6 +410,7 @@ pub(super) fn shape(
         strength_use: max_tension / rts,
         surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
         polyline_error: off,
+        pivots: Vec::new(),
     })
 }
 

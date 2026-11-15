@@ -307,3 +307,92 @@ fn a_pivoting_post_in_the_blocks_settles() {
         }
     }
 }
+
+/// A pivoting post with a hinge friction (owner, 2026-11-15: "keep it
+/// frictionless for now with an option to add it if needed"), clipped in
+/// with unequal lengths as above: with a friction above what holding it
+/// takes, the hinge sticks — the post stays where it is given (as a post
+/// held across the line), the spans' difference held by the hinge's
+/// moment, which the structure takes at A1 as a couple about the axis (and
+/// the force across the post); with half that friction it slips — it
+/// turns, less far than without friction (5.70°), until the wires' moment
+/// about the axis is the friction. Without a friction nothing changes (the
+/// tests above).
+#[test]
+fn a_hinge_friction_sticks_or_slips() {
+    let stringing =
+        r#"{"kind": "unstressed_lengths", "lengths": [300.70, 300.40], "temperature": 20}"#;
+    let solve = |friction: f64| {
+        let mut line = pivoting(ABOVE, stringing);
+        line.structures[1].strings[0].hinge_friction_nm = Some(friction);
+        line.validate().unwrap();
+        solve_section(
+            &line,
+            &line.sections[0],
+            &cable(),
+            &still(),
+            &default_fe_budget(),
+        )
+        .unwrap()
+    };
+    let base = Vector3::new(300.0, 0.0, 28.4);
+    // The wires' moment on the top about the vertical through A1.
+    let wires = |s: &SectionShape| {
+        let r = v(s.clamps[1]) - base;
+        let f = v(s.pulls[1]);
+        r.x * f.y - r.y * f.x
+    };
+    // Stick.
+    let s = solve(1e6);
+    let h = s.hinges[1].as_ref().unwrap();
+    // (Held by a stiff bar: it yields some 0.4 µm.)
+    assert!(h.stuck && h.turn_deg.abs() < 1e-4, "{h:?}");
+    assert_eq!((h.post.as_str(), h.base.as_str()), ("P1", "A1"));
+    let held = wires(&s);
+
+    assert!(held.abs() > 1000.0, "{held}");
+    assert!(
+        (h.moment - held.abs()).abs() < 1e-6 * held.abs(),
+        "{h:?} {held}"
+    );
+    // The clamp where given along the line (its members' stretch aside).
+    assert!((s.clamps[1][0] - 300.0).abs() < 1e-6, "{:?}", s.clamps[1]);
+    // The spans' difference held: H about 3.5 kN apart (as a fixed post
+    // would hold them, benchmark tbins-006's notes).
+    let (h1, h2) = (s.spans[0].horizontal_tension, s.spans[1].horizontal_tension);
+    assert!((h2 - h1) > 3000.0, "{h1} {h2}");
+    // On the structure at A1: the couple about the axis, the wires' moment.
+    let a1 = s.attachment_loads[1]
+        .iter()
+        .find(|x| x.label == "A1")
+        .unwrap();
+    assert!(
+        (a1.moment[2] - held).abs() < 1e-6 * held.abs(),
+        "{a1:?} {held}"
+    );
+    // All the forces on the structure are the wires' pull and the
+    // members' weights.
+    let sum = s.attachment_loads[1]
+        .iter()
+        .fold(Vector3::zeros(), |a, x| a + v(x.force));
+    let expected = v(s.pulls[1]) - Vector3::new(0.0, 0.0, 650.0);
+    assert!(
+        (sum - expected).norm() < 1e-6 * expected.norm(),
+        "{sum:?} {expected:?}"
+    );
+    // Slip.
+    let friction = 0.5 * held.abs();
+    let s = solve(friction);
+    let h = s.hinges[1].as_ref().unwrap();
+
+    assert!(
+        !h.stuck && h.turn_deg.abs() > 0.5 && h.turn_deg.abs() < 5.7,
+        "{h:?}"
+    );
+    assert!(
+        (wires(&s).abs() - friction).abs() < 1e-6 * friction,
+        "{} {friction}",
+        wires(&s)
+    );
+    assert!((h.moment - friction).abs() < 1e-9 * friction, "{h:?}");
+}

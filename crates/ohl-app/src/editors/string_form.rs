@@ -919,6 +919,10 @@ impl StringForm {
                 cantilever_load: x.post.cantilever_load.filter(|_| x.post.post),
                 exit_angle_deg: x.post.exit_angle_deg.filter(|_| x.post.post),
                 exit_direction_deg: x.post.exit_direction_deg.filter(|_| x.post.post),
+                hinge_friction_nm: x
+                    .post
+                    .hinge_friction_nm
+                    .filter(|_| x.post.post && x.post.hinged),
                 // From its wire point as placed here.
                 ..Default::default()
             });
@@ -1476,7 +1480,28 @@ fn post_ui(ui: &mut egui::Ui, x: &mut StringRow) {
         p.cantilever_load = None;
         p.exit_angle_deg = None;
         p.exit_direction_deg = None;
+        p.hinge_friction_nm = None;
         return;
+    }
+    if p.hinged {
+        // Owner, 2026-11-15: frictionless by default, a friction moment
+        // when needed.
+        ui.horizontal(|ui| {
+            let mut friction = p.hinge_friction_nm.is_some();
+            if ui
+                .checkbox(&mut friction, "hinge friction")
+                .on_hover_text(HINGE_FRICTION_HELP)
+                .changed()
+            {
+                p.hinge_friction_nm = friction.then_some(100.0);
+            }
+            if let Some(f) = &mut p.hinge_friction_nm {
+                value(ui, f, 10.0, " N·m");
+                *f = f.max(0.0);
+            }
+        });
+    } else {
+        p.hinge_friction_nm = None;
     }
     ui.horizontal(|ui| {
         let mut rated = p.cantilever_load.is_some();
@@ -1529,6 +1554,17 @@ fn post_ui(ui: &mut egui::Ui, x: &mut StringRow) {
         }
     });
 }
+
+/// What a hinged post's hinge friction does (the form's hover; OHL-Structure
+/// says the same in its post columns).
+pub const HINGE_FRICTION_HELP: &str = "The moment its hinge holds before the post turns, N·m. \
+     Unticked: frictionless (the default) — the post turns freely about the line through its \
+     base and its brace's until the wires (or a jumper) balance it, and the pylon takes no \
+     longitudinal load from the hinge (NOT ON THE SAFE SIDE for the pylon if the real hinge \
+     sticks). Ticked: the hinge holds the post where it is given while the moment needed is at \
+     most this (stick), else the post turns until that moment is reached (slip); the moment goes \
+     into the structure at the post's base, so the pylon's longitudinal load includes the hinge's \
+     friction up to this value. Each solve starts from the post as given.";
 
 /// A V's leg (one of `legs` strings meeting at one wire point): its
 /// length.

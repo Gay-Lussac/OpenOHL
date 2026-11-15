@@ -408,6 +408,7 @@ impl Line {
                 cantilever_load: x.cantilever_load,
                 exit_angle_deg: x.exit_angle_deg,
                 exit_direction_deg: x.exit_direction_deg,
+                hinge_friction_nm: x.hinge_friction_nm,
                 ..Default::default()
             }));
             // Sets replaced by the structure's own wire points, or left out.

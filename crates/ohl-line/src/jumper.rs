@@ -318,6 +318,24 @@ pub struct TapContext {
     pub points: std::collections::BTreeMap<(String, String), Point>,
     /// Loads on its points, by label.
     pub loads: Vec<(String, [f64; 3])>,
+    /// Its ends at pivoting posts turned with the post (owner, 2026-11-15;
+    /// [`crate::post::JumperPivot`]): where the clamp is, and the turn
+    /// that turns the direction the clamp holds it in.
+    pub moved: Vec<MovedEnd>,
+}
+
+/// A jumper's end on a pivoting post's clamp, turned with the post
+/// ([`TapContext::moved`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MovedEnd {
+    /// The end's attachment.
+    pub point: SectionPoint,
+    /// The clamp, m.
+    pub at: Point,
+    /// The post's axis (unit).
+    pub axis: Point,
+    /// Its turn about the axis, radians.
+    pub turn: f64,
 }
 
 /// Where a tap is in the case solved: its span point as its section is
@@ -397,6 +415,11 @@ pub struct JumperShape {
     /// ([`crate::solve::polyline_error`] for a catenary; 0 for a rigid or
     /// stiff jumper, whose model is the straight pieces themselves).
     pub polyline_error: f64,
+    /// The pivoting posts its ends are at, as they settled with it (owner,
+    /// 2026-11-15: solved together, [`crate::post::JumperPivot`]): its end
+    /// there is the post's clamp turned with the post; empty where no end
+    /// is at a pivoting post holding jumpers only.
+    pub pivots: Vec<crate::post::PivotTurn>,
 }
 
 /// The share of its length from `from` a jumper point is at: a fraction;
@@ -1215,8 +1238,10 @@ fn clamp_holds(
                 held.push(RodString {
                     top,
                     length,
-                    // A string that may take compression pushes too.
-                    push: s.compression.is_some(),
+                    // A string that may take compression pushes too, and
+                    // a hinged post (2026-11-15: before, it hung as a
+                    // tension-only string).
+                    push: s.compression.is_some() || (s.post && s.hinged),
                 });
             }
             Ok(ClampHold {
@@ -1422,10 +1447,13 @@ pub fn solve_jumper_in(
             )));
         }
     }
+    let moved = |point: &SectionPoint| context.moved.iter().find(|m| m.point == *point);
     let end = |end: &crate::JumperEnd| match end {
-        crate::JumperEnd::Wire(point) => {
-            end_position(line, shapes, point).map_err(|e| invalid(e.to_string()))
-        }
+        crate::JumperEnd::Wire(point) => match moved(point) {
+            // On a pivoting post: its clamp turned with it (2026-11-15).
+            Some(m) => Ok(v(m.at)),
+            None => end_position(line, shapes, point).map_err(|e| invalid(e.to_string())),
+        },
         crate::JumperEnd::Tap { tap } => tap_position(line, shapes, context, tap).map_err(invalid),
     };
     let a = end(&jumper.from)?;
@@ -1486,8 +1514,25 @@ pub fn solve_jumper_in(
             strength_use: 0.0,
             surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
             polyline_error: 0.0,
+            pivots: Vec::new(),
         });
     }
+    // With an end on a turned pivoting post (2026-11-15) the wind keeps the
+    // direction and the size it has on the jumper as given: it blows from
+    // one side whatever the post's turn (the full pressure square to the
+    // jumper in plan, turned with it, would drive the post round without
+    // end — no wind does that), its full pressure kept (on the safe side
+    // for the jumper's swing: a wire turned from square to the wind takes
+    // less).
+    let (wa, wb) = if context.moved.is_empty() {
+        (a, b)
+    } else {
+        let given = |end: &crate::JumperEnd| match end {
+            crate::JumperEnd::Wire(point) => end_position(line, shapes, point).ok(),
+            crate::JumperEnd::Tap { tap } => tap_position(line, shapes, context, tap).ok(),
+        };
+        given(&jumper.from).zip(given(&jumper.to)).unwrap_or((a, b))
+    };
     // Given by its tension: a taut wire, any direction (the riser).
     if let Some(tension) = jumper.tension {
         let cut = match jumper.length {
@@ -1497,7 +1542,8 @@ pub fn solve_jumper_in(
             // cut there, see [`solve_jumpers`]).
             None => riser::design_length(line, jumper, cable, tension, a, b).map_err(invalid)?,
         };
-        return riser::shape(line, jumper, cable, case, a, b, cut, &hanging).map_err(invalid);
+        return riser::shape(line, jumper, cable, case, a, b, (wa, wb), cut, &hanging)
+            .map_err(invalid);
     }
     if d.xy().norm() < 0.1 {
         return Err(invalid(
@@ -1509,7 +1555,7 @@ pub fn solve_jumper_in(
     let ea = cable.axial_stiffness().si();
     // The line's wind, whichever way the jumper was entered: across the
     // line from the case's side (a jumper across the line takes little).
-    let along = line.direction_at([0.5 * (a.x + b.x), 0.5 * (a.y + b.y)]);
+    let along = line.direction_at([0.5 * (wa.x + wb.x), 0.5 * (wa.y + wb.y)]);
     // Lengthened or shortened like the line's cables (below): its own
     // weight spread over that length, so it weighs the same hot or cold
     // (ice and wind per metre of the real jumper).
@@ -1518,7 +1564,7 @@ pub fn solve_jumper_in(
         .apply(cable)
         .free_thermal_strain(case.temperature.celsius() - jumper.temperature)
         .exp();
-    let load = wire_load_in_line_wind(case, cable, d, along)
+    let load = wire_load_in_line_wind(case, cable, wb - wa, along)
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     // As catenary elements (taut, or on a support string): the own weight
     // per unit unstressed length, the ice and wind per metre of the
@@ -1530,6 +1576,17 @@ pub fn solve_jumper_in(
         crate::LoadsPer::Stretched => (own, load - own),
         crate::LoadsPer::Unstretched => (load, Vector3::zeros()),
     };
+    // A post's clamp turned with the post holds it turned the same way.
+    let turned = |d: Option<Vector3<f64>>, end: &crate::JumperEnd| {
+        let d = d?;
+        Some(match end.point().and_then(moved) {
+            Some(m) => {
+                let axis = nalgebra::Unit::new_normalize(v(m.axis));
+                nalgebra::Rotation3::from_axis_angle(&axis, m.turn) * d
+            }
+            None => d,
+        })
+    };
     // A tap is a hinge: no direction held there.
     let hinged = |mut s: Stiff| {
         if jumper.from.as_tap().is_some() {
@@ -1538,6 +1595,8 @@ pub fn solve_jumper_in(
         if jumper.to.as_tap().is_some() {
             s.end = None;
         }
+        s.start = turned(s.start, &jumper.from);
+        s.end = turned(s.end, &jumper.to);
         s
     };
     let stiff = stiffness(line, jumper, shapes, cable, load)
@@ -1652,17 +1711,9 @@ pub fn solve_jumper_in(
             strength_use: shape.max_tension / rts,
             surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
             polyline_error: 0.0,
+            pivots: Vec::new(),
         });
     }
-    // The pull at an end: its tension there along the jumper.
-    let pull = |at: Vector3<f64>, next: Vector3<f64>, t: f64| {
-        let u = next - at;
-        if u.norm() > 0.0 {
-            u.normalize() * (t * f64::from(bundle))
-        } else {
-            Vector3::zeros()
-        }
-    };
     let (points, max_tension, supports, end_forces, off) = match &support {
         None => {
             // Its ice and wind per stretched metre: a fixed point on its
@@ -1696,10 +1747,12 @@ pub fn solve_jumper_in(
                 .into_iter()
                 .map(|q| a + q)
                 .collect();
-            let n = points.len();
+            // Its pull on its clamps, exact (2026-11-15: before, its
+            // tension along the first and last of 64 pieces — off by up to
+            // half a piece's turn, ~0.5° on a slack jumper).
             let ends = [
-                pull(points[0], points[1], state.tension_i),
-                pull(points[n - 1], points[n - 2], state.tension_j),
+                state.force_i * f64::from(bundle),
+                state.force_j * f64::from(bundle),
             ];
             let off = crate::solve::polyline_error(&points, state.horizontal / props.load.norm());
             (
@@ -1768,10 +1821,10 @@ pub fn solve_jumper_in(
             // The jumper's direction through the clamp: between its
             // neighbouring points.
             let through = points[(at_clamp + 1).min(points.len() - 1)] - points[at_clamp - 1];
-            let n = points.len();
+            // Exact, as above.
             let ends = [
-                pull(points[0], points[1], solution.cables[0].tension_i),
-                pull(points[n - 1], points[n - 2], solution.cables[1].tension_j),
+                solution.cables[0].force_i * f64::from(bundle),
+                solution.cables[1].force_j * f64::from(bundle),
             ];
             (
                 points,
@@ -1814,6 +1867,7 @@ pub fn solve_jumper_in(
         strength_use: max_tension / rts,
         surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
         polyline_error: off,
+        pivots: Vec::new(),
     })
 }
 
@@ -1869,24 +1923,27 @@ pub(crate) fn solve_jumpers_memo(
         .unwrap_or_else(|_| vec![(0..line.jumpers.len()).collect()]);
     let mut out: Vec<Option<Result<JumperShape, LineError>>> = vec![None; line.jumpers.len()];
     let mut points: std::collections::BTreeMap<(String, String), Point> = Default::default();
+    let context_of = |jumper: &Jumper, points: &std::collections::BTreeMap<_, _>| TapContext {
+        points: points.clone(),
+        loads: jumper
+            .points
+            .iter()
+            .filter_map(|p| {
+                loads
+                    .get(&crate::solve::LoadAt::Jumper(
+                        jumper.id.clone(),
+                        p.label.clone(),
+                    ))
+                    .map(|f| (p.label.clone(), *f))
+            })
+            .collect(),
+        moved: Vec::new(),
+    };
+    let (pivots, unpivoted) = crate::post::jumper_pivots(line);
     for level in levels {
         let jumpers: Vec<&Jumper> = level.iter().map(|&k| &line.jumpers[k]).collect();
         let solved = in_parallel(&jumpers, |jumper| {
-            let context = TapContext {
-                points: points.clone(),
-                loads: jumper
-                    .points
-                    .iter()
-                    .filter_map(|p| {
-                        loads
-                            .get(&crate::solve::LoadAt::Jumper(
-                                jumper.id.clone(),
-                                p.label.clone(),
-                            ))
-                            .map(|f| (p.label.clone(), *f))
-                    })
-                    .collect(),
-            };
+            let context = context_of(jumper, &points);
             match (memo, &global) {
                 (Some(m), Some((g, look))) => {
                     m.solve(line, library, case, shapes, jumper, &context, g, look)
@@ -1895,17 +1952,260 @@ pub(crate) fn solve_jumpers_memo(
             }
         });
         for (&k, r) in level.iter().zip(solved) {
-            if let Ok(s) = &r {
+            out[k] = Some(r);
+        }
+        // The pivoting posts whose jumpers are all solved by now: solved
+        // together with them (2026-11-15).
+        let ready: Vec<&crate::post::JumperPivot> = pivots
+            .iter()
+            .filter(|p| {
+                let at: Vec<usize> = ends_at(line, &p.point).map(|(k, _)| k).collect();
+                at.iter().all(|k| out[*k].is_some()) && at.iter().any(|k| level.contains(k))
+            })
+            .collect();
+        if !ready.is_empty() {
+            let solve = |k: usize, moved: Vec<MovedEnd>| {
+                let jumper = &line.jumpers[k];
+                let mut context = context_of(jumper, &points);
+                context.moved = moved;
+                solve_one_jumper_in(line, library, case, shapes, jumper, &context)
+            };
+            couple_pivots(line, case, &ready, &mut out, solve);
+        }
+        for &k in &level {
+            if let Some(Ok(s)) = &out[k] {
                 for (label, q) in &s.point_positions {
                     points.insert((line.jumpers[k].id.clone(), label.clone()), *q);
                 }
             }
-            out[k] = Some(r);
+        }
+    }
+    // A hinged post that cannot be solved with its jumpers: said on them.
+    for (structure, post, why) in &unpivoted {
+        for (k, j) in line.jumpers.iter().enumerate() {
+            if j.points().any(|p| p.structure == *structure) && j.supports().is_empty() {
+                let at_post = line.structure(structure).is_some_and(|s| {
+                    j.points().any(|p| {
+                        s.wire_at_set(p.set).is_some_and(|w| {
+                            s.component(&w.label)
+                                .strings
+                                .iter()
+                                .any(|&i| s.strings[i].label == *post)
+                        })
+                    })
+                });
+                if at_post && matches!(out[k], Some(Ok(_))) {
+                    out[k] = Some(Err(LineError::Invalid(format!(
+                        "jumper {}: the pivoting post {post} at {structure} is not solved with \
+                         it: {why}",
+                        j.id
+                    ))));
+                }
+            }
         }
     }
     out.into_iter()
         .map(|r| r.unwrap_or_else(|| Err(LineError::Invalid("not solved".into()))))
         .collect()
+}
+
+/// The jumpers' ends at `point`: (jumper index, end 0 `from` or 1 `to`).
+fn ends_at<'a>(
+    line: &'a Line,
+    point: &'a SectionPoint,
+) -> impl Iterator<Item = (usize, usize)> + 'a {
+    line.jumpers.iter().enumerate().flat_map(move |(k, j)| {
+        [&j.from, &j.to]
+            .into_iter()
+            .enumerate()
+            .filter(move |(_, e)| e.point() == Some(point))
+            .map(move |(e, _)| (k, e))
+    })
+}
+
+/// Passes at most over the pivoting posts solved together with their
+/// jumpers, each settled with the others where the last pass left them
+/// ([`couple_pivots`]).
+const PIVOT_PASSES: usize = 20;
+
+/// Solves the pivoting posts `pivots` together with the jumpers ending at
+/// them (owner, 2026-11-15: "Should the jumper be solved together with the
+/// post? — yes"): each post's top on its circle and its jumpers' shapes in
+/// one equilibrium — the post turned ([`crate::post::settle_turn`]) until
+/// the moment about its axis of its jumpers' pull and moment (each solved
+/// again with its end on the turned clamp, the clamp's direction turned
+/// too: `solve` with the moved ends), half its members' weight and wind and
+/// its counterweights is held by its hinge (nothing without friction).
+/// Posts sharing a jumper are settled in turn, each with the others where
+/// they are, pass after pass until no turn changes by more than 10⁻⁹ rad.
+/// The jumpers' results in `out` are replaced by those solved with the
+/// posts settled ([`JumperShape::pivots`]), or by why there is none: a
+/// rigid jumper there (a member, a brace of the post: not modelled), no
+/// balance (the load turns the post without end, or pushes it back over
+/// its hinge: free to pivot, nothing made up).
+///
+/// Expected cost: per post 10–30 solves of its jumpers (~1 ms each), one
+/// pass without shared jumpers. Exit clauses: [`PIVOT_PASSES`] passes,
+/// [`crate::post::SETTLE_EVALUATIONS`] per settling.
+fn couple_pivots(
+    line: &Line,
+    case: &WeatherCase,
+    pivots: &[&crate::post::JumperPivot],
+    out: &mut [Option<Result<JumperShape, LineError>>],
+    solve: impl Fn(usize, Vec<MovedEnd>) -> Result<JumperShape, LineError>,
+) {
+    let fail = |out: &mut [Option<Result<JumperShape, LineError>>],
+                p: &crate::post::JumperPivot,
+                why: &str| {
+        for (k, _) in ends_at(line, &p.point) {
+            if matches!(out[k], Some(Ok(_))) {
+                out[k] = Some(Err(LineError::Invalid(format!(
+                    "jumper {}: the hinged post {} at {} (solved with its jumpers): {why} — free \
+                     to pivot; its loads not computed",
+                    line.jumpers[k].id, p.post, p.structure
+                ))));
+            }
+        }
+    };
+    // A post whose jumper did not solve as given, or holds a rigid one, is
+    // not settled; the others are.
+    let mut live: Vec<&crate::post::JumperPivot> = Vec::new();
+    for &p in pivots {
+        let ends: Vec<(usize, usize)> = ends_at(line, &p.point).collect();
+        if let Some((k, _)) = ends.iter().find(|(k, _)| line.jumpers[*k].rigid) {
+            fail(
+                out,
+                p,
+                &format!(
+                    "jumper {} is rigid: a rigid jumper holds the post as a brace would, its \
+                     force along it not modelled",
+                    line.jumpers[*k].id
+                ),
+            );
+            continue;
+        }
+        if let Some((k, _)) = ends.iter().find(|(k, _)| !matches!(out[*k], Some(Ok(_)))) {
+            fail(
+                out,
+                p,
+                &format!("jumper {} is not solved", line.jumpers[*k].id),
+            );
+            continue;
+        }
+        live.push(p);
+    }
+    if live.is_empty() {
+        return;
+    }
+    // The wind on its members: across the line from the case's side, its
+    // structure's local wind (N per m² of wind area).
+    let wind = |p: &crate::post::JumperPivot| -> Point {
+        let Some(structure) = line.structure(&p.structure) else {
+            return [0.0; 3];
+        };
+        let at = [structure.position[0], structure.position[1]];
+        let Some(a) = line.direction_at(at) else {
+            return [0.0; 3];
+        };
+        let push = case.wind_pressure.si()
+            * line.wind_factor_at_structure(&p.structure)
+            * case.wind_from.to_left();
+        [-a[1] * push, a[0] * push, 0.0]
+    };
+    let moved_for = |k: usize, turns: &[f64]| -> Vec<MovedEnd> {
+        live.iter()
+            .zip(turns)
+            .filter(|(p, _)| ends_at(line, &p.point).any(|(j, _)| j == k))
+            .map(|(p, &turn)| MovedEnd {
+                point: p.point.clone(),
+                at: p.clamp_at(turn),
+                axis: p.axis(),
+                turn,
+            })
+            .collect()
+    };
+    let mut turns = vec![0.0; live.len()];
+    let mut held = vec![(0.0, true); live.len()];
+    let mut settled = false;
+    for _ in 0..PIVOT_PASSES {
+        let mut change: f64 = 0.0;
+        for i in 0..live.len() {
+            let p = live[i];
+            let w = wind(p);
+            let ends: Vec<(usize, usize)> = ends_at(line, &p.point).collect();
+            let drive = |turn: f64| -> Result<(f64, f64), String> {
+                let mut t = turns.clone();
+                t[i] = turn;
+                let (mut force, mut moment) = ([0.0; 3], [0.0; 3]);
+                for &(k, e) in &ends {
+                    let s = solve(k, moved_for(k, &t)).map_err(|x| x.to_string())?;
+                    for c in 0..3 {
+                        force[c] += s.end_forces[e][c];
+                        moment[c] += s.end_moments[e][c];
+                    }
+                }
+                Ok(p.drive(turn, force, moment, w))
+            };
+            match crate::post::settle_turn(p.friction, drive) {
+                Ok((turn, moment, stuck)) => {
+                    change = change.max((turn - turns[i]).abs());
+                    turns[i] = turn;
+                    held[i] = (moment, stuck);
+                }
+                Err(e) => {
+                    fail(out, p, &e);
+                    return;
+                }
+            }
+        }
+        if change < 1e-9 || live.len() == 1 {
+            settled = true;
+            break;
+        }
+    }
+    if !settled {
+        for p in &live {
+            fail(
+                out,
+                p,
+                &format!(
+                    "the posts sharing jumpers did not settle together in {PIVOT_PASSES} passes"
+                ),
+            );
+        }
+        return;
+    }
+    // Their jumpers solved with every post where it settled.
+    let mut done: Vec<usize> = Vec::new();
+    for p in &live {
+        for (k, _) in ends_at(line, &p.point) {
+            if done.contains(&k) {
+                continue;
+            }
+            done.push(k);
+            out[k] = Some(solve(k, moved_for(k, &turns)).map(|mut s| {
+                s.pivots = live
+                    .iter()
+                    .zip(&turns)
+                    .zip(&held)
+                    .filter(|((q, _), _)| ends_at(line, &q.point).any(|(j, _)| j == k))
+                    .map(|((q, &turn), &(moment, stuck))| crate::post::PivotTurn {
+                        structure: q.structure.clone(),
+                        set: q.point.set,
+                        wire: q.wire.clone(),
+                        post: q.post.clone(),
+                        turn_deg: turn.to_degrees(),
+                        clamp: q.clamp_at(turn),
+                        axis: q.axis(),
+                        radius: q.radius(),
+                        hinge_moment: moment,
+                        stuck,
+                    })
+                    .collect();
+                s
+            }));
+        }
+    }
 }
 
 thread_local! {

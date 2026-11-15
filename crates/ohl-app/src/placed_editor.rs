@@ -92,7 +92,10 @@ pub fn as_type(s: &Structure) -> DocumentMut {
     // Version 4 only where a string gives limits, 13 where one is a post
     // (an older program reads the rest).
     let limits = s.strings.iter().any(|x| !x.limits().is_empty());
-    let version = if s.strings.iter().any(|x| x.post) {
+    let version = if s.strings.iter().any(|x| x.hinge_friction_nm.is_some()) {
+        // A hinge friction (2026-11-15).
+        i64::from(ohl_structures::structures::HINGE_FRICTION_VERSION)
+    } else if s.strings.iter().any(|x| x.post) {
         i64::from(ohl_structures::structures::POST_VERSION)
     } else if limits {
         4
@@ -167,6 +170,9 @@ pub fn as_type(s: &Structure) -> DocumentMut {
             t.insert("post", toml_edit::value(true));
             if x.hinged {
                 t.insert("hinged", toml_edit::value(true));
+                if let Some(f) = x.hinge_friction_nm {
+                    t.insert("hinge_friction_nm", toml_edit::value(f));
+                }
             }
             if let Some(c) = x.cantilever_load {
                 t.insert("cantilever_load", toml_edit::value(format!("{c} N")));
@@ -312,6 +318,7 @@ impl PlacedEditor {
                 cantilever_load: x.cantilever_load,
                 exit_angle_deg: x.exit_angle_deg,
                 exit_direction_deg: x.exit_direction_deg,
+                hinge_friction_nm: x.hinge_friction_nm,
                 // From its wire point as placed here.
                 ..Default::default()
             })
