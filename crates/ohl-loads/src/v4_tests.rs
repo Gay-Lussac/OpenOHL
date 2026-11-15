@@ -704,16 +704,21 @@ fn use_local_takes_the_structures_wind() {
     assert!((body.pressure - 1.5 * w.wind_pressure.si()).abs() < 1e-9);
 }
 
-/// Per-pylon sets: T2 takes only "calm" (its own), T3 its type's default
-/// "wind"; T1 and T4 every case. A name not in the library is said.
+/// The structure groups (2026-11-15): T2 picked in a group taking only
+/// "calm", T3 of type "tangent" in a group of that type taking "wind"; T1
+/// and T4 in no group take every case. Each case is computed only for
+/// its groups' structures; a name not in the library is said.
 #[test]
-fn per_pylon_load_case_sets() {
+fn a_case_is_computed_only_for_its_groups_structures() {
     let mut line = two_wires();
-    line.structures[1].load_cases = vec!["calm".into()];
+    let mut calm = ohl_line::StructureGroup::new("calm only");
+    calm.structures = vec!["T2".into()];
+    calm.load_cases = vec!["calm".into()];
     line.structures[2].structure_type = Some("tangent".into());
-    line.structure_loads
-        .type_load_cases
-        .insert("tangent".into(), vec!["wind".into(), "gone".into()]);
+    let mut tangent = ohl_line::StructureGroup::new("tangent");
+    tangent.rules.types = vec!["tangent".into()];
+    tangent.load_cases = vec!["wind".into(), "gone".into()];
+    line.structure_groups = vec![calm, tangent];
     assert_eq!(line.load_cases_for(&line.structures[1]), ["calm"]);
     assert_eq!(line.load_cases_for(&line.structures[2]), ["wind", "gone"]);
     assert!(line.load_cases_for(&line.structures[0]).is_empty());
@@ -752,7 +757,7 @@ fn per_pylon_load_case_sets() {
     assert!(
         r[0].notes
             .iter()
-            .any(|n| n.contains("not in the load case set"))
+            .any(|n| n.contains("not taken by the groups") && n.contains("T3"))
     );
 }
 

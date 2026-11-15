@@ -3,11 +3,12 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! A structure load case of the two parts (2026-10-25) from the line to
-//! the solve: the example line sends its weather cases (the high wind
-//! twice, from the left and from the right) to T2; type-02 gets a case
-//! of line forces (factors per axis, a point off) and loads on the
-//! structure itself (self weight, the wind on the body at the pressure of
-//! the line result, ice, a point load); evaluated with an invented
+//! the solve: the example line sends T2 a library case (the high wind
+//! from the left, every factor 1: since 2026-11-15 the line sends library
+//! cases only); type-02 gets a case of line forces (its unfactored forces
+//! × factors per axis, a point off) and loads on the structure itself
+//! (self weight, the wind on the body at the pressure of the line case,
+//! ice, a point load); evaluated with an invented
 //! section library (profiles and wind factors for type-02's sections) the
 //! table's wind is the line's own member wind, its ice ρ g (P t + π t²) L,
 //! and the finite-element solve balances the table and the factored self
@@ -127,16 +128,14 @@ fn a_case_of_two_parts_goes_from_the_line_to_the_solve() {
     let weather = ohl_weather::WeatherCases::load(&ex().join("weather-cases.ohlwc"))
         .unwrap()
         .cases;
-    let choice = ohl_line::StructureLoads {
-        load_cases: None,
-        weather_cases: vec!["high wind".into()],
-        condition: None,
-        ..Default::default()
-    };
+    // A library case of the high wind from the left, every factor 1.
+    let mut left = ohl_loads::LoadCase::from_weather("high wind");
+    left.name = LEFT.into();
+    left.wind_from = Some(ohl_weather::WindSide::Left);
     let budget = ohl_wirefe::default_fe_budget();
     let loads =
-        structure_case_loads(&line, &library, structure_cases(&choice, &weather), &budget).unwrap();
-    let placed = placed_values(&[], &loads.weather, &[], &line, "T2", "synthetic");
+        structure_case_loads(&line, &library, structure_cases(&weather, &[left]), &budget).unwrap();
+    let placed = placed_values(&loads.library, &line, "T2", "synthetic");
     assert!(placed.cases.iter().any(|c| c == LEFT), "{:?}", placed.cases);
     let values = placed.values;
 

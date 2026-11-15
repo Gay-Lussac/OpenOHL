@@ -13,9 +13,8 @@
 //!   "structure": "T2",
 //!   "line": "synthetic-line-typed",
 //!   "structure_type": "type-02",
-//!   "cases": ["everyday", "wind", "high wind — wind from the left",
-//!             "high wind — wind from the right"],
-//!   "sources": ["load_case", "load_case", "weather_case", "weather_case"],
+//!   "cases": ["everyday", "wind", "ice"],
+//!   "sources": ["load_case", "load_case", "load_case"],
 //!   "values": {
 //!     "points": [...], "values": [...],
 //!     "structure_wind": [
@@ -63,6 +62,11 @@
 //! older file has none and such line forces get "no line value" there. A
 //! file is written at version 7 only when it holds such values, else at 6
 //! ([`PlacedValues::needed_version`]).
+//!
+//! Since 2026-11-15 (owner: Line › Criteria › Loads for structures is
+//! gone) the line sends the placed structure's library cases only, each
+//! `load_case`; a case of source `weather_case` (an unfactored weather case
+//! sent on its own) is found in older files only. The format is unchanged.
 
 use std::path::{Path, PathBuf};
 
@@ -89,9 +93,8 @@ pub const LINE_VALUES_FILE_VERSION_WITHOUT_MOMENTS: u32 = 7;
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_SET_PARTS: u32 = 6;
 
 /// How the note of a line-values file without values begins when the
-/// project has no load case library and sends no weather case: the
-/// structure application then says plainly that the project has no load
-/// cases and where to add them.
+/// project has no load case library: the structure application then says
+/// plainly that the project has no load cases and where to add them.
 pub const NO_LOAD_CASE_FILE: &str = "no load case file";
 
 /// A section or jumper at the placed structure that did not solve in one
@@ -155,7 +158,8 @@ pub enum CaseSource {
     #[default]
     LoadCase,
     /// A weather case of the line on its own, all factors 1 (Criteria ›
-    /// Loads for structures in the line application).
+    /// Loads for structures in the line application, until 2026-11-15):
+    /// in older files only, no longer sent.
     WeatherCase,
 }
 

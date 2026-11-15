@@ -66,7 +66,7 @@ fn solved() -> (Line, Vec<CaseLoads>) {
 #[test]
 fn the_line_values_file_gives_the_same_table() {
     let (line, loads) = solved();
-    let placed = placed_values(&loads, &[], &[], &line, "T2", "synthetic");
+    let placed = placed_values(&loads, &line, "T2", "synthetic");
     assert_eq!(placed.structure, "T2");
     assert_eq!(placed.line, "synthetic");
     assert_eq!(placed.structure_type, "type-02");
@@ -113,100 +113,6 @@ fn the_line_values_file_gives_the_same_table() {
     let g = back.values.governing();
     assert_eq!(g.len(), 2);
     assert!(g.iter().all(|g| g.largest.iter().all(Option::is_some)));
-}
-
-/// The weather cases chosen for the structures (owner, 2026-10-25): each
-/// a line result, unfactored (factored = unfactored), marked as weather
-/// cases; a case with wind twice, the wind from the left and from the
-/// right, the wires pushed to opposite sides; a chosen case not in the
-/// line named in the note.
-#[test]
-fn weather_cases_are_sent_unfactored_and_wind_on_both_sides() {
-    let (line, library, weather, _) = example();
-    let choice = ohl_line::StructureLoads {
-        load_cases: Some(vec!["wind".into()]),
-        weather_cases: vec!["high wind".into(), "glaze ice".into(), "gone".into()],
-        condition: None,
-        ..Default::default()
-    };
-    let cases = structure_cases(&choice, &weather);
-    assert_eq!(cases.missing, ["weather case \"gone\""]);
-    let budget = ohl_wirefe::default_fe_budget();
-    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    let placed = placed_values(
-        &[],
-        &loads.weather,
-        &loads.missing,
-        &line,
-        "T2",
-        "synthetic",
-    );
-    // In the order of the line's weather cases; the line's load cases are
-    // not sent.
-    assert_eq!(
-        placed.cases,
-        [
-            "glaze ice",
-            "high wind — wind from the left",
-            "high wind — wind from the right"
-        ]
-    );
-    assert_eq!(placed.sources, [CaseSource::WeatherCase; 3]);
-    assert!(placed.note.as_deref().unwrap().contains("\"gone\""));
-    // The same as the core's structure loads of that weather case with
-    // unit factors.
-    let unit = [ohl_loads::LoadCase::from_weather("glaze ice")];
-    let direct = ohl_loads::structure_loads(&line, &library, &weather, &unit, &budget).unwrap();
-    let p = &placed.values.points[0];
-    for q in [LineQuantity::Vertical, LineQuantity::Transverse] {
-        assert_eq!(
-            placed.values.get("glaze ice", &p.label, &p.sets, q),
-            line_values(&direct, &line, "T2").get("weather: glaze ice", &p.label, &p.sets, q)
-        );
-    }
-    for (q, f) in [
-        (LineQuantity::Transverse, LineQuantity::TransverseFactored),
-        (LineQuantity::Vertical, LineQuantity::VerticalFactored),
-    ] {
-        for c in &placed.cases {
-            assert_eq!(
-                placed.values.get(c, &p.label, &p.sets, q),
-                placed.values.get(c, &p.label, &p.sets, f)
-            );
-        }
-    }
-    // The two sides of the wind.
-    let at = |case: &str, q| placed.values.get(case, &p.label, &p.sets, q).unwrap();
-    let (l, r) = (
-        "high wind — wind from the left",
-        "high wind — wind from the right",
-    );
-    // The transverse forces opposite (what both share — the line angle's
-    // pull at T2 — is small beside the wind), the vertical about the
-    // same (the strings swing to either side).
-    let (tl, tr) = (
-        at(l, LineQuantity::Transverse),
-        at(r, LineQuantity::Transverse),
-    );
-    assert!(tl > 0.0 && tr < 0.0, "{tl} {tr}");
-    assert!((tl + tr).abs() < 0.1 * (tl - tr), "{tl} {tr}");
-    let (vl, vr) = (at(l, LineQuantity::Vertical), at(r, LineQuantity::Vertical));
-    assert!((vl - vr).abs() < 0.1 * vl, "{vl} {vr}");
-    // The body wind of each side blows its way.
-    let w: Vec<ohl_structure_loads::Direction> = placed
-        .values
-        .structure_wind
-        .iter()
-        .filter(|w| w.case.starts_with("high wind"))
-        .map(|w| w.towards)
-        .collect();
-    assert_eq!(
-        w,
-        [
-            ohl_structure_loads::Direction::Right,
-            ohl_structure_loads::Direction::Left
-        ]
-    );
 }
 
 /// A mast of one vertical member, a tube of 100 mm from the section
@@ -353,7 +259,7 @@ fn the_line_values_file_lists_the_wires_not_solved() {
     )
     .unwrap();
     // T3: S3 starts there.
-    let t3 = placed_values(&loads, &[], &[], &line, "T3", "synthetic");
+    let t3 = placed_values(&loads, &line, "T3", "synthetic");
     assert_eq!(t3.missing.len(), 3, "{:?}", t3.missing);
     for (m, case) in t3.missing.iter().zip(["everyday", "wind", "ice"]) {
         assert_eq!(
@@ -369,86 +275,39 @@ fn the_line_values_file_lists_the_wires_not_solved() {
     let back = PlacedValues::parse(&t3.to_json()).unwrap();
     assert_eq!(back, t3);
     // T2: only S1 and S2, solved.
-    let t2 = placed_values(&loads, &[], &[], &line, "T2", "synthetic");
+    let t2 = placed_values(&loads, &line, "T2", "synthetic");
     assert!(t2.missing.is_empty(), "{:?}", t2.missing);
     assert!(t2.others.iter().all(|o| o.missing.is_empty()));
     assert_eq!(t2.incomplete("ice"), None);
 }
 
-/// A load case of the line with a broken wire sent to the structures
-/// (roadmap O9): a line result of its weather case with that wire broken,
-/// named so, unfactored, after the weather cases; a wind case twice; the
-/// structure next to the broken span takes the unbalanced pull along the
-/// line (the same as the core's broken-wire loads with unit factors); a
-/// name chosen that is no broken-wire case is named in the note.
+/// A load case of the library with a broken wire (roadmap O9; since
+/// 2026-11-15 the only way it reaches a structure: as a library case of
+/// its groups): T2 gets it with its unfactored values — the core's
+/// broken-wire loads with unit factors — and its factor on the
+/// longitudinal ones; the structure next to the broken span takes the
+/// unbalanced pull along the line, nearly balanced in the case without
+/// the break.
 #[test]
-fn broken_wire_cases_are_sent_as_line_results() {
+fn a_broken_wire_case_reaches_the_structure_as_a_library_case() {
     let (line, library, weather, _) = example();
     let lc = LoadCases::parse(
         "[[case]]\nname = \"S1 broken\"\nweather = \"everyday\"\nlongitudinal = 1.3\n\
-         [case.broken]\nsection = \"S1\"\nspan = 2\n\
-         [[case]]\nname = \"S1 broken in wind\"\nweather = \"high wind\"\n\
          [case.broken]\nsection = \"S1\"\nspan = 2\n\
          [[case]]\nname = \"plain\"\nweather = \"everyday\"\n",
     )
     .unwrap()
     .cases;
-    let choice = ohl_line::StructureLoads {
-        weather_cases: vec!["everyday".into()],
-        broken_cases: vec![
-            "S1 broken".into(),
-            "S1 broken in wind".into(),
-            "plain".into(),
-        ],
-        ..Default::default()
-    };
-    let cases = ohl_structure_link::structure_cases_with(&choice, &weather, &lc);
-    assert_eq!(cases.missing, ["load case \"plain\" with a broken wire"]);
+    let cases = structure_cases(&weather, &lc);
     let budget = ohl_wirefe::default_fe_budget();
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
-    let placed = placed_values(
-        &[],
-        &loads.weather,
-        &loads.missing,
-        &line,
-        "T2",
-        "synthetic",
-    );
-    assert_eq!(
-        placed.cases,
-        [
-            "everyday",
-            "everyday — S1 span 2 broken",
-            "high wind — S1 span 2 broken — wind from the left",
-            "high wind — S1 span 2 broken — wind from the right",
-        ]
-    );
-    assert!(placed.note.as_deref().unwrap().contains("\"plain\""));
-    // Unfactored, and as the core gives it with unit factors.
+    let placed = ohl_structure_link::placed_values_with(&loads, &line, "T2", "synthetic");
+    assert_eq!(placed.cases, ["S1 broken", "plain"]);
+    assert_eq!(placed.sources, [CaseSource::LoadCase; 2]);
+    // Unfactored, as the core gives it with unit factors.
     let mut unit = lc[0].clone();
     unit.longitudinal = 1.0;
     let direct = ohl_loads::structure_loads(&line, &library, &weather, &[unit], &budget).unwrap();
-    let p = placed
-        .values
-        .points
-        .iter()
-        .find(|p| p.sets.contains(&1) || !p.sets.is_empty())
-        .unwrap();
-    let sent = placed.values.get(
-        "everyday — S1 span 2 broken",
-        &p.label,
-        &p.sets,
-        LineQuantity::Longitudinal,
-    );
-    let core = line_values(&direct, &line, "T2").get(
-        "S1 broken",
-        &p.label,
-        &p.sets,
-        LineQuantity::Longitudinal,
-    );
-    assert_eq!(sent, core);
-    // The broken span pulls T2 along the line where S1 hangs; whole, it is
-    // nearly balanced.
     let s1 = placed
         .values
         .points
@@ -460,16 +319,24 @@ fn broken_wire_cases_are_sent_as_line_results() {
                 .any(|x| x.structure == "T2" && p.sets.contains(&x.set))
         })
         .unwrap();
-    let along = |case: &str| {
-        placed
-            .values
-            .get(case, &s1.label, &s1.sets, LineQuantity::Longitudinal)
-            .unwrap()
-    };
+    let get = |case: &str, q| placed.values.get(case, &s1.label, &s1.sets, q).unwrap();
+    let core = line_values(&direct, &line, "T2")
+        .get("S1 broken", &s1.label, &s1.sets, LineQuantity::Longitudinal)
+        .unwrap();
+    assert!((get("S1 broken", LineQuantity::Longitudinal) - core).abs() < 1e-9);
+    let f = get("S1 broken", LineQuantity::LongitudinalFactored);
     assert!(
-        along("everyday — S1 span 2 broken").abs() > 10.0 * along("everyday").abs().max(1.0),
-        "{} {}",
-        along("everyday — S1 span 2 broken"),
-        along("everyday")
+        (f - 1.3 * core).abs() < 1e-6 * f.abs().max(1.0),
+        "{f} {core}"
+    );
+    // The broken span pulls T2 along the line where S1 hangs; whole, it is
+    // nearly balanced.
+    let (broken, whole) = (
+        get("S1 broken", LineQuantity::Longitudinal),
+        get("plain", LineQuantity::Longitudinal),
+    );
+    assert!(
+        broken.abs() > 10.0 * whole.abs().max(1.0),
+        "{broken} {whole}"
     );
 }

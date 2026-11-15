@@ -3,8 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The line's load case library as a placed structure's load cases in
-//! OHL-Structure (owner 2026-11-03: "The library's cases"): its set of
-//! the library, each case with its factors, its wind on the body from any
+//! OHL-Structure (owner 2026-11-03: "The library's cases"; 2026-11-15:
+//! those only): the cases of its groups, each case with its factors, its wind on the body from any
 //! angle, its broken wires all broken, its ice and snow on the members.
 //! The values are INVENTED (the synthetic example line).
 
@@ -13,10 +13,18 @@ use std::path::{Path, PathBuf};
 use ohl_line::Line;
 use ohl_loads::LoadCases;
 use ohl_structure_link::{
-    library_recipes, placed_values_with, structure_case_loads, structure_cases_with,
+    library_recipes, placed_values_with, structure_case_loads, structure_cases,
 };
 use ohl_structure_loads::{LineQuantity, PlacedValues, WindFrom};
-use ohl_structures::StructureLibrary;
+use ohl_structures::{LibraryItem, StructureLibrary};
+
+/// Group `name` picking `ids`, taking `cases`.
+fn pick(line: &mut Line, name: &str, ids: &[&str], cases: &[&str]) {
+    let mut g = ohl_line::StructureGroup::new(name);
+    g.structures = ids.iter().map(|s| (*s).to_owned()).collect();
+    g.load_cases = cases.iter().map(|s| (*s).to_owned()).collect();
+    line.structure_groups.push(g);
+}
 
 fn ex() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/synthetic-line")
@@ -38,8 +46,8 @@ fn example() -> (Line, ohl_cables::Library, Vec<ohl_weather::WeatherCase>) {
 
 /// A case of the library with the wind on the structures from 30° (0 from
 /// the right, 90 from ahead), two broken wires (S1's first two spans,
-/// broken together) and its own factors; T2 takes it and "calm" (its own
-/// set), T3 every case. In OHL-Structure T2 gets exactly its set, each
+/// broken together) and its own factors; T2 takes it and "calm" (its
+/// group), T3 every case. In OHL-Structure T2 gets exactly those, each
 /// case with the library's factors; the angled wind arrives as an angle
 /// (towards (−cos 30°, −sin 30°)); the broken wires are both broken in the
 /// line's values (as the core computes the case), and through JSON the
@@ -59,31 +67,9 @@ fn a_placed_structure_takes_its_set_with_an_angled_wind_and_two_broken_wires() {
     )
     .unwrap()
     .cases;
-    line.structures
-        .iter_mut()
-        .find(|s| s.id == "T2")
-        .unwrap()
-        .load_cases = vec!["calm".into(), "storm, two broken".into()];
-    let choice = ohl_line::StructureLoads {
-        weather_cases: vec!["everyday".into()],
-        broken_cases: vec!["storm, two broken".into()],
-        ..Default::default()
-    };
-    let cases = structure_cases_with(&choice, &weather, &lc);
+    pick(&mut line, "T2", &["T2"], &["calm", "storm, two broken"]);
+    let cases = structure_cases(&weather, &lc);
     assert_eq!(cases.library.len(), 3);
-    // The broken-wire line result breaks both wires.
-    let sent: Vec<&str> = cases.weather.iter().map(|c| c.name.as_str()).collect();
-    assert!(
-        sent.contains(&"high wind — S1 span 1 broken, S1 span 2 broken — wind from the left"),
-        "{sent:?}"
-    );
-    assert!(
-        cases
-            .weather
-            .iter()
-            .filter(|c| c.name.contains("broken"))
-            .all(|c| c.broken_wires().count() == 2)
-    );
     let budget = ohl_wirefe::default_fe_budget();
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
     assert!(
@@ -133,7 +119,7 @@ fn a_placed_structure_takes_its_set_with_an_angled_wind_and_two_broken_wires() {
     // Through the file and back.
     let read = PlacedValues::parse(&placed.to_json()).unwrap();
     assert_eq!(read.library_cases, placed.library_cases);
-    // T3 has no set: every case.
+    // T3 is in no group: every case.
     let t3 = library_recipes(&loads.library, &weather, &line, "T3");
     assert_eq!(t3.len(), 3);
 }
@@ -210,7 +196,7 @@ fn a_case_taking_the_local_conditions_puts_the_local_ice_on_the_members() {
 /// Never silently absent (2026-11-14). A library case naming a weather
 /// case that is not there fails only itself: the other cases still reach
 /// OHL-Structure, and the note of every structure taking the faulty one
-/// names it (NOT SENT). A structure whose own set names only cases no
+/// names it (NOT SENT). A structure whose groups name only cases no
 /// longer in the library gets no library case and is told why (NOT
 /// CHECKED); one naming one such case among others gets the others and
 /// is told which is missing.
@@ -225,16 +211,9 @@ fn one_faulty_case_fails_alone_and_a_set_of_missing_cases_is_said() {
     )
     .unwrap()
     .cases;
-    let set = |line: &mut Line, id: &str, cases: &[&str]| {
-        line.structures
-            .iter_mut()
-            .find(|s| s.id == id)
-            .unwrap()
-            .load_cases = cases.iter().map(|c| (*c).to_owned()).collect();
-    };
-    set(&mut line, "T2", &["calm (renamed)"]);
-    set(&mut line, "T3", &["calm", "windy (renamed)"]);
-    let cases = structure_cases_with(&ohl_line::StructureLoads::default(), &weather, &lc);
+    pick(&mut line, "T2", &["T2"], &["calm (renamed)"]);
+    pick(&mut line, "T3", &["T3"], &["calm", "windy (renamed)"]);
+    let cases = structure_cases(&weather, &lc);
     let budget = ohl_wirefe::default_fe_budget();
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
     assert_eq!(loads.library_failed.len(), 1);
@@ -252,12 +231,12 @@ fn one_faulty_case_fails_alone_and_a_set_of_missing_cases_is_said() {
             && note.contains("no such weather"),
         "{note}"
     );
-    // T2: every case of its set gone from the library.
+    // T2: every case of its groups gone from the library.
     let t2 = placed_values_with(&loads, &line, "T2", "synthetic");
     assert!(t2.library_cases.is_empty());
     let note = t2.note.clone().unwrap_or_default();
     assert!(
-        note.contains("NOT CHECKED: load case(s) calm (renamed) of T2's set")
+        note.contains("NOT CHECKED: load case(s) calm (renamed) of T2's groups")
             && note.contains("no library case is sent for it"),
         "{note}"
     );
@@ -272,66 +251,85 @@ fn one_faulty_case_fails_alone_and_a_set_of_missing_cases_is_said() {
     assert!(!note.contains("no library case is sent"), "{note}");
 }
 
-/// One name, one meaning (2026-11-14): a library with a load case
-/// `everyday` on weather case `everyday`, S1 removed in it (a construction
-/// state); with `everyday` also ticked in Loads for structures (the wires
-/// after creep there), the line result is sent as `everyday (weather
-/// case)`, said in the note — two cases of two names, each with its own
-/// forces (before, both were `everyday` and OHL-Structure took the
-/// library's for both: without S1's pull, not on the safe side).
+/// Only the library cases reach OHL-Structure (owner, 2026-11-15): a
+/// line still holding the weather cases once sent unfactored (and a
+/// broken-wire case once sent) gets one note saying they are no longer
+/// used, and T2 gets the cases of its groups only, every one a library
+/// case — a broken-wire one too. An extra load case of type-02 taking the
+/// line forces of the library case "storm" (factor 1 on each axis) gets
+/// its **unfactored** forces, not the factored ones; one taking a weather
+/// case's line result (an older recipe) gets no value, said.
 #[test]
-fn a_weather_case_sent_with_a_library_case_name_is_renamed() {
-    let (line, library, weather) = example();
+fn only_library_cases_are_sent_and_an_extra_case_takes_their_unfactored_forces() {
+    let (mut line, library, weather) = example();
+    line.structure_loads.weather_cases = vec!["everyday".into(), "high wind".into()];
+    line.structure_loads.broken_cases = vec!["S1 broken".into()];
+    assert!(
+        line.unused_structure_loads_note()
+            .is_some_and(|n| n.contains("no longer used"))
+    );
     let lc = LoadCases::parse(
         "format = \"ohl-load-cases\"\nversion = 4\n\
-         [[case]]\nname = \"everyday\"\nweather = \"everyday\"\n\
-         [[case.removed]]\nsection = \"S1\"\n",
+         [[case]]\nname = \"storm\"\nweather = \"high wind\"\ntransverse = 1.4\nvertical = 1.2\n\
+         [[case]]\nname = \"S1 broken\"\nweather = \"everyday\"\n\
+         [[case.broken]]\nsection = \"S1\"\nspan = 2\n\
+         [[case]]\nname = \"ice\"\nweather = \"glaze ice\"\n",
     )
     .unwrap()
     .cases;
-    let choice = ohl_line::StructureLoads {
-        weather_cases: vec!["everyday".into()],
-        condition: Some("creep".into()),
-        ..Default::default()
-    };
-    let cases = structure_cases_with(&choice, &weather, &lc);
-    let sent: Vec<&str> = cases.weather.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(sent, ["everyday (weather case)"]);
-    assert_eq!(cases.weather_cases[0].name, "everyday (weather case)");
-    assert_eq!(cases.renamed.len(), 1);
+    pick(&mut line, "T2", &["T2"], &["storm", "S1 broken"]);
     let budget = ohl_wirefe::default_fe_budget();
-    let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
+    let loads =
+        structure_case_loads(&line, &library, structure_cases(&weather, &lc), &budget).unwrap();
     let placed = placed_values_with(&loads, &line, "T2", "synthetic");
-    assert!(placed.cases.contains(&"everyday".to_owned()));
-    assert!(placed.cases.contains(&"everyday (weather case)".to_owned()));
-    let note = placed.note.clone().unwrap_or_default();
+    assert_eq!(placed.cases, ["storm", "S1 broken"]);
     assert!(
-        note.contains(ohl_structure_link::RENAMED) && note.contains("\"everyday (weather case)\""),
-        "{note}"
-    );
-    // Solved after creep although the creep case is sent renamed (the
-    // line's own weather cases go along).
-    assert!(!note.contains("not solved"), "{note}");
-    // Each its own forces: S1 removed (the library's) or there, at T1 (a
-    // line end of S1: its pull along the line).
-    let t1 = placed_values_with(&loads, &line, "T1", "synthetic");
-    let pull = |case: &str| -> f64 {
-        t1.values
-            .points
+        placed
+            .sources
             .iter()
-            .filter_map(|p| {
-                t1.values
-                    .get(case, &p.label, &p.sets, LineQuantity::Longitudinal)
-            })
-            .map(f64::abs)
-            .sum()
-    };
-    let (removed, sent) = (pull("everyday"), pull("everyday (weather case)"));
-    assert!(sent > 1000.0, "{sent}");
-    assert!(
-        (removed - sent).abs() > 1000.0,
-        "the two cases have their own forces: {removed} N, {sent} N"
+            .all(|s| *s == ohl_structure_loads::CaseSource::LoadCase)
     );
+    let names: Vec<&str> = placed
+        .library_cases
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(names, ["storm", "S1 broken"]);
+    let note = placed.note.clone().unwrap_or_default();
+    assert!(note.contains("Groups: T2 is in T2"), "{note}");
+    // An extra case on "storm", every factor 1: the unfactored forces.
+    let dir = ex().join("Structures");
+    let text = std::fs::read_to_string(dir.join("type-02.ohls")).unwrap()
+        + "\n[[load_case]]\nname = \"mine\"\n[[load_case.line]]\nresult = \"storm\"\n\
+           vertical = 1.0\ntransverse = 1.0\nlongitudinal = 1.0\n\
+           [[load_case]]\nname = \"older\"\n[[load_case.line]]\n\
+           result = \"high wind — wind from the left\"\n";
+    let t = ohl_structures::StructureType::parse(&dir.join("type-02.ohls"), &text).unwrap();
+    let recipes = ohl_structure_loads::StructureLoadCases::from_structure(&t).unwrap();
+    let table = ohl_structure_loads::evaluate_with_areas(
+        &recipes,
+        &t,
+        &placed.values,
+        &ohl_structure_loads::NoAreas,
+    );
+    let p = &placed.values.points[0];
+    let row = table
+        .case("mine")
+        .find(|r| r.label == p.label && r.missing.is_none())
+        .expect("a row of line forces");
+    let get = |q| placed.values.get("storm", &p.label, &p.sets, q).unwrap();
+    assert!((row.force[0] - get(LineQuantity::Transverse)).abs() < 1e-9);
+    assert!((row.force[2] - get(LineQuantity::Vertical)).abs() < 1e-9);
+    let factored = get(LineQuantity::TransverseFactored);
+    assert!(
+        (factored - 1.4 * get(LineQuantity::Transverse)).abs() < 1e-6 * factored.abs().max(1.0)
+    );
+    assert!(
+        (row.force[0] - factored).abs() > 1e-6,
+        "unfactored, not factored"
+    );
+    // The older recipe on a weather case's line result: no value.
+    assert!(table.case("older").all(|r| r.missing.is_some()));
 }
 
 /// Local conditions reach OHL-Structure (2026-11-14, owner's answer 3):
@@ -358,9 +356,8 @@ fn the_local_conditions_of_the_check_reach_the_placed_structure() {
     .cases;
     let w = weather.iter().find(|w| w.name == "high wind").unwrap();
     let budget = ohl_wirefe::default_fe_budget();
-    let choice = ohl_line::StructureLoads::default();
     let sent = |local: bool| {
-        let cases = structure_cases_with(&choice, &weather, &lc).with_local(local);
+        let cases = structure_cases(&weather, &lc).with_local(local);
         let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
         placed_values_with(&loads, &line, "T2", "synthetic")
     };
@@ -374,6 +371,7 @@ fn the_local_conditions_of_the_check_reach_the_placed_structure() {
     assert!((wind(&off) - w.wind_pressure.si()).abs() < 1e-9);
     let note = on.note.clone().unwrap_or_default();
     assert!(note.starts_with(ohl_structure_link::WITH_LOCAL), "{note}");
+    assert!(note.contains(ohl_structure_link::GROUPS), "{note}");
     assert!(
         !off.note
             .clone()

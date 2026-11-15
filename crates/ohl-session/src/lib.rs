@@ -860,6 +860,9 @@ struct Meta {
     circuit_starts: Vec<ohl_line::SectionPoint>,
     #[serde(default, skip_serializing_if = "ohl_line::StructureLoads::is_default")]
     structure_loads: ohl_line::StructureLoads,
+    /// The structure groups (2026-11-15): their own settings row.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    structure_groups: Vec<ohl_line::StructureGroup>,
     #[serde(
         default,
         skip_serializing_if = "ohl_line::electrical::ElectricalSettings::is_default"
@@ -884,6 +887,7 @@ impl Meta {
             defaults: line.defaults,
             circuit_starts: line.circuit_starts.clone(),
             structure_loads: line.structure_loads.clone(),
+            structure_groups: line.structure_groups.clone(),
             electrical: line.electrical,
         }
     }
@@ -894,7 +898,7 @@ impl Meta {
 /// undo one each: `line` (name, CRS, display) and one row per setting.
 /// Projects written before kept them all in `line`: read as defaults
 /// under the rows ([`meta_of`]), until the first change writes the rows.
-const META_ROWS: [&str; 9] = [
+const META_ROWS: [&str; 10] = [
     "systems",
     "circuits",
     "creep_stretch",
@@ -904,6 +908,7 @@ const META_ROWS: [&str; 9] = [
     "circuit_starts",
     "structure_loads",
     "electrical",
+    "structure_groups",
 ];
 
 /// The settings `meta` as rows: (id, value).
@@ -924,6 +929,7 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
             "defaults" => json(&meta.defaults),
             "circuit_starts" => json(&meta.circuit_starts),
             "electrical" => json(&meta.electrical),
+            "structure_groups" => json(&meta.structure_groups),
             _ => json(&meta.structure_loads),
         };
         out.push((key.to_owned(), serde_json::json!({ key: v })));
@@ -1207,6 +1213,22 @@ pub(crate) fn rename_references(
             out.extend(starts_renamed_in(line, |p| {
                 (p.structure == id).then(|| ohl_line::SectionPoint::new(new_id.clone(), p.set))
             }));
+            // The structure groups picking it (2026-11-15).
+            if line
+                .structure_groups
+                .iter()
+                .any(|g| g.structures.contains(&id))
+            {
+                let mut after = line.clone();
+                for g in &mut after.structure_groups {
+                    for s in &mut g.structures {
+                        if *s == id {
+                            *s = new_id.clone();
+                        }
+                    }
+                }
+                out.push(line_settings_change(line, &after));
+            }
         }
         // A section renamed: its spacers follow.
         Kind::Section => {
@@ -1432,7 +1454,9 @@ fn line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionEr
 type ObjectList = Vec<(Kind, String, Value)>;
 
 /// Older projects: `objects` read into routes, alignments and alignment
-/// points ([`Line::upgrade_routes`]); `None` when nothing changes.
+/// points ([`Line::upgrade_routes`]) and their load case sets into
+/// structure groups ([`Line::adopt_structure_groups`], 2026-11-15); `None`
+/// when nothing changes.
 /// `before_routes`: a project from before routes and alignments (its
 /// routes were each their own alignment, or followed its structures, and
 /// the line had its own alignment).
@@ -1443,7 +1467,7 @@ fn upgraded_objects(
     if objects.is_empty() {
         return Ok(None);
     }
-    let mut line = raw_line_of(objects)?;
+    let mut line = stored_line_of(objects)?;
     line.version = if before_routes {
         2
     } else {
@@ -1451,6 +1475,8 @@ fn upgraded_objects(
     };
     let before = line.clone();
     line.upgrade_routes();
+    // The load case sets of before 2026-11-15 as structure groups, kept so.
+    line.adopt_structure_groups();
     if line == before {
         return Ok(None);
     }
@@ -1458,8 +1484,17 @@ fn upgraded_objects(
     Ok(Some(objects_of(&line)))
 }
 
-/// The line made of `objects`, not validated.
+/// The line made of `objects`, not validated; the load case sets of
+/// before 2026-11-15 read into structure groups
+/// ([`Line::adopt_structure_groups`]: a value an undo puts back).
 fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionError> {
+    let mut line = stored_line_of(objects)?;
+    line.adopt_structure_groups();
+    Ok(line)
+}
+
+/// The line made of `objects` as they are stored, not validated.
+fn stored_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, SessionError> {
     let bad = |m: String| refused(m);
     let mut ordered: Vec<(&(Kind, String), &Object)> = objects.iter().collect();
     ordered.sort_by_key(|(k, o)| (k.0, o.ord));
@@ -1487,6 +1522,7 @@ fn raw_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Sessi
         solver: meta.solver,
         circuit_starts: meta.circuit_starts,
         structure_loads: meta.structure_loads,
+        structure_groups: meta.structure_groups,
         electrical: meta.electrical,
         condition_cases: Default::default(),
         spacers: vec![],
@@ -1818,7 +1854,7 @@ impl Session {
                 .is_some())
         };
         let before_routes = !done("routes_alignments")?;
-        if before_routes || !done("alignment_points")? {
+        if before_routes || !done("alignment_points")? || !done("structure_groups")? {
             let tx = conn.unchecked_transaction()?;
             for (name, objects) in &mut by_line {
                 let Some(new) = upgraded_objects(objects, before_routes)? else {
@@ -1873,7 +1909,8 @@ impl Session {
             }
             tx.execute_batch(
                 "INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('routes_alignments', '1');
-                 INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('alignment_points', '1');",
+                 INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('alignment_points', '1');
+                 INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('structure_groups', '1');",
             )?;
             tx.commit()?;
         }
@@ -2388,14 +2425,49 @@ impl Session {
         line_settings_change(&self.line, &line)
     }
 
-    /// The command setting what the line sends to the placed structures
-    /// (Criteria › Loads for structures: load cases, weather cases on
-    /// their own): one logged, undoable put of its settings row
-    /// (`structure_loads`); no section is solved again.
-    pub fn structure_loads_command(&self, choice: ohl_line::StructureLoads) -> Command {
+    /// The command setting the line's structure groups (Structures › Load
+    /// cases per group, 2026-11-15: which load cases each structure takes):
+    /// one logged, undoable put of their settings row
+    /// (`structure_groups`); no section is solved again. A line still
+    /// holding the load case sets of before 2026-11-15 (own sets, types'
+    /// sets: read into groups in memory) has them emptied in the same
+    /// command, so they are not read into groups again.
+    pub fn structure_groups_command(&self, groups: Vec<ohl_line::StructureGroup>) -> Command {
         let mut line = self.line.clone();
-        line.structure_loads = choice;
-        line_settings_change(&self.line, &line)
+        line.structure_groups = groups;
+        let mut commands = vec![line_settings_change(&self.line, &line)];
+        let stored = self
+            .objects
+            .iter()
+            .filter(|((k, _), _)| *k == Kind::Structure)
+            .filter_map(|(_, o)| serde_json::from_value::<Structure>((*o.value).clone()).ok())
+            .filter(|s| !s.load_cases.is_empty() || s.no_load_cases);
+        for mut s in stored {
+            s.load_cases.clear();
+            s.no_load_cases = false;
+            commands.push(Command::Put {
+                kind: Kind::Structure,
+                id: s.id.clone(),
+                value: json(&s),
+                ord: None,
+            });
+        }
+        if let Ok(Some(meta)) = meta_of(&self.objects)
+            && !meta.structure_loads.type_load_cases.is_empty()
+        {
+            let mut sl = meta.structure_loads;
+            sl.type_load_cases.clear();
+            commands.push(Command::Put {
+                kind: Kind::Meta,
+                id: "structure_loads".into(),
+                value: serde_json::json!({ "structure_loads": sl }),
+                ord: None,
+            });
+        }
+        match commands.len() {
+            1 => commands.remove(0),
+            _ => Command::Batch { commands },
+        }
     }
 
     /// The command setting the line's electrical settings (soil

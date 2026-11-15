@@ -487,6 +487,35 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
         item(ui, Command::Table(TableKind::Strings), out);
         item(ui, Command::Table(TableKind::Insulators), out);
         item(ui, Command::Table(TableKind::StringShapes), out);
+        // The load cases and which structures take them (owner,
+        // 2026-11-15: moved here from Criteria, the groups instead of the
+        // per-structure and per-type sets).
+        ui.separator();
+        ui.label(egui::RichText::new("Load cases").small().weak());
+        if ui
+            .button("Load cases…")
+            .on_hover_text(
+                "The load case library: each case a weather case, the wires' condition, the \
+                 factors, broken or removed wires, the wind, ice and snow on the structures",
+            )
+            .clicked()
+        {
+            out.push(Command::Library(LibraryKind::LoadCases));
+            ui.close();
+        }
+        if ui
+            .button("Load cases per group…")
+            .on_hover_text(
+                "Which structures take which load cases: groups of structures (picked, or by \
+                 type, line angle, station, dead end), each ticking cases of the library; in no \
+                 group, every case",
+            )
+            .clicked()
+        {
+            r.structure_groups.open = true;
+            ui.close();
+        }
+        ui.separator();
         // Under the structures (owner, 2026-11-14), not Plans & sheets.
         if ui
             .button("Staking table…")
@@ -599,8 +628,8 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
             if ui
                 .button("Weather case groups…")
                 .on_hover_text(
-                    "Named groups of weather cases with a description, picked as one in Loads for \
-                     structures and in the checks",
+                    "Named groups of weather cases with a description, picked as one in the \
+                     checks",
                 )
                 .clicked()
             {
@@ -608,18 +637,8 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
                 ui.close();
             }
             item(ui, Command::Library(LibraryKind::WeatherCases), out);
-            item(ui, Command::Library(LibraryKind::LoadCases), out);
-            if ui
-                .button("Load cases per structure type…")
-                .on_hover_text(
-                    "Per structure type, the load cases of the library its structures take \
-                     (a structure's own set, in its Properties, comes first; none: every case)",
-                )
-                .clicked()
-            {
-                r.load_case_types_open = true;
-                ui.close();
-            }
+            // The load cases and their groups: Line › Structures
+            // (2026-11-15).
             if ui
                 .button("Creep-Stretch…")
                 .on_hover_text(
@@ -675,7 +694,8 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
                 r.design_code.open = true;
                 ui.close();
             }
-            crate::structure_app::loads_menu(ui, r);
+            // (Loads for structures is gone, 2026-11-15: a placed structure
+            // gets its library cases only, through its groups.)
         });
 }
 
@@ -703,7 +723,7 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
         .button("Compute structure loads")
         .on_hover_text(
             "The loads on the structures at every attachment, in each load case \
-                 (Criteria › Load cases library)",
+                 (Line › Structures › Load cases…)",
         )
         .clicked()
     {

@@ -1938,45 +1938,98 @@ fn settings_changed_by_two_users_are_both_kept() {
     assert_eq!(read.solver.jumper_loads, ohl_line::JumperLoads::Pull);
 }
 
-/// What the line sends to the placed structures (load cases, weather
-/// cases on their own): its own settings row (`structure_loads`), put
-/// alone, read back when the project opens again, no section solved
-/// again; undone and redone.
+/// The structure groups (2026-11-15): their own settings row
+/// (`structure_groups`), put alone, read back when the project opens
+/// again, no section solved again; undone and redone.
 #[test]
-fn structure_loads_are_a_settings_row() {
-    let (path, mut s) = project("structure-loads");
-    assert!(s.line().structure_loads.is_default());
-    let choice = ohl_line::StructureLoads {
-        load_cases: Some(vec!["wind".into()]),
-        weather_cases: vec!["ice".into(), "wind".into()],
-        condition: Some("creep".into()),
-        ..Default::default()
-    };
-    let command = s.structure_loads_command(choice.clone());
+fn structure_groups_are_a_settings_row() {
+    let (path, mut s) = project("structure-groups");
+    assert!(s.line().structure_groups.is_empty());
+    let mut g = ohl_line::StructureGroup::new("angle");
+    g.structures = vec!["T2".into()];
+    g.load_cases = vec!["wind".into()];
+    g.rules.angle_from_deg = Some(10.0);
+    let groups = vec![g];
+    let command = s.structure_groups_command(groups.clone());
     let Command::Batch { commands } = &command else {
         panic!("{command:?}")
     };
     assert!(
-        matches!(&commands[..], [Command::Put { kind: Kind::Meta, id, .. }] if id == "structure_loads"),
+        matches!(&commands[..], [Command::Put { kind: Kind::Meta, id, .. }] if id == "structure_groups"),
         "{commands:?}"
     );
     let applied = s.apply("ana", command).unwrap();
     assert!(applied.sections.is_empty(), "{:?}", applied.sections);
-    assert_eq!(s.line().structure_loads, choice);
-    let row = &*s.objects[&(Kind::Meta, "structure_loads".to_owned())].value;
+    assert_eq!(s.line().structure_groups, groups);
+    let row = &*s.objects[&(Kind::Meta, "structure_groups".to_owned())].value;
     assert_eq!(
         row,
-        &serde_json::json!({ "structure_loads": {
-            "load_cases": ["wind"], "weather_cases": ["ice", "wind"], "condition": "creep"
-        } })
+        &serde_json::json!({ "structure_groups": [{
+            "name": "angle", "structures": ["T2"], "rules": { "angle_from_deg": 10.0 },
+            "load_cases": ["wind"]
+        }] })
     );
     drop(s);
     let mut s = Session::open(&path).unwrap();
-    assert_eq!(s.line().structure_loads, choice);
+    assert_eq!(s.line().structure_groups, groups);
     s.undo("ana").unwrap();
-    assert!(s.line().structure_loads.is_default());
+    assert!(s.line().structure_groups.is_empty());
     s.redo("ana").unwrap();
-    assert_eq!(s.line().structure_loads, choice);
+    assert_eq!(s.line().structure_groups, groups);
+}
+
+/// A project of before 2026-11-15 with a structure's own load cases and a
+/// type's set: read into groups when it opens, kept so (the objects
+/// rewritten once, not a logged edit); opened again, the same groups,
+/// none added twice.
+#[test]
+fn old_case_sets_become_groups_when_the_project_opens() {
+    let (path, mut s) = project("old-sets");
+    let mut t2 = s.line().structure("T2").unwrap().clone();
+    t2.load_cases = vec!["wind".into()];
+    let mut line = s.line().clone();
+    line.structure_loads
+        .type_load_cases
+        .insert("1A".into(), vec!["ice".into()]);
+    s.apply(
+        "ana",
+        Command::Batch {
+            commands: vec![
+                Command::Put {
+                    kind: Kind::Structure,
+                    id: "T2".into(),
+                    value: json(&t2),
+                    ord: None,
+                },
+                line_settings_change(s.line(), &line),
+            ],
+        },
+    )
+    .unwrap();
+    // In memory: already groups.
+    assert!(!s.line().has_old_case_sets());
+    assert_eq!(s.line().structure_groups.len(), 2);
+    // An older project: the upgrade not done yet.
+    s.conn
+        .execute("DELETE FROM ols_meta WHERE key = 'structure_groups'", [])
+        .unwrap();
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    let stored = &*s.objects[&(Kind::Structure, "T2".to_owned())].value;
+    assert!(stored.get("load_cases").is_none(), "{stored}");
+    let names: Vec<&str> = s
+        .line()
+        .structure_groups
+        .iter()
+        .map(|g| g.name.as_str())
+        .collect();
+    assert_eq!(names, ["type 1A", "T2"]);
+    let groups = s.line().structure_groups.clone();
+    drop(s);
+    let s = Session::open(&path).unwrap();
+    assert_eq!(s.line().structure_groups, groups);
+    assert!(s.line().takes_load_case("T2", "wind"));
+    assert!(!s.line().takes_load_case("T2", "everyday"));
 }
 
 /// A project still to be upgraded to alignment points keeps its library

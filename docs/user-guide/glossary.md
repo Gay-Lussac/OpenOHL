@@ -371,6 +371,14 @@ line sends to its structures. *German:* Lastfall.
 from the line with the structure's own loads, for its analysis.
 *German:* Mastlastfall (to confirm).
 
+**Structure group** — structures, picked by hand or by rules (types, line
+angle, station, dead end), and the load cases of the library they take
+(2026-11-15, Line › Structures › Load cases per group; in the line file
+`structure_groups`). A structure takes the cases of all its groups; in no
+group, every case ([Load cases per group](load-cases-per-group.md)).
+*Replaces:* case set, per-pylon set, load cases per structure type.
+*German:* Mastgruppe (to confirm).
+
 **Broken wire** — a load case's wire gone in one span of a section
 (`[case.broken]`): the section solved without it, the strings next to the
 break swung to the spans left ([Load

@@ -35,10 +35,10 @@ The names are those of the line file:
              height_adjust="0.5"                 <!-- feet 0.5 m above the ground -->
              soil_resistivity_ohm_m="8.5"           <!-- soil resistivity measured here, Ω·m -->
              earthing_resistance_ohm="6.2"          <!-- its earthing (footing), Ω (2026-10-29) -->
-             no_load_cases="true">                  <!-- it takes no load case (version 14, 2026-11-10): no loads, no checks, said so; not with <load_case> -->
+             no_load_cases="true">                  <!-- older files (version 14, until 2026-11-15): it took no load case; read into the group "no load case" -->
     <weather_group name="…"/>                   <!-- its weather case groups (kept, no longer used) -->
     <local wind_static="1.2" wind_clearance="0.8" wire_ice="1.5" structure_ice_m="0.02" snow_altitude_m="900"/>  <!-- local conditions (2026-11-03; also snow_ground_pa, and wind_study_pa: a wind study's pressure for the internal clearances, 2026-11-04) -->
-    <load_case name="…"/>                       <!-- its load cases (2026-11-03); none: its type's, else every case -->
+    <load_case name="…"/>                       <!-- older files (2026-11-03 to 2026-11-15): its own load cases; read into a group picking it -->
     <point label="A1" x="…" y="…" z="…"/>       <!-- where strings hang -->
     <wire label="W1" x="…" y="…" z="…" set="1" weight="…"/> <!-- set: a wire ends here; weight: a counterweight -->
     <string label="S1" top="A1" wire="W1" insulator="…" length="…" angle_deg="…" direction_deg="…" weight="…" wind_area="…"
@@ -117,11 +117,18 @@ The names are those of the line file:
   <defaults spacer_compression="10000"/>        <!-- the project's default values -->
   <solver jumper_loads="pull" taps="once" loads_per="unstretched" blocks="equal_h" local_spans="mean"/>  <!-- Criteria › Calculation options; defaults estimate, loop, stretched, sheaves (blocks: version 10), worst (local_spans, 2026-11-03) -->
   <bimetallic behavior="bird_cage"/>            <!-- or compression, max_virtual_compression_pa="…" -->
-  <structure_loads condition="creep">           <!-- Criteria › Loads for structures; default as strung, no weather case -->
-    <weather_case name="…"/>                    <!-- a wind case sent twice (wind from the left, from the right); load_case read, not used since 2026-10-25 -->
-    <broken_case name="…"/>                     <!-- version 9: a load case with a broken wire, its weather case with the wire broken -->
-    <type_cases type="…"><case name="…"/></type_cases>  <!-- a structure type's default load cases (2026-11-03) -->
+  <structure_loads condition="creep">           <!-- the old Loads for structures: kept as read, no longer used since 2026-11-15 -->
+    <weather_case name="…"/>                    <!-- a weather case once sent unfactored; load_case read, not used since 2026-10-25 -->
+    <broken_case name="…"/>                     <!-- version 9: a broken-wire case once sent -->
+    <type_cases type="…"><case name="…"/></type_cases>  <!-- older files: a type's default load cases, read into a group "type X" -->
   </structure_loads>
+  <structure_group name="angle 10–30°" description="…">  <!-- version 18 (2026-11-15): which load cases its structures take -->
+    <structure id="T7"/>                        <!-- picked by hand -->
+    <rules angle_from_deg="10" angle_to_deg="30" alignment="main" station_from="0" station_to="5000" dead_end="false">
+      <type id="1A"/>                           <!-- every rule given must hold, bounds included -->
+    </rules>
+    <case name="wind"/>                         <!-- the load cases taken; none: its structures take none from it -->
+  </structure_group>
   <electrical soil_resistivity_ohm_m="100" earthing_resistance_ohm="10" earth_return="carson_series" mean_height="solved"/>  <!-- version 11: line parameters; earth_return also complex_depth, carson_first_terms; mean_height also two_thirds_sag -->
 </line>
 ```

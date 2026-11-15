@@ -125,6 +125,7 @@ mod string_builder;
 mod string_checks;
 mod structure_app;
 mod structure_desk;
+mod structure_groups;
 mod structure_picker;
 mod style;
 mod surfaces;

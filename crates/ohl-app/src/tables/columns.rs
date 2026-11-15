@@ -114,14 +114,13 @@ pub(super) const STRUCTURES: &[Column] = &[
         Yes,
         "local conditions: the wind pressure a wind study gives at this structure for the conductors' distances to it, Pa: Internal clearances with Use local conditions ticked checks it in the wind study's cases at this pressure (raised to the check's least) in place of the case's; empty: none",
     ),
-    // Its load case set (owner, 2026-11-03): edited in its Properties
-    // (several selected: Apply to the others) and per type in Line ›
-    // Criteria › Load cases per structure type.
+    // Its structure groups and their load cases (owner, 2026-11-15):
+    // made in Line › Structures › Load cases per group.
     (
         "load cases",
         150.0,
         Derived,
-        "the load cases of the library it takes: how many and which (its own, else its type's, else every case; \"none: takes no load case\": no loads are computed and no structure check is made for it, said so in the results); set in its Properties › Load cases, per type in Line › Criteria › Load cases per structure type",
+        "its structure groups and the load cases of the library they give it: the groups, how many cases and which (the union of its groups'; \"no group: every case\"; \"none: takes no load case\": its groups tick none — no loads are computed and no structure check is made for it, said so in the results); set in Line › Structures › Load cases per group",
     ),
 ];
 

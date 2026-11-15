@@ -5,8 +5,7 @@
 //! **Weather case groups** (owner, 2026-10-25): a name, a description and
 //! a few weather cases, kept in the weather case file beside the cases
 //! (`[[group]]`, [`ohl_weather::CaseGroup`]); made in Line › Criteria › Weather
-//! case groups…, picked as one in Line › Criteria › Loads for structures and in
-//! the checks' case lists (a group's button adds its cases). Since
+//! case groups…, picked as one in the checks' case lists (a group's button adds its cases). Since
 //! 2026-11-03 groups are only that: named lists of cases for picking
 //! several at once. The structures' and sections' groups (and the checks'
 //! structure and section overrides that read them) gave way to the

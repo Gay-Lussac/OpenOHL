@@ -71,7 +71,7 @@ cases = ["max temperature", "glaze ice"]
 In the app they are made in **Line › Criteria › Weather case groups…** (a name,
 a description, the cases ticked; **Save** writes them into the file, one
 change) and **picked as one** — a group's button adds its cases — in
-**Line › Criteria › Loads for structures** and in the checks' case lists
+the checks' case lists
 (vertical and radial clearances, vegetation, safety volumes, wire
 tensions, string checks, distance between conductors). **Groups are only
 that** (2026-11-03): named lists of cases for picking several at once.

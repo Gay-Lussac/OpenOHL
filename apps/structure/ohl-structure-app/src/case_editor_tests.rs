@@ -244,3 +244,33 @@ fn mirror_wind_turns_the_body_wind_too() {
     assert!(h.state().message.as_ref().unwrap().1);
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
+
+/// An extra case taking the line forces of a case the line does not send
+/// (2026-11-15: the weather cases once sent on their own are gone; here
+/// the example's case on "high wind — wind from the left", the line
+/// sending only the invented storm cases): said in the status block in
+/// the warning colour, NOT ON THE SAFE SIDE, naming the cases sent —
+/// never run silently without them.
+#[test]
+fn a_case_on_a_line_case_not_sent_is_said() {
+    let (path, at) = placed("unsent");
+    let mut h = harness(&path, &at);
+    menu(&mut h, "Loads", "Load case editor");
+    let said = h.state().loads.unsent_line_forces();
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(
+        said[0].starts_with("Case high wind, from the left takes the line forces of \"high wind — wind from the left\"")
+            && said[0].contains("NOT ON THE SAFE SIDE")
+            && said[0].contains(LEFT),
+        "{}",
+        said[0]
+    );
+    let status = h.state().loads.line_status();
+    assert!(
+        status
+            .iter()
+            .any(|(t, tone)| *t == said[0] && *tone == crate::load_cases_tab::Tone::Warn)
+    );
+    h.get_by_label_contains("which the line does not send");
+    std::fs::remove_dir_all(path.parent().unwrap()).ok();
+}

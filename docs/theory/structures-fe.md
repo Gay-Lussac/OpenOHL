@@ -307,9 +307,10 @@ for it.
 **The exact treatment** is to solve the line with the one-sided
 condition — a broken or removed wire, different ice on the spans — with
 the strings swinging ([a broken wire](wirefe.md#a-broken-wire), [a
-weather case per span](wirefe.md#a-weather-case-per-span)) and to send
-that line result; those are built and can be taken in a structure load
-case instead. The share is offered because load trees specify it; every
+weather case per span](wirefe.md#a-weather-case-per-span)) as a case
+of the load case library the structure takes (since 2026-11-15 the line
+sends library cases only); those are built and their unfactored forces
+can be taken in a structure load case instead. The share is offered because load trees specify it; every
 load-table row made with it, the solved case's notes, the report and the
 exports say **"NOT ON THE SAFE SIDE"** with the reason.
 
@@ -348,6 +349,8 @@ Line loads panel shows the four values, with their signs).
 The wind on a structure's own body is \\( q = p_s\\, \\gamma_s \\): \\( p_s \\) the load case's `[case.structure]` `wind_pressure`, else its weather case's `wind_pressure`; \\( \\gamma_s \\) its `wind_factor`, else its `transverse` factor (`ohl_loads::LoadCase::structure_wind`). The wires and strings always take the weather case's pressure and the transverse factor, so a design code treating the wind on structures apart from the wind on the conductors writes the structures' values there (by hand, or a design-code plugin). One rule for every use: the height bands (\\( p_s\\,c_d\\,A \\) unfactored, \\( \\times\\gamma_s \\) factored), the member wind above, the pole's \\( p \\) below, and the line cases in OHL-Structure (sent in the line values as \\( p_s \\), \\( \\gamma_s \\) and the side; there a surface load of \\( q \\) on every member, and the pole's wind). Without the table, \\( q \\) is the weather case's pressure times the transverse factor, as before. Example (invented): a wind case of 600 Pa with transverse 1.4 and `[case.structure]` 900 Pa × 1.2 gives the wires 600 × 1.4 = 840 Pa and the structures 900 × 1.2 = 1 080 Pa; a band of 10 m² with drag 3 carries 900 × 30 = 27 kN, factored 32.4 kN (validation cases `loadwind-001` and `-002`, `benchmarks/weather/load_case_wind.toml`; the line's checks and OHL-Structure's pole check of the same case agree to the last digit, `apps/structure/ohl-structure-tests/tests/structure_wind.rs`).
 
 The pressure is one rule; how it becomes member forces is the member wind's: the line's FE check puts \\( q \\) on the members with the drag and shielding factors of the cross-section library's `[wind]` table (above; else the generic drag), while OHL-Structure's surface loads (its recipes' pressures and the line cases' wind on the body) take \\( q \\) × the projected area along the wind, with no drag and no shielding. So the same case can load the members of a lattice differently in the two; the factors on OHL-Structure's surface loads are still open (U5).
+
+**Since 2026-11-15 one rule for the line's cases in OHL-Structure** (owner: the line sends a structure's library cases only): a library case is rebuilt there with the member wind of the line's FE check (drag and shielding), so OHL-Structure and the line take the same member forces from the same case. The surface-load rule (\( q \) × projected area, no drag, no shielding) remains for a line case of an **older line-values file** that is not rebuilt as a library case (an unfactored weather case once sent on its own, 2026-10-25 to 2026-11-15). For a lattice body it is **NOT ON THE SAFE SIDE**: an angle's drag coefficient is about 2, not 1 (the cross-section library's `[wind]` table gives the project's value), so the body wind is lower than the member wind of the same pressure; and such a case has every factor 1, so its usage is not a design check. OHL-Structure says both in its status block and asks to open the structure again from OHL-Design. An extra load case that names a line case the line does not send (one of those weather cases, or a library case the structure's groups do not take) gets no line value: its line-force rows are left out of the run, the case is lighter than intended — **NOT ON THE SAFE SIDE**, said in the status block in the warning colour, never silent.
 
 ## Pole check
 

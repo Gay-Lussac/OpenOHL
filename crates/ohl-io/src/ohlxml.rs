@@ -1116,6 +1116,7 @@ pub fn to_xml(line: &Line) -> String {
         defaults,
         circuit_starts,
         structure_loads,
+        structure_groups,
         electrical,
         condition_cases: _,
     } = line;
@@ -1331,6 +1332,10 @@ pub fn to_xml(line: &Line) -> String {
         }
         out.push_str("  </structure_loads>\n");
     }
+    // The structure groups (line file version 18, 2026-11-15).
+    for g in structure_groups {
+        write_group(&mut out, g);
+    }
     if !electrical.is_default() {
         let ohl_line::electrical::ElectricalSettings {
             soil_resistivity_ohm_m,
@@ -1357,7 +1362,127 @@ pub fn to_xml(line: &Line) -> String {
     out
 }
 
+/// A structure group: `<structure_group name description?>` with its
+/// picked `<structure id/>`, its `<rules …><type id/></rules>` and its
+/// `<case name/>`.
+fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
+    let ohl_line::StructureGroup {
+        name,
+        description,
+        structures,
+        rules,
+        load_cases,
+    } = g;
+    out.push_str("  <structure_group");
+    attr(out, "name", name);
+    nonempty(out, "description", description);
+    if structures.is_empty() && rules.is_empty() && load_cases.is_empty() {
+        out.push_str("/>\n");
+        return;
+    }
+    out.push_str(">\n");
+    for id in structures {
+        out.push_str("    <structure");
+        attr(out, "id", id);
+        out.push_str("/>\n");
+    }
+    if !rules.is_empty() {
+        let ohl_line::GroupRules {
+            types,
+            angle_from_deg,
+            angle_to_deg,
+            alignment,
+            station_from,
+            station_to,
+            dead_end,
+        } = rules;
+        out.push_str("    <rules");
+        opt_num(out, "angle_from_deg", *angle_from_deg);
+        opt_num(out, "angle_to_deg", *angle_to_deg);
+        opt_text(out, "alignment", alignment.as_deref());
+        opt_num(out, "station_from", *station_from);
+        opt_num(out, "station_to", *station_to);
+        if let Some(d) = dead_end {
+            attr(out, "dead_end", if *d { "true" } else { "false" });
+        }
+        if types.is_empty() {
+            out.push_str("/>\n");
+        } else {
+            out.push_str(">\n");
+            for t in types {
+                out.push_str("      <type");
+                attr(out, "id", t);
+                out.push_str("/>\n");
+            }
+            out.push_str("    </rules>\n");
+        }
+    }
+    for c in load_cases {
+        out.push_str("    <case");
+        attr(out, "name", c);
+        out.push_str("/>\n");
+    }
+    out.push_str("  </structure_group>\n");
+}
+
 // Reading.
+
+/// A `<structure_group>` ([`write_group`]).
+fn read_group(e: &Element) -> Result<ohl_line::StructureGroup, String> {
+    check(e, &["name", "description"], &["structure", "rules", "case"])?;
+    let names = |tag: &str, key: &str| {
+        e.children_named(tag)
+            .map(|c| {
+                check(c, &[key], &[])?;
+                Ok(text(c, key)?.to_owned())
+            })
+            .collect::<Result<Vec<String>, String>>()
+    };
+    let rules = match e.child("rules") {
+        None => ohl_line::GroupRules::default(),
+        Some(r) => {
+            check(
+                r,
+                &[
+                    "angle_from_deg",
+                    "angle_to_deg",
+                    "alignment",
+                    "station_from",
+                    "station_to",
+                    "dead_end",
+                ],
+                &["type"],
+            )?;
+            ohl_line::GroupRules {
+                types: r
+                    .children_named("type")
+                    .map(|t| {
+                        check(t, &["id"], &[])?;
+                        Ok(text(t, "id")?.to_owned())
+                    })
+                    .collect::<Result<_, String>>()?,
+                angle_from_deg: optional(r, "angle_from_deg")?,
+                angle_to_deg: optional(r, "angle_to_deg")?,
+                alignment: owned(r, "alignment"),
+                station_from: optional(r, "station_from")?,
+                station_to: optional(r, "station_to")?,
+                dead_end: match r.attr("dead_end") {
+                    None => None,
+                    Some("true") | Some("1") => Some(true),
+                    Some("false") | Some("0") => Some(false),
+                    Some(o) => return Err(format!("<rules> dead_end=\"{o}\": true or false")),
+                },
+            }
+        }
+    };
+    Ok(ohl_line::StructureGroup {
+        name: text(e, "name")?.to_owned(),
+        description: owned(e, "description").unwrap_or_default(),
+        structures: names("structure", "id")?,
+        rules,
+        load_cases: names("case", "name")?,
+    })
+}
 
 /// Refuses attributes and child elements not in the lists.
 fn check(e: &Element, attrs: &[&str], children: &[&str]) -> Result<(), String> {
@@ -2335,6 +2460,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             "solver",
             "circuit_start",
             "structure_loads",
+            "structure_group",
             "electrical",
         ],
     )?;
@@ -2560,6 +2686,10 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             None => ohl_line::StructureLoads::default(),
             Some(e) => read_structure_loads(e)?,
         },
+        structure_groups: root
+            .children_named("structure_group")
+            .map(read_group)
+            .collect::<Result<_, _>>()?,
         electrical,
         systems: root
             .children_named("system")
@@ -2601,6 +2731,11 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
     line.place_strings().map_err(|e| e.to_string())?;
     line.version = ohl_line::LINE_FILE_VERSION;
     line.read_older();
+    if let Some(p) = line.groups_problem() {
+        return Err(p);
+    }
+    // The load case sets of before 2026-11-15 into groups, as a line file.
+    line.adopt_structure_groups();
     Ok(line)
 }
 

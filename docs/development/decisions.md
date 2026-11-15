@@ -108,6 +108,78 @@ writing the page:
   counts, also one in a pocket under the shielding wires that a sphere
   from above could not reach.
 
+**Load cases made simple: groups of structures, the library cases only**
+(owner: "in line criteria loads for structure there's an old part for the
+load cases that makes no sense to have anymore. also the loadcase library
+and loadcases per structure type should be moved to structures and maybe
+reworked in this new concept. i was a bit confused on how to do things so
+please make them simpler and more understandable. i think most of the
+features here are doubled with simply defining load cases and then have
+them attributed in groups of pylons"; the plan of 2026-11-14 approved
+with "go ahead with your recommendations"). Built, in active development,
+not approved yet:
+
+- **Line › Criteria › Loads for structures is gone.** A placed structure
+  gets its library cases only (their unfactored values per quantity and
+  their factors), in OHL-Structure as before; an extra load case there
+  takes the unfactored forces of any of them, broken-wire cases included.
+  The weather cases once sent unfactored, the wires' condition for them
+  and the broken-wire cases sent (`structure_loads.weather_cases`,
+  `condition`, `broken_cases`, and the older `load_cases`) are read, kept
+  and no longer used; one note says so (`Line::unused_structure_loads_note`,
+  in the groups window and in Checks › Structure loads). With them goes
+  the second body-wind rule: a library case takes the member wind (drag
+  and shielding) — one rule. The line-values file keeps its format and
+  version (8): no new field, `weather_case` sources only in older files.
+  An older file's weather cases still run in OHL-Structure, said **NOT ON
+  THE SAFE SIDE** (every factor 1, body wind without drag or shielding);
+  an extra case naming a line case not sent gets no value and is said
+  **NOT ON THE SAFE SIDE** in the status block, never run silently.
+- **The load case library and the groups are in Line › Structures**:
+  *Load cases…* (the library, the same form) and *Load cases per group…*
+  (a new window on the check pages' guidelines: numbered sections with
+  (?) help and a user guide page of its own, every change one command).
+- **Groups only.** A structure takes the union of the cases of the groups
+  it is in (two groups: both, the safe side); in no group, every case; in
+  groups ticking none only, none (the former *takes no load case*). No
+  own set per structure and no set per type any more: a structure's
+  Properties shows its groups and cases only. Membership: structures
+  picked by hand (*Add the N selected*, from the Structures table or a
+  view) and/or rules, all of which must hold — types, line angle from–to
+  (degrees), station from–to on an alignment, dead end yes/no read from
+  the line — live as the line is edited; the usage notes and
+  OHL-Structure's status block say which groups a structure is in.
+- **Formats.** Line file version **18** for `structure_groups`, written
+  only by a line with one (`BEFORE_GROUPS_VERSION` 17); OHL XML
+  `<structure_group>` (`docs/schema/ohl-line.xsd`); project `meta` row
+  `structure_groups` (`Session::structure_groups_command`). Older lines
+  are read into groups (`Line::adopt_structure_groups`): a group `type X`
+  per type set (rule type X), a group per distinct own set (picking its
+  structures, named after them), a group `no load case` for the structures
+  that took none; each description says where it came from; an older
+  project is rewritten so once when it opens.
+
+**To confirm** (chosen on the safe side or the simplest, not asked):
+1. *Older sets read with the union.* A structure that had its own set and
+   whose type had a set now takes both; one that took *none* and whose
+   type had a set now takes its type's cases. More cases (the safe side),
+   but not exactly the old result; the guide asks to look at *7 Who is in*
+   after opening an older project.
+2. *Line angle rule:* the size of the angle (left or right), the largest
+   over the alignments whose run the structure is on; a structure on no
+   alignment's run has none and is not taken by an angle rule (it then
+   takes its other groups', or every case in none).
+3. *Dead end:* a section of the line ends at the structure (its first or
+   last point); a string flagged strain alone does not count.
+4. *Older line-values files* holding weather cases sent on their own are
+   still run, said NOT ON THE SAFE SIDE, rather than refused: they are
+   rewritten when the structure is opened from OHL-Design again.
+5. *A deleted structure* stays in the groups that picked it (shown *(not
+   in the line)*, left out); a renamed one follows.
+6. Rules on the height and the ground elevation (in the plan of
+   2026-11-14) are not built: the owner's list named types, angle,
+   station and dead end.
+
 **Ice on the structures from the wires' ice, with a factor** (owner: "for
 the ice on the load cases can you also add a factor as for the wind to
 change the value compared to the conductor weather cases"; asked which

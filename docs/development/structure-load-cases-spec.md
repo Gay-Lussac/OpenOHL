@@ -13,8 +13,13 @@ library's factors, beside the line results described here. So "the line
 gives forces, nothing else" below holds for the line results only. On
 2026-11-14 the owner set the model: the line transfers what the wires do
 (forces per load case, per set, back and ahead); the structure side
-decides what acts and checks it. The flow as it is today: [How load
-cases reach a structure](../user-guide/load-cases-to-structures.md).
+decides what acts and checks it. On 2026-11-15 the owner made it
+simple: Criteria › Loads for structures is gone — the line sends a
+placed structure the library cases of its structure groups only, and the
+"line results" of this spec are now those library cases' unfactored
+forces (the weather cases sent on their own, two-sided, and the
+broken-wire results are no longer sent). The flow as it is today: [How
+load cases reach a structure](../user-guide/load-cases-to-structures.md).
 
 ## Why
 

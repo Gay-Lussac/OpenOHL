@@ -56,6 +56,7 @@ pub fn empty_line(name: &str) -> Line {
         circuit_starts: Vec::new(),
         circuits: Vec::new(),
         structure_loads: Default::default(),
+        structure_groups: Vec::new(),
         electrical: Default::default(),
         condition_cases: Default::default(),
         solver: Default::default(),

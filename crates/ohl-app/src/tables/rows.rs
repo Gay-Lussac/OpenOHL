@@ -156,11 +156,13 @@ impl TableKind {
             }
         }
         let on_routes = line.structure_routes();
-        // The load case library's names: a set naming a case not there is
-        // said in the load cases column (2026-11-14).
+        // The load case library's names: a group ticking a case not there
+        // is said in the load cases column (2026-11-14).
         let known = (self == TableKind::Structures)
             .then(|| crate::load_case_sets::library_names(model).ok())
             .flatten();
+        // Every structure's groups and cases, resolved once (2026-11-15).
+        let sets = (self == TableKind::Structures).then(|| line.case_sets());
         let mut rows: Vec<Row> = match self {
             TableKind::Structures => line
                 .structures
@@ -216,7 +218,9 @@ impl TableKind {
                             .unwrap_or_default(),
                         s.local.snow_altitude.map(|v| f(v, 1)).unwrap_or_default(),
                         s.local.wind_study.map(|v| f(v, 1)).unwrap_or_default(),
-                        crate::load_case_sets::cell(line, s, known.as_deref()),
+                        sets.as_ref().map_or_else(String::new, |sets| {
+                            crate::load_case_sets::cell(sets, s, known.as_deref())
+                        }),
                     ],
                 })
                 .collect(),

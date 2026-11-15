@@ -79,7 +79,8 @@ fn shown(x: f64) -> String {
 const LINE_FORCES_HEADERS: [(&str, &str); 9] = [
     (
         "Line result",
-        "The line result (a weather case; a wind case twice)",
+        "The line case whose forces are taken: a library case of this structure (its \
+         unfactored forces; broken-wire cases too)",
     ),
     ("Vertical", "Factor on the vertical forces (down)"),
     (
@@ -397,9 +398,9 @@ impl StructureApp {
             .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(
-                        "The load cases of the line this structure takes (its set), with their \
-                         factors, wind, ice and snow on the structure: changed in OHL-Design \
-                         (Line › Criteria › Load cases library, the structure's Load cases). \
+                        "The load cases of the line this structure takes (its groups'), with \
+                         their factors, wind, ice and snow on the structure: changed in OHL-Design \
+                         (Line › Structures › Load cases… and Load cases per group…). \
                          The cases below are this structure's own, extra loads.",
                     )
                     .small()
@@ -701,17 +702,17 @@ impl StructureApp {
     ) -> Option<Change> {
         ui.label(
             egui::RichText::new(
-                "A line result's forces at each attachment point (unfactored, as the line sends \
-                 them) × the factor of each axis: rows \"line\" of the load table (line 1, …), \
-                 one per point.",
+                "A line case's forces at each attachment point (unfactored, as the line sends \
+                 them: the structure's library cases, broken-wire ones too) × the factor of each \
+                 axis: rows \"line\" of the load table (line 1, …), one per point.",
             )
             .weak(),
         );
         if info.results.is_empty() {
             ui.label(
-                "No line results here: they come from the line (OHL-Design › Criteria › Loads \
-                 for structures), with this structure opened from a placed structure. A result \
-                 can be typed by its name.",
+                "No line cases here: they come from the line — the placed structure's library \
+                 cases (OHL-Design › Structures › Load cases per group), with this structure \
+                 opened from a placed structure. A case can be typed by its name.",
             );
         }
         let mut change: Option<Change> = None;

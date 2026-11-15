@@ -35,6 +35,7 @@ pub mod diff;
 pub mod electrical;
 pub mod export;
 pub mod finite;
+pub mod groups;
 pub mod incremental;
 pub mod jumper;
 pub mod legacy;
@@ -52,6 +53,7 @@ pub mod solve;
 pub mod staking;
 
 pub use bimetallic::bimetallic_notes;
+pub use groups::{CaseSet, CaseSets, Facts, GroupRules, StructureGroup};
 pub use objects::{
     Axis, ClampFor, LineObject, ObjectKind, ObjectLibrary, ObjectType, Shape, SpreadObject,
     TypeKind,
@@ -74,7 +76,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 17 adds the post insulators (a string's
+/// Latest line file version: 18 adds the structure groups (`structure_groups`:
+/// [`StructureGroup`], which load cases each structure takes; owner,
+/// 2026-11-15), written only by a line that has one (else 17 or older,
+/// [`Line::to_json`]: an older program must not read such a line and give
+/// every structure every case); 17 adds the post insulators (a string's
 /// `post`, `cantilever_load`, `exit_angle_deg`, `exit_direction_deg`:
 /// [`InsulatorString`]; owner, 2026-11-14), written only by a line that has
 /// one (else 16 or older, [`Line::to_json`]); 16 adds an object's tap or spacer clamp use
@@ -132,7 +138,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 17;
+pub const LINE_FILE_VERSION: u32 = 18;
+
+/// The version before the structure groups (`structure_groups`; owner,
+/// 2026-11-15): what a line without them is written as (when it has a post
+/// insulator).
+const BEFORE_GROUPS_VERSION: u32 = 17;
 
 /// The version before the post insulators (`post`, `cantilever_load`,
 /// `exit_angle_deg`, `exit_direction_deg` on a string; owner, 2026-11-14):
@@ -278,11 +289,18 @@ pub struct Line {
     /// on them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub circuit_starts: Vec<SectionPoint>,
-    /// What the line sends to the placed structures (Criteria › Loads
-    /// for structures): which load cases, which weather cases on their
-    /// own.
+    /// The settings of Line › Criteria › Loads for structures of before
+    /// 2026-11-15, kept as read: the weather cases sent, the wires'
+    /// condition, the broken-wire cases sent (no longer used:
+    /// [`Line::unused_structure_loads_note`]) and the types' load case sets
+    /// (read into [`Line::structure_groups`]).
     #[serde(default, skip_serializing_if = "StructureLoads::is_default")]
     pub structure_loads: StructureLoads,
+    /// The structure groups (owner, 2026-11-15; line file version 18):
+    /// which load cases of the library each structure takes — the union of
+    /// its groups' ([`Line::case_sets`]; in no group: every case).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structure_groups: Vec<StructureGroup>,
     /// Electrical settings: soil resistivity, earth return method, the
     /// wires' height in a span (line file version 11 when not the
     /// defaults; [`electrical::ElectricalSettings`]).
@@ -356,13 +374,14 @@ impl HeightDatum {
     }
 }
 
-/// What the line sends to the placed structures besides their case sets
-/// (Criteria › Loads for structures): the weather cases chosen, each sent
-/// unfactored (a case with all factors 1), the wires' condition in them,
-/// the broken-wire cases chosen, and the case sets of the structure types
-/// ([`StructureLoads::type_load_cases`]; each placed structure gets its
-/// set of the load case library whatever is chosen here, since
-/// 2026-11-03).
+/// The settings of Line › Criteria › Loads for structures of before
+/// 2026-11-15 (owner, 2026-11-15: the menu is gone; a placed structure
+/// gets its library cases only), kept as read so that nothing is dropped
+/// silently: the weather cases that were sent unfactored, the wires'
+/// condition in them and the broken-wire cases sent — no longer used,
+/// said once ([`Line::unused_structure_loads_note`]) — and the case sets
+/// of the structure types, read into groups on reading
+/// ([`Line::adopt_structure_groups`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureLoads {
@@ -371,32 +390,34 @@ pub struct StructureLoads {
     /// structure load cases'); kept as read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub load_cases: Option<Vec<String>>,
-    /// The weather cases sent, by name (default none): each gives the
-    /// forces at the structures unfactored, a wind case twice (the wind
-    /// from the left and from the right).
+    /// The weather cases that were sent, by name (default none): each gave
+    /// the forces at the structures unfactored, a wind case twice. Kept as
+    /// read, no longer used since 2026-11-15.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weather_cases: Vec<String>,
     /// The wires' condition in them: `initial` (as strung, the default),
-    /// `creep`, `load`, `max_sag` (2026-10-25).
+    /// `creep`, `load`, `max_sag` (2026-10-25). Kept as read, no longer
+    /// used since 2026-11-15.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub condition: Option<String>,
     /// The line's load cases with a broken wire sent, by name (roadmap O9;
     /// default none, line file 9): each the weather case it names with
     /// that wire broken, unfactored, in the condition above — a line
     /// result `<weather case> — <section> span <n> broken` (a wind case
-    /// twice). Their factors are the structure load cases'.
+    /// twice). Kept as read, no longer used since 2026-11-15: a broken-wire
+    /// case reaches a structure through its groups like every other.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub broken_cases: Vec<String>,
     /// Per structure type (by id), its default load cases (owner
-    /// 2026-11-03, per-pylon sets): names of cases of the line's load
-    /// case library a structure of that type takes when it gives none of
-    /// its own ([`Structure::load_cases`], [`Line::load_cases_for`]).
+    /// 2026-11-03, per-pylon sets, until 2026-11-15): read into a group
+    /// `type X` of rule type X ([`Line::adopt_structure_groups`]) and
+    /// emptied.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub type_load_cases: BTreeMap<String, Vec<String>>,
 }
 
 impl StructureLoads {
-    /// No weather case sent, the wires as strung.
+    /// Nothing kept.
     pub fn is_default(&self) -> bool {
         *self == Self::default()
     }
@@ -1451,22 +1472,17 @@ pub struct Structure {
     /// with Use local conditions ticked.
     #[serde(default, skip_serializing_if = "local::LocalConditions::is_empty")]
     pub local: local::LocalConditions,
-    /// Its load cases (owner 2026-11-03: "on each pylon you should have a
-    /// load case for structure that can be different per structure and
-    /// composed of cases from the library"): names of cases of the line's
-    /// load case library; empty: its type's default
-    /// ([`StructureLoads::type_load_cases`]), else every case
-    /// ([`Line::load_cases_for`]). Names are checked against the library
-    /// when the loads are computed.
+    /// Its own load cases (owner 2026-11-03, until 2026-11-15): names of
+    /// cases of the line's load case library. Read into a group picking
+    /// it ([`Line::adopt_structure_groups`]) and emptied: since 2026-11-15
+    /// a structure takes the cases of its groups
+    /// ([`Line::structure_groups`], [`Line::case_sets`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_cases: Vec<String>,
-    /// It takes **no** load case (owner 2026-11-10; line file 14, written
-    /// only when true): no case of the line's load case library is
-    /// computed or checked for it, and it is said so wherever loads and
-    /// checks are listed per structure ("takes no load case" — never
-    /// shown as passing). With it, `load_cases` must be empty (refused:
-    /// a list and none contradict). False: `load_cases` as before (empty:
-    /// its type's default, else every case).
+    /// It took **no** load case (owner 2026-11-10, line file 14; until
+    /// 2026-11-15): read into the group `no load case`, which ticks none
+    /// ([`Line::adopt_structure_groups`]), and set back to false. With it,
+    /// `load_cases` must be empty (refused: a list and none contradict).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_load_cases: bool,
     /// Values of columns added by plugins, by `plugin.column`
@@ -3543,6 +3559,9 @@ impl Line {
         line.read_older();
         line.place_strings()?;
         line.validate()?;
+        // The load case sets of before 2026-11-15 into groups (after the
+        // check: a structure's list and "none" together are refused).
+        line.adopt_structure_groups();
         line.version = LINE_FILE_VERSION;
         Ok(line)
     }
@@ -3670,8 +3689,8 @@ impl Line {
     }
 
     /// Serialises to pretty JSON at the oldest version that holds the
-    /// line, so an older program still reads it: 17 with a post insulator,
-    /// else 16 with an object's tap
+    /// line, so an older program still reads it: 18 with a structure group,
+    /// else 17 with a post insulator, else 16 with an object's tap
     /// or spacer clamp use or one on each subconductor, else 15 with a system's
     /// highest operating voltage or insulation level, a stringing in a
     /// final condition or by catenary constant, a point's constant force
@@ -3703,6 +3722,7 @@ impl Line {
         });
         let current = self.systems.iter().any(|s| s.current_a.is_some());
         let no_cases = self.structures.iter().any(|s| s.no_load_cases);
+        let groups = !self.structure_groups.is_empty();
         let system_voltages = self
             .systems
             .iter()
@@ -3731,7 +3751,8 @@ impl Line {
             })
         });
         let written = match (sheaves, winds, shapes) {
-            _ if posts => LINE_FILE_VERSION,
+            _ if groups => LINE_FILE_VERSION,
+            _ if posts => BEFORE_GROUPS_VERSION,
             _ if clamps => BEFORE_POST_VERSION,
             _ if system_voltages || final_stringing => BEFORE_CLAMP_FOR_VERSION,
             _ if no_cases => BEFORE_SYSTEM_VOLTAGES_VERSION,
@@ -3792,62 +3813,38 @@ impl Line {
         self.structures.iter().find(|s| s.id == id)
     }
 
-    /// The load cases of `structure` (per-pylon sets, owner 2026-11-03):
-    /// its own ([`Structure::load_cases`]), else its type's default
-    /// ([`StructureLoads::type_load_cases`]); empty: every case of the
-    /// line's load case library — or none at all for a structure that
-    /// takes no load case ([`Structure::no_load_cases`]: ask
-    /// [`Line::takes_load_case`], which knows).
-    pub fn load_cases_for<'a>(&'a self, structure: &'a Structure) -> &'a [String] {
-        if structure.no_load_cases {
-            return &[];
-        }
-        if !structure.load_cases.is_empty() {
-            return &structure.load_cases;
-        }
-        structure
-            .structure_type
-            .as_deref()
-            .and_then(|t| self.structure_loads.type_load_cases.get(t))
-            .map_or(&[], Vec::as_slice)
+    /// The load cases `structure` takes, resolved through the structure
+    /// groups ([`Line::case_sets`]): the union of its groups' cases; empty
+    /// when it takes every case (in no group) or none (ask
+    /// [`Line::takes_load_case`], which knows). One structure: for many,
+    /// resolve once with [`Line::case_sets`].
+    pub fn load_cases_for(&self, structure: &Structure) -> Vec<String> {
+        self.case_sets().of(&structure.id).names().to_vec()
     }
 
-    /// Whether structure `id` takes load case `case` ([`Line::load_cases_for`];
-    /// a structure not in the line: every case; one taking no load case,
-    /// [`Structure::no_load_cases`]: none).
+    /// Whether structure `id` takes load case `case` (through its groups,
+    /// [`Line::case_sets`]; a structure not in the line, or in no group:
+    /// every case; one whose groups tick none: none). One structure: for
+    /// many, resolve once with [`Line::case_sets`].
     pub fn takes_load_case(&self, id: &str, case: &str) -> bool {
-        self.structure(id).is_none_or(|s| {
-            if s.no_load_cases {
-                return false;
-            }
-            let set = self.load_cases_for(s);
-            set.is_empty() || set.iter().any(|c| c == case)
-        })
+        self.case_sets().takes(id, case)
     }
 
-    /// Whether structure `id` takes no load case at all
-    /// ([`Structure::no_load_cases`]).
+    /// Whether structure `id` takes no load case at all (its groups tick
+    /// none).
     pub fn takes_no_load_case(&self, id: &str) -> bool {
-        self.structure(id).is_some_and(|s| s.no_load_cases)
+        self.case_sets().takes_none(id)
     }
 
     /// The structures taking no load case, by id, in the line's order.
-    pub fn structures_without_load_cases(&self) -> Vec<&str> {
-        self.structures
-            .iter()
-            .filter(|s| s.no_load_cases)
-            .map(|s| s.id.as_str())
-            .collect()
+    pub fn structures_without_load_cases(&self) -> Vec<String> {
+        self.case_sets().without_load_cases().to_vec()
     }
 
-    /// Whether any structure or type gives its own load cases (or takes
-    /// none).
+    /// Whether any structure is in a group (else every structure takes
+    /// every case).
     pub fn has_load_case_sets(&self) -> bool {
-        !self.structure_loads.type_load_cases.is_empty()
-            || self
-                .structures
-                .iter()
-                .any(|s| !s.load_cases.is_empty() || s.no_load_cases)
+        !self.structure_groups.is_empty() || self.has_old_case_sets()
     }
 
     /// The limits of string `label` of structure `structure` (not checked
@@ -4090,6 +4087,9 @@ impl Line {
                 s.id,
                 s.load_cases.join(", ")
             ));
+        }
+        if let Some(p) = self.groups_problem() {
+            return invalid(p);
         }
         ohl_core::files::check_header(
             Some(&self.format),

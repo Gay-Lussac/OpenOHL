@@ -818,44 +818,6 @@ fn the_bimetallic_model_is_chosen_for_the_line() {
     assert!(r.model.line.bimetallic.is_default());
 }
 
-/// Criteria › Loads for structures: a tick menu that stays open while two
-/// weather cases are ticked in a row; each tick
-/// kept in the project (the line's `structure_loads` settings row),
-/// undone like any edit.
-#[test]
-fn loads_for_structures_are_ticked_in_a_menu_that_stays_open() {
-    let model = synthetic_project("structure-loads");
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, 1000.0))
-        .build_eframe(|_| App::with_model(model, None));
-    harness.run();
-    crate::tests::line_menu(&mut harness, "Criteria");
-    harness.run();
-    harness
-        .get_by_label_contains("Loads for structures")
-        .hover();
-    harness.run();
-    harness.get_by_label("glaze ice").click();
-    harness.run();
-    // Still open: the next boxes can be ticked.
-    harness.get_by_label("high wind").click();
-    harness.run();
-    let r = harness.state_mut().ready().unwrap();
-    let want = ohl_line::StructureLoads {
-        load_cases: None,
-        weather_cases: vec!["glaze ice".into(), "high wind".into()],
-        condition: None,
-        ..Default::default()
-    };
-    assert_eq!(r.model.line.structure_loads, want);
-    // Kept in the project: the session's line has it.
-    let e = r.model.editing.as_ref().unwrap();
-    assert_eq!(e.session.line().structure_loads, want);
-    // Undone like any edit (one tick each).
-    r.model.undo().unwrap();
-    assert_eq!(r.model.line.structure_loads.weather_cases, ["glaze ice"]);
-}
-
 /// A transverse Mercator projection centred on the synthetic line's origin
 /// (invented, for the tests).
 pub(super) const LOCAL_TM: &str =

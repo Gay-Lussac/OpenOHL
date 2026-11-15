@@ -652,43 +652,58 @@ fn the_tutorial_builds_a_first_line() {
     }
     h.run();
 
-    // Chapter 9: Criteria › Loads for structures: everyday and high wind
-    // ticked (the menu stays open), as strung; the line results: everyday
-    // once (renamed, the library has a load case of its name), high wind
-    // from the left and from the right.
-    crate::tests::line_menu(&mut h, "Criteria");
-    h.get_by_label_contains("Loads for structures").hover();
-    h.run();
-    h.get_by_label("Weather cases sent");
-    let tick = egui::accesskit::Role::CheckBox;
-    h.get_by_role_and_label(tick, "everyday").click();
-    h.run();
-    h.get_by_role_and_label(tick, "high wind").click();
-    h.run();
-    shot(&mut h, "loads-for-structures");
+    // Chapter 9 (2026-11-15): T2 selected; Line › Structures › Load
+    // cases per group…: New group "suspension", rule type
+    // starter-suspension, everyday and wind ticked. The suspension
+    // structures take those two, the others (in no group) every case; a
+    // placed structure gets its library cases only.
     {
         let r = h.state_mut().ready().unwrap();
-        assert_eq!(
-            r.model.line.structure_loads.weather_cases,
-            ["everyday", "high wind"]
-        );
-        assert_eq!(r.model.line.structure_loads.condition, None);
+        r.select(Selection::Structure("T2".into()));
+        r.model.selected_also.clear();
+    }
+    h.run();
+    crate::tests::line_menu(&mut h, "Structures");
+    click(&mut h, "Load cases per group…");
+    assert!(h.state_mut().ready().unwrap().structure_groups.open);
+    click(&mut h, "New group");
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "name")
+        .focus();
+    h.run();
+    press(&mut h, egui::Key::A, egui::Modifiers::COMMAND);
+    h.get_by_role_and_label(egui::accesskit::Role::TextInput, "name")
+        .type_text("suspension");
+    h.run();
+    press(&mut h, egui::Key::Enter, egui::Modifiers::NONE);
+    h.get_by_label(&format!("type {SUSPENSION}")).scroll_to_me();
+    h.run();
+    click(&mut h, &format!("type {SUSPENSION}"));
+    let tick = egui::accesskit::Role::CheckBox;
+    for case in ["everyday", "wind"] {
+        h.get_by_role_and_label(tick, case).scroll_to_me();
+        h.run();
+        h.get_by_role_and_label(tick, case).click();
+        h.run();
+    }
+    shot_of(&mut h, "load-cases-per-group", "Load cases per group");
+    {
+        let r = h.state_mut().ready().unwrap();
+        let g = &r.model.line.structure_groups;
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].name, "suspension");
+        assert_eq!(g[0].rules.types, [SUSPENSION]);
+        assert_eq!(g[0].load_cases, ["everyday", "wind"]);
+        let sets = r.model.line.case_sets();
+        assert!(sets.takes("T2", "wind") && !sets.takes("T2", "ice"));
+        assert!(sets.takes("T1", "ice"), "a tension structure: every case");
         let loads = crate::structure_app::LineInputs::of(&r.model)
             .compute()
             .unwrap();
-        let names: Vec<&str> = loads.weather.iter().map(|c| c.case.name.as_str()).collect();
-        // The library has a load case "everyday": the weather case is
-        // sent as "everyday (weather case)" (one name, one meaning).
-        assert_eq!(
-            names,
-            [
-                "everyday (weather case)",
-                "high wind — wind from the left",
-                "high wind — wind from the right"
-            ]
-        );
+        let t2 = ohl_structure_link::placed_values_with(&loads, &r.model.line, "T2", "tutorial");
+        assert_eq!(t2.cases, ["everyday", "wind"]);
+        r.structure_groups.open = false;
     }
-    press(&mut h, egui::Key::Escape, egui::Modifiers::NONE);
+    h.run();
 
     // Chapter 10: File › Save all (⌘S), File › Close, opened again (File
     // › Open recent: the same action): the line as built.
