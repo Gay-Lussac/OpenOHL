@@ -96,6 +96,10 @@ pub struct Stages {
     pub total: std::sync::atomic::AtomicUsize,
     /// When the stage began, ms after the run's start.
     pub since_ms: std::sync::atomic::AtomicU64,
+    /// When the structures began (the line solved), ms after the start.
+    pub structures_ms: std::sync::atomic::AtomicU64,
+    /// When the run ended, ms after the start.
+    pub ended_ms: std::sync::atomic::AtomicU64,
     /// Stops the run (Stop): no answer.
     pub cancel: ohl_core::budget::CancelToken,
 }
@@ -308,6 +312,7 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         .flat_map(|c| c.loads.iter().map(|l| l.structure.as_str()))
         .collect();
     stages.begin(2, structures.len(), ms());
+    stages.structures_ms.store(ms(), Relaxed);
     let report = |n: usize, of: usize| {
         stages.done.store(n, Relaxed);
         stages.total.store(of, Relaxed);
@@ -326,6 +331,7 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         },
     )?;
     stages.begin(3, 0, ms());
+    stages.ended_ms.store(ms(), Relaxed);
     Some(Run {
         loads: Ok(loads),
         usage,

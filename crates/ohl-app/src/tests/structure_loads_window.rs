@@ -490,3 +490,150 @@ fn each_loads_guide_button_opens_a_heading_of_the_page() {
         assert!(headings.iter().any(|x| x == s), "{s} not in {headings:?}");
     }
 }
+
+/// Timing of a run on a project given by `OHL_PROFILE_PROJECT` (a copy:
+/// it is opened as a model, not changed), the load cases named in
+/// `OHL_PROFILE_CASES` (`|`-separated, run for the structures in no
+/// group; absent: every case): stage 1 (the line per case) and stage 2
+/// (the structures), one thread and all the cores, the answers compared;
+/// the slowest structures one at a time. Not run by default
+/// (`--ignored`, a release build).
+#[test]
+#[ignore = "timing on a project given by OHL_PROFILE_PROJECT"]
+fn profile_structure_loads() {
+    let Ok(path) = std::env::var("OHL_PROFILE_PROJECT") else {
+        return;
+    };
+    let started = std::time::Instant::now();
+    let model = model::load(
+        Sources {
+            file: path.into(),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some("tester".into()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    eprintln!("model read: {:.1} s", started.elapsed().as_secs_f64());
+    let library = ohl_loads::LoadCases::load(model.sources.load_cases.as_deref().unwrap()).unwrap();
+    let wanted: Option<Vec<String>> = std::env::var("OHL_PROFILE_CASES")
+        .ok()
+        .map(|s| s.split('|').map(str::to_owned).collect());
+    let names: Vec<String> = library.cases.iter().map(|c| c.name.clone()).collect();
+    eprintln!("library: {names:?}");
+    let choice = crate::loads_plan::Choice {
+        alone_cases: wanted,
+        ..Default::default()
+    };
+    let sets = model.line.case_sets();
+    let aligned = crate::loads_plan::on_alignment(&model.line);
+    let plan = crate::loads_plan::plan(&model.line, &sets, &names, &choice, None, &aligned);
+    eprintln!(
+        "{} structures ({} on an alignment, {} computed), {} cases solved, {} pairs",
+        model.line.structures.len(),
+        aligned.len(),
+        plan.order.len(),
+        plan.solve.len(),
+        plan.pairs()
+    );
+    let inputs = crate::loads::Inputs {
+        line: model.line.clone(),
+        library: model.library.clone(),
+        types: model
+            .types
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .unwrap_or_default(),
+        weather: model.cases.iter().map(|c| c.case.clone()).collect(),
+        sections: model.section_library(),
+        cases: Ok(library.cases.clone()),
+        known: names,
+        local: false,
+        plan: Some(plan),
+    };
+    let timed = |threads: usize| {
+        use std::sync::atomic::Ordering::Relaxed;
+        let stages = crate::loads::Stages::default();
+        let t = std::time::Instant::now();
+        let r = crate::loads::run(&inputs, &stages, threads).unwrap();
+        let (s1, end) = (
+            stages.structures_ms.load(Relaxed) as f64 / 1e3,
+            stages.ended_ms.load(Relaxed) as f64 / 1e3,
+        );
+        eprintln!(
+            "threads {threads}: total {:.1} s — line {s1:.1} s, structures {:.1} s",
+            t.elapsed().as_secs_f64(),
+            end - s1
+        );
+        r
+    };
+    let all = timed(0);
+    let one = if std::env::var("OHL_PROFILE_SEQUENTIAL").is_ok() {
+        let one = timed(1);
+        assert_eq!(format!("{:?}", one.loads), format!("{:?}", all.loads));
+        assert_eq!(format!("{:?}", one.usage), format!("{:?}", all.usage));
+        eprintln!("one thread and all the cores: identical");
+        one
+    } else {
+        all
+    };
+    eprintln!("{} cases not computed", one.failed.len());
+    if std::env::var("OHL_PROFILE_EACH").is_err() {
+        return;
+    }
+    // The slowest structures, one at a time (each on its own).
+    let loads = one.loads.unwrap();
+    let sections = inputs.sections.clone().unwrap();
+    let t = std::time::Instant::now();
+    let _ = ohl_loads::capacity::usage_with_progress(
+        &inputs.line,
+        &inputs.types,
+        &sections,
+        &inputs.library,
+        &inputs.weather,
+        &[],
+        &ohl_loads::capacity::Progress::default(),
+    );
+    let base = t.elapsed().as_secs_f64();
+    eprintln!("models read (no structure): {base:.2} s");
+    let mut each: Vec<(f64, String)> = Vec::new();
+    for s in &inputs.line.structures {
+        let only: Vec<ohl_loads::CaseLoads> = loads
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c.loads.retain(|l| l.structure == s.id);
+                c.missing.retain(|m| m.structure == s.id);
+                for b in &mut c.broken_each {
+                    b.loads.retain(|l| l.structure == s.id);
+                }
+                c
+            })
+            .collect();
+        if only.iter().all(|c| c.loads.is_empty()) {
+            continue;
+        }
+        let t = std::time::Instant::now();
+        let _ = ohl_loads::capacity::usage_with_progress(
+            &inputs.line,
+            &inputs.types,
+            &sections,
+            &inputs.library,
+            &inputs.weather,
+            &only,
+            &ohl_loads::capacity::Progress {
+                threads: 1,
+                ..Default::default()
+            },
+        );
+        each.push((t.elapsed().as_secs_f64() - base, s.id.clone()));
+    }
+    each.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let sum: f64 = each.iter().map(|e| e.0).sum();
+    eprintln!("structures one by one: {sum:.1} s in all; slowest:");
+    for (t, id) in each.iter().take(8) {
+        eprintln!("  {id}: {t:.2} s");
+    }
+}

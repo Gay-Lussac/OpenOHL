@@ -2427,7 +2427,12 @@ stabilisation retries) and then makes the member check (`member_usage`)
 **once, on the converged forces** — never inside a pass (a thread-local
 count in a test). A later loop over the structures' solves (the
 structure flexibility at level 4) keeps this: the checks run once on the
-converged state. The app's Structure loads window solves the line per
+converged state. A profile's cross-section properties
+(`ohl_sections::Section::properties`) are worked out once per thread and
+profile for the member checks and the tension-only members' compression
+caps (`ohl_structures_fe::check::properties`: kept by profile id, found by
+the whole profile; at most 4096 kept per thread, then started again) —
+before, again for every member, solve and case. The app's Structure loads window solves the line per
 load case in parallel too (`ohl_app::loads::run`: stage 1 one
 `structure_loads_each` per case, stage 2 `usage_with_progress`;
 `Stages` its progress) for the plan of its setup

@@ -213,7 +213,7 @@ pub fn torsional_slenderness(
     if matches!(sym, Symmetry::Angle | Symmetry::Closed) {
         return None;
     }
-    let q = p.properties();
+    let q = crate::check::properties(p);
     let (Some(sc), Some(cw)) = (q.shear_centre, q.warping) else {
         return Some(Err(()));
     };

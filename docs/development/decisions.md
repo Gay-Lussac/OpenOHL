@@ -60,6 +60,20 @@ active development, not approved yet:
    between cases or structures. The member checks are made once per
    structure and case on the converged forces (they already were:
    `analyse` checks after `solve`; now tested).
+   **Profiled first** (a real line, 8 load cases, 78 structures with
+   lattice models of about 1000 joints and 2500 members): the line solves
+   took a few seconds; the structures took nearly all the time, and of
+   that most went into the member checks, which worked out each
+   profile's cross-section properties (outline moments, shear centre,
+   warping) again for every member, every solve and every load case.
+   They are now worked out once per profile and thread
+   (`ohl_structures_fe::check::properties`, found by the whole profile:
+   a changed profile is worked out again) — the same numbers. With the
+   structures in parallel, the run there went from minutes to well under
+   half a minute on a 10-core computer; the factorisations of the
+   structures' solves are now most of the rest (their first, unstabilised
+   try of a model that needs holding is a further saving left open: it
+   must give the same answer).
 5. **Add the default cases… with their weather cases**: the load case
    form's Add the default cases… adds, with a tick on by default, the
    default weather cases the new load cases name that the project lacks

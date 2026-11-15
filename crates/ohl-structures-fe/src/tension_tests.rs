@@ -271,6 +271,32 @@ fn the_member_check_runs_once_after_every_pass() {
     assert_eq!(CHECKS_MADE.with(std::cell::Cell::get), before + 1);
 }
 
+/// A profile's properties kept per thread (2026-11-15, the speed of the
+/// member checks): the same answer as worked out afresh; a profile of the
+/// same id changed is worked out again, never the old one's taken.
+#[test]
+fn kept_profile_properties_are_those_worked_out() {
+    let p = |t: f64| ohl_sections::Section {
+        id: "kept-profile".into(),
+        name: String::new(),
+        description: String::new(),
+        shape: ohl_sections::Shape::DoubleAngle {
+            h: 0.1,
+            b: 0.1,
+            t,
+            r: 0.0,
+            gap: 0.01,
+        },
+        material: None,
+        given: ohl_sections::Given::default(),
+    };
+    let (a, b) = (p(0.008), p(0.010));
+    assert_eq!(crate::check::properties(&a), a.properties());
+    assert_eq!(crate::check::properties(&a), a.properties(), "kept");
+    assert_eq!(crate::check::properties(&b), b.properties(), "changed");
+    assert_ne!(crate::check::properties(&a), crate::check::properties(&b));
+}
+
 /// Tension-only members that stay taut: the model solves with exactly
 /// the numbers of the same model with trusses — first order and P-Delta
 /// (the same equations solved the same way).
