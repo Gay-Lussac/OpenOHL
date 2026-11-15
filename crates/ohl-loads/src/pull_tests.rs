@@ -140,16 +140,24 @@ fn a_broken_span_sends_no_pull() {
     assert!((t3.pull_ahead[1] - t3.local[1]).abs() < 1e-3, "{t3:?}");
 }
 
-/// A structure taking no load case (`no_load_cases`): no loads in any
-/// case, said in every case's notes; the others as before, bit for bit.
-/// In the usage it is listed, not checked, saying so — never a pass.
+/// Group `name` picking `ids`, taking `cases` (none: no case).
+fn pick(line: &mut Line, name: &str, ids: &[&str], cases: &[&str]) {
+    let mut g = ohl_line::StructureGroup::new(name);
+    g.structures = ids.iter().map(|s| (*s).to_owned()).collect();
+    g.load_cases = cases.iter().map(|s| (*s).to_owned()).collect();
+    line.structure_groups.push(g);
+}
+
+/// A structure whose groups tick no case: no loads in any case, said in
+/// every case's notes; the others as before, bit for bit. In the usage it
+/// is listed, not checked, saying so — never a pass.
 #[test]
 fn a_structure_taking_no_load_case_is_skipped_and_said() {
     let line = three_spans();
     let (lib, weather, budget) = (library(), weather(), default_budget());
     let before = structure_loads(&line, &lib, &weather, &cases(), &budget).unwrap();
     let mut none = line.clone();
-    none.structures[1].no_load_cases = true;
+    pick(&mut none, "dismantled", &["T2"], &[]);
     let r = structure_loads(&none, &lib, &weather, &cases(), &budget).unwrap();
     for (c, b) in r.iter().zip(&before) {
         assert!(!c.loads.iter().any(|l| l.structure == "T2"));
@@ -163,11 +171,11 @@ fn a_structure_taking_no_load_case_is_skipped_and_said() {
             .collect();
         assert_eq!(said.len(), 1, "{:?}", c.notes);
         assert!(said[0].contains("T2"), "{said:?}");
-        // Not also listed as out of a load case set.
+        // Not also listed as out of a group's cases.
         assert!(
             !c.notes
                 .iter()
-                .any(|n| n.contains("not in the load case set"))
+                .any(|n| n.contains("not taken by the groups"))
         );
     }
     assert!(
@@ -194,7 +202,7 @@ fn a_structure_taking_no_load_case_is_skipped_and_said() {
     }
 }
 
-/// A structure whose case set names only cases no longer in the library
+/// A structure whose groups name only cases no longer in the library
 /// (a case renamed there): never silently absent (2026-11-14) — no loads,
 /// every case's notes say NOT CHECKED, and the usage lists it as not
 /// checked with the names, never a pass. A set naming one case that is
@@ -203,8 +211,13 @@ fn a_structure_taking_no_load_case_is_skipped_and_said() {
 #[test]
 fn a_set_naming_cases_not_in_the_library_is_listed_not_checked() {
     let mut line = three_spans();
-    line.structures[1].load_cases = vec!["wind (old name)".into()];
-    line.structures[2].load_cases = vec!["weather: calm".into(), "ice (old name)".into()];
+    pick(&mut line, "T2", &["T2"], &["wind (old name)"]);
+    pick(
+        &mut line,
+        "T3",
+        &["T3"],
+        &["weather: calm", "ice (old name)"],
+    );
     let (lib, weather, budget) = (library(), weather(), default_budget());
     let r = structure_loads(&line, &lib, &weather, &cases(), &budget).unwrap();
     let types = ohl_structures::StructureLibrary::default();
@@ -223,7 +236,7 @@ fn a_set_naming_cases_not_in_the_library_is_listed_not_checked() {
         assert!(
             !c.notes
                 .iter()
-                .any(|n| n.contains("not in the load case set") && n.contains("T2")),
+                .any(|n| n.contains("not taken by the groups") && n.contains("T2")),
             "{:?}",
             c.notes
         );
@@ -269,8 +282,8 @@ fn a_set_naming_cases_not_in_the_library_is_listed_not_checked() {
     // library are not "missing".
     let known: Vec<String> = cases().iter().map(|c| c.name.clone()).collect();
     let mut both = line.clone();
-    both.structures[1].load_cases = vec!["weather: wind".into()];
-    both.structures[2].load_cases = Vec::new();
+    both.structure_groups.clear();
+    pick(&mut both, "T2", &["T2"], &["weather: wind"]);
     let one = structure_loads_each(&both, &lib, &weather, &cases()[..1], &known, &budget);
     assert!(one[0].as_ref().unwrap().unknown_sets.is_empty());
 }

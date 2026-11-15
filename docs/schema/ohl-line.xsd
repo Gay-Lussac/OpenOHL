@@ -367,7 +367,7 @@
               </xs:element>
               <xs:element name="load_case" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
-                  <xs:documentation>Its load cases (per-pylon sets, 2026-11-03), by name, cases of the line's load case library (checked when the loads are computed); none: its type's default (structure_loads type_cases), else every case.</xs:documentation>
+                  <xs:documentation>Its own load cases (per-pylon sets, 2026-11-03, until 2026-11-15), by name: read into a structure group picking it (structure_group), as a line file is.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="name" type="xs:string" use="required"/>
@@ -580,7 +580,7 @@
             </xs:attribute>
             <xs:attribute name="no_load_cases" type="xs:boolean" default="false">
               <xs:annotation>
-                <xs:documentation>The structure takes no load case (version 14, 2026-11-10): no case of the load case library is computed or checked for it, and it is listed as taking none. Not together with load_case elements (refused).</xs:documentation>
+                <xs:documentation>The structure took no load case (version 14, 2026-11-10, until 2026-11-15): read into the structure group "no load case", which ticks none. Not together with load_case elements (refused).</xs:documentation>
               </xs:annotation>
             </xs:attribute>
           </xs:complexType>
@@ -1006,14 +1006,14 @@
 
         <xs:element name="structure_loads" minOccurs="0">
           <xs:annotation>
-            <xs:documentation>What the line sends to the placed structures
-              (Criteria › Loads for structures): the weather cases sent
-              (weather_case: the forces unfactored, a wind case twice, the
-              wind from the left and from the right) and the wires'
-              condition in them (condition: initial, the default, creep,
-              load, max_sag). load_cases and load_case are read and not
-              used since 2026-10-25 (the factors are the structure load
-              cases').</xs:documentation>
+            <xs:documentation>The settings of Criteria › Loads for
+              structures of before 2026-11-15, kept as read and no longer
+              used (a placed structure gets its library cases only, through
+              its structure groups): the weather cases that were sent
+              (weather_case), the wires' condition in them (condition), the
+              broken-wire cases sent (broken_case); load_cases and load_case
+              not used since 2026-10-25. type_cases is read into structure
+              groups (structure_group).</xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:sequence>
@@ -1041,9 +1041,9 @@
               <xs:element name="type_cases" minOccurs="0" maxOccurs="unbounded">
                 <xs:annotation>
                   <xs:documentation>A structure type's default load cases
-                    (per-pylon sets, 2026-11-03): the cases of the line's load
-                    case library a structure of that type takes when it lists
-                    none of its own; each type once.</xs:documentation>
+                    (per-pylon sets, 2026-11-03, until 2026-11-15): read into a
+                    structure group "type X" of rule type X; each type
+                    once.</xs:documentation>
                 </xs:annotation>
                 <xs:complexType>
                   <xs:sequence>
@@ -1075,6 +1075,60 @@
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>
+          </xs:complexType>
+        </xs:element>
+
+        <xs:element name="structure_group" minOccurs="0" maxOccurs="unbounded">
+          <xs:annotation>
+            <xs:documentation>Version 18 (2026-11-15): a structure group —
+              which load cases of the line's load case library its structures
+              take. A structure is in it when picked (structure) or when every
+              rule given holds (rules; none given: picked ones only). A
+              structure takes the union of the cases of its groups; in no
+              group, every case; in groups ticking no case only,
+              none.</xs:documentation>
+          </xs:annotation>
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="id" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="rules" minOccurs="0">
+                <xs:annotation>
+                  <xs:documentation>Each rule given must hold (bounds
+                    inclusive): its type one of type (none: any), the size of
+                    the line angle in degrees from angle_from_deg to
+                    angle_to_deg, its station in metres from station_from to
+                    station_to on alignment (an alignment id; absent: any
+                    alignment it stands on), dead_end (true: a section of the
+                    line ends at it; false: none does).</xs:documentation>
+                </xs:annotation>
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="type" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="id" type="xs:string" use="required"/>
+                      </xs:complexType>
+                    </xs:element>
+                  </xs:sequence>
+                  <xs:attribute name="angle_from_deg" type="xs:double"/>
+                  <xs:attribute name="angle_to_deg" type="xs:double"/>
+                  <xs:attribute name="alignment" type="xs:string"/>
+                  <xs:attribute name="station_from" type="xs:double"/>
+                  <xs:attribute name="station_to" type="xs:double"/>
+                  <xs:attribute name="dead_end" type="xs:boolean"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="case" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="description" type="xs:string"/>
           </xs:complexType>
         </xs:element>
 

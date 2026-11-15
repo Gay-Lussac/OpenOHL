@@ -387,24 +387,41 @@ fn rich_line() -> Line {
     });
     line.circuits
         .push(ohl_line::circuits::Circuit::new("c2", "empty"));
-    // Weather cases sent to the placed structures.
+    // The settings of Loads for structures of before 2026-11-15: kept as
+    // read, no longer used.
     line.structure_loads = ohl_line::StructureLoads {
         load_cases: Some(vec!["wind 90°".into()]),
         weather_cases: vec!["ice 25 mm".into(), "wind <&>".into()],
         condition: Some("creep".into()),
         broken_cases: vec!["S1 span 2 broken".into()],
-        // Per structure type its default load cases (2026-11-03).
-        type_load_cases: [(
-            "tower <A>".to_owned(),
-            vec!["wind 90°".to_owned(), "ice".to_owned()],
-        )]
-        .into_iter()
-        .collect(),
+        ..Default::default()
     };
-    // A structure's own load cases (per-pylon sets, 2026-11-03).
-    line.structures[0].load_cases = vec!["wind 90°".into(), "construction & T1".into()];
-    // A structure taking no load case (2026-11-10).
-    line.structures[1].no_load_cases = true;
+    // Structure groups (line file version 18, 2026-11-15): one with every
+    // rule, one picking two structures, one ticking no case.
+    line.structure_groups = vec![
+        ohl_line::StructureGroup {
+            name: "angle <10–30°> & co".into(),
+            description: "invented \"angle\" towers".into(),
+            structures: vec![],
+            rules: ohl_line::GroupRules {
+                types: vec!["tower <A>".into(), "B".into()],
+                angle_from_deg: Some(10.0),
+                angle_to_deg: Some(30.5),
+                alignment: Some("main".into()),
+                station_from: Some(0.0),
+                station_to: Some(1200.0),
+                dead_end: Some(false),
+            },
+            load_cases: vec!["wind 90°".into(), "ice".into()],
+        },
+        ohl_line::StructureGroup {
+            name: "picked".into(),
+            structures: vec![line.structures[0].id.clone(), line.structures[2].id.clone()],
+            load_cases: vec!["construction & T1".into()],
+            ..Default::default()
+        },
+        ohl_line::StructureGroup::new("none"),
+    ];
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
     }
@@ -589,6 +606,40 @@ fn ohl_xml_refuses_what_it_does_not_know() {
     }
 }
 
+/// An OHL XML document of before 2026-11-15 with a structure's own load
+/// cases, a structure taking none and a type's set: read into structure
+/// groups, as a line file is.
+#[test]
+fn ohl_xml_case_sets_of_before_are_read_into_groups() {
+    let mut line =
+        Line::load(&root().join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+    let xml = ohlxml::to_xml(&line).replace(
+        "<structure id=\"T2\"",
+        "<structure id=\"T2\" no_load_cases=\"true\"",
+    );
+    let xml = xml.replace(
+        "</line>",
+        "  <structure_loads load_cases=\"all\">\n    <weather_case name=\"storm\"/>\n    \
+         <type_cases type=\"1A\"><case name=\"ice\"/></type_cases>\n  \
+         </structure_loads>\n</line>",
+    );
+    let back = ohlxml::from_xml(&xml).unwrap();
+    assert!(!back.has_old_case_sets());
+    let names: Vec<&str> = back
+        .structure_groups
+        .iter()
+        .map(|g| g.name.as_str())
+        .collect();
+    assert_eq!(names, ["type 1A", "no load case"]);
+    assert!(back.takes_no_load_case("T2"));
+    // The weather case sent: kept as read, said in one note.
+    assert_eq!(back.structure_loads.weather_cases, ["storm"]);
+    assert!(back.unused_structure_loads_note().is_some());
+    line.structure_groups = back.structure_groups.clone();
+    line.structure_loads = back.structure_loads.clone();
+    assert_eq!(back, line);
+}
+
 /// The XSD names every element the writer uses.
 #[test]
 fn xsd_lists_every_element_written() {
@@ -621,6 +672,9 @@ fn xsd_lists_every_element_written() {
         "offset_across",
         "offset_along",
         "shared",
+        "angle_from_deg",
+        "station_to",
+        "dead_end",
     ] {
         assert!(xsd.contains(&format!("name=\"{a}\"")), "{a}");
     }

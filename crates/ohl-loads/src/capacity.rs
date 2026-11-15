@@ -543,6 +543,8 @@ fn usage_pass(
     results: &[CaseLoads],
     analyses: &crate::analysis::Analyses,
 ) -> Vec<CaseUsage> {
+    // Which cases each structure takes: resolved once (its groups).
+    let sets = line.case_sets();
     let wind = wind_spans(line);
     let position = positions(line);
     let angles = line_angles(line);
@@ -590,8 +592,8 @@ fn usage_pass(
                 by_structure.entry(m.structure.as_str()).or_default();
             }
             // A structure taking no load case: listed, not checked.
-            for id in line.structures_without_load_cases() {
-                by_structure.entry(id).or_default();
+            for id in sets.without_load_cases() {
+                by_structure.entry(id.as_str()).or_default();
             }
             // A structure whose set names only cases not in the library
             // (2026-11-14): listed, not checked, never silently absent.
@@ -603,7 +605,7 @@ fn usage_pass(
                 .map(|(id, points)| {
                     let structure = line.structure(id);
                     let type_id = structure.and_then(|s| s.structure_type.clone());
-                    if line.takes_no_load_case(id) {
+                    if sets.takes_none(id) {
                         let angle = angles.get(id).copied().unwrap_or(0.0);
                         return without_load_case(id, type_id, angle);
                     }
@@ -922,8 +924,8 @@ fn usage_pass(
         .collect()
 }
 
-/// A structure that takes no load case
-/// (`ohl_line::Structure::no_load_cases`) in a case's usage: listed, no
+/// A structure that takes no load case (its structure groups tick
+/// none) in a case's usage: listed, no
 /// check made (never a pass), saying so.
 fn without_load_case(id: &str, structure_type: Option<String>, angle: f64) -> StructureUsage {
     StructureUsage {

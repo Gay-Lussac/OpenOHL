@@ -54,6 +54,7 @@ pub fn add_structure_loads(
         return;
     }
     let analyses = Analyses::load(types, sections);
+    let sets = line.case_sets();
     for r in results {
         let Some(w) = weather_of(r) else {
             continue;
@@ -64,7 +65,7 @@ pub fn add_structure_loads(
         let mut without: Vec<&str> = Vec::new();
         let mut no_snow: Vec<&str> = Vec::new();
         for s in &line.structures {
-            if !line.takes_load_case(&s.id, &r.case.name) {
+            if !sets.takes(&s.id, &r.case.name) {
                 continue;
             }
             let ice = match r.case.structure_ice_at(w, Some(s)) {
