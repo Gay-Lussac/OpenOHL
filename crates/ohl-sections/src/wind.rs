@@ -263,6 +263,22 @@ impl StructureWind {
             && self.member_law == MemberLaw::Inclination
     }
 
+    /// Its inclination curves and member law in words, each after ", "
+    /// (none given: empty), for the summaries of a table.
+    pub fn inclination_words(&self) -> String {
+        let mut s = String::new();
+        if !self.inclination.is_empty() {
+            s.push_str(&format!(
+                ", inclination for {} shape(s)",
+                self.inclination.len()
+            ));
+        }
+        if self.member_law == MemberLaw::Sin2 {
+            s.push_str(", the sin²θ law (comparison only, NOT ON THE SAFE SIDE)");
+        }
+        s
+    }
+
     /// Whether it uses a key of version 2 ([`INCLINATION_VERSION`]):
     /// inclination curves or a member law.
     pub fn needs_version_2(&self) -> bool {

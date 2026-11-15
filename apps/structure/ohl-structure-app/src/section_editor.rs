@@ -727,7 +727,7 @@ impl StructureApp {
                      inclination factors and no shielding"
                 .to_owned(),
             Some(w) => format!(
-                "Wind factors for structures from {}: drag for {} shape(s){}{}",
+                "Wind factors for structures from {}: drag for {} shape(s){}{}{}",
                 w.source_name(),
                 w.drag.len(),
                 if w.face_drag.is_some() {
@@ -739,7 +739,8 @@ impl StructureApp {
                     ", shielding"
                 } else {
                     ""
-                }
+                },
+                w.inclination_words()
             ),
         };
         ui.label(egui::RichText::new(text).weak()).on_hover_text(

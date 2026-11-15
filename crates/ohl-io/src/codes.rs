@@ -416,7 +416,7 @@ impl Generated {
     pub fn structure_wind_note(&self) -> String {
         match &self.structure_wind {
             Some((_, w)) => format!(
-                "{} gives wind factors for structures ({}{}{})",
+                "{} gives wind factors for structures ({}{}{}{})",
                 self.plugin,
                 if w.drag.is_empty() {
                     String::new()
@@ -432,7 +432,8 @@ impl Generated {
                     ", shielding"
                 } else {
                     ""
-                }
+                },
+                w.inclination_words()
             ),
             None => format!(
                 "{} gives no wind factors for structures: the member wind takes the built-in \
