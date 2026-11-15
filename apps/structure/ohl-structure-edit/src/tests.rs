@@ -890,19 +890,21 @@ fn advice_on_points_and_joints() {
     assert_eq!(
         advice,
         vec![
-            "point A2 is on no joint or member: it carries no load in the analysis",
+            "point A2 is linked to no joint: it carries no load in the analysis — link it (its \
+             joint in the list, or the Link or Move attachment point tool)",
             "joint N1 is on one member only",
             "joint N3 is on one member only",
             "joint N4 is on no member",
         ]
     );
     // Level 3 lacks a section on each member (from the section library
-    // or the file's own [[section]]s: few, each named) and the point on
-    // a joint of the members (as the level asks).
+    // or the file's own [[section]]s: few, each named). The new point
+    // stands alone (owner 2026-11-15): allowed beside the 3D structure,
+    // warned in the Advice above, not a lack of the level.
     let level = level_items(&m);
-    assert_eq!(level.len(), 3, "{m:?}");
+    assert_eq!(level.len(), 2, "{m:?}");
     assert!(
-        level
+        !level
             .iter()
             .any(|x| x.starts_with("point A2 is on no joint of the members")),
         "{m:?}"

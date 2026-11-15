@@ -39,7 +39,8 @@ the tool; the window's action first in the button row, **Cancel** (or
 - **Edit › Tools** lists every tool by group — *Select and edit*,
   *Geometry*, *Body* — with its hotbar key; choosing one holds it.
 
-With **Select**, **Move**, **Symmetry** and **Link** held, a click in
+With **Select**, **Move**, **Symmetry**, **Link** and **Move attachment
+point** held, a click in
 the view selects (Link: picks the point, then the joint); with the other
 tools a click **acts** on what is under the pointer, or, on nothing,
 where it meets the plane facing you through the structure's middle. A
@@ -169,11 +170,18 @@ cannot stay without it.
    - a **joint**: a point on it (it moves with the joint) — not on a
      support joint, since strings hang from attach joints (the message
      says so);
-   - elsewhere: a point at the top of the stick figure, to be moved in
-     the view or the Attachment points table.
+   - elsewhere: a point at the top of the stick figure, **standing
+     alone** — linked to no joint, and no joint is made for it (owner,
+     2026-11-15) — to be moved in the view or the Attachment points
+     table, then linked: its joint in the [list](structure-app.md#attachment-points-joints-and-the-link-tool),
+     or [Link](#link) / [Move attachment point](#move-attachment-point).
 
 **Good to know.** The new point is selected; the message line names it.
-**Undo**: one step.
+A point standing alone belongs to the stick figure (level 1): on a
+structure with members, the strings hanging from it are **not attached
+to the 3D structure** — the header's Advice and the results say so, not
+on the safe side, until it is linked. The file is written at version
+17 (`unlinked = true`). **Undo**: one step.
 
 ## One string below the point
 
@@ -213,9 +221,9 @@ starts again. **Undo**: one step.
 
 ## Link
 
-**What it is for.** Linking an attachment point to a joint, where the
-point is: its distance from the joint is kept as its offset (a rigid
-link, whose moment the analysis applies at the joint).
+**What it is for.** Linking an attachment point to a joint: onto it, or
+where the point is, its distance from the joint kept as its offset (a
+rigid link, whose moment the analysis applies at the joint).
 
 **How to use it**
 
@@ -223,10 +231,25 @@ link, whose moment the analysis applies at the joint).
    right-click menu).
 2. Click an attachment point: the **attach joints** are ringed. The one
    under the pointer shows the offset's length and its moment arm.
-3. Click a ringed joint: the point is linked to it.
+3. Click a ringed joint: the point is linked to it — on the joint at
+   once; not on it, the question below.
 
-**Keys.** A **right-click** or **Escape** drops the point chosen; a
-second one lets go of the tool.
+**The question: onto the joint, or its position kept?** When the point
+is not on the joint it is linked to (farther than **1 mm**), a small
+window asks (owner, 2026-11-15):
+
+| Choice | What it does |
+|---|---|
+| **Move the point onto the joint** (the default) | The point moves onto the joint, the strings hanging from it with it; no offset. |
+| **Keep its position (offset x, y, z from the joint)** | The point stays where it is; its distance from the joint becomes its **offset**, a rigid link whose moment the analysis applies at the joint (where a frame member meets it; else left out and said). |
+
+**Link** (Enter) applies the choice, **Cancel** (Escape) changes
+nothing. Within 1 mm the point goes onto the joint without the question.
+The answer is part of the one edit: **Undo** takes back the link and the
+move together.
+
+**Keys.** A **right-click** or **Escape** closes the question, then
+drops the point chosen; a further one lets go of the tool.
 
 **Good to know**
 
@@ -236,8 +259,60 @@ second one lets go of the tool.
 - A point cannot be put on a member: [Insert a joint](#insert-a-joint)
   on the member first, then link the point.
 - **Unlink** is in the point's menu (in the view or the Attachment
-  points table) and in the Inspector.
+  points table) and in the Inspector: the point keeps its place,
+  standing alone, linked to no joint.
+- An attachment point and a joint are separate objects, even when they
+  have the same name: a joint is only ever found by its id, a point by
+  its label. Another point's own place (a stick figure's) is no joint to
+  link to.
 - **Undo**: one step.
+
+## Move attachment point
+
+**What it is for.** Moving an attachment point from the joint it is on
+to another joint, starting from the joint (owner, 2026-11-15). The
+strings hanging from the point follow it.
+
+**How to use it**
+
+1. Hold **Move attachment point** (from the inventory, E; or **Edit ›
+   Tools**).
+2. Click a **joint carrying an attachment point** (or the point itself).
+   With several points on the joint, a small window lists them — each
+   with the strings hanging from it and the sets of their wire points —
+   and you click the one to move.
+3. Click the **joint to move it to** (the attach joints are ringed). On
+   the joint, the point is not moved; elsewhere the question below asks
+   how it goes there.
+
+**The question: onto the joint, or its position kept?** When the point
+is not on the joint it is linked to (farther than **1 mm**), a small
+window asks (owner, 2026-11-15):
+
+| Choice | What it does |
+|---|---|
+| **Move the point onto the joint** (the default) | The point moves onto the joint, the strings hanging from it with it; no offset. |
+| **Keep its position (offset x, y, z from the joint)** | The point stays where it is; its distance from the joint becomes its **offset**, a rigid link whose moment the analysis applies at the joint (where a frame member meets it; else left out and said). |
+
+**Link** (Enter) applies the choice, **Cancel** (Escape) changes
+nothing. Within 1 mm the point goes onto the joint without the question.
+The answer is part of the one edit: **Undo** takes back the link and the
+move together.
+
+**Keys.** **Escape** cancels at any step: the question, then the
+chooser, then the point chosen; a further one lets go of the tool.
+
+**Good to know**
+
+- A joint carrying no point says so in the message line; click a point
+  standing alone directly.
+- Only attach joints take a point; a support joint takes no strings.
+- The same move is made in the Attachment points list: the point's
+  **joint** cell (a list of the attach joints with a search, or a
+  joint's id typed).
+- A placed structure (opened from OHL-Design) whose point the line links
+  elsewhere shows **line differs** in the list; see [The line's links](structure-app.md#the-lines-links-from-ohl-design).
+- **Undo**: one step (the move and the answer together).
 
 ## Add a joint
 

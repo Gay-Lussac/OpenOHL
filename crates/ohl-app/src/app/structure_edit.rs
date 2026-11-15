@@ -176,7 +176,26 @@ impl Ready {
     pub fn structure_file_saved(&mut self, path: &std::path::Path, id: &str) {
         use crate::library::{LibraryKind, PageAction};
         let kind = LibraryKind::StructureTypes;
+        // The type's attachment points' links before and after (owner
+        // 2026-11-15: the two applications tell each other when points are
+        // linked or moved).
+        let before = crate::link_tool::type_links(&self.model, id);
         self.library_saved(kind, PageAction::Saved(path.to_path_buf()));
+        let after = crate::link_tool::type_links(&self.model, id);
+        let users: Vec<String> = self
+            .model
+            .line
+            .structures
+            .iter()
+            .filter(|s| s.structure_type.as_deref() == Some(id))
+            .map(|s| s.id.clone())
+            .collect();
+        let changed = crate::link_tool::type_links_changed(&users, &before, &after);
+        if !changed.is_empty() {
+            let text = format!("{} (from OHL-Structure)", changed.join("; "));
+            log::info!("{text}");
+            self.status = Some((text, false));
+        }
         if let Some(page) = self.libraries.get_mut(&kind)
             && page.file.as_deref() == Some(path)
         {

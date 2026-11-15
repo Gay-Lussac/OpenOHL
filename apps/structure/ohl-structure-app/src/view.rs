@@ -461,7 +461,7 @@ impl View {
         use crate::tools::Tool;
         let acting = !matches!(
             v.tool,
-            Tool::Select | Tool::Move | Tool::Symmetry | Tool::Link
+            Tool::Select | Tool::Move | Tool::Symmetry | Tool::Link | Tool::MovePoint
         );
         if linking.is_none()
             && acting

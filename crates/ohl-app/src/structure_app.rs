@@ -25,7 +25,13 @@
 //! (`ohl_structure_loads::line_values_path`) and passed with
 //! `--line-values FILE --structure ID`; written again (in the background)
 //! when the line changes while the application runs, and read again
-//! there. The values typed over its load table come back as
+//! there. The file also carries the placed structure's own links of its
+//! attachment points where they differ from its type's (a relink or a
+//! move made here, line-values version 9, 2026-11-15): OHL-Structure says
+//! what changed and solves the placed structure with them. The other way,
+//! a type file saved there is read again here and what its points' links
+//! changed is said in the status line ("T7: point A1 linked to joint 42Y
+//! (from OHL-Structure)"). The values typed over its load table come back as
 //! `<stem>.<structure>.loads.csv` and are kept in the project (library
 //! kind `loads`, beside the structure types) when they change. The
 //! project's section library goes along as `--sections`.
@@ -125,17 +131,36 @@ impl Placed {
 
     /// A line-values file without values, saying why.
     pub fn pending(&self, why: &str) -> Result<(), String> {
-        PlacedValues::pending(&self.structure, &self.line, &self.structure_type, why)
-            .save(&self.values)
+        self.pending_with(why, &[])
+    }
+
+    /// [`Placed::pending`] with the placed structure's own links.
+    pub fn pending_with(
+        &self,
+        why: &str,
+        links: &[ohl_structure_loads::PlacedLink],
+    ) -> Result<(), String> {
+        let mut v = PlacedValues::pending(&self.structure, &self.line, &self.structure_type, why);
+        v.links = links.to_vec();
+        v.at_needed_version().save(&self.values)
     }
 
     /// The line-values file from the line's structure loads `loads` in
     /// the cases it sends to its structures: this structure's cases of the
     /// load case library, those of its groups (owner 2026-11-03: "The
-    /// library's cases"; 2026-11-15: those only).
-    pub fn write(&self, loads: &StructureCaseLoads, line: &ohl_line::Line) -> Result<(), String> {
-        ohl_structure_link::placed_values_with(loads, line, &self.structure, &self.line)
-            .save(&self.values)
+    /// library's cases"; 2026-11-15: those only), with the placed
+    /// structure's own links of its attachment points `links` (where they
+    /// differ from its type's: version 9).
+    pub fn write_with(
+        &self,
+        loads: &StructureCaseLoads,
+        line: &ohl_line::Line,
+        links: &[ohl_structure_loads::PlacedLink],
+    ) -> Result<(), String> {
+        let mut v =
+            ohl_structure_link::placed_values_with(loads, line, &self.structure, &self.line);
+        v.links = links.to_vec();
+        v.at_needed_version().save(&self.values)
     }
 }
 
@@ -188,6 +213,9 @@ pub struct LineInputs {
     /// check with **Use local conditions** ticked (owner's answer 3 of
     /// 2026-11-14; [`ohl_structure_link::StructureCases::with_local`]).
     pub local: bool,
+    /// The placed structures' own links that differ from their types'
+    /// ([`crate::link_tool::placed_links`]), by structure id.
+    pub links: std::collections::HashMap<String, Vec<ohl_structure_loads::PlacedLink>>,
 }
 
 /// The line's load cases (its `.ohllc` file; none when there is none or
@@ -211,6 +239,7 @@ impl LineInputs {
             weather: model.cases.iter().map(|c| c.case.clone()).collect(),
             load_cases: line_load_cases(model),
             local: false,
+            links: crate::link_tool::placed_links(model),
         }
     }
 
@@ -226,7 +255,7 @@ impl LineInputs {
 
     /// The structures' loads in the cases the line sends to them: the
     /// load case library's cases (each structure takes those of its
-    /// groups in [`Placed::write`]) — as Checks › Structure loads computes
+    /// groups in [`Placed::write_with`]) — as Checks › Structure loads computes
     /// them (seconds for a long line: one solve per case and section).
     /// Err: no case to send (no load case library).
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
@@ -250,10 +279,11 @@ impl LineInputs {
         placed
             .iter()
             .filter_map(|p| {
+                let links = self.links.get(&p.structure).map_or(&[][..], Vec::as_slice);
                 let r = match &loads {
-                    Ok(l) => p.write(l, &self.line),
+                    Ok(l) => p.write_with(l, &self.line, links),
                     Err(e) => p
-                        .pending(&format!("no values from the line: {e}"))
+                        .pending_with(&format!("no values from the line: {e}"), links)
                         .and(Err(e.clone())),
                 };
                 r.err()
@@ -840,6 +870,18 @@ impl StructureApps {
             overrides: (at, m, t),
             libraries: (dirs, signature),
         });
+    }
+
+    /// Whether structure file `path` is open in a structure application
+    /// still running (an edit of the file elsewhere would be overwritten
+    /// by its save).
+    pub fn is_open(&mut self, path: &Path) -> bool {
+        self.watched.iter_mut().any(|w| {
+            w.path == path
+                && w.child
+                    .as_mut()
+                    .is_some_and(|c| c.child.try_wait().ok().flatten().is_none())
+        })
     }
 
     /// Whether a file is watched (the caller asks for a frame now and

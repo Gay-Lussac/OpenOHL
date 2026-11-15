@@ -867,18 +867,27 @@ impl StructureApp {
     /// length, the strings hanging from it; a row's menu links or unlinks
     /// it.
     fn points_sheet(&mut self, ui: &mut egui::Ui, t: &StructureType) {
+        // The placed structure's links the line sent, where they differ
+        // from the type's (OHL-Design's relinks, 2026-11-15).
+        let placed: Vec<(String, String)> = t
+            .points
+            .iter()
+            .filter_map(|p| self.placed_link_of(&p.label).map(|n| (p.label.clone(), n)))
+            .collect();
+        let attach = crate::link_tool::attach_joints(t);
         let Some(f) = &mut self.file else {
             return;
         };
         let joints = t.joints();
         let mut action = None;
+        let mut link_to: Option<(String, String)> = None;
         egui::Grid::new("points").striped(true).show(ui, |ui| {
             for (h, tip) in [
                 ("attachment point", "Where strings hang; right-click: link, unlink"),
                 ("x [m]", "Where it is: typed, a point on a joint stays on it and its offset follows"),
                 ("y [m]", ""),
                 ("z [m]", ""),
-                ("joint", "The joint it is linked to (Link tool, or its menu)"),
+                ("joint", "The joint it is linked to: choose one in the list (search, or type its id), or use the Link or Move attachment point tool. Not on the joint: you are asked whether to move the point onto it (the default) or keep its position at an offset. One undo step"),
                 ("offset x [m]", "From its joint to it: a rigid link, whose moment the analysis applies at the joint"),
                 ("offset y [m]", ""),
                 ("offset z [m]", ""),
@@ -926,10 +935,74 @@ impl StructureApp {
                 let own = joints
                     .iter()
                     .any(|j| j.id == p.joint && j.source == ohl_structures::JointSource::Point);
-                ui.label(if own {
-                    format!("{} (its own)", p.joint)
+                let shown = if p.unlinked {
+                    "unlinked".to_owned()
+                } else if own {
+                    format!("{} (its own place)", p.joint)
                 } else {
                     p.joint.clone()
+                };
+                let in_line = placed.iter().find(|(l, _)| *l == p.label).map(|(_, n)| n);
+                ui.horizontal(|ui| {
+                    let r = egui::ComboBox::from_id_salt(("point-joint", &p.label))
+                        .selected_text(shown)
+                        .width(96.0)
+                        .show_ui(ui, |ui| {
+                            let search = self.buffers.entry("point-joint-search".into()).or_default();
+                            ui.add(
+                                egui::TextEdit::singleline(search)
+                                    .hint_text("search, or type a joint's id")
+                                    .desired_width(150.0),
+                            );
+                            let s = search.trim().to_lowercase();
+                            egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                                for j in attach
+                                    .iter()
+                                    .filter(|j| s.is_empty() || j.to_lowercase().contains(&s))
+                                {
+                                    if ui
+                                        .selectable_label(!p.unlinked && *j == p.joint, j.as_str())
+                                        .clicked()
+                                    {
+                                        link_to = Some((p.label.clone(), j.clone()));
+                                    }
+                                }
+                            });
+                            let typed = search.trim().to_owned();
+                            if !typed.is_empty()
+                                && !attach.contains(&typed)
+                                && ui
+                                    .button(format!("Link to joint {typed}"))
+                                    .on_hover_text("A joint typed by its id (refused, with why, when it takes no link)")
+                                    .clicked()
+                            {
+                                link_to = Some((p.label.clone(), typed));
+                            }
+                            if attach.is_empty() {
+                                ui.label(
+                                    egui::RichText::new(
+                                        "No attach joint yet: add a joint (Body), or set a \
+                                         joint's kind to attach (Joints table)",
+                                    )
+                                    .weak(),
+                                );
+                            }
+                        })
+                        .response;
+                    r.on_hover_text(if p.unlinked {
+                        "Linked to no joint: its strings are not attached to the 3D structure. \
+                         Choose a joint to link it"
+                    } else {
+                        "Choose another joint to move the point there (asked: onto the joint, or \
+                         its position kept at an offset)"
+                    });
+                    if let Some(n) = in_line {
+                        ui.colored_label(ui.visuals().warn_fg_color, "line differs")
+                            .on_hover_text(format!(
+                                "The placed structure links this point differently in the line \
+                                 ({n}, made in OHL-Design): its results here use the line's link"
+                            ));
+                    }
                 });
                 let mut o = t.point_offset(p);
                 let mut shifted = false;
@@ -959,6 +1032,10 @@ impl StructureApp {
         });
         if let Some(a) = action {
             self.link_action(a);
+        }
+        if let Some((label, joint)) = link_to {
+            self.buffers.remove("point-joint-search");
+            self.request_link(&label, &joint, "the list");
         }
         if t.points.is_empty() {
             ui.label(

@@ -831,11 +831,14 @@ impl Ready {
                 self.editor = StringForm::post_on(model, id, None).map(Form::String);
                 self.select(Selection::Structure(id.clone()));
             }
-            (Tool::Link, Selection::Point { .. }) => self.link_click(target),
-            (Tool::Link, _) => {
+            (Tool::Link | Tool::MovePoint, Selection::Point { .. }) => self.link_click(target),
+            (Tool::Link | Tool::MovePoint, _) => {
                 if self.link_from.take().is_some() {
                     self.status = Some((
-                        "Link: cancelled (click a ringed joint to link the point)".into(),
+                        format!(
+                            "{}: cancelled (click a ringed joint to link the point)",
+                            tool.name()
+                        ),
                         false,
                     ));
                 } else {
@@ -950,15 +953,42 @@ impl Ready {
 
     /// The Link tool on a structure's point: the joints it may be linked
     /// to, ringed.
-    fn link_click(&mut self, target: Selection) {
+    pub(crate) fn link_click(&mut self, target: Selection) {
         let Selection::Point { structure, label } = &target else {
             return;
         };
+        let tool = self.hotbar.tool();
+        let name = if tool == crate::tools::Tool::MovePoint {
+            "Move attachment point"
+        } else {
+            "Link"
+        };
+        // Move attachment point: several points at the place clicked, one
+        // chosen first (owner 2026-11-15).
+        if tool == crate::tools::Tool::MovePoint {
+            let here = crate::link_tool::sharing(&self.model, structure, label);
+            if here.len() > 1 {
+                self.status = Some((
+                    format!(
+                        "{name}: {} points of {structure} are here ({}) — choose one",
+                        here.len(),
+                        here.join(", ")
+                    ),
+                    false,
+                ));
+                self.point_chooser = Some(crate::link_tool::PointChooser {
+                    structure: structure.clone(),
+                    labels: here,
+                });
+                self.select(target);
+                return;
+            }
+        }
         match crate::link_tool::overlay(&self.model, structure, label) {
             Ok(o) => {
                 self.status = Some((
                     format!(
-                        "Link {label} of {structure}: click a ringed joint of its \
+                        "{name} {label} of {structure}: click a ringed joint of its \
                                  type ({} joint(s) it may be linked to; Escape: cancel)",
                         o.joints.len()
                     ),
@@ -968,7 +998,7 @@ impl Ready {
             }
             Err(e) => {
                 self.link_from = None;
-                self.status = Some((format!("Link: {e}"), true));
+                self.status = Some((format!("{name}: {e}"), true));
             }
         }
         self.select(target);
@@ -1005,7 +1035,10 @@ impl Ready {
     /// joints it may be linked to (none: the tool not held, or no point
     /// chosen; a point whose structure went is dropped).
     pub fn link_overlay(&mut self) -> Option<crate::link_tool::LinkOverlay> {
-        if self.hotbar.tool() != crate::tools::Tool::Link {
+        if !matches!(
+            self.hotbar.tool(),
+            crate::tools::Tool::Link | crate::tools::Tool::MovePoint
+        ) {
             self.link_from = None;
             return None;
         }
@@ -1033,16 +1066,97 @@ impl Ready {
         let Some((id, label)) = self.link_from.take() else {
             return;
         };
-        match crate::link_tool::link_command(&self.model, &id, &label, joint) {
-            Ok((what, command)) => {
-                self.perform(crate::edit::Action::Command { what, command });
-                self.selection = Selection::Point {
-                    structure: id,
-                    label,
-                };
+        let moving = self.hotbar.tool() == crate::tools::Tool::MovePoint;
+        let name = if moving {
+            "Move attachment point"
+        } else {
+            "Link"
+        };
+        match crate::link_tool::window_for(&self.model, &id, &label, joint, moving) {
+            // Asked first: onto the joint or its position kept (the point
+            // not on it), and for a move this structure or the type.
+            Ok(Some(w)) => {
+                self.status = Some((
+                    format!(
+                        "{name} {label} of {id} to joint {joint}: {}",
+                        if w.ask_how {
+                            "not on the joint — onto it, or its position kept?"
+                        } else {
+                            "this structure only, or the type?"
+                        }
+                    ),
+                    false,
+                ));
+                self.link_window = Some(w);
             }
-            Err(e) => self.status = Some((format!("Link: {e}"), true)),
+            // On the joint: linked onto it at once.
+            Ok(None) => {
+                self.apply_link(&id, &label, joint, ohl_structure_edit::links::LinkHow::Onto);
+            }
+            Err(e) => self.status = Some((format!("{name}: {e}"), true)),
         }
+    }
+
+    /// Attachment point `label` of structure `id` linked to joint `joint`
+    /// as `how` says: this structure's own link, one command (one undo).
+    pub fn apply_link(
+        &mut self,
+        id: &str,
+        label: &str,
+        joint: &str,
+        how: ohl_structure_edit::links::LinkHow,
+    ) -> bool {
+        match crate::link_tool::move_command(&self.model, id, label, joint, how) {
+            Ok((what, command)) => {
+                let done = self.perform(crate::edit::Action::Command { what, command });
+                self.selection = Selection::Point {
+                    structure: id.to_owned(),
+                    label: label.to_owned(),
+                };
+                done
+            }
+            Err(e) => {
+                self.status = Some((format!("Link: {e}"), true));
+                false
+            }
+        }
+    }
+
+    /// The point moved in its type's file (every structure of the type):
+    /// the file written with the edit functions OHL-Structure uses, then
+    /// kept in the project and read again as a save of the Structure
+    /// types page; the line follows. Err: why not (nothing written).
+    pub fn apply_type_move(
+        &mut self,
+        id: &str,
+        label: &str,
+        joint: &str,
+        how: ohl_structure_edit::links::LinkHow,
+    ) -> Result<(), String> {
+        let path = self
+            .model
+            .line
+            .structure(id)
+            .and_then(|s| s.structure_type.as_deref())
+            .and_then(|t| self.model.types.as_ref()?.0.path(t))
+            .map(std::path::Path::to_path_buf);
+        let open_there = path
+            .as_deref()
+            .is_some_and(|p| self.structure_apps.is_open(p));
+        let (path, text, what) =
+            crate::link_tool::type_edit(&self.model, id, label, joint, how, open_there)?;
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        log::info!("{what}");
+        self.library_saved(
+            crate::library::LibraryKind::StructureTypes,
+            crate::library::PageAction::Saved(path),
+        );
+        self.status = Some((what, false));
+        self.selection = Selection::Point {
+            structure: id.to_owned(),
+            label: label.to_owned(),
+        };
+        Ok(())
     }
 
     /// "Tool: what to click" in the status bar.

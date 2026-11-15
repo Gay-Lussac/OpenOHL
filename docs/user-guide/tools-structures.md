@@ -1,10 +1,11 @@
 # Tools: Structures
 
-*Built, in active development (not approved yet).* The six tools of the
+*Built, in active development (not approved yet).* The seven tools of the
 **Structures** theme place and change structures: **Add structure**
 stands a new one on the line, **Move structure** moves one, **Replace
 structure** puts another structure type in its place, **Link attachment
-point** links an attachment point to a joint of its type, **Add
+point** links an attachment point to a joint of its type, **Move
+attachment point** moves one to another joint of its type, **Add
 string** hangs a new string on a structure (or puts a spacer between two
 wires), and **Add post insulator** stands a post insulator on it. This page explains each tool, its windows and every field. The
 words structure, structure type, attachment point, string, wire point and
@@ -195,10 +196,10 @@ window's × change nothing. The window takes no Enter.
 ## Link attachment point
 
 **What it is for.** Link attachment point links an attachment point
-(where a string hangs) to a **joint** of its structure's type, where the
-point is: its distance from the joint is kept as its **offset**, a rigid
-link whose moment the structure analysis applies at the joint
-([Glossary](glossary.md#structures)).
+(where a string hangs) to a **joint** of its structure's type: onto the
+joint, or where the point is — its distance from the joint kept as its
+**offset**, a rigid link whose moment the structure analysis applies at
+the joint ([Glossary](glossary.md#structures)).
 
 **How to use it**
 
@@ -211,7 +212,19 @@ link whose moment the structure analysis applies at the joint
 3. Move the pointer over a ringed joint: the offset (x, y, z in the
    structure's axes), its length and its moment arm (its length across
    the vertical) are written beside it.
-4. Click the ringed joint: the point is linked there, where it is.
+4. Click the ringed joint: on the joint, the point is linked at once;
+   not on it (farther than 1 mm), the **Link *point* of *structure* to
+   joint *joint*** window asks how (below).
+
+**The window** (only when the point is not on the joint; owner,
+2026-11-15)
+
+| Field | What it does |
+|---|---|
+| **Move the point onto the joint** | The default: the point moves onto the joint, the strings hanging from it with it; no offset. |
+| **Keep its position (offset x, y, z from the joint)** | The point stays where it is; its distance from the joint (in the structure's axes, m) becomes its offset. |
+
+**Link** (Enter) applies it, **Cancel** (Escape) changes nothing.
 
 **Keys.** **Escape**, or a click elsewhere, cancels the point chosen.
 
@@ -225,7 +238,64 @@ link whose moment the structure analysis applies at the joint
   point's Properties; an unlinked point is drawn red and its structure's
   loads are refused until it is linked again.
 - A linked point moved later keeps its joint; its offset follows.
-- **Undo**: one step.
+- An attachment point and a joint are separate objects, even with the
+  same name (a derived type's point `A1` on its joint `A1`): the joint
+  is found by its id only.
+- **Undo**: one step (the link and the move onto the joint together).
+
+## Move attachment point
+
+**What it is for.** Move attachment point moves an attachment point of a
+structure with a 3D type to another **joint** of that type (owner,
+2026-11-15) — for this structure only, or in the type, for all its
+structures. It is the tool for a structure added with a 3D type where
+there was none: its points are linked as the type links them, and here
+one is moved to the joint it belongs on. The strings hanging from the
+point follow it.
+
+**How to use it**
+
+1. Hold **Move attachment point** (from the inventory or Edit › Tools ›
+   Structures; or right-click an attachment point: **Move to a
+   joint…**).
+2. Click an **attachment point** of a structure with a type. When
+   several points are at that place, a small window lists them — each
+   with the strings hanging from it and the sets of their wire points —
+   and you click the one to move. The type's **attach joints** are
+   ringed in the 3D view, as for Link attachment point.
+3. Click the ringed joint to move it to. The **Move *point* of
+   *structure* to joint *joint*** window opens.
+4. Choose, then **Move** (Enter).
+
+**The window**
+
+| Field | What it does |
+|---|---|
+| **Move the point onto the joint** / **Keep its position (offset …)** | Shown when the point is not on the joint (farther than 1 mm): onto it (the default: the point and its strings move there) or its position kept, its distance becoming its offset. |
+| ***structure* only (relink)** | The default: this placed structure's own link (the line's relink), one change of the project. |
+| **The type *type* (all its structures)** | The structure type's file, changed with the same edit functions OHL-Structure uses, then read again: every structure of the type follows (one that has its own link of the point keeps it). |
+
+**Move** (Enter) applies it, **Cancel** (Escape) changes nothing.
+
+**Keys.** **Escape** closes the chooser or the window, else cancels the
+point chosen.
+
+**Good to know**
+
+- Only attach joints take a point; a support joint takes no strings.
+- **The type** is refused while the type is open in OHL-Structure (its
+  own copy would overwrite the change): move the point there, or close
+  it first.
+- **OHL-Structure is told**: a structure open there gets the new link
+  of *this structure only* in its line values, and says *T7: point A1
+  linked to joint 42Y (from OHL-Design)*; a point moved there reaches
+  the line when the structure file is saved there, and the status bar
+  here says *T7: point A1 linked to joint 42Y (from OHL-Structure)*.
+  ([The line's links](structure-app.md#the-lines-links-from-ohl-design).)
+- **Undo**: *this structure only* is one step of Edit › Undo. *The
+  type* changes the type's file, kept in the project as a save of the
+  Structure types page: Edit › Undo does not take it back — move the
+  point back the same way.
 
 ## Add string
 

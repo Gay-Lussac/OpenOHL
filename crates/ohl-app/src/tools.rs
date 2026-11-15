@@ -60,6 +60,12 @@ pub enum Tool {
     /// type: the point linked to it where it is, the distance kept as its
     /// offset (a rigid link) — [`crate::link_tool`].
     Link,
+    /// Click an attachment point of a typed structure (one chosen when
+    /// several share its place), then a joint of its type: the point
+    /// moved there — this structure only (a relink) or the type (all its
+    /// structures); asked, onto the joint or its position kept, when it
+    /// is not on it (owner 2026-11-15; [`crate::link_tool`]).
+    MovePoint,
     /// Click two points: the distance between them
     /// ([`crate::measure`]).
     MeasureDistance,
@@ -89,7 +95,7 @@ pub enum Tool {
 impl Tool {
     /// Every tool, theme by theme ([`THEMES`]): the inventory and the
     /// Edit › Tools list them in this order.
-    pub const ALL: [Tool; 25] = [
+    pub const ALL: [Tool; 26] = [
         Tool::Select,
         Tool::Edit,
         Tool::Delete,
@@ -101,6 +107,7 @@ impl Tool {
         Tool::Move,
         Tool::Replace,
         Tool::Link,
+        Tool::MovePoint,
         Tool::AddString,
         Tool::AddPost,
         Tool::StringWire,
@@ -126,6 +133,7 @@ impl Tool {
             | Tool::Move
             | Tool::Replace
             | Tool::Link
+            | Tool::MovePoint
             | Tool::AddString
             | Tool::AddPost => "Structures",
             Tool::StringWire | Tool::AddJumper | Tool::OnSpan => "Wires",
@@ -160,6 +168,7 @@ impl Tool {
             Tool::OnSpan => "Add on span",
             Tool::Replace => "Replace structure",
             Tool::Link => "Link attachment point",
+            Tool::MovePoint => "Move attachment point",
             Tool::MeasureDistance => "Distance",
             Tool::MeasureHeight => "Height above ground",
             Tool::MeasureStations => "Stations",
@@ -194,6 +203,7 @@ impl Tool {
             Tool::OnSpan => "◎",
             Tool::Replace => "⬌",
             Tool::Link => "🔗",
+            Tool::MovePoint => "↘",
             Tool::MeasureDistance => "↔",
             Tool::MeasureHeight => "↕",
             Tool::MeasureStations => "📏",
@@ -258,7 +268,10 @@ impl Tool {
                 "click a structure: choose another structure type for its place; matching wire points are rewired, the others you map (or they are removed, after a list)"
             }
             Tool::Link => {
-                "click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint where it is, its distance kept as the offset (Escape or a click elsewhere: cancel)"
+                "click an attachment point (where a string hangs), then a ringed joint of its structure: the point is linked to that joint — not on it, you are asked: onto the joint, or its position kept at an offset (Escape or a click elsewhere: cancel)"
+            }
+            Tool::MovePoint => {
+                "click an attachment point of a structure with a 3D type (several at one place: choose one), then a ringed joint of its type: the point moves there — this structure only, or the type (all its structures) (Escape: cancel)"
             }
             Tool::MeasureDistance => {
                 "click two points — a wire where clicked (to its surface), a structure's base, a wire point, a LiDAR or survey point, or the ground: the distance and its parts, its bearing in plan and its elevation angle (Escape: start again)"
@@ -332,7 +345,10 @@ impl Tool {
     /// Structure points and wire points can be clicked while it is
     /// held.
     pub fn picks_points(self) -> bool {
-        matches!(self, Tool::AddString | Tool::AddPost | Tool::Link)
+        matches!(
+            self,
+            Tool::AddString | Tool::AddPost | Tool::Link | Tool::MovePoint
+        )
     }
 
     /// Jumpers (their points) can be clicked while it is held.
@@ -384,6 +400,7 @@ impl Tool {
             Tool::OnSpan => "on_span",
             Tool::Replace => "replace",
             Tool::Link => "link",
+            Tool::MovePoint => "move_point",
             Tool::MeasureDistance => "measure_distance",
             Tool::MeasureHeight => "measure_height",
             Tool::MeasureStations => "measure_stations",

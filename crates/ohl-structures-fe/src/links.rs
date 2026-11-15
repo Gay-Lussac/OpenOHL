@@ -74,10 +74,17 @@ impl Model {
                 .map_err(|e| format!("point {label}: {what}: {e}"))
         };
         let mut rows = Vec::new();
+        let mut unlinked = Vec::new();
         for p in points.into_iter().flatten() {
             let Some(label) = p.get("label").and_then(toml::Value::as_str) else {
                 continue;
             };
+            // Linked to no joint (owner 2026-11-15): no place in the model,
+            // never by its position or its name.
+            if p.get("unlinked").and_then(toml::Value::as_bool) == Some(true) {
+                unlinked.push(label.to_owned());
+                continue;
+            }
             let offset = match p.get("offset") {
                 Some(v) => length3(v, "offset", label)?,
                 None => [0.0; 3],
@@ -140,6 +147,7 @@ impl Model {
             }
         }
         self.joint_points = joint_points;
+        self.unlinked_points = unlinked;
         Ok(())
     }
 
@@ -195,12 +203,25 @@ impl Model {
         offset: [f64; 3],
         force: [f64; 3],
     ) -> Option<PointLoad> {
-        let node = self
-            .nodes
-            .iter()
-            .position(|n| n.id == joint)
-            .or_else(|| self.place_of(label).map(|(n, _)| n))?;
-        Some(self.load_at(label, node, offset, force))
+        if let Some(node) = self.nodes.iter().position(|n| n.id == joint) {
+            return Some(self.load_at(label, node, offset, force));
+        }
+        // A separate model (its own node ids): the node carrying the point
+        // (by the point's own link in the model, never by a joint of the
+        // point's name), said (owner 2026-11-15: points and joints are
+        // separate objects).
+        let node = self.place_of(label).map(|(n, _)| n)?;
+        let mut at = self.load_at(label, node, offset, force);
+        let said = format!(
+            "point {label}: joint {joint} is not in the model: the node carrying point {label} \
+             there taken ({})",
+            self.nodes[node].id
+        );
+        at.note = Some(match at.note.take() {
+            Some(n) => format!("{n}; {said}"),
+            None => said,
+        });
+        Some(at)
     }
 
     /// The loads at the structure's point labelled `label` with `force`

@@ -49,6 +49,9 @@ pub enum Tool {
     TwoStrings,
     /// A point, then its joint: linked.
     Link,
+    /// A joint carrying attachment points (one chosen when several),
+    /// then another joint: the point moved there (owner 2026-11-15).
+    MovePoint,
     /// The symmetry of the body (its options), Make symmetric.
     Symmetry,
     /// A member clicked: a joint inserted on it.
@@ -63,7 +66,7 @@ pub enum Tool {
 
 impl Tool {
     /// Every tool, in the inventory's order.
-    pub const ALL: [Tool; 12] = [
+    pub const ALL: [Tool; 13] = [
         Tool::Select,
         Tool::Edit,
         Tool::Move,
@@ -72,6 +75,7 @@ impl Tool {
         Tool::OneString,
         Tool::TwoStrings,
         Tool::Link,
+        Tool::MovePoint,
         Tool::AddJoint,
         Tool::AddMember,
         Tool::InsertJoint,
@@ -96,6 +100,7 @@ impl Tool {
             Tool::OneString => "One string below the point",
             Tool::TwoStrings => "Two strings to one wire point",
             Tool::Link => "Link",
+            Tool::MovePoint => "Move attachment point",
             Tool::Symmetry => "Symmetry",
             Tool::InsertJoint => "Insert a joint",
             Tool::Delete => "Delete",
@@ -108,7 +113,9 @@ impl Tool {
     pub fn theme(self) -> &'static str {
         match self {
             Tool::Select | Tool::Edit | Tool::Move | Tool::Delete => "Select and edit",
-            Tool::AddPoint | Tool::OneString | Tool::TwoStrings | Tool::Link => "Geometry",
+            Tool::AddPoint | Tool::OneString | Tool::TwoStrings | Tool::Link | Tool::MovePoint => {
+                "Geometry"
+            }
             Tool::AddJoint | Tool::AddMember | Tool::InsertJoint | Tool::Symmetry => "Body",
         }
     }
@@ -124,6 +131,7 @@ impl Tool {
             Tool::OneString => "one-string",
             Tool::TwoStrings => "two-strings",
             Tool::Link => "link",
+            Tool::MovePoint => "move-point",
             Tool::Symmetry => "symmetry",
             Tool::InsertJoint => "insert-joint",
             Tool::Delete => "delete",
@@ -153,6 +161,10 @@ impl Tool {
             }
             Tool::Link => {
                 "Click an attachment point, then the joint to link it to; right-click: cancel"
+            }
+            Tool::MovePoint => {
+                "Click a joint carrying an attachment point (or the point), then the joint to \
+                 move it to; Escape: cancel"
             }
             Tool::Symmetry => {
                 "The body's symmetry (joints and members take their mirror images along); click: \
@@ -186,6 +198,7 @@ impl Tool {
             Tool::OneString => Icon::OneString,
             Tool::TwoStrings => Icon::TwoStrings,
             Tool::Link => Icon::Link,
+            Tool::MovePoint => Icon::MovePoint,
             Tool::Symmetry => Icon::Symmetry,
             Tool::InsertJoint => Icon::InsertJoint,
             Tool::Delete => Icon::Delete,
@@ -362,10 +375,17 @@ impl StructureApp {
             return;
         }
         self.held = tool;
-        if tool == Tool::Link && self.link.is_none() {
-            self.toggle_link_tool();
-        } else if tool != Tool::Link && self.link.is_some() {
-            self.link = None;
+        match tool {
+            Tool::Link | Tool::MovePoint => {
+                let mode = crate::link_tool::LinkMode::of(tool);
+                if self.link.as_ref().map(|l| l.mode) != Some(mode) {
+                    self.take_link_tool(mode);
+                }
+            }
+            _ => {
+                self.link = None;
+                self.link_ask = None;
+            }
         }
         // What a click does is in the strip above the view: no message.
     }
@@ -390,13 +410,17 @@ impl StructureApp {
     /// The Link tool taken up or let go elsewhere (the menu, a point's
     /// menu, Escape): the hotbar follows it.
     pub(crate) fn follow_link_tool(&mut self) {
-        let linking = self.link.is_some();
-        if linking && self.held != Tool::Link {
-            self.hotbar.hold(Tool::Link);
-            self.held = Tool::Link;
-        } else if !linking && self.held == Tool::Link {
-            self.hotbar.hold(Tool::Select);
-            self.held = Tool::Select;
+        let want = self.link.as_ref().map(|l| l.mode.tool());
+        match want {
+            Some(t) if self.held != t => {
+                self.hotbar.hold(t);
+                self.held = t;
+            }
+            None if matches!(self.held, Tool::Link | Tool::MovePoint) => {
+                self.hotbar.hold(Tool::Select);
+                self.held = Tool::Select;
+            }
+            _ => {}
         }
     }
 

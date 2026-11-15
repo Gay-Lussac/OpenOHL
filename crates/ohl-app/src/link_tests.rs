@@ -85,6 +85,26 @@ fn point(structure: &str, label: &str) -> Selection {
     }
 }
 
+/// The link window open (the point not on the joint): its position kept
+/// at an offset (owner 2026-11-15: asked, onto the joint or an offset).
+fn keep_position(h: &mut Harness<'_, App>) {
+    let r = h.state_mut().ready().unwrap();
+    let mut w = r
+        .link_window
+        .clone()
+        .expect("asked: the point is not on the joint");
+    assert!(w.ask_how && !w.moving, "{w:?}");
+    assert_eq!(
+        w.how,
+        ohl_structure_edit::links::LinkHow::Onto,
+        "the default"
+    );
+    w.how = ohl_structure_edit::links::LinkHow::KeepPosition;
+    r.answer_link_window(&w).unwrap();
+    assert!(r.link_window.is_none());
+    h.run();
+}
+
 /// Where `p` is on the screen (the 3D view as last drawn).
 fn on_screen(h: &mut Harness<'_, App>, p: [f64; 3]) -> egui::Pos2 {
     let r = h.state_mut().ready().unwrap();
@@ -220,6 +240,8 @@ fn the_link_tool_links_with_two_clicks_cancels_and_undoes() {
         h.state_mut().ready().unwrap().link_to_joint("L10B");
         h.run();
     }
+    // Not on the joint: asked; its position kept.
+    keep_position(&mut h);
     {
         let r = h.state_mut().ready().unwrap();
         assert!(r.link_from.is_none());
@@ -329,6 +351,7 @@ fn the_rigid_link_is_drawn_and_picked() {
     use_tool(&mut h, Tool::Link, point("T2", "A1"));
     h.state_mut().ready().unwrap().link_to_joint("L10B");
     h.run();
+    keep_position(&mut h);
     let (from, to) = {
         let r = h.state_mut().ready().unwrap();
         let links = crate::link_tool::drawn_links(&r.model);
@@ -748,4 +771,235 @@ fn the_edit_windows_keep_a_moved_point_on_its_joint() {
     let p = s.point("A11").unwrap();
     assert_eq!(p.joint.as_deref(), Some("A2"));
     assert!(close(p.offset, [0.0, 0.0, 0.2]), "{:?}", p.offset);
+}
+
+/// The answer of the link window open: `how`, `scope`.
+fn answer(
+    h: &mut Harness<'_, App>,
+    how: ohl_structure_edit::links::LinkHow,
+    scope: crate::link_tool::Scope,
+) {
+    let r = h.state_mut().ready().unwrap();
+    let mut w = r.link_window.clone().expect("the window is open");
+    w.how = how;
+    w.scope = scope;
+    r.answer_link_window(&w).unwrap();
+    h.run();
+}
+
+/// Move attachment point (owner 2026-11-15), this structure only: A1 of
+/// T2 (on joint A1 of its type, a joint of the same name) clicked, then
+/// joint A2, 12 m away — the window asks (onto the joint by default, this
+/// structure by default); onto it: A1 of T2 is on A2, where A2 is placed,
+/// its string with it; T4 (the same type) unchanged. One command: one
+/// undo. Escape on the window changes nothing.
+#[test]
+fn move_attachment_point_this_structure_only() {
+    use crate::link_tool::Scope;
+    use ohl_structure_edit::links::LinkHow;
+    let mut h = harness(typed_project("move-point-here"), false);
+    let (a11, t4_before) = {
+        let r = h.state_mut().ready().unwrap();
+        (
+            r.model
+                .line
+                .structure("T2")
+                .unwrap()
+                .point("A11")
+                .unwrap()
+                .position,
+            r.model
+                .line
+                .structure("T4")
+                .unwrap()
+                .point("A1")
+                .unwrap()
+                .clone(),
+        )
+    };
+    use_tool(&mut h, Tool::MovePoint, point("T2", "A1"));
+    assert_eq!(
+        h.state_mut().ready().unwrap().link_from,
+        Some(("T2".into(), "A1".into()))
+    );
+    h.state_mut().ready().unwrap().link_to_joint("A2");
+    h.run();
+    {
+        let r = h.state_mut().ready().unwrap();
+        let w = r.link_window.clone().unwrap();
+        assert!(w.moving && w.ask_how, "{w:?}");
+        assert_eq!((w.how, w.scope), (LinkHow::Onto, Scope::ThisStructure));
+        assert!((w.offset.iter().map(|v| v * v).sum::<f64>().sqrt() - 12.0).abs() < 1e-6);
+    }
+    // Escape: nothing changes.
+    press(&mut h, egui::Key::Escape, egui::Modifiers::NONE);
+    {
+        let r = h.state_mut().ready().unwrap();
+        assert!(r.link_window.is_none());
+        let p = r.model.line.structure("T2").unwrap().point("A1").unwrap();
+        assert_eq!(p.joint.as_deref(), Some("A1"));
+    }
+    use_tool(&mut h, Tool::MovePoint, point("T2", "A1"));
+    h.state_mut().ready().unwrap().link_to_joint("A2");
+    h.run();
+    answer(&mut h, LinkHow::Onto, Scope::ThisStructure);
+    let r = h.state_mut().ready().unwrap();
+    let s = r.model.line.structure("T2").unwrap();
+    let p = s.point("A1").unwrap();
+    assert_eq!((p.joint.as_deref(), p.offset), (Some("A2"), [0.0; 3]));
+    assert!(
+        (0..3).all(|k| (p.position[k] - a11[k]).abs() < 1e-6),
+        "{p:?}"
+    );
+    // Its string hangs from it there.
+    assert!(s.strings.iter().any(|x| x.top == "A1"));
+    assert_eq!(
+        r.model.line.structure("T4").unwrap().point("A1").unwrap(),
+        &t4_before
+    );
+    // Sent to OHL-Structure with T2's values: its own link.
+    let links = crate::link_tool::placed_links(&r.model);
+    assert_eq!(links["T2"].len(), 1);
+    assert_eq!(links["T2"][0].joint.as_deref(), Some("A2"));
+    assert!(!links.contains_key("T4"));
+    assert!(r.perform(crate::edit::Action::Undo));
+    let p = r.model.line.structure("T2").unwrap().point("A1").unwrap();
+    assert_eq!(p.joint.as_deref(), Some("A1"));
+    assert!(crate::link_tool::placed_links(&r.model).is_empty());
+}
+
+/// Move attachment point, the type: A1 moved onto joint A2 in type-02's
+/// file (with the edit functions OHL-Structure uses), read again — T2 and
+/// T4 both follow; the status says it. Refused while the type is open in
+/// OHL-Structure.
+#[test]
+fn move_attachment_point_in_the_type() {
+    use crate::link_tool::Scope;
+    use ohl_structure_edit::links::LinkHow;
+    let mut h = harness(typed_project("move-point-type"), false);
+    {
+        let r = h.state_mut().ready().unwrap();
+        let e = crate::link_tool::type_edit(&r.model, "T2", "A1", "A2", LinkHow::Onto, true)
+            .unwrap_err();
+        assert!(e.contains("open in OHL-Structure"), "{e}");
+    }
+    use_tool(&mut h, Tool::MovePoint, point("T2", "A1"));
+    h.state_mut().ready().unwrap().link_to_joint("A2");
+    h.run();
+    answer(&mut h, LinkHow::Onto, Scope::Type);
+    let r = h.state_mut().ready().unwrap();
+    let path = r
+        .model
+        .types
+        .as_ref()
+        .unwrap()
+        .0
+        .path("type-02")
+        .unwrap()
+        .to_path_buf();
+    let text = std::fs::read_to_string(&path).unwrap();
+    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(&path, &text)
+        .unwrap();
+    assert_eq!(t.point_link("A1"), Some(("A2", [0.0; 3])));
+    for id in ["T2", "T4"] {
+        let p = r.model.line.structure(id).unwrap().point("A1").unwrap();
+        assert_eq!(p.joint.as_deref(), Some("A2"), "{id}");
+    }
+    let (status, error) = r.status.clone().unwrap();
+    assert!(
+        !error && status.contains("type type-02") && status.contains("T2, T4"),
+        "{status}"
+    );
+}
+
+/// Move attachment point on a place holding two points (A9 added on joint
+/// A1 with A1): the chooser lists both; Escape closes it; one chosen, its
+/// joint is clicked next.
+#[test]
+fn move_attachment_point_chooses_among_points_at_one_place() {
+    let model = crate::tests::typed_project_with("move-point-choose", |dir| {
+        let p = dir.join("type-02.ohls");
+        let text = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(
+            &p,
+            format!("{text}\n[[point]]\nlabel = \"A9\"\nnode = \"A1\"\n"),
+        )
+        .unwrap();
+    });
+    let mut h = harness(model, false);
+    use_tool(&mut h, Tool::MovePoint, point("T2", "A1"));
+    {
+        let r = h.state_mut().ready().unwrap();
+        let c = r.point_chooser.clone().expect("the chooser");
+        assert_eq!(c.labels, ["A1", "A9"]);
+        assert!(r.link_from.is_none());
+        assert_eq!(
+            crate::link_tool::hanging(&r.model, "T2", "A1"),
+            "string S1 (set 1)"
+        );
+    }
+    press(&mut h, egui::Key::Escape, egui::Modifiers::NONE);
+    assert!(h.state_mut().ready().unwrap().point_chooser.is_none());
+    use_tool(&mut h, Tool::MovePoint, point("T2", "A1"));
+    let r = h.state_mut().ready().unwrap();
+    r.choose_point("T2", "A9");
+    assert!(r.point_chooser.is_none());
+    assert_eq!(r.link_from, Some(("T2".into(), "A9".into())));
+}
+
+/// The two applications tell each other (owner 2026-11-15). OHL-Design →
+/// OHL-Structure: T2's own link of A1 (moved to joint A2 here) goes into
+/// its line-values file (version 9), read there as "T2: point A1 linked
+/// to joint A2". OHL-Structure → OHL-Design: type-02 saved there with A11
+/// moved onto joint A1 (as its list or tool does) — read again here, T2
+/// and T4 follow and the status says "T2, T4: point A11 linked to joint
+/// A1 (from OHL-Structure)".
+#[test]
+fn the_two_applications_tell_each_other_of_moved_points() {
+    use ohl_structure_edit::links::LinkHow;
+    let mut h = harness(typed_project("move-point-talk"), false);
+    let r = h.state_mut().ready().unwrap();
+    let (what, command) =
+        crate::link_tool::move_command(&r.model, "T2", "A1", "A2", LinkHow::Onto).unwrap();
+    assert!(r.perform(crate::edit::Action::Command { what, command }));
+    let path = r
+        .model
+        .types
+        .as_ref()
+        .unwrap()
+        .0
+        .path("type-02")
+        .unwrap()
+        .to_path_buf();
+    let placed = crate::structure_app::Placed::new(&path, "T2", "line", "type-02");
+    let errors =
+        crate::structure_app::LineInputs::of(&r.model).write_all(std::slice::from_ref(&placed));
+    let v = ohl_structure_loads::PlacedValues::load(&placed.values)
+        .unwrap_or_else(|e| panic!("{e} ({errors:?})"));
+    assert_eq!(v.version, ohl_structure_loads::LINE_VALUES_FILE_VERSION);
+    assert_eq!(
+        ohl_structure_loads::links_changed("T2", &[], &v.links),
+        ["T2: point A1 linked to joint A2"]
+    );
+    // Saved in OHL-Structure: A11 onto joint A1.
+    let text = std::fs::read_to_string(&path).unwrap();
+    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(&path, &text)
+        .unwrap();
+    let mut doc: toml_edit::DocumentMut = text.parse().unwrap();
+    ohl_structure_edit::links::relink_point(&mut doc, &t, "A11", "A1", LinkHow::Onto).unwrap();
+    std::fs::write(&path, doc.to_string()).unwrap();
+    r.structure_file_saved(&path, "type-02");
+    let (status, error) = r.status.clone().unwrap();
+    assert!(!error, "{status}");
+    assert!(
+        status.contains("T2, T4: point A11 linked to joint A1 (from OHL-Structure)"),
+        "{status}"
+    );
+    for id in ["T2", "T4"] {
+        let p = r.model.line.structure(id).unwrap().point("A11").unwrap();
+        assert_eq!(p.joint.as_deref(), Some("A1"), "{id}");
+    }
+    // T2's own link of A1 still wins over the type's.
+    let p = r.model.line.structure("T2").unwrap().point("A1").unwrap();
+    assert_eq!(p.joint.as_deref(), Some("A2"));
 }

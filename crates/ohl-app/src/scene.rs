@@ -643,7 +643,7 @@ pub fn structures(
             out.push(Prim::new(at, vec![at, [at[0], at[1], top]], steel, 2.5).at(1, 2));
         }
         // Unlinked attachment points (their joint gone from the type, or
-        // unlinked): red, their structure's loads refused.
+        // unlinked): red, their loads left out of the structure check.
         if st.structure_type.is_some() && tint.is_none() {
             for p in st.points.iter().filter(|p| p.unlinked) {
                 let mut dot =

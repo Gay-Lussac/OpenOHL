@@ -238,11 +238,37 @@ fn advice(t: &StructureType) -> Vec<Missing> {
         .iter()
         .filter(|p| p.node.is_none() && p.member.is_none())
     {
-        out.push(Missing::advice(
+        let hangs = t.strings.iter().any(|s| s.top == p.label);
+        let reason = if p.unlinked {
+            // Allowed (owner 2026-11-15): a point of the level-1
+            // description; its strings' loads do not reach the members.
+            format!(
+                "point {} is linked to no joint: {} — link it (its joint in the list, or the \
+                 Link or Move attachment point tool)",
+                p.label,
+                if hangs {
+                    "NOT ON THE SAFE SIDE: the strings hanging from it are not attached to the 3D \
+                     structure (their loads do not reach the members)"
+                } else {
+                    "it carries no load in the analysis"
+                }
+            )
+        } else if t.nodes.iter().any(|n| n.id == p.joint) {
+            // A file written before: on the joint at its position (or the
+            // joint naming it), not written as a link.
+            format!(
+                "point {} takes joint {} by its position only (a file written before): choose \
+                 its joint in the list to write the link",
+                p.label, p.joint
+            )
+        } else {
             format!(
                 "point {} is on no joint or member: it carries no load in the analysis",
                 p.label
-            ),
+            )
+        };
+        out.push(Missing::advice(
+            reason,
             Some(Handle::Point(p.label.clone())),
             Place::Points,
         ));

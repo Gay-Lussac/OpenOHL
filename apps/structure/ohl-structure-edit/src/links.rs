@@ -22,6 +22,89 @@ use crate::edits::{array, entry, next_id, point_value, raise_version};
 /// The version that reads a joint's `kind` and a point's `offset`.
 pub const LINKS_VERSION: i64 = 6;
 
+/// The version that reads a point standing alone (`unlinked = true`,
+/// [`ohl_structures::UNLINKED_POINT_VERSION`]).
+pub const UNLINKED_VERSION: i64 = ohl_structures::UNLINKED_POINT_VERSION as i64;
+
+/// How a point linked to a joint it is not on goes there (owner
+/// 2026-11-15: asked whenever it is farther than
+/// [`ohl_structures::ON_JOINT`] from the joint).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkHow {
+    /// The point moved onto the joint (no offset): what hangs from it
+    /// moves with it.
+    Onto,
+    /// The point kept where it is, at an offset from the joint (a rigid
+    /// link whose moment the analysis applies at the joint).
+    KeepPosition,
+}
+
+/// From joint `joint` to attachment point `label` of `t`, where the point
+/// is now, local axes, m (rounding below [`ohl_structures::SAME_JOINT`]
+/// taken off). None: no such point, or no joint `joint` among the
+/// structure's `[[node]]`s.
+pub fn offset_from(t: &StructureType, label: &str, joint: &str) -> Option<[f64; 3]> {
+    let p = t.points.iter().find(|p| p.label == label)?.position();
+    let j = t.joint(joint).filter(|j| j.source == JointSource::Node)?;
+    Some([0, 1, 2].map(|k| {
+        let v = p[k].si() - j.position[k];
+        if v.abs() < ohl_structures::SAME_JOINT {
+            0.0
+        } else {
+            v
+        }
+    }))
+}
+
+/// Whether linking point `label` to joint `joint` asks how (the point
+/// farther than [`ohl_structures::ON_JOINT`] from it): the offset it
+/// would keep. None: on the joint (linked onto it, no question), or no
+/// such point or joint.
+pub fn needs_asking(t: &StructureType, label: &str, joint: &str) -> Option<[f64; 3]> {
+    let o = offset_from(t, label, joint)?;
+    (o.iter().map(|v| v * v).sum::<f64>().sqrt() > ohl_structures::ON_JOINT).then_some(o)
+}
+
+/// Links (or relinks, or moves) attachment point `label` to attach joint
+/// `joint`, `how` chosen: onto it, or kept where it is at an offset.
+/// Within [`ohl_structures::ON_JOINT`] it goes onto the joint whatever
+/// `how` says. The strings hanging from it follow (their top is the
+/// point). Refused as [`link_point`] refuses.
+pub fn relink_point(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    label: &str,
+    joint: &str,
+    how: LinkHow,
+) -> Result<(), String> {
+    if !t.points.iter().any(|p| p.label == label) {
+        return Err(format!("no attachment point {label}"));
+    }
+    if offset_from(t, label, joint).is_none() {
+        return Err(
+            not_attach(t, joint).unwrap_or_else(|| format!("{joint} is no joint of the structure"))
+        );
+    }
+    let o = match (how, needs_asking(t, label, joint)) {
+        (LinkHow::KeepPosition, Some(o)) => o,
+        _ => [0.0; 3],
+    };
+    link_point(doc, t, label, joint, o)
+}
+
+/// The attachment points linked to joint `joint` (a `[[node]]`), in
+/// order.
+pub fn points_on(t: &StructureType, joint: &str) -> Vec<String> {
+    if !t.nodes.iter().any(|n| n.id == joint) {
+        return Vec::new();
+    }
+    t.points
+        .iter()
+        .filter(|p| !p.unlinked && p.joint == joint)
+        .map(|p| p.label.clone())
+        .collect()
+}
+
 /// Why joint `joint` of `t` takes no link (none: an attach joint).
 pub fn not_attach(t: &StructureType, joint: &str) -> Option<String> {
     match t.joint(joint) {
@@ -54,34 +137,48 @@ pub fn link_point(
         return Err(why);
     }
     let j = t.joint(joint).ok_or_else(|| format!("no joint {joint}"))?;
+    // A point and a joint are separate objects (owner 2026-11-15): another
+    // point's own place is no joint to link to.
+    if j.source == JointSource::Point {
+        return Err(format!(
+            "{joint} is attachment point {joint}'s own place, not a joint of the structure: link \
+             to a joint (a joint of the body, or one added)"
+        ));
+    }
     let p = entry(doc, "point", "label", label).ok_or("no such point in the file")?;
-    for k in ["point", "node", "member", "at", "offset"] {
+    let left = p
+        .get("node")
+        .and_then(Item::as_str)
+        .filter(|n| *n != joint)
+        .map(str::to_owned);
+    for k in ["point", "node", "member", "at", "offset", "unlinked"] {
         p.remove(k);
     }
-    match &j.source {
-        JointSource::Node => {
-            p.insert("node", toml_edit::value(joint));
-        }
-        // Another point's own joint: at its position.
-        JointSource::Point => {
-            let o = offset;
-            let q = j.position;
-            p.insert(
-                "point",
-                point_value([q[0] + o[0], q[1] + o[1], q[2] + o[2]]),
-            );
-            return Ok(());
-        }
-    }
-    if offset != [0.0; 3] {
+    p.insert("node", toml_edit::value(joint));
+    let shifted = offset != [0.0; 3];
+    if shifted {
         p.insert("offset", point_value(offset));
+    }
+    // The joint the point left stays an attach joint (its kind was worked
+    // out from the point on it): a point can be moved back.
+    let mut kind = false;
+    if let Some(n) = left.and_then(|id| entry(doc, "node", "id", &id))
+        && !n.contains_key("kind")
+        && n.get("support").is_none()
+    {
+        n.insert("kind", toml_edit::value(JointKind::Attach.as_str()));
+        kind = true;
+    }
+    if shifted || kind {
         raise_version(doc, LINKS_VERSION);
     }
     Ok(())
 }
 
-/// Unlinks attachment point `label`: it keeps its position as a point of
-/// its own (its own joint, on no member).
+/// Unlinks attachment point `label`: it keeps its position, standing
+/// alone, linked to no joint (`unlinked = true`, version 17; owner
+/// 2026-11-15) — its strings' loads reach no member until it is linked
+/// again.
 pub fn unlink_point(doc: &mut DocumentMut, t: &StructureType, label: &str) -> Result<(), String> {
     let at = t
         .points
@@ -95,6 +192,8 @@ pub fn unlink_point(doc: &mut DocumentMut, t: &StructureType, label: &str) -> Re
         p.remove(k);
     }
     p.insert("point", point_value(at));
+    p.insert("unlinked", toml_edit::value(true));
+    raise_version(doc, UNLINKED_VERSION);
     Ok(())
 }
 
@@ -407,13 +506,18 @@ mod tests {
         assert_eq!(doc["version"].as_integer(), Some(6));
         assert!(link_point(&mut doc.clone(), &t, "A1", "N1", [0.0; 3]).is_err());
         assert!(link_point(&mut doc.clone(), &t, "A1", "N9", [0.0; 3]).is_err());
-        // Unlinked: where it was, its own joint.
+        // Unlinked: where it was, standing alone (no joint at all; owner
+        // 2026-11-15), the file raised to 17.
         unlink_point(&mut doc, &t, "A1").unwrap();
         let t = read(&doc);
         assert_eq!(t.point_local("A1", None), Some([4.0, 0.0, 21.0]));
-        assert_eq!(t.point_link("A1"), Some(("A1", [0.0; 3])));
+        assert_eq!(t.point_link("A1"), None);
+        assert!(t.points[0].unlinked);
         assert!(!has(&doc, "point", "label", "A1", "node"));
+        assert!(has(&doc, "point", "label", "A1", "unlinked"));
+        assert_eq!(doc["version"].as_integer(), Some(17));
         link_point(&mut doc, &t, "A1", "N2", [0.0; 3]).unwrap();
+        assert!(!has(&doc, "point", "label", "A1", "unlinked"));
         let t = read(&doc);
         assert!(set_joint_kind(&mut doc.clone(), &t, "N2", Some(JointKind::Support)).is_err());
         set_joint_kind(&mut doc, &t, "N2", None).unwrap();
@@ -459,6 +563,69 @@ mod tests {
         let tf = read(&free);
         move_point(&mut free, &tf, "A1", [3.0, 0.0, 21.0]).unwrap();
         assert_eq!(read(&free).point_local("A1", None), Some([3.0, 0.0, 21.0]));
+    }
+
+    /// Linking a point that is not on the joint (owner 2026-11-15): within
+    /// 1 mm onto it without a question; farther, asked — onto it (no
+    /// offset, the point moves) or its position kept (the offset). A point
+    /// and a joint of the same name are separate: point N2 linked to joint
+    /// N1… is found by its label, joint N2 by its id; another point's own
+    /// place is no joint to link to. The points on a joint, in order.
+    #[test]
+    fn linking_asks_how_and_keeps_points_and_joints_apart() {
+        let text = TEXT.replace(
+            "[[point]]\nlabel = \"A1\"\npoint = [\"4 m\", \"0 m\", \"21 m\"]\n",
+            "[[point]]\nlabel = \"A1\"\npoint = [\"4 m\", \"0 m\", \"21 m\"]\n\
+             [[point]]\nlabel = \"N2\"\npoint = [\"4.0005 m\", \"0 m\", \"20 m\"]\nunlinked = true\n\
+             [[point]]\nlabel = \"F\"\npoint = [\"9 m\", \"0 m\", \"9 m\"]\n",
+        ).replace("id = \"N2\"\n", "id = \"N2\"\nkind = \"attach\"\n");
+        let mut doc: DocumentMut = text.parse().unwrap();
+        let t = read(&doc);
+        // Point N2 stands alone, though joint N2 is 0.5 mm away.
+        assert_eq!(t.point_link("N2"), None);
+        assert_eq!(t.joint("N2").unwrap().source, JointSource::Node);
+        // Within 1 mm: no question, onto it.
+        assert_eq!(needs_asking(&t, "N2", "N2"), None);
+        relink_point(&mut doc, &t, "N2", "N2", LinkHow::KeepPosition).unwrap();
+        let t = read(&doc);
+        assert_eq!(t.point_link("N2"), Some(("N2", [0.0; 3])));
+        // A1 is 1 m above N2: asked.
+        let o = needs_asking(&t, "A1", "N2").unwrap();
+        assert!((o[2] - 1.0).abs() < 1e-9, "{o:?}");
+        let mut onto = doc.clone();
+        relink_point(&mut onto, &t, "A1", "N2", LinkHow::Onto).unwrap();
+        let to = read(&onto);
+        assert_eq!(to.point_link("A1"), Some(("N2", [0.0; 3])));
+        assert_eq!(to.point_local("A1", None), Some([4.0, 0.0, 20.0]));
+        relink_point(&mut doc, &t, "A1", "N2", LinkHow::KeepPosition).unwrap();
+        let t = read(&doc);
+        assert_eq!(t.point_link("A1"), Some(("N2", [0.0, 0.0, 1.0])));
+        assert_eq!(points_on(&t, "N2"), ["A1", "N2"]);
+        // Moving point N2 does not move joint N2.
+        move_point(&mut doc, &t, "N2", [4.0, 0.5, 20.0]).unwrap();
+        let t = read(&doc);
+        assert_eq!(t.joint("N2").unwrap().position, [4.0, 0.0, 20.0]);
+        assert_eq!(t.point_link("N2"), Some(("N2", [0.0, 0.5, 0.0])));
+        // F (a stick figure's point, its own place) is no joint.
+        let e = link_point(&mut doc.clone(), &t, "A1", "F", [0.0; 3]).unwrap_err();
+        assert!(e.contains("own place"), "{e}");
+        assert!(relink_point(&mut doc.clone(), &t, "A1", "F", LinkHow::Onto).is_err());
+        assert!(points_on(&t, "F").is_empty());
+    }
+
+    /// A string hangs from an attachment point, never from a joint (owner
+    /// 2026-11-15): a string whose top names a joint is refused, said.
+    #[test]
+    fn a_string_never_hangs_from_a_joint() {
+        let text = format!(
+            "{TEXT}[[wire]]\nlabel = \"W1\"\n[[string]]\nlabel = \"S1\"\ntop = \"N2\"\nwire = \"W1\"\nlength = \"2 m\"\n"
+        );
+        let e = StructureType::parse(Path::new("t.ohls"), &text).unwrap_err();
+        assert!(
+            e.message.contains("is a joint") && e.message.contains("never from a joint"),
+            "{}",
+            e.message
+        );
     }
 
     /// A joint inserted on a member: an attach joint at the fraction, the

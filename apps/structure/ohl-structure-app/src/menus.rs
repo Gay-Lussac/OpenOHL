@@ -203,6 +203,8 @@ impl StructureApp {
         self.selected.clear();
         self.confirm = None;
         self.link = None;
+        self.link_ask = None;
+        self.placed_links.clear();
         self.buffers.clear();
         self.results = Default::default();
         self.line_values = None;
@@ -978,6 +980,7 @@ impl StructureApp {
     pub(crate) fn windows(&mut self, ctx: &egui::Context) {
         self.confirm_window(ctx);
         self.detail_question(ctx);
+        self.link_windows(ctx);
         self.store_window(ctx);
         self.libraries_window(ctx);
         self.new_structure_window(ctx);

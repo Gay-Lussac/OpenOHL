@@ -399,14 +399,20 @@ pub fn add_point_at_joint(doc: &mut DocumentMut, t: &StructureType, joint: &str)
     label
 }
 
-/// A point of the structure at `at` (on no joint: a stick figure's);
-/// its label.
+/// A point of the structure at `at`, standing alone (linked to no joint,
+/// owner 2026-11-15: never a joint of its own); its label.
 pub fn add_point(doc: &mut DocumentMut, t: &StructureType, at: [f64; 3]) -> String {
     let label = fresh(labels(t).into_iter(), "A1");
     let mut table = Table::new();
     table.insert("label", toml_edit::value(label.clone()));
     table.insert("point", point_value(at));
+    // Standing alone, never a joint of its own nor the joint at its
+    // position (owner 2026-11-15: "an attachment point by itself then
+    // linked"): linked with the list, the Link or the Move attachment
+    // point tool.
+    table.insert("unlinked", toml_edit::value(true));
     array(doc, "point").push(table);
+    raise_version(doc, crate::links::UNLINKED_VERSION);
     label
 }
 

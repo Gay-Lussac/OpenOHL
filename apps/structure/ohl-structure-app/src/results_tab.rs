@@ -324,7 +324,19 @@ impl StructureApp {
         let Some(f) = &self.file else {
             return false;
         };
-        let structure = f.structure().clone();
+        // A placed structure: the line's links of its points (sent by
+        // OHL-Design) over the type's (owner 2026-11-15); one that cannot
+        // be applied refuses the run, said.
+        let (structure, text) =
+            match crate::link_tool::with_placed_links(f.structure(), &f.text(), &self.placed_links)
+            {
+                Ok(Some(p)) => p,
+                Ok(None) => (f.structure().clone(), f.text()),
+                Err(e) => {
+                    self.message = Some((e, true));
+                    return false;
+                }
+            };
         let table = self.loads.table().clone();
         // The recipes and the line cases' wind on the body, the line's
         // pressures written in (surface loads on the extension's piece, the
@@ -333,7 +345,6 @@ impl StructureApp {
         let key = self.loads.key();
         let only = (!self.results.case.is_empty()).then_some(self.results.case.as_str());
         let run = cases_to_run(&table, &recipes, only);
-        let text = f.text();
         let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
         let sections = self.loads.sections.clone();
         self.results.ran_with = (table.clone(), recipes.clone());

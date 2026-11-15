@@ -175,6 +175,12 @@ pub struct StructureApp {
     pub section_editor: crate::section_editor::SectionEditor,
     /// The Link tool, held (Edit › Tools › Link): [`crate::link_tool`].
     pub link: Option<crate::link_tool::LinkTool>,
+    /// A link waiting for its answer (the point not on the joint: onto
+    /// it, or its position kept; [`crate::link_tool::LinkAsk`]).
+    pub link_ask: Option<crate::link_tool::LinkAsk>,
+    /// The placed structure's links the line sent last (the line-values
+    /// file), to say what changed when it is read again.
+    pub placed_links: Vec<ohl_structure_loads::PlacedLink>,
     /// Where "Insert a joint" puts it on a member: the fraction of its
     /// length from its first joint (the member's menu).
     pub insert_at: f64,
@@ -273,6 +279,8 @@ impl StructureApp {
             plugins: Default::default(),
             section_editor: Default::default(),
             link: None,
+            link_ask: None,
+            placed_links: Vec::new(),
             insert_at: 0.5,
             rigid_links: true,
             string_volumes: false,
@@ -317,6 +325,7 @@ impl StructureApp {
                 self.confirm = None;
                 self.message = None;
                 self.link = None;
+                self.link_ask = None;
                 self.buffers.clear();
                 self.view = View::default();
                 self.drawn = None;
@@ -388,6 +397,9 @@ impl StructureApp {
             self.loads.info = None;
             self.loads.values_error = None;
             self.loads.line = Default::default();
+            // The placed structure's links go with its loads, not to
+            // another file.
+            self.placed_links.clear();
         }
         self.open(path);
     }
@@ -420,7 +432,10 @@ impl StructureApp {
             return;
         }
         match PlacedValues::load(path) {
-            Ok(v) => self.loads.set_line_values(v),
+            Ok(v) => {
+                self.placed_links_read(&v);
+                self.loads.set_line_values(v);
+            }
             Err(e) => self.loads.values_error = Some(e),
         }
     }
@@ -555,6 +570,12 @@ impl StructureApp {
     /// gauge line?, Continuous members) or the inventory: closed, nothing
     /// done. False: none was open.
     fn close_tool_window(&mut self) -> bool {
+        // The link question, or the Move attachment point chooser: closed
+        // first, the tool still held.
+        if self.link_ask.is_some() || self.link.as_ref().is_some_and(|l| l.choose.is_some()) {
+            self.cancel_link();
+            return true;
+        }
         let open = self.confirm.is_some()
             || self.joints.ask_open.is_some()
             || self.joint_tools.offer.is_some()

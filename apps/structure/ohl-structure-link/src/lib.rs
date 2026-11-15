@@ -1126,6 +1126,10 @@ pub fn fe_loads(
     }
     for r in table.case(case).filter(|r| r.missing.is_none()) {
         match r.at {
+            // An attachment point linked to no joint (owner 2026-11-15):
+            // its load reaches no member, left out and said with the case
+            // (not on the safe side).
+            At::Point if model.unlinked_points.contains(&r.label) => {}
             At::Point => {
                 // At its joint, or shared to the ends of its member.
                 // With a fixed post's moment (2026-11-14): at a frame
@@ -1542,6 +1546,20 @@ fn analyse_one(
         notes.push(format!(
             "{left_out} row(s) without a value left out (no line value, no area, …)"
         ));
+    }
+    // Loads at attachment points linked to no joint: left out, said.
+    let unlinked: Vec<&str> = model
+        .unlinked_points
+        .iter()
+        .filter(|l| {
+            table
+                .case(&case.name)
+                .any(|r| r.missing.is_none() && r.at == At::Point && &r.label == *l)
+        })
+        .map(String::as_str)
+        .collect();
+    if !unlinked.is_empty() {
+        notes.push(ohl_structures::unlinked_words(&unlinked));
     }
     // The moment of each attachment point's offset (a rigid link to its
     // joint), applied or left out (2026-10-21).

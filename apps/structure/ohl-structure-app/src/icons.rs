@@ -38,6 +38,8 @@ pub enum Icon {
     Move,
     /// The Link tool.
     Link,
+    /// The Move attachment point tool.
+    MovePoint,
     /// The Delete tool.
     Delete,
     /// The Add point tool.
@@ -65,7 +67,7 @@ pub enum Icon {
 impl Icon {
     /// Every icon (the tests check each file).
     #[cfg(test)]
-    pub const ALL: [Icon; 20] = [
+    pub const ALL: [Icon; 21] = [
         Icon::AddJoint,
         Icon::AddMember,
         Icon::PointOnJoint,
@@ -75,6 +77,7 @@ impl Icon {
         Icon::Select,
         Icon::Move,
         Icon::Link,
+        Icon::MovePoint,
         Icon::Delete,
         Icon::AddPoint,
         Icon::OneString,
@@ -100,6 +103,7 @@ impl Icon {
             Icon::Select => "select",
             Icon::Move => "move",
             Icon::Link => "link",
+            Icon::MovePoint => "move-point",
             Icon::Delete => "delete",
             Icon::AddPoint => "add-point",
             Icon::OneString => "add-string",
@@ -131,6 +135,7 @@ impl Icon {
             Icon::Select => icon!("select"),
             Icon::Move => icon!("move"),
             Icon::Link => icon!("link"),
+            Icon::MovePoint => icon!("move-point"),
             Icon::Delete => icon!("delete"),
             Icon::AddPoint => icon!("add-point"),
             Icon::OneString => icon!("add-string"),

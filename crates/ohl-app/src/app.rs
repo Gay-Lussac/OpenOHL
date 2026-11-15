@@ -23,6 +23,7 @@ use crate::view3d::View3d;
 pub(crate) mod clearance_panel;
 mod drafting;
 mod edits;
+mod link_windows;
 mod menu_bar;
 mod object_windows;
 mod settings_windows;
@@ -465,6 +466,13 @@ pub struct Ready {
     /// Link tool: the attachment point chosen (structure, label), waiting
     /// for its joint ([`crate::link_tool`]).
     pub link_from: Option<(String, String)>,
+    /// The Link or Move attachment point window (the point not on the
+    /// joint: onto it or its position kept; a move: this structure or the
+    /// type) — [`crate::link_tool::LinkWindow`].
+    pub link_window: Option<crate::link_tool::LinkWindow>,
+    /// Move attachment point: several points at the place clicked, one
+    /// to choose.
+    pub point_chooser: Option<crate::link_tool::PointChooser>,
     /// Add jumper: the helping strings clicked after it, in order
     /// (structure, wire point).
     pub jumper_via: Vec<(String, String)>,
@@ -626,6 +634,8 @@ impl Ready {
             jumper_from: None,
             spacer_from: None,
             link_from: None,
+            link_window: None,
+            point_chooser: None,
             jumper_tap: None,
             jumper_via: Vec::new(),
             open_page: None,

@@ -41,6 +41,82 @@ took the same angle twice). The Weather cases table now shows a 90° /
 their own `wind_from` / `wind_direction` still win, as before. Built, not
 approved yet.
 
+**Attachment points moved from joint to joint; the two applications tell
+each other** (owner: *"on OHL-Structure, the attachment points on point
+and strings can not be moved from a joint to another in the list where
+it should and i would like to have a tool to move attachment points
+where i can click on a joint with an attachment point and move it to
+another. also a joint can have multiple attachment points on it and
+moving one would require to choose one from the listed attachment points
+on the joint. in OHL design in addition to the link attachment point
+tool when we add a 3d structure where there was none before, a move
+attachment point should also be available. 2 two apps should communicate
+with each other when attachment points are linked to a joint or
+moved."*; then *"in the table when adding a new attachment point in
+OHL-Structure it creates its own joint where it should be created as an
+attachment point by itself then linked."* and *"if the attachment point
+is not exactly on the joint, linking it should ask if we want to move it
+on the joint or create an offset."*; and the rules: an attachment point
+and a joint are separate objects even of the same name; a string never
+hangs from a joint; an attachment point must be linked to a joint to
+load the 3D structure — an unlinked one belongs to the level-1
+description, allowed with a warning; a linked point's offset gives the
+moment at the joint as before. Built, in active development, not
+approved yet.)
+
+- **OHL-Structure, the list**: a point's joint is chosen in the Points &
+  strings list (the attach joints, a search, or an id typed); the point
+  moves there, its strings follow; one edit, one undo step.
+- **OHL-Structure, Move attachment point** (a new tool): a joint
+  carrying points clicked (several: a chooser lists them with the
+  strings and sets hanging from each), then the target joint; Escape
+  cancels at any step; one undo step.
+- **The question** (every link: the list, both OHL-Structure tools,
+  OHL-Design's Link and Move attachment point): a point farther than
+  **1 mm** from the joint (`ohl_structures::ON_JOINT`) asks *Move the
+  point onto the joint* (the default, so a moved point lands on its new
+  joint with no offset) or *Keep its position* (an offset); within 1 mm
+  it goes onto the joint without asking. Part of the same edit.
+- **A point standing alone**: `[[point]] unlinked = true` with its
+  `point` (structure file **version 17**, `UNLINKED_POINT_VERSION`,
+  written only when used). Add a point and Unlink write it; it never
+  takes the joint at its position nor a joint of its own; linking
+  removes it. Files written before read the same (a free point on the
+  joint at its place, said in the Advice; a stick figure's point its own
+  place) — but another point's own place is no joint to link to any
+  more.
+- **Unlinked points on a 3D structure** (safe side): allowed; their
+  strings' loads are left out of the 3D check (OHL-Structure's results,
+  OHL-Design's structure check) with *NOT ON THE SAFE SIDE: attachment
+  point X linked to no joint: the strings hanging from it are not
+  attached to the 3D structure* naming them (`unlinked_words`), and in
+  OHL-Structure's Advice. Before, OHL-Design refused the whole check of
+  a structure with an unlinked point; the owner's rule makes it a
+  warning. A linked point's offset moment is unchanged.
+- **Points and joints apart**: a string whose top names a joint is
+  refused with the fix; the separate model's fallback from a joint id to
+  the point's own node (`Model::linked_load`) now says so in its note.
+- **OHL-Design, Move attachment point** (a new tool beside Link
+  attachment point): a point of a structure with a 3D type (a chooser
+  when several share its place), then a joint of its type; **this
+  structure only** (the default: the line's relink, `link_point`, one
+  command, one undo) or **the type** (its `.ohls` edited with
+  `ohl_structure_edit::links::relink_point`, saved into the project and
+  read again: every structure of the type follows; not an Edit › Undo
+  step — said in the window; refused while the type is open in
+  OHL-Structure).
+- **The two applications** (no network, the files they share): OHL-Design
+  writes a placed structure's own links (where they differ from the
+  type) into its line-values file — **version 9**, `links` — written
+  again when the line changes; OHL-Structure says what changed (*T2:
+  point A1 linked to joint A2 (from OHL-Design)*), marks the point
+  **line differs** and solves the placed structure with the line's link over
+  the type's, refusing the run when it cannot be applied (never leaving
+  the loads on the old joint). OHL-Structure's change reaches OHL-Design
+  when the type is saved there (the existing file watch); OHL-Design's
+  status says *T2, T4: point A11 linked to joint A1 (from
+  OHL-Structure)*.
+
 **Structure flexibility, phase 3: the interface loop and calculation
 level 3** (owner: "go ahead with phase 3 of the flexibility plan"; built,
 in active development, not approved yet;

@@ -431,8 +431,9 @@ pub fn with_points(
     }
     // The old structure's own strings from points kept, when their wire
     // points are there.
-    let kept =
-        |label: &str| out.points.iter().any(|q| q.label == label) || t.point_link(label).is_some();
+    let kept = |label: &str| {
+        out.points.iter().any(|q| q.label == label) || t.points.iter().any(|q| q.label == label)
+    };
     let wires = |label: &str| {
         out.wires.iter().any(|w| w.label == label) || t.wires.iter().any(|w| w.label == label)
     };
