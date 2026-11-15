@@ -48,7 +48,7 @@ use crate::checks::{
 };
 use crate::rules::{
     CheckScope, CircuitFilter, DEFAULT_SEARCH_MARGIN, PairVoltage, Requirement, Rule, RuleSet,
-    Target, WindSteps, Wires, default_band,
+    Target, WindSides, WindSteps, Wires, default_band,
 };
 pub use crate::zone_arc::{ARC_TOLERANCE, ArcCase, ZoneArc, arc_cases, arc_polylines, zone_arcs};
 use crate::zone_arc::{ArcPointCheck, arc_ground, arcs_of_rule};
@@ -526,18 +526,30 @@ pub struct WindState {
 }
 
 impl WindState {
-    /// "high wind, 300 of 600 Pa from the left", "everyday".
+    /// "high wind, 300 of 600 Pa from the left", "everyday"; a wind at an
+    /// angle: "storm, 300 of 600 Pa from 45°".
     pub fn describe(&self) -> String {
         match self.side {
             None if self.full > 0.0 => format!("{}, no wind", self.name),
             None => self.name.clone(),
-            Some(side) => format!(
-                "{}, {:.0} of {:.0} Pa from the {}",
+            Some(_) => format!(
+                "{}, {:.0} of {:.0} Pa {}",
                 self.name,
                 self.pressure,
                 self.full,
-                side.as_str()
+                self.from()
             ),
+        }
+    }
+
+    /// Where its wind comes from in words: "from the left", a wind at an
+    /// angle "from 45°" ([`ohl_weather::WindDirection::words`]); empty
+    /// without wind.
+    pub fn from(&self) -> String {
+        match (self.case.oblique(), self.side) {
+            (Some(d), _) => d.words(),
+            (None, Some(side)) => format!("from the {}", side.as_str()),
+            (None, None) => String::new(),
         }
     }
 }
@@ -564,12 +576,17 @@ pub fn wind_states(
             } else {
                 vec![None]
             };
+            let mut seen: Vec<Option<WindSide>> = Vec::new();
             for side in sides {
                 let mut c = case.clone();
                 c.wind_pressure = Stress::from_si(p);
-                if let Some(s) = side {
-                    c.wind_from = s;
+                let side = side.map(|s| own_position(&mut c, s, wind.sides));
+                // (A case with its own direction checked from one side
+                // gives that position once.)
+                if seen.contains(&side) {
+                    continue;
                 }
+                seen.push(side);
                 out.push(WindState {
                     name: case.name.clone(),
                     case: c,
@@ -581,6 +598,39 @@ pub fn wind_states(
         }
     }
     out
+}
+
+/// Puts the wind of `c` from `side` of `sides` and gives the side the
+/// position is marked with (owner 2026-11-15). A case without a direction:
+/// from that side, as before. A case with its own direction (its
+/// `wind_direction`, never turned by a setting): with both sides, the
+/// direction (right) and its mirror about the line (left; θ → 360° − θ);
+/// with one side only, the direction alone — across the line marked with
+/// the side it really blows from (90°: right, 270°: left), at an angle
+/// right as it is, left mirrored.
+fn own_position(c: &mut WeatherCase, side: WindSide, sides: WindSides) -> WindSide {
+    let mirror = sides == WindSides::Both && side == WindSide::Left;
+    match (c.own_side(), c.wind_direction) {
+        (Some(own), _) => {
+            // The across rule from that side (the direction kept: the
+            // case's own, as the desktop application keeps it).
+            c.wind_from = if mirror { own.opposite() } else { own };
+            c.wind_from
+        }
+        (None, Some(d)) => {
+            if mirror {
+                c.wind_direction = Some(d.mirrored());
+                c.wind_from = c.wind_from.opposite();
+                WindSide::Left
+            } else {
+                WindSide::Right
+            }
+        }
+        (None, None) => {
+            c.wind_from = side;
+            side
+        }
+    }
 }
 
 /// The solved sections of every state, and the sections that failed.
@@ -827,7 +877,7 @@ impl ZoneFinding {
         let s = &states[self.state];
         match (self.arc, s.side) {
             (Some(a), _) => format!("arc {}", arc_angle(a)),
-            (None, Some(side)) => format!("{:.0} Pa from the {}", s.pressure, side.as_str()),
+            (None, Some(_)) => format!("{:.0} Pa {}", s.pressure, s.from()),
             (None, None) => "no wind".into(),
         }
     }
@@ -1611,7 +1661,6 @@ pub fn sections_needed(line: &Line, rules: &[ZoneRule]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rules::WindSides;
     use ohl_core::units::Temperature;
     use std::path::Path;
 
@@ -2866,5 +2915,60 @@ mod tests {
         // The vertical window takes the zone stated.
         let v = from_rule_set(&set, Measure::Vertical, |_| vec![], &[220.0]);
         assert_eq!((v.width, v.depth), (Some(2.0), Some(0.5)));
+    }
+
+    /// The positions of a case with its own direction (owner 2026-11-15):
+    /// both sides, the direction and its mirror — at an angle θ and
+    /// 360° − θ, said by the angle; across, the two sides, said as before;
+    /// one side, the direction alone (never turned to it). A case without
+    /// a direction: the sides asked for, as before.
+    #[test]
+    fn an_own_direction_takes_itself_and_its_mirror() {
+        use ohl_weather::WindDirection;
+        let set = ohl_weather::WeatherCases::parse(
+            "format = \"ohl-weather-cases\"\nversion = 2\n\
+             [[case]]\nname = \"gust\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n\
+             wind_direction = 45\n\
+             [[case]]\nname = \"storm\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n\
+             wind_direction = \"left\"\n\
+             [[case]]\nname = \"plain\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n",
+        )
+        .unwrap();
+        let states = |sides| {
+            let wind = WindSteps {
+                sides,
+                ..Default::default()
+            };
+            wind_states(&set.cases, |_| true, &wind)
+        };
+        let both = states(WindSides::Both);
+        let said: Vec<String> = both.iter().map(WindState::describe).collect();
+        assert_eq!(
+            said,
+            [
+                "gust, 300 of 300 Pa from 315°",
+                "gust, 300 of 300 Pa from 45°",
+                "storm, 300 of 300 Pa from the right",
+                "storm, 300 of 300 Pa from the left",
+                "plain, 300 of 300 Pa from the left",
+                "plain, 300 of 300 Pa from the right",
+            ]
+        );
+        assert_eq!(both[0].case.oblique(), Some(WindDirection::Angle(315.0)));
+        assert_eq!(both[1].case.oblique(), Some(WindDirection::Angle(45.0)));
+        assert_eq!(both[2].case.wind_from, WindSide::Right);
+        assert_eq!(both[3].case.wind_from, WindSide::Left);
+        for one in [WindSides::Left, WindSides::Right] {
+            let said: Vec<String> = states(one).iter().map(WindState::describe).collect();
+            let plain = format!("plain, 300 of 300 Pa from the {}", one.as_str());
+            assert_eq!(
+                said,
+                [
+                    "gust, 300 of 300 Pa from 45°",
+                    "storm, 300 of 300 Pa from the left",
+                    plain.as_str(),
+                ]
+            );
+        }
     }
 }

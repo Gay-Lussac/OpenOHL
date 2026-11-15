@@ -1782,11 +1782,18 @@ pub fn solve_positions(
                 // pressure between 0 and the full one.
                 jobs.push((c, PositionKind::Still, still(case), Some(0.0)));
                 let full = case.wind_pressure.si();
+                // A case with its own direction across the line, stepped
+                // from one side: its own side (never turned to the side
+                // asked for; owner 2026-11-15); from both, both.
+                let sides: Vec<WindSide> = match case.own_side() {
+                    Some(own) if steps.sides != crate::rules::WindSides::Both => vec![own],
+                    _ => steps.sides.sides().to_vec(),
+                };
                 for p in steps.pressures(full, crate::zone::MAX_STEPS) {
                     if p <= 0.0 || p >= full {
                         continue;
                     }
-                    for &side in steps.sides.sides() {
+                    for &side in &sides {
                         let kind = match side {
                             WindSide::Right => PositionKind::StepLeft,
                             WindSide::Left => PositionKind::StepRight,

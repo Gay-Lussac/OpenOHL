@@ -455,7 +455,8 @@ mod tests {
     }
 
     /// Weather file version 2: a case's direction; across the line read as
-    /// its side (the same case as before); compared, summarised.
+    /// its side with the direction kept (its own side: owner 2026-11-15,
+    /// not the same as a case without a direction); compared, summarised.
     #[test]
     fn weather_cases_with_a_direction() {
         let set = crate::WeatherCases::parse(
@@ -475,9 +476,14 @@ mod tests {
             c[0].summary(),
             "10.0 °C, wind 300 Pa from 180° (from behind: blowing ahead)"
         );
-        assert_eq!(c[1].wind_direction, None);
+        assert_eq!(c[1].wind_direction, Some(WindDirection::Left));
+        assert_eq!(c[1].own_side(), Some(crate::WindSide::Left));
+        assert_eq!(c[1].oblique(), None);
         assert_eq!(c[1].wind_from, crate::WindSide::Left);
-        assert!(c[1].same_physics(&c[2]));
+        assert_eq!(c[1].summary(), c[2].summary());
+        // Its own side, the other's following the display: not the same.
+        assert!(!c[1].same_physics(&c[2]) && !c[2].same_physics(&c[1]));
+        assert_eq!(c[2].own_side(), None);
         assert!(!c[0].same_physics(&c[2]));
         // No wind: no direction to take.
         assert_eq!(c[3].oblique(), None);

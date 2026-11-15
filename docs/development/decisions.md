@@ -10,6 +10,37 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**A weather case's own wind direction is kept and never turned by the
+display** (owner's report: "the duplicate detection doesnt recognise the
+angle for the winds and offers to merge 2 winds coming from different
+directions"). Cause: a weather case written with `wind_direction` 90 /
+270 ("right" / "left") was read as the across rule with its side and
+**no** direction; in the desktop application every case without a
+direction takes the side View › Display weather cases shows, so the two
+copies of one source wind (*— from the right (90°)*, *— from the left
+(270°)*) became the same case: Merge duplicate weather cases offered
+them, and — worse — the left copy was solved, checked and handed to the
+structure loads from the display's side, not from the left. Now: the
+direction given is kept in memory (its side in `wind_from`, the across
+rule from it bit for bit); a case with its own direction (across or at an
+angle) is never turned by the display — as it is, its mirror drawn with
+*both* — and the display's choice applies to the cases without a
+direction exactly as before (owner's rule: "the current cases need to be
+identical"; `wind_direction_identical` unchanged). `same_physics`: 90°
+and 270° never the same; a case without a direction and one with its own
+direction across from the same side not the same either (one follows the
+display, the other does not); the merge window lists the cases only the
+direction keeps apart, with why. The clearance positions: both sides =
+the direction and its mirror, one side = the direction alone (never
+turned). **Changed for existing projects:** nothing for cases without a
+direction. A case with an angle under the display's left (until today
+"mirrored") is now shown as it is, not mirrored — its mirror is drawn
+with *both*, and the clearance checks' both sides take it (before, they
+took the same angle twice). The Weather cases table now shows a 90° /
+270° case's direction (before: empty). Load cases naming such a case:
+their own `wind_from` / `wind_direction` still win, as before. Built, not
+approved yet.
+
 **Structure flexibility, phase 3: the interface loop and calculation
 level 3** (owner: "go ahead with phase 3 of the flexibility plan"; built,
 in active development, not approved yet;

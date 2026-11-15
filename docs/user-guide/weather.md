@@ -39,7 +39,7 @@ wind_pressure = "200 Pa"
 | `ice_load` | no | Or: ice weight per length of wire (not both). |
 | `ice_density` | no | Default glaze ice, 913 kg/m³. With a thickness: the ice weight. With a load: the iced diameter, for the wind and the clearances. |
 | `wind_pressure` | no | Wind pressure on the projected (iced) diameter, perpendicular to each span (the across rule), or with a `wind_direction` its part normal to each span. |
-| `wind_direction` | no | Version 2 (2026-11-15). Where the wind comes **from**, relative to the line at each place, clockwise: `0` from ahead, `90` from the right, `180` from behind, `270` from the left (any angle in degrees, or `"ahead"`, `"right"`, `"back"`, `"left"`, `"ahead_right"` 45, `"back_right"` 135, `"back_left"` 225, `"ahead_left"` 315; `"across"` = not given). Not given, `right`/90 or `left`/270: the **across rule**, every span the full pressure square to itself — the same results as a case without it, bit for bit (right/90 is the old "from the right", left/270 the old "from the left"). Another angle: **one wind**, each span the part normal to it ([Wind on the line](../theory/wind.md)). A file with a direction is written as version 2. |
+| `wind_direction` | no | Version 2 (2026-11-15). Where the wind comes **from**, relative to the line at each place, clockwise: `0` from ahead, `90` from the right, `180` from behind, `270` from the left (any angle in degrees, or `"ahead"`, `"right"`, `"back"`, `"left"`, `"ahead_right"` 45, `"back_right"` 135, `"back_left"` 225, `"ahead_left"` 315; `"across"` = not given). Not given, `right`/90 or `left`/270: the **across rule**, every span the full pressure square to itself — the same results as a case without it from that side, bit for bit (right/90 is the old "from the right", left/270 the old "from the left"). Another angle: **one wind**, each span the part normal to it ([Wind on the line](../theory/wind.md)). **Given, the direction is the case's own** (2026-11-15), 90 and 270 too: the desktop application never turns it to the side View › Display weather cases shows (only a case without a direction follows the display), and two cases differing only in it are two winds (never merged as duplicates). A file with a direction is written as version 2. |
 | `air_density_factor` | no | Q, Pa/(m/s)²: the wind pressure of a wind velocity V is Q·V² (default 0.613, ½ρ of air at 15 °C at sea level). Only relates pressure and velocity (the Weather cases table shows and takes both); the loads use `wind_pressure`. |
 | `ambient_temperature` | no | Air temperature, e.g. `"35 °C"`, for ratings; the wires use `temperature`. |
 | `wind_from` | no | Files of earlier versions only: the side is now chosen where the wires are shown (desktop app: View › Display weather cases — each case as it is, 90° from the right across; mirrored, 270° from the left; or both; the command line still reads it, right by default, and `ohl line --wind-from` sets it for a single case). A project's weather case file loses it when the project is opened; a file read directly is not changed (its value is not used by the app). |
@@ -49,8 +49,20 @@ either side is written as two cases with a `wind_direction` each — e.g.
 `"… right"` with `wind_direction = 90` and `"… left"` with
 `wind_direction = 270`: each is the across rule from its side, exactly
 the old `wind_from = "right"` / `"left"` (an importer converting another
-program's wind case does this). In the desktop application the side of a
-case across the line follows View › Display weather cases, as before.
+program's wind case does this). The direction given is the case's own
+(owner 2026-11-15): in the desktop application the left case is solved,
+checked and handed to the structure loads from the left whatever View ›
+Display weather cases shows; only a case **without** a direction follows
+the display's side, as before. Line › Criteria › Merge duplicate weather
+cases never offers the two (it lists them as not offered, with their
+directions).
+
+| Case | In the desktop application |
+|---|---|
+| no `wind_direction` | across, from the side the display shows (as each case / both: right, 90°; cases without a direction from the left: left, 270°) — as before |
+| `wind_direction = 90` / `"right"` | across, always from the right; with *both* its mirror (from the left) drawn too |
+| `wind_direction = 270` / `"left"` | across, always from the left; with *both* its mirror (from the right) drawn too |
+| another angle θ | one wind from θ, always; with *both* its mirror (360° − θ) drawn too |
 
 ```toml
 format = "ohl-weather-cases"

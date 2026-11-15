@@ -139,7 +139,6 @@ impl Ready {
         measure: ohl_clearance::Measure,
         p: &crate::clearance_zones::Picked,
     ) {
-        use crate::model::WindDisplay;
         let f = &p.finding;
         let state = &p.state;
         let case = self
@@ -168,8 +167,7 @@ impl Ready {
                 None => state.full <= 0.0,
                 Some(side) => {
                     (state.pressure - state.full).abs() < 1e-9
-                        && (self.model.wind == WindDisplay::Both
-                            || self.model.wind.primary() == side)
+                        && crate::model::drawn_from(&state.case, side, self.model.wind)
                 }
             };
         if !drawn && !jumper {
@@ -222,7 +220,6 @@ impl Ready {
         f: &crate::clearance::Finding,
         state: &ohl_clearance::zone::WindState,
     ) {
-        use crate::model::WindDisplay;
         let section = |s: &Selection| match s {
             Selection::Span { section, .. } => Some(section.clone()),
             _ => None,
@@ -250,7 +247,7 @@ impl Ready {
             None => state.full <= 0.0,
             Some(side) => {
                 (state.pressure - state.full).abs() < 1e-9
-                    && (self.model.wind == WindDisplay::Both || self.model.wind.primary() == side)
+                    && crate::model::drawn_from(&state.case, side, self.model.wind)
             }
         };
         if !drawn && let Selection::Span { section, span } = &f.wire {

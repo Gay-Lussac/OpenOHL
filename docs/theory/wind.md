@@ -302,12 +302,19 @@ line).
 
 ## Clearances and the views
 
-The views show each case **as it is** or **mirrored** about the line
-(\\( \theta \to 360° - \theta \\); a case across the line: from the right,
-90°, or from the left, 270°), or **both** (View › Display weather cases).
-The clearance checks' "both sides" for a case with a direction take the
-direction and its mirror (owner, 2026-11-15, question 15; the checks' own
-positions with the direction are in active development).
+A case **without** a direction blows across from the side the view
+chooses (View › Display weather cases: from the right, 90°, as each case;
+from the left, 270°; or both). A case that **gives** its direction —
+across the line (90°, 270°) or at an angle — keeps it as its own
+(2026-11-15): the view never turns it, it is solved, checked and loaded
+as given; with *both* its mirror about the line
+(\\( \theta \to 360° - \theta \\); across: the other side) is drawn too.
+Two cases differing only in their direction (e.g. the two copies of one
+source wind, from 90° and from 270°) are two winds, never one. The
+clearance checks' "both sides" for a case with a direction take the
+direction and its mirror; one side only, the direction alone — never
+turned to the side asked for, which would check another wind than the
+case's (owner, 2026-11-15, question 15).
 
 ## Validation
 

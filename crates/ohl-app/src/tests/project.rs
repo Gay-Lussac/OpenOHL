@@ -174,6 +174,184 @@ fn display_names_the_wind_by_its_angle() {
     assert_eq!(kept.primary(), WindSide::Left);
 }
 
+/// A wind written as two cases, from 90° and from 270° (owner 2026-11-15:
+/// the duplicate merge offered to merge them — both were solved from the
+/// display's side): the 270° case is solved from the left whatever the
+/// display shows, bit for bit the old left (a case without a direction
+/// from the left); with both, its mirror from the right. A case without a
+/// direction follows the display, as before. The same for the clearance
+/// positions: both sides, the direction and its mirror; one side, the
+/// direction alone.
+#[test]
+fn an_own_direction_is_never_turned_by_the_display() {
+    use crate::model::{Solved, WindDisplay, drawn_from, shown_name, shown_side, side_shown};
+    use ohl_weather::{WindDirection, WindSide};
+    let m = synthetic();
+    let file = ohl_weather::WeatherCases::parse(
+        "format = \"ohl-weather-cases\"\nversion = 2\n\
+         [[case]]\nname = \"storm — from the left (270°)\"\ntemperature = \"15 °C\"\n\
+         wind_pressure = \"600 Pa\"\nwind_direction = 270\n\
+         [[case]]\nname = \"storm\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n",
+    )
+    .unwrap()
+    .cases;
+    let (left, plain) = (&file[0], &file[1]);
+    assert_eq!(left.wind_direction, Some(WindDirection::Angle(270.0)));
+    let old_left = ohl_weather::WeatherCase {
+        wind_from: WindSide::Left,
+        ..plain.clone()
+    };
+    let from_left = Solved::new(&m.line, &m.library, old_left).shapes;
+    let from_right = Solved::new(&m.line, &m.library, plain.clone()).shapes;
+    assert!(!from_left.is_empty() && from_left != from_right);
+    for wind in WindDisplay::ALL {
+        let s = Solved::with_wind(&m.line, &m.library, left.clone(), wind);
+        assert_eq!(s.case.wind_from, WindSide::Left, "{wind:?}");
+        assert_eq!(s.case.wind_direction, left.wind_direction, "{wind:?}");
+        assert_eq!(s.shapes, from_left, "{wind:?}: the old left, bit for bit");
+        assert!(s.solved_for(wind), "{wind:?}");
+        assert_eq!(shown_side(&s.case), WindSide::Right, "as it is");
+        assert_eq!(shown_name(&s.case), "storm — from the left (270°)");
+        match &s.mirror {
+            Some(mirror) => {
+                assert_eq!(wind, WindDisplay::Both);
+                assert_eq!(mirror.case.wind_from, WindSide::Right);
+                assert_eq!(mirror.shapes, from_right, "its mirror: the old right");
+                assert_eq!(
+                    shown_name(&mirror.case),
+                    "storm — from the left (270°) — from the right (90°)"
+                );
+            }
+            None => assert_ne!(wind, WindDisplay::Both),
+        }
+        // A case without a direction: the display's side, as before.
+        let p = Solved::with_wind(&m.line, &m.library, plain.clone(), wind);
+        assert_eq!(p.case.wind_from, wind.primary(), "{wind:?}");
+        let want = match wind.primary() {
+            WindSide::Left => &from_left,
+            WindSide::Right => &from_right,
+        };
+        assert_eq!(&p.shapes, want, "{wind:?}");
+        // Drawn: the clearance positions of the case as solved.
+        assert!(drawn_from(&s.case, WindSide::Left, wind));
+        assert_eq!(
+            drawn_from(&s.case, WindSide::Right, wind),
+            wind == WindDisplay::Both
+        );
+    }
+    // Mirrored and back: as in its file; the other side of the ground
+    // lines its mirror.
+    let mirrored = side_shown(left.clone(), WindSide::Left);
+    assert_eq!(mirrored.wind_from, WindSide::Right);
+    assert_eq!(shown_side(&mirrored), WindSide::Left);
+    assert_eq!(&side_shown(mirrored.clone(), WindSide::Right), left);
+    assert_eq!(crate::ground_lines::other_side(left), mirrored);
+    assert_eq!(&crate::ground_lines::other_side(&mirrored), left);
+    // The clearance positions: both sides, the direction and its mirror;
+    // one side (either), the direction alone.
+    let sides_of = |sides| {
+        let wind = ohl_clearance::WindSteps {
+            sides,
+            ..Default::default()
+        };
+        ohl_clearance::zone::wind_states(std::slice::from_ref(left), |_| true, &wind)
+            .into_iter()
+            .map(|s| (s.side, s.case.wind_from))
+            .collect::<Vec<_>>()
+    };
+    use ohl_clearance::WindSides;
+    assert_eq!(
+        sides_of(WindSides::Both),
+        [
+            (Some(WindSide::Right), WindSide::Right),
+            (Some(WindSide::Left), WindSide::Left)
+        ]
+    );
+    for one in [WindSides::Left, WindSides::Right] {
+        assert_eq!(sides_of(one), [(Some(WindSide::Left), WindSide::Left)]);
+    }
+    // A case without a direction: the sides asked for.
+    let plain_states = |sides| {
+        let wind = ohl_clearance::WindSteps {
+            sides,
+            ..Default::default()
+        };
+        ohl_clearance::zone::wind_states(std::slice::from_ref(plain), |_| true, &wind)
+            .into_iter()
+            .map(|s| s.case.wind_from)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        plain_states(WindSides::Both),
+        [WindSide::Left, WindSide::Right]
+    );
+    assert_eq!(plain_states(WindSides::Right), [WindSide::Right]);
+}
+
+/// Round trip of a weather file with a wind written as two cases (90°,
+/// 270°): another field of the 270° case edited in the table and 270
+/// typed for a case without a direction — written back, each keeps (or
+/// gets) its own direction, the model's cases solved from their own side
+/// (under the display's left too); the case left without a direction
+/// follows the display.
+#[test]
+fn the_weather_table_keeps_an_own_direction() {
+    use crate::tables::TableKind;
+    use ohl_weather::{WindDirection, WindSide};
+    let mut model = synthetic_project("own-direction-table");
+    let path = model.sources.file.parent().unwrap().join("cases.ohlwc");
+    std::fs::write(
+        &path,
+        "format = \"ohl-weather-cases\"\nversion = 2\nname = \"t\"\n\n\
+         [[case]]\nname = \"everyday\"\ntemperature = \"10 °C\"\n\n\
+         [[case]]\nname = \"storm — from the right (90°)\"\ntemperature = \"15 °C\"\n\
+         wind_pressure = \"600 Pa\"\nwind_direction = 90\n\n\
+         [[case]]\nname = \"storm — from the left (270°)\"\ntemperature = \"15 °C\"\n\
+         wind_pressure = \"600 Pa\"\nwind_direction = 270\n\n\
+         [[case]]\nname = \"storm\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n\n\
+         [[case]]\nname = \"gust\"\ntemperature = \"15 °C\"\nwind_pressure = \"300 Pa\"\n",
+    )
+    .unwrap();
+    model.sources.weather = Some(path.clone());
+    model.set_wind(crate::model::WindDisplay::Left);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1500.0, 950.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let kind = TableKind::WeatherCases;
+    super::objects::set_cell(&mut harness, kind, "2", "Wire temp\n°C", "16");
+    super::objects::set_cell(&mut harness, kind, "4", "Wind direction\n° from", "270");
+    super::objects::apply_table(&mut harness, kind, false).unwrap();
+    let written =
+        ohl_weather::WeatherCases::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let by_name = |name: &str| written.cases.iter().find(|c| c.name == name).unwrap();
+    let left = by_name("storm — from the left (270°)");
+    assert_eq!(left.wind_direction, Some(WindDirection::Angle(270.0)));
+    assert!((left.temperature.celsius() - 16.0).abs() < 1e-12);
+    assert_eq!(by_name("gust").own_side(), Some(WindSide::Left));
+    assert_eq!(
+        by_name("storm — from the right (90°)").own_side(),
+        Some(WindSide::Right)
+    );
+    assert_eq!(by_name("storm").wind_direction, None);
+    let r = harness.state_mut().ready().unwrap();
+    assert_eq!(r.model.wind, crate::model::WindDisplay::Left);
+    let side = |name: &str| {
+        r.model
+            .cases
+            .iter()
+            .find(|c| c.case.name == name)
+            .unwrap()
+            .case
+            .wind_from
+    };
+    assert_eq!(side("storm — from the right (90°)"), WindSide::Right);
+    assert_eq!(side("storm — from the left (270°)"), WindSide::Left);
+    assert_eq!(side("gust"), WindSide::Left);
+    // Without a direction: the display's side.
+    assert_eq!(side("storm"), WindSide::Left);
+}
+
 /// Weather case files of earlier versions: the wind side is dropped.
 #[test]
 fn old_weather_files_lose_the_wind_side() {

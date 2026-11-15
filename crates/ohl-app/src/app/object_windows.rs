@@ -163,9 +163,11 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
         .on_hover_text(
             "The wind's direction, where it comes from looking ahead along the line: 0° from \
              ahead, 90° from the right, 180° from behind, 270° from the left (clockwise). A case \
-             without a direction blows across: 90° as it is, 270° mirrored. A case with a \
-             direction: as it is, or mirrored about the line (θ → 360° − θ). Both: each case \
-             with wind drawn twice; the case as it is is the one reported, checked and clicked",
+             without a direction blows across from the side chosen here: 90° as each case, \
+             270° from the left. A case that gives its own direction (90, 270 or any angle in \
+             the Weather cases table) is never turned: always as it is. Both: each case with \
+             wind drawn twice, as it is and mirrored about the line (θ → 360° − θ); the case as \
+             it is is the one reported, checked and clicked",
         );
         ui.label(
             egui::RichText::new(

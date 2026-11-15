@@ -2559,9 +2559,25 @@ in project axes; `across_side()`; `mirrored()` θ → 360° − θ; `parse`
 names incl. the diagonals `ahead_right` 45°, `back_right` 135°,
 `back_left` 225°, `ahead_left` 315°; `text()`, `old_text()`, `words()`);
 read through `WeatherCaseFile` (`#[serde(from)]`): `"across"` = none, a
-direction across the line (right/left, 90°, 270°) becomes `wind_from`
-that side and none — never kept; `oblique()` the direction at an angle
-with wind, `towards_at(ahead)`, `with_direction(d)`),
+direction across the line (right/left, 90°, 270°) puts its side in
+`wind_from` (the across rule's, bit for bit) and is **kept** as given
+(2026-11-15, owner's report on the duplicate merge: until then dropped,
+so a 270° case read in the desktop application took the display's side
+and equalled the 90° one); `own_side()` that side; `oblique()` the
+direction at an angle with wind, `towards_at(ahead)`,
+`with_direction(d)` — a load case's override, across the line its side
+and none, as before). **Desktop application** (`ohl_app::model`): a case
+with a `wind_direction` (`own_direction`) is never turned by the display
+(`WindDisplay::primary_of` right = as it is; `WindDisplay::shown`); a case
+without one follows `WindDisplay::primary` as before; `side_shown(case,
+side)` right as it is, left mirrored — across with its own direction only
+`wind_from` flips (the direction stays as in the file), at an angle the
+direction mirrors and `wind_from` marks it; `shown_side` reads which;
+`drawn_from` whether a clearance position is the case as drawn. The
+clearance positions (`ohl_clearance::zone::wind_states`): a case with
+its own direction takes the direction and its mirror with both sides,
+the direction alone with one side (never turned to it); `WindState::from`
+says a wind at an angle by its angle.
 `air_density_factor`, `ambient_temperature`. `WEATHER_FILE_VERSION` 2;
 the desktop Weather cases table's column **Wind direction** writes
 `wind_direction` (degrees) and raises the file to 2. The physics:
@@ -2570,7 +2586,7 @@ the desktop Weather cases table's column **Wind direction** writes
 `without_ice`, `with_more_ice_thickness` (a thickness grows; a load
 becomes the load out to the iced diameter plus twice the extra) and
 `with_more_ice_load` (the ice weight plus the extra, as a load at the
-case's density, else glaze ice); `has_ice`. `same_physics` (2026-10-21): whether two cases put the same weather on the wires (temperature; ice none on both, or the same thickness and density, or the same load and density, glaze ice when none given — a thickness never equals a load; wind pressure, and with wind its side and `air_density_factor`; `ambient_temperature`; within `SAME_PHYSICS_TOLERANCE` 1e-6 relative), never the name, description or tags — how a preset's cases are matched to the project's ([plugins](plugins.md#matching-a-presets-weather-cases)).
+case's density, else glaze ice); `has_ice`. `same_physics` (2026-10-21): whether two cases put the same weather on the wires (temperature; ice none on both, or the same thickness and density, or the same load and density, glaze ice when none given — a thickness never equals a load; wind pressure, and with wind its side, its own direction — none only as none, 90° and 270° never the same, 2026-11-15 — and `air_density_factor`; `ambient_temperature`; within `SAME_PHYSICS_TOLERANCE` 1e-6 relative), never the name, description or tags — how a preset's cases are matched to the project's ([plugins](plugins.md#matching-a-presets-weather-cases)).
 
 **A weather case per span** (2026-10-20, in memory only):
 `ohl_line::solve::SpanCases` — `base` (the section's case) and `spans`

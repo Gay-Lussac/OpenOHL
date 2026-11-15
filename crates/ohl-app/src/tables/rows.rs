@@ -757,3 +757,31 @@ pub(super) fn weather_cells(w: &ohl_weather::WeatherCase, order: usize, q: f64) 
         });
     c
 }
+
+#[cfg(test)]
+mod own_direction_tests {
+    use super::*;
+
+    /// The Weather cases table shows a case's own direction across the
+    /// line, whatever the display shows (before 2026-11-15 a 270° case
+    /// showed none); a case without a direction shows none.
+    #[test]
+    fn the_table_shows_an_own_direction_across() {
+        let file = ohl_weather::WeatherCases::parse(
+            "format = \"ohl-weather-cases\"\nversion = 2\n\
+             [[case]]\nname = \"w\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n\
+             wind_direction = 270\n\
+             [[case]]\nname = \"r\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n\
+             wind_direction = \"right\"\n\
+             [[case]]\nname = \"p\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n",
+        )
+        .unwrap()
+        .cases;
+        for (c, want) in file.iter().zip(["270", "90", ""]) {
+            for wind in crate::model::WindDisplay::ALL {
+                let cells = weather_cells(&wind.shown(c.clone()), 1, 0.613);
+                assert_eq!(cells[W_DIRECTION], want, "{} {wind:?}", c.name);
+            }
+        }
+    }
+}

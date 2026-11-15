@@ -201,18 +201,24 @@ pub struct Solved {
 
 /// How the wind of the weather cases is shown (View › Display weather
 /// cases; owner 2026-11-15: no more "left" or "right" — the angles, named
-/// as the old cases): each case **as it is** (a case across the line:
-/// from the right, 90°), **mirrored** about the line (θ → 360° − θ;
-/// across: from the left, 270°), or **both**. A display choice, not part
-/// of the weather case. Kept in the project's view as before (`right`,
-/// `left`, `both`): an old choice reads as the same drawing.
+/// as the old cases): each case **as it is** (a case without a direction:
+/// from the right, 90°), the cases without a direction **from the left**
+/// (270°), or **both** (each case and its mirror about the line,
+/// θ → 360° − θ). A display choice, not part of the weather case. A case
+/// that gives its own direction (`wind_direction` in its file, across the
+/// line or at an angle) is never turned by it: always as it is, its
+/// mirror drawn only with both (owner 2026-11-15: two cases from 90° and
+/// 270° are two winds). Kept in the project's view as before (`right`,
+/// `left`, `both`): an old choice reads as the same drawing for the cases
+/// without a direction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WindDisplay {
-    /// Each case as it is (across the line: from the right, 90°).
+    /// Each case as it is (without a direction: from the right, 90°).
     #[default]
     Right,
-    /// Each case mirrored about the line (across: from the left, 270°).
+    /// The cases without a direction from the left (270°); a case with its
+    /// own direction as it is.
     Left,
     /// Both drawn at once (the case as it is reported, checked, picked).
     Both,
@@ -225,18 +231,54 @@ impl WindDisplay {
     /// Name in the menu.
     pub fn name(self) -> &'static str {
         match self {
-            WindDisplay::Right => "as each case (across: from the right, 90°)",
-            WindDisplay::Left => "mirrored (across: from the left, 270°)",
+            WindDisplay::Right => "as each case (without a direction: from the right, 90°)",
+            WindDisplay::Left => "cases without a direction from the left (270°)",
             WindDisplay::Both => "both: each case and its mirror (90° and 270°)",
         }
     }
 
-    /// The side solved first (reported, checked, picked).
+    /// The side solved first (reported, checked, picked) for a case
+    /// without a direction of its own.
     pub fn primary(self) -> ohl_weather::WindSide {
         match self {
             WindDisplay::Left => ohl_weather::WindSide::Left,
             WindDisplay::Right | WindDisplay::Both => ohl_weather::WindSide::Right,
         }
+    }
+
+    /// The side `case` is solved from first ([`side_shown`]): a case with
+    /// its own direction ([`own_direction`]) as it is (right) whatever
+    /// the choice; a case without one, [`WindDisplay::primary`].
+    pub fn primary_of(self, case: &WeatherCase) -> ohl_weather::WindSide {
+        if own_direction(case) {
+            ohl_weather::WindSide::Right
+        } else {
+            self.primary()
+        }
+    }
+
+    /// `case` as this choice shows it first ([`WindDisplay::primary_of`]).
+    pub fn shown(self, case: WeatherCase) -> WeatherCase {
+        let side = self.primary_of(&case);
+        side_shown(case, side)
+    }
+}
+
+/// Whether `case` gives its own wind direction (`wind_direction` in its
+/// file: across the line or at an angle; owner 2026-11-15): never turned
+/// by the display's choice. A case without one follows it, as before.
+pub fn own_direction(case: &WeatherCase) -> bool {
+    case.wind_direction.is_some()
+}
+
+/// The side `case` is shown from, in the terms of [`side_shown`]: right
+/// as it is (a case without a direction: from the right; with its own
+/// direction: that direction), left mirrored.
+pub fn shown_side(case: &WeatherCase) -> ohl_weather::WindSide {
+    match case.own_side() {
+        Some(own) if case.wind_from == own => ohl_weather::WindSide::Right,
+        Some(_) => ohl_weather::WindSide::Left,
+        None => case.wind_from,
     }
 }
 
@@ -253,19 +295,44 @@ pub enum CasesShown {
     PerSection,
 }
 
-/// `case` shown from `side` ([`WindDisplay::primary`]): its wind's side
-/// that one; a case with a wind at an angle mirrored about the line
-/// (θ → 360° − θ) when the side changes — the side marks it: from the
-/// right, the case as in its file (whose side the program strips), from
-/// the left, mirrored. A case across the line: only its side, as before.
+/// `case` shown from `side` ([`WindDisplay::primary_of`]): right as it
+/// is, left mirrored about the line, the side it is in read by
+/// [`shown_side`]. A case without a direction: its wind's side that one,
+/// as before. A case with a wind at an angle mirrored (θ → 360° − θ) when
+/// the side changes — the side marks it: from the right, the case as in
+/// its file (whose side the program strips), from the left, mirrored. A
+/// case with its own direction across the line (90°, 270°): its direction
+/// kept as in its file, the side it is solved from (`wind_from`, the
+/// across rule's) its own as it is, the other one mirrored.
 pub fn side_shown(mut case: WeatherCase, side: ohl_weather::WindSide) -> WeatherCase {
-    if case.wind_from != side {
-        if let Some(d) = case.wind_direction {
-            case.wind_direction = Some(d.mirrored());
+    if shown_side(&case) != side {
+        match case.wind_direction {
+            Some(d) if d.across_side().is_some() => case.wind_from = case.wind_from.opposite(),
+            Some(d) => {
+                case.wind_direction = Some(d.mirrored());
+                case.wind_from = side;
+            }
+            None => case.wind_from = side,
         }
-        case.wind_from = side;
     }
     case
+}
+
+/// Whether a clearance position of `case` with its wind from `side` (a
+/// [`ohl_clearance::zone::WindState`]'s) is the case as drawn by `wind`:
+/// both drawn with [`WindDisplay::Both`]; else a case without a direction
+/// from the display's side, one with its own direction across the line
+/// from that side, one at an angle as it is (its side the position's
+/// mark: right as it is, left mirrored).
+pub fn drawn_from(case: &WeatherCase, side: ohl_weather::WindSide, wind: WindDisplay) -> bool {
+    if wind == WindDisplay::Both {
+        return true;
+    }
+    match (case.own_side(), case.wind_direction) {
+        (Some(own), _) => side == own,
+        (None, Some(_)) => side == ohl_weather::WindSide::Right,
+        (None, None) => side == wind.primary(),
+    }
 }
 
 /// The wind of `case` in words, named as the old cases (owner
@@ -305,9 +372,9 @@ impl Solved {
         case: WeatherCase,
         wind: WindDisplay,
     ) -> Self {
-        let case = side_shown(case, wind.primary());
+        let case = wind.shown(case);
         let mirrored = (wind == WindDisplay::Both && case.wind_pressure.si() > 0.0).then(|| {
-            let other = side_shown(case.clone(), ohl_weather::WindSide::Left);
+            let other = side_shown(case.clone(), wind.primary_of(&case).opposite());
             Box::new(Self::new(line, library, other))
         });
         let mut s = Self::new(line, library, case);
@@ -320,7 +387,7 @@ impl Solved {
         let windy = self.case.wind_pressure.si() > 0.0;
         self.ready
             && (!windy
-                || (self.case.wind_from == wind.primary()
+                || (shown_side(&self.case) == wind.primary_of(&self.case)
                     && self.mirror.is_some() == (wind == WindDisplay::Both)))
     }
 
@@ -1920,8 +1987,8 @@ impl Model {
     pub fn set_wind(&mut self, wind: WindDisplay) {
         self.wind = wind;
         for c in &mut self.cases {
-            if c.case.wind_pressure.si() > 0.0 && c.case.wind_from != wind.primary() {
-                let case = side_shown(c.case.clone(), wind.primary());
+            if c.case.wind_pressure.si() > 0.0 && shown_side(&c.case) != wind.primary_of(&c.case) {
+                let case = wind.shown(c.case.clone());
                 *c = Solved::pending(case);
             }
             if wind != WindDisplay::Both {
@@ -2293,7 +2360,7 @@ impl Model {
             .into_iter()
             .enumerate()
             .map(|(k, c)| {
-                let c = side_shown(c, self.wind.primary());
+                let c = self.wind.shown(c);
                 if k == 0 || was.contains(&c.name) {
                     let mut s = Solved::with_wind(&line, &library, c, self.wind);
                     // Sections that stop solving keep their last shape.
@@ -2604,7 +2671,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         .as_ref()
         .map_or_else(WindDisplay::default, |v| v.wind);
     for (k, case) in cases.into_iter().enumerate() {
-        let case = side_shown(case, wind.primary());
+        let case = wind.shown(case);
         if k > 0 {
             solved.push(Solved::pending(case));
             continue;

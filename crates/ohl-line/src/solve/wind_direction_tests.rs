@@ -144,7 +144,8 @@ fn with(line: &Line, options: WireWindOptions) -> Line {
 
 /// A direction across the line is the across rule from that side: 90° the
 /// case from the right, 270° the case from the left, bit for bit (read
-/// from a file: the direction is not even kept).
+/// from a file the direction is kept as the case's own, 2026-11-15 — its
+/// side the same, no wind at an angle).
 #[test]
 fn across_directions_are_the_old_cases_bit_for_bit() {
     let line = line_through(
@@ -159,16 +160,26 @@ fn across_directions_are_the_old_cases_bit_for_bit() {
         .cases
         .remove(0)
     };
+    // The case as before but for its own direction kept.
+    let own = |c: ohl_weather::WeatherCase| ohl_weather::WeatherCase {
+        wind_direction: None,
+        ..c
+    };
     let right = read("");
-    assert_eq!(read("wind_direction = 90"), right);
-    assert_eq!(read("wind_direction = \"right\""), right);
+    assert_eq!(own(read("wind_direction = 90")), right);
+    assert_eq!(own(read("wind_direction = \"right\"")), right);
     assert_eq!(read("wind_direction = \"across\""), right);
     let left = read("wind_from = \"left\"");
-    assert_eq!(read("wind_direction = 270"), left);
-    assert_eq!(read("wind_direction = \"left\""), left);
+    assert_eq!(own(read("wind_direction = 270")), left);
+    assert_eq!(own(read("wind_direction = \"left\"")), left);
+    assert_eq!(read("wind_direction = 270").oblique(), None);
     assert_eq!(
         solve(&line, &read("wind_direction = 90")),
         solve(&line, &right)
+    );
+    assert_eq!(
+        solve(&line, &read("wind_direction = 270")),
+        solve(&line, &left)
     );
     // A case with a direction built in code takes the across rule too.
     let built = wind(Some(WindDirection::Angle(270.0)));
