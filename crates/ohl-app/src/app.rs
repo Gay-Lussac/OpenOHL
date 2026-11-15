@@ -2376,6 +2376,14 @@ impl App {
             return;
         };
         let galloping = ready.galloping.ui(ctx, &ready.model);
+        // Its user guide ↗: the window's own page, at its section.
+        if let Some(anchor) = ready.galloping.guide.take() {
+            let (page, anchor) = crate::galloping::guide(anchor);
+            ready.status = Some(match crate::help::open_section(page, anchor) {
+                Ok(m) => (format!("user guide opened: {m}"), false),
+                Err(e) => (e, true),
+            });
+        }
         let wirefit = ready.wirefit.ui(ctx, &ready.model);
         if let Some(target) = galloping {
             // The span drawn in the results' weather case.

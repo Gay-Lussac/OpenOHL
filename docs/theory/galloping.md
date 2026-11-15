@@ -1,7 +1,10 @@
 # Galloping ellipses and blowout
 
 Implemented in `crates/ohl-clearance` (`galloping`, `blowout`, and the
-`same_line` rules of `rules`/`checks`).
+`same_line` rules of `rules`/`checks`). The window that runs the
+galloping check, setting by setting, every field of its parameter file
+and what is not on the safe side: [user guide › Galloping
+ellipses](../user-guide/galloping.md).
 
 ## Galloping ellipses
 
@@ -29,8 +32,13 @@ numbers are invented.
 
 For a span of horizontal length \\( L \\), sag \\( D \\) (in the weather case
 checked: the largest vertical distance below the chord, as solved), conductor
-diameter \\( d \\) and \\( n \\) loops, each axis is a sum of terms with
-user coefficients:
+diameter \\( d \\) (the bare diameter of the section's wire type in the
+library — a subconductor's for a bundle, never iced) and \\( n \\) loops,
+each axis is a sum of terms with user coefficients:
+
+![A span from the side: the chord between the clamps, the horizontal span length L and the sag D; across the span at mid-span the wire at rest and its ellipse](../images/theory/galloping-sag.svg)
+
+*The sag the ellipse is sized from (schematic).*
 
 \\[ A = k_D D + k_L L + k_{\sqrt D} \sqrt D + k_d d + k_{\ln}\\, n d \ln\frac{s D}{n^2 d} + k_0, \qquad
     B = (\text{the same terms}) + k_A A \\]
@@ -100,10 +108,55 @@ line angle between their spans, different attachment heights) are compared
 at slightly different places along the span (either way). Exact: the
 ellipses swept along each wire and their distance in 3D.
 
-**Simplification:** only wires between the same two structures are paired.
-Galloping of a span next to another line's span, or of adjacent spans
-near a structure, is not compared. Exact: pairs of every wire within
-reach.
+**Simplification:** only wires between the same two structures are paired
+(a wire's two structure points; a clamp on the span that a jumper hangs
+on does not change its pair — before 2026-11-15 such a span was left out,
+not said). Galloping of a span next to another line's span, or of
+adjacent spans near a structure, is not compared. Exact: pairs of every
+wire within reach.
+
+**Simplification, NOT ON THE SAFE SIDE between the stations:** the
+ellipses are compared at the stations only. Where two wires are not
+alike (different sags or heights) the smallest gap may lie between two
+stations and be a little smaller than the one found. Exact: the smallest
+gap over the span, found by refining around the smallest station.
+
+**NOT ON THE SAFE SIDE, said in the results: a loop's middle between two
+stations.** With `along = "sine"` loop \\( k \\) of \\( n \\) is largest at
+\\( t = (2k+1)/(2n) \\). With \\( s \\) stations at \\( t = j/s \\), that
+point is a station only when \\( s \\) is a multiple of \\( 2n \\); else the
+largest ellipse compared is \\( \max_j |\sin(n\pi j/s)| \\) of its full size
+in that loop — with 20 stations \\( \sin 0.45\pi = 98.8\,\% \\) for 3 loops,
+\\( \sin 0.4\pi = 95.1\,\% \\) for 4 — and the gap found is larger than at
+the loop's middle. The results say it per method, with the share and the
+fix (`stations` a multiple of \\( 2n \\)); `galloping::largest_share`.
+Exact: the loops' middles added to the stations (an open question to the
+owner, 2026-11-15).
+
+**NOT ON THE SAFE SIDE, said in the results: a wire without a diameter.**
+A section whose wire type is not in the library has \\( d = 0 \\): the
+`diameter` and logarithmic terms vanish for it.
+
+**NOT ON THE SAFE SIDE where the method means another sag, said in the
+results: a case with wind.** In a case with wind the wires are swung,
+and \\( D \\) is the vertical sag of the swung wire, the sag in its plane
+times the cosine of the swing angle: smaller. A method that sizes the
+ellipse from the sag in the wire's plane, or from the sag of the iced
+wire without wind, gets smaller ellipses than it means. Which sag a
+method takes is the method's: choose the weather case accordingly.
+
+### The requirement
+
+`required` is read at the pair's voltage (`pair_voltage`): the higher of
+the two wires' nominal voltages (default), their sum, or the voltage
+between the two conductors (`difference`, as in the
+[rule files](../user-guide/terrain.md#clearance)). Two earth wires are
+read at 0 kV; a phase and an earth wire at the phase's nominal voltage
+(higher, sum) or its voltage to earth (difference).
+
+**NOT ON THE SAFE SIDE, said in the results:** a pair whose voltage is
+above the last row of a table by voltage takes the last row's distance.
+Exact: the distance for that voltage, which the table does not give.
 
 Cost: stations × 72² distances per pair and method, about 0.1 ms; one step
 of the exit clause (`Budget`) per pair and method.

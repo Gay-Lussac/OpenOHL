@@ -6,9 +6,14 @@
 //! the methods of a galloping parameter file (`.ohlg`), in one weather
 //! case, and the clearance between them ([`ohl_clearance::galloping`]).
 //! Computed on demand in the background; worst pairs first; a click goes
-//! to the span.
+//! to the span. Built as the check pages say (2026-11-15, the owner: "a
+//! review and explanation page in the books for the galloping ellipses
+//! check"): its own page of the user guide ([`GUIDE`]), the sections'
+//! **user guide ↗** buttons, the explanations behind their (?), what the
+//! file sets about the computation under *4 Model*.
 
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use eframe::egui;
 use ohl_clearance::galloping::{self, GallopingParams};
@@ -56,6 +61,9 @@ pub struct Report {
     pub case: String,
     /// Notes (the parameters' cases, sections not solved).
     pub notes: Vec<String>,
+    /// Where the check is not on the safe side
+    /// ([`galloping::notes`]): written above the table, never folded.
+    pub safety: Vec<String>,
     /// Pairs, worst first.
     pub rows: Vec<Row>,
 }
@@ -79,10 +87,80 @@ pub struct GallopingWindow {
     pub(crate) job: Job<Report>,
     /// The results table's rows, by the answer's count and its rows.
     rows: check_ui::CachedRows<(u64, usize)>,
-    /// The parameter file read for its summary (the file, its methods and
-    /// requirement in words, or why not).
-    params: Option<(PathBuf, Result<String, String>)>,
+    /// The parameter file read (the file, when it was changed on disk,
+    /// what it holds or why it is not read): its summary, *4 Model* and
+    /// what blocks Run.
+    params: Option<(PathBuf, Option<SystemTime>, Result<GallopingParams, String>)>,
+    /// A section of the window's user guide page to open ([`guide`]).
+    pub guide: Option<&'static str>,
 }
+
+/// The window's own page of the user guide (check pages' guidelines §6).
+pub const GUIDE: &str = "user-guide/galloping";
+
+/// The sections of [`GUIDE`] the window's **user guide ↗** buttons open
+/// (each a heading of the page: tested).
+pub mod anchors {
+    /// *1 What it checks*.
+    pub const WHAT: &str = "1-what-it-checks";
+    /// *2 Scope*.
+    pub const SCOPE: &str = "2-scope";
+    /// *3 Rules: the parameter file*.
+    pub const RULES: &str = "3-rules-the-parameter-file";
+    /// *4 Model*: what the file sets about the computation.
+    pub const MODEL: &str = "4-model-from-the-parameter-file-folded";
+    /// The Results tab.
+    pub const RESULTS: &str = "the-results";
+}
+
+/// The page and section a **user guide ↗** button opens.
+pub fn guide(anchor: &'static str) -> (&'static str, &'static str) {
+    (GUIDE, anchor)
+}
+
+/// The question, in *1 What it checks*: its line and the (?).
+const WHAT_HELP: (&str, &str) = (
+    "Ellipses around the wires of each span, sized from the sag by the coefficients of the \
+     parameter file, and the clearance between them.",
+    "Each method of the parameter file draws an ellipse around every wire of a span — the \
+     space the iced wire may sweep when it gallops — its axes from the wire's sag in the \
+     weather case chosen, the span length and the conductor diameter. Every two wires hanging \
+     between the same two structures are paired; the smallest distance between their \
+     ellipses along the span, less both wires' outer radii, is compared with the file's \
+     requirement. OpenOHL ships no method: every coefficient is the file's.",
+);
+
+/// *2 Scope*'s (?).
+const SCOPE_HELP: (&str, &str) = (
+    "The weather case the ellipses are sized in, and the circuits, routes and sections checked.",
+    "Weather case: the sags and the wires' positions at rest are those solved in it (the case \
+     shown in the views when the window opens). Circuits: only the wires of the circuits \
+     ticked are paired. Routes, alignments, sections: only the sections ticked, or with a \
+     structure on a route or alignment ticked (none: the whole line). Fewer spans, a faster \
+     run; the check itself stays well under a second.",
+);
+
+/// *3 Rules*' (?).
+const RULES_HELP: (&str, &str) = (
+    "The galloping parameter file (.ohlg): its methods, its requirement and the cases it names.",
+    "A text file holding every coefficient of the methods you design to (OpenOHL ships none; \
+     the example's numbers are invented). Each method draws one ellipse per wire: its major \
+     axis A and minor axis B as sums of terms in the sag D, the span L, √D, the conductor \
+     diameter d, a logarithmic term and a constant. The requirement is the distance two \
+     ellipses must keep (none: the distances only). Edited outside the window; read again \
+     when it changes on disk. Every field: the user guide.",
+);
+
+/// *4 Model*'s (?).
+const MODEL_HELP: (&str, &str) = (
+    "What the parameter file sets about how the check is computed (read-only).",
+    "Stations: the ellipses compared at stations − 1 inner points along the span; a number \
+     that is not a multiple of 2 × loops misses the middle of a loop, where the ellipse is \
+     largest (said in the results). Calculation: the wires solved by this condition and \
+     method (one more solve of the line). Pair's voltage: the voltage a requirement by \
+     voltage is read at. Per method: the tilt of the major axis, the centre above the wire \
+     at rest, and how the size varies along the span.",
+);
 
 /// The project setting the window's scope is kept in, per project line.
 pub const SETTING: &str = "app.galloping";
@@ -155,6 +233,8 @@ impl GallopingWindow {
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
         let weather = solved.case.clone();
+        // The sag of swung wires (said in the results).
+        let windy = weather.wind_pressure.si() > 0.0;
         let wind = model.wind;
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
@@ -195,10 +275,12 @@ impl GallopingWindow {
             let short = |p: &galloping::GallopingPair| p.distance - p.required.unwrap_or(0.0);
             pairs.sort_by(|a, b| short(a).total_cmp(&short(b)));
             local.finish(LOCAL.1, started.elapsed());
+            let safety = galloping::notes(&params, &wires, &pairs, windy);
             let span = |k: usize| (wires[k].wire.section.clone(), wires[k].wire.span);
             Ok(Report {
                 case,
                 notes,
+                safety,
                 rows: pairs
                     .iter()
                     .map(|p| Row {
@@ -229,10 +311,33 @@ impl GallopingWindow {
         let mut again = false;
         let stale = self.out_of_date(model);
         let mut open = self.open;
+        // The parameter file read again when it changed on disk: what
+        // blocks Run is said before it (check pages' guidelines §3).
+        self.read_params();
+        let file_why = match (&self.file, &self.params) {
+            (None, _) => Some("choose a galloping parameter file (.ohlg) in 3 Rules".to_owned()),
+            (Some(_), Some((_, _, Err(_)))) => {
+                Some("the parameter file is not read: see 3 Rules".to_owned())
+            }
+            _ => None,
+        };
         let why = (!model.cases.is_empty())
             .then_some(())
             .map_or(Some("the model has no weather case".to_owned()), |_| None)
+            .or(file_why)
             .or_else(|| self.scope.why_not(&model.line));
+        // The case chosen not among the file's (the command line runs
+        // only those): said before Run.
+        let case_name = model.cases.get(self.case).map(|c| c.case.name.clone());
+        let other_case = match (&self.params, &case_name) {
+            (Some((_, _, Ok(p))), Some(c)) if !p.applies(c) => Some(format!(
+                "\"{c}\" is not one of the cases the parameter file names ({}): the check runs \
+                 in it all the same",
+                p.cases.join(", ")
+            )),
+            _ => None,
+        };
+        let mut guide = None;
         let scope_words = check_ui::scope_words(&model.line, &self.scope, true);
         // The case is solved already: the time goes with the spans checked.
         let (sections, spans) = check_ui::scope_counts(&model.line, &self.scope);
@@ -269,23 +374,34 @@ impl GallopingWindow {
                 );
                 match tab {
                     check_ui::Tab::Setup => help::body(ui, WINDOW, |ui| {
-                        check_ui::section(ui, 1, "What it checks", None);
-                        help::explain(
+                        // The check pages' treatment (2026-11-15): the
+                        // grey lines in the (?) of their section; what
+                        // blocks Run and the warnings stay written.
+                        guide = guide.or(check_ui::section(
                             ui,
-                            "Ellipses around the wires of each span, sized from the sag by the \
-                             coefficients of the parameter file, and their clearances.",
-                            "Each method of the parameter file sizes an ellipse around each wire \
-                             from its sag in the weather case chosen; the distance between the \
-                             ellipses of two wires is compared with the requirement of the file.",
-                        );
+                            1,
+                            "What it checks",
+                            Some(anchors::WHAT),
+                        ));
+                        help::explain(ui, WHAT_HELP.0, WHAT_HELP.1);
                         check_ui::how_computed(
                             ui,
-                            "galloping-window",
-                            "The weather case's sags; per wire an ellipse by the method's coefficients; per pair of wires the shortest distance between their ellipses.",
+                            WINDOW,
+                            "The weather case's sags; per wire and method an ellipse whose axes \
+                             A and B come from the sag by the method's coefficients; per pair \
+                             of wires between the same two structures the shortest distance \
+                             between their ellipses along the span, less both wires' outer \
+                             radii.",
                             help::galloping_ellipses,
                         );
                         ui.separator();
-                        check_ui::section(ui, 2, "Scope", None);
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            2,
+                            "Scope",
+                            Some(anchors::SCOPE),
+                            Some(SCOPE_HELP),
+                        ));
                         let names: Vec<String> =
                             model.cases.iter().map(|c| c.case.name.clone()).collect();
                         check_ui::ScopePicker::new(WINDOW, &model.line)
@@ -293,32 +409,43 @@ impl GallopingWindow {
                             .wires(&mut self.scope, true)
                             .cases(check_ui::Cases::One(&names, &mut self.case))
                             .ui(ui);
-                        ui.separator();
-                        check_ui::section(ui, 3, "Rules", None);
-                        ui.horizontal(|ui| {
-                            let name = self.file.as_ref().map_or("no parameter file".into(), |p| {
-                                p.file_name()
-                                    .map_or(String::new(), |n| n.to_string_lossy().into_owned())
-                            });
-                            ui.label(format!("parameters: {name}"));
-                            if ui.button("Choose…").clicked()
-                                && let Some(p) = rfd::FileDialog::new()
-                                    .add_filter(
-                                        "Galloping parameters",
-                                        &[ohl_clearance::galloping::GALLOPING_FILE_EXTENSION],
-                                    )
-                                    .pick_file()
-                            {
-                                self.file = Some(p);
-                            }
-                        });
-                        // Its methods and requirement, read from the file
-                        // (again only when another is chosen).
-                        if let Some(text) = self.params_text() {
-                            ui.label(egui::RichText::new(text).small().weak());
+                        if let Some(w) = &other_case {
+                            ui.label(
+                                egui::RichText::new(w)
+                                    .small()
+                                    .color(ui.visuals().warn_fg_color),
+                            );
                         }
+                        ui.separator();
+                        guide = guide.or(check_ui::section_help(
+                            ui,
+                            3,
+                            "Rules: the parameter file",
+                            Some(anchors::RULES),
+                            Some(RULES_HELP),
+                        ));
+                        self.file_ui(ui);
+                        ui.separator();
+                        // Rarely looked at: folded (check pages' §1).
+                        let model_guide = check_ui::model_section(ui, WINDOW, 4, |ui| {
+                            let g = ui
+                                .horizontal(|ui| {
+                                    let g = help::heading(
+                                        ui,
+                                        "From the parameter file",
+                                        anchors::MODEL,
+                                    );
+                                    help::question_both(ui, MODEL_HELP.0, MODEL_HELP.1);
+                                    g
+                                })
+                                .inner;
+                            self.model_ui(ui);
+                            g
+                        });
+                        guide = guide.or(model_guide.flatten());
                     }),
                     check_ui::Tab::Results => check_ui::results_area(ui, WINDOW, |ui| {
+                        guide = guide.or(help::heading(ui, "Results", anchors::RESULTS));
                         let report = match &self.job.result {
                             None => {
                                 ui.label(
@@ -332,28 +459,18 @@ impl GallopingWindow {
                             }
                             Some(Ok(r)) => r,
                         };
-                        let n = report.rows.iter().filter(|r| short(r)).count();
-                        check_ui::verdict(
-                            ui,
-                            n > 0,
-                            &if n > 0 {
-                                format!(
-                                    "✖ {n} pair{} × method below the requirement in case \"{}\"",
-                                    if n == 1 { "" } else { "s" },
-                                    report.case
-                                )
-                            } else {
-                                format!(
-                                    "✔ Every pair at its requirement in case \"{}\" ({} pairs × \
-                                     methods)",
-                                    report.case,
-                                    report.rows.len()
-                                )
-                            },
-                            false,
-                        );
-                        // What was assumed and left out, folded above the
-                        // table.
+                        let (failing, text) = verdict(report);
+                        check_ui::verdict(ui, failing, &text, false);
+                        // Where it is not on the safe side: always
+                        // written (check pages' §6); what was assumed and
+                        // left out folded above the table.
+                        for n in &report.safety {
+                            ui.label(
+                                egui::RichText::new(n)
+                                    .small()
+                                    .color(ui.visuals().warn_fg_color),
+                            );
+                        }
                         check_ui::notes_fold(ui, WINDOW, &report.notes);
                         use check_ui::Col;
                         // Built once per answer, not every frame.
@@ -365,11 +482,24 @@ impl GallopingWindow {
                                 Col::text("Method"),
                                 Col::text("Span"),
                                 Col::text("Other span"),
-                                Col::num("Distance [m]"),
-                                Col::num("Required [m]"),
-                                Col::num("At [%]").tip("Where along the span"),
-                                Col::text("Ellipse [m]"),
-                                Col::text("Other ellipse [m]"),
+                                Col::num("Distance [m]").tip(
+                                    "The smallest distance between the two wires' ellipses \
+                                     along the span, less both wires' outer radii (bundle, \
+                                     conductor — iced with ice — and the polyline's bound); \
+                                     0: they overlap",
+                                ),
+                                Col::num("Required [m]").tip(
+                                    "The parameter file's requirement at the pair's voltage \
+                                     (empty: the file gives none)",
+                                ),
+                                Col::num("At [%]").tip(
+                                    "Where along the first wire's span, from its first \
+                                     structure",
+                                ),
+                                Col::text("Ellipse [m]")
+                                    .tip("The first wire's ellipse at its largest: A × B"),
+                                Col::text("Other ellipse [m]")
+                                    .tip("The second wire's ellipse at its largest: A × B"),
                             ],
                         )
                         .rows_kept(rows)
@@ -416,59 +546,202 @@ impl GallopingWindow {
             },
         );
         self.open = open;
+        self.guide = self.guide.or(guide);
         if again && why.is_none() {
             self.start(model, ctx);
         }
         go
     }
 
-    /// The parameter file's methods and requirement in one line ("methods
-    /// A (1 loop), B (2 loops); required by voltage: …"), read with the
-    /// check's own reader once per file chosen; an error said as such.
-    fn params_text(&mut self) -> Option<String> {
-        let path = self.file.clone()?;
-        if self.params.as_ref().is_none_or(|(p, _)| *p != path) {
-            let text = GallopingParams::load(&path).map(|p| {
-                let methods = p
-                    .methods
-                    .iter()
-                    .map(|m| {
-                        format!(
-                            "{} ({} loop{})",
-                            m.name,
-                            m.loops,
-                            if m.loops == 1 { "" } else { "s" }
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let required = p
-                    .required
-                    .as_ref()
-                    .map_or("no requirement (distances only)".to_owned(), |r| {
-                        format!("required {}", crate::rule_table::distance_words(r))
-                    });
-                let cases = if p.cases.is_empty() {
-                    String::new()
-                } else {
-                    format!("; for the cases {}", p.cases.join(", "))
-                };
-                format!(
-                    "{}: method{} {methods}; {required}{cases}",
-                    if p.name.is_empty() {
-                        "parameters"
-                    } else {
-                        p.name.as_str()
-                    },
-                    if p.methods.len() == 1 { "" } else { "s" }
-                )
-            });
-            self.params = Some((path, text));
+    /// Reads the parameter file with the check's own reader: once per
+    /// file chosen, and again when it changed on disk (its modification
+    /// time; a stat per frame).
+    fn read_params(&mut self) {
+        let Some(path) = self.file.clone() else {
+            self.params = None;
+            return;
+        };
+        let modified = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if self
+            .params
+            .as_ref()
+            .is_none_or(|(p, m, _)| *p != path || *m != modified)
+        {
+            let read = GallopingParams::load(&path);
+            self.params = Some((path, modified, read));
         }
-        self.params.as_ref().map(|(_, t)| match t {
-            Ok(t) => t.clone(),
-            Err(e) => format!("not read: {e}"),
-        })
+    }
+
+    /// *3 Rules*: the file and **Choose…**, then what it holds — its
+    /// name, requirement and cases, a row per method with its axes in
+    /// words — or why it is not read, in the error colour.
+    fn file_ui(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let name = self.file.as_ref().map_or("none chosen".into(), |p| {
+                p.file_name()
+                    .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+            });
+            ui.label("Parameter file").on_hover_text(
+                "The .ohlg file whose methods draw the ellipses and whose requirement they are \
+                 checked against; another file, other ellipses",
+            );
+            ui.strong(name);
+            if ui
+                .button("Choose…")
+                .on_hover_text(
+                    "Another galloping parameter file (.ohlg): the next Run draws its methods' \
+                     ellipses and checks its requirement",
+                )
+                .clicked()
+                && let Some(p) = rfd::FileDialog::new()
+                    .add_filter(
+                        "Galloping parameters",
+                        &[ohl_clearance::galloping::GALLOPING_FILE_EXTENSION],
+                    )
+                    .pick_file()
+            {
+                self.file = Some(p);
+                self.read_params();
+            }
+        });
+        let Some((_, _, read)) = &self.params else {
+            return;
+        };
+        let p = match read {
+            Ok(p) => p,
+            Err(e) => {
+                crate::menu::error_label(ui, format!("not read: {e}"));
+                return;
+            }
+        };
+        egui::Grid::new((WINDOW, "file"))
+            .num_columns(2)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                if !p.name.is_empty() {
+                    ui.label("Name");
+                    ui.label(&p.name);
+                    ui.end_row();
+                }
+                ui.label("Required").on_hover_text(
+                    "The distance two ellipses must keep (the file's required); a pair below it \
+                     is a violation. None: the distances only, no verdict per pair",
+                );
+                ui.label(p.required.as_ref().map_or(
+                    "no requirement: distances only".to_owned(),
+                    crate::rule_table::distance_words,
+                ));
+                ui.end_row();
+                ui.label("Cases").on_hover_text(
+                    "The weather cases the file says its wires gallop in (its cases); the \
+                     window runs in the case chosen in 2 Scope, the command line only in these",
+                );
+                ui.label(if p.cases.is_empty() {
+                    "every case".to_owned()
+                } else {
+                    p.cases.join(", ")
+                });
+                ui.end_row();
+            });
+        egui::Grid::new((WINDOW, "methods"))
+            .num_columns(4)
+            .striped(true)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                ui.strong("Method");
+                ui.strong("Loops").on_hover_text(
+                    "The number of loops n in the span: with along = sine, each loop's ellipse is \
+                     largest in its middle and nothing at the loops' ends",
+                );
+                ui.strong("Major axis A [m]").on_hover_text(
+                    "The ellipse's full major axis, from the sag D, the span L, the conductor \
+                     diameter d and n: a larger A, a larger ellipse, a smaller clearance",
+                );
+                ui.strong("Minor axis B [m]").on_hover_text(
+                    "The ellipse's full minor axis: the same terms and a share of A",
+                );
+                ui.end_row();
+                for m in &p.methods {
+                    ui.label(&m.name);
+                    ui.label(m.loops.to_string());
+                    ui.label(format!("A = {}", axis_words(&m.major)));
+                    ui.label(format!("B = {}", axis_words(&m.minor)));
+                    ui.end_row();
+                }
+            });
+    }
+
+    /// *4 Model*: what the file sets about how the check is computed,
+    /// read-only, each with its effect on hover.
+    fn model_ui(&self, ui: &mut egui::Ui) {
+        let Some((_, _, Ok(p))) = &self.params else {
+            ui.label(egui::RichText::new("no parameter file read").small().weak());
+            return;
+        };
+        egui::Grid::new((WINDOW, "model"))
+            .num_columns(2)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                ui.label("Stations").on_hover_text(
+                    "The ellipses are compared at stations − 1 inner points along the span: more, \
+                     the smallest gap found more closely, in proportion more time (well under a \
+                     second for a whole line); a multiple of 2 × loops compares every loop's \
+                     largest ellipse",
+                );
+                ui.label(format!("{} ({} inner points)", p.stations, p.stations - 1));
+                ui.end_row();
+                ui.label("Calculation").on_hover_text(
+                    "How the wires are solved for their sags and positions: the file's condition \
+                     and method (one more solve of the line in the case), else each section's own",
+                );
+                ui.label(
+                    p.calculation
+                        .map_or("each section's own".to_owned(), |c| c.label()),
+                );
+                ui.end_row();
+                ui.label("Pair's voltage").on_hover_text(
+                    "The voltage a requirement by voltage is read at: the higher of the two \
+                     wires' nominal voltages, their sum, or the voltage between them",
+                );
+                ui.label(match p.pair_voltage {
+                    ohl_clearance::rules::PairVoltage::Higher => "the higher",
+                    ohl_clearance::rules::PairVoltage::Sum => "the sum",
+                    ohl_clearance::rules::PairVoltage::Difference => "the difference",
+                });
+                ui.end_row();
+            });
+        egui::Grid::new((WINDOW, "model-methods"))
+            .num_columns(4)
+            .striped(true)
+            .spacing(help::GRID_SPACING)
+            .show(ui, |ui| {
+                ui.strong("Method");
+                ui.strong("Tilt [°]").on_hover_text(
+                    "The major axis from the vertical, its top to the right looking from the \
+                     span's first structure to its last: tilted, the ellipses lean towards a \
+                     neighbour on that side",
+                );
+                ui.strong("Centre above the wire [× A]").on_hover_text(
+                    "The ellipse's centre along the major axis above the wire at rest: 0.5 puts \
+                     the wire at the lower end, the ellipse reaching up towards a wire above",
+                );
+                ui.strong("Along the span").on_hover_text(
+                    "sine: the size × |sin(nπt)|, largest in each loop's middle, nothing at the \
+                     supports; constant: the full size all along (larger, a smaller clearance \
+                     near the structures)",
+                );
+                ui.end_row();
+                for m in &p.methods {
+                    ui.label(&m.name);
+                    ui.label(format!("{}", m.tilt_deg));
+                    ui.label(format!("{}", m.centre_above_rest));
+                    ui.label(match m.along {
+                        galloping::Along::Sine => "sine",
+                        galloping::Along::Constant => "constant",
+                    });
+                    ui.end_row();
+                }
+            });
     }
 
     /// The weather case of the results shown (a row clicked is drawn in
@@ -514,6 +787,81 @@ fn table_rows(report: &Report) -> Vec<check_ui::Row> {
         .collect()
 }
 
+/// The verdict: whether it fails, and in words — the pairs below the
+/// requirement, every pair at it, or (no requirement in the file) the
+/// smallest distance found.
+fn verdict(report: &Report) -> (bool, String) {
+    let n = report.rows.iter().filter(|r| short(r)).count();
+    let s = |k: usize| if k == 1 { "" } else { "s" };
+    if n > 0 {
+        return (
+            true,
+            format!(
+                "✖ {n} pair{} × method below the requirement in case \"{}\"",
+                s(n),
+                report.case
+            ),
+        );
+    }
+    if report.rows.iter().all(|r| r.required.is_none()) {
+        let least = report.rows.iter().map(|r| r.distance).reduce(f64::min);
+        return (
+            false,
+            match least {
+                Some(d) => format!(
+                    "No requirement in the parameter file: distances only — the smallest \
+                     {d:.2} m in case \"{}\" ({} pair{} × methods)",
+                    report.case,
+                    report.rows.len(),
+                    s(report.rows.len())
+                ),
+                None => format!("No pair of wires to compare in case \"{}\"", report.case),
+            },
+        );
+    }
+    (
+        false,
+        format!(
+            "✔ Every pair at its requirement in case \"{}\" ({} pairs × methods)",
+            report.case,
+            report.rows.len()
+        ),
+    )
+}
+
+/// An axis of a method in words: its terms (`1.2 D + 0.3 m`, `0.4 A`;
+/// none: `0`).
+pub(crate) fn axis_words(a: &galloping::AxisFormula) -> String {
+    let num = |x: f64| format!("{}", (x * 1e6).round() / 1e6);
+    let mut terms = Vec::new();
+    for (k, what) in [
+        (a.sag, "D"),
+        (a.span, "L"),
+        (a.sqrt_sag, "√D"),
+        (a.diameter, "d"),
+        (a.major, "A"),
+    ] {
+        if k != 0.0 {
+            terms.push(format!("{} {what}", num(k)));
+        }
+    }
+    if a.log_factor != 0.0 {
+        terms.push(format!(
+            "{} n d ln({} D / (n² d))",
+            num(a.log_factor),
+            num(a.log_scale)
+        ));
+    }
+    if a.constant != 0.0 {
+        terms.push(format!("{} m", num(a.constant)));
+    }
+    if terms.is_empty() {
+        "0".to_owned()
+    } else {
+        terms.join(" + ")
+    }
+}
+
 /// A pair below its requirement.
 fn short(r: &Row) -> bool {
     r.required.is_some_and(|q| r.distance < q)
@@ -540,4 +888,147 @@ fn csv(r: &Report) -> String {
         );
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    /// Every section the window's **user guide ↗** buttons open is a
+    /// heading of its own page (mdBook's anchors: lower case, spaces as
+    /// `-`, punctuation dropped).
+    #[test]
+    fn each_guide_button_opens_a_heading_of_the_page() {
+        let text =
+            std::fs::read_to_string(crate::tests::root().join("docs/user-guide/galloping.md"))
+                .unwrap();
+        let headings: Vec<String> = text
+            .lines()
+            .filter_map(|l| l.strip_prefix('#'))
+            .map(|h| {
+                h.trim_start_matches('#')
+                    .trim()
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        for a in [
+            anchors::WHAT,
+            anchors::SCOPE,
+            anchors::RULES,
+            anchors::MODEL,
+            anchors::RESULTS,
+        ] {
+            let (page, s) = guide(a);
+            assert_eq!(page, "user-guide/galloping");
+            assert!(headings.iter().any(|x| x == s), "{s} not in {headings:?}");
+        }
+    }
+
+    /// The window's first **user guide ↗** (1 What it checks) opens its
+    /// own page.
+    #[test]
+    fn the_user_guide_button_opens_the_window_page() {
+        let model = crate::tests::synthetic();
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.galloping.show(&r.model, r.case);
+        }
+        h.run();
+        h.query_all_by_label("user guide ↗")
+            .next()
+            .expect("a user guide button")
+            .click();
+        h.run();
+        let r = h.state_mut().ready().unwrap();
+        let (said, error) = r.status.clone().expect("what was opened");
+        assert!(!error, "{said}");
+        assert!(said.contains("galloping"), "{said}");
+        assert!(said.contains(anchors::WHAT), "{said}");
+    }
+
+    /// Without a parameter file, or with one that is not read, Run is
+    /// greyed and the footer says why (before 2026-11-15 Run failed);
+    /// a case the file does not name is said before Run; the file's
+    /// methods are listed with their axes in words.
+    #[test]
+    fn what_blocks_run_and_the_file_said_before_run() {
+        let model = crate::tests::synthetic();
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(1500.0, 950.0))
+            .build_eframe(|_| crate::app::App::with_model(model, None));
+        h.run();
+        {
+            let r = h.state_mut().ready().unwrap();
+            r.galloping.show(&r.model, r.case);
+            r.galloping.file = None;
+        }
+        h.run();
+        assert!(
+            h.query_all_by_label_contains("choose a galloping parameter file")
+                .next()
+                .is_some()
+        );
+        let bad = std::env::temp_dir().join(format!("galloping-bad-{}.ohlg", std::process::id()));
+        std::fs::write(&bad, "name = \"no method\"\n").unwrap();
+        h.state_mut().ready().unwrap().galloping.file = Some(bad.clone());
+        h.run();
+        assert!(
+            h.query_all_by_label_contains("the parameter file is not read")
+                .next()
+                .is_some()
+        );
+        assert!(
+            h.query_all_by_label_contains("give at least one [[method]]")
+                .next()
+                .is_some()
+        );
+        // The example file, read again once changed on disk: its methods
+        // in words; the case shown, if not a glaze case, said.
+        let example = crate::tests::root().join("examples/synthetic-line/galloping-example.ohlg");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&bad, std::fs::read_to_string(&example).unwrap()).unwrap();
+        h.run();
+        let _ = std::fs::remove_file(&bad);
+        assert!(h.query_all_by_label("A = 1.2 D + 0.3 m").next().is_some());
+        assert!(h.query_all_by_label("B = 0.4 A").next().is_some());
+        let r = h.state_mut().ready().unwrap();
+        let named = r.model.cases[r.galloping.case].case.name.clone();
+        if !named.starts_with("glaze") {
+            assert!(
+                h.query_all_by_label_contains("is not one of the cases the parameter file names")
+                    .next()
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn axes_in_words() {
+        let a = galloping::AxisFormula {
+            sag: 1.25,
+            constant: 0.3,
+            ..Default::default()
+        };
+        assert_eq!(axis_words(&a), "1.25 D + 0.3 m");
+        assert_eq!(axis_words(&galloping::AxisFormula::default()), "0");
+        let l = galloping::AxisFormula {
+            log_factor: 80.0,
+            log_scale: 8.0,
+            major: 0.4,
+            ..Default::default()
+        };
+        assert_eq!(axis_words(&l), "0.4 A + 80 n d ln(8 D / (n² d))");
+    }
 }

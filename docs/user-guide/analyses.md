@@ -92,16 +92,16 @@ along = "sine"                      # or "constant"
 CSV columns: case, method, both spans, distance, required, overlap, where
 (fraction of the span), both ellipses' axes, the first wire's position.
 
+The output starts with the *NOT ON THE SAFE SIDE* notes of the case
+(2026-11-15): a loop's middle between the stations, a wire without a
+diameter, a pair beyond the requirement's table, a case with wind.
+
 In the desktop app: **Checks › Galloping ellipses…** — choose the weather
 case (*2 Scope*) and the parameter file (*3 Rules*; the project's `.ohlg`,
 or one next to a line file, is chosen first), then **Run** (the window's
-footer, bottom left). Under the parameter file's name a line says what it
-holds: its methods (with their loops), its requirement and the cases it
-names (2026-10-31). The Results tab lists every pair and method (spans
-named from 1), *Only violations* on by default, the notes folded above
-the table; a row clicked selects its span and draws it in the weather
-case of the run. **Export CSV…** writes the rows shown, **Full report
-(CSV)…** every pair with the case.
+footer, bottom left). The window, setting by setting, every field of the
+parameter file and what is not on the safe side: its own page,
+[Galloping ellipses](galloping.md).
 
 ## Ice shedding: the conductor jump when the ice drops
 
