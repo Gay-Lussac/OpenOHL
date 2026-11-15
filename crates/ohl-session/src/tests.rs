@@ -1978,6 +1978,44 @@ fn structure_groups_are_a_settings_row() {
     assert_eq!(s.line().structure_groups, groups);
 }
 
+/// A load case's own list (2026-11-15, the Load cases form's Applies to):
+/// kept in the groups row, read back when the project opens again; a
+/// structure renamed follows in its picks and its exclusions.
+#[test]
+fn a_load_cases_own_list_is_kept_and_follows_a_rename() {
+    let (path, mut s) = project("own-list");
+    let mut g = ohl_line::StructureGroup::new("suspension");
+    g.structures = vec!["T2".into(), "T3".into()];
+    g.load_cases = vec!["everyday".into(), "wind".into()];
+    let mut line = s.line().clone();
+    line.structure_groups = vec![g];
+    line.give_case("ice", &["T2".to_owned()], true);
+    line.give_case("wind", &["T3".to_owned()], false);
+    let groups = line.structure_groups.clone();
+    let command = s.structure_groups_command(groups.clone());
+    s.apply("ana", command).unwrap();
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    assert_eq!(s.line().structure_groups, groups);
+    assert!(!s.line().takes_load_case("T3", "wind"));
+    assert!(s.line().takes_load_case("T2", "ice"));
+    for (from, to) in [("T2", "Y2"), ("T3", "Y3")] {
+        s.apply(
+            "ana",
+            Command::Rename {
+                kind: Kind::Structure,
+                id: from.into(),
+                new_id: to.into(),
+            },
+        )
+        .unwrap();
+    }
+    let l = s.line();
+    assert_eq!(l.structure_groups[1].structures, ["Y2"]);
+    assert_eq!(l.structure_groups[2].excluded, ["Y3"]);
+    assert!(!l.takes_load_case("Y3", "wind") && l.takes_load_case("Y2", "ice"));
+}
+
 /// A project of before 2026-11-15 with a structure's own load cases and a
 /// type's set: read into groups when it opens, kept so (the objects
 /// rewritten once, not a logged edit); opened again, the same groups,

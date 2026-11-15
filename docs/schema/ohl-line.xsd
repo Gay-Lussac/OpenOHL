@@ -1086,11 +1086,26 @@
               rule given holds (rules; none given: picked ones only). A
               structure takes the union of the cases of its groups; in no
               group, every case; in groups ticking no case only,
-              none.</xs:documentation>
+              none. With load_case (the same raise): that load case's own
+              list (the Load cases form's Applies to; at most one per case,
+              no name, no rules, no case element) — its structure elements
+              take the case on top of their groups' cases, its excluded
+              elements do not take it whatever their groups give; it does
+              not count as a group for "in no group: every
+              case".</xs:documentation>
           </xs:annotation>
           <xs:complexType>
             <xs:sequence>
               <xs:element name="structure" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="id" type="xs:string" use="required"/>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="excluded" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                  <xs:documentation>A load case's own list only: a structure
+                    that does not take its case.</xs:documentation>
+                </xs:annotation>
                 <xs:complexType>
                   <xs:attribute name="id" type="xs:string" use="required"/>
                 </xs:complexType>
@@ -1127,7 +1142,13 @@
                 </xs:complexType>
               </xs:element>
             </xs:sequence>
-            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="name" type="xs:string">
+              <xs:annotation>
+                <xs:documentation>Required for a group (unique); absent on a
+                  load case's own list.</xs:documentation>
+              </xs:annotation>
+            </xs:attribute>
+            <xs:attribute name="load_case" type="xs:string"/>
             <xs:attribute name="description" type="xs:string"/>
           </xs:complexType>
         </xs:element>

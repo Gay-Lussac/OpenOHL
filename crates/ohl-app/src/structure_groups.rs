@@ -14,10 +14,16 @@
 //! its own page, [`GUIDE`]): 1 How it works (with the line's summary),
 //! 2 Groups (the list: add, delete), then for the group picked 3 Name and
 //! description, 4 Structures picked (from the selection in the Structures
-//! table or a view: *Add the N selected*), 5 Rules (types, line angle,
-//! station on an alignment, dead end — all must hold), 6 Load cases (the
+//! table or a view: *Add the N selected*; per position, the first way),
+//! 5 Rules (optional: types, line angle, station on an alignment, dead end
+//! — all must hold, an automatic helper), 6 Load cases (the
 //! library's, ticked) and 7 Who is in (the structures it holds now, why,
 //! and the cases each takes; the structures in no group).
+//!
+//! A load case's own list (2026-11-15, the Load cases form's *8 Applies
+//! to*) is a row *case (own list)*; picked, its picked and excluded
+//! structures and who takes the case, changed with the form's command
+//! ([`crate::load_case_sets::give_command`]).
 //!
 //! Every change is one command of the session
 //! ([`ohl_session::Session::structure_groups_command`], one undo).
@@ -45,8 +51,8 @@ pub mod anchors {
     pub const NAME: &str = "3-name-and-description";
     /// *4 Structures picked*.
     pub const PICKED: &str = "4-structures-picked";
-    /// *5 Rules*.
-    pub const RULES: &str = "5-rules";
+    /// *5 Rules (optional)*.
+    pub const RULES: &str = "5-rules-optional";
     /// *6 Load cases*.
     pub const CASES: &str = "6-load-cases";
     /// *7 Who is in*.
@@ -70,23 +76,29 @@ const HOW_HELP: (&str, &str) = (
      its structures take. A structure in two groups takes the cases of both (more cases: the \
      safe side). A structure in no group takes every case of the library. A group ticking no \
      case gives its structures none: no loads, no structure check, said wherever they are \
-     listed. The checks of the line (Checks › Structure loads) and OHL-Structure (Open in \
+     listed. Picking is per position: two structures of the same type can take different cases; \
+     the rules are an optional automatic helper. Each load case also has its own list, ticked \
+     where the case is defined (Load cases… › Applies to) and shown here as \"case (own list)\": \
+     its picked structures take that case on top of their groups' cases, its excluded ones do \
+     not take it whatever their groups give. The checks of the line (Checks › Structure loads) and OHL-Structure (Open in \
      OHL-Structure… on a placed structure) take exactly these cases. Nothing is solved again: \
      a case is solved once for the whole line.",
 );
 
 /// *4 Structures picked*: the help.
 const PICKED_HELP: (&str, &str) = (
-    "Structures in the group whatever the rules say.",
+    "The first way: structures in the group by hand, per position, whatever their type.",
     "Select structures in the Structures table or in a view (Shift or Cmd/Ctrl + click for \
      several), then Add the N selected. A structure picked stays in the group when the line \
-     changes; × takes it out. A picked id no longer in the line is shown and left out.",
+     changes; × takes it out. A picked id no longer in the line is shown and left out. Two \
+     structures of the same type can be in different groups and take different cases.",
 );
 
-/// *5 Rules*: the help.
+/// *5 Rules (optional)*: the help.
 const RULES_HELP: (&str, &str) = (
-    "Every rule given must hold; bounds are included.",
-    "Types: its structure type is one of those ticked (none ticked: any type). Line angle: the \
+    "Optional, automatic: every rule given must hold; bounds are included.",
+    "A helper to fill the group without picking: a structure for which every rule given holds \
+     is in it, on top of the structures picked. Types: its structure type is one of those ticked (none ticked: any type). Line angle: the \
      size of the angle the line turns there, left or right, in degrees (the largest over the \
      alignments it is on; a structure on no alignment has none and is not taken by an angle \
      rule). Station: its station on the alignment chosen (any alignment: on any it stands on), \
@@ -274,11 +286,30 @@ impl GroupsWindow {
             return None;
         }
         if let Some(p) = g.rules.problem() {
-            self.error = Some(format!("group \"{}\": {p}", g.name));
+            self.error = Some(format!("group \"{}\": {p}", g.label()));
             return None;
         }
-        let name = g.name.clone();
+        let name = g.label();
         self.command(model, format!("group \"{name}\": {what}"), groups)
+    }
+
+    /// Structures `take` made to take load case `case` and `drop` not to,
+    /// through the case's own list (the same command as the Load cases
+    /// form's *Applies to*).
+    fn give(
+        &mut self,
+        model: &Model,
+        case: &str,
+        take: &[String],
+        drop: &[String],
+    ) -> Option<(String, Command)> {
+        match crate::load_case_sets::give_command(model, case, take, drop) {
+            Ok(c) => c,
+            Err(e) => {
+                self.error = Some(e);
+                None
+            }
+        }
     }
 
     /// The line's groups resolved (cached while the line and its groups
@@ -447,7 +478,7 @@ impl GroupsWindow {
                             ui.end_row();
                             for (k, g) in groups.iter().enumerate() {
                                 if ui
-                                    .selectable_label(k == self.picked, &g.name)
+                                    .selectable_label(k == self.picked, g.label())
                                     .on_hover_text(if g.description.is_empty() {
                                         "Pick it to see and change it below".to_owned()
                                     } else {
@@ -459,6 +490,27 @@ impl GroupsWindow {
                                     self.buffers.clear();
                                 }
                                 ui.label(sets.members(k).len().to_string());
+                                if let Some(case) = &g.load_case {
+                                    if known.as_ref().is_ok_and(|k| !k.contains(case)) {
+                                        crate::menu::error_label(
+                                            ui,
+                                            format!("{case} (not in the library)"),
+                                        );
+                                    } else {
+                                        ui.label(case);
+                                    }
+                                    let excluded = sets.excluded(k).len();
+                                    ui.label(format!(
+                                        "— the load case's own list{} (Load cases… › Applies to)",
+                                        if excluded == 0 {
+                                            String::new()
+                                        } else {
+                                            format!(", {excluded} excluded")
+                                        }
+                                    ));
+                                    ui.end_row();
+                                    continue;
+                                }
                                 if g.load_cases.is_empty() {
                                     ui.colored_label(ui.visuals().warn_fg_color, "none");
                                 } else {
@@ -500,8 +552,17 @@ impl GroupsWindow {
                     && ui
                         .button("Delete group")
                         .on_hover_text(
-                            "The group picked taken away (one undo); its structures keep their \
-                             other groups (in none: every case)",
+                            if groups
+                                .get(self.picked)
+                                .is_some_and(StructureGroup::is_own_list)
+                            {
+                                "The load case's own list taken away (one undo): its picked \
+                                 structures keep the case only when a group gives it; its \
+                                 excluded ones take it again"
+                            } else {
+                                "The group picked taken away (one undo); its structures keep \
+                                 their other groups (in none: every case)"
+                            },
                         )
                         .clicked()
                 {
@@ -522,6 +583,10 @@ impl GroupsWindow {
         let Some(g) = groups.get(self.picked).cloned() else {
             return;
         };
+        if g.is_own_list() {
+            self.own_list_ui(ui, model, &g, selected, &sets, editable, out);
+            return;
+        }
         ui.separator();
         ui.heading(format!("Group \"{}\"", g.name));
         ui.add_enabled_ui(editable, |ui| {
@@ -664,7 +729,7 @@ impl GroupsWindow {
             out.guide = out.guide.or(crate::check_ui::section_help(
                 ui,
                 5,
-                "Rules",
+                "Rules (optional)",
                 Some(anchors::RULES),
                 Some(RULES_HELP),
             ));
@@ -741,16 +806,32 @@ impl GroupsWindow {
                                     (true, false) => "picked",
                                     _ => "rules",
                                 });
-                                ui.label(sets.groups_of(id).join(", "));
+                                ui.label(crate::load_case_sets::groups_words(&sets, id));
+                                let excluded = sets.excluded_from(id);
+                                let but = if excluded.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(
+                                        " — {} {}",
+                                        excluded.join(", "),
+                                        crate::load_case_sets::EXCLUDED
+                                    )
+                                };
                                 match sets.of(id) {
                                     CaseSet::NoCase => {
                                         ui.colored_label(
                                             ui.visuals().warn_fg_color,
-                                            crate::load_case_sets::NO_CASE,
+                                            format!("{}{but}", crate::load_case_sets::NO_CASE),
                                         );
                                     }
-                                    c => {
+                                    c if excluded.is_empty() => {
                                         ui.label(c.names().join(", "));
+                                    }
+                                    c => {
+                                        ui.colored_label(
+                                            ui.visuals().warn_fg_color,
+                                            format!("{}{but}", c.names().join(", ")),
+                                        );
                                     }
                                 }
                                 ui.end_row();
@@ -766,6 +847,215 @@ impl GroupsWindow {
                 format!("In no group (they take every case): {}", first_ids(&alone))
             })
             .small(),
+        );
+    }
+
+    /// A load case's own list `g` picked (2026-11-15): its description,
+    /// its picked and excluded structures (changed as in the Load cases
+    /// form's *Applies to*: the same command), who it gives the case to.
+    #[allow(clippy::too_many_arguments)]
+    fn own_list_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        model: &Model,
+        g: &StructureGroup,
+        selected: &[String],
+        sets: &CaseSets,
+        editable: bool,
+        out: &mut Out,
+    ) {
+        let case = g.load_case.clone().unwrap_or_default();
+        ui.separator();
+        ui.heading(format!("Load case \"{case}\": its own list"));
+        ui.label(
+            egui::RichText::new(format!(
+                "Made where the case is defined: Line › Structures › Load cases… › {case} › 8 \
+                 Applies to (ticks there change this list). Its picked structures take {case} on \
+                 top of their groups' cases (a structure in no group takes every case already); \
+                 its excluded structures do not take {case}, whatever their groups give. It has \
+                 no rules and gives no other case."
+            ))
+            .small(),
+        );
+        ui.add_enabled_ui(editable, |ui| {
+            // 3 Name and description: the name is the case's.
+            out.guide = out.guide.or(crate::check_ui::section_help(
+                ui,
+                3,
+                "Name and description",
+                Some(anchors::NAME),
+                Some((
+                    "Named after its load case; the description is free text.",
+                    "A load case's own list has no name of its own: it is shown as \"case \
+                     (own list)\" wherever a structure's groups are listed, and follows a \
+                     rename of the case in the Load cases library.",
+                )),
+            ));
+            egui::Grid::new("structure-group-own-description")
+                .num_columns(2)
+                .spacing(help::GRID_SPACING)
+                .show(ui, |ui| {
+                    if let Some(d) = self.field(
+                        ui,
+                        format!("description/{}", self.picked),
+                        "description",
+                        &g.description,
+                        480.0,
+                        "What the list is for (free text)",
+                    ) {
+                        out.command = self.change_picked(model, "description", |x| {
+                            x.description = d.trim().to_owned();
+                        });
+                    }
+                    ui.end_row();
+                });
+            ui.separator();
+            // 4 Structures picked, and excluded.
+            out.guide = out.guide.or(crate::check_ui::section_help(
+                ui,
+                4,
+                "Structures picked",
+                Some(anchors::PICKED),
+                Some((
+                    "Picked: they take the case; excluded: they do not, whatever their groups \
+                     give.",
+                    "Select structures in the Structures table or in a view, then Add the N \
+                     selected (picked here when no group of theirs gives the case; an exclusion \
+                     taken away) or Remove the N selected (taken out; excluded when a group or \
+                     being in no group still gives them the case). × takes one pick or one \
+                     exclusion away. The same as ticking them in Load cases… › Applies to.",
+                )),
+            ));
+            let mut gone: Option<(String, bool)> = None;
+            for (what, ids, excluded) in [
+                ("picked (take it)", &g.structures, false),
+                ("excluded (do not take it)", &g.excluded, true),
+            ] {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(what);
+                    if ids.is_empty() {
+                        ui.label(egui::RichText::new("none").weak());
+                    }
+                    for id in ids.iter() {
+                        let there = model.line.structure(id).is_some();
+                        let text = if there {
+                            format!("{id} ×")
+                        } else {
+                            format!("{id} (not in the line) ×")
+                        };
+                        if ui
+                            .small_button(text)
+                            .on_hover_text(if excluded {
+                                format!("Take {id}'s exclusion away: it takes {case} again when its groups give it")
+                            } else {
+                                format!("Take {id} out of the list: it takes {case} only when its groups give it")
+                            })
+                            .clicked()
+                        {
+                            gone = Some((id.clone(), excluded));
+                        }
+                    }
+                });
+            }
+            if let Some((id, excluded)) = gone {
+                out.command = if excluded {
+                    self.change_picked(model, &format!("{id} no longer excluded"), |x| {
+                        x.excluded.retain(|s| *s != id);
+                    })
+                } else {
+                    self.change_picked(model, &format!("{id} taken out"), |x| {
+                        x.structures.retain(|s| *s != id);
+                    })
+                };
+            }
+            let (held, new): (Vec<String>, Vec<String>) = selected
+                .iter()
+                .filter(|s| model.line.structure(s).is_some())
+                .cloned()
+                .partition(|s| sets.takes(s, &case));
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !new.is_empty(),
+                        egui::Button::new(format!("Add the {} selected", new.len())),
+                    )
+                    .on_hover_text(format!("Give {case} to {}", new.join(", ")))
+                    .on_disabled_hover_text(
+                        "Select structures that do not take the case in the Structures table or \
+                         in a view first",
+                    )
+                    .clicked()
+                {
+                    out.command = self.give(model, &case, &new, &[]);
+                }
+                if !held.is_empty()
+                    && ui
+                        .button(format!("Remove the {} selected", held.len()))
+                        .on_hover_text(format!("{} not to take {case}", held.join(", ")))
+                        .clicked()
+                {
+                    out.command = self.give(model, &case, &[], &held);
+                }
+            });
+        });
+        ui.separator();
+        // 7 Who is in: who takes the case, and how.
+        out.guide = out.guide.or(crate::check_ui::section_help(
+            ui,
+            7,
+            "Who is in",
+            Some(anchors::WHO),
+            Some((
+                "The structures taking the case, and how each gets it.",
+                "Every structure taking the case — through a group, in no group, or picked \
+                 here — and those excluded here.",
+            )),
+        ));
+        let takers = sets.takers(&case);
+        let excluded = sets.own_list(&case).map_or(&[][..], |k| sets.excluded(k));
+        ui.label(format!(
+            "{} structure(s) take \"{case}\"{}",
+            takers.len(),
+            if excluded.is_empty() {
+                String::new()
+            } else {
+                format!(" · {} excluded here", excluded.len())
+            }
+        ));
+        help::list(
+            ui,
+            "structure-groups-own-members",
+            200.0,
+            egui::ScrollArea::vertical()
+                .id_salt("structure-groups-own-members")
+                .auto_shrink([false, true]),
+            |ui| {
+                egui::Grid::new("structure-groups-own-members-grid")
+                    .num_columns(3)
+                    .striped(true)
+                    .spacing(help::GRID_SPACING)
+                    .show(ui, |ui| {
+                        for h in ["structure", "type", "how"] {
+                            ui.strong(h);
+                        }
+                        ui.end_row();
+                        for id in takers.iter().chain(excluded) {
+                            let Some(s) = model.line.structure(id) else {
+                                continue;
+                            };
+                            ui.label(id);
+                            ui.label(s.structure_type.clone().unwrap_or_default());
+                            let why = sets.why(id, &case);
+                            let words = crate::load_case_sets::why_words(&model.line, &why);
+                            if why.takes {
+                                ui.label(words);
+                            } else {
+                                ui.colored_label(ui.visuals().warn_fg_color, words);
+                            }
+                            ui.end_row();
+                        }
+                    });
+            },
         );
     }
 

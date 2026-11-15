@@ -1364,7 +1364,9 @@ pub fn to_xml(line: &Line) -> String {
 
 /// A structure group: `<structure_group name description?>` with its
 /// picked `<structure id/>`, its `<rules …><type id/></rules>` and its
-/// `<case name/>`.
+/// `<case name/>`; a load case's own list `<structure_group load_case
+/// description?>` with its picked `<structure id/>` and its `<excluded
+/// id/>`.
 fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
     let ohl_line::StructureGroup {
         name,
@@ -1372,17 +1374,27 @@ fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
         structures,
         rules,
         load_cases,
+        load_case,
+        excluded,
     } = g;
     out.push_str("  <structure_group");
-    attr(out, "name", name);
+    nonempty(out, "name", name);
+    if let Some(c) = load_case {
+        attr(out, "load_case", c);
+    }
     nonempty(out, "description", description);
-    if structures.is_empty() && rules.is_empty() && load_cases.is_empty() {
+    if structures.is_empty() && rules.is_empty() && load_cases.is_empty() && excluded.is_empty() {
         out.push_str("/>\n");
         return;
     }
     out.push_str(">\n");
     for id in structures {
         out.push_str("    <structure");
+        attr(out, "id", id);
+        out.push_str("/>\n");
+    }
+    for id in excluded {
+        out.push_str("    <excluded");
         attr(out, "id", id);
         out.push_str("/>\n");
     }
@@ -1429,7 +1441,11 @@ fn write_group(out: &mut String, g: &ohl_line::StructureGroup) {
 
 /// A `<structure_group>` ([`write_group`]).
 fn read_group(e: &Element) -> Result<ohl_line::StructureGroup, String> {
-    check(e, &["name", "description"], &["structure", "rules", "case"])?;
+    check(
+        e,
+        &["name", "description", "load_case"],
+        &["structure", "excluded", "rules", "case"],
+    )?;
     let names = |tag: &str, key: &str| {
         e.children_named(tag)
             .map(|c| {
@@ -1475,12 +1491,20 @@ fn read_group(e: &Element) -> Result<ohl_line::StructureGroup, String> {
             }
         }
     };
+    let load_case = owned(e, "load_case");
     Ok(ohl_line::StructureGroup {
-        name: text(e, "name")?.to_owned(),
+        // A load case's own list has no name; a group needs one.
+        name: if load_case.is_some() {
+            owned(e, "name").unwrap_or_default()
+        } else {
+            text(e, "name")?.to_owned()
+        },
         description: owned(e, "description").unwrap_or_default(),
         structures: names("structure", "id")?,
         rules,
         load_cases: names("case", "name")?,
+        load_case,
+        excluded: names("excluded", "id")?,
     })
 }
 

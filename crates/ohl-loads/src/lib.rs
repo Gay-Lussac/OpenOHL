@@ -1879,6 +1879,18 @@ pub fn unknown_case_sets(line: &Line, known: &[String]) -> Vec<UnknownCases> {
 pub fn load_case_set_notes(line: &Line, known: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     for g in &line.structure_groups {
+        // A load case's own list of a case not in the library: its
+        // picked structures are not checked in it (2026-11-15).
+        if let Some(case) = &g.load_case {
+            if !known.contains(case) && !g.structures.is_empty() {
+                out.push(format!(
+                    "load case \"{case}\" is not in the library: the structures its own list \
+                     picks ({}) are not checked in it",
+                    g.structures.join(", ")
+                ));
+            }
+            continue;
+        }
         let unknown: Vec<&str> = g
             .load_cases
             .iter()

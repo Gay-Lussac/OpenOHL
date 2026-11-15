@@ -1362,6 +1362,30 @@ impl Ready {
         action: crate::library::PageAction,
     ) {
         use crate::library::PageAction;
+        // The load case form's Applies to (2026-11-15): which structures
+        // take the case, one command of the line (the file unchanged).
+        if let PageAction::GiveCase(give) = &action {
+            match crate::load_case_sets::give_command(
+                &self.model,
+                &give.case,
+                &give.take,
+                &give.drop,
+            ) {
+                Ok(Some((what, command))) => {
+                    if self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    }) {
+                        self.status = Some((what, false));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    self.status = Some((format!("load case \"{}\": {e}", give.case), true));
+                }
+            }
+            return;
+        }
         // A load case renamed (2026-11-14): one command, the structures'
         // sets with it; the page reads the file again.
         if let PageAction::RenameLoadCase { old, new } = &action {
@@ -1447,7 +1471,7 @@ impl Ready {
                 )
             }
             // Taken above.
-            PageAction::RenameLoadCase { .. } => return,
+            PageAction::RenameLoadCase { .. } | PageAction::GiveCase(_) => return,
         };
         // A library chosen for the model must have the line's cables.
         let reloaded = self.model.reload_libraries().and_then(|report| {

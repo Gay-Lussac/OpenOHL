@@ -20,6 +20,18 @@
 //! the library; in groups that tick no case only: none (no loads, no
 //! check, said wherever loads and checks are listed per structure).
 //!
+//! **A load case's own list** (owner, 2026-11-15: "manual should always
+//! be available where load cases rules are defined and on which pylon
+//! they apply with a list of them. Not per type but per position"): a
+//! group with [`StructureGroup::load_case`] set belongs to that case and
+//! is edited where the case is defined (Load cases… › Applies to). Its
+//! picked structures take the case **on top of** what their groups give;
+//! its **excluded** structures do not take it, whatever their groups give
+//! (an exclusion is said wherever the structure's cases are listed). It
+//! has no rules and no other case, and it does not count as a group for
+//! "in no group: every case": it only ever adds its case, or takes away
+//! exactly that case, never more (the safe side; [`Line::give_case`]).
+//!
 //! Before 2026-11-15 a structure gave its own set (`load_cases`,
 //! `no_load_cases`) and a structure type its default set
 //! (`structure_loads.type_load_cases`), taken in that order. Such a line
@@ -44,7 +56,9 @@ const TOLERANCE: f64 = 1e-6;
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StructureGroup {
-    /// Its name, unique in the line.
+    /// Its name, unique in the line (a load case's own list has none: it
+    /// is named after its case, [`StructureGroup::label`]).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub name: String,
     /// What it is for, in words.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -62,6 +76,18 @@ pub struct StructureGroup {
     /// loads, no check — unless another group of theirs gives some).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub load_cases: Vec<String>,
+    /// Set: the group is this load case's **own list** (2026-11-15, the
+    /// Load cases form's *Applies to*; at most one per case). Its picked
+    /// structures take this case on top of their groups' cases; it has no
+    /// rules and no `load_cases`, and does not count as a group for "in
+    /// no group: every case".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_case: Option<String>,
+    /// A load case's own list only: the structures that do **not** take
+    /// its case, whatever their groups give (said wherever their cases are
+    /// listed; an id not in the line is left out).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded: Vec<String>,
 }
 
 /// The rules of a [`StructureGroup`]: each one given must hold (bounds
@@ -252,10 +278,41 @@ impl StructureGroup {
         }
     }
 
+    /// Load case `case`'s own list, holding nothing.
+    pub fn own_list(case: &str) -> Self {
+        Self {
+            load_case: Some(case.to_owned()),
+            ..Self::default()
+        }
+    }
+
+    /// Whether it is a load case's own list ([`StructureGroup::load_case`]).
+    pub fn is_own_list(&self) -> bool {
+        self.load_case.is_some()
+    }
+
+    /// Its name as shown: its name, or for a load case's own list
+    /// `wind (own list)`.
+    pub fn label(&self) -> String {
+        match &self.load_case {
+            Some(c) => format!("{c} (own list)"),
+            None => self.name.clone(),
+        }
+    }
+
+    /// The load cases it gives: those ticked, or a load case's own list's
+    /// case.
+    pub fn cases(&self) -> Vec<String> {
+        match &self.load_case {
+            Some(c) => vec![c.clone()],
+            None => self.load_cases.clone(),
+        }
+    }
+
     /// Whether structure `s` (with its `facts`) is in the group: picked,
-    /// or every rule holds.
+    /// or every rule holds (a load case's own list: picked only).
     pub fn holds(&self, s: &Structure, facts: &Facts) -> bool {
-        self.structures.contains(&s.id) || self.rules.holds(s, facts)
+        self.structures.contains(&s.id) || (!self.is_own_list() && self.rules.holds(s, facts))
     }
 
     /// Whether this group's rules need the stations and line angles.
@@ -265,14 +322,20 @@ impl StructureGroup {
 }
 
 /// The load cases one structure takes ([`CaseSets::of`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum CaseSet {
     /// In no group: every case of the library.
+    #[default]
     Every,
-    /// These cases (the union of its groups', in their order of first
-    /// appearance).
+    /// In no group, excluded from these cases in their own lists: every
+    /// case of the library but these.
+    EveryBut(Vec<String>),
+    /// These cases (the union of its groups' and the cases whose own list
+    /// picks it, in their order of first appearance, less those it is
+    /// excluded from).
     These(Vec<String>),
-    /// In groups ticking no case only: none (no loads, no check).
+    /// In groups ticking no case only (or excluded from each of their
+    /// cases): none (no loads, no check).
     NoCase,
 }
 
@@ -281,12 +344,14 @@ impl CaseSet {
     pub fn takes(&self, case: &str) -> bool {
         match self {
             CaseSet::Every => true,
+            CaseSet::EveryBut(c) => !c.iter().any(|x| x == case),
             CaseSet::These(c) => c.iter().any(|x| x == case),
             CaseSet::NoCase => false,
         }
     }
 
-    /// The names it gives (empty: every case, or none).
+    /// The names it gives (empty: every case — all, or all but some —,
+    /// or none).
     pub fn names(&self) -> &[String] {
         match self {
             CaseSet::These(c) => c,
@@ -295,17 +360,77 @@ impl CaseSet {
     }
 }
 
+/// How one group gives a structure a load case ([`CaseWhy::by`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupWhy {
+    /// The group's name ([`StructureGroup::label`]).
+    pub group: String,
+    /// The structure is picked in it.
+    pub picked: bool,
+    /// The group's rules hold for it.
+    pub rules: bool,
+}
+
+/// How a structure gets a load case, or why it does not
+/// ([`CaseSets::why`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CaseWhy {
+    /// It takes the case.
+    pub takes: bool,
+    /// It is in no group (so it takes every case, less its exclusions).
+    pub no_group: bool,
+    /// Its groups ticking the case.
+    pub by: Vec<GroupWhy>,
+    /// The case's own list picks it.
+    pub picked_here: bool,
+    /// The case's own list excludes it.
+    pub excluded_here: bool,
+    /// Every group it is in (its names), the case's own list left out.
+    pub groups: Vec<String>,
+}
+
+impl CaseWhy {
+    /// Whether it gets the case without the case's own list: in no
+    /// group, or a group of its ticks the case.
+    pub fn by_groups(&self) -> bool {
+        self.no_group || !self.by.is_empty()
+    }
+}
+
+/// One structure's groups and cases ([`CaseSets`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Entry {
+    /// Its groups (indices in [`Line::structure_groups`], own lists left
+    /// out): picked in it, its rules hold.
+    groups: Vec<(usize, bool, bool)>,
+    /// Its cases.
+    set: CaseSet,
+    /// The cases whose own list picks it.
+    picked_for: Vec<String>,
+    /// The cases whose own list excludes it (and does not pick it).
+    excluded_from: Vec<String>,
+}
+
 /// Every structure's groups and load cases, resolved once from the line
 /// ([`Line::case_sets`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CaseSets {
-    /// Per structure (by id): the indices of its groups in
-    /// [`Line::structure_groups`], and its cases.
-    by_structure: BTreeMap<String, (Vec<usize>, CaseSet)>,
-    /// The groups' names, in their order.
+    /// Per structure (by id).
+    by_structure: BTreeMap<String, Entry>,
+    /// The structures, in the line's order.
+    order: Vec<String>,
+    /// The groups' names ([`StructureGroup::label`]), in their order.
     names: Vec<String>,
-    /// Per group, its structures, in the line's order.
+    /// Per group, the cases it gives ([`StructureGroup::cases`]).
+    cases: Vec<Vec<String>>,
+    /// Per group, the case it is the own list of.
+    own: Vec<Option<String>>,
+    /// Per group, its structures (an own list: those it picks), in the
+    /// line's order.
     members: Vec<Vec<String>>,
+    /// Per group, the structures it excludes (own lists), in the line's
+    /// order.
+    excluded: Vec<Vec<String>>,
     /// The structures in no group, in the line's order.
     alone: Vec<String>,
     /// The structures taking no load case, in the line's order.
@@ -318,7 +443,7 @@ static EVERY: CaseSet = CaseSet::Every;
 impl CaseSets {
     /// The cases structure `id` takes (one not in the line: every case).
     pub fn of(&self, id: &str) -> &CaseSet {
-        self.by_structure.get(id).map_or(&EVERY, |x| &x.1)
+        self.by_structure.get(id).map_or(&EVERY, |x| &x.set)
     }
 
     /// Whether structure `id` takes load case `case`.
@@ -331,20 +456,93 @@ impl CaseSets {
         matches!(self.of(id), CaseSet::NoCase)
     }
 
-    /// The names of the groups structure `id` is in, in their order.
+    /// The names of the groups structure `id` is in, in their order (the
+    /// load cases' own lists left out: [`CaseSets::picked_for`],
+    /// [`CaseSets::excluded_from`]).
     pub fn groups_of(&self, id: &str) -> Vec<&str> {
         self.by_structure.get(id).map_or_else(Vec::new, |x| {
-            x.0.iter().map(|&k| self.names[k].as_str()).collect()
+            x.groups
+                .iter()
+                .map(|&(k, _, _)| self.names[k].as_str())
+                .collect()
         })
     }
 
-    /// The structures of group `k` (its index), in the line's order.
+    /// The load cases whose own list picks structure `id`.
+    pub fn picked_for(&self, id: &str) -> &[String] {
+        self.by_structure
+            .get(id)
+            .map_or(&[], |x| x.picked_for.as_slice())
+    }
+
+    /// The load cases whose own list excludes structure `id` (it does not
+    /// take them, whatever its groups give).
+    pub fn excluded_from(&self, id: &str) -> &[String] {
+        self.by_structure
+            .get(id)
+            .map_or(&[], |x| x.excluded_from.as_slice())
+    }
+
+    /// How structure `id` gets load case `case`, or why it does not.
+    pub fn why(&self, id: &str, case: &str) -> CaseWhy {
+        let Some(e) = self.by_structure.get(id) else {
+            return CaseWhy {
+                takes: true,
+                no_group: true,
+                ..CaseWhy::default()
+            };
+        };
+        CaseWhy {
+            takes: e.set.takes(case),
+            no_group: e.groups.is_empty(),
+            by: e
+                .groups
+                .iter()
+                .filter(|(k, _, _)| self.cases[*k].iter().any(|c| c == case))
+                .map(|&(k, picked, rules)| GroupWhy {
+                    group: self.names[k].clone(),
+                    picked,
+                    rules,
+                })
+                .collect(),
+            picked_here: e.picked_for.iter().any(|c| c == case),
+            excluded_here: e.excluded_from.iter().any(|c| c == case),
+            groups: e
+                .groups
+                .iter()
+                .map(|&(k, _, _)| self.names[k].clone())
+                .collect(),
+        }
+    }
+
+    /// The structures taking load case `case`, in the line's order.
+    pub fn takers(&self, case: &str) -> Vec<String> {
+        self.order
+            .iter()
+            .filter(|id| self.takes(id, case))
+            .cloned()
+            .collect()
+    }
+
+    /// The structures of group `k` (its index; a load case's own list:
+    /// those it picks), in the line's order.
     pub fn members(&self, k: usize) -> &[String] {
         self.members.get(k).map_or(&[], Vec::as_slice)
     }
 
-    /// The structures in no group (they take every case), in the line's
-    /// order.
+    /// The structures group `k` (a load case's own list) excludes, in the
+    /// line's order.
+    pub fn excluded(&self, k: usize) -> &[String] {
+        self.excluded.get(k).map_or(&[], Vec::as_slice)
+    }
+
+    /// The index of load case `case`'s own list, if it has one.
+    pub fn own_list(&self, case: &str) -> Option<usize> {
+        self.own.iter().position(|c| c.as_deref() == Some(case))
+    }
+
+    /// The structures in no group (they take every case, less those they
+    /// are excluded from), in the line's order.
     pub fn in_no_group(&self) -> &[String] {
         &self.alone
     }
@@ -354,10 +552,34 @@ impl CaseSets {
         &self.none
     }
 
-    /// Whether the line has groups (else every structure takes every
-    /// case).
+    /// Whether the line has groups (own lists too; else every structure
+    /// takes every case).
     pub fn has_groups(&self) -> bool {
         !self.names.is_empty()
+    }
+}
+
+/// What [`Line::give_case`] did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Given {
+    /// Picked in the case's own list (no group of theirs gives it).
+    pub picked: Vec<String>,
+    /// Taken out of the case's own list's picks.
+    pub unpicked: Vec<String>,
+    /// Excluded in the case's own list, with how they got the case
+    /// before (in no group, or through which groups — by rules or picked).
+    pub excluded: Vec<(String, CaseWhy)>,
+    /// Their exclusion taken away.
+    pub unexcluded: Vec<String>,
+}
+
+impl Given {
+    /// Nothing done (they already took, or did not take, the case).
+    pub fn is_empty(&self) -> bool {
+        self.picked.is_empty()
+            && self.unpicked.is_empty()
+            && self.excluded.is_empty()
+            && self.unexcluded.is_empty()
     }
 }
 
@@ -366,6 +588,23 @@ impl Line {
     /// line angles and stations on the alignments (computed only when a
     /// group's rule needs them) and whether a section ends at it.
     pub fn structure_facts(&self) -> BTreeMap<String, Facts> {
+        self.facts(
+            self.structure_groups
+                .iter()
+                .any(StructureGroup::needs_stations),
+        )
+    }
+
+    /// [`Line::structure_facts`] with the stations and line angles always
+    /// computed (to show them: the Load cases form's *Applies to*).
+    /// Expected cost: the stations of every alignment (milliseconds for a
+    /// long line).
+    pub fn structure_facts_with_stations(&self) -> BTreeMap<String, Facts> {
+        self.facts(true)
+    }
+
+    /// The facts, with the stations when `stations`.
+    fn facts(&self, stations: bool) -> BTreeMap<String, Facts> {
         let mut out: BTreeMap<String, Facts> = self
             .structures
             .iter()
@@ -381,11 +620,7 @@ impl Line {
                 }
             }
         }
-        if self
-            .structure_groups
-            .iter()
-            .any(StructureGroup::needs_stations)
-        {
+        if stations {
             for view in self.alignment_views() {
                 let Ok(stations) = view.stations(self) else {
                     continue;
@@ -407,7 +642,10 @@ impl Line {
 
     /// Every structure's groups and load cases ([`CaseSets`]): the union
     /// of the cases of its groups; in no group, every case; in groups
-    /// ticking none only, none. A line still holding the sets of before
+    /// ticking none only, none — then the load cases' own lists: a case
+    /// whose own list picks it added (in no group it has every case
+    /// already), a case whose own list excludes it taken away (in no
+    /// group: [`CaseSet::EveryBut`]). A line still holding the sets of before
     /// 2026-11-15 (a structure's own, a type's) is resolved as if read
     /// into groups ([`Line::adopt_structure_groups`]). Expected cost: one
     /// pass over the structures and groups, plus the stations of every
@@ -421,32 +659,66 @@ impl Line {
         let facts = self.structure_facts();
         let groups = &self.structure_groups;
         let mut out = CaseSets {
-            names: groups.iter().map(|g| g.name.clone()).collect(),
+            names: groups.iter().map(StructureGroup::label).collect(),
+            cases: groups.iter().map(StructureGroup::cases).collect(),
+            own: groups.iter().map(|g| g.load_case.clone()).collect(),
             members: vec![Vec::new(); groups.len()],
+            excluded: vec![Vec::new(); groups.len()],
             ..CaseSets::default()
         };
         let none = Facts::default();
         for s in &self.structures {
-            let f = facts.get(&s.id).unwrap_or(&none);
-            let mine: Vec<usize> = groups
-                .iter()
-                .enumerate()
-                .filter(|(_, g)| g.holds(s, f))
-                .map(|(k, _)| k)
-                .collect();
-            for &k in &mine {
-                out.members[k].push(s.id.clone());
+            if out.by_structure.contains_key(&s.id) {
+                continue;
             }
-            let set = if mine.is_empty() {
+            let f = facts.get(&s.id).unwrap_or(&none);
+            let mut e = Entry::default();
+            for (k, g) in groups.iter().enumerate() {
+                if let Some(case) = &g.load_case {
+                    if g.structures.contains(&s.id) {
+                        out.members[k].push(s.id.clone());
+                        if !e.picked_for.contains(case) {
+                            e.picked_for.push(case.clone());
+                        }
+                    }
+                    if g.excluded.contains(&s.id) {
+                        out.excluded[k].push(s.id.clone());
+                        if !e.excluded_from.contains(case) {
+                            e.excluded_from.push(case.clone());
+                        }
+                    }
+                    continue;
+                }
+                let picked = g.structures.contains(&s.id);
+                let rules = g.rules.holds(s, f);
+                if picked || rules {
+                    out.members[k].push(s.id.clone());
+                    e.groups.push((k, picked, rules));
+                }
+            }
+            // Picked and excluded for one case (refused when read,
+            // `Line::groups_problem`): picked — more cases, the safe side.
+            let picked_for = e.picked_for.clone();
+            e.excluded_from.retain(|c| !picked_for.contains(c));
+            e.set = if e.groups.is_empty() {
+                // An own list's pick does not count as a group: every
+                // case, less the exclusions.
                 out.alone.push(s.id.clone());
-                CaseSet::Every
+                if e.excluded_from.is_empty() {
+                    CaseSet::Every
+                } else {
+                    CaseSet::EveryBut(e.excluded_from.clone())
+                }
             } else {
                 let mut cases: Vec<String> = Vec::new();
-                for &k in &mine {
-                    for c in &groups[k].load_cases {
-                        if !cases.contains(c) {
-                            cases.push(c.clone());
-                        }
+                for c in e
+                    .groups
+                    .iter()
+                    .flat_map(|&(k, _, _)| &groups[k].load_cases)
+                    .chain(&e.picked_for)
+                {
+                    if !cases.contains(c) && !e.excluded_from.contains(c) {
+                        cases.push(c.clone());
                     }
                 }
                 if cases.is_empty() {
@@ -456,9 +728,78 @@ impl Line {
                     CaseSet::These(cases)
                 }
             };
-            out.by_structure.entry(s.id.clone()).or_insert((mine, set));
+            out.order.push(s.id.clone());
+            out.by_structure.insert(s.id.clone(), e);
         }
         out
+    }
+
+    /// Structures `ids` made to take load case `case` (`take`), or not to,
+    /// through the case's **own list** ([`StructureGroup::load_case`],
+    /// made when needed; taken away when left empty). Per structure, from
+    /// how it gets the case now ([`CaseSets::why`]):
+    ///
+    /// - to take it: its exclusion is taken away; picked in the own list
+    ///   when no group of its gives the case;
+    /// - not to take it: taken out of the own list's picks; **excluded**
+    ///   when it still gets the case otherwise (in no group, or a group
+    ///   giving it — by rules or picked there): exactly this case leaves,
+    ///   none other (the safe side), said wherever its cases are listed.
+    ///
+    /// Its groups and their rules are never changed. What was done
+    /// ([`Given`]; empty when they already did, or did not, take it). A
+    /// structure not in the line is left out.
+    pub fn give_case(&mut self, case: &str, ids: &[String], take: bool) -> Given {
+        let sets = self.case_sets();
+        let k = match self
+            .structure_groups
+            .iter()
+            .position(|g| g.load_case.as_deref() == Some(case))
+        {
+            Some(k) => k,
+            None => {
+                self.structure_groups.push(StructureGroup::own_list(case));
+                self.structure_groups.len() - 1
+            }
+        };
+        let mut given = Given::default();
+        for id in ids {
+            if self.structure(id).is_none() {
+                continue;
+            }
+            let why = sets.why(id, case);
+            let g = &mut self.structure_groups[k];
+            if take {
+                if why.takes {
+                    continue;
+                }
+                if g.excluded.contains(id) {
+                    g.excluded.retain(|x| x != id);
+                    given.unexcluded.push(id.clone());
+                }
+                if !why.by_groups() && !g.structures.contains(id) {
+                    g.structures.push(id.clone());
+                    given.picked.push(id.clone());
+                }
+            } else {
+                if !why.takes {
+                    continue;
+                }
+                if g.structures.contains(id) {
+                    g.structures.retain(|x| x != id);
+                    given.unpicked.push(id.clone());
+                }
+                if why.by_groups() && !g.excluded.contains(id) {
+                    g.excluded.push(id.clone());
+                    given.excluded.push((id.clone(), why));
+                }
+            }
+        }
+        let g = &self.structure_groups[k];
+        if g.structures.is_empty() && g.excluded.is_empty() && g.description.is_empty() {
+            self.structure_groups.remove(k);
+        }
+        given
     }
 
     /// Whether the line still holds load case sets of before 2026-11-15:
@@ -550,7 +891,10 @@ impl Line {
         }
         for mut g in made {
             if self.structure_groups.iter().any(|x| {
-                x.structures == g.structures && x.rules == g.rules && x.load_cases == g.load_cases
+                !x.is_own_list()
+                    && x.structures == g.structures
+                    && x.rules == g.rules
+                    && x.load_cases == g.load_cases
             }) {
                 continue;
             }
@@ -576,7 +920,36 @@ impl Line {
     /// that cannot hold), in words.
     pub fn groups_problem(&self) -> Option<String> {
         let mut seen: Vec<&str> = Vec::new();
+        let mut own: Vec<&str> = Vec::new();
         for g in &self.structure_groups {
+            if let Some(case) = &g.load_case {
+                let case = case.as_str();
+                if case.trim().is_empty() {
+                    return Some("a load case's own list without its case's name".into());
+                }
+                if own.contains(&case) {
+                    return Some(format!("load case \"{case}\": two own lists"));
+                }
+                own.push(case);
+                if !g.rules.is_empty() || !g.load_cases.is_empty() {
+                    return Some(format!(
+                        "load case \"{case}\"'s own list: it holds picked and excluded structures \
+                         only (no rules, no other case: make a group for them)"
+                    ));
+                }
+                if let Some(id) = g.structures.iter().find(|s| g.excluded.contains(s)) {
+                    return Some(format!(
+                        "load case \"{case}\"'s own list: {id} both picked and excluded"
+                    ));
+                }
+                continue;
+            }
+            if !g.excluded.is_empty() {
+                return Some(format!(
+                    "structure group \"{}\": only a load case's own list excludes structures",
+                    g.name
+                ));
+            }
             let name = g.name.trim();
             if name.is_empty() {
                 return Some("a structure group without a name".into());

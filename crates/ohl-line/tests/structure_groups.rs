@@ -376,3 +376,174 @@ fn the_old_loads_for_structures_settings_are_said_once() {
     let back = Line::from_json(&line.to_json()).unwrap();
     assert_eq!(back.structure_loads.weather_cases, ["storm"]);
 }
+
+/// Per position, not per type (owner, 2026-11-15): two structures of the
+/// same type take different cases — by a group's picks, and by the
+/// cases' own lists; the type rule is only a helper.
+#[test]
+fn two_structures_of_one_type_take_different_cases() {
+    let mut line = line();
+    for id in ["T2", "T4"] {
+        line.structures
+            .iter_mut()
+            .find(|s| s.id == id)
+            .unwrap()
+            .structure_type = Some("1A".into());
+    }
+    // A group by the type rule gives both "everyday".
+    line.structure_groups.push(group(
+        "1A",
+        &["everyday"],
+        GroupRules {
+            types: vec!["1A".into()],
+            ..GroupRules::default()
+        },
+    ));
+    // A group picking T2 only gives it "wind" too.
+    let mut crossing = group("crossing", &["wind"], GroupRules::default());
+    crossing.structures = vec!["T2".into()];
+    line.structure_groups.push(crossing);
+    // T4 gets "ice" from the case's own list.
+    let given = line.give_case("ice", &["T4".to_owned()], true);
+    assert_eq!(given.picked, ["T4"]);
+    let sets = line.case_sets();
+    assert_eq!(sets.of("T2").names(), ["everyday", "wind"]);
+    assert_eq!(sets.of("T4").names(), ["everyday", "ice"]);
+    assert_eq!(sets.picked_for("T4"), ["ice"]);
+    assert_eq!(sets.groups_of("T4"), ["1A"]);
+}
+
+/// A manual pick in a case's own list adds the case on top of the
+/// structure's groups; a structure in no group keeps every case (the own
+/// list does not count as a group); unticked again, the list is taken
+/// away when empty.
+#[test]
+fn a_manual_pick_adds_the_case_and_never_takes_others_away() {
+    let mut line = line();
+    let mut g = group("suspension", &["everyday"], GroupRules::default());
+    g.structures = vec!["T2".into()];
+    line.structure_groups.push(g);
+    // T2 does not take wind: picked in wind's own list.
+    let given = line.give_case("wind", &["T2".to_owned(), "T3".to_owned()], true);
+    assert_eq!(given.picked, ["T2"]);
+    // T3 is in no group: it takes wind already, nothing done.
+    assert!(!given.picked.contains(&"T3".to_owned()));
+    let own = line
+        .structure_groups
+        .iter()
+        .find(|g| g.is_own_list())
+        .unwrap();
+    assert_eq!(own.load_case.as_deref(), Some("wind"));
+    assert_eq!(own.label(), "wind (own list)");
+    let sets = line.case_sets();
+    assert_eq!(sets.of("T2").names(), ["everyday", "wind"]);
+    assert_eq!(*sets.of("T3"), CaseSet::Every);
+    assert!(sets.in_no_group().contains(&"T3".to_owned()));
+    let why = sets.why("T2", "wind");
+    assert!(why.takes && why.picked_here && !why.by_groups());
+    assert_eq!(sets.takers("wind").first().map(String::as_str), Some("T1"));
+    // Unticked: taken out (its group does not give wind), the empty list
+    // gone; T2 keeps "everyday".
+    let given = line.give_case("wind", &["T2".to_owned()], false);
+    assert_eq!(given.unpicked, ["T2"]);
+    assert!(given.excluded.is_empty());
+    assert!(line.structure_groups.iter().all(|g| !g.is_own_list()));
+    assert_eq!(line.case_sets().of("T2").names(), ["everyday"]);
+}
+
+/// Unticking a structure that gets the case through a group's RULE (or in
+/// no group) excludes it in the case's own list: exactly that case
+/// leaves; the exclusion says how it took the case; the rule is
+/// untouched; ticked again, the exclusion goes.
+#[test]
+fn an_exclusion_takes_away_exactly_its_case() {
+    let mut line = line();
+    line.structure_groups.push(group(
+        "dead ends",
+        &["broken", "wind"],
+        GroupRules {
+            dead_end: Some(true),
+            ..GroupRules::default()
+        },
+    ));
+    let given = line.give_case("broken", &["T3".to_owned(), "T2".to_owned()], false);
+    // T3 by the rule: excluded, the rule's group named.
+    assert_eq!(given.excluded.len(), 2);
+    let (id, why) = &given.excluded[0];
+    assert_eq!(id, "T3");
+    assert_eq!(why.by.len(), 1);
+    assert_eq!(why.by[0].group, "dead ends");
+    assert!(why.by[0].rules && !why.by[0].picked);
+    // T2 in no group (every case): excluded too.
+    assert!(given.excluded[1].1.no_group);
+    assert_eq!(
+        line.structure_groups[0].rules.dead_end,
+        Some(true),
+        "the rule untouched"
+    );
+    let sets = line.case_sets();
+    assert_eq!(sets.of("T3").names(), ["wind"]);
+    assert_eq!(sets.excluded_from("T3"), ["broken"]);
+    assert_eq!(*sets.of("T2"), CaseSet::EveryBut(vec!["broken".into()]));
+    assert!(sets.takes("T2", "ice") && !sets.takes("T2", "broken"));
+    let why = sets.why("T3", "broken");
+    assert!(!why.takes && why.excluded_here && why.by_groups());
+    // Excluded from its only cases: takes none, said.
+    line.give_case("wind", &["T5".to_owned()], false);
+    line.give_case("broken", &["T5".to_owned()], false);
+    assert!(line.case_sets().takes_none("T5"));
+    assert!(
+        line.case_sets()
+            .without_load_cases()
+            .contains(&"T5".to_owned())
+    );
+    // Ticked again: the exclusions go.
+    let given = line.give_case("broken", &["T3".to_owned(), "T2".to_owned()], true);
+    assert_eq!(given.unexcluded, ["T3", "T2"]);
+    assert!(given.picked.is_empty());
+    assert!(line.case_sets().takes("T3", "broken"));
+    assert_eq!(*line.case_sets().of("T2"), CaseSet::Every);
+}
+
+/// A case's own list (picks and exclusions) round trips in the line file
+/// at version 18; one picked and excluded, a second own list for one
+/// case, rules on one, or an exclusion on a group are refused.
+#[test]
+fn own_lists_round_trip_and_wrong_ones_are_refused() {
+    let mut line = line();
+    let mut g = group("suspension", &["everyday", "wind"], GroupRules::default());
+    g.structures = vec!["T2".into(), "T4".into()];
+    line.structure_groups.push(g);
+    line.give_case("ice", &["T2".to_owned()], true);
+    line.give_case("wind", &["T4".to_owned()], false);
+    let text = line.to_json();
+    assert!(text.contains("\"version\": 18"), "{text}");
+    assert!(text.contains("\"load_case\": \"ice\""), "{text}");
+    assert!(text.contains("\"excluded\""), "{text}");
+    let back = Line::from_json(&text).unwrap();
+    assert_eq!(back.structure_groups, line.structure_groups);
+    let sets = back.case_sets();
+    assert_eq!(sets.of("T2").names(), ["everyday", "wind", "ice"]);
+    assert_eq!(sets.of("T4").names(), ["everyday"]);
+    // Refused.
+    let refused = |f: &dyn Fn(&mut Line)| {
+        let mut l = line.clone();
+        f(&mut l);
+        Line::from_json(&l.to_json()).unwrap_err().to_string()
+    };
+    let e = refused(&|l| {
+        let k = l.structure_groups.len() - 1;
+        let id = l.structure_groups[k].excluded[0].clone();
+        l.structure_groups[k].structures.push(id);
+    });
+    assert!(e.contains("both picked and excluded"), "{e}");
+    let e = refused(&|l| l.structure_groups.push(StructureGroup::own_list("ice")));
+    assert!(e.contains("two own lists"), "{e}");
+    let e = refused(&|l| {
+        let k = l.structure_groups.len() - 1;
+        l.structure_groups[k].rules.dead_end = Some(true);
+    });
+    assert!(e.contains("no rules"), "{e}");
+    let e = refused(&|l| l.structure_groups[0].excluded.push("T6".into()));
+    assert!(e.contains("only a load case's own list excludes"), "{e}");
+}

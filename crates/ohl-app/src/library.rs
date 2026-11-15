@@ -914,6 +914,14 @@ pub struct PageContext<'a> {
     pub ahead: f64,
     /// The project's weather cases (the load case form picks from them).
     pub weather: &'a [ohl_weather::WeatherCase],
+    /// The structures selected (the load case form's *Add the N
+    /// selected*).
+    pub selected: &'a [String],
+    /// The line's version (the load case form resolves the line again
+    /// when it changes).
+    pub line_version: u64,
+    /// Why the line cannot be changed, if it cannot.
+    pub read_only: Option<&'a str>,
 }
 
 /// What the page asks of the application.
@@ -933,6 +941,10 @@ pub enum PageAction {
         /// Its new name.
         new: String,
     },
+    /// Structures made to take a load case and not to, through the case's
+    /// own list, as one command (the load case form's *Applies to*,
+    /// 2026-11-15).
+    GiveCase(crate::load_case_form::Give),
 }
 
 /// Whether the model reads `kind` from the project (its working copies).
@@ -1493,11 +1505,23 @@ impl LibraryPage {
             });
             if self.form_on {
                 self.form.sync(self.edited.text().unwrap_or_default());
+                let known = sources
+                    .load_cases
+                    .as_deref()
+                    .and_then(|p| crate::load_case_sets::names_in(p).ok());
                 let fcx = crate::load_case_form::FormContext {
                     weather: cx.weather,
                     line: cx.line,
                     project: cx.line.is_some() && in_project(sources, LibraryKind::LoadCases),
                     dirty: self.dirty(),
+                    in_use: self
+                        .file
+                        .as_deref()
+                        .is_some_and(|f| kind.in_use(sources, f)),
+                    known: known.as_deref(),
+                    selected: cx.selected,
+                    line_version: cx.line_version,
+                    read_only: cx.read_only,
                 };
                 if let Some(t) = crate::load_case_form::ui(
                     ui,
@@ -1514,6 +1538,9 @@ impl LibraryPage {
                 }
                 if let Some((old, new)) = self.form.rename.take() {
                     return Some(PageAction::RenameLoadCase { old, new });
+                }
+                if let Some(give) = self.form.give.take() {
+                    return Some(PageAction::GiveCase(give));
                 }
                 return action;
             }

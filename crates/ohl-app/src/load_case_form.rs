@@ -11,7 +11,10 @@
 //! Duplicate, Delete, Rename), the case picked on the right in plain
 //! sections — 1 Weather, 2 Wind on the wires, 3 Wires removed and wires
 //! broken, 4 Wind on the structures, 5 Ice and snow on the structures,
-//! 6 Factors and local conditions, 7 Tags and description.
+//! 6 Factors and local conditions, 7 Tags and description, 8 Applies to
+//! (2026-11-15: the structures taking the case and how, ticked per
+//! structure — the case's own list, [`ohl_line::Line::give_case`]; a
+//! change is one command of the project, not part of the file).
 //!
 //! The form edits the cases ([`ohl_loads::LoadCases`]) and writes the
 //! file with `ohl_loads`' own writer ([`ohl_loads::LoadCases::to_toml`],
@@ -46,6 +49,45 @@ pub struct Form {
     pub rename: Option<(String, String)>,
     /// Numbers being typed, by field (a number half typed does not read).
     buffers: HashMap<String, String>,
+    /// *8 Applies to*: its state.
+    applies: AppliesTo,
+    /// A change of which structures take a case, asked of the project
+    /// (one command, [`crate::load_case_sets::give_command`]); taken by
+    /// the page.
+    pub give: Option<Give>,
+}
+
+/// Structures made to take a load case (`take`) and not to (`drop`),
+/// through the case's own list (owner, 2026-11-15: "manual should always
+/// be available where load cases rules are defined … Not per type but
+/// per position").
+#[derive(Debug, Clone, PartialEq)]
+pub struct Give {
+    /// The case, by name.
+    pub case: String,
+    /// The structures to take it.
+    pub take: Vec<String>,
+    /// The structures not to take it.
+    pub drop: Vec<String>,
+}
+
+/// The line resolved for *8 Applies to*: (line version, its groups, what
+/// each structure takes, the structures' stations).
+type Resolved = (
+    u64,
+    Vec<ohl_line::StructureGroup>,
+    ohl_line::CaseSets,
+    std::collections::BTreeMap<String, ohl_line::Facts>,
+);
+
+/// *8 Applies to*: the ticks being dragged, the line resolved.
+#[derive(Debug, Default)]
+struct AppliesTo {
+    /// The ticks as dragged (case, the structures ticked): asked as one
+    /// change when the button is let go.
+    pending: Option<(String, Vec<String>)>,
+    /// The line resolved (while its version and groups are as they were).
+    cache: Option<Resolved>,
 }
 
 /// What the form needs from the project.
@@ -61,6 +103,20 @@ pub struct FormContext<'a> {
     /// The page has changes not saved (a rename of the project waits for
     /// them to be saved or discarded).
     pub dirty: bool,
+    /// The file is the load case library the line uses (*8 Applies to*
+    /// shows and changes which structures take its cases).
+    pub in_use: bool,
+    /// The case names of the library as saved (a case not saved yet
+    /// cannot be given to structures); none: not read.
+    pub known: Option<&'a [String]>,
+    /// The structures selected (the Structures table, a view): *Add the
+    /// N selected*.
+    pub selected: &'a [String],
+    /// The line's version (*8 Applies to* resolves the line again when it
+    /// changes).
+    pub line_version: u64,
+    /// Why the line cannot be changed (read-only), if it cannot.
+    pub read_only: Option<&'a str>,
 }
 
 impl Form {
@@ -175,7 +231,9 @@ pub fn ui(
     };
     let mut changed = false;
     let mut request = None;
+    let mut give = None;
     let buffers = &mut form.buffers;
+    let applies = &mut form.applies;
     egui::Panel::left(egui::Id::new("load-case-form-list"))
         .resizable(true)
         .default_size(210.0)
@@ -240,8 +298,8 @@ pub fn ui(
                 if ui
                     .add_enabled(*item < cases.cases.len(), egui::Button::new("Rename"))
                     .on_hover_text(if cx.project {
-                        "Give the case picked another name: in the file and in every structure's \
-                         and type's set and broken-wire tick naming it, one change (undone as one)"
+                        "Give the case picked another name: in the file, in every structure group \
+                         ticking it and in its own list (Applies to), one change (undone as one)"
                     } else {
                         "Give the case picked another name (a file outside a project: the \
                          structures' sets naming it are not renamed)"
@@ -349,10 +407,14 @@ pub fn ui(
             .auto_shrink(false)
             .show(ui, |ui| {
                 changed |= case_ui(ui, case, *item, cx, buffers);
+                give = applies_to_ui(ui, &case.name, cx, applies);
             });
     });
     if request.is_some() {
         form.rename = request;
+    }
+    if give.is_some() {
+        form.give = give;
     }
     if changed { form.written() } else { None }
 }
@@ -619,6 +681,279 @@ fn case_ui(
         changed = true;
     }
     changed
+}
+
+/// *8 Applies to*: the help (the short line, the longer text behind the
+/// (?)).
+pub const APPLIES_HELP: (&str, &str) = (
+    "Which structures take this case: ticked. Tick or untick them here, per structure, whatever \
+     its type.",
+    "Each row: the structure, its station on its alignment, its type, and how it gets the case \
+     — through a structure group (picked there, or by a rule of it: type, line angle, station, \
+     dead end), in no group (every case), or picked here. Ticking a structure that does not take \
+     the case picks it in the case's own list: it takes the case on top of its groups' cases. \
+     Unticking one picked here takes it out; unticking one that gets the case through a group's \
+     rule, a group it is picked in, or by being in no group excludes it here: exactly this case \
+     leaves it, nothing else changes — or change the rule in Line › Structures › Load cases per \
+     group. An exclusion is shown here, in the groups window (the own list) and in the \
+     Structures table. Press and drag across rows to give them all one state, shift-click for a \
+     range; All, None and Invert act on the rows shown (the search filters them). Each change is \
+     one step of Edit › Undo. Nothing is solved again: the case is solved once for the line.",
+);
+
+/// The structures selected that do (`true`) or do not take the case, of
+/// those in the line.
+fn selected_split(
+    line: &ohl_line::Line,
+    selected: &[String],
+    takers: &[String],
+) -> [Vec<String>; 2] {
+    let there: Vec<String> = selected
+        .iter()
+        .filter(|s| line.structure(s).is_some())
+        .cloned()
+        .collect();
+    let (held, new): (Vec<String>, Vec<String>) =
+        there.into_iter().partition(|s| takers.contains(s));
+    [new, held]
+}
+
+/// *8 Applies to* of case `name` (owner, 2026-11-15: "manual should
+/// always be available where load cases rules are defined and on which
+/// pylon they apply with a list of them. Not per type but per
+/// position"): the structures taking it and how, a tick per structure of
+/// the line (a filter, press-and-drag, shift for a range, All / None /
+/// Invert) and *Add / Remove the N selected*; a change asked of the
+/// project as one command ([`Give`]).
+fn applies_to_ui(
+    ui: &mut egui::Ui,
+    name: &str,
+    cx: &FormContext<'_>,
+    st: &mut AppliesTo,
+) -> Option<Give> {
+    heading(
+        ui,
+        8,
+        "Applies to",
+        "The structures of the line that take this case and how each gets it; tick or untick \
+         them here — per structure, whatever its type.",
+    );
+    let Some(line) = cx.line else {
+        ui.label(
+            egui::RichText::new("No line open: no structures to give the case to.")
+                .small()
+                .weak(),
+        );
+        return None;
+    };
+    if !cx.in_use {
+        ui.label(
+            egui::RichText::new(
+                "This file is not the load case library the line uses: which structures take a \
+                 case is shown and changed for the library in use (Use for the model).",
+            )
+            .small()
+            .weak(),
+        );
+        return None;
+    }
+    let fresh = st
+        .cache
+        .as_ref()
+        .is_some_and(|(v, g, _, _)| *v == cx.line_version && *g == line.structure_groups);
+    if !fresh {
+        st.cache = Some((
+            cx.line_version,
+            line.structure_groups.clone(),
+            line.case_sets(),
+            line.structure_facts_with_stations(),
+        ));
+    }
+    let (_, _, sets, facts) = st.cache.as_ref().expect("set above");
+    let takers = sets.takers(name);
+    let n = line.structures.len();
+    ui.horizontal_wrapped(|ui| {
+        if takers.is_empty() {
+            ui.colored_label(
+                ui.visuals().warn_fg_color,
+                "No structure takes this case: it gives no loads and no check anywhere.",
+            );
+        } else {
+            ui.label(format!(
+                "Taken by {} of {n} structure(s): {}",
+                takers.len(),
+                first_ids(&takers)
+            ));
+        }
+        crate::check_help::question_both(ui, APPLIES_HELP.0, APPLIES_HELP.1);
+    });
+    let saved = cx.known.is_none_or(|k| k.iter().any(|c| c == name));
+    if let Some(why) = cx.read_only {
+        crate::menu::error_label(ui, egui::RichText::new(format!("read-only: {why}")).small());
+    }
+    if !saved {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(format!(
+                "Save the file first: \"{name}\" is not in the line's library yet (structures \
+                 take a case by its saved name)."
+            ))
+            .small(),
+        );
+    }
+    let editable = cx.read_only.is_none() && saved;
+    if st.pending.as_ref().is_some_and(|(c, _)| c != name) {
+        st.pending = None;
+    }
+    let alignment_name = |id: &str| {
+        line.alignments.iter().find(|a| a.id == id).map_or_else(
+            || id.to_owned(),
+            |a| {
+                if a.name.is_empty() {
+                    a.id.clone()
+                } else {
+                    a.name.clone()
+                }
+            },
+        )
+    };
+    let items: Vec<crate::tick_list::Item> = line
+        .structures
+        .iter()
+        .map(|s| {
+            let at = facts
+                .get(&s.id)
+                .and_then(|f| f.stations.first())
+                .map_or("on no alignment".to_owned(), |(a, st)| {
+                    format!("{} m on {}", format_station(*st), alignment_name(a))
+                });
+            let ty = s
+                .structure_type
+                .as_deref()
+                .map_or("no type".to_owned(), |t| format!("type {t}"));
+            let how = crate::load_case_sets::why_words(line, &sets.why(&s.id, name));
+            crate::tick_list::Item::new(s.id.clone(), format!("{} · {at} · {ty} — {how}", s.id))
+        })
+        .collect();
+    let mut chosen = Some(
+        st.pending
+            .as_ref()
+            .map_or_else(|| takers.clone(), |p| p.1.clone()),
+    );
+    let changed = ui
+        .add_enabled_ui(editable, |ui| {
+            crate::tick_list::tick_list(ui, ("load-case-applies", name), &items, &mut chosen, 220.0)
+        })
+        .inner;
+    // The list reads the pointer itself: greyed, a press changes nothing.
+    if changed && editable {
+        let ids = chosen.unwrap_or_else(|| line.structures.iter().map(|s| s.id.clone()).collect());
+        st.pending = Some((name.to_owned(), ids));
+    }
+    let mut out = None;
+    // Asked when the button is let go: a drag across rows is one change.
+    if !ui.input(|i| i.pointer.primary_down())
+        && let Some((case, ids)) = st.pending.take()
+    {
+        let take: Vec<String> = ids
+            .iter()
+            .filter(|s| !takers.contains(s))
+            .cloned()
+            .collect();
+        let drop: Vec<String> = takers
+            .iter()
+            .filter(|s| !ids.contains(s))
+            .cloned()
+            .collect();
+        if !take.is_empty() || !drop.is_empty() {
+            out = Some(Give { case, take, drop });
+        }
+    }
+    let [new, held] = selected_split(line, cx.selected, &takers);
+    ui.add_enabled_ui(editable, |ui| {
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !new.is_empty(),
+                    egui::Button::new(format!("Add the {} selected", new.len())),
+                )
+                .on_hover_text(format!(
+                    "Give the case to {} (selected in the Structures table or a view)",
+                    new.join(", ")
+                ))
+                .on_disabled_hover_text(
+                    "Select structures that do not take it in the Structures table or in a view \
+                     first (Shift or Cmd/Ctrl + click for several)",
+                )
+                .clicked()
+            {
+                out = Some(Give {
+                    case: name.to_owned(),
+                    take: new.clone(),
+                    drop: Vec::new(),
+                });
+            }
+            if !held.is_empty()
+                && ui
+                    .button(format!("Remove the {} selected", held.len()))
+                    .on_hover_text(format!(
+                        "{} not to take the case (taken out of its own list, or excluded here \
+                         when a group gives it)",
+                        held.join(", ")
+                    ))
+                    .clicked()
+            {
+                out = Some(Give {
+                    case: name.to_owned(),
+                    take: Vec::new(),
+                    drop: held.clone(),
+                });
+            }
+        });
+    });
+    // The case's own list in words: where else it is seen.
+    if let Some(k) = sets.own_list(name) {
+        let picked = sets.members(k);
+        let excluded = sets.excluded(k);
+        ui.label(
+            egui::RichText::new(format!(
+                "Its own list: {} picked here{}{} — also in Line › Structures › Load cases per \
+                 group as \"{name} (own list)\".",
+                picked.len(),
+                if picked.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", first_ids(picked))
+                },
+                if excluded.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {} excluded ({})", excluded.len(), first_ids(excluded))
+                }
+            ))
+            .small(),
+        );
+    }
+    out
+}
+
+/// A station as the rows show it (metres, one decimal).
+fn format_station(m: f64) -> String {
+    format!("{m:.1}")
+}
+
+/// The first ids of `ids` (ten at most, then how many more).
+fn first_ids(ids: &[String]) -> String {
+    let mut s = ids
+        .iter()
+        .take(10)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if ids.len() > 10 {
+        s.push_str(&format!(" and {} more", ids.len() - 10));
+    }
+    s
 }
 
 /// Section 3: the line's sections, a tick to remove each; per section its

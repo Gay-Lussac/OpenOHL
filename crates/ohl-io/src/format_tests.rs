@@ -413,6 +413,7 @@ fn rich_line() -> Line {
                 dead_end: Some(false),
             },
             load_cases: vec!["wind 90°".into(), "ice".into()],
+            ..Default::default()
         },
         ohl_line::StructureGroup {
             name: "picked".into(),
@@ -421,6 +422,15 @@ fn rich_line() -> Line {
             ..Default::default()
         },
         ohl_line::StructureGroup::new("none"),
+        // A load case's own list (the same raise): one picked, one
+        // excluded, no name.
+        ohl_line::StructureGroup {
+            description: "per position".into(),
+            structures: vec![line.structures[1].id.clone()],
+            load_case: Some("ice <&>".into()),
+            excluded: vec![line.structures[0].id.clone()],
+            ..Default::default()
+        },
     ];
     if let Some(j) = line.jumpers.first_mut() {
         j.stiffness_factor = Some(0.3);
@@ -675,6 +685,7 @@ fn xsd_lists_every_element_written() {
         "angle_from_deg",
         "station_to",
         "dead_end",
+        "load_case",
     ] {
         assert!(xsd.contains(&format!("name=\"{a}\"")), "{a}");
     }
