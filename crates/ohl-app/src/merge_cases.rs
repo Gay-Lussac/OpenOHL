@@ -15,8 +15,7 @@
 //!   galloping files' `cases`, sheet templates' `[cases]`), each name
 //!   kept once in a list; nothing else of a file changed (comments,
 //!   order and the rest as written);
-//! - in the line's settings: the creep-stretch cases and the weather cases
-//!   sent to the structures;
+//! - in the line's settings: the creep-stretch cases;
 //! - and the cases shown and each section's display cases follow.
 //!
 //! Not changed: the saved performed checks (records of a run as it was
@@ -277,11 +276,9 @@ pub fn command(model: &Model, map: &BTreeMap<String, String>) -> Result<Merge, S
         .as_ref()
         .map(|c| map.get(c).unwrap_or(c).clone());
     cs.load_cases = renamed_list(&cs.load_cases, map);
-    let sl = &mut after.structure_loads;
-    sl.weather_cases = renamed_list(&sl.weather_cases, map);
-    if after.creep_stretch != before.creep_stretch
-        || after.structure_loads != before.structure_loads
-    {
+    // (The weather cases once sent to the structures, kept as read since
+    // 2026-11-15, are no longer used: left as they are.)
+    if after.creep_stretch != before.creep_stretch {
         commands.push(ohl_session::line_settings_change(before, &after));
     }
     let what = if map.len() == 1 {
@@ -391,7 +388,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                      else a calculation reads — not the name or description): each group \
                      ticked becomes the case kept, everything naming the others (rule \
                      files, load cases, galloping files, sheet templates, the creep-stretch \
-                     cases, the cases sent to the structures) names it instead. One change, \
+                     cases) names it instead. One change, \
                      undone as one. Saved check reports stay as they were run.",
                 )
                 .small()

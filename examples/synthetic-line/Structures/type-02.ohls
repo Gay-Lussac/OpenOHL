@@ -1512,7 +1512,10 @@ direction = "x"
 members = "all"
 
 # A case of the two parts (2026-10-25; invented factors, NOT from a
-# design code): the line forces of a line result, a factor per axis, and
+# design code): the unfactored line forces of a line case — since
+# 2026-11-15 a library case the placed structure takes, by its name (here
+# a project whose library has a case of that name; one the line does not
+# send is said in OHL-Structure's status block) — a factor per axis, and
 # the loads on the structure itself. The cases above are in the older
 # form (still read and evaluated).
 [[load_case]]

@@ -222,11 +222,11 @@ pub fn ui(
                 if ui
                     .add_enabled(*item < cases.cases.len(), egui::Button::new("Delete"))
                     .on_hover_text(if takers.is_empty() {
-                        "Delete the case picked (no structure's set names it)".to_owned()
+                        "Delete the case picked (no structure group ticks it)".to_owned()
                     } else {
                         format!(
-                            "Delete the case picked: {} name it in their set and are then not \
-                             checked in it (said in the usage and the Structures table)",
+                            "Delete the case picked: group(s) {} tick it; their structures are \
+                             then not checked in it (said in the usage and the Structures table)",
                             takers.join(", ")
                         )
                     })

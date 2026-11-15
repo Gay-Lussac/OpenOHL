@@ -26,13 +26,16 @@
 //! Surface loads take the members' areas from the section library
 //! (`--sections`, else `Sections/` beside the file).
 //!
-//! **The line's wind on the structure body**: a line case that gives the
-//! wind on the structure's own body ([`LineValues::structure_wind`]: the
-//! case's own values for the structures, or its weather case's pressure
-//! and transverse factor) puts that pressure × factor on every member as
-//! surface rows of the case (source line, [`line_wind_recipes`]) and on a
-//! pole as its wind — the rule of the line's own structure checks
-//! (`ohl_loads::LoadCase::structure_wind`).
+//! **The line's cases**: since 2026-11-15 the line sends the placed
+//! structure's library cases only (owner: Loads for structures is gone),
+//! each rebuilt here as a load case with the member wind
+//! ([`library_cases`]). An **older line-values file** may still hold line
+//! cases of its own (unfactored weather cases, or cases from before the
+//! library cases were rebuilt): they run as before, their wind on the
+//! structure body as pressure × factor on every member's area as surface
+//! rows of the case ([`line_wind_recipes`]) — no drag coefficient and no
+//! shielding, NOT ON THE SAFE SIDE for a lattice body; said in the status
+//! block, with Open in OHL-Structure… again to get the library cases.
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -1352,7 +1355,7 @@ impl LoadCasesTab {
             let text = if why.starts_with(ohl_structure_loads::NO_LOAD_CASE_FILE) {
                 format!(
                     "The line gives no values for {id}: the project has no load cases. Add \
-                     them in OHL-Design (Criteria › Load cases library, or a design-code \
+                     them in OHL-Design (Line › Structures › Load cases…, or a design-code \
                      plugin); the values come here when the line is solved again."
                 )
             } else if !why.is_empty() {
@@ -1379,38 +1382,49 @@ impl LoadCasesTab {
             Tone::Good,
         )];
         // What the line says is not sent or not checked (2026-11-14: a
-        // library case that does not compute, cases of the set not in the
-        // library) and line results renamed: each a line of its own, never
-        // only in the note.
+        // library case that does not compute, cases of the groups not in
+        // the library), its groups and the local conditions: each a line
+        // of its own, never only in the note.
         for part in info.note.as_deref().unwrap_or("").split(" · ") {
             if part.starts_with("NOT ") {
                 out.push((part.to_owned(), Tone::Warn));
-            } else if part.starts_with(ohl_structure_link::RENAMED)
+            } else if part.starts_with(ohl_structure_link::GROUPS)
                 || part.starts_with(ohl_structure_link::WITH_LOCAL)
+                || part.starts_with("RENAMED")
             {
                 out.push((part.to_owned(), Tone::Info));
             }
         }
-        // An extra case taking line forces of a name that is now a
-        // library case, the weather case sent renamed: said (it gets the
-        // library case's forces).
-        let library: Vec<&str> = info.library_cases.iter().map(|c| c.name.as_str()).collect();
-        for r in self.recipes().unwrap_or(&[]) {
-            for l in &r.line {
-                let renamed = format!("{} {}", l.result, ohl_structure_link::WEATHER_CASE_SUFFIX);
-                if library.contains(&l.result.as_str()) && info.cases.contains(&renamed) {
-                    out.push((
-                        format!(
-                            "Case {} takes line forces \"{}\": the library case's (its wires' \
-                             condition, broken or removed wires, local conditions). The weather \
-                             case of that name is sent as \"{renamed}\": pick it there if that \
-                             was meant.",
-                            r.name, l.result
-                        ),
-                        Tone::Warn,
-                    ));
-                }
-            }
+        // An extra case taking the line forces of a case the line does not
+        // send (2026-11-15: a weather case once sent on its own, a library
+        // case its groups do not take): said, never run silently without
+        // them.
+        out.extend(
+            self.unsent_line_forces()
+                .into_iter()
+                .map(|t| (t, Tone::Warn)),
+        );
+        // An older line-values file with unfactored weather cases run as
+        // cases of their own: said (the line no longer sends them).
+        let weather: Vec<&str> = info
+            .cases
+            .iter()
+            .filter(|c| info.source(c) == ohl_structure_loads::CaseSource::WeatherCase)
+            .map(String::as_str)
+            .collect();
+        if !weather.is_empty() {
+            out.push((
+                format!(
+                    "Older line values: {} unfactored weather case(s) sent on their own ({}) run \
+                     as cases, every factor 1 — not a design check, their wind on the body \
+                     without drag or shielding: NOT ON THE SAFE SIDE. The line no longer sends \
+                     them (2026-11-15): open {id} again from OHL-Design (Open in \
+                     OHL-Structure…) to get its library cases.",
+                    weather.len(),
+                    weather.join(", ")
+                ),
+                Tone::Warn,
+            ));
         }
         // Typed values on no row: not run.
         let stray = self.stray();
@@ -1461,6 +1475,55 @@ impl LoadCasesTab {
                 ),
                 Tone::Warn,
             ));
+        }
+        out
+    }
+}
+
+impl LoadCasesTab {
+    /// The structure's own load cases taking the line forces of a case
+    /// the line does not send (none: opened alone, nothing sent), each in
+    /// words: since 2026-11-15 the line sends the structure's library
+    /// cases only (the weather cases once sent on their own are gone).
+    /// Such line forces get no value: their rows are left out of the run,
+    /// NOT ON THE SAFE SIDE — said in the status block.
+    pub fn unsent_line_forces(&self) -> Vec<String> {
+        let Some(info) = &self.info else {
+            return Vec::new();
+        };
+        if info.values.values.is_empty() {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for r in self.recipes().unwrap_or(&[]) {
+            let mut gone: Vec<&str> = Vec::new();
+            for l in &r.line {
+                if !l.result.is_empty()
+                    && !info.cases.contains(&l.result)
+                    && !gone.contains(&l.result.as_str())
+                {
+                    gone.push(&l.result);
+                }
+            }
+            if !gone.is_empty() {
+                out.push(format!(
+                    "Case {} takes the line forces of {}, which the line does not send: their \
+                     rows have no value and are left out of the run — NOT ON THE SAFE SIDE. \
+                     Since 2026-11-15 the line sends this structure's library cases only (the \
+                     weather cases once sent on their own are gone): pick one of them in its 1. \
+                     line forces ({}).",
+                    r.name,
+                    gone.iter()
+                        .map(|g| format!("\"{g}\""))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    if info.cases.is_empty() {
+                        "none is sent".to_owned()
+                    } else {
+                        info.cases.join(", ")
+                    }
+                ));
+            }
         }
         out
     }

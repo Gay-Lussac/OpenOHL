@@ -92,11 +92,13 @@ pub enum Panel {
     Spot,
     /// Line › Structures › String builder (2026-10-31).
     StringBuilder,
+    /// Line › Structures › Load cases per group (2026-11-15).
+    StructureGroups,
 }
 
 impl Panel {
     /// Every one.
-    pub const ALL: [Panel; 31] = [
+    pub const ALL: [Panel; 32] = [
         Panel::Editor,
         Panel::PylonBuilder,
         Panel::Replace,
@@ -128,6 +130,7 @@ impl Panel {
         Panel::Clearances,
         Panel::Spot,
         Panel::StringBuilder,
+        Panel::StructureGroups,
     ];
 
     /// A name until its window gave its title.
@@ -164,6 +167,7 @@ impl Panel {
             Panel::Clearances => "Clearances",
             Panel::Spot => "Spot structures",
             Panel::StringBuilder => "String builder",
+            Panel::StructureGroups => "Load cases per group",
         }
     }
 }

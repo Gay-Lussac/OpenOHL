@@ -14,7 +14,6 @@ use ohl_line::Line;
 use ohl_loads::LoadCases;
 use ohl_structure_link::{
     analyse_cases, cases_to_run, placed_values_with, structure_case_loads, structure_cases,
-    structure_cases_with,
 };
 use ohl_structure_loads::{
     LineForces, LineQuantity, LoadCaseRecipe, PlacedValues, SPAN_SHARE_ASSUMPTION, evaluate,
@@ -39,11 +38,12 @@ fn example() -> (Line, ohl_cables::Library, Vec<ohl_weather::WeatherCase>) {
     (line, library, weather)
 }
 
-fn everyday() -> ohl_line::StructureLoads {
-    ohl_line::StructureLoads {
-        weather_cases: vec!["everyday".into()],
-        ..Default::default()
-    }
+/// A library case "everyday": the weather case of that name, as strung,
+/// every factor 1 (since 2026-11-15 the line sends library cases only).
+fn everyday() -> Vec<ohl_loads::LoadCase> {
+    let mut c = ohl_loads::LoadCase::from_weather("everyday");
+    c.name = "everyday".into();
+    vec![c]
 }
 
 fn case(name: &str, l: LineForces) -> LoadCaseRecipe {
@@ -68,7 +68,7 @@ fn case(name: &str, l: LineForces) -> LoadCaseRecipe {
 fn back_5_percent_on_a_suspension_structure_in_still_air() {
     let (line, library, weather) = example();
     let budget = ohl_wirefe::default_fe_budget();
-    let cases = structure_cases(&everyday(), &weather);
+    let cases = structure_cases(&weather, &everyday());
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
     let placed = placed_values_with(&loads, &line, "T2", "synthetic");
     assert_eq!(placed.version, 6);
@@ -155,10 +155,9 @@ fn back_5_percent_on_a_suspension_structure_in_still_air() {
     assert!(!said("as solved"));
 }
 
-/// A structure that takes no load case (`no_load_cases`): none of the
-/// line's library is sent for it and the file's note says so; the line
-/// results (the forces the line transmits) are sent all the same; the
-/// other structures keep theirs.
+/// A structure whose groups tick no load case: none of the line's library
+/// is sent for it (nothing else is sent since 2026-11-15) and the file's
+/// note says so; the other structures keep theirs.
 #[test]
 fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     let (mut line, library, weather) = example();
@@ -166,13 +165,11 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
         .unwrap()
         .cases;
     assert!(!lc.is_empty());
-    line.structures
-        .iter_mut()
-        .find(|s| s.id == "T2")
-        .unwrap()
-        .no_load_cases = true;
+    let mut none = ohl_line::StructureGroup::new("dismantled");
+    none.structures = vec!["T2".into()];
+    line.structure_groups.push(none);
     let budget = ohl_wirefe::default_fe_budget();
-    let cases = structure_cases_with(&everyday(), &weather, &lc);
+    let cases = structure_cases(&weather, &lc);
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
     assert!(
         loads.library_failed.is_empty(),
@@ -194,16 +191,17 @@ fn a_structure_taking_no_load_case_gets_none_of_the_library() {
     assert!(t2.library_cases.is_empty());
     let note = t2.note.as_deref().unwrap();
     assert!(note.contains("T2 takes no load case"), "{note}");
-    // The weather case sent has the name of a library case: renamed
-    // (2026-11-14, one name one meaning).
-    assert_eq!(t2.cases, ["everyday (weather case)"]);
-    assert!(!t2.values.values.is_empty());
+    assert!(note.contains("Groups: T2 is in dismantled"), "{note}");
+    assert!(t2.cases.is_empty());
+    assert!(t2.values.values.is_empty());
     let t3 = placed_values_with(&loads, &line, "T3", "synthetic");
     assert_eq!(t3.library_cases.len(), lc.len());
-    // Only the rename said.
+    // Only its groups said: in none, every case.
     let note = t3.note.clone().unwrap_or_default();
     assert!(
-        note.starts_with(ohl_structure_link::RENAMED) && !note.contains(" · "),
+        note.starts_with(ohl_structure_link::GROUPS)
+            && note.contains("in no structure group")
+            && !note.contains(" · "),
         "{note}"
     );
 }
@@ -288,7 +286,7 @@ fn a_shared_point_sends_each_sets_pull() {
     let mut line = Line::from_json(TWO_SETS_LINE).unwrap();
     line.creep_stretch.creep_case = Some("everyday".into());
     let budget = ohl_wirefe::default_fe_budget();
-    let cases = structure_cases(&everyday(), &weather);
+    let cases = structure_cases(&weather, &everyday());
     let loads = structure_case_loads(&line, &library, cases, &budget).unwrap();
     let placed = placed_values_with(&loads, &line, "T2", "two sets");
     assert_eq!(placed.version, 7);

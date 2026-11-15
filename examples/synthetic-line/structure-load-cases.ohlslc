@@ -1,8 +1,9 @@
 # Synthetic example structure load cases (NOT taken from any design
 # code): load cases on their own, as exported from a structure and
 # imported into another. Values are invented; they only show the format.
-# Each case has its line forces (a line result of the line: a weather
-# case, a wind case twice) with a factor per axis, and the loads on the
+# Each case has its line forces (the unfactored forces of a line case: since
+# 2026-11-15 a library case of the placed structure, by its name) with a
+# factor per axis, and the loads on the
 # structure itself; one case takes a share of the back and ahead spans'
 # pull (version 4); the last case is in the older form (still read).
 format = "ohl-structure-load-cases"

@@ -3,8 +3,9 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! Tests: local winds per span (roadmap O15) in the Sections table and a
-//! span's Properties; broken-wire cases sent to the structures (roadmap
-//! O9) in Criteria › Loads for structures.
+//! span's Properties. (The broken-wire cases sent to the structures of
+//! Criteria › Loads for structures are gone since 2026-11-15: a
+//! broken-wire case reaches a structure through its groups.)
 
 use super::objects::{apply_table, set_cell};
 use super::*;
@@ -128,42 +129,4 @@ fn local_winds_are_set_in_a_spans_properties() {
     harness.get_by_label("× 1.3 of the weather case's");
     harness.state_mut().ready().unwrap().model.undo().unwrap();
     assert!(factors(&mut harness).is_empty());
-}
-
-/// Criteria › Loads for structures lists the line's load cases with a
-/// broken wire; a tick changes the choice (the menu sends it as one
-/// undoable edit, as its other ticks).
-#[test]
-fn broken_wire_cases_are_ticked_for_the_structures() {
-    let mut model = synthetic_project("broken-cases");
-    let dir = model.sources.file.parent().unwrap().to_path_buf();
-    let path = dir.join("broken.ohllc");
-    std::fs::write(
-        &path,
-        "format = \"ohl-load-cases\"\nversion = 3\n[[case]]\nname = \"S1 broken\"\n\
-         weather = \"everyday\"\n[case.broken]\nsection = \"S1\"\nspan = 2\n",
-    )
-    .unwrap();
-    model.sources.load_cases = Some(path);
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(1500.0, 950.0))
-        .build_ui_state(
-            |ui, model: &mut crate::model::Model| {
-                let lc = crate::structure_app::line_load_cases(model);
-                let mut choice = model.line.structure_loads.clone();
-                crate::structure_app::broken_cases_ui(ui, &lc, &mut choice);
-                model.line.structure_loads = choice;
-            },
-            model,
-        );
-    harness.run();
-    harness.get_by_label("Broken-wire cases sent");
-    harness
-        .get_by_label("S1 broken (everyday, S1 span 2 broken)")
-        .click();
-    harness.run();
-    assert_eq!(
-        harness.state().line.structure_loads.broken_cases,
-        vec!["S1 broken".to_owned()]
-    );
 }

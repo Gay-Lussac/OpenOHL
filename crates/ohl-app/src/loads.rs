@@ -4,7 +4,7 @@
 
 //! Checks › Structure loads: the loads the wires and strings put on the
 //! structures in each load case (the load case file used: the project's,
-//! Line › Criteria › Load cases), computed on demand in the background — the
+//! Line › Structures › Load cases…), computed on demand in the background — the
 //! model is not changed. One load case shown at a time; factored or not;
 //! a click goes to the structure; CSV export. **Usage**: how much of its
 //! capacity each structure uses (its type's allowable spans and loads,
@@ -421,7 +421,7 @@ impl LoadsPage {
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
-                "no load case file: Line › Criteria › Load cases library (the project's own, or a \
+                "no load case file: Line › Structures › Load cases… (the project's own, or a \
                  .ohllc file next to a line file)"
                     .into(),
             ));
@@ -892,17 +892,19 @@ impl LoadsPage {
             ))
             .small(),
         );
-        // Per-pylon sets: only the structures whose set has this case.
+        // The structure groups: only the structures whose groups give
+        // this case (2026-11-15).
         if model.line.has_load_case_sets() {
+            let sets = model.line.case_sets();
             let (with, without): (Vec<&ohl_line::Structure>, Vec<&ohl_line::Structure>) = model
                 .line
                 .structures
                 .iter()
-                .partition(|s| model.line.takes_load_case(&s.id, &c.name));
-            let none = model.line.structures_without_load_cases();
+                .partition(|s| sets.takes(&s.id, &c.name));
+            let none = sets.without_load_cases();
             ui.label(
                 egui::RichText::new(format!(
-                    "taken by {} of {} structures (their load case sets); not by: {}{}",
+                    "taken by {} of {} structures (their groups); not by: {}{}",
                     with.len(),
                     model.line.structures.len(),
                     if without.is_empty() {
@@ -928,12 +930,17 @@ impl LoadsPage {
                 .weak(),
             )
             .on_hover_text(
-                "Each structure takes the load cases of its set (Structures table › load \
-                 cases, or its type's in Line › Criteria › Load cases per structure type; \
-                 none: every case). A structure not taking this case has no loads in it; one \
-                 that takes no load case at all (its Properties › Load cases › none) has no \
-                 loads in any and is not checked — listed as such, never as passing.",
+                "Each structure takes the load cases of its structure groups (Line › Structures \
+                 › Load cases per group; both groups' when it is in two; in no group, every \
+                 case). A structure not taking this case has no loads in it; one whose groups \
+                 tick no case has no loads in any and is not checked — listed as such, never as \
+                 passing.",
             );
+        }
+        // The settings of Loads for structures of before 2026-11-15: said
+        // once, kept as read and no longer used.
+        if let Some(note) = model.line.unused_structure_loads_note() {
+            ui.label(egui::RichText::new(note).small().weak());
         }
         // What the case assumed (wind side, local conditions, removed and
         // broken wires, ice and snow on the structures), in a box of its
@@ -1149,7 +1156,7 @@ impl LoadsPage {
                         String::new()
                     } else {
                         format!(
-                            ", {} not checked (a load case of its set not in the library: {})",
+                            ", {} not checked (a load case of its groups not in the library: {})",
                             seen.len(),
                             seen.into_iter().collect::<Vec<_>>().join(", ")
                         )
