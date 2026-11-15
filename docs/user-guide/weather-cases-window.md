@@ -78,6 +78,33 @@ undo); **Revert** drops them.
 - **Load factors** are never applied here: they belong to the load cases,
   on the force components ([Load cases](loads.md)).
 
+## The default cases
+
+*Built, in active development, not approved yet* (owner, 2026-11-15).
+**Add the default cases…** above the table puts OpenOHL's nine default
+weather cases — −20, 0, 10, 20, 40 and 80 °C; 10 °C + 300 Pa wind; 0 °C +
+20 N/m and + 60 N/m ice, **arbitrary values for checking, not from a design
+code** ([the list](weather.md#the-default-weather-cases)) — that the table
+lacks into it as new rows:
+
+- by **name**: a row of the same name (as edited, or added and not applied
+  yet) is kept as it is, never replaced; a row marked for deletion does not
+  count;
+- the rows are pending like any other: change or delete them, then
+  **Apply** keeps them (one command, one undo) or **Revert** drops them;
+- the message above the table lists the cases added and those kept; when
+  every one is there, it says so and adds nothing.
+
+A new project starts with them (File › New project…, the tick **Start with
+the default weather and load cases**, on by default). The default **load
+cases** name some of them; they are added in the Load cases library
+([Load cases: the default load cases](loads.md#the-default-load-cases)).
+
+The two ice cases give no density: glaze ice, the smallest iced diameter
+for their weight — **NOT ON THE SAFE SIDE** for the clearances to the iced
+surface (their descriptions say so; the note under the table speaks only of
+cases with wind).
+
 ## The menus around it
 
 | Menu | What |
@@ -90,7 +117,11 @@ undo); **Revert** drops them.
 ## On the safe side
 
 - An ice load without a density is glaze ice: **not on the safe side**
-  for the wind, the swing and the clearances (said under the table).
+  for the wind, the swing and the clearances (said under the table for the
+  cases with wind; the default ice cases, without wind, say it in their
+  descriptions).
+- The default cases are arbitrary values for checking, not a design
+  code's: replace them with your code's.
 - Ice is a concentric shell of one thickness along the whole span — a
   simplification either way ([Weather loads](../theory/sagtension.md#weather-loads)).
 - The wind is one pressure along the whole line except where local
