@@ -1,0 +1,75 @@
+# OpenOHL's default weather cases (owner, 2026-11-15: "these values are
+# arbitrary but needed to check the codes"). ARBITRARY values for checking
+# the program and the design codes: NOT taken from a design code or a
+# standard. Replace them with the cases of the code you use.
+#
+# Every new project starts with them (File › New project…, the tick "Start
+# with the default weather and load cases"); Line › Criteria › Weather cases
+# › Add the default cases… adds those a project lacks (by name). The
+# command line takes this file with --weather.
+#
+# The ice cases give an ice load without a density: the program takes it as
+# glaze ice (913 kg/m³), the densest ice, so the smallest iced diameter for
+# that weight — NOT ON THE SAFE SIDE for the clearances measured to the iced
+# surface (and for the wind on the iced wire, were wind added). Give the
+# ice's density for lighter ice.
+format = "ohl-weather-cases"
+version = 1
+name = "Default weather cases (arbitrary values for checking)"
+
+[[case]]
+name = "-20 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature -20 °C, no wind, no ice"
+tags = ["default", "loads"]
+temperature = "-20 °C"
+
+[[case]]
+name = "0 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, no wind, no ice"
+tags = ["default"]
+temperature = "0 °C"
+
+[[case]]
+name = "10 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 10 °C, no wind, no ice"
+tags = ["default", "loads"]
+temperature = "10 °C"
+
+[[case]]
+name = "20 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 20 °C, no wind, no ice"
+tags = ["default"]
+temperature = "20 °C"
+
+[[case]]
+name = "40 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 40 °C, no wind, no ice"
+tags = ["default", "loads", "clearance"]
+temperature = "40 °C"
+
+[[case]]
+name = "80 °C"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 80 °C, no wind, no ice"
+tags = ["default", "clearance"]
+temperature = "80 °C"
+
+[[case]]
+name = "10 °C + 300 Pa wind"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 10 °C, wind 300 Pa across the line (the side is chosen where the wires are shown, right by default; a load case may give it), no ice"
+tags = ["default", "loads", "clearance"]
+temperature = "10 °C"
+wind_pressure = "300 Pa"
+
+[[case]]
+name = "0 °C + 20 N/m ice"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 20 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface; give the density for lighter ice"
+tags = ["default", "loads", "clearance"]
+temperature = "0 °C"
+ice_load = "20 N/m"
+
+[[case]]
+name = "0 °C + 60 N/m ice"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 60 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface; give the density for lighter ice"
+tags = ["default", "loads", "clearance"]
+temperature = "0 °C"
+ice_load = "60 N/m"
