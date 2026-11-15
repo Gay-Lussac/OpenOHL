@@ -356,7 +356,7 @@ pub fn tension_only_note(model: &Model, solution: &Solution) -> Option<String> {
 
 /// A tension-only member stiffens a held direction when its axis has at
 /// least this component along it (the sine of 1°).
-const ALONG_HELD: f64 = 0.017_452_406;
+pub const ALONG_HELD: f64 = 0.017_452_406;
 
 /// The joints of a solution held by the stabilisation in a direction one
 /// of their tension-only members would hold if it were not shortened
