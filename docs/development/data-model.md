@@ -252,7 +252,14 @@ or `"none"`: tension-only members carry no compression) made `.ohls`
 **14** (`structures::TENSION_COMPRESSION_VERSION`; written at 14 only when
 set to none: OHL-Structure's `ohl_structure_edit::set_tension_compression`)
 and `.ohlfe` **6** (`TENSION_COMPRESSION_MODEL_VERSION`); nothing else
-changes.
+changes. The optional checks `[analysis] redundant_force` (percent of the
+compression in the member a redundant member braces) and `climbing_load`
+(a force on flat members at mid-length, alone; both 2026-11-15, off when
+not given) made `.ohls` **16** (`structures::REDUNDANT_FORCE_VERSION`,
+`structures::CLIMBING_LOAD_VERSION`; written at 16 only when one is given:
+OHL-Structure's `ohl_structure_edit::set_redundant_force`,
+`set_climbing_load`) and `.ohlfe` **7** (`REDUNDANT_FORCE_MODEL_VERSION`,
+`CLIMBING_LOAD_MODEL_VERSION`).
 
 ### Coordinates and angles
 
@@ -1318,7 +1325,22 @@ structure file the same key, structure file version 14
 (`ohl_structures::structures::TENSION_COMPRESSION_VERSION`), raised by
 OHL-Structure's switch (`ohl_structure_edit::set_tension_compression`)
 only when set to none; `ohl structures fe --tension-compression`
-overrides it) and
+overrides it; version 7, 2026-11-15: the optional checks, off when not
+given — `[analysis] redundant_force` (percent in files) →
+`Analysis::redundant_force` (a share, 0.025 for 2.5; at most 100 %),
+`check::redundant_supports` (per redundant member the braced member's
+piece, joint and compression, `check::Supported`, else why not; lines
+through a joint within `check::STRAIGHT_THROUGH_DEG`), its mark in what
+governs `check::REDUNDANT_FORCE`; `[analysis] climbing_load` (a force) →
+`Analysis::climbing_load` (N), `check::climbing_check` →
+`Vec<check::Climbing>` (member, usage, words; members within
+`check::CLIMBING_INCLINATION_DEG` of the horizontal), `check::climbing_note`;
+OHL-Structure's link carries it as `CaseResult::climbing`
+(`ClimbingResult`: member id, usage, words); `REDUNDANT_FORCE_MODEL_VERSION`
+and `CLIMBING_LOAD_MODEL_VERSION` 7, written only when given; in a structure
+file the same keys, version 16; `ohl structures fe --redundant-force`,
+`--climbing-load` override them, its CSV gets a `climbing` column when the
+check is on) and
 poles `.ohlp` (`ohl-pole`) next to the `.ohls`
 ([Structure analysis](../user-guide/structure-analysis.md)); clearance
 rules `.ohlr`; thermal ambient `.ohlta`; unit costs `.ohlcost`; galloping

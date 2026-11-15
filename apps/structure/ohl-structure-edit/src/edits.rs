@@ -1492,6 +1492,63 @@ pub fn set_tension_compression(doc: &mut DocumentMut, none: bool) -> Result<(), 
     }
 }
 
+/// The optional redundant-member check (`[analysis] redundant_force`,
+/// percent; owner 2026-11-15), as typed: a percentage above 0, at most 100
+/// (`2.5`, `2.5 %`) writes it and raises the file to version 16
+/// ([`ohl_structures::structures::REDUNDANT_FORCE_VERSION`]); empty removes
+/// it (the check off), the version left as it is.
+pub fn set_redundant_force(doc: &mut DocumentMut, typed: &str) -> Result<(), String> {
+    let t = typed.trim();
+    if t.is_empty() {
+        return set_analysis_field(doc, "redundant_force", "");
+    }
+    let number = t.trim_end_matches('%').trim();
+    let v = ohl_core::units::parse_finite(number)
+        .ok()
+        .filter(|v| *v > 0.0 && *v <= 100.0)
+        .ok_or_else(|| {
+            format!("redundant force \"{t}\": a percentage above 0, at most 100 (e.g. 2.5)")
+        })?;
+    raise_version(
+        doc,
+        i64::from(ohl_structures::structures::REDUNDANT_FORCE_VERSION),
+    );
+    set_analysis_field(doc, "redundant_force", &v.to_string())
+}
+
+/// The optional climbing-load check (`[analysis] climbing_load`; owner
+/// 2026-11-15), as typed: a force above 0 (`1100 N`, `1.1 kN`; a plain
+/// number in N) writes it and raises the file to version 16
+/// ([`ohl_structures::structures::CLIMBING_LOAD_VERSION`]); empty removes it
+/// (the check off), the version left as it is.
+pub fn set_climbing_load(doc: &mut DocumentMut, typed: &str) -> Result<(), String> {
+    let t = typed.trim().trim_matches('"').trim();
+    if t.is_empty() {
+        return set_analysis_field(doc, "climbing_load", "");
+    }
+    let f: ohl_core::units::Force = if ohl_core::units::parse_finite(t).is_ok() {
+        format!("{t} N").parse()
+    } else {
+        t.parse()
+    }
+    .map_err(|e| format!("climbing load \"{t}\": {e}"))?;
+    if f.si().is_nan() || f.si() <= 0.0 {
+        return Err(format!(
+            "climbing load \"{t}\": a force above 0 (e.g. 1100 N)"
+        ));
+    }
+    raise_version(
+        doc,
+        i64::from(ohl_structures::structures::CLIMBING_LOAD_VERSION),
+    );
+    let text = if ohl_core::units::parse_finite(t).is_ok() {
+        format!("\"{t} N\"")
+    } else {
+        format!("\"{t}\"")
+    };
+    set_analysis_field(doc, "climbing_load", &text)
+}
+
 /// Removes the table of `key` whose `field` is `value`.
 pub fn remove_item(doc: &mut DocumentMut, key: &str, field: &str, value: &str) {
     if let Some(a) = doc.get_mut(key).and_then(Item::as_array_of_tables_mut) {

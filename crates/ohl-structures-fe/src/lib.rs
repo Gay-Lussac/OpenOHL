@@ -516,6 +516,8 @@ mod member_tests;
 #[cfg(test)]
 mod offset_tests;
 #[cfg(test)]
+mod optional_checks_tests;
+#[cfg(test)]
 mod pole_extension_tests;
 #[cfg(test)]
 mod sia263_tests;

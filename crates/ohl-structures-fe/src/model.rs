@@ -20,6 +20,10 @@
 //! capacity = "asce10-97"    # member capacities: asce10-97 (default) | simple (version 4)
 //! tension_compression = "buckling"  # tension-only members in compression: up to their
 //!                           # buckling load (default) | "none": slack once shortened (version 6)
+//! # redundant_force = 2.5   # optional: redundant members also checked for this percentage of
+//!                           # the compression in the member they brace (version 7)
+//! # climbing_load = "1100 N"  # optional: flat members checked for this load at mid-length,
+//!                           # alone (version 7)
 //!
 
 //! [[material]]
@@ -96,7 +100,10 @@ use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
-/// Newest format version read. Version 6 (2026-11-15) adds `[analysis]
+/// Newest format version read. Version 7 (2026-11-15) adds the optional
+/// checks `[analysis] redundant_force` (percent) and `climbing_load`
+/// ([`Analysis::redundant_force`], [`Analysis::climbing_load`]); a file is
+/// written at 7 only when it gives one. Version 6 (2026-11-15) adds `[analysis]
 /// tension_compression` ([`TensionCompression`]); a file is written at 6
 /// only when it gives the key. Version 5 (2026-11-11) adds a plugin's
 /// method as `[analysis] capacity`. Version 4 (2026-10-27) adds `[analysis]
@@ -107,9 +114,13 @@ pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
 /// modelling member, a tower program's fictitious member). Version 2 adds
 /// the member kind `tension` (a truss in tension only); versions 1 and 2
 /// read as before.
-pub const MODEL_FILE_VERSION: u32 = 6;
+pub const MODEL_FILE_VERSION: u32 = 7;
 /// The model file version of `[analysis] tension_compression` (2026-11-15).
 pub const TENSION_COMPRESSION_MODEL_VERSION: u32 = 6;
+/// The model file version of `[analysis] redundant_force` (2026-11-15).
+pub const REDUNDANT_FORCE_MODEL_VERSION: u32 = 7;
+/// The model file version of `[analysis] climbing_load` (2026-11-15).
+pub const CLIMBING_LOAD_MODEL_VERSION: u32 = 7;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
@@ -142,6 +153,10 @@ struct AnalysisFile {
     capacity: Option<String>,
     #[serde(default)]
     tension_compression: Option<String>,
+    #[serde(default)]
+    redundant_force: Option<f64>,
+    #[serde(default)]
+    climbing_load: Option<Force>,
 }
 
 impl Default for AnalysisFile {
@@ -155,6 +170,8 @@ impl Default for AnalysisFile {
             single_angle_moments: false,
             capacity: None,
             tension_compression: None,
+            redundant_force: None,
+            climbing_load: None,
         }
     }
 }
@@ -722,6 +739,19 @@ pub struct Analysis {
     /// ([`TensionCompression`]; model file version 6, structure file
     /// version 14, default: up to their buckling load).
     pub tension_compression: TensionCompression,
+    /// The optional redundant-member check (`[analysis] redundant_force`,
+    /// percent in files; owner 2026-11-15): each redundant member
+    /// ([`crate::design::MemberClass::Redundant`]) is also checked for
+    /// this share (0.025: 2.5 %) of the compression in the member it braces
+    /// ([`crate::check::redundant_supports`]); none (the default): not
+    /// checked. Model file version 7, structure file version 16.
+    pub redundant_force: Option<f64>,
+    /// The optional climbing-load check (`[analysis] climbing_load`, N;
+    /// owner 2026-11-15): each flat member checked in bending for this
+    /// load at mid-length, alone, against first yield
+    /// ([`crate::check::climbing_check`]); none (the default): not
+    /// checked. Model file version 7, structure file version 16.
+    pub climbing_load: Option<f64>,
 }
 
 /// What a tension-only member ([`MemberKind::Tension`]) carries in
@@ -830,6 +860,8 @@ impl Default for Analysis {
             single_angle_moments: false,
             capacity: CapacityMethod::Asce10,
             tension_compression: TensionCompression::Buckling,
+            redundant_force: None,
+            climbing_load: None,
         }
     }
 }
@@ -1215,6 +1247,8 @@ impl Model {
                         TensionCompression::parse(t).map_err(|e| format!("analysis: {e}"))?
                     }
                 },
+                redundant_force: file.analysis.redundant_force.map(|p| p / 100.0),
+                climbing_load: file.analysis.climbing_load.map(|f| f.si()),
             },
             nodes,
             sections,
@@ -1455,6 +1489,18 @@ impl Model {
         let factor = self.analysis.dead_load_factor;
         if !(factor.is_finite() && factor > 0.0) {
             return Err("analysis: dead_load_factor must be above 0".into());
+        }
+        if let Some(r) = self.analysis.redundant_force
+            && !(r.is_finite() && r > 0.0 && r <= 1.0)
+        {
+            return Err(
+                "analysis: redundant_force must be a percentage above 0, at most 100".into(),
+            );
+        }
+        if let Some(p) = self.analysis.climbing_load
+            && !(p.is_finite() && p > 0.0)
+        {
+            return Err("analysis: climbing_load must be above 0".into());
         }
         let mut attachments = std::collections::BTreeSet::new();
         for n in &self.nodes {

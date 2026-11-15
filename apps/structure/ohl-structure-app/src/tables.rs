@@ -79,6 +79,27 @@ const TENSION_NO_COMPRESSION_HELP: &str = "Ticked: the tension-only members (kin
      tension_compression = \"none\" in [analysis] (structure file version 14); every check \
      takes it, OHL-Design's structure usage too";
 
+/// The Analysis row's redundant force (`[analysis] redundant_force`, owner
+/// 2026-11-15): what it does to the results.
+const REDUNDANT_FORCE_HELP: &str = "Optional, off when empty. A percentage (e.g. 2.5): every \
+     redundant member (class redundant) is also checked for that share of the compression in \
+     the member it braces — the member passing straight through its end joint (within 10°), \
+     its compression there in each load case — in compression and in tension, by its own \
+     capacities; its usage is the larger of its own force's and this one, what governs says \
+     which. Common design practice is 1 to 2.5 % (ASCE 10-97, commentary C3.7.4: practice, not \
+     a requirement). A redundant member whose braced member cannot be found is said not on \
+     the safe side. Writes redundant_force in [analysis] (structure file version 16); every \
+     check takes it, OHL-Design's structure usage too";
+
+/// The Analysis row's climbing load (`[analysis] climbing_load`, owner
+/// 2026-11-15): what it does to the results.
+const CLIMBING_LOAD_HELP: &str = "Optional, off when empty. A force (e.g. 1100 N, ASCE 10-97 \
+     commentary C2.2): every member within 30° of the horizontal is checked in bending for \
+     that load at mid-length, alone — not with any load case — simply supported, plus its own \
+     weight, against first yield (no permanent distortion). A list of its own in the results \
+     (Climbing) and a note; the load cases' usage does not change. Steeper members are not \
+     checked. Writes climbing_load in [analysis] (structure file version 16)";
+
 /// The member fields of the finite-element check typed as text in the
 /// Member sections and Groups tables: (field, heading, what it is, hint).
 pub(crate) const MEMBER_FIELDS: [(&str, &str, &str, &str); 5] = [
@@ -1795,6 +1816,35 @@ impl StructureApp {
                     edit::set_tension_compression(doc, none)
                 })
             {
+                self.message = Some((e, true));
+            }
+            // The optional checks (owner 2026-11-15), off when empty.
+            ui.label("redundant force [%]");
+            let current = field_text(analysis.get("redundant_force"));
+            if let Some(typed) = text_cell(
+                ui,
+                &mut self.buffers,
+                "analysis/redundant_force".into(),
+                &current,
+                "off",
+                REDUNDANT_FORCE_HELP,
+            ) && let Err(e) = f.edit("redundant force", |doc, _| {
+                edit::set_redundant_force(doc, &typed)
+            }) {
+                self.message = Some((e, true));
+            }
+            ui.label("climbing load");
+            let current = field_text(analysis.get("climbing_load"));
+            if let Some(typed) = text_cell(
+                ui,
+                &mut self.buffers,
+                "analysis/climbing_load".into(),
+                &current,
+                "off",
+                CLIMBING_LOAD_HELP,
+            ) && let Err(e) = f.edit("climbing load", |doc, _| {
+                edit::set_climbing_load(doc, &typed)
+            }) {
                 self.message = Some((e, true));
             }
             ui.label("dead-load factor");

@@ -1231,6 +1231,22 @@ pub struct CaseResult {
     /// plate, each member's bolts in it and each weld; empty without
     /// plates (or a model of its own file).
     pub plates: Vec<PlateUsage>,
+    /// The optional climbing check (`[analysis] climbing_load`, owner
+    /// 2026-11-15): flat members under the climbing load alone — not this
+    /// case's, the same in every case, apart from the members' usage;
+    /// empty when the check is off.
+    pub climbing: Vec<ClimbingResult>,
+}
+
+/// One member's climbing check ([`ohl_structures_fe::check::climbing_check`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClimbingResult {
+    /// The member's id.
+    pub member: String,
+    /// Share of its first-yield moment used (none: not checked).
+    pub usage: Option<f64>,
+    /// In words.
+    pub words: String,
 }
 
 /// The moment of an attachment point's offset in one case: r × F at its
@@ -1602,6 +1618,20 @@ fn analyse_one(
     if let Some(note) = ohl_structures_fe::local_displacement_note(model, &solution) {
         notes.push(note);
     }
+    // The climbing check (optional, alone: not a load case; owner
+    // 2026-11-15): its own list and a note.
+    let climbing_check = ohl_structures_fe::check::climbing_check(model);
+    if let Some(note) = ohl_structures_fe::check::climbing_note(model, &climbing_check) {
+        notes.push(note);
+    }
+    let climbing = climbing_check
+        .into_iter()
+        .map(|c| ClimbingResult {
+            member: model.members[c.member].id.clone(),
+            usage: c.usage,
+            words: c.words,
+        })
+        .collect();
     // Eccentric member ends (connection shifts, rigid end offsets): how
     // many, and those left out where only bars meet the joint.
     if let Some(note) = ohl_structures_fe::eccentricity_note(model, &solution) {
@@ -1687,6 +1717,7 @@ fn analyse_one(
         notes,
         points,
         plates: Vec::new(),
+        climbing,
     };
     Ok((result, keep.then_some(solution)))
 }

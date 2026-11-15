@@ -259,8 +259,13 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// a hinged post's hinge friction (`hinge_friction_nm`:
 /// [`TypeString::hinge_friction_nm`], [`HINGE_FRICTION_VERSION`]), written
 /// only when a string gives one (an older program must not read such a
-/// post as frictionless).
-pub const STRUCTURE_FILE_VERSION: u32 = 15;
+/// post as frictionless). Version 16 (2026-11-15) adds the optional
+/// checks `[analysis] redundant_force` (percent of the compression in the
+/// member a redundant member braces) and `climbing_load` (a load on flat
+/// members at mid-length, alone), read by `ohl_structures_fe`
+/// ([`REDUNDANT_FORCE_VERSION`], [`CLIMBING_LOAD_VERSION`]); a file is
+/// written at 16 only when it gives one.
+pub const STRUCTURE_FILE_VERSION: u32 = 16;
 
 /// The structure file version of `[analysis] tension_compression`
 /// (2026-11-15): `"buckling"` (the default) or `"none"`.
@@ -269,6 +274,16 @@ pub const TENSION_COMPRESSION_VERSION: u32 = 14;
 /// The structure file version of a hinged post's hinge friction
 /// (`hinge_friction_nm`; owner, 2026-11-15).
 pub const HINGE_FRICTION_VERSION: u32 = 15;
+
+/// The structure file version of `[analysis] redundant_force` (owner,
+/// 2026-11-15): redundant members also checked for that percentage of the
+/// compression in the member they brace; off when not given.
+pub const REDUNDANT_FORCE_VERSION: u32 = 16;
+
+/// The structure file version of `[analysis] climbing_load` (owner,
+/// 2026-11-15): flat members checked for that load at mid-length, alone;
+/// off when not given.
+pub const CLIMBING_LOAD_VERSION: u32 = 16;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
