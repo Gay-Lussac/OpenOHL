@@ -80,9 +80,20 @@ fn the_link_tool_links_cancels_and_undoes() {
         })
         .unwrap();
     let attach = text(&h);
-    // Point, then joint: linked where it is.
+    // Point, then joint: not on it, asked (owner 2026-11-15); its position
+    // kept, linked where it is.
     h.state_mut().link_click(Some(Handle::Point("A1".into())));
     h.state_mut().link_click(Some(Handle::Joint("L10B".into())));
+    h.run();
+    assert_eq!(text(&h), attach, "nothing changed before the answer");
+    let ask = h.state().link_ask.clone().expect("asked");
+    assert_eq!(
+        ask.how,
+        ohl_structure_edit::links::LinkHow::Onto,
+        "the default"
+    );
+    h.state_mut()
+        .answer_link(ohl_structure_edit::links::LinkHow::KeepPosition);
     h.run();
     let after = text(&h);
     assert!(after.contains("node = \"L10B\""), "{after}");
