@@ -63,6 +63,8 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
             r.surfaces.show(&r.model);
             ui.close();
         }
+        ui.separator();
+        crate::backgrounds::import_entries(ui, r);
     });
     ui.menu_button("Export", |ui| {
         if ui

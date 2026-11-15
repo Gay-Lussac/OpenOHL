@@ -696,12 +696,15 @@ ground: spans that are not fully over the survey are reported.
 
 ## Backgrounds: orthophotos, maps and drawings
 
-**Line › Terrain › Backgrounds** keeps orthophotos, maps and DXF drawings (e.g.
-the cadastre) in the project file, drawn under the line. Like point clouds and
+Orthophotos, maps and DXF drawings (e.g. the cadastre) are imported from
+**File › Import › Orthophotos or maps…** and **File › Import › DXF
+drawing…** (since 2026-11-15, with the other imports; before, in the
+Backgrounds menu) and kept in the project file, drawn under the line;
+**Line › Terrain › Backgrounds** shows or hides them and removes them. Like point clouds and
 surfaces they belong to the project, not to the line: they are not logged
 and not undone.
 
-- **Import orthophotos or maps…** — *They are orthophotos* or *a map*
+- **Orthophotos or maps…** (File › Import) — *They are orthophotos* or *a map*
   (2026-10-25): a map is a georeferenced image of a map loaded into the
   project; under the plan view it is drawn like an orthophoto, and the
   **route and situation plans** and the **sheets' key map** take the maps
@@ -748,7 +751,7 @@ and not undone.
   convert them once yourself (QGIS with ECW support, or the ECW vendor's free
   tools) to GeoTIFF — some mapping agencies publish their orthophotos as
   GeoTIFF directly.
-- **Import DXF drawing…** — an ASCII DXF file (any version; binary DXF is
+- **DXF drawing…** (File › Import) — an ASCII DXF file (any version; binary DXF is
   refused): lines, polylines (with their arcs), circles, arcs, ellipses,
   points and texts, by layer, in their colours (the DXF colour index or
   true colour; BYLAYER, BYBLOCK), at their own heights; blocks are

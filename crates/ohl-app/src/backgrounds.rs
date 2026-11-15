@@ -498,7 +498,7 @@ fn is_ecw(p: &Path) -> bool {
     p.extension().is_some_and(|e| e.eq_ignore_ascii_case("ecw"))
 }
 
-/// Line › Terrain › Backgrounds › Import orthophotos or maps.
+/// File › Import › Orthophotos or maps.
 #[derive(Debug, Clone)]
 pub struct ImageImport {
     /// The files.
@@ -532,7 +532,7 @@ impl ImageImport {
     }
 }
 
-/// Line › Terrain › Backgrounds › Import DXF drawing.
+/// File › Import › DXF drawing.
 #[derive(Debug, Clone, Default)]
 pub struct DrawingImport {
     /// The file.
@@ -1098,13 +1098,16 @@ impl Windows {
 
 /// The Line › Terrain › Backgrounds menu: imports, removal, and what is shown
 /// (ticks: the menu stays open).
-pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
+/// File › Import's entries for the backgrounds: orthophotos or maps, and a
+/// DXF drawing (2026-11-15: moved from Line › Terrain › Backgrounds).
+pub fn import_entries(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     let busy = r.backgrounds.job.is_some();
     if ui
-        .add_enabled(!busy, egui::Button::new("Import orthophotos or maps…"))
+        .add_enabled(!busy, egui::Button::new("Orthophotos or maps…"))
         .on_hover_text(
-            "GeoTIFF, or TIFF/JPEG/PNG with a world file; ECW through a converter. A map is \
-             taken first by the route and situation plans and the key map",
+            "Background images kept in the project: GeoTIFF, or TIFF/JPEG/PNG with a world \
+             file; ECW through a converter. A map is taken first by the route and situation \
+             plans and the key map (shown in Line › Terrain › Backgrounds)",
         )
         .clicked()
     {
@@ -1112,13 +1115,27 @@ pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         ui.close();
     }
     if ui
-        .add_enabled(!busy, egui::Button::new("Import DXF drawing…"))
-        .on_hover_text("e.g. the cadastre: drawn in the plan and 3D views")
+        .add_enabled(!busy, egui::Button::new("DXF drawing…"))
+        .on_hover_text(
+            "A background drawing kept in the project, e.g. the cadastre: drawn in the plan and \
+             3D views (shown in Line › Terrain › Backgrounds)",
+        )
         .clicked()
     {
         r.backgrounds.drawing = Some(DrawingImport::default());
         ui.close();
     }
+}
+
+/// Line › Terrain › Backgrounds: what is shown, and Remove.
+pub fn menu(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
+    // The imports are in File › Import (owner, 2026-11-15: "so that it
+    // stays coherent with the rest").
+    ui.label(
+        egui::RichText::new("Import: File › Import › Orthophotos or maps…, DXF drawing…")
+            .small()
+            .weak(),
+    );
     if ui
         .add_enabled(
             !r.model.backgrounds.is_empty(),

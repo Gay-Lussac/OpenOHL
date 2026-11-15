@@ -10,6 +10,26 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**"Unstable" says where**: a finite-element solve failing as unstable
+(compression above the elastic buckling load) now names the joints its
+buckling mode moves most and the members in compression at the first —
+before, it said nowhere where. Found on a real tower model whose plan
+bracing (all its members in one horizontal plane, held across it only by
+the bending of thin angles modelled as frames) buckled under a few kN;
+how to treat such joints is to be decided.
+
+**A moment only where a member that is always a frame meets the joint**:
+an attachment's offset moment (or a post's) at a joint only tension-only
+members that bend (or trusses) meet is left out and said NOT ON THE SAFE
+SIDE; before, it was put there and the solve refused the case once those
+members were bowed or slack.
+
+**Background imports in File › Import** (owner: "in line terrain there
+are the imports for dxf and orthophotos... can you move them to the file
+-> imports so that it stays coherent with the rest"): File › Import ›
+Orthophotos or maps… and DXF drawing…; Line › Terrain › Backgrounds keeps
+what is shown and Remove backgrounds….
+
 **Ice on the structures from the wires' ice, with a factor** (owner: "for
 the ice on the load cases can you also add a factor as for the wind to
 change the value compared to the conductor weather cases"; asked which

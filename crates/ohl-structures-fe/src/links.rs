@@ -210,11 +210,15 @@ impl Model {
         self.point_load(label, force).map(|p| p.loads)
     }
 
-    /// Whether a frame member meets node `n`.
+    /// Whether a member that is always a frame meets node `n` — one that
+    /// can take a moment put there. A tension-only member that bends does
+    /// not count: it goes slack when shortened (since 2026-11-15 at any
+    /// compression), and a moment at a joint only such members meet would
+    /// then have nothing to take it (the solve refused the whole case).
     pub fn frame_at(&self, n: usize) -> bool {
         self.members
             .iter()
-            .any(|m| (m.i == n || m.j == n) && m.is_frame())
+            .any(|m| (m.i == n || m.j == n) && m.kind == crate::MemberKind::Frame)
     }
 
     fn load_at(&self, label: &str, n: usize, offset: [f64; 3], force: [f64; 3]) -> PointLoad {
@@ -253,7 +257,8 @@ impl Model {
                 };
                 format!(
                     "NOT ON THE SAFE SIDE: attachment point {label}: {what} ({:.2} kN m) left \
-                     out at joint {}: only trusses meet it (make it a frame joint to carry it)",
+                     out at joint {}: no member that is always a frame meets it (trusses or tension-only \
+                     members only; make it a frame joint to carry it)",
                     kn_m(moment),
                     self.nodes[n].id
                 )

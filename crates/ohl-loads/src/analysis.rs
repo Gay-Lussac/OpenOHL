@@ -459,7 +459,8 @@ impl Analyses {
                             _ => notes.push(format!(
                                 "model: attachment point {label}: the moment of the post \
                                  insulator on it ({:.2} kN m) left out — NOT ON THE SAFE \
-                                 SIDE: only trusses meet its joint (make it a frame joint)",
+                                 SIDE: no member that is always a frame meets its joint (trusses or tension-only \
+                                 members only; make it a frame joint)",
                                 extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
                             )),
                         }

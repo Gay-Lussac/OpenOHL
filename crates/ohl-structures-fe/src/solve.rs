@@ -156,6 +156,14 @@ pub enum FeError {
         iteration: u64,
         /// Negative pivots (buckling modes passed).
         modes: usize,
+        /// The joints moving most in the buckling mode, farthest first (at
+        /// most [`MECHANISM_JOINTS`]; 2026-11-15, a tower's "unstable" said
+        /// nowhere where).
+        joints: Vec<String>,
+        /// The members in compression meeting at the first of them, by
+        /// id with their force, N (most compressed first, at most
+        /// [`MECHANISM_JOINTS`]).
+        compressed: Vec<(String, f64)>,
     },
     /// The tension-only members do not settle: the active-set iterations
     /// came back to a set they had solved before (a cycle), or took
@@ -235,11 +243,34 @@ impl fmt::Display for FeError {
                 force / 1000.0,
                 share * 100.0
             ),
-            FeError::Unstable { iteration, modes } => write!(
-                f,
-                "unstable: axial compression above the elastic buckling load \
-                 ({modes} buckling mode(s), iteration {iteration})"
-            ),
+            FeError::Unstable {
+                iteration,
+                modes,
+                joints,
+                compressed,
+            } => {
+                write!(
+                    f,
+                    "unstable: axial compression above the elastic buckling load \
+                     ({modes} buckling mode(s), iteration {iteration})"
+                )?;
+                if let Some(first) = joints.first() {
+                    write!(f, "; the mode moves most at {}", joints.join(", "))?;
+                    if !compressed.is_empty() {
+                        let list: Vec<String> = compressed
+                            .iter()
+                            .map(|(m, n)| format!("{m} {:.1} kN", -n / 1000.0))
+                            .collect();
+                        write!(f, "; in compression at {first}: {}", list.join(", "))?;
+                    }
+                    write!(
+                        f,
+                        " (check the bracing there: a joint held only by members in one line or \
+                         one plane buckles under their compression)"
+                    )?;
+                }
+                Ok(())
+            }
             FeError::Unsettled {
                 members,
                 flipping,
@@ -1390,9 +1421,27 @@ fn solve_with(
             }
         };
         if negative > 0 {
+            // Where it buckles: the mode nearest zero stiffness, from the
+            // matrix again (inverse iteration, as a mechanism's).
+            assemble(
+                model,
+                &prepared,
+                &eq,
+                (&axial, &slack),
+                options.nonlinear,
+                held,
+                &mut k,
+            );
+            let joints = mode_joints(model, &dof_of, &k.mechanism());
+            let compressed = joints
+                .first()
+                .map(|j| compressed_at(model, j, &axial, &slack))
+                .unwrap_or_default();
             return Err(FeError::Unstable {
                 iteration: run.iterations(),
                 modes: negative,
+                joints,
+                compressed,
             });
         }
         k.solve(&mut r);
@@ -1828,6 +1877,53 @@ fn moving_joints(model: &Model, dof_of: &[(usize, usize)], v: &[f64]) -> (Vec<St
         .map(|&n| model.nodes[n].id.clone())
         .collect();
     (names, moving.len())
+}
+
+/// The joints moving most in mode `v` (their translations), farthest
+/// first: at most [`MECHANISM_JOINTS`], each at least a tenth of the
+/// largest.
+fn mode_joints(model: &Model, dof_of: &[(usize, usize)], v: &[f64]) -> Vec<String> {
+    let mut size = vec![0.0f64; model.nodes.len()];
+    for (q, &(n, d)) in dof_of.iter().enumerate() {
+        if d < 3 && v[q].is_finite() {
+            size[n] += v[q] * v[q];
+        }
+    }
+    let largest = size.iter().copied().fold(0.0, f64::max);
+    if largest <= 0.0 {
+        return Vec::new();
+    }
+    let mut order: Vec<usize> = (0..size.len())
+        .filter(|&n| size[n] >= 0.01 * largest)
+        .collect();
+    order.sort_by(|&a, &b| size[b].total_cmp(&size[a]));
+    order
+        .into_iter()
+        .take(MECHANISM_JOINTS)
+        .map(|n| model.nodes[n].id.clone())
+        .collect()
+}
+
+/// The members in compression meeting at joint `joint` with their axial
+/// force (N, negative), most compressed first, at most
+/// [`MECHANISM_JOINTS`].
+fn compressed_at(model: &Model, joint: &str, axial: &[f64], slack: &[bool]) -> Vec<(String, f64)> {
+    let Some(n) = model.nodes.iter().position(|x| x.id == joint) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, f64)> = model
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(k, m)| (m.i == n || m.j == n) && !slack.get(*k).copied().unwrap_or(false))
+        .filter_map(|(k, m)| {
+            let a = axial.get(k).copied().unwrap_or(0.0);
+            (a < 0.0).then(|| (m.id.clone(), a))
+        })
+        .collect();
+    out.sort_by(|a, b| a.1.total_cmp(&b.1));
+    out.truncate(MECHANISM_JOINTS);
+    out
 }
 
 fn global_translation(d: &[[f64; 6]], n: usize) -> Vector3<f64> {

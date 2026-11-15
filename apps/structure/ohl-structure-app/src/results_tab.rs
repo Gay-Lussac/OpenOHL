@@ -837,7 +837,7 @@ fn offset_moments_ui(
                             ui.horizontal(|ui| {
                                 ui.colored_label(ui.visuals().warn_fg_color, "left out")
                                     .on_hover_text(p.note.as_deref().unwrap_or(
-                                        "only trusses meet the joint: they cannot carry a moment",
+                                        "no member that is always a frame meets the joint (trusses or tension-only members only): they cannot carry a moment",
                                     ));
                                 if let Some(j) = &joint
                                     && ui

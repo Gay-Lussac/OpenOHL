@@ -621,6 +621,17 @@ fn points_share_joints_and_offsets_make_moments() {
     assert!(!q.moment_applied);
     assert_eq!(q.loads[0].moment, [0.0; 3]);
     assert!(q.note.unwrap().contains("make it a frame joint"));
+    // A tension-only member that bends only (2026-11-15): it may go slack,
+    // so it does not count as a frame for a moment put at the joint — left
+    // out and said, not refused by the solve once the member slackens.
+    let tension = base.replace("kind = \"frame\"", "kind = \"tension\"\nbending = true");
+    let m = Model::from_structure_type(&tension).unwrap();
+    assert!(m.members[0].is_frame());
+    assert!(!m.frame_at(1));
+    let q = m.point_load("Q", f).unwrap();
+    assert!(!q.moment_applied);
+    assert_eq!(q.loads[0].moment, [0.0; 3]);
+    assert!(q.note.unwrap().contains("tension-only"));
 }
 
 /// Wood pole: a horizontal load F at height h gives F·h at the ground

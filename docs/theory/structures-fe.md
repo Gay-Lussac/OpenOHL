@@ -84,6 +84,8 @@ The threshold (an eigenvalue below \\( 10^{-6} \\) of the largest: members withi
 
 ## Tension-only members: compression up to their buckling load
 
+**A moment at a joint** (an attachment's offset, a post insulator) is carried only where a member that is **always** a frame meets it (2026-11-15): a tension-only member that bends may be bowed or slack, so at a joint only such members (or trusses) meet, the moment is left out and the result says NOT ON THE SAFE SIDE, as where only trusses meet. Before, the moment was put there and the solve refused the whole case once those members were left out.
+
 A tension-only member (`kind = "tension"`) stands for light bracing that buckles under a small compression. It follows a **capped law**: a truss in tension and in compression up to its own elastic buckling load, and no more:
 
 \\[ N = \max\left(\frac{EA}{L}\\,\delta,\\; -N_{cr}\right), \qquad N_{cr} = \frac{\pi^2 E I_{min}}{L_k^2}, \\]
