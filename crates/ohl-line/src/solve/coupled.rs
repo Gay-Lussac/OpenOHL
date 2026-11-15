@@ -552,6 +552,15 @@ pub fn solve_spacer_group(
         let left = Vector3::new(-h.y, h.x, 0.0) / h.norm();
         // The span's local wind (roadmap O15).
         let local = line.sections[k].wind_factor(span);
+        // A wind at an angle: the full pressure along where it blows.
+        let mid = v(shape.clamps[span]) + d * 0.5;
+        if let Some([x, y]) = line
+            .direction_at([mid.x, mid.y])
+            .and_then(|a| case.towards_at(a))
+        {
+            let f = 0.5 * case.wind_pressure.si() * local * s.wind_area;
+            return [x * f, y * f, 0.0];
+        }
         p(left * (0.5 * case.wind_pressure.si() * local * s.wind_area * case.wind_from.to_left()))
     };
     // The forces on the pulled ends, one vector per spacer (in `spacers`'

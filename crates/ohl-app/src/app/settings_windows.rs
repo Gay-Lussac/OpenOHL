@@ -557,6 +557,61 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .small()
                 .weak(),
             );
+            ui.separator();
+            ui.strong("Wind at an angle on the wires");
+            ui.label(
+                "For weather or load cases with a wind direction other than across the line \
+                 (Weather cases: Wind direction). Cases without a direction, or from the right or \
+                 the left, keep the across rule and are not affected.",
+            );
+            for law in ohl_weather::ObliqueLaw::ALL {
+                let help = match law {
+                    ohl_weather::ObliqueLaw::Projected => {
+                        "The force normal to the wire on the area it shows to the wind, \
+                         q·D·sin θ (SIA 261 Table 74 for round bars): the larger, on the safe side"
+                    }
+                    ohl_weather::ObliqueLaw::CrossFlow => {
+                        "The force of the wind's speed normal to the wire, q·D·sin² θ (the \
+                         cross-flow principle): lighter than the projected area"
+                    }
+                };
+                let text = match law {
+                    ohl_weather::ObliqueLaw::Projected => "Projected area (default)",
+                    ohl_weather::ObliqueLaw::CrossFlow => "Cross-flow principle",
+                };
+                ui.radio_value(&mut draft.wind.law, law, text)
+                    .on_hover_text(help);
+            }
+            ui.horizontal(|ui| {
+                let mut on = draft.wind.friction.is_some();
+                if ui
+                    .checkbox(&mut on, "Friction along the wire, c_t")
+                    .on_hover_text(
+                        "A force along the wire, c_t · q · D · cos² θ, with the wind's part along \
+                         it (off by default). The coefficient is yours to give from a source: \
+                         the program gives no value",
+                    )
+                    .changed()
+                {
+                    draft.wind.friction = on.then_some(ohl_line::wind::Friction(0.0));
+                }
+                if let Some(f) = draft.wind.friction.as_mut() {
+                    ui.add(
+                        egui::DragValue::new(&mut f.0)
+                            .speed(0.001)
+                            .range(0.0..=10.0),
+                    );
+                }
+            });
+            ui.label(
+                egui::RichText::new(
+                    "The effect, a 300 m span of a 30 mm wire at 500 Pa: across 4500 N either \
+                     way; at 45° to the wire 3182 N (projected area) or 2250 N (cross-flow). \
+                     Time: none — the same solve.",
+                )
+                .small()
+                .weak(),
+            );
             // Not the project's: the application's, for every project
             // (owner, 2026-11-12), taken at once.
             ui.separator();

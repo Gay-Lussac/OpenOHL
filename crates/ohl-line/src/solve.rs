@@ -47,6 +47,7 @@ use ohl_weather::WeatherCase;
 use ohl_wirefe::catenary_element::default_element_budget;
 use ohl_wirefe::{CableElement, CableProperties, Model, Node, TrussElement, default_fe_budget};
 
+use crate::wind::{PlaceWind, WireWind};
 use crate::{Line, LineError, Point, Section, Stringing};
 
 mod coupled;
@@ -534,6 +535,22 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
         - Vector3::new(0.0, 0.0, load.vertical.si())
 }
 
+/// Load per unit length on a span with chord `d` for a weather case with a
+/// wind at an angle (`wind`, [`PlaceWind`]): weight and ice down, the wind's
+/// part normal to the chord by the law (with its vertical part on an
+/// inclined span) and the friction along it when given. Simplification:
+/// the chord's direction for the whole span (the wire is steeper near the
+/// supports, and swung).
+pub(crate) fn oblique_span_load(
+    case: &WeatherCase,
+    cable: &Cable,
+    d: Vector3<f64>,
+    wind: &PlaceWind,
+) -> Vector3<f64> {
+    let load = case.wire_load(cable.diameter, cable.weight());
+    wind.on_wire(load.horizontal.si(), d) - Vector3::new(0.0, 0.0, load.vertical.si())
+}
+
 /// Load per unit length on a wire with chord `d` where the line runs along
 /// `along` (a plan unit vector): weight and ice down, and the case's full
 /// wind pressure square to the wire in plan, as on the spans
@@ -545,15 +562,23 @@ pub(crate) fn span_load(case: &WeatherCase, cable: &Cable, d: Vector3<f64>) -> V
 /// line blows it out fully). A wire lying exactly across the line is
 /// pushed ahead. Without a direction, as [`span_load`]. For wires whose
 /// own direction does not tell the line's (jumpers).
+///
+/// A case with a wind at an angle (owner 2026-11-15): the one wind from
+/// its direction relative to the line there (`along`), each piece the
+/// part normal to it by the law of `options` (and its friction).
 pub(crate) fn wire_load_in_line_wind(
     case: &WeatherCase,
     cable: &Cable,
     d: Vector3<f64>,
     along: Option<[f64; 2]>,
+    options: &crate::wind::WireWindOptions,
 ) -> Vector3<f64> {
     let Some(a) = along else {
         return span_load(case, cable, d);
     };
+    if let Some(w) = PlaceWind::of(case, a, options) {
+        return oblique_span_load(case, cable, d, &w);
+    }
     let load = case.wire_load(cable.diameter, cable.weight());
     let left = nalgebra::Vector2::new(-a[1], a[0]);
     let ahead = nalgebra::Vector2::new(a[0], a[1]);
@@ -663,6 +688,9 @@ struct Cases<'a> {
     /// bundle left, (n − k)/n: the span keeps its element with that share
     /// of the stiffness, of the weight and of the loads per metre.
     partial: &'a [(usize, f64)],
+    /// The line's direction at the spans and points, for the cases with
+    /// a wind at an angle (none: every case across, or not yet known).
+    wind: Option<&'a WireWind>,
 }
 
 impl<'a> Cases<'a> {
@@ -675,7 +703,32 @@ impl<'a> Cases<'a> {
             rolling: None,
             broken: &[],
             partial: &[],
+            wind: None,
         }
+    }
+
+    /// Whether a case of it has a wind at an angle (the section's, a
+    /// span's own, the rolling's).
+    fn any_oblique(&self) -> bool {
+        self.base.oblique().is_some()
+            || self
+                .own
+                .into_iter()
+                .chain(self.rolling)
+                .flat_map(|m| m.values())
+                .any(|c| c.oblique().is_some())
+    }
+
+    /// The wind at an angle on span `s` in its case (none: the across
+    /// rule).
+    fn span_wind(&self, s: usize) -> Option<PlaceWind> {
+        self.wind?.span(self.of(s), s)
+    }
+
+    /// The wind at an angle of the section's case at point `k` (none: the
+    /// across rule).
+    fn point_wind(&self, k: usize) -> Option<PlaceWind> {
+        self.wind?.point(self.base, k)
     }
 
     fn of_spans(cases: &'a SpanCases) -> Self {
@@ -830,16 +883,23 @@ fn span_load_scaled(
 /// [`crate::LoadsPer::Unstretched`] (the solver option, owner decision
 /// 2026-10-21) the ice and wind too per unit of unstressed length, as
 /// before: none per stretched metre.
+///
+/// `wind`: the span's wind at an angle ([`oblique_span_load`]); none: the
+/// across rule ([`span_load`]).
 fn span_loads_split(
     case: &WeatherCase,
     cable: &Cable,
     d: Vector3<f64>,
     scale: f64,
     per: crate::LoadsPer,
+    wind: Option<PlaceWind>,
 ) -> (Vector3<f64>, Vector3<f64>) {
     let w = cable.weight().si();
     let own = Vector3::new(0.0, 0.0, -w * scale);
-    let ice_wind = span_load(case, cable, d) + Vector3::new(0.0, 0.0, w);
+    let ice_wind = match wind {
+        Some(pw) => oblique_span_load(case, cable, d, &pw),
+        None => span_load(case, cable, d),
+    } + Vector3::new(0.0, 0.0, w);
     match per {
         crate::LoadsPer::Stretched => (own, ice_wind),
         crate::LoadsPer::Unstretched => (own + ice_wind, Vector3::zeros()),
@@ -1550,9 +1610,21 @@ fn build(
         let transverse = Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm();
         // The local wind at this point (1 without).
         let local = cases.at_point(k);
+        // A wind at an angle: the full pressure along where it blows (the
+        // string's one area; Conservative for an inclined string).
+        let oblique = cases.point_wind(k);
         for m in holder.members.iter().filter(|m| m.wind_area > 0.0) {
-            let push = transverse
-                * (0.5 * case.wind_pressure.si() * local * m.wind_area * case.wind_from.to_left());
+            let push = match oblique {
+                Some(w) => w.towards * (0.5 * case.wind_pressure.si() * local * m.wind_area),
+                None => {
+                    transverse
+                        * (0.5
+                            * case.wind_pressure.si()
+                            * local
+                            * m.wind_area
+                            * case.wind_from.to_left())
+                }
+            };
             for end in [m.top, m.bottom] {
                 if let At::Free(i) = end {
                     model.nodes[frees[k][i]].load += push;
@@ -1585,7 +1657,14 @@ fn build(
         // total weight unchanged.
         let scale = reference.weight_scale[s] / thermal;
         // Ice and wind per metre of the stretched wire.
-        let (load, stretched) = span_loads_split(case, cable, d, scale, reference.loads_per);
+        let (load, stretched) = span_loads_split(
+            case,
+            cable,
+            d,
+            scale,
+            reference.loads_per,
+            cases.span_wind(s),
+        );
         // Some subconductors broken here (roadmap O22 item 7): the model
         // is one subconductor's share of the bundle, so this span carries
         // the share left of the stiffness, of the weight and of the ice
@@ -1610,9 +1689,12 @@ fn build(
             let solved = shape_props
                 .solve(d, None, &element_budget)
                 .map_err(|e| invalid(format!("span {s}: {e}")))?;
-            // The wind across the span, from the case's side.
+            // The wind across the span, from the case's side; at an angle:
+            // along where it blows (the object's area as given).
             let horizontal = d.xy();
-            let left = if horizontal.norm() > 0.0 {
+            let left = if let Some(w) = cases.span_wind(s) {
+                w.towards
+            } else if horizontal.norm() > 0.0 {
                 Vector3::new(-horizontal.y, horizontal.x, 0.0) / horizontal.norm()
                     * case.wind_from.to_left()
             } else {
@@ -2112,8 +2194,12 @@ fn hanging_loads(
     };
     let weight: f64 = holder.members.iter().map(|m| m.weight).sum();
     let area: f64 = holder.members.iter().map(|m| m.wind_area).sum();
-    let wind =
-        left * (case.wind_pressure.si() * cases.at_point(k) * area * case.wind_from.to_left());
+    let wind = match cases.point_wind(k) {
+        Some(w) => w.towards * (case.wind_pressure.si() * cases.at_point(k) * area),
+        None => {
+            left * (case.wind_pressure.si() * cases.at_point(k) * area * case.wind_from.to_left())
+        }
+    };
     let share = 1.0 / tops.len() as f64;
     tops.iter()
         .map(|(label, at, _)| Support {
@@ -2386,6 +2472,7 @@ fn shared_out(
                     *d,
                     reference.weight_scale[s] / thermal,
                     reference.loads_per,
+                    cases.span_wind(s),
                 );
                 let k = stretches.borrow()[s];
                 let load = own + stretched * k;
@@ -2556,6 +2643,7 @@ fn over_sheaves(
             d,
             reference.weight_scale[s] / thermal,
             reference.loads_per,
+            cases.span_wind(s),
         );
         let load = own + stretched * k;
         let element = |l: f64| CableProperties {
@@ -3196,6 +3284,13 @@ fn solve_cases(
         .base
         .with_wind_factor(section.largest_wind_factor())
         .with_ice_factor(section.largest_ice_factor());
+    // A wind at an angle: the ruling span's one load the largest span's
+    // (Conservative, 2026-11-15).
+    let rs_case = if section.calculation.method() == Method::Rs && rs_case.oblique().is_some() {
+        ruling_span_oblique(line, section, cable, &rs_case, budget)?
+    } else {
+        rs_case
+    };
     // The line's bimetallic model for cables that do not give their own.
     let own = &*line.bimetallic.apply(cable);
     // Its own weight per metre at the stringing temperature; the jumpers
@@ -3260,6 +3355,43 @@ fn solve_cases(
     }
 }
 
+/// A weather case with a wind at an angle as the ruling-span method takes
+/// it (one load for every span of the section): the wind across the line
+/// whose resultant per metre is the **largest** of the spans' — each
+/// span's wind at an angle on its chord by the law, with its vertical part
+/// and its friction ([`oblique_span_load`]) — so that the tension is at
+/// least the largest span's (Conservative; the plane of the load and the
+/// longitudinal parts are left out: Simplification, the finite elements
+/// give them).
+fn ruling_span_oblique(
+    line: &Line,
+    section: &Section,
+    cable: &Cable,
+    case: &WeatherCase,
+    budget: &Budget,
+) -> Result<WeatherCase, LineError> {
+    let prepared = memo::prepared(line, section, cable, budget)?;
+    let clamps = &prepared.reference.clamps;
+    let wind = WireWind::of(line, section, clamps);
+    let load = case.wire_load(cable.diameter, cable.weight());
+    let (v, qd) = (load.vertical.si(), load.horizontal.si());
+    let largest = clamps
+        .windows(2)
+        .enumerate()
+        .filter_map(|(s, c)| {
+            let w = wind.span(case, s)?;
+            Some(oblique_span_load(case, cable, c[1] - c[0], &w).norm())
+        })
+        .fold(0.0_f64, f64::max);
+    let across = (largest * largest - v * v).max(0.0).sqrt();
+    let factor = if qd > 0.0 { across / qd } else { 0.0 };
+    Ok(WeatherCase {
+        wind_direction: None,
+        wind_pressure: ohl_core::units::Stress::from_si(case.wind_pressure.si() * factor),
+        ..case.clone()
+    })
+}
+
 /// Passes of the secant iteration on the stress-strain curves (exit
 /// clause; it converges in 3–6).
 const CURVE_PASSES: usize = 30;
@@ -3298,6 +3430,17 @@ fn solve_fe(
     reference.loads_per = line.solver.loads_per;
     // How it rolls in the blocks (2026-10-25).
     reference.blocks = line.solver.blocks;
+    // A wind at an angle (2026-11-15): the line's direction at its spans
+    // and points (none for cases across: those solve as before).
+    let oblique = (cases.wind.is_none() && cases.any_oblique())
+        .then(|| WireWind::of(line, section, &reference.clamps));
+    let cases = match &oblique {
+        Some(w) => Cases {
+            wind: Some(w),
+            ..cases
+        },
+        None => cases,
+    };
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
@@ -4004,6 +4147,9 @@ mod span_case_tests;
 
 #[cfg(test)]
 mod local_tests;
+
+#[cfg(test)]
+mod wind_direction_tests;
 
 #[cfg(test)]
 mod final_stringing_tests;

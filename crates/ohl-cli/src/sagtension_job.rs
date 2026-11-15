@@ -377,6 +377,15 @@ fn nonlinear_report(
     };
     let mut warnings = Vec::new();
     for case in &job.weather {
+        if let Some(d) = case.oblique() {
+            // The job knows no line direction: the across envelope.
+            warnings.push(format!(
+                "\"{}\": wind {} taken across the spans (the full pressure; the job has no \
+                 line direction) — Conservative",
+                case.name,
+                d.words()
+            ));
+        }
         let s = state(case, cable);
         let initial = section
             .solve(s, &MaterialState::Initial, &budget)

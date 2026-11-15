@@ -51,6 +51,7 @@ pub mod route;
 pub mod sagging;
 pub mod solve;
 pub mod staking;
+pub mod wind;
 
 pub use bimetallic::bimetallic_notes;
 pub use groups::{CaseSet, CaseSets, CaseWhy, Facts, Given, GroupRules, GroupWhy, StructureGroup};
@@ -76,7 +77,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 19 adds a hinged post's hinge friction (a
+/// Latest line file version: 20 adds the calculation options of a wind
+/// at an angle on the wires (`solver.wind`: the law and the friction
+/// along the wire, [`wind::WireWindOptions`]; owner, 2026-11-15), written
+/// only by a line that changes them (else 19 or older, [`Line::to_json`]);
+/// 19 adds a hinged post's hinge friction (a
 /// string's `hinge_friction_nm`: [`InsulatorString::hinge_friction_nm`];
 /// owner, 2026-11-15), written only by a line that has one (else 18 or
 /// older, [`Line::to_json`]: an older program must not read such a post as
@@ -144,7 +149,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 19;
+pub const LINE_FILE_VERSION: u32 = 20;
+
+/// The version before the oblique-wind options (`solver.wind`; owner,
+/// 2026-11-15): what a line without them is written as (when it has a
+/// hinge friction).
+const BEFORE_WIND_OPTIONS_VERSION: u32 = 19;
 
 /// The version before a hinged post's hinge friction (`hinge_friction_nm`;
 /// owner, 2026-11-15): what a line without one is written as (when it has
@@ -482,6 +492,13 @@ pub struct SolverOptions {
     /// mean.
     #[serde(default, skip_serializing_if = "local::SpanRule::is_default")]
     pub local_spans: local::SpanRule,
+    /// A wind at an angle on the wires (owner, 2026-11-15; line file
+    /// version 20 when not the defaults): the law of the force normal to a
+    /// wire at an angle (the projected area by default) and the friction
+    /// along it (none by default). No effect on a case without a direction
+    /// ([`wind::WireWindOptions`]).
+    #[serde(default, skip_serializing_if = "wind::WireWindOptions::is_default")]
+    pub wind: wind::WireWindOptions,
 }
 
 /// How a section in the blocks shares its unstressed length between its
@@ -3766,7 +3783,8 @@ impl Line {
             .iter()
             .any(|s| s.strings.iter().any(|x| x.hinge_friction_nm.is_some()));
         let written = match (sheaves, winds, shapes) {
-            _ if hinge_friction => LINE_FILE_VERSION,
+            _ if !self.solver.wind.is_default() => LINE_FILE_VERSION,
+            _ if hinge_friction => BEFORE_WIND_OPTIONS_VERSION,
             _ if groups => BEFORE_HINGE_FRICTION_VERSION,
             _ if posts => BEFORE_GROUPS_VERSION,
             _ if clamps => BEFORE_POST_VERSION,

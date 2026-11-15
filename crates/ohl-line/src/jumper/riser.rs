@@ -338,7 +338,7 @@ pub(super) fn shape(
     let along = line.direction_at([0.5 * (wa.x + wb.x), 0.5 * (wa.y + wb.y)]);
     // Per unstressed metre: the own weight spread over the length (it
     // weighs the same hot or cold), ice and wind as on the jumper.
-    let load = wire_load_in_line_wind(case, cable, wb - wa, along)
+    let load = wire_load_in_line_wind(case, cable, wb - wa, along, &line.solver.wind)
         + Vector3::new(0.0, 0.0, cable.weight().si() * (1.0 - 1.0 / thermal));
     let bundle = f64::from(line.jumper_bundle(jumper).count.max(1));
     let points: Vec<(f64, Vector3<f64>)> = object_loads(

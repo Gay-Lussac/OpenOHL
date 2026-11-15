@@ -52,6 +52,7 @@ fn end_tensions(r: &Reference, cable: &Cable, case: &WeatherCase) -> Vec<(f64, f
                 d,
                 r.weight_scale[s] / thermal,
                 crate::LoadsPer::Unstretched,
+                None,
             );
             assert_eq!(stretched, Vector3::zeros());
             let state = CableProperties {
