@@ -2624,6 +2624,50 @@ converged tangent condensed to fixed nodes, K_ss − K_sf K_ff⁻¹ K_fs, each
 cable at its solved load; Err for a node not fixed or given twice, or a
 singular free block). Nothing stored.
 
+**The line solved with flexible structures: the interface loop,
+calculation level 3** (2026-11-15, phase 3 of the plan; in memory only, no
+setting, no file field — an internal entry point and the command line's
+`ohl line … --calculation-level 3`, printed only;
+[theory](../theory/structure-flexibility.md#the-interface-loop)). In
+`ohl_line::solve::flexible`: `CalculationLevel` (`Rigid` = 2, `Linear` = 3;
+`from_number`, `number`); `StructureResponse` (trait: `structure()`,
+`labels()`, `reference()` — the wires' forces at the stringing state per
+label, line axes, N —, `answer(forces) -> Result<Answer { displacement:
+Vec<Point>, flexibility: DMatrix }, String>`); `LinearStructure {
+structure, labels, flexibility (3 × labels square, m/N, line axes; points
+on one joint share rows), reference, body (zero: the body loads come with
+phase 4), approximate, notes }` (u = C (F − F_ref) + body);
+`RigidStructure { structure, reason }`; `Structures { flexible, rigid,
+notes }`; `FlexibleOptions { passes (20), time_limit (600 s),
+displacement_tolerance (1e-4 m), force_tolerance (1 N),
+relative_force_tolerance (1e-6), halvings (3) }`; `reference_forces(line,
+library, budget) -> ReferenceForces { forces: BTreeMap<(structure,
+label), Point>, failed, ruling_span, elapsed }` (each section in still air
+at its stringing temperature). `solve_line_flexible(line, library, case,
+budget, structures, options)` / `solve_line_coupled(…, responses, rigid,
+notes, options)` → `Result<FlexibleSolve, FlexibleFailure>`:
+`FlexibleSolve { case, sections (flexible, in the line's order), rigid
+(pass 0 = solve_line_with, bit for bit), points: [PointResult {
+structure, label, displacement (line axes, m), local (right, ahead, up),
+rigid, flexible (forces, line axes, N, Option) }], spans: [SpanChange {
+section, span, tension, sag, low: [rigid, flexible] }], passes:
+[PassReport { displacement_residual (m), force_residual (N), worst,
+halved, elapsed }], rigid_structures, notes, elapsed, estimate }`;
+`FlexibleFailure { case, reason, passes, rigid, elapsed }` (Display:
+"… failed: … (the rigid results stay, said rigid)"). The line solve's
+section solves, shared assemblies, spacers and jumpers' pull carry the
+moved points and the stiffness through one base `Coupling` (the
+default: the calls as before). In `ohl-loads`: `flexible_structures(line,
+library, types, sections, budget) -> FlexibleSetup { structures,
+reference, condensed, elapsed }` (per placed structure its points with a
+reference force, `Analyses::flexibility_cached` at the stringing state —
+condensations kept by `CondenseKey` in a `CondenseCache`, made over the
+cores — the matrix expanded to its points; no type, no model, refused:
+rigid with the reason; a structure with no wire solved by finite elements
+is left out) and `solve_line_flexible(line, library, types, sections,
+cases, level, budget) -> FlexibleRun { level, setup, cases }`. Nothing
+stored; no check reads it (the structure checks keep the rigid solve).
+
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors
 `vertical`, `transverse`, `longitudinal`, `strength`, `tags`;

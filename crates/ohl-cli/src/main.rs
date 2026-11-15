@@ -15,6 +15,7 @@ mod clearance_run;
 mod code_run;
 mod cost_run;
 mod electrical_run;
+mod flexible_run;
 mod ice_shedding_run;
 mod internal_run;
 mod io_run;
@@ -603,6 +604,25 @@ struct LineArgs {
     /// File-format plugin directory (repeatable).
     #[arg(long)]
     plugin: Vec<PathBuf>,
+    /// Also solve the weather cases at this calculation level, for
+    /// testing (in active development): 3 = each structure with a model
+    /// (or a pole with an elasticity) a linear stiffness at its attachment
+    /// points; prints the points' displacements and the change against
+    /// rigid. Everything else printed and written, every check included,
+    /// stays rigid (level 2, the default).
+    #[arg(long, value_parser = parse_calculation_level)]
+    calculation_level: Option<ohl_line::solve::flexible::CalculationLevel>,
+}
+
+/// A calculation level for `--calculation-level` (2 or 3).
+fn parse_calculation_level(
+    text: &str,
+) -> Result<ohl_line::solve::flexible::CalculationLevel, String> {
+    let n: u8 = text
+        .trim()
+        .parse()
+        .map_err(|_| format!("calculation level \"{text}\": give 2 or 3"))?;
+    ohl_line::solve::flexible::CalculationLevel::from_number(n)
 }
 
 /// Arguments of `ohl drawing`.
@@ -1966,6 +1986,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         export,
         export_options,
         plugin,
+        calculation_level,
     } = args;
     use ohl_core::files::shipped_library;
 
@@ -2157,6 +2178,18 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 extras.jumpers = jumpers;
                 first = Some((case.clone(), shapes));
             }
+        }
+        // The cases again at another calculation level, for testing (plan
+        // of 2026-11-15, phase 3): printed only, nothing above changes.
+        if let Some(level) = calculation_level {
+            let sections = match sections_arg
+                .clone()
+                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+            {
+                Some(p) => ohl_sections::SectionLibrary::load(&p)?,
+                None => ohl_sections::SectionLibrary::default(),
+            };
+            flexible_run::report(&line, &library, &types, &sections, &cases, *level);
         }
         for (g, calc) in groups.iter().copied().enumerate() {
             if groups.len() > 1 {

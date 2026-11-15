@@ -1,18 +1,23 @@
 # Structure flexibility in the line solve (calculation levels 3 and 4)
 
 *Partly built, in active development (not approved yet; plan approved by
-the owner 2026-11-15).* Built (internal, no setting, no result uses them
-yet): the condensation of a structure to its attachment points
+the owner 2026-11-15).* Built (no setting, no check uses them yet): the
+condensation of a structure to its attachment points
 (`ohl_structures_fe::condense`), of a pole (`condense_pole`), of a placed
-structure in the line's axes (`ohl-loads`, `flexibility`), and on the wire
+structure in the line's axes (`ohl-loads`, `flexibility`); on the wire
 side a section solved with its structure points moved and its stiffness
 at those points (`ohl_wirefe::Model::support_stiffness`,
-`ohl_line::solve::Coupling::moved`, `SupportStiffness`). **In active
-development, not built yet:** the iteration that couples structures and
-wires, calculation levels 3 and 4 as results, the line setting, the
-command-line flag and every window. Today every line result is solved
-with the structures rigid (calculation level 2), as
-[Finite-element wire systems](wirefe.md) says.
+`ohl_line::solve::Coupling::moved`, `SupportStiffness`); and **the
+interface loop with calculation level 3** (`ohl_line::solve::flexible`,
+`ohl_loads::solve_line_flexible`), run for testing by the command line's
+`ohl line … --calculation-level 3`, which prints the attachment points'
+displacements and the change against rigid after the rigid results.
+**In active development, not built yet:** the structures' own wind and
+ice in their deflection, the structure checks with the larger of rigid
+and flexible, the other checks taking the level, the line setting and
+every window, level 4. Every result the program gives (every check,
+every file written) is solved with the structures rigid (calculation
+level 2), as [Finite-element wire systems](wirefe.md) says.
 
 ## Two kinds of level
 
@@ -62,37 +67,95 @@ Wires and structures are **not** merged into one finite-element model:
 each section and each structure keeps its own solver, its exit clauses and
 its error reports; sections stay parallel and memoised; one failing
 structure does not fail the line. They meet only at the attachment points.
-*(The loop itself is not built yet; the parts it calls are.)*
+*(Built: `ohl_line::solve::flexible::solve_line_coupled`, level 3 by
+`solve_line_flexible`; the whole line coupled at once, owner 2026-11-15.)*
 
 The unknowns are the displacements **u** of the attachment points of the
-flexible structures (three each, line axes); rigid is u = 0.
+flexible structures (three each, line axes, measured from the structures
+as strung); rigid is u = 0.
 
-1. **Pass 0 is today's rigid solve**: every section solved with u = 0
-   gives the forces **F** the wires put on each attachment point (the
-   whole bundle's). Every result can therefore show its change against
-   rigid at no extra cost.
-2. **The structures answer**: level 3, \\( \mathbf u_s = \mathbf C\,(\mathbf F - \mathbf F_{ref}) \\)
-   with C a structure's flexibility; level 4, the structure's non-linear
-   solve under F less its state at the reference.
+1. **Pass 0 is the rigid solve**: every section solved with u = 0 — the
+   whole line as always, shared assemblies, spacers and the jumpers' pull
+   included, bit for bit the rigid solve (tested) — gives the forces
+   **F** the wires put on each attachment point (the whole bundle's,
+   unfactored) and each section's stiffness there (below), summed per
+   point into \\( \mathbf K_w \\). Every result therefore shows its change
+   against rigid at no extra cost.
+2. **The structures answer**: level 3,
+   \\( \mathbf u_s = \mathbf C\,(\mathbf F - \mathbf F_{ref}) \\) with C a
+   structure's flexibility at its points (one matrix per structure, its
+   points fully coupled) and \\( \mathbf F_{ref} \\) the wires' forces at
+   the stringing state (below); level 4 (not built), the structure's
+   non-linear solve under F less its state at the reference.
 3. **Mismatch** \\( \mathbf r = \mathbf u - \mathbf u_s \\).
-4. **Newton step** on all attachment displacements of the line at once.
-   With \\( \mathbf K_w \\) the wires' stiffness at the attachment points
-   (how their forces change when the points move, below) the step solves
-   \\( (\mathbf I + \mathbf C\,\mathbf K_w)\,\Delta\mathbf u = -\mathbf r \\)
+4. **Converged** when, at every point, the mismatch is at most
+   **0.1 mm** and the force changed by at most **1 N** (or 10⁻⁶ of the
+   force, the larger) since the last accepted pass. In pass 0, which has
+   no last pass, the force test takes \\( \mathbf K_w \mathbf r \\), the
+   change a move by the mismatch would make: a case whose structures would
+   move less than 0.1 mm is answered by the rigid solve itself.
+5. **Newton step** on all attachment displacements of the line at once,
+   from \\( \mathbf r(\mathbf u) = \mathbf u - \mathbf C\,(\mathbf F(\mathbf u) - \mathbf F_{ref}) \\)
+   and \\( \partial\mathbf F/\partial\mathbf u = -\mathbf K_w \\):
+   \\[ (\mathbf I + \mathbf C\,\mathbf K_w)\,\Delta\mathbf u = -\mathbf r \\]
    — the flexibility form, which needs no inverse of C (equivalently
    \\( (\mathbf K_s + \mathbf K_w)\,\Delta\mathbf u = -\mathbf K_s\,\mathbf r \\)
    with \\( \mathbf K_s = \mathbf C^{-1} \\) where C has an inverse; it does
-   not when two points cannot move apart, below).
-5. **Move the attachment points** by Δu, solve the sections again (in
-   parallel), back to 2, until every point's mismatch is below the
-   tolerance and the forces no longer change.
+   not when two points cannot move apart, below). 3 × (flexible points)
+   unknowns, C K_w formed structure by structure (C is block diagonal),
+   solved by Gaussian elimination with partial pivoting within the
+   system's band (the points ordered by structure along the line; a
+   section couples only the structures it passes), a dense LU when the
+   band is wide.
+6. **Line search**: a pass whose largest mismatch grew is solved again with
+   half the step, at most three times; then the step is taken anyway.
+7. **Move the attachment points** to u + Δu, solve the line again (the
+   sections in parallel), back to 2.
 
 Only the forces must be exact; \\( \mathbf K_w \\) may be approximate — it
-then costs passes, never accuracy. Planned exit clauses: a number of
-passes, a time limit as a guard, the cancel token, each section's and each
-structure's own budget; a case that does not converge fails, naming the
-worst point and the trend (owner 2026-11-15), and the rigid results stay
-available, said rigid.
+then costs passes, never accuracy (the hand cases below converge
+quadratically: the mismatch 30 mm, 0.1 mm, 10⁻⁹ m).
+
+**Exit clauses** (each said when it stops a case): 20 passes at most (line
+solves, halved steps included; level 3 converges in 1–6 in the cases
+below); a time limit of 10 minutes per case, checked before each pass with
+the last pass's time (a guard far above any real case); the budget's
+cancel token; each section's own budget. **A case that does not converge
+fails** (owner 2026-11-15) — never the last pass returned as if converged
+— naming the worst point, its direction in the structure's axes and the
+trend: "not converged in 8 passes; mismatch still … mm at T2 W1
+(vertical), decreasing …× a pass". A section that solved rigid but not
+with its points moved fails the case too, naming it. The rigid solve is
+kept with the failure and said rigid. After pass 0 the time is
+estimated as pass 0's time × 4 (level 3 expects 2–5 passes); the result
+gives the estimate, the measured time and each pass's time.
+
+**A local origin for the moved passes.** A line in projected coordinates
+of millions of metres is solved in its passes after pass 0 about a local
+origin (the first structure's position rounded to whole kilometres; pass
+0 stays the rigid solve as given) and its results are moved back: with
+the points moved, some sections' Newton iterations otherwise stall at a
+force noise of about 10⁻³ N — the rounding of such coordinates
+(about 5·10⁻¹⁰ m) times the wires' stiffness — just above their
+tolerance (found on a real line; about the local origin the same
+sections converge). Tested: the same line near and far from the origin
+gives the same results to 10⁻⁶ m and 10⁻³ N.
+
+**The reference forces** \\( \mathbf F_{ref} \\): each section in still air
+at its stringing temperature, the whole line solved as in any case (one
+solve per distinct stringing temperature, each section's forces from the
+solve at its own) — the state the structures are drawn in (geometry as
+strung). A case equal to it gives u = 0 exactly (tested: one pass, the
+sections the rigid solve's bit for bit). A section in a final condition
+(after creep or after load) is solved in that condition here too, as in
+every case.
+
+**Results** per case: per point of a flexible structure its displacement
+(line axes and the structure's: right, ahead, up) and the wires' force on
+it rigid and flexible; per span the horizontal tension, the sag and the
+lowest point's height, rigid and flexible; each pass's mismatch, force
+change, worst point and time; the structures taken rigid with why; the
+notes below.
 
 ## A structure condensed to its attachment points
 
@@ -214,9 +277,13 @@ Listed with the structure and the reason, e.g.: "no structure model
 (detail level 1 or 2)", "its model could not be read: …", "pole without
 elasticity", "attachment point A2-L not linked to a joint", "attachment
 point A1-R: only bars meet its joint J7, in a line or a plane — no
-stiffness across them", "its model did not solve at the reference: …".
-Ruling-span sections are solved on rigid structures; their forces still
-load the structures (owner 2026-11-15).
+stiffness across them", "its model did not solve at the reference: …",
+"no structure type". A structure that carries no wire solved by finite
+elements has nothing to move and is left out of the loop. Ruling-span
+sections are solved on rigid structures (owner 2026-11-15); their forces
+load the structures in the structure checks, but at level 3 the change of
+their forces is not in the structures' deflection (they report no forces
+at points) — said with the result.
 
 ## The wire side
 
@@ -260,6 +327,87 @@ tension falls by about 0.6 kN, as the elastic catenary
 \\( L = \tfrac{2H}{w}\operatorname{asinh}\tfrac{wL_0}{2H} + \tfrac{HL_0}{EA} \\)
 with the same \\( L_0 \\) and w says, to 10⁻⁷.
 
+## What level 3 leaves out or approximates
+
+- **The matrix is fixed** at the stringing state: members going slack or
+  taut with the case's load, guys slackening and P-Delta growing are not
+  followed (level 4's) — stiffer than the case's state where members
+  would go slack.
+- **The structures' own wind and ice** are not in their deflection yet
+  (they come with the structure loads, plan phase 4): under wind the
+  points move less than they would — **not on the safe side** for
+  leeward clearances.
+- **The deflection already present at stringing** is left out (geometry
+  as strung) — not on the safe side where it lowers conductors.
+- **Translations only**: a hinge's friction moment on a pivoting post and
+  a fixed post's tilt are left out (the post moves with its base).
+- **Ruling-span sections** are rigid: their points do not move and the
+  change of their forces is not in the structures' deflection (they
+  report no forces at points); said with the result.
+- **A section that did not solve rigid** stays missing as in the rigid
+  solve; its points' forces are taken as at the stringing state in the
+  structures' deflection, said.
+- **The wires' stiffness** \\( \mathbf K_w \\) is approximate (above): it
+  costs passes, never accuracy — the converged answer is exact for the
+  forces as the sections solve them.
+- **Unfactored**: the interaction at service loads; the load case's
+  factors go on the resulting forces (below).
+
+## Hand cases (level 3)
+
+Each checked by a test against a reference independent of the loop
+(`ohl-line`, `solve::flexible_tests`; `ohl-loads`, `flexibility`):
+
+1. **A span on a spring** — a level 300 m span strung at 20 kN at 15 °C,
+   one end rigid, the other on a spring of 100 kN/m along the span. The
+   tension solves the elastic catenary with the unstressed length and the
+   weight of the case (from the rigid solve) on the chord shortened by
+   the spring, \\( L(H) = 300 - (nH + F_{ref,x})/k \\), found by bisection.
+   At −20 °C: rigid 22 965.2 N, level 3 22 524.0 N, the closed form the
+   same to 2·10⁻¹⁴; the end moves 25.2 mm towards the span; sag 7.831 →
+   7.984 m; 4 passes (mismatch 30 mm, 0.11 mm, 1.4·10⁻⁹ m, 2·10⁻¹⁶ m). At
+   50 °C the structure springs back and tightens the span: 17 871.7 →
+   18 054.0 N, sag 10.057 → 9.957 m (rigid sags more: the "hot" row
+   below, measured). A bundle of two: the same per wire, the spring
+   taking twice the force. Agreement 10⁻⁶ with a 10⁻⁷ m tolerance, 10⁻⁴
+   with the default 0.1 mm.
+2. **A span on a pole** — the same span, its end on a pole top of
+   7 kN/m both ways (3EI/h³ of a 12 m pole, softer than the span along
+   it), 20 mm of ice at −5 °C: rigid 49 231.7 N, level 3 30 537.2 N
+   (−38 %), the closed form the same to 5·10⁻¹³; the top moves 1.505 m
+   towards the span; sag 9.83 → 15.74 m; 6 passes.
+3. **Two spans on a flexible suspension string, one span iced** — two
+   300 m spans clipped in, a 3 m suspension string between them whose top
+   sits on springs (50 kN/m along and across, 5 MN/m vertically), 15 mm of
+   ice on the first span only. Reference: the same wire model solved at
+   once with the string's top free and held by three bars of 100 km along
+   the axes (EA = k L₀, unstressed so that they carry the stringing force
+   at the drawn point; their sideways stiffness, force/length, below 10⁻⁵
+   of k) — one Newton solve, no interface. The loop agrees to 2·10⁻⁸ m at
+   the clamp, 0.001 N in the force on the string's top, 0.002 N in the
+   tensions; 3 passes. **The unbalance relieved:** the longitudinal load on
+   the structure 653.7 N rigid, 621.4 N flexible (−4.9 %, the string's
+   swing already relieves most of it); the top moves 12.4 mm towards the
+   iced span; the iced span sags 1.8 mm more, the bare one 2.1 mm less.
+4. **The limits** — in the stringing state nothing moves (one pass, the
+   sections the rigid solve's bit for bit); springs a million times stiffer
+   give the rigid tensions to 10⁻⁶; no flexible structure: the rigid
+   solve.
+5. **Exit clauses** — the pole of case 2 stopped after 2 passes or by a
+   zero time limit fails with the worst point, its direction and the
+   trend; a deliberately soft top (1 N/m vertically) fails cleanly after
+   8 passes, and given its 20 finds the real equilibrium — the top sunk
+   tens of metres, until its vertical load is back at the stringing
+   state's — after many halved steps.
+6. **The example line** — its lattice towers (a model) and its steel pole
+   (an elasticity) flexible, the other structures rigid ("no structure
+   model"); every case converged with u = C (F − F_ref) at every point
+   to 0.1 mm, the rigid solve kept bit for bit. In still air, cold, the
+   suspension structures move less than 0.1 mm (pass 0 is the answer); in
+   the high-wind case the lattice towers' points move about 19 mm leeward,
+   the pole's top about 0.2 m, the tensions change by at most 0.1 %
+   (3 passes).
+
 ## Load factors
 
 The interaction is solved at **unfactored** loads (the service state);
@@ -278,22 +426,26 @@ against rigid. Every other result (sags, clearances, swings) takes the
 flexible solve where it is the less favourable, or checks both — per
 check, with the same rule: never less safe than rigid. *(The rule applies
 from the phase that brings levels 3 and 4 to the checks; the parts built
-so far change no result.)*
+so far change no result. Until then the level-3 run says with every
+result: "NOT ON THE SAFE SIDE for the structures if taken from here: the
+flexible loads may be lower than rigid — every structure check still uses
+the rigid solve".)*
 
 What rigid gives compared with the real, flexible structure, reasoned from
-the mechanics ("to verify": a test of the level-3 phase will measure it):
+the mechanics ("to verify": still to be measured on a line with the
+structure loads, plan phase 4; "measured": a hand case above):
 
 | Quantity | Rigid gives | So rigid is | Sure? |
 |---|---|---|---|
-| Tension of dead-end and angle spans in cold or iced cases | higher | conservative for tension limits and structure loads | yes |
-| Longitudinal load at the suspension tower next to an unbalanced load or a break | higher | conservative | yes |
+| Tension of dead-end and angle spans in cold or iced cases | higher | conservative for tension limits and structure loads | yes (measured: hand cases 1, 2) |
+| Longitudinal load at the suspension tower next to an unbalanced load or a break | higher | conservative | yes (measured: hand case 3, −4.9 %) |
 | Longitudinal load at towers farther from a break or unbalance | possibly lower (the load spreads further) | **possibly not conservative** | to verify |
 | Loads on the other phases' points of a tower with a broken wire | none (no coupling) | **not conservative** for those points and the torsion they cause | yes (qualitatively) |
 | Vertical (weight span) loads | change with the neighbours' relative vertical movement | either way, small | to verify |
 | Transverse (wind) loads | nearly unchanged | neutral | yes |
 | Sag at a tension above the stringing tension (cold, ice, wind) | smaller | **not conservative** for clearances below the wires | yes |
-| Sag at a tension below the stringing tension (hot) | larger (the structure springs back and tightens the span) | conservative (slightly) | to verify |
-| Sag of the loaded span in unbalanced ice | smaller | **not conservative** | yes |
+| Sag at a tension below the stringing tension (hot) | larger (the structure springs back and tightens the span) | conservative (slightly) | yes (measured: hand case 1, 0.10 m at 50 °C) |
+| Sag of the loaded span in unbalanced ice | smaller | **not conservative** | yes (measured: hand case 3) |
 | Clearances of the remaining spans after a break | smaller sags | **not conservative** | yes |
 | Ground clearance under arms that deflect down | conductors higher | **not conservative** | yes |
 | Horizontal clearances under wind | conductors closer to the tower line | **not conservative** leeward, conservative windward | yes |
@@ -303,8 +455,8 @@ the mechanics ("to verify": a test of the level-3 phase will measure it):
 
 The page [Finite-element wire systems](wirefe.md) says flexibility "raises
 the sags (on the unsafe side for clearances)": true above the stringing
-tension and in unbalanced cases; in hot cases slightly the other way (to
-be measured).
+tension and in unbalanced cases; in hot cases slightly the other way
+(measured, hand case 1).
 
 What the flexible levels themselves leave out, all stiffer than reality
 (so loads on the safe side, deflections not): rigid foundations in the
@@ -331,12 +483,26 @@ Done once per structure type, extension and reference state and kept by
 the key `CondenseKey` (the type, the extension, a fingerprint of the
 model, the points and their links, and the linearisation — an edited
 model is another key); per placed structure only the turn of the matrices
-(microseconds). A line with ten towers of such size: some 5–10 s for all
+(microseconds). At the stringing state the linearisation holds the
+structure's own wires' forces, so in practice each placed structure is
+condensed once (identical ones shared), over the cores. A line with ten towers of such size: some 5–10 s for all
 its matrices — more than the plan's first estimate (under a second),
 because a real tower with frames factorises in about 0.1 s, not
 milliseconds. The wire side's stiffness costs one evaluation of the
 elements and one solve of the free nodes' block per section (well under a
 millisecond).
+
+**The loop** (level 3, optimised build without link-time optimisation,
+the example line with its five weather cases, 2026-11-15): the setup —
+the stringing state's solve and the three condensations — 7 ms; per case
+1 to 3 passes, 8–36 ms against 7–12 ms for the rigid solve: about two to
+three rigid solves per case, as the plan estimated (3–5×). Each pass
+solves the whole line again; a real line's pass costs more than its rigid
+solve where that comes from the memo (the moved sections are solved
+afresh, with their stiffness), so the estimate printed after pass 0
+(pass 0 × 4) can be low there — measured times are printed with it. The
+interface system is held dense (3 × flexible points square: about
+90 MB for a thousand points), formed and eliminated within its band.
 
 ## Sources
 

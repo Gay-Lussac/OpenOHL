@@ -92,19 +92,35 @@ pub fn may_be_taut(line: &Line, results: &[Result<SectionShape, LineError>]) -> 
 /// Jumper loads on what they hang on (the whole bundle's, N).
 pub type JumperLoadMap = std::collections::BTreeMap<LoadAt, [f64; 3]>;
 
+/// What every solve of a line solve carries from `base`: its structure
+/// points moved ([`Coupling::moved`]) and whether its support stiffness
+/// is asked ([`Coupling::stiffness`]) — the structures' deflection of
+/// the coupled solve (calculation level 3, [`super::flexible`]); nothing
+/// else. The default: as without (bit for bit).
+pub(super) fn carried(base: &Coupling) -> Coupling {
+    Coupling {
+        moved: base.moved.clone(),
+        stiffness: base.stiffness,
+        ..Coupling::default()
+    }
+}
+
 /// Every section, the jumpers' loads `jumpers` on their clamps, spread
 /// over the cores (sections are independent finite-element models);
-/// sections sharing an assembly then together.
-pub(super) fn solve_sections_with(
+/// sections sharing an assembly then together — every solve carrying
+/// `base`'s moved points and stiffness ([`carried`]; the default: as
+/// without).
+pub(super) fn solve_sections_based(
     line: &Line,
     library: &ohl_cables::Library,
     case: &WeatherCase,
     budget: &Budget,
     jumpers: &JumperLoadMap,
+    base: &Coupling,
 ) -> Vec<Result<SectionShape, LineError>> {
     let coupling = Coupling {
         jumpers: Some(jumpers.clone()),
-        ..Coupling::default()
+        ..carried(base)
     };
     // Which sections run against the line: the routes made once.
     let views = line.alignment_views();
@@ -118,10 +134,28 @@ pub(super) fn solve_sections_with(
         solve_section_coupled_side(line, section, cable, case, budget, &coupling, against)
     });
     for group in coupled_groups(line) {
-        solve_coupled(line, library, case, &group, &mut results, budget, jumpers);
+        solve_coupled_based(
+            line,
+            library,
+            case,
+            &group,
+            &mut results,
+            budget,
+            jumpers,
+            base,
+        );
     }
     for group in spacer_groups(line) {
-        solve_spacer_group(line, library, case, &group, &mut results, budget, jumpers);
+        solve_spacer_group_based(
+            line,
+            library,
+            case,
+            &group,
+            &mut results,
+            budget,
+            jumpers,
+            base,
+        );
     }
     results
 }
@@ -168,9 +202,36 @@ pub(crate) fn jumper_pull_with(
     case: &WeatherCase,
     budget: &Budget,
     estimate: &JumperLoadMap,
+    used: JumperLoadMap,
+    results: &mut [Result<SectionShape, LineError>],
+    memo: Option<&crate::incremental::JumperMemo>,
+) -> JumperLoadMap {
+    jumper_pull_based(
+        line,
+        library,
+        case,
+        budget,
+        estimate,
+        used,
+        results,
+        memo,
+        &Coupling::default(),
+    )
+}
+
+/// [`jumper_pull_with`], every solve carrying `base`'s moved points and
+/// stiffness ([`carried`]).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn jumper_pull_based(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    estimate: &JumperLoadMap,
     mut used: JumperLoadMap,
     results: &mut [Result<SectionShape, LineError>],
     memo: Option<&crate::incremental::JumperMemo>,
+    base: &Coupling,
 ) -> JumperLoadMap {
     if line.jumpers.is_empty() {
         return used;
@@ -292,7 +353,7 @@ pub(crate) fn jumper_pull_with(
         }
         let coupling = Coupling {
             jumpers: Some(used.clone()),
-            ..Coupling::default()
+            ..carried(base)
         };
         // Over the cores.
         let solved = crate::jumper::in_parallel(&again, |&k| {
@@ -308,13 +369,13 @@ pub(crate) fn jumper_pull_with(
             .iter()
             .filter(|g| g.iter().any(|k| again.contains(k)))
         {
-            solve_coupled(line, library, case, group, results, budget, &used);
+            solve_coupled_based(line, library, case, group, results, budget, &used, base);
         }
         for group in spacer_groups(line)
             .iter()
             .filter(|g| g.iter().any(|k| again.contains(k)))
         {
-            solve_spacer_group(line, library, case, group, results, budget, &used);
+            solve_spacer_group_based(line, library, case, group, results, budget, &used, base);
         }
     }
     used
@@ -440,6 +501,32 @@ pub fn solve_spacer_group(
     results: &mut [Result<SectionShape, LineError>],
     budget: &Budget,
     jumpers: &JumperLoadMap,
+) {
+    solve_spacer_group_based(
+        line,
+        library,
+        case,
+        group,
+        results,
+        budget,
+        jumpers,
+        &Coupling::default(),
+    );
+}
+
+/// [`solve_spacer_group`], every solve in the weather case carrying
+/// `base`'s moved points and stiffness ([`carried`]); the spacers'
+/// lengths at stringing as without (the structures as strung).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_spacer_group_based(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    group: &[usize],
+    results: &mut [Result<SectionShape, LineError>],
+    budget: &Budget,
+    jumpers: &JumperLoadMap,
+    base: &Coupling,
 ) {
     let fail = |results: &mut [Result<SectionShape, LineError>], m: String| {
         for &k in group {
@@ -610,7 +697,7 @@ pub fn solve_spacer_group(
             let coupling = Coupling {
                 jumpers: Some(jumpers.clone()),
                 spacers: couplings.get(&k).cloned().unwrap_or_default(),
-                ..Coupling::default()
+                ..carried(base)
             };
             cable_of(library, section).and_then(|cable| {
                 solve_section_coupled(line, section, cable, case, budget, &coupling)
@@ -709,6 +796,31 @@ pub fn solve_coupled(
     budget: &Budget,
     jumpers: &JumperLoadMap,
 ) {
+    solve_coupled_based(
+        line,
+        library,
+        case,
+        group,
+        results,
+        budget,
+        jumpers,
+        &Coupling::default(),
+    );
+}
+
+/// [`solve_coupled`], every solve carrying `base`'s moved points and
+/// stiffness ([`carried`]).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn solve_coupled_based(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    group: &[usize],
+    results: &mut [Result<SectionShape, LineError>],
+    budget: &Budget,
+    jumpers: &JumperLoadMap,
+    base: &Coupling,
+) {
     type Points = std::collections::BTreeMap<crate::SectionPoint, Point>;
     let solvers = coupling_solvers(line, library, case, group, results);
     let pulls_of = |results: &[Result<SectionShape, LineError>]| -> Option<Points> {
@@ -758,7 +870,7 @@ pub fn solve_coupled(
                 held: held_of(results),
                 solvers: solvers.clone(),
                 jumpers: Some(jumpers.clone()),
-                ..Coupling::default()
+                ..carried(base)
             };
             results[k] = cable_of(library, section).and_then(|cable| {
                 solve_section_coupled(line, section, cable, case, budget, &coupling)

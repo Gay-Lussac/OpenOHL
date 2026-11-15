@@ -17,13 +17,29 @@
 //! orientation (its height adjustment, a translation, changes nothing).
 //! A structure with neither a model nor a pole, or one refused, stays
 //! rigid with the reason ([`Rigid`]).
+//!
+//! [`flexible_structures`] sets up every placed structure of a line for
+//! calculation level 3 (phase 3: the matrices at the stringing state, kept
+//! by their key, condensed over the cores) and [`solve_line_flexible`]
+//! runs the line's interface loop ([`ohl_line::solve::flexible`]) in
+//! weather cases — an internal entry point for testing (the command
+//! line's `--calculation-level 3`); no check takes it yet.
+
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use ohl_core::budget::Budget;
+use ohl_line::solve::flexible::{
+    CalculationLevel, FlexibleFailure, FlexibleOptions, FlexibleSolve, LinearStructure,
+    ReferenceForces, RigidStructure, Structures, reference_forces,
+};
 use ohl_structures::StructureType;
 use ohl_structures_fe::condense::{
     Attachment, CondenseKey, Condensed, Linearisation, Link, Rigid, condense, condense_pole,
 };
 use ohl_structures_fe::{Loads, PoleLoad};
+use ohl_weather::WeatherCase;
 
 use crate::analysis::Analyses;
 
@@ -76,7 +92,8 @@ impl Analyses {
     /// Expected cost: one reference solve and one factorisation of the
     /// structure's tangent plus a substitution per attachment direction
     /// (measured, theory: Structure flexibility); to be kept per
-    /// [`Flexible::key`] by its caller.
+    /// [`Flexible::key`] by its caller ([`Analyses::flexibility_cached`]).
+    #[cfg(test)]
     pub(crate) fn flexibility(
         &self,
         t: &StructureType,
@@ -85,6 +102,37 @@ impl Analyses {
         reference: Option<&[(String, [f64; 3])]>,
         budget: &Budget,
     ) -> Result<Flexible, Rigid> {
+        self.flexibility_cached(t, placed, labels, reference, budget, None)
+    }
+
+    /// The stiffness of placed structure `placed` of type `t` at its
+    /// attachment points `labels`, as `Analyses::flexibility` (the form
+    /// without a cache, for tests) says, the condensations (in the
+    /// structure's axes) kept in `cache` by their key and taken from it
+    /// (the same inputs, the same matrices).
+    pub(crate) fn flexibility_cached(
+        &self,
+        t: &StructureType,
+        placed: Option<&ohl_line::Structure>,
+        labels: &[String],
+        reference: Option<&[(String, [f64; 3])]>,
+        budget: &Budget,
+        cache: Option<&CondenseCache>,
+    ) -> Result<Flexible, Rigid> {
+        let memo = |key: &CondenseKey, make: &dyn Fn() -> Result<Condensed, Rigid>| {
+            let Some(cache) = cache else {
+                return make();
+            };
+            if let Some(hit) = cache.lock().expect("not poisoned").get(key) {
+                return hit.clone();
+            }
+            let made = make();
+            cache
+                .lock()
+                .expect("not poisoned")
+                .insert(key.clone(), made.clone());
+            made
+        };
         let extension = placed.and_then(|s| s.extension.as_deref());
         let orientation = placed.map_or(0.0, |s| s.orientation_deg);
         let (key, condensed) = if let Some((model, extended)) = self.model_of(t, extension) {
@@ -124,7 +172,8 @@ impl Analyses {
                 &points,
                 &linearisation,
             );
-            (key, condense(model, &points, &linearisation, budget)?)
+            let condensed = memo(&key, &|| condense(model, &points, &linearisation, budget))?;
+            (key, condensed)
         } else if let Some(pole) = self.pole_of(&t.id) {
             let pole = pole.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
             // The points as the pole check places them: the type's.
@@ -148,7 +197,10 @@ impl Analyses {
                     .collect()
             });
             let key = CondenseKey::of_pole(&t.id, pole, &points, wires.as_deref());
-            (key, condense_pole(pole, &points, wires.as_deref(), budget)?)
+            let condensed = memo(&key, &|| {
+                condense_pole(pole, &points, wires.as_deref(), budget)
+            })?;
+            (key, condensed)
         } else {
             return Err(Rigid::NoModel);
         };
@@ -156,6 +208,254 @@ impl Analyses {
             key,
             condensed: condensed.turned(to_line_axes(orientation)),
         })
+    }
+}
+
+/// Condensations by their key, in the structure's axes (or why refused).
+pub(crate) type CondenseCache = Mutex<HashMap<CondenseKey, Result<Condensed, Rigid>>>;
+
+/// A line's structures set up for calculation level 3.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FlexibleSetup {
+    /// The flexible structures (their matrices in the line's axes), the
+    /// rigid ones with why, the notes.
+    pub structures: Structures,
+    /// The wires' forces at the stringing state.
+    pub reference: ReferenceForces,
+    /// Condensations made (one per distinct key: type, extension, model,
+    /// points and reference forces).
+    pub condensed: usize,
+    /// The time of the setup (the reference solve included).
+    pub elapsed: Duration,
+}
+
+/// Each of `items` through `f`, over the cores (in order).
+fn over_cores<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZero::get)
+        .min(items.len())
+        .max(1);
+    if threads == 1 {
+        return items.iter().map(&f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: Mutex<Vec<(usize, R)>> = Mutex::new(Vec::with_capacity(items.len()));
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(item) = items.get(k) else { return };
+                    let r = f(item);
+                    done.lock().expect("not poisoned").push((k, r));
+                }
+            });
+        }
+    });
+    let mut done = done.into_inner().expect("not poisoned");
+    done.sort_by_key(|(k, _)| *k);
+    done.into_iter().map(|(_, r)| r).collect()
+}
+
+/// The structures of `line` for calculation level 3: the wires' forces at
+/// the stringing state ([`reference_forces`]); per placed structure its
+/// points carrying wires solved by finite elements, condensed at the
+/// stringing state (`Analyses::flexibility_cached`: the tangent under its
+/// self-weight and those forces), the matrix expanded to its points and
+/// turned to the line's axes; a structure with no type, no model, a
+/// refusal or no such wire: rigid, with why. `budget`: the line solves';
+/// the structures' solves take their own default budget.
+///
+/// Expected cost: one rigid line solve, then one condensation per placed
+/// structure (measured 7 ms for the example's lattice tower, 0.5–1.2 s
+/// for real towers of 2000 members; theory: Structure flexibility), over
+/// the cores.
+pub fn flexible_structures(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    budget: &Budget,
+) -> FlexibleSetup {
+    let analyses = Analyses::load(types, sections);
+    flexible_with(line, library, types, &analyses, budget)
+}
+
+/// [`flexible_structures`] with the models read (`analyses`).
+pub(crate) fn flexible_with(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    analyses: &Analyses,
+    budget: &Budget,
+) -> FlexibleSetup {
+    let started = Instant::now();
+    let reference = reference_forces(line, library, budget);
+    let mut points: BTreeMap<&str, Vec<(String, ohl_line::Point)>> = BTreeMap::new();
+    for ((structure, label), f) in &reference.forces {
+        points
+            .entry(structure.as_str())
+            .or_default()
+            .push((label.clone(), *f));
+    }
+    // Each structure once (the first of an id, as `Line::structure`).
+    let mut placed: Vec<&ohl_line::Structure> = Vec::new();
+    for s in &line.structures {
+        if !placed.iter().any(|p| p.id == s.id) {
+            placed.push(s);
+        }
+    }
+    let cache: CondenseCache = Mutex::new(HashMap::new());
+    let structure_budget = ohl_structures_fe::default_budget();
+    let rigid = |s: &ohl_line::Structure, reason: String| RigidStructure {
+        structure: s.id.clone(),
+        reason,
+    };
+    let answers = over_cores(
+        &placed,
+        |&s| -> Option<Result<LinearStructure, RigidStructure>> {
+            let Some(at) = points.get(s.id.as_str()) else {
+                // No wire solved by finite elements on it: nothing to move.
+                return None;
+            };
+            let Some(type_id) = &s.structure_type else {
+                return Some(Err(rigid(s, "no structure type".into())));
+            };
+            let Some(t) = types.get(type_id) else {
+                return Some(Err(rigid(
+                    s,
+                    format!("its type {type_id} is not in the structure library"),
+                )));
+            };
+            let labels: Vec<String> = at.iter().map(|(l, _)| l.clone()).collect();
+            let local: Vec<(String, [f64; 3])> = at
+                .iter()
+                .map(|(l, f)| {
+                    (
+                        l.clone(),
+                        ohl_line::links::to_structure_axes(s.orientation_deg, *f),
+                    )
+                })
+                .collect();
+            let flexible = match analyses.flexibility_cached(
+                t,
+                Some(s),
+                &labels,
+                Some(&local),
+                &structure_budget,
+                Some(&cache),
+            ) {
+                Ok(f) => f,
+                Err(e) => return Some(Err(rigid(s, e.to_string()))),
+            };
+            let c = &flexible.condensed;
+            // Per point its place's rows (points on one joint share them).
+            let place: Vec<usize> = labels
+                .iter()
+                .map(|l| {
+                    c.labels
+                        .iter()
+                        .position(|x| x == l)
+                        .map_or(0, |k| c.place_of[k])
+                })
+                .collect();
+            let n = labels.len();
+            let mut matrix = nalgebra::DMatrix::<f64>::zeros(3 * n, 3 * n);
+            for a in 0..n {
+                for b in 0..n {
+                    for i in 0..3 {
+                        for j in 0..3 {
+                            matrix[(3 * a + i, 3 * b + j)] =
+                                c.flexibility[(3 * place[a] + i, 3 * place[b] + j)];
+                        }
+                    }
+                }
+            }
+            let mut notes = c.notes.clone();
+            notes.push(c.linearisation.to_owned());
+            Some(Ok(LinearStructure {
+                structure: s.id.clone(),
+                labels,
+                flexibility: matrix,
+                reference: at.iter().map(|(_, f)| *f).collect(),
+                body: vec![[0.0; 3]; n],
+                approximate: c.approximate,
+                notes,
+            }))
+        },
+    );
+    let mut structures = Structures::default();
+    for a in answers.into_iter().flatten() {
+        match a {
+            Ok(f) => structures.flexible.push(f),
+            Err(r) => structures.rigid.push(r),
+        }
+    }
+    for f in &reference.failed {
+        structures.notes.push(format!(
+            "stringing state: section {f} — its points' reference forces missing"
+        ));
+    }
+    let condensed = cache.lock().expect("not poisoned").len();
+    FlexibleSetup {
+        structures,
+        reference,
+        condensed,
+        elapsed: started.elapsed(),
+    }
+}
+
+/// A line's run at a calculation level in weather cases.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlexibleRun {
+    /// The level.
+    pub level: CalculationLevel,
+    /// The structures as set up (none flexible at level 2).
+    pub setup: FlexibleSetup,
+    /// Each case: solved, or failed with why (the rigid solve kept).
+    pub cases: Vec<Result<FlexibleSolve, FlexibleFailure>>,
+}
+
+/// `line` solved in `cases` at calculation level `level` — level 3: its
+/// structures set up ([`flexible_structures`]) and each case's interface
+/// loop ([`ohl_line::solve::flexible::solve_line_flexible`], its default
+/// exit clauses); level 2: the rigid solve of each case (pass 0 alone).
+/// Unfactored, weather cases (the structure loads keep the rigid solve:
+/// the larger of rigid and flexible comes with them, plan phase 4).
+///
+/// Expected cost: the setup, then per case 2–5 rigid line solves
+/// (measured: theory, Structure flexibility).
+pub fn solve_line_flexible(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    cases: &[WeatherCase],
+    level: CalculationLevel,
+    budget: &Budget,
+) -> FlexibleRun {
+    let setup = match level {
+        CalculationLevel::Rigid => FlexibleSetup::default(),
+        CalculationLevel::Linear => flexible_structures(line, library, types, sections, budget),
+    };
+    let options = FlexibleOptions::default();
+    let cases = cases
+        .iter()
+        .map(|case| {
+            ohl_line::solve::flexible::solve_line_flexible(
+                line,
+                library,
+                case,
+                budget,
+                &setup.structures,
+                &options,
+            )
+        })
+        .collect();
+    FlexibleRun {
+        level,
+        setup,
+        cases,
     }
 }
 
@@ -320,5 +620,130 @@ mod tests {
             "{:?}",
             pole.condensed.notes
         );
+    }
+
+    /// The example line at calculation level 3: its lattice towers (T2,
+    /// T4, a model) and its steel pole (T6) flexible, every other
+    /// structure rigid with why; in the stringing state nothing moves; in
+    /// cold, iced and windy cases the loop converges in a few passes, each
+    /// point where its structure puts it under the wires' forces
+    /// (u = C (F − F_ref) to 0.1 mm), the rigid solve kept bit for bit;
+    /// cold, the spans at the pole slacken (tension below rigid).
+    #[test]
+    fn the_example_line_at_level_three() {
+        let (types, line, _) = setup();
+        let library = ohl_cables::Library::load(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../libraries/cables"),
+        )
+        .unwrap();
+        let sections = ohl_sections::SectionLibrary::default();
+        let budget = ohl_wirefe::default_fe_budget();
+        let still =
+            |t: f64| WeatherCase::still("case", ohl_core::units::Temperature::from_celsius(t));
+        let mut iced = still(-5.0);
+        iced.ice_thickness = ohl_core::units::Length::from_millimeters(15.0);
+        let mut windy = still(5.0);
+        windy.wind_pressure = ohl_core::units::Stress::from_pascals(450.0);
+        let cases = [still(15.0), still(-20.0), iced, windy];
+        let run = solve_line_flexible(
+            &line,
+            &library,
+            &types,
+            &sections,
+            &cases,
+            CalculationLevel::Linear,
+            &budget,
+        );
+        let flexible: Vec<&str> = run
+            .setup
+            .structures
+            .flexible
+            .iter()
+            .map(|s| s.structure.as_str())
+            .collect();
+        assert_eq!(
+            flexible,
+            ["T2", "T4", "T6"],
+            "{:?}",
+            run.setup.structures.rigid
+        );
+        let rigid: Vec<&str> = run
+            .setup
+            .structures
+            .rigid
+            .iter()
+            .map(|s| s.structure.as_str())
+            .collect();
+        assert_eq!(rigid, ["T1", "T3", "T5", "T7"]);
+        assert!(
+            run.setup.structures.rigid[0]
+                .reason
+                .contains("no structure model"),
+            "{:?}",
+            run.setup.structures.rigid
+        );
+        for (case, r) in cases.iter().zip(&run.cases) {
+            let solved = r.as_ref().unwrap_or_else(|e| panic!("{e}"));
+            let plain = ohl_line::solve::solve_line_with(&line, &library, case, &budget);
+            assert_eq!(format!("{plain:?}"), format!("{:?}", solved.rigid));
+            assert!(solved.passes.len() <= 6, "{:?}", solved.passes);
+            for s in &run.setup.structures.flexible {
+                let forces: Vec<ohl_line::Point> = s
+                    .labels
+                    .iter()
+                    .map(|l| {
+                        solved
+                            .points
+                            .iter()
+                            .find(|p| p.structure == s.structure && p.label == *l)
+                            .and_then(|p| p.flexible)
+                            .unwrap()
+                    })
+                    .collect();
+                let answer =
+                    ohl_line::solve::flexible::StructureResponse::answer(s, &forces).unwrap();
+                for (l, u) in s.labels.iter().zip(&answer.displacement) {
+                    let p = solved
+                        .points
+                        .iter()
+                        .find(|p| p.structure == s.structure && p.label == *l)
+                        .unwrap();
+                    let d: f64 = (0..3)
+                        .map(|c| (p.displacement[c] - u[c]).powi(2))
+                        .sum::<f64>()
+                        .sqrt();
+                    assert!(d < 1e-4, "{} {l}: {:?} against {u:?}", s.structure, p);
+                }
+            }
+        }
+        // The stringing state: one pass, nothing moves.
+        let at_stringing = run.cases[0].as_ref().unwrap();
+        assert_eq!(at_stringing.passes.len(), 1);
+        assert!(
+            at_stringing
+                .points
+                .iter()
+                .all(|p| p.displacement == [0.0; 3])
+        );
+        // Cold, still air: the suspension structures see only the small
+        // change of the unbalance — every point moves less than the
+        // tolerance, the rigid solve is the answer (pass 0).
+        assert_eq!(run.cases[1].as_ref().unwrap().passes.len(), 1);
+        // Iced: every point moves down (by about a millimetre).
+        let iced = run.cases[2].as_ref().unwrap();
+        assert!(
+            iced.points.iter().all(|p| p.local[2] < 0.0),
+            "{:?}",
+            iced.points
+        );
+        // Wind from the right: every point moves leeward (to the left of
+        // the line), the pole's top by decimetres, the lattice towers'
+        // points by centimetres.
+        let windy = run.cases[3].as_ref().unwrap();
+        for p in &windy.points {
+            let least = if p.structure == "T6" { 0.1 } else { 0.005 };
+            assert!(p.local[0] < -least, "{p:?}");
+        }
+        assert!(windy.passes.len() <= 4, "{:?}", windy.passes);
     }
 }

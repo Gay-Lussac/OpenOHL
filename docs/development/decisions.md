@@ -10,6 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-15
 
+**Structure flexibility, phase 3: the interface loop and calculation
+level 3** (owner: "go ahead with phase 3 of the flexibility plan"; built,
+in active development, not approved yet;
+[theory](../theory/structure-flexibility.md#the-interface-loop)). As the
+owner's answers to the plan decided: the wires and the structures meet
+only at the attachment points, the whole line coupled at once; pass 0 is
+the rigid solve (bit for bit); the structures answer u = C (F − F_ref),
+C condensed at the stringing state (the tangent there), three
+translations per point with every coupling between a structure's
+points, displacements from the structures as strung, F_ref the wires'
+forces in still air at each section's stringing temperature; a Newton
+step in the flexibility form (I + C K_w) Δu = −r, a halved step when the
+mismatch grows; converged at 0.1 mm and 1 N (or 10⁻⁶ of the force) at
+every point; exit clauses 20 passes, a 10-minute guard per case, the
+cancel token, each section's budget; **a case that does not converge
+fails** with its worst point, direction and trend — never the last pass
+returned — the rigid results kept, said rigid. Structures without a
+model, or refused, rigid and listed with why; ruling-span sections
+rigid; at unfactored loads. **No check takes it yet**: an internal entry
+point (`ohl_loads::solve_line_flexible`) and, for testing, `ohl line …
+--calculation-level 3`, which prints the displacements and the change
+against rigid after the rigid results and says that every check, the
+structure checks included, still uses the rigid solve (the larger of
+rigid and flexible, the owner's rule for the structure checks, comes
+with phase 4, as do the structures' own wind and ice in their
+deflection — until then **not on the safe side** for leeward clearances,
+said). Hand cases: a span on a spring and on a pole against the elastic
+catenary in closed form (to 10⁻¹³), two spans on a flexible string top
+with one span iced against the same wire model solved at once with the
+spring as long bars (0.001 N), the stringing state (u = 0 exactly), the
+rigid limit, the exit clauses, the example line. Measured on them: the
+hot-case sag of rigid larger (conservative, slightly), the longitudinal
+load next to an unbalance lower when flexible.
+
 **Member wind on inclined members: SIA 261 inclination factors and
 force coefficients** (owner: "go ahead with your recommendations"). A
 review found the member wind of the structures **not on the safe side**:
