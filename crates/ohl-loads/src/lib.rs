@@ -101,13 +101,13 @@ mod analysis;
 mod body;
 pub mod capacity;
 // The structures' stiffness for the line's coupled solve (in active
-// development: only its link rule is used by a check yet).
-#[cfg_attr(not(test), allow(dead_code))]
+// development: an entry point for testing; no check uses it yet).
 mod flexibility;
 mod options;
 mod write;
 
 pub use body::add_structure_loads;
+pub use flexibility::{FlexibleRun, FlexibleSetup, flexible_structures, solve_line_flexible};
 pub use options::{
     DEFAULT_SNOW_EXPOSURE, DEFAULT_SNOW_SHAPE, DEFAULT_SNOW_THERMAL, IceOn, RemovedWire, SnowOn,
     StructureIce, StructureOptions, WindDirection, snow_load,
