@@ -220,8 +220,8 @@ its fields appear under the list.
 
 The times were measured with `ohl lightning` on the example line
 (`examples/lightning`, 4 spans, 1.26 km, three phases and two earth
-wires; one rule in one weather case; a debug build on an 8+2-core
-laptop, the program's start included). They grow with the line's length
+wires; one rule in one weather case; a debug build, the program's start
+included). They grow with the line's length
 and with the rule × case pairs. On the same example (no terrain given:
 the ground level across) the length exposed by the 8 kA sphere was
 158.5 m at a 10 m step, 144.4 m at 5 m and 145.9 m at 1 m: a step of a few metres is enough there; each exposure
