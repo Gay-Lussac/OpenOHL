@@ -46,7 +46,15 @@ The bimetallic model is used: it costs nothing and keeps jumpers consistent with
 
 ## Hinged jumper: one catenary element
 
-If neither end is clamped (both ends are taps on through wires), or `bending_stiffness` is 0, the jumper is one **exact elastic catenary element** between its ends. This is the element of [Finite-element wire systems](wirefe.md): it is exact for any sag and needs no meshing. With a support string, the jumper is two elements and a tension-only truss, and the Newton solver of `ohl-wirefe` finds the point where the string holds it.
+If neither end is clamped (both ends are taps on through wires), or `bending_stiffness` is 0, the jumper is one **exact elastic catenary element** between its ends. This is the element of [Finite-element wire systems](wirefe.md): it is exact for any sag and needs no meshing. With a support string, the jumper is two elements and a tension-only truss, and the Newton solver of `ohl-wirefe` finds the point where the string holds it. Its pull on its ends is the element's exact force on its nodes (since 2026-11-15; before, its tension along the first and last of the 64 pieces it is drawn with — off by up to half a piece's turn, ~0.5° on a slack jumper).
+
+## On a pivoting post: solved together with the post
+
+A jumper ending at the top of a **pivoting post** (a hinged post free to turn about the line through its base and its brace's) that no section holds is **solved together with the post** (owner, 2026-11-15): the post turns, its top on its circle, and for each turn the jumper is solved again — by the model above that fits it (rod, catenary, riser) — with its end on the turned clamp and the clamp's fixed exit direction turned with the post, until the moment about the post's axis of the jumper's pull and moment (and the post's own loads) is held by its hinge: nothing without friction. Several jumpers on one post are summed; posts at both ends of a jumper are settled in turn. Its shape, sag, clearances and pull are then those with the post settled; the procedure, its exit clauses and the hand check (50.194°, benchmark tbins-007) are in [Post insulators](post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it).
+
+- **Its wind keeps its direction as given**: the jumper's wind is the full pressure square to it in plan (step 3 above, conservative for its swing); turned with the post, that push would turn with the jumper and drive the post round without end — found on a test line: no balance within a whole turn. With an end on a turned post the jumper takes the wind it has as given (direction and size), as a wind blowing from one side does; the full pressure kept on a wire turned from square to it is on the safe side for its swing.
+- **A rigid jumper** there would hold the post as a brace (its length fixes the top's distance from its other end) with a force along it that the rigid jumper's model does not carry: it is not solved, said.
+- A jumper given by its sag is cut with the post where it is given (its design case), not settled — stated, not shown to be on either side.
 
 ## Clamped jumper: an elastic rod
 

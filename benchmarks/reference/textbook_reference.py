@@ -1005,6 +1005,74 @@ def insulator_cases():
                     (1000.0, "tbins-005 two strings 1000 Pa")):
         show(name, v_section(q, mass))
     show("tbins-006 pivoting post (hinged, one brace straight above)", pivot_section(mass))
+    show("tbins-007 pivoting post held by a jumper", pivot_jumper(mass))
+
+
+def pivot_jumper(mass):
+    """A pivoting post holding only a jumper's end, solved together with it
+    (owner decision 2026-11-15): a hinged post from A1 (0, 0, 10) to its top,
+    given at (0, -1.5, 10), 450 N, braced from A2 (0, 0, 11.5), 200 N (both
+    rigid): it turns about the vertical through A1 and A2, its top on the
+    circle of radius 1.5 m at z = 10. A jumper of the textbook cable, 4.0 m
+    of unstressed wire at 10 degC, no bending stiffness, from the top to a
+    point fixed at (3, -2.5, 9); still air at 10 degC. The jumper (an
+    elastic catenary by quadrature) pulls the top; the post turns from
+    where it is given the way the pull's moment about the axis drives it
+    (stepping out 0.5 degrees growing to 15) until that moment changes sign,
+    then bisection: the turn phi, the top at (1.5 sin phi, -1.5 cos phi,
+    10). The members' forces from the statics at the top (the pull and half
+    the members' weights, by least squares on the post's and the brace's
+    directions; what is left across them is the moment's residue)."""
+    EA = CABLE["EA"]
+    w = mass * G
+    R, L0 = 1.5, 4.0
+    A1, A2, fixed = [0.0, 0.0, 10.0], [0.0, 0.0, 11.5], [3.0, -2.5, 9.0]
+    jumper = Span(0, 1, L0, EA, [0.0, 0.0, -w])
+
+    def top(phi):
+        return [R * math.sin(phi), -R * math.cos(phi), 10.0]
+
+    def pull(phi):
+        F0, _ = jumper.forces([top(phi), fixed])
+        return F0  # the jumper's force on the top
+
+    def moment(phi):
+        F, r = pull(phi), top(phi)
+        return r[0] * F[1] - r[1] * F[0]
+
+    m0 = moment(0.0)
+    s = 1.0 if m0 > 0 else -1.0
+    a, step = 0.0, math.radians(0.5)
+    while True:
+        b = a + s * step
+        if moment(b) * m0 < 0:
+            break
+        a, step = b, min(step * 1.6, math.radians(15.0))
+    lo, hi = (a, b) if a < b else (b, a)
+    phi = bisect(moment, lo, hi)
+    c, F = top(phi), pull(phi)
+    load = [F[0], F[1], F[2] - (450.0 + 200.0) / 2]
+    u = []
+    for base in (A1, A2):
+        d = [base[k] - c[k] for k in range(3)]
+        n = norm(d)
+        u.append([x / n for x in d])
+    # Least squares: N_p u_p + N_b u_b = -load.
+    m = [[sum(u[i][k] * u[j][k] for k in range(3)) for j in range(2)] for i in range(2)]
+    rhs = [-sum(u[i][k] * load[k] for k in range(3)) for i in range(2)]
+    N = solve_linear(m, rhs)
+    _, F1 = jumper.forces([c, fixed])
+    out = {"turn_deg": math.degrees(phi), "clamp_x_m": c[0], "clamp_y_m": c[1], "clamp_z_m": c[2],
+           "pull_x_n": F[0], "pull_y_n": F[1], "pull_z_n": F[2],
+           "member_P1_n": N[0], "member_B1_n": N[1],
+           "J_max_tension_n": max(norm(F), norm(F1)),
+           "moment_left_nm": moment(phi)}
+    # The decoupled answer before (the jumper solved to the top as given,
+    # the post turned under that fixed pull until it points along the
+    # pull's part across the axis).
+    F00 = pull(0.0)
+    out["decoupled_turn_deg"] = math.degrees(math.atan2(F00[0], -F00[1]))
+    return out
 
 
 def pivot_section(mass):
@@ -1714,6 +1782,8 @@ def main():
     if sys.argv[1:] == ["pivot"]:
         show("tbins-006 pivoting post",
              pivot_section(strung_mass(CABLE["mass"], CABLE["alpha"], 10.0)))
+        show("tbins-007 pivoting post held by a jumper",
+             pivot_jumper(strung_mass(CABLE["mass"], CABLE["alpha"], 10.0)))
         return
     self_check()
     textbook_catenary()

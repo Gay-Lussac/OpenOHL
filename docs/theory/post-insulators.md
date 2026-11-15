@@ -213,43 +213,142 @@ the circle of its length, along the line. With two braces off that line
   to centimetres along the line); exact: the post's swing in the sharing.
   Not shown to be on either side; the swing in the solve is exact for the
   lengths shared.
-- **A jumper only** (no section ends at its top): the post and its brace
-  are solved alone under the jumper's pull on the clamp
-  (`post::hinged_alone`): turned about its free line until the pull's part
-  across that line points away from it — the post hangs in the load as a
-  pendulum, the stable one of the two balances; a load along the line
-  only turns it nowhere (every turn balances; it stays as given) — then
-  the members' forces from statics, each on its base with half its weight.
-  Where the pull points back towards the hinge (a balance that does not
-  hold) nothing near its given position holds it: its loads are not
-  computed and the case says so. **Simplification, NOT ON THE SAFE SIDE
-  for the directions** (said with every case): the jumper is solved to the
-  post's top where given, not again with the post swung; a small push
-  along the line turns a free post a long way (in the test the jumper's
-  28 N of wind along the line turns it 90°). The sizes of the post's and
-  the brace's forces stand (the same in every turn about a vertical line);
-  their directions in plan do not where it swings far.
+- **A jumper only** (no section ends at its top): the post is **solved
+  together with its jumpers** (owner, 2026-11-15: *"Should the jumper be
+  solved together with the post? — yes"*). A pivoting post has one degree
+  of freedom, its turn \( \varphi \) about its free line: its top on the
+  circle \( \mathbf c(\varphi) = \mathbf o + s\,\mathbf a + \rho(\hat{\mathbf
+  e}_0 \cos\varphi + \mathbf a \times \hat{\mathbf e}_0 \sin\varphi) \)
+  (\( \mathbf a \) the axis, \( \rho \) the top's distance from it,
+  \( \hat{\mathbf e}_0 \) towards the top as given). For a turn, every
+  jumper ending at its top is solved again by the jumper solver with that
+  end on \( \mathbf c(\varphi) \) — the clamp's fixed exit direction
+  turned with the post — and the moment about the axis of what is on the
+  top is
+  \( M(\varphi) = \mathbf a \cdot [\mathbf r \times (\textstyle\sum
+  \mathbf F_j + \tfrac12 \sum W_i (-\mathbf z) + \tfrac12 \sum A_i
+  \mathbf q + \mathbf W_c)] + \mathbf a \cdot \sum \mathbf C_j \)
+  (the jumpers' pull and their moment on a clamp holding them in a fixed
+  direction, half of each member's weight and wind, a counterweight). The
+  post settles where its hinge holds that moment — nothing without
+  friction, \( M = 0 \). It is found **from where the post is given**
+  (where the crew sets it): stepping out the way \( M(0) \) drives it,
+  0.5° growing to 15°, until \( M \) changes sign, then the Illinois method
+  to \( 10^{-9} \) of the moment's size — the first balance on its way,
+  a stable one (turned further, the moment turns it back), not another
+  further round. The jumpers' shapes, sags and pulls are those solved with
+  the post there (shown and checked so); the post's and its brace's forces
+  come from the statics at that top (each on its base with half its weight
+  and wind). Posts that share a jumper (one at each end) are settled in
+  turn, each with the other where it is, pass after pass until no turn
+  changes by more than \( 10^{-9} \) rad. **Exit clauses**: a whole turn
+  without a balance (the load turns it without end), 120 evaluations per
+  settling, 20 passes for posts sharing jumpers — then its jumpers are not
+  solved and its loads not computed, said (*free to pivot; its loads not
+  computed*), nothing made up.
+
+  A pull towards a point inside the post's circle — a fixed load there
+  would push the post back over its hinge — settles where the top comes
+  nearest that point (the jumper then pulls the post straight towards its
+  hinge: a stable balance, the jumper's length holding it): it may lie far
+  round (in the loads test, a jumper from the conductor's clamp across the
+  line in a 500 Pa wind, about 107°). **Not checked**: whether the
+  structure's body is in the way of so large a turn — the model knows only
+  the post, its braces and the wires.
+
+  **The jumper's wind with the post turned** keeps the direction and size
+  it has on the jumper as given. The jumper's wind is the full pressure
+  square to it in plan ([Jumpers](jumpers.md), conservative for its swing);
+  turned with the jumper as the post turns, that push would drive the post
+  round without end (found on the loads test: no balance within a whole
+  turn) — no wind blowing from one side does that. The full pressure kept
+  on a jumper turned from square to it is on the safe side for its swing;
+  for the post's turn it is the wind from one fixed direction, as it
+  should be.
+
+  The test's hand check (and benchmark tbins-007, against an independent
+  quadrature catenary and bisection): a 1.5 m level post braced from
+  1.5 m above its base, a jumper of 4.0 m of wire without bending
+  stiffness from its top to a point fixed at (3, −2.5, 9) m. In still air
+  the jumper hangs in the vertical plane through its ends: its pull on
+  the top points in plan at the fixed point, and the post settles with
+  the top, the axis and that point in one vertical plane, turned
+  \( \arctan(3/2.5) = 50.194° \). The solve agrees to \( 10^{-6} \)
+  degrees; the members' forces to \( 10^{-6} \).
+
+  *Before 2026-11-15* the post was turned alone under the jumper's pull as
+  solved to its top where given, the jumper not solved again: in the same
+  case 71.57°, 21° too far; and a pull towards the hinge was reported as
+  having no balance. That simplification and its note (NOT ON THE SAFE
+  SIDE for the forces' directions in plan) are gone.
+
+  **A rigid jumper** (a tube) ending at a pivoting post holds the post as
+  a brace would — its length fixes the top's distance from its other end —
+  with a force along it the rigid jumper's model does not carry (it shares
+  its weight and wind between its ends only): it is **not solved**, said
+  (*a rigid jumper holds the post as a brace would, its force along it not
+  modelled*), its loads not computed. A jumper's **support clamp** on a
+  pivoting post's strings is solved within that jumper (the post and its
+  brace as rigid strings holding the clamp, the post pushing as well as
+  pulling — before 2026-11-15 a hinged post there hung as a tension-only
+  string); a post holding both a jumper's end and another jumper's support
+  clamp is not solved, said.
+
+  **Simplification** (stated, not shown to be on either side): a jumper
+  given by its sag is cut with the post where it is given (its design
+  case), not with the post settled in still air.
 - **Nothing**: free. No load path — no stiffness is made up for it; its
   loads (its own and its brace's weight and wind) are not computed, and
   every load case says so (*hinged post P at T: nothing holds it (free to
   pivot); its loads not computed — NOT ON THE SAFE SIDE*), as do the
   string checks (not checked).
 
-**The hinge is taken frictionless** (the owner's free pivot). **NOT ON THE
-SAFE SIDE for the structure's longitudinal load**, said with every load
-case for each pivoting post a section ends at: free, the post passes
-along the line only what its swing turns of the pull across it, and the
-spans' pull difference stays in the wire; a hinge that sticks (friction,
-corrosion, ice) holds the post where it is and passes part of that
-difference into the structure, as a fixed post passes all of it. Exact: a
-hinge with its friction moment. The post's and brace's own forces are
-those of the swung geometry, a little different from the unswung one.
+**The hinge is frictionless by default** — the owner's choice (2026-11-15:
+*"No friction moment"*, then *"keep that written for the pylon but keep it
+frictionless for now with an option to add it if needed"*): safe for the
+post and for its swing (the post turns as far as anything can turn it).
+**NOT ON THE SAFE SIDE for the structure's longitudinal load**, said with
+every load case for each pivoting post (a section or a jumper holding it):
+free, the post passes along the line only what its swing turns of the
+pull across it, and the spans' pull difference stays in the wire; a hinge
+that sticks (friction, corrosion, ice) holds the post where it is and
+passes part of that difference into the structure, as a fixed post passes
+all of it. The post's and brace's own forces are those of the swung
+geometry, a little different from the unswung one.
+
+**A hinge friction**, where needed (a hinged post's `hinge_friction_nm`,
+N·m; none: frictionless): the simplest honest law, **stick and slip** about
+the post's free line, from where the post is given in every solve (the
+stringing state, where the crew sets it — not from the case before: no
+history between cases). The hinge holds the post where it is given while
+the moment needed to hold it there is at most the friction \( M_f \)
+(**stick**); else the post turns the way the load drives it until the
+moment about its axis has fallen to \( M_f \), the hinge holding \( M_f \)
+against the turn (**slip**). In a section's solve a sticking post is held
+by a stiff bar across it at its top (its turning only; 100 m long, ten
+times its stiffest member) whose force times the top's distance from the
+axis is the hinge's moment; a slipping one carries \( M_f / \rho \) across
+it at its top (kept square to it as it turns), and a slipping post turned
+back past where it is given sticks again — at most 12 solves, then the
+section is reported not solved. With jumpers only, the settling above with
+\( |M| \le M_f \) as the stick test and \( M = \pm M_f \) as the slip
+balance. The loads then: the force across the post \( \mathbf F_h \) is
+the post's shear; the structure takes it at the post's base, reversed, with
+its moment there \( -(\mathbf c - \mathbf b) \times \mathbf F_h \) — about
+the axis the hinge's moment — and a jumper's moment on the clamp passed
+the same way; the note for the pylon then says that its longitudinal load
+**includes the hinge's moment up to that value** — still NOT ON THE SAFE
+SIDE where the real hinge holds more. Not modelled: a moment that depends
+on the force on the hinge (a coefficient of friction times the pin's
+load), and the order of the cases (each starts from the post as given).
 
 **Its loads on the structure**: the post's axial force at its hinge and
 each brace's at its base, each with half its weight — as for strings
 (`SectionShape::attachment_loads`); they reach the structure loads and
 the line values sent to OHL-Structure as plain forces at those points (no
-moment: the hinge passes none).
+moment: a frictionless hinge passes none; with a hinge friction, the
+hinge's moment and force at the post's base as above,
+`Support::moment`).
 
 ## Its ratings checked
 
@@ -274,7 +373,10 @@ any):
   checked: posts are given no torsion rating.
 
 A hinged post is checked from its solved force: its compression and
-tension against its ratings; no uplift row (it may push). The loads are
+tension against its ratings; no uplift row (it may push). With a hinge
+friction its hinge's moment is the bending moment at its base: compared
+with its cantilever rating as \( M / h \) (a section's post; a post held
+by jumpers only is not in the string check). The loads are
 the weather case's, unfactored, against the ratings as given — **no
 strength factor is applied**: a design code's factor on the ratings (from
 its plugin) is not built in, as for the strings' maximum load.
@@ -316,4 +418,17 @@ statics; nothing attached said), `ohl-loads`
 every weather case); benchmark `tbins-006` (`benchmarks/wirefe/textbook-insulators.toml`:
 the swing, the spans' tensions and the members' forces against an
 independent reference — quadrature catenaries and Newton on the clamp,
-`benchmarks/reference/textbook_reference.py pivot` — to 10⁻⁷).
+`benchmarks/reference/textbook_reference.py pivot` — to 10⁻⁷). Solved
+together with a jumper (2026-11-15): `ohl-line` `post::jumper_pivot_tests`
+(the settled turn against the closed form \( \arctan(3/2.5) \), stable
+either side, the decoupled 71.57°; the members' statics; stick and slip;
+a rigid jumper said; the friction's validation), the rewritten
+`ohl-loads` `a_jumper_holds_a_pivoting_post` (the loads the statics at
+the settled top, no moment of the pull about the axis), benchmark
+`tbins-007` (the turn, the top, the pull and the members' forces against
+an independent quadrature catenary with stepping and bisection on the
+turn, to 10⁻⁶). The hinge friction in a section: `pivot_tests`
+`a_hinge_friction_sticks_or_slips` (sticking: the spans' difference held,
+the couple at A1 the wires' moment, the forces on the structure the wires'
+pull and the weights; slipping: the wires' moment the friction, the turn
+less than without).

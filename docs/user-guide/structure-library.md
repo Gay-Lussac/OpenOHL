@@ -135,6 +135,7 @@ length = "2.83 m"
 | `cantilever_load` | Its rating across it at its top (a force; default: its library post's; none: not checked). |
 | `exit_angle` | The angle from the horizontal at which its clamp holds a jumper ending at its wire point, −90° to 90° (negative: down; none: level), fixed to the structure. |
 | `exit_direction` | The same clamp's direction in plan, in the type's axes (0 ahead, 90 right; none: towards the jumper's other end). |
+| `hinge_friction_nm` | Version 15, a hinged post's: the moment its hinge holds before the post turns, N·m (a plain number; none: frictionless — [below](#post-insulators-on-a-type)). |
 
 A post's compression rating is its `compression`, as for a string. The
 type is refused, as a line's strings are, when a post is a strain string,
@@ -160,11 +161,11 @@ it there is what is attached to its top:
   case says *hinged post … pivots … NOT ON THE SAFE SIDE for … longitudinal
   load*: the hinge is taken frictionless, while one that sticks would pass
   part of the spans' difference into the structure;
-- **a jumper only**: the post swings under the jumper's pull until it
-  balances, and its and its brace's forces follow from that; said with
-  every case (the jumper is not solved again with the post swung: the
-  forces' directions in plan are not on the safe side where it swings
-  far);
+- **a jumper only**: the post is solved together with its jumper — the
+  jumper's end moves with the post's top, the post turns until the
+  jumper's pull balances it, and the jumper's shape, the post's and the
+  brace's forces all come from that one equilibrium (a rigid jumper — a
+  tube — would hold the post as a brace: not solved, said);
 - **nothing**: it is free — its loads are not computed and every case says
   so (*hinged post … nothing holds it (free to pivot)*).
 
@@ -172,6 +173,29 @@ Two braces off that line — one ahead and one back — lock every direction:
 the post is then held by its braces, whatever is attached. The post's
 force reaches the structure at its hinge and each brace's at its base,
 plain forces, no moment ([theory](../theory/post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it)).
+
+**A hinge friction** (`hinge_friction_nm`, a moment in N·m as a plain
+number; structure file version 15, written only when a string gives it;
+owner, 2026-11-15): the hinge is frictionless unless you give one. With
+one, the hinge holds the post where it is given while the moment needed to
+hold it is at most that value (stick), else the post turns until the moment
+is that value (slip); the moment goes into the structure at the post's
+base, and the load cases say the longitudinal load includes the hinge's
+friction up to that value. A hinged post's only (refused elsewhere, and
+below 0).
+
+```toml
+[[string]]
+label = "P2"
+top = "B"
+wire = "W2"
+length = "2 m"
+angle = "90 deg"
+direction = "90 deg"
+post = true
+hinged = true
+hinge_friction_nm = 250.0
+```
 
 **Version 1 files** gave each string as an `[[attachment]]` with a set and phase; they are read as before: an attachment's point is labelled by its string's `top` label, else `A<set>-<phase>`, and its set is the set itself for phase 1, else `set + 1000 · (phase + 1)` ([line file](line-file.md#points-strings-and-wire-points)).
 
