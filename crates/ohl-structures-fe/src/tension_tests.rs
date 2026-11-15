@@ -11,12 +11,16 @@
 //! buckling load (the X panel's compressed diagonal bowed, carrying it,
 //! against the method of joints; a stocky one a truss); and the formerly
 //! cycling kinked joint settling (its ties split), with the runs that
-//! split ties and, as the last resort, keep members active.
+//! split ties and, as the last resort, keep members active. A model set
+//! to no compression (`[analysis] tension_compression = "none"`): the
+//! same X panel, stocky diagonal and kinked joint slack instead of bowed,
+//! a joint held only by compressed tension-only members refused, the key
+//! in files.
 
 use crate::solve::{TENSION_PASSES, next_active_set, rounds, settle, solve_stabilised};
 use crate::{
     FeError, Loads, Member, MemberKind, Model, NodalLoad, Node, Options, Section, Solution,
-    default_budget, kept_active_note, member_usage, solve, tension_only_note,
+    TensionCompression, default_budget, kept_active_note, member_usage, solve, tension_only_note,
 };
 
 const E: f64 = 2.1e11;
@@ -676,4 +680,209 @@ fn halves_through_an_unbraced_crossing_say_their_length() {
     let bm = index(&m, "BM");
     m.members[bm].lk = Some(5.0);
     assert!(crate::check::unbraced_crossings(&m)[bm].is_none());
+}
+
+/// A model whose tension-only members carry no compression (`[analysis]
+/// tension_compression = "none"`, owner 2026-11-15).
+fn no_compression(mut m: Model) -> Model {
+    m.analysis.tension_compression = TensionCompression::None;
+    m
+}
+
+/// The X panel with diagonals of a second moment I = 1 cm⁴ (E = 210 GPa,
+/// 5 m long, buckling load N_cr = π²EI/L² = 829.05 N), the model set to
+/// no compression: BD, shortened, goes slack and carries nothing — not
+/// even up to its buckling load; AC carries the whole shear. By the
+/// method of joints: AC = 5H/4, the top DC = −H, the leg BC = −3H/4, the
+/// leg AD 0. First order exact; with P-Delta close to it. The default
+/// (buckling) solves the same model as before, BD bowed at N_cr
+/// ([`x_panel_compressed_diagonal_carries_its_buckling_load`]).
+#[test]
+fn x_panel_without_compression_its_compressed_diagonal_carries_nothing() {
+    let mut m = panel(MemberKind::Tension, false);
+    m.sections[0].i_min = 1e-8;
+    let ncr = std::f64::consts::PI.powi(2) * E * 1e-8 / 25.0;
+    let buckling = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    assert_eq!(axial(&m, &buckling, "BD"), -ncr);
+    let m = no_compression(m);
+    assert_eq!(crate::solve::compression_caps(&m), vec![0.0; 5]);
+    // Its buckling load is still its buckling load; it is not used.
+    assert_eq!(crate::solve::buckling_loads(&m)[index(&m, "BD")], ncr);
+    let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &first_order());
+    let bd = &s.members[index(&m, "BD")];
+    assert!(bd.slack && !bd.bowed && bd.axial == 0.0, "{bd:?}");
+    assert_eq!(bd.end_forces, [0.0; 12]);
+    assert!(close(axial(&m, &s, "AC"), 1.25 * H), "{s:?}");
+    assert!(close(axial(&m, &s, "DC"), -H));
+    assert!(close(axial(&m, &s, "BC"), -0.75 * H));
+    assert!(axial(&m, &s, "AD").abs() <= 1e-9 * H);
+    assert_eq!(s.passes, 2);
+    let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+    assert!(close(sum, -H), "{sum}");
+    assert_eq!(
+        tension_only_note(&m, &s).unwrap(),
+        "tension-only members (no compression): 1 of 2 slack (2 solve(s)): BD"
+    );
+    // Its usage: 0, slack, the law said.
+    let mut steel = m.clone();
+    steel.sections[0].yield_strength = Some(355e6);
+    let u = member_usage(&steel, &s, 1.0);
+    let ub = &u[index(&m, "BD")];
+    assert_eq!(
+        (ub.usage, ub.governs.as_str()),
+        (Some(0.0), crate::check::SLACK_NO_COMPRESSION)
+    );
+    // With P-Delta: slack too, close to first order.
+    let p = solved(&m, vec![force(3, [H, 0.0, 0.0])], &Options::default());
+    assert!(p.members[index(&m, "BD")].slack);
+    assert_eq!(axial(&m, &p, "BD"), 0.0);
+    assert!((axial(&m, &p, "AC") / (1.25 * H) - 1.0).abs() < 1e-2);
+    let sum: f64 = p.reactions.iter().map(|r| r.force[0]).sum();
+    assert!((sum + H).abs() < 1e-6 * H, "{sum}");
+}
+
+/// A stocky tension-only member (I = 1000 cm⁴: N_cr = 829 kN against
+/// about 6 kN), the model set to no compression: BD goes slack where a
+/// truss diagonal (and the default law,
+/// [`compression_below_the_buckling_load_is_carried_as_a_truss`]) would
+/// carry, and AC takes it all.
+#[test]
+fn without_compression_a_stocky_tension_only_member_goes_slack() {
+    let mut m = panel(MemberKind::Tension, false);
+    m.sections[0].i_min = 1e-5;
+    let m = no_compression(m);
+    let mut t = panel(MemberKind::Truss, false);
+    t.sections[0].i_min = 1e-5;
+    for options in [first_order(), Options::default()] {
+        let s = solved(&m, vec![force(3, [H, 0.0, 0.0])], &options);
+        let r = solved(&t, vec![force(3, [H, 0.0, 0.0])], &options);
+        assert!(axial(&t, &r, "BD") < -0.1 * H, "{r:?}");
+        let bd = &s.members[index(&m, "BD")];
+        assert!(bd.slack && bd.axial == 0.0, "{bd:?}");
+        assert!((axial(&m, &s, "AC") / (1.25 * H) - 1.0).abs() < 1e-2);
+    }
+}
+
+/// The kinked joint with a second moment (I = 0.1 cm⁴), the model set to
+/// no compression: MC and BM, shortened, go slack — not bowed at their
+/// buckling load as by default
+/// ([`the_kinked_joint_with_bending_stiffness_bows_its_shortened_halves`]):
+/// the same as without a second moment, AM and MD taking H/1.6 each.
+#[test]
+fn without_compression_the_kinked_joint_slackens_its_shortened_halves() {
+    let m = no_compression(kinked_joint(MemberKind::Tension, 1e-9));
+    for options in [first_order(), Options::default()] {
+        let s = solved(&m, kinked_loads(), &options);
+        assert!(s.kept_active.is_empty(), "{s:?}");
+        for id in ["MC", "BM"] {
+            let f = &s.members[index(&m, id)];
+            assert!(f.slack && !f.bowed && f.axial == 0.0, "{id}: {f:?}");
+        }
+        for id in ["AM", "MD"] {
+            let n = axial(&m, &s, id);
+            assert!((n / (H / 1.6) - 1.0).abs() < 1e-3, "{id}: {n}");
+        }
+        let sum: f64 = s.reactions.iter().map(|r| r.force[0]).sum();
+        assert!(close(sum, -H), "{sum}");
+        let note = tension_only_note(&m, &s).unwrap();
+        assert!(
+            note.starts_with("tension-only members (no compression): 2 of 4 slack"),
+            "{note}"
+        );
+    }
+}
+
+/// A joint held only by tension-only members in compression: T (2, 0, 3)
+/// on two stocky tension-only struts from the pinned feet A, B, pushed
+/// down. By default they carry it as trusses (compression below their
+/// buckling load); with no compression both go slack, T is held by
+/// nothing, and the case is refused naming T.
+#[test]
+fn without_compression_a_joint_held_only_by_compressed_tension_members_is_refused() {
+    let mut m = Model {
+        sections: vec![Section::elastic("s", E, 1e-3, 1e-5)],
+        ..Model::default()
+    };
+    m.nodes = vec![
+        Node::pinned("A", [0.0, 0.0, 0.0]),
+        Node::pinned("B", [4.0, 0.0, 0.0]),
+        Node::free("T", [2.0, 0.0, 3.0]),
+    ];
+    m.members = vec![
+        Member::new("AT", MemberKind::Tension, 0, 2, 0),
+        Member::new("BT", MemberKind::Tension, 1, 2, 0),
+    ];
+    let down = || Loads {
+        nodal: vec![force(2, [0.0, 0.0, -H])],
+        self_weight: 0.0,
+        ..Default::default()
+    };
+    let s = solve(&m, &down(), &first_order(), &default_budget()).unwrap_or_else(|e| panic!("{e}"));
+    assert!(axial(&m, &s, "AT") < -0.5 * H, "{s:?}");
+    let m = no_compression(m);
+    let e = solve(&m, &down(), &first_order(), &default_budget()).unwrap_err();
+    assert!(
+        matches!(&e, FeError::Held { joints, .. } if joints == &["T".to_owned()]),
+        "{e:?}"
+    );
+    // The refusal says the likely cause.
+    let text = crate::refusal_text(&m, &e);
+    assert!(
+        text.starts_with("mechanism: joint(s) T ") && text.ends_with(crate::NO_COMPRESSION_REFUSAL),
+        "{text}"
+    );
+    // Not said by default.
+    let mut b = m.clone();
+    b.analysis.tension_compression = TensionCompression::Buckling;
+    assert_eq!(crate::refusal_text(&b, &e), e.to_string());
+}
+
+/// `[analysis] tension_compression` in files: absent the default
+/// (buckling), `"buckling"`, `"none"`; another word refused, naming the
+/// two; a structure file's `[analysis]` passes it through.
+#[test]
+fn tension_compression_in_files() {
+    let body = "[[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\n\
+                [[section]]\nid = \"a\"\nmaterial = \"s\"\narea = \"10 cm2\"\n\
+                [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
+                [[node]]\nid = \"B\"\npoint = [0, 0, 5]\n\
+                [[member]]\nid = \"t\"\nnodes = [\"A\", \"B\"]\nsection = \"a\"\nkind = \"tension\"\n";
+    let model = |analysis: &str| {
+        Model::parse(&format!(
+            "format = \"ohl-structure-model\"\nversion = 6\n{analysis}{body}"
+        ))
+    };
+    assert_eq!(
+        model("").unwrap().analysis.tension_compression,
+        TensionCompression::Buckling
+    );
+    assert_eq!(
+        model("[analysis]\ntension_compression = \"buckling\"\n")
+            .unwrap()
+            .analysis
+            .tension_compression,
+        TensionCompression::Buckling
+    );
+    assert_eq!(
+        model("[analysis]\ntension_compression = \"none\"\n")
+            .unwrap()
+            .analysis
+            .tension_compression,
+        TensionCompression::None
+    );
+    let e = model("[analysis]\ntension_compression = \"zero\"\n").unwrap_err();
+    assert!(
+        e.contains("tension_compression \"zero\"") && e.contains("buckling") && e.contains("none"),
+        "{e}"
+    );
+    for t in [TensionCompression::Buckling, TensionCompression::None] {
+        assert_eq!(TensionCompression::parse(t.as_str()), Ok(t));
+    }
+    let s = Model::from_structure_type(&format!(
+        "id = \"T\"\nname = \"t\"\nkind = \"lattice\"\n\
+         [analysis]\ntension_compression = \"none\"\n{body}"
+    ))
+    .unwrap();
+    assert_eq!(s.analysis.tension_compression, TensionCompression::None);
+    assert_eq!(crate::model::TENSION_COMPRESSION_MODEL_VERSION, 6);
 }

@@ -44,6 +44,13 @@ pub struct FeArgs {
     /// code, unsafe compared with design codes).
     #[arg(long)]
     capacity: Option<String>,
+    /// What the tension-only members carry in compression, whatever the
+    /// model says: `buckling` (up to their own buckling load, the default)
+    /// or `none` (no compression: slack as soon as shortened; a joint
+    /// held only by them when shortened is then free and the case refused,
+    /// naming it).
+    #[arg(long, value_name = "buckling|none")]
+    tension_compression: Option<String>,
     /// A plugin giving member capacities (its folder; its
     /// `member-capacity` export): `--capacity` names its method.
     #[arg(long, requires = "capacity")]
@@ -236,6 +243,10 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     if args.linear {
         model.analysis.nonlinear = false;
     }
+    if let Some(t) = &args.tension_compression {
+        model.analysis.tension_compression = ohl_structures_fe::TensionCompression::parse(t)
+            .map_err(|e| format!("--tension-compression: {e}"))?;
+    }
     if let Some(c) = &args.capacity
         && args.capacity_plugin.is_none()
     {
@@ -371,7 +382,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             args.strength,
             &ohl_structures_fe::default_budget(),
         )
-        .map_err(|e| format!("{case}: {e}"))?;
+        .map_err(|e| format!("{case}: {}", ohl_structures_fe::refusal_text(&model, &e)))?;
         solved.push((case, s, usage, started.elapsed()));
     }
     let by_plugin = {

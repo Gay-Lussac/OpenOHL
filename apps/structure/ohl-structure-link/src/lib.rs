@@ -1550,7 +1550,12 @@ fn analyse_one(
     }
     let started = Instant::now();
     let (solution, usage) = ohl_structures_fe::analyse(model, &loads, case.strength, budget)
-        .map_err(|e| format!("did not solve: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "did not solve: {}",
+                ohl_structures_fe::refusal_text(model, &e)
+            )
+        })?;
     let took = started.elapsed();
     if let Some(note) = ohl_structures_fe::dead_load_note(model) {
         notes.push(note);

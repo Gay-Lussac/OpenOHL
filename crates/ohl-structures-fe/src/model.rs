@@ -18,6 +18,8 @@
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
 //! capacity = "asce10-97"    # member capacities: asce10-97 (default) | simple (version 4)
+//! tension_compression = "buckling"  # tension-only members in compression: up to their
+//!                           # buckling load (default) | "none": slack once shortened (version 6)
 //!
 
 //! [[material]]
@@ -94,7 +96,10 @@ use crate::units::Moment;
 
 /// `format` of a structure model file.
 pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
-/// Newest format version read. Version 4 (2026-10-27) adds `[analysis]
+/// Newest format version read. Version 6 (2026-11-15) adds `[analysis]
+/// tension_compression` ([`TensionCompression`]); a file is written at 6
+/// only when it gives the key. Version 5 (2026-11-11) adds a plugin's
+/// method as `[analysis] capacity`. Version 4 (2026-10-27) adds `[analysis]
 /// single_angle_moments` and a member's design data (`[member.design]`,
 /// [`crate::design`]); versions 1 to 3 read as before. Version 3 adds a member's `bending` (a
 /// tension-only member that also bends, as a frame: a tower program's
@@ -102,7 +107,9 @@ pub const MODEL_FILE_FORMAT: &str = "ohl-structure-model";
 /// modelling member, a tower program's fictitious member). Version 2 adds
 /// the member kind `tension` (a truss in tension only); versions 1 and 2
 /// read as before.
-pub const MODEL_FILE_VERSION: u32 = 5;
+pub const MODEL_FILE_VERSION: u32 = 6;
+/// The model file version of `[analysis] tension_compression` (2026-11-15).
+pub const TENSION_COMPRESSION_MODEL_VERSION: u32 = 6;
 /// File extension of structure models.
 pub const MODEL_FILE_EXTENSION: &str = "ohlfe";
 /// Gravity, m/s².
@@ -133,6 +140,8 @@ struct AnalysisFile {
     single_angle_moments: bool,
     #[serde(default)]
     capacity: Option<String>,
+    #[serde(default)]
+    tension_compression: Option<String>,
 }
 
 impl Default for AnalysisFile {
@@ -145,6 +154,7 @@ impl Default for AnalysisFile {
             dead_load_factor: None,
             single_angle_moments: false,
             capacity: None,
+            tension_compression: None,
         }
     }
 }
@@ -708,6 +718,61 @@ pub struct Analysis {
     /// How the members' capacities are found ([`CapacityMethod`]; version
     /// 4, default ASCE 10-97).
     pub capacity: CapacityMethod,
+    /// What the tension-only members carry in compression
+    /// ([`TensionCompression`]; model file version 6, structure file
+    /// version 14, default: up to their buckling load).
+    pub tension_compression: TensionCompression,
+}
+
+/// What a tension-only member ([`MemberKind::Tension`]) carries in
+/// compression (`[analysis] tension_compression`, owner 2026-11-15): a
+/// setting of each model, so that a model can be switched and the
+/// structures that then lose a support seen, named — nothing changes for
+/// a model until it is switched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TensionCompression {
+    /// `"buckling"` (the default, the decision of 2026-10-19): compression
+    /// up to its own buckling load, capped by its design compression
+    /// resistance when lower ([`crate::solve::buckling_loads`]); shortened
+    /// beyond, bowed, carrying that load.
+    #[default]
+    Buckling,
+    /// `"none"`: no compression at all, not even up to its buckling load —
+    /// slack as soon as it is shortened. On the safe side for the other
+    /// members (they take all the compression); a joint held only by
+    /// tension-only members in compression is then free, and the solve
+    /// refuses the case naming it.
+    None,
+}
+
+impl TensionCompression {
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TensionCompression::Buckling => "buckling",
+            TensionCompression::None => "none",
+        }
+    }
+
+    /// The law of a name in files.
+    pub fn parse(name: &str) -> Result<Self, String> {
+        match name.trim() {
+            "buckling" => Ok(TensionCompression::Buckling),
+            "none" => Ok(TensionCompression::None),
+            other => Err(format!(
+                "tension_compression \"{other}\": buckling (default: compression up to the \
+                 member's buckling load) or none (no compression: slack once shortened)"
+            )),
+        }
+    }
+
+    /// The law in words, for the notes and the member check.
+    pub fn words(self) -> &'static str {
+        match self {
+            TensionCompression::Buckling => "compression up to their buckling load",
+            TensionCompression::None => "no compression",
+        }
+    }
 }
 
 /// How the check finds the members' capacities (`[analysis] capacity`,
@@ -763,6 +828,7 @@ impl Default for Analysis {
             dead_load_given: false,
             single_angle_moments: false,
             capacity: CapacityMethod::Asce10,
+            tension_compression: TensionCompression::Buckling,
         }
     }
 }
@@ -1141,6 +1207,12 @@ impl Model {
                     None => CapacityMethod::default(),
                     Some(_) if capacity_plugin.is_some() => CapacityMethod::default(),
                     Some(c) => CapacityMethod::parse(c).map_err(|e| format!("analysis: {e}"))?,
+                },
+                tension_compression: match &file.analysis.tension_compression {
+                    None => TensionCompression::default(),
+                    Some(t) => {
+                        TensionCompression::parse(t).map_err(|e| format!("analysis: {e}"))?
+                    }
                 },
             },
             nodes,

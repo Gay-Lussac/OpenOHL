@@ -8,7 +8,8 @@
 //! halves carrying a load across it at its middle (against the fixed-end
 //! beam's hand solution), the same rod as tension-only trusses (the load
 //! across it carried only by a relative hold, flagged), an X-braced panel whose compressed
-//! bending diagonal bows as a truss, and the file keys.
+//! bending diagonal bows as a truss (slack when the model's tension-only
+//! members carry no compression), and the file keys.
 
 use crate::check::{NOT_CHECKED, worst};
 use crate::{
@@ -128,6 +129,23 @@ fn a_tension_only_truss_rod_carries_it_only_by_a_relative_hold() {
 #[test]
 fn a_compressed_bending_diagonal_bows_as_a_truss() {
     let i_d = 1e-10;
+    let m = bending_panel(i_d);
+    let n_cr = std::f64::consts::PI.powi(2) * E * i_d / 25.0;
+    let s = run(&m, vec![force(3, [H, 0.0, 0.0])]).unwrap_or_else(|e| panic!("{e}"));
+    let (ac, bd) = (&s.members[3], &s.members[4]);
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * H;
+    assert!(bd.bowed && close(bd.axial, -n_cr), "{s:?}");
+    let bd_moments = [4, 5, 10, 11].map(|k| bd.end_forces[k]);
+    assert_eq!(bd_moments, [0.0; 4]);
+    assert!(close(ac.axial, 1.25 * H - n_cr), "{}", ac.axial);
+    let moments = [4, 5, 10, 11].map(|k| ac.end_forces[k].abs());
+    assert!(moments.iter().all(|x| *x <= 1e-6 * H), "{moments:?}");
+    assert!(close(s.members[2].axial, -H + 0.8 * n_cr));
+}
+
+/// The panel of [`a_compressed_bending_diagonal_bows_as_a_truss`], its
+/// diagonals of the second moment `i_d`.
+fn bending_panel(i_d: f64) -> Model {
     let mut m = Model {
         sections: vec![
             Section::elastic("s", E, 1e-3, I),
@@ -155,17 +173,28 @@ fn a_compressed_bending_diagonal_bows_as_a_truss() {
         x.bending = true;
         m.members.push(x);
     }
-    let n_cr = std::f64::consts::PI.powi(2) * E * i_d / 25.0;
+    m
+}
+
+/// The same panel, the model set to no compression (`[analysis]
+/// tension_compression = "none"`, owner 2026-11-15): BD, shortened, goes
+/// slack — not bowed at its buckling load — no bending, no moments; AC
+/// carries the whole shear (method of joints: AC = 5H/4, DC = −H) and
+/// bends not at all.
+#[test]
+fn without_compression_a_compressed_bending_diagonal_goes_slack() {
+    let mut m = bending_panel(1e-10);
+    m.analysis.tension_compression = crate::TensionCompression::None;
     let s = run(&m, vec![force(3, [H, 0.0, 0.0])]).unwrap_or_else(|e| panic!("{e}"));
     let (ac, bd) = (&s.members[3], &s.members[4]);
     let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * H;
-    assert!(bd.bowed && close(bd.axial, -n_cr), "{s:?}");
+    assert!(bd.slack && !bd.bowed && bd.axial == 0.0, "{s:?}");
     let bd_moments = [4, 5, 10, 11].map(|k| bd.end_forces[k]);
     assert_eq!(bd_moments, [0.0; 4]);
-    assert!(close(ac.axial, 1.25 * H - n_cr), "{}", ac.axial);
+    assert!(close(ac.axial, 1.25 * H), "{}", ac.axial);
     let moments = [4, 5, 10, 11].map(|k| ac.end_forces[k].abs());
     assert!(moments.iter().all(|x| *x <= 1e-6 * H), "{moments:?}");
-    assert!(close(s.members[2].axial, -H + 0.8 * n_cr));
+    assert!(close(s.members[2].axial, -H));
 }
 
 /// A member with `check = false` is solved, its forces reported, its

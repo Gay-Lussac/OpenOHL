@@ -250,7 +250,15 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// Version 13 (2026-11-15) adds a string's post fields (`post`, `hinged`,
 /// `cantilever_load`, `exit_angle`, `exit_direction`: [`TypeString::post`],
 /// [`POST_VERSION`]); a file is written at 13 only when a string gives one.
-pub const STRUCTURE_FILE_VERSION: u32 = 13;
+/// Version 14 (2026-11-15) adds `[analysis] tension_compression` (what
+/// the tension-only members carry in compression, read by
+/// `ohl_structures_fe`; [`TENSION_COMPRESSION_VERSION`]); a file is
+/// written at 14 only when it gives the key.
+pub const STRUCTURE_FILE_VERSION: u32 = 14;
+
+/// The structure file version of `[analysis] tension_compression`
+/// (2026-11-15): `"buckling"` (the default) or `"none"`.
+pub const TENSION_COMPRESSION_VERSION: u32 = 14;
 
 /// Family of structure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -2846,8 +2854,11 @@ mod tests {
             assert!(parse(text).is_err(), "{k}: read");
         }
         // The version only an older program needs: a newer one refused.
-        let newer = POSTS.replace("version = 13", &format!("version = {}", POST_VERSION + 1));
-        assert_eq!(POST_VERSION, STRUCTURE_FILE_VERSION);
+        let newer = POSTS.replace(
+            "version = 13",
+            &format!("version = {}", STRUCTURE_FILE_VERSION + 1),
+        );
+        assert!(POST_VERSION <= STRUCTURE_FILE_VERSION);
         assert!(parse(&newer).is_err());
     }
 
