@@ -177,6 +177,12 @@ fn the_load_case_library_adds_the_missing_default_cases() {
     let r = h.state_mut().ready().unwrap();
     r.model.undo().unwrap();
     assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
+    // Another: the default weather cases they named out again (added with
+    // them, the tick on by default; 2026-11-15).
+    assert!(r.model.cases.iter().any(|c| c.case.name == "-20 °C"));
+    r.model.undo().unwrap();
+    r.model.reload_libraries().unwrap();
+    assert!(!r.model.cases.iter().any(|c| c.case.name == "-20 °C"));
     // Another: the own list out of the line again.
     r.model.undo().unwrap();
     assert!(

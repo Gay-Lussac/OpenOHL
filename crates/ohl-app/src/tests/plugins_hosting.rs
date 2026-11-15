@@ -753,6 +753,9 @@ fn structure_loads_are_computed_and_shown() {
     harness.get_by_label("Checks").click();
     harness.run();
     harness.get_by_label("Compute structure loads").click();
+    harness.run();
+    // Opening computes nothing: Run does (2026-11-15).
+    crate::tests::run_in(&harness, "Structure loads").click();
     run_until(&mut harness, |a| {
         let r = a.ready().unwrap();
         r.loads.poll();

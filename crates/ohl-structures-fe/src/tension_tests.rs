@@ -246,6 +246,31 @@ fn p_delta_solves_the_active_members() {
     assert!(s.displacements[3][0] > 1.001 * f.displacements[3][0]);
 }
 
+/// The member check is made once, on the solved forces, never inside the
+/// solver's passes (2026-11-15, owner: "the code on the structure side
+/// should be checked only once at the end and not through every step of
+/// the calculations"): the X panel's active-set rounds and P-Delta pass
+/// (4 passes) make no check; `analyse` makes one, after the solve.
+#[test]
+fn the_member_check_runs_once_after_every_pass() {
+    use crate::check::CHECKS_MADE;
+    let m = panel(MemberKind::Tension, false);
+    let loads = Loads {
+        nodal: vec![force(3, [H, 0.0, -200e3]), force(2, [0.0, 0.0, -200e3])],
+        ..Loads::default()
+    };
+    let before = CHECKS_MADE.with(std::cell::Cell::get);
+    let s = solve(&m, &loads, &Options::default(), &default_budget()).unwrap();
+    assert_eq!(s.passes, 4);
+    assert_eq!(
+        CHECKS_MADE.with(std::cell::Cell::get),
+        before,
+        "none in the solve"
+    );
+    crate::analyse(&m, &loads, 1.0, &default_budget()).unwrap();
+    assert_eq!(CHECKS_MADE.with(std::cell::Cell::get), before + 1);
+}
+
 /// Tension-only members that stay taut: the model solves with exactly
 /// the numbers of the same model with trusses — first order and P-Delta
 /// (the same equations solved the same way).

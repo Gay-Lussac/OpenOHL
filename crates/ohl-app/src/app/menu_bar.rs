@@ -722,14 +722,14 @@ fn checks_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
     if ui
         .button("Compute structure loads")
         .on_hover_text(
-            "The loads on the structures at every attachment, in each load case \
-                 (Line › Structures › Load cases…)",
+            "Opens the Structure loads window: the loads on the structures at every attachment \
+             and their usage, in the load cases their groups give them (Line › Structures › \
+             Load cases…); nothing is computed until you press Run",
         )
         .clicked()
     {
-        if !r.loads.running() {
-            r.loads.start(&r.model, ui.ctx());
-        }
+        // Opening computes nothing: Run does (owner 2026-11-15: "i would
+        // like to have to click on run to start it").
         r.loads.open = true;
         ui.close();
     }

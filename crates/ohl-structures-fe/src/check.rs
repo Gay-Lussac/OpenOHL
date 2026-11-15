@@ -281,6 +281,13 @@ pub fn euler_load(model: &Model, member: usize) -> Option<f64> {
     (s.i_min > 0.0).then(|| std::f64::consts::PI.powi(2) * s.e * s.i_min / (kl * kl))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How often this thread made the member check ([`member_usage_with`]):
+    /// once per solve, after it, never inside its iterations (tested).
+    pub(crate) static CHECKS_MADE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Usage of every member; `strength`: the load case's strength factor.
 pub fn member_usage(model: &Model, solution: &Solution, strength: f64) -> Vec<MemberUsage> {
     member_usage_with(model, solution, strength, None)
@@ -300,6 +307,8 @@ pub fn member_usage_with(
     strength: f64,
     given: Option<&[crate::asce10::Capacity]>,
 ) -> Vec<MemberUsage> {
+    #[cfg(test)]
+    CHECKS_MADE.with(|n| n.set(n.get() + 1));
     // The file asks for a plugin's member check and none was run here:
     // no member is checked by another method in its place.
     if let (Some(p), None) = (&model.capacity_plugin, given) {

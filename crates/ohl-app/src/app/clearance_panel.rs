@@ -96,6 +96,20 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
     if let Some(Some(id)) = go {
         r.go_to(Selection::Structure(id));
     }
+    // The window's own page of the user guide (2026-11-15).
+    if let Some(anchor) = r.loads.guide.take() {
+        let (page, anchor) = crate::loads::guide(anchor);
+        r.status = Some(match crate::help::open_section(page, anchor) {
+            Ok(m) => (format!("user guide opened: {m}"), false),
+            Err(e) => (e, true),
+        });
+    }
+    // Make these a group…: the structures in no group selected, Load
+    // cases per group opened (New group, Add the selected).
+    if let Some(ids) = r.loads.make_group.take() {
+        r.go_to_all(ids.into_iter().map(Selection::Structure).collect());
+        crate::structure_groups::request_open(ctx, None);
+    }
     // Colour structures by usage: the views follow.
     let marks = r.loads.usage_marks();
     if marks != r.model.usage_marks {

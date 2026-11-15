@@ -62,7 +62,20 @@ pub struct Form {
     /// in the line (one command, [`crate::default_cases::groups_command`]);
     /// taken by the page.
     pub default_groups: bool,
+    /// **Add the default cases…** without the default weather cases they
+    /// name (the tick [`ALSO_WEATHER`] unticked; ticked by default).
+    skip_weather: bool,
+    /// The default weather cases to add with the default load cases (the
+    /// weather case file, its own change: one undo step;
+    /// [`crate::default_cases::weather_with`]); taken by the page.
+    pub default_weather: Vec<String>,
 }
+
+/// The tick of **Add the default cases…** adding the default weather
+/// cases the default load cases name that the project lacks (2026-11-15:
+/// a load case whose weather case is missing cannot be computed).
+pub const ALSO_WEATHER: &str =
+    "Also add the default weather cases they name that the project lacks";
 
 /// Structures made to take a load case (`take`) and not to (`drop`),
 /// through the case's own list (owner, 2026-11-15: "manual should always
@@ -370,14 +383,27 @@ pub fn ui(
                         crate::menu::message(
                             ui,
                             egui::RichText::new(format!(
-                                "They name weather cases the project does not have: {} — add \
-                                 them in Line › Criteria › Weather cases › {}",
+                                "They name weather cases the project does not have: {} — a load \
+                                 case whose weather case is missing cannot be computed",
                                 lacking.join(", "),
-                                crate::default_cases::ADD_BUTTON
                             ))
                             .small(),
                             Some(ui.visuals().warn_fg_color),
                         );
+                        let mut also = !form.skip_weather;
+                        if ui
+                            .checkbox(&mut also, ALSO_WEATHER)
+                            .on_hover_text(
+                                "The default weather cases of those names are added to the \
+                                 project's weather case file at once (its own change, one undo \
+                                 step; a weather case of the same name is never replaced); \
+                                 unticked, add them yourself in Line › Criteria › Weather cases \
+                                 › Add the default cases…",
+                            )
+                            .changed()
+                        {
+                            form.skip_weather = !also;
+                        }
                     }
                     ui.horizontal(|ui| {
                         if !missing.is_empty()
@@ -391,6 +417,9 @@ pub fn ui(
                             form.default_groups = missing
                                 .iter()
                                 .any(|c| c.name == ohl_loads::DEFAULT_HIGH_ICE_CASE);
+                            if !form.skip_weather {
+                                form.default_weather = lacking.clone();
+                            }
                             cases.cases.extend(missing.iter().cloned());
                             *item = first;
                             buffers.clear();
