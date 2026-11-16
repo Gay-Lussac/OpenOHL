@@ -261,6 +261,9 @@ drops the point chosen; a further one lets go of the tool.
 - **Unlink** is in the point's menu (in the view or the Attachment
   points table) and in the Inspector: the point keeps its place,
   standing alone, linked to no joint.
+- A joint is an attach joint only while attachment points are on it
+  (2026-11-16): relinked elsewhere, unlinked or deleted, the last point
+  leaves the joint at its plain kind (none, or support).
 - An attachment point and a joint are separate objects, even when they
   have the same name: a joint is only ever found by its id, a point by
   its label. Another point's own place (a stick figure's) is no joint to
@@ -307,6 +310,12 @@ chooser, then the point chosen; a further one lets go of the tool.
 - A joint carrying no point says so in the message line; click a point
   standing alone directly.
 - Only attach joints take a point; a support joint takes no strings.
+- The joint the point leaves stays an attach joint only while other
+  points are on it (2026-11-16). Its last point gone, it goes back to
+  its plain kind — *auto* in the Joints table: none, or support where
+  the structure stands on it — and is no longer ringed; set its kind to
+  attach again to put a point back there. **Undo** brings back the
+  point and the joint's kind together.
 - The same move is made in the Attachment points list: the point's
   **joint** cell (a list of the attach joints with a search, or a
   joint's id typed).

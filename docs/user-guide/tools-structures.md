@@ -283,6 +283,13 @@ point chosen.
 **Good to know**
 
 - Only attach joints take a point; a support joint takes no strings.
+- **The type**: the joint the point leaves is an attach joint only
+  while attachment points are on it (2026-11-16). When the last one
+  leaves, the joint goes back to its plain kind (none, or support where
+  the structure stands on it) and is no longer ringed; to move a point
+  back there, set its kind to attach in OHL-Structure first. *This
+  structure only* changes no structure file: the type's joints keep
+  their kinds.
 - **The type** is refused while the type is open in OHL-Structure (its
   own copy would overwrite the change): move the point there, or close
   it first.

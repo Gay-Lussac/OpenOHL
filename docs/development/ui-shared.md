@@ -13,6 +13,7 @@ OHL-Design (`crates/ohl-app`) and OHL-Structure
 | Module | What | What each application keeps |
 |---|---|---|
 | `style` | Text sizes, solid scroll bars, value fields unlike buttons, the UI scale list and menu, sentence case and unit headers | Its storage key; OHL-Structure its 22 pt rows and right-aligned value fields (`field`, `num`, `num_label`) |
+| `link_question` | The question when an attachment point is linked to a joint it is not on (2026-11-16): its sentence with the distance, and the two choices — onto the joint (the default) or its position kept at an offset | Its window around it (title, (?) help, buttons); OHL-Design's Move attachment point adds this structure or the type |
 | `messages` | `message`, `error_label`, `ok_color`: long texts scroll in a box of fixed height | |
 | `notices` | Notices that fade, errors that stay | How often the window is drawn while one fades in its tests; OHL-Design the short sentences it makes of an edit's message (`plain`) |
 | `rows` | Long tables, only the rows in view | |

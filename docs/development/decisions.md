@@ -8,6 +8,46 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-16
+
+**A joint is an attach joint only while attachment points are on it;
+OHL-Design's Structure types page asks onto the joint or an offset**
+(owner: *"if no attach points are left on the joint then no it shouldn't
+be attach anymore"* and, for the question, *"also in OHL design"*).
+Built, in active development, not approved yet.
+
+- **The joint left.** Before, a point moved off a joint wrote
+  `kind = "attach"` on the joint it left (so a point could be moved
+  back), and an explicit `attach` stayed after unlinking or deleting its
+  last point. Now, in the same edit (one undo step brings back both),
+  the joint whose last point leaves goes back to its plain kind — its
+  `kind = "attach"` and an `attachment` naming a point no longer there
+  taken off, worked out again as none, or support with a `support`
+  (`ohl_structure_edit::links::release_joints`). Every path that takes a
+  point off a joint goes through it: OHL-Structure's list, Link and
+  Move attachment point (`link_point` / `relink_point`), Unlink,
+  Delete (`Removal::left`), a point written before 2026-10-21 moved
+  off the joint at its place, a generator putting a point on a tip;
+  OHL-Design's Move attachment point on the type and its Structure types
+  page (the same edits); the line's links in OHL-Structure's run of a
+  placed structure (`with_placed_links`, the file itself unchanged). The
+  joint a point arrives at must already be an attach joint, as before.
+  A point and a joint stay separate objects (`links::joint_of` finds a
+  point's joint among the `[[node]]`s only). *This structure only* in
+  OHL-Design changes no structure file: the type's joints keep their
+  kinds there (left as it is). Files written before with an attach joint
+  carrying no point read the same.
+- **The question on the Structure types page.** Its Link tool and the
+  joint chosen in its Attachment points table linked a point that was
+  not on the joint at an offset without asking. Now they ask as
+  everywhere else (`type_workspace::LinkAsk`): onto the joint (the
+  default) or its position kept; within 1 mm onto it without asking.
+  The question's two choices and its sentence are one shared copy for
+  both applications (`ohl_ui::link_question`), used by OHL-Structure's
+  window, OHL-Design's Link / Move attachment point window and the
+  Structure types page. A point dropped onto a joint by dragging still
+  goes onto it (the drop is the answer).
+
 ## 2026-11-15
 
 **A weather case's own wind direction is kept and never turned by the
