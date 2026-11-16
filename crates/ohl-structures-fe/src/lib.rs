@@ -59,8 +59,10 @@ pub use model::{
     PluginMethod, Section, TensionCompression,
 };
 pub use offsets::{EccentricEnd, eccentricity_note};
-pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored};
-pub use solve::{FeError, Loads, MemberForces, Options, Reaction, Solution, default_budget, solve};
+pub use pole::{Pole, PoleCheck, PoleLoad, check_pole, check_pole_factored, check_pole_leaning};
+pub use solve::{
+    FeError, Loads, MemberForces, Options, Prescribed, Reaction, Solution, default_budget, solve,
+};
 pub use stabilise::{Stabilisation, Stabilised};
 
 /// Solves a model under `loads` with its own analysis settings and gives
@@ -526,6 +528,8 @@ mod offset_tests;
 mod optional_checks_tests;
 #[cfg(test)]
 mod pole_extension_tests;
+#[cfg(test)]
+mod prescribed_tests;
 #[cfg(test)]
 mod sia263_tests;
 #[cfg(test)]

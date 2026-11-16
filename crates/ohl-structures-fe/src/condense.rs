@@ -59,7 +59,10 @@ use crate::links::PointLoad;
 use crate::model::{Model, cross};
 use crate::pole::{Pole, PoleLoad};
 use crate::skyline::{Pivot, Skyline, reverse_cuthill_mckee};
-use crate::solve::{DOF_NAMES, HELD_SHARE, Loads, Options, Prepared, Solution, assemble, solve};
+use crate::solve::{
+    DOF_NAMES, HELD_SHARE, Imposed, Loads, Options, Prepared, Prescribed, Solution, Vector12,
+    assemble, prescribed_forces, solve,
+};
 use crate::stabilise::Stabilisation;
 
 /// How a placed structure links one of its attachment points (the line's
@@ -299,6 +302,11 @@ pub struct Condensed {
     /// under it, m, in the matrices' axes: the same tangent, one more
     /// substitution each. Empty: none asked.
     pub extra: Vec<Vec<[f64; 3]>>,
+    /// Each place's displacement under the structure's prescribed foot
+    /// movements ([`condense_full`]; measured settlements and tilts, owner
+    /// 2026-11-16), m, in the matrices' axes: the rigid-body motion and the
+    /// elastic distortion on the same tangent. Empty: none given.
+    pub feet: Vec<[f64; 3]>,
 }
 
 impl Condensed {
@@ -366,8 +374,19 @@ impl Condensed {
                 .iter()
                 .map(|set| set.iter().map(turn_vector).collect())
                 .collect(),
+            feet: self.feet.iter().map(turn_vector).collect(),
             ..self.clone()
         }
+    }
+
+    /// Each point's displacement (as `labels`, m, the matrices' axes)
+    /// under the prescribed foot movements ([`Condensed::feet`]); none
+    /// when none were given.
+    pub fn feet_at_points(&self) -> Option<Vec<[f64; 3]>> {
+        if self.feet.is_empty() {
+            return None;
+        }
+        Some(self.place_of.iter().map(|&p| self.feet[p]).collect())
     }
 
     /// Each point's displacement (as `labels`, m, the matrices' axes)
@@ -507,6 +526,31 @@ pub fn condense_with(
     points: &[Attachment],
     linearisation: &Linearisation,
     extra: &[Vec<crate::model::NodalLoad>],
+    budget: &Budget,
+) -> Result<Condensed, Rigid> {
+    condense_full(model, points, linearisation, extra, &[], budget)
+}
+
+/// [`condense_with`] with, for the structure's prescribed foot movements
+/// `feet` (measured settlements and tilts of its supports, owner
+/// 2026-11-16; [`Prescribed`]), each place's displacement under them on
+/// the same tangent ([`Condensed::feet`]: the rigid-body motion and the
+/// elastic distortion of a statically indeterminate structure, the linear
+/// answer). The tangent is the one `linearisation` says: to take it with
+/// the feet moved (their forces' P-Delta, the tension-only members as
+/// they are then), give them in its loads too. Empty `feet`: as
+/// [`condense_with`], bit for bit. A movement the model cannot take (a
+/// direction no support holds, a rotation at a joint without one):
+/// refused ([`Rigid::Reference`]).
+///
+/// Expected cost: as [`condense_with`], plus one forward and back
+/// substitution.
+pub fn condense_full(
+    model: &Model,
+    points: &[Attachment],
+    linearisation: &Linearisation,
+    extra: &[Vec<crate::model::NodalLoad>],
+    feet: &[Prescribed],
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
     if points.is_empty() {
@@ -656,6 +700,15 @@ pub fn condense_with(
         );
     }
 
+    // The prescribed foot movements: each place's displacement.
+    let feet_moves = match tangent.feet(model, feet)? {
+        None => Vec::new(),
+        Some(u) => places
+            .iter()
+            .map(|place| place_displacement(u[place.node], place.offset))
+            .collect(),
+    };
+
     // A force at a point carried by a joint held to the ground: refused.
     let ground: Vec<&Stabilisation> = solution
         .stabilised
@@ -742,6 +795,7 @@ pub fn condense_with(
         notes,
         linearisation: linearisation.words(),
         extra: extra_moves,
+        feet: feet_moves,
     })
 }
 
@@ -792,6 +846,16 @@ struct Tangent {
     /// The structure's size (the diagonal of the box around its joints),
     /// m.
     size: f64,
+    /// The members as assembled.
+    prepared: Vec<Prepared>,
+    /// Per node, whether a member bending in the tangent meets it.
+    has_frame: Vec<bool>,
+    /// The axial forces and the members left out (slack, bowed) of the
+    /// solution it is taken at.
+    axial: Vec<f64>,
+    out: Vec<bool>,
+    /// P-Delta in it.
+    nonlinear: bool,
 }
 
 impl Tangent {
@@ -919,7 +983,63 @@ impl Tangent {
                 }
             }
         }
-        Ok(Self { k, eq, n_eq, size })
+        Ok(Self {
+            k,
+            eq,
+            n_eq,
+            size,
+            prepared,
+            has_frame,
+            axial,
+            out,
+            nonlinear,
+        })
+    }
+
+    /// Every node's displacement (m, rad) under the prescribed
+    /// displacements `feet` on this tangent: K_ff·u_f = −K_fp·u_p (+ k·u_g
+    /// of the springs' ground ends), the held directions moved as given.
+    /// None when there are none (all zero). Refused as the solver refuses
+    /// them ([`Imposed::of`]).
+    fn feet(&self, model: &Model, feet: &[Prescribed]) -> Result<Option<Vec<[f64; 6]>>, Rigid> {
+        let Some(imposed) = Imposed::of(model, feet, &self.eq, &self.has_frame)
+            .map_err(|e| Rigid::Reference(e.to_string()))?
+        else {
+            return Ok(None);
+        };
+        let at_ends: Vec<Option<Vector12>> = model
+            .members
+            .iter()
+            .zip(&self.prepared)
+            .map(|(m, p)| imposed.at_ends(m, p))
+            .collect();
+        let mut p = vec![0.0; self.n_eq];
+        prescribed_forces(
+            model,
+            &self.prepared,
+            &at_ends,
+            (&self.axial, &self.out),
+            self.nonlinear,
+            &mut p,
+        );
+        let mut x: Vec<f64> = p.iter().map(|v| -v).collect();
+        for (n, e) in self.eq.iter().enumerate() {
+            for (d, q) in e.iter().enumerate() {
+                if let Some(q) = q {
+                    x[*q] += model.nodes[n].spring[d] * imposed.ground[n][d];
+                }
+            }
+        }
+        self.k.solve(&mut x);
+        let mut u = self.displacements(&x);
+        for (n, e) in self.eq.iter().enumerate() {
+            for (d, q) in e.iter().enumerate() {
+                if q.is_none() && imposed.moved[n][d] != 0.0 {
+                    u[n][d] = imposed.moved[n][d];
+                }
+            }
+        }
+        Ok(Some(u))
     }
 
     /// Adds the unit load (force `force`, moment `moment`) at `node` to
@@ -1063,6 +1183,36 @@ pub fn condense_pole_with(
     extra: &[PoleBody],
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
+    condense_pole_full(pole, points, reference, extra, [0.0; 6], budget)
+}
+
+/// The prescribed movement of a pole's base: its frame model's ground
+/// node moved by `base` (translations m, rotations rad: a tilt; structure
+/// axes); none when zero.
+fn pole_base(base: [f64; 6]) -> Vec<Prescribed> {
+    if base == [0.0; 6] {
+        Vec::new()
+    } else {
+        vec![Prescribed {
+            node: 0,
+            displacement: base,
+        }]
+    }
+}
+
+/// [`condense_pole_with`] with the pole's base moved by `base` (a measured
+/// settlement and tilt, owner 2026-11-16; translations m, rotations rad,
+/// structure axes): each point's displacement under it in
+/// [`Condensed::feet`] — for a pole, fixed at its one base, a rigid-body
+/// motion. Zero: as [`condense_pole_with`], bit for bit.
+pub fn condense_pole_full(
+    pole: &Pole,
+    points: &[(String, [f64; 3])],
+    reference: Option<&[PoleLoad]>,
+    extra: &[PoleBody],
+    base: [f64; 6],
+    budget: &Budget,
+) -> Result<Condensed, Rigid> {
     let e = pole.elasticity.ok_or(Rigid::PoleWithoutElasticity)?;
     if points.is_empty() {
         return Err(Rigid::NoPoints);
@@ -1096,7 +1246,14 @@ pub fn condense_pole_with(
     let attachments: Vec<Attachment> = points.iter().map(|p| Attachment::of_type(&p.0)).collect();
     let extra: Vec<Vec<crate::model::NodalLoad>> =
         extra.iter().map(|b| pole_body_loads(pole, &z, b)).collect();
-    let mut c = condense_with(&model, &attachments, &linearisation, &extra, budget)?;
+    let mut c = condense_full(
+        &model,
+        &attachments,
+        &linearisation,
+        &extra,
+        &pole_base(base),
+        budget,
+    )?;
     c.notes.push(
         "NOT ON THE SAFE SIDE for clearances: the pole fixed at the ground line (its \
          embedment's rotation left out), its crossarms rigid, wood's creep left out — stiffer \
@@ -1145,6 +1302,23 @@ pub fn deflect(
     loads: &[crate::model::NodalLoad],
     budget: &Budget,
 ) -> Result<Vec<[f64; 6]>, Rigid> {
+    deflect_full(model, linearisation, loads, &[], budget)
+}
+
+/// [`deflect`] with the structure's prescribed foot movements `feet`
+/// added ([`condense_full`]: their rigid-body motion and elastic
+/// distortion on the same tangent; the held directions moved as given) —
+/// the body as built on its moved feet and deflected. Empty `feet`: as
+/// [`deflect`], bit for bit.
+///
+/// Expected cost: as [`deflect`], plus one substitution.
+pub fn deflect_full(
+    model: &Model,
+    linearisation: &Linearisation,
+    loads: &[crate::model::NodalLoad],
+    feet: &[Prescribed],
+    budget: &Budget,
+) -> Result<Vec<[f64; 6]>, Rigid> {
     let (solution, nonlinear) = reference(model, linearisation, budget)?;
     let tangent = Tangent::at(model, &solution, nonlinear, false)?;
     let mut x = vec![0.0; tangent.n_eq];
@@ -1154,7 +1328,15 @@ pub fn deflect(
         }
     }
     tangent.k.solve(&mut x);
-    Ok(tangent.displacements(&x))
+    let mut u = tangent.displacements(&x);
+    if let Some(moved) = tangent.feet(model, feet)? {
+        for (a, b) in u.iter_mut().zip(moved) {
+            for d in 0..6 {
+                a[d] += b[d];
+            }
+        }
+    }
+    Ok(u)
 }
 
 /// The axis of `pole` deflected ([`deflect`] on the pole check's frame
@@ -1168,6 +1350,21 @@ pub fn deflect_pole(
     reference: Option<&[PoleLoad]>,
     loads: &[PoleLoad],
     body: &PoleBody,
+    budget: &Budget,
+) -> Result<Vec<(f64, [f64; 3])>, Rigid> {
+    deflect_pole_full(pole, reference, loads, body, [0.0; 6], budget)
+}
+
+/// [`deflect_pole`] with the pole's base moved by `base` (a measured
+/// settlement and tilt; translations m, rotations rad, structure axes):
+/// the axis as built on its moved base and deflected. Zero: as
+/// [`deflect_pole`], bit for bit.
+pub fn deflect_pole_full(
+    pole: &Pole,
+    reference: Option<&[PoleLoad]>,
+    loads: &[PoleLoad],
+    body: &PoleBody,
+    base: [f64; 6],
     budget: &Budget,
 ) -> Result<Vec<(f64, [f64; 3])>, Rigid> {
     let e = pole.elasticity.ok_or(Rigid::PoleWithoutElasticity)?;
@@ -1189,11 +1386,34 @@ pub fn deflect_pole(
     };
     let mut nodal = crate::pole::axis_loads(&z, top, loads);
     nodal.extend(pole_body_loads(pole, &z, body));
-    let u = deflect(&model, &linearisation, &nodal, budget)?;
+    let u = deflect_full(&model, &linearisation, &nodal, &pole_base(base), budget)?;
     Ok(z.iter()
         .zip(u)
         .map(|(h, d)| (*h, [d[0], d[1], d[2]]))
         .collect())
+}
+
+impl Model {
+    /// Where attachment point `label` (linked by `link`) is in the model:
+    /// its node and the offset whose rotation moves it (zero: the node's
+    /// translation only) — the place the condensation reads it at
+    /// ([`Place`]). None: unlinked, or no joint carries it.
+    pub fn attachment_place(&self, label: &str, link: &Link) -> Option<(usize, [f64; 3])> {
+        let mut node = None;
+        let mut moments = [[0.0; 3]; 3];
+        for (k, m) in moments.iter_mut().enumerate() {
+            let mut e = [0.0; 3];
+            e[k] = 1.0;
+            let load = self.attachment_load(label, link, e)?;
+            let [l] = load.loads.as_slice() else {
+                return None;
+            };
+            node = Some(l.node);
+            *m = l.moment;
+        }
+        // r from r × eₓ = (0, r_z, −r_y) and r × e_y = (−r_z, 0, r_x).
+        Some((node?, [moments[1][2], -moments[0][2], moments[0][1]]))
+    }
 }
 
 /// The displacement of a place at `offset` from its node (structure

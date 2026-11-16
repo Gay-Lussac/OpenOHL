@@ -89,6 +89,38 @@ pub struct Loads {
     /// bending they put on the member between its joints (2026-11-08,
     /// [`MemberForces::lumped_load`]). Empty: none said.
     pub member: Vec<(usize, [f64; 3])>,
+    /// Prescribed displacements of supports (measured foot movements,
+    /// owner 2026-11-16; [`Prescribed`]): imposed at the held directions
+    /// of support joints, or as the movement of a spring's ground end.
+    /// Empty: none — every solve exactly as without (bit for bit).
+    pub prescribed: Vec<Prescribed>,
+}
+
+/// A support joint's prescribed displacement (a measured movement of a
+/// tower's foot or a pole's base: settlement, a tilt; owner 2026-11-16).
+///
+/// Per direction (x, y, z, rx, ry, rz; m and rad, structure axes):
+/// - a **fixed** direction ([`crate::Node::fixed`]) is moved by the value
+///   — the support goes with it, and its reaction is what it takes to
+///   move the structure there;
+/// - a **sprung** direction ([`crate::Node::spring`], not fixed): the
+///   spring's ground end moves by the value (the spring's force
+///   −k·(u − value));
+/// - a **free** direction, or a rotation at a joint no frame member meets
+///   (it has no rotation), is refused ([`FeError::Invalid`]) unless the
+///   value is 0.
+///
+/// In a statically indeterminate structure (a tower on four feet, a
+/// portal frame) a movement that is not a rigid-body motion strains the
+/// members: their forces are in the solution; a rigid-body motion (all
+/// feet alike, a pole's base) only moves it (with P-Delta, its weight
+/// and loads leaning with it).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Prescribed {
+    /// Node (index).
+    pub node: usize,
+    /// Translations (m) and rotations (rad), structure axes.
+    pub displacement: [f64; 6],
 }
 
 /// Settings of one solve.
@@ -1329,6 +1361,27 @@ fn solve_with(
     for (k, (n, d)) in dof_of.iter().enumerate() {
         f[k] = f_ext[*n][*d];
     }
+    // Prescribed support displacements (none: nothing below changes).
+    let imposed = Imposed::of(model, &loads.prescribed, &eq, &has_frame)?;
+    if let Some(i) = &imposed {
+        // A spring's ground end moved: k·u_g on its equation (not in the
+        // loads, so its reaction is the spring's force −k·(u − u_g)).
+        for (k, (n, d)) in dof_of.iter().enumerate() {
+            let g = i.ground[*n][*d];
+            if g != 0.0 {
+                f[k] += model.nodes[*n].spring[*d] * g;
+            }
+        }
+    }
+    let at_ends: Vec<Option<SMatrix<f64, 12, 1>>> = match &imposed {
+        Some(i) => model
+            .members
+            .iter()
+            .zip(&prepared)
+            .map(|(m, p)| i.at_ends(m, p))
+            .collect(),
+        None => Vec::new(),
+    };
 
     // Profile.
     let mut first: Vec<usize> = (0..n_eq).collect();
@@ -1367,7 +1420,7 @@ fn solve_with(
         }
     }
     let mut slack_solved: Option<Vec<bool>> = None;
-    let scale = f
+    let mut scale = f
         .iter()
         .map(|x| x * x)
         .sum::<f64>()
@@ -1401,6 +1454,26 @@ fn solve_with(
         let ku = k.mul(&u);
         for (a, b) in r.iter_mut().zip(&ku) {
             *a -= b;
+        }
+        if imposed.is_some() {
+            // The members' forces of the prescribed displacements on the
+            // free directions (−K_fp·u_p, the tangent's); the first
+            // iteration's set the scale of the out-of-balance forces too.
+            let mut p = vec![0.0; n_eq];
+            prescribed_forces(
+                model,
+                &prepared,
+                &at_ends,
+                (&axial, &slack),
+                options.nonlinear,
+                &mut p,
+            );
+            if slack_solved.is_none() {
+                scale = scale.max(p.iter().map(|x| x * x).sum::<f64>().sqrt());
+            }
+            for (a, b) in r.iter_mut().zip(&p) {
+                *a -= b;
+            }
         }
         residual = r.iter().map(|x| x * x).sum::<f64>().sqrt() / scale;
         let settled = slack_solved.as_ref() == Some(&slack);
@@ -1482,7 +1555,7 @@ fn solve_with(
         slack_solved = Some(slack.clone());
         // Axial forces and slack cables from the new displacements.
         for (idx, (m, p)) in model.members.iter().zip(&prepared).enumerate() {
-            let d = local_displacements(p, &u);
+            let d = with_imposed(local_displacements(p, &u), p, &at_ends, idx);
             let n = m.pretension + p.ea_l * (d[6] - d[0]);
             if m.kind == MemberKind::Cable {
                 slack[idx] = n < 0.0;
@@ -1501,6 +1574,13 @@ fn solve_with(
             let ku = k.mul(&u);
             let mut r = f.clone();
             constant_forces(model, &prepared, &slack, &bowed, &mut r);
+            if imposed.is_some() {
+                let mut p = vec![0.0; n_eq];
+                prescribed_forces(model, &prepared, &at_ends, (&axial, &slack), false, &mut p);
+                for (a, b) in r.iter_mut().zip(&p) {
+                    *a -= b;
+                }
+            }
             residual = r
                 .iter()
                 .zip(&ku)
@@ -1517,6 +1597,16 @@ fn solve_with(
     for (q, (n, d)) in dof_of.iter().enumerate() {
         displacements[*n][*d] = u[q];
     }
+    if let Some(i) = &imposed {
+        // The held directions moved as prescribed.
+        for (n, e) in eq.iter().enumerate() {
+            for d in 0..6 {
+                if e[d].is_none() && i.moved[n][d] != 0.0 {
+                    displacements[n][d] = i.moved[n][d];
+                }
+            }
+        }
+    }
     let mut internal = vec![[0.0; 6]; n_nodes];
     let members: Vec<MemberForces> = model
         .members
@@ -1524,7 +1614,7 @@ fn solve_with(
         .zip(&prepared)
         .enumerate()
         .map(|(idx, (m, p))| {
-            let d = local_displacements(p, &u);
+            let d = with_imposed(local_displacements(p, &u), p, &at_ends, idx);
             let n = axial[idx];
             let mut end = [0.0; 12];
             if bends[idx] {
@@ -1941,6 +2031,166 @@ fn compressed_at(model: &Model, joint: &str, axial: &[f64], slack: &[bool]) -> V
     out.sort_by(|a, b| a.1.total_cmp(&b.1));
     out.truncate(MECHANISM_JOINTS);
     out
+}
+
+/// The prescribed displacements of a solve ([`Loads::prescribed`]) per
+/// node: the held directions moved, the springs' ground ends moved.
+pub(crate) struct Imposed {
+    /// Per node, its fixed directions' displacements (m, rad).
+    pub(crate) moved: Vec<[f64; 6]>,
+    /// Per node, its springs' ground ends' displacements (m, rad).
+    pub(crate) ground: Vec<[f64; 6]>,
+}
+
+impl Imposed {
+    /// `prescribed` on `model` (its nodes' equations `eq`, `has_frame`
+    /// whether a member bending in this solve meets each): none when
+    /// empty or all zero (the solve as without, bit for bit). Refused
+    /// ([`FeError::Invalid`]): a node out of range, a value that is not a
+    /// number, a direction neither fixed nor sprung, a rotation at a joint
+    /// no frame member meets.
+    pub(crate) fn of(
+        model: &Model,
+        prescribed: &[Prescribed],
+        eq: &[[Option<usize>; 6]],
+        has_frame: &[bool],
+    ) -> Result<Option<Self>, FeError> {
+        if prescribed
+            .iter()
+            .all(|p| p.displacement.iter().all(|v| *v == 0.0))
+        {
+            return Ok(None);
+        }
+        let n_nodes = model.nodes.len();
+        let mut moved = vec![[0.0; 6]; n_nodes];
+        let mut ground = vec![[0.0; 6]; n_nodes];
+        for p in prescribed {
+            let Some(node) = model.nodes.get(p.node) else {
+                return Err(FeError::Invalid(
+                    "prescribed displacement at a node out of range".into(),
+                ));
+            };
+            for (d, &v) in p.displacement.iter().enumerate() {
+                if v == 0.0 {
+                    continue;
+                }
+                if !v.is_finite() {
+                    return Err(FeError::Invalid(format!(
+                        "prescribed displacement at joint {} in {}: {v} is not a number",
+                        node.id, DOF_NAMES[d]
+                    )));
+                }
+                if d >= 3 && !has_frame[p.node] {
+                    return Err(FeError::Invalid(format!(
+                        "prescribed rotation at joint {} ({}): no frame member meets it, so \
+                         it has no rotation",
+                        node.id, DOF_NAMES[d]
+                    )));
+                }
+                if node.fixed[d] {
+                    moved[p.node][d] += v;
+                } else if node.spring[d] != 0.0 && eq[p.node][d].is_some() {
+                    ground[p.node][d] += v;
+                } else {
+                    return Err(FeError::Invalid(format!(
+                        "prescribed displacement at joint {} in {}: no support or spring holds \
+                         that direction",
+                        node.id, DOF_NAMES[d]
+                    )));
+                }
+            }
+        }
+        Ok(Some(Self { moved, ground }))
+    }
+
+    /// The prescribed displacements at the 12 degrees of freedom of member
+    /// `m` (structure axes) where they have no equation; none when all
+    /// zero.
+    pub(crate) fn at_ends(&self, m: &crate::model::Member, p: &Prepared) -> Option<Vector12> {
+        let mut g = Vector12::zeros();
+        let mut any = false;
+        for c in 0..12 {
+            if p.eq[c].is_none() {
+                let n = if c < 6 { m.i } else { m.j };
+                let v = self.moved[n][c % 6];
+                if v != 0.0 {
+                    g[c] = v;
+                    any = true;
+                }
+            }
+        }
+        any.then_some(g)
+    }
+}
+
+/// Twelve values of a member's degrees of freedom.
+pub(crate) type Vector12 = SMatrix<f64, 12, 1>;
+
+/// A member's local displacements `d` with its ends' prescribed
+/// displacements added (`at_ends`, per member; empty: none).
+fn with_imposed(d: Vector12, p: &Prepared, at_ends: &[Option<Vector12>], idx: usize) -> Vector12 {
+    match at_ends.get(idx) {
+        Some(Some(g)) => d + p.t * g,
+        _ => d,
+    }
+}
+
+/// Adds to `out` (per equation) the forces the members put on the free
+/// directions when their ends' held directions move by `at_ends` (per
+/// member; [`Imposed::at_ends`]): K_fp·u_p with each member's tangent as
+/// [`assemble`] takes it.
+pub(crate) fn prescribed_forces(
+    model: &Model,
+    prepared: &[Prepared],
+    at_ends: &[Option<Vector12>],
+    (axial, slack): (&[f64], &[bool]),
+    nonlinear: bool,
+    out: &mut [f64],
+) {
+    for (idx, (m, p)) in model.members.iter().zip(prepared).enumerate() {
+        let Some(Some(g)) = at_ends.get(idx) else {
+            continue;
+        };
+        let f = member_tangent(m, p, axial[idx], slack[idx], nonlinear) * g;
+        for c in 0..12 {
+            if let Some(q) = p.eq[c] {
+                out[q] += f[c];
+            }
+        }
+    }
+}
+
+/// One member's tangent stiffness in structure axes (12 × 12), as
+/// [`assemble`] adds it.
+fn member_tangent(
+    m: &crate::model::Member,
+    p: &Prepared,
+    axial: f64,
+    slack: bool,
+    nonlinear: bool,
+) -> Mat12 {
+    if m.is_frame() && !slack {
+        let mut kl = p.ke;
+        if nonlinear {
+            kl += frame_geometric(p.l, axial);
+        }
+        return p.t.transpose() * kl * p.t;
+    }
+    let n_l = if nonlinear { axial / p.l } else { 0.0 };
+    let ea_l = if slack { 0.0 } else { p.ea_l };
+    let e = p.r.row(0).transpose();
+    let b = axial_block(&e, ea_l, n_l);
+    let mut kl = Mat12::zeros();
+    for (oa, sa) in [(0, 1.0), (6, -1.0)] {
+        for (ob, sb) in [(0, 1.0), (6, -1.0)] {
+            kl.fixed_view_mut::<3, 3>(oa, ob)
+                .copy_from(&(b * (sa * sb)));
+        }
+    }
+    match &p.rigid {
+        Some(d) => d.transpose() * kl * d,
+        None => kl,
+    }
 }
 
 fn global_translation(d: &[[f64; 6]], n: usize) -> Vector3<f64> {
