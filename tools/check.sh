@@ -27,7 +27,8 @@
 # - local-data/check/scan.txt: extended regular expressions (one per
 #   line, `#` comments) that must not appear in what is pushed (names of
 #   real lines, persons, companies): the diff from BASE (default
-#   origin/main) to TREE's HEAD is searched; local-data/check/scan-ok.txt
+#   origin/main) to TREE's working tree (committed and uncommitted) and
+#   the untracked files are searched; local-data/check/scan-ok.txt
 #   the same for the lines to let through.
 # Build folders are pruned at the end (tools/prune-target.sh).
 set -e
@@ -54,7 +55,16 @@ if [ -f "$PRIVATE/scan.txt" ]; then
     [ -f "$PRIVATE/scan-ok.txt" ] && OK="$OK|$(grep -v '^#' "$PRIVATE/scan-ok.txt" | grep -v '^$' | paste -sd '|' -)"
     # The lines added only: a line removed (a leak taken out) is already
     # public and is not pushed again.
-    HITS=$(git diff "$BASE"..HEAD | grep -n -i -E "$PAT" | grep -E '^[0-9]+:\+' | grep -v -E '^[0-9]+:\+\+\+ ' | grep -v -E "$OK" || true)
+    # The committed AND the uncommitted changes (the working tree against
+    # BASE): a check run before the commit must see what will be
+    # committed (2026-11-16: a name in an uncommitted edit got through).
+    HITS=$(git diff "$BASE" | grep -n -i -E "$PAT" | grep -E '^[0-9]+:\+' | grep -v -E '^[0-9]+:\+\+\+ ' | grep -v -E "$OK" || true)
+    # New files not yet added are searched whole.
+    NEW=$(git ls-files --others --exclude-standard)
+    if [ -n "$NEW" ]; then
+        UNTRACKED=$(echo "$NEW" | while IFS= read -r f; do [ -f "$f" ] && grep -n -i -E "$PAT" "$f" /dev/null; done | grep -v -E "$OK" || true)
+        [ -n "$UNTRACKED" ] && HITS=$(printf '%s\n%s' "$HITS" "$UNTRACKED")
+    fi
     if [ -n "$HITS" ]; then
         echo "$HITS" | head -20
         echo scan-FAILED
