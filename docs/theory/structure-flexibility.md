@@ -680,10 +680,15 @@ the worse.
   pole's top 155 mm across at 450 Pa); the effect of level 4 is where
   members switch or P-Delta grows (above).
 
-**Cost** (the example line, test build, a busy machine): five weather
-cases at level 3 1.7 s, at level 4 1.8 s (one to three full solves per
-structure and case). See [Cost](#cost-measured-2026-11-15) for the
-measured times of an optimised build.
+**Cost** (the example line's five weather cases, `ohl line
+--calculation-level 2|3|4`, optimised build without link-time
+optimisation, a machine busy with other builds — the times are noisy):
+the rigid solve 6–17 ms a case; level 3 122 ms for the five (1–3 line
+solves each, the setup 7 ms); level 4 174 ms (1–4 line solves, one or two
+full solves per structure and case, 1.4–3.4 ms of structure solves a
+case). Only in *rime ice + wind* did level 4 take a line solve more: the
+steel pole's P-Delta moved its top 2.8 mm further than level 3, its
+forces changed by 0.01 %.
 
 ## The reference state of the structures
 

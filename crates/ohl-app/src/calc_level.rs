@@ -212,27 +212,30 @@ pub fn beside(choice: ohl_line::StructuresInSolve) -> String {
                 t
             }
             (None, Some(r), _) => format!(
-                "Not run here yet. Estimate from the last level-3 run ({} in {:.1} s): about \
-                 {:.0} s — level 3's line solves, then 1–4 more per case, each with a full \
-                 solve of every flexible structure (side by side). Its effect is shown after a \
-                 run.",
+                "Not run here yet. Estimate from the last level-3 run ({} in {:.1} s): \
+                 {:.0}–{:.0} s — level 3's line solves, then 1–4 more per case, each with a full \
+                 solve of every flexible structure (side by side): about 1.5× level 3 on the \
+                 example line, up to some 10× with towers of thousands of members (a few \
+                 seconds a solve). Its effect is shown after a run.",
                 r.what,
                 r.seconds,
-                r.seconds * 2.0
+                r.seconds * 1.5,
+                r.seconds * 10.0
             ),
             (None, None, Some(r)) => format!(
-                "Not run here yet. Estimate from the last rigid run ({} in {:.1} s): about \
+                "Not run here yet. Estimate from the last rigid run ({} in {:.1} s): \
                  {:.0} s or more — level 3's {passes:.0} line solves per case, then 1–4 more, \
-                 each with a full solve of every flexible structure (side by side). Its effect is \
-                 shown after a run.",
+                 each with a full solve of every flexible structure (side by side; a few seconds \
+                 a solve for towers of thousands of members). Its effect is shown after a run.",
                 r.what,
                 r.seconds,
                 r.seconds * passes * 2.0
             ),
             (None, None, None) => "Not run here yet: level 3's line solves (2–5 per case), then \
                                    1–4 more, each with a full solve of every flexible structure \
-                                   (side by side over the cores; on the example line about as \
-                                   fast as level 3). Its effect is shown after a run."
+                                   (side by side over the cores; on the example line about 1.5× \
+                                   level 3, up to some 10× with towers of thousands of \
+                                   members). Its effect is shown after a run."
                 .to_owned(),
         },
     }

@@ -72,7 +72,7 @@ pub fn condensed_tangent(
 /// its own settings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FullModel {
-    /// The model (a pole: the pole check's frame model, [`FullModel::pole`]).
+    /// The model (a pole: the pole check's frame model, [`FullModel::of_pole`]).
     pub model: Model,
     /// The attachment points, in the order of the forces given.
     pub points: Vec<Attachment>,

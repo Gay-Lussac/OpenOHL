@@ -6,10 +6,11 @@
 //! development): each flexible structure's full non-linear answer in the
 //! line's interface loop ([`ohl_line::solve::flexible::FullAnswer`]).
 //!
-//! Set up once per run with level 3's structures ([`prepare_full`]): per
+//! Set up once per run with level 3's structures (`prepare_full`, through
+//! [`crate::prepare_structure_loads_at`] and [`crate::prepare_check_level`]): per
 //! flexible structure its model as the structure check takes it (or its
 //! pole's frame model), its points linked as the check links their loads
-//! ([`crate::flexibility::placed_link`]), and its solve under the wires'
+//! (as the structure check links their loads), and its solve under the wires'
 //! forces at the stringing state (with its self-weight) — the state its
 //! displacements are measured from (the structures as drawn are the
 //! structures as strung), and the first pass's tension-only set.
