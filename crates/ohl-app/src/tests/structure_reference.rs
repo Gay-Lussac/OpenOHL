@@ -160,3 +160,66 @@ fn a_reference_case_solved_drawn_undone_and_stale() {
     let (note, warn) = crate::structure_reference::view_note(&r.model).unwrap();
     assert!(warn && note.contains("out of date"), "{note}");
 }
+
+/// Measured foot movements (owner 2026-11-16) entered in the structure
+/// window: kept by its Apply (one command, line file version 23), the
+/// structure moved by them alone (no reference case: automatically, said),
+/// the case's wires following, its body drawn on its moved feet; undone:
+/// as before, bit for bit.
+#[test]
+fn foot_movements_entered_drawn_and_undone() {
+    let model = typed_project("foot-movements");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 1000.0))
+        .build_eframe(|_| App::with_model(model, None));
+    harness.run();
+    let (k, before) = {
+        let r = harness.state_mut().ready().unwrap();
+        let k = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "everyday")
+            .unwrap();
+        let before = low(r, k);
+        let mut f = crate::editors::StructureForm::of(&r.model, "T2").unwrap();
+        f.foot_movements.source = "survey".into();
+        f.foot_movements.feet.push(ohl_line::feet::FootMovement {
+            joint: "L0B".into(),
+            translation: [0.0, 0.0, -0.02],
+            ..Default::default()
+        });
+        let (what, command) = f.command(r.model.stored_line()).unwrap();
+        assert!(r.perform(crate::edit::Action::Command { what, command }));
+        (k, before)
+    };
+    until(&mut harness, |r| r.model.bodies.placed_count() == 1);
+    let r = harness.state_mut().ready().unwrap();
+    let stored = r.model.stored_line().unwrap();
+    assert!(stored.has_foot_movements());
+    assert!(stored.to_json().contains("\"version\": 23"));
+    let state = r.model.line.reference_in_use().cloned().expect("in use");
+    assert_eq!(state.level, ohl_loads::reference::FEET_LEVEL);
+    assert!(state.points.iter().all(|p| p.structure == "T2"));
+    let (note, warn) = crate::structure_reference::view_note(&r.model).unwrap();
+    assert!(!warn);
+    assert!(
+        note.starts_with("Structures drawn on their measured foot movements alone"),
+        "{note}"
+    );
+    let after = low(r, k);
+    assert!(
+        (0..3).any(|c| (after[c] - before[c]).abs() > 1e-4),
+        "{before:?} {after:?}"
+    );
+    // The window's guidance: towers from their plans.
+    assert!(crate::structure_reference::TOWERS_FROM_PLANS.contains("design plans"));
+    // Undo: none; as drawn, bit for bit.
+    r.perform(crate::edit::Action::Undo);
+    assert!(!r.model.line.has_foot_movements());
+    assert!(r.model.line.reference_in_use().is_none());
+    assert_eq!(low(r, k), before, "as before, bit for bit");
+    until(&mut harness, |r| r.model.bodies.placed_count() == 0);
+    let r = harness.state_mut().ready().unwrap();
+    assert!(crate::structure_reference::view_note(&r.model).is_none());
+}

@@ -805,10 +805,35 @@ pub fn placed_values(
         } else {
             levels
         },
+        feet: placed_feet(line, structure),
         ..PlacedValues::pending(structure, line_name, &structure_type, "")
     }
     // Version 7 only with a set's part of a point's pulls among them.
     .at_needed_version()
+}
+
+/// Placed structure `structure`'s measured foot movements as the
+/// line-values file carries them (version 11; none: none measured).
+pub fn placed_feet(line: &Line, structure: &str) -> Option<ohl_structure_loads::PlacedFeet> {
+    let f = line
+        .structure(structure)?
+        .foot_movements
+        .as_ref()
+        .filter(|f| !f.is_empty())?;
+    Some(ohl_structure_loads::PlacedFeet {
+        source: f.source.clone(),
+        date: f.date.clone(),
+        feet: f
+            .feet
+            .iter()
+            .filter(|x| !x.is_zero())
+            .map(|x| ohl_structure_loads::PlacedFoot {
+                joint: x.joint.clone(),
+                translation: x.translation,
+                tilt_deg: x.tilt_deg,
+            })
+            .collect(),
+    })
 }
 
 /// Per case of `loads`, the sections and jumpers at placed structure
@@ -1234,6 +1259,7 @@ pub fn fe_loads(
         nodal,
         self_weight,
         member: spread,
+        prescribed: Vec::new(),
     })
 }
 
@@ -1607,6 +1633,12 @@ fn analyse_one(
     let mut loads = fe_loads(model, table, &case.name, self_weight)?;
     loads.nodal.extend_from_slice(&extra.nodal);
     loads.member.extend_from_slice(&extra.member);
+    // The placed structure's foot movements (run::RunInput::feet): solved
+    // with and without them, each member's larger usage kept.
+    let moved = (!extra.prescribed.is_empty()).then(|| ohl_structures_fe::Loads {
+        prescribed: extra.prescribed.clone(),
+        ..loads.clone()
+    });
     let mut notes = Vec::new();
     let left_out = table
         .case(&case.name)
@@ -1710,6 +1742,24 @@ fn analyse_one(
                 ohl_structures_fe::refusal_text(model, &e)
             )
         })?;
+    let (solution, usage) = match &moved {
+        None => (solution, usage),
+        Some(moved) => {
+            let (s, with) = ohl_structures_fe::analyse(model, moved, case.strength, budget)
+                .map_err(|e| {
+                    format!(
+                        "did not solve on its moved feet: {}",
+                        ohl_structures_fe::refusal_text(model, &e)
+                    )
+                })?;
+            notes.push(
+                "on its moved feet (the line's foot movements): the members' forces with them, \
+                 each member's usage the larger of with and without them"
+                    .to_owned(),
+            );
+            (s, ohl_structures_fe::feet::larger_usage(&usage, with))
+        }
+    };
     let took = started.elapsed();
     if let Some(note) = ohl_structures_fe::dead_load_note(model) {
         notes.push(note);

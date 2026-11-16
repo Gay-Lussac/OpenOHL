@@ -584,7 +584,13 @@ point on a frame joint at an offset: the joint's translation plus its
 rotation times the offset, as the condensation reads it), and
 \\( \mathbf U(\mathbf F_{ref}) \\) its solve under the stringing state's
 forces — the structures as drawn are the structures as strung, at level
-4 too. The flexibility of the Newton step is the **tangent at that
+4 too. A structure with [foot movements](#foot-movements) is solved in
+every case with its supports moved by them (prescribed displacements; a
+pole's base), its stringing state's solve on its feet as drawn: the
+feet's rigid-body motion and elastic distortion — what level 3 adds as
+its feet's move — and their P-Delta are in each answer, and the tangent
+is taken with the feet moved (tested: a linear column on a moved foot,
+level 4 equal to level 3 to 10⁻⁹ m). The flexibility of the Newton step is the **tangent at that
 solution condensed to the points**: the stiffness the solver assembles
 there — its slack and bowed members out, the geometric stiffness of its
 axial forces, its stabilised joints — condensed exactly as level 3
@@ -758,6 +764,13 @@ rigid, owner 2026-11-15), internal clearances (the body in the check is
 not deflected: a moved string against an undeflected body would not be
 consistent), and every level-3 run (its own deflection per case).
 
+**Not yet** (owner 2026-11-16: left to phase 6, with level 4): levels 3
+and 4 starting from the reference state — the structures' stiffness
+taken (linearised) at R's state rather than at the stringing state, and
+level 4's non-linear solve started from R. Until then every level-3 run
+linearises at the stringing state and finds each case's deflection from
+the structures as strung (on their moved feet, below).
+
 **Out of date.** The state keeps a stable 128-bit fingerprint (FNV-1a) of
 what it was solved from — the line (geometry, structures as resolved,
 sections, jumpers, settings), the wires' library entries, the structure
@@ -767,6 +780,90 @@ difference, another case named, another level: **out of date, not used**
 (the structures as drawn, bit for bit) and said, until solved again.
 The check is not stored: a line read again is unchecked, and not used,
 until checked.
+
+## Foot movements
+
+*Built, in active development (owner 2026-11-16: "the tower should not
+be initially built from a scan but from plans then adjusted based on the
+movement of the feet and the lean of the weather case").* A structure is
+modelled from its design plans; what its feet did since it was built — a
+foundation settled, a leg pushed out, a pole's base tilted — is
+**measured** and given per placed structure: per foot (a support joint
+of its model; `all`: every foot alike) a translation \\( \mathbf t \\) and a
+tilt \\( \boldsymbol\theta \\) (small rotations; the axis leaning to the
+right by \\( \theta_y \\) and ahead by \\( -\theta_x \\)).
+
+**Prescribed support displacements.** Each foot's movement is imposed on
+its support joint in the directions the support holds. With the
+equations split into the free directions *f* and the held ones *p*
+(whose displacements \\( \mathbf u_p \\) are now given, zero before),
+
+\\[ \mathbf K_{ff}\,\mathbf u_f = \mathbf f_f - \mathbf K_{fp}\,\mathbf u_p , \\]
+
+the reactions \\( \mathbf r_p = \mathbf K_{pf}\mathbf u_f + \mathbf K_{pp}\mathbf u_p - \mathbf f_p \\)
+— the standard partitioning of the stiffness method (Przemieniecki 1968).
+A sprung direction moves its spring's ground end by the value
+(\\( k\,u_g \\) added to its equation; the spring's force
+\\( -k(u - u_g) \\)). The solver keeps its form: every element's end
+displacements include the held ones, so the axial forces, the geometric
+stiffness of P-Delta (\\( \mathbf K = \mathbf K_e + \mathbf K_g(N) \\), the
+term \\( \mathbf K_{fp}\mathbf u_p \\) taken with the tangent of each
+iteration), the tension-only members' active set and the reactions all
+see them. Without any, nothing changes, bit for bit.
+
+**Rigid-body motion or strain.** A movement that is a rigid-body motion
+of the structure (every foot alike, or a statically determinate support
+such as a pole's single base) only moves it: \\( \mathbf u = \mathbf t +
+\boldsymbol\theta \times \mathbf r \\), no member force (first order). With
+P-Delta the vertical loads lean with it and bend it: a pole tilted by
+\\( \theta \\) under a top load \\( P \\) has a base moment about
+\\( P\,(\theta H + \delta) \\), \\( \delta \\) its own bending. A structure on
+more supports than it needs is strained by a movement that is not a
+rigid-body motion (a **differential settlement**): its members take
+forces without any load. **Hand case:** a beam on three supports, spans
+\\( a \\), the middle support settled by \\( \delta \\): the middle reaction is
+the load that deflects a simply supported beam of \\( 2a \\) by \\( \delta \\),
+\\( R = 48EI\delta/(2a)^3 = 6EI\delta/a^3 \\), the moment over it
+\\( R\,a/2 = 3EI\delta/a^2 \\) — reproduced to 10⁻⁹ (`ohl-structures-fe`
+`prescribed_tests`); a four-legged tower with one foot settled agrees
+with an independent solve (the foot released and pushed by the force
+that moves it as far) to 10⁻⁶.
+
+**Where they are taken.**
+
+- **The reference state** is solved on the moved feet: at level 3 each
+  flexible structure answers \\( \mathbf u = \mathbf C(\mathbf F - \mathbf
+  F_{ref}) + \mathbf u_{body} + \mathbf u_{feet} \\), \\( \mathbf u_{feet} \\)
+  each point's move under the feet on the same tangent (the stringing
+  state's, with the feet moved; for a pole the rigid tilt of its base).
+  So the state is: plans, moved by the feet, leaning as in R. The feet
+  are part of its fingerprint.
+- **Every level-3 setup** likewise (each case's points moved by the feet
+  on top of its own deflection).
+- **Without a reference state in use** the structures moved by their
+  feet alone are used by the level-2 solves: each structure solved on its
+  elastic model without loads (first order; a pole, or a structure
+  without a model moved as one body by `all`, by the rigid motion),
+  automatically, said. **Simplification:** without load the elastic
+  first-order answer; the strain of a differential settlement is linear
+  in it.
+- **The structure checks** solve each case with and without the feet and
+  keep each member's **larger usage** (a pole: leaning and upright).
+  **Conservative:** the settlement's forces are counted where they load
+  a member and never taken to relieve one — a measured movement has its
+  own error, may grow or go back. **Conservative:** the forces of a
+  differential settlement are those of an elastic structure on the other
+  feet as rigid supports: real foundations give under the redistributed
+  reactions, and real joints slip and yield, so the members take less.
+
+**Left out or approximated (said where it applies):** a foot that is not
+a support joint of the model, or single feet on a structure without a
+model (not taken: **NOT ON THE SAFE SIDE**, said with the structure); a
+movement in a direction the support does not hold (left out: the
+structure follows freely there); a tilt at a pinned foot (it turns
+freely); a twist about the vertical (not given). The wires' forces on
+the structure (the structure loads) stay those of the structures as
+drawn (rigid, on the safe side, owner 2026-11-16).
 
 ## Load factors
 
@@ -891,5 +988,9 @@ structure checked with both solves) 56 s against 24 s.
   computer iteration", *International Journal for Numerical Methods in
   Engineering*, vol. 1, no. 3, pp. 275–277, 1969 — the relaxation factor
   of level 4's staggered passes.
+- J. S. Przemieniecki, *Theory of Matrix Structural Analysis*,
+  McGraw-Hill, 1968 — the stiffness method with prescribed displacements
+  (the equations partitioned into free and given ones; cited as the
+  literature names it, not read here).
 - The skyline \\( \mathbf L\mathbf D\mathbf L^T \\) solver and the element stiffnesses: see
   [Structure analysis](structures-fe.md#solver).

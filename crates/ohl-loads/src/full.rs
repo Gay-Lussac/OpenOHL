@@ -44,7 +44,8 @@ use crate::analysis::Analyses;
 use crate::flexibility::{over_cores, placed_link, to_line_axes};
 
 /// A structure's full model, its points' displacement at the stringing
-/// state (structure axes, m) and its tension-only set there.
+/// state (structure axes, m; on its feet as drawn) and its tension-only
+/// set there.
 type Strung = (FullModel, Vec<[f64; 3]>, Vec<bool>);
 
 /// A flexible structure set up for level 4.
@@ -57,6 +58,9 @@ struct FullStructure {
     /// state's forces (structure axes, m) and the tension-only set there;
     /// Err: why not (taken linear in every case, said).
     model: Result<Strung, String>,
+    /// Its measured foot movements on its model (its supports, or a
+    /// pole's base; empty: none) — every case's full solve on them.
+    feet: Vec<ohl_structures_fe::Prescribed>,
     /// Per case of the run (as [`FullShared::cases`]), the case as the
     /// structure check takes it here (a wind relative to the line turned
     /// to the structure's axes) and its weather (index).
@@ -183,6 +187,21 @@ impl FullProvider for FullCase {
                 ));
             }
         }
+        let on_feet: Vec<&str> = self
+            .shared
+            .structures
+            .iter()
+            .filter(|s| !s.feet.is_empty())
+            .map(|s| s.placed.id.as_str())
+            .collect();
+        if !on_feet.is_empty() {
+            out.push(format!(
+                "level 4 on the measured foot movements of {}: each case's full solve with the \
+                 supports moved, its displacement from the stringing state's solve on the feet as \
+                 drawn (as level 3 adds the feet's moves)",
+                on_feet.join(", ")
+            ));
+        }
         out
     }
 }
@@ -250,9 +269,10 @@ impl StructureResponse for Answering<'_> {
             .collect();
         let started = Instant::now();
         let start = st.inactive.clone().unwrap_or_else(|| strung_set.clone());
-        let solved = model.solve(
+        let solved = model.solve_on(
             &local,
             st.body.as_deref().unwrap_or_default(),
+            &s.feet,
             Some(&start),
             &ohl_structures_fe::default_budget(),
         );
@@ -394,12 +414,18 @@ pub(crate) fn prepare_full(
         |l| -> Option<FullStructure> {
             let placed = line.structure(&l.structure)?.clone();
             let t = types.get(placed.structure_type.as_deref()?)?.clone();
-            let model = full_model(&analyses, &t, &placed, &l.labels).and_then(|m| {
+            let mut feet = Vec::new();
+            let model = full_model(&analyses, &t, &placed, &l.labels).and_then(|(m, f)| {
+                feet = f;
                 let local: Vec<[f64; 3]> = l
                     .reference
                     .iter()
                     .map(|f| ohl_line::links::to_structure_axes(placed.orientation_deg, *f))
                     .collect();
+                // The stringing state on the feet as drawn: the
+                // displacements are measured from the structure as drawn
+                // and strung, the feet's moves part of each case's answer
+                // (as level 3 adds them).
                 let p = m
                     .solve(&local, &[], None, &budget)
                     .map_err(|e| format!("at the stringing state: {e}"))?;
@@ -419,6 +445,7 @@ pub(crate) fn prepare_full(
                 placed,
                 t,
                 model,
+                feet,
                 cases,
             })
         },
@@ -438,6 +465,7 @@ pub(crate) fn prepare_full(
                     placed,
                     t,
                     model: Err("stopped before its turn".into()),
+                    feet: Vec::new(),
                     cases: Vec::new(),
                 })
             }
@@ -455,16 +483,22 @@ pub(crate) fn prepare_full(
 
 /// The full model of placed structure `placed` of type `t` at points
 /// `labels`: its model as the structure check takes it (its extension's
-/// own when it changes it), else its pole's frame model; Err: why not.
+/// own when it changes it), else its pole's frame model; with its
+/// measured foot movements on it (`crate::feet`: its supports, a pole's
+/// base). Err: why not (a foot that is not a support of the model too).
 fn full_model(
     analyses: &Analyses,
     t: &ohl_structures::StructureType,
     placed: &ohl_line::Structure,
     labels: &[String],
-) -> Result<FullModel, String> {
+) -> Result<(FullModel, Vec<ohl_structures_fe::Prescribed>), String> {
     let extension = placed.extension.as_deref();
     if let Some((model, _)) = analyses.model_of(t, extension) {
         let model = model.as_ref().map_err(Clone::clone)?;
+        let feet = crate::feet::on_model(model, Some(placed))
+            .map_err(|e| format!("foot movements: {e}"))?
+            .map(|f| f.prescribed)
+            .unwrap_or_default();
         let points = labels
             .iter()
             .map(|l| Attachment {
@@ -472,7 +506,7 @@ fn full_model(
                 link: placed_link(Some(placed), l),
             })
             .collect();
-        return Ok(FullModel::of_model(model.clone(), points));
+        return Ok((FullModel::of_model(model.clone(), points), feet));
     }
     if let Some(pole) = analyses.pole_of(&t.id) {
         let pole = pole.as_ref().map_err(Clone::clone)?;
@@ -489,7 +523,12 @@ fn full_model(
         let h = pole.height();
         let pieces = crate::analysis::POLE_ICE_PIECES;
         let heights = (0..pieces).map(|k| foot + (k as f64 + 0.5) * h / pieces as f64);
-        return FullModel::of_pole(pole, &points, heights).map_err(|e| e.to_string());
+        let m = FullModel::of_pole(pole, &points, heights).map_err(|e| e.to_string())?;
+        let base = crate::feet::on_pole(Some(placed))
+            .map_err(|e| format!("foot movements: {e}"))?
+            .unwrap_or([0.0; 6]);
+        let feet = m.pole_feet(base);
+        return Ok((m, feet));
     }
     Err("no structure model".into())
 }

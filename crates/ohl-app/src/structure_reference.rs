@@ -58,7 +58,7 @@ pub fn check_with(
     sections: &Path,
     weather: &[WeatherCase],
 ) {
-    if line.reference.is_none() {
+    if line.reference.is_none() && !line.has_foot_movements() {
         return;
     }
     let empty = ohl_structures::StructureLibrary::default();
@@ -270,40 +270,60 @@ pub fn frame(r: &mut crate::app::Ready, ctx: &egui::Context) {
 
 /// The 3D view's note of the reference state (bottom left, in the
 /// structures' colour, no box): drawn deflected in case X, or out of
-/// date (as drawn); none without a reference case.
+/// date (as drawn); drawn on their measured foot movements (owner
+/// 2026-11-16) when those are what is used; none without a reference
+/// case or foot movements.
 pub fn view_note(model: &Model) -> Option<(String, bool)> {
-    let r = model.line.reference.as_ref()?;
-    Some(match model.line.reference_in_use() {
-        Some(s) => (
+    let making = if model.reference_drawn.is_none() {
+        " — bodies being made"
+    } else {
+        ""
+    };
+    let in_use = model.line.reference_in_use();
+    let feet = in_use.filter(|s| s.level == ohl_loads::reference::FEET_LEVEL);
+    let feet_words = |s: &ohl_line::reference::ReferenceState| {
+        format!(
+            "structures drawn on their measured foot movements alone (no load){}{making}",
+            if s.rigid.is_empty() {
+                String::new()
+            } else {
+                format!(" — NOT taken at {} structure(s)", s.rigid.len())
+            }
+        )
+    };
+    let Some(r) = model.line.reference.as_ref() else {
+        let s = feet?;
+        let mut w = feet_words(s);
+        w[..1].make_ascii_uppercase();
+        return Some((w, !s.rigid.is_empty()));
+    };
+    Some(match in_use {
+        Some(s) if feet.is_none() => (
             format!(
-                "Structures drawn as deflected in case \"{}\" (calculation level {}){}",
+                "Structures drawn as deflected in case \"{}\" (calculation level {}){}{making}",
                 s.case,
                 s.level,
-                if model.reference_drawn.is_none() {
-                    " — bodies being made"
-                } else {
+                if s.fingerprint.feet.is_empty() {
                     ""
+                } else {
+                    " on their measured foot movements"
                 }
             ),
             false,
         ),
-        None => (
-            match (&r.state, &r.status) {
-                (None, _) => format!(
-                    "Reference case \"{}\" not solved: structures as drawn",
-                    r.case
-                ),
-                (_, ohl_line::reference::ReferenceStatus::Stale(why)) => format!(
-                    "Reference case \"{}\" out of date ({why}): structures as drawn",
-                    r.case
-                ),
-                _ => format!(
-                    "Reference case \"{}\" not in use: structures as drawn",
-                    r.case
-                ),
-            },
-            true,
-        ),
+        _ => {
+            let why = match (&r.state, &r.status) {
+                (None, _) => format!("Reference case \"{}\" not solved", r.case),
+                (_, ohl_line::reference::ReferenceStatus::Stale(why)) => {
+                    format!("Reference case \"{}\" out of date ({why})", r.case)
+                }
+                _ => format!("Reference case \"{}\" not in use", r.case),
+            };
+            match feet {
+                Some(s) => (format!("{why}: {}", feet_words(s)), true),
+                None => (format!("{why}: structures as drawn"), true),
+            }
+        }
     })
 }
 
@@ -340,6 +360,11 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
          takes their attachment points as moved there — e.g. the survey day's temperature and \
          wind, to make the model match the LiDAR scan.",
     );
+    ui.label(
+        egui::RichText::new(TOWERS_FROM_PLANS)
+            .small()
+            .color(ui.visuals().warn_fg_color),
+    );
     let names: Vec<String> = r.model.cases.iter().map(|c| c.case.name.clone()).collect();
     let set = r.model.line.reference.as_ref().map(|x| x.case.clone());
     let tool = &mut r.structure_reference;
@@ -361,6 +386,20 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
     let note = r.model.line.reference_note();
     let in_use = r.model.line.reference_in_use().cloned();
     match (&note, &in_use) {
+        (Some(n), Some(s)) if s.level == ohl_loads::reference::FEET_LEVEL => {
+            let mut ids: Vec<&str> = s.points.iter().map(|p| p.structure.as_str()).collect();
+            ids.dedup();
+            ui.label(
+                egui::RichText::new(format!(
+                    "In use: the measured foot movements alone — {} points of {} structure(s) \
+                     moved (solved without loads, automatically, in {:.2} s). {n}",
+                    s.points.len(),
+                    ids.len(),
+                    s.seconds
+                ))
+                .small(),
+            );
+        }
         (Some(_), Some(s)) => {
             let most = ohl_loads::reference::moves_in_structure_axes(&r.model.line, s)
                 .into_iter()
@@ -489,6 +528,16 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         }
     }
 }
+
+/// How towers are built (owner 2026-11-16: "the tower should not be
+/// initially built from a scan but from plans then adjusted based on the
+/// movement of the feet and the lean of the weather case"), shown in the
+/// section.
+pub const TOWERS_FROM_PLANS: &str = "Model the towers from their design plans, not from \
+    scanned positions: their as-built lean comes from the measured movements of their feet \
+    (each structure's form: Foot movements) and from the reference case's deflection. Points \
+    placed from a scan already contain the lean: with a reference case it would be counted \
+    twice.";
 
 /// The (?) help of the section.
 const HELP: &str = "The structures solved once in a weather case at calculation level 3 \

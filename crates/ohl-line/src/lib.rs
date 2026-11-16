@@ -34,6 +34,7 @@ pub mod condition;
 pub mod diff;
 pub mod electrical;
 pub mod export;
+pub mod feet;
 pub mod finite;
 pub mod groups;
 pub mod incremental;
@@ -78,7 +79,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 22 adds the reference case of the
+/// Latest line file version: 23 adds the measured movements of a placed
+/// structure's feet (`foot_movements`, [`feet::FootMovements`]; owner
+/// 2026-11-16), written only by a line that has some (else 22 or older,
+/// [`Line::to_json`]: an older program must not read such a line with
+/// its structures as designed); 22 adds the reference case of the
 /// structures and the state solved in it (`reference`,
 /// [`reference::StructureReference`]; plan of 2026-11-15, phase 5b),
 /// written only by a line that has one (else 21 or older,
@@ -159,7 +164,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 22;
+pub const LINE_FILE_VERSION: u32 = 23;
+
+/// The version before the foot movements (`foot_movements`; owner
+/// 2026-11-16): what a line without them is written as (when it has a
+/// reference case).
+const BEFORE_FEET_VERSION: u32 = 22;
 
 /// The version before the reference case of the structures
 /// (`reference`; plan of 2026-11-15, phase 5b): what a line without one
@@ -357,6 +367,15 @@ pub struct Line {
     /// deflected there while it is current. None: as drawn (as before).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<reference::StructureReference>,
+    /// The structures with their measured foot movements alone
+    /// ([`Structure::foot_movements`]; owner 2026-11-16): solved without
+    /// loads by the program that checks the reference state
+    /// (`ohl_loads::reference::check_reference`), used by the level-2
+    /// solves when no reference state is (no reference case, or one not
+    /// solved or out of date). Never stored; equal in every line (the
+    /// program's knowledge, not the line's content).
+    #[serde(skip)]
+    pub feet_state: reference::FeetState,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
@@ -1648,6 +1667,12 @@ pub struct Structure {
     /// `load_cases` must be empty (refused: a list and none contradict).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_load_cases: bool,
+    /// The measured movements of its feet from the design, with their
+    /// source and date (owner 2026-11-16; line file 23,
+    /// [`feet::FootMovements`]): the structure is modelled from its plans
+    /// and moved by them (none: as designed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foot_movements: Option<feet::FootMovements>,
     /// Values of columns added by plugins, by `plugin.column`
     /// ([`Fields`]).
     #[serde(default, skip_serializing_if = "Fields::is_empty")]
@@ -1700,6 +1725,8 @@ struct StructureFile {
     #[serde(default)]
     no_load_cases: bool,
     #[serde(default)]
+    foot_movements: Option<feet::FootMovements>,
+    #[serde(default)]
     fields: Fields,
 }
 
@@ -1751,6 +1778,7 @@ impl From<StructureFile> for Structure {
             local: f.local,
             load_cases: f.load_cases,
             no_load_cases: f.no_load_cases,
+            foot_movements: f.foot_movements,
             fields: f.fields,
         }
     }
@@ -3918,7 +3946,8 @@ impl Line {
             .iter()
             .any(|s| s.strings.iter().any(|x| x.hinge_friction_nm.is_some()));
         let written = match (sheaves, winds, shapes) {
-            _ if self.reference.is_some() => LINE_FILE_VERSION,
+            _ if self.has_foot_movements() => LINE_FILE_VERSION,
+            _ if self.reference.is_some() => BEFORE_FEET_VERSION,
             _ if !self.solver.structures.is_default() => BEFORE_REFERENCE_VERSION,
             _ if !self.solver.wind.is_default() => BEFORE_STRUCTURES_VERSION,
             _ if hinge_friction => BEFORE_WIND_OPTIONS_VERSION,
@@ -4261,6 +4290,15 @@ impl Line {
         }
         if let Some(p) = self.groups_problem() {
             return invalid(p);
+        }
+        for s in &self.structures {
+            if let Some(p) = s
+                .foot_movements
+                .as_ref()
+                .and_then(feet::FootMovements::problem)
+            {
+                return invalid(format!("structure {}: {p}", s.id));
+            }
         }
         ohl_core::files::check_header(
             Some(&self.format),

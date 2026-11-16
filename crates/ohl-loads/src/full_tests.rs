@@ -230,8 +230,34 @@ fn harness(
     library: &ohl_cables::Library,
     types: &ohl_structures::StructureLibrary,
     id: &str,
+    model: Model,
+    node: usize,
+) -> (Structures, Structures, crate::full::FullSetup) {
+    harness_on(
+        line,
+        library,
+        types,
+        id,
+        model,
+        node,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+/// [`harness`] on foot movements: `feet` prescribed on the model (level
+/// 4's full solves), `moves` each point's move by them (level 3's
+/// [`LinearStructure::feet`], line axes).
+#[allow(clippy::too_many_arguments)]
+fn harness_on(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    id: &str,
     mut model: Model,
     node: usize,
+    feet: Vec<ohl_structures_fe::Prescribed>,
+    moves: Vec<[f64; 3]>,
 ) -> (Structures, Structures, crate::full::FullSetup) {
     let budget = ohl_structures_fe::default_budget();
     let reference = reference_forces(line, library, &ohl_wirefe::default_fe_budget());
@@ -272,6 +298,7 @@ fn harness(
         flexibility,
         reference: forces,
         body: vec![[0.0; 3]; n],
+        feet: moves,
         approximate: false,
         notes: Vec::new(),
     };
@@ -287,6 +314,7 @@ fn harness(
             placed,
             t,
             model: Ok((full, strung.displacement, strung.inactive)),
+            feet,
             cases: Vec::new(),
         }],
         cases: Vec::new(),
@@ -374,6 +402,56 @@ fn a_linear_structure_at_level_four_is_level_three() {
         }
         assert_eq!(b.structure_solves.0, 1);
         assert!(b.full_failed.is_empty());
+    }
+}
+
+/// Foot movements at level 4 (merged with phase 6, 2026-11-17): a linear
+/// column whose foot is moved 30 mm sideways and 10 mm down — its full
+/// solves on the moved foot, level 3 adding the same rigid move — level
+/// 4 equals level 3 to 10⁻⁹ m, every point moved by the foot's move and
+/// the case's deflection.
+#[test]
+fn level_four_takes_the_foot_movements() {
+    let (line, library, types) = example();
+    let foot = [0.03, 0.0, -0.01, 0.0, 0.0, 0.0];
+    let n = reference_forces(&line, &library, &ohl_wirefe::default_fe_budget())
+        .forces
+        .keys()
+        .filter(|(s, _)| s == "T6")
+        .count();
+    let (three, four, _) = harness_on(
+        &line,
+        &library,
+        &types,
+        "T6",
+        column(12.0, 4e-3, 3e-4, false),
+        1,
+        vec![ohl_structures_fe::Prescribed {
+            node: 0,
+            displacement: foot,
+        }],
+        vec![[foot[0], foot[1], foot[2]]; n],
+    );
+    let (plain, _, _) = harness(
+        &line,
+        &library,
+        &types,
+        "T6",
+        column(12.0, 4e-3, 3e-4, false),
+        1,
+    );
+    for case in [still(15.0), windy(450.0)] {
+        let a = solve(&line, &library, &case, &three);
+        let b = solve(&line, &library, &case, &four);
+        let c = solve(&line, &library, &case, &plain);
+        assert!(b.full_failed.is_empty(), "{:?}", b.full_failed);
+        for ((p, q), r) in a.points.iter().zip(&b.points).zip(&c.points) {
+            assert!(size([0, 1, 2].map(|k| p.displacement[k] - q.displacement[k])) < 1e-9);
+            // Moved by the foot (the wires then pull a little less or
+            // more: within a few millimetres of the plain move plus it).
+            let moved = [0, 1, 2].map(|k| q.displacement[k] - r.displacement[k] - foot[k]);
+            assert!(size(moved) < 5e-3, "{moved:?}");
+        }
     }
 }
 

@@ -347,6 +347,8 @@ impl StructureApp {
         let run = cases_to_run(&table, &recipes, only);
         let dir = f.path().and_then(Path::parent).map(Path::to_path_buf);
         let sections = self.loads.sections.clone();
+        // The placed structure's measured foot movements (from the line).
+        let feet = self.loads.info.as_ref().and_then(|i| i.feet.clone());
         self.results.ran_with = (table.clone(), recipes.clone());
         let ext = extension.clone();
         self.results.start(ctx, key, extension, move |budget| {
@@ -361,6 +363,7 @@ impl StructureApp {
                     cases: &run,
                     extension: ext.as_deref(),
                     bolts: Some(&bolts.0),
+                    feet: feet.as_ref(),
                 },
                 budget,
             )

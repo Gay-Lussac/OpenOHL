@@ -1413,6 +1413,25 @@ impl LoadCasesTab {
                 Tone::Info,
             )
         });
+        // The placed structure's measured foot movements (line-values
+        // version 11, owner 2026-11-16): shown, and the results solve it on
+        // its moved feet.
+        if let Some(f) = &info.feet {
+            out.push((
+                format!(
+                    "Foot movements measured at {id}: {} — {}. The structure is modelled from \
+                     its plans and solved on its moved feet: each member's larger usage of with \
+                     and without them (Results; a pole's tilted base leans it).",
+                    f.summary(),
+                    f.feet
+                        .iter()
+                        .map(ohl_structure_loads::PlacedFoot::describe)
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+                Tone::Info,
+            ));
+        }
         // What the line says is not sent or not checked (2026-11-14: a
         // library case that does not compute, cases of the groups not in
         // the library), its groups and the local conditions: each a line

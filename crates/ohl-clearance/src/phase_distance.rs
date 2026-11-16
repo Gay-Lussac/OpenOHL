@@ -1190,6 +1190,7 @@ pub(crate) mod tests {
             local: Default::default(),
             load_cases: Vec::new(),
             no_load_cases: false,
+            foot_movements: None,
             fields: Default::default(),
         };
         let mut st = st;

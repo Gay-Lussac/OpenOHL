@@ -136,7 +136,17 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   at the line's [linear stiffness](calculation-level.md) *Line forces
   from a level 3 solve …: 3 case(s) from the level-3 solve, each beside
   the same case from the rigid solve — check both* (the cases named
-  *wind (rigid)* and *wind (level 3)*); *The
+  *wind (rigid)* and *wind (level 3)*); the placed structure's measured
+  foot movements (2026-11-16, line-values version 11; entered in
+  OHL-Design's structure window, [Foot movements](calculation-level.md#foot-movements))
+  — *Foot movements measured at T2: 1 foot (survey, 2026-05-12) — L0B:
+  across 0.0, ahead 0.0, up −12.0 mm. The structure is modelled from its
+  plans and solved on its moved feet: each member's larger usage of with
+  and without them*; the Results then solve each case with and without
+  them and keep each member's larger usage (a note on every case; a
+  pole's tilted base leans it, the larger usage of leaning and upright;
+  a foot that is not a support joint of the model: not taken, **NOT ON
+  THE SAFE SIDE**, said); *The
   line's values for T2 are being computed…*; *The line gives no values
   for T7: the project has no load cases. Add them in OHL-Design
   (Line › Structures › Load cases…, or a design-code plugin)…* (no load

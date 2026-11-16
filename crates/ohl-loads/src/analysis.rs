@@ -511,20 +511,63 @@ impl Analyses {
             } else {
                 0.0
             },
+            prescribed: Vec::new(),
         };
+        // The placed structure's measured foot movements (owner
+        // 2026-11-16): solved with and without them, each member's larger
+        // usage kept — the members' forces of a differential settlement
+        // added where they load a member, never taken to relieve one (on
+        // the safe side: the measurement's own error, a movement that
+        // grows or goes back).
+        let feet = match crate::feet::on_model(model, placed) {
+            Ok(f) => f,
+            Err(e) => {
+                notes.push(format!(
+                    "model: NOT ON THE SAFE SIDE: foot movements not taken — {e}"
+                ));
+                None
+            }
+        };
+        if let Some(f) = &feet {
+            let n = format!(
+                "model: foot movements {} imposed on its supports — each member's larger usage \
+                 of with and without them (a settlement's forces on the safe side)",
+                f.summary
+            );
+            if !notes.contains(&n) {
+                notes.push(n);
+            }
+            for n in &f.notes {
+                let n = format!("model: {n}");
+                if !notes.contains(&n) {
+                    notes.push(n);
+                }
+            }
+        }
+        let moved_loads = feet.as_ref().map(|f| Loads {
+            prescribed: f.prescribed.clone(),
+            ..loads.clone()
+        });
         if let Some(e) = self.plugin_errors.get(&key) {
             // The plugin is not installed (or has no such method): the
             // check is refused, the plugin named.
             return refused(e.clone());
         }
         let solve = || {
-            ohl_structures_fe::analyse(
-                model,
-                &loads,
-                case.strength,
-                &ohl_structures_fe::default_budget(),
-            )
-            .map_err(|e| ohl_structures_fe::refusal_text(model, &e))
+            let budget = ohl_structures_fe::default_budget();
+            let plain = ohl_structures_fe::analyse(model, &loads, case.strength, &budget)
+                .map_err(|e| ohl_structures_fe::refusal_text(model, &e))?;
+            let Some(moved) = &moved_loads else {
+                return Ok(plain);
+            };
+            let (s, with) = ohl_structures_fe::analyse(model, moved, case.strength, &budget)
+                .map_err(|e| {
+                    format!(
+                        "with its foot movements: {}",
+                        ohl_structures_fe::refusal_text(model, &e)
+                    )
+                })?;
+            Ok((s, ohl_structures_fe::feet::larger_usage(&plain.1, with)))
         };
         let mut plugin_note = None;
         let solved = if !by_plugin {
@@ -967,38 +1010,82 @@ impl Analyses {
             [tx * body.factored() * iced, ty * body.factored() * iced]
         });
 
-        Some(
-            // The pole's own weight in the P-Delta model times the
-            // vertical factor, as the members' own weight in the fe check
-            // (physics review 2026-10-26).
-            match ohl_structures_fe::check_pole_factored(
-                pole,
-                &on_pole,
-                wind,
-                case.strength,
-                case.vertical,
-                true,
-                &ohl_structures_fe::default_budget(),
-            ) {
-                Ok(c) => Check {
-                    method: Method::Pole,
-                    usage: c.usage,
-                    // Without P-Delta (no elasticity): not all on the
-                    // safe side, never shown as passing.
-                    not_safe: usize::from(ohl_structures_fe::check::not_safe(&c.governs)),
-                    governs: format!("pole {}: {}", pole.id, c.governs),
-                    incomplete: false,
-                    approximate: false,
-                },
-                Err(e) => Check {
-                    method: Method::Pole,
-                    usage: f64::INFINITY,
-                    governs: e,
-                    incomplete: false,
-                    approximate: false,
-                    not_safe: 0,
-                },
+        // A tilted base (the measured foot movements, owner 2026-11-16):
+        // the pole and its loads lean; the larger usage of with and
+        // without the lean is kept (on the safe side).
+        let lean = match crate::feet::on_pole(placed) {
+            Ok(base) => base
+                .map(ohl_structures_fe::feet::pole_lean)
+                .filter(|l| *l != [0.0; 2]),
+            Err(e) => {
+                notes.push(format!(
+                    "pole: NOT ON THE SAFE SIDE: foot movements not taken — {e}"
+                ));
+                None
+            }
+        };
+        let budget = ohl_structures_fe::default_budget();
+        // The pole's own weight in the P-Delta model times the vertical
+        // factor, as the members' own weight in the fe check (physics
+        // review 2026-10-26).
+        let checked = ohl_structures_fe::check_pole_factored(
+            pole,
+            &on_pole,
+            wind,
+            case.strength,
+            case.vertical,
+            true,
+            &budget,
+        );
+        let checked = match (lean, checked) {
+            (Some(lean), Ok(upright)) => {
+                notes.push(format!(
+                    "pole: its base tilted ({:.3}° to the right, {:.3}° ahead; foot movements): \
+                     the larger usage of leaning and upright",
+                    lean[0].to_degrees(),
+                    lean[1].to_degrees()
+                ));
+                match ohl_structures_fe::check_pole_leaning(
+                    pole,
+                    &on_pole,
+                    wind,
+                    case.strength,
+                    case.vertical,
+                    lean,
+                    true,
+                    &budget,
+                ) {
+                    Ok(l)
+                        if ohl_structures_fe::check::usage_order(l.usage, upright.usage)
+                            .is_ge() =>
+                    {
+                        Ok(l)
+                    }
+                    Ok(_) => Ok(upright),
+                    Err(e) => Err(format!("leaning on its tilted base: {e}")),
+                }
+            }
+            (_, other) => other,
+        };
+        Some(match checked {
+            Ok(c) => Check {
+                method: Method::Pole,
+                usage: c.usage,
+                // Without P-Delta (no elasticity): not all on the
+                // safe side, never shown as passing.
+                not_safe: usize::from(ohl_structures_fe::check::not_safe(&c.governs)),
+                governs: format!("pole {}: {}", pole.id, c.governs),
+                incomplete: false,
+                approximate: false,
             },
-        )
+            Err(e) => Check {
+                method: Method::Pole,
+                usage: f64::INFINITY,
+                governs: e,
+                incomplete: false,
+                approximate: false,
+                not_safe: 0,
+            },
+        })
     }
 }

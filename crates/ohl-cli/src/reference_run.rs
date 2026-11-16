@@ -53,9 +53,9 @@ pub(crate) fn keep(inputs: Inputs) {
 
 /// `line`'s reference state checked against the inputs kept when it was
 /// read ([`keep`]) and the weather cases `weather` (all the file's), the
-/// note printed; nothing without a reference case.
+/// note printed; nothing without a reference case or foot movements.
 pub(crate) fn checked(line: &mut Line, weather: &[WeatherCase]) {
-    if line.reference.is_none() {
+    if line.reference.is_none() && !line.has_foot_movements() {
         return;
     }
     let inputs = INPUTS
@@ -77,15 +77,22 @@ pub(crate) fn check(
     weather: &[WeatherCase],
     use_it: bool,
 ) {
-    if line.reference.is_none() {
+    if line.reference.is_none() && !line.has_foot_movements() {
         return;
     }
     if use_it {
         ohl_loads::reference::check_reference(line, library, types, sections, weather);
-    } else if let Some(r) = line.reference.as_mut()
-        && r.state.is_some()
-    {
-        r.status = ReferenceStatus::SetAside(IGNORED.to_owned());
+    } else {
+        if let Some(r) = line.reference.as_mut()
+            && r.state.is_some()
+        {
+            r.status = ReferenceStatus::SetAside(IGNORED.to_owned());
+        }
+        // The foot movements too: the structures as drawn.
+        line.feet_state = ohl_line::reference::FeetState {
+            state: None,
+            status: ReferenceStatus::SetAside(IGNORED.to_owned()),
+        };
     }
     print_note(line);
 }

@@ -522,6 +522,12 @@ impl std::fmt::Debug for Editing {
     }
 }
 
+/// What a project line shown for comparison says when it has a reference
+/// state of its structures or measured foot movements: they are not
+/// checked or used for it — its structures as drawn.
+pub const OTHER_LINE_AS_DRAWN: &str = "its structures as drawn (its reference state and foot \
+    movements are not used for a line shown beside)";
+
 /// A saved project line shown for comparison: resolved and solved in
 /// every weather case of the model.
 #[derive(Debug)]
@@ -2365,7 +2371,7 @@ impl Model {
             .unwrap_or(OTHER_COLORS[self.other_lines.len() % OTHER_COLORS.len()]);
         let text = format!(
             "project line \"{name}\" shown (read in {:.1?}): {} section(s), {} structure(s) \
-             differ from the line worked on{}; solving the cases shown",
+             differ from the line worked on{}; solving the cases shown{}",
             started.elapsed(),
             differs.sections.len(),
             differs.structures.len(),
@@ -2373,6 +2379,11 @@ impl Model {
                 String::new()
             } else {
                 format!(" (its own library files: {})", own.kinds.join(", "))
+            },
+            if line.reference.is_some() || line.has_foot_movements() {
+                format!("; {OTHER_LINE_AS_DRAWN}")
+            } else {
+                String::new()
             }
         );
         self.other_lines.push(OtherLine {
@@ -2747,7 +2758,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     line.set_weather_cases(&cases);
     // The reference state of the structures checked before anything is
     // solved (the cases as shown, as the reference solve takes them).
-    if line.reference.is_some() {
+    if line.reference.is_some() || line.has_foot_movements() {
         let shown: Vec<WeatherCase> = cases.iter().cloned().map(as_shown).collect();
         let folder = library_dir
             .as_ref()

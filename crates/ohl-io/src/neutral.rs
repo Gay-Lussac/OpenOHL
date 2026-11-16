@@ -59,6 +59,7 @@ pub fn empty_line(name: &str) -> Line {
         structure_groups: Vec::new(),
         electrical: Default::default(),
         reference: None,
+        feet_state: Default::default(),
         condition_cases: Default::default(),
         solver: Default::default(),
         spacers: Default::default(),

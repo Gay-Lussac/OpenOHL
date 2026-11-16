@@ -20,7 +20,7 @@ fn example() -> String {
 
 #[test]
 fn older_files_read_as_rigid_and_keep_their_version() {
-    assert_eq!(LINE_FILE_VERSION, 22);
+    assert_eq!(LINE_FILE_VERSION, 23);
     let line = Line::from_json(&example()).unwrap();
     assert_eq!(line.solver.structures, StructuresInSolve::Rigid);
     assert_eq!(line.solver.structures.level(), CalculationLevel::Rigid);

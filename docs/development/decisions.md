@@ -53,11 +53,72 @@ active development, not approved yet;
   level is out of date.
 - **No format change**: `full` was already read and written (line file
   version 21).
+- **Foot movements** (merged the same night): each case's full solve takes
+  the structure's measured foot movements (its supports moved), its
+  stringing state's solve on the feet as drawn — as level 3 adds the
+  feet's move.
 - **Open**: the clearance crate's tension and string envelopes still name
   the coupled solve "level 3" in a few of their notes (the check's own
   header says level 4); the structures' own wind and ice in the
   weather-case runs of `ohl line --calculation-level 4` (as at level 3,
   not in them, said).
+
+**Towers built from their plans, moved by their measured foot movements
+and the reference case's lean** (owner: *"the tower should not be
+initially built from a scan but from plans then adjusted based on the
+movement of the feet and the lean of the weather case"*; with the
+owner's answers to the questions of the reference state; built, in
+active development, not approved yet;
+[user guide](../user-guide/calculation-level.md#foot-movements),
+[theory](../theory/structure-flexibility.md#foot-movements)).
+
+- **Foot movements per placed structure** (`foot_movements`, line file
+  **version 23**, written only when a structure has some): the measured
+  movements of its feet from the design, with their source and date —
+  per foot (a support joint of its model, `base` for a pole, `all` for
+  every foot alike: the structure moved as one body) a translation in
+  the structure's axes and a tilt. Entered in OHL-Design's structure
+  window (**Foot movements (measured)**, kept by its Apply: one undoable
+  step) or with `ohl structures feet`; passed to OHL-Structure in the
+  line-values file (**version 11**, `feet`), which shows them and solves
+  the placed structure on its moved feet. Not in OHL XML.
+- **The structure engine** takes **prescribed support displacements**
+  (`ohl_structures_fe::Loads::prescribed`; asked for by the owner's
+  instruction): the linear and P-Delta solves, the tension-only members'
+  active set, the condensation and the deflected body. Without any,
+  every solve is as before, bit for bit (compared with the solver before
+  the change on the example structures, a tension-only panel and a pole
+  frame: identical to the last digit).
+- **Used** in the reference state (its points moved by the feet — the
+  rigid-body motion and the elastic distortion — and by the case's
+  deflection; the feet part of its fingerprint: changed, it is out of
+  date), in every calculation-level-3 setup (each point's answer moved by
+  the feet in every case), and — **without a reference state in use** —
+  as the structures moved by their foot movements alone, solved without
+  loads, **automatically** (the coordinator's recommendation, said in
+  every result); drawn in the 3D view on their moved feet.
+- **The structure checks** take them: a structure on more feet than it
+  needs (a lattice tower on four) is strained by a foot moved apart from
+  the others (a differential settlement). The check solves each case
+  with and without them and keeps **each member's larger usage** — on the
+  safe side: the settlement's forces counted where they load a member,
+  never taken to relieve one; a pole's tilted base leans it (the larger
+  usage of leaning and upright). The same in OHL-Structure.
+- **The owner's answers to the reference state's questions**: (1) the
+  structure loads stay as drawn, rigid (on the safe side) — kept and said;
+  (2) levels 3 and 4 starting from (linearising at) the reference state
+  are left to phase 6 (theory: not yet); (3) the command line takes a
+  wind case without its own direction **from the right**, as OHL-Design,
+  for the reference state only (its solve, its fingerprint, its bodies:
+  `ohl_loads::reference::as_shown`) — the other checks of the command
+  line keep the weather file's side, so none of their results changes;
+  (4) this entry; (5) project lines shown beside and the server's scene
+  say "structures as drawn" when their line has a reference state or
+  foot movements (the Python bindings read no line).
+- **The window's warning** is now the owner's rule: model the towers
+  from their design plans, not from scanned positions; points placed
+  from a scan already contain the lean (counted twice with a reference
+  case).
 
 **A reference state of the structures (structure flexibility, phase
 5b)** (owner: *"Would it be possible to define a weather case at which

@@ -36,7 +36,7 @@ use crate::condense::{
 };
 use crate::model::{JointPoint, Model, NodalLoad};
 use crate::pole::{Pole, PoleLoad};
-use crate::solve::{Loads, Options, Solution, solve_from};
+use crate::solve::{Loads, Options, Prescribed, Solution, solve_from};
 
 /// The linearisation in words of a tangent condensed at a case's own
 /// solution ([`Condensed::linearisation`]).
@@ -64,7 +64,7 @@ pub fn condensed_tangent(
     solution: &Solution,
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
-    condense_state(model, points, State::At(solution), &[], budget)
+    condense_state(model, points, State::At(solution), &[], &[], budget)
 }
 
 /// A structure set up for its full solves at its attachment points: its
@@ -180,11 +180,41 @@ impl FullModel {
         }
     }
 
+    /// A pole's base moved by `base` (translations m, rotations rad,
+    /// structure axes: its measured foot movement) as prescribed on its
+    /// frame model's ground node, as [`crate::condense::condense_pole_full`]
+    /// takes it; none for a structure model or a zero movement.
+    pub fn pole_feet(&self, base: [f64; 6]) -> Vec<Prescribed> {
+        if self.pole.is_none() || base == [0.0; 6] {
+            return Vec::new();
+        }
+        vec![Prescribed {
+            node: 0,
+            displacement: base,
+        }]
+    }
+
+    /// [`FullModel::solve_on`] on the structure's feet as drawn.
+    ///
+    /// Expected cost: as [`FullModel::solve_on`].
+    pub fn solve(
+        &self,
+        forces: &[[f64; 3]],
+        extra: &[NodalLoad],
+        start: Option<&[bool]>,
+        budget: &Budget,
+    ) -> Result<PointsSolve, String> {
+        self.solve_on(forces, extra, &[], start, budget)
+    }
+
     /// The structure solved under `forces` at its points (as
     /// [`FullModel::points`]; structure axes, N) and the loads `extra` at
     /// its nodes (its own wind and ice of a case), with its self-weight,
-    /// its own settings, the active set of the tension-only members
-    /// started from `start` (the last pass's [`PointsSolve::inactive`];
+    /// its supports moved by `feet` (its measured foot movements,
+    /// [`Prescribed`]; empty: as drawn — the solve and the tangent then
+    /// with the feet moved), its own settings, the active set of the
+    /// tension-only members started from `start` (the last pass's
+    /// [`PointsSolve::inactive`];
     /// none: cold, as [`crate::solve::solve`]): each point's displacement
     /// and the tangent at the solution condensed to the points. Err: why,
     /// in words (the solve failed — unstable, a mechanism, implausible —,
@@ -193,10 +223,11 @@ impl FullModel {
     /// Expected cost: one solve of the structure (first order: one or two
     /// factorisations; P-Delta a few tens; the active-set iterations
     /// fewer from a warm start) and one condensation of its tangent.
-    pub fn solve(
+    pub fn solve_on(
         &self,
         forces: &[[f64; 3]],
         extra: &[NodalLoad],
+        feet: &[Prescribed],
         start: Option<&[bool]>,
         budget: &Budget,
     ) -> Result<PointsSolve, String> {
@@ -221,6 +252,7 @@ impl FullModel {
         let loads = Loads {
             nodal,
             self_weight: self.self_weight,
+            prescribed: feet.to_vec(),
             ..Loads::default()
         };
         let s = solve_from(&self.model, &loads, &self.options, budget, start)

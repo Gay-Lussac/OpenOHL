@@ -103,6 +103,7 @@ pub mod capacity;
 // The line's calculation level in the checks of weather cases (plan of
 // 2026-11-15, phase 5).
 mod check_level;
+mod feet;
 // The structures' stiffness for the line's coupled solve (in active
 // development: the structure loads, and the checks through
 // `check_level`).
@@ -3817,5 +3818,7 @@ mod pull_tests;
 #[cfg(test)]
 mod level_tests;
 
+#[cfg(test)]
+mod feet_tests;
 #[cfg(test)]
 mod reference_tests;

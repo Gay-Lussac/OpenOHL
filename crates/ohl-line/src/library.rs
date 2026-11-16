@@ -107,6 +107,7 @@ fn without_component(
         local: Default::default(),
         load_cases: Vec::new(),
         no_load_cases: false,
+        foot_movements: None,
         id: String::new(),
         position: [0.0; 3],
         orientation_deg: 0.0,

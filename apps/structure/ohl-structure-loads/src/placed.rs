@@ -82,6 +82,16 @@
 //! only when a case is not at 2; an older file has none: every case
 //! rigid.
 //!
+//! Version 11 (2026-11-16, owner: "the tower should not be initially
+//! built from a scan but from plans then adjusted based on the movement
+//! of the feet") adds `feet`: the placed structure's measured foot
+//! movements ([`PlacedFeet`]: source, date, per foot its joint — a
+//! support joint of the model, `base` for a pole, `all` for every foot
+//! alike — its translation in the structure's axes, m, and its tilt,
+//! degrees). OHL-Structure shows them and solves the placed structure on
+//! its moved feet (each member's larger usage of with and without them).
+//! Written only when the structure has some; an older file has none.
+//!
 //! Since 2026-11-15 (owner: Line › Criteria › Loads for structures is
 //! gone) the line sends the placed structure's library cases only, each
 //! `load_case`; a case of source `weather_case` (an unfactored weather case
@@ -102,10 +112,14 @@ pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// holding several sets; 8: the moments at points — a fixed post
 /// insulator's, 2026-11-14; 9: the placed structure's own links of its
 /// attachment points, 2026-11-15; 10: the calculation level of each
-/// case, 2026-11-16; older files are read too). The newest version
-/// read; a file is written at the lowest its values need
+/// case, 2026-11-16; 11: the placed structure's foot movements,
+/// 2026-11-16; older files are read too). The newest version read; a
+/// file is written at the lowest its values need
 /// ([`PlacedValues::needed_version`]).
-pub const LINE_VALUES_FILE_VERSION: u32 = 10;
+pub const LINE_VALUES_FILE_VERSION: u32 = 11;
+/// The version before the foot movements (what a file without them is
+/// written as at most).
+pub const LINE_VALUES_FILE_VERSION_WITHOUT_FEET: u32 = 10;
 /// The version before the calculation level per case (what a file of
 /// rigid cases only is written as at most).
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS: u32 = 9;
@@ -258,6 +272,89 @@ pub fn links_changed(structure: &str, before: &[PlacedLink], now: &[PlacedLink])
     out
 }
 
+/// A placed structure's measured foot movements (version 11; made in
+/// OHL-Design, the line's `foot_movements`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacedFeet {
+    /// Where they come from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source: String,
+    /// When they were measured.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub date: String,
+    /// Per foot.
+    #[serde(default)]
+    pub feet: Vec<PlacedFoot>,
+}
+
+/// One foot's measured movement from the design.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacedFoot {
+    /// A support joint of the model, `base` (a pole) or `all` (every foot
+    /// alike: the structure moved as one body).
+    pub joint: String,
+    /// Its translation, structure axes (x right of the line, y ahead, z
+    /// up), m.
+    #[serde(default)]
+    pub translation: [f64; 3],
+    /// Its tilt, degrees: the axis leaning to the right of the line and
+    /// ahead (a rotation about y, and about −x).
+    #[serde(default)]
+    pub tilt_deg: [f64; 2],
+}
+
+impl PlacedFoot {
+    /// Its six displacements (translations m, rotations rad).
+    pub fn displacement(&self) -> [f64; 6] {
+        let [tx, ty] = self.tilt_deg.map(f64::to_radians);
+        let t = self.translation;
+        [t[0], t[1], t[2], -ty, tx, 0.0]
+    }
+
+    /// In words: `F2: across 0.0, ahead 0.0, up −12.0 mm, tilt 0.100° to
+    /// the right, 0.000° ahead`.
+    pub fn describe(&self) -> String {
+        format!(
+            "{}: across {:.1}, ahead {:.1}, up {:.1} mm{}",
+            self.joint,
+            self.translation[0] * 1e3,
+            self.translation[1] * 1e3,
+            self.translation[2] * 1e3,
+            if self.tilt_deg == [0.0; 2] {
+                String::new()
+            } else {
+                format!(
+                    ", tilt {:.3}° to the right, {:.3}° ahead",
+                    self.tilt_deg[0], self.tilt_deg[1]
+                )
+            }
+        )
+    }
+}
+
+impl PlacedFeet {
+    /// In words for a heading: `3 feet (survey, 2026-05-12)`.
+    pub fn summary(&self) -> String {
+        let n = self.feet.len();
+        let what = if n == 1 {
+            "1 foot".to_owned()
+        } else {
+            format!("{n} feet")
+        };
+        let about: Vec<&str> = [self.source.as_str(), self.date.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect();
+        if about.is_empty() {
+            what
+        } else {
+            format!("{what} ({})", about.join(", "))
+        }
+    }
+}
+
 /// Another placed structure using the same structure file, with its
 /// values (for the envelope over the places, a reporting option only).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -333,6 +430,11 @@ pub struct PlacedValues {
     /// ([`PlacedValues::level_of`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub levels: Vec<u8>,
+    /// The placed structure's measured foot movements (version 11,
+    /// 2026-11-16; [`PlacedFeet`]): solved on its moved feet. None: as
+    /// designed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feet: Option<PlacedFeet>,
 }
 
 impl PlacedValues {
@@ -353,6 +455,7 @@ impl PlacedValues {
             library_cases: Vec::new(),
             links: Vec::new(),
             levels: Vec::new(),
+            feet: None,
         }
     }
 
@@ -375,8 +478,10 @@ impl PlacedValues {
             self.values.has_set_parts() || self.others.iter().any(|o| o.values.has_set_parts());
         let moments = !self.values.moments.is_empty()
             || self.others.iter().any(|o| !o.values.moments.is_empty());
-        if !self.levels.is_empty() {
+        if self.feet.is_some() {
             LINE_VALUES_FILE_VERSION
+        } else if !self.levels.is_empty() {
+            LINE_VALUES_FILE_VERSION_WITHOUT_FEET
         } else if !self.links.is_empty() {
             LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS
         } else if moments {

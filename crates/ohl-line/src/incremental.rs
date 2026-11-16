@@ -368,6 +368,9 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         // (Read by the structure loads only, after the solve.)
         load_cases: _,
         no_load_cases: _,
+        // (The level-2 solves take the structures moved by them, through
+        // the state checked from them: a change re-solves its sections.)
+        foot_movements,
         fields,
     } = a;
     *id == b.id
@@ -383,6 +386,7 @@ fn same_but_drawing(a: &Structure, b: &Structure) -> bool {
         && *omit == b.omit
         && *omit_sets == b.omit_sets
         && *routes == b.routes
+        && *foot_movements == b.foot_movements
         && *fields == b.fields
 }
 

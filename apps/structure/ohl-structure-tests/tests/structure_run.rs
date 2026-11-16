@@ -106,6 +106,7 @@ fn the_case_is_solved_on_the_extension_chosen() {
                 cases: &cases,
                 extension,
                 bolts: None,
+                feet: None,
             },
             &default_budget(),
         )
@@ -152,6 +153,7 @@ fn the_case_is_solved_on_the_extension_chosen() {
             cases: &cases,
             extension: Some("+9"),
             bolts: None,
+            feet: None,
         },
         &default_budget(),
     );
@@ -209,6 +211,7 @@ fn the_pole_check_of_the_line() {
                 cases: &cases,
                 extension: None,
                 bolts: None,
+                feet: None,
             },
             &default_budget(),
         )
@@ -334,6 +337,7 @@ points = ["A1"]
             cases: &cases,
             extension: None,
             bolts: None,
+            feet: None,
         },
         &default_budget(),
     )

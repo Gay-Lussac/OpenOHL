@@ -79,6 +79,7 @@ fn on_springs(
             flexibility: springs(k),
             reference: vec![f],
             body: vec![[0.0; 3]],
+            feet: Vec::new(),
             approximate: false,
             notes: Vec::new(),
         }],

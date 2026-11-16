@@ -1538,6 +1538,7 @@ fn stored_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Se
         structure_groups: meta.structure_groups,
         electrical: meta.electrical,
         reference: meta.reference,
+        feet_state: Default::default(),
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: meta.defaults,

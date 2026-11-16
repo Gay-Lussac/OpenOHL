@@ -51,6 +51,8 @@ impl StructureForm {
             local: Default::default(),
             soil_resistivity_ohm_m: None,
             earthing_resistance_ohm: None,
+            foot_movements: Default::default(),
+            support_joints: None,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -160,6 +162,8 @@ impl StructureForm {
             local: s.local,
             soil_resistivity_ohm_m: s.soil_resistivity_ohm_m,
             earthing_resistance_ohm: s.earthing_resistance_ohm,
+            foot_movements: s.foot_movements.clone().unwrap_or_default(),
+            support_joints: None,
             new_route: String::new(),
             make_route: None,
             message: None,
@@ -222,6 +226,7 @@ impl StructureForm {
         if id.is_empty() {
             return Err("the structure needs an id".into());
         }
+        let feet = self.feet_value()?;
         let s = if self.new {
             if stored.is_some_and(|l| l.structure(&id).is_some()) {
                 return Err(format!("structure {id} exists already"));
@@ -238,6 +243,7 @@ impl StructureForm {
                 local: self.local,
                 soil_resistivity_ohm_m: self.soil_resistivity_ohm_m,
                 earthing_resistance_ohm: self.earthing_resistance_ohm,
+                foot_movements: feet,
                 ..Structure::new(id.clone(), self.position)
             }
             .with_post_support(self.post_support.filter(|_| self.structure_type.is_none()))?
@@ -277,6 +283,7 @@ impl StructureForm {
             s.local = self.local;
             s.soil_resistivity_ohm_m = self.soil_resistivity_ohm_m;
             s.earthing_resistance_ohm = self.earthing_resistance_ohm;
+            s.foot_movements = feet;
             // Its own points as in the window (in its axes, turned and
             // moved with it); a linked one keeps its joint, its offset
             // following a move (owner decision 2026-10-21).
@@ -342,6 +349,25 @@ impl StructureForm {
                 ],
             },
         ))
+    }
+
+    /// Its foot movements as kept with the structure: none when nothing
+    /// is measured (no foot, or every one zero); refused when not valid
+    /// ([`ohl_line::feet::FootMovements::problem`]).
+    pub(super) fn feet_value(&self) -> Result<Option<ohl_line::feet::FootMovements>, String> {
+        let mut f = self.foot_movements.clone();
+        for x in &mut f.feet {
+            x.joint = x.joint.trim().to_owned();
+        }
+        f.source = f.source.trim().to_owned();
+        f.date = f.date.trim().to_owned();
+        if f.is_empty() {
+            return Ok(None);
+        }
+        if let Some(p) = f.problem() {
+            return Err(format!("foot movements: {p}"));
+        }
+        Ok(Some(f))
     }
 
     /// Its own points in project coordinates.
@@ -804,7 +830,220 @@ pub(super) fn structure_ui(
             });
         }
     }
+    ui.separator();
+    feet_ui(ui, f, model);
     new_pylon
+}
+
+/// The support joints of structure type `type_id` standing on
+/// `extension` (its model's joints held by a support or spring), `base`
+/// for a pole; with `all` (every foot alike) first.
+fn support_joints(model: &Model, type_id: Option<&str>, extension: Option<&str>) -> Vec<String> {
+    let mut out = vec![ohl_line::feet::ALL_FEET.to_owned()];
+    let Some((types, _)) = model.types.as_ref() else {
+        return out;
+    };
+    let Some(t) = type_id.and_then(|id| types.get(id)) else {
+        return out;
+    };
+    let sections = model.section_library().unwrap_or_default();
+    let path = types.path(&t.id);
+    let dir = path
+        .and_then(std::path::Path::parent)
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let fe = if let Some(file) = &t.model {
+        ohl_structures_fe::Model::load_with(&dir.join(file), &sections).ok()
+    } else if t.members_designed() {
+        path.and_then(|p| ohl_structures_fe::Model::load_extended(p, &sections, extension).ok())
+    } else {
+        None
+    };
+    match fe {
+        Some(m) => out.extend(
+            m.nodes
+                .iter()
+                .filter(|n| n.is_support())
+                .map(|n| n.id.clone()),
+        ),
+        None if ohl_structures_fe::pole::structure_pole(t, &dir, &sections).is_some() => {
+            out.push(ohl_line::feet::POLE_BASE.to_owned());
+        }
+        None => {}
+    }
+    out
+}
+
+/// The structure window's foot movements (owner 2026-11-16): the measured
+/// movements of its feet from the design, with their source and date —
+/// kept with the structure by the window's Apply (one undoable step).
+fn feet_ui(ui: &mut egui::Ui, f: &mut StructureForm, model: &Model) {
+    let n = f
+        .foot_movements
+        .feet
+        .iter()
+        .filter(|x| !x.is_zero())
+        .count();
+    egui::CollapsingHeader::new(if n == 0 {
+        "Foot movements (measured): none".to_owned()
+    } else {
+        format!("Foot movements (measured): {}", f.foot_movements.summary())
+    })
+    .id_salt("structure-feet")
+    .show(ui, |ui| {
+        ui.label(
+            egui::RichText::new(
+                "The structure is modelled from its design plans; what its feet did since \
+                 (a foundation settled, a leg pushed out, a pole's base tilted) is measured \
+                 here. Its points move with them (the views, every rigid solve, the reference \
+                 state), and a structure on more feet than it needs is strained by a foot \
+                 moved apart from the others: the structure checks take the larger of with \
+                 and without them. Structure axes: across to the right, ahead, up; tilt: the \
+                 axis leaning to the right and ahead.",
+            )
+            .small()
+            .weak(),
+        );
+        let read_for = (f.structure_type.clone(), f.extension.clone());
+        if f.support_joints
+            .as_ref()
+            .is_none_or(|b| (&b.0, &b.1) != (&read_for.0, &read_for.1))
+        {
+            let joints = support_joints(model, read_for.0.as_deref(), read_for.1.as_deref());
+            f.support_joints = Some(Box::new((read_for.0, read_for.1, joints)));
+        }
+        let joints = f
+            .support_joints
+            .as_ref()
+            .map(|b| b.2.clone())
+            .unwrap_or_default();
+        egui::Grid::new("structure-feet-about")
+            .num_columns(2)
+            .show(ui, |ui| {
+                ui.label("source");
+                ui.add(
+                    egui::TextEdit::singleline(&mut f.foot_movements.source)
+                        .desired_width(220.0)
+                        .hint_text("who measured, how"),
+                );
+                ui.end_row();
+                ui.label("date");
+                ui.add(
+                    egui::TextEdit::singleline(&mut f.foot_movements.date)
+                        .desired_width(120.0)
+                        .hint_text("2026-05-12"),
+                );
+                ui.end_row();
+            });
+        let mut remove = None;
+        egui::Grid::new("structure-feet")
+            .num_columns(7)
+            .striped(true)
+            .show(ui, |ui| {
+                for h in [
+                    "foot",
+                    "across",
+                    "ahead",
+                    "up",
+                    "tilt right",
+                    "tilt ahead",
+                    "",
+                ] {
+                    ui.label(egui::RichText::new(h).small().strong());
+                }
+                ui.end_row();
+                for (k, foot) in f.foot_movements.feet.iter_mut().enumerate() {
+                    egui::ComboBox::from_id_salt(("structure-foot", k))
+                        .selected_text(if foot.joint.is_empty() {
+                            "(choose)"
+                        } else {
+                            foot.joint.as_str()
+                        })
+                        .width(90.0)
+                        .show_ui(ui, |ui| {
+                            for j in &joints {
+                                let words = if j == ohl_line::feet::ALL_FEET {
+                                    "all (every foot alike)".to_owned()
+                                } else {
+                                    j.clone()
+                                };
+                                ui.selectable_value(&mut foot.joint, j.clone(), words);
+                            }
+                        });
+                    for c in 0..3 {
+                        let mut mm = foot.translation[c] * 1e3;
+                        if crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut mm)
+                                .speed(1.0)
+                                .max_decimals(1)
+                                .suffix(" mm"),
+                        )
+                        .changed()
+                        {
+                            foot.translation[c] = mm / 1e3;
+                        }
+                    }
+                    for c in 0..2 {
+                        crate::style::field(
+                            ui,
+                            egui::DragValue::new(&mut foot.tilt_deg[c])
+                                .speed(0.01)
+                                .range(-10.0..=10.0)
+                                .max_decimals(3)
+                                .suffix("°"),
+                        );
+                    }
+                    if ui
+                        .small_button("×")
+                        .on_hover_text("Take this foot away")
+                        .clicked()
+                    {
+                        remove = Some(k);
+                    }
+                    ui.end_row();
+                }
+            });
+        if let Some(k) = remove {
+            f.foot_movements.feet.remove(k);
+        }
+        if ui
+            .small_button("+ foot")
+            .on_hover_text("A measured foot: choose its support joint (or all)")
+            .clicked()
+        {
+            let taken: Vec<&str> = f
+                .foot_movements
+                .feet
+                .iter()
+                .map(|x| x.joint.as_str())
+                .collect();
+            let next = joints
+                .iter()
+                .skip(1)
+                .find(|j| !taken.contains(&j.as_str()))
+                .or_else(|| joints.first())
+                .cloned()
+                .unwrap_or_default();
+            f.foot_movements.feet.push(ohl_line::feet::FootMovement {
+                joint: next,
+                ..Default::default()
+            });
+        }
+        if joints.len() == 1 {
+            ui.label(
+                egui::RichText::new(
+                    "No structure model to name its feet: only \"all\" (the structure moved as \
+                     one body) can be taken.",
+                )
+                .small()
+                .weak(),
+            );
+        }
+        if let Err(e) = f.feet_value() {
+            ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(e).small());
+        }
+    });
 }
 
 /// What the structure window's preview shows, as a key (built again when

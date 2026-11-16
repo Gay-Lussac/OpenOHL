@@ -726,6 +726,43 @@ fn moment_at(pole: &Pole, loads: &[PoleLoad], wind: [f64; 2], h: f64) -> ([f64; 
     ([m[0] + mw[0], m[1] + mw[1]], mw)
 }
 
+/// The bending moment (x, y components) at height `h` from a lean of the
+/// pole (`lean`: its axis's horizontal move per metre of height, x and y —
+/// a tilted base, owner 2026-11-16): the loads above `loads` and the
+/// shaft's own weight above (times `self_weight`), each displaced
+/// sideways by lean × (z − h) from the section at `h`, N·m.
+fn lean_moment(
+    pole: &Pole,
+    loads: &[PoleLoad],
+    lean: [f64; 2],
+    h: f64,
+    self_weight: f64,
+) -> [f64; 2] {
+    let mut m = [0.0; 2];
+    let mut add = |z: f64, fz: f64| {
+        let r = [lean[0] * (z - h), lean[1] * (z - h)];
+        // r × F with F vertical: (r_y F_z, −r_x F_z).
+        m[0] += r[1] * fz;
+        m[1] -= r[0] * fz;
+    };
+    for l in loads.iter().filter(|l| l.point[2] > h) {
+        add(l.point[2], l.force[2]);
+    }
+    let top = pole.height();
+    if top > h {
+        let n = 64;
+        let dz = (top - h) / n as f64;
+        for k in 0..n {
+            let z = h + (k as f64 + 0.5) * dz;
+            if let Some(s) = pole.shaft_at(z) {
+                let w = s.area_inertia().0 * dz * pole.density * crate::model::G * self_weight;
+                add(z, -w);
+            }
+        }
+    }
+    m
+}
+
 /// The axial force (compression positive), the horizontal shear and the
 /// torsion at height `h`, N and N·m: the loads above (their vertical and
 /// horizontal parts, the torsion of their horizontal parts about the
@@ -802,7 +839,55 @@ pub fn check_pole_factored(
     p_delta: bool,
     budget: &Budget,
 ) -> Result<PoleCheck, String> {
-    let mut c = check_pole_first(pole, loads, wind, strength, self_weight, p_delta, budget)?;
+    check_pole_leaning(
+        pole,
+        loads,
+        wind,
+        strength,
+        self_weight,
+        [0.0; 2],
+        p_delta,
+        budget,
+    )
+}
+
+/// [`check_pole_factored`] of a pole whose base is tilted (a measured
+/// tilt, owner 2026-11-16): `lean` its axis's horizontal move per metre
+/// of height (x right of the line, y ahead; the tilt's angles, small).
+/// The loads above each section and the shaft's own weight lean with the
+/// pole: their vertical forces bend it by lean × their height above the
+/// section (first order), and with P-Delta the amplification is that of
+/// the frame model with its base tilted (a prescribed rotation,
+/// [`crate::Prescribed`]): the second-order ground moment over the
+/// first-order one with the lean. Zero lean: [`check_pole_factored`], bit
+/// for bit.
+#[allow(clippy::too_many_arguments)]
+pub fn check_pole_leaning(
+    pole: &Pole,
+    loads: &[PoleLoad],
+    wind: [f64; 2],
+    strength: f64,
+    self_weight: f64,
+    lean: [f64; 2],
+    p_delta: bool,
+    budget: &Budget,
+) -> Result<PoleCheck, String> {
+    if !lean.iter().all(|v| v.is_finite()) {
+        return Err(format!(
+            "pole {}: the lean {lean:?} is not a finite number",
+            pole.id
+        ));
+    }
+    let mut c = check_pole_first(
+        pole,
+        loads,
+        wind,
+        strength,
+        self_weight,
+        lean,
+        p_delta,
+        budget,
+    )?;
     let mut not_safe = Vec::new();
     match (p_delta, pole.elasticity) {
         (true, Some(_)) => {}
@@ -833,15 +918,28 @@ pub fn check_pole_factored(
     Ok(c)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_pole_first(
     pole: &Pole,
     loads: &[PoleLoad],
     wind: [f64; 2],
     strength: f64,
     self_weight: f64,
+    lean: [f64; 2],
     p_delta: bool,
     budget: &Budget,
 ) -> Result<PoleCheck, String> {
+    let leaning = lean != [0.0; 2];
+    // The moment at a height, the lean's with it.
+    let moment = |h: f64| {
+        let (mut m, w) = moment_at(pole, loads, wind, h);
+        if leaning {
+            let l = lean_moment(pole, loads, lean, h, self_weight);
+            m[0] += l[0];
+            m[1] += l[1];
+        }
+        (m, w)
+    };
     // A load that is not a finite number would place no node in the
     // P-Delta model and give no usage: refused, named (code review
     // 2026-10-26).
@@ -869,10 +967,26 @@ fn check_pole_first(
             pole.id
         ));
     }
-    let (ground, wind_ground) = moment_at(pole, loads, wind, 0.0);
+    let (ground, wind_ground) = moment(0.0);
     let ground_moment = ground[0].hypot(ground[1]);
+    let amplified = |e: f64| {
+        if leaning {
+            amplification_leaning(
+                pole,
+                e,
+                loads,
+                wind,
+                self_weight,
+                lean,
+                ground_moment,
+                budget,
+            )
+        } else {
+            amplification(pole, e, loads, wind, self_weight, budget)
+        }
+    };
     let amplification = match (p_delta, pole.elasticity) {
-        (true, Some(e)) => match amplification(pole, e, loads, wind, self_weight, budget) {
+        (true, Some(e)) => match amplified(e) {
             Ok(a) => a,
             Err(FeError::Unstable { .. }) => {
                 return Ok(PoleCheck {
@@ -913,7 +1027,7 @@ fn check_pole_first(
     let mut worst: Option<(f64, f64, f64, f64, String)> = None;
     for k in 0..=HEIGHTS {
         let h = pole.height() * k as f64 / HEIGHTS as f64;
-        let (m, _) = moment_at(pole, loads, wind, h);
+        let (m, _) = moment(h);
         let moment = m[0].hypot(m[1]) * amplification;
         let (usage, cap, words) = match (pole.by_code(), pole.shaft_at(h), pole.yield_strength) {
             (true, Some(shaft), Some(fy)) => {
@@ -1076,6 +1190,56 @@ fn amplification(
     let second = solve(&model, &loads, &Options::default(), budget)?;
     let m1 = ground(&linear);
     Ok(if m1 > 0.0 { ground(&second) / m1 } else { 1.0 })
+}
+
+/// [`amplification`] of a pole whose base is tilted by `lean`: the
+/// second-order ground moment of the frame model with its base turned
+/// (θ_y = lean_x, θ_x = −lean_y) over the first-order ground moment with
+/// the lean, `first` (N·m).
+#[allow(clippy::too_many_arguments)]
+fn amplification_leaning(
+    pole: &Pole,
+    e: f64,
+    loads: &[PoleLoad],
+    wind: [f64; 2],
+    self_weight: f64,
+    lean: [f64; 2],
+    first: f64,
+    budget: &Budget,
+) -> Result<f64, FeError> {
+    let top = pole.height();
+    let (model, z) = frame_model(pole, e, loads.iter().map(|l| l.point[2]));
+    let mut nodal = axis_loads(&z, top, loads);
+    if wind != [0.0, 0.0] {
+        for k in 0..z.len() - 1 {
+            let (a, b) = (z[k], z[k + 1]);
+            let w = pole.drag * pole.diameter_at(0.5 * (a + b)) * (b - a) / 2.0;
+            for n in [k, k + 1] {
+                nodal.push(NodalLoad {
+                    node: n,
+                    force: [wind[0] * w, wind[1] * w, 0.0],
+                    moment: [0.0; 3],
+                });
+            }
+        }
+    }
+    let loads = Loads {
+        nodal,
+        self_weight,
+        prescribed: vec![crate::Prescribed {
+            node: 0,
+            displacement: [0.0, 0.0, 0.0, -lean[1], lean[0], 0.0],
+        }],
+        ..Default::default()
+    };
+    let second = solve(&model, &loads, &Options::default(), budget)?;
+    let r = second
+        .reactions
+        .iter()
+        .find(|r| r.node == 0)
+        .expect("fixed base");
+    let m2 = r.moment[0].hypot(r.moment[1]);
+    Ok(if first > 0.0 { m2 / first } else { 1.0 })
 }
 
 /// The pole's frame model above the ground line ([`ELEMENTS`] tapered
