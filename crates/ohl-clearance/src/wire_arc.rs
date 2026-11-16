@@ -206,6 +206,8 @@ mod tests {
             still: 0,
             left: Some(1),
             right: Some(2),
+            levels: Vec::new(),
+            stepped: false,
         }];
         let all = swings(&arcs, &cases, WIRE_ARC_STEP);
         assert_eq!(all.len(), 2);

@@ -132,6 +132,13 @@ pub struct ZonesArgs {
     /// wind steps).
     #[arg(long)]
     pub jumper_band_margin: Option<f64>,
+    /// The swing bands' intermediate levels from each side (the rule file's `[wind] band_levels`): the band also
+    /// holds the wire solved at this many wind pressures between still air
+    /// and the full one (each one more solve per side). Default: measured
+    /// (see the theory, Wind positions); 0: still air and the blowouts
+    /// alone, as before 2026-11-16.
+    #[arg(long)]
+    pub band_levels: Option<usize>,
     /// Step the wind by this many Pa from 0 up to each case's pressure
     /// (the rule file's `[wind] steps` and `step`).
     #[arg(long)]
@@ -435,6 +442,15 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
             return Err(format!("--jumper-band-margin: {e}"));
         }
         wind.jumper_band_margin = m;
+    }
+    if let Some(n) = args.band_levels {
+        if n > ohl_clearance::positions::MAX_BAND_LEVELS {
+            return Err(format!(
+                "--band-levels: at most {}",
+                ohl_clearance::positions::MAX_BAND_LEVELS
+            ));
+        }
+        wind.band_levels = n;
     }
     if let Some(step) = args.wind_step {
         if !(step.is_finite() && step > 0.0) {
@@ -760,8 +776,8 @@ fn describe_check(z: &Zone, wind: &WindSteps, check: &ohl_clearance::CheckScope)
         ohl_clearance::WindSides::Right => "the right",
     };
     let margin = format!(
-        "band margin {} m, jumpers {} m",
-        wind.band_margin, wind.jumper_band_margin
+        "band margin {} m, jumpers {} m, {} levels a side",
+        wind.band_margin, wind.jumper_band_margin, wind.band_levels
     );
     parts.push(if wind.stepped && wind.arc {
         format!(

@@ -227,6 +227,7 @@ Read by the window from the whole file:
 | `[wind]` | `arc` | false when the table omits it (a new window: on) | **swing arc** |
 | `[wind]` | `band_margin` | `"0.15 m"` | **band margin** |
 | `[wind]` | `jumper_band_margin` | `"0 m"` | **jumper band margin** |
+| `[wind]` | `band_levels` | `4` | **band levels** |
 | `[check]` | `circuits`, `routes`, `alignments` | every circuit, the whole line | **Scope** |
 | `[check]` | `method` | each section's own | **Solved by**: `"fe"`, `"rs"` |
 | `[check]` | `search_distance` | none | **Ignore LiDAR points farther than** |
@@ -242,8 +243,10 @@ On the safe side (theory, [Wind positions](../theory/clearances.md#wind-position
 and [The radial distance to the arc](../theory/clearances.md#the-radial-distance-to-the-arc)):
 
 - the swing band holds every radius and every angle between still air and
-  the blowouts, widened by the band margin of 0.15 m (the measured worst
-  excess 0.089 m plus an allowance);
+  the blowouts, widened by the band margin of 0.15 m — with the default 4
+  band levels the wire between them lies at most 0.063 m outside the
+  band on a real line of 930 spans (measured with 10 Pa steps), held by
+  the margin;
 - on the band, a bundle is taken as its outer envelope, with the largest
   allowance of the three solved wires;
 - the distance to the ground is taken from points along the wire at most
@@ -253,9 +256,19 @@ and [The radial distance to the arc](../theory/clearances.md#the-radial-distance
 
 Not on the safe side, and said in the results each time it applies:
 
+- **Band levels 0** (with the swing arc, without the wind steps): the
+  band of still air and the blowouts alone; between them the wire can lie
+  outside the band by more than its margin (up to 0.69 m at 1300 Pa on a
+  real line). The results say *NOT ON THE SAFE SIDE: the swing band
+  without levels …*.
+- **Spans the wind pulls to or above the line between their clamps** (a wind
+  along an inclined span at a high pressure; with the swing arc, without
+  the wind steps): the band does not hold such a wire between its
+  levels. The results say *NOT ON THE SAFE SIDE: … spans whose wire the
+  wind pulls to or above the line between its clamps …*; tick the wind steps.
 - **Jumpers with the swing arc, without the wind steps, at a jumper band
   margin of 0 m** (the default): a jumper's band does not hold the jumper
-  between its blowouts (up to 0.293 m outside on the example line). The
+  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m). The
   results then say *NOT ON THE SAFE SIDE: jumpers checked on their swing
   band without a margin …*, and the window says it under the setting.
   Enter a jumper band margin for your jumpers or tick the wind steps.

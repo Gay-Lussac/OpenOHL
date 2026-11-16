@@ -217,8 +217,12 @@ fn wire_clearances_on_the_swing_arc() {
         ..Default::default()
     };
     let states = ohl_clearance::zone::wind_states(&windy, |_| true, &wind);
-    // Still air and both full blowouts.
-    assert_eq!(states.len(), 3);
+    // Still air, both full blowouts and the band's levels (2026-11-16).
+    let levels = ohl_clearance::positions::band_levels(
+        windy[0].wind_pressure.si(),
+        ohl_clearance::positions::BAND_LEVELS,
+    );
+    assert_eq!(states.len(), 3 + 2 * levels.len());
     let run = |arc: bool| {
         crate::clearance::run(&crate::clearance::Input {
             states: states.clone(),
@@ -817,7 +821,7 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
     harness.get_by_label("band margin");
     assert!(
         harness
-            .query_all_by_label_contains("3 solves for a windy case of 600 Pa")
+            .query_all_by_label_contains("11 solves for a windy case of 600 Pa")
             .next()
             .is_some()
     );
@@ -828,8 +832,10 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
         let r = harness.state_mut().ready().unwrap();
         if let (Some(rep), false) = r.vertical_clearances.result() {
             let rep = rep.as_ref().unwrap();
-            // Still air and the two blowouts; every span's arc.
-            assert_eq!(rep.states.len(), 3);
+            // Still air, the two blowouts and the band's levels
+            // (2026-11-16, for the band only); every span's arc.
+            assert_eq!(rep.states.len(), 11);
+            assert_eq!(rep.states.iter().filter(|s| s.band_only).count(), 8);
             assert!(rep.arc_spans > 0);
             assert!(rep.zone.findings.iter().any(|f| f.arc.is_some()));
             // The jumper on its band without a margin, no steps: said

@@ -66,10 +66,14 @@ with a saved run: a smaller value is less safe and on the user's
 responsibility): at a place \\( s \\) along the
 span's axis the annular sector of centre \\( C(s) \\) from radius
 \\( r(s) \\) to \\( R(s) \\) between \\( \varphi_L(s) \\) and
-\\( \varphi_R(s) \\) — the closed form of the danger-tree page, with its
-**Conservative** labels (every radius from the smallest to the largest;
-the band's margin; the angles from the smallest to the largest) and its
-**Simplification** (a rigid swing). Distances are measured in 3D, so
+\\( \varphi_R(s) \\) — the closed form of the danger-tree page — its solved positions still
+air, the blowouts and the band's levels (2026-11-16: 4 a side by
+default, **band levels**, `--band-levels`) — with its labels
+(**Conservative (measured)** with the default levels, every radius and
+angle from the smallest to the largest and the band's margin; **NOT ON
+THE SAFE SIDE** without levels, said in the results) and its
+**Simplification** (a rigid swing); a span the wind lifts above the line
+between its clamps is also taken at its wind steps of 10 Pa (said). Distances are measured in 3D, so
 beyond the band's ends and beyond the span's ends the volume is rounded
 (balls of radius \\( D \\)).
 
@@ -85,10 +89,13 @@ own \\( m_j \\) (the window's **jumper band margin**,
 `--jumper-band-margin`, recorded with a saved run; **0 m by default**),
 meshed as a span's.
 
-**Simplification** (the jumpers' margin; on the user's responsibility;
-exact: the wind steps): with \\( m_j = 0 \\) a jumper's band is **not
-conservative between its blowouts** — on the example line its jumper's
-10 Pa steps lie up to 0.293 m outside it
+**NOT ON THE SAFE SIDE** (the jumpers' margin of 0; said in the results;
+on the user's responsibility; exact: the wind steps): with
+\\( m_j = 0 \\) a jumper's band is not conservative between its solved
+positions — on the example line its jumper's 10 Pa steps lie up to
+0.307 m outside the band without levels and 0.043 m with the default
+levels; on a real line up to 2.1 m without levels and still up to 1.9 m
+with them (a few jumpers)
 ([the swing arc](lidar-analysis.md#wire-positions-checked)). The user
 enters a value for their jumpers. The jumper's solved positions (blown
 left and right, every step) remain tubes of their own, so the volume
@@ -244,8 +251,10 @@ outward.
   them: a step's centre line lay up to 1.53 m inside the arc's radius
   (S1's second span, 400 Pa), its tube sticking out of the arc's volume
   towards the axis by that much. At 10 Pa on the example lines
-  (`tests/arc_band.rs`): at most 0.089 m outside the band without its
-  margin, none with it ([the swing arc](lidar-analysis.md#wire-positions-checked)).
+  (`tests/arc_band.rs`): at most 0.009 m outside the band with the
+  default levels (0.091 m without), none with its margin; on a real line
+  of 930 spans 0.063 m with the default levels, 0.69 m without (not on
+  the safe side: [the swing arc](lidar-analysis.md#wire-positions-checked)).
 - `the_jumper_closes_the_gap_at_a_dead_end` (and validation
   `safetyvolume-004`, `-005`): two straight sections end to end, their
   dead-end clamps 6 m apart either side of a structure, \\( d = 1 \\) m:

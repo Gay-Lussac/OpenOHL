@@ -49,6 +49,13 @@ pub struct SafetyArgs {
     /// jumpers; exact: the wind steps).
     #[arg(long, default_value_t = ohl_clearance::positions::JUMPER_BAND_MARGIN)]
     pub jumper_band_margin: f64,
+    /// The swing bands' intermediate levels from each side: the band also
+    /// holds the wire solved at this many wind pressures between still air
+    /// and the full one (each one more solve per side). Default: measured
+    /// (see the theory, Wind positions); 0: still air and the blowouts
+    /// alone, as before 2026-11-16.
+    #[arg(long, default_value_t = ohl_clearance::positions::BAND_LEVELS)]
+    pub band_levels: usize,
     /// The distance from the conductors' surface (required; none is built
     /// in): a distance (`5`, `"5 m"`), or by the voltage of each wire's
     /// system as a rule file writes it (`'{ by_voltage = [[110, 3], [380,
@@ -127,6 +134,12 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
     if let Some(e) = ohl_clearance::rules::band_margin_problem(a.jumper_band_margin) {
         return Err(format!("--jumper-band-margin: {e}"));
     }
+    if a.band_levels > ohl_clearance::positions::MAX_BAND_LEVELS {
+        return Err(format!(
+            "--band-levels: at most {}",
+            ohl_clearance::positions::MAX_BAND_LEVELS
+        ));
+    }
     let steps = WindSteps {
         stepped: a.wind.stepped(),
         arc: false,
@@ -134,6 +147,7 @@ pub fn run(a: SafetyArgs) -> Result<(), String> {
         sides: a.wind_sides,
         band_margin: a.band_margin,
         jumper_band_margin: a.jumper_band_margin,
+        band_levels: a.band_levels,
     };
     let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
     let t = Instant::now();

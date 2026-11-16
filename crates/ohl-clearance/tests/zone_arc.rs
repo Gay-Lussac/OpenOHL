@@ -170,7 +170,8 @@ fn lowest(r: &ZoneCheckResult) -> Vec<Lowest> {
 
 /// A point on the wire at half the wind (300 Pa from the right): 1 m and
 /// more from the full blowouts, inside the swing arc's band (three
-/// solves; 0.47 m from the arc at the largest radius before 2026-10-21).
+/// solves and the band's levels since 2026-11-16; 0.47 m from the arc at
+/// the largest radius before 2026-10-21).
 #[test]
 fn the_arc_finds_the_wire_at_half_the_wind() {
     let (line, library, _) = example();
@@ -186,7 +187,15 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
         ..WindSteps::default()
     };
     let r = run(Measure::Radial, &arc, &[p]);
-    assert_eq!(r.states.len(), 3);
+    // Still air, the two blowouts and the band's levels (2026-11-16),
+    // solved for the band only.
+    let levels =
+        ohl_clearance::positions::band_levels(600.0, ohl_clearance::positions::BAND_LEVELS);
+    assert_eq!(r.states.len(), 3 + 2 * levels.len());
+    assert_eq!(
+        r.states.iter().filter(|s| s.band_only).count(),
+        2 * levels.len()
+    );
     let f = r
         .zone
         .findings

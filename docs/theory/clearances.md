@@ -222,30 +222,99 @@ Two options, alone or together:
   the same code `positions::SwingArc`): each span swung as one about
   its attachment axis (the line through the string tops, at a dead end
   the clamps) between still air and the full blowouts of the sides
-  chosen — a **band**: every radius from the smallest
-  to the largest of theirs, \\( r = \min(R_L, R_0, R_R) \\) to
-  \\( R = \max(R_L, R_0, R_R) \\), at each place along the span, from the
-  smallest to the largest of their angles. Three solves per windy case
-  (one side, or a wind along the line: two). For a wind at an angle the
+  chosen — a **band**: every radius from the smallest to the largest of
+  its solved positions at each place along the span, from the smallest
+  to the largest of their angles. Since 2026-11-16 the solved positions
+  are still air, the full blowouts **and the band's levels**: the wire
+  solved at \\( n \\) intermediate pressures from each side,
+  \\( k\,P/(n + 1) \\) for \\( k = 1 \ldots n \\), each rounded to a
+  whole 10 Pa, and at least one every 200 Pa (`positions::band_levels`,
+  `BAND_LEVEL_SPACING`; **band levels**, `[wind] band_levels`,
+  `--band-levels`; \\( n = 4 \\) by default), held by the
+  band but not checked as positions themselves; with the wind steps on,
+  every step is a level too (no more solves). Before 2026-11-16 three
+  positions only: \\( r = \min(R_L, R_0, R_R) \\),
+  \\( R = \max(R_L, R_0, R_R) \\). Solves per windy case: 3 + 2n (one
+  side, or a wind along the line: 2 + n). For a wind at an angle the
   two blowouts are the direction and its mirror; along the line the band
   runs from still air to its one blowout. The arc's own labels hold here
   too:
 
+  **NOT ON THE SAFE SIDE without the levels (until 2026-11-16):** the
+  band of three positions does **not** hold the wire between them in
+  general. Measured on a real line of 930 spans and 526 jumpers with
+  10 Pa steps from both sides: the steps' centre lines lay outside that
+  band by up to 0.23 m at 500 Pa across the line, 0.49 m at 1000 Pa and
+  0.69 m at 1300 Pa (about 0.05 m per 100 Pa; the default margin of
+  0.15 m held only up to about 390 Pa), up to 0.82 m with the wind
+  turned to 30° and 0.70 m at 60° (1450 Pa); 718 of the 930 spans lay
+  more than 0.15 m outside somewhere. Where: long, deep-sag spans
+  (679 m, 172 m down, 35 m sag: the curve between the blowouts bulges
+  out) and spans from a dead end to an angle string (the string at the
+  far end swings back through the vertical while the span's own sag
+  plane follows the wind, and the radius dips below all three positions
+  around 0.45 of the full pressure); steep spans at an angle. On the
+  example lines only 0.091 m, which the margin held — the label
+  "Conservative" given here until 2026-11-16 was measured on them alone.
+  A result computed without levels (band levels 0) says so
+  (`positions::band_levels_note`).
+
+  **Conservative (measured):** with the default levels the band holds
+  every 10 Pa step within its margin. Measured 2026-11-16 (the steps
+  solved apart, the band of a run without steps; centre lines to the
+  band without its margin): on the example lines 0.009 m across, 0.0045 m
+  at 30°, 60° and along the line (0.091 m and 0.082 m without levels;
+  `tests/arc_band.rs`); on the real line (10 Pa steps from both sides, one side along the line: across the line
+  as given at 300, 500, 650, 1000 and 1300 Pa, turned to 30° and 60° at
+  1000 Pa, along the line at 1000 and 1450 Pa, ice and wind at 700 Pa;
+  measured 2026-11-16) at most **0.063 m** with
+  the default levels (across at 1000 Pa; at 1300 Pa 0.059 m with the six
+  levels the 200 Pa spacing gives; 0.043 m at 30°, 0.051 m at 60°,
+  along the line 0.023 m at 1000 Pa and 0.033 m at 1450 Pa besides the
+  spans the wind pulls to their chord — 4 and 18, taken at their steps
+  (below) —, ice and wind 0.027 m at 700 Pa), against 0.69 m without. The excess grows with the spacing
+  of the solved pressures — about 0.3 mm per pascal, whatever the
+  case's pressure (0.063 m at 200 Pa apart, 0.091 m at 260, 0.167 m at
+  433) — hence at least one level every 200 Pa (`BAND_LEVEL_SPACING`). The
+  margin of 0.15 m is that worst excess plus an allowance for other
+  lines. Exact: a solve at every pressure (the steps), and between two
+  levels the band is a linear envelope of the levels at the stations of
+  the three positions' points — the measured excess includes that.
+
   **Conservative:** every radius between the smallest and the largest of
-  the three along the whole arc, for targets on every side — below and
-  beside the wire as well as between the axis and the arc (above the
-  swinging wire). Until 2026-10-21 the largest radius only: a target
-  between the axis and the arc could be nearer a wire at an intermediate
-  pressure, which sags less, than to the arc — by 0.47 m on the example
-  line (below).
+  the solved positions along the whole arc, for targets on every side —
+  below and beside the wire as well as between the axis and the arc
+  (above the swinging wire). Until 2026-10-21 the largest radius only: a
+  target between the axis and the arc could be nearer a wire at an
+  intermediate pressure, which sags less, than to the arc — by 0.47 m on
+  the example line (below).
 
   **Conservative:** the band widened by its margin \\( m \\) on every
-  side, 0.15 m by default (the measured worst excess of the 10 Pa steps
-  over the band, 0.089 m, plus an allowance of 0.061 m:
-  [the swing arc](lidar-analysis.md#wire-positions-checked)). Since
-  2026-10-21 the margin is a parameter (`[wind] band_margin`, the
-  windows' **band margin**, `ohl zones --band-margin`): a smaller value
-  is less safe and on the user's responsibility.
+  side, 0.15 m by default. Since 2026-10-21 the margin is a parameter
+  (`[wind] band_margin`, the windows' **band margin**, `ohl zones
+  --band-margin`): a smaller value is less safe and on the user's
+  responsibility.
+
+  **Where the band does not apply (2026-11-16):** a wind with a
+  component along an inclined span lifts the wire towards, and at high
+  pressure through, the line between its clamps (a steep span with the
+  wind along the line: on the real line at 1450 Pa from ahead the wire
+  passed within 0.2–0.5 m of its chord and its full blowout ended above
+  it — the band, a swing about the axis, then missed the steps by up to
+  8.7 m, and by 16 m at 2400 Pa; at 1000 Pa from ahead a steep span's
+  wire pulled towards its chord lay 0.30 m outside its band whatever the
+  number of levels: near the axis its angle turns fast with the
+  pressure). A span whose solved positions or levels lie more than
+  0.1 m above their own chord (`positions::LIFT_TOLERANCE`) or are
+  pulled towards it to less than half of still air's sag
+  (`STRAIGHT_RATIO`; a wind across the line sags a wire more, never
+  less; `SwingArc::above_axis`), and a span without a band, is said in
+  the results; the danger trees, safety
+  volumes and `ohl analysis` then also check it at its wind steps of
+  10 Pa from both sides (solved for that case when the steps are off).
+  The vertical and radial clearance windows and `ohl zones` say
+  **NOT ON THE SAFE SIDE** for such spans unless the wind steps are
+  ticked.
 
   **Jumpers**: the jumpers a rule checks (`wires` jumpers or
   both) have a band of their own, about the line through their two end
@@ -256,15 +325,20 @@ Two options, alone or together:
   margin**, `ohl zones --jumper-band-margin`), **0 m by default**. Before,
   they were checked at their solved positions only.
 
-  **Simplification** (on the user's responsibility; exact: the wind
-  steps): with \\( m_j = 0 \\) the jumper's band is **not conservative
-  between its blowouts** — on the example line its 10 Pa steps lie up to
-  0.293 m outside it ([the swing arc](lidar-analysis.md#wire-positions-checked)).
+  **NOT ON THE SAFE SIDE** (the jumpers' margin of 0; said in the
+  results; on the user's responsibility; exact: the wind steps): with
+  \\( m_j = 0 \\) the jumper's band is not conservative between its
+  solved positions — on the example line its 10 Pa steps lie up to
+  0.307 m outside the band of three positions and 0.043 m outside the
+  band with the default levels; on a real line up to 2.1 m without
+  levels and still up to 1.9 m with the default levels (a few jumpers: two whose shape changes abruptly between 140 and 170 Pa, others between the last level and the full pressure)
+  ([the swing arc](lidar-analysis.md#wire-positions-checked)).
   The value that holds a jumper is the user's to enter for their jumpers
   (the wind steps show it).
 
-  **Conservative:** the arc runs from the smallest to the largest of
-  \\( \varphi_L, \varphi_0, \varphi_R \\).
+  **Conservative:** the arc runs from the smallest to the largest angle
+  of its solved positions (\\( \varphi_L, \varphi_0, \varphi_R \\) and
+  the levels').
 
   **Simplification:** a rigid swing about the axis through the
   attachments. Suspension strings swing with the wind and their clamps
@@ -487,11 +561,13 @@ the arc (vertically 8 s against 73 s at 10 Pa and 16 s at 50 Pa;
 radially, with the ground, 29 s against 113 s and 19 s).
 
 - **Why the arc is faster.** Three solves per windy case (still air,
-  left, right) instead of one per pressure and side —
-  \\( 1 + 2\,P/\Delta p \\): 25 at 50 Pa, 131 at 10 Pa for 650 Pa — and
-  one closed-form distance per point and span instead of one per
-  position. The solves and the per-position search both grow with the
-  number of positions; the arc keeps them at three.
+  left, right) and, since 2026-11-16, its levels (2n: 8 by default; the
+  tables above were measured with three) instead of one per pressure and
+  side — \\( 1 + 2\,P/\Delta p \\): 25 at 50 Pa, 131 at 10 Pa for
+  650 Pa — and one closed-form distance per point and span instead of one
+  per position. The solves and the per-position search both grow with
+  the number of positions; the arc keeps the positions checked at one
+  band per span, whatever its levels.
 - **What the arc gains.** It covers every angle between the blowouts
   continuously; the steps see the wire only at the pressures they solve
   and are blind between two of them. it takes every
@@ -517,13 +593,45 @@ placed on the wire solved at 300 Pa (S1's first span, mid-span) was
 pressure, so it passes 0.47 m nearer the axis than the arc. That point
 now lies inside the band (clearance 0 less the conductor and the margin).
 With steps of 10 Pa from both sides on the example lines no stepped
-position lies outside the band widened by its margin (at most 0.089 m
-outside the band itself; the arc alone missed them by up to 1.53 m:
-`tests/arc_band.rs`). Never read "no loss" into the arc: it is a
+position lies outside the band widened by its margin (at most 0.091 m
+outside the band of three positions, 0.009 m with the default levels;
+the arc alone missed them by up to 1.53 m: `tests/arc_band.rs`); on a
+real line of 930 spans the band of three positions missed them by up to
+0.69 m (not on the safe side), the band with the default levels by
+0.063 m ([Wind positions](#wind-positions)). Never read "no loss" into the arc: it is a
   conservative envelope with a simplification, not the steps' exact
   positions.
 - **Both together** (the steps and the arc) check the steps' positions
   and the arc: the smaller of the two at every span.
+
+## Shared solves
+
+Each run solves each distinct case once (2026-11-16,
+`positions::solve_key`, `zone::solve_states`): the weather case as the
+solve reads it — every field but its name, description and tags, and
+across the line not its direction (the solve reads the side there).
+Cases that differ by their wind pressure alone (a **family**,
+`positions::family_key`: the same temperature, ice, side and direction,
+air density) share their solves at the same pressures: stepped by
+10 Pa, the 800 Pa case's steps are the 500 and 600 Pa cases' steps and
+full blowouts, so a family costs the solves of its largest member; the
+band's levels (whole 10 Pa) are steps too. Each case's positions are
+bit for bit those of solving it alone (`positions` test
+`cases_of_one_family_share_their_solves`, `zone` test
+`band_levels_and_shared_solves_of_the_states`). A wind from another
+direction (along the line, at an angle) is a family of its own: the
+wires sway differently, nothing is derived from another direction. On a
+real line's 76 windy cases stepped by 10 Pa from both sides with the
+band: 11,266 solves asked, 3,541 made (−69 %); the project's 150 windy
+cases (each wind twice, from 90° and from 270°): 22,340 asked, 3,557 made
+(−84 %). The band alone (4 levels): 888 asked, 621 made. Measured on one
+family (10 °C, 200 to 650 Pa, steps and band): 131 solves in 118 s
+together against 413 solves in 200 s one case at a time (a computer
+shared with other work), the positions bit for bit the same. A case's
+band is made about each span's axis as the run's first solve gives it
+(at a dead end the clamp moves with the wind), as before 2026-11-16: run
+with other cases, a band can differ from that case's band alone by that
+clamp's movement (its wire positions do not).
 
 ## How it is made fast
 

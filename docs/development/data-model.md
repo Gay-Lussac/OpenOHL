@@ -1474,7 +1474,17 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   negative one). `zone::run_zone_check` takes the arc as
   `Option<BandMargins>` (none: no arc), its `ZoneCheckResult` has
   `band_margin: Option<BandMargins>`; `zone_arcs` takes the jumpers
-  solved and the margins.
+  solved and the margins. Since 2026-11-16 `band_levels` (a whole
+  number 0…50, `WindSteps::band_levels`, default `positions::BAND_LEVELS`;
+  written only when not the default; older programs refuse a file with
+  it): the swing bands' intermediate solved pressures from each side
+  (`positions::band_levels`: at least one every 200 Pa,
+  `BAND_LEVEL_SPACING`; 0: none). `zone::wind_states` adds them as states
+  marked `WindState::band_only` (solved for the band, not checked;
+  after the case's other states), `zone_arc::ArcCase::levels` (every
+  intermediate state of the case, the steps too) and `ArcCase::stepped`;
+  `zone::solve_states` solves each distinct state once
+  (`positions::solve_key`).
 - `[check]` (optional, `CheckScope`): `circuits` (circuit names; empty:
   every circuit), `method` (`fe` / `rs`: every section solved by it;
   absent: each section's own), `search_distance` (m: LiDAR points
@@ -1866,7 +1876,19 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   `still`, noted). `PositionOptions::band_margin` (2026-10-21, default
   0.15 m; `PositionOptions` no longer derives `Default`, its `Default`
   sets it): every span's band's margin; `PositionOptions::jumper_band_margin`
-  (2026-10-21, default 0 m): every jumper's band's. `VegetationParams::clearance_by_voltage` and
+  (2026-10-21, default 0 m): every jumper's band's;
+  `PositionOptions::band_levels` (2026-11-16, default
+  `positions::BAND_LEVELS`): the bands' levels a side. `SwingArc` holds,
+  besides its three positions' points per station, its levels' envelope
+  per station (smallest and largest radius and angle;
+  `SwingArc::with_levels`, `level_count()`, `lift()`, `above_axis()`);
+  `jumper_band_levels` the jumpers'. `Positions::solves` (2026-11-16):
+  the line solves asked for and made (each distinct solve once:
+  `positions::solve_key`, the case without its name, description and
+  tags; `family_key` the same without its pressure; `solve_count` counts
+  without solving). A span whose band does not hold its wire (lifted
+  above its axis, or no band) gets its 10 Pa steps as `StepLeft` /
+  `StepRight` / `Still` positions when the steps are off (noted). `VegetationParams::clearance_by_voltage` and
   `allowance_by_voltage` (a `rules::Requirement`, else `clearance` and
   `fall_allowance`) give each span its distance by its wire's voltage
   (`VegetationCheck::required`). Results per span:
@@ -3888,7 +3910,9 @@ distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
 `fall_through_ground` (since 2026-11-05; missing: false),
 `min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
 no limit), `search_distance`, `swing_arc`, `band_margin` (m, since
-2026-10-21; absent in older runs: 0.15 m), `jumper_band_margin` (m,
+2026-10-21; absent in older runs: 0.15 m), `band_levels` (since
+2026-11-16; absent in older runs: 0, the band of still air and the
+blowouts alone), `jumper_band_margin` (m,
 since 2026-10-21, kept from the shared wind choice: the check takes no
 jumpers), `loads_per` (2026-10-21: the line's calculation option the run
 used; absent in older runs), `wind_steps`, `wind_step`
@@ -3927,7 +3951,8 @@ volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
 `parameters`: `version` (1), `cases` (weather case names), `distance` (as
 a rule file writes a distance), `margin`, `tolerance` (m), `wind`
 (`none`, `steps`, `arc`, `both`), `band_margin` (m, since 2026-10-21;
-absent in older runs: 0.15 m), `jumper_band_margin` (m, since
+absent in older runs: 0.15 m), `band_levels` (since 2026-11-16; absent
+in older runs: 0), `jumper_band_margin` (m, since
 2026-10-21; absent in older runs: their `band_margin`, as their jumpers
 took it), `loads_per` (2026-10-21: the line's calculation option the run
 used; absent in older runs), `wind_step` (Pa), `wind_sides`, `per`

@@ -128,7 +128,10 @@ fn danger_trees_with_swing_arc_ice_and_isoclearance_lines() {
     // can fall in (the one under it too); the arcs of the windy case and
     // the unbalanced ice of the iced case solved.
     assert!(stdout.contains("swing arcs"), "{stdout}");
-    assert!(stdout.contains("(band margin 0.15 m)"), "{stdout}");
+    assert!(
+        stdout.contains("(band margin 0.15 m, 4 levels a side)"),
+        "{stdout}"
+    );
     assert!(stdout.contains("unbalanced ice:"), "{stdout}");
     let row = stdout
         .lines()

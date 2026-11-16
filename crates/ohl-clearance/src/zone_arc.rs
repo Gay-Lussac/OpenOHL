@@ -45,7 +45,7 @@ use crate::checks::{
     wires_of,
 };
 use crate::geometry::P3;
-use crate::positions::{SwingArc, WireShape, jumper_band, span_axis};
+use crate::positions::{SwingArc, WireShape, jumper_band_levels, span_axis};
 use crate::rules::Rule;
 use crate::zone::WindState;
 
@@ -68,6 +68,12 @@ pub struct ArcCase {
     pub left: Option<usize>,
     /// Blown to the right (the wind from the left).
     pub right: Option<usize>,
+    /// Its intermediate pressures from either side (2026-11-16): the
+    /// band's levels and the wind steps (indices in the states), each
+    /// held by the band ([`SwingArc::with_levels`]).
+    pub levels: Vec<usize>,
+    /// Its wind is stepped (some of its levels are steps, checked).
+    pub stepped: bool,
 }
 
 /// The swing arcs of `states` ([`crate::zone::wind_states`] with the arc
@@ -85,12 +91,24 @@ pub fn arc_cases(states: &[WindState]) -> Vec<ArcCase> {
             })
         };
         let (left, right) = (find(WindSide::Right), find(WindSide::Left));
+        let levels = (0..states.len())
+            .filter(|&j| {
+                let t = &states[j];
+                t.name == s.name
+                    && t.side.is_some()
+                    && t.pressure > 0.0
+                    && t.pressure < t.full - 1e-9
+            })
+            .collect::<Vec<usize>>();
+        let stepped = levels.iter().any(|&j| !states[j].band_only);
         if left.is_some() || right.is_some() {
             out.push(ArcCase {
                 name: s.name.clone(),
                 still: k,
                 left,
                 right,
+                levels,
+                stepped,
             });
         }
     }
@@ -167,7 +185,17 @@ pub fn zone_arcs_with(
         };
         let still = wires(Some(case.still)).unwrap_or_default();
         let (left, right) = (wires(case.left), wires(case.right));
-        let (mut left_out, mut jumpers_out) = (0, 0);
+        // The levels' wires by (section, span).
+        let mut levels: HashMap<(String, usize), Vec<Wire>> = HashMap::new();
+        for &k in &case.levels {
+            for w in wires(Some(k)).unwrap_or_default() {
+                levels
+                    .entry((w.section.clone(), w.span))
+                    .or_default()
+                    .push(w);
+            }
+        }
+        let (mut left_out, mut jumpers_out, mut lifted) = (0, 0, 0);
         for w in &still {
             run.check()
                 .map_err(|e| format!("making the swing arcs {e}"))?;
@@ -196,8 +224,12 @@ pub fn zone_arcs_with(
             // A span: about its attachments; a jumper: about the line
             // through its end clamps blown to the left (else in still
             // air), as the safety volumes take it ([`jumper_band`]).
+            let own: &[Wire] = levels
+                .get(&(w.section.clone(), w.span))
+                .map_or(&[], Vec::as_slice);
             let arc = if jumper {
-                jumper_band(l.as_ref(), w, r.as_ref(), margins.jumper)
+                let own: Vec<&Wire> = own.iter().collect();
+                jumper_band_levels(l.as_ref(), w, r.as_ref(), &own, margins.jumper)
             } else {
                 shapes[case.still]
                     .iter()
@@ -208,11 +240,16 @@ pub fn zone_arcs_with(
                         let mid = shape(w);
                         let l = l.as_ref().map_or_else(|| mid.clone(), shape);
                         let r = r.as_ref().map_or_else(|| mid.clone(), shape);
-                        SwingArc::with_margin(axis, &l, &mid, &r, margins.span)
+                        let own: Vec<WireShape> = own.iter().map(shape).collect();
+                        let own: Vec<&WireShape> = own.iter().collect();
+                        SwingArc::with_levels(axis, &l, &mid, &r, &own, margins.span)
                     })
             };
             match arc {
                 Some(arc) => {
+                    if !jumper && arc.above_axis() {
+                        lifted += 1;
+                    }
                     let radius = arc.extent().0;
                     out.push(ZoneArc {
                         case: c,
@@ -231,6 +268,23 @@ pub fn zone_arcs_with(
                  steadily along its span)",
                 case.name
             ));
+        }
+        if lifted > 0 {
+            notes.push(if case.stepped {
+                format!(
+                    "\"{}\": {lifted} spans whose wire the wind pulls to or above the line between \
+                     its clamps: the swing band does not hold such a wire between its \
+                     pressures; checked at the wind steps",
+                    case.name
+                )
+            } else {
+                format!(
+                    "NOT ON THE SAFE SIDE: \"{}\": {lifted} spans whose wire the wind pulls to or \
+                     above the line between its clamps: the swing band does not hold such a wire \
+                     between its levels. Tick the wind steps (every 10 Pa) for them.",
+                    case.name
+                )
+            });
         }
         if jumpers_out > 0 {
             notes.push(format!(

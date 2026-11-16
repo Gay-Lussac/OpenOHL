@@ -355,8 +355,8 @@ span (in parallel on every core):
   between the axis and the arc).
 - **Band margin** (`--band-margin M`, default 0.15 m; since 2026-10-21):
   every distance to the band taken this much smaller. The default is the
-  worst excess measured on the example lines (0.089 m) plus an allowance:
-  conservative. A smaller value is less safe and on your responsibility.
+  worst excess measured with the default 4 band levels (on a real line of
+  930 spans 0.063 m) plus an allowance: conservative. A smaller value is less safe and on your responsibility.
   The jumpers' own margin (in the [safety volumes](safety-volumes.md) and the
   clearance windows) does not apply here: the danger-tree check leaves
   the jumpers out.

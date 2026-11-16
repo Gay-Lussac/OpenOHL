@@ -245,6 +245,13 @@ pub struct VegetationArgs {
     /// (conservative); a smaller value is on the user's responsibility.
     #[arg(long, default_value_t = ohl_clearance::positions::BAND_MARGIN)]
     pub band_margin: f64,
+    /// The swing bands' intermediate levels from each side (--swing-arc): the band also
+    /// holds the wire solved at this many wind pressures between still air
+    /// and the full one (each one more solve per side). Default: measured
+    /// (see the theory, Wind positions); 0: still air and the blowouts
+    /// alone, as before 2026-11-16.
+    #[arg(long, default_value_t = ohl_clearance::positions::BAND_LEVELS)]
+    pub band_levels: usize,
     /// Step the wind of each windy case by this pressure, Pa: still air
     /// and every pressure up to the case's are checked too (alongside or
     /// instead of --swing-arc), as the desktop clearance windows step it.
@@ -1047,6 +1054,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
             // The danger-tree check leaves the jumpers out.
             jumpers: false,
             band_margin: a.band_margin,
+            band_levels: a.band_levels,
             ..Default::default()
         },
         &budget,
@@ -1091,7 +1099,10 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         count(PositionKind::Right),
         count(PositionKind::Arc),
         if a.swing_arc {
-            format!(" (band margin {} m)", a.band_margin)
+            format!(
+                " (band margin {} m, {} levels a side)",
+                a.band_margin, a.band_levels
+            )
         } else {
             String::new()
         },
