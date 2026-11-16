@@ -370,16 +370,18 @@ fn a_joint_left_by_its_last_point_is_no_attach_joint() {
     // What its Delete button does (the window's title is "Delete" too).
     let r = h.state_mut().confirm.take().expect("asked");
     assert_eq!(r.left, ["A2"]);
+    assert_eq!(r.capacities, ["A11"], "its allowable load goes with it");
     h.state_mut()
         .file
         .as_mut()
         .unwrap()
         .edit("delete", |doc, _| ohl_structure_edit::remove(doc, &r));
     h.run();
-    // (The file then names a point gone in its capacity, so it is checked
-    // as written.)
+    // Its allowable load went with it: the file still reads.
     assert!(!text(&h).contains("label = \"A11\""));
+    assert!(!text(&h).contains("point = \"A11\""));
     assert_eq!(kind_written(&h, "A2"), None);
+    assert_eq!(kind(&h, "A2"), None, "the file reads, A2 plain");
     assert_eq!(kind_written(&h, "A1").as_deref(), Some("attach"));
     h.state_mut().undo();
     h.run();

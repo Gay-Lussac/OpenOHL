@@ -47,6 +47,11 @@ Built, in active development, not approved yet.
   window, OHL-Design's Link / Move attachment point window and the
   Structure types page. A point dropped onto a joint by dragging still
   goes onto it (the drop is the answer).
+- **A point deleted takes its allowable load.** Deleting a point that
+  had an allowable load (`[[capacity.attachment]] point = …`) left the
+  entry behind, naming a point no longer there, and the structure file
+  no longer read (found by the tests above). The entry now goes with
+  the point, listed in the Delete confirmation (`Removal::capacities`).
 
 ## 2026-11-15
 

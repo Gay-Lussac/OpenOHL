@@ -109,6 +109,11 @@ pub struct Removal {
     /// (version 9; "D1 at N2", "plate G1"), for the confirmation:
     /// [`remove`] takes them from the members and joints.
     pub connections: Vec<String>,
+    /// The points going that have an allowable load
+    /// (`[[capacity.attachment]] point = …`): their capacity entries go
+    /// with them (a capacity naming a point that is gone made the file
+    /// unreadable; found 2026-11-16).
+    pub capacities: Vec<String>,
     /// The joints the points going were linked to (and that stay): each
     /// falls back from attach once nothing is on it
     /// ([`crate::links::release_joints`]; owner 2026-11-16). Not listed
@@ -126,6 +131,7 @@ impl Removal {
             (&mut self.wires, more.wires),
             (&mut self.strings, more.strings),
             (&mut self.connections, more.connections),
+            (&mut self.capacities, more.capacities),
             (&mut self.left, more.left),
         ] {
             for x in add {
@@ -145,6 +151,7 @@ impl Removal {
             ("wire point", &self.wires),
             ("string", &self.strings),
             ("connection or plate", &self.connections),
+            ("allowable load(s) of point", &self.capacities),
         ]
         .into_iter()
         .filter(|(_, v)| !v.is_empty())
@@ -186,6 +193,14 @@ pub fn removal(t: &StructureType, h: &Handle) -> Removal {
         }
     }
     r.connections = connections_going(t, &r.members, &r.joints);
+    r.capacities = t
+        .capacity
+        .iter()
+        .flat_map(|c| &c.attachments)
+        .filter_map(|a| a.point.clone())
+        .filter(|p| r.points.contains(p))
+        .collect();
+    r.capacities.dedup();
     r.left = r
         .points
         .iter()
@@ -243,7 +258,45 @@ pub fn remove(doc: &mut DocumentMut, r: &Removal) {
             });
         }
     }
+    remove_capacities(doc, &r.capacities);
     crate::links::release_joints(doc, &r.left);
+}
+
+/// The allowable loads (`[[capacity.attachment]]`) of the `points` gone
+/// removed; an empty `[capacity]` removed with them.
+fn remove_capacities(doc: &mut DocumentMut, points: &[String]) {
+    if points.is_empty() {
+        return;
+    }
+    let Some(cap) = doc.get_mut("capacity").and_then(Item::as_table_like_mut) else {
+        return;
+    };
+    let empty = match cap.get_mut("attachment") {
+        Some(Item::ArrayOfTables(a)) => {
+            a.retain(|t| {
+                !t.get("point")
+                    .and_then(Item::as_str)
+                    .is_some_and(|p| points.iter().any(|g| g == p))
+            });
+            a.is_empty()
+        }
+        Some(Item::Value(Value::Array(a))) => {
+            a.retain(|v| {
+                !v.as_inline_table()
+                    .and_then(|t| t.get("point"))
+                    .and_then(|p| p.as_str())
+                    .is_some_and(|p| points.iter().any(|g| g == p))
+            });
+            a.is_empty()
+        }
+        _ => false,
+    };
+    if empty {
+        cap.remove("attachment");
+    }
+    if cap.is_empty() {
+        doc.remove("capacity");
+    }
 }
 
 /// The connections of `members` and at `joints` and the plates and
