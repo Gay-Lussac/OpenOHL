@@ -22,6 +22,7 @@
 - [Getting started](user-guide/getting-started.md)
 - [Glossary](user-guide/glossary.md)
 - [OHL-Design, the line application (ohl-design)](user-guide/desktop-app.md)
+  - [Structures in the wire solve (calculation level)](user-guide/calculation-level.md)
 - [Tools](user-guide/tools.md)
   - [General](user-guide/tools-general.md)
   - [Alignments](user-guide/tools-alignments.md)

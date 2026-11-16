@@ -606,6 +606,7 @@ impl LoadsSetup {
     /// with its own wind and ice of the case in its deflection.
     pub fn structures_for(&self, case: &str) -> Structures {
         let mut out = self.setup.structures.clone();
+        out.body_loads = true;
         if let Some(body) = self.body.get(case) {
             for (s, b) in out.flexible.iter_mut().zip(body) {
                 s.body.clone_from(b);
@@ -657,9 +658,30 @@ pub fn prepare_structure_loads(
     for s in &mut strung.sections {
         s.calculation = initial;
     }
+    prepare_strung(
+        &strung, library, types, sections, weather, &cases, budget, done, cancel,
+    )
+}
+
+/// [`prepare_structure_loads`] on `strung`, the line as its stringing
+/// state is solved (its weather cases set, each section's calculation the
+/// one the reference takes), in the load cases `cases` (their wind
+/// directions expanded).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn prepare_strung(
+    strung: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    weather: &[WeatherCase],
+    cases: &[LoadCase],
+    budget: &Budget,
+    done: Option<&(dyn Fn(usize, usize) + Sync)>,
+    cancel: Option<&ohl_core::budget::CancelToken>,
+) -> LoadsSetup {
     let analyses = Analyses::load(types, sections);
     let (setup, body) = setup_with(
-        &strung, library, types, &analyses, budget, &cases, weather, done, cancel,
+        strung, library, types, &analyses, budget, cases, weather, done, cancel,
     );
     let mut by_case: BTreeMap<String, Vec<Vec<ohl_line::Point>>> = BTreeMap::new();
     for (k, c) in cases.iter().enumerate() {

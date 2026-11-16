@@ -403,6 +403,88 @@ pub struct TensionRow {
     /// Where it is marked: the most tensioned support (the higher end of
     /// the span; for the horizontal tension too).
     pub at: [f64; 3],
+    /// At calculation level 3 ([`envelope`]): the tension of the rigid
+    /// solve and of the level-3 solve, N — `tension` is the larger (never
+    /// less safe than rigid). None: the rigid solve alone (level 2, or the
+    /// case without a level-3 solve).
+    pub levels: Option<[f64; 2]>,
+}
+
+impl TensionRow {
+    /// Which solve governs the row: 3 when the level-3 solve's tension is
+    /// the larger, else 2 (rigid; also a row of the rigid solve alone).
+    pub fn level(&self) -> u8 {
+        match self.levels {
+            Some([rigid, level]) if level > rigid => 3,
+            _ => 2,
+        }
+    }
+}
+
+/// The report of the rigid solves (`rigid`) and of the level-3 solves of
+/// the same cases (`level`) merged (calculation level 3, plan of
+/// 2026-11-15, phase 5; owner: never less safe than rigid): each span,
+/// case and rule once, with the larger tension of the two and both kept
+/// ([`TensionRow::levels`]); a row of one solve only (a case without a
+/// level-3 solve, a section that did not solve) as it is. The notes of
+/// both, each once. With the largest change against rigid, in words.
+pub fn envelope(rigid: TensionReport, level: TensionReport) -> (TensionReport, Option<String>) {
+    type Key = (usize, String, crate::calculation::Calc, String, usize);
+    let key = |r: &TensionRow| -> Key {
+        (
+            r.rule,
+            r.case.clone(),
+            r.calculation,
+            r.section.clone(),
+            r.span,
+        )
+    };
+    let mut flexible: std::collections::HashMap<Key, TensionRow> =
+        level.rows.into_iter().map(|r| (key(&r), r)).collect();
+    let mut change: Option<(f64, String)> = None;
+    let mut rows = Vec::with_capacity(rigid.rows.len());
+    for mut r in rigid.rows {
+        if let Some(f) = flexible.remove(&key(&r)) {
+            if r.tension.abs() > 0.0 {
+                let c = (f.tension - r.tension) / r.tension.abs();
+                if change.as_ref().is_none_or(|(x, _)| c.abs() > x.abs()) {
+                    change = Some((
+                        c,
+                        format!(
+                            "section {} span {} in {}",
+                            r.section,
+                            r.span + 1,
+                            crate::calculation::label(&r.case, r.calculation)
+                        ),
+                    ));
+                }
+            }
+            let both = [r.tension, f.tension];
+            if f.usage > r.usage {
+                r = f;
+            }
+            r.levels = Some(both);
+        }
+        rows.push(r);
+    }
+    rows.extend(flexible.into_values());
+    rows.sort_by(|a, b| b.usage.total_cmp(&a.usage));
+    let mut notes = rigid.notes;
+    // (A rule none of whose cases has a level-3 solve: said by the
+    // tally's failures, not as "none solved".)
+    for n in level.notes {
+        if !notes.contains(&n) && !n.ends_with("none of its weather cases is solved") {
+            notes.push(n);
+        }
+    }
+    let change = change.map(|(c, at)| {
+        format!(
+            "largest change of a span's tension {:+.2} % at {at} (the larger of rigid and level 3 \
+             checked)",
+            c * 100.0
+        )
+    });
+    (TensionReport { rows, notes }, change)
 }
 
 impl TensionRow {
@@ -612,6 +694,7 @@ fn span_rows(
             allowed,
             usage: tension / allowed,
             at: if last[2] > first[2] { last } else { first },
+            levels: None,
         });
     }
 }

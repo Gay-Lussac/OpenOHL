@@ -307,6 +307,8 @@ fn rich_line() -> Line {
     line.solver.blocks = ohl_line::InTheBlocks::EqualH;
     // Ice and wind per unstretched metre (2026-10-21): kept.
     line.solver.loads_per = ohl_line::LoadsPer::Unstretched;
+    // The structures in the wire solve (line file version 21): kept.
+    line.solver.structures = ohl_line::StructuresInSolve::Linear;
     // The electrical settings (2026-10-27): kept.
     line.electrical = ohl_line::electrical::ElectricalSettings {
         soil_resistivity_ohm_m: Some(320.0),
@@ -698,6 +700,9 @@ fn xsd_lists_every_element_written() {
         "station_to",
         "dead_end",
         "load_case",
+        "structures",
+        "wind_law",
+        "wire_friction",
     ] {
         assert!(xsd.contains(&format!("name=\"{a}\"")), "{a}");
     }

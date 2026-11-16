@@ -562,6 +562,15 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 .weak(),
             );
             ui.separator();
+            // The calculation level (plan of 2026-11-15, phase 5), with
+            // its time and effect measured here.
+            crate::calc_level::ui(
+                ui,
+                &mut draft.structures,
+                &r.model.line,
+                r.model.types.as_ref().map(|(t, _)| t),
+            );
+            ui.separator();
             // Folded by default (the window keeps its OK in view).
             egui::CollapsingHeader::new("Wind at an angle on the wires")
                 .id_salt("wind-at-an-angle")

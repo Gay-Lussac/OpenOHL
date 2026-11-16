@@ -130,7 +130,13 @@ ohl-structure Structures/type-02.ohls --structure T2 \
   with unfactored weather cases sent on their own says they run as cases
   of every factor 1, their body wind without drag or shielding, **NOT ON
   THE SAFE SIDE**, and to open the structure again from OHL-Design):
-  *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; *The
+  *The line gives the forces at 2 point(s) of T2 in 3 case(s): …*; the
+  calculation level the line solved them at (2026-11-16, line-values
+  version 10) — *Line forces from a level 2 solve (structures rigid)*, or
+  at the line's [linear stiffness](calculation-level.md) *Line forces
+  from a level 3 solve …: 3 case(s) from the level-3 solve, each beside
+  the same case from the rigid solve — check both* (the cases named
+  *wind (rigid)* and *wind (level 3)*); *The
   line's values for T2 are being computed…*; *The line gives no values
   for T7: the project has no load cases. Add them in OHL-Design
   (Line › Structures › Load cases…, or a design-code plugin)…* (no load

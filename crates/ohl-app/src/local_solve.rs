@@ -162,6 +162,16 @@ impl Local {
         out
     }
 
+    /// [`Local::notes`] of a check that does not take the line's
+    /// calculation level yet: with, when the line asks for another than
+    /// rigid, that it stays rigid ([`ohl_line::rigid_check_note`]; plan of
+    /// 2026-11-15, §6.2).
+    pub fn rigid_notes(&self) -> Vec<String> {
+        let mut out = self.notes();
+        out.extend(ohl_line::rigid_check_note(&self.line));
+        out
+    }
+
     /// The sections of `line` (the check's line, [`Local::line`], or one
     /// made from it: by a calculation) solved in `case` (as
     /// [`ohl_line::solve::solve_line_memo_default`], from the memo when

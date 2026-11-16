@@ -303,7 +303,7 @@ impl RawStringRule {
 }
 
 /// What a row compares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Measure {
     /// The axial force against the maximum load, N.
     Load,
@@ -403,6 +403,103 @@ pub struct StringRow {
     pub pass: bool,
     /// Where it is marked: the string's wire point, as solved.
     pub at: [f64; 3],
+    /// At calculation level 3 ([`envelope`]): the value of the rigid
+    /// solve and of the level-3 solve (N or degrees) — the row is the one
+    /// of the two with the larger usage (never less safe than rigid).
+    /// None: the rigid solve alone (level 2, or the case without a
+    /// level-3 solve).
+    pub levels: Option<[f64; 2]>,
+    /// Which solve the row is (2: rigid, 3: the level-3 solve).
+    pub level: u8,
+}
+
+/// The report of the rigid solves (`rigid`) and of the level-3 solves of
+/// the same cases (`level`, its rows' [`StringRow::level`] 3) merged
+/// (calculation level 3, plan of 2026-11-15, phase 5; owner: never less
+/// safe than rigid): each string, limit, case and rule once, the row of
+/// the larger usage with both values kept ([`StringRow::levels`]); a row
+/// of one solve only as it is. The swing of the level-3 solve is measured
+/// from the moved top in the structure's axes as drawn (its tilt at the
+/// point left out, said in the notes). With the largest change against
+/// rigid, in words.
+pub fn envelope(rigid: StringReport, mut level: StringReport) -> (StringReport, Option<String>) {
+    type Key = (
+        usize,
+        String,
+        crate::calculation::Calc,
+        String,
+        String,
+        Measure,
+        u8,
+    );
+    let key = |r: &StringRow| -> Key {
+        (
+            r.rule,
+            r.case.clone(),
+            r.calculation,
+            r.structure.clone(),
+            r.string.clone(),
+            r.measure,
+            r.source as u8,
+        )
+    };
+    for r in &mut level.rows {
+        r.level = 3;
+    }
+    let mut flexible: std::collections::HashMap<Key, StringRow> =
+        level.rows.into_iter().map(|r| (key(&r), r)).collect();
+    let mut change: Option<(f64, String)> = None;
+    let mut rows = Vec::with_capacity(rigid.rows.len());
+    for mut r in rigid.rows {
+        if let Some(f) = flexible.remove(&key(&r)) {
+            if r.measure != Measure::Uplift && r.value.abs() > 0.0 {
+                let c = (f.value - r.value) / r.value.abs();
+                if change.as_ref().is_none_or(|(x, _)| c.abs() > x.abs()) {
+                    change = Some((
+                        c,
+                        format!(
+                            "{} {} {} in {}",
+                            r.structure,
+                            r.string,
+                            r.measure.short(),
+                            crate::calculation::label(&r.case, r.calculation)
+                        ),
+                    ));
+                }
+            }
+            let both = [r.value, f.value];
+            if f.usage > r.usage || (!f.pass && r.pass) {
+                r = f;
+            }
+            r.levels = Some(both);
+        }
+        rows.push(r);
+    }
+    rows.extend(flexible.into_values());
+    rows.sort_by(|a, b| a.pass.cmp(&b.pass).then(b.usage.total_cmp(&a.usage)));
+    let mut notes = rigid.notes;
+    // (A rule none of whose cases has a level-3 solve: said by the
+    // tally's failures, not as "none solved".)
+    for n in level.notes {
+        if !notes.contains(&n) && !n.ends_with("none of its weather cases is solved") {
+            notes.push(n);
+        }
+    }
+    notes.push(
+        "level 3: a string's swing measured from its moved top in its structure's axes as \
+         drawn — the structure's tilt at the point left out (under wind the structure leans \
+         with the string, so the swing from the vertical is the larger there; under other loads \
+         either way)"
+            .to_owned(),
+    );
+    let change = change.map(|(c, at)| {
+        format!(
+            "largest change of a string's value {:+.2} % at {at} (the worse of rigid and level 3 \
+             checked)",
+            c * 100.0
+        )
+    });
+    (StringReport { rows, notes }, change)
 }
 
 /// The result of a check.
@@ -572,6 +669,8 @@ pub fn check(
                                 usage,
                                 pass,
                                 at: st.bottom,
+                                levels: None,
+                                level: 2,
                             };
                         if rule.load {
                             match st.limits.max_load {
@@ -733,6 +832,8 @@ pub fn check(
                         usage: value / max,
                         pass: value <= max,
                         at: p.top,
+                        levels: None,
+                        level: 2,
                     });
                 }
             }

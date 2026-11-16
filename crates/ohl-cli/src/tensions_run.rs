@@ -20,7 +20,7 @@ use clap::Args;
 use ohl_clearance::rules::RuleSet;
 use ohl_clearance::tension;
 
-use crate::analysis_run::{CaseArgs, ModelArgs, cases, load};
+use crate::analysis_run::{CaseArgs, ModelArgs, cases, check_level, load_with_structures};
 
 /// `ohl tensions`.
 #[derive(Args)]
@@ -198,34 +198,65 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
             a.rules.display()
         ));
     }
-    let (mut line, library) = load(&a.model)?;
-    let chosen = cases(&a.cases, &mut line)?;
+    let mut l = load_with_structures(&a.model)?;
+    let chosen = cases(&a.cases, &mut l.line)?;
     if a.sag_to_limits {
-        line = sag_to_limits(a, &line, &library, &set.tension_rules, &chosen)?;
+        if !l.line.solver.structures.is_default() {
+            println!(
+                "note: --sag-to-limits finds the stringings on the rigid solve (calculation \
+                 level 2); the check after it takes the line's level"
+            );
+        }
+        l.line = sag_to_limits(a, &l.line, &l.library, &set.tension_rules, &chosen)?;
     }
-    let solved = crate::analysis_run::solve_for_rules(
-        &line,
-        &library,
+    // The line's calculation level (or --structures-as): at level 3 each
+    // case solved rigid and flexible, the worse kept.
+    let level = check_level(&l, &chosen)?;
+    let (solved, tally) = crate::analysis_run::solve_for_rules(
+        &l.line,
+        &l.library,
         &chosen,
         &set.tension_rules,
         |r, c| r.applies(c),
         |r| r.calculation,
+        &level,
     );
+    let (line, library) = (&l.line, &l.library);
     let views: Vec<(
         &str,
         ohl_clearance::calculation::Calc,
         &[ohl_line::solve::SectionShape],
     )> = solved
         .iter()
-        .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
+        .map(|s| (s.case.as_str(), s.calc, s.rigid.as_slice()))
         .collect();
-    let report = tension::check(
-        &line,
-        &library,
+    let mut report = tension::check(
+        line,
+        library,
         &views,
         &set.tension_rules,
         &Default::default(),
     );
+    let mut change = None;
+    if level.setup.is_some() {
+        let flexible: Vec<(
+            &str,
+            ohl_clearance::calculation::Calc,
+            &[ohl_line::solve::SectionShape],
+        )> = solved
+            .iter()
+            .filter_map(|s| Some((s.case.as_str(), s.calc, s.flexible.as_deref()?)))
+            .collect();
+        let at_level = tension::check(
+            line,
+            library,
+            &flexible,
+            &set.tension_rules,
+            &Default::default(),
+        );
+        (report, change) = tension::envelope(report, at_level);
+    }
+    report.notes.splice(0..0, level.notes(&tally, change));
     for n in &report.notes {
         println!("  note: {n}");
     }
@@ -234,8 +265,12 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
         "rule", "case", "section", "span", "tension kN", "allowed kN", "usage %"
     );
     for r in &report.rows {
+        // At level 3: both solves' tensions, the larger checked.
+        let both = r.levels.map_or(String::new(), |[a, b]| {
+            format!("  (rigid {:.2} / level 3 {:.2} kN)", a / 1000.0, b / 1000.0)
+        });
         println!(
-            "{:<24} {:<16} {:<12} {:>4} {:>11.2} {:>11.2} {:>8.1} {}",
+            "{:<24} {:<16} {:<12} {:>4} {:>11.2} {:>11.2} {:>8.1} {}{both}",
             set.tension_rules[r.rule].name,
             ohl_clearance::calculation::label(&r.case, r.calculation),
             r.section,

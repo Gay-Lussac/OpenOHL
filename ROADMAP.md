@@ -1376,6 +1376,16 @@ converge. Order and timing to decide.
 > Also needed (possibly with O7): **anchoring (guy) cables** in the
 > structures.
 
+**Where it stands (2026-11-16):** plan approved 2026-11-15 (level 3 first,
+level 4 on the same loop). Built, in active development: phases 0–5 —
+the structures condensed at their attachment points, the interface loop,
+calculation level 3 in the structure loads (never below rigid), and the
+line's setting (Line › Criteria › Calculation options, line file version
+21, `--structures-as`) taken by the structure loads, the wire tensions,
+the string checks and the loads sent to OHL-Structure. Next: the
+clearances taking the level (after the swing-arc band work), level 4
+(phase 6).
+
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications and
 checked with free tools (2026-10-19: IfcOpenShell's schema and rule
@@ -1585,9 +1595,9 @@ and placed in the line by a position, an angle and a height adjustment.*
 
 - [x] **Level 1** — ruling span: sections sagged by the ruling span method on rigid structures
 - [x] **Level 2** — FE of the wires on rigid structures (`ohl-wirefe`, what OpenOHL has today); the conductors' forces put on the structures, every structure checked once *(today's structure loads and usage)*
-- [ ] **Level 3** — FE of the wires with a linear stiffness matrix at each structure's suspension points, derived from the structure (level 3 structures only)
+- [ ] **Level 3** — FE of the wires with a linear stiffness matrix at each structure's suspension points, derived from the structure (level 3 structures only) *(built, in active development, 2026-11-16: the structure loads, wire tensions, string checks and the loads sent to OHL-Structure; the clearances still rigid, said)*
 - [ ] **Level 4** — the full solve: structures and line iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge)
-- [ ] The level chosen per run (app, CLI, load cases), shown with every result; a structure below level 3 is rigid at levels 3 and 4, and the result says so
+- [ ] The level chosen per line (Line › Criteria › Calculation options) and per run (`--structures-as`), shown with every result that takes it; a structure below level 3 is rigid at levels 3 and 4, and the result says so *(2026-11-16; per check and per structure group later)*
 
 ---
 

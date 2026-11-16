@@ -234,7 +234,7 @@ impl IceSheddingWindow {
             let started = std::time::Instant::now();
             let line = local.line();
             let (plan, mut notes) = engine::solves(&rules, &cases, cases.len());
-            notes.splice(0..0, local.notes());
+            notes.splice(0..0, local.rigid_notes());
             let mut shapes = Vec::new();
             for (case, calc) in &plan {
                 let l = ohl_clearance::calculation::line_for(line, *calc);

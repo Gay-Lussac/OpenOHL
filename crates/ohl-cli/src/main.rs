@@ -604,14 +604,21 @@ struct LineArgs {
     /// File-format plugin directory (repeatable).
     #[arg(long)]
     plugin: Vec<PathBuf>,
-    /// Also solve the weather cases at this calculation level, for
-    /// testing (in active development): 3 = each structure with a model
-    /// (or a pole with an elasticity) a linear stiffness at its attachment
-    /// points; prints the points' displacements and the change against
-    /// rigid. With --load-cases the structure loads and usage take it too
-    /// (each load the larger of rigid and level 3, the checks the worse:
-    /// never below rigid). Everything else printed and written stays
-    /// rigid (level 2, the default).
+    /// The structures in the wire solve for this run, over the line's
+    /// setting (Line › Criteria › Calculation options; in active
+    /// development): rigid (calculation level 2) or linear (level 3: each
+    /// structure with a model, or a pole with an elasticity, a linear
+    /// stiffness at its attachment points). At level 3 the weather cases
+    /// are solved again with the structures flexible (the points'
+    /// displacements and the change against rigid printed), and with
+    /// --load-cases the structure loads and usage take it (each load the
+    /// larger of rigid and level 3, the checks the worse: never below
+    /// rigid). The tables, clearances, drawings and files written stay
+    /// rigid (level 2), said. Full structures (level 4) are not built yet.
+    #[arg(long, value_parser = analysis_run::parse_structures_as, conflicts_with = "calculation_level")]
+    structures_as: Option<ohl_line::StructuresInSolve>,
+    /// The same as --structures-as by the level's number: 2 (rigid) or 3
+    /// (linear).
     #[arg(long, value_parser = parse_calculation_level)]
     calculation_level: Option<ohl_line::solve::flexible::CalculationLevel>,
 }
@@ -1988,6 +1995,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         export,
         export_options,
         plugin,
+        structures_as,
         calculation_level,
     } = args;
     use ohl_core::files::shipped_library;
@@ -2017,6 +2025,29 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
             line.solver.loads_per.describe(),
             line.solver.blocks.describe()
         );
+        // The structures in the wire solve (the calculation level): the
+        // command line's over the file's; level 4 refused (not built).
+        if let Some(s) = structures_as {
+            line.solver.structures = *s;
+        }
+        if let Some(level) = calculation_level {
+            line.solver.structures = match level {
+                ohl_line::solve::flexible::CalculationLevel::Rigid => {
+                    ohl_line::StructuresInSolve::Rigid
+                }
+                ohl_line::solve::flexible::CalculationLevel::Linear => {
+                    ohl_line::StructuresInSolve::Linear
+                }
+            };
+        }
+        let level = line.solver.structures.level()?;
+        if level != ohl_line::solve::flexible::CalculationLevel::Rigid {
+            println!(
+                "calculation level {}: {}",
+                level.number(),
+                line.solver.structures.describe()
+            );
+        }
         let library = ohl_cables::Library::load(library).map_err(|e| e.to_string())?;
         for w in ohl_cables::mechanics::library_warnings(&library) {
             eprintln!("warning: wire library: {w}");
@@ -2181,9 +2212,9 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 first = Some((case.clone(), shapes));
             }
         }
-        // The cases again at another calculation level, for testing (plan
-        // of 2026-11-15, phase 3): printed only, nothing above changes.
-        if let Some(level) = calculation_level {
+        // The cases again at the line's calculation level (plan of
+        // 2026-11-15, phases 3 and 5): printed after the rigid tables.
+        if level != ohl_line::solve::flexible::CalculationLevel::Rigid {
             let sections = match sections_arg
                 .clone()
                 .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
@@ -2191,7 +2222,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
                 Some(p) => ohl_sections::SectionLibrary::load(&p)?,
                 None => ohl_sections::SectionLibrary::default(),
             };
-            flexible_run::report(&line, &library, &types, &sections, &cases, *level);
+            flexible_run::report(&line, &library, &types, &sections, &cases, level);
         }
         for (g, calc) in groups.iter().copied().enumerate() {
             if groups.len() > 1 {
@@ -2888,7 +2919,6 @@ fn structure_loads_report(
         load_cases,
         loads_csv,
         usage_csv,
-        calculation_level,
         ..
     } = args;
     if let (Some(lc), Some(w)) = (load_cases, weather) {
@@ -2908,9 +2938,7 @@ fn structure_loads_report(
         // Calculation level 3 (in active development): the structures
         // set up once for every case (their stiffness at the stringing
         // state, their own wind and ice per case).
-        let level = (*calculation_level
-            == Some(ohl_line::solve::flexible::CalculationLevel::Linear))
-        .then(|| {
+        let level = (line.solver.structures == ohl_line::StructuresInSolve::Linear).then(|| {
             let setup = ohl_loads::prepare_structure_loads(
                 line, library, types, &sections, &all, &set.cases, &budget, None, None,
             );

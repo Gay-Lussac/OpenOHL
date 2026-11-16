@@ -14,7 +14,7 @@ use clap::Args;
 use ohl_clearance::rules::RuleSet;
 use ohl_clearance::strings::{self, Measure};
 
-use crate::analysis_run::{CaseArgs, ModelArgs, cases, load};
+use crate::analysis_run::{CaseArgs, ModelArgs, cases, check_level, load_with_structures};
 
 /// `ohl strings`.
 #[derive(Args)]
@@ -40,52 +40,69 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
             a.rules.display()
         ));
     }
-    let (mut line, library) = load(&a.model)?;
-    let chosen = cases(&a.cases, &mut line)?;
-    let solved = crate::analysis_run::solve_for_rules(
-        &line,
-        &library,
+    let mut l = load_with_structures(&a.model)?;
+    let chosen = cases(&a.cases, &mut l.line)?;
+    // The line's calculation level (or --structures-as): at level 3 each
+    // case solved rigid and flexible, the worse kept.
+    let level = check_level(&l, &chosen)?;
+    let (solved, tally) = crate::analysis_run::solve_for_rules(
+        &l.line,
+        &l.library,
         &chosen,
         &set.string_rules,
         |r, c| r.applies(c),
         |r| r.calculation,
+        &level,
     );
-    let views: Vec<(
-        &str,
-        ohl_clearance::calculation::Calc,
-        &[ohl_line::solve::SectionShape],
-    )> = solved
-        .iter()
-        .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
-        .collect();
-    // The fixed posts' loads in the same cases (their ratings).
-    let posts: Vec<(
-        &str,
-        ohl_clearance::calculation::Calc,
-        Vec<ohl_line::post::PostLoad>,
-    )> = solved
-        .iter()
-        .filter_map(|(n, c, s)| {
-            let case = chosen.iter().find(|w| &w.name == n)?;
-            let l = ohl_clearance::calculation::line_for(&line, *c);
-            Some((
-                n.as_str(),
-                *c,
-                ohl_line::post::post_loads(&l, &library, case, s),
-            ))
-        })
-        .collect();
-    let post_views: Vec<strings::PostCase> = posts
-        .iter()
-        .map(|(n, c, p)| (*n, *c, p.as_slice()))
-        .collect();
-    let report = strings::check(
-        &line,
-        &views,
-        &post_views,
-        &set.string_rules,
-        &Default::default(),
-    );
+    let (line, library) = (&l.line, &l.library);
+    // One solve's checks (`flexible`: the level-3 solves'), the fixed
+    // posts' loads in the same cases with them (their ratings).
+    let check = |flexible: bool| {
+        let shapes: Vec<(
+            &str,
+            ohl_clearance::calculation::Calc,
+            &[ohl_line::solve::SectionShape],
+        )> = solved
+            .iter()
+            .filter_map(|s| {
+                let shapes = if flexible {
+                    s.flexible.as_deref()?
+                } else {
+                    s.rigid.as_slice()
+                };
+                Some((s.case.as_str(), s.calc, shapes))
+            })
+            .collect();
+        let posts: Vec<(
+            &str,
+            ohl_clearance::calculation::Calc,
+            Vec<ohl_line::post::PostLoad>,
+        )> = shapes
+            .iter()
+            .filter_map(|(n, c, s)| {
+                let case = chosen.iter().find(|w| &w.name == n)?;
+                let l = ohl_clearance::calculation::line_for(line, *c);
+                Some((*n, *c, ohl_line::post::post_loads(&l, library, case, s)))
+            })
+            .collect();
+        let post_views: Vec<strings::PostCase> = posts
+            .iter()
+            .map(|(n, c, p)| (*n, *c, p.as_slice()))
+            .collect();
+        strings::check(
+            line,
+            &shapes,
+            &post_views,
+            &set.string_rules,
+            &Default::default(),
+        )
+    };
+    let mut report = check(false);
+    let mut change = None;
+    if level.setup.is_some() {
+        (report, change) = strings::envelope(report, check(true));
+    }
+    report.notes.splice(0..0, level.notes(&tally, change));
     for n in &report.notes {
         println!("  note: {n}");
     }
@@ -102,8 +119,16 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
             Measure::Uplift => (format!("{:.2} kN", r.value / 1000.0), "hangs".into()),
             _ => (format!("{:.1}°", r.value), format!("{:.1}°", r.limit)),
         };
+        // At level 3: both solves' values, the worse checked.
+        let both = r.levels.map_or(String::new(), |[a, b]| {
+            if r.measure.is_force() {
+                format!("  (rigid {:.2} / level 3 {:.2} kN)", a / 1000.0, b / 1000.0)
+            } else {
+                format!("  (rigid {a:.1}° / level 3 {b:.1}°)")
+            }
+        });
         println!(
-            "{:<20} {:<16} {:<16} {:<8} {:>12} {:>12} {:>8.1} {}",
+            "{:<20} {:<16} {:<16} {:<8} {:>12} {:>12} {:>8.1} {}{both}",
             set.string_rules[r.rule].name,
             ohl_clearance::calculation::label(&r.case, r.calculation),
             format!("{} {}", r.structure, r.string),

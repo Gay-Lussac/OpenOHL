@@ -3,10 +3,11 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The line solved with flexible structures: the interface loop and
-//! calculation level 3 (plan of 2026-11-15, phase 3; in active
-//! development — an internal entry point and a command-line flag for
-//! testing, no setting, no check uses it yet: every check still takes
-//! the rigid solve).
+//! calculation level 3 (plan of 2026-11-15, phases 3–5; in active
+//! development). The line's setting is [`crate::SolverOptions::structures`];
+//! the structure loads, the wire tensions, the string checks and the
+//! loads sent to OHL-Structure take it (through `ohl-loads`), the other
+//! checks stay rigid and say so ([`crate::rigid_check_note`]).
 //!
 //! Sections and structures keep their own solvers; they meet only at the
 //! attachment points of the flexible structures. The unknowns are those
@@ -234,6 +235,11 @@ pub struct Structures {
     pub rigid: Vec<RigidStructure>,
     /// Notes of the setup (the reference state's sections that failed …).
     pub notes: Vec<String>,
+    /// The flexible structures' own wind and ice of the case are in their
+    /// deflection ([`LinearStructure::body`]; the structure loads and the
+    /// checks at the line's level, plan §4.6); false: left out, said NOT
+    /// ON THE SAFE SIDE for leeward clearances.
+    pub body_loads: bool,
 }
 
 /// Exit clauses and tolerances of the loop.
@@ -441,9 +447,10 @@ impl std::fmt::Display for FlexibleFailure {
     }
 }
 
-/// The notes of every level-3 result.
-pub fn level_three_notes() -> Vec<String> {
-    vec![
+/// The notes of every level-3 result (`body`: the structures' own wind
+/// and ice of the case in their deflection, [`Structures::body_loads`]).
+pub fn level_three_notes(body: bool) -> Vec<String> {
+    let mut notes: Vec<String> = vec![
         "calculation level 3 (in active development): each flexible structure a linear \
          stiffness at its attachment points, linearised at the stringing state (tension-only \
          members and guys as at that state); displacements from the structures as strung"
@@ -453,17 +460,31 @@ pub fn level_three_notes() -> Vec<String> {
          lower than rigid — the structure loads at level 3 keep, per point, the larger of rigid \
          and flexible"
             .into(),
-        "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, the \
-         structures' own wind and ice (in their deflection only in the structure loads), rigid \
-         foundations in the \
-         models, linearisation stiffer than the case's state where members would go slack — \
-         all make the points move less than the real structures"
-            .into(),
+        format!(
+            "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, \
+             {}rigid foundations in the models, linearisation stiffer than the case's state \
+             where members would go slack — all make the points move less than the real \
+             structures",
+            if body {
+                ""
+            } else {
+                "the structures' own wind and ice (left out of their deflection here), "
+            }
+        ),
         "the wires' stiffness at the points is approximate (sheaves' sharing, stress-strain \
          secant, loads per stretched metre, jumpers' pull, shared assemblies): it costs passes, \
          never accuracy"
             .into(),
-    ]
+    ];
+    if body {
+        notes.insert(
+            1,
+            "each flexible structure's own wind and ice of the case in its deflection \
+             (unfactored, on the same linear stiffness)"
+                .into(),
+        );
+    }
+    notes
 }
 
 /// Without the support stiffness (asked for the loop only).
@@ -511,7 +532,7 @@ pub fn solve_line_flexible_broken(
         .iter()
         .map(|s| s as &dyn StructureResponse)
         .collect();
-    let mut notes = level_three_notes();
+    let mut notes = level_three_notes(structures.body_loads);
     notes.extend(structures.notes.iter().cloned());
     for s in &structures.flexible {
         for n in &s.notes {

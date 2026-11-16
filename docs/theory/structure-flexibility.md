@@ -1,23 +1,25 @@
 # Structure flexibility in the line solve (calculation levels 3 and 4)
 
 *Partly built, in active development (not approved yet; plan approved by
-the owner 2026-11-15).* Built (no setting, no check uses them yet): the
-condensation of a structure to its attachment points
-(`ohl_structures_fe::condense`), of a pole (`condense_pole`), of a placed
-structure in the line's axes (`ohl-loads`, `flexibility`); on the wire
-side a section solved with its structure points moved and its stiffness
-at those points (`ohl_wirefe::Model::support_stiffness`,
-`ohl_line::solve::Coupling::moved`, `SupportStiffness`); and **the
-interface loop with calculation level 3** (`ohl_line::solve::flexible`,
-`ohl_loads::solve_line_flexible`), run for testing by the command line's
-`ohl line … --calculation-level 3`, which prints the attachment points'
-displacements and the change against rigid after the rigid results.
-**In active development, not built yet:** the structures' own wind and
-ice in their deflection, the structure checks with the larger of rigid
-and flexible, the other checks taking the level, the line setting and
-every window, level 4. Every result the program gives (every check,
-every file written) is solved with the structures rigid (calculation
-level 2), as [Finite-element wire systems](wirefe.md) says.
+the owner 2026-11-15).* Built: the condensation of a structure to its
+attachment points (`ohl_structures_fe::condense`), of a pole
+(`condense_pole`), of a placed structure in the line's axes (`ohl-loads`,
+`flexibility`); on the wire side a section solved with its structure
+points moved and its stiffness at those points
+(`ohl_wirefe::Model::support_stiffness`,
+`ohl_line::solve::Coupling::moved`, `SupportStiffness`); **the interface
+loop with calculation level 3** (`ohl_line::solve::flexible`); the
+structure loads and usage at level 3 (phase 4); and **the line's setting**
+(phase 5, 2026-11-16): Line › Criteria › Calculation options' *Structures
+in the wire solve* — rigid (default), linear stiffness (level 3), full
+structures (level 4, not built yet: read, refused by a run) — line file
+`solver.structures`, the command line's `--structures-as`, taken by the
+wire tensions, the string checks, the structure loads and the loads sent
+to OHL-Structure ([Checks at level 3](#checks-at-level-3)). **Not built
+yet:** the clearances, internal clearances and the other checks taking
+the level (they stay rigid and say so), level 4. The views, the tables and
+every file written are the rigid solve's (calculation level 2), as
+[Finite-element wire systems](wirefe.md) says.
 
 ## Two kinds of level
 
@@ -477,6 +479,71 @@ rigid with why, the passes, the time and the largest move. A case whose
 loop does not converge **keeps the rigid loads**, said ("calculation
 level 3 failed in this case: …; its loads there are the rigid solve's").
 
+## Checks at level 3
+
+*(Built, in active development: `ohl_loads::prepare_check_level`,
+`CheckLevel::solve`; `ohl_clearance::tension::envelope`,
+`ohl_clearance::strings::envelope`. Plan of 2026-11-15, phase 5.)*
+
+The line's setting chooses the level of every check that takes it (a run
+of the command line may override it: `--structures-as`). The checks of
+**weather cases** — the wire tensions and the string checks — set the
+structures up once per run as the structure loads do (above), with two
+differences:
+
+- the stringing state is solved with **each section by its own method**
+  (finite elements or ruling span) in its initial condition, since these
+  checks solve each section by its own; a rule asking another method than
+  a section's (a rule's ruling span on a section of finite elements, or
+  the other way round) is solved **rigid**, said — the forces at the
+  stringing state would not be those the case is measured from;
+- each structure's own wind and ice are those of the **weather case on
+  its own** (`LoadCase::from_weather`: every factor 1), unfactored, as
+  plan §4.6 says for runs without load cases.
+
+**Never less safe than rigid** (owner 2026-11-15): each case is solved by
+the interface loop, whose pass 0 is the rigid solve, and the check is
+made on **both** solves; per row (a span, case and rule; a string, limit,
+case and rule) the **worse** is kept with both values
+(`TensionRow::levels`, `StringRow::levels`) — conservative: never below
+rigid. A case whose loop does not converge is checked on the rigid solve
+only, said.
+
+- **Wire tensions**: the larger tension. Rigid governs where a structure
+  leans towards its spans (cold, ice); level 3 where a tower top moving
+  leeward lengthens a short, steep, nearly taut span's chord (the
+  "+55 %" observation of phase 4: physical, kept).
+- **String checks**: the row of the larger usage. The swing is measured
+  from the **moved** top, in the structure's axes as drawn: the
+  structure's **tilt** at the point is left out (rotations are not
+  condensed; a later phase). Under wind the structure leans leeward with
+  the string, so the swing from the vertical is larger than the swing
+  relative to the leaning structure — on the safe side for swing limits
+  there; under other loads either way, said in the notes. Rigid governs
+  the longitudinal swing in unbalanced cases (the string does all the
+  equalising), as the table below says.
+
+**Said** with every result at level 3 (plan §6.3): the level and what it
+assumes, the reference state (the structures as drawn are the structures
+as strung), the rule of the worse of rigid and level 3, the structures
+flexible and those taken rigid with why, the sections by the ruling span
+(rigid), the setup's time and condensations, the cases solved, their
+passes and time, the largest move of a point, the largest change of the
+check's value against rigid, the cases without a level-3 solve, and
+what is NOT ON THE SAFE SIDE where the level-3 solve governs (the
+deflection present at stringing left out, rigid foundations, the
+linearisation stiffer than the case's state). The checks that do not take
+the level yet say "calculation level 2 (structures rigid): this check does
+not take the line's level yet"; internal clearances stay rigid until the
+structure body is drawn deflected.
+
+**Its time and effect** (owner: every modelling setting shows its effect
+on results and its time): each run of a check that takes the level is
+kept on this computer (its time, the setup's, its rigid solves', the
+largest change against rigid and the largest move), shown beside each
+choice of the setting; without a level-3 run, an estimate from the last
+rigid run times the expected passes (`EXPECTED_PASSES`, 4).
+
 ## Load factors
 
 The interaction is solved at **unfactored** loads (the service state);
@@ -495,10 +562,16 @@ against rigid. Every other result (sags, clearances, swings) takes the
 flexible solve where it is the less favourable, or checks both — per
 check, with the same rule: never less safe than rigid. *(Applied in the
 structure loads and usage since phase 4 (above: per point and component
-the larger load, per structure the worse check); the other checks take
-the level with phase 5. The weather-case run of the command line says
-with every result: "NOT ON THE SAFE SIDE for the structures if taken from
-here: the flexible loads may be lower than rigid".)*
+the larger load, per structure the worse check), and in the wire tensions
+and string checks since phase 5 (both solves checked, the worse kept per
+row). The clearances take the level later; until then they are rigid —
+**not on the safe side** for the rows of the table below that say so
+(sags above the stringing tension, the loaded span in unbalanced ice,
+the remaining spans after a break, ground clearance under arms that
+deflect down, leeward horizontal clearances), said in their notes. The
+weather-case run of `ohl line` says with every result: "NOT ON THE SAFE
+SIDE for the structures if taken from here: the flexible loads may be
+lower than rigid".)*
 
 What rigid gives compared with the real, flexible structure, reasoned from
 the mechanics ("measured": a hand case above, or the example line's

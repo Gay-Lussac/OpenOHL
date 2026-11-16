@@ -41,6 +41,25 @@ pub struct ModelArgs {
     /// Insulator assembly library directory (.ohli).
     #[arg(long)]
     pub insulators: Option<PathBuf>,
+    /// The structures in the wire solve for this run, over the line's
+    /// setting (Line › Criteria › Calculation options): rigid
+    /// (calculation level 2) or linear (level 3: each structure with a
+    /// model a linear stiffness at its attachment points; the checks
+    /// that take it keep the worse of rigid and level 3). Full structures
+    /// (level 4) are not built yet. The checks that do not take the level
+    /// yet say so and stay rigid.
+    #[arg(long, value_parser = parse_structures_as)]
+    pub structures_as: Option<ohl_line::StructuresInSolve>,
+}
+
+/// The structures in the wire solve for `--structures-as` (rigid or
+/// linear; full refused: not built yet).
+pub(crate) fn parse_structures_as(text: &str) -> Result<ohl_line::StructuresInSolve, String> {
+    match ohl_line::StructuresInSolve::parse(text.trim()) {
+        Some(ohl_line::StructuresInSolve::Full) => Err(ohl_line::FULL_NOT_BUILT.into()),
+        Some(s) => Ok(s),
+        None => Err(format!("structures \"{text}\": rigid or linear")),
+    }
 }
 
 /// Weather cases from a file.
@@ -336,7 +355,39 @@ pub struct FitArgs {
 /// The line with its structure types resolved, and the wire library: a
 /// project's own libraries unless given, as `ohl line` reads them
 /// ([`crate::project::Libraries`]).
+///
+/// For a check that does not take the line's calculation level: when the
+/// line (or `--structures-as`) asks for another than rigid, it is said
+/// that this check stays rigid ([`ohl_line::rigid_check_note`]).
 pub(crate) fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String> {
+    let l = load_with_structures(m)?;
+    if let Some(n) = ohl_line::rigid_check_note(&l.line) {
+        println!("note: {n}");
+    }
+    Ok((l.line, l.library))
+}
+
+/// A line read for a check that takes its calculation level: its wires,
+/// structure types and the structure models' sections.
+pub(crate) struct Loaded {
+    /// The line, its structure types resolved, `--structures-as` over its
+    /// own setting.
+    pub line: Line,
+    /// Its wires.
+    pub library: ohl_cables::Library,
+    /// Its structure types (empty: none typed).
+    pub types: ohl_structures::StructureLibrary,
+    /// The cross-section library of the structure models (empty: none).
+    pub sections: ohl_sections::SectionLibrary,
+    /// The libraries' folders, kept while the line is used (a project's
+    /// working folder holds the structure models read at level 3).
+    _libraries: crate::project::Libraries,
+}
+
+/// [`load`] with the structure types and sections kept, the line's
+/// structures in the wire solve set from `--structures-as` when given,
+/// nothing said.
+pub(crate) fn load_with_structures(m: &ModelArgs) -> Result<Loaded, String> {
     let libs = crate::project::Libraries::resolve(
         &m.file,
         crate::project::GivenLibraries {
@@ -347,17 +398,79 @@ pub(crate) fn load(m: &ModelArgs) -> Result<(Line, ohl_cables::Library), String>
         },
     )?;
     let mut line = crate::project::load_line(&m.file)?;
+    if let Some(s) = m.structures_as {
+        line.solver.structures = s;
+    }
+    let mut types = ohl_structures::StructureLibrary::default();
     if line.structures.iter().any(|s| s.structure_type.is_some()) {
-        let structures = ohl_structures::StructureLibrary::load_dir(&libs.structures)
+        types = ohl_structures::StructureLibrary::load_dir(&libs.structures)
             .map_err(|e| e.to_string())?;
         let insulators = ohl_structures::InsulatorLibrary::load_dir(&libs.insulators)
             .map_err(|e| e.to_string())?;
         line = line
-            .resolve(&structures, &insulators)
+            .resolve(&types, &insulators)
             .map_err(|e| e.to_string())?;
     }
+    let sections = match &libs.sections {
+        Some(p) if !line.solver.structures.is_default() => {
+            ohl_sections::SectionLibrary::load(p).map_err(|e| e.to_string())?
+        }
+        _ => ohl_sections::SectionLibrary::default(),
+    };
     let library = ohl_cables::Library::load(&libs.cables).map_err(|e| e.to_string())?;
-    Ok((line, library))
+    Ok(Loaded {
+        line,
+        library,
+        types,
+        sections,
+        _libraries: libs,
+    })
+}
+
+/// The structures of `l` set up for a check in weather cases `cases` at
+/// the line's calculation level (its setting, or `--structures-as`): at
+/// level 3 one condensation per structure first (said, with the time);
+/// level 4 refused (not built yet).
+pub(crate) fn check_level(
+    l: &Loaded,
+    cases: &[WeatherCase],
+) -> Result<ohl_loads::CheckLevel, String> {
+    let level = l.line.solver.structures.level()?;
+    let started = Instant::now();
+    let out = ohl_loads::prepare_check_level(
+        &l.line,
+        &l.library,
+        &l.types,
+        &l.sections,
+        cases,
+        level,
+        &ohl_wirefe::default_fe_budget(),
+        None,
+        None,
+    );
+    if let Some(setup) = &out.setup {
+        println!(
+            "calculation level 3 (in active development): {} structures flexible, {} rigid; set \
+             up in {:.1?}",
+            setup.setup.structures.flexible.len(),
+            setup.setup.structures.rigid.len(),
+            started.elapsed()
+        );
+    }
+    Ok(out)
+}
+
+/// A weather case solved for a check at the line's calculation level
+/// ([`solve_for_rules`]).
+pub(crate) struct RuleSolve {
+    /// The weather case's name.
+    pub case: String,
+    /// The rule's calculation.
+    pub calc: ohl_clearance::calculation::Calc,
+    /// The rigid solve's sections (failures printed and left out).
+    pub rigid: Vec<SectionShape>,
+    /// The level-3 solve's (none: level 2, or the case without one).
+    pub flexible: Option<Vec<SectionShape>>,
 }
 
 /// The chosen weather cases (the line gets the file's condition cases).
@@ -372,9 +485,10 @@ pub(crate) fn cases(c: &CaseArgs, line: &mut Line) -> Result<Vec<WeatherCase>, S
 }
 
 /// Solves the line in each weather case of `cases` the rules apply to,
-/// once per calculation they ask (`applies`, `calc`; 2026-11-01): the
-/// case's name, the calculation and the sections solved (failures printed
-/// and left out).
+/// once per calculation they ask (`applies`, `calc`; 2026-11-01), at the
+/// calculation level `level`: per case and calculation the rigid solve
+/// and, at level 3, the level-3 solve (failures printed and left out);
+/// with what the level-3 solves took.
 pub(crate) fn solve_for_rules<R>(
     line: &Line,
     library: &ohl_cables::Library,
@@ -382,31 +496,41 @@ pub(crate) fn solve_for_rules<R>(
     rules: &[R],
     applies: impl Fn(&R, &str) -> bool,
     calc: impl Fn(&R) -> ohl_clearance::calculation::Calc,
-) -> Vec<(String, ohl_clearance::calculation::Calc, Vec<SectionShape>)> {
+    level: &ohl_loads::CheckLevel,
+) -> (Vec<RuleSolve>, ohl_loads::LevelTally) {
     let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
-    ohl_clearance::calculation::solves(&names, rules, applies, calc)
+    let budget = ohl_wirefe::default_fe_budget();
+    let mut tally = ohl_loads::LevelTally::default();
+    let solved = ohl_clearance::calculation::solves(&names, rules, applies, calc)
         .into_iter()
         .map(|(k, c)| {
             let case = &cases[k];
             let l = ohl_clearance::calculation::line_for(line, c);
-            let mut shapes = Vec::new();
-            for (section, r) in l
-                .sections
-                .iter()
-                .zip(ohl_line::solve::solve_line(&l, library, case))
-            {
-                match r {
-                    Ok(s) => shapes.push(s),
-                    Err(e) => println!(
-                        "  \"{}\": section {} not solved: {e}",
-                        ohl_clearance::calculation::label(&case.name, c),
-                        section.id
-                    ),
+            let solve = level.solve(&l, library, case, &budget);
+            tally.add(&solve);
+            let label = ohl_clearance::calculation::label(&case.name, c);
+            let keep = |results: &[Result<SectionShape, ohl_line::LineError>], what: &str| {
+                let mut shapes = Vec::new();
+                for (section, r) in l.sections.iter().zip(results) {
+                    match r {
+                        Ok(s) => shapes.push(s.clone()),
+                        Err(e) => println!(
+                            "  \"{label}\"{what}: section {} not solved: {e}",
+                            section.id
+                        ),
+                    }
                 }
+                shapes
+            };
+            RuleSolve {
+                case: case.name.clone(),
+                calc: c,
+                rigid: keep(&solve.rigid, ""),
+                flexible: solve.flexible().map(|f| keep(f, " (level 3)")),
             }
-            (case.name.clone(), c, shapes)
         })
-        .collect()
+        .collect();
+    (solved, tally)
 }
 
 /// Solves every section; failures are printed and left out.

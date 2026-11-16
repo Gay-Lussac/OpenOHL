@@ -244,7 +244,7 @@ impl GallopingWindow {
             let started = std::time::Instant::now();
             let line = local.line();
             let params = GallopingParams::load(&path)?;
-            let mut notes = local.notes();
+            let mut notes = local.rigid_notes();
             let (mut shapes, failed) = if local.applied() && params.calculation.is_none() {
                 let s = local.solved(&library, weather.clone());
                 (s.shapes, s.failed)

@@ -115,8 +115,12 @@ previous results stay.
 ### Structures flexible (level 3)
 
 The footer's **Structures flexible (level 3)** (built, in active
-development; kept with the project's setup, off by default) computes the
-loads at calculation level 3: each structure that has a model (or a pole
+development) follows the line's [structures in the wire
+solve](calculation-level.md) (Line › Criteria › Calculation options:
+ticked when the line says *linear stiffness*); ticked or unticked here
+it sets this window's runs only — kept with the project's setup, its
+hover saying the line's choice — until ticked back to the line's. It
+computes the loads at calculation level 3: each structure that has a model (or a pole
 with an elasticity) answers the wires as a linear stiffness at its
 attachment points, its own wind and ice of the case in its deflection,
 and each load case's line is solved again until wires and structures
@@ -135,8 +139,10 @@ loop does not converge keeps the rigid loads and says so. The switch's
 (?) help shows the last run's largest move, its largest change of a load
 against rigid and its time. It costs one condensation per structure
 (well under a second for a lattice tower) and two to five line solves
-per load case. OHL-Structure still gets the rigid loads (until the line's
-own setting for the level, phase 5).
+per load case. The loads sent to OHL-Structure follow the switch: at
+level 3 each case twice, from the rigid and from the level-3 solve, each
+saying its level there (*Line forces from a level 3 solve*). Each run's
+time and effect are kept for the Calculation options window.
 
 ## Results
 

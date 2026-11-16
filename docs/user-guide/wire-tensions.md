@@ -200,6 +200,24 @@ Read by the window from the whole file:
 The window writes `checks = ["tension"]`. Clearance rules (`[[rule]]`),
 string rules and the other tables of a file are not used here.
 
+## At calculation level 3
+
+With the line's **structures in the wire solve** set to *linear
+stiffness* (Line › Criteria › Calculation options; built, in active
+development), each weather case of the rules is solved twice — rigid,
+and with each structure that has a model as a linear stiffness at its
+attachment points — and **each span keeps the larger tension of the
+two** (never less safe than rigid). The results' notes begin with the
+level, the reference (the structures as drawn are the structures as
+strung), the structures taken rigid and why, the cases solved and their
+passes and time, the largest move of a point and the largest change of a
+span's tension against rigid. A dead end or angle structure leaning
+towards its spans makes the tension lower than rigid in cold and iced
+cases: rigid then governs. A rule solving the wires by another method
+than the line (a rule's ruling span on sections of finite elements) is
+solved rigid, said. See [Structures in the wire
+solve](calculation-level.md).
+
 ## What is conservative and what is not
 
 On the safe side (theory, [Wire tensions](../theory/wire-tensions.md)):
@@ -240,7 +258,9 @@ the RTS itself ([Sag-tension](../theory/sagtension.md)).
 
 `ohl tensions` runs the same check from the command line on the window's
 rule file, on the whole line and without local conditions (it does not
-read the `[check]` table), and writes the full report with `--csv`;
+read the `[check]` table), at the line's calculation level
+(`--structures-as rigid|linear` for one run; at level 3 each row also
+prints both solves' tensions), and writes the full report with `--csv`;
 `--sag-to-limits` gives each section the largest stringing tension that
 keeps every rule
 ([Wire tension rules](terrain.md#wire-tension-rules-tension_rule)).

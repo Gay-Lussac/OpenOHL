@@ -163,7 +163,11 @@ impl Ready {
         }
         if let Some(e) = self
             .structure_apps
-            .refresh_values(&self.model, self.loads.local)
+            .refresh_values(
+                &self.model,
+                self.loads.local,
+                self.loads.level3_for(&self.model.line).unwrap_or(false),
+            )
             .pop()
         {
             self.status = Some((e, true));

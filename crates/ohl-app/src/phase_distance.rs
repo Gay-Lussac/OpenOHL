@@ -1249,7 +1249,7 @@ impl PhaseDistanceWindow {
         let keep = self.scope.keeps(&model.line);
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();
-            let mut notes = local.notes();
+            let mut notes = local.rigid_notes();
             let mut rows = Vec::new();
             if kind == Kind::UnequalWind
                 && let Some((solved, _)) = cases.first()

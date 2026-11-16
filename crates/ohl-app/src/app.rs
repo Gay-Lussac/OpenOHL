@@ -2111,6 +2111,7 @@ impl eframe::App for App {
         }
         self.quickbar.save(storage);
         crate::memory_limit::save(storage);
+        crate::calc_level::save(storage);
         self.lod.save(storage);
         self.palette.save(storage);
         self.recent.save(storage);

@@ -23,6 +23,7 @@ mod area;
 mod backgrounds;
 mod bom;
 mod building_fields;
+mod calc_level;
 mod case_groups;
 mod check_help;
 mod check_library;
@@ -348,6 +349,7 @@ fn main() -> std::process::ExitCode {
             log::info!("controls: {}", app.controls.name);
             if let Some(st) = cc.storage {
                 memory_limit::load(st);
+                calc_level::load(st);
             }
             if let Some(s) = cc.storage.and_then(selection::Snaps::load) {
                 app.snaps = s;

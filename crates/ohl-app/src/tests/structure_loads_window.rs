@@ -572,15 +572,33 @@ fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
         "{}",
         p.text
     );
-    // Kept with the project's setup, not written when off.
+    // Kept with the project's setup only when set here; not written when
+    // it follows the line (phase 5); a setup kept before reads as ticked.
     let on = crate::loads_plan::Choice {
-        level3: true,
+        level3: Some(true),
         ..Default::default()
     };
     let text = serde_json::to_string(&on).unwrap();
     assert!(text.contains("\"level3\":true"), "{text}");
-    let off = serde_json::to_string(&crate::loads_plan::Choice::default()).unwrap();
-    assert!(!off.contains("level3"), "{off}");
+    let follows = serde_json::to_string(&crate::loads_plan::Choice::default()).unwrap();
+    assert!(!follows.contains("level3"), "{follows}");
+    let old: crate::loads_plan::Choice = serde_json::from_str("{\"level3\":true}").unwrap();
+    assert_eq!(old.level3, Some(true));
+    // The window follows the line's setting unless set here.
+    let mut page = crate::loads::LoadsPage::default();
+    let mut line = model.line.clone();
+    assert_eq!(page.level3_for(&line), Ok(false));
+    line.solver.structures = ohl_line::StructuresInSolve::Linear;
+    assert_eq!(page.level3_for(&line), Ok(true));
+    page.level3 = Some(false);
+    assert_eq!(page.level3_for(&line), Ok(false));
+    page.level3 = None;
+    line.solver.structures = ohl_line::StructuresInSolve::Full;
+    assert!(
+        page.level3_for(&line)
+            .unwrap_err()
+            .contains("not built yet")
+    );
 }
 
 /// Every section the window's **user guide ↗** buttons open is a heading

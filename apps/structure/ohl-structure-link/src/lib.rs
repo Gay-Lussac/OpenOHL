@@ -317,7 +317,7 @@ pub fn line_values(loads: &[CaseLoads], line: &Line, structure: &str) -> LineVal
 /// unfactored line forces of any of them, broken-wire ones included. The
 /// weather cases once sent unfactored on their own (Line › Criteria ›
 /// Loads for structures, 2026-10-25 to 2026-11-15) are no longer sent.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct StructureCases {
     /// The line's load case library (its cases as they are, factors
     /// kept): each placed structure takes those of its groups.
@@ -327,9 +327,34 @@ pub struct StructureCases {
     /// Every case takes the structures' local conditions (the line's
     /// check's **Use local conditions**, [`StructureCases::with_local`]).
     pub local: bool,
+    /// Solved at calculation level 3 (the line's setting, or the line's
+    /// Structure loads window's; plan of 2026-11-15, phase 5): the
+    /// structure types and the structure models' sections the structures'
+    /// stiffness is set up from ([`StructureCases::at_level_three`]). None:
+    /// rigid (level 2).
+    pub level3: Option<
+        Box<(
+            ohl_structures::StructureLibrary,
+            ohl_sections::SectionLibrary,
+        )>,
+    >,
 }
 
 impl StructureCases {
+    /// These cases solved at calculation level 3: each structure with a
+    /// model a linear stiffness at its attachment points, set up from
+    /// `types` and `sections` ([`structure_case_loads`]); OHL-Structure
+    /// gets the rigid and the level-3 solve of each case, each a case
+    /// with its level (the line-values file's `levels`).
+    pub fn at_level_three(
+        mut self,
+        types: ohl_structures::StructureLibrary,
+        sections: ohl_sections::SectionLibrary,
+    ) -> Self {
+        self.level3 = Some(Box::new((types, sections)));
+        self
+    }
+
     /// No case to send.
     pub fn is_empty(&self) -> bool {
         self.library.is_empty()
@@ -374,6 +399,7 @@ pub fn structure_cases(
         library: load_cases.to_vec(),
         library_weather: weather.to_vec(),
         local: false,
+        level3: None,
     }
 }
 
@@ -416,13 +442,29 @@ pub fn structure_case_loads(
         // A set of wind directions: one case per direction (OHL-Structure
         // gets one case each).
         let expanded = ohl_loads::expand_directions(&cases.library);
-        let each = ohl_loads::structure_loads_each(
+        // At calculation level 3 the structures set up once for every
+        // case (their stiffness, their own wind and ice per case).
+        let level = cases.level3.as_ref().map(|l| {
+            ohl_loads::prepare_structure_loads(
+                line,
+                library,
+                &l.0,
+                &l.1,
+                &cases.library_weather,
+                &expanded,
+                budget,
+                None,
+                None,
+            )
+        });
+        let each = ohl_loads::structure_loads_at(
             line,
             library,
             &cases.library_weather,
             &expanded,
             &library_names,
             budget,
+            level.as_ref(),
         );
         for (c, r) in expanded.iter().zip(each) {
             match r {

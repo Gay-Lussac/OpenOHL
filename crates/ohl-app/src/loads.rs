@@ -639,6 +639,60 @@ struct Planned {
     sets: ohl_line::CaseSets,
 }
 
+/// What a run at level 3 changed against rigid, in words: the largest
+/// move of a point and the largest change of a load (none: a rigid run).
+pub fn effect_words(cases: &[CaseLoads]) -> Option<String> {
+    let mut most: Option<(f64, String)> = None;
+    let mut moved: Option<(f64, String)> = None;
+    for c in cases {
+        let Some(l) = &c.level else { continue };
+        for m in &l.moves {
+            let d = m.local.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if moved.as_ref().is_none_or(|x| d > x.0) {
+                moved = Some((d, format!("{} {} in {}", m.structure, m.point, c.case.name)));
+            }
+        }
+        let mut structures: Vec<&str> = l.moves.iter().map(|m| m.structure.as_str()).collect();
+        structures.dedup();
+        for s in structures {
+            if let Some((p, k, a, b)) = l.largest_change(s)
+                && a.abs() > 1.0
+            {
+                let r = (b - a) / a.abs();
+                if most.as_ref().is_none_or(|x| r.abs() > x.0.abs()) {
+                    let axis = ["transverse", "longitudinal", "vertical"][k];
+                    most = Some((r, format!("{s} {p} {axis} in {}", c.case.name)));
+                }
+            }
+        }
+    }
+    match (moved, most) {
+        (Some((d, at)), Some((r, of))) => Some(format!(
+            "largest move {:.1} mm at {at}; largest change of a load against rigid {:+.1} % at \
+             {of}",
+            d * 1e3,
+            r * 100.0
+        )),
+        (Some((d, at)), None) => Some(format!("largest move {:.1} mm at {at}", d * 1e3)),
+        _ => None,
+    }
+}
+
+/// The structures a run at level 3 took rigid, with why (its first case
+/// that says).
+fn rigid_words(cases: &[CaseLoads]) -> Vec<String> {
+    cases
+        .iter()
+        .find_map(|c| c.level.as_ref())
+        .map(|l| {
+            l.rigid_structures
+                .iter()
+                .map(|(s, why)| format!("{s} ({why})"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The Structure loads window (a page until 2026-10-27; now docked as a
 /// panel or floating like every check window, [`crate::check_help::window`]).
 /// It computes only when Run is pressed (owner 2026-11-15: "the compute
@@ -655,8 +709,10 @@ pub struct LoadsPage {
     /// wind for strength on their own wind bands.
     pub local: bool,
     /// **Structures flexible** (calculation level 3; kept with the
-    /// project, [`SETTING`]).
-    pub level3: bool,
+    /// project, [`SETTING`]): none, as the line's setting
+    /// ([`LoadsPage::level3_for`]); ticked or unticked here for this
+    /// window's runs whatever the line says.
+    pub level3: Option<bool>,
     /// A computation running: since, its answer, where it is.
     running: Option<(Instant, Receiver<Finished>, std::sync::Arc<Stages>)>,
     /// How much of their capacity the structures use, per load case (with
@@ -744,6 +800,18 @@ impl LoadsPage {
             kept.loaded(serde_json::to_string(&self.choice).unwrap_or_default());
         }
         self.kept = kept;
+    }
+
+    /// Whether the runs take calculation level 3 on `line`: the window's
+    /// own choice, else the line's setting (Line › Criteria › Calculation
+    /// options). Err: the line asks for full structures (level 4, not
+    /// built yet) and the window does not say otherwise.
+    pub fn level3_for(&self, line: &ohl_line::Line) -> Result<bool, String> {
+        match self.level3 {
+            Some(on) => Ok(on),
+            None => Ok(line.solver.structures.level()?
+                == ohl_line::solve::flexible::CalculationLevel::Linear),
+        }
     }
 
     /// Whether a computation runs.
@@ -890,6 +958,15 @@ impl LoadsPage {
             ));
             return;
         };
+        // The calculation level: the window's, else the line's (level 4
+        // refused, not built yet).
+        let level3 = match self.level3_for(&model.line) {
+            Ok(on) => on,
+            Err(e) => {
+                self.results = Some(Err(e));
+                return;
+            }
+        };
         // Its notes and run times (the line itself goes in as it is: the
         // load cases take the local conditions, one rule).
         let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
@@ -926,7 +1003,7 @@ impl LoadsPage {
             cases,
             known,
             local: self.local,
-            level3: self.level3,
+            level3,
             plan: Some(plan.clone()),
         };
         self.units.1 = plan.pairs();
@@ -939,6 +1016,23 @@ impl LoadsPage {
             let started = Instant::now();
             let r = run(&inputs, &progress, 0);
             local.finish(LOCAL.1, started.elapsed());
+            // Its time and effect, for Calculation options (this computer).
+            if let Some(Run {
+                loads: Ok(cases), ..
+            }) = &r
+            {
+                crate::calc_level::record(
+                    if inputs.level3 { 3 } else { 2 },
+                    crate::calc_level::LevelRun {
+                        what: format!("Structure loads, {} load case(s)", cases.len()),
+                        line: crate::calc_level::line_size(&inputs.line),
+                        seconds: started.elapsed().as_secs_f64(),
+                        effect: effect_words(cases),
+                        rigid: rigid_words(cases),
+                        ..Default::default()
+                    },
+                );
+            }
             let _ = tx.send((r, local.notes()));
             c.request_repaint();
         });
@@ -953,39 +1047,12 @@ impl LoadsPage {
         let Some(Ok(cases)) = &self.results else {
             return "\n\nNot run at level 3 yet: its effect and time are shown after a run.".into();
         };
-        let mut most: Option<(f64, String)> = None;
-        let mut moved: Option<(f64, String)> = None;
-        for c in cases {
-            let Some(l) = &c.level else { continue };
-            for m in &l.moves {
-                let d = m.local.iter().map(|v| v * v).sum::<f64>().sqrt();
-                if moved.as_ref().is_none_or(|x| d > x.0) {
-                    moved = Some((d, format!("{} {} in {}", m.structure, m.point, c.case.name)));
-                }
-            }
-            let mut structures: Vec<&str> = l.moves.iter().map(|m| m.structure.as_str()).collect();
-            structures.dedup();
-            for s in structures {
-                if let Some((p, k, a, b)) = l.largest_change(s)
-                    && a.abs() > 1.0
-                {
-                    let r = (b - a) / a.abs();
-                    if most.as_ref().is_none_or(|x| r.abs() > x.0.abs()) {
-                        let axis = ["transverse", "longitudinal", "vertical"][k];
-                        most = Some((r, format!("{s} {p} {axis} in {}", c.case.name)));
-                    }
-                }
-            }
-        }
-        match (moved, most) {
-            (Some((d, at)), Some((r, of))) => format!(
-                "\n\nLast run ({:.1} s): largest move {:.1} mm at {at}; largest change of a \
-                 load against rigid {:+.1} % at {of} (the larger kept).",
+        match effect_words(cases) {
+            Some(e) => format!(
+                "\n\nLast run ({:.1} s): {e} (the larger kept).",
                 self.took.map_or(0.0, |t| t.as_secs_f64()),
-                d * 1e3,
-                r * 100.0
             ),
-            _ => "\n\nThe last run was rigid (level 2).".into(),
+            None => "\n\nThe last run was rigid (level 2).".into(),
         }
     }
 
@@ -1126,9 +1193,25 @@ impl LoadsPage {
             let effect = self.level_effect();
             let local = &mut self.local;
             let level3 = &mut self.level3;
+            let line_level = model.line.solver.structures;
             match crate::check_ui::run_footer(ui, f, |ui| {
                 crate::local_solve::switch(ui, local, LOCAL.1, LOCAL.0, LOCAL.2, &model.line);
-                ui.checkbox(level3, "Structures flexible (level 3)")
+                // As the line's setting unless ticked otherwise here.
+                let follows = line_level == ohl_line::StructuresInSolve::Linear;
+                let mut on = level3.unwrap_or(follows);
+                let own = match level3 {
+                    None => format!(
+                        "As the line's setting ({}; Line › Criteria › Calculation options).",
+                        line_level.describe()
+                    ),
+                    Some(_) => format!(
+                        "Set here for this window's runs: the line's setting is {} (untick or \
+                         tick back to follow it).",
+                        line_level.describe()
+                    ),
+                };
+                if ui
+                    .checkbox(&mut on, "Structures flexible (level 3)")
                     .on_hover_text(format!(
                         "Calculation level 3 (in active development): every load case's line \
                          solved again with each structure that has a model (or a pole with an \
@@ -1136,8 +1219,13 @@ impl LoadsPage {
                          wind and ice of the case in its deflection, at unfactored loads. The \
                          loads and the usage are the larger of the rigid and the flexible \
                          solve's (never below rigid). Costs one condensation per structure \
-                         first, then 2–5 line solves per case.{effect}"
-                    ));
+                         first, then 2–5 line solves per case. {own}{effect}"
+                    ))
+                    .changed()
+                {
+                    *level3 = (on != follows || line_level == ohl_line::StructuresInSolve::Full)
+                        .then_some(on);
+                }
             }) {
                 crate::check_ui::Action::Run => self.start(model, ui.ctx()),
                 crate::check_ui::Action::Stop => self.stop(),

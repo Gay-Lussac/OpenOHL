@@ -27,9 +27,10 @@ pub(crate) fn report(
     level: CalculationLevel,
 ) {
     println!(
-        "calculation level {} (in active development, for testing): every result above, every \
-         check and every file written stay rigid (calculation level 2), but for the structure \
-         loads with --load-cases (the larger of rigid and level 3)",
+        "calculation level {} (in active development): the tables above, the clearances, the \
+         drawings and every file written are the rigid solve's (calculation level 2: they do not \
+         take the line's level yet); the structure loads with --load-cases take the larger of \
+         rigid and level 3, `ohl tensions` and `ohl strings` the worse of the two",
         level.number()
     );
     let started = std::time::Instant::now();

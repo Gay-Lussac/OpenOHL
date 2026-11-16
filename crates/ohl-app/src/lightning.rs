@@ -325,7 +325,7 @@ impl LightningWindow {
             if ground.is_none() {
                 report.notes.insert(0, NO_TERRAIN.into());
             }
-            report.notes.splice(0..0, local.notes());
+            report.notes.splice(0..0, local.rigid_notes());
             local.finish(LOCAL.1, started.elapsed());
             Ok(Arc::new(Report { report, rules }))
         });

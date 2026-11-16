@@ -187,6 +187,15 @@ impl StringChecksWindow {
             ));
             return;
         }
+        // The line's calculation level (plan of 2026-11-15, phase 5):
+        // level 4 refused (not built yet).
+        let level = match crate::calc_level::LevelInputs::of(model) {
+            Ok(l) => l,
+            Err(e) => {
+                self.job.result = Some(Err(format!("not run: {e}")));
+                return;
+            }
+        };
         // The line with the local conditions when ticked.
         let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
         let library = model.library.clone();
@@ -196,9 +205,21 @@ impl StringChecksWindow {
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();
             let line = local.line();
-            let mut solved = Vec::new();
-            let mut posts = Vec::new();
             let mut notes = local.notes();
+            // At level 3 the structures set up once for every case.
+            let at = level.prepare(line, &library, &cases);
+            let flexible = at.setup.is_some();
+            let mut tally = ohl_loads::LevelTally::default();
+            let budget = ohl_loads::default_budget();
+            // Per solve (rigid, level 3): the sections and the fixed
+            // posts' loads (their ratings) of each case and calculation.
+            type Solved = Vec<(
+                String,
+                ohl_clearance::calculation::Calc,
+                Vec<ohl_line::solve::SectionShape>,
+                Vec<ohl_line::post::PostLoad>,
+            )>;
+            let (mut solved, mut at_level): (Solved, Solved) = (Vec::new(), Vec::new());
             // Each case once per calculation its rules ask (2026-11-01).
             let names: Vec<&str> = cases.iter().map(|c| c.name.as_str()).collect();
             let plan = ohl_clearance::calculation::solves(
@@ -210,45 +231,69 @@ impl StringChecksWindow {
             for (k, calc) in plan {
                 let case = &cases[k];
                 let line = ohl_clearance::calculation::line_for(line, calc);
-                let mut shapes = Vec::new();
-                for (section, r) in line
-                    .sections
-                    .iter()
-                    .zip(local.sections(&line, &library, case))
-                {
-                    match r {
-                        Ok(s) if keep.as_ref().is_some_and(|k| !k.contains(&s.section)) => {}
-                        Ok(s) => shapes.push(s),
-                        Err(e) => notes.push(format!(
-                            "\"{}\": section {} not solved: {e}",
-                            ohl_clearance::calculation::label(&case.name, calc),
-                            section.id
-                        )),
+                let label = ohl_clearance::calculation::label(&case.name, calc);
+                let (rigid, level3) = if flexible {
+                    let s = at.solve(&line, &library, case, &budget);
+                    tally.add(&s);
+                    let f = s.flexible().map(<[_]>::to_vec);
+                    (s.rigid, f)
+                } else {
+                    (local.sections(&line, &library, case), None)
+                };
+                let mut keep_shapes = |results: Vec<
+                    Result<ohl_line::solve::SectionShape, ohl_line::LineError>,
+                >,
+                                       what: &str| {
+                    let mut shapes = Vec::new();
+                    for (section, r) in line.sections.iter().zip(results) {
+                        match r {
+                            Ok(s) if keep.as_ref().is_some_and(|k| !k.contains(&s.section)) => {}
+                            Ok(s) => shapes.push(s),
+                            Err(e) => notes.push(format!(
+                                "\"{label}\"{what}: section {} not solved: {e}",
+                                section.id
+                            )),
+                        }
                     }
+                    let posts = ohl_line::post::post_loads(&line, &library, case, &shapes);
+                    (case.name.clone(), calc, shapes, posts)
+                };
+                solved.push(keep_shapes(rigid, ""));
+                if let Some(f) = level3 {
+                    at_level.push(keep_shapes(f, " (level 3)"));
                 }
-                // The fixed posts' loads (their ratings).
-                posts.push((
-                    case.name.clone(),
-                    calc,
-                    ohl_line::post::post_loads(&line, &library, case, &shapes),
-                ));
-                solved.push((case.name.clone(), calc, shapes));
             }
-            let views: Vec<(
-                &str,
-                ohl_clearance::calculation::Calc,
-                &[ohl_line::solve::SectionShape],
-            )> = solved
-                .iter()
-                .map(|(n, c, s)| (n.as_str(), *c, s.as_slice()))
-                .collect();
-            let post_views: Vec<strings::PostCase> = posts
-                .iter()
-                .map(|(n, c, p)| (n.as_str(), *c, p.as_slice()))
-                .collect();
-            let mut report = strings::check(line, &views, &post_views, &rules, &Default::default());
+            let check = |solved: &Solved| {
+                let views: Vec<(
+                    &str,
+                    ohl_clearance::calculation::Calc,
+                    &[ohl_line::solve::SectionShape],
+                )> = solved
+                    .iter()
+                    .map(|(n, c, s, _)| (n.as_str(), *c, s.as_slice()))
+                    .collect();
+                let post_views: Vec<strings::PostCase> = solved
+                    .iter()
+                    .map(|(n, c, _, p)| (n.as_str(), *c, p.as_slice()))
+                    .collect();
+                strings::check(line, &views, &post_views, &rules, &Default::default())
+            };
+            let mut report = check(&solved);
+            let mut change = None;
+            if flexible {
+                (report, change) = strings::envelope(report, check(&at_level));
+            }
+            notes.extend(at.notes(&tally, change.clone()));
             report.notes.splice(0..0, notes);
             local.finish(LOCAL.1, started.elapsed());
+            crate::calc_level::record_run(
+                &at,
+                format!("String checks, {} case(s)", cases.len()),
+                line,
+                started.elapsed(),
+                &tally,
+                change,
+            );
             Ok(Report { report, rules })
         });
     }

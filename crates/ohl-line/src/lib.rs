@@ -77,7 +77,12 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 20 adds the calculation options of a wind
+/// Latest line file version: 21 adds the structures in the wire solve
+/// (`solver.structures`: rigid, linear or full — the calculation level of
+/// the checks that take it, [`StructuresInSolve`]; plan of 2026-11-15,
+/// phase 5), written only by a line that is not rigid (else 20 or older,
+/// [`Line::to_json`]: an older program must not read such a line as
+/// rigid); 20 adds the calculation options of a wind
 /// at an angle on the wires (`solver.wind`: the law and the friction
 /// along the wire, [`wind::WireWindOptions`]; owner, 2026-11-15), written
 /// only by a line that changes them (else 19 or older, [`Line::to_json`]);
@@ -149,7 +154,13 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 20;
+pub const LINE_FILE_VERSION: u32 = 21;
+
+/// The version before the structures in the wire solve
+/// (`solver.structures`, the calculation level; plan of 2026-11-15, phase
+/// 5): what a line without them is written as (when it has the oblique-wind
+/// options).
+const BEFORE_STRUCTURES_VERSION: u32 = 20;
 
 /// The version before the oblique-wind options (`solver.wind`; owner,
 /// 2026-11-15): what a line without them is written as (when it has a
@@ -499,6 +510,108 @@ pub struct SolverOptions {
     /// ([`wind::WireWindOptions`]).
     #[serde(default, skip_serializing_if = "wind::WireWindOptions::is_default")]
     pub wind: wind::WireWindOptions,
+    /// The structures in the wire solve — the calculation level of the
+    /// checks that take it (plan of 2026-11-15, phase 5; line file version
+    /// 21 when not the default): rigid (levels 1–2, the default), a
+    /// linear stiffness at their attachment points (level 3), or their
+    /// full models (level 4, not built yet: refused where a run asks for
+    /// it, [`StructuresInSolve::level`]). A file without it: rigid.
+    #[serde(default, skip_serializing_if = "StructuresInSolve::is_default")]
+    pub structures: StructuresInSolve,
+}
+
+/// The structures in the wire solve ([`SolverOptions::structures`]; plan
+/// of 2026-11-15, phase 5): which calculation level the checks that take
+/// it solve the line at. Each check's results say the level used; the
+/// checks that do not take it yet say they are rigid.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StructuresInSolve {
+    /// Rigid (calculation levels 1 and 2; the default): every structure
+    /// point a fixed node of the wire model.
+    #[default]
+    Rigid,
+    /// Linear stiffness (calculation level 3): each structure with a
+    /// computable model a linear stiffness at its attachment points,
+    /// condensed at the stringing state; the others rigid, said.
+    Linear,
+    /// Full structures (calculation level 4): the structures' non-linear
+    /// models in every pass. Not built yet (phase 6): read and written,
+    /// but a run asking for it is refused with why.
+    Full,
+}
+
+impl StructuresInSolve {
+    /// Every choice.
+    pub const ALL: [Self; 3] = [Self::Rigid, Self::Linear, Self::Full];
+
+    /// The default.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// As written in files and on the command line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Rigid => "rigid",
+            Self::Linear => "linear",
+            Self::Full => "full",
+        }
+    }
+
+    /// From its written name.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|j| j.as_str() == text)
+    }
+
+    /// The calculation level's number (2, 3 or 4).
+    pub fn number(self) -> u8 {
+        match self {
+            Self::Rigid => 2,
+            Self::Linear => 3,
+            Self::Full => 4,
+        }
+    }
+
+    /// In words, for report headers.
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Rigid => "structures rigid (calculation level 2)",
+            Self::Linear => {
+                "structures as a linear stiffness at their attachment points (calculation \
+                 level 3)"
+            }
+            Self::Full => "full structures (calculation level 4, not built yet)",
+        }
+    }
+
+    /// The calculation level a run solves at; full structures (level 4)
+    /// refused with why — not built yet.
+    pub fn level(self) -> Result<solve::flexible::CalculationLevel, String> {
+        match self {
+            Self::Rigid => Ok(solve::flexible::CalculationLevel::Rigid),
+            Self::Linear => Ok(solve::flexible::CalculationLevel::Linear),
+            Self::Full => Err(FULL_NOT_BUILT.to_owned()),
+        }
+    }
+}
+
+/// Why a run at full structures (calculation level 4) is refused.
+pub const FULL_NOT_BUILT: &str = "full structures (calculation level 4) are not built yet: \
+    choose rigid or linear stiffness (level 3) in Line › Criteria › Calculation options, or \
+    give --structures-as rigid|linear";
+
+/// The note of a check that does not take the line's calculation level
+/// yet, when the line asks for another than rigid (plan of 2026-11-15,
+/// §6.2); none when the line's structures are rigid.
+pub fn rigid_check_note(line: &Line) -> Option<String> {
+    (!line.solver.structures.is_default()).then(|| {
+        format!(
+            "calculation level 2 (structures rigid): this check does not take the line's level \
+             yet (the line asks for {})",
+            line.solver.structures.describe()
+        )
+    })
 }
 
 /// How a section in the blocks shares its unstressed length between its
@@ -3783,7 +3896,8 @@ impl Line {
             .iter()
             .any(|s| s.strings.iter().any(|x| x.hinge_friction_nm.is_some()));
         let written = match (sheaves, winds, shapes) {
-            _ if !self.solver.wind.is_default() => LINE_FILE_VERSION,
+            _ if !self.solver.structures.is_default() => LINE_FILE_VERSION,
+            _ if !self.solver.wind.is_default() => BEFORE_STRUCTURES_VERSION,
             _ if hinge_friction => BEFORE_WIND_OPTIONS_VERSION,
             _ if groups => BEFORE_HINGE_FRICTION_VERSION,
             _ if posts => BEFORE_GROUPS_VERSION,

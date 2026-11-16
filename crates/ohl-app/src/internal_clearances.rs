@@ -579,6 +579,16 @@ impl InternalClearancesWindow {
             let line = local.line();
             let mut solved = Vec::new();
             let mut notes = local.notes();
+            // Rigid at every calculation level until the structure body is
+            // drawn deflected (plan of 2026-11-15, §6.2: a moved conductor
+            // against an undeflected body would not be consistent).
+            if !line.solver.structures.is_default() {
+                notes.push(format!(
+                    "calculation level 2 (structures rigid): internal clearances stay rigid \
+                     until the structure body is drawn deflected — the line asks for {}",
+                    line.solver.structures.describe()
+                ));
+            }
             notes.extend(study.notes.iter().cloned());
             for case in &cases {
                 let s = scoped(local.solved(&library, case.clone()));

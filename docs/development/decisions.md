@@ -10,6 +10,60 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**Structure flexibility, phase 5: the line's calculation level, the
+checks taking it** (owner: "Go ahead with the next steps"; built, in
+active development, not approved yet;
+[user guide](../user-guide/calculation-level.md),
+[theory](../theory/structure-flexibility.md#checks-at-level-3)).
+
+- **The setting**: Line › Criteria › Calculation options › *Structures in
+  the wire solve* — rigid (default, calculation level 2), linear
+  stiffness (level 3), full structures (level 4). The line file's
+  `solver.structures` (**version 21**, written only when not rigid; an
+  older file reads rigid), OHL XML `<solver structures>`, the session's
+  solver command (one logged, undoable command), the app's revision
+  (every result out of date when it changes). **Full structures are not
+  built yet**: the choice is in the format (so phase 6 needs no new
+  version) and shown greyed in the window, not offered; a file that asks
+  for it is read, and every run taking the level refuses it with why
+  (`--structures-as full` too). Beside each choice the window shows the
+  last run at that level on this computer (its time, the setup's, how
+  many times its rigid solves, the largest change against rigid and the
+  largest move), else an estimate from the last rigid run; its (?) lists
+  the structures that stay rigid and why (from the files, and from the
+  last level-3 run).
+- **The command line**: `--structures-as rigid|linear` overrides the
+  line's choice for one run (every command reading a line through the
+  common model arguments, and `ohl line`); `ohl line --calculation-level
+  2|3` kept as the same by number (`--structures` was taken: the
+  structure type folder). `ohl line` at level 3 prints the level-3 solve
+  of each weather case after the rigid tables (which stay rigid, said).
+- **The checks taking it**: the structure loads and usage (phase 4), the
+  **wire tensions** and the **string checks** (both in the window and
+  `ohl tensions` / `ohl strings`), and the **loads sent to
+  OHL-Structure** (each case from the rigid and the level-3 solve, the
+  line-values file's `levels`; OHL-Structure says "Line forces from a
+  level 3 solve"). The weather-case checks set the structures up once
+  per run with each section by its own method (a rule asking another
+  method than a section's is solved rigid, said) and each structure's own
+  wind and ice of the weather case on its own; **never less safe than
+  rigid**: both solves checked, per row the worse kept with both values.
+  The string swing at level 3 is measured from the moved top, the
+  structure's tilt left out (said).
+- **The Structure loads window's switch follows the line's choice**;
+  ticked or unticked there it sets that window's runs (and the loads sent
+  to OHL-Structure) only, kept with the project's setup, its hover saying
+  the line's choice; ticked back, it follows the line again. A setup kept
+  before (ticked) still reads as ticked.
+- **Not yet taking the level** (rigid, said where cheap — "calculation
+  level 2 (structures rigid): this check does not take the line's level
+  yet"): the clearances (vertical, radial, wire clearances, vegetation,
+  safety volumes, LiDAR; their adoption waits for the swing-arc band work
+  on the clearance positions), galloping, ice shedding, lightning, the
+  distance between conductors; internal clearances stay rigid until the
+  structure body is drawn deflected. The views, tables, sagging tables and
+  drawings are the rigid solve's.
+
 **A joint is an attach joint only while attachment points are on it;
 OHL-Design's Structure types page asks onto the joint or an offset**
 (owner: *"if no attach points are left on the joint then no it shouldn't

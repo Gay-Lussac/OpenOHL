@@ -1381,6 +1381,26 @@ impl LoadCasesTab {
             ),
             Tone::Good,
         )];
+        // The calculation level the line solved its cases at (line-values
+        // version 10; plan of 2026-11-15, phase 5).
+        let at_three = info.levels.iter().filter(|l| **l == 3).count();
+        out.push(if at_three > 0 {
+            (
+                format!(
+                    "Line forces from a level 3 solve (calculation level 3, in active \
+                     development: each structure with a model a linear stiffness at its \
+                     attachment points): {at_three} case(s) from the level-3 solve, each beside \
+                     the same case from the rigid solve — check both, the worse governs (never \
+                     less safe than rigid)."
+                ),
+                Tone::Info,
+            )
+        } else {
+            (
+                "Line forces from a level 2 solve (structures rigid).".to_owned(),
+                Tone::Info,
+            )
+        });
         // What the line says is not sent or not checked (2026-11-14: a
         // library case that does not compute, cases of the groups not in
         // the library), its groups and the local conditions: each a line
@@ -2128,6 +2148,54 @@ mod line_rows_tests {
     /// name in the table, taking `structure_wind_factored` on every
     /// member; resolved for a run, its pressure is 600 × 1.4 = 840 Pa to
     /// −x.
+    /// The line's calculation level said (plan of 2026-11-15, phase 5):
+    /// "Line forces from a level 3 solve" when a case of the file was
+    /// solved at level 3, else from a level 2 solve (rigid).
+    #[test]
+    fn the_line_status_says_the_calculation_level() {
+        let mut v = PlacedValues::pending("T2", "line", "type-02", "");
+        v.note = None;
+        v.values.points.push(LinePoint {
+            label: "A1".into(),
+            sets: vec![1],
+            phases: vec!["L1".into()],
+        });
+        for case in ["wind (rigid)", "wind (level 3)"] {
+            v.cases.push(case.into());
+            v.values.values.push(LineValue {
+                case: case.into(),
+                point: Some("A1".into()),
+                set: None,
+                quantity: LineQuantity::Transverse,
+                value: 1000.0,
+            });
+        }
+        let said = |v: &PlacedValues| {
+            let mut tab = LoadCasesTab::default();
+            tab.set_line_values(v.clone());
+            tab.line_status()
+                .into_iter()
+                .map(|(t, _)| t)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let rigid = said(&v);
+        assert!(
+            rigid.contains("Line forces from a level 2 solve"),
+            "{rigid}"
+        );
+        v.levels = vec![2, 3];
+        let three = said(&v);
+        assert!(
+            three.contains("Line forces from a level 3 solve"),
+            "{three}"
+        );
+        assert!(
+            three.contains("1 case(s) from the level-3 solve"),
+            "{three}"
+        );
+    }
+
     #[test]
     fn the_line_cases_wind_on_the_body_is_a_case_of_its_own() {
         use ohl_structure_loads::{CaseWind, Direction};

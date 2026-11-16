@@ -100,13 +100,18 @@
 mod analysis;
 mod body;
 pub mod capacity;
+// The line's calculation level in the checks of weather cases (plan of
+// 2026-11-15, phase 5).
+mod check_level;
 // The structures' stiffness for the line's coupled solve (in active
-// development: an entry point for testing; no check uses it yet).
+// development: the structure loads, and the checks through
+// `check_level`).
 mod flexibility;
 mod options;
 mod write;
 
 pub use body::add_structure_loads;
+pub use check_level::{CheckLevel, LevelSolve, LevelTally, prepare_check_level};
 pub use flexibility::{
     FlexibleRun, FlexibleSetup, LoadsSetup, flexible_structures, prepare_structure_loads,
     solve_line_flexible,

@@ -987,6 +987,33 @@
                 </xs:restriction>
               </xs:simpleType>
             </xs:attribute>
+            <!-- Version 20 (2026-11-15): a wind at an angle on the wires,
+                 the law of the force normal to the wire (projected area,
+                 default; or the cross-flow principle) and the friction
+                 coefficient along it (none: no force along the wire). -->
+            <xs:attribute name="wind_law" default="projected">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="projected"/>
+                  <xs:enumeration value="cross_flow"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+            <xs:attribute name="wire_friction" type="xs:double"/>
+            <!-- Version 21 (2026-11-16): the structures in the wire solve,
+                 the calculation level of the checks that take it — rigid
+                 (default, level 2), linear (level 3: a linear stiffness at
+                 the attachment points) or full (level 4: not built yet,
+                 read but refused by a run). -->
+            <xs:attribute name="structures" default="rigid">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="rigid"/>
+                  <xs:enumeration value="linear"/>
+                  <xs:enumeration value="full"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
 

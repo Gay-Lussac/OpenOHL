@@ -1259,6 +1259,7 @@ pub fn to_xml(line: &Line) -> String {
             blocks,
             local_spans,
             wind,
+            structures,
         } = solver;
         out.push_str("  <solver");
         attr(&mut out, "jumper_loads", jumper_loads.as_str());
@@ -1279,6 +1280,9 @@ pub fn to_xml(line: &Line) -> String {
         }
         if let Some(f) = wind.friction {
             attr(&mut out, "wire_friction", &format!("{:?}", f.0));
+        }
+        if !structures.is_default() {
+            attr(&mut out, "structures", structures.as_str());
         }
         out.push_str("/>\n");
     }
@@ -2596,6 +2600,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                     "local_spans",
                     "wind_law",
                     "wire_friction",
+                    "structures",
                 ],
                 &[],
             )?;
@@ -2638,6 +2643,12 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                         .and_then(ohl_line::wind::Friction::new)?,
                 ),
             };
+            // The structures in the wire solve (line file version 21).
+            let structures = match owned(s, "structures") {
+                None => ohl_line::StructuresInSolve::default(),
+                Some(t) => ohl_line::StructuresInSolve::parse(&t)
+                    .ok_or_else(|| format!("solver structures \"{t}\": rigid, linear or full"))?,
+            };
             ohl_line::SolverOptions {
                 jumper_loads,
                 taps,
@@ -2645,6 +2656,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
                 blocks,
                 local_spans,
                 wind: ohl_line::wind::WireWindOptions { law, friction },
+                structures,
             }
         }
     };
