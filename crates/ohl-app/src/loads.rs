@@ -64,9 +64,9 @@ pub struct Inputs {
     pub known: Vec<String>,
     /// **Use local conditions** ticked.
     pub local: bool,
-    /// **Structures flexible** ticked: calculation level 3
-    /// ([`ohl_loads::structure_loads_at`]).
-    pub level3: bool,
+    /// The calculation level ([`LoadsPage::level_for`]): 3 or 4 with
+    /// **Structures flexible** ([`ohl_loads::structure_loads_at`]).
+    pub level: ohl_line::solve::flexible::CalculationLevel,
     /// Per structure, the load cases it is computed for (the window's
     /// setup and the line's groups, [`crate::loads_plan`]); none: every
     /// structure in every case it takes.
@@ -92,7 +92,7 @@ pub struct NotComputed {
 pub struct Stages {
     /// 0: starting, 1: solving the line in each load case, 2: the
     /// structures, 3: done, 4: the structures' stiffness at their points
-    /// (calculation level 3, before 1).
+    /// (calculation levels 3 and 4, before 1).
     pub stage: std::sync::atomic::AtomicUsize,
     /// Done in the stage.
     pub done: std::sync::atomic::AtomicUsize,
@@ -106,6 +106,53 @@ pub struct Stages {
     pub ended_ms: std::sync::atomic::AtomicU64,
     /// Stops the run (Stop): no answer.
     pub cancel: ohl_core::budget::CancelToken,
+    /// At calculation level 4, where the case's loop is (per pass and per
+    /// structure; owner 2026-11-15: a progress bar, the structures in
+    /// parallel).
+    pub loop_at: std::sync::Arc<LoopAt>,
+}
+
+/// Where a level-4 case's loop is ([`Stages::loop_at`]).
+#[derive(Debug, Default)]
+pub struct LoopAt {
+    /// The line solves of the case so far (0: none yet at level 4).
+    pub pass: std::sync::atomic::AtomicUsize,
+    /// The level of the pass (3 or 4).
+    pub level: std::sync::atomic::AtomicUsize,
+    /// Structures solved in the pass.
+    pub done: std::sync::atomic::AtomicUsize,
+    /// Of.
+    pub of: std::sync::atomic::AtomicUsize,
+    /// The largest mismatch of the last pass, µm.
+    pub mismatch_um: std::sync::atomic::AtomicU64,
+}
+
+impl LoopAt {
+    /// In words ("pass 3 at level 4, structure 5 of 12, mismatch 1.2 mm");
+    /// none before a level-4 loop.
+    fn words(&self) -> Option<String> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let pass = self.pass.load(Relaxed);
+        if pass == 0 {
+            return None;
+        }
+        let (done, of) = (self.done.load(Relaxed), self.of.load(Relaxed));
+        let mismatch = self.mismatch_um.load(Relaxed);
+        Some(format!(
+            "pass {pass} at level {}{}{}",
+            self.level.load(Relaxed),
+            if done > 0 {
+                format!(", structure {done} of {of}")
+            } else {
+                String::new()
+            },
+            if mismatch > 0 {
+                format!(", mismatch {:.1} mm", mismatch as f64 / 1e3)
+            } else {
+                String::new()
+            }
+        ))
+    }
 }
 
 impl Stages {
@@ -129,11 +176,14 @@ impl Stages {
         let since = std::time::Duration::from_millis(self.since_ms.load(Relaxed));
         let what = match stage {
             1 => format!(
-                "Solving the line: case {} of {total}",
-                (done + 1).min(total)
+                "Solving the line: case {} of {total}{}",
+                (done + 1).min(total),
+                self.loop_at
+                    .words()
+                    .map_or(String::new(), |w| format!(" ({w})"))
             ),
             2 => format!("Structures: {done} of {total}"),
-            4 => format!("Structures' stiffness (level 3): {done} of {total}"),
+            4 => format!("Structures' stiffness (levels 3 and 4): {done} of {total}"),
             _ => "Starting".to_owned(),
         };
         // The time left in this stage, from its own pace.
@@ -218,28 +268,42 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         n => n,
     };
     let budget = ohl_loads::default_budget().cancel_token(stages.cancel.clone());
-    // Calculation level 3: first the structures' stiffness at their
+    // Calculation level 3 or 4: first the structures' stiffness at their
     // points and their own wind and ice per case (the structures in
-    // parallel), kept for every case.
-    let level = if i.level3 {
+    // parallel; level 4 their full models too), kept for every case.
+    let full = i.level == ohl_line::solve::flexible::CalculationLevel::Full;
+    let level = if i.level.flexible() {
         stages.begin(4, line.structures.len(), ms());
         let report = |n: usize, of: usize| {
             stages.done.store(n, Relaxed);
             stages.total.store(of, Relaxed);
         };
-        let setup = ohl_loads::prepare_structure_loads(
+        let setup = ohl_loads::prepare_structure_loads_at(
             line,
             &i.library,
             &i.types,
             &sections,
             &i.weather,
             &expanded,
+            i.level,
             &budget,
             Some(&report),
             Some(&stages.cancel),
         );
         if stages.cancel.is_cancelled() {
             return None;
+        }
+        // Level 4: the loops tell the bar their pass and structure.
+        if let Some(f) = &setup.full {
+            let at = stages.loop_at.clone();
+            f.on_progress(std::sync::Arc::new(move |p| {
+                at.pass.store(p.pass, Relaxed);
+                at.level.store(usize::from(p.level), Relaxed);
+                at.done.store(p.done, Relaxed);
+                at.of.store(p.of, Relaxed);
+                at.mismatch_um
+                    .store(p.mismatch.map_or(0, |m| (m * 1e6) as u64), Relaxed);
+            }));
         }
         Some(setup)
     } else {
@@ -275,7 +339,13 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         mine
     };
     let mut each: Vec<Option<Result<CaseLoads, String>>> = vec![None; expanded.len()];
-    let workers = threads.clamp(1, expanded.len().max(1));
+    // Level 4: a case at a time, its structures side by side in each pass
+    // (the bar says the pass and the structure).
+    let workers = if full {
+        1
+    } else {
+        threads.clamp(1, expanded.len().max(1))
+    };
     if workers == 1 {
         for (k, r) in solve_one() {
             each[k] = Some(r);
@@ -639,8 +709,9 @@ struct Planned {
     sets: ohl_line::CaseSets,
 }
 
-/// What a run at level 3 changed against rigid, in words: the largest
-/// move of a point and the largest change of a load (none: a rigid run).
+/// What a run at level 3 or 4 changed against rigid, in words: the
+/// largest move of a point and the largest change of a load (none: a
+/// rigid run); at level 4 the cases with a structure failing there.
 pub fn effect_words(cases: &[CaseLoads]) -> Option<String> {
     let mut most: Option<(f64, String)> = None;
     let mut moved: Option<(f64, String)> = None;
@@ -666,20 +737,30 @@ pub fn effect_words(cases: &[CaseLoads]) -> Option<String> {
             }
         }
     }
+    let failing: usize = cases
+        .iter()
+        .filter_map(|c| c.level.as_ref())
+        .map(|l| l.full_failed.len())
+        .sum();
+    let failing = if failing > 0 {
+        format!("; {failing} structure(s) failed at level 4 in a case (taken linear there)")
+    } else {
+        String::new()
+    };
     match (moved, most) {
         (Some((d, at)), Some((r, of))) => Some(format!(
             "largest move {:.1} mm at {at}; largest change of a load against rigid {:+.1} % at \
-             {of}",
+             {of}{failing}",
             d * 1e3,
             r * 100.0
         )),
-        (Some((d, at)), None) => Some(format!("largest move {:.1} mm at {at}", d * 1e3)),
+        (Some((d, at)), None) => Some(format!("largest move {:.1} mm at {at}{failing}", d * 1e3)),
         _ => None,
     }
 }
 
-/// The structures a run at level 3 took rigid, with why (its first case
-/// that says).
+/// The structures a run at level 3 or 4 took rigid, with why (its first
+/// case that says).
 fn rigid_words(cases: &[CaseLoads]) -> Vec<String> {
     cases
         .iter()
@@ -708,10 +789,10 @@ pub struct LoadsPage {
     /// structures' wind for strength and wire ice on their spans, and their
     /// wind for strength on their own wind bands.
     pub local: bool,
-    /// **Structures flexible** (calculation level 3; kept with the
-    /// project, [`SETTING`]): none, as the line's setting
-    /// ([`LoadsPage::level3_for`]); ticked or unticked here for this
-    /// window's runs whatever the line says.
+    /// **Structures flexible** (calculation level 3, or 4 when the line's
+    /// setting is full structures; kept with the project, [`SETTING`]):
+    /// none, as the line's setting ([`LoadsPage::level_for`]); ticked or
+    /// unticked here for this window's runs whatever the line says.
     pub level3: Option<bool>,
     /// A computation running: since, its answer, where it is.
     running: Option<(Instant, Receiver<Finished>, std::sync::Arc<Stages>)>,
@@ -802,15 +883,18 @@ impl LoadsPage {
         self.kept = kept;
     }
 
-    /// Whether the runs take calculation level 3 on `line`: the window's
-    /// own choice, else the line's setting (Line › Criteria › Calculation
-    /// options). Err: the line asks for full structures (level 4, not
-    /// built yet) and the window does not say otherwise.
-    pub fn level3_for(&self, line: &ohl_line::Line) -> Result<bool, String> {
+    /// The calculation level the runs take on `line`: the line's setting
+    /// (Line › Criteria › Calculation options), unless the window says
+    /// otherwise — **Structures flexible** unticked: rigid (level 2);
+    /// ticked: level 3, or 4 when the line's setting is full structures.
+    pub fn level_for(&self, line: &ohl_line::Line) -> ohl_line::solve::flexible::CalculationLevel {
+        use ohl_line::solve::flexible::CalculationLevel as L;
+        let own = line.solver.structures.level();
         match self.level3 {
-            Some(on) => Ok(on),
-            None => Ok(line.solver.structures.level()?
-                == ohl_line::solve::flexible::CalculationLevel::Linear),
+            Some(false) => L::Rigid,
+            Some(true) if own == L::Full => L::Full,
+            Some(true) => L::Linear,
+            None => own,
         }
     }
 
@@ -958,15 +1042,8 @@ impl LoadsPage {
             ));
             return;
         };
-        // The calculation level: the window's, else the line's (level 4
-        // refused, not built yet).
-        let level3 = match self.level3_for(&model.line) {
-            Ok(on) => on,
-            Err(e) => {
-                self.results = Some(Err(e));
-                return;
-            }
-        };
+        // The calculation level: the window's, else the line's.
+        let level = self.level_for(&model.line);
         // Its notes and run times (the line itself goes in as it is: the
         // load cases take the local conditions, one rule).
         let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
@@ -1003,7 +1080,7 @@ impl LoadsPage {
             cases,
             known,
             local: self.local,
-            level3,
+            level,
             plan: Some(plan.clone()),
         };
         self.units.1 = plan.pairs();
@@ -1022,7 +1099,7 @@ impl LoadsPage {
             }) = &r
             {
                 crate::calc_level::record(
-                    if inputs.level3 { 3 } else { 2 },
+                    inputs.level.number(),
                     crate::calc_level::LevelRun {
                         what: format!("Structure loads, {} load case(s)", cases.len()),
                         line: crate::calc_level::line_size(&inputs.line),
@@ -1041,11 +1118,12 @@ impl LoadsPage {
         self.runs_started += 1;
     }
 
-    /// What the last run at level 3 changed and took, for the switch's
-    /// help (settings explain their effect, measured).
+    /// What the last run at level 3 or 4 changed and took, for the
+    /// switch's help (settings explain their effect, measured).
     fn level_effect(&self) -> String {
         let Some(Ok(cases)) = &self.results else {
-            return "\n\nNot run at level 3 yet: its effect and time are shown after a run.".into();
+            return "\n\nNot run at level 3 or 4 yet: its effect and time are shown after a run."
+                .into();
         };
         match effect_words(cases) {
             Some(e) => format!(
@@ -1197,7 +1275,7 @@ impl LoadsPage {
             match crate::check_ui::run_footer(ui, f, |ui| {
                 crate::local_solve::switch(ui, local, LOCAL.1, LOCAL.0, LOCAL.2, &model.line);
                 // As the line's setting unless ticked otherwise here.
-                let follows = line_level == ohl_line::StructuresInSolve::Linear;
+                let follows = line_level != ohl_line::StructuresInSolve::Rigid;
                 let mut on = level3.unwrap_or(follows);
                 let own = match level3 {
                     None => format!(
@@ -1211,7 +1289,14 @@ impl LoadsPage {
                     ),
                 };
                 if ui
-                    .checkbox(&mut on, "Structures flexible (level 3)")
+                    .checkbox(
+                        &mut on,
+                        if line_level == ohl_line::StructuresInSolve::Full {
+                            "Structures flexible (level 4)"
+                        } else {
+                            "Structures flexible (level 3)"
+                        },
+                    )
                     .on_hover_text(format!(
                         "Calculation level 3 (in active development): every load case's line \
                          solved again with each structure that has a model (or a pole with an \
@@ -1219,12 +1304,16 @@ impl LoadsPage {
                          wind and ice of the case in its deflection, at unfactored loads. The \
                          loads and the usage are the larger of the rigid and the flexible \
                          solve's (never below rigid). Costs one condensation per structure \
-                         first, then 2–5 line solves per case. {own}{effect}"
+                         first, then 2–5 line solves per case. Level 4 when the line's setting \
+                         is full structures: from level 3's solution each structure solved in \
+                         full in every pass (P-Delta, tension-only members and guys), the \
+                         structures side by side, the cases one after the other; a structure \
+                         failing at level 4 in a case is taken linear there and its usage \
+                         reported failing. {own}{effect}"
                     ))
                     .changed()
                 {
-                    *level3 = (on != follows || line_level == ohl_line::StructuresInSolve::Full)
-                        .then_some(on);
+                    *level3 = (on != follows).then_some(on);
                 }
             }) {
                 crate::check_ui::Action::Run => self.start(model, ui.ctx()),

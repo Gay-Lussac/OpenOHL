@@ -10,6 +10,55 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**Calculation level 4 — the structures in full (structure flexibility,
+phase 6)** (owner: *"go ahead with 6"*; the plan's answers of 2026-11-15:
+*"keep the larger of rigid and flexible, otherwise your
+recommendations"*, and the speed note: the structures in parallel with a
+progress bar, the member and code checks once at the end; built, in
+active development, not approved yet;
+[theory](../theory/structure-flexibility.md#level-4-the-structures-in-full),
+[user guide](../user-guide/calculation-level.md)).
+
+- **Structure engine** (approved changes, additive): a **warm start**
+  of the tension-only active set (`ohl_structures_fe::solve::solve_from`;
+  `solve` is it without one, every solve of before unchanged bit for
+  bit; a warm start that fails is solved again cold), and the **tangent
+  at a solution condensed** to the attachment points
+  (`ohl_structures_fe::tangent`: the condensation's own code at a given
+  solution; with `FullModel`, a structure's full solve at its points).
+- **The loop in two stages** (`ohl_line::solve::flexible::solve_line_staged`):
+  level 3 to its convergence, then the full answers from that state (no
+  line solve more), their tangents in the Newton step, the structures
+  solved side by side; 20 passes for each stage. Level 3 and rigid
+  unchanged (their tests bit for bit).
+- **Fallback**: where the Newton step of the full stage cannot be taken,
+  staggered passes relaxed by Aitken's factor (Irons and Tuck 1969).
+- **A structure whose full solve fails in a case** is taken linear there
+  for the rest of the case and listed; its usage in that case is
+  reported failing (infinite, never a pass). **A case that does not
+  converge fails**, its rigid solve kept and said rigid.
+- **Never below rigid**: the structure loads keep per point and
+  component the larger of rigid and level 4; the checks take both
+  solves, the worse kept — as at level 3.
+- **Where**: the line's setting *Full structures* is offered (no longer
+  greyed; its time and effect beside it, measured), `--structures-as
+  full` and `--calculation-level 4` on the command line, the structure
+  loads (the cases one after the other at level 4, each case's
+  structures side by side; the bar says the pass and the structure), the
+  wire tensions, the string checks, the loads sent to OHL-Structure
+  (their cases' level 4 in the line-values file's `levels`, the same
+  version), and the reference state: **solved at level 4 when the line's
+  setting is full structures**, else at 3 (`ohl_loads::reference::reference_level`,
+  which replaces the constant `REFERENCE_LEVEL`); a state of the other
+  level is out of date.
+- **No format change**: `full` was already read and written (line file
+  version 21).
+- **Open**: the clearance crate's tension and string envelopes still name
+  the coupled solve "level 3" in a few of their notes (the check's own
+  header says level 4); the structures' own wind and ice in the
+  weather-case runs of `ohl line --calculation-level 4` (as at level 3,
+  not in them, said).
+
 **A reference state of the structures (structure flexibility, phase
 5b)** (owner: *"Would it be possible to define a weather case at which
 the structure is drawn in OHL design where it would solve at level 4 and
@@ -25,7 +74,8 @@ please"*; built, in active development, not approved yet;
   command when the solve arrives), **Remove** (one command). Solved at
   **level 3** for now; level 4, once built, takes its place
   (`ohl_loads::reference::REFERENCE_LEVEL`, the one place) — a state of
-  another level is then out of date.
+  another level is then out of date. *(Phase 6, the same day: solved at
+  level 4 when the line's setting is full structures, above.)*
 - **Kept in the line file** (`reference`, **version 22**, written only
   when set; a project's settings row `reference`): per attachment point of
   each flexible structure its displacement and the wires' forces in the

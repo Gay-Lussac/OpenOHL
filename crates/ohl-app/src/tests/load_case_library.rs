@@ -379,7 +379,7 @@ fn inputs(model: &model::Model, local: bool) -> crate::loads::Inputs {
             .map(|s| s.cases),
         known: crate::load_case_sets::library_names(model).unwrap_or_default(),
         local,
-        level3: false,
+        level: ohl_line::solve::flexible::CalculationLevel::Rigid,
         plan: None,
     }
 }

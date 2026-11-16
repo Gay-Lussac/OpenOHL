@@ -473,7 +473,7 @@ fn a_run_reports_both_stages_and_stops_when_cancelled() {
         cases: Ok(library.cases.clone()),
         known: library.cases.iter().map(|c| c.name.clone()).collect(),
         local: false,
-        level3: false,
+        level: ohl_line::solve::flexible::CalculationLevel::Rigid,
         plan: None,
     };
     let stages = crate::loads::Stages::default();
@@ -528,11 +528,11 @@ fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
         cases: Ok(library.cases.clone()),
         known: library.cases.iter().map(|c| c.name.clone()).collect(),
         local: false,
-        level3: false,
+        level: ohl_line::solve::flexible::CalculationLevel::Rigid,
         plan: None,
     };
     let rigid = crate::loads::run(&inputs, &crate::loads::Stages::default(), 0).unwrap();
-    inputs.level3 = true;
+    inputs.level = ohl_line::solve::flexible::CalculationLevel::Linear;
     let stages = crate::loads::Stages::default();
     let flexible = crate::loads::run(&inputs, &stages, 0).unwrap();
     assert_eq!(stages.stage.load(Relaxed), 3, "done");
@@ -561,6 +561,51 @@ fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
             }
         }
     }
+    // Level 4: every case from its level-4 solve too, never below rigid,
+    // the cases one at a time (the structures side by side), the bar's
+    // loop words kept.
+    inputs.level = ohl_line::solve::flexible::CalculationLevel::Full;
+    let stages = crate::loads::Stages::default();
+    let four = crate::loads::run(&inputs, &stages, 0).unwrap();
+    assert!(
+        stages.loop_at.pass.load(Relaxed) >= 1,
+        "the loop told its pass"
+    );
+    for (r, f) in a.iter().zip(four.loads.as_ref().unwrap()) {
+        let level = f.level.as_ref().expect("level 4");
+        assert_eq!(level.level, 4);
+        assert!(level.failed.is_none(), "{:?}", level.failed);
+        assert!(level.full_failed.is_empty(), "{:?}", level.full_failed);
+        assert!(f.notes.iter().any(|n| n.contains("calculation level 4")));
+        for x in &r.loads {
+            let y = f
+                .loads
+                .iter()
+                .find(|y| y.structure == x.structure && y.point == x.point)
+                .unwrap();
+            for k in 0..3 {
+                assert!(y.factored[k].abs() >= x.factored[k].abs());
+            }
+        }
+    }
+    for (ca, cb) in rigid.usage.iter().zip(&four.usage) {
+        for (sa, sb) in ca.structures.iter().zip(&cb.structures) {
+            if let (Some(x), Some(y)) = (&sa.fe, &sb.fe) {
+                assert!(y.usage >= x.usage - 1e-12, "{}: {x:?} {y:?}", sa.structure);
+            }
+        }
+    }
+    stages.loop_at.pass.store(2, Relaxed);
+    stages.loop_at.level.store(4, Relaxed);
+    stages.loop_at.done.store(1, Relaxed);
+    stages.loop_at.of.store(3, Relaxed);
+    stages.stage.store(1, Relaxed);
+    let p = stages.progress(std::time::Duration::from_secs(1));
+    assert!(
+        p.text.contains("pass 2 at level 4, structure 1 of 3"),
+        "{}",
+        p.text
+    );
     let s = crate::loads::Stages::default();
     s.stage.store(4, Relaxed);
     s.total.store(7, Relaxed);
@@ -568,7 +613,7 @@ fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
     let p = s.progress(std::time::Duration::from_secs(1));
     assert!(
         p.text
-            .starts_with("Structures' stiffness (level 3): 2 of 7"),
+            .starts_with("Structures' stiffness (levels 3 and 4): 2 of 7"),
         "{}",
         p.text
     );
@@ -585,20 +630,21 @@ fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
     let old: crate::loads_plan::Choice = serde_json::from_str("{\"level3\":true}").unwrap();
     assert_eq!(old.level3, Some(true));
     // The window follows the line's setting unless set here.
+    use ohl_line::solve::flexible::CalculationLevel as L;
     let mut page = crate::loads::LoadsPage::default();
     let mut line = model.line.clone();
-    assert_eq!(page.level3_for(&line), Ok(false));
+    assert_eq!(page.level_for(&line), L::Rigid);
     line.solver.structures = ohl_line::StructuresInSolve::Linear;
-    assert_eq!(page.level3_for(&line), Ok(true));
+    assert_eq!(page.level_for(&line), L::Linear);
     page.level3 = Some(false);
-    assert_eq!(page.level3_for(&line), Ok(false));
+    assert_eq!(page.level_for(&line), L::Rigid);
     page.level3 = None;
     line.solver.structures = ohl_line::StructuresInSolve::Full;
-    assert!(
-        page.level3_for(&line)
-            .unwrap_err()
-            .contains("not built yet")
-    );
+    assert_eq!(page.level_for(&line), L::Full);
+    page.level3 = Some(true);
+    assert_eq!(page.level_for(&line), L::Full);
+    line.solver.structures = ohl_line::StructuresInSolve::Rigid;
+    assert_eq!(page.level_for(&line), L::Linear);
 }
 
 /// Every section the window's **user guide ↗** buttons open is a heading
@@ -699,7 +745,7 @@ fn profile_structure_loads() {
         cases: Ok(library.cases.clone()),
         known: names,
         local: false,
-        level3: false,
+        level: ohl_line::solve::flexible::CalculationLevel::Rigid,
         plan: Some(plan),
     };
     let timed = |threads: usize| {

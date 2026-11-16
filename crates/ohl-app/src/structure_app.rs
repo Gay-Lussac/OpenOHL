@@ -216,10 +216,11 @@ pub struct LineInputs {
     /// The placed structures' own links that differ from their types'
     /// ([`crate::link_tool::placed_links`]), by structure id.
     pub links: std::collections::HashMap<String, Vec<ohl_structure_loads::PlacedLink>>,
-    /// Solved at calculation level 3 (the line's setting, or the Structure
-    /// loads window's): the structure types and the models' sections.
-    /// None: rigid.
-    pub level3: Option<(
+    /// Solved at calculation level 3 or 4 (the line's setting, or the
+    /// Structure loads window's): the level, the structure types and the
+    /// models' sections. None: rigid.
+    pub level: Option<(
+        ohl_line::solve::flexible::CalculationLevel,
         ohl_structures::StructureLibrary,
         ohl_sections::SectionLibrary,
     )>,
@@ -239,13 +240,11 @@ pub fn line_load_cases(model: &Model) -> Vec<ohl_loads::LoadCase> {
 
 impl LineInputs {
     /// The model as it is now, at the line's calculation level (Line ›
-    /// Criteria › Calculation options; full structures, not built yet,
-    /// rigid). (Tests; the app passes the Structure loads window's choices,
-    /// [`LineInputs::of_with`].)
+    /// Criteria › Calculation options). (Tests; the app passes the
+    /// Structure loads window's choices, [`LineInputs::of_with`].)
     #[cfg(test)]
     pub fn of(model: &Model) -> Self {
-        let level3 = model.line.solver.structures == ohl_line::StructuresInSolve::Linear;
-        Self::of_with(model, false, level3)
+        Self::of_with(model, false, model.line.solver.structures.level())
     }
 
     /// [`LineInputs::of`] with the line's check's **Use local conditions**
@@ -260,10 +259,14 @@ impl LineInputs {
     }
 
     /// The model as it is now with the Structure loads window's **Use
-    /// local conditions** (`local`) and its calculation level (`level3`:
-    /// level 3, else rigid; [`crate::loads::LoadsPage::level3_for`]):
-    /// OHL-Structure gets the cases as that window computes them.
-    pub fn of_with(model: &Model, local: bool, level3: bool) -> Self {
+    /// local conditions** (`local`) and its calculation level (`level`;
+    /// [`crate::loads::LoadsPage::level_for`]): OHL-Structure gets the
+    /// cases as that window computes them.
+    pub fn of_with(
+        model: &Model,
+        local: bool,
+        level: ohl_line::solve::flexible::CalculationLevel,
+    ) -> Self {
         Self {
             line: model.line.clone(),
             library: model.library.clone(),
@@ -271,8 +274,9 @@ impl LineInputs {
             load_cases: line_load_cases(model),
             local,
             links: crate::link_tool::placed_links(model),
-            level3: level3.then(|| {
+            level: level.flexible().then(|| {
                 (
+                    level,
                     model
                         .types
                         .as_ref()
@@ -292,8 +296,8 @@ impl LineInputs {
     pub fn compute(&self) -> Result<StructureCaseLoads, String> {
         let mut cases = ohl_structure_link::structure_cases(&self.weather, &self.load_cases)
             .with_local(self.local);
-        if let Some((types, sections)) = &self.level3 {
-            cases = cases.at_level_three(types.clone(), sections.clone());
+        if let Some((level, types, sections)) = &self.level {
+            cases = cases.at_level(*level, types.clone(), sections.clone());
         }
         if cases.is_empty() {
             return Err(NO_CASES.into());
@@ -660,8 +664,9 @@ pub struct StructureApps {
     values_version: Option<u64>,
     /// The line check's Use local conditions they were written with.
     values_local: bool,
-    /// The calculation level (3: true) they were computed at.
-    values_level3: bool,
+    /// The calculation level (its number; 0: none yet) they were computed
+    /// at.
+    values_level: u8,
     /// The line's version seen last, and since when.
     seen: Option<(u64, Instant)>,
     /// A computation of the values running: what went wrong, when done.
@@ -1010,7 +1015,12 @@ impl StructureApps {
     /// computation at a time), and when the line's check's **Use local
     /// conditions** (`local`) changed. What went wrong in a computation
     /// finished.
-    pub fn refresh_values(&mut self, model: &Model, local: bool, level3: bool) -> Vec<String> {
+    pub fn refresh_values(
+        &mut self,
+        model: &Model,
+        local: bool,
+        level: ohl_line::solve::flexible::CalculationLevel,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         if let Some(rx) = &self.computing {
             match rx.try_recv() {
@@ -1030,7 +1040,7 @@ impl StructureApps {
         if placed.is_empty()
             || (self.values_version == Some(version)
                 && self.values_local == local
-                && self.values_level3 == level3)
+                && self.values_level == level.number())
         {
             return out;
         }
@@ -1052,8 +1062,8 @@ impl StructureApps {
         self.seen = Some((version, Instant::now()));
         self.values_version = Some(version);
         self.values_local = local;
-        self.values_level3 = level3;
-        let inputs = LineInputs::of_with(model, local, level3);
+        self.values_level = level.number();
+        let inputs = LineInputs::of_with(model, local, level);
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let _ = tx.send(inputs.write_all(&placed));

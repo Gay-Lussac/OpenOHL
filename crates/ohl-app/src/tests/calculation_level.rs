@@ -5,16 +5,16 @@
 //! The line's calculation level (plan of 2026-11-15, phase 5): Line ›
 //! Criteria › Calculation options' **Structures in the wire solve** — one
 //! command, undoable, kept in the line's settings, every result out of
-//! date when it changes; full structures (level 4) shown, not offered —
-//! and the Wire tensions and String checks windows solving at level 3:
+//! date when it changes; full structures (level 4) offered too — and the
+//! Wire tensions and String checks windows solving at levels 3 and 4:
 //! both solves of every case, the worse kept, the results saying the
 //! level, the run's time and effect kept for the window.
 
 use super::*;
 
-/// Criteria › Calculation options: linear stiffness chosen; full
-/// structures greyed (not built yet); the time beside each choice; one
-/// command, undoable; the revision changed and back.
+/// Criteria › Calculation options: full structures chosen, then linear
+/// stiffness; the time beside each choice; one command, undoable; the
+/// revision changed and back.
 #[test]
 fn calculation_options_choose_the_linear_stiffness() {
     let model = typed_project("structures-in-solve");
@@ -27,20 +27,23 @@ fn calculation_options_choose_the_linear_stiffness() {
     harness.run();
     harness.get_by_label("Calculation options…").click();
     harness.run();
-    // Each choice says its time (measured here, else an estimate).
+    // Each choice says its time (measured here, else an estimate): level
+    // 4's too.
     assert!(
         harness
-            .query_all_by_label_contains("Not built yet (calculation level 4")
+            .query_all_by_label_contains("each with a full solve of every flexible structure")
             .next()
             .is_some()
     );
-    // Full structures: not offered.
+    // (Its place settles over a few frames as the window takes its size.)
+    for _ in 0..8 {
+        harness
+            .get_by_label("Linear stiffness (calculation level 3)")
+            .scroll_to_me();
+        harness.run();
+    }
     harness
-        .get_by_label("Full structures (calculation level 4) — not built yet")
-        .scroll_to_me();
-    harness.run();
-    harness
-        .get_by_label("Full structures (calculation level 4) — not built yet")
+        .get_by_label("Linear stiffness (calculation level 3)")
         .click();
     harness.run();
     assert_eq!(
@@ -51,11 +54,32 @@ fn calculation_options_choose_the_linear_stiffness() {
             .solver_window
             .unwrap()
             .structures,
-        ohl_line::StructuresInSolve::Rigid,
-        "greyed: not chosen"
+        ohl_line::StructuresInSolve::Linear,
+        "chosen"
     );
-    // (Its place settles over a few frames as the window takes its size.)
-    for _ in 0..3 {
+    // Full structures: offered (then back to linear).
+    for _ in 0..8 {
+        harness
+            .get_by_label("Full structures (calculation level 4)")
+            .scroll_to_me();
+        harness.run();
+    }
+    harness
+        .get_by_label("Full structures (calculation level 4)")
+        .click();
+    harness.run();
+    assert_eq!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .solver_window
+            .unwrap()
+            .structures,
+        ohl_line::StructuresInSolve::Full,
+        "chosen"
+    );
+    for _ in 0..8 {
         harness
             .get_by_label("Linear stiffness (calculation level 3)")
             .scroll_to_me();
@@ -119,7 +143,8 @@ fn wait<T: Send + 'static>(job: &mut crate::job::Job<T>) -> Result<T, String> {
 /// high wind): every span checked once with both solves' tensions, the
 /// larger checked; the notes say the level, the reference, the rigid
 /// structures and the rule; the run kept for Calculation options. Rigid:
-/// no level at all. Full structures: not run, said.
+/// no level at all. Full structures (level 4): the same rows, never below
+/// rigid, its notes and its run kept.
 #[test]
 fn wire_tensions_at_level_three_keep_the_larger_tension() {
     use ohl_clearance::tension::TensionRule;
@@ -184,8 +209,26 @@ fn wire_tensions_at_level_three_keep_the_larger_tension() {
         last.effect.unwrap_or_default()
     );
     model.line.solver.structures = ohl_line::StructuresInSolve::Full;
-    let full = run(&model).unwrap_err();
-    assert!(full.contains("not built yet"), "{full}");
+    let four = run(&model).unwrap();
+    assert_eq!(four.report.rows.len(), rigid.report.rows.len());
+    for r in &four.report.rows {
+        let [a, b] = r.levels.expect("both solves");
+        assert_eq!(r.tension, a.max(b));
+        let same = rigid
+            .report
+            .rows
+            .iter()
+            .find(|x| x.case == r.case && x.section == r.section && x.span == r.span)
+            .unwrap();
+        assert!(r.tension >= same.tension, "never below rigid");
+    }
+    let notes = four.report.notes.join("\n");
+    assert!(notes.contains("calculation level 4"), "{notes}");
+    assert!(notes.contains("level-4 solve of its case"), "{notes}");
+    assert!(!notes.contains("failed at calculation level 4"), "{notes}");
+    let last = crate::calc_level::last(4).expect("recorded");
+    assert!(last.what.starts_with("Wire tensions"), "{}", last.what);
+    eprintln!("level 4: {}", last.effect.unwrap_or_default());
 }
 
 /// String checks at level 3 on the example line (invented limits): each

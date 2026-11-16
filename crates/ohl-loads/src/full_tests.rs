@@ -342,8 +342,8 @@ fn column(l: f64, a: f64, i: f64, nonlinear: bool) -> Model {
 fn total(s: &FlexibleSolve, id: &str) -> [f64; 3] {
     let mut f = [0.0; 3];
     for p in s.points.iter().filter(|p| p.structure == id) {
-        for k in 0..3 {
-            f[k] += p.flexible.unwrap_or_default()[k];
+        for (x, v) in f.iter_mut().zip(p.flexible.unwrap_or_default()) {
+            *x += v;
         }
     }
     f
@@ -403,8 +403,8 @@ fn a_guyed_pole_whose_guy_goes_slack() {
         .iter()
         .fold([0.0; 3], |a, f| [a[0] + f[0], a[1] + f[1], a[2] + f[2]]);
     for pt in p.points.iter() {
-        for k in 0..2 {
-            push[k] += pt.rigid.unwrap_or_default()[k];
+        for (x, v) in push.iter_mut().zip(pt.rigid.unwrap_or_default()) {
+            *x += v;
         }
     }
     let h = (push[0] - strung[0]).hypot(push[1] - strung[1]);

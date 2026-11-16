@@ -7,7 +7,8 @@
 //!
 //! - **Chosen** in Line › Criteria › Calculation options under the
 //!   calculation level ([`ui`]): a weather case, **Solve and keep** (the
-//!   case solved at calculation level 3 on its own thread,
+//!   case solved at calculation level 3 — 4 when the calculation level
+//!   chosen above is full structures — on its own thread,
 //!   [`ohl_loads::reference::solve_reference`], then kept with the line by
 //!   one undoable command), **Remove** (one command too).
 //! - **Checked** whenever the line comes from the project (an edit, its
@@ -333,8 +334,9 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
         crate::check_help::question(ui, HELP);
     });
     ui.label(
-        "A weather case the structures are solved in once (at calculation level 3) and kept: \
-         the structures are then drawn deflected as in it, and every rigid (level 2) solve \
+        "A weather case the structures are solved in once (at calculation level 3, or 4 when \
+         Full structures is chosen above) and kept: the structures are then drawn deflected as \
+         in it, and every rigid (level 2) solve \
          takes their attachment points as moved there — e.g. the survey day's temperature and \
          wind, to make the model match the LiDAR scan.",
     );
@@ -427,8 +429,9 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
                 egui::Button::new("Solve and keep"),
             )
             .on_hover_text(
-                "Solve the structures in the chosen case at calculation level 3 and keep the \
-                 state with the line (one undoable step)",
+                "Solve the structures in the chosen case at calculation level 3 (4 when Full \
+                 structures is chosen above) and keep the state with the line (one undoable \
+                 step)",
             )
             .clicked();
         remove = ui
@@ -490,7 +493,10 @@ pub fn ui(ui: &mut egui::Ui, r: &mut crate::app::Ready) {
 /// The (?) help of the section.
 const HELP: &str = "The structures solved once in a weather case at calculation level 3 \
     (each structure with a model a linear stiffness at its attachment points, condensed at the \
-    stringing state, its own wind and ice of the case in it) and that state kept with the line. \
+    stringing state, its own wind and ice of the case in it) — or at level 4 when Full \
+    structures is chosen as the calculation level above (from there each structure solved in \
+    full: P-Delta, tension-only members and guys; its body drawn on the level-3 stiffness) — \
+    and that state kept with the line. A state solved at the other level is out of date. \
     While it is current: the structures are drawn deflected as in it (3D view; the views say \
     so), and every rigid (level 2) solve — the views, the tables, the clearances, the LiDAR \
     comparison — takes each attachment point moved by its displacement there. Every other \

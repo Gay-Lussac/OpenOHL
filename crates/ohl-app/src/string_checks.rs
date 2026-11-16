@@ -187,8 +187,8 @@ impl StringChecksWindow {
             ));
             return;
         }
-        // The line's calculation level (plan of 2026-11-15, phase 5):
-        // level 4 refused (not built yet).
+        // The line's calculation level (plan of 2026-11-15, phases 5 and
+        // 6).
         let level = match crate::calc_level::LevelInputs::of(model) {
             Ok(l) => l,
             Err(e) => {
@@ -260,7 +260,7 @@ impl StringChecksWindow {
                 };
                 solved.push(keep_shapes(rigid, ""));
                 if let Some(f) = level3 {
-                    at_level.push(keep_shapes(f, " (level 3)"));
+                    at_level.push(keep_shapes(f, &format!(" (level {})", at.level.number())));
                 }
             }
             let check = |solved: &Solved| {

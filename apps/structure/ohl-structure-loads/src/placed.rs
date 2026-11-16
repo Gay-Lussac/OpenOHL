@@ -76,9 +76,11 @@
 //! Version 10 (2026-11-16, calculation level 3 in the structure loads)
 //! adds `levels`: the calculation level each case was solved at, in the
 //! order of `cases` (2 rigid, 3 the structures as a linear stiffness at
-//! their points); at level 3 a case comes twice, `<case> (rigid)` and
-//! `<case> (level 3)`, each with its level. Written only when a case is
-//! not at 2; an older file has none: every case rigid.
+//! their points, 4 the structures' full models — since 2026-11-16, the
+//! same version); at level 3 or 4 a case comes twice, `<case> (rigid)`
+//! and `<case> (level 3)` (or `(level 4)`), each with its level. Written
+//! only when a case is not at 2; an older file has none: every case
+//! rigid.
 //!
 //! Since 2026-11-15 (owner: Line › Criteria › Loads for structures is
 //! gone) the line sends the placed structure's library cases only, each

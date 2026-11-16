@@ -166,7 +166,7 @@ impl Ready {
             .refresh_values(
                 &self.model,
                 self.loads.local,
-                self.loads.level3_for(&self.model.line).unwrap_or(false),
+                self.loads.level_for(&self.model.line),
             )
             .pop()
         {

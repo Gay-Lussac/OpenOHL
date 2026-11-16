@@ -5,7 +5,7 @@
 //! A section's attachment points moved, and its stiffness there
 //! (calculation levels 3 and 4 of the line solve, plan of 2026-11-15,
 //! phase 2): what the coupling of structures and wires (in active
-//! development, not built yet) asks a section — "solved with these
+//! development, [`super::flexible`]) asks a section — "solved with these
 //! points moved by these displacements, what are your forces on them and
 //! how do they change when the points move?".
 //!

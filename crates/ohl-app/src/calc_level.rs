@@ -5,8 +5,8 @@
 //! The line's calculation level in OHL-Design (plan of 2026-11-15, phase
 //! 5; in active development): Line › Criteria › Calculation options'
 //! **Structures in the wire solve** — rigid (level 2), linear stiffness
-//! (level 3), full structures (level 4, not built yet: shown, not
-//! offered) — and what each choice costs and changes on this computer
+//! (level 3), full structures (level 4) — and what each choice costs and
+//! changes on this computer
 //! (owner: every modelling setting shows its effect on results and its
 //! time).
 //!
@@ -51,10 +51,10 @@ pub struct LevelRun {
     pub rigid: Vec<String>,
 }
 
-/// The last run of each level (2, 3), on this computer.
+/// The last run of each level (2, 3, 4), on this computer.
 static RUNS: Mutex<BTreeMap<u8, LevelRun>> = Mutex::new(BTreeMap::new());
 
-/// Records `run` as the last at level `level` (2 or 3).
+/// Records `run` as the last at level `level` (2, 3 or 4).
 pub fn record(level: u8, run: LevelRun) {
     RUNS.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -189,9 +189,52 @@ pub fn beside(choice: ohl_line::StructuresInSolve) -> String {
                  effect is shown after a run."
             ),
         },
-        S::Full => "Not built yet (calculation level 4: the structures' full non-linear models \
-                    in every pass; planned after level 3)."
-            .to_owned(),
+        S::Full => match (last(4), last(3), last(2)) {
+            (Some(r), _, _) => {
+                let mut t = format!(
+                    "Last run here: {} in {:.1} s ({}{}{}).",
+                    r.what,
+                    r.seconds,
+                    r.line,
+                    r.setup_seconds.map_or(String::new(), |s| format!(
+                        "; structures set up in {s:.1} s"
+                    )),
+                    r.rigid_seconds
+                        .filter(|s| *s > 0.0)
+                        .map_or(String::new(), |s| format!(
+                            "; {:.1}× its rigid solves",
+                            r.seconds / s
+                        )),
+                );
+                if let Some(e) = &r.effect {
+                    t.push_str(&format!(" Effect measured: {e}."));
+                }
+                t
+            }
+            (None, Some(r), _) => format!(
+                "Not run here yet. Estimate from the last level-3 run ({} in {:.1} s): about \
+                 {:.0} s — level 3's line solves, then 1–4 more per case, each with a full \
+                 solve of every flexible structure (side by side). Its effect is shown after a \
+                 run.",
+                r.what,
+                r.seconds,
+                r.seconds * 2.0
+            ),
+            (None, None, Some(r)) => format!(
+                "Not run here yet. Estimate from the last rigid run ({} in {:.1} s): about \
+                 {:.0} s or more — level 3's {passes:.0} line solves per case, then 1–4 more, \
+                 each with a full solve of every flexible structure (side by side). Its effect is \
+                 shown after a run.",
+                r.what,
+                r.seconds,
+                r.seconds * passes * 2.0
+            ),
+            (None, None, None) => "Not run here yet: level 3's line solves (2–5 per case), then \
+                                   1–4 more, each with a full solve of every flexible structure \
+                                   (side by side over the cores; on the example line about as \
+                                   fast as level 3). Its effect is shown after a run."
+                .to_owned(),
+        },
     }
 }
 
@@ -210,8 +253,15 @@ pub fn help(line: &ohl_line::Line, types: Option<&ohl_structures::StructureLibra
          solve. Taken: Wire tensions, String checks, Structure loads and the loads sent to \
          OHL-Structure. Still rigid (said in their results): the clearances, the views, the \
          sagging tables, internal clearances (until the structure body is drawn deflected) and \
-         the other checks. Full structures (level 4) are not built yet.\n\nStay rigid at level \
-         3: ",
+         the other checks.\n\nFull structures (level 4, in active development): from level 3's \
+         solution, each such structure solved in full in every pass — its own P-Delta, its \
+         tension-only members and guys going slack or taut, its own wind and ice — the \
+         structures side by side, until the wires and the structures agree; the member and code \
+         checks once, on the converged forces. A structure whose full solve fails in a case \
+         (unstable under the loads with the line) is taken linear there and reported failing in \
+         that case. The same checks take it, the worse of rigid and level 4 kept. The line's \
+         reference state is solved at level 4 when this is chosen.\n\nStay rigid at levels 3 \
+         and 4: ",
     );
     if rigid.is_empty() {
         t.push_str("none from the files (a run may still refuse a model, said in its results)");
@@ -232,8 +282,7 @@ pub fn help(line: &ohl_line::Line, types: Option<&ohl_structures::StructureLibra
 }
 
 /// The radio of the choice in the Calculation options window, each choice
-/// with its time and effect beside it ([`beside`]); full structures
-/// greyed (not built yet).
+/// with its time and effect beside it ([`beside`]).
 pub fn ui(
     ui: &mut egui::Ui,
     choice: &mut ohl_line::StructuresInSolve,
@@ -264,14 +313,14 @@ pub fn ui(
         ),
         (
             S::Full,
-            "Full structures (calculation level 4) — not built yet",
-            "The structures' full non-linear models in every pass: not built yet (planned after \
-             level 3)",
+            "Full structures (calculation level 4)",
+            "From level 3's solution, each structure with a model solved in full in every pass \
+             (P-Delta, tension-only members and guys, its own wind and ice), side by side; the \
+             checks keep the worse of rigid and level 4; a structure failing at level 4 is taken \
+             linear there and reported failing",
         ),
     ] {
-        ui.add_enabled_ui(c != S::Full, |ui| {
-            ui.radio_value(choice, c, text).on_hover_text(hover);
-        });
+        ui.radio_value(choice, c, text).on_hover_text(hover);
         ui.indent(("level-beside", c.as_str()), |ui| {
             ui.label(egui::RichText::new(beside(c)).small().weak());
         });
@@ -284,19 +333,19 @@ pub fn ui(
 pub struct LevelInputs {
     /// The level (the line's setting).
     pub level: ohl_line::solve::flexible::CalculationLevel,
-    /// The structure types (level 3).
+    /// The structure types (levels 3 and 4).
     pub types: ohl_structures::StructureLibrary,
-    /// The structure models' sections (level 3).
+    /// The structure models' sections (levels 3 and 4).
     pub sections: ohl_sections::SectionLibrary,
 }
 
 impl LevelInputs {
-    /// The line's level and, at level 3, the libraries the structures'
-    /// stiffness is set up from. Err: why the check cannot run (full
-    /// structures, not built yet; a section library that does not read).
+    /// The line's level and, at levels 3 and 4, the libraries the
+    /// structures are set up from. Err: why the check cannot run (a
+    /// section library that does not read).
     pub fn of(model: &crate::model::Model) -> Result<Self, String> {
-        let level = model.line.solver.structures.level()?;
-        let linear = level == ohl_line::solve::flexible::CalculationLevel::Linear;
+        let level = model.line.solver.structures.level();
+        let linear = level.flexible();
         Ok(Self {
             level,
             types: if linear {
@@ -360,7 +409,13 @@ pub fn record_run(
     };
     if let Some(setup) = &level.setup {
         let s = &setup.setup;
-        run.setup_seconds = Some(s.elapsed.as_secs_f64());
+        run.setup_seconds = Some(
+            s.elapsed.as_secs_f64()
+                + setup
+                    .full
+                    .as_ref()
+                    .map_or(0.0, |f| f.0.elapsed.as_secs_f64()),
+        );
         run.rigid_seconds = Some(tally.rigid_elapsed.as_secs_f64());
         run.effect = change.or_else(|| {
             tally
@@ -374,6 +429,19 @@ pub fn record_run(
             run.effect = run
                 .effect
                 .map(|e| format!("{e}; largest move {:.1} mm at {at}", d * 1e3));
+        }
+        if let Some(c) = &tally.from_level3 {
+            run.effect = Some(match run.effect.take() {
+                Some(e) => format!("{e}; level 4 {c}"),
+                None => format!("level 4 {c}"),
+            });
+        }
+        if !tally.full_failed.is_empty() {
+            run.effect = Some(format!(
+                "{}; {} structure(s) failed at level 4 in a case (taken linear there)",
+                run.effect.take().unwrap_or_default(),
+                tally.full_failed.len()
+            ));
         }
         run.rigid = s
             .structures

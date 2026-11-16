@@ -16,7 +16,7 @@ describes: stick figure, outline, full design, joint details).
 |---|---|---|
 | **Rigid** (default) | 2 | Every structure point holds its wires where it is drawn: the structures do not move, whatever the wires pull. |
 | **Linear stiffness** | 3 | Each structure that has a computable model (a full design, a separate `.ohlfe` model, or a pole with an elasticity) answers the wires' forces with a deflection: a linear stiffness at its attachment points, condensed once from its model at the stringing state, with its own wind and ice of the case in its deflection. Each case is solved again until the wires and the structures agree (two to five line solves per case). |
-| **Full structures** | 4 | The structures' full non-linear models in every pass. **Not built yet**: shown greyed, not offered; a line file that asks for it is read, but a check run on it is refused with why. |
+| **Full structures** | 4 | Level 3 first; then, from its solution, each such structure is solved in full in every pass — its own P-Delta, its tension-only members and guys going slack or taut with the load, its own wind and ice — the structures side by side, until the wires and the structures agree (on the example line at most one line solve more than level 3). A structure whose full solve fails in a case (unstable under the loads with the line) is taken linear there and reported **failing** in that case. The member and code checks are made once, on the converged forces. |
 
 The choice is one change of the line's settings (one command, undone as
 one); every result made before it is *out of date* (its banner names the
@@ -37,9 +37,15 @@ computer** (kept with the application, for every project):
   move of a point. Not run here yet: an estimate from the last rigid run
   (about four line solves per case instead of one, plus one condensation
   per structure first).
+- **Full structures**: the last level-4 run here — the same, with the
+  largest difference from level 3 (a point's move, a point's force) and
+  the structures that failed at level 4 in a case. Not run here yet: an
+  estimate from the last level-3 run (about twice its time: level 3's
+  line solves, then one to four more, each with a full solve of every
+  flexible structure, side by side), else from the last rigid run.
 
 The **(?)** beside the title lists the structures that stay rigid at
-level 3 and why (no structure type, a type not in the library, a type
+levels 3 and 4 and why (no structure type, a type not in the library, a type
 with neither a structure model nor a pole), read from the files; after a
 level-3 run, also the ones that run took rigid (a model that did not
 solve at the stringing state, an attachment point in a direction no
@@ -47,25 +53,25 @@ member holds…).
 
 ## Which checks take it
 
-| Check | At level 3 |
+| Check | At levels 3 and 4 |
 |---|---|
 | [Wire tensions](wire-tensions.md) | both solves of every case; each span's tension the larger of the two |
 | String checks | both solves; each string's swing and load the row of the larger usage; the swing measured from the moved top |
-| [Structure loads](structure-loads-window.md) | each load the larger of the two per component; the usage the worse of the two checks |
-| The loads sent to [OHL-Structure](structure-app.md) | each case twice, from the rigid and from the level-3 solve, each saying its level |
+| [Structure loads](structure-loads-window.md) | each load the larger of the two per component; the usage the worse of the two checks; at level 4 a structure that failed there in a case is failing in it |
+| The loads sent to [OHL-Structure](structure-app.md) | each case twice, from the rigid and from the level-3 (or level-4) solve, each saying its level |
 | Clearances (vertical, radial, wire clearances, vegetation, safety volumes, LiDAR) | not yet: rigid, said in their notes where it is cheap to say ("calculation level 2 (structures rigid): this check does not take the line's level yet"); with a [reference state](#the-reference-state-of-the-structures) in use: the structures as deflected in its case |
 | Internal clearances | rigid until the structure body is drawn deflected (a moved conductor against an undeflected body would not be consistent), said |
 | Galloping, ice shedding, lightning, distance between conductors | rigid, said |
 | Views, tables, sagging tables, stringing charts, drawings | rigid (the sagging tables by definition: the structures as drawn are the structures as strung) |
 
 **Never less safe than rigid** (owner, 2026-11-15): every check that
-takes the level checks the rigid solve and the level-3 solve of each
-case and keeps the worse. Choosing level 3 can only find more, never
-less, than rigid; the change against rigid is said.
+takes the level checks the rigid solve and the level-3 (or level-4) solve
+of each case and keeps the worse. Choosing level 3 or 4 can only find
+more, never less, than rigid; the change against rigid is said.
 
 ## What the results say
 
-The notes of every result solved at level 3 begin with:
+The notes of every result solved at level 3 or 4 begin with:
 
 - the level and how the structures are taken (linear stiffness at their
   attachment points, linearised at the stringing state, their own wind
@@ -86,6 +92,18 @@ The notes of every result solved at level 3 begin with:
   state where members would go slack — the points move less than the
   real structures.
 
+At level 4 they also say: the structures solved in full from level 3's
+solution; the line solves at each level and the full solves; the largest
+difference from level 3 (*level 4 against level 3: the points' moves
+differ by up to … mm (T…), their forces by up to … %*); each structure
+that failed at level 4 in a case, with why (*taken linear (level 3)
+there; its usage in this case reported failing*); the structures without
+a full model (taken linear in every case); a case whose Newton step had
+to give way to staggered passes; and **NOT ON THE SAFE SIDE**: P-Delta on
+the drawn geometry (no large displacements: a very flexible structure's
+large rotations are not followed), rigid foundations, the stringing
+state's deflection left out.
+
 A rule that solves the wires by another method than the line (a rule's
 ruling span on sections of finite elements, or the other way round) is
 solved rigid, said: the structures' stiffness is set up for the line's
@@ -93,11 +111,19 @@ own methods.
 
 ## The Structure loads window's switch
 
-The Structure loads window's **Structures flexible (level 3)** follows
-the line's choice; ticked or unticked there it sets that window's runs
-only (and the loads sent to OHL-Structure while it is so), kept with the
-project's setup, and its hover says the line's choice. Ticked back to
-the line's choice, it follows the line again.
+The Structure loads window's **Structures flexible (level 3)** — **(level
+4)** when the line's choice is full structures — follows the line's
+choice; ticked or unticked there it sets that window's runs only (and the
+loads sent to OHL-Structure while it is so), kept with the project's
+setup, and its hover says the line's choice. Ticked back to the line's
+choice, it follows the line again.
+
+At level 4 the window's load cases run **one after the other**, each
+case's structures side by side over the cores; the bar says the case,
+the pass and the level of its answers, the structure being solved and
+the last mismatch (*Solving the line: case 3 of 12 (pass 4 at level 4,
+structure 17 of 71, mismatch 0.8 mm)*). **Stop** stops it between
+structures.
 
 ## The reference state of the structures
 
@@ -105,8 +131,10 @@ the line's choice, it follows the line again.
 possible to define a weather case at which the structure is drawn in OHL
 design where it would solve at level 4 and then keep it for later for
 example level 2 solves. This could be useful to make the model match the
-lidar scans."* Level 4 is not built yet, so the reference state is solved
-at **level 3** for now; once level 4 is built it is solved there.
+lidar scans."* The reference state is solved at **level 3**, or at
+**level 4 when the line's choice is Full structures** (above): choose
+*Full structures* there first, then **Solve and keep**. A state solved
+at the other level is out of date (said) until solved again.
 
 **Where:** Line › Criteria › Calculation options, under *Structures in the
 wire solve*: **Reference case** (a weather case of the project, or none),
@@ -116,7 +144,8 @@ wind.
 1. Choose the case, then **Solve and keep**. The structures are solved
    in that case at level 3 (each structure with a model a linear
    stiffness at its attachment points, condensed at the stringing state,
-   its own wind and ice of the case in its deflection), on its own
+   its own wind and ice of the case in its deflection; at level 4 from
+   there each structure solved in full), on its own
    thread — a spinner and **Stop** while it runs. Then the state is kept
    with the line: one step, undone as one (Edit › Undo).
 2. While the state is **current**, every rigid (level 2) solve — the
@@ -189,11 +218,14 @@ the libraries and the run's weather cases and, current, takes it;
 FILE` writes the line with it to a new line file (the input is not
 changed).
 
-`--structures-as rigid|linear` overrides the line's choice for one run on
-`ohl line` (the weather cases solved again at level 3 and printed after
-the rigid tables; with `--load-cases` the structure loads and usage),
-`ohl tensions`, `ohl strings` and the other commands reading a line (those
-that do not take the level say so and stay rigid). `ohl line
---calculation-level 2|3` is the same by the level's number. `full` is
-refused: not built yet. `ohl structures …` solves no line (its loads come
+`--structures-as rigid|linear|full` overrides the line's choice for one
+run on `ohl line` (the weather cases solved again at level 3 or 4 and
+printed after the rigid tables — at level 4 also each case's line solves
+at each level, the full solves, the difference from level 3 and any
+structure that failed there; with `--load-cases` the structure loads and
+usage), `ohl tensions`, `ohl strings` and the other commands reading a
+line (those that do not take the level say so and stay rigid). `ohl line
+--calculation-level 2|3|4` is the same by the level's number; with
+`--solve-reference` the reference state is solved at the level chosen
+(3, or 4 for full). `ohl structures …` solves no line (its loads come
 from `ohl line --loads-csv`, which takes the level).

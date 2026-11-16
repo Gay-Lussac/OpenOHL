@@ -1387,8 +1387,13 @@ the string checks and the loads sent to OHL-Structure; phase 5b (owner
 solved once at level 3 and kept with the line (version 22), the
 structures drawn deflected in it and every level-2 solve taking their
 points as moved there while it is current (the LiDAR comparison by
-default). Next: the clearances taking the level (after the swing-arc
-band work), level 4 (phase 6; the reference state then solved there).
+default); phase 6 (2026-11-16) — **calculation level 4**: from level 3's
+solution each flexible structure solved in full in every pass (P-Delta,
+tension-only members and guys; the structures side by side, the checks
+once at the end), a structure failing there taken linear and reported
+failing, the reference state solved at level 4 when the line's setting
+is full structures. Next: the clearances taking the level (after the
+swing-arc band work).
 
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications and
@@ -1600,7 +1605,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] **Level 1** — ruling span: sections sagged by the ruling span method on rigid structures
 - [x] **Level 2** — FE of the wires on rigid structures (`ohl-wirefe`, what OpenOHL has today); the conductors' forces put on the structures, every structure checked once *(today's structure loads and usage)*
 - [ ] **Level 3** — FE of the wires with a linear stiffness matrix at each structure's suspension points, derived from the structure (level 3 structures only) *(built, in active development, 2026-11-16: the structure loads, wire tensions, string checks and the loads sent to OHL-Structure; the clearances still rigid, said)*
-- [ ] **Level 4** — the full solve: structures and line iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge)
+- [ ] **Level 4** — the full solve: structures and line iterated until both converge (displacements and forces between passes below tolerances; exit clauses, damping, reports of what did not converge) *(built, in active development, 2026-11-16: the same checks as level 3; a structure failing at level 4 taken linear and reported failing; the clearances still rigid, said)*
 - [ ] The level chosen per line (Line › Criteria › Calculation options) and per run (`--structures-as`), shown with every result that takes it; a structure below level 3 is rigid at levels 3 and 4, and the result says so *(2026-11-16; per check and per structure group later)*
 
 ---

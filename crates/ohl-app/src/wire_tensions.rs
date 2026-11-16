@@ -238,8 +238,8 @@ impl WireTensionsWindow {
             ));
             return;
         }
-        // The line's calculation level (plan of 2026-11-15, phase 5):
-        // level 4 refused (not built yet).
+        // The line's calculation level (plan of 2026-11-15, phases 5 and
+        // 6).
         let level = match crate::calc_level::LevelInputs::of(model) {
             Ok(l) => l,
             Err(e) => {
@@ -258,9 +258,10 @@ impl WireTensionsWindow {
             let started = std::time::Instant::now();
             let line = local.line();
             let mut notes = local.notes();
-            // At level 3 the structures set up once for every case.
+            // At level 3 or 4 the structures set up once for every case.
             let at = level.prepare(line, &library, &cases);
             let flexible = at.setup.is_some();
+            let tag = format!(" (level {})", at.level.number());
             let mut tally = ohl_loads::LevelTally::default();
             let budget = ohl_loads::default_budget();
             // Each case once per calculation its rules ask (2026-11-01):
@@ -305,7 +306,7 @@ impl WireTensionsWindow {
                 };
                 solved.push((case.name.clone(), calc, keep_shapes(rigid, "")));
                 if let Some(f) = level3 {
-                    at_level.push((case.name.clone(), calc, keep_shapes(f, " (level 3)")));
+                    at_level.push((case.name.clone(), calc, keep_shapes(f, &tag)));
                 }
             }
             let check = |solved: &[(

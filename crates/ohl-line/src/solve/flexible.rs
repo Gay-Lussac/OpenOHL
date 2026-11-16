@@ -816,6 +816,10 @@ pub struct FullStage<'a> {
     pub provider: Option<&'a dyn FullProvider>,
 }
 
+/// The structures' answers of a pass: their displacements u_s and C block
+/// by block (its rows in the unknowns, its matrix).
+type Answered = (DVector<f64>, Vec<(Vec<usize>, DMatrix<f64>)>);
+
 /// The first relaxation factor of level 4's staggered passes (Aitken's
 /// then, within [`RELAXATION_LIMITS`]).
 pub const RELAXATION_START: f64 = 0.5;
@@ -977,7 +981,7 @@ pub fn solve_line_staged(
                       f: &DVector<f64>,
                       pass: usize,
                       mismatch: Option<f64>|
-     -> Result<(DVector<f64>, Vec<(Vec<usize>, DMatrix<f64>)>), String> {
+     -> Result<Answered, String> {
         let ids_of = |r: usize| -> Vec<Option<usize>> {
             let s = responses[r];
             s.labels()

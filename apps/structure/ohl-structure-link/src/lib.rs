@@ -327,13 +327,14 @@ pub struct StructureCases {
     /// Every case takes the structures' local conditions (the line's
     /// check's **Use local conditions**, [`StructureCases::with_local`]).
     pub local: bool,
-    /// Solved at calculation level 3 (the line's setting, or the line's
-    /// Structure loads window's; plan of 2026-11-15, phase 5): the
-    /// structure types and the structure models' sections the structures'
-    /// stiffness is set up from ([`StructureCases::at_level_three`]). None:
-    /// rigid (level 2).
+    /// Solved at calculation level 3 or 4 (the line's setting, or the
+    /// line's Structure loads window's; plan of 2026-11-15, phases 5 and
+    /// 6): the level, the structure types and the structure models'
+    /// sections the structures are set up from ([`StructureCases::at_level`]).
+    /// None: rigid (level 2).
     pub level3: Option<
         Box<(
+            ohl_line::solve::flexible::CalculationLevel,
             ohl_structures::StructureLibrary,
             ohl_sections::SectionLibrary,
         )>,
@@ -341,18 +342,35 @@ pub struct StructureCases {
 }
 
 impl StructureCases {
+    /// These cases solved at calculation level `level`: 3 as
+    /// [`StructureCases::at_level_three`]; 4 with each structure's full
+    /// model besides (OHL-Structure gets the rigid and the level-4 solve
+    /// of each case); 2: rigid, as without.
+    pub fn at_level(
+        mut self,
+        level: ohl_line::solve::flexible::CalculationLevel,
+        types: ohl_structures::StructureLibrary,
+        sections: ohl_sections::SectionLibrary,
+    ) -> Self {
+        self.level3 = level.flexible().then(|| Box::new((level, types, sections)));
+        self
+    }
+
     /// These cases solved at calculation level 3: each structure with a
     /// model a linear stiffness at its attachment points, set up from
     /// `types` and `sections` ([`structure_case_loads`]); OHL-Structure
     /// gets the rigid and the level-3 solve of each case, each a case
     /// with its level (the line-values file's `levels`).
     pub fn at_level_three(
-        mut self,
+        self,
         types: ohl_structures::StructureLibrary,
         sections: ohl_sections::SectionLibrary,
     ) -> Self {
-        self.level3 = Some(Box::new((types, sections)));
-        self
+        self.at_level(
+            ohl_line::solve::flexible::CalculationLevel::Linear,
+            types,
+            sections,
+        )
     }
 
     /// No case to send.
@@ -442,16 +460,18 @@ pub fn structure_case_loads(
         // A set of wind directions: one case per direction (OHL-Structure
         // gets one case each).
         let expanded = ohl_loads::expand_directions(&cases.library);
-        // At calculation level 3 the structures set up once for every
-        // case (their stiffness, their own wind and ice per case).
+        // At calculation level 3 or 4 the structures set up once for
+        // every case (their stiffness, their own wind and ice per case;
+        // level 4 their full models).
         let level = cases.level3.as_ref().map(|l| {
-            ohl_loads::prepare_structure_loads(
+            ohl_loads::prepare_structure_loads_at(
                 line,
                 library,
-                &l.0,
                 &l.1,
+                &l.2,
                 &cases.library_weather,
                 &expanded,
+                l.0,
                 budget,
                 None,
                 None,

@@ -12,14 +12,16 @@ loop with calculation level 3** (`ohl_line::solve::flexible`); the
 structure loads and usage at level 3 (phase 4); and **the line's setting**
 (phase 5, 2026-11-16): Line › Criteria › Calculation options' *Structures
 in the wire solve* — rigid (default), linear stiffness (level 3), full
-structures (level 4, not built yet: read, refused by a run) — line file
-`solver.structures`, the command line's `--structures-as`, taken by the
-wire tensions, the string checks, the structure loads and the loads sent
-to OHL-Structure ([Checks at level 3](#checks-at-level-3)). **Not built
-yet:** the clearances, internal clearances and the other checks taking
-the level (they stay rigid and say so), level 4. The views, the tables and
-every file written are the rigid solve's (calculation level 2), as
-[Finite-element wire systems](wirefe.md) says.
+structures (level 4) — line file `solver.structures`, the command line's
+`--structures-as`, taken by the wire tensions, the string checks, the
+structure loads and the loads sent to OHL-Structure
+([Checks at level 3](#checks-at-level-3)); and **calculation level 4**
+(phase 6, 2026-11-16, [below](#level-4-the-structures-in-full)): each
+flexible structure solved in full in every pass of the same loop, from
+level 3's solution. **Not built yet:** the clearances, internal
+clearances and the other checks taking the level (they stay rigid and say
+so). The views, the tables and every file written are the rigid solve's
+(calculation level 2), as [Finite-element wire systems](wirefe.md) says.
 
 ## Two kinds of level
 
@@ -61,7 +63,8 @@ state.
 (P-Delta at the actual loads, tension-only members and slack guys as each
 case has them, the structure's own wind and ice) take part in every pass
 of the iteration below; the matrix of level 3 is replaced by each
-structure's tangent at its current state. *(Not built.)*
+structure's tangent at its current state. *(Built 2026-11-16:
+[Level 4](#level-4-the-structures-in-full).)*
 
 ## The interface loop
 
@@ -87,8 +90,9 @@ as strung); rigid is u = 0.
    \\( \mathbf u_s = \mathbf C\,(\mathbf F - \mathbf F_{ref}) \\) with C a
    structure's flexibility at its points (one matrix per structure, its
    points fully coupled) and \\( \mathbf F_{ref} \\) the wires' forces at
-   the stringing state (below); level 4 (not built), the structure's
-   non-linear solve under F less its state at the reference.
+   the stringing state (below); level 4, the structure's non-linear solve
+   under F less its solve under \\( \mathbf F_{ref} \\), C its tangent at
+   that solution ([Level 4](#level-4-the-structures-in-full)).
 3. **Mismatch** \\( \mathbf r = \mathbf u - \mathbf u_s \\).
 4. **Converged** when, at every point, the mismatch is at most
    **0.1 mm** and the force changed by at most **1 N** (or 10⁻⁶ of the
@@ -552,6 +556,135 @@ largest change against rigid and the largest move), shown beside each
 choice of the setting; without a level-3 run, an estimate from the last
 rigid run times the expected passes (`EXPECTED_PASSES`, 4).
 
+## Level 4: the structures in full
+
+*Built 2026-11-16, in active development (plan of 2026-11-15, phase 6).*
+
+**The same loop, in two stages** (`ohl_line::solve::flexible::solve_line_staged`).
+Level 3 runs to its convergence first. Then, at that same line solve —
+no line solve more — each flexible structure answers in full; the loop
+goes on with the full answers until the convergence test of the loop
+holds again (0.1 mm, 1 N). A structure that stays linear (first order,
+no tension-only member switching) answers what its level-3 matrix
+answers, so level 4 converges at the switch (tested: equal to 10⁻⁹ m).
+
+**A structure's full answer** (`ohl_structures_fe::tangent::FullModel`,
+`ohl-loads` `full`): its model as the structure check takes it (or its
+pole's frame model), its points linked as the check links their loads,
+solved with its own settings — P-Delta, stabilisation, tension-only
+members by their active set, cables slack or taut — under the wires'
+forces at its points (unfactored, turned to its axes), its self-weight
+and its own wind and ice of the case (unfactored, as level 3 takes
+them). Its answer is
+
+\\[ \mathbf u_s = \mathbf U(\mathbf F + \text{own loads}) - \mathbf U(\mathbf F_{ref}) \\]
+
+with \\( \mathbf U \\) the points' displacement of the full solve (a
+point on a frame joint at an offset: the joint's translation plus its
+rotation times the offset, as the condensation reads it), and
+\\( \mathbf U(\mathbf F_{ref}) \\) its solve under the stringing state's
+forces — the structures as drawn are the structures as strung, at level
+4 too. The flexibility of the Newton step is the **tangent at that
+solution condensed to the points**: the stiffness the solver assembles
+there — its slack and bowed members out, the geometric stiffness of its
+axial forces, its stabilised joints — condensed exactly as level 3
+condenses the tangent at the stringing state (the same code: at a given
+solution instead of a reference solved first; tested equal bit for bit,
+and against finite differences of full solves).
+
+**Warm start.** Each structure's tension-only active set starts from its
+last pass's set (the first pass: the stringing state's), not from "all
+active" (`ohl_structures_fe::solve::solve_from`). The iterations go on
+from there as from the cold start, so where both settle on the same set
+the solution is the cold start's bit for bit (tested), in fewer solves; a
+warm start that fails is solved again cold, so it never fails where the
+cold start solves. Where two sets would both be settled (the active-set
+iterations' fixed point is not unique on every model) the warm start may
+keep the other: both balance the loads with every member within its law.
+
+**Side by side, checks once** (owner 2026-11-15). In each pass the
+structures are solved side by side over the cores; the case's progress
+says the pass and the structure. The member and code checks are made
+**once**, on the converged forces, by the structure check — never in the
+passes. In the Structure loads window the load cases then run one after
+the other (each case's structures side by side).
+
+**Fallback.** Where the Newton step of the full stage cannot be taken —
+the interface system singular, the step not finite, or its line search
+spent with the mismatch still growing (a structure's tension-only set or
+a guy switching makes the answer non-smooth) — the passes go on
+**staggered**: \\( \mathbf u \leftarrow \mathbf u - \omega\,\mathbf r \\),
+the relaxation by Aitken's rule as Irons and Tuck give it,
+\\( \omega_k = -\omega_{k-1}\,\mathbf r_{k-1}\cdot(\mathbf r_k - \mathbf r_{k-1}) / |\mathbf r_k - \mathbf r_{k-1}|^2 \\),
+starting at 0.5 and kept within 0.05–1 — said in the notes.
+
+**Exit clauses.** The full stage has its own 20 passes; the case's time
+limit (10 minutes) and the cancel token hold over both stages; each
+structure solve its own (200 iterations, 30 s). **A case that does not
+converge fails** (owner 2026-11-15), named as at level 3; its rigid
+solve stays, said rigid.
+
+**A structure whose full solve fails** (unstable — compression above a
+buckling load —, a mechanism, implausible displacements, or its tangent
+refused) **in a case is taken linear** (its level-3 matrix) for the rest
+of that case, and the line goes on (owner 2026-11-15). It is listed with
+why ("T6 failed at calculation level 4 in case "ice": did not solve
+under the loads with the line: unstable …"), and its usage in that case
+is reported **failing** — infinite, "unstable under the loads with the
+line", never a pass. A structure whose solve fails already at the
+stringing state has no full model: linear in every case, said.
+
+**What level 4 leaves out** (said with its results; stiffer than the
+real structures, so loads on the safe side, deflections not): rigid
+foundations in the models; a pole fixed at the ground line with rigid
+crossarms; the deflection already present at stringing; P-Delta on the
+drawn geometry — the structure solver has no large-displacement
+formulation, so a very flexible structure's large rotations are not
+followed; offsets at joints only bars meet taken as the joint's
+translation; a fixed post's tilt. The jumpers are solved on the
+structures as drawn, as at level 3.
+
+**Never below rigid**, as at level 3: the structure loads keep per point
+and component the larger of rigid and level 4, the checks both solves,
+the worse.
+
+**Validation** (`ohl-loads` `full_tests`, `ohl_structures_fe`
+`tangent_tests`; the plan's tests 1–5):
+
+- *A linear structure* (a frame column, first order) at a pole's place on
+  the example line, iced and in wind: level 4 equals level 3 to 10⁻⁹ m,
+  with no line solve more.
+- *A guyed pole*: a 12 m column guyed towards where the wind pushes it,
+  the guy pretensioned 2 kN (taut at the stringing state). Level 3 (guy
+  in its stiffness) moves the top 7.1 mm across the line at 450 Pa;
+  level 4 finds the guy slack and moves it 285 mm — the pole alone:
+  F L³/3EI across and F L/EA along it under the converged forces, less
+  the stringing state's, to 0.2 mm (the hand model).
+- *P-Delta*: a column at a quarter of its buckling load: the condensed
+  tangent equals the finite difference of two full solves to 10⁻⁵
+  (and is about 1/(1 − 0.25) times the elastic L³/3EI).
+- *An X panel* of tension-only diagonals (no compression): the tangent
+  with its slack diagonal out is the panel with one diagonal by the
+  method of joints, to 10⁻⁹; on the example line the wind switches the
+  slack diagonal from the stringing state's to the other — the loop
+  converges, each point where the panel's full solve puts it.
+- *A structure failing*: a column whose buckling load lies between its
+  stringing state's and the iced case's vertical load — iced, its full
+  solve is unstable, it is taken linear, the case converges at level 3's
+  answer; cold, it solves at level 4.
+- *The example line*, in still air, cold, iced and two winds: every case
+  converges in 1–4 line solves, each point where its structure's full
+  solve puts it under the converged forces (to 0.1 mm), the rigid solve
+  bit for bit. Its lattice towers and its steel pole are nearly linear in
+  these cases: level 4 moves the points as level 3 does to 0.1 mm (the
+  pole's top 155 mm across at 450 Pa); the effect of level 4 is where
+  members switch or P-Delta grows (above).
+
+**Cost** (the example line, test build, a busy machine): five weather
+cases at level 3 1.7 s, at level 4 1.8 s (one to three full solves per
+structure and case). See [Cost](#cost-measured-2026-11-15) for the
+measured times of an optimised build.
+
 ## The reference state of the structures
 
 *Built, in active development (plan of 2026-11-15, phase 5b; owner
@@ -560,11 +693,16 @@ survey day's weather. Its state is solved once and kept with the line;
 while it is current, every level-2 solve takes the structures as
 deflected in R.
 
-**Solved** at level 3 (level 4 once built; `REFERENCE_LEVEL` is the one
-place the choice is made): the structures set up as for any level-3
-check (condensed at the stringing state, their own wind and ice of R in
-their deflection), then R's interface loop from the structures as
-strung. Kept per attachment point of each flexible structure: its
+**Solved** at level 3, or at **level 4 when the line's calculation level
+is full structures** (Line › Criteria › Calculation options, or the
+command line's `--structures-as full`; `reference_level` is the one place
+the choice is made, 2026-11-16): the structures set up as for any check
+at that level (condensed at the stringing state, their own wind and ice
+of R in their deflection; at level 4 their full models besides), then
+R's interface loop from the structures as strung. A state solved at the
+other level is out of date (said) until solved again. The deflected body
+drawn is the level-3 tangent's linear answer under the stored forces at
+either level (display only). Kept per attachment point of each flexible structure: its
 displacement \\( \mathbf u_R \\) (line axes, from the structure as strung)
 and the wires' forces \\( \mathbf F_R \\) and \\( \mathbf F_{ref} \\) (in R and at
 the stringing state). The deflected body drawn is the same linear answer
@@ -630,8 +768,8 @@ until checked.
 The interaction is solved at **unfactored** loads (the service state);
 the load case's factors go on the redistributed forces for the structure
 checks, as today (owner 2026-11-15). At level 4 the structure check still
-solves the factored loads with its own P-Delta. Every level 3 load case says
-(and level 4 will): "structure flexibility at unfactored loads; factors on the
+solves the factored loads with its own P-Delta. Every level-3 and level-4
+load case says: "structure flexibility at unfactored loads; factors on the
 resulting forces".
 
 ## Safe side
@@ -744,5 +882,9 @@ structure checked with both solves) 56 s against 24 s.
   *Journal of the Structural Division*, ASCE, vol. 104, no. ST5, 1978 —
   an early analysis of a line's cables together with flexible supports
   (cited as the literature names it; not read here).
+- B. M. Irons, R. C. Tuck, "A version of the Aitken accelerator for
+  computer iteration", *International Journal for Numerical Methods in
+  Engineering*, vol. 1, no. 3, pp. 275–277, 1969 — the relaxation factor
+  of level 4's staggered passes.
 - The skyline \\( \mathbf L\mathbf D\mathbf L^T \\) solver and the element stiffnesses: see
   [Structure analysis](structures-fe.md#solver).

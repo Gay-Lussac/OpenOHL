@@ -46,7 +46,9 @@
 //!   height, its offset from the axis a rigid link (the crossarm rigid).
 //!
 //! Nothing here changes a solve: it is read by the line's coupling of
-//! structures and wires (in active development, not built yet).
+//! structures and wires (calculation levels 3 and 4, in active development;
+//! level 4 condenses the tangent at a case's own solution:
+//! [`crate::tangent`]).
 
 use std::fmt::{self, Debug, Write as _};
 use std::hash::{DefaultHasher, Hasher};

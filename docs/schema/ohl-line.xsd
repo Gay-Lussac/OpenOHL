@@ -1003,8 +1003,8 @@
             <!-- Version 21 (2026-11-16): the structures in the wire solve,
                  the calculation level of the checks that take it — rigid
                  (default, level 2), linear (level 3: a linear stiffness at
-                 the attachment points) or full (level 4: not built yet,
-                 read but refused by a run). -->
+                 the attachment points) or full (level 4: the structures' full models, from
+                 level 3's solution; since 2026-11-16). -->
             <xs:attribute name="structures" default="rigid">
               <xs:simpleType>
                 <xs:restriction base="xs:string">

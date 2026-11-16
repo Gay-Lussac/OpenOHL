@@ -42,6 +42,10 @@ use crate::LoadCase;
 use crate::analysis::Analyses;
 use crate::flexibility::{over_cores, placed_link, to_line_axes};
 
+/// A structure's full model, its points' displacement at the stringing
+/// state (structure axes, m) and its tension-only set there.
+type Strung = (FullModel, Vec<[f64; 3]>, Vec<bool>);
+
 /// A flexible structure set up for level 4.
 struct FullStructure {
     /// The placed structure.
@@ -51,7 +55,7 @@ struct FullStructure {
     /// Its full model, its displacement at each point under the stringing
     /// state's forces (structure axes, m) and the tension-only set there;
     /// Err: why not (taken linear in every case, said).
-    model: Result<(FullModel, Vec<[f64; 3]>, Vec<bool>), String>,
+    model: Result<Strung, String>,
     /// Per case of the run (as [`FullShared::cases`]), the case as the
     /// structure check takes it here (a wind relative to the line turned
     /// to the structure's axes) and its weather (index).

@@ -1384,7 +1384,19 @@ impl LoadCasesTab {
         // The calculation level the line solved its cases at (line-values
         // version 10; plan of 2026-11-15, phase 5).
         let at_three = info.levels.iter().filter(|l| **l == 3).count();
-        out.push(if at_three > 0 {
+        let at_four = info.levels.iter().filter(|l| **l == 4).count();
+        out.push(if at_four > 0 {
+            (
+                format!(
+                    "Line forces from a level 4 solve (calculation level 4, in active \
+                     development: each structure with a model solved in full with the wires, \
+                     P-Delta and tension-only members included): {at_four} case(s) from the \
+                     level-4 solve, each beside the same case from the rigid solve — check both, \
+                     the worse governs (never less safe than rigid)."
+                ),
+                Tone::Info,
+            )
+        } else if at_three > 0 {
             (
                 format!(
                     "Line forces from a level 3 solve (calculation level 3, in active \
@@ -2193,6 +2205,13 @@ mod line_rows_tests {
         assert!(
             three.contains("1 case(s) from the level-3 solve"),
             "{three}"
+        );
+        v.levels = vec![2, 4];
+        let four = said(&v);
+        assert!(
+            four.contains("Line forces from a level 4 solve")
+                && four.contains("1 case(s) from the level-4 solve"),
+            "{four}"
         );
     }
 
