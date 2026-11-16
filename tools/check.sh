@@ -47,6 +47,16 @@ mkdir -p "$OUT"
 LOG="$OUT/check-test.log"
 cd "$TREE"
 
+# Each step's line ends with the seconds it took (2026-11-16: to see where
+# the time goes before buying hardware or changing how tests run).
+START=$(date +%s)
+LAST=$START
+ok() {
+    NOW=$(date +%s)
+    echo "$1 ($((NOW - LAST)) s)"
+    LAST=$NOW
+}
+
 # The real-line scan first: nothing else matters if it fails.
 if [ -f "$PRIVATE/scan.txt" ]; then
     BASE=${BASE:-origin/main}
@@ -70,12 +80,12 @@ if [ -f "$PRIVATE/scan.txt" ]; then
         echo scan-FAILED
         exit 1
     fi
-    echo scan-ok
+    ok scan-ok
 fi
 
-$C fmt --all --check && echo fmt-ok || { echo fmt-FAILED; exit 1; }
-$C clippy -q --workspace --exclude ohl-py --all-targets -- -D warnings && echo clippy1-ok || { echo clippy1-FAILED; exit 1; }
-$C clippy -q -p ohl-app --no-default-features --all-targets -- -D warnings && echo clippy2-ok || { echo clippy2-FAILED; exit 1; }
+$C fmt --all --check && ok fmt-ok || { echo fmt-FAILED; exit 1; }
+$C clippy -q --workspace --exclude ohl-py --all-targets -- -D warnings && ok clippy1-ok || { echo clippy1-FAILED; exit 1; }
+$C clippy -q -p ohl-app --no-default-features --all-targets -- -D warnings && ok clippy2-ok || { echo clippy2-FAILED; exit 1; }
 
 # The tests and the benchmarks read the shipped libraries next to the
 # program: with the build outside the tree, a link to them there (made
@@ -92,29 +102,29 @@ for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
     (cd "$d" && env -u CARGO_TARGET_DIR $C build -q --release --target wasm32-wasip2) || { echo "plugins-FAILED $d"; exit 1; }
     (cd "$d" && env -u CARGO_TARGET_DIR $C clippy -q --release --target wasm32-wasip2 -- -D warnings) || { echo "plugins-clippy-FAILED $d"; exit 1; }
 done
-echo plugins-built
+ok plugins-built
 
 # The plugins' own native tests (plain Rust, beside their WebAssembly
 # build; built in the check's target folder, pruned with it).
 for d in plugins/examples/building-cuts; do
     (cd "$d" && $C fmt --check && CARGO_TARGET_DIR="$OUT" $C test -q > /dev/null) || { echo "plugin-tests-FAILED $d"; exit 1; }
 done
-echo plugin-tests-ok
+ok plugin-tests-ok
 
 OHL_REQUIRE_PLUGIN_TESTS=1 OHL_REQUIRE_GPU_TESTS=1 $C test -q --no-fail-fast --workspace --exclude ohl-py > "$LOG" 2>&1 || {
     grep -E "FAILED|panicked|^error" "$LOG" | head -30
     echo "tests-FAILED (all output: $LOG)"
     exit 1
 }
-echo "tests-ok ($(grep -c "test result: ok" "$LOG") test binaries)"
+ok "tests-ok ($(grep -c "test result: ok" "$LOG") test binaries)"
 
-RUSTDOCFLAGS="-D warnings" $C doc -q --no-deps --workspace --exclude ohl-py && echo doc-ok || { echo doc-FAILED; exit 1; }
-mdbook build > /dev/null 2>&1 && echo mdbook-ok || { echo mdbook-FAILED; exit 1; }
-python3 -I tools/check_doc_links.py > /dev/null && echo links-ok || { echo links-FAILED; exit 1; }
+RUSTDOCFLAGS="-D warnings" $C doc -q --no-deps --workspace --exclude ohl-py && ok doc-ok || { echo doc-FAILED; exit 1; }
+mdbook build > /dev/null 2>&1 && ok mdbook-ok || { echo mdbook-FAILED; exit 1; }
+python3 -I tools/check_doc_links.py > /dev/null && ok links-ok || { echo links-FAILED; exit 1; }
 
 $C build -q -p ohl-cli
 BENCH=$("$OUT/debug/ohl" validate benchmarks 2>&1 | tail -1)
-echo "$BENCH"
+ok "$BENCH"
 case "$BENCH" in *" 0 failed"*) ;; *) echo benchmarks-FAILED; exit 1 ;; esac
 
 if [ -f "$PRIVATE/plugins.txt" ]; then
@@ -124,7 +134,7 @@ if [ -f "$PRIVATE/plugins.txt" ]; then
             && env -u CARGO_TARGET_DIR $C test -q 2>&1 | grep "test result" \
             && env -u CARGO_TARGET_DIR $C clippy -q --target wasm32-wasip2 -- -D warnings \
             && "$OUT/debug/ohl" plugin check . > /dev/null) \
-            && echo "$(basename "$d")-ok" || { echo "$(basename "$d")-FAILED"; exit 1; }
+            && ok "$(basename "$d")-ok" || { echo "$(basename "$d")-FAILED"; exit 1; }
     done
 fi
 
@@ -134,7 +144,7 @@ PLUGIN_DIRS=$(for d in plugins/examples/* plugins/tests/* plugins/codes/*; do
 done)
 # shellcheck disable=SC2086
 "$OUT/debug/ohl" plugin check $PLUGIN_DIRS > "$OUT/plugin-check.log" 2>&1 \
-    && echo plugins-checked || { grep -B3 FAILED "$OUT/plugin-check.log" | head -30; echo plugin-check-FAILED; exit 1; }
+    && ok plugins-checked || { grep -B3 FAILED "$OUT/plugin-check.log" | head -30; echo plugin-check-FAILED; exit 1; }
 
 # A plugin of every kind from its template: written, formatted, built and
 # linted on its own, and checked (ADR-0012: the templates stay usable).
@@ -149,8 +159,8 @@ for k in minimal design-code check io terrain project sheet-templates wire-colou
         && "$OUT/debug/ohl" plugin check . > /dev/null) || { echo "plugin-template-FAILED $k"; exit 1; }
 done
 rm -rf "${TEMPLATES:?}"
-echo plugin-templates-ok
+ok plugin-templates-ok
 
 sh "$HERE/tools/prune-target.sh" "$OUT"
 [ "$OUT" = "$HERE/target" ] || [ ! -d "$HERE/target" ] || sh "$HERE/tools/prune-target.sh" "$HERE/target"
-echo check-ok
+echo "check-ok ($(( $(date +%s) - START )) s in all)"
