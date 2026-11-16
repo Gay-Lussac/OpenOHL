@@ -1080,26 +1080,8 @@ pub fn condense_pole_with(
         }),
     };
     let attachments: Vec<Attachment> = points.iter().map(|p| Attachment::of_type(&p.0)).collect();
-    let extra: Vec<Vec<crate::model::NodalLoad>> = extra
-        .iter()
-        .map(|b| {
-            let mut nodal = crate::pole::axis_loads(&z, top, &b.loads);
-            if b.wind != [0.0; 2] {
-                for k in 0..z.len().saturating_sub(1) {
-                    let length = z[k + 1] - z[k];
-                    let q = pole.drag * pole.diameter_at(0.5 * (z[k] + z[k + 1])) * length;
-                    for node in [k, k + 1] {
-                        nodal.push(crate::model::NodalLoad {
-                            node,
-                            force: [0.5 * q * b.wind[0], 0.5 * q * b.wind[1], 0.0],
-                            moment: [0.0; 3],
-                        });
-                    }
-                }
-            }
-            nodal
-        })
-        .collect();
+    let extra: Vec<Vec<crate::model::NodalLoad>> =
+        extra.iter().map(|b| pole_body_loads(pole, &z, b)).collect();
     let mut c = condense_with(&model, &attachments, &linearisation, &extra, budget)?;
     c.notes.push(
         "NOT ON THE SAFE SIDE for clearances: the pole fixed at the ground line (its \
@@ -1108,6 +1090,96 @@ pub fn condense_pole_with(
             .to_owned(),
     );
     Ok(c)
+}
+
+/// The pole's own loads `b` on its frame model of heights `z`: the wind
+/// on the shaft lumped on the nodes (each element's q at its middle times
+/// its length, half at each end), the loads as the pole check places
+/// them.
+fn pole_body_loads(pole: &Pole, z: &[f64], b: &PoleBody) -> Vec<crate::model::NodalLoad> {
+    let mut nodal = crate::pole::axis_loads(z, pole.height(), &b.loads);
+    if b.wind != [0.0; 2] {
+        for k in 0..z.len().saturating_sub(1) {
+            let length = z[k + 1] - z[k];
+            let q = pole.drag * pole.diameter_at(0.5 * (z[k] + z[k + 1])) * length;
+            for node in [k, k + 1] {
+                nodal.push(crate::model::NodalLoad {
+                    node,
+                    force: [0.5 * q * b.wind[0], 0.5 * q * b.wind[1], 0.0],
+                    moment: [0.0; 3],
+                });
+            }
+        }
+    }
+    nodal
+}
+
+/// Each node's displacement (three translations and three rotations, m
+/// and rad, structure axes) of `model` under `loads` (at its nodes, N)
+/// on the tangent of `linearisation` — the state and stiffness the
+/// condensation takes ([`condense`]), so the linear answer of
+/// calculation level 3 at every joint: the structure's deflected body as
+/// drawn (plan of 2026-11-15, phase 5b; display only, nothing is checked
+/// on it). Refused as the condensation is (the reference solve failed, a
+/// mechanism, unstable).
+///
+/// Expected cost: one reference solve, one factorisation of the tangent
+/// and one substitution (as [`condense`] with one place).
+pub fn deflect(
+    model: &Model,
+    linearisation: &Linearisation,
+    loads: &[crate::model::NodalLoad],
+    budget: &Budget,
+) -> Result<Vec<[f64; 6]>, Rigid> {
+    let (solution, nonlinear) = reference(model, linearisation, budget)?;
+    let tangent = Tangent::at(model, &solution, nonlinear, false)?;
+    let mut x = vec![0.0; tangent.n_eq];
+    for l in loads {
+        if l.node < tangent.eq.len() {
+            tangent.put(l.node, l.force, l.moment, &mut x);
+        }
+    }
+    tangent.k.solve(&mut x);
+    Ok(tangent.displacements(&x))
+}
+
+/// The axis of `pole` deflected ([`deflect`] on the pole check's frame
+/// model, as [`condense_pole_with`] builds it): under the forces `loads`
+/// at its points and its own loads `body`, on the tangent at `reference`
+/// (none: the elastic pole). Each node's height above the ground line
+/// and its translation (structure axes, m), bottom to top. Refused
+/// without an elasticity.
+pub fn deflect_pole(
+    pole: &Pole,
+    reference: Option<&[PoleLoad]>,
+    loads: &[PoleLoad],
+    body: &PoleBody,
+    budget: &Budget,
+) -> Result<Vec<(f64, [f64; 3])>, Rigid> {
+    let e = pole.elasticity.ok_or(Rigid::PoleWithoutElasticity)?;
+    let top = pole.height();
+    let heights = reference
+        .into_iter()
+        .flatten()
+        .chain(loads)
+        .chain(&body.loads)
+        .map(|l| l.point[2]);
+    let (model, z) = crate::pole::frame_model(pole, e, heights);
+    let linearisation = match reference {
+        None => Linearisation::Unloaded,
+        Some(r) => Linearisation::Tangent(Loads {
+            nodal: crate::pole::axis_loads(&z, top, r),
+            self_weight: 1.0,
+            ..Loads::default()
+        }),
+    };
+    let mut nodal = crate::pole::axis_loads(&z, top, loads);
+    nodal.extend(pole_body_loads(pole, &z, body));
+    let u = deflect(&model, &linearisation, &nodal, budget)?;
+    Ok(z.iter()
+        .zip(u)
+        .map(|(h, d)| (*h, [d[0], d[1], d[2]]))
+        .collect())
 }
 
 /// The displacement of a place at `offset` from its node (structure

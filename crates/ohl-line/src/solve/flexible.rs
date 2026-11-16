@@ -79,6 +79,11 @@ pub const INTERFACE_TIME_LIMIT: Duration = Duration::from_secs(600);
 /// Passes the time estimate counts on (level 3 expects 2–5).
 pub const EXPECTED_PASSES: u32 = 4;
 
+/// Why the coupled solve sets a reference state aside
+/// ([`Line::as_drawn`]): it finds each case's own deflection.
+pub const STRUNG: &str = "the coupled solve finds each case's own deflection from the \
+    structures as strung";
+
 /// How a line and its structures are computed together (theory:
 /// Structure flexibility in the line solve). Levels 1 and 2 are the rigid
 /// solves of today (a section's method: ruling span or finite elements);
@@ -303,6 +308,10 @@ pub fn reference_forces(
     budget: &Budget,
 ) -> ReferenceForces {
     let started = Instant::now();
+    // On the structures as strung: a reference state's lean is not the
+    // stringing's ([`crate::reference`]).
+    let drawn = line.as_drawn(STRUNG);
+    let line = &*drawn;
     let mut temperatures: Vec<f64> = Vec::new();
     for s in &line.sections {
         let t = s.stringing.temperature();
@@ -573,6 +582,10 @@ pub fn solve_line_coupled(
     broken: &[(&str, Vec<Break>)],
 ) -> Result<FlexibleSolve, FlexibleFailure> {
     let started = Instant::now();
+    // Each case its own deflection from the structures as strung: a
+    // reference state in use is set aside ([`crate::reference`]).
+    let drawn = line.as_drawn(STRUNG);
+    let line = &*drawn;
     // The points: per structure its labels, in order.
     let mut points: Vec<(String, String)> = Vec::new();
     let mut owner: Vec<(usize, usize)> = Vec::new();
@@ -619,6 +632,7 @@ pub fn solve_line_coupled(
         }
         let base = Coupling {
             moved,
+            strung: true,
             stiffness: true,
             ..Coupling::default()
         };

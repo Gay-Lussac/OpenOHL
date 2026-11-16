@@ -25,7 +25,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::{Point, Section};
+use crate::{Line, Point, Section};
 
 use super::{Built, Holder, v};
 
@@ -64,12 +64,23 @@ pub struct SupportStiffness {
     pub matrix: nalgebra::DMatrix<f64>,
 }
 
-/// The holders with their structure points moved by `moves` (none for a
-/// holder's points: as they are). Only points on a structure move — not
-/// another section's clamp held where given. A zero displacement is not
-/// added (the positions stay the same bit for bit).
-pub(super) fn move_points(holders: &mut [Holder], section: &Section, moves: &PointMoves) {
-    if moves.is_empty() {
+/// The holders with their structure points moved: by `coupling`'s moves
+/// ([`super::Coupling::moved`]) and, unless those are measured from the
+/// structures as strung ([`super::Coupling::strung`]: the coupled solve
+/// of levels 3 and 4), by the line's reference state in use
+/// ([`Line::reference_move`], phase 5b) — the one place a section solve
+/// takes it. Only points on a structure move — not another section's
+/// clamp held where given. A zero displacement is not added; with
+/// neither (no moves, no reference state in use) the positions stay the
+/// same bit for bit.
+pub(super) fn move_points(
+    holders: &mut [Holder],
+    section: &Section,
+    line: &Line,
+    coupling: &super::Coupling,
+) {
+    let reference = !coupling.strung && line.reference_in_use().is_some();
+    if coupling.moved.is_empty() && !reference {
         return;
     }
     for (holder, point) in holders.iter_mut().zip(&section.points) {
@@ -77,10 +88,22 @@ pub(super) fn move_points(holders: &mut [Holder], section: &Section, moves: &Poi
             if other.is_some() {
                 continue;
             }
-            if let Some(u) = moves.get(&(point.structure.clone(), label.clone()))
-                && *u != [0.0; 3]
-            {
-                *position += v(*u);
+            let given = coupling
+                .moved
+                .get(&(point.structure.clone(), label.clone()))
+                .copied();
+            let kept = if reference {
+                line.reference_move(&point.structure, label)
+            } else {
+                None
+            };
+            let u = match (given, kept) {
+                (Some(a), Some(b)) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+                (Some(a), None) | (None, Some(a)) => a,
+                (None, None) => continue,
+            };
+            if u != [0.0; 3] {
+                *position += v(u);
             }
         }
     }

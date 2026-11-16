@@ -100,6 +100,7 @@ pub type JumperLoadMap = std::collections::BTreeMap<LoadAt, [f64; 3]>;
 pub(super) fn carried(base: &Coupling) -> Coupling {
     Coupling {
         moved: base.moved.clone(),
+        strung: base.strung,
         stiffness: base.stiffness,
         ..Coupling::default()
     }
@@ -582,8 +583,10 @@ pub(super) fn solve_spacer_group_based(
                                 section.stringing.temperature(),
                             ),
                         );
+                        // At stringing: on the structures as strung.
                         let coupling = Coupling {
                             jumpers: Some(Default::default()),
+                            strung: true,
                             ..Coupling::default()
                         };
                         cable_of(library, section).and_then(|cable| {

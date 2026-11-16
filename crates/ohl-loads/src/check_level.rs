@@ -45,6 +45,9 @@ pub struct CheckLevel {
     /// Each section's method in the setup (by id): a check solving a
     /// section by another method is solved rigid ([`CheckLevel::refuses`]).
     methods: Vec<(String, Method)>,
+    /// What the results say of the line's reference state (plan of
+    /// 2026-11-15, phase 5b; none: no reference case).
+    reference: Option<String>,
 }
 
 impl CheckLevel {
@@ -54,6 +57,17 @@ impl CheckLevel {
             level: CalculationLevel::Rigid,
             setup: None,
             methods: Vec::new(),
+            reference: None,
+        }
+    }
+
+    /// Calculation level 2 on `line`: every case solved rigid alone, the
+    /// structures as deflected in its reference case when that state is
+    /// in use ([`ohl_line::reference`]), said in the notes.
+    pub fn rigid_on(line: &Line) -> Self {
+        Self {
+            reference: line.reference_note(),
+            ..Self::rigid()
         }
     }
 
@@ -111,6 +125,15 @@ impl CheckLevel {
         let Some(setup) = &self.setup else {
             return rigid(None);
         };
+        // Each case its own deflection from the structures as strung (its
+        // rigid solve too): a reference state in use set aside.
+        let drawn = line.as_drawn(ohl_line::solve::flexible::STRUNG);
+        let line = &*drawn;
+        let rigid = |why: Option<String>| LevelSolve {
+            case: case.name.clone(),
+            rigid: ohl_line::solve::solve_line_with(line, library, case, budget),
+            level: why.map(Err),
+        };
         if let Some(why) = self.refuses(line) {
             return rigid(Some(why));
         }
@@ -147,10 +170,21 @@ impl CheckLevel {
     /// level 2.
     pub fn notes(&self, tally: &LevelTally, change: Option<String>) -> Vec<String> {
         let Some(setup) = &self.setup else {
-            return Vec::new();
+            // Level 2: what the reference state does (none set: nothing).
+            return self.reference.iter().cloned().collect();
         };
         let s = &setup.setup.structures;
-        let mut out = vec![
+        let mut out: Vec<String> = self
+            .reference
+            .iter()
+            .map(|_| {
+                "the line's reference case not used at calculation level 3: each case finds its \
+                 own deflection from the structures as strung (the reference state is the \
+                 level-3 solve of its case; its rigid solve as drawn)"
+                    .to_owned()
+            })
+            .collect();
+        out.extend([
             "calculation level 3 (in active development): each structure with a model (or a pole \
              with an elasticity) a linear stiffness at its attachment points, linearised at the \
              stringing state (tension-only members and guys as at that state), its own wind and \
@@ -160,7 +194,7 @@ impl CheckLevel {
             "never less safe than rigid (owner 2026-11-15): every value is checked on the rigid \
              solve and on the level-3 solve of its case, the worse kept"
                 .to_owned(),
-        ];
+        ]);
         let mut rigid: Vec<String> = s
             .rigid
             .iter()
@@ -247,7 +281,7 @@ pub fn prepare_check_level(
     cancel: Option<&ohl_core::budget::CancelToken>,
 ) -> CheckLevel {
     if level == CalculationLevel::Rigid {
-        return CheckLevel::rigid();
+        return CheckLevel::rigid_on(line);
     }
     let mut strung = line.clone();
     for s in &mut strung.sections {
@@ -268,6 +302,7 @@ pub fn prepare_check_level(
             .iter()
             .map(|s| (s.id.clone(), s.calculation.method()))
             .collect(),
+        reference: line.reference.as_ref().map(|r| r.case.clone()),
     }
 }
 

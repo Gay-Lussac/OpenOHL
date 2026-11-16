@@ -162,8 +162,11 @@ pub(super) fn work_back(
         ohl_core::units::Temperature::from_celsius(temperature),
     );
     // The wire alone, as the stringing reference: no jumpers, no spacers.
+    // On the structures as strung (drawn): a reference state's lean is
+    // a case's, not the stringing's.
     let alone = Coupling {
         jumpers: Some(JumperLoadMap::new()),
+        strung: true,
         ..Coupling::default()
     };
     let mut trial = section.clone();

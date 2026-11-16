@@ -129,6 +129,7 @@ pub fn empty_line() -> Line {
         structure_loads: Default::default(),
         structure_groups: Vec::new(),
         electrical: Default::default(),
+        reference: None,
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: Default::default(),

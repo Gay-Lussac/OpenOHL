@@ -1120,6 +1120,9 @@ pub fn to_xml(line: &Line) -> String {
         structure_loads,
         structure_groups,
         electrical,
+        // The reference state of the structures (line file version 22)
+        // is not exchanged: solved again where the structures' models are.
+        reference: _,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -2779,6 +2782,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
             .collect::<Result<_, _>>()?,
         display,
         creep_stretch,
+        reference: None,
         condition_cases: Default::default(),
         spacers: root
             .children_named("spacer")

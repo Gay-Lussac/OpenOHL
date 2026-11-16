@@ -108,6 +108,8 @@ mod check_level;
 // `check_level`).
 mod flexibility;
 mod options;
+// The reference state of the structures (plan of 2026-11-15, phase 5b).
+pub mod reference;
 mod write;
 
 pub use body::add_structure_loads;
@@ -2069,7 +2071,9 @@ pub fn structure_loads_at(
 ) -> Vec<Result<CaseLoads, String>> {
     // A set of wind directions: one case per direction.
     let cases = &expand_directions(cases);
-    let mut line = line.clone();
+    // The structures as drawn, rigid (owner 2026-11-15: loads never below
+    // rigid): a reference state in use set aside, said.
+    let mut line = line.as_drawn(reference::LOADS_AS_DRAWN).into_owned();
     line.set_weather_cases(weather);
     let has_local = ohl_line::local::has_local(&line);
     let local = (has_local && cases.iter().any(|c| c.use_local))
@@ -2078,6 +2082,8 @@ pub fn structure_loads_at(
     let sets = line.case_sets();
     let unknown = unknown_case_sets(&line, known);
     let mut set_notes = load_case_set_notes(&line, known);
+    // The reference case of the structures: not used here, said.
+    set_notes.extend(line.reference_note());
     // The jumpers' own pull on their clamps with a bending stiffness only
     // estimated (k · EI_max, conservative for the swing, not for the
     // pull): said with every case (2026-11-08).
@@ -3757,3 +3763,6 @@ mod pull_tests;
 
 #[cfg(test)]
 mod level_tests;
+
+#[cfg(test)]
+mod reference_tests;
