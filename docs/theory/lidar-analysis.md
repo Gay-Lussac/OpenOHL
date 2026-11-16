@@ -159,40 +159,86 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
 
   *The swing arc as a band about the attachment axis, widened by its margin \\( m \\) (schematic).*
 
-  **Conservative:** every radius between the smallest and the largest of
-  the three, along the whole arc: a wind between none and the full one
-  sags the wire to a radius between them, wherever the target is —
-  below and beside the wire (vegetation, the ground) as well as between
-  the axis and the arc (above the swinging wire). Until 2026-10-21 the
-  arc took the largest radius only, conservative for targets outside it
-  but not for one between the axis and the arc: a wire at an intermediate
-  pressure passed up to 1.53 m nearer the axis (measured on the example
-  line). Exact: a solve at every pressure.
+  **Levels (2026-11-16).** The band also holds the span solved at
+  \\( n \\) intermediate pressures from each side — \\( k\,P/(n + 1) \\),
+  \\( k = 1 \ldots n \\), each rounded to a whole 10 Pa
+  (`positions::band_levels`), and at least one every 200 Pa
+  (`BAND_LEVEL_SPACING`), 4 by default (**band levels** in the
+  vegetation panel, the clearance windows and the safety volumes;
+  `[wind] band_levels`; `--band-levels`; saved runs record it): at each
+  station the band runs from the smallest to the largest radius and
+  angle of still air, the blowouts and every level
+  (`SwingArc::with_levels`; between two stations the three positions'
+  points interpolated as before and the levels' smallest and largest
+  radius and angle linearly). Each level is one more solve a side, held
+  by the band, not checked as a position itself; with the wind steps on,
+  every step is a level too (no more solves).
 
-  **Conservative:** the band is widened by a margin \\( m \\) on every
-  side, 0.15 m by default (`positions::BAND_MARGIN`; every distance to it
-  taken \\( m \\) smaller, as if the conductor were that much thicker),
-  because the band alone does not quite hold every intermediate
-  position. \\( m \\) is a
-  **parameter**: the default is the measured worst excess below plus an
-  allowance, and the user may change it — in the vegetation panel, the
-  clearance windows and the safety volumes (**band margin**), the rule
-  file (`[wind] band_margin`) and the command line (`--band-margin`);
-  saved runs record it. A smaller value than the default is less safe
-  and **on the user's responsibility**. Measured 2026-10-21 (`tests/arc_band.rs`) on the
-  example line and the crossing line, both windy example cases (600 Pa;
-  200 Pa with rime ice), steps of 10 Pa from both sides (1738 stepped
-  positions): a step's centre line lies at most **0.089 m** outside the
-  band (S3's first span at 280 Pa, inside the inner radius: at
-  mid-pressures the strings swing and the sag changes so the radius dips
-  a little below the still-air one; and up to 0.041 m beyond the end
-  angle at a dead end, whose clamp moves with the wind), against
-  **1.533 m** from the arc alone at the largest radius (S1's second span
-  at 420 Pa). The margin is that worst excess plus an allowance of
-  0.061 m for other lines (about 70 %): no step lies outside the widened
-  band (tolerance 0). It also takes 0.15 m off the clearances on the
-  outer side, where the arc alone was already conservative (the price of
-  one margin for every side). Exact: a solve at every pressure.
+  **NOT ON THE SAFE SIDE without the levels (until 2026-11-16):** the
+  band of the three positions alone does not hold the wire at
+  intermediate pressures in general — measured on a real line of 930
+  spans with 10 Pa steps from both sides, a step's centre line lay up to
+  0.23 m outside it at 500 Pa across the line, 0.49 m at 1000 Pa,
+  0.69 m at 1300 Pa (about 0.05 m per 100 Pa: the margin of 0.15 m held
+  only up to about 390 Pa) and 0.82 m with the wind at 30°, on long
+  deep-sag spans, spans from a dead end to an angle string and steep
+  spans ([Clearances › Wind positions](clearances.md#wind-positions)).
+  The example lines' 0.091 m (below) had made it look conservative. A
+  run without levels (band levels 0) says so in its results.
+
+  **Conservative (measured):** every radius and angle between the
+  smallest and the largest of the solved positions, along the whole arc:
+  a wind between none and the full one swings the wire to a radius and
+  an angle between those of the levels around it, wherever the target
+  is — below and beside the wire (vegetation, the ground) as well as
+  between the axis and the arc (above the swinging wire). Until
+  2026-10-21 the arc took the largest radius only: a wire at an
+  intermediate pressure passed up to 1.53 m nearer the axis (measured on
+  the example line). Exact: a solve at every pressure.
+
+  **Conservative (measured):** the band is widened by a margin \\( m \\)
+  on every side, 0.15 m by default (`positions::BAND_MARGIN`; every
+  distance to it taken \\( m \\) smaller, as if the conductor were that
+  much thicker), because the band does not quite hold every intermediate
+  position. \\( m \\) is a **parameter**: the default is the measured
+  worst excess below plus an allowance, and the user may change it — in
+  the vegetation panel, the clearance windows and the safety volumes
+  (**band margin**), the rule file (`[wind] band_margin`) and the
+  command line (`--band-margin`); saved runs record it. A smaller value
+  than the default is less safe and **on the user's responsibility**.
+  Measured (`tests/arc_band.rs`) on the example line and the crossing
+  line, both windy example cases (600 Pa; 200 Pa with rime ice), steps
+  of 10 Pa from both sides (1738 stepped positions): a step's centre
+  line lies at most **0.009 m** outside the band with the default levels
+  (2026-11-16); without levels 0.091 m (S3's first span at 260 Pa,
+  inside the inner radius: at mid-pressures the strings swing and the
+  sag changes so the radius dips a little below the still-air one; 0.089 m
+  when first measured on 2026-10-21), against **1.533 m** from the arc
+  alone at the largest radius (S1's second span at 420 Pa). On a real
+  line of 930 spans (10 Pa steps from both sides, one side along the line: across the line
+  as given at 300, 500, 650, 1000 and 1300 Pa, turned to 30° and 60° at
+  1000 Pa, along the line at 1000 and 1450 Pa, ice and wind at 700 Pa;
+  measured 2026-11-16) at most **0.063 m** with
+  the default levels (across at 1000 Pa; at 1300 Pa 0.059 m with the six
+  levels the 200 Pa spacing gives; 0.043 m at 30°, 0.051 m at 60°,
+  along the line 0.023 m at 1000 Pa and 0.033 m at 1450 Pa besides the
+  spans the wind pulls to their chord — 4 and 18, taken at their steps
+  (below) —, ice and wind 0.027 m at 700 Pa), against 0.69 m without. The excess grows with the spacing
+  of the solved pressures — about 0.3 mm per pascal, whatever the
+  case's pressure (0.063 m at 200 Pa apart, 0.091 m at 260, 0.167 m at
+  433) — hence at least one level every 200 Pa (`BAND_LEVEL_SPACING`). It also takes 0.15 m off the
+  clearances on the outer side, where the arc alone was already
+  conservative (the price of one margin for every side). Exact: a solve
+  at every pressure.
+
+  **Where the band does not apply (2026-11-16):** a span whose solved
+  positions or levels lie more than 0.1 m above the line between their
+  own clamps, or are pulled towards it to less than half of still air's
+  sag (a wind along an inclined span does so: `SwingArc::above_axis`),
+  or that has no band, is said in the results
+  and also checked at its wind steps of 10 Pa from both sides (solved
+  for that case when the steps are off). On the real line at 1450 Pa
+  from ahead such spans lay up to 8.7 m outside their band.
 
   **Jumpers**: where jumpers are
   taken — the safety volumes, and the vertical and radial clearance
@@ -219,10 +265,12 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
   misses them by up to 2.54 m. With the clamps' line through the
   still-air clamps instead, the excess was larger (0.375 m).
 
-  **Simplification** (the jumpers' margin, 0 m by default; on the user's
-  responsibility; exact: the wind steps): with \\( m_j = 0 \\) a jumper's
-  band is **not conservative between its blowouts** — on the example
-  line it misses the jumper by up to 0.293 m. A jumper swings with its
+  **NOT ON THE SAFE SIDE** (the jumpers' margin, 0 m by default; said
+  in the results; on the user's responsibility; exact: the wind steps):
+  with \\( m_j = 0 \\) a jumper's band is not conservative between its
+  solved positions — on the example line it misses the jumper by up to
+  0.307 m without levels and 0.043 m with the default levels; on a real
+  line by up to 2.1 m without levels and still up to 1.9 m with the default levels (a few jumpers: two whose shape changes abruptly between 140 and 170 Pa, others between the last level and the full pressure). A jumper swings with its
   clamps and changes its shape about their line more than a span does,
   so no one value holds every line; the user enters a value for their
   jumpers (on the example line about 0.35 m would hold it with an

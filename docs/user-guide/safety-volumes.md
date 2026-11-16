@@ -178,7 +178,7 @@ volumes hold.
   0.15 m again. A change marks a run with the arc *out of date*.
 - **jumper band margin** (m, with the swing arc, default 0): the jumpers'
   bands' own widening. At 0 a jumper's band does not hold the jumper
-  between its blowouts (up to 0.293 m outside on the example line):
+  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m):
   enter a value for your jumpers, or tick the wind steps. With the arc
   alone and 0 m the window says *NOT ON THE SAFE SIDE for the jumpers*
   under the wind, and the results say it too.
@@ -273,6 +273,7 @@ run's parameters) and what `ohl safety-volume` takes:
 | from | `wind_sides` | `--wind-sides` | `both`, `left`, `right` | `both` | the sides of the steps |
 | band margin | `band_margin` | `--band-margin` | m | 0.15 | the swing band's widening |
 | jumper band margin | `jumper_band_margin` | `--jumper-band-margin` | m | 0 | the jumpers' bands' widening |
+| band levels | `band_levels` | `--band-levels` | — | 4 | the bands' intermediate solved pressures a side |
 | Wires by | `calculation` | — | e.g. `max-sag-fe` | each section's own | how every wire is solved |
 | tolerance | `tolerance` | `--tolerance` | m | 0.05 | the most the mesh lies outside where smooth |
 | Use local conditions | `local` (setup only) | — | — | off | the structures' local wind and ice |
@@ -327,9 +328,14 @@ applies:
   its two full blowouts: the positions at lower pressures between still
   air and the blowouts are not in the volume. The window starts with the
   arc on; the command line's `--wind` still defaults to `none`.
+- **Band levels 0** (with the swing arc, without the wind steps): the
+  band of still air and the blowouts alone; between them the wire can lie
+  outside the band by more than its margin; the results say *NOT ON THE
+  SAFE SIDE: the swing band without levels …*. (A span the wind pulls to or above the line between its clamps is
+  also checked at its wind steps of 10 Pa, said in the results.)
 - **Jumpers with the swing arc, without the wind steps, at a jumper band
   margin of 0 m**: a jumper can lie outside its band between its
-  blowouts (up to 0.293 m on the example line). Enter a jumper band
+  blowouts (up to 0.31 m on the example line and 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m). Enter a jumper band
   margin or tick the wind steps.
 Not said in the results, explained in the theory:
 

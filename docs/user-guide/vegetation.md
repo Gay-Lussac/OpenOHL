@@ -272,6 +272,7 @@ command line `ohl lidar vegetation` takes the same values as options.
 | search distance | `search_distance` | `--corridor` | m | 50 | half width of the corridor read |
 | swing arc | `swing_arc` | `--swing-arc` | — | on in the window (a setting saved without it: off); off on the command line | the positions between the blowouts |
 | band margin | `band_margin` | `--band-margin` | m | 0.15 | the band widened |
+| band levels | `band_levels` | `--band-levels` | — | 4 | the band's intermediate solved pressures a side |
 | wind stepped, step | `wind_steps`, `wind_step` | `--wind-step` | Pa | off, 50 | still air and every pressure by the step |
 | from | `wind_sides` | `--wind-sides` | `both`, `left`, `right` | both | the stepped wind's sides |
 | unbalanced ice | `unbalanced_ice`, `unbalanced_ice_value` | `--unbalanced-ice` | `case`; mm; N/m; N (command line: `thickness=` in m) | off, 5 | see [Wire positions](#wire-positions) |
@@ -297,8 +298,10 @@ On the safe side (theory, [Danger trees](../theory/lidar-analysis.md#danger-tree
 - falling uphill, the ground's angle is seen from the base (a larger
   sector);
 - on the swing band, every radius and angle between still air and the
-  blowouts, widened by the band margin of 0.15 m (the measured worst
-  excess 0.089 m plus an allowance); a tree's shelter by a ridge is not
+  blowouts, widened by the band margin of 0.15 m — with the default 4
+  band levels the wire between them lies at most 0.063 m outside the
+  band on a real line of 930 spans (measured with 10 Pa steps), held by
+  the margin; a tree's shelter by a ridge is not
   credited on the band;
 - the questionable trees' list holds every point without a base that a
   tree of the tallest height could reach from (measured in plan, never
@@ -306,6 +309,11 @@ On the safe side (theory, [Danger trees](../theory/lidar-analysis.md#danger-tree
 
 Not on the safe side, and said in the results each time it applies:
 
+- **Band levels 0** (with the swing arc, without the wind steps): the
+  band of still air and the blowouts alone; between them the wire can lie
+  outside the band by more than its margin; the results say *NOT ON THE
+  SAFE SIDE: the swing band without levels …*. (A span the wind pulls to or above the line between its clamps is
+  also checked at its wind steps of 10 Pa, said in the results.)
 - **Questionable trees**: a point without a tree base is **not checked
   for fall-in**. The results say *NOT CHECKED, NOT ON THE SAFE SIDE: N
   vegetation points …*, the verdict is red, and they are listed (at most

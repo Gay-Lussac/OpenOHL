@@ -10,6 +10,80 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**The swing band takes intermediate solved pressures (levels); cases
+differing by their pressure alone share their solves; a span the band
+does not hold is checked at its steps** (owner: *"try the correction
+with a bit more cases for the band and for the calculations going
+through multiple windy cases, we should find a way to simplify the
+number of computation needed based on the different wind cases. For
+example if you have 500/600 and 800 only computing 800 should suffice to
+have the result of the others"*, and on directions: *"if we have wind
+along the line, the conductors might sway differently and necessitate a
+new solve"*). Built, in active development, not approved yet;
+[theory](../theory/clearances.md#wind-positions).
+
+- **Why: the band was not on the safe side.** Measured on a real line of
+  930 spans with 10 Pa steps from both sides, the wire at intermediate
+  pressures lay outside the band of still air and the two blowouts by up
+  to 0.23 m at 500 Pa across the line, 0.49 m at 1000 Pa, 0.69 m at
+  1300 Pa, 0.82 m at 30° (1450 Pa); the default margin of 0.15 m held
+  only up to about 390 Pa. The theory's label "Conservative" for the
+  band (and the statement below, in the entry "Both wind sides always
+  drawn…", that "the band stays conservative for a wind at an angle")
+  rested on the example lines alone (0.091 m) — **wrong on a real
+  line**; corrected in the theory, which now gives the real-line
+  amounts.
+- **The levels.** The band also holds the wire solved at n intermediate
+  pressures from each side, k·P/(n + 1) rounded to a whole 10 Pa, and at
+  least one every 200 Pa (`positions::band_levels`), n = 4 by default
+  (`BAND_LEVELS`; the
+  **band levels** field beside the band margin in the clearance windows,
+  the vegetation panel and the safety volumes; `[wind] band_levels`;
+  `--band-levels` of `ohl zones`, `ohl safety-volume`, `ohl analysis`;
+  saved runs record it, older ones read as 0). With the wind steps, every
+  step is a level. Measured on the real line with 10 Pa steps: at most 0.063 m outside the
+  band with the default levels (across the line up to 1300 Pa, 30° and
+  60° at 1000 Pa, along the line, ice and wind), 0.69 m without; the
+  excess grows with the spacing of the solved pressures (about 0.3 mm
+  per pascal), hence at least one level every 200 Pa; example lines
+  0.009 m (0.091 m without). Cost: 2n more solves
+  per windy case (8 by default; 3 before), the band's checks unchanged.
+  Without levels (0): the results say NOT ON THE SAFE SIDE.
+- **Where the band does not apply.** A wind along an inclined span lifts
+  the wire towards and through the line between its clamps (on the real
+  line at 1450 Pa from ahead; 8.7 m outside the band). A span whose
+  solved positions or levels lie more than 0.1 m above their own chord,
+  or are pulled towards it to less than half of still air's sag (along
+  the line at 1000 Pa a steep span pulled so lay 0.30 m outside its band
+  with any number of levels), or that has no band, is said; the danger trees, safety volumes and
+  `ohl analysis` also check it at its 10 Pa steps from both sides (solved
+  for that case only); the clearance windows and `ohl zones` say NOT ON
+  THE SAFE SIDE for it unless the steps are ticked.
+- **Shared solves.** Every run solves each distinct case once
+  (`positions::solve_key`: the case without its name, description and
+  tags, and across the line without its direction, which the solve does
+  not read there): cases differing by their pressure alone
+  (`family_key`) share their solves at the same pressures — the steps
+  of the 800 Pa case are the 500 and 600 Pa cases' steps and blowouts —
+  bit for bit what solving each alone gives (tested), and the two copies
+  of one wind across the line (from 90° and from 270°) share every blown
+  solve. A wind from another direction (along the line, at an angle) is
+  its own family, never derived from another (owner, same day). On the
+  real line's 76 windy cases stepped by 10 Pa with the band: 11,266
+  solves asked, 3,541 made (−69 %); its 150 windy cases (each wind from
+  90° and 270°): 22,340 asked, 3,557 made (−84 %); one family (10 °C,
+  200–650 Pa) 118 s together against 200 s one at a time (a shared
+  computer), the positions bit for bit the same. A band is still made
+  about each span's axis as the run's first solve gives it (as before).
+- **Changed results.** With the swing arc on, every band is at least as
+  wide as before (more positions held): results can only get worse; a
+  span the band does not hold gets its steps (more positions). Without
+  the arc, nothing changes (the shared solves are the same solves).
+- **Also:** the structure condensation's note "offset … taken as the
+  joint's translation only" is no longer said for offsets of 1 cm or less
+  (imported positions rounded to whole centimetres; nothing computed
+  changes).
+
 **A joint is an attach joint only while attachment points are on it;
 OHL-Design's Structure types page asks onto the joint or an offset**
 (owner: *"if no attach points are left on the joint then no it shouldn't
@@ -110,7 +184,9 @@ needs a slight rework."*). Built, in active development:
   60° and 0° against their 10 Pa steps from both sides: the steps lie up
   to 0.082 m outside the band without its margin (across: 0.091 m), held
   by the default margin of 0.15 m — the band stays conservative for a
-  wind at an angle on the example line ([Wind on the
+  wind at an angle on the example line (**corrected the same day**: not
+  on a real line, across the line nor at an angle — see the entry on the
+  swing band's levels above) ([Wind on the
   line](../theory/wind.md#clearances-and-the-views)). A case with its own
   direction checks that wind and its mirror only, not the across
   envelope (said there as an assumption).

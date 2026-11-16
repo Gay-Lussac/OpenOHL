@@ -358,18 +358,27 @@ blowout (no sideways swing — that is the case as given).
   across rule — every span the full pressure square to itself — stays
   the default and is the envelope over the horizontal directions at a
   pressure; a direction is always the user's or a design code's.
-- **Conservative (as for the across rule):** the band runs from the
-  smallest to the largest angle and radius of the three positions and is
-  widened by its margin (0.15 m by default). A wind at an angle also
-  moves the strings along the line; the blowouts hold that (solved), the
-  positions between them lie within the band and its margin — measured
-  2026-11-16 on the example line, both windy cases from 30°, 60° and 0°
-  against their steps of 10 Pa from both sides (3960 positions): a
-  step's centre line lies up to 0.082 m outside the band without its
-  margin (30°: 0.042 m, 60°: 0.082 m, 0°: 0.001 m), against 0.091 m for
-  the same cases across the line — held by the margin
-  (`crates/ohl-clearance/tests/arc_band.rs`). Exact at the pressures
-  solved: the wind steps.
+- **Conservative (measured, as for the across rule; 2026-11-16):** the
+  band runs from the smallest to the largest angle and radius of its
+  solved positions — still air, the two blowouts and the band's levels
+  (4 a side by default) — and is widened by its margin (0.15 m by
+  default). A wind at an angle also moves the strings along the line;
+  the blowouts and the levels hold that (solved), the positions between
+  them lie within the band and its margin — measured on the example
+  line, both windy cases from 30°, 60° and 0° against their steps of
+  10 Pa from both sides (3960 positions): a step's centre line lies up to
+  0.0045 m outside the band with the default levels (0.082 m without:
+  30° 0.042 m, 60° 0.082 m, 0° 0.001 m), and on a real line of 930 spans
+  0.043 m at 30° and 0.051 m at 60° with the default levels at 1000 Pa
+  (0.609 m and 0.417 m without; three steep spans lifted at 30° and 60°
+  taken at their steps) (`crates/ohl-clearance/tests/arc_band.rs`,
+  [Clearances › Wind positions](clearances.md#wind-positions)).
+  **NOT ON THE SAFE SIDE** without the levels (as until 2026-11-16): on
+  the real line up to 0.82 m at 30° and 0.70 m at 60° (1450 Pa). A wind
+  along an inclined span at a high pressure lifts the wire above the line
+  between its clamps, where the band does not apply: such spans are said
+  and, in the danger trees, safety volumes and `ohl analysis`, taken at
+  their wind steps. Exact at the pressures solved: the wind steps.
 
 ## Validation
 
