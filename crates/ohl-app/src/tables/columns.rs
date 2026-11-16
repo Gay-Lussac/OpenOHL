@@ -1065,6 +1065,7 @@ pub(super) const WEATHER: &[Column] = &[
         Yes,
         "where the wind comes from, relative to the line: 0 ahead, 90 right, 180 behind, 270 left \
          (clockwise; or ahead, right, back, left). Empty, 90 or 270: across, every span the full \
-         pressure (the side as View › Display weather cases shows it)",
+         pressure (drawn from both sides: as it is, without a direction from the right, and \
+         mirrored)",
     ),
 ];

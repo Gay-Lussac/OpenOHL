@@ -123,8 +123,8 @@ jumper_band_margin = "0.3 m"  # the jumpers' bands' own margin (2026-10-21; defa
 `sides` is for the weather cases without a direction. A case that gives
 its own `wind_direction` (2026-11-15) takes, with `both`, the direction
 and its mirror about the line (across: 90° and 270°; at an angle θ: θ and
-360° − θ); with `left` or `right`, its direction alone — never turned to
-the side asked for.
+360° − θ; along the line, 0° or 180°, once); with `left` or `right`, its
+direction alone — never turned to the side asked for.
 
 `arc = true` adds each span's swing arc between still air and the full
 blowouts of the sides chosen (three solves per windy case; since

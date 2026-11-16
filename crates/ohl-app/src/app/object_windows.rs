@@ -13,14 +13,14 @@ pub struct DisplayWindow {
     pub ticks: Vec<bool>,
     /// For every section, or each section's own (Sections table).
     pub mode: crate::model::CasesShown,
-    /// The wind side shown.
-    pub wind: crate::model::WindDisplay,
 }
 
 /// The "Display weather cases" window: the same cases for every section
 /// (ticked here; the Sections table is not changed) or each section's own
-/// display cases from the Sections table; and the side the wind comes
-/// from. Apply (Enter) shows them; display only — this user's choice.
+/// display cases from the Sections table. The wind is drawn from both
+/// sides (owner 2026-11-16: no side to choose; [`crate::model::as_shown`],
+/// [`crate::model::mirror_case`]). Apply (Enter) shows them; display only
+/// — this user's choice.
 /// Line › Structures › Angles around structures: which angle means ahead. Angles
 /// in plan around a structure turn clockwise seen from above.
 pub(super) fn angles_window(ctx: &egui::Context, r: &mut Ready) {
@@ -101,7 +101,7 @@ pub(super) fn angles_window(ctx: &egui::Context, r: &mut Ready) {
 }
 
 pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
-    use crate::model::{CasesShown, WindDisplay};
+    use crate::model::CasesShown;
     let Some(mut w) = r.display_window.clone() else {
         return;
     };
@@ -149,25 +149,21 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
             "Sections without one: the cases ticked above (the first one when none is ticked)",
         );
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Wind");
-            egui::ComboBox::from_id_salt("wind-side")
-                .selected_text(w.wind.name())
-                .show_ui(ui, |ui| {
-                    for side in WindDisplay::ALL {
-                        ui.selectable_value(&mut w.wind, side, side.name());
-                    }
-                });
-        })
-        .response
+        ui.label(
+            egui::RichText::new(
+                "Wind: every case with wind is drawn from both sides — as it is (without a \
+                 direction from the right, 90°; with its own direction as given) and mirrored \
+                 about the line (an angle θ and 360° − θ; across, 90° and 270°). Once when the \
+                 two are the same wind (from ahead, 0°; from behind, 180°) or another case shown \
+                 is the mirror.",
+            )
+            .small()
+            .weak(),
+        )
         .on_hover_text(
-            "The wind's direction, where it comes from looking ahead along the line: 0° from \
-             ahead, 90° from the right, 180° from behind, 270° from the left (clockwise). A case \
-             without a direction blows across from the side chosen here: 90° as each case, \
-             270° from the left. A case that gives its own direction (90, 270 or any angle in \
-             the Weather cases table) is never turned: always as it is. Both: each case with \
-             wind drawn twice, as it is and mirrored about the line (θ → 360° − θ); the case as \
-             it is is the one reported, checked and clicked",
+            "Where the wind comes from, looking ahead along the line: 0° from ahead, 90° from the \
+             right, 180° from behind, 270° from the left (clockwise). A case's own direction is \
+             in the Weather cases table",
         );
         ui.label(
             egui::RichText::new(
@@ -189,9 +185,6 @@ pub(super) fn display_window(ctx: &egui::Context, r: &mut Ready) {
         let mut cases: Vec<usize> = (0..w.ticks.len()).filter(|k| w.ticks[*k]).collect();
         if cases.is_empty() {
             cases.push(r.case.min(r.model.cases.len().saturating_sub(1)));
-        }
-        if w.wind != r.model.wind {
-            r.model.set_wind(w.wind);
         }
         r.model.cases_shown = w.mode;
         r.show_cases(cases);

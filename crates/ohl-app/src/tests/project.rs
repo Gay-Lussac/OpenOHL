@@ -9,8 +9,8 @@ use super::*;
 
 /// View › Display weather cases: two cases ticked for every section
 /// (the Sections table's display cases kept, not used); the strings are
-/// drawn to their clamp in each; the wind from both sides draws each case
-/// with wind twice.
+/// drawn to their clamp in each; a case with wind is drawn from both
+/// sides (owner 2026-11-16: no side to choose).
 #[test]
 fn several_weather_cases_are_shown_for_the_whole_line() {
     let mut model = synthetic();
@@ -74,9 +74,11 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
         assert_eq!(r.model.display_cases.get("S1"), Some(&vec![0]));
         assert_eq!(r.model.section_cases("S1", 0), vec![0, wind]);
         assert!(r.display_window.is_none());
-        // Every section drawn twice.
+        // Every section drawn three times: in still air, and in the high
+        // wind from both sides (its mirror solved with it).
+        r.model.ensure_solved(wind);
         let n = r.model.line.sections.len();
-        assert_eq!(r.model.shapes_shown(r.case).len(), 2 * n);
+        assert_eq!(r.model.shapes_shown(r.case).len(), 3 * n);
     }
     assert!(strings(&mut harness) > one, "strings in both cases");
     // The swung strings: in high wind a suspension clamp is not plumb.
@@ -101,14 +103,15 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
             .counts()
             .0
     };
-    let one_side = strings_of(&r.model);
-    // Wind from both sides: the windy case solved twice, swung both ways.
-    r.model.set_wind(crate::model::WindDisplay::Both);
-    r.model.ensure_solved(wind);
+    // The windy case solved twice, swung both ways: its mirror hidden,
+    // fewer strings drawn.
+    let both_sides = strings_of(&r.model);
+    r.model.cases[wind].mirror_hidden = true;
     assert!(
-        strings_of(&r.model) > one_side,
+        strings_of(&r.model) < both_sides,
         "strings drawn to both sides' clamps"
     );
+    r.model.cases[wind].mirror_hidden = false;
     let solved = &r.model.cases[wind];
     let mirror = solved.mirror.as_ref().expect("solved from the left too");
     assert_eq!(solved.case.wind_from, ohl_weather::WindSide::Right);
@@ -124,14 +127,6 @@ fn several_weather_cases_are_shown_for_the_whole_line() {
     );
     let n = r.model.line.sections.len();
     assert_eq!(r.model.shapes_shown(0).len(), 3 * n);
-    // Back to one side: the mirror goes.
-    r.model.set_wind(crate::model::WindDisplay::Left);
-    r.model.ensure_solved(wind);
-    assert!(r.model.cases[wind].mirror.is_none());
-    assert_eq!(
-        r.model.cases[wind].case.wind_from,
-        ohl_weather::WindSide::Left
-    );
 }
 
 /// View › Display weather cases with the angles (owner 2026-11-15): a
@@ -169,22 +164,27 @@ fn display_names_the_wind_by_its_angle() {
     assert_eq!(mirrored.wind_direction, Some(WindDirection::Angle(315.0)));
     assert_eq!(wind_words(&mirrored), "from 315°");
     assert_eq!(side_shown(mirrored, WindSide::Right), ahead_right);
-    // The kept display choice of before reads as the same drawing.
-    let kept: crate::model::WindDisplay = serde_json::from_str("\"left\"").unwrap();
-    assert_eq!(kept.primary(), WindSide::Left);
+    // The display's wind side kept in this user's view until 2026-11-16:
+    // read and ignored, not written again.
+    for old in ["left", "right", "both"] {
+        let text = format!("{{\"wind\": \"{old}\", \"cases_shown\": \"per_section\"}}");
+        let prefs: crate::model::ViewPrefs = serde_json::from_str(&text).unwrap();
+        assert_eq!(prefs.cases_shown, crate::model::CasesShown::PerSection);
+        assert!(!serde_json::to_string(&prefs).unwrap().contains("\"wind\""));
+    }
 }
 
 /// A wind written as two cases, from 90° and from 270° (owner 2026-11-15:
 /// the duplicate merge offered to merge them — both were solved from the
-/// display's side): the 270° case is solved from the left whatever the
-/// display shows, bit for bit the old left (a case without a direction
-/// from the left); with both, its mirror from the right. A case without a
-/// direction follows the display, as before. The same for the clearance
-/// positions: both sides, the direction and its mirror; one side, the
-/// direction alone.
+/// display's side): the 270° case is solved from the left, bit for bit
+/// the old left (a case without a direction from the left), its mirror
+/// from the right (since 2026-11-16 both sides are always drawn). A case
+/// without a direction: from the right as it is, its mirror from the
+/// left. The clearance positions: both sides, the direction and its
+/// mirror; one side, the direction alone.
 #[test]
 fn an_own_direction_is_never_turned_by_the_display() {
-    use crate::model::{Solved, WindDisplay, drawn_from, shown_name, shown_side, side_shown};
+    use crate::model::{Solved, shown_name, shown_side, side_shown};
     use ohl_weather::{WindDirection, WindSide};
     let m = synthetic();
     let file = ohl_weather::WeatherCases::parse(
@@ -204,41 +204,30 @@ fn an_own_direction_is_never_turned_by_the_display() {
     let from_left = Solved::new(&m.line, &m.library, old_left).shapes;
     let from_right = Solved::new(&m.line, &m.library, plain.clone()).shapes;
     assert!(!from_left.is_empty() && from_left != from_right);
-    for wind in WindDisplay::ALL {
-        let s = Solved::with_wind(&m.line, &m.library, left.clone(), wind);
-        assert_eq!(s.case.wind_from, WindSide::Left, "{wind:?}");
-        assert_eq!(s.case.wind_direction, left.wind_direction, "{wind:?}");
-        assert_eq!(s.shapes, from_left, "{wind:?}: the old left, bit for bit");
-        assert!(s.solved_for(wind), "{wind:?}");
-        assert_eq!(shown_side(&s.case), WindSide::Right, "as it is");
-        assert_eq!(shown_name(&s.case), "storm — from the left (270°)");
-        match &s.mirror {
-            Some(mirror) => {
-                assert_eq!(wind, WindDisplay::Both);
-                assert_eq!(mirror.case.wind_from, WindSide::Right);
-                assert_eq!(mirror.shapes, from_right, "its mirror: the old right");
-                assert_eq!(
-                    shown_name(&mirror.case),
-                    "storm — from the left (270°) — from the right (90°)"
-                );
-            }
-            None => assert_ne!(wind, WindDisplay::Both),
-        }
-        // A case without a direction: the display's side, as before.
-        let p = Solved::with_wind(&m.line, &m.library, plain.clone(), wind);
-        assert_eq!(p.case.wind_from, wind.primary(), "{wind:?}");
-        let want = match wind.primary() {
-            WindSide::Left => &from_left,
-            WindSide::Right => &from_right,
-        };
-        assert_eq!(&p.shapes, want, "{wind:?}");
-        // Drawn: the clearance positions of the case as solved.
-        assert!(drawn_from(&s.case, WindSide::Left, wind));
-        assert_eq!(
-            drawn_from(&s.case, WindSide::Right, wind),
-            wind == WindDisplay::Both
-        );
-    }
+    let s = Solved::with_mirror(&m.line, &m.library, left.clone(), true);
+    assert_eq!(s.case.wind_from, WindSide::Left);
+    assert_eq!(s.case.wind_direction, left.wind_direction);
+    assert_eq!(s.shapes, from_left, "the old left, bit for bit");
+    assert!(s.solved_for(true));
+    assert_eq!(shown_side(&s.case), WindSide::Right, "as it is");
+    assert_eq!(shown_name(&s.case), "storm — from the left (270°)");
+    let mirror = s.mirror.as_ref().expect("both sides");
+    assert_eq!(mirror.case.wind_from, WindSide::Right);
+    assert_eq!(mirror.shapes, from_right, "its mirror: the old right");
+    assert_eq!(
+        shown_name(&mirror.case),
+        "storm — from the left (270°) — from the right (90°)"
+    );
+    // Without its mirror (a check's solve): the case alone.
+    let one = Solved::as_shown(&m.line, &m.library, left.clone());
+    assert!(one.mirror.is_none() && one.solved_for(false) && !one.solved_for(true));
+    assert_eq!(one.shapes, from_left);
+    // A case without a direction: from the right as it is (as the old
+    // default), its mirror from the left.
+    let p = Solved::with_mirror(&m.line, &m.library, plain.clone(), true);
+    assert_eq!(p.case.wind_from, WindSide::Right);
+    assert_eq!(p.shapes, from_right);
+    assert_eq!(p.mirror.as_ref().unwrap().shapes, from_left);
     // Mirrored and back: as in its file; the other side of the ground
     // lines its mirror.
     let mirrored = side_shown(left.clone(), WindSide::Left);
@@ -288,12 +277,99 @@ fn an_own_direction_is_never_turned_by_the_display() {
     assert_eq!(plain_states(WindSides::Right), [WindSide::Right]);
 }
 
+/// Both wind sides drawn at once (owner 2026-11-16: "We should just
+/// display both sides at once"): a case with wind and its mirror; once
+/// when the mirror is the same wind (from ahead) or another case drawn
+/// with it is that mirror (the two directed copies of one source wind),
+/// its mirror then not solved, or hidden when it was; drawn again when
+/// the other copy is no longer drawn there.
+#[test]
+fn both_wind_sides_are_drawn_once_each() {
+    use crate::model::{CasesShown, Solved};
+    use ohl_weather::{WindDirection, WindSide};
+    let mut m = synthetic();
+    let file = ohl_weather::WeatherCases::parse(
+        "format = \"ohl-weather-cases\"\nversion = 2\n\
+         [[case]]\nname = \"calm\"\ntemperature = \"15 °C\"\n\
+         [[case]]\nname = \"storm — from the right (90°)\"\ntemperature = \"15 °C\"\n\
+         wind_pressure = \"600 Pa\"\nwind_direction = 90\n\
+         [[case]]\nname = \"storm — from the left (270°)\"\ntemperature = \"15 °C\"\n\
+         wind_pressure = \"600 Pa\"\nwind_direction = 270\n\
+         [[case]]\nname = \"ahead\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n\
+         wind_direction = 0\n\
+         [[case]]\nname = \"gust\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n\
+         wind_direction = 30\n\
+         [[case]]\nname = \"storm\"\ntemperature = \"15 °C\"\nwind_pressure = \"600 Pa\"\n",
+    )
+    .unwrap()
+    .cases;
+    m.cases = file.into_iter().map(Solved::pending).collect();
+    let (calm, right, left, ahead, gust, plain) = (0, 1, 2, 3, 4, 5);
+    let show = |m: &mut crate::model::Model, cases: Vec<usize>| {
+        m.shown_cases = cases.clone();
+        for k in cases {
+            m.ensure_solved(k);
+        }
+    };
+    let drawn = |m: &crate::model::Model, k: usize| m.cases[k].drawn().count();
+    // Each alone: both sides, but still air and the wind from ahead once.
+    for (k, n) in [
+        (calm, 1),
+        (right, 2),
+        (left, 2),
+        (ahead, 1),
+        (gust, 2),
+        (plain, 2),
+    ] {
+        show(&mut m, vec![k]);
+        assert_eq!(drawn(&m, k), n, "{}", m.cases[k].case.name);
+    }
+    // The mirror of 30° is 330°; of the case without a direction, the
+    // wind from the left; of the 90° case, the 270° case bit for bit.
+    let mirror =
+        |m: &crate::model::Model, k: usize| m.cases[k].mirror.as_deref().unwrap().case.clone();
+    assert_eq!(
+        mirror(&m, gust).wind_direction,
+        Some(WindDirection::Angle(330.0))
+    );
+    assert_eq!(mirror(&m, plain).wind_from, WindSide::Left);
+    assert_eq!(
+        m.cases[right].mirror.as_deref().unwrap().shapes,
+        m.cases[left].shapes,
+        "the 90° case's mirror: the 270° case"
+    );
+    // The two copies shown together: each once, their mirrors hidden.
+    m.mirrors_changed = false;
+    show(&mut m, vec![right, left]);
+    assert_eq!((drawn(&m, right), drawn(&m, left)), (1, 1));
+    assert_eq!(m.cases[right].sides().count(), 2, "kept, hidden");
+    assert!(m.mirrors_changed, "the views drawn again");
+    let n = m.line.sections.len();
+    assert_eq!(m.shapes_shown(0).len(), 2 * n);
+    // A copy not solved yet, shown with the other: its mirror not solved.
+    m.cases[left] = Solved::pending(m.cases[left].case.clone());
+    m.ensure_solved(left);
+    assert!(m.cases[left].mirror.is_none());
+    assert!(!m.mirror_wanted(left));
+    // Each section's own cases: where the 90° case is drawn without the
+    // 270° one, its mirror drawn again.
+    let first = m.line.sections[0].id.clone();
+    m.cases_shown = CasesShown::PerSection;
+    m.display_cases.insert(first, vec![right]);
+    assert!(m.mirror_wanted(right));
+    assert!(!m.mirror_wanted(left), "drawn with the 90° case everywhere");
+    m.ensure_solved(right);
+    assert_eq!(drawn(&m, right), 2);
+    // A case not drawn: its mirror not wanted (a check's solve).
+    assert!(!m.mirror_wanted(plain));
+}
+
 /// Round trip of a weather file with a wind written as two cases (90°,
 /// 270°): another field of the 270° case edited in the table and 270
 /// typed for a case without a direction — written back, each keeps (or
-/// gets) its own direction, the model's cases solved from their own side
-/// (under the display's left too); the case left without a direction
-/// follows the display.
+/// gets) its own direction, the model's cases solved from their own side;
+/// the case left without a direction from the right, as it is drawn
+/// first.
 #[test]
 fn the_weather_table_keeps_an_own_direction() {
     use crate::tables::TableKind;
@@ -313,7 +389,6 @@ fn the_weather_table_keeps_an_own_direction() {
     )
     .unwrap();
     model.sources.weather = Some(path.clone());
-    model.set_wind(crate::model::WindDisplay::Left);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
         .build_eframe(|_| App::with_model(model, None));
@@ -335,7 +410,6 @@ fn the_weather_table_keeps_an_own_direction() {
     );
     assert_eq!(by_name("storm").wind_direction, None);
     let r = harness.state_mut().ready().unwrap();
-    assert_eq!(r.model.wind, crate::model::WindDisplay::Left);
     let side = |name: &str| {
         r.model
             .cases
@@ -348,8 +422,8 @@ fn the_weather_table_keeps_an_own_direction() {
     assert_eq!(side("storm — from the right (90°)"), WindSide::Right);
     assert_eq!(side("storm — from the left (270°)"), WindSide::Left);
     assert_eq!(side("gust"), WindSide::Left);
-    // Without a direction: the display's side.
-    assert_eq!(side("storm"), WindSide::Left);
+    // Without a direction: from the right as it is drawn first.
+    assert_eq!(side("storm"), WindSide::Right);
 }
 
 /// Weather case files of earlier versions: the wind side is dropped.

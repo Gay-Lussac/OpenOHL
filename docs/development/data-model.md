@@ -2589,7 +2589,8 @@ Angle(deg), OldAngle(deg)}`, `OldAngle` an angle of the old convention
 kept as read (0° right, towards ahead; `degrees()` = 90° − θ_old,
 `old_degrees()`, `towards()` in (x right, y ahead) = (−sin θ, −cos θ),
 for `OldAngle` (−cos θ_old, −sin θ_old) bit for bit; `towards_in(ahead)`
-in project axes; `across_side()`; `mirrored()` θ → 360° − θ; `parse`
+in project axes; `across_side()`; `mirrored()` θ → 360° − θ; `along()`
+(2026-11-16: from ahead or behind, its own mirror); `parse`
 names incl. the diagonals `ahead_right` 45°, `back_right` 135°,
 `back_left` 225°, `ahead_left` 315°; `text()`, `old_text()`, `words()`);
 read through `WeatherCaseFile` (`#[serde(from)]`): `"across"` = none, a
@@ -2600,18 +2601,37 @@ so a 270° case read in the desktop application took the display's side
 and equalled the 90° one); `own_side()` that side; `oblique()` the
 direction at an angle with wind, `towards_at(ahead)`,
 `with_direction(d)` — a load case's override, across the line its side
-and none, as before). **Desktop application** (`ohl_app::model`): a case
-with a `wind_direction` (`own_direction`) is never turned by the display
-(`WindDisplay::primary_of` right = as it is; `WindDisplay::shown`); a case
-without one follows `WindDisplay::primary` as before; `side_shown(case,
+and none, as before). **Desktop application** (`ohl_app::model`, since
+2026-11-16 without a wind side to choose — the display's `WindDisplay`
+and `ViewPrefs::wind` are gone, an old `wind` in this user's view prefs
+read and ignored): every case is held **as it is** (`as_shown`: without
+a direction from the right, with its own direction as given) and, with
+wind, drawn with its **mirror** (`mirror_case`; `Solved::mirror`, solved
+with it by `Solved::with_mirror`) unless the mirror is the same wind
+(`has_mirror`: along the line, 0°/180°) or another case drawn with it
+wherever it is drawn is that mirror (`Model::mirror_wanted`, `same_wind`:
+the same physics with the wind compared by where it blows) —
+`Solved::mirror_hidden` hides a mirror solved before, `Solved::drawn`
+draws the case and its mirror unless hidden, `Solved::sides` every side
+solved (the lines on the ground take both), `Model::mirrors_changed`
+asks the views to draw again. The checks of the case shown take the case
+as it is only (`Solved::as_shown`, `solved_for(false)`). `side_shown(case,
 side)` right as it is, left mirrored — across with its own direction only
 `wind_from` flips (the direction stays as in the file), at an angle the
-direction mirrors and `wind_from` marks it; `shown_side` reads which;
-`drawn_from` whether a clearance position is the case as drawn. The
+direction mirrors and `wind_from` marks it; `shown_side` reads which. The
 clearance positions (`ohl_clearance::zone::wind_states`): a case with
 its own direction takes the direction and its mirror with both sides,
-the direction alone with one side (never turned to it); `WindState::from`
-says a wind at an angle by its angle.
+the direction alone with one side (never turned to it), along the line
+once (2026-11-16); `WindState::from` says a wind at an angle by its
+angle. The danger-tree, safety-volume and unequal-wind positions
+(`ohl_clearance::positions::from_side`, 2026-11-16): from the right a
+wind at an angle as given when it comes from the right half (0°–180°),
+else mirrored; from the left the other; along the line one side only
+(`one_side_only`; `PositionKind::Left` alone, the arc from still air to
+it); `own_from` the side of a case's own direction (the steps of one
+side take it); `Positions::directions` (per case its direction at an
+angle) lets `Positions::describe` say a blown position's direction
+("left (from 30°)").
 `air_density_factor`, `ambient_temperature`. `WEATHER_FILE_VERSION` 2;
 the desktop Weather cases table's column **Wind direction** writes
 `wind_direction` (degrees) and raises the file to 2. The physics:

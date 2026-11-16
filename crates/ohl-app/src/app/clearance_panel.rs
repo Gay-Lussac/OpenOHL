@@ -118,6 +118,17 @@ pub(super) fn check_page_windows(ctx: &egui::Context, r: &mut Ready) {
     }
 }
 
+/// Whether a clearance check's wind position is a weather case as the
+/// views draw it: still air, or its full wind from either side — both
+/// sides are drawn since 2026-11-16 (the case as it is and its mirror, or
+/// another case drawn in its mirror's place, [`crate::model::Model::mirror_wanted`]).
+fn drawn_as_shown(state: &ohl_clearance::zone::WindState) -> bool {
+    match state.side {
+        None => state.full <= 0.0,
+        Some(_) => (state.pressure - state.full).abs() < 1e-9,
+    }
+}
+
 impl Ready {
     /// Shows a check result's weather case on its sections (`None`: none
     /// any more), [`crate::result_case`].
@@ -174,16 +185,10 @@ impl Ready {
             format!("found in {}", p.says()),
             f.wire,
         );
-        // The case as drawn: at its full wind from the side shown (both
-        // sides: both).
-        let drawn = f.arc.is_none()
-            && match state.side {
-                None => state.full <= 0.0,
-                Some(side) => {
-                    (state.pressure - state.full).abs() < 1e-9
-                        && crate::model::drawn_from(&state.case, side, self.model.wind)
-                }
-            };
+        // The case as drawn: still air, or its full wind from either side
+        // (both sides are drawn: the case as it is and its mirror, or the
+        // case drawn in its mirror's place).
+        let drawn = f.arc.is_none() && drawn_as_shown(state);
         if !drawn && !jumper {
             rc.solve_wire(
                 &self.model.line,
@@ -255,15 +260,9 @@ impl Ready {
             format!("found in {}", f.case),
             f.at,
         );
-        // The case as drawn: at its full wind from the side shown (both
-        // sides: both); else the span at the finding's wind on top.
-        let drawn = match state.side {
-            None => state.full <= 0.0,
-            Some(side) => {
-                (state.pressure - state.full).abs() < 1e-9
-                    && crate::model::drawn_from(&state.case, side, self.model.wind)
-            }
-        };
+        // The case as drawn (both sides); else the span at the finding's
+        // wind on top.
+        let drawn = drawn_as_shown(state);
         if !drawn && let Selection::Span { section, span } = &f.wire {
             rc.solve_wire(
                 &self.model.line,

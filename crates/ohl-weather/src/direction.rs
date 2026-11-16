@@ -176,6 +176,13 @@ impl WindDirection {
         [right[0] * x + ahead[0] * y, right[1] * x + ahead[1] * y]
     }
 
+    /// Whether it blows along the line, from ahead (0°) or from behind
+    /// (180°): its own mirror ([`WindDirection::mirrored`]), no other
+    /// side to it.
+    pub fn along(self) -> bool {
+        self.mirrored().degrees() == self.degrees()
+    }
+
     /// Mirrored about the line (left and right swapped): θ → 360° − θ.
     pub fn mirrored(self) -> Self {
         match self {
@@ -381,6 +388,35 @@ mod tests {
             Ok(WindDirection::Angle(225.0))
         );
         assert!(WindDirection::parse("sideways").is_err());
+    }
+
+    /// Along the line (0°, 180°, by name, number or old angle) a wind is
+    /// its own mirror; at any other angle, across too, it is not.
+    #[test]
+    fn along_the_line_is_its_own_mirror() {
+        for d in [
+            WindDirection::Ahead,
+            WindDirection::Back,
+            WindDirection::Angle(0.0),
+            WindDirection::Angle(180.0),
+            WindDirection::Angle(-180.0),
+            WindDirection::Angle(360.0),
+            WindDirection::OldAngle(90.0),
+            WindDirection::OldAngle(270.0),
+        ] {
+            assert!(d.along(), "{d:?}");
+        }
+        for d in [
+            WindDirection::Right,
+            WindDirection::Left,
+            WindDirection::Angle(30.0),
+            WindDirection::Angle(179.0),
+            WindDirection::Angle(270.0),
+            WindDirection::OldAngle(0.0),
+            WindDirection::OldAngle(37.3),
+        ] {
+            assert!(!d.along(), "{d:?}");
+        }
     }
 
     /// θ = 90° − θ_old, and an old angle keeps the old vector bit for bit.

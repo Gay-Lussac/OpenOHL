@@ -53,6 +53,71 @@ Built, in active development, not approved yet.
   no longer read (found by the tests above). The entry now goes with
   the point, listed in the Delete confirmation (`Removal::capacities`).
 
+**Both wind sides always drawn; the danger trees, safety volumes and
+unequal wind check a wind at an angle with its mirror** (owner: *"Display
+weather case should indeed not have 'both, left or right' for wind. We
+should just display both sides at once."* and *"Please also check how
+this impacts the wind arc in the clearances and danger tree... maybe it
+needs a slight rework."*). Built, in active development:
+
+- **The display.** View › Display weather cases has no wind choice any
+  more (`WindDisplay` removed). Every case with wind is drawn as it is —
+  without a direction from the right (90°), with its own direction as
+  given — and mirrored about the line (θ → 360° − θ; across: the other
+  side). Once only when the mirror is the same wind (along the line, 0°
+  or 180°) or when another case drawn with it, wherever it is drawn, is
+  its mirror (the two directed copies of one source wind, from 90° and
+  from 270°, shown together: each drawn once; where a section shows only
+  one, it is drawn with its mirror). The mirror is solved only when it
+  is drawn; a mirror solved before and no longer needed is hidden, not
+  thrown away. The checks of the case shown (fields, distance between
+  conductors, galloping, buildings) take the case as it is only — the
+  same as before for the default; under the old "from the left" choice
+  they took a case without a direction from the left, now always from the
+  right. The choice remembered in a user's view (`right`, `left`, `both`)
+  is read and ignored, not written. Cost: a displayed case with wind takes
+  two solves (it and its mirror) where the default took one.
+- **What the arcs did** (the investigation). None of the arcs depended
+  on the display's choice: the clearance windows, `ohl zones` and the wire
+  to wire swing take the sides of their own `[wind] sides`, and the
+  danger trees, grow-in, safety volumes and `ohl analysis` always both.
+  The swing arc itself (`SwingArc`) is built from the solved blowouts
+  whatever their wind and takes the smallest to the largest angle and
+  radius, so it is right for any direction once the blowouts are. The
+  vertical and radial clearance windows already took a wind at an angle
+  and its mirror (2026-11-15). **Wrong:** the positions of the danger
+  trees, grow-in, safety volumes, `ohl analysis` and the unequal-wind
+  distance between conductors set only the side (`wind_from`) for each
+  blowout, which a wind at an angle does not read — so for a case with
+  its own direction at an angle both "sides" were the case as it is and
+  its mirror was **never checked** (not on the safe side against the
+  views, which drew it). Now (`ohl_clearance::positions::from_side`): from
+  the right the wind from θ when it comes from the right half (0°–180°),
+  else its mirror; from the left the other — each blowout blowing the
+  wires to the side named, said with its angle ("left (from 30°)"). A
+  wind along the line (0°, 180°) is one blowout (its arc from still air to
+  it); the clearance windows' positions take it once too (before: the same
+  position twice). The wire to wire swing's labels say a wind at an angle
+  by its angle (before "from the left/right").
+- **Changed results.** Cases without a direction and cases with their own
+  direction across the line: identical, bit for bit (the tests of before
+  pass unchanged). Cases with their own direction at an angle (new since
+  2026-11-15): the danger trees, safety volumes, `ohl analysis` and the
+  unequal wind now also check the mirror — results can only get worse
+  (more positions); along the line the duplicate position is gone (the
+  same lowest result, counted once).
+- **The band at an angle, measured:** both windy example cases from 30°,
+  60° and 0° against their 10 Pa steps from both sides: the steps lie up
+  to 0.082 m outside the band without its margin (across: 0.091 m), held
+  by the default margin of 0.15 m — the band stays conservative for a
+  wind at an angle on the example line ([Wind on the
+  line](../theory/wind.md#clearances-and-the-views)). A case with its own
+  direction checks that wind and its mirror only, not the across
+  envelope (said there as an assumption).
+- **Not done (open):** other project lines drawn next to the line still
+  show one side of each case (as before, also with "both"); the lines on
+  the ground take both sides of them.
+
 ## 2026-11-15
 
 **A weather case's own wind direction is kept and never turned by the

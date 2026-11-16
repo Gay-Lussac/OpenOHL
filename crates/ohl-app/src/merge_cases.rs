@@ -100,7 +100,9 @@ pub fn different_directions(cases: &[WeatherCase]) -> Vec<Vec<String>> {
                 .map(|c| {
                     let wind = match c.wind_direction {
                         Some(d) => d.words(),
-                        None => "without a direction (follows the display)".into(),
+                        None => {
+                            "without a direction (across, from the side a check asks for)".into()
+                        }
                     };
                     format!("\"{}\" {wind}", c.name)
                 })
@@ -415,7 +417,7 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
     }
     let mut w = std::mem::take(&mut r.merge_cases);
     if w.groups.is_none() {
-        // The cases as in their file (the display's side is the view's).
+        // The cases as in their file (as they are drawn first).
         let cases: Vec<WeatherCase> = r
             .model
             .cases
@@ -457,7 +459,8 @@ pub fn window(ctx: &egui::Context, r: &mut Ready) {
                     egui::RichText::new(
                         "Not offered — the same weather but the wind from different \
                          directions (two winds, never merged; a case without a direction \
-                         follows the display's side, one with its own direction never does):",
+                         is turned to the side a check asks for, one with its own direction \
+                         never is):",
                     )
                     .small()
                     .weak(),
@@ -550,13 +553,13 @@ mod tests {
     /// The owner's report (2026-11-15): "the duplicate detection doesnt
     /// recognise the angle for the winds and offers to merge 2 winds
     /// coming from different directions". A wind imported as two cases,
-    /// from 90° and from 270°, is never offered — whatever the display
-    /// shows (the window takes the cases as in their file) — and the
+    /// from 90° and from 270°, is never offered — as held or mirrored
+    /// (the window takes the cases as in their file) — and the
     /// window says why; two cases from 90° are; a case without a direction
     /// is not merged with one of its own direction.
     #[test]
     fn winds_from_different_directions_are_not_offered() {
-        use crate::model::{WindDisplay, side_shown};
+        use crate::model::{as_shown, mirror_case, side_shown};
         let text = "format = \"ohl-weather-cases\"\nversion = 2\n\
              [[case]]\nname = \"storm — from the right (90°)\"\ntemperature = \"10 °C\"\n\
              wind_pressure = \"500 Pa\"\nwind_direction = 90\n\
@@ -566,28 +569,33 @@ mod tests {
              wind_pressure = \"500 Pa\"\nwind_direction = \"right\"\n\
              [[case]]\nname = \"storm\"\ntemperature = \"10 °C\"\nwind_pressure = \"500 Pa\"\n";
         let file = ohl_weather::WeatherCases::parse(text).unwrap().cases;
-        for wind in WindDisplay::ALL {
-            // As the model holds them, then as the window takes them.
+        for mirrored in [false, true] {
+            // As the model holds them (or mirrored), then as the window
+            // takes them.
             let cases: Vec<WeatherCase> = file
                 .iter()
-                .map(|c| side_shown(wind.shown(c.clone()), ohl_weather::WindSide::Right))
+                .map(|c| {
+                    let held = as_shown(c.clone());
+                    let held = if mirrored { mirror_case(&held) } else { held };
+                    side_shown(held, ohl_weather::WindSide::Right)
+                })
                 .collect();
             let g = groups(&cases);
             let names: Vec<Vec<String>> = g.iter().map(|g| g.names.clone()).collect();
             assert_eq!(
                 names,
                 vec![vec!["storm — from the right (90°)", "storm again"]],
-                "{wind:?}"
+                "{mirrored}"
             );
             let apart = different_directions(&cases);
-            assert_eq!(apart.len(), 1, "{wind:?}");
+            assert_eq!(apart.len(), 1, "{mirrored}");
             assert_eq!(
                 apart[0],
                 vec![
                     "\"storm — from the right (90°)\" from 90° (from the right)",
                     "\"storm — from the left (270°)\" from 270° (from the left)",
                     "\"storm again\" from 90° (from the right)",
-                    "\"storm\" without a direction (follows the display)",
+                    "\"storm\" without a direction (across, from the side a check asks for)",
                 ]
             );
         }

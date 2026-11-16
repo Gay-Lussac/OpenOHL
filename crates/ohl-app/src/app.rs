@@ -1998,6 +1998,9 @@ impl Ready {
         }
         self.model.want(need, ctx);
         let done = self.model.poll_solving();
+        if std::mem::take(&mut self.model.mirrors_changed) {
+            self.refresh_views();
+        }
         if !done.is_empty() {
             self.status = Some((format!("solved: {}", done.join(", ")), false));
             self.clearances.stale = true;

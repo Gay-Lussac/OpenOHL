@@ -607,7 +607,9 @@ pub fn wind_states(
 /// direction (right) and its mirror about the line (left; θ → 360° − θ);
 /// with one side only, the direction alone — across the line marked with
 /// the side it really blows from (90°: right, 270°: left), at an angle
-/// right as it is, left mirrored.
+/// right as it is, left mirrored. Along the line (0°, 180°: its own
+/// mirror) the direction once, marked right (2026-11-16; before, both
+/// sides gave the same position twice).
 fn own_position(c: &mut WeatherCase, side: WindSide, sides: WindSides) -> WindSide {
     let mirror = sides == WindSides::Both && side == WindSide::Left;
     match (c.own_side(), c.wind_direction) {
@@ -618,7 +620,7 @@ fn own_position(c: &mut WeatherCase, side: WindSide, sides: WindSides) -> WindSi
             c.wind_from
         }
         (None, Some(d)) => {
-            if mirror {
+            if mirror && !d.along() {
                 c.wind_direction = Some(d.mirrored());
                 c.wind_from = c.wind_from.opposite();
                 WindSide::Left
@@ -2920,8 +2922,9 @@ mod tests {
     /// The positions of a case with its own direction (owner 2026-11-15):
     /// both sides, the direction and its mirror — at an angle θ and
     /// 360° − θ, said by the angle; across, the two sides, said as before;
-    /// one side, the direction alone (never turned to it). A case without
-    /// a direction: the sides asked for, as before.
+    /// along the line (0°: its own mirror) once (2026-11-16); one side,
+    /// the direction alone (never turned to it). A case without a
+    /// direction: the sides asked for, as before.
     #[test]
     fn an_own_direction_takes_itself_and_its_mirror() {
         use ohl_weather::WindDirection;
@@ -2931,7 +2934,9 @@ mod tests {
              wind_direction = 45\n\
              [[case]]\nname = \"storm\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n\
              wind_direction = \"left\"\n\
-             [[case]]\nname = \"plain\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n",
+             [[case]]\nname = \"plain\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n\
+             [[case]]\nname = \"breeze\"\ntemperature = \"10 °C\"\nwind_pressure = \"300 Pa\"\n\
+             wind_direction = 0\n",
         )
         .unwrap();
         let states = |sides| {
@@ -2952,8 +2957,10 @@ mod tests {
                 "storm, 300 of 300 Pa from the left",
                 "plain, 300 of 300 Pa from the left",
                 "plain, 300 of 300 Pa from the right",
+                "breeze, 300 of 300 Pa from 0° (from ahead: blowing back)",
             ]
         );
+        assert_eq!(both[6].side, Some(WindSide::Right));
         assert_eq!(both[0].case.oblique(), Some(WindDirection::Angle(315.0)));
         assert_eq!(both[1].case.oblique(), Some(WindDirection::Angle(45.0)));
         assert_eq!(both[2].case.wind_from, WindSide::Right);
@@ -2967,6 +2974,7 @@ mod tests {
                     "gust, 300 of 300 Pa from 45°",
                     "storm, 300 of 300 Pa from the left",
                     plain.as_str(),
+                    "breeze, 300 of 300 Pa from 0° (from ahead: blowing back)",
                 ]
             );
         }

@@ -76,9 +76,8 @@ pub struct ViewPrefs {
     /// What is written next to the wires in each view.
     #[serde(default)]
     pub section_display: crate::annotations::SectionDisplay,
-    /// The side the wind comes from in the weather cases shown.
-    #[serde(default)]
-    pub wind: WindDisplay,
+    // (`wind`, the side the wind of the cases shown came from until
+    // 2026-11-16: read and ignored — both sides are always drawn.)
     /// How the display weather cases apply to the sections.
     #[serde(default)]
     pub cases_shown: CasesShown,
@@ -190,85 +189,69 @@ pub struct Solved {
     /// Solved (else not yet: solved when first shown or checked,
     /// [`Model::want`]).
     pub ready: bool,
-    /// The same case with the wind from the other side, when both sides
-    /// are shown ([`WindDisplay::Both`]) and the case has wind.
+    /// The same case mirrored about the line ([`mirror_case`]), solved
+    /// when the case has another side ([`has_mirror`]) and no other case
+    /// drawn with it is that mirror ([`Model::mirror_wanted`]).
     pub mirror: Option<Box<Solved>>,
+    /// Its mirror solved but not drawn: another case drawn with it is
+    /// that mirror (e.g. the two directed copies of one source wind,
+    /// from 90° and from 270°), drawn once ([`Solved::drawn`]).
+    pub mirror_hidden: bool,
     /// Counted up ([`next_serial`]) whenever it is made or solved again:
     /// another serial, another solution (the Tables page's rows,
     /// [`crate::tables::TablePage::cached_rows`]).
     pub serial: u64,
 }
 
-/// How the wind of the weather cases is shown (View › Display weather
-/// cases; owner 2026-11-15: no more "left" or "right" — the angles, named
-/// as the old cases): each case **as it is** (a case without a direction:
-/// from the right, 90°), the cases without a direction **from the left**
-/// (270°), or **both** (each case and its mirror about the line,
-/// θ → 360° − θ). A display choice, not part of the weather case. A case
-/// that gives its own direction (`wind_direction` in its file, across the
-/// line or at an angle) is never turned by it: always as it is, its
-/// mirror drawn only with both (owner 2026-11-15: two cases from 90° and
-/// 270° are two winds). Kept in the project's view as before (`right`,
-/// `left`, `both`): an old choice reads as the same drawing for the cases
-/// without a direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WindDisplay {
-    /// Each case as it is (without a direction: from the right, 90°).
-    #[default]
-    Right,
-    /// The cases without a direction from the left (270°); a case with its
-    /// own direction as it is.
-    Left,
-    /// Both drawn at once (the case as it is reported, checked, picked).
-    Both,
+/// The wind of the weather cases drawn (View › Display weather cases;
+/// owner 2026-11-16: "We should just display both sides at once"): every
+/// case with wind **as it is** — a case without a direction from the
+/// right (90°), a case with its own direction (`wind_direction` in its
+/// file, across the line or at an angle) as given — and its **mirror**
+/// about the line (θ → 360° − θ; across: the other side), drawn once
+/// when the mirror is the same wind (from ahead, 0°, or from behind,
+/// 180°: [`has_mirror`]) or another case drawn with it is that mirror
+/// ([`Model::mirror_wanted`]). The case as it is is the one reported,
+/// checked and picked first. Until 2026-11-16 a display choice chose
+/// "as each case", "from the left" or "both" (kept in this user's view;
+/// read and ignored since).
+///
+/// `case` as it is drawn first: [`side_shown`] from the right (a case
+/// without a direction from the right, 90°; one with its own direction as
+/// given).
+pub fn as_shown(case: WeatherCase) -> WeatherCase {
+    side_shown(case, ohl_weather::WindSide::Right)
 }
 
-impl WindDisplay {
-    /// Every choice, in the menu's order.
-    pub const ALL: [WindDisplay; 3] = [WindDisplay::Right, WindDisplay::Left, WindDisplay::Both];
-
-    /// Name in the menu.
-    pub fn name(self) -> &'static str {
-        match self {
-            WindDisplay::Right => "as each case (without a direction: from the right, 90°)",
-            WindDisplay::Left => "cases without a direction from the left (270°)",
-            WindDisplay::Both => "both: each case and its mirror (90° and 270°)",
-        }
-    }
-
-    /// The side solved first (reported, checked, picked) for a case
-    /// without a direction of its own.
-    pub fn primary(self) -> ohl_weather::WindSide {
-        match self {
-            WindDisplay::Left => ohl_weather::WindSide::Left,
-            WindDisplay::Right | WindDisplay::Both => ohl_weather::WindSide::Right,
-        }
-    }
-
-    /// The side `case` is solved from first ([`side_shown`]): a case with
-    /// its own direction ([`own_direction`]) as it is (right) whatever
-    /// the choice; a case without one, [`WindDisplay::primary`].
-    pub fn primary_of(self, case: &WeatherCase) -> ohl_weather::WindSide {
-        if own_direction(case) {
-            ohl_weather::WindSide::Right
-        } else {
-            self.primary()
-        }
-    }
-
-    /// `case` as this choice shows it first ([`WindDisplay::primary_of`]).
-    pub fn shown(self, case: WeatherCase) -> WeatherCase {
-        let side = self.primary_of(&case);
-        side_shown(case, side)
-    }
+/// Whether `case` has another side to draw: it has wind, and its mirror
+/// about the line is another wind (not from ahead, 0°, or from behind,
+/// 180°, which mirror to themselves).
+pub fn has_mirror(case: &WeatherCase) -> bool {
+    case.wind_pressure.si() > 0.0 && case.oblique().is_none_or(|d| !d.along())
 }
 
-/// Whether `case` gives its own wind direction (`wind_direction` in its
-/// file: across the line or at an angle; owner 2026-11-15): never turned
-/// by the display's choice. A case without one follows it, as before.
-pub fn own_direction(case: &WeatherCase) -> bool {
-    case.wind_direction.is_some()
+/// `case` mirrored about the line ([`side_shown`] from its other side): a
+/// case without a direction, or with its own across the line, from the
+/// other side; one at an angle θ from 360° − θ.
+pub fn mirror_case(case: &WeatherCase) -> WeatherCase {
+    side_shown(case.clone(), shown_side(case).opposite())
+}
+
+/// Whether `a` and `b` blow the wires alike: the same physics
+/// ([`WeatherCase::same_physics`]) with the wind compared by where it
+/// blows — across the line by its side (with or without a direction of
+/// its own), at an angle by the angle. A case's mirror and the other
+/// directed copy of its source wind (from 90° and from 270°) are alike.
+pub fn same_wind(a: &WeatherCase, b: &WeatherCase) -> bool {
+    fn blowing(case: &WeatherCase) -> WeatherCase {
+        let mut c = case.clone();
+        match c.oblique() {
+            Some(_) => c.wind_from = ohl_weather::WindSide::Right,
+            None => c.wind_direction = None,
+        }
+        c
+    }
+    blowing(a).same_physics(&blowing(b))
 }
 
 /// The side `case` is shown from, in the terms of [`side_shown`]: right
@@ -295,7 +278,7 @@ pub enum CasesShown {
     PerSection,
 }
 
-/// `case` shown from `side` ([`WindDisplay::primary_of`]): right as it
+/// `case` shown from `side` ([`as_shown`], [`mirror_case`]): right as it
 /// is, left mirrored about the line, the side it is in read by
 /// [`shown_side`]. A case without a direction: its wind's side that one,
 /// as before. A case with a wind at an angle mirrored (θ → 360° − θ) when
@@ -316,23 +299,6 @@ pub fn side_shown(mut case: WeatherCase, side: ohl_weather::WindSide) -> Weather
         }
     }
     case
-}
-
-/// Whether a clearance position of `case` with its wind from `side` (a
-/// [`ohl_clearance::zone::WindState`]'s) is the case as drawn by `wind`:
-/// both drawn with [`WindDisplay::Both`]; else a case without a direction
-/// from the display's side, one with its own direction across the line
-/// from that side, one at an angle as it is (its side the position's
-/// mark: right as it is, left mirrored).
-pub fn drawn_from(case: &WeatherCase, side: ohl_weather::WindSide, wind: WindDisplay) -> bool {
-    if wind == WindDisplay::Both {
-        return true;
-    }
-    match (case.own_side(), case.wind_direction) {
-        (Some(own), _) => side == own,
-        (None, Some(_)) => side == ohl_weather::WindSide::Right,
-        (None, None) => side == wind.primary(),
-    }
 }
 
 /// The wind of `case` in words, named as the old cases (owner
@@ -364,35 +330,47 @@ pub fn shown_name(case: &WeatherCase) -> String {
 }
 
 impl Solved {
-    /// Solves `line` in `case`, and with the wind from the other side too
-    /// when `wind` shows both and the case has wind.
-    pub fn with_wind(
+    /// Solves `line` in `case` as it is drawn first ([`as_shown`]) and,
+    /// when `mirror` and the case has another side ([`has_mirror`]), in
+    /// its mirror too ([`mirror_case`]).
+    pub fn with_mirror(
         line: &Line,
         library: &ohl_cables::Library,
         case: WeatherCase,
-        wind: WindDisplay,
+        mirror: bool,
     ) -> Self {
-        let case = wind.shown(case);
-        let mirrored = (wind == WindDisplay::Both && case.wind_pressure.si() > 0.0).then(|| {
-            let other = side_shown(case.clone(), wind.primary_of(&case).opposite());
-            Box::new(Self::new(line, library, other))
-        });
+        let case = as_shown(case);
+        let mirrored = (mirror && has_mirror(&case))
+            .then(|| Box::new(Self::new(line, library, mirror_case(&case))));
         let mut s = Self::new(line, library, case);
         s.mirror = mirrored;
         s
     }
 
-    /// Whether it is solved as `wind` shows it (its side, its mirror).
-    pub fn solved_for(&self, wind: WindDisplay) -> bool {
-        let windy = self.case.wind_pressure.si() > 0.0;
-        self.ready
-            && (!windy
-                || (shown_side(&self.case) == wind.primary_of(&self.case)
-                    && self.mirror.is_some() == (wind == WindDisplay::Both)))
+    /// Solves `line` in `case` as it is drawn first ([`as_shown`]), its
+    /// mirror not: what a check of the case shown takes.
+    pub fn as_shown(line: &Line, library: &ohl_cables::Library, case: WeatherCase) -> Self {
+        Self::new(line, library, as_shown(case))
     }
 
-    /// The solutions drawn: this one, and its mirror if any.
+    /// Whether it is solved for drawing: as it is drawn first, and its
+    /// mirror too when `mirror` is wanted ([`Model::mirror_wanted`]).
+    pub fn solved_for(&self, mirror: bool) -> bool {
+        self.ready
+            && (self.case.wind_pressure.si() <= 0.0
+                || shown_side(&self.case) == ohl_weather::WindSide::Right)
+            && (!mirror || self.mirror.is_some())
+    }
+
+    /// The solutions drawn: this one, and its mirror if any and not
+    /// hidden ([`Solved::mirror_hidden`]).
     pub fn drawn(&self) -> impl Iterator<Item = &Solved> {
+        std::iter::once(self).chain(self.mirror.as_deref().filter(|_| !self.mirror_hidden))
+    }
+
+    /// Every side solved: this one, and its mirror if any (hidden or
+    /// not) — what an envelope of both sides takes.
+    pub fn sides(&self) -> impl Iterator<Item = &Solved> {
         std::iter::once(self).chain(self.mirror.as_deref())
     }
 
@@ -446,6 +424,7 @@ impl Solved {
             bundles: Default::default(),
             ready: false,
             mirror: None,
+            mirror_hidden: false,
             serial: next_serial(),
         }
     }
@@ -467,6 +446,7 @@ impl Solved {
             live,
             ready: true,
             mirror: None,
+            mirror_hidden: false,
             serial: 0,
         };
         s.refresh(line);
@@ -694,6 +674,10 @@ pub struct Model {
     /// Weather cases being solved in the background: index, the line's
     /// version they started from, the answer.
     pub solving: Vec<(usize, u64, std::sync::mpsc::Receiver<Solved>)>,
+    /// A case's mirror shown or hidden since the views took it
+    /// ([`Model::want`]; the cases drawn changed with what is displayed):
+    /// the views drawn again.
+    pub mirrors_changed: bool,
     /// Counts the changes of `line` (a solve started before one is
     /// dropped).
     pub line_version: u64,
@@ -770,9 +754,6 @@ pub struct Model {
     /// What is written next to the wires in each view (Line › Sections › Display
     /// options; this user's choice).
     pub section_display: crate::annotations::SectionDisplay,
-    /// The side the wind comes from in the weather cases shown (this
-    /// user's choice).
-    pub wind: WindDisplay,
     /// How the display weather cases apply to the sections (this user's
     /// choice).
     pub cases_shown: CasesShown,
@@ -1270,8 +1251,8 @@ fn project_libraries(
                         &[(kind.to_owned(), name.clone(), Some(converted.clone()))],
                     ) {
                         Ok(()) => log(format!(
-                            "weather cases {name}: the wind side removed (now chosen in \
-                             Display weather cases)"
+                            "weather cases {name}: the wind side removed (a case without a \
+                             direction is drawn from both sides)"
                         )),
                         Err(e) => log(format!("weather cases {name}: not converted ({e})")),
                     }
@@ -1415,11 +1396,11 @@ impl Model {
     }
 
     /// The solutions weather case `case` is drawn from, by their serials
-    /// (the case's and its mirror's, 0 for none): another pair, another
-    /// drawing of the case.
+    /// (the case's and its mirror's drawn, 0 for none): another pair,
+    /// another drawing of the case.
     pub fn drawn_serials(&self, case: usize) -> (u64, u64) {
         self.cases.get(case).map_or((0, 0), |c| {
-            (c.serial, c.mirror.as_ref().map_or(0, |m| m.serial))
+            (c.serial, c.drawn().nth(1).map_or(0, |m| m.serial))
         })
     }
 
@@ -1663,7 +1644,6 @@ impl Model {
             hidden_classes: self.hidden_classes.clone(),
             class_scheme: self.sources.class_scheme.clone(),
             section_display: self.section_display.clone(),
-            wind: self.wind,
             cases_shown: self.cases_shown,
             hidden_backgrounds: self.hidden_backgrounds.clone(),
             profile_ratio: self.profile_ratio,
@@ -1685,10 +1665,12 @@ impl Model {
             if self.previewing {
                 continue;
             }
-            let Some(c) = self.cases.get(k) else {
+            if k >= self.cases.len() {
                 continue;
-            };
-            if c.solved_for(self.wind) || self.solving.iter().any(|(j, _, _)| *j == k) {
+            }
+            let mirror = self.show_mirror(k);
+            let c = &self.cases[k];
+            if c.solved_for(mirror) || self.solving.iter().any(|(j, _, _)| *j == k) {
                 continue;
             }
             // A few at a time (each spreads over the cores): the next
@@ -1697,11 +1679,10 @@ impl Model {
                 continue;
             }
             let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());
-            let wind = self.wind;
             let (tx, rx) = std::sync::mpsc::channel();
             let ctx = ctx.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(Solved::with_wind(&line, &library, case, wind));
+                let _ = tx.send(Solved::with_mirror(&line, &library, case, mirror));
                 ctx.request_repaint();
             });
             self.solving.push((k, self.line_version, rx));
@@ -1796,11 +1777,19 @@ impl Model {
 
     /// Solves weather case `k` now if it is not (a check or a script
     /// needs it).
+    ///
+    /// The case as it is drawn first (what a check takes), and its mirror
+    /// when it is drawn ([`Model::mirror_wanted`]: a case not drawn, its
+    /// mirror not solved).
     pub fn ensure_solved(&mut self, k: usize) {
+        if k >= self.cases.len() {
+            return;
+        }
+        let mirror = self.show_mirror(k);
         if let Some(c) = self.cases.get(k)
-            && !c.solved_for(self.wind)
+            && !c.solved_for(mirror)
         {
-            let mut s = Solved::with_wind(&self.line, &self.library, c.case.clone(), self.wind);
+            let mut s = Solved::with_mirror(&self.line, &self.library, c.case.clone(), mirror);
             s.inherit(c);
             self.solving.retain(|(j, _, _)| *j != k);
             self.cases[k] = s;
@@ -1982,22 +1971,52 @@ impl Model {
             .find(|s| s.section == section)
     }
 
-    /// The wind side shown: every case's primary side set, mirrors dropped
-    /// or wanted ([`Model::want`] solves what is shown again).
-    pub fn set_wind(&mut self, wind: WindDisplay) {
-        self.wind = wind;
-        for c in &mut self.cases {
-            if c.case.wind_pressure.si() > 0.0 && shown_side(&c.case) != wind.primary_of(&c.case) {
-                let case = wind.shown(c.case.clone());
-                *c = Solved::pending(case);
-            }
-            if wind != WindDisplay::Both {
-                c.mirror = None;
-            }
+    /// Weather case `k`'s mirror shown or hidden as [`Model::mirror_wanted`]
+    /// says (a mirror solved and wanted again, or another case drawn in its
+    /// place: without a solve; [`Model::mirrors_changed`] when it
+    /// changes); whether it is wanted. `k` must be a case.
+    fn show_mirror(&mut self, k: usize) -> bool {
+        let mirror = self.mirror_wanted(k);
+        let c = &mut self.cases[k];
+        if c.mirror.is_some() && c.mirror_hidden == mirror {
+            self.mirrors_changed = true;
         }
-        // Answers on their way were solved for the old side.
-        self.solving.clear();
-        self.line_version += 1;
+        c.mirror_hidden = !mirror;
+        mirror
+    }
+
+    /// Whether weather case `k`'s mirror is drawn ([`Solved::drawn`]):
+    /// the case has another side ([`has_mirror`]), it is drawn (in the
+    /// cases shown for the line, a section's own display cases or as a
+    /// check result's case), and somewhere it is drawn no other case drawn
+    /// there is its mirror ([`same_wind`]; e.g. the two directed copies of
+    /// one source wind, from 90° and from 270°, both shown: each drawn
+    /// once, owner 2026-11-16).
+    pub fn mirror_wanted(&self, k: usize) -> bool {
+        let Some(c) = self.cases.get(k) else {
+            return false;
+        };
+        if !has_mirror(&c.case) {
+            return false;
+        }
+        let mirror = mirror_case(&c.case);
+        let twin = |j: usize| {
+            j != k
+                && self
+                    .cases
+                    .get(j)
+                    .is_some_and(|o| same_wind(&as_shown(o.case.clone()), &mirror))
+        };
+        let per_section = self.cases_shown == CasesShown::PerSection
+            || self.result_case.as_ref().is_some_and(|r| r.case.is_some());
+        if !per_section || self.line.sections.is_empty() {
+            let shown = self.shown(k);
+            return shown.contains(&k) && !shown.iter().any(|&j| twin(j));
+        }
+        self.line.sections.iter().any(|s| {
+            let cases = self.section_cases(&s.id, k);
+            cases.contains(&k) && !cases.iter().any(|&j| twin(j))
+        })
     }
 
     /// Every section in each weather case it is drawn in, in line order
@@ -2360,11 +2379,16 @@ impl Model {
             .into_iter()
             .enumerate()
             .map(|(k, c)| {
-                let c = self.wind.shown(c);
+                let c = as_shown(c);
                 if k == 0 || was.contains(&c.name) {
-                    let mut s = Solved::with_wind(&line, &library, c, self.wind);
+                    let before = old.iter().find(|o| o.case.name == c.name);
+                    // Its mirror when it had one (drawn, or hidden for
+                    // another case drawn in its place: Model::want).
+                    let mirror = before.is_some_and(|o| o.mirror.is_some());
+                    let mut s = Solved::with_mirror(&line, &library, c, mirror);
+                    s.mirror_hidden = before.is_some_and(|o| o.mirror_hidden);
                     // Sections that stop solving keep their last shape.
-                    if let Some(o) = old.iter().find(|o| o.case.name == s.case.name) {
+                    if let Some(o) = before {
                         s.inherit(o);
                     }
                     s
@@ -2665,20 +2689,19 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     // they are shown or a check needs them (Model::want).
     let mut solved = Vec::new();
     let others = cases.len().saturating_sub(1);
-    // The wind side is this user's display choice, not the file's.
-    let wind = sources
-        .view
-        .as_ref()
-        .map_or_else(WindDisplay::default, |v| v.wind);
+    // A case without a direction from the right (the file's side is not
+    // used), one with its own direction as given.
     for (k, case) in cases.into_iter().enumerate() {
-        let case = wind.shown(case);
+        let case = as_shown(case);
         if k > 0 {
             solved.push(Solved::pending(case));
             continue;
         }
         let t = Instant::now();
         let name = case.name.clone();
-        let one = Solved::with_wind(&line, &library, case, wind);
+        // Both wind sides drawn (its mirror hidden by the first frame when
+        // another case drawn is that mirror, Model::want).
+        let one = Solved::with_mirror(&line, &library, case, true);
         step(
             format!(
                 "case \"{name}\" solved in {:.0?}{}",
@@ -2915,11 +2938,11 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         points_percent,
         library_dir,
         section_display,
-        wind,
         cases_shown,
         viewer_session,
         remote: None,
         solving: Vec::new(),
+        mirrors_changed: false,
         line_version: 0,
         project_version: 0,
     };

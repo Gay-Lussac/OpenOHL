@@ -1210,13 +1210,12 @@ impl PhaseDistanceWindow {
         let line =
             ohl_clearance::calculation::line_for(local.line(), self.calculation).into_owned();
         let library = model.library.clone();
-        let wind = model.wind;
         let own = self.calculation.is_none() && !local.applied();
         let cases: Vec<(crate::model::Solved, bool)> = self
             .cases
             .iter()
             .filter_map(|k| model.cases.get(*k))
-            .map(|c| (c.clone(), own && c.solved_for(wind)))
+            .map(|c| (c.clone(), own && c.solved_for(false)))
             .collect();
         let mut settings = self.settings.clone();
         settings.circuits = self.circuits.clone();
@@ -1340,7 +1339,7 @@ impl PhaseDistanceWindow {
                 let solved = if ready {
                     solved
                 } else {
-                    crate::model::Solved::with_wind(&line, &library, solved.case.clone(), wind)
+                    crate::model::Solved::as_shown(&line, &library, solved.case.clone())
                 };
                 let name = solved.case.name.clone();
                 notes.extend(

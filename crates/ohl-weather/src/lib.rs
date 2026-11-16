@@ -79,14 +79,15 @@ pub struct WeatherCase {
     /// Where the wind comes from, given by the case itself (weather file
     /// version 2; owner 2026-11-15): none — the across rule, every span
     /// the full pressure square to itself from [`WeatherCase::wind_from`]'s
-    /// side, as before (in the desktop application such a case follows
-    /// the display's side). A direction across the line (`"right"`,
+    /// side, as before (in the desktop application such a case is drawn
+    /// from the right, 90°, and mirrored; a check asking for one side
+    /// turns it to that side). A direction across the line (`"right"`,
     /// `"left"`, 90°, 270°) is kept here as given and its side put in
     /// [`WeatherCase::wind_from`]: the across rule from that side (bit for
     /// bit the results of that side), the direction marking it as the
     /// case's own (owner 2026-11-15: two cases from 90° and 270° are two
-    /// winds, never one; the desktop application does not turn it to the
-    /// display's side). Any other direction ([`WindDirection`]: from; 0°
+    /// winds, never one; never turned to a side a check asks for). Any
+    /// other direction ([`WindDirection`]: from; 0°
     /// from ahead, 90° from the right, clockwise, relative to the line at
     /// each place) is **one wind**, each wire piece taking the part normal
     /// to it ([`oblique_wire_force`]).

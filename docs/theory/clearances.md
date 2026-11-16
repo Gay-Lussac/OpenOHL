@@ -205,8 +205,12 @@ and \\( p \\) `per_1000_m` — e.g. the Swiss LeV, Annex 6, Table 2.4.1:
 ## Wind positions
 
 A weather case with wind is solved from each side chosen (left, right or
-both, looking ahead along the line) at its full pressure. Two options,
-alone or together:
+both, looking ahead along the line) at its full pressure. A case that
+gives its own wind direction takes, with both sides, the direction and
+its mirror about the line (at an angle θ: θ and 360° − θ; along the line,
+0° or 180°, once: its mirror is itself), with one side the direction
+alone ([Wind on the line › Clearances and the views](wind.md#clearances-and-the-views)).
+Two options, alone or together:
 
 - **Wind steps**: still air and every pressure \\( p_k = k\,\Delta p \\)
   up to the case's (at most 200 steps a side, the step made larger
@@ -222,7 +226,10 @@ alone or together:
   to the largest of theirs, \\( r = \min(R_L, R_0, R_R) \\) to
   \\( R = \max(R_L, R_0, R_R) \\), at each place along the span, from the
   smallest to the largest of their angles. Three solves per windy case
-  (one side: two). The arc's own labels hold here too:
+  (one side, or a wind along the line: two). For a wind at an angle the
+  two blowouts are the direction and its mirror; along the line the band
+  runs from still air to its one blowout. The arc's own labels hold here
+  too:
 
   **Conservative:** every radius between the smallest and the largest of
   the three along the whole arc, for targets on every side — below and

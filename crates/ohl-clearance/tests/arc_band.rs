@@ -59,6 +59,12 @@ struct Measured {
 /// The spans' bands (`jumpers` false) or the jumpers' (true) of `file` in
 /// `case` against its steps at 10 Pa from both sides.
 fn measure(file: &str, case: &str, jumpers: bool) -> Measured {
+    measure_at(file, case, jumpers, None)
+}
+
+/// [`measure`] with the case's wind from `direction` (degrees, the
+/// program's convention; none: as in the file, across the line).
+fn measure_at(file: &str, case: &str, jumpers: bool, direction: Option<f64>) -> Measured {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let line = ohl_line::Line::load(&root.join("examples/synthetic-line").join(file)).unwrap();
     let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
@@ -67,6 +73,13 @@ fn measure(file: &str, case: &str, jumpers: bool) -> Measured {
             .unwrap()
             .select(&[case.into()], &[])
             .unwrap();
+    let cases: Vec<ohl_weather::WeatherCase> = cases
+        .into_iter()
+        .map(|c| match direction {
+            Some(a) => c.with_direction(ohl_weather::WindDirection::Angle(a)),
+            None => c,
+        })
+        .collect();
     let steps = WindSteps {
         arc: false,
         stepped: true,
@@ -248,4 +261,37 @@ fn the_jumper_bands_hold_the_steps_at_10_pa() {
     assert!(worst.0 > 0.28 && worst.0 < 0.31, "{worst:?}");
     // The arc alone misses them by far more.
     assert!(worst_arc.0 > 1.0, "{worst_arc:?}");
+}
+
+/// A wind at an angle (2026-11-16): the band of a case's blowouts at θ
+/// and 360° − θ, and along the line (0°: one blowout, no other side),
+/// against its steps at 10 Pa from both sides — the steps of a wind at an
+/// angle the direction and its mirror ([`ohl_clearance::positions::from_side`]).
+/// Every step's centre line within the band widened by its margin
+/// [`BAND_MARGIN`], as for a wind across the line (measured 2026-11-16 on
+/// the example line, both windy cases, at 30°, 60° and 0°; numbers
+/// printed, see the theory).
+#[test]
+fn the_band_holds_the_steps_of_a_wind_at_an_angle() {
+    let mut worst = (0.0f64, String::new());
+    let mut n = 0;
+    for direction in [30.0, 60.0, 0.0] {
+        for case in ["high wind", "rime ice + wind"] {
+            let m = measure_at("synthetic-line.ohl.json", case, false, Some(direction));
+            eprintln!(
+                "from {direction}°, {case}: {} bands, {} step positions; farthest from the band {:.4} m ({})",
+                m.bands, m.positions, m.band.0, m.band.1
+            );
+            assert!(m.bands > 0 && m.positions > 0, "{direction} {case}");
+            n += m.positions;
+            if m.band.0 > worst.0 {
+                worst = m.band;
+            }
+        }
+    }
+    eprintln!(
+        "at an angle: {n} step positions; band {:.4} m ({})",
+        worst.0, worst.1
+    );
+    assert!(worst.0 <= BAND_MARGIN, "{worst:?}");
 }

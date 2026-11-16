@@ -90,7 +90,10 @@ pub fn levels(max: f64, step: f64, low_share: f64) -> Result<Vec<f64>, String> {
 
 /// The line solved at the wind levels of [`levels`] up to `case`'s
 /// pressure by `step` (Pa): its temperature and ice kept, still air
-/// once, the other levels from each side. `solve` solves the line in a
+/// once, the other levels from each side ([`crate::positions::from_side`]:
+/// a wind at an angle θ and its mirror 360° − θ; along the line, from
+/// ahead or behind, once — until 2026-11-16 a wind at an angle was taken
+/// twice as it is, its mirror never). `solve` solves the line in a
 /// case (its sections not solved: notes); the levels solved side by side
 /// on the cores. The conductors with [`crate::phase_distance::conductors`].
 pub fn solve_levels(
@@ -104,11 +107,13 @@ pub fn solve_levels(
     let pressures = levels(case.wind_pressure.si(), step, low_share)?;
     let mut cases: Vec<WeatherCase> = Vec::new();
     for side in [WindSide::Right, WindSide::Left] {
+        if side == WindSide::Left && crate::positions::one_side_only(case) {
+            continue;
+        }
         for &p in &pressures {
             if p > 0.0 || side == WindSide::Right {
-                let mut c = case.clone();
+                let mut c = crate::positions::from_side(case, side);
                 c.wind_pressure = Stress::from_pascals(p);
-                c.wind_from = side;
                 cases.push(c);
             }
         }

@@ -242,8 +242,7 @@ impl BuildingFieldsWindow {
         };
         let line = model.line.clone();
         let library = model.library.clone();
-        let wind = model.wind;
-        let unsolved = !solved.solved_for(wind);
+        let unsolved = !solved.solved_for(false);
         let (mut shapes, mut jumpers) = (solved.shapes.clone(), solved.jumpers.clone());
         let weather = solved.case.clone();
         let cloud = model.cloud.clone();
@@ -251,7 +250,7 @@ impl BuildingFieldsWindow {
         let st = self.st.clone();
         self.job.start_at(ctx, model.revision(), move || {
             if unsolved {
-                let s = crate::model::Solved::with_wind(&line, &library, weather.clone(), wind);
+                let s = crate::model::Solved::as_shown(&line, &library, weather.clone());
                 shapes = s.shapes;
                 jumpers = s.jumpers;
             }

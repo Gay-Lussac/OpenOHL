@@ -1443,6 +1443,10 @@ pub struct Span {
 pub struct Positions {
     /// The weather cases, by name.
     pub cases: Vec<String>,
+    /// Per case, its own wind direction at an angle as given (none:
+    /// across the line, or not known): said by [`Positions::describe`]
+    /// for its blown positions ([`from_side`]).
+    pub directions: Vec<Option<ohl_weather::WindDirection>>,
     /// The spans.
     pub spans: Vec<Span>,
     /// The positions.
@@ -1581,12 +1585,29 @@ impl Positions {
             .position(|s| s.wire.section == section && s.wire.span == span)
     }
 
-    /// "case, position" of position `k`.
+    /// "case, position" of position `k`; a blown position of a case
+    /// with a wind at an angle with its direction: "storm, left (from
+    /// 30°)".
     pub fn describe(&self, k: usize) -> String {
         let p = &self.positions[k];
+        let side = match p.kind {
+            PositionKind::Left | PositionKind::StepLeft | PositionKind::IceLeft => {
+                Some(WindSide::Right)
+            }
+            PositionKind::Right | PositionKind::StepRight | PositionKind::IceRight => {
+                Some(WindSide::Left)
+            }
+            _ => None,
+        };
+        let kind = match (self.directions.get(p.case).copied().flatten(), side) {
+            (Some(d), Some(side)) => {
+                format!("{} ({})", p.kind.name(), direction_from(d, side).words())
+            }
+            _ => p.kind.name().to_owned(),
+        };
         match p.pressure {
-            Some(q) => format!("{}, {} at {q:.0} Pa", self.cases[p.case], p.kind.name()),
-            None => format!("{}, {}", self.cases[p.case], p.kind.name()),
+            Some(q) => format!("{}, {kind} at {q:.0} Pa", self.cases[p.case]),
+            None => format!("{}, {kind}", self.cases[p.case]),
         }
     }
 }
@@ -1677,11 +1698,82 @@ pub(crate) fn span_axis(shape: &SectionShape, k: usize) -> Option<Axis> {
     Axis::new(attachment(shape, k), attachment(shape, k + 1))
 }
 
-/// The case with its wind from `side`.
+/// The case with its wind from `side` (the side it blows from, looking
+/// ahead along the line): a case without a direction, or with its own
+/// across the line, the across rule from that side. A wind at an angle
+/// θ (owner 2026-11-15/16, as the desktop application draws it): from
+/// the right θ when it comes from the right half (0° < θ < 180°), else
+/// its mirror about the line, 360° − θ; from the left the other one — so
+/// that the two sides are the direction and its mirror, each blowing the
+/// wires to the side named. Along the line (0°, 180°) it has no other
+/// side: the case as it is from both ([`one_side_only`]). Until
+/// 2026-11-16 only the side (`wind_from`) was set, which a wind at an
+/// angle does not read: both sides were the case as it is, its mirror
+/// never checked.
+pub fn from_side(case: &WeatherCase, side: WindSide) -> WeatherCase {
+    let mut c = case.clone();
+    if let Some(d) = case.oblique() {
+        c.wind_direction = Some(direction_from(d, side));
+    }
+    c.wind_from = side;
+    c
+}
+
+/// The side a wind at an angle comes from: the right for
+/// 0° ≤ θ ≤ 180°, else the left.
+fn half_of(d: ohl_weather::WindDirection) -> WindSide {
+    if d.degrees() > 180.0 {
+        WindSide::Left
+    } else {
+        WindSide::Right
+    }
+}
+
+/// A wind at an angle `d` from `side` ([`from_side`]): `d` when it comes
+/// from that side, else its mirror (360° − θ); along the line `d`.
+pub fn direction_from(d: ohl_weather::WindDirection, side: WindSide) -> ohl_weather::WindDirection {
+    if d.along() || half_of(d) == side {
+        d
+    } else {
+        d.mirrored()
+    }
+}
+
+/// The side a case's own direction blows from: across the line its own
+/// side; at an angle the right for 0° ≤ θ ≤ 180°, else the left; none
+/// without a direction (or without wind).
+pub fn own_from(case: &WeatherCase) -> Option<WindSide> {
+    case.own_side().or_else(|| case.oblique().map(half_of))
+}
+
+/// Whether the case's wind has one side only: along the line (from ahead,
+/// 0°, or from behind, 180°: its own mirror) — checked once, not from
+/// each side ([`from_side`] gives the same case).
+pub fn one_side_only(case: &WeatherCase) -> bool {
+    case.oblique().is_some_and(|d| d.along())
+}
+
+/// The sides a windy case is solved from at its full pressure: both, the
+/// right first; one along the line ([`one_side_only`]).
+fn full_sides(case: &WeatherCase) -> &'static [WindSide] {
+    if one_side_only(case) {
+        &[WindSide::Right]
+    } else {
+        &[WindSide::Right, WindSide::Left]
+    }
+}
+
+/// The case with its wind from `side` ([`from_side`]).
 fn blown(case: &WeatherCase, side: WindSide) -> WeatherCase {
-    WeatherCase {
-        wind_from: side,
-        ..case.clone()
+    from_side(case, side)
+}
+
+/// The position of a case blown from `side` at its full pressure: blown
+/// to the other side.
+fn blown_kind(side: WindSide) -> PositionKind {
+    match side {
+        WindSide::Right => PositionKind::Left,
+        WindSide::Left => PositionKind::Right,
     }
 }
 
@@ -1775,17 +1867,21 @@ pub fn solve_positions(
     let mut jobs: Vec<(usize, PositionKind, WeatherCase, Option<f64>)> = Vec::new();
     for (c, case) in cases.iter().enumerate() {
         if is_windy(case) {
-            jobs.push((c, PositionKind::Left, blown(case, WindSide::Right), None));
-            jobs.push((c, PositionKind::Right, blown(case, WindSide::Left), None));
+            for &side in full_sides(case) {
+                jobs.push((c, blown_kind(side), blown(case, side), None));
+            }
             if let Some(steps) = &options.wind_steps {
                 // Still air (checked, and the arc's middle) and every
                 // pressure between 0 and the full one.
                 jobs.push((c, PositionKind::Still, still(case), Some(0.0)));
                 let full = case.wind_pressure.si();
-                // A case with its own direction across the line, stepped
-                // from one side: its own side (never turned to the side
-                // asked for; owner 2026-11-15); from both, both.
-                let sides: Vec<WindSide> = match case.own_side() {
+                // A case with its own direction (across the line or at an
+                // angle), stepped from one side: its own side, the
+                // direction alone (never turned to the side asked for;
+                // owner 2026-11-15); from both, the direction and its
+                // mirror; along the line, once.
+                let sides: Vec<WindSide> = match own_from(case) {
+                    _ if one_side_only(case) => vec![WindSide::Right],
                     Some(own) if steps.sides != crate::rules::WindSides::Both => vec![own],
                     _ => steps.sides.sides().to_vec(),
                 };
@@ -1825,6 +1921,7 @@ pub fn solve_positions(
     })?;
     let mut out = Positions {
         cases: cases.iter().map(|c| c.name.clone()).collect(),
+        directions: cases.iter().map(WeatherCase::oblique).collect(),
         ..Positions::default()
     };
     // Per case: its solved shapes by kind (and pressure).
@@ -1913,10 +2010,12 @@ pub fn solve_positions(
             continue;
         }
         let find = |k: PositionKind| kept.iter().position(|(kind, ..)| *kind == k);
+        // (A wind along the line has one side: its band from still air to
+        // that blowout.)
         let (Some(l), Some(s), Some(r)) = (
             find(PositionKind::Left),
             find(PositionKind::Case).or_else(|| find(PositionKind::Still)),
-            find(PositionKind::Right),
+            find(PositionKind::Right).or_else(|| find(PositionKind::Left)),
         ) else {
             continue;
         };
@@ -2056,8 +2155,13 @@ pub fn add_unbalanced_ice(
                 continue;
             }
             if is_windy(case) {
-                jobs.push((id, c, PositionKind::IceLeft, blown(case, WindSide::Right)));
-                jobs.push((id, c, PositionKind::IceRight, blown(case, WindSide::Left)));
+                for &side in full_sides(case) {
+                    let kind = match side {
+                        WindSide::Right => PositionKind::IceLeft,
+                        WindSide::Left => PositionKind::IceRight,
+                    };
+                    jobs.push((id, c, kind, blown(case, side)));
+                }
             } else {
                 jobs.push((id, c, PositionKind::Ice, case.clone()));
             }
@@ -2658,6 +2762,136 @@ mod tests {
                     .unwrap()
             ),
             format!("high wind, left (step) at {:.0} Pa", full / 3.0)
+        );
+    }
+
+    /// A wind at an angle from each side (2026-11-16): from the right the
+    /// direction coming from the right half, from the left its mirror
+    /// (360° − θ) — until then both sides were the case as it is (only the
+    /// side was set, which a wind at an angle does not read), its mirror
+    /// never checked. Along the line one side only; across and without a
+    /// direction as before (the side). On the example line a 30° case's
+    /// two blowouts lie to the two sides of the axis, the mirror the
+    /// 330° case solved as such bit for bit; a 0° case gives one blowout
+    /// and its arc.
+    #[test]
+    fn a_wind_at_an_angle_is_checked_with_its_mirror() {
+        use ohl_weather::WindDirection;
+        use std::path::Path;
+        let base = ohl_weather::WeatherCase {
+            wind_pressure: ohl_core::units::Stress::from_pascals(600.0),
+            ..WeatherCase::still("w", ohl_core::units::Temperature::from_celsius(10.0))
+        };
+        let at = |a: f64| base.with_direction(WindDirection::Angle(a));
+        let dir = |c: &WeatherCase| c.oblique().map(WindDirection::degrees);
+        for (a, right, left) in [
+            (30.0, 30.0, 330.0),
+            (330.0, 30.0, 330.0),
+            (150.0, 150.0, 210.0),
+        ] {
+            assert_eq!(dir(&from_side(&at(a), WindSide::Right)), Some(right), "{a}");
+            assert_eq!(dir(&from_side(&at(a), WindSide::Left)), Some(left), "{a}");
+        }
+        for a in [0.0, 180.0] {
+            assert!(one_side_only(&at(a)));
+            let dir_of = |side| from_side(&at(a), side).oblique();
+            assert_eq!(dir_of(WindSide::Left), dir_of(WindSide::Right));
+        }
+        assert_eq!(own_from(&at(30.0)), Some(WindSide::Right));
+        assert_eq!(own_from(&at(200.0)), Some(WindSide::Left));
+        assert_eq!(own_from(&base), None);
+        // Across and without a direction: the side, as before.
+        let left = from_side(&base, WindSide::Left);
+        assert_eq!(
+            (left.wind_from, left.wind_direction),
+            (WindSide::Left, None)
+        );
+        let own = base.with_direction(WindDirection::Angle(270.0));
+        assert_eq!(own_from(&own), None);
+        let own = ohl_weather::WeatherCase {
+            wind_direction: Some(WindDirection::Left),
+            wind_from: WindSide::Left,
+            ..base.clone()
+        };
+        assert_eq!(own_from(&own), Some(WindSide::Left));
+        assert_eq!(from_side(&own, WindSide::Right).wind_from, WindSide::Right);
+        assert!(!one_side_only(&own) && !one_side_only(&base));
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let options = PositionOptions {
+            swing_arc: true,
+            ..Default::default()
+        };
+        let p = solve_positions(
+            &line,
+            &library,
+            &[at(30.0), at(0.0)],
+            options,
+            &Budget::new(),
+        )
+        .unwrap();
+        assert!(p.notes.is_empty(), "{:?}", p.notes);
+        let s = p.span_of("S1", 1).unwrap();
+        let of = |case: usize, kind: PositionKind| {
+            p.spans[s]
+                .positions
+                .iter()
+                .copied()
+                .find(|&i| p.positions[i].case == case && p.positions[i].kind == kind)
+        };
+        // The largest offset to the right of the axis, signed.
+        let offset = |i: usize| match &p.positions[i].shape {
+            Shape::Wire(w) => w
+                .wire
+                .points
+                .iter()
+                .map(|q| {
+                    let a = &p.spans[s].axis;
+                    let v = sub(*q, a.a1);
+                    dot(v, a.right)
+                })
+                .fold(0.0f64, |m, y| if y.abs() > m.abs() { y } else { m }),
+            Shape::Arc(_) => unreachable!(),
+        };
+        let (l, r) = (
+            of(0, PositionKind::Left).unwrap(),
+            of(0, PositionKind::Right).unwrap(),
+        );
+        assert!(
+            offset(l) < -0.5 && offset(r) > 0.5,
+            "{} {}",
+            offset(l),
+            offset(r)
+        );
+        assert_eq!(p.describe(l), "w, left (from 30°)");
+        assert_eq!(p.describe(r), "w, right (from 330°)");
+        // The mirror: the 330° case solved as such, bit for bit.
+        let mirror = solve_positions(
+            &line,
+            &library,
+            &[at(330.0)],
+            PositionOptions::default(),
+            &Budget::new(),
+        )
+        .unwrap();
+        let s2 = mirror.span_of("S1", 1).unwrap();
+        let k = mirror.spans[s2]
+            .positions
+            .iter()
+            .copied()
+            .find(|&i| mirror.positions[i].kind == PositionKind::Right)
+            .unwrap();
+        assert_eq!(mirror.positions[k].shape, p.positions[r].shape);
+        assert!(of(0, PositionKind::Arc).is_some());
+        // Along the line: one blowout, its arc.
+        assert!(of(1, PositionKind::Left).is_some() && of(1, PositionKind::Right).is_none());
+        assert!(of(1, PositionKind::Arc).is_some());
+        assert_eq!(
+            p.describe(of(1, PositionKind::Left).unwrap()),
+            "w, left (from 0° (from ahead: blowing back))"
         );
     }
 
