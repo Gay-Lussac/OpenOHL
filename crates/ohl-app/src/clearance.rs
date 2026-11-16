@@ -171,6 +171,7 @@ impl Input {
                 pressure: full,
                 full,
                 side: (full > 0.0).then_some(case.wind_from),
+                band_only: false,
             }],
             solved: Some(vec![(shapes, jumpers)]),
             sections: Vec::new(),
@@ -679,6 +680,10 @@ pub fn run(input: &Input) -> Result<Report, String> {
         for (k, state) in states.iter().enumerate() {
             if input.cancel.is_cancelled() {
                 return Err("stopped".into());
+            }
+            // The swing band's levels (2026-11-16): for the band only.
+            if state.band_only {
+                continue;
             }
             let label = format!("{}{suffix}", state.describe());
             let checks = ohl_clearance::check_case(

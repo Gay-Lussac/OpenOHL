@@ -138,6 +138,15 @@ impl Scope {
 
 /// [`scope_items`] of `model`'s line kept to the route worked on (owner,
 /// 2026-11-01): the systems, circuits and spans with a section on it.
+/// The swing bands' levels a saved run was made with (`band_levels`):
+/// a run saved before 2026-11-16 took the band of still air and the
+/// blowouts alone (0).
+pub fn band_levels(v: &Value) -> usize {
+    v.get("band_levels").and_then(Value::as_u64).map_or(0, |n| {
+        (n as usize).min(ohl_clearance::positions::MAX_BAND_LEVELS)
+    })
+}
+
 pub fn scope_items_on(model: &Model, scope: Scope) -> Vec<crate::tick_list::Item> {
     let items = scope_items(&model.line, scope);
     let Some(on) = model.scope() else {
@@ -340,6 +349,7 @@ impl Settings {
             "wind": self.wind.as_str(),
             "band_margin": self.steps.band_margin,
             "jumper_band_margin": self.steps.jumper_band_margin,
+            "band_levels": self.steps.band_levels,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
             "per": self.grouping.as_str(),
@@ -391,6 +401,9 @@ impl Settings {
                         "jumper_band_margin",
                         num("band_margin", d.steps.band_margin),
                     ),
+                    // Runs saved before 2026-11-16: the band of still air
+                    // and the blowouts alone.
+                    band_levels: band_levels(v),
                 },
                 grouping: text("per").map_or(Ok(d.grouping), Grouping::parse)?,
                 // Runs saved before 2026-10-21: by circuit.
@@ -419,11 +432,17 @@ impl Settings {
         }
         let span = self.steps.band_margin != run.steps.band_margin;
         let jumper = self.steps.jumper_band_margin != run.steps.jumper_band_margin;
-        match (span, jumper) {
-            (true, true) => Some("the band margins".to_owned()),
-            (true, false) => Some("the band margin".to_owned()),
-            (false, true) => Some("the jumper band margin".to_owned()),
+        let margins = match (span, jumper) {
+            (true, true) => Some("the band margins"),
+            (true, false) => Some("the band margin"),
+            (false, true) => Some("the jumper band margin"),
             (false, false) => None,
+        };
+        // The band's levels (2026-11-16).
+        let levels = (self.steps.band_levels != run.steps.band_levels).then_some("the band levels");
+        match (margins, levels) {
+            (Some(a), Some(b)) => Some(format!("{a} and {b}")),
+            (a, b) => a.or(b).map(str::to_owned),
         }
     }
 

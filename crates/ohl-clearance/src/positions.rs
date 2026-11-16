@@ -24,7 +24,6 @@ use ohl_weather::{WeatherCase, WindSide};
 
 use crate::checks::{Wire, wires_of};
 use crate::geometry::{P3, closest_on_segment, cross, distance, dot, sub};
-use ohl_line::jumper::JumperShape;
 
 fn lerp(a: P3, b: P3, t: f64) -> P3 {
     [
@@ -737,29 +736,121 @@ impl WireShape {
 /// thicker), on every side. A parameter since 2026-10-21 (the owner's
 /// decision; [`crate::rules::WindSteps::band_margin`],
 /// [`PositionOptions::band_margin`], [`SwingArc::with_margin`]): a smaller
-/// value is on the user's responsibility. **Conservative:** the band from the smallest to the largest
-/// radius of the left, still and right positions does not quite hold the
-/// solver's positions at intermediate pressures: measured 2026-10-21 on
-/// the example lines with steps of 10 Pa from both sides, a step's
-/// centre line lies up to 0.089 m outside it (inside its inner radius,
-/// at mid-pressures: the strings swing and the sag changes; and 0.041 m
-/// beyond its end angle at a dead end, whose clamp moves with the wind);
-/// the margin is that worst excess plus an allowance of 0.061 m for
-/// other lines (`tests/arc_band.rs`). Exact: a solve at every pressure.
+/// value is on the user's responsibility. **Conservative (measured)**
+/// with the default levels ([`BAND_LEVELS`]): the band of the solved
+/// positions does not quite hold the solver's positions between them —
+/// measured 2026-11-16 with steps of 10 Pa from both sides, a step's
+/// centre line lies up to 0.009 m outside it on the example lines and
+/// 0.063 m on a real line of 930 spans; the margin is that worst excess
+/// plus an allowance (`tests/arc_band.rs`). **NOT ON THE SAFE SIDE**
+/// without the levels (the band of still air and the blowouts alone, as
+/// until 2026-11-16): 0.091 m on the example lines (0.089 m on
+/// 2026-10-21), but up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa on the
+/// real line — the margin held only up to about 390 Pa there
+/// ([`band_levels_note`]). Exact: a solve at every pressure.
 pub const BAND_MARGIN: f64 = 0.15;
+
+/// How many intermediate wind pressures (levels) a span's swing band is
+/// solved at by default from each side besides still air and the full
+/// blowout (2026-11-16, [`band_levels`]): the smallest count whose worst
+/// excess over the band, measured on a real line of 930 spans with 10 Pa
+/// steps (across the line up to 1300 Pa, at 30° and 60°, along the line
+/// up to 1000 Pa, with ice), lies within [`BAND_MARGIN`] with an
+/// allowance: 0.063 m (the excess grows with the spacing of the solved
+/// pressures, about 0.3 mm per pascal: [`BAND_LEVEL_SPACING`]; none:
+/// 0.69 m).
+/// Each level is one more solve a side.
+pub const BAND_LEVELS: usize = 4;
+
+/// How far a wire may lie above its own chord before its band is taken
+/// as not holding it ([`SwingArc::above_axis`]), m: 0.1 m, the order of a
+/// wire's own size — a wire hanging under its weight and blown sideways
+/// lies below the line between its clamps everywhere (the wind's load and
+/// its weight both pull it off that line on the same side); only a wind
+/// with a component along an inclined span lifts it.
+pub const LIFT_TOLERANCE: f64 = 0.1;
+
+/// A solved position or level whose sag (its largest distance from its
+/// own chord) is less than this fraction of still air's marks the band
+/// as not holding the wire ([`SwingArc::above_axis`]): 0.5. Measured on a
+/// real line of 930 spans: along the line at 1000 Pa a steep span's wire
+/// pulled towards its chord lay 0.30 m outside its band with any number
+/// of levels, while a wind across the line sags a wire more, never less,
+/// than still air.
+pub const STRAIGHT_RATIO: f64 = 0.5;
+
+/// The most levels a band takes from each side (a setting's bound).
+pub const MAX_BAND_LEVELS: usize = 50;
+
+/// What the band's levels do and cost, in words (the setting's hover
+/// text; measured, see the theory).
+pub const BAND_LEVELS_HELP: &str = "The swing band holds still air, the full blowouts and the \
+    wire solved at this many intermediate wind pressures from each side (k/(n + 1) of the \
+    case's, rounded to 10 Pa), and at least one every 200 Pa. Measured on a real line of 930 \
+    spans with 10 Pa steps: the wire between two levels lies outside the band by about 0.33 mm \
+    per pascal between them — with the default 4 at most 0.063 m, inside the 0.15 m margin; \
+    without levels (0, as before 2026-11-16) up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa, \
+    not on the safe side. Each level is one more solve of the line a side: on that line a \
+    500 Pa case's band took 15 s without levels and 46 s with 4 (its 10 Pa steps: 64 s; a \
+    computer shared with other work, load about 30 on 10 cores). With the wind steps, the \
+    levels the steps solve cost nothing.";
+
+/// The levels are whole multiples of this, Pa (10 Pa): solves that the
+/// wind steps of 10 Pa (as a span the band does not hold is checked at,
+/// and as the band was measured with), and the cases differing only by
+/// their pressure ([`family_key`]), share.
+pub const BAND_LEVEL_ROUNDING: f64 = 10.0;
+
+/// The levels lie at most this far apart, Pa (2026-11-16): whatever
+/// the count asked for, a band of levels takes at least one every 200 Pa
+/// ([`band_levels`]). Measured on a real line of 930 spans: the wire
+/// between two solved pressures lies outside the band by about 0.3 mm
+/// per pascal of their spacing (0.007 m at 60 Pa apart, 0.063 m at 200,
+/// 0.082 m at 250, 0.091 m at 260, 0.124 m at 325, 0.167 m at 433),
+/// whatever the case's pressure — so the spacing, not the count, keeps
+/// the excess within the margin: at most 200 Pa apart, at most 0.063 m
+/// measured, held by the 0.15 m margin with an allowance of 0.087 m.
+pub const BAND_LEVEL_SPACING: f64 = 200.0;
+
+/// The intermediate wind pressures of a band of at least `n` levels for
+/// a case of wind pressure `full` (Pa), increasing: k·full/(m + 1) for
+/// k = 1…m, m the larger of `n` and the count that keeps them at most
+/// [`BAND_LEVEL_SPACING`] apart (⌈full / 200 Pa⌉ − 1), each rounded to the
+/// nearest whole multiple of [`BAND_LEVEL_ROUNDING`], those above 0 and
+/// below `full` (each once). Empty for no wind or `n` = 0 (the band of
+/// still air and the blowouts alone, as before 2026-11-16).
+pub fn band_levels(full: f64, n: usize) -> Vec<f64> {
+    let mut out: Vec<f64> = Vec::new();
+    if n == 0 || !(full.is_finite() && full > 0.0) {
+        return out;
+    }
+    let n = n.max(((full / BAND_LEVEL_SPACING).ceil() as usize).saturating_sub(1));
+    for k in 1..=n {
+        let p =
+            (full * k as f64 / (n + 1) as f64 / BAND_LEVEL_ROUNDING).round() * BAND_LEVEL_ROUNDING;
+        if p > 0.0 && p < full && !out.contains(&p) {
+            out.push(p);
+        }
+    }
+    out
+}
 
 /// The jumpers' band margin by default, m: **0, no widening** (the
 /// owner's decision of 2026-10-21: a value of its own, entered by the
 /// user for their jumpers; [`crate::rules::WindSteps::jumper_band_margin`],
 /// [`PositionOptions::jumper_band_margin`], [`BandMargins::jumper`]).
-/// **Simplification** (on the user's responsibility; exact: the wind
-/// steps): with 0 a jumper's band ([`jumper_band`]) is *not* conservative
-/// between its blowouts — measured 2026-10-21 with steps of 10 Pa from
-/// both sides on the example line's jumper, a step's centre line lies up
-/// to 0.293 m outside it (high wind, blown right at 230 Pa, inside its
-/// inner radius; `tests/arc_band.rs`). A jumper swings with its clamps
-/// and changes its shape more than a span: the value that holds it is the
-/// user's to find for their jumpers (the wind steps show it).
+/// **NOT ON THE SAFE SIDE** (said in the results; on the user's
+/// responsibility; exact: the wind steps): with 0 a jumper's band
+/// ([`jumper_band`]) is *not* conservative between its solved positions —
+/// measured with steps of 10 Pa from both sides, a step's centre line
+/// lies up to 0.307 m outside the example line's jumper's band without
+/// levels (0.293 m on 2026-10-21) and 0.043 m with the default levels;
+/// on a real line up to 2.1 m without levels and still up to 1.9 m with
+/// them (a few jumpers: two whose shape changes abruptly between 140 and
+/// 170 Pa, others between the last level and the full pressure)
+/// (`tests/arc_band.rs`). A jumper swings with its clamps and changes its
+/// shape more than a span: the value that holds it is the user's to find
+/// for their jumpers (the wind steps show it).
 pub const JUMPER_BAND_MARGIN: f64 = 0.0;
 
 /// The swing bands' margins, m: the spans' and the jumpers' (2026-10-21,
@@ -820,6 +911,22 @@ pub struct SwingArc {
     allowance: f64,
     /// The band's margin, m.
     margin: f64,
+    /// At each station, the envelope of its intermediate solved positions
+    /// (its **levels**, 2026-11-16: [`SwingArc::with_levels`]) in the
+    /// plane square to the axis there: smallest and largest radius,
+    /// smallest and largest angle. Empty: none (the band of the three
+    /// positions alone).
+    levels: Vec<[f64; 4]>,
+    /// How many intermediate positions the band was made with.
+    level_count: usize,
+    /// The largest height of a position's (or a level's) point above its
+    /// own chord, m (≤ 0: none above).
+    lift: f64,
+    /// Still air's sag: its points' largest distance from its own chord,
+    /// m.
+    sag_still: f64,
+    /// The smallest sag of the positions and levels (as `sag_still`), m.
+    sag_least: f64,
 }
 
 /// Where a point lies relative to an arc, at its place along the axis.
@@ -906,17 +1013,158 @@ impl SwingArc {
             .iter()
             .map(|&s| [left.at(s), still.at(s), right.at(s)])
             .collect();
-        Some(Self {
-            axis,
-            down,
-            right: right_dir,
-            stations,
-            points,
-            outer: left.radius + left.allowance.max(still.allowance).max(right.allowance) + margin,
-            radius: left.radius,
-            allowance: left.allowance.max(still.allowance).max(right.allowance) + margin,
-            margin,
-        })
+        Some(
+            Self {
+                axis,
+                down,
+                right: right_dir,
+                stations,
+                points,
+                outer: left.radius
+                    + left.allowance.max(still.allowance).max(right.allowance)
+                    + margin,
+                radius: left.radius,
+                allowance: left.allowance.max(still.allowance).max(right.allowance) + margin,
+                margin,
+                levels: Vec::new(),
+                level_count: 0,
+                lift: f64::NEG_INFINITY,
+                sag_still: 0.0,
+                sag_least: f64::INFINITY,
+            }
+            .lifted(&[left, still, right], Some(1)),
+        )
+    }
+
+    /// The band with its lift ([`SwingArc::lift`]) raised to that of
+    /// `wires` — each one's points' largest height above its own chord
+    /// (the line between its first and its last point), square to the
+    /// axis — and its smallest sag lowered to theirs (the points' largest
+    /// distance from that chord); `still`: which of them is still air.
+    fn lifted(mut self, wires: &[&WireShape], still: Option<usize>) -> Self {
+        for (k, w) in wires.iter().enumerate() {
+            let pts = &w.wire.points;
+            let (Some(&a), Some(&b)) = (pts.first(), pts.last()) else {
+                continue;
+            };
+            let d = sub(b, a);
+            let dd = dot(d, d);
+            if dd <= 0.0 {
+                continue;
+            }
+            let mut sag = 0.0f64;
+            for &p in pts {
+                let t = dot(sub(p, a), d) / dd;
+                let q = [a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]];
+                self.lift = self.lift.max(-dot(sub(p, q), self.down));
+                sag = sag.max(distance(p, q));
+            }
+            if still == Some(k) {
+                self.sag_still = sag;
+            }
+            self.sag_least = self.sag_least.min(sag);
+        }
+        self
+    }
+
+    /// As [`SwingArc::with_margin`], the band also holding `levels`: the
+    /// span's solved positions at intermediate wind pressures (2026-11-16;
+    /// [`band_levels`], or the wind steps when solved), from either side.
+    /// At each station (the places of the three positions' points) the
+    /// band's radii and angles are the smallest and largest of the three
+    /// positions' and of every level's point there (each level's point at
+    /// the station's place along the axis, on its polyline); between
+    /// stations the three positions' points are interpolated as before and
+    /// the levels' smallest and largest radius and angle linearly. None
+    /// when a position or a level does not run steadily along the axis.
+    pub fn with_levels(
+        axis: Axis,
+        left: &WireShape,
+        still: &WireShape,
+        right: &WireShape,
+        levels: &[&WireShape],
+        margin: f64,
+    ) -> Option<Self> {
+        let mut arc = Self::with_margin(axis, left, still, right, margin)?;
+        if levels.is_empty() {
+            return Some(arc);
+        }
+        if levels.iter().any(|w| !w.monotone) {
+            return None;
+        }
+        arc.levels = arc
+            .stations
+            .iter()
+            .map(|&s| {
+                let centre = arc.centre(s);
+                let mut e = [f64::INFINITY, 0.0, f64::INFINITY, f64::NEG_INFINITY];
+                for w in levels {
+                    let (r, phi) = arc.polar(sub(w.at(s), centre));
+                    e = [e[0].min(r), e[1].max(r), e[2].min(phi), e[3].max(phi)];
+                }
+                e
+            })
+            .collect();
+        arc.level_count = levels.len();
+        let allowance = levels
+            .iter()
+            .map(|w| w.allowance)
+            .fold(arc.allowance - arc.margin, f64::max);
+        arc.allowance = allowance + arc.margin;
+        arc.outer = arc.radius + arc.allowance;
+        Some(arc.lifted(levels, None))
+    }
+
+    /// How many intermediate solved positions (levels) the band holds
+    /// besides still air and the blowouts ([`SwingArc::with_levels`]).
+    pub fn level_count(&self) -> usize {
+        self.level_count
+    }
+
+    /// The largest height of a solved position's (or a level's) centre
+    /// line above its own chord — the straight line between its two ends
+    /// (its clamps), measured square to the span's axis, m (≤ 0: the wire
+    /// stays below its chord everywhere). Its own chord, not the span's
+    /// axis: a dead end's clamp moves with the wind, and the wire near it
+    /// with it.
+    pub fn lift(&self) -> f64 {
+        self.lift
+    }
+
+    /// The smallest sag of its solved positions and levels — each one's
+    /// largest distance from its own chord — over still air's, 1 when
+    /// none is smaller (a wind across the line sags the wire more in the
+    /// plane of its load; one along an inclined span pulls it towards its
+    /// chord).
+    pub fn sag_ratio(&self) -> f64 {
+        if self.sag_still > 0.0 {
+            (self.sag_least / self.sag_still).min(1.0)
+        } else {
+            1.0
+        }
+    }
+
+    /// Whether the band does not hold the wire because the wind pulls it
+    /// **to or above its chord** (2026-11-16): a solved position or a
+    /// level more than [`LIFT_TOLERANCE`] above the line between its
+    /// clamps somewhere ([`SwingArc::lift`]), or pulled towards that line
+    /// to less than [`STRAIGHT_RATIO`] of still air's sag
+    /// ([`SwingArc::sag_ratio`]). The band is a swing about the axis; a
+    /// wire the wind pulls to or through its chord (a steep span with the
+    /// wind along the line at a high pressure) passes near the axis, where
+    /// its angle turns fast with the pressure, and the band does not hold
+    /// it between its levels.
+    pub fn above_axis(&self) -> bool {
+        self.lift > LIFT_TOLERANCE || self.sag_ratio() < STRAIGHT_RATIO
+    }
+
+    /// The point on the axis at place `s`.
+    fn centre(&self, s: f64) -> P3 {
+        [
+            self.axis.a1[0] + s * self.axis.u[0],
+            self.axis.a1[1] + s * self.axis.u[1],
+            self.axis.a1[2] + s * self.axis.u[2],
+        ]
     }
 
     /// The arc at place `s` along the axis (clamped to the stations).
@@ -941,6 +1189,13 @@ impl SwingArc {
             inner = inner.min(r);
             from = from.min(phi);
             to = to.max(phi);
+        }
+        if let (Some(a), Some(b)) = (self.levels.get(k - 1), self.levels.get(k)) {
+            let at = |i: usize| a[i] + t * (b[i] - a[i]);
+            inner = inner.min(at(0));
+            radius = radius.max(at(1));
+            from = from.min(at(2));
+            to = to.max(at(3));
         }
         ArcPlace {
             centre,
@@ -1453,6 +1708,9 @@ pub struct Positions {
     pub positions: Vec<Position>,
     /// What could not be done (sections not solved, arcs left out…).
     pub notes: Vec<String>,
+    /// The line solves asked for and made (each distinct solve once,
+    /// [`solve_key`]; 2026-11-16).
+    pub solves: (usize, usize),
 }
 
 impl Positions {
@@ -1638,6 +1896,12 @@ pub struct PositionOptions {
     /// default; the user's, 2026-10-21): every distance to a jumper's
     /// band taken this much smaller.
     pub jumper_band_margin: f64,
+    /// The swing bands' intermediate levels from each side
+    /// ([`BAND_LEVELS`] by default, 2026-11-16; [`band_levels`]): each a
+    /// solve of the case at that pressure, held by the band, not checked
+    /// as a position itself. With the wind steps, every step is a level
+    /// too (no more solves).
+    pub band_levels: usize,
 }
 
 impl Default for PositionOptions {
@@ -1648,6 +1912,7 @@ impl Default for PositionOptions {
             jumpers: false,
             band_margin: BAND_MARGIN,
             jumper_band_margin: JUMPER_BAND_MARGIN,
+            band_levels: BAND_LEVELS,
         }
     }
 }
@@ -1667,13 +1932,27 @@ pub fn jumper_band(
     right: Option<&Wire>,
     margin: f64,
 ) -> Option<SwingArc> {
+    jumper_band_levels(left, still, right, &[], margin)
+}
+
+/// [`jumper_band`] also holding `levels`, the jumper solved at
+/// intermediate wind pressures ([`SwingArc::with_levels`], 2026-11-16).
+pub fn jumper_band_levels(
+    left: Option<&Wire>,
+    still: &Wire,
+    right: Option<&Wire>,
+    levels: &[&Wire],
+    margin: f64,
+) -> Option<SwingArc> {
     let ends = left.unwrap_or(still);
     let axis = Axis::new(*ends.points.first()?, *ends.points.last()?)?;
     let shape = |w: &Wire| WireShape::new(w.clone(), &axis);
     let mid = shape(still);
     let l = left.map_or_else(|| mid.clone(), shape);
     let r = right.map_or_else(|| mid.clone(), shape);
-    SwingArc::with_margin(axis, &l, &mid, &r, margin)
+    let levels: Vec<WireShape> = levels.iter().map(|w| shape(w)).collect();
+    let levels: Vec<&WireShape> = levels.iter().collect();
+    SwingArc::with_levels(axis, &l, &mid, &r, &levels, margin)
 }
 
 /// The attachment of section point `i` of `shape` a span swings about:
@@ -1847,15 +2126,255 @@ pub(crate) fn parallel<T: Send>(
         .collect())
 }
 
+/// The case as a solve reads it (2026-11-16): without its name,
+/// description and tags; across the line (no direction at an angle,
+/// [`WeatherCase::oblique`]) without its direction, which the solve does
+/// not read there (its side, `wind_from`, is the across rule's) — so the
+/// two copies of one wind across the line, from 90° and from 270°, blown
+/// from the same side are one solve.
+fn as_solved(case: &WeatherCase) -> WeatherCase {
+    let mut k = case.clone();
+    k.name.clear();
+    k.description.clear();
+    k.tags.clear();
+    if k.oblique().is_none() {
+        k.wind_direction = None;
+    }
+    k
+}
+
+/// The key of a line solve (2026-11-16): the weather case as the solve
+/// reads it (its `Debug` text: every number exactly, each field; the
+/// name, description and tags left out, a direction across the line too).
+/// Two solves of one key are the same solve, bit for bit: done once
+/// ([`solve_positions`], [`crate::zone::solve_states`]).
+pub fn solve_key(case: &WeatherCase) -> String {
+    format!("{:?}", as_solved(case))
+}
+
+/// The **family** of a windy case (2026-11-16): its [`solve_key`] without
+/// its wind pressure. Cases of one family differ by their pressure alone
+/// (the same temperature, ice, wind side and direction, air density…):
+/// the solves of one at a pressure are the solves of another at that
+/// pressure, so the wind steps of the one of largest pressure hold every
+/// other's (the 500 and 600 Pa cases are steps of the 800 Pa case's).
+/// A wind from another direction (along the line, at an angle) is another
+/// family, solved on its own.
+pub fn family_key(case: &WeatherCase) -> String {
+    let mut k = as_solved(case);
+    k.wind_pressure = ohl_core::units::Stress::from_si(0.0);
+    format!("{k:?}")
+}
+
+/// One line solve a run asks for.
+struct Job {
+    /// The case (index in the cases).
+    case: usize,
+    /// The position it gives.
+    kind: PositionKind,
+    /// The case as solved (its side and pressure set).
+    solve: WeatherCase,
+    /// Its wind pressure when not the case's own (a step or a level), Pa.
+    pressure: Option<f64>,
+    /// Solved for the swing band only (a level), not checked itself.
+    band_only: bool,
+}
+
+/// One line solve made: the sections solved, the wires, what failed.
+struct Solve {
+    shapes: Vec<SectionShape>,
+    wires: Vec<Wire>,
+    failed: Vec<String>,
+}
+
+/// The solves of a run, each once ([`solve_key`]).
+#[derive(Default)]
+struct Solves {
+    keys: std::collections::HashMap<String, usize>,
+    made: Vec<Solve>,
+    asked: usize,
+}
+
+impl Solves {
+    /// Solves the jobs whose key was not solved yet (in parallel); the
+    /// solve of each job (index in `made`).
+    fn run(
+        &mut self,
+        line: &Line,
+        library: &ohl_cables::Library,
+        jobs: &[Job],
+        jumpers: bool,
+        budget: &Budget,
+    ) -> Result<Vec<usize>, String> {
+        let mut of_job = Vec::with_capacity(jobs.len());
+        let mut new: Vec<&WeatherCase> = Vec::new();
+        for j in jobs {
+            let next = self.made.len() + new.len();
+            let k = *self.keys.entry(solve_key(&j.solve)).or_insert_with(|| {
+                new.push(&j.solve);
+                next
+            });
+            of_job.push(k);
+        }
+        self.asked += jobs.len();
+        let fe = ohl_wirefe::default_fe_budget();
+        let solved = parallel(new.len(), budget, |k| {
+            let case = new[k];
+            let results = ohl_line::solve::solve_line_memo(line, library, case, &fe);
+            let mut shapes = Vec::new();
+            let mut failed = Vec::new();
+            for (section, r) in line.sections.iter().zip(results) {
+                match r {
+                    Ok(s) => shapes.push(s),
+                    Err(e) => failed.push(format!("section {} not solved: {e}", section.id)),
+                }
+            }
+            let mut solved_jumpers = Vec::new();
+            if jumpers && !line.jumpers.is_empty() {
+                let results = ohl_line::jumper::solve_jumpers(line, library, case, &shapes);
+                for (def, r) in line.jumpers.iter().zip(results) {
+                    match r {
+                        Ok(j) => solved_jumpers.push(j),
+                        Err(e) => failed.push(format!("jumper {} not solved: {e}", def.id)),
+                    }
+                }
+            }
+            let wires = wires_of(line, &shapes, &solved_jumpers);
+            Ok(Solve {
+                shapes,
+                wires,
+                failed,
+            })
+        })?;
+        self.made.extend(solved);
+        Ok(of_job)
+    }
+}
+
+/// The position of a step (or level) blown from `side`: blown to the
+/// other side.
+fn step_kind(side: WindSide) -> PositionKind {
+    match side {
+        WindSide::Right => PositionKind::StepLeft,
+        WindSide::Left => PositionKind::StepRight,
+    }
+}
+
+/// What the results of a run with the swing band say when it has no
+/// levels (`levels` 0: the band of still air and the full blowouts
+/// alone, as until 2026-11-16): not on the safe side. None with levels
+/// (at least one every [`BAND_LEVEL_SPACING`]: measured within the
+/// margin).
+pub fn band_levels_note(levels: usize) -> Option<String> {
+    (levels == 0).then(|| {
+        "NOT ON THE SAFE SIDE: the swing band without levels (still air and the full blowouts \
+         alone): between them a wire can lie outside the band by more than its margin \
+         (measured on a real line of 930 spans: up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa \
+         across the line). Set the band levels (4 by default), or tick the wind steps."
+            .to_owned()
+    })
+}
+
+/// The solves a run asks for, in order ([`solve_positions`]).
+fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
+    let mut jobs: Vec<Job> = Vec::new();
+    let job = |case, kind, solve, pressure, band_only| Job {
+        case,
+        kind,
+        solve,
+        pressure,
+        band_only,
+    };
+    for (c, case) in cases.iter().enumerate() {
+        if !is_windy(case) {
+            jobs.push(job(c, PositionKind::Case, case.clone(), None, false));
+            continue;
+        }
+        for &side in full_sides(case) {
+            jobs.push(job(c, blown_kind(side), blown(case, side), None, false));
+        }
+        let full = case.wind_pressure.si();
+        let mut stepped: Vec<(PositionKind, f64)> = Vec::new();
+        if let Some(steps) = &options.wind_steps {
+            // Still air (checked, and the arc's middle) and every
+            // pressure between 0 and the full one.
+            jobs.push(job(c, PositionKind::Still, still(case), Some(0.0), false));
+            // A case with its own direction (across the line or at an
+            // angle), stepped from one side: its own side, the
+            // direction alone (never turned to the side asked for;
+            // owner 2026-11-15); from both, the direction and its
+            // mirror; along the line, once.
+            let sides: Vec<WindSide> = match own_from(case) {
+                _ if one_side_only(case) => vec![WindSide::Right],
+                Some(own) if steps.sides != crate::rules::WindSides::Both => vec![own],
+                _ => steps.sides.sides().to_vec(),
+            };
+            for p in steps.pressures(full, crate::zone::MAX_STEPS) {
+                if p <= 0.0 || p >= full {
+                    continue;
+                }
+                for &side in &sides {
+                    let mut at = blown(case, side);
+                    at.wind_pressure = ohl_core::units::Stress::from_si(p);
+                    jobs.push(job(c, step_kind(side), at, Some(p), false));
+                    stepped.push((step_kind(side), p));
+                }
+            }
+        } else if options.swing_arc {
+            // Still air: for the arc only.
+            jobs.push(job(c, PositionKind::Case, still(case), None, false));
+        }
+        if options.swing_arc {
+            // The band's levels (2026-11-16): those the steps do not
+            // solve already.
+            for &side in full_sides(case) {
+                for p in band_levels(full, options.band_levels) {
+                    if stepped.contains(&(step_kind(side), p)) {
+                        continue;
+                    }
+                    let mut at = blown(case, side);
+                    at.wind_pressure = ohl_core::units::Stress::from_si(p);
+                    jobs.push(job(c, step_kind(side), at, Some(p), true));
+                }
+            }
+        }
+    }
+    jobs
+}
+
+/// How many line solves [`solve_positions`] asks for with `options` and how
+/// many it makes, each distinct solve once ([`solve_key`]; 2026-11-16) —
+/// before the steps of spans the band does not hold, which it adds when it
+/// finds them. Nothing is solved here.
+pub fn solve_count(cases: &[WeatherCase], options: &PositionOptions) -> (usize, usize) {
+    let jobs = jobs_of(cases, options);
+    let keys: std::collections::HashSet<String> =
+        jobs.iter().map(|j| solve_key(&j.solve)).collect();
+    (jobs.len(), keys.len())
+}
+
 /// Solves every case of `cases` — a still case as it is, a windy one from
-/// the left and from the right (and in still air for the swing arc; with
-/// the wind stepped, in still air and at every intermediate pressure from
-/// the sides chosen) — in parallel, and gathers the positions of every
-/// span. Sections that do not solve are left out (noted).
+/// the left and from the right (and in still air and at the swing band's
+/// levels for the swing band; with the wind stepped, in still air and at
+/// every intermediate pressure from the sides chosen) — in parallel, and
+/// gathers the positions of every span. Sections that do not solve are
+/// left out (noted).
 ///
-/// Cost: one line solve per case and side, each typically well under a
-/// second; exit clause: `budget` (its time limit, checked between
-/// solves).
+/// Each solve is made once (2026-11-16, [`solve_key`]): cases differing
+/// by their wind pressure alone ([`family_key`]) share their solves at
+/// the same pressures — the steps of the one of largest pressure are the
+/// others' steps and full blowouts — bit for bit what solving each alone
+/// gives.
+///
+/// A span whose band does not hold its wire (the wind lifts it above its
+/// axis, [`SwingArc::above_axis`], or a position does not run steadily
+/// along it) is also checked at its wind steps (2026-11-16: every
+/// [`BAND_LEVEL_ROUNDING`], 10 Pa, from both sides, solved for its case
+/// when the steps are not; noted).
+///
+/// Cost: one line solve per distinct case, side and pressure, each
+/// typically well under a second; exit clause: `budget` (its time limit,
+/// checked between solves).
 pub fn solve_positions(
     line: &Line,
     library: &ohl_cables::Library,
@@ -1863,117 +2382,53 @@ pub fn solve_positions(
     options: PositionOptions,
     budget: &Budget,
 ) -> Result<Positions, String> {
-    // Jobs: (case, kind, the case solved, its pressure when stepped).
-    let mut jobs: Vec<(usize, PositionKind, WeatherCase, Option<f64>)> = Vec::new();
-    for (c, case) in cases.iter().enumerate() {
-        if is_windy(case) {
-            for &side in full_sides(case) {
-                jobs.push((c, blown_kind(side), blown(case, side), None));
-            }
-            if let Some(steps) = &options.wind_steps {
-                // Still air (checked, and the arc's middle) and every
-                // pressure between 0 and the full one.
-                jobs.push((c, PositionKind::Still, still(case), Some(0.0)));
-                let full = case.wind_pressure.si();
-                // A case with its own direction (across the line or at an
-                // angle), stepped from one side: its own side, the
-                // direction alone (never turned to the side asked for;
-                // owner 2026-11-15); from both, the direction and its
-                // mirror; along the line, once.
-                let sides: Vec<WindSide> = match own_from(case) {
-                    _ if one_side_only(case) => vec![WindSide::Right],
-                    Some(own) if steps.sides != crate::rules::WindSides::Both => vec![own],
-                    _ => steps.sides.sides().to_vec(),
-                };
-                for p in steps.pressures(full, crate::zone::MAX_STEPS) {
-                    if p <= 0.0 || p >= full {
-                        continue;
-                    }
-                    for &side in &sides {
-                        let kind = match side {
-                            WindSide::Right => PositionKind::StepLeft,
-                            WindSide::Left => PositionKind::StepRight,
-                        };
-                        let mut at = blown(case, side);
-                        at.wind_pressure = ohl_core::units::Stress::from_si(p);
-                        jobs.push((c, kind, at, Some(p)));
-                    }
-                }
-            } else if options.swing_arc {
-                // Still air: for the arc only.
-                jobs.push((c, PositionKind::Case, still(case), None));
-            }
-        } else {
-            jobs.push((c, PositionKind::Case, case.clone(), None));
-        }
-    }
-    let fe = ohl_wirefe::default_fe_budget();
-    let solved = parallel(jobs.len(), budget, |k| {
-        let (_, _, case, _) = &jobs[k];
-        let results = ohl_line::solve::solve_line_memo(line, library, case, &fe);
-        let jumpers = if options.jumpers && !line.jumpers.is_empty() {
-            let ok: Vec<SectionShape> = results.iter().filter_map(|r| r.clone().ok()).collect();
-            ohl_line::jumper::solve_jumpers(line, library, case, &ok)
-        } else {
-            Vec::new()
-        };
-        Ok((results, jumpers))
-    })?;
+    let jobs = jobs_of(cases, &options);
+    let job = |case, kind, solve, pressure, band_only| Job {
+        case,
+        kind,
+        solve,
+        pressure,
+        band_only,
+    };
+    let mut solves = Solves::default();
+    let of_job = solves.run(line, library, &jobs, options.jumpers, budget)?;
     let mut out = Positions {
         cases: cases.iter().map(|c| c.name.clone()).collect(),
         directions: cases.iter().map(WeatherCase::oblique).collect(),
         ..Positions::default()
     };
-    // Per case: its solved shapes by kind (and pressure).
-    type Solved = (
-        PositionKind,
-        Option<f64>,
-        Vec<SectionShape>,
-        Vec<JumperShape>,
-    );
-    let mut by_case: Vec<Vec<Solved>> = vec![Vec::new(); cases.len()];
-    for ((c, kind, case, pressure), (results, jumper_results)) in jobs.iter().zip(solved) {
-        let mut shapes = Vec::new();
-        for (section, r) in line.sections.iter().zip(results) {
-            match r {
-                Ok(s) => shapes.push(s),
-                Err(e) => out.notes.push(format!(
-                    "case \"{}\" ({}): section {} not solved: {e}",
-                    case.name,
-                    kind.name(),
-                    section.id
-                )),
-            }
+    for (j, job) in jobs.iter().enumerate() {
+        for f in &solves.made[of_job[j]].failed {
+            out.notes.push(format!(
+                "case \"{}\" ({}): {f}",
+                job.solve.name,
+                job.kind.name()
+            ));
         }
-        let mut jumpers = Vec::new();
-        for (def, r) in line.jumpers.iter().zip(jumper_results) {
-            match r {
-                Ok(j) => jumpers.push(j),
-                Err(e) => out.notes.push(format!(
-                    "case \"{}\" ({}): jumper {} not solved: {e}",
-                    case.name,
-                    kind.name(),
-                    def.id
-                )),
-            }
-        }
-        by_case[*c].push((*kind, *pressure, shapes, jumpers));
     }
-    for (c, variants) in by_case.iter().enumerate() {
+    // The spans by (section, span).
+    let mut span_index: std::collections::HashMap<(String, usize), usize> =
+        std::collections::HashMap::new();
+    let mut by_case: Vec<Vec<usize>> = vec![Vec::new(); cases.len()];
+    for (j, job) in jobs.iter().enumerate() {
+        by_case[job.case].push(j);
+    }
+    // Per case, the spans the band does not hold.
+    let mut unheld: Vec<(usize, Vec<usize>)> = Vec::new();
+    let mut any_band = false;
+    for (c, list) in by_case.iter().enumerate() {
         let windy = is_windy(&cases[c]);
-        // Still air of a windy case: for the arc, not checked itself.
-        type Kept<'a> = (PositionKind, Vec<Wire>, &'a Vec<SectionShape>, Option<f64>);
-        let mut kept: Vec<Kept> = Vec::new();
-        for (kind, pressure, shapes, jumpers) in variants {
-            kept.push((*kind, wires_of(line, shapes, jumpers), shapes, *pressure));
-        }
+        let solve_of = |i: usize| &solves.made[of_job[list[i]]];
         let mut span_ids: Vec<Vec<Option<usize>>> = Vec::new();
-        for (kind, wires, shapes, pressure) in &kept {
+        for (i, &j) in list.iter().enumerate() {
+            let job = &jobs[j];
+            let solve = solve_of(i);
             let mut ids = Vec::new();
-            for w in wires {
+            for w in &solve.wires {
                 let jumper = w.section.starts_with("jumper:");
-                let id = match out.span_of(&w.section, w.span) {
-                    Some(id) => Some(id),
+                let key = (w.section.clone(), w.span);
+                let id = match span_index.get(&key) {
+                    Some(&id) => Some(id),
                     // A jumper: about the line through its ends.
                     None if jumper => match (w.points.first(), w.points.last()) {
                         (Some(a), Some(b)) => {
@@ -1981,27 +2436,31 @@ pub fn solve_positions(
                         }
                         _ => None,
                     },
-                    None => shapes
+                    None => solve
+                        .shapes
                         .iter()
                         .find(|s| s.section == w.section)
                         .and_then(|s| span_axis(s, w.span))
                         .map(|axis| out.add_span(w.clone(), axis)),
                 };
+                if let Some(id) = id {
+                    span_index.insert(key, id);
+                }
                 ids.push(id);
                 let Some(id) = id else { continue };
-                // Still air of a windy case solved for the arc: for the
-                // band only (a jumper's too; kept below for a jumper
-                // without one).
-                if windy && *kind == PositionKind::Case {
+                // Still air of a windy case solved for the arc, and the
+                // band's levels: for the band only (a jumper's too; kept
+                // below for a jumper without one).
+                if (windy && job.kind == PositionKind::Case) || job.band_only {
                     continue;
                 }
                 let axis = out.spans[id].axis;
                 out.add_at(
                     id,
                     c,
-                    *kind,
+                    job.kind,
                     Shape::Wire(WireShape::new(w.clone(), &axis)),
-                    *pressure,
+                    job.pressure,
                 );
             }
             span_ids.push(ids);
@@ -2009,7 +2468,7 @@ pub fn solve_positions(
         if !(windy && options.swing_arc) {
             continue;
         }
-        let find = |k: PositionKind| kept.iter().position(|(kind, ..)| *kind == k);
+        let find = |k: PositionKind| list.iter().position(|&j| jobs[j].kind == k);
         // (A wind along the line has one side: its band from still air to
         // that blowout.)
         let (Some(l), Some(s), Some(r)) = (
@@ -2019,48 +2478,89 @@ pub fn solve_positions(
         ) else {
             continue;
         };
+        // The levels of each span: every intermediate solve (the band's
+        // levels, and the steps when solved).
+        let mut levels_of: std::collections::HashMap<usize, Vec<&Wire>> =
+            std::collections::HashMap::new();
+        for (i, &j) in list.iter().enumerate() {
+            if !matches!(
+                jobs[j].kind,
+                PositionKind::StepLeft | PositionKind::StepRight
+            ) {
+                continue;
+            }
+            for (w, id) in solve_of(i).wires.iter().zip(&span_ids[i]) {
+                if let Some(id) = id {
+                    levels_of.entry(*id).or_default().push(w);
+                }
+            }
+        }
         let (mut left_out, mut jumpers_out) = (0, 0);
+        let mut not_held: Vec<usize> = Vec::new();
+        let mut lifted = 0;
         // Still air solved for the band only (not a step).
-        let still_only = kept[s].0 == PositionKind::Case;
-        for (w, id) in kept[s].1.iter().zip(&span_ids[s]) {
+        let still_only = jobs[list[s]].kind == PositionKind::Case;
+        for (w, id) in solve_of(s).wires.iter().zip(&span_ids[s]) {
             let Some(id) = *id else { continue };
             // A jumper: its own band about the line through its end
             // clamps (2026-10-21); without one, its still air as solved.
             let jumper = w.section.starts_with("jumper:");
             let pick = |k: usize| {
-                kept[k]
-                    .1
+                solve_of(k)
+                    .wires
                     .iter()
                     .find(|x| x.section == w.section && x.span == w.span)
             };
+            let levels: &[&Wire] = levels_of.get(&id).map_or(&[], Vec::as_slice);
             let axis = out.spans[id].axis;
             let shape = |x: &Wire| WireShape::new(x.clone(), &axis);
             let arc = match (pick(l), pick(r)) {
                 // About its end clamps blown to the left: the span's axis
                 // (it was made from that solve, the first).
                 (Some(wl), Some(wr)) if jumper => {
-                    jumper_band(Some(wl), w, Some(wr), options.jumper_band_margin)
+                    jumper_band_levels(Some(wl), w, Some(wr), levels, options.jumper_band_margin)
                 }
-                (Some(wl), Some(wr)) => SwingArc::with_margin(
-                    axis,
-                    &shape(wl),
-                    &shape(w),
-                    &shape(wr),
-                    options.band_margin,
-                ),
+                (Some(wl), Some(wr)) => {
+                    let shapes: Vec<WireShape> = levels.iter().map(|x| shape(x)).collect();
+                    let refs: Vec<&WireShape> = shapes.iter().collect();
+                    SwingArc::with_levels(
+                        axis,
+                        &shape(wl),
+                        &shape(w),
+                        &shape(wr),
+                        &refs,
+                        options.band_margin,
+                    )
+                }
                 _ => None,
             };
             match arc {
-                Some(arc) => out.add(id, c, PositionKind::Arc, Shape::Arc(arc)),
+                Some(arc) => {
+                    if !jumper && arc.above_axis() {
+                        lifted += 1;
+                        not_held.push(id);
+                    }
+                    any_band = true;
+                    out.add(id, c, PositionKind::Arc, Shape::Arc(arc));
+                }
                 None if jumper => {
                     jumpers_out += 1;
                     if still_only {
                         out.add_at(id, c, PositionKind::Still, Shape::Wire(shape(w)), None);
                     }
                 }
-                None => left_out += 1,
+                None => {
+                    left_out += 1;
+                    not_held.push(id);
+                }
             }
         }
+        let stepped = options.wind_steps.is_some();
+        let checked = if stepped {
+            "checked at the wind steps solved"
+        } else {
+            "checked at their wind steps (every 10 Pa from both sides) instead"
+        };
         if jumpers_out > 0 {
             out.notes.push(format!(
                 "case \"{}\": {jumpers_out} jumpers without a swing band (not solved blown to both sides, or not running steadily along the line through their ends): taken at their solved positions",
@@ -2069,11 +2569,73 @@ pub fn solve_positions(
         }
         if left_out > 0 {
             out.notes.push(format!(
-                "case \"{}\": {left_out} spans without a swing arc (a wire not solved, or not running steadily along its span)",
+                "case \"{}\": {left_out} spans without a swing arc (a wire not solved, or not running steadily along its span): {checked}",
                 cases[c].name
             ));
         }
+        if lifted > 0 {
+            out.notes.push(format!(
+                "case \"{}\": {lifted} spans whose wire the wind pulls to or above the line between its clamps (the swing band does not hold such a wire between its levels): {checked}",
+                cases[c].name
+            ));
+        }
+        if !not_held.is_empty() && !stepped {
+            unheld.push((c, not_held));
+        }
     }
+    if any_band
+        && options.wind_steps.is_none()
+        && let Some(n) = band_levels_note(options.band_levels)
+    {
+        out.notes.push(n);
+    }
+    // The spans the band does not hold: their wind steps (2026-11-16).
+    if !unheld.is_empty() {
+        let steps = crate::rules::WindSteps {
+            stepped: true,
+            step: BAND_LEVEL_ROUNDING,
+            ..Default::default()
+        };
+        let mut more: Vec<Job> = Vec::new();
+        for (c, _) in &unheld {
+            let case = &cases[*c];
+            more.push(job(*c, PositionKind::Still, still(case), Some(0.0), false));
+            let full = case.wind_pressure.si();
+            for p in steps.pressures(full, crate::zone::MAX_STEPS) {
+                if p <= 0.0 || p >= full {
+                    continue;
+                }
+                for &side in full_sides(case) {
+                    let mut at = blown(case, side);
+                    at.wind_pressure = ohl_core::units::Stress::from_si(p);
+                    more.push(job(*c, step_kind(side), at, Some(p), false));
+                }
+            }
+        }
+        let of_more = solves.run(line, library, &more, options.jumpers, budget)?;
+        for (j, job) in more.iter().enumerate() {
+            let Some((_, spans)) = unheld.iter().find(|(c, _)| *c == job.case) else {
+                continue;
+            };
+            for w in &solves.made[of_more[j]].wires {
+                let Some(&id) = span_index.get(&(w.section.clone(), w.span)) else {
+                    continue;
+                };
+                if !spans.contains(&id) {
+                    continue;
+                }
+                let axis = out.spans[id].axis;
+                out.add_at(
+                    id,
+                    job.case,
+                    job.kind,
+                    Shape::Wire(WireShape::new(w.clone(), &axis)),
+                    job.pressure,
+                );
+            }
+        }
+    }
+    out.solves = (solves.asked, solves.made.len());
     Ok(out)
 }
 
@@ -2376,6 +2938,239 @@ mod tests {
         assert!((sloped.vertical_outer() - 0.03).abs() < 1e-15);
         sloped.axis.u = [0.8, 0.0, 0.6];
         assert!((sloped.vertical_outer() - 0.0375).abs() < 1e-15);
+    }
+
+    /// The band's levels (2026-11-16): k·full/(n + 1) rounded to whole
+    /// 10 Pa, each once, strictly between 0 and the full pressure, at
+    /// least one every 200 Pa.
+    #[test]
+    fn band_levels_are_rounded_fractions() {
+        assert_eq!(band_levels(500.0, 4), vec![100.0, 200.0, 300.0, 400.0]);
+        // At least one every 200 Pa: 3 asked, 6 taken at 1300 Pa.
+        assert_eq!(
+            band_levels(1300.0, 3),
+            vec![190.0, 370.0, 560.0, 740.0, 930.0, 1110.0]
+        );
+        assert_eq!(band_levels(1000.0, 3), vec![200.0, 400.0, 600.0, 800.0]);
+        for (full, n) in [(2400.0, 4), (650.0, 1), (1450.0, 2)] {
+            let v = band_levels(full, n);
+            let mut prev = 0.0;
+            for p in v.iter().copied().chain([full]) {
+                assert!(p - prev <= BAND_LEVEL_SPACING + 10.0, "{full} {n} {v:?}");
+                prev = p;
+            }
+        }
+        assert_eq!(band_levels(595.0, 2), vec![200.0, 400.0]);
+        // Few pressures below the full one: each once.
+        assert_eq!(band_levels(30.0, 8), vec![10.0, 20.0]);
+        assert!(band_levels(500.0, 0).is_empty());
+        assert!(band_levels(0.0, 4).is_empty());
+        assert!(band_levels(f64::NAN, 4).is_empty());
+        // The levels are steps of 10 Pa, bit for bit.
+        for p in band_levels(1450.0, 8) {
+            let k = (p / 10.0).round() as i64;
+            assert_eq!(p, k as f64 * 10.0);
+        }
+    }
+
+    /// A level inside the three positions' radii pulls the band's inner
+    /// radius in (2026-11-16): still air sag 4 m, blown ±40° with sag 5 m,
+    /// a level at 20° with sag 3.5 m — at mid-span r = 3.5, R = 5, the
+    /// angles still ±40°; a level beyond 40° widens them. A level lifted
+    /// above the axis marks the band ([`SwingArc::above_axis`]).
+    #[test]
+    fn the_band_holds_its_levels() {
+        let ax = axis();
+        let phi = 40f64.to_radians();
+        let left = WireShape::new(wire(hanging(-phi, 5.0)), &ax);
+        let still = WireShape::new(wire(hanging(0.0, 4.0)), &ax);
+        let right = WireShape::new(wire(hanging(phi, 5.0)), &ax);
+        let level = WireShape::new(wire(hanging(20f64.to_radians(), 3.5)), &ax);
+        let arc = SwingArc::with_levels(ax, &left, &still, &right, &[&level], 0.0).unwrap();
+        assert_eq!(arc.level_count(), 1);
+        let place = arc.place(50.0);
+        assert!((place.inner - 3.5).abs() < 1e-12, "{place:?}");
+        assert!((place.radius - 5.0).abs() < 1e-12);
+        assert!((place.from + phi).abs() < 1e-12 && (place.to - phi).abs() < 1e-12);
+        // Between stations (52.5 m: halfway between the points at 50 and
+        // 55 m), the levels' radius linearly: 3.5 · 4·0.525·0.475 / 1 …
+        let r = |sag: f64, x: f64| 4.0 * sag * (x / 100.0) * (1.0 - x / 100.0);
+        let p = arc.place(52.5);
+        let lerp = (r(3.5, 50.0) + r(3.5, 55.0)) / 2.0;
+        assert!((p.inner - lerp).abs() < 1e-12, "{p:?} {lerp}");
+        // The level's own point there lies within the band.
+        let a = 20f64.to_radians();
+        let q = [52.5, -r(3.5, 52.5) * a.sin(), 20.0 - r(3.5, 52.5) * a.cos()];
+        assert!(arc.nearest(q).0 < 1e-3, "{}", arc.nearest(q).0);
+        // Without the level the point lies inside the inner radius.
+        let plain = SwingArc::with_margin(ax, &left, &still, &right, 0.0).unwrap();
+        assert!(plain.nearest(q).0 > 0.4);
+        assert!(!arc.above_axis() && arc.lift() < 0.0 + 1e-9);
+        let wide = WireShape::new(wire(hanging(60f64.to_radians(), 5.0)), &ax);
+        let arc = SwingArc::with_levels(ax, &left, &still, &right, &[&wide], 0.0).unwrap();
+        assert!((arc.place(50.0).to - 60f64.to_radians()).abs() < 1e-12);
+        // A level 2 m above the axis at mid-span.
+        let up = WireShape::new(wire(hanging(std::f64::consts::PI, 2.0)), &ax);
+        let arc = SwingArc::with_levels(ax, &left, &still, &right, &[&up], 0.0).unwrap();
+        assert!(arc.above_axis());
+        assert!((arc.lift() - 2.0).abs() < 1e-12, "{}", arc.lift());
+        // A level pulled towards its chord: sag 1.5 m against still air's
+        // 4 m (less than half): the band does not hold it either.
+        let taut = WireShape::new(wire(hanging(0.3, 1.5)), &ax);
+        let arc = SwingArc::with_levels(ax, &left, &still, &right, &[&taut], 0.0).unwrap();
+        assert!(
+            (arc.sag_ratio() - 1.5 / 4.0).abs() < 1e-12,
+            "{}",
+            arc.sag_ratio()
+        );
+        assert!(arc.above_axis());
+        let plain = SwingArc::with_levels(ax, &left, &still, &right, &[&level], 0.0).unwrap();
+        assert!((plain.sag_ratio() - 3.5 / 4.0).abs() < 1e-12);
+    }
+
+    /// Cases differing by their wind pressure alone share their solves
+    /// (2026-11-16): the example line's "high wind" at its pressure and a
+    /// copy at 3/5 of it (rounded to 10 Pa), stepped by 10 Pa from both
+    /// sides with the swing band — the smaller case's positions and band
+    /// bit for bit those of solving it alone, the solves those of the
+    /// larger case alone.
+    #[test]
+    fn cases_of_one_family_share_their_solves() {
+        use std::path::Path;
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let line =
+            Line::load(&root.join("examples/synthetic-line/synthetic-line.ohl.json")).unwrap();
+        let library = ohl_cables::Library::load(&root.join("libraries/cables")).unwrap();
+        let big = ohl_weather::WeatherCases::load(
+            &root.join("examples/synthetic-line/weather-cases.ohlwc"),
+        )
+        .unwrap()
+        .select(&["high wind".into()], &[])
+        .unwrap()
+        .remove(0);
+        let full = big.wind_pressure.si();
+        let mut small = big.clone();
+        small.name = "smaller wind".into();
+        small.wind_pressure = ohl_core::units::Stress::from_si((full * 0.6 / 10.0).round() * 10.0);
+        assert_eq!(family_key(&small), family_key(&big));
+        assert_ne!(solve_key(&small), solve_key(&big));
+        let mut other = big.clone();
+        other.temperature = ohl_core::units::Temperature::from_celsius(41.0);
+        assert_ne!(family_key(&other), family_key(&big));
+        let options = PositionOptions {
+            swing_arc: true,
+            wind_steps: Some(crate::rules::WindSteps {
+                stepped: true,
+                step: 10.0,
+                sides: crate::rules::WindSides::Both,
+                ..Default::default()
+            }),
+            jumpers: true,
+            ..Default::default()
+        };
+        let alone = solve_positions(
+            &line,
+            &library,
+            std::slice::from_ref(&small),
+            options,
+            &Budget::new(),
+        )
+        .unwrap();
+        let big_alone = solve_positions(
+            &line,
+            &library,
+            std::slice::from_ref(&big),
+            options,
+            &Budget::new(),
+        )
+        .unwrap();
+        let both = solve_positions(
+            &line,
+            &library,
+            &[small.clone(), big.clone()],
+            options,
+            &Budget::new(),
+        )
+        .unwrap();
+        // Every solve of the smaller case is one of the larger's.
+        assert_eq!(both.solves.1, big_alone.solves.1, "{:?}", both.solves);
+        assert_eq!(both.solves.0, alone.solves.0 + big_alone.solves.0);
+        assert_eq!(
+            solve_count(&[small.clone(), big.clone()], &options),
+            both.solves
+        );
+        // The smaller case's positions (and band) as alone, bit for bit:
+        // its first solve gives the spans' axes in both runs.
+        let of = |p: &Positions,
+                  case: usize|
+         -> Vec<(String, usize, PositionKind, Option<u64>, Shape)> {
+            p.positions
+                .iter()
+                .filter(|x| x.case == case)
+                .map(|x| {
+                    let w = &p.spans[x.span].wire;
+                    (
+                        w.section.clone(),
+                        w.span,
+                        x.kind,
+                        x.pressure.map(f64::to_bits),
+                        x.shape.clone(),
+                    )
+                })
+                .collect()
+        };
+        let a = of(&alone, 0);
+        assert!(a.len() > 100, "{}", a.len());
+        assert!(a.iter().any(|x| x.2 == PositionKind::Arc));
+        assert!(
+            a == of(&both, 0),
+            "the smaller case differs from solving it alone"
+        );
+        // The larger case's wire positions as alone too (its bands about
+        // the axes of the run's first solve: compared by their wires).
+        let wires = |v: Vec<(String, usize, PositionKind, Option<u64>, Shape)>| {
+            v.into_iter()
+                .filter(|x| matches!(x.4, Shape::Wire(_)))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|x| match x.4 {
+                    Shape::Wire(w) => (x.0, x.1, x.2, x.3, w.wire.points),
+                    Shape::Arc(_) => unreachable!(),
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(wires(of(&big_alone, 0)) == wires(of(&both, 1)));
+        // The two copies of one wind across the line, from 90° and from
+        // 270°, share every solve (each is solved from both sides, and
+        // blown from one side the two are the same solve: the solve reads
+        // the side across the line, not the direction): each solved alone
+        // gives the other's positions bit for bit (but still air, which
+        // keeps its side in the key).
+        let band = PositionOptions {
+            swing_arc: true,
+            ..Default::default()
+        };
+        let right = WeatherCase {
+            wind_direction: Some(ohl_weather::WindDirection::Right),
+            wind_from: WindSide::Right,
+            ..big.clone()
+        };
+        let left = WeatherCase {
+            name: "the mirror copy".into(),
+            wind_direction: Some(ohl_weather::WindDirection::Left),
+            wind_from: WindSide::Left,
+            ..big.clone()
+        };
+        let one = solve_count(std::slice::from_ref(&right), &band);
+        // (Every blown solve; still air keeps its side, unread without
+        // wind but kept in the key: one more solve.)
+        assert_eq!(
+            solve_count(&[right.clone(), left.clone()], &band).1,
+            one.1 + 1
+        );
+        let r = solve_positions(&line, &library, &[right], band, &Budget::new()).unwrap();
+        let l = solve_positions(&line, &library, &[left], band, &Budget::new()).unwrap();
+        assert!(wires(of(&r, 0)) == wires(of(&l, 0)));
     }
 
     /// The bands never claim more than the exact distance: random points

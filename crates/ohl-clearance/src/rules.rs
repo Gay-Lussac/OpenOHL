@@ -90,7 +90,10 @@
 //!   the default [`crate::positions::BAND_MARGIN`]) is the spans' swing
 //!   band margin; `jumper_band_margin = "0.3 m"` (2026-10-21, optional,
 //!   written only when not the default
-//!   [`crate::positions::JUMPER_BAND_MARGIN`], 0) the jumpers'.
+//!   [`crate::positions::JUMPER_BAND_MARGIN`], 0) the jumpers';
+//!   `band_levels = 4` (2026-11-16, optional, written only when not the
+//!   default [`crate::positions::BAND_LEVELS`]) the bands' intermediate
+//!   solved pressures from each side.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
@@ -1175,6 +1178,8 @@ struct RawWind {
     band_margin: Option<Length>,
     #[serde(default)]
     jumper_band_margin: Option<Length>,
+    #[serde(default)]
+    band_levels: Option<usize>,
 }
 
 /// The sides the wind blows from, looking ahead along the line.
@@ -1246,7 +1251,9 @@ pub struct WindSteps {
     /// every distance to a swing arc's band is taken this much smaller.
     /// Default [`crate::positions::BAND_MARGIN`] (the measured worst
     /// excess of the intermediate pressures plus an allowance;
-    /// conservative); a smaller value is on the user's responsibility.
+    /// conservative with levels ([`WindSteps::band_levels`]), not on the
+    /// safe side without); a smaller value is on the user's
+    /// responsibility.
     pub band_margin: f64,
     /// The jumpers' swing band margin, m (`[wind] jumper_band_margin`,
     /// 2026-10-21, the owner's decision: a value of its own): every
@@ -1256,6 +1263,15 @@ pub struct WindSteps {
     /// its blowouts; exact: the wind steps); the user enters a value for
     /// their jumpers.
     pub jumper_band_margin: f64,
+    /// The swing bands' intermediate levels from each side
+    /// (`[wind] band_levels`, 2026-11-16): the band also holds the wire
+    /// solved at this many pressures between still air and the full one
+    /// ([`crate::positions::band_levels`]), each one more solve per side.
+    /// At least one every [`crate::positions::BAND_LEVEL_SPACING`].
+    /// Default [`crate::positions::BAND_LEVELS`] (measured); 0: the band
+    /// of still air and the blowouts alone, as before 2026-11-16 (not on
+    /// the safe side, said).
+    pub band_levels: usize,
 }
 
 /// Default step of the wind pressure, Pa.
@@ -1270,6 +1286,7 @@ impl Default for WindSteps {
             arc: false,
             band_margin: crate::positions::BAND_MARGIN,
             jumper_band_margin: crate::positions::JUMPER_BAND_MARGIN,
+            band_levels: crate::positions::BAND_LEVELS,
         }
     }
 }
@@ -1937,9 +1954,17 @@ impl RuleSet {
                 if let Some(e) = band_margin_problem(jumper_band_margin) {
                     return Err(format!("[wind] jumper {e}"));
                 }
+                let band_levels = w.band_levels.unwrap_or(crate::positions::BAND_LEVELS);
+                if band_levels > crate::positions::MAX_BAND_LEVELS {
+                    return Err(format!(
+                        "[wind] band_levels {band_levels}: at most {}",
+                        crate::positions::MAX_BAND_LEVELS
+                    ));
+                }
                 Ok(WindSteps {
                     band_margin,
                     jumper_band_margin,
+                    band_levels,
                     stepped: w.steps,
                     step,
                     sides: w
@@ -2141,6 +2166,9 @@ impl RuleSet {
             }
             if w.jumper_band_margin != crate::positions::JUMPER_BAND_MARGIN {
                 let _ = writeln!(t, "jumper_band_margin = {}", length(w.jumper_band_margin));
+            }
+            if w.band_levels != crate::positions::BAND_LEVELS {
+                let _ = writeln!(t, "band_levels = {}", w.band_levels);
             }
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {

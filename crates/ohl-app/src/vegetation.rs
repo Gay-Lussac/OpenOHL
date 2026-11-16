@@ -410,6 +410,7 @@ impl Settings {
             "swing_arc": self.arc,
             "band_margin": self.steps.band_margin,
             "jumper_band_margin": self.steps.jumper_band_margin,
+            "band_levels": self.steps.band_levels,
             "wind_steps": self.steps.stepped,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
@@ -504,6 +505,9 @@ impl Settings {
                     // Not used by the danger-tree check (no jumpers); kept
                     // as the shared wind choice gives it.
                     jumper_band_margin: num("jumper_band_margin", d.steps.jumper_band_margin),
+                    // Runs saved before 2026-11-16: the band of still air
+                    // and the blowouts alone.
+                    band_levels: crate::safety_volume::band_levels(v),
                 },
                 ice: (
                     Ice::parse(
@@ -1047,6 +1051,7 @@ impl VegetationWindow {
             wind_steps: settings.steps.stepped.then_some(settings.steps),
             jumpers: false,
             band_margin: settings.steps.band_margin,
+            band_levels: settings.steps.band_levels,
             ..PositionOptions::default()
         };
         let ice = match settings.ice.0 {
@@ -1211,10 +1216,18 @@ impl VegetationWindow {
             Some(s) => Some(s.clone()),
             None => self.job.stamp.out_of_date(model, USES),
         };
-        // The band's margin changed since (2026-10-21).
-        let margin = (report.settings.arc
-            && self.settings.steps.band_margin != report.settings.steps.band_margin)
-            .then(|| "the band margin".to_owned());
+        // The band's margin (2026-10-21) or levels (2026-11-16) changed
+        // since.
+        let (now, then) = (&self.settings.steps, &report.settings.steps);
+        let margin = match (
+            report.settings.arc && now.band_margin != then.band_margin,
+            report.settings.arc && now.band_levels != then.band_levels,
+        ) {
+            (true, true) => Some("the band margin and levels".to_owned()),
+            (true, false) => Some("the band margin".to_owned()),
+            (false, true) => Some("the band levels".to_owned()),
+            (false, false) => None,
+        };
         match (line, margin) {
             (Some(a), Some(b)) => Some(format!("{a}, {b}")),
             (a, b) => a.or(b),
@@ -1709,6 +1722,9 @@ impl VegetationWindow {
                 ));
                 if w.band_margin != ohl_clearance::positions::BAND_MARGIN {
                     rows.push(("band margin, m".into(), format!("{}", w.band_margin)));
+                }
+                if w.band_levels != ohl_clearance::positions::BAND_LEVELS {
+                    rows.push(("band levels a side".into(), format!("{}", w.band_levels)));
                 }
                 if w.jumper_band_margin != ohl_clearance::positions::JUMPER_BAND_MARGIN {
                     rows.push((

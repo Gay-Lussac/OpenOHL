@@ -296,6 +296,19 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
     if wind.arc && !wind.stepped {
         n += 1;
     }
+    if wind.arc {
+        // The band's levels the steps do not solve (2026-11-16).
+        let steps = if wind.stepped {
+            wind.pressures(full, ohl_clearance::zone::MAX_STEPS)
+        } else {
+            Vec::new()
+        };
+        n += ohl_clearance::positions::band_levels(full, wind.band_levels)
+            .iter()
+            .filter(|p| !steps.contains(p))
+            .count()
+            * full_sides;
+    }
     n
 }
 
@@ -393,6 +406,7 @@ pub fn wind_choice_with(
         }
     });
     if wind.arc {
+        changed |= band_levels_ui(ui, id, &mut wind.band_levels, lines);
         changed |= band_margin_ui(ui, id, &mut wind.band_margin, lines);
         changed |= jumper_band_margin_ui(ui, id, &mut wind.jumper_band_margin, jumpers, lines);
     }
@@ -512,19 +526,80 @@ fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, lines: bool) ->
     changed
 }
 
+/// The swing band's levels (2026-11-16): how many intermediate wind
+/// pressures from each side the band also holds (at least one every
+/// 250 Pa), with what that does and costs (measured). None: a warning
+/// (not on the safe side). True when changed.
+fn band_levels_ui(ui: &mut egui::Ui, id: &str, levels: &mut usize, lines: bool) -> bool {
+    let default = ohl_clearance::positions::BAND_LEVELS;
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label("band levels");
+        changed |= ui
+            .push_id((id, "band-levels"), |ui| {
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(levels)
+                        .speed(0.1)
+                        .range(0..=ohl_clearance::positions::MAX_BAND_LEVELS)
+                        .suffix(" a side"),
+                )
+            })
+            .inner
+            .on_hover_text(BAND_LEVELS_HELP)
+            .changed();
+        if *levels != default
+            && ui
+                .small_button(format!("{default}"))
+                .on_hover_text("Back to the default levels")
+                .clicked()
+        {
+            *levels = default;
+            changed = true;
+        }
+        if !lines && *levels > 0 {
+            question_both(ui, BAND_LEVELS_SHORT, BAND_LEVELS_HELP);
+        }
+    });
+    if *levels == 0 {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(
+                "No levels: the band of still air and the blowouts alone misses the wire between \
+                 them by more than its margin on long and steep spans. Not on the safe side.",
+            )
+            .small(),
+        )
+        .on_hover_text(BAND_LEVELS_HELP);
+    } else if lines {
+        explain(ui, BAND_LEVELS_SHORT, BAND_LEVELS_HELP);
+    }
+    changed
+}
+
+/// The band levels' line.
+const BAND_LEVELS_SHORT: &str = "Band levels: the band also holds the wire solved at this many \
+    pressures between still air and the full one (at least one every 200 Pa), from each side \
+    (one more solve each).";
+
+/// The band levels' longer explanation (hover): what they do and cost,
+/// measured.
+pub const BAND_LEVELS_HELP: &str = ohl_clearance::positions::BAND_LEVELS_HELP;
+
 /// The band margin's line.
 const BAND_MARGIN_SHORT: &str =
     "Band margin: every distance to the swing band taken this much smaller (conservative).";
 
 /// The band margin's longer explanation (hover).
 pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the largest radius of the \
-    still and blown positions) does not quite hold the wire at intermediate wind pressures: \
-    measured with steps of 10 Pa on the example lines, a span's wire lies up to 0.089 m outside \
-    it (the strings swing and the sag changes). The margin covers that worst excess plus an \
-    allowance for other lines: 0.15 m by default, conservative — every distance to the band is \
-    taken this much smaller, as if the conductor were that much thicker. The jumpers' bands have \
-    a margin of their own (below). A smaller value is less safe and on your responsibility; to \
-    be sure on your line, compare with the wind steps.";
+    still and blown positions and of its levels) does not quite hold the wire between them: \
+    measured with steps of 10 Pa and the default 4 band levels, a span's wire lies up to 0.063 m \
+    outside it on a real line of 930 spans (the strings swing and the sag changes). The margin \
+    covers that worst excess plus an allowance for other lines: 0.15 m by default, conservative \
+    with the default levels — every distance to the band is taken this much smaller, as if the \
+    conductor were that much thicker (without levels the excess reached 0.69 m at 1300 Pa). The \
+    jumpers' bands have a margin of their own (below). A smaller value is less safe and on your \
+    responsibility; to be sure on your line, compare with the wind steps.";
 
 /// The jumpers' swing band margin (2026-10-21, the owner's decision: a
 /// value of its own, default 0, entered by the user): a field in metres
@@ -596,13 +671,14 @@ fn jumper_short(margin: f64) -> &'static str {
 
 /// The jumpers' band margin's longer explanation (hover).
 pub const JUMPER_BAND_MARGIN_HELP: &str = "A jumper's swing band (about the line through its end \
-    clamps, from the smallest to the largest radius of its still and blown positions) does not \
-    hold the jumper at intermediate wind pressures: it swings with its clamps and changes its \
-    shape. Measured with steps of 10 Pa on the example line's jumper, it lies up to 0.293 m \
-    outside its band (high wind, blown right at 230 Pa). The default is 0 m, no widening: a \
-    simplification on your responsibility, the band not conservative between the blowouts. \
-    Enter a value for your jumpers — compare with the wind steps to find it (exact: the wind \
-    steps). Separate from the spans' band margin.";
+    clamps, from the smallest to the largest radius of its still and blown positions and levels) \
+    does not hold the jumper at intermediate wind pressures: it swings with its clamps and changes \
+    its shape. Measured with steps of 10 Pa, the example line's jumper lies up to 0.31 m outside \
+    its band without levels and 0.04 m with the default levels; on a real line up to 2.1 m \
+    without levels and, for some jumpers, still up to 1.9 m with them. The default is 0 m, no widening: not \
+    on the safe side, said in the results, on your responsibility. Enter a value for your jumpers \
+    — compare with the wind steps to find it (exact: the wind steps). Separate from the spans' \
+    band margin.";
 
 /// Size of a drawing, px.
 pub const SIZE: egui::Vec2 = egui::vec2(120.0, 80.0);
@@ -1829,8 +1905,9 @@ mod tests {
     }
 
     /// The solves a choice needs: steps of 10 Pa to 650 Pa from both
-    /// sides are 1 + 64 × 2 + 2 = 131 (the arc suggested); the arc alone
-    /// 3; the case's pressure alone 2 (one side: 1).
+    /// sides are 1 + 64 × 2 + 2 = 131 (the arc suggested; its levels are
+    /// steps); the arc alone 3 and its levels (2026-11-16: 4 a side by
+    /// default, 11); the case's pressure alone 2 (one side: 1).
     #[test]
     fn solves_per_windy_case() {
         let mut w = WindSteps {
@@ -1840,12 +1917,19 @@ mod tests {
         };
         assert_eq!(solves_per_case(&w, 650.0, true), 131);
         assert!(solves_per_case(&w, 650.0, true) > MANY_SOLVES);
+        w.arc = true;
+        assert_eq!(solves_per_case(&w, 650.0, true), 131);
         w.stepped = false;
+        w.arc = false;
         assert_eq!(solves_per_case(&w, 650.0, true), 2);
         w.arc = true;
+        assert_eq!(solves_per_case(&w, 650.0, true), 11);
+        w.band_levels = 0;
         assert_eq!(solves_per_case(&w, 650.0, true), 3);
         w.sides = WindSides::Left;
         assert_eq!(solves_per_case(&w, 650.0, true), 2);
+        w.band_levels = 4;
+        assert_eq!(solves_per_case(&w, 650.0, true), 6);
         w.arc = false;
         assert_eq!(solves_per_case(&w, 650.0, true), 1);
         assert_eq!(solves_per_case(&w, 0.0, true), 1);

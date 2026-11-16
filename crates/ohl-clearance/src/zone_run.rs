@@ -93,10 +93,27 @@ pub fn jumpers_unsafe(
 ) -> bool {
     let stepped = states
         .iter()
-        .any(|s| s.pressure > 0.0 && s.pressure < s.full - 1e-9);
+        .any(|s| !s.band_only && s.pressure > 0.0 && s.pressure < s.full - 1e-9);
     arc.is_some_and(|m| m.jumper <= 0.0)
         && !stepped
         && arcs.iter().any(|a| a.wire.section.starts_with("jumper:"))
+}
+
+/// The note of bands without levels
+/// ([`crate::positions::band_levels_note`]): a case's band, its wind not
+/// stepped, holding no intermediate pressure where the default would.
+pub fn fewer_band_levels(states: &[WindState], cases: &[ArcCase]) -> Option<String> {
+    let none = cases.iter().filter(|c| !c.stepped).any(|c| {
+        c.levels.is_empty()
+            && states.get(c.still).is_some_and(|s| {
+                !crate::positions::band_levels(s.full, crate::positions::BAND_LEVELS).is_empty()
+            })
+    });
+    if none {
+        crate::positions::band_levels_note(0)
+    } else {
+        None
+    }
 }
 
 /// Runs a zone check: the sections the rules need ([`sections_needed`];
@@ -307,6 +324,13 @@ pub fn run_zone_check(
             // the blowouts: said (owner, 2026-11-12: never silent).
             if jumpers_unsafe(arc, &states, &arcs) {
                 report.notes.push(crate::zone::JUMPER_BAND_NOTE.to_owned());
+            }
+            // A band without levels and no steps
+            // (2026-11-16): said.
+            if !arcs.is_empty()
+                && let Some(n) = fewer_band_levels(&states, &cases)
+            {
+                report.notes.push(n);
             }
             // Radial to the points scanned only (owner, 2026-11-12: "yes
             // add the line to the results").

@@ -63,7 +63,7 @@ use ohl_line::jumper::JumperShape;
 /// combination the window allows, never silent).
 pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on their swing band \
      without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside its \
-     band (up to 0.293 m on the example line, measured with 10 Pa steps). Enter a jumper band \
+     band (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m). Enter a jumper band \
      margin for your jumpers, or tick the wind steps (exact at the pressures they solve).";
 
 /// What the results say when the radial check measured to LiDAR points
@@ -523,6 +523,9 @@ pub struct WindState {
     pub full: f64,
     /// Side the wind blows from (`None`: no wind).
     pub side: Option<WindSide>,
+    /// Solved for the swing band only (one of its levels, 2026-11-16:
+    /// [`crate::positions::band_levels`]), not checked itself.
+    pub band_only: bool,
 }
 
 impl WindState {
@@ -556,7 +559,9 @@ impl WindState {
 
 /// The positions of the wires to check: of every case `wanted`, the
 /// pressures of `wind` ([`WindSteps::pressures`]) from each of its sides
-/// (0 Pa once; with the swing arc, still air too).
+/// (0 Pa once; with the swing arc, still air too, and the band's levels
+/// the steps do not solve, marked [`WindState::band_only`]: after the
+/// case's other states).
 pub fn wind_states(
     cases: &[WeatherCase],
     wanted: impl Fn(&str) -> bool,
@@ -570,7 +575,20 @@ pub fn wind_states(
         if wind.arc && full > 0.0 && pressures.first().is_some_and(|p| *p > 0.0) {
             pressures.insert(0, 0.0);
         }
-        for p in pressures {
+        // The swing band's levels (2026-11-16): those not stepped.
+        let levels: Vec<f64> = if wind.arc {
+            crate::positions::band_levels(full, wind.band_levels)
+                .into_iter()
+                .filter(|p| !pressures.contains(p))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let all = pressures
+            .iter()
+            .map(|&p| (p, false))
+            .chain(levels.iter().map(|&p| (p, true)));
+        for (p, band_only) in all {
             let sides: Vec<Option<WindSide>> = if p > 0.0 {
                 wind.sides.sides().iter().copied().map(Some).collect()
             } else {
@@ -593,6 +611,7 @@ pub fn wind_states(
                     pressure: p,
                     full,
                     side,
+                    band_only,
                 });
             }
         }
@@ -706,16 +725,38 @@ pub fn solve_states(
         &part
     };
     let run = budget.start();
+    // Each distinct solve once (2026-11-16): states of cases differing by
+    // their name alone — the steps of cases differing by their pressure
+    // alone, at the same pressure — share theirs, bit for bit
+    // ([`crate::positions::solve_key`]).
+    let mut keys: HashMap<String, usize> = HashMap::new();
+    let mut unique: Vec<usize> = Vec::new();
+    let mut shares: Vec<usize> = Vec::new();
+    let of_state: Vec<usize> = states
+        .iter()
+        .enumerate()
+        .map(|(k, s)| {
+            let u = *keys
+                .entry(crate::positions::solve_key(&s.case))
+                .or_insert_with(|| {
+                    unique.push(k);
+                    shares.push(0);
+                    unique.len() - 1
+                });
+            shares[u] += 1;
+            u
+        })
+        .collect();
     let next = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
-    let results: Mutex<Vec<Option<StateSolve>>> = Mutex::new(vec![None; states.len()]);
+    let results: Mutex<Vec<Option<StateSolve>>> = Mutex::new(vec![None; unique.len()]);
     let mut fe = ohl_wirefe::default_fe_budget();
     if let Some(token) = budget.token() {
         fe = fe.cancel_token(token.clone());
     }
     let threads = std::thread::available_parallelism()
         .map_or(1, |n| n.get())
-        .min(states.len())
+        .min(unique.len())
         .max(1);
     let inner = (std::thread::available_parallelism().map_or(1, |n| n.get()) / threads).max(1);
     let stopped: Mutex<Option<String>> = Mutex::new(None);
@@ -732,7 +773,7 @@ pub fn solve_states(
                         return;
                     }
                     let k = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(state) = states.get(k) else {
+                    let Some(state) = unique.get(k).map(|&s| &states[s]) else {
                         return;
                     };
                     let solved: Vec<Result<SectionShape, String>> =
@@ -757,7 +798,7 @@ pub fn solve_states(
                             .collect()
                     };
                     results.lock().expect("not poisoned")[k] = Some((solved, jumpers));
-                    done.fetch_add(1, Ordering::Relaxed);
+                    done.fetch_add(shares[k], Ordering::Relaxed);
                 }
             });
         }
@@ -770,11 +811,9 @@ pub fn solve_states(
         ));
     }
     let mut out = Solved::default();
-    for (state, r) in states
-        .iter()
-        .zip(results.into_inner().expect("not poisoned"))
-    {
-        let (r, jr) = r.unwrap_or_default();
+    let results = results.into_inner().expect("not poisoned");
+    for (state, &u) in states.iter().zip(&of_state) {
+        let (r, jr) = results[u].clone().unwrap_or_default();
         let mut solved_jumpers = Vec::new();
         for (jumper, r) in line.jumpers.iter().zip(jr) {
             match r {
@@ -1041,8 +1080,9 @@ pub fn check_zones(
                 .push(format!("\"{}\": no class and no ground ticked", rule.name));
             continue;
         }
+        // (The swing band's levels: for the band only.)
         let used: Vec<usize> = (0..states.len())
-            .filter(|&s| rule.applies(&states[s].name))
+            .filter(|&s| !states[s].band_only && rule.applies(&states[s].name))
             .collect();
         if used.is_empty() {
             report.notes.push(format!(
@@ -2353,6 +2393,61 @@ mod tests {
         assert_eq!(states[0].side, None);
         assert_eq!(states[0].describe(), "wind, no wind");
         assert_eq!(states[2].describe(), "wind, 200 of 600 Pa from the right");
+    }
+
+    /// The swing band's levels are states of their own, for the band only
+    /// (2026-11-16); the states of cases differing by their pressure
+    /// alone share their solves, bit for bit (and the progress counts
+    /// every state).
+    #[test]
+    fn band_levels_and_shared_solves_of_the_states() {
+        let wind = WindSteps {
+            stepped: true,
+            step: 100.0,
+            sides: WindSides::Both,
+            arc: true,
+            ..Default::default()
+        };
+        let mut small = windy(300.0);
+        small.name = "smaller".into();
+        let states = wind_states(&[windy(600.0), small], |_| true, &wind);
+        // Stepped by 100 Pa: the levels (120, 240, 360, 480 Pa for 600;
+        // 60, 120, 180, 240 for 300) those steps do not solve, each side.
+        let only: Vec<f64> = states
+            .iter()
+            .filter(|s| s.band_only)
+            .map(|s| s.pressure)
+            .collect();
+        assert_eq!(only.len(), 2 * 4 + 2 * 4, "{only:?}");
+        assert!(only.iter().all(|p| p % 100.0 != 0.0));
+        let (line, library) = example();
+        let done = AtomicUsize::new(0);
+        let solved =
+            solve_states(&line, &library, &states, &[], false, &Budget::new(), &done).unwrap();
+        assert_eq!(
+            done.load(std::sync::atomic::Ordering::Relaxed),
+            states.len()
+        );
+        // The smaller case's states at a pressure the larger's has (still
+        // air, the steps, its blowouts, the levels 120 and 240 Pa): the
+        // same shapes.
+        let mut twins = 0;
+        for (k, s) in states
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.name == "smaller")
+        {
+            let Some(twin) = states
+                .iter()
+                .position(|t| t.name != "smaller" && t.pressure == s.pressure && t.side == s.side)
+            else {
+                continue;
+            };
+            twins += 1;
+            assert!(solved.shapes[k] == solved.shapes[twin], "{}", s.describe());
+        }
+        // 0 Pa; 100, 200, 300, 120 and 240 Pa from each side.
+        assert_eq!(twins, 1 + 5 * 2);
     }
 
     /// A rule takes the sections' spans, the jumpers or both: a point under

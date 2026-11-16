@@ -402,7 +402,7 @@ fn exit_codes() {
         .unwrap();
     let said = String::from_utf8_lossy(&arc.stdout);
     assert!(
-        said.contains("swing arc (band margin 0.3 m, jumpers 0.35 m)"),
+        said.contains("swing arc (band margin 0.3 m, jumpers 0.35 m, 4 levels a side)"),
         "{said}"
     );
     let refused = Command::new(env!("CARGO_BIN_EXE_ohl"))
