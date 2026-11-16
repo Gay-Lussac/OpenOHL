@@ -1042,8 +1042,13 @@ fn paint_other_lines(painter: &egui::Painter, fr: &Frame<'_>) {
         let whole = model.other_lines_whole;
         let d = &other.differs;
         // As the working line: each section in its display cases,
-        // jumpers in the cases shown.
-        for (k, solved) in other.cases.iter().enumerate() {
+        // jumpers in the cases shown, both wind sides.
+        for (k, solved) in other
+            .cases
+            .iter()
+            .enumerate()
+            .flat_map(|(k, c)| c.drawn().map(move |d| (k, d)))
+        {
             for shape in &solved.shapes {
                 if !cases_of
                     .entry(shape.section.as_str())

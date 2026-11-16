@@ -21,12 +21,18 @@ changes *stage 1* only.
   and jumpers that are changed or added (a section also when one of its
   structures is); tick **whole lines** in the Versions menu to draw them
   whole. They are drawn as the line you work on is: structures, strings at
-  their solved clamps, bundles and jumpers, in the same weather cases. A
-  line shown is solved only in the weather cases displayed, in the
-  background, from the solutions of the line you work on with only the
-  sections that differ solved again (2026-10-23; before, every weather case
-  of the project was solved at once, which held the window for a long
-  time). Each line has its own library files (wires, structure types,
+  their solved clamps, bundles and jumpers, in the same weather cases —
+  a case with wind from **both sides**, by the same rule as the line you
+  work on (2026-11-16; see [Display weather
+  cases](desktop-app.md#weather-cases-shown)): as it is and mirrored
+  about the line, once when the mirror is the same wind (from ahead or
+  behind) or another case shown is its mirror. A line shown is solved
+  only in the weather cases displayed, in the background, from the
+  solutions of the line you work on with only the sections that differ
+  solved again (2026-10-23; before, every weather case of the project was
+  solved at once, which held the window for a long time); the mirror of a
+  windy case only while it is drawn, from the mirror of the line you work
+  on — one more such solve per windy case and line shown. Each line has its own library files (wires, structure types,
   insulators, rules…), tracked with it like its objects; a line shown is
   read and solved with its own where they differ from yours — the status
   bar says which. The lines on the ground and the sheets take it whole. When

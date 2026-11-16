@@ -2620,7 +2620,12 @@ the same physics with the wind compared by where it blows) —
 `Solved::mirror_hidden` hides a mirror solved before, `Solved::drawn`
 draws the case and its mirror unless hidden, `Solved::sides` every side
 solved (the lines on the ground take both), `Model::mirrors_changed`
-asks the views to draw again. The checks of the case shown take the case
+asks the views to draw again. The project lines shown next to the line
+(`OtherLine::cases`) hold their mirrors the same way (2026-11-16):
+`Model::want_others` takes `mirror_wanted` of each case, solves the
+mirror from the line's own (`OtherSolve`: the case, its mirror or both,
+each from the line's solution with the differing sections solved again)
+and sets `mirror_hidden`. The checks of the case shown take the case
 as it is only (`Solved::as_shown`, `solved_for(false)`). `side_shown(case,
 side)` right as it is, left mirrored — across with its own direction only
 `wind_from` flips (the direction stays as in the file), at an angle the

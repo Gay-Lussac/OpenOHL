@@ -533,7 +533,9 @@ pub struct OtherLine {
     /// Solved in each weather case of the model (same order): each case
     /// when first wanted, in the background, from the line worked on's
     /// solution with only the sections that differ solved again
-    /// ([`Model::want_others`]); pending until then.
+    /// ([`Model::want_others`]); pending until then. Its mirror as the
+    /// line worked on's: solved when drawn, hidden when no longer
+    /// ([`Model::mirror_wanted`]).
     pub cases: Vec<Solved>,
     /// What differs from the line worked on (as it was when last
     /// compared, [`OtherLine::differs_for`]).
@@ -541,7 +543,7 @@ pub struct OtherLine {
     /// The worked-on line's version `differs` was made against.
     pub differs_for: u64,
     /// Cases being solved: (case, receiver).
-    pub solving: Vec<(usize, std::sync::mpsc::Receiver<Solved>)>,
+    pub solving: Vec<(usize, std::sync::mpsc::Receiver<OtherSolve>)>,
     /// Its own wire library, where its library files differ from the
     /// line worked on's (none: the same; its structure types and
     /// insulators, when they differ, resolved its structures already).
@@ -555,6 +557,17 @@ pub struct OtherLine {
     /// another serial, another line or solution (what the lines on the
     /// ground solved for it are kept by).
     pub serial: u64,
+}
+
+/// What a background solve of a project line shown in one weather case
+/// hands back ([`Model::want_others`]): the case as it is drawn first,
+/// its mirror, or both.
+#[derive(Debug)]
+pub struct OtherSolve {
+    /// The case as it is drawn first; none: solved before.
+    pub main: Option<Solved>,
+    /// Its mirror ([`Solved::mirror`]); none: not drawn, or solved before.
+    pub mirror: Option<Solved>,
 }
 
 /// A project line's own libraries, where its library files differ from
@@ -675,8 +688,9 @@ pub struct Model {
     /// version they started from, the answer.
     pub solving: Vec<(usize, u64, std::sync::mpsc::Receiver<Solved>)>,
     /// A case's mirror shown or hidden since the views took it
-    /// ([`Model::want`]; the cases drawn changed with what is displayed):
-    /// the views drawn again.
+    /// ([`Model::want`], the project lines shown: [`Model::want_others`];
+    /// the cases drawn changed with what is displayed): the views drawn
+    /// again.
     pub mirrors_changed: bool,
     /// Counts the changes of `line` (a solve started before one is
     /// dropped).
@@ -1696,34 +1710,66 @@ impl Model {
     /// a case the line worked on is not solved in yet waits for it. Their
     /// differences are compared again when the line worked on changed.
     ///
-    /// Expected cost: one section solve per differing section and case
-    /// (a new line: none), on background threads.
+    /// Both wind sides as the line worked on's (owner 2026-11-16): each
+    /// case's mirror by the same rule ([`Model::mirror_wanted`]: the same
+    /// cases are drawn), solved when it is drawn — from the line worked
+    /// on's mirror, waiting for it — and hidden when it is no longer
+    /// ([`Model::mirrors_changed`] when that changes).
+    ///
+    /// Expected cost: one section solve per differing section and case,
+    /// twice for a case whose mirror is drawn (a new line: none), on
+    /// background threads.
     pub fn want_others(&mut self, wanted: &[usize], ctx: &eframe::egui::Context) {
         // (Not against a line being dragged: when it is let go.)
-        if self.previewing {
+        if self.previewing || self.other_lines.is_empty() {
             return;
         }
+        let mirrors: Vec<(usize, bool)> = wanted
+            .iter()
+            .filter(|&&k| k < self.cases.len())
+            .map(|&k| (k, self.mirror_wanted(k)))
+            .collect();
         for o in &mut self.other_lines {
             if o.differs_for != self.line_version {
                 o.differs = Differences::between_with(&self.line, &o.line, &o.cables_changed);
                 o.differs_for = self.line_version;
             }
-            for &k in wanted {
-                let (Some(mine), Some(theirs)) = (self.cases.get(k), o.cases.get(k)) else {
+            for &(k, mirror) in &mirrors {
+                let (Some(mine), Some(theirs)) = (self.cases.get(k), o.cases.get_mut(k)) else {
                     continue;
                 };
-                if theirs.ready || !mine.ready || o.solving.iter().any(|(j, _)| *j == k) {
+                if theirs.mirror.is_some() && theirs.mirror_hidden == mirror {
+                    self.mirrors_changed = true;
+                }
+                theirs.mirror_hidden = !mirror;
+                if o.solving.iter().any(|(j, _)| *j == k) {
                     continue;
                 }
-                let mut live = mine.live.clone();
+                // Each side from the line worked on's, when it has it.
+                let from = |s: &Solved| (s.live.clone(), s.case.clone());
+                let main = (!theirs.ready && mine.ready).then(|| from(mine));
+                let side = mine
+                    .mirror
+                    .as_deref()
+                    .filter(|_| mirror && theirs.mirror.is_none())
+                    .map(from);
+                if main.is_none() && side.is_none() {
+                    continue;
+                }
                 let library = o.library.clone().unwrap_or_else(|| self.library.clone());
-                let (line, case) = (o.line.clone(), mine.case.clone());
+                let line = o.line.clone();
                 let dirty: Vec<String> = o.differs.sections.iter().cloned().collect();
                 let (tx, rx) = std::sync::mpsc::channel();
                 let ctx = ctx.clone();
                 std::thread::spawn(move || {
-                    live.update(&line, &library, &dirty);
-                    let _ = tx.send(Solved::from_live(&line, case, live));
+                    let solve = |(mut live, case): (ohl_line::incremental::SolvedLine, _)| {
+                        live.update(&line, &library, &dirty);
+                        Solved::from_live(&line, case, live)
+                    };
+                    let _ = tx.send(OtherSolve {
+                        main: main.map(solve),
+                        mirror: side.map(solve),
+                    });
                     ctx.request_repaint();
                 });
                 o.solving.push((k, rx));
@@ -1731,8 +1777,8 @@ impl Model {
         }
     }
 
-    /// Takes the project lines' cases solved in the background; whether
-    /// any arrived.
+    /// Takes the project lines' cases (and mirrors) solved in the
+    /// background; whether any arrived.
     pub fn poll_others(&mut self) -> bool {
         let mut any = false;
         for o in &mut self.other_lines {
@@ -1740,7 +1786,16 @@ impl Model {
             for (k, rx) in std::mem::take(&mut o.solving) {
                 match rx.try_recv() {
                     Ok(s) if k < o.cases.len() => {
-                        o.cases[k] = s;
+                        let c = &mut o.cases[k];
+                        if let Some(mut main) = s.main {
+                            // Its mirror (none yet, or solved before) kept.
+                            main.mirror = c.mirror.take();
+                            main.mirror_hidden = c.mirror_hidden;
+                            *c = main;
+                        }
+                        if let Some(mirror) = s.mirror {
+                            c.mirror = Some(Box::new(mirror));
+                        }
                         o.serial = next_serial();
                         any = true;
                     }

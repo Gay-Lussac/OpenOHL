@@ -114,9 +114,19 @@ needs a slight rework."*). Built, in active development:
   line](../theory/wind.md#clearances-and-the-views)). A case with its own
   direction checks that wind and its mirror only, not the across
   envelope (said there as an assumption).
-- **Not done (open):** other project lines drawn next to the line still
-  show one side of each case (as before, also with "both"); the lines on
-  the ground take both sides of them.
+- **The project lines shown next to the line** (owner, same day:
+  "yes"): both sides too, by the same rule and code
+  (`Model::want_others` asks `Model::mirror_wanted` for each case, the
+  other line's `Solved::mirror` and `mirror_hidden` as the line's): the
+  mirror solved in the background only while drawn, from the line worked
+  on's mirror with only the sections that differ solved again (waiting
+  for it as the case waits for the line's case), hidden when no longer
+  wanted (`mirrors_changed`); the plan draws their `Solved::drawn` as the
+  3D view did already. Cost: one more such solve per windy case and line
+  shown. The lines on the ground take the mirror they hold instead of
+  solving it again. Nothing in the files changes. Not done: the
+  drawings' other versions (Sheets) still take one side of each case of
+  a project line, as before.
 
 **Structure flexibility, phase 4: calculation level 3 in the structure
 loads** (owner: "Yes"; built, in active development, not approved yet;
