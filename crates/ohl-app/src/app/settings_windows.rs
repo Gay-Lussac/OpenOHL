@@ -571,6 +571,10 @@ pub(super) fn solver_window(ctx: &egui::Context, r: &mut Ready) {
                 r.model.types.as_ref().map(|(t, _)| t),
             );
             ui.separator();
+            // The reference state of the structures (plan of 2026-11-15,
+            // phase 5b): its own buttons, each one undoable command.
+            crate::structure_reference::ui(ui, r);
+            ui.separator();
             // Folded by default (the window keeps its OK in view).
             egui::CollapsingHeader::new("Wind at an angle on the wires")
                 .id_salt("wind-at-an-angle")

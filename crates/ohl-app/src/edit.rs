@@ -83,6 +83,10 @@ impl Model {
         // The creep-stretch weather cases, for sections after creep or load.
         let cases: Vec<_> = self.cases.iter().map(|c| c.case.clone()).collect();
         line.set_weather_cases(&cases);
+        // The reference state of the structures checked against the
+        // libraries and cases now (plan of 2026-11-15, phase 5b): used
+        // only when current.
+        crate::structure_reference::check(self, &mut line);
         Ok(line)
     }
 
@@ -119,9 +123,12 @@ impl Model {
         // Other creep-stretch weather cases (Line › Criteria › Creep-Stretch, or
         // its undo): every section after creep or load changes.
         let all: Vec<String>;
-        // The bimetallic conductor model too.
+        // The bimetallic conductor model too; and the reference state in
+        // use (another one, or none any more): every section.
+        let reference_changed = line.reference_in_use() != self.line.reference_in_use();
         let dirty = if line.creep_stretch != self.line.creep_stretch
             || line.bimetallic != self.line.bimetallic
+            || reference_changed
         {
             all = line.sections.iter().map(|s| s.id.clone()).collect();
             &all
@@ -147,7 +154,8 @@ impl Model {
                 )
             })
             || line.solver != self.line.solver
-            || line.condition_cases != self.line.condition_cases;
+            || line.condition_cases != self.line.condition_cases
+            || reference_changed;
         // The cases the views asked for lately, shown or picked: at once;
         // the others not solved any more, solved again from the new line
         // when wanted (in the background, or by a check).
@@ -268,6 +276,9 @@ impl Model {
             return;
         };
         self.line.structures[k] = self.line.structures[k].moved_to(position);
+        // The reference state no longer matches the line until let go
+        // (checked again then).
+        self.line.reference_stale("a structure being moved");
         self.line_version += 1;
         self.previewing = true;
         let dirty = self.sections_through(id);

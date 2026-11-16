@@ -531,7 +531,12 @@ impl InternalClearancesWindow {
         }
         // The line with the local conditions when ticked (the wind for
         // clearances).
-        let local = crate::local_solve::prepare(&model.line, self.local, LOCAL.0);
+        // The structures and their strings as drawn: the body is not
+        // deflected in the check (a reference state set aside, said).
+        let drawn = model
+            .line
+            .as_drawn(crate::structure_reference::INTERNAL_AS_DRAWN);
+        let local = crate::local_solve::prepare(&drawn, self.local, LOCAL.0);
         let library = model.library.clone();
         let rules = self.rules.clone();
         let bodies = structure_bodies(model);
@@ -578,7 +583,7 @@ impl InternalClearancesWindow {
             let started = std::time::Instant::now();
             let line = local.line();
             let mut solved = Vec::new();
-            let mut notes = local.notes();
+            let mut notes = local.with_reference();
             // Rigid at every calculation level until the structure body is
             // drawn deflected (plan of 2026-11-15, §6.2: a moved conductor
             // against an undeflected body would not be consistent).

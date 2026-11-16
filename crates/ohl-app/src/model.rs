@@ -666,8 +666,13 @@ pub struct Model {
         ohl_structures::InsulatorLibrary,
     )>,
     /// The types' bodies as drawn (levels 2 and 3), shared by their
-    /// structures ([`drawn_bodies`]); made again with the libraries.
+    /// structures ([`drawn_bodies`]); made again with the libraries. The
+    /// structures of a reference state in use drawn deflected, each with
+    /// its own ([`crate::structure_reference::frame`]).
     pub bodies: std::sync::Arc<ohl_structures_fe::drawn::Bodies>,
+    /// The reference state whose deflected bodies are drawn (its key;
+    /// none: the structures as drawn).
+    pub reference_drawn: Option<String>,
     /// The structures merged with their types after the last edits, kept
     /// for the next (with these libraries; a new one with others).
     pub resolve_cache: ohl_line::library::ResolveCache,
@@ -2217,6 +2222,7 @@ impl Model {
         };
         let cases: Vec<WeatherCase> = self.cases.iter().map(|c| c.case.clone()).collect();
         line.set_weather_cases(&cases);
+        crate::structure_reference::check(self, &mut line);
         // Solutions of the line left are dropped, those under way too.
         self.solving.clear();
         self.line_version += 1;
@@ -2418,6 +2424,15 @@ impl Model {
             ohl_cables::Library::load(&library_path(&self.sources)).map_err(|e| e.to_string())?;
         let cases = load_cases(&self.sources)?;
         line.set_weather_cases(&cases);
+        // The reference state of the structures checked with them.
+        let shown: Vec<WeatherCase> = cases.iter().cloned().map(as_shown).collect();
+        crate::structure_reference::check_with(
+            &mut line,
+            &library,
+            types.as_ref().map(|(t, _)| t),
+            &self.sections_folder(),
+            &shown,
+        );
         // The cases solved before (by name, and the first) again; the
         // others when shown.
         let was: Vec<String> = self
@@ -2730,6 +2745,26 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
     let cases = load_cases(&sources)?;
     // The creep-stretch weather cases, for sections after creep or load.
     line.set_weather_cases(&cases);
+    // The reference state of the structures checked before anything is
+    // solved (the cases as shown, as the reference solve takes them).
+    if line.reference.is_some() {
+        let shown: Vec<WeatherCase> = cases.iter().cloned().map(as_shown).collect();
+        let folder = library_dir
+            .as_ref()
+            .map(|w| w.join(library_folder("sections")))
+            .filter(|d| d.is_dir())
+            .unwrap_or_else(|| sections_dir(&sources));
+        crate::structure_reference::check_with(
+            &mut line,
+            &library,
+            types.as_ref().map(|(t, _)| t),
+            &folder,
+            &shown,
+        );
+        if let Some(n) = line.reference_note() {
+            step(n, &mut log);
+        }
+    }
     let missing = line.missing_condition_cases();
     if !missing.is_empty() {
         step(
@@ -2982,6 +3017,7 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         previewing: false,
         usage_marks: Default::default(),
         usage_out_of_date: false,
+        reference_drawn: None,
         other_lines: Vec::new(),
         other_lines_whole: false,
         lines_changed: Vec::new(),

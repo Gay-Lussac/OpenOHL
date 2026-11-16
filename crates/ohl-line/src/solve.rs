@@ -1342,7 +1342,7 @@ pub struct Coupling {
     pub moved: PointMoves,
     /// The moves are the whole displacement from the structures as strung
     /// (the coupled solve of calculation levels 3 and 4): the line's
-    /// reference state is not added ([`crate::reference`]). False (the
+    /// reference state is not added ([`mod@crate::reference`]). False (the
     /// default): a reference state in use moves the points too.
     pub strung: bool,
     /// Also find its stiffness at those points

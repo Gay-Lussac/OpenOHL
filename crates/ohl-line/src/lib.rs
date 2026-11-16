@@ -353,7 +353,7 @@ pub struct Line {
     pub electrical: electrical::ElectricalSettings,
     /// The reference case of the structures and the state solved in it
     /// (plan of 2026-11-15, phase 5b; line file version 22 when set,
-    /// [`reference`]): the level-2 solves take the structures as
+    /// [`mod@reference`]): the level-2 solves take the structures as
     /// deflected there while it is current. None: as drawn (as before).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<reference::StructureReference>,

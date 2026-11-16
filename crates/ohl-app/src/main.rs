@@ -130,6 +130,7 @@ mod structure_app;
 mod structure_desk;
 mod structure_groups;
 mod structure_picker;
+mod structure_reference;
 mod style;
 mod surfaces;
 mod survey_io;

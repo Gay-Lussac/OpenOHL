@@ -265,6 +265,10 @@ pub fn drawn_body<'a>(
     bodies: &'a ohl_structures_fe::drawn::Bodies,
     st: &ohl_line::Structure,
 ) -> Option<&'a ohl_structures_fe::drawn::DrawnBody> {
+    // Its own when drawn deflected (the line's reference state in use).
+    if let Some(b) = bodies.placed(&st.id) {
+        return Some(b);
+    }
     bodies.get(st.structure_type.as_deref()?, st.extension.as_deref())
 }
 

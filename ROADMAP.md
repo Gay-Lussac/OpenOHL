@@ -1382,9 +1382,13 @@ the structures condensed at their attachment points, the interface loop,
 calculation level 3 in the structure loads (never below rigid), and the
 line's setting (Line › Criteria › Calculation options, line file version
 21, `--structures-as`) taken by the structure loads, the wire tensions,
-the string checks and the loads sent to OHL-Structure. Next: the
-clearances taking the level (after the swing-arc band work), level 4
-(phase 6).
+the string checks and the loads sent to OHL-Structure; phase 5b (owner
+2026-11-16) — a **reference state of the structures**: a weather case
+solved once at level 3 and kept with the line (version 22), the
+structures drawn deflected in it and every level-2 solve taking their
+points as moved there while it is current (the LiDAR comparison by
+default). Next: the clearances taking the level (after the swing-arc
+band work), level 4 (phase 6; the reference state then solved there).
 
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications and
