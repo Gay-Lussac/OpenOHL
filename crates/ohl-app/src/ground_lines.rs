@@ -288,21 +288,17 @@ impl<'a> ProjectLine<'a> {
     }
 }
 
-/// Whether `case` has wind (then both its sides count).
-fn windy(case: &WeatherCase) -> bool {
-    case.wind_pressure.si() > 0.0
-}
-
 /// `case` with the wind from the other side: mirrored about the line
-/// ([`crate::model::side_shown`]; a case with its own direction across
+/// ([`crate::model::mirror_case`]; a case with its own direction across
 /// the line from the other side, one at an angle θ from 360° − θ).
 pub fn other_side(case: &WeatherCase) -> WeatherCase {
-    let side = crate::model::shown_side(case).opposite();
-    crate::model::side_shown(case.clone(), side)
+    crate::model::mirror_case(case)
 }
 
 /// The windy weather cases chosen whose other wind side the model does
-/// not hold (the views show one side): (index, that side's case).
+/// not hold (not solved yet, or another case drawn in its place; along
+/// the line, from ahead or behind, there is none): (index, that side's
+/// case).
 pub fn other_sides_wanted(model: &Model, chosen: &[usize]) -> Vec<(usize, WeatherCase)> {
     sides_wanted(&model.cases, chosen)
 }
@@ -313,7 +309,8 @@ fn sides_wanted(cases: &[Solved], chosen: &[usize]) -> Vec<(usize, WeatherCase)>
         .iter()
         .filter_map(|&k| {
             let c = cases.get(k)?;
-            (c.ready && windy(&c.case) && c.mirror.is_none()).then(|| (k, other_side(&c.case)))
+            (c.ready && crate::model::has_mirror(&c.case) && c.mirror.is_none())
+                .then(|| (k, other_side(&c.case)))
         })
         .collect()
 }
@@ -1110,7 +1107,9 @@ pub fn solutions<'a>(
             });
             continue;
         }
-        out.extend(c.drawn().map(|s| (k, s)));
+        // Both sides, its mirror too when another case is drawn in its
+        // place (the lines go round every side).
+        out.extend(c.sides().map(|s| (k, s)));
         out.extend(
             others
                 .iter()

@@ -402,11 +402,14 @@ fn swing_findings(
                 stopped()?;
                 let f = k as f64 / fine.samples as f64;
                 let label = format!(
-                    "{}, swing arc: {:.0} of {:.0} Pa from the {}{suffix}",
+                    "{}, swing arc: {:.0} of {:.0} Pa {}{suffix}",
                     state.name,
                     f * state.full,
                     state.full,
-                    swing.side.as_str()
+                    // Where the full blowout's wind comes from: "from the
+                    // left", a wind at an angle "from 45°" (until
+                    // 2026-11-16 always "from the left" or "right").
+                    state.from()
                 );
                 let wires = fine.wires(arcs, k);
                 for c in &check(&wires, &state.name)? {

@@ -114,7 +114,7 @@ cases with wind).
 | Line › Criteria › Weather cases | this table |
 | Line › Criteria › Merge duplicate weather cases… | cases with the same weather under other names merged into one, everything naming them following; cases the wind's direction alone keeps apart (e.g. a wind from 90° and from 270°, or a case without a direction and one with its own) are not offered — listed under the groups with their directions |
 | Line › Criteria › Weather case groups… | named groups of cases, picked as one in the checks' case lists ([Groups of cases](weather.md#groups-of-cases)) |
-| View › Display weather cases | the cases shown, each named with its wind (e.g. *high wind — from the right (90°)*), and the wind of the cases **without** a direction: from the right (90°, *as each case*), from the left (270°), or both; a case with its own direction always as it is, its mirror (across: the other side; at an angle θ: 360° − θ) drawn with *both* |
+| View › Display weather cases | the cases shown, each named with its wind (e.g. *high wind — from the right (90°)*); every case with wind drawn from both sides (2026-11-16): as it is (without a direction from the right, 90°; with its own direction as given) and its mirror about the line (across: the other side; at an angle θ: 360° − θ) — once when the mirror is the same wind (0°, 180°) or another case shown is the mirror |
 
 ## On the safe side
 

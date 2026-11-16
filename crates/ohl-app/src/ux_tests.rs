@@ -434,7 +434,6 @@ fn tool_windows_dock_and_still_close_with_their_tool() {
         r.display_window = Some(crate::app::DisplayWindow {
             ticks: vec![true; r.model.cases.len()],
             mode: r.model.cases_shown,
-            wind: r.model.wind,
         });
         h.run();
         h.run();

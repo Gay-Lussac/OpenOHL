@@ -82,21 +82,32 @@ pub(crate) fn root() -> PathBuf {
 }
 
 /// Every weather case solved (the application solves the others when
-/// they are shown; the tests look at all of them).
+/// they are shown; the tests look at all of them), a case with wind with
+/// its mirror too (both sides drawn when it is shown, 2026-11-16: no
+/// solve left to the background when a test shows it).
 fn solved_all(mut m: model::Model) -> model::Model {
-    for k in 0..m.cases.len() {
-        m.ensure_solved(k);
-    }
+    solve_every_case(&mut m);
     m
+}
+
+/// [`solved_all`] of `m`.
+fn solve_every_case(m: &mut model::Model) {
+    for k in 0..m.cases.len() {
+        let c = &m.cases[k];
+        if model::has_mirror(&c.case) && !c.solved_for(true) {
+            let case = c.case.clone();
+            m.cases[k] = model::Solved::with_mirror(&m.line, &m.library, case, true);
+        } else {
+            m.ensure_solved(k);
+        }
+    }
 }
 
 /// Works on project line `name`, every weather case solved at once (the
 /// application solves them in the background).
 fn switch(m: &mut model::Model, name: &str) {
     m.switch_line(name).unwrap();
-    for k in 0..m.cases.len() {
-        m.ensure_solved(k);
-    }
+    solve_every_case(m);
 }
 
 /// The Run button of the check window titled `title` (in its footer, at

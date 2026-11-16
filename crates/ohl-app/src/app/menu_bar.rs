@@ -1106,7 +1106,6 @@ pub(super) fn run_command(
                     .map(|k| shown.contains(&k))
                     .collect(),
                 mode: r.model.cases_shown,
-                wind: r.model.wind,
             });
         }
         Command::Table(k) => open_page(dock, Tab::Table(k)),

@@ -18,7 +18,7 @@ use ohl_line::Line;
 use ohl_line::solve::SectionShape;
 use ohl_weather::WeatherCase;
 
-use crate::model::{Model, Solved, WindDisplay};
+use crate::model::{Model, Solved};
 
 /// Per system id (`""`: the earthed wires, no system): its weather case
 /// by name and its calculation (none: the window's).
@@ -138,7 +138,6 @@ pub fn plan(
 pub fn compose(
     line: &Line,
     library: &ohl_cables::Library,
-    wind: WindDisplay,
     shapes: Vec<SectionShape>,
     plan: &[(String, WeatherCase, Calc)],
 ) -> (Vec<SectionShape>, Vec<String>) {
@@ -153,7 +152,7 @@ pub fn compose(
             continue;
         }
         let l = line_for(line, *calc);
-        let s = Solved::with_wind(&l, library, case.clone(), wind);
+        let s = Solved::as_shown(&l, library, case.clone());
         for f in &s.failed {
             notes.push(format!(
                 "\"{}\": not solved: {f}",

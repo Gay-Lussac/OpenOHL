@@ -302,19 +302,74 @@ line).
 
 ## Clearances and the views
 
-A case **without** a direction blows across from the side the view
-chooses (View › Display weather cases: from the right, 90°, as each case;
-from the left, 270°; or both). A case that **gives** its direction —
-across the line (90°, 270°) or at an angle — keeps it as its own
-(2026-11-15): the view never turns it, it is solved, checked and loaded
-as given; with *both* its mirror about the line
-(\\( \theta \to 360° - \theta \\); across: the other side) is drawn too.
-Two cases differing only in their direction (e.g. the two copies of one
-source wind, from 90° and from 270°) are two winds, never one. The
-clearance checks' "both sides" for a case with a direction take the
-direction and its mirror; one side only, the direction alone — never
-turned to the side asked for, which would check another wind than the
-case's (owner, 2026-11-15, question 15).
+**The views** (2026-11-16, the owner's decision: "We should just display
+both sides at once"): every case with wind is drawn **as it is** — a
+case **without** a direction across from the right (90°), a case that
+**gives** its direction (across the line, 90° or 270°, or at an angle)
+as given — **and mirrored about the line**
+(\\( \theta \to 360° - \theta \\); across: the other side). Once only
+when the mirror is the same wind (along the line: 0°, 180°) or another
+case drawn with it is its mirror (e.g. the two copies of one source
+wind, from 90° and from 270°, shown together). There is no side to
+choose any more (until 2026-11-16: "as each case", "from the left",
+"both"). The case as it is is the one reported, checked first and loaded.
+A case with its own direction keeps it (2026-11-15): never turned to a
+side; two cases differing only in their direction are two winds, never
+one.
+
+**The clearance checks** take the same two sides. Their "both sides"
+(the default) for a case without a direction: across from the left and
+from the right; for a case with its own direction: the direction and its
+mirror — across the line the two sides, at an angle θ the winds from θ
+and from 360° − θ, along the line (0°, 180°) the direction once. One
+side only: a case without a direction from that side; a case with its
+own direction, the direction alone — never turned to the side asked for,
+which would check another wind than the case's (owner, 2026-11-15,
+question 15).
+
+- The vertical and radial clearance windows, `ohl zones` and the wire to
+  wire swing arc (`ohl_clearance::zone::wind_states`): as above since
+  2026-11-15; along the line once since 2026-11-16 (before, the same
+  position twice — the same result, counted twice).
+- The danger trees and grow-in, the safety volumes, `ohl analysis` and
+  the distance between conductors under unequal wind
+  (`ohl_clearance::positions::from_side`): until 2026-11-16 the two
+  sides of a case **at an angle** were both the case as it is — the side
+  was set, which a wind at an angle does not read — so its mirror was
+  **never checked** (not on the safe side against the views, which drew
+  it). Now from the right the wind from θ when it comes from the right
+  half (0°–180°), else its mirror, and from the left the other one: each
+  blowout blows the wires to the side named; along the line one blowout.
+  Cases without a direction or with their own across the line: unchanged,
+  bit for bit.
+
+**The swing arc** between still air and the two blowouts
+([Vertical and radial clearances](clearances.md#wind-positions),
+[LiDAR analyses](lidar-analysis.md#wire-positions-checked)) is built from
+the solved positions whatever their wind: for a wind at an angle from
+the blowouts at θ and 360° − θ, along the line from still air to its one
+blowout (no sideways swing — that is the case as given).
+
+- **Assumption (the case's, not an envelope):** a case with its own
+  direction checks that wind and its mirror only. A wind at an angle
+  swings the wires less across the line than the across rule at the same
+  pressure (the part normal to each span), and along the line hardly at
+  all: a wind across the line is **not** checked by such a case. The
+  across rule — every span the full pressure square to itself — stays
+  the default and is the envelope over the horizontal directions at a
+  pressure; a direction is always the user's or a design code's.
+- **Conservative (as for the across rule):** the band runs from the
+  smallest to the largest angle and radius of the three positions and is
+  widened by its margin (0.15 m by default). A wind at an angle also
+  moves the strings along the line; the blowouts hold that (solved), the
+  positions between them lie within the band and its margin — measured
+  2026-11-16 on the example line, both windy cases from 30°, 60° and 0°
+  against their steps of 10 Pa from both sides (3960 positions): a
+  step's centre line lies up to 0.082 m outside the band without its
+  margin (30°: 0.042 m, 60°: 0.082 m, 0°: 0.001 m), against 0.091 m for
+  the same cases across the line — held by the margin
+  (`crates/ohl-clearance/tests/arc_band.rs`). Exact at the pressures
+  solved: the wind steps.
 
 ## Validation
 

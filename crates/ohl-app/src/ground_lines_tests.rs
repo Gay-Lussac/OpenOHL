@@ -767,8 +767,9 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
         h.query_by_label_contains("Weather cases: as displayed (")
             .is_some()
     );
-    // Another case displayed (windy: its wind from the left solved for
-    // the lines in the background, then taken: made once or twice).
+    // Another case displayed (windy: solved in the background with its
+    // mirror, its wind from the left, since 2026-11-16 by the model as
+    // both sides are drawn, then taken: made once to three times).
     let r = h.state_mut().ready().unwrap();
     r.show_cases(vec![windy]);
     settle(&mut h);
@@ -782,7 +783,7 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
         &second
     ));
     let made = r.ground_lines.made;
-    assert!((2..=3).contains(&made), "{made}");
+    assert!((2..=4).contains(&made), "{made}");
     // The same as made here with both wind sides.
     let both = ground_lines::other_sides_now(&r.model, &[windy]);
     let here = ground_lines::compute(&r.model, &[windy], &both, &r.model.ground_lines);
@@ -829,7 +830,9 @@ fn the_option_shows_and_hides_and_follows_the_weather_case() {
 /// solved (at most 20 s).
 fn settle(h: &mut Harness<'_, App>) {
     for _ in 0..1000 {
-        h.run();
+        // (A step: the status bar's spinner repaints while a case and its
+        // mirror are solved, since 2026-11-16 by the model itself.)
+        h.step();
         let r = h.state_mut().ready().unwrap();
         if r.model.solving.is_empty() && !r.ground_lines.solving() {
             break;

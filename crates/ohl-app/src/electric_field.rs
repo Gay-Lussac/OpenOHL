@@ -947,7 +947,7 @@ impl ElectricFieldWindow {
         // A case the app has not solved yet (it solves a case when it is
         // shown): solved for the run, in the background (2026-10-31: the
         // run took no wire and gave 0 kV/m).
-        let unsolved = !solved.solved_for(model.wind) || self.common.calculation.is_some();
+        let unsolved = !solved.solved_for(false) || self.common.calculation.is_some();
         // The systems in cases or calculations of their own (2026-11-01).
         let plan = crate::field_systems::plan(
             model,
@@ -955,7 +955,6 @@ impl ElectricFieldWindow {
             &solved.case,
             self.common.calculation,
         );
-        let wind = model.wind;
         // The ground chosen (2026-11-01), read in the background.
         let ground_source = crate::field_ground::source(model, &self.common.ground_from);
         let settings = self.settings(model);
@@ -988,13 +987,12 @@ impl ElectricFieldWindow {
             ));
             if unsolved {
                 progress.next_step(format!("solving the weather case {}", case.name));
-                let s = crate::model::Solved::with_wind(&line, &library, case.clone(), wind);
+                let s = crate::model::Solved::as_shown(&line, &library, case.clone());
                 shapes = s.shapes;
                 jumpers = s.jumpers;
             }
             let (ground, ground_note) = ground_source.read()?;
-            let (shapes, per_notes) =
-                crate::field_systems::compose(&line, &library, wind, shapes, &plan);
+            let (shapes, per_notes) = crate::field_systems::compose(&line, &library, shapes, &plan);
             let height = |x: f64, y: f64| ground.as_ref().and_then(|t| t.height(x, y));
             let g: Option<&(dyn Fn(f64, f64) -> Option<f64> + Sync)> = ground
                 .as_ref()

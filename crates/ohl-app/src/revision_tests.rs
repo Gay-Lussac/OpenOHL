@@ -83,12 +83,11 @@ fn results_are_out_of_date_after_point_and_line_edits_not_view_settings() {
     assert_eq!(stale(&mut h), [None, None, None]);
     assert!(!h.state_mut().ready().unwrap().view3d.vegetation.stale);
 
-    // View settings: a class hidden, another wind side, another case
-    // shown — nothing out of date.
+    // View settings: a class hidden, another case shown — nothing out of
+    // date.
     {
         let r = h.state_mut().ready().unwrap();
         r.model.hidden_classes.insert(5);
-        r.model.set_wind(crate::model::WindDisplay::Left);
         r.case = r.model.cases.len() - 1;
     }
     h.run_steps(3);

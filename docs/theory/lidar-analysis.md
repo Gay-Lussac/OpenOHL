@@ -119,7 +119,16 @@ in plain words, every setting and what is and is not conservative:
 
 For each weather case chosen (up to a few hundred), each span of each
 section is solved by the line's own solver (finite elements). A case with
-wind is solved with the wind **from the left and from the right**.
+wind is solved with the wind **from the left and from the right**. A case
+with its own wind at an angle θ (2026-11-16): from the right the wind
+from θ when it comes from the right half (0°–180°), else from 360° − θ,
+and from the left the other one — the direction and its mirror, as the
+views draw them; along the line (0°, 180°) once, its arc from still air
+to that blowout. Until 2026-11-16 both sides of such a case were the
+case as it is (only the side was set, which a wind at an angle does not
+read): its mirror was **not checked** — not on the safe side against the
+views. A case with its own direction across the line, or without one:
+unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-and-the-views)).
 
 - **Hot / still air:** the case's own position (a case without wind).
 - **Blowout:** the left and right positions (a case with wind).

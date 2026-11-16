@@ -19,7 +19,9 @@ wire in any of its positions:
 
 - \\( W_k \\): the centre line of position \\( k \\) — each weather case
   chosen as solved by the line's solver (still air as it is; a windy case
-  blown to the left and to the right at its full pressure), and as asked
+  blown to the left and to the right at its full pressure — a wind at an
+  angle θ from θ and from 360° − θ, along the line once, as the danger
+  trees take it, [LiDAR analyses › Wire positions checked](lidar-analysis.md#wire-positions-checked)), and as asked
   for, every **wind step** (still air and every intermediate pressure) and
   the **swing arc** (a band: the solid swept by the
   span swinging rigidly about its attachment axis between the two

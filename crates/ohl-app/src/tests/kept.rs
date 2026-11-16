@@ -11,9 +11,9 @@ use super::*;
 /// The example line with both wind sides solved and the labels ticked.
 fn both_sides() -> model::Model {
     let mut m = synthetic();
-    m.set_wind(model::WindDisplay::Both);
     for k in 0..m.cases.len() {
-        m.ensure_solved(k);
+        let case = m.cases[k].case.clone();
+        m.cases[k] = model::Solved::with_mirror(&m.line, &m.library, case, true);
     }
     assert!(m.cases.iter().any(|c| c.mirror.is_some()));
     m
@@ -98,7 +98,7 @@ fn string_pieces_are_made_once_per_case_and_solution() {
     // A case solved again: its pieces again, the others' kept.
     let windy = m.cases.iter().position(|c| c.mirror.is_some()).unwrap();
     let case = m.cases[windy].case.clone();
-    m.cases[windy] = model::Solved::with_wind(&m.line, &m.library, case, m.wind);
+    m.cases[windy] = model::Solved::with_mirror(&m.line, &m.library, case, true);
     for k in 0..n {
         assert_eq!(
             *crate::selection::string_pieces(&m, k),
@@ -106,13 +106,10 @@ fn string_pieces_are_made_once_per_case_and_solution() {
         );
     }
     assert_eq!(made(), before + 1);
-    // Its other wind side dropped (the line's version counts up with
-    // it): one side's pieces, all made again.
+    // Its other wind side hidden (another case drawn in its place): one
+    // side's pieces, made again.
     let both = crate::selection::string_pieces(&m, windy);
-    m.set_wind(model::WindDisplay::Right);
-    for k in 0..n {
-        m.ensure_solved(k);
-    }
+    m.cases[windy].mirror_hidden = true;
     let one = crate::selection::string_pieces(&m, windy);
     assert_eq!(*one, string_pieces_before(&m, windy));
     assert_ne!(*one, *both);

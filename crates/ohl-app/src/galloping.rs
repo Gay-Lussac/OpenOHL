@@ -236,7 +236,6 @@ impl GallopingWindow {
         let library = model.library.clone();
         let shapes = solved.shapes.clone();
         let weather = solved.case.clone();
-        let wind = model.wind;
         let case = solved.case.name.clone();
         let failed = solved.failed.clone();
         // The scope's sections only (none: the whole line).
@@ -263,7 +262,7 @@ impl GallopingWindow {
             // anew by it.
             if params.calculation.is_some() {
                 let l = ohl_clearance::calculation::line_for(line, params.calculation);
-                let s = crate::model::Solved::with_wind(&l, &library, weather, wind);
+                let s = crate::model::Solved::as_shown(&l, &library, weather);
                 notes.extend(s.failed.iter().map(|f| format!("not solved: {f}")));
                 shapes = s.shapes;
             }
