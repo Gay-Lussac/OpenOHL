@@ -3,7 +3,7 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The line solved with flexible structures: the interface loop and
-//! calculation level 3 (plan of 2026-11-15, phases 3–5; in active
+//! calculation levels 3 and 4 (plan of 2026-11-15, phases 3–6; in active
 //! development). The line's setting is [`crate::SolverOptions::structures`];
 //! the structure loads, the wire tensions, the string checks and the
 //! loads sent to OHL-Structure take it (through `ohl-loads`), the other
@@ -23,7 +23,11 @@
 //!    u_s = C (F − F_ref) (+ the body loads' deflection, none yet), with C
 //!    a structure's flexibility at its points (condensed from its model at
 //!    the stringing state) and F_ref the wires' forces at the stringing
-//!    state ([`reference_forces`]).
+//!    state ([`reference_forces`]); level 4 ([`FullAnswer`]), each
+//!    structure solved in full under F and its own loads, less its solve
+//!    under F_ref, C its tangent at that solution condensed — side by
+//!    side across the structures, each from the last pass's tension-only
+//!    set.
 //! 3. **Mismatch** r = u − u_s.
 //! 4. **Converged** when every point's mismatch is at most
 //!    [`DISPLACEMENT_TOLERANCE`] and every point's force changed by at most
@@ -44,6 +48,16 @@
 //! Structures without a model, or refused, stay rigid and are listed
 //! ([`RigidStructure`]); sections solved by the ruling span are rigid (no
 //! forces of theirs at the points, none moved).
+//!
+//! **Level 4** runs the same loop in two stages ([`solve_line_staged`]):
+//! the linear structures first (level 3, to its convergence), then, from
+//! that state and without another line solve, the full answers; a
+//! structure whose full solve fails is taken linear for the rest of the
+//! case and listed failing ([`FlexibleSolve::full_failed`]); a Newton step
+//! that cannot be taken (the interface system singular, the step not
+//! finite, or its line search spent) falls back to staggered passes
+//! relaxed by Aitken's factor (Irons and Tuck 1969). Its passes have
+//! their own count ([`INTERFACE_PASSES`]).
 
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
@@ -87,7 +101,7 @@ pub const STRUNG: &str = "the coupled solve finds each case's own deflection fro
 /// How a line and its structures are computed together (theory:
 /// Structure flexibility in the line solve). Levels 1 and 2 are the rigid
 /// solves of today (a section's method: ruling span or finite elements);
-/// level 4 is not built.
+/// level 4 the structures' full non-linear models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CalculationLevel {
     /// Structures rigid (calculation levels 1 and 2; the default).
@@ -95,22 +109,25 @@ pub enum CalculationLevel {
     /// Level 3: each flexible structure a linear stiffness at its
     /// attachment points.
     Linear,
+    /// Level 4: each flexible structure its full non-linear model in
+    /// every pass (P-Delta, tension-only members and guys), from level
+    /// 3's solution.
+    Full,
 }
 
 impl CalculationLevel {
-    /// The level of number `n` (2 or 3; 1 is a section's method, 4 not
-    /// built yet).
+    /// The level of number `n` (2, 3 or 4; 1 is a section's method).
     pub fn from_number(n: u8) -> Result<Self, String> {
         match n {
             2 => Ok(Self::Rigid),
             3 => Ok(Self::Linear),
+            4 => Ok(Self::Full),
             1 => Err(
                 "calculation level 1 (the ruling span) is a section's method \
-                      (its calculation), not a run option; give 2 or 3"
+                      (its calculation), not a run option; give 2, 3 or 4"
                     .into(),
             ),
-            4 => Err("calculation level 4 (full structures) is not built yet; give 2 or 3".into()),
-            n => Err(format!("calculation level {n}: give 2 or 3")),
+            n => Err(format!("calculation level {n}: give 2, 3 or 4")),
         }
     }
 
@@ -119,7 +136,13 @@ impl CalculationLevel {
         match self {
             Self::Rigid => 2,
             Self::Linear => 3,
+            Self::Full => 4,
         }
+    }
+
+    /// The structures flexible (level 3 or 4).
+    pub fn flexible(self) -> bool {
+        self != Self::Rigid
     }
 }
 
@@ -137,7 +160,8 @@ pub struct Answer {
 }
 
 /// What a flexible structure answers in the loop: level 3 a fixed linear
-/// matrix ([`LinearStructure`]); level 4 (not built) its non-linear solve.
+/// matrix ([`LinearStructure`]); level 4 its non-linear solve
+/// ([`FullAnswer`]).
 pub trait StructureResponse: Sync {
     /// The placed structure's id.
     fn structure(&self) -> &str;
@@ -222,6 +246,71 @@ impl StructureResponse for LinearStructure {
     }
 }
 
+/// A structure's full non-linear answer in one case's loop (calculation
+/// level 4): [`StructureResponse::answer`] solves it under the forces
+/// (its tangent at the solution as the flexibility), from the last
+/// answer's tension-only set; when its solve fails it answers as its
+/// linear structure (level 3) from then on in this case and says why
+/// ([`FullAnswer::failed`]).
+pub trait FullAnswer: StructureResponse {
+    /// Why its full solve failed in this case (taken linear since); none:
+    /// it did not.
+    fn failed(&self) -> Option<String>;
+    /// Its full solves in this case and their time.
+    fn solves(&self) -> (usize, Duration);
+}
+
+/// Where a level-4 loop is ([`FullProvider::progress`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoopProgress {
+    /// The weather case.
+    pub case: String,
+    /// The line solves so far.
+    pub pass: usize,
+    /// The level of the answers (3 or 4).
+    pub level: u8,
+    /// Structures answered in this pass, of `of`.
+    pub done: usize,
+    /// The structures of the pass.
+    pub of: usize,
+    /// The largest mismatch of the last pass, m (none: none yet).
+    pub mismatch: Option<f64>,
+}
+
+/// The full structures of a line for one case (calculation level 4):
+/// fresh answers per solve (their warm starts and failures are the
+/// case's), in the order of the linear structures they fall back on.
+pub trait FullProvider: Send + Sync {
+    /// The answers for one solve, one per structure of `linear` (in its
+    /// order).
+    fn responses<'a>(&'a self, linear: &'a [LinearStructure]) -> Vec<Box<dyn FullAnswer + 'a>>;
+    /// Told after each structure's answer at level 4 (a progress bar);
+    /// nothing by default.
+    fn progress(&self, _at: &LoopProgress) {}
+    /// What it assumes and leaves out, in words (said with the level's
+    /// notes).
+    fn notes(&self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
+/// [`Structures::full`]: a shared [`FullProvider`] (equal when the same
+/// one).
+#[derive(Clone)]
+pub struct FullModels(pub std::sync::Arc<dyn FullProvider>);
+
+impl std::fmt::Debug for FullModels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FullModels")
+    }
+}
+
+impl PartialEq for FullModels {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 /// A structure taken rigid, and why.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RigidStructure {
@@ -245,6 +334,9 @@ pub struct Structures {
     /// checks at the line's level, plan §4.6); false: left out, said NOT
     /// ON THE SAFE SIDE for leeward clearances.
     pub body_loads: bool,
+    /// Calculation level 4: the flexible structures' full models (none:
+    /// level 3, the linear structures alone).
+    pub full: Option<FullModels>,
 }
 
 /// Exit clauses and tolerances of the loop.
@@ -401,13 +493,23 @@ pub struct PassReport {
     pub halved: bool,
     /// The pass's time.
     pub elapsed: Duration,
+    /// The level of the structures' answers (3 or 4).
+    pub level: u8,
+    /// A line solve (false: the full answers taken at level 3's
+    /// solution, no line solve).
+    pub solved: bool,
+    /// A staggered pass (level 4's fallback when the Newton step could not
+    /// be taken), relaxed by this factor.
+    pub relaxed: Option<f64>,
 }
 
-/// A case solved at calculation level 3.
+/// A case solved at calculation level 3 or 4.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlexibleSolve {
     /// The weather case.
     pub case: String,
+    /// The level (3 or 4).
+    pub level: CalculationLevel,
     /// The sections as solved with the structures flexible, in the line's
     /// order.
     pub sections: Vec<Result<SectionShape, LineError>>,
@@ -428,6 +530,55 @@ pub struct FlexibleSolve {
     /// Its time as estimated after pass 0 (pass 0's time ×
     /// [`EXPECTED_PASSES`]).
     pub estimate: Duration,
+    /// Level 4: every point at level 3's solution, where the full
+    /// answers started (empty at level 3).
+    pub level3: Vec<PointResult>,
+    /// Level 4: the structures whose full solve failed in this case, with
+    /// why — taken linear (level 3) for the rest of it, reported failing.
+    pub full_failed: Vec<RigidStructure>,
+    /// Level 4: the structures' full solves and their time (summed over
+    /// the structures; they run side by side).
+    pub structure_solves: (usize, Duration),
+}
+
+impl FlexibleSolve {
+    /// The line solves made (the passes that solved the line).
+    pub fn line_solves(&self) -> usize {
+        self.passes.iter().filter(|p| p.solved).count()
+    }
+
+    /// Level 4: the largest change of a point's move and of a point's
+    /// force from level 3's solution, in words; none at level 3.
+    pub fn change_from_level3(&self) -> Option<String> {
+        if self.level3.is_empty() {
+            return None;
+        }
+        let (mut moved, mut at_m) = (0.0_f64, String::new());
+        let (mut force, mut at_f) = (0.0_f64, String::new());
+        for (a, b) in self.level3.iter().zip(&self.points) {
+            let d = (0..3)
+                .map(|k| (b.displacement[k] - a.displacement[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            if d > moved {
+                (moved, at_m) = (d, format!(" ({} {})", b.structure, b.label));
+            }
+            if let (Some(x), Some(y)) = (a.flexible, b.flexible) {
+                let size = x.iter().map(|v| v * v).sum::<f64>().sqrt();
+                let d = (0..3).map(|k| (y[k] - x[k]).powi(2)).sum::<f64>().sqrt();
+                let share = if size > 1.0 { d / size } else { 0.0 };
+                if share > force {
+                    (force, at_f) = (share, format!(" ({} {})", b.structure, b.label));
+                }
+            }
+        }
+        Some(format!(
+            "against level 3: the points' moves differ by up to {:.1} mm{at_m}, their forces by \
+             up to {:.2} %{at_f}",
+            moved * 1e3,
+            force * 100.0,
+        ))
+    }
 }
 
 /// A case whose loop did not converge (or could not go on): it fails,
@@ -436,6 +587,8 @@ pub struct FlexibleSolve {
 pub struct FlexibleFailure {
     /// The weather case.
     pub case: String,
+    /// The level asked (3 or 4).
+    pub level: u8,
     /// Why, in words (the worst point and the trend where it applies).
     pub reason: String,
     /// The passes made.
@@ -450,8 +603,8 @@ impl std::fmt::Display for FlexibleFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "case \"{}\": calculation level 3 failed: {} (the rigid results stay, said rigid)",
-            self.case, self.reason
+            "case \"{}\": calculation level {} failed: {} (the rigid results stay, said rigid)",
+            self.case, self.level, self.reason
         )
     }
 }
@@ -496,6 +649,51 @@ pub fn level_three_notes(body: bool) -> Vec<String> {
     notes
 }
 
+/// The notes of every level-4 result (`body`: the structures' own wind
+/// and ice of the case in their solves, [`Structures::body_loads`]).
+pub fn level_four_notes(body: bool) -> Vec<String> {
+    let mut notes: Vec<String> = vec![
+        "calculation level 4 (in active development): each flexible structure solved in full in \
+         every pass (its own P-Delta, stabilisation, tension-only members and guys by their \
+         active set) under the wires' forces at its attachment points, its displacement from its \
+         solve under the stringing state's forces (the structures as drawn are the structures as \
+         strung); started from level 3's solution, the Newton step on each structure's tangent \
+         at its solution"
+            .into(),
+        "interaction at unfactored loads; a load case's factors go on the resulting forces".into(),
+        "NOT ON THE SAFE SIDE for the structures if taken from here: the flexible loads may be \
+         lower than rigid — the structure loads at level 4 keep, per point, the larger of rigid \
+         and flexible"
+            .into(),
+        format!(
+            "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, \
+             {}rigid foundations in the models, P-Delta on the drawn geometry (no large \
+             displacements: a very flexible structure's large rotations are not followed) — the \
+             points may move less than the real structures",
+            if body {
+                ""
+            } else {
+                "the structures' own wind and ice (left out of their solves here), "
+            }
+        ),
+        "a structure whose full solve fails in a case is taken linear (level 3) there and \
+         reported failing in it; a case whose loop does not converge fails"
+            .into(),
+        "the wires' stiffness at the points is approximate (sheaves' sharing, stress-strain \
+         secant, loads per stretched metre, jumpers' pull, shared assemblies): it costs passes, \
+         never accuracy"
+            .into(),
+    ];
+    if body {
+        notes.insert(
+            1,
+            "each flexible structure's own wind and ice of the case in its solves (unfactored)"
+                .into(),
+        );
+    }
+    notes
+}
+
 /// Without the support stiffness (asked for the loop only).
 fn stripped(results: &[Result<SectionShape, LineError>]) -> Vec<Result<SectionShape, LineError>> {
     results
@@ -509,7 +707,9 @@ fn stripped(results: &[Result<SectionShape, LineError>]) -> Vec<Result<SectionSh
         .collect()
 }
 
-/// [`solve_line_coupled`] with level 3's linear structures.
+/// [`solve_line_coupled`] with level 3's linear structures — level 4 when
+/// `structures` has their full models ([`Structures::full`]:
+/// [`solve_line_staged`]).
 pub fn solve_line_flexible(
     line: &Line,
     library: &ohl_cables::Library,
@@ -541,19 +741,38 @@ pub fn solve_line_flexible_broken(
         .iter()
         .map(|s| s as &dyn StructureResponse)
         .collect();
-    let mut notes = level_three_notes(structures.body_loads);
+    let mut notes = match &structures.full {
+        Some(full) => {
+            let mut n = level_four_notes(structures.body_loads);
+            n.extend(full.0.notes());
+            n
+        }
+        None => level_three_notes(structures.body_loads),
+    };
     notes.extend(structures.notes.iter().cloned());
     for s in &structures.flexible {
         for n in &s.notes {
             notes.push(format!("{}: {n}", s.structure));
         }
     }
-    solve_line_coupled(
+    let answers = structures
+        .full
+        .as_ref()
+        .map(|f| f.0.responses(&structures.flexible));
+    let full: Option<Vec<&dyn FullAnswer>> = answers
+        .as_ref()
+        .map(|a| a.iter().map(|b| b.as_ref()).collect());
+    let stage = full.as_deref().map(|answers| FullStage {
+        answers,
+        provider: structures.full.as_ref().map(|f| &*f.0),
+    });
+    solve_line_staged(
         line,
         library,
         case,
         budget,
         &responses,
+        stage,
         &structures.rigid,
         notes,
         options,
@@ -577,11 +796,65 @@ pub fn solve_line_coupled(
     budget: &Budget,
     responses: &[&dyn StructureResponse],
     rigid: &[RigidStructure],
+    notes: Vec<String>,
+    options: &FlexibleOptions,
+    broken: &[(&str, Vec<Break>)],
+) -> Result<FlexibleSolve, FlexibleFailure> {
+    solve_line_staged(
+        line, library, case, budget, responses, None, rigid, notes, options, broken,
+    )
+}
+
+/// Calculation level 4's stage of the loop ([`solve_line_staged`]): the
+/// full answers, one per linear structure (in its order), and who is told
+/// the progress.
+#[derive(Clone, Copy)]
+pub struct FullStage<'a> {
+    /// The full answers.
+    pub answers: &'a [&'a dyn FullAnswer],
+    /// Told the progress (none: nobody).
+    pub provider: Option<&'a dyn FullProvider>,
+}
+
+/// The first relaxation factor of level 4's staggered passes (Aitken's
+/// then, within [`RELAXATION_LIMITS`]).
+pub const RELAXATION_START: f64 = 0.5;
+
+/// The least and the largest relaxation factor of the staggered passes.
+pub const RELAXATION_LIMITS: [f64; 2] = [0.05, 1.0];
+
+/// [`solve_line_coupled`] in stages: the linear structures `responses`
+/// to their convergence (level 3; with `full` none, exactly
+/// [`solve_line_coupled`]), then — level 4 — the full answers of `full`
+/// from that state: answered at the same line solve first (no new one),
+/// then the loop goes on with them, their tangents in the Newton step,
+/// the structures answered side by side; [`INTERFACE_PASSES`] for each
+/// stage. A full answer that fails answers linear from then on (listed in
+/// [`FlexibleSolve::full_failed`]). Where the Newton step of the full
+/// stage cannot be taken (the interface system singular, the step not
+/// finite, its line search spent with the mismatch still growing), the
+/// passes go on staggered: u ← u − ω r, ω by Aitken's rule
+/// (ω_k = −ω_{k−1} r_{k−1}·(r_k − r_{k−1}) / |r_k − r_{k−1}|²,
+/// within [`RELAXATION_LIMITS`]) — said in the notes.
+///
+/// Expected cost: level 3's, then per full pass one line solve and one
+/// full solve of each flexible structure (side by side over the cores)
+/// with a condensation of its tangent; 2–5 passes expected.
+#[allow(clippy::too_many_arguments)]
+pub fn solve_line_staged(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    responses: &[&dyn StructureResponse],
+    full: Option<FullStage<'_>>,
+    rigid: &[RigidStructure],
     mut notes: Vec<String>,
     options: &FlexibleOptions,
     broken: &[(&str, Vec<Break>)],
 ) -> Result<FlexibleSolve, FlexibleFailure> {
     let started = Instant::now();
+    let asked = if full.is_some() { 4 } else { 3 };
     // Each case its own deflection from the structures as strung: a
     // reference state in use is set aside ([`crate::reference`]).
     let drawn = line.as_drawn(STRUNG);
@@ -692,6 +965,101 @@ pub fn solve_line_coupled(
     let norm3 = |x: &DVector<f64>, i: usize| -> f64 {
         (x[3 * i].powi(2) + x[3 * i + 1].powi(2) + x[3 * i + 2].powi(2)).sqrt()
     };
+    let cancelled = || {
+        budget
+            .token()
+            .is_some_and(ohl_core::budget::CancelToken::is_cancelled)
+    };
+    // The structures' answers to the forces `f` (the full ones at level
+    // 4, side by side), C block by block (its rows in the unknowns, its
+    // matrix). Err: a structure that did not answer, in words.
+    let answer_all = |at_full: bool,
+                      f: &DVector<f64>,
+                      pass: usize,
+                      mismatch: Option<f64>|
+     -> Result<(DVector<f64>, Vec<(Vec<usize>, DMatrix<f64>)>), String> {
+        let ids_of = |r: usize| -> Vec<Option<usize>> {
+            let s = responses[r];
+            s.labels()
+                .iter()
+                .map(|l| index.get(&(s.structure().to_owned(), l.clone())).copied())
+                .collect()
+        };
+        let forces_of = |r: usize, ids: &[Option<usize>]| -> Vec<Point> {
+            ids.iter()
+                .enumerate()
+                .map(|(k, i)| match i {
+                    Some(i) if owner[*i] == (r, k) => [f[3 * i], f[3 * i + 1], f[3 * i + 2]],
+                    _ => responses[r].reference()[k],
+                })
+                .collect()
+        };
+        let answers: Vec<Result<Answer, String>> = match full.filter(|_| at_full) {
+            Some(stage) => {
+                let done = std::sync::atomic::AtomicUsize::new(0);
+                let of = stage.answers.len();
+                let items: Vec<usize> = (0..of).collect();
+                crate::jumper::in_parallel_each(&items, |&r| {
+                    if cancelled() {
+                        return Err("cancelled".to_owned());
+                    }
+                    let a = stage.answers[r].answer(&forces_of(r, &ids_of(r)));
+                    let d = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    if let Some(p) = stage.provider {
+                        p.progress(&LoopProgress {
+                            case: case.name.clone(),
+                            pass: pass + 1,
+                            level: 4,
+                            done: d,
+                            of,
+                            mismatch,
+                        });
+                    }
+                    a
+                })
+            }
+            None => (0..responses.len())
+                .map(|r| responses[r].answer(&forces_of(r, &ids_of(r))))
+                .collect(),
+        };
+        let mut us = DVector::<f64>::zeros(n);
+        let mut blocks: Vec<(Vec<usize>, DMatrix<f64>)> = Vec::with_capacity(responses.len());
+        for (r, answer) in answers.into_iter().enumerate() {
+            let s = responses[r];
+            let answer = answer.map_err(|e| {
+                if e == "cancelled" {
+                    e
+                } else {
+                    format!("structure {} did not answer: {e}", s.structure())
+                }
+            })?;
+            let ids = ids_of(r);
+            // Its points the loop owns (a label given twice: once).
+            let own: Vec<(usize, usize)> = ids
+                .iter()
+                .enumerate()
+                .filter_map(|(a, ia)| ia.filter(|&ia| owner[ia] == (r, a)).map(|ia| (a, ia)))
+                .collect();
+            let mut rows = Vec::with_capacity(3 * own.len());
+            let mut block = DMatrix::<f64>::zeros(3 * own.len(), 3 * own.len());
+            for (p, &(a, ia)) in own.iter().enumerate() {
+                for k in 0..3 {
+                    us[3 * ia + k] = answer.displacement[a][k];
+                    rows.push(3 * ia + k);
+                }
+                for (q, &(b, _)) in own.iter().enumerate() {
+                    for i in 0..3 {
+                        for j in 0..3 {
+                            block[(3 * p + i, 3 * q + j)] =
+                                answer.flexibility[(3 * a + i, 3 * b + j)];
+                        }
+                    }
+                }
+            }
+            blocks.push((rows, block));
+        }
+        Ok((us, blocks))
+    };
     let mut passes: Vec<PassReport> = Vec::new();
     let mut rigid_results: Vec<Result<SectionShape, LineError>> = Vec::new();
     let mut rigid_forces: Option<(DVector<f64>, Vec<bool>)> = None;
@@ -700,10 +1068,37 @@ pub fn solve_line_coupled(
                 passes: Vec<PassReport>,
                 rigid: Vec<Result<SectionShape, LineError>>| FlexibleFailure {
         case: case.name.clone(),
+        level: asked,
         reason,
         passes,
         rigid,
         elapsed: started.elapsed(),
+    };
+    // Every point at `u` with the forces `f` (`seen`: which have one).
+    let point_results = |u: &DVector<f64>,
+                         f: &DVector<f64>,
+                         seen: &[bool],
+                         rigid: Option<&(DVector<f64>, Vec<bool>)>|
+     -> Vec<PointResult> {
+        (0..np)
+            .map(|i| {
+                let d = [u[3 * i], u[3 * i + 1], u[3 * i + 2]];
+                PointResult {
+                    structure: points[i].0.clone(),
+                    label: points[i].1.clone(),
+                    displacement: d,
+                    local: local(i, d),
+                    rigid: rigid.and_then(|(f0, seen0)| {
+                        seen0
+                            .get(i)
+                            .copied()
+                            .unwrap_or(false)
+                            .then(|| [f0[3 * i], f0[3 * i + 1], f0[3 * i + 2]])
+                    }),
+                    flexible: seen[i].then(|| [f[3 * i], f[3 * i + 1], f[3 * i + 2]]),
+                }
+            })
+            .collect()
     };
     let mut u = DVector::<f64>::zeros(n);
     let mut accepted_u = DVector::<f64>::zeros(n);
@@ -712,16 +1107,31 @@ pub fn solve_line_coupled(
     let mut step = DVector::<f64>::zeros(n);
     let mut halved = 0_u32;
     let mut missing_noted = false;
+    // Level 4's stage: on, from which pass; level 3's points there; the
+    // staggered fallback and its relaxation.
+    let mut at_full = false;
+    let mut stage_start = 0_usize;
+    let mut level3: Vec<PointResult> = Vec::new();
+    let mut staggered = false;
+    let mut omega = RELAXATION_START;
+    let mut last_r: Option<DVector<f64>> = None;
     for pass in 0.. {
-        if budget
-            .token()
-            .is_some_and(ohl_core::budget::CancelToken::is_cancelled)
-        {
+        if cancelled() {
             return Err(fail(
                 format!("cancelled after {pass} passes"),
                 passes,
                 stripped(&rigid_results),
             ));
+        }
+        if let Some(p) = full.and_then(|s| s.provider) {
+            p.progress(&LoopProgress {
+                case: case.name.clone(),
+                pass: pass + 1,
+                level: if at_full { 4 } else { 3 },
+                done: 0,
+                of: responses.len(),
+                mismatch: passes.last().map(|p| p.displacement_residual),
+            });
         }
         let pass_started = Instant::now();
         let results = match solve(&u) {
@@ -816,143 +1226,146 @@ pub fn solve_line_coupled(
                 }
             }
         }
-        // The structures' answers, C block by block (its rows in the
-        // unknowns, its matrix).
-        let mut us = DVector::<f64>::zeros(n);
-        let mut blocks: Vec<(Vec<usize>, DMatrix<f64>)> = Vec::with_capacity(responses.len());
-        for (r, s) in responses.iter().enumerate() {
-            let ids: Vec<Option<usize>> = s
-                .labels()
-                .iter()
-                .map(|l| index.get(&(s.structure().to_owned(), l.clone())).copied())
-                .collect();
-            let forces: Vec<Point> = ids
-                .iter()
-                .enumerate()
-                .map(|(k, i)| match i {
-                    Some(i) if owner[*i] == (r, k) => [f[3 * i], f[3 * i + 1], f[3 * i + 2]],
-                    _ => s.reference()[k],
-                })
-                .collect();
-            let answer = match s.answer(&forces) {
-                Ok(a) => a,
-                Err(e) => {
+        // The answers to this line solve: once, or (level 4) again with
+        // the full answers where level 3 has converged.
+        let mut solved_now = true;
+        let (r, blocks, residual, worst, grew) = loop {
+            let answered = Instant::now();
+            let (us, blocks) = match answer_all(
+                at_full,
+                &f,
+                pass,
+                passes.last().map(|p| p.displacement_residual),
+            ) {
+                Ok(x) => x,
+                Err(e) if e == "cancelled" => {
                     return Err(fail(
-                        format!("structure {} did not answer: {e}", s.structure()),
+                        format!("cancelled in pass {}", pass + 1),
                         passes,
                         rigid_results,
                     ));
                 }
+                Err(e) => return Err(fail(e, passes, rigid_results)),
             };
-            // Its points the loop owns (a label given twice: once).
-            let own: Vec<(usize, usize)> = ids
-                .iter()
-                .enumerate()
-                .filter_map(|(a, ia)| ia.filter(|&ia| owner[ia] == (r, a)).map(|ia| (a, ia)))
-                .collect();
-            let mut rows = Vec::with_capacity(3 * own.len());
-            let mut block = DMatrix::<f64>::zeros(3 * own.len(), 3 * own.len());
-            for (p, &(a, ia)) in own.iter().enumerate() {
-                for k in 0..3 {
-                    us[3 * ia + k] = answer.displacement[a][k];
-                    rows.push(3 * ia + k);
-                }
-                for (q, &(b, _)) in own.iter().enumerate() {
-                    for i in 0..3 {
-                        for j in 0..3 {
-                            block[(3 * p + i, 3 * q + j)] =
-                                answer.flexibility[(3 * a + i, 3 * b + j)];
-                        }
-                    }
+            let r = &u - &us;
+            let (mut residual, mut worst) = (0.0_f64, None);
+            for i in 0..np {
+                let x = norm3(&r, i);
+                if x > residual {
+                    (residual, worst) = (x, Some(i));
                 }
             }
-            blocks.push((rows, block));
-        }
-        let r = &u - &us;
-        let (mut residual, mut worst) = (0.0_f64, None);
-        for i in 0..np {
-            let x = norm3(&r, i);
-            if x > residual {
-                (residual, worst) = (x, Some(i));
-            }
-        }
-        // The forces' change since the last accepted pass (pass 0: the
-        // change K_w r a move by the mismatch would make).
-        let change = match &accepted_f {
-            Some(prev) => &f - prev,
-            None => &kw * &r,
-        };
-        let mut force_residual = 0.0_f64;
-        let mut force_ok = true;
-        for i in 0..np {
-            let d = norm3(&change, i);
-            force_residual = force_residual.max(d);
-            if d > options
-                .force_tolerance
-                .max(options.relative_force_tolerance * norm3(&f, i))
-            {
-                force_ok = false;
-            }
-        }
-        let grew = pass > 0 && residual > accepted_residual;
-        let pass_time = pass_started.elapsed();
-        passes.push(PassReport {
-            displacement_residual: residual,
-            force_residual,
-            worst: worst.map(|i| points[i].clone()),
-            halved: false,
-            elapsed: pass_time,
-        });
-        if pass == 0 {
-            estimate = pass_time * EXPECTED_PASSES;
-        }
-        if residual <= options.displacement_tolerance && force_ok {
-            // Converged.
-            let (f0, seen0) = rigid_forces.take().unwrap_or_default();
-            let point_results = (0..np)
-                .map(|i| {
-                    let d = [u[3 * i], u[3 * i + 1], u[3 * i + 2]];
-                    PointResult {
-                        structure: points[i].0.clone(),
-                        label: points[i].1.clone(),
-                        displacement: d,
-                        local: local(i, d),
-                        rigid: seen0
-                            .get(i)
-                            .copied()
-                            .unwrap_or(false)
-                            .then(|| [f0[3 * i], f0[3 * i + 1], f0[3 * i + 2]]),
-                        flexible: seen[i].then(|| [f[3 * i], f[3 * i + 1], f[3 * i + 2]]),
-                    }
-                })
-                .collect();
-            let sections = stripped(&results);
-            let mut spans = Vec::new();
-            for (a, b) in rigid_results.iter().zip(&sections) {
-                let (Ok(a), Ok(b)) = (a, b) else { continue };
-                for (s, (x, y)) in a.spans.iter().zip(&b.spans).enumerate() {
-                    spans.push(SpanChange {
-                        section: a.section.clone(),
-                        span: s,
-                        tension: [x.horizontal_tension, y.horizontal_tension],
-                        sag: [x.sag, y.sag],
-                        low: [x.low_point[2], y.low_point[2]],
-                    });
+            // The forces' change since the last accepted pass (pass 0: the
+            // change K_w r a move by the mismatch would make).
+            let change = match &accepted_f {
+                Some(prev) => &f - prev,
+                None => &kw * &r,
+            };
+            let mut force_residual = 0.0_f64;
+            let mut force_ok = true;
+            for i in 0..np {
+                let d = norm3(&change, i);
+                force_residual = force_residual.max(d);
+                if d > options
+                    .force_tolerance
+                    .max(options.relative_force_tolerance * norm3(&f, i))
+                {
+                    force_ok = false;
                 }
             }
-            return Ok(FlexibleSolve {
-                case: case.name.clone(),
-                sections,
-                rigid: rigid_results,
-                points: point_results,
-                spans,
-                passes,
-                rigid_structures: rigid.to_vec(),
-                notes,
-                elapsed: started.elapsed(),
-                estimate,
+            let grew = pass > 0 && residual > accepted_residual;
+            let pass_time = if solved_now {
+                pass_started.elapsed()
+            } else {
+                answered.elapsed()
+            };
+            passes.push(PassReport {
+                displacement_residual: residual,
+                force_residual,
+                worst: worst.map(|i| points[i].clone()),
+                halved: false,
+                elapsed: pass_time,
+                level: if at_full { 4 } else { 3 },
+                solved: solved_now,
+                relaxed: None,
             });
-        }
+            if pass == 0 && solved_now {
+                estimate = pass_time * EXPECTED_PASSES;
+            }
+            if residual <= options.displacement_tolerance && force_ok {
+                if !at_full && full.is_some() {
+                    // Level 3 converged: the full answers from here, at
+                    // this line solve.
+                    level3 = point_results(&u, &f, &seen, rigid_forces.as_ref());
+                    at_full = true;
+                    stage_start = pass;
+                    accepted_residual = f64::INFINITY;
+                    halved = 0;
+                    solved_now = false;
+                    continue;
+                }
+                // Converged.
+                let point_results = point_results(&u, &f, &seen, rigid_forces.as_ref());
+                let sections = stripped(&results);
+                let mut spans = Vec::new();
+                for (a, b) in rigid_results.iter().zip(&sections) {
+                    let (Ok(a), Ok(b)) = (a, b) else { continue };
+                    for (s, (x, y)) in a.spans.iter().zip(&b.spans).enumerate() {
+                        spans.push(SpanChange {
+                            section: a.section.clone(),
+                            span: s,
+                            tension: [x.horizontal_tension, y.horizontal_tension],
+                            sag: [x.sag, y.sag],
+                            low: [x.low_point[2], y.low_point[2]],
+                        });
+                    }
+                }
+                let mut full_failed = Vec::new();
+                let mut structure_solves = (0, Duration::ZERO);
+                if let Some(stage) = full {
+                    for a in stage.answers {
+                        if let Some(why) = a.failed() {
+                            notes.push(format!(
+                                "{} failed at calculation level 4 in case \"{}\": {why} — taken \
+                                 linear (level 3) for the rest of the case; reported failing in \
+                                 it",
+                                a.structure(),
+                                case.name
+                            ));
+                            full_failed.push(RigidStructure {
+                                structure: a.structure().to_owned(),
+                                reason: why,
+                            });
+                        }
+                        let (k, t) = a.solves();
+                        structure_solves.0 += k;
+                        structure_solves.1 += t;
+                    }
+                }
+                return Ok(FlexibleSolve {
+                    case: case.name.clone(),
+                    level: if full.is_some() {
+                        CalculationLevel::Full
+                    } else {
+                        CalculationLevel::Linear
+                    },
+                    sections,
+                    rigid: rigid_results,
+                    points: point_results,
+                    spans,
+                    passes,
+                    rigid_structures: rigid.to_vec(),
+                    notes,
+                    elapsed: started.elapsed(),
+                    estimate,
+                    level3,
+                    full_failed,
+                    structure_solves,
+                });
+            }
+            break (r, blocks, residual, worst, grew);
+        };
+        let pass_time = pass_started.elapsed();
         // Exit clauses.
         let worst_text = |passes: &[PassReport]| -> String {
             let Some(i) = worst else {
@@ -981,11 +1394,12 @@ pub fn solve_line_coupled(
                 ["across the line", "along the line", "vertical"][axis]
             )
         };
-        if pass + 1 >= options.passes {
+        if pass + 1 - stage_start >= options.passes {
             return Err(fail(
                 format!(
-                    "not converged in {} passes{}",
+                    "not converged in {} passes{}{}",
                     options.passes,
+                    if at_full { " at level 4" } else { "" },
                     worst_text(&passes)
                 ),
                 passes,
@@ -1014,42 +1428,87 @@ pub fn solve_line_coupled(
             }
             continue;
         }
+        if grew && at_full && !staggered {
+            staggered = true;
+            notes.push(format!(
+                "level 4, case \"{}\": the Newton step did not lower the mismatch after {} \
+                 halvings (pass {}): staggered passes from there, relaxed by Aitken's factor",
+                case.name,
+                options.halvings,
+                pass + 1
+            ));
+        }
         accepted_u = u.clone();
         accepted_f = Some(f);
         accepted_residual = residual;
         halved = 0;
-        // Newton: (I + C K_w) Δu = −r, C block by block.
-        let mut a = DMatrix::<f64>::identity(n, n);
-        for (rows, block) in &blocks {
-            let mut kr = DMatrix::<f64>::zeros(rows.len(), n);
-            for (k, &row) in rows.iter().enumerate() {
-                kr.row_mut(k).copy_from(&kw.row(row));
-            }
-            let product = block * kr;
-            for (k, &row) in rows.iter().enumerate() {
-                for col in 0..n {
-                    a[(row, col)] += product[(k, col)];
+        let delta = if staggered {
+            None
+        } else {
+            // Newton: (I + C K_w) Δu = −r, C block by block.
+            let mut a = DMatrix::<f64>::identity(n, n);
+            for (rows, block) in &blocks {
+                let mut kr = DMatrix::<f64>::zeros(rows.len(), n);
+                for (k, &row) in rows.iter().enumerate() {
+                    kr.row_mut(k).copy_from(&kw.row(row));
+                }
+                let product = block * kr;
+                for (k, &row) in rows.iter().enumerate() {
+                    for col in 0..n {
+                        a[(row, col)] += product[(k, col)];
+                    }
                 }
             }
-        }
-        let Some(delta) = solve_banded(a, -&r) else {
-            return Err(fail(
-                format!(
-                    "the interface system is singular in pass {pass}{}",
-                    worst_text(&passes)
-                ),
-                passes,
-                rigid_results,
-            ));
+            match solve_banded(a, -&r) {
+                Some(delta) if delta.iter().all(|x| x.is_finite()) => Some(delta),
+                failed if !at_full => {
+                    let why = if failed.is_none() {
+                        format!("the interface system is singular in pass {pass}")
+                    } else {
+                        format!("the Newton step is not finite in pass {pass}")
+                    };
+                    return Err(fail(
+                        if failed.is_none() {
+                            format!("{why}{}", worst_text(&passes))
+                        } else {
+                            why
+                        },
+                        passes,
+                        rigid_results,
+                    ));
+                }
+                _ => {
+                    staggered = true;
+                    notes.push(format!(
+                        "level 4, case \"{}\": the Newton step could not be taken in pass {} \
+                         (the interface system singular, or the step not finite): staggered \
+                         passes from there, relaxed by Aitken's factor",
+                        case.name,
+                        pass + 1
+                    ));
+                    None
+                }
+            }
         };
-        if delta.iter().any(|x| !x.is_finite()) {
-            return Err(fail(
-                format!("the Newton step is not finite in pass {pass}"),
-                passes,
-                rigid_results,
-            ));
-        }
-        step = delta;
+        step = match delta {
+            Some(delta) => delta,
+            None => {
+                // Staggered: u − ω r, ω by Aitken's rule.
+                if let Some(prev) = &last_r {
+                    let dr = &r - prev;
+                    let den = dr.norm_squared();
+                    if den > 0.0 {
+                        omega = (-omega * prev.dot(&dr) / den)
+                            .clamp(RELAXATION_LIMITS[0], RELAXATION_LIMITS[1]);
+                    }
+                }
+                last_r = Some(r.clone());
+                if let Some(last) = passes.last_mut() {
+                    last.relaxed = Some(omega);
+                }
+                -&r * omega
+            }
+        };
         u = &accepted_u + &step;
     }
     unreachable!("the loop returns")

@@ -107,6 +107,9 @@ mod check_level;
 // development: the structure loads, and the checks through
 // `check_level`).
 mod flexibility;
+// Calculation level 4: the structures' full models in the coupled solve
+// (plan of 2026-11-15, phase 6).
+pub mod full;
 mod options;
 // The reference state of the structures (plan of 2026-11-15, phase 5b).
 pub mod reference;
@@ -116,7 +119,7 @@ pub use body::add_structure_loads;
 pub use check_level::{CheckLevel, LevelSolve, LevelTally, prepare_check_level};
 pub use flexibility::{
     FlexibleRun, FlexibleSetup, LoadsSetup, flexible_structures, prepare_structure_loads,
-    solve_line_flexible,
+    prepare_structure_loads_at, solve_line_flexible,
 };
 pub use options::{
     DEFAULT_SNOW_EXPOSURE, DEFAULT_SNOW_SHAPE, DEFAULT_SNOW_THERMAL, IceOn, RemovedWire, SnowOn,
@@ -1551,17 +1554,17 @@ pub struct CaseLoads {
     /// ([`unknown_case_sets`]; the same in every case): never silently
     /// absent from the checks (2026-11-14).
     pub unknown_sets: Vec<UnknownCases>,
-    /// Computed at calculation level 3 ([`structure_loads_at`]): the
+    /// Computed at calculation level 3 or 4 ([`structure_loads_at`]): the
     /// rigid and the flexible solve's loads, the points' moves, the
     /// passes. [`CaseLoads::loads`] is then per component the larger of
     /// the two. None: the rigid solve alone (calculation level 2).
     pub level: Option<FlexibleLoads>,
 }
 
-/// A load case's loads at calculation level 3 ([`CaseLoads::level`]).
+/// A load case's loads at calculation level 3 or 4 ([`CaseLoads::level`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlexibleLoads {
-    /// The calculation level (3).
+    /// The calculation level (3 or 4).
     pub level: u8,
     /// The loads of the rigid solve (calculation level 2), by structure
     /// and point.
@@ -1584,6 +1587,10 @@ pub struct FlexibleLoads {
     /// Why the coupled solve failed (one of a case's solves): its loads
     /// are then the rigid solve's there.
     pub failed: Option<String>,
+    /// Level 4: the structures whose full solve failed in this case
+    /// (structure, why) — taken linear (level 3) there, their usage in it
+    /// reported failing (owner 2026-11-15).
+    pub full_failed: Vec<(String, String)>,
 }
 
 /// A point of a flexible structure moved by a coupled solve
@@ -1704,7 +1711,7 @@ impl CaseLoads {
             each.iter()
                 .map(|b| CheckVariant {
                     words: match level {
-                        Some(3) => format!("span {} broken, level 3", b.span),
+                        Some(n @ (3 | 4)) => format!("span {} broken, level {n}", b.span),
                         Some(_) => format!("span {} broken, rigid", b.span),
                         None => format!("span {} broken", b.span),
                     },
@@ -1729,7 +1736,7 @@ impl CaseLoads {
             if l.flexible_each.is_empty() {
                 if !l.flexible.is_empty() {
                     out.push(CheckVariant {
-                        words: "level 3".into(),
+                        words: format!("level {}", l.level),
                         span: None,
                         level: Some(l.level),
                         loads: &l.flexible,
@@ -2247,8 +2254,9 @@ pub fn structure_loads_at(
         // span of "every").
         let first = fixed.first().and_then(|f| f.1.first().map(|b| b.span));
         let mut each = Vec::new();
-        // Calculation level 3: the structures for this case (their own
-        // wind and ice of the case in their deflection).
+        // Calculation level 3 or 4: the structures for this case (their
+        // own wind and ice of the case in their deflection; level 4 their
+        // full models).
         let flexible = level.map(|l| l.structures_for(&case.name));
         let mut acc = flexible.as_ref().map(|_| LevelAcc::default());
         let (mut loads, failed, mut missing) = match &every {
@@ -2722,8 +2730,14 @@ fn case_loads(
             Ok(solved) => {
                 let info = LevelInfo {
                     points: solved.points.clone(),
-                    passes: solved.passes.len(),
+                    passes: solved.line_solves(),
                     elapsed: solved.elapsed,
+                    full_failed: solved
+                        .full_failed
+                        .iter()
+                        .map(|f| (f.structure.clone(), f.reason.clone()))
+                        .collect(),
+                    from_level3: solved.change_from_level3(),
                 };
                 // The loads act at the structures' points as drawn: the
                 // points' moves are the structures' deflection, not a
@@ -2795,18 +2809,30 @@ struct LevelAcc {
     passes: usize,
     elapsed: std::time::Duration,
     failed: Option<String>,
+    full_failed: Vec<(String, String)>,
+    from_level3: Option<String>,
 }
 
 impl LevelAcc {
     /// The level's loads of the case, and its notes.
     fn finish(self, setup: &LoadsSetup, case: &str) -> (FlexibleLoads, Vec<String>) {
         let s = &setup.setup.structures;
-        let mut notes = vec![
+        let n = setup.level().number();
+        let mut notes = vec![if n == 4 {
+            "calculation level 4 (in active development): the line solved with each flexible \
+             structure in full in every pass (its own P-Delta, tension-only members and guys, \
+             its own wind and ice of the case), from level 3's solution; structure flexibility \
+             at unfactored loads, the case's factors on the resulting forces; the member and \
+             code checks once, on the converged forces"
+                .to_owned()
+        } else {
             "calculation level 3 (in active development): the line solved with each flexible \
              structure a linear stiffness at its attachment points (linearised at the stringing \
              state) and its own wind and ice of the case in its deflection; structure \
              flexibility at unfactored loads, the case's factors on the resulting forces"
-                .to_owned(),
+                .to_owned()
+        }];
+        notes.extend([
             "never below rigid (owner 2026-11-15): each load at a point is per component the \
              larger of the rigid and the flexible solve's, and the structures' checks take both \
              solves each on its own and keep the worse"
@@ -2814,7 +2840,7 @@ impl LevelAcc {
             "the jumpers solved on the structures as drawn (their ends not moved by the \
              structures' deflection)"
                 .to_owned(),
-        ];
+        ]);
         if !s.rigid.is_empty() {
             let mut first: Vec<String> = s
                 .rigid
@@ -2825,13 +2851,26 @@ impl LevelAcc {
             if s.rigid.len() > 10 {
                 first.push(format!("and {} more", s.rigid.len() - 10));
             }
-            notes.push(format!("taken rigid at level 3: {}", first.join("; ")));
+            notes.push(format!("taken rigid at level {n}: {}", first.join("; ")));
         }
         notes.extend(s.notes.iter().cloned());
+        if let Some(full) = &setup.full {
+            for (id, why) in full.linear_only() {
+                notes.push(format!(
+                    "{id}: no full model at level 4 ({why}) — taken linear (level 3)"
+                ));
+            }
+        }
+        for (id, why) in &self.full_failed {
+            notes.push(format!(
+                "{id} failed at calculation level 4 in this case: {why} — taken linear (level 3) \
+                 there; its usage in this case reported failing"
+            ));
+        }
         if let Some(why) = &self.failed {
             notes.push(format!(
-                "calculation level 3 failed in this case: {why} — its loads there are the rigid \
-                 solve's (calculation level 2)"
+                "calculation level {n} failed in this case: {why} — its loads there are the \
+                 rigid solve's (calculation level 2)"
             ));
         } else if !s.flexible.is_empty() {
             let largest = self
@@ -2840,13 +2879,16 @@ impl LevelAcc {
                 .max_by(|a, b| norm(*a.1).total_cmp(&norm(*b.1)));
             if let Some(((st, p), m)) = largest {
                 notes.push(format!(
-                    "level 3: {} structures flexible, {} passes ({:.1?}); largest move {:.1} mm \
-                     at {st} {p}",
+                    "level {n}: {} structures flexible, {} line solves ({:.1?}); largest move \
+                     {:.1} mm at {st} {p}",
                     s.flexible.len(),
                     self.passes,
                     self.elapsed,
                     norm(*m) * 1e3
                 ));
+            }
+            if let Some(c) = &self.from_level3 {
+                notes.push(format!("level 4 {c}"));
             }
         }
         let _ = case;
@@ -2861,7 +2903,7 @@ impl LevelAcc {
             .collect();
         (
             FlexibleLoads {
-                level: 3,
+                level: n,
                 rigid: self.rigid.into_values().collect(),
                 flexible: self.flexible.into_values().collect(),
                 rigid_each: self.rigid_each,
@@ -2875,6 +2917,7 @@ impl LevelAcc {
                 passes: self.passes,
                 elapsed: self.elapsed,
                 failed: self.failed,
+                full_failed: self.full_failed,
             },
             notes,
         )
@@ -2907,6 +2950,14 @@ fn larger_of(out: CaseOut, line: &Line, acc: Option<&mut LevelAcc>, span: Option
             keep(&mut acc.flexible, &mut acc.flexible_each, &flexible);
             acc.passes = acc.passes.max(info.passes);
             acc.elapsed += info.elapsed;
+            for f in info.full_failed {
+                if !acc.full_failed.contains(&f) {
+                    acc.full_failed.push(f);
+                }
+            }
+            if acc.from_level3.is_none() {
+                acc.from_level3 = info.from_level3;
+            }
             for p in info.points {
                 let e = acc.moves.entry((p.structure, p.label)).or_insert([0.0; 3]);
                 if norm(p.local) > norm(*e) {
@@ -2960,6 +3011,8 @@ struct LevelInfo {
     points: Vec<ohl_line::solve::flexible::PointResult>,
     passes: usize,
     elapsed: std::time::Duration,
+    full_failed: Vec<(String, String)>,
+    from_level3: Option<String>,
 }
 
 /// The loads at the structures' points from the line solved in `w`

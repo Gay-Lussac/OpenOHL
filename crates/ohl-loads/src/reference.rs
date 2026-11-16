@@ -11,13 +11,13 @@
 //! - [`solve_reference`]: the case at calculation level 3 (each structure
 //!   with a model a linear stiffness at its points, condensed at the
 //!   stringing state, its own wind and ice of the case in its
-//!   deflection; the structures as drawn are the structures as strung)
-//!   — the points' displacements and forces, the structures taken rigid,
-//!   the fingerprint, and each flexible structure's deflected body.
-//!   Level 4 is not built: [`REFERENCE_LEVEL`] is the one place the
-//!   reference solve's level is chosen — when level 4 exists the solve
-//!   switches to it there (its non-linear structures starting from the
-//!   level-3 state), and a state of another level is out of date.
+//!   deflection; the structures as drawn are the structures as strung),
+//!   or at level 4 (from there, each structure solved in full) when the
+//!   line's setting is full structures ([`reference_level`], the one
+//!   place the level is chosen) — the points' displacements and forces,
+//!   the structures taken rigid, the fingerprint, and each flexible
+//!   structure's deflected body (drawn on the level-3 tangent). A state
+//!   solved at another level than the setting's now is out of date.
 //! - [`check_reference`]: compares the stored fingerprint with the
 //!   inputs now (the line, the wires, the structure types with their
 //!   models and poles and the cross-sections, the case's weather) and
@@ -42,10 +42,16 @@ use ohl_weather::WeatherCase;
 use crate::LoadCase;
 use crate::analysis::Analyses;
 
-/// The calculation level the reference state is solved at: 3 (level 4,
-/// the structures' full non-linear models, is not built yet — the hook:
-/// switch here when it is).
-pub const REFERENCE_LEVEL: CalculationLevel = CalculationLevel::Linear;
+/// The calculation level `line`'s reference state is solved at (phase 6,
+/// 2026-11-16): 4 when its setting (Line › Criteria › Calculation
+/// options, [`ohl_line::SolverOptions::structures`]) is full structures,
+/// else 3 — the user chooses it with that setting.
+pub fn reference_level(line: &Line) -> CalculationLevel {
+    match line.solver.structures.level() {
+        CalculationLevel::Full => CalculationLevel::Full,
+        _ => CalculationLevel::Linear,
+    }
+}
 
 /// Why a check keeps the structures as drawn: the structure loads (rigid,
 /// on the safe side — owner 2026-11-15: never below rigid).
@@ -125,7 +131,7 @@ pub fn fingerprint(
 /// Marks `line`'s reference state current or out of date against the
 /// inputs now (`library`, `types`, `sections`, the weather cases
 /// `weather`): current only when it was solved in the case set now, at
-/// the level the reference solve takes ([`REFERENCE_LEVEL`]), and every
+/// the level the reference solve takes ([`reference_level`]), and every
 /// part of its fingerprint is that of the inputs ([`fingerprint`]); else
 /// out of date with what changed. No state: not checked (said as not
 /// solved). Returns the status set (none: no reference case).
@@ -138,6 +144,7 @@ pub fn check_reference(
     sections: &ohl_sections::SectionLibrary,
     weather: &[WeatherCase],
 ) -> Option<ReferenceStatus> {
+    let level = reference_level(line).number();
     let status = {
         let r = line.reference.as_ref()?;
         match &r.state {
@@ -147,10 +154,10 @@ pub fn check_reference(
                     "solved in case \"{}\", the reference case is now \"{}\"",
                     state.case, r.case
                 )),
-                _ if state.level != REFERENCE_LEVEL.number() => ReferenceStatus::Stale(format!(
-                    "solved at calculation level {}, the reference solve is now at level {}",
-                    state.level,
-                    REFERENCE_LEVEL.number()
+                _ if state.level != level => ReferenceStatus::Stale(format!(
+                    "solved at calculation level {}, the reference solve is now at level {level} \
+                     (Line › Criteria › Calculation options)",
+                    state.level
                 )),
                 None => ReferenceStatus::Stale(format!(
                     "weather case \"{}\" is not among the project's weather cases",
@@ -207,12 +214,14 @@ pub struct ReferenceSolve {
 }
 
 /// `line`'s structures solved in weather case `case` (by name, among
-/// `weather`) at the reference level ([`REFERENCE_LEVEL`]: 3) to keep as
-/// its reference state: the structures set up as the checks at level 3
-/// set them up ([`crate::prepare_check_level`]: condensed at the
-/// stringing state, their own wind and ice of the case in their
-/// deflection), the case solved by the coupled loop (from the structures
-/// as strung: a state already in use is set aside), each flexible
+/// `weather`) at the reference level ([`reference_level`]: 3, or 4 when
+/// the line's setting is full structures) to keep as its reference state:
+/// the structures set up as the checks at that level set them up
+/// ([`crate::prepare_check_level`]: condensed at the stringing state,
+/// their own wind and ice of the case in their deflection; level 4 their
+/// full models besides), the case solved by the coupled loop (from the
+/// structures as strung: a state already in use is set aside), each
+/// flexible
 /// structure's points with their displacement and forces, the
 /// structures taken rigid with why, the fingerprint of the inputs, and
 /// the deflected bodies. `done` told per structure set up, `cancel`
@@ -241,13 +250,14 @@ pub fn solve_reference(
     let drawn = line.as_drawn(ohl_line::solve::flexible::STRUNG);
     let line = &*drawn;
     let started = Instant::now();
+    let at = reference_level(line);
     let level = crate::prepare_check_level(
         line,
         library,
         types,
         sections,
         std::slice::from_ref(w),
-        REFERENCE_LEVEL,
+        at,
         budget,
         done,
         cancel,
@@ -262,12 +272,17 @@ pub fn solve_reference(
     let flexible = match solved.level {
         Some(Ok(f)) => f,
         Some(Err(why)) => return Err(why),
-        None => return Err("no structure set up at calculation level 3".into()),
+        None => {
+            return Err(format!(
+                "no structure set up at calculation level {}",
+                at.number()
+            ));
+        }
     };
     let setup = level
         .setup
         .as_ref()
-        .ok_or("no structure set up at calculation level 3")?;
+        .ok_or_else(|| format!("no structure set up at calculation level {}", at.number()))?;
     let strung = &setup.setup.reference.forces;
     let points: Vec<ReferencePoint> = flexible
         .points
@@ -295,7 +310,7 @@ pub fn solve_reference(
         .collect();
     let mut state = ReferenceState {
         case: case.to_owned(),
-        level: REFERENCE_LEVEL.number(),
+        level: at.number(),
         fingerprint: fingerprint(line, library, types, sections, w),
         points,
         rigid,

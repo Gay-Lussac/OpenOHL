@@ -5,8 +5,7 @@
 //! The structures in the wire solve (`solver.structures`, line file
 //! version 21; plan of 2026-11-15, phase 5): files without it read as
 //! rigid and are written at their own version; linear and full written at
-//! version 21 and read back; full structures (calculation level 4) are
-//! read but refused when a run asks for their level (not built yet).
+//! version 21 and read back, each its calculation level (3 and 4).
 
 use ohl_line::solve::flexible::CalculationLevel;
 use ohl_line::{LINE_FILE_VERSION, Line, StructuresInSolve};
@@ -24,7 +23,7 @@ fn older_files_read_as_rigid_and_keep_their_version() {
     assert_eq!(LINE_FILE_VERSION, 22);
     let line = Line::from_json(&example()).unwrap();
     assert_eq!(line.solver.structures, StructuresInSolve::Rigid);
-    assert_eq!(line.solver.structures.level(), Ok(CalculationLevel::Rigid));
+    assert_eq!(line.solver.structures.level(), CalculationLevel::Rigid);
     let text = line.to_json();
     assert!(
         !text.contains("\"structures\": \""),
@@ -41,9 +40,9 @@ fn linear_and_full_round_trip_at_version_21() {
         (
             StructuresInSolve::Linear,
             "linear",
-            Some(CalculationLevel::Linear),
+            CalculationLevel::Linear,
         ),
-        (StructuresInSolve::Full, "full", None),
+        (StructuresInSolve::Full, "full", CalculationLevel::Full),
     ] {
         line.solver.structures = choice;
         let text = line.to_json();
@@ -56,13 +55,9 @@ fn linear_and_full_round_trip_at_version_21() {
         assert_eq!(back, line);
         assert_eq!(StructuresInSolve::parse(word), Some(choice));
         assert_eq!(choice.as_str(), word);
-        match level {
-            Some(l) => assert_eq!(back.solver.structures.level(), Ok(l)),
-            None => {
-                let why = back.solver.structures.level().unwrap_err();
-                assert!(why.contains("not built yet"), "{why}");
-            }
-        }
+        assert_eq!(back.solver.structures.level(), level);
+        assert_eq!(StructuresInSolve::of_level(level), choice);
+        assert_eq!(CalculationLevel::from_number(level.number()), Ok(level));
         let note = ohl_line::rigid_check_note(&back).unwrap();
         assert!(
             note.starts_with("calculation level 2 (structures rigid): this check does not take"),

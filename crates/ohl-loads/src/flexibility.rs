@@ -719,11 +719,15 @@ pub struct LoadsSetup {
     /// deflection under the structure's own wind and ice of the case,
     /// unfactored, line axes, m.
     pub body: BTreeMap<String, Vec<Vec<ohl_line::Point>>>,
+    /// Calculation level 4: the flexible structures' full models
+    /// ([`crate::full`]; none: level 3).
+    pub full: Option<crate::full::FullSetup>,
 }
 
 impl LoadsSetup {
     /// The structures for load case `case` (its name): each flexible one
-    /// with its own wind and ice of the case in its deflection.
+    /// with its own wind and ice of the case in its deflection (level 4:
+    /// in its full solves too).
     pub fn structures_for(&self, case: &str) -> Structures {
         let mut out = self.setup.structures.clone();
         out.body_loads = true;
@@ -732,7 +736,17 @@ impl LoadsSetup {
                 s.body.clone_from(b);
             }
         }
+        out.full = self.full.as_ref().map(|f| f.for_case(Some(case)));
         out
+    }
+
+    /// The calculation level set up (3, or 4 with the full models).
+    pub fn level(&self) -> CalculationLevel {
+        if self.full.is_some() {
+            CalculationLevel::Full
+        } else {
+            CalculationLevel::Linear
+        }
     }
 }
 
@@ -765,6 +779,41 @@ pub fn prepare_structure_loads(
     done: Option<&(dyn Fn(usize, usize) + Sync)>,
     cancel: Option<&ohl_core::budget::CancelToken>,
 ) -> LoadsSetup {
+    prepare_structure_loads_at(
+        line,
+        library,
+        types,
+        sections,
+        weather,
+        cases,
+        CalculationLevel::Linear,
+        budget,
+        done,
+        cancel,
+    )
+}
+
+/// [`prepare_structure_loads`] at calculation level `level`: 3 as there;
+/// 4 with each flexible structure's full model besides
+/// ([`crate::full`]: its solve under the stringing state's forces, its
+/// cases in its axes), `done` told per structure again. Level 2: as 3
+/// (the caller does not take it).
+///
+/// Expected cost: level 3's, and at level 4 one full solve per flexible
+/// structure more.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_structure_loads_at(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    types: &ohl_structures::StructureLibrary,
+    sections: &ohl_sections::SectionLibrary,
+    weather: &[WeatherCase],
+    cases: &[LoadCase],
+    level: CalculationLevel,
+    budget: &Budget,
+    done: Option<&(dyn Fn(usize, usize) + Sync)>,
+    cancel: Option<&ohl_core::budget::CancelToken>,
+) -> LoadsSetup {
     let cases = crate::expand_directions(cases);
     let mut strung = line.clone();
     strung.set_weather_cases(weather);
@@ -779,14 +828,14 @@ pub fn prepare_structure_loads(
         s.calculation = initial;
     }
     prepare_strung(
-        &strung, library, types, sections, weather, &cases, budget, done, cancel,
+        &strung, library, types, sections, weather, &cases, level, budget, done, cancel,
     )
 }
 
 /// [`prepare_structure_loads`] on `strung`, the line as its stringing
 /// state is solved (its weather cases set, each section's calculation the
 /// one the reference takes), in the load cases `cases` (their wind
-/// directions expanded).
+/// directions expanded), at `level` (4: the full models besides).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn prepare_strung(
     strung: &ohl_line::Line,
@@ -795,6 +844,7 @@ pub(crate) fn prepare_strung(
     sections: &ohl_sections::SectionLibrary,
     weather: &[WeatherCase],
     cases: &[LoadCase],
+    level: CalculationLevel,
     budget: &Budget,
     done: Option<&(dyn Fn(usize, usize) + Sync)>,
     cancel: Option<&ohl_core::budget::CancelToken>,
@@ -803,6 +853,18 @@ pub(crate) fn prepare_strung(
     let (setup, body) = setup_with(
         strung, library, types, &analyses, budget, cases, weather, done, cancel,
     );
+    let full = (level == CalculationLevel::Full).then(|| {
+        crate::full::prepare_full(
+            strung,
+            types,
+            analyses,
+            &setup.structures.flexible,
+            cases,
+            weather,
+            done,
+            cancel,
+        )
+    });
     let mut by_case: BTreeMap<String, Vec<Vec<ohl_line::Point>>> = BTreeMap::new();
     for (k, c) in cases.iter().enumerate() {
         by_case.insert(
@@ -813,6 +875,7 @@ pub(crate) fn prepare_strung(
     LoadsSetup {
         setup,
         body: by_case,
+        full,
     }
 }
 
@@ -830,13 +893,16 @@ pub struct FlexibleRun {
 /// `line` solved in `cases` at calculation level `level` — level 3: its
 /// structures set up ([`flexible_structures`]) and each case's interface
 /// loop ([`ohl_line::solve::flexible::solve_line_flexible`], its default
-/// exit clauses); level 2: the rigid solve of each case (pass 0 alone).
-/// Unfactored, weather cases, the structures' own wind and ice not in
-/// their deflection (the structure loads at level 3:
-/// [`prepare_structure_loads`], [`crate::structure_loads_at`]).
+/// exit clauses); level 4: besides, each flexible structure's full model
+/// ([`crate::full`]) from level 3's solution; level 2: the rigid solve of
+/// each case (pass 0 alone). Unfactored, weather cases, the structures'
+/// own wind and ice not in their deflection (the structure loads at
+/// levels 3 and 4: [`prepare_structure_loads_at`],
+/// [`crate::structure_loads_at`]).
 ///
-/// Expected cost: the setup, then per case 2–5 rigid line solves
-/// (measured: theory, Structure flexibility).
+/// Expected cost: the setup, then per case 2–5 rigid line solves (level
+/// 4: then 2–5 more, each with one full solve per flexible structure;
+/// measured: theory, Structure flexibility).
 pub fn solve_line_flexible(
     line: &ohl_line::Line,
     library: &ohl_cables::Library,
@@ -846,10 +912,27 @@ pub fn solve_line_flexible(
     level: CalculationLevel,
     budget: &Budget,
 ) -> FlexibleRun {
+    let analyses = Analyses::load(types, sections);
     let setup = match level {
         CalculationLevel::Rigid => FlexibleSetup::default(),
-        CalculationLevel::Linear => flexible_structures(line, library, types, sections, budget),
+        CalculationLevel::Linear | CalculationLevel::Full => {
+            flexible_with(line, library, types, &analyses, budget)
+        }
     };
+    let mut structures = setup.structures.clone();
+    if level == CalculationLevel::Full {
+        let full = crate::full::prepare_full(
+            line,
+            types,
+            analyses,
+            &setup.structures.flexible,
+            &[],
+            &[],
+            None,
+            None,
+        );
+        structures.full = Some(full.for_case(None));
+    }
     let options = FlexibleOptions::default();
     let cases = cases
         .iter()
@@ -859,7 +942,7 @@ pub fn solve_line_flexible(
                 library,
                 case,
                 budget,
-                &setup.structures,
+                &structures,
                 &options,
             )
         })

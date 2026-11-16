@@ -20,6 +20,10 @@
 //! per value, the worse of the two (owner 2026-11-15: never less safe
 //! than rigid). A case whose loop does not converge is checked rigid
 //! only, said.
+//!
+//! At level 4 the setup adds each flexible structure's full model
+//! ([`crate::full`]) and the loop goes on from level 3's solution with
+//! the structures solved in full in every pass (phase 6).
 
 use std::time::Duration;
 
@@ -38,9 +42,9 @@ use crate::{LoadCase, LoadsSetup, WEATHER_CASE_PREFIX};
 pub struct CheckLevel {
     /// The level asked.
     pub level: CalculationLevel,
-    /// The structures at level 3 (flexible with their matrices and their
-    /// own wind and ice per weather case, rigid with why); none at
-    /// level 2.
+    /// The structures at level 3 or 4 (flexible with their matrices and
+    /// their own wind and ice per weather case, at level 4 their full
+    /// models; rigid with why); none at level 2.
     pub setup: Option<LoadsSetup>,
     /// Each section's method in the setup (by id): a check solving a
     /// section by another method is solved rigid ([`CheckLevel::refuses`]).
@@ -106,10 +110,12 @@ impl CheckLevel {
     /// `line` solved in weather case `case` at this level: the rigid solve
     /// alone (level 2, or refused: [`CheckLevel::refuses`]), or the
     /// interface loop with the structures flexible, its pass 0 the rigid
-    /// solve (level 3). `budget`: each section's.
+    /// solve (level 3; level 4 from level 3's solution with the structures'
+    /// full models). `budget`: each section's.
     ///
     /// Expected cost: level 2 one line solve; level 3 2–5 (the loop's
-    /// passes).
+    /// passes); level 4 2–5 more, each with a full solve per flexible
+    /// structure (side by side).
     pub fn solve(
         &self,
         line: &Line,
@@ -174,27 +180,47 @@ impl CheckLevel {
             return self.reference.iter().cloned().collect();
         };
         let s = &setup.setup.structures;
+        let n = self.level.number();
         let mut out: Vec<String> = self
             .reference
             .iter()
             .map(|_| {
-                "the line's reference case not used at calculation level 3: each case finds its \
-                 own deflection from the structures as strung (the reference state is the \
-                 level-3 solve of its case; its rigid solve as drawn)"
-                    .to_owned()
+                format!(
+                    "the line's reference case not used at calculation level {n}: each case \
+                     finds its own deflection from the structures as strung (the reference \
+                     state is the coupled solve of its case; its rigid solve as drawn)"
+                )
             })
             .collect();
-        out.extend([
+        out.push(
             "calculation level 3 (in active development): each structure with a model (or a pole \
              with an elasticity) a linear stiffness at its attachment points, linearised at the \
              stringing state (tension-only members and guys as at that state), its own wind and \
              ice of the case in its deflection (unfactored); reference: the structures as drawn \
              are the structures as strung (displacements from the stringing state)"
                 .to_owned(),
+        );
+        if self.level == CalculationLevel::Full {
+            out.push(
+                "calculation level 4 (in active development): from level 3's solution, each \
+                 flexible structure solved in full in every pass (its own P-Delta, tension-only \
+                 members and guys, stabilisation; its own wind and ice of the case, unfactored), \
+                 the structures side by side; a structure whose full solve fails in a case taken \
+                 linear (level 3) there and said"
+                    .to_owned(),
+            );
+            if let Some(full) = &setup.full {
+                for (id, why) in full.linear_only() {
+                    out.push(format!(
+                        "{id}: no full model ({why}) — taken linear (level 3)"
+                    ));
+                }
+            }
+        }
+        out.push(format!(
             "never less safe than rigid (owner 2026-11-15): every value is checked on the rigid \
-             solve and on the level-3 solve of its case, the worse kept"
-                .to_owned(),
-        ]);
+             solve and on the level-{n} solve of its case, the worse kept"
+        ));
         let mut rigid: Vec<String> = s
             .rigid
             .iter()
@@ -223,10 +249,14 @@ impl CheckLevel {
         }
         out.extend(s.notes.iter().cloned());
         out.push(format!(
-            "level 3: set up in {:.1?} ({} condensations); {} case(s) solved at level 3 in \
+            "level {n}: set up in {:.1?} ({} condensations{}); {} case(s) solved at level {n} in \
              {:.1?}, at most {} pass(es){}",
             setup.setup.elapsed,
             setup.setup.condensed,
+            setup.full.as_ref().map_or(String::new(), |f| format!(
+                ", the full models in {:.1?}",
+                f.0.elapsed
+            )),
             tally.cases,
             tally.elapsed,
             tally.passes,
@@ -241,16 +271,28 @@ impl CheckLevel {
         if let Some(c) = change {
             out.push(format!("change against rigid: {c}"));
         }
+        if let Some(c) = &tally.from_level3 {
+            out.push(format!("level 4 {c}"));
+        }
+        for f in &tally.full_failed {
+            out.push(f.clone());
+        }
         for f in &tally.failed {
             out.push(format!("{f} — that case checked on the rigid solve only"));
         }
-        out.push(
+        out.push(if self.level == CalculationLevel::Full {
+            "NOT ON THE SAFE SIDE where a check takes the level-4 solve: the deflection already \
+             present at stringing left out, rigid foundations in the models, P-Delta on the drawn \
+             geometry (no large displacements) — the points may move less than the real \
+             structures"
+                .to_owned()
+        } else {
             "NOT ON THE SAFE SIDE where a check takes the level-3 solve: the deflection already \
              present at stringing left out, rigid foundations in the models, the linearisation \
              stiffer than the case's state where members would go slack — the points move less \
              than the real structures"
-                .to_owned(),
-        );
+                .to_owned()
+        });
         out
     }
 }
@@ -292,7 +334,7 @@ pub fn prepare_check_level(
         .map(|w| LoadCase::from_weather(&w.name))
         .collect();
     let setup = crate::flexibility::prepare_strung(
-        &strung, library, types, sections, weather, &cases, budget, done, cancel,
+        &strung, library, types, sections, weather, &cases, level, budget, done, cancel,
     );
     CheckLevel {
         level,
@@ -344,6 +386,11 @@ pub struct LevelTally {
     pub rigid_elapsed: Duration,
     /// The largest move of a point (m) and where ("T2 A1 in case X").
     pub moved: Option<(f64, String)>,
+    /// Level 4: the largest change from level 3's solution, in words (the
+    /// case's with the largest move change).
+    pub from_level3: Option<String>,
+    /// Level 4: the structures that failed at level 4, per case, in words.
+    pub full_failed: Vec<String>,
 }
 
 impl LevelTally {
@@ -371,6 +418,21 @@ impl LevelTally {
                     if self.moved.as_ref().is_none_or(|(m, _)| d > *m) {
                         self.moved =
                             Some((d, format!("{} {} in {}", p.structure, p.label, s.case)));
+                    }
+                }
+                if let Some(c) = s.change_from_level3()
+                    && self.from_level3.is_none()
+                {
+                    self.from_level3 = Some(format!("in case \"{}\" {c}", s.case));
+                }
+                for f in &s.full_failed {
+                    let line = format!(
+                        "{} failed at calculation level 4 in case \"{}\": {} — taken linear \
+                         (level 3) there",
+                        f.structure, s.case, f.reason
+                    );
+                    if !self.full_failed.contains(&line) {
+                        self.full_failed.push(line);
                     }
                 }
             }

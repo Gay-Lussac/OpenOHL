@@ -877,7 +877,9 @@ fn ties_hiding_compression(s: &Solution, ties: &[Vec<usize>], own: &[f64]) -> Ve
 /// A set solved before in the same phase (a cycle) or [`TENSION_PASSES`]
 /// solves: [`FeError::Unsettled`] ([`solve`] then switches the ties going
 /// round member by member, or keeps the members active). The last
-/// solution and the solves done.
+/// solution and the solves done. (The solver itself goes through
+/// [`settle_from`], which this is with no warm start.)
+#[cfg(test)]
 pub(crate) fn settle<S>(
     model: &Model,
     nonlinear: bool,
@@ -886,7 +888,7 @@ pub(crate) fn settle<S>(
     settle_from(model, nonlinear, None, step)
 }
 
-/// [`settle`] from the set `start` (its tension-only members left out
+/// The active-set iterations above (`settle`) from the set `start` (its tension-only members left out
 /// where true; none, or another length: every member active), the warm
 /// start of [`solve_from`].
 pub(crate) fn settle_from<S>(

@@ -530,8 +530,8 @@ pub struct SolverOptions {
     /// checks that take it (plan of 2026-11-15, phase 5; line file version
     /// 21 when not the default): rigid (levels 1–2, the default), a
     /// linear stiffness at their attachment points (level 3), or their
-    /// full models (level 4, not built yet: refused where a run asks for
-    /// it, [`StructuresInSolve::level`]). A file without it: rigid.
+    /// full models (level 4, [`StructuresInSolve::level`]). A file without
+    /// it: rigid.
     #[serde(default, skip_serializing_if = "StructuresInSolve::is_default")]
     pub structures: StructuresInSolve,
 }
@@ -552,8 +552,8 @@ pub enum StructuresInSolve {
     /// condensed at the stringing state; the others rigid, said.
     Linear,
     /// Full structures (calculation level 4): the structures' non-linear
-    /// models in every pass. Not built yet (phase 6): read and written,
-    /// but a run asking for it is refused with why.
+    /// models in every pass of the coupled solve (P-Delta, tension-only
+    /// members and guys), from level 3's solution; the others rigid, said.
     Full,
 }
 
@@ -597,25 +597,31 @@ impl StructuresInSolve {
                 "structures as a linear stiffness at their attachment points (calculation \
                  level 3)"
             }
-            Self::Full => "full structures (calculation level 4, not built yet)",
+            Self::Full => {
+                "full structures: each structure's full non-linear model at its attachment \
+                 points (calculation level 4)"
+            }
         }
     }
 
-    /// The calculation level a run solves at; full structures (level 4)
-    /// refused with why — not built yet.
-    pub fn level(self) -> Result<solve::flexible::CalculationLevel, String> {
+    /// The calculation level a run solves at.
+    pub fn level(self) -> solve::flexible::CalculationLevel {
         match self {
-            Self::Rigid => Ok(solve::flexible::CalculationLevel::Rigid),
-            Self::Linear => Ok(solve::flexible::CalculationLevel::Linear),
-            Self::Full => Err(FULL_NOT_BUILT.to_owned()),
+            Self::Rigid => solve::flexible::CalculationLevel::Rigid,
+            Self::Linear => solve::flexible::CalculationLevel::Linear,
+            Self::Full => solve::flexible::CalculationLevel::Full,
+        }
+    }
+
+    /// The setting of calculation level `level`.
+    pub fn of_level(level: solve::flexible::CalculationLevel) -> Self {
+        match level {
+            solve::flexible::CalculationLevel::Rigid => Self::Rigid,
+            solve::flexible::CalculationLevel::Linear => Self::Linear,
+            solve::flexible::CalculationLevel::Full => Self::Full,
         }
     }
 }
-
-/// Why a run at full structures (calculation level 4) is refused.
-pub const FULL_NOT_BUILT: &str = "full structures (calculation level 4) are not built yet: \
-    choose rigid or linear stiffness (level 3) in Line › Criteria › Calculation options, or \
-    give --structures-as rigid|linear";
 
 /// The note of a check that does not take the line's calculation level
 /// yet, when the line asks for another than rigid (plan of 2026-11-15,

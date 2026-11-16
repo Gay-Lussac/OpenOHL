@@ -2252,7 +2252,25 @@ pub(crate) fn in_parallel<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + S
     let cores = THREADS
         .with(std::cell::Cell::get)
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
-    let threads = cores.min(items.len() / 8).max(1);
+    on_threads(items, f, cores.min(items.len() / 8).max(1))
+}
+
+/// [`in_parallel`] for few items that each take long (a level-4 pass's
+/// structure solves, 2026-11-16): a thread per item up to the cores (or
+/// the threads [`with_threads`] allows).
+pub(crate) fn in_parallel_each<T: Sync, R: Send>(
+    items: &[T],
+    f: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    let cores = THREADS
+        .with(std::cell::Cell::get)
+        .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()));
+    on_threads(items, f, cores.min(items.len()).max(1))
+}
+
+/// `f` of every item on `threads` threads, each taking the next item when
+/// done; the results in the items' order.
+fn on_threads<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync, threads: usize) -> Vec<R> {
     if threads == 1 {
         return items.iter().map(&f).collect();
     }

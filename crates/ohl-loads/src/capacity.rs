@@ -943,6 +943,32 @@ fn usage_pass(
             }
             (fe, pole)
         };
+        // A structure whose full solve failed at calculation level 4 in
+        // this case: failing there, never a pass (owner 2026-11-15).
+        let (mut fe, mut pole) = (fe, pole);
+        if let Some((_, why)) = r
+            .level
+            .as_ref()
+            .and_then(|l| l.full_failed.iter().find(|(s, _)| s == id))
+        {
+            let failing = |method: Method, before: Option<Check>| Check {
+                method,
+                usage: f64::INFINITY,
+                governs: format!(
+                    "failed at calculation level 4: {why} — unstable under the loads with the \
+                     line (taken linear there){}",
+                    before.map_or(String::new(), |c| format!("; its check: {}", c.governs))
+                ),
+                incomplete: false,
+                approximate: false,
+                not_safe: 0,
+            };
+            if fe.is_none() && pole.is_some() {
+                pole = Some(failing(Method::Pole, pole.take()));
+            } else {
+                fe = Some(failing(Method::Fe, fe.take()));
+            }
+        }
         let missing: Vec<crate::MissingWire> = r.missing_at(id).cloned().collect();
         let mark = |c: Option<Check>| {
             c.map(|mut c| {
