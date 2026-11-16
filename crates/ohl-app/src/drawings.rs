@@ -1143,17 +1143,29 @@ impl Input {
                     .filter_map(|(name, _, _)| {
                         let k = model.cases.iter().position(|c| &c.case.name == name)?;
                         let c = o.cases.get(k)?;
-                        if c.ready {
-                            Some((name.clone(), c.shapes.clone(), c.jumpers.clone()))
+                        // Both wind sides, as the main line and the views
+                        // draw them (Model::mirror_wanted; owner
+                        // 2026-11-16).
+                        let mirror = model.mirror_wanted(k);
+                        let sides = |s: &crate::model::Solved| {
+                            (
+                                name.clone(),
+                                s.drawn().flat_map(|c| c.shapes.clone()).collect(),
+                                s.drawn().flat_map(|c| c.jumpers.clone()).collect(),
+                            )
+                        };
+                        if c.solved_for(mirror) {
+                            Some(sides(c))
                         } else {
-                            // Not solved in that case yet (shown in
-                            // others): solved here.
-                            let s = crate::model::Solved::new(
+                            // Not solved in that case (or its mirror) yet
+                            // (shown in others): solved here.
+                            let s = crate::model::Solved::with_mirror(
                                 &o.line,
                                 &model.library,
                                 model.cases[k].case.clone(),
+                                mirror,
                             );
-                            Some((name.clone(), s.shapes, s.jumpers))
+                            Some(sides(&s))
                         }
                     })
                     .collect(),

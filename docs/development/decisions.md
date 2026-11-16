@@ -124,9 +124,9 @@ needs a slight rework."*). Built, in active development:
   wanted (`mirrors_changed`); the plan draws their `Solved::drawn` as the
   3D view did already. Cost: one more such solve per windy case and line
   shown. The lines on the ground take the mirror they hold instead of
-  solving it again. Nothing in the files changes. Not done: the
-  drawings' other versions (Sheets) still take one side of each case of
-  a project line, as before.
+  solving it again. Nothing in the files changes. The
+  drawings' other versions (Sheets) draw a project line's both sides
+  too, as the line itself (`Solved::with_mirror` when not yet solved).
 
 **Structure flexibility, phase 4: calculation level 3 in the structure
 loads** (owner: "Yes"; built, in active development, not approved yet;
