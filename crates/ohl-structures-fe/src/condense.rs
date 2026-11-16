@@ -245,6 +245,16 @@ impl fmt::Display for Rigid {
 
 impl std::error::Error for Rigid {}
 
+/// The offset below which the note "taken as the joint's translation
+/// only" is not said, m (2026-11-16): 1 cm. Imported structures place their
+/// points at positions rounded to whole centimetres, so a point meant to
+/// be on a joint lies up to some millimetres off it; the rotation of such
+/// an offset moves the point by the joint's rotation times the offset —
+/// 0.1 mm for 1 cm at 0.012 rad, the largest rotation measured on a real
+/// line's towers under 500 Pa. Only the note: the rotation is left out
+/// at every offset as before (nothing computed changes).
+pub const OFFSET_NOTE_TOLERANCE: f64 = 0.01;
+
 /// Where one or more attachment points are in the model: a node and the
 /// offset whose rotation moves them (zero: the node's translation only).
 #[derive(Debug, Clone, PartialEq)]
@@ -523,7 +533,11 @@ pub fn condense_with(
             };
             node = Some(l.node);
             moments[k] = l.moment;
-            left_out |= load.moment != [0.0; 3] && !load.moment_applied;
+            // (Said only beyond the note's tolerance: a smaller offset is
+            // the rounding of imported positions; its rotation is left
+            // out all the same.)
+            let arm = load.moment.iter().map(|m| m * m).sum::<f64>().sqrt();
+            left_out |= arm > OFFSET_NOTE_TOLERANCE && !load.moment_applied;
         }
         let node = node.expect("three loads");
         if !model.bar_joint_free(node).is_empty() {

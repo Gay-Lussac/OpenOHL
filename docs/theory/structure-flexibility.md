@@ -190,7 +190,13 @@ link: where a member that is always a frame meets the joint, the unit
 force carries its moment r × F and the point moves by
 \\( \mathbf u + \boldsymbol\theta \times \mathbf r \\); where only bars meet it, the
 moment is left out (as the check leaves it out) and the point moves with
-the joint's translation only — said in the notes. Points whose unit loads
+the joint's translation only — said in the notes when the offset is
+longer than 1 cm (`OFFSET_NOTE_TOLERANCE`, since 2026-11-16: imported
+structures place their points at positions rounded to whole
+centimetres, so millimetre offsets on such joints are rounding; their
+rotation would move the point by about 0.1 mm at the largest tower
+rotation measured on a real line under 500 Pa, 0.012 rad — only the note
+changed, nothing computed). Points whose unit loads
 are the same (several points on one joint without a turned offset) share
 one block of the matrices.
 
