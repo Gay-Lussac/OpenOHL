@@ -267,7 +267,7 @@ fn groups_round_trip_at_version_18() {
     line.structure_groups.push(g);
     line.structure_groups
         .push(group("nothing", &[], GroupRules::default()));
-    assert_eq!(LINE_FILE_VERSION, 22);
+    assert_eq!(LINE_FILE_VERSION, 23);
     let text = line.to_json();
     assert!(text.contains("\"version\": 18"), "{text}");
     assert!(text.contains("\"structure_groups\""));

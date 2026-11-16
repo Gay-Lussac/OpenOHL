@@ -2468,6 +2468,7 @@ impl Calculation for FlexibleSupport {
                 flexibility,
                 reference: vec![f_ref],
                 body: vec![[0.0; 3]],
+                feet: Vec::new(),
                 approximate: false,
                 notes: Vec::new(),
             }],

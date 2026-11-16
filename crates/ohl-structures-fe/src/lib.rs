@@ -37,6 +37,7 @@ pub mod condense;
 pub mod design;
 pub mod drawn;
 mod element;
+pub mod feet;
 pub mod links;
 pub mod member_ends;
 pub mod model;

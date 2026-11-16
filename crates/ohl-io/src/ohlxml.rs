@@ -438,6 +438,9 @@ fn write_structure(out: &mut String, s: &Structure) {
         local,
         load_cases,
         no_load_cases,
+        // (Not in OHL XML: the measured foot movements are kept in the line
+        // file, version 23.)
+        foot_movements: _,
         fields,
     } = s;
     out.push_str("  <structure");
@@ -1123,6 +1126,7 @@ pub fn to_xml(line: &Line) -> String {
         // The reference state of the structures (line file version 22)
         // is not exchanged: solved again where the structures' models are.
         reference: _,
+        feet_state: _,
         condition_cases: _,
     } = line;
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<line");
@@ -2055,6 +2059,8 @@ fn read_structure(e: &Element) -> Result<Structure, String> {
             })
             .collect::<Result<_, String>>()?,
         no_load_cases: flag(e, "no_load_cases")?,
+        // (Not in OHL XML: kept in the line file, version 23.)
+        foot_movements: None,
         id,
         fields: read_fields(e)?,
     })
@@ -2783,6 +2789,7 @@ pub fn from_element(root: &Element) -> Result<Line, String> {
         display,
         creep_stretch,
         reference: None,
+        feet_state: Default::default(),
         condition_cases: Default::default(),
         spacers: root
             .children_named("spacer")

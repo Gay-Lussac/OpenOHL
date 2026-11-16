@@ -37,6 +37,11 @@
 //!   pole's drag), the case's strength factor, P-Delta when the pole gives
 //!   its modulus. The ice on members is not on the pole (said in the
 //!   case's notes: the pole check takes no ice of its own).
+//! - **The placed structure's measured foot movements** (line-values
+//!   version 11, owner 2026-11-16; [`RunInput::feet`]): put on the
+//!   model's supports by the line's rule ([`ohl_structures_fe::feet`]) —
+//!   each member's larger usage of with and without them, said; a pole's
+//!   tilted base leans it (the larger usage of leaning and upright).
 
 use std::path::Path;
 
@@ -70,6 +75,26 @@ pub struct RunInput<'a> {
     /// The bolt library its connections' bolts are looked up in (none:
     /// the libraries in `Bolts/` beside it, in `dir`; no `dir`: none).
     pub bolts: Option<&'a BoltLibrary>,
+    /// The placed structure's measured foot movements (from the line;
+    /// none: as designed).
+    pub feet: Option<&'a ohl_structure_loads::PlacedFeet>,
+}
+
+/// The foot movements of `input` as the engine takes them (empty: none).
+fn foot_moves(input: &RunInput) -> Vec<ohl_structures_fe::feet::FootMove> {
+    input
+        .feet
+        .map(|f| {
+            f.feet
+                .iter()
+                .map(|x| ohl_structures_fe::feet::FootMove {
+                    joint: x.joint.clone(),
+                    displacement: x.displacement(),
+                })
+                .filter(|x| x.displacement != [0.0; 6])
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// A section the model uses.
@@ -727,7 +752,7 @@ fn pole_case(
     }
     // The pole's own weight in the P-Delta model times the case's
     // self-weight factor, as the members' (physics review 2026-10-26).
-    let c = ohl_structures_fe::check_pole_factored(
+    let mut c = ohl_structures_fe::check_pole_factored(
         pole,
         &loads,
         wind,
@@ -736,6 +761,40 @@ fn pole_case(
         true,
         budget,
     )?;
+    // Its base tilted (the line's measured foot movements): the larger
+    // usage of leaning and upright.
+    match ohl_structures_fe::feet::pole_base(&foot_moves(input)) {
+        Ok(Some(base)) => {
+            let lean = ohl_structures_fe::feet::pole_lean(base);
+            if lean != [0.0; 2] {
+                let leaning = ohl_structures_fe::check_pole_leaning(
+                    pole,
+                    &loads,
+                    wind,
+                    case.strength,
+                    case.self_weight,
+                    lean,
+                    true,
+                    budget,
+                )?;
+                notes.push(format!(
+                    "its base tilted by the line's foot movements ({:.3}° to the right, {:.3}° \
+                     ahead): the larger usage of leaning ({:.3}) and upright ({:.3})",
+                    lean[0].to_degrees(),
+                    lean[1].to_degrees(),
+                    leaning.usage,
+                    c.usage
+                ));
+                if ohl_structures_fe::check::usage_order(leaning.usage, c.usage).is_ge() {
+                    c = leaning;
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(e) => notes.push(format!(
+            "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}"
+        )),
+    }
     Ok(PoleResult {
         usage: c.usage,
         height: c.height,
@@ -800,6 +859,32 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     if let Some(m) = &model {
         run.sections = sections_of(m);
     }
+    // The placed structure's measured foot movements on the model's
+    // supports (the line's rule).
+    let moves = foot_moves(input);
+    let feet: Vec<ohl_structures_fe::Prescribed> = match (&model, moves.is_empty()) {
+        (Some(m), false) => match ohl_structures_fe::feet::on_supports(m, &moves) {
+            Ok(on) => {
+                if let Some(f) = input.feet {
+                    run.notes.push(format!(
+                        "foot movements from the line, {}: imposed on the model's supports — \
+                         each member's larger usage of with and without them (a settlement's \
+                         forces on the safe side)",
+                        f.summary()
+                    ));
+                }
+                run.notes.extend(on.notes);
+                on.prescribed
+            }
+            Err(e) => {
+                run.notes.push(format!(
+                    "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}"
+                ));
+                Vec::new()
+            }
+        },
+        _ => Vec::new(),
+    };
     if model.is_none() && pole.is_none() {
         return Err("the structure has no members, no model file and no pole".into());
     }
@@ -871,6 +956,10 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                     l
                 }
                 _ => Default::default(),
+            };
+            let extra = ohl_structures_fe::Loads {
+                prescribed: feet.clone(),
+                ..extra
             };
             analyse_one(m, input.table, c, &extra, budget).map(|(mut r, solution)| {
                 r.notes.extend(notes);

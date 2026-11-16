@@ -131,17 +131,20 @@ impl Placed {
 
     /// A line-values file without values, saying why.
     pub fn pending(&self, why: &str) -> Result<(), String> {
-        self.pending_with(why, &[])
+        self.pending_with(why, &[], None)
     }
 
-    /// [`Placed::pending`] with the placed structure's own links.
+    /// [`Placed::pending`] with the placed structure's own links and its
+    /// measured foot movements (version 11).
     pub fn pending_with(
         &self,
         why: &str,
         links: &[ohl_structure_loads::PlacedLink],
+        feet: Option<ohl_structure_loads::PlacedFeet>,
     ) -> Result<(), String> {
         let mut v = PlacedValues::pending(&self.structure, &self.line, &self.structure_type, why);
         v.links = links.to_vec();
+        v.feet = feet;
         v.at_needed_version().save(&self.values)
     }
 
@@ -317,7 +320,11 @@ impl LineInputs {
                 let r = match &loads {
                     Ok(l) => p.write_with(l, &self.line, links),
                     Err(e) => p
-                        .pending_with(&format!("no values from the line: {e}"), links)
+                        .pending_with(
+                            &format!("no values from the line: {e}"),
+                            links,
+                            ohl_structure_link::placed_feet(&self.line, &p.structure),
+                        )
                         .and(Err(e.clone())),
                 };
                 r.err()

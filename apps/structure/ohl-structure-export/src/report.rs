@@ -605,6 +605,7 @@ pub fn from_text(input: &FromText) -> Result<Report, String> {
             cases: &cases,
             extension: input.extension,
             bolts: None,
+            feet: None,
         },
         &budget,
     )?;

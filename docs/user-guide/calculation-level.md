@@ -173,10 +173,68 @@ Check those at level 3, where each case finds its own deflection.
 | The As-built wires window unticked | its **Structures** switch (below) |
 | Sections solved by the ruling span | their points are not moved |
 
-**Draw the structures as designed (or as strung).** The reference state
-adds the reference case's deflection to the structures as drawn. A model
-whose attachment points were placed from a scan taken in the reference
-case already leans as there: its state would count the lean twice.
+**How towers are built** (owner, 2026-11-16: *"the tower should not be
+initially built from a scan but from plans then adjusted based on the
+movement of the feet and the lean of the weather case"*):
+
+1. **From the design plans**: place each structure where the plans place
+   it, with its type (its model) as designed — not at positions taken
+   from a scan.
+2. **Moved by the measured movements of its feet**: a settled foundation,
+   a leg pushed out, a pole's tilted base ([Foot movements](#foot-movements)
+   below).
+3. **Leaning as in the reference case**: its deflection in the survey
+   day's weather (above).
+
+The window says so under *Reference state of the structures*. Points
+placed from a scan already contain the lean: with a reference case it
+would be counted twice.
+
+## Foot movements
+
+*Built, in active development.* The measured movements of a placed
+structure's feet from the design, with their source and date.
+
+**Where:** the structure's window (double-click it, or Edit on it) ›
+**Foot movements (measured)**: the source (who measured, how) and the
+date, then a row per foot — the foot (a support joint of its type's
+model, chosen from the list; **all** for every foot alike: the structure
+moved as one body; **base** for a pole), its movement across (to the
+right of the line), ahead and up (mm), and its tilt to the right and
+ahead (degrees). **Apply** keeps them with the structure: one step,
+undone as one (Edit › Undo). On the command line: `ohl structures feet
+LINE.ohl.json --structure T12 --foot "L0B:0,0,-12" --foot
+"L0C:0,0,-4:0.05,0" --source "survey" --date 2026-05-12 --out
+OUT.ohl.json` (mm, degrees; without `--foot` it lists them, `--clear`
+takes them away). Kept in the line file (version 23).
+
+**What they do:**
+
+| Where | What |
+|---|---|
+| Every rigid (level 2) solve — the views, the tables, the clearances, the LiDAR comparison | without a reference state in use (none set, not solved yet, out of date or not checked): each structure's attachment points moved by its foot movements alone — the structure solved on its moved feet **without loads**, automatically, said in every result (*structures moved by their measured foot movements alone*); with a current reference state: by that state, which includes them |
+| The reference state | solved on the moved feet: its points moved by the feet and by the case's deflection; the feet are part of what it was solved from — changed, it is out of date (*the foot movements changed since it was solved*) |
+| Calculation level 3 | each structure's points moved by its feet in every case, on top of its own deflection |
+| The 3D view | the structures drawn on their moved feet (at true scale: millimetres), said at its bottom left |
+| The structure checks (Structure loads window's usage, OHL-Structure) | each case solved with and without the foot movements, **each member's larger usage** kept (below) |
+| OHL-Structure | the line-values file carries them (version 11): the Loads tab lists them, the results solve the placed structure on its moved feet |
+
+**Strain.** A structure standing on more feet than it needs — a lattice
+tower on four, a portal — is strained when one foot moves apart from the
+others (a differential settlement): its members take forces without any
+load. A pole, on one base, only leans (and its weight and loads lean
+with it: P-Delta). The structure checks keep per member the larger usage
+of with and without the movements: the settlement's forces are counted
+where they load a member and never taken to relieve one (on the safe
+side, [theory](../theory/structure-flexibility.md#foot-movements)).
+
+**Said, NOT ON THE SAFE SIDE where it applies:** a foot that is not a
+support joint of the model (its movements are not taken, said with the
+structure), single feet on a structure without a model (only **all**
+can be taken there), a movement in a direction the support does not hold
+(left out: the structure follows freely there), a tilt at a pinned foot
+(it turns freely). The structure loads (the wires' forces) stay as drawn,
+rigid (on the safe side, owner 2026-11-16).
 
 ## On the command line
 
@@ -184,6 +242,13 @@ case already leans as there: its state would count the lean twice.
 `ohl line`): `use` (default) checks the line's reference state against
 the libraries and the run's weather cases and, current, takes it;
 `ignore` the structures as drawn. Either way the run says which.
+The reference case's wind is taken as OHL-Design shows it — a case
+without its own direction **from the right** — so a state saved by one
+program is current in the other; the command line's other checks keep
+the weather file's side. A line with foot movements and no reference
+state in use takes them alone (said), as in OHL-Design; `ignore` sets
+them aside too. `ohl structures feet` lists, sets or clears a structure's
+foot movements ([above](#foot-movements)).
 `ohl line … --weather W --solve-reference "CASE"` solves one for the run
 (each structure's largest move, the times printed) and `--save-reference
 FILE` writes the line with it to a new line file (the input is not

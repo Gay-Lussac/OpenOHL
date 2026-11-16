@@ -116,3 +116,68 @@ fn solved_saved_used_ignored_and_stale() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Foot movements on the command line (owner 2026-11-16): set with `ohl
+/// structures feet` (version 23), listed; `ohl tensions` takes the
+/// structures moved by them alone (no reference case: said) and
+/// `--structure-reference ignore` the structures as drawn (the line's own
+/// rows).
+#[test]
+fn foot_movements_set_listed_and_used() {
+    let dir = std::env::temp_dir().join(format!("ohl-foot-movements-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let line = ex().join("synthetic-line-typed.ohl.json");
+    let saved = dir.join("with-feet.ohl.json");
+    let set = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["structures", "feet"])
+        .arg(&line)
+        .args([
+            "--structure",
+            "T2",
+            "--foot",
+            "L0B:0,0,-20",
+            "--source",
+            "survey",
+        ])
+        .args(["--date", "2026-05-12", "--out"])
+        .arg(&saved)
+        .output()
+        .unwrap();
+    let said = text(&set);
+    assert!(set.status.success(), "{said}");
+    assert!(said.contains("T2: 1 foot (survey, 2026-05-12)"), "{said}");
+    assert!(
+        said.contains("L0B: across 0.0 mm, ahead 0.0 mm, up -20.0 mm"),
+        "{said}"
+    );
+    let file = std::fs::read_to_string(&saved).unwrap();
+    assert!(file.contains("\"version\": 23"), "{}", &file[..200]);
+    let listed = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["structures", "feet"])
+        .arg(&saved)
+        .output()
+        .unwrap();
+    assert!(text(&listed).contains("T2: 1 foot"), "{}", text(&listed));
+    // A bad value refused at once.
+    let bad = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .args(["structures", "feet"])
+        .arg(&line)
+        .args(["--structure", "T2", "--foot", "L0B:0,0"])
+        .arg("--out")
+        .arg(dir.join("bad.ohl.json"))
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+
+    let used = tensions(&saved, &[]);
+    let used_text = text(&used);
+    assert!(
+        used_text.contains("structures moved by their measured foot movements alone"),
+        "{used_text}"
+    );
+    let ignored = tensions(&saved, &["--structure-reference", "ignore"]);
+    let plain = tensions(&line, &[]);
+    assert_eq!(rows(&text(&ignored)), rows(&text(&plain)));
+    assert_ne!(rows(&used_text), rows(&text(&plain)), "{used_text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

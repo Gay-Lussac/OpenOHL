@@ -154,7 +154,8 @@ pub trait StructureResponse: Sync {
 }
 
 /// A structure as a linear stiffness at its attachment points
-/// (calculation level 3): u = C (F − F_ref) + u_body.
+/// (calculation level 3): u = C (F − F_ref) + u_body (+ u_feet, its
+/// measured foot movements).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinearStructure {
     /// The placed structure's id.
@@ -171,6 +172,11 @@ pub struct LinearStructure {
     /// ice of the case (line axes, m): zero — the body loads come with
     /// the structure loads (plan phase 4).
     pub body: Vec<Point>,
+    /// The move of each point by the structure's measured foot movements
+    /// (line axes, m; owner 2026-11-16, [`crate::feet`]): the structure as
+    /// built from its plans and moved at its feet — its rigid-body motion
+    /// and elastic distortion, in every case alike. Empty: none.
+    pub feet: Vec<Point>,
     /// The matrix is approximate (the reference solve was; said in
     /// `notes`).
     pub approximate: bool,
@@ -212,7 +218,13 @@ impl StructureResponse for LinearStructure {
         let displacement = (0..n)
             .map(|k| {
                 let b = self.body.get(k).copied().unwrap_or([0.0; 3]);
-                [u[3 * k] + b[0], u[3 * k + 1] + b[1], u[3 * k + 2] + b[2]]
+                let mut d = [u[3 * k] + b[0], u[3 * k + 1] + b[1], u[3 * k + 2] + b[2]];
+                if let Some(f) = self.feet.get(k) {
+                    for (a, b) in d.iter_mut().zip(f) {
+                        *a += b;
+                    }
+                }
+                d
             })
             .collect();
         Ok(Answer {

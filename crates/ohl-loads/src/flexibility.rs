@@ -37,8 +37,8 @@ use ohl_line::solve::flexible::{
 };
 use ohl_structures::StructureType;
 use ohl_structures_fe::condense::{
-    Attachment, CondenseKey, Condensed, Linearisation, Link, PoleBody, Rigid, condense_pole_with,
-    condense_with,
+    Attachment, CondenseKey, Condensed, Linearisation, Link, PoleBody, Rigid, condense_full,
+    condense_pole_full,
 };
 use ohl_structures_fe::{Loads, PoleLoad};
 use ohl_weather::WeatherCase;
@@ -84,6 +84,11 @@ pub(crate) struct Flexible {
     /// Per body case asked, each point's (as asked) deflection under the
     /// structure's own wind and ice of the case, line axes, m.
     pub body: Vec<Vec<[f64; 3]>>,
+    /// Each point's (as asked) move by the structure's measured foot
+    /// movements, line axes, m (empty: none; [`crate::feet`]).
+    pub feet: Vec<[f64; 3]>,
+    /// What the foot movements left out, in words.
+    pub feet_notes: Vec<String>,
 }
 
 /// The distinct non-empty sets of `sets`, and per set its index among
@@ -185,9 +190,16 @@ impl Analyses {
         };
         let extension = placed.and_then(|s| s.extension.as_deref());
         let orientation = placed.map_or(0.0, |s| s.orientation_deg);
+        let mut feet_notes = Vec::new();
         let (key, condensed, of_case) = if let Some((model, extended)) = self.model_of(t, extension)
         {
             let model = model.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
+            // Its measured foot movements (owner 2026-11-16): the
+            // reference state with its feet moved, and each point's move.
+            let feet = crate::feet::on_model(model, placed)
+                .map_err(|e| Rigid::Reference(format!("foot movements: {e}")))?
+                .unwrap_or_default();
+            feet_notes.clone_from(&feet.notes);
             let points: Vec<Attachment> = labels
                 .iter()
                 .map(|l| Attachment {
@@ -212,6 +224,7 @@ impl Analyses {
                     Linearisation::Tangent(Loads {
                         nodal,
                         self_weight: if model.analysis.self_weight { 1.0 } else { 0.0 },
+                        prescribed: feet.prescribed.clone(),
                         ..Loads::default()
                     })
                 }
@@ -243,9 +256,17 @@ impl Analyses {
                 &points,
                 &linearisation,
             )
-            .with_extra(&extra, extra.is_empty());
+            .with_extra(&extra, extra.is_empty())
+            .with_extra(&("feet", &feet.prescribed), feet.prescribed.is_empty());
             let condensed = memo(&key, &|| {
-                condense_with(model, &points, &linearisation, &extra, budget)
+                condense_full(
+                    model,
+                    &points,
+                    &linearisation,
+                    &extra,
+                    &feet.prescribed,
+                    budget,
+                )
             })?;
             (key, condensed, of_case)
         } else if let Some(pole) = self.pole_of(&t.id) {
@@ -288,10 +309,14 @@ impl Analyses {
                 b.wind = [tx * wind.pressure * iced, ty * wind.pressure * iced];
                 b
             }));
+            let base = crate::feet::on_pole(placed)
+                .map_err(|e| Rigid::Reference(format!("foot movements: {e}")))?
+                .unwrap_or([0.0; 6]);
             let key = CondenseKey::of_pole(&t.id, pole, &points, wires.as_deref())
-                .with_extra(&extra, extra.is_empty());
+                .with_extra(&extra, extra.is_empty())
+                .with_extra(&("feet", base), base == [0.0; 6]);
             let condensed = memo(&key, &|| {
-                condense_pole_with(pole, &points, wires.as_deref(), &extra, budget)
+                condense_pole_full(pole, &points, wires.as_deref(), &extra, base, budget)
             })?;
             (key, condensed, of_case)
         } else {
@@ -305,10 +330,13 @@ impl Analyses {
                     .unwrap_or_else(|| vec![[0.0; 3]; labels.len()])
             })
             .collect();
+        let feet = condensed.feet_at_points().unwrap_or_default();
         Ok(Flexible {
             key,
             condensed,
             body,
+            feet,
+            feet_notes,
         })
     }
 }
@@ -321,11 +349,16 @@ impl Analyses {
     /// under the change of the wires' forces from there to `forces` (the
     /// same labels, structure axes) and the structure's own wind and ice
     /// of `body` (unfactored) — the linear answer of calculation level 3
-    /// at every joint (a model) or along the axis (a pole). Refused as
-    /// the condensation is.
+    /// at every joint (a model) or along the axis (a pole) — on its
+    /// measured foot movements (owner 2026-11-16: their rigid-body motion
+    /// and elastic distortion added, the stringing state's tangent taken
+    /// with the feet moved, as the condensation takes it). `unloaded`:
+    /// the elastic structure, no load — the foot movements alone (the
+    /// state without a reference case). Refused as the condensation is.
     ///
     /// Expected cost: one reference solve and one factorisation of the
     /// structure's tangent (as one condensation).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn deflected_body(
         &self,
         t: &StructureType,
@@ -333,6 +366,7 @@ impl Analyses {
         strung: &[(String, [f64; 3])],
         forces: &[(String, [f64; 3])],
         body: Option<(&LoadCase, &WeatherCase)>,
+        unloaded: bool,
         budget: &Budget,
     ) -> Result<ohl_structures_fe::drawn::BodyDeflection, Rigid> {
         let extension = placed.and_then(|s| s.extension.as_deref());
@@ -362,11 +396,19 @@ impl Analyses {
                 }
                 Ok(nodal)
             };
-            let linearisation = Linearisation::Tangent(Loads {
-                nodal: nodal_of(strung)?,
-                self_weight: if model.analysis.self_weight { 1.0 } else { 0.0 },
-                ..Loads::default()
-            });
+            let feet = crate::feet::on_model(model, placed)
+                .map_err(|e| Rigid::Reference(format!("foot movements: {e}")))?
+                .unwrap_or_default();
+            let linearisation = if unloaded {
+                Linearisation::Unloaded
+            } else {
+                Linearisation::Tangent(Loads {
+                    nodal: nodal_of(strung)?,
+                    self_weight: if model.analysis.self_weight { 1.0 } else { 0.0 },
+                    prescribed: feet.prescribed.clone(),
+                    ..Loads::default()
+                })
+            };
             let mut loads = nodal_of(&change)?;
             if let Some((case, w)) = body {
                 let key = (
@@ -379,7 +421,13 @@ impl Analyses {
                         .nodal,
                 );
             }
-            let u = ohl_structures_fe::condense::deflect(model, &linearisation, &loads, budget)?;
+            let u = ohl_structures_fe::condense::deflect_full(
+                model,
+                &linearisation,
+                &loads,
+                &feet.prescribed,
+                budget,
+            )?;
             return Ok(ohl_structures_fe::drawn::BodyDeflection {
                 joints: model
                     .nodes
@@ -417,11 +465,15 @@ impl Analyses {
                 let [tx, ty] = wind.towards_xy();
                 own.wind = [tx * wind.pressure * iced, ty * wind.pressure * iced];
             }
-            let axis = ohl_structures_fe::condense::deflect_pole(
+            let base = crate::feet::on_pole(placed)
+                .map_err(|e| Rigid::Reference(format!("foot movements: {e}")))?
+                .unwrap_or([0.0; 6]);
+            let axis = ohl_structures_fe::condense::deflect_pole_full(
                 pole,
-                Some(&at(strung)),
+                (!unloaded).then(|| at(strung)).as_deref(),
                 &at(&change),
                 &own,
+                base,
                 budget,
             )?;
             return Ok(ohl_structures_fe::drawn::BodyDeflection {
@@ -431,6 +483,55 @@ impl Analyses {
         }
         Err(Rigid::NoModel)
     }
+}
+
+/// A structure moved as one body and its (zero) body deflection per case.
+type OneBody = (LinearStructure, Vec<Vec<ohl_line::Point>>);
+
+/// A structure without a model moved as one body by its foot movements
+/// ([`crate::feet::as_one_body`]) for the coupled solve: no flexibility
+/// (rigid), each of its points `labels` moved by t + θ × r (turned to
+/// the line's axes), with the forces `at` at the stringing state, no
+/// body deflection in any of `cases` cases. None: no foot movements.
+fn one_body(
+    t: &StructureType,
+    s: &ohl_line::Structure,
+    labels: &[String],
+    at: &[(String, ohl_line::Point)],
+    cases: usize,
+) -> Option<Result<OneBody, String>> {
+    let foot = match crate::feet::as_one_body(Some(s)) {
+        Ok(Some(f)) => f.clone(),
+        Ok(None) => return None,
+        Err(e) => return Some(Err(e)),
+    };
+    let mut feet = Vec::with_capacity(labels.len());
+    for l in labels {
+        let Some(r) = t.point_local(l, s.extension.as_deref()) else {
+            return Some(Err(format!("point {l} not in its type")));
+        };
+        feet.push(ohl_line::links::from_structure_axes(
+            s.orientation_deg,
+            foot.rigid_at(r),
+        ));
+    }
+    let n = labels.len();
+    Some(Ok((
+        LinearStructure {
+            structure: s.id.clone(),
+            labels: labels.to_vec(),
+            flexibility: nalgebra::DMatrix::<f64>::zeros(3 * n, 3 * n),
+            reference: at.iter().map(|(_, f)| *f).collect(),
+            body: vec![[0.0; 3]; n],
+            feet,
+            approximate: false,
+            notes: vec![
+                "rigid (no structure model), moved as one body by its measured foot movements"
+                    .to_owned(),
+            ],
+        },
+        vec![vec![[0.0; 3]; n]; cases],
+    )))
 }
 
 /// Condensations by their key, in the structure's axes (or why refused).
@@ -621,6 +722,21 @@ fn setup_with(
                 Some(&cache),
             ) {
                 Ok(f) => f,
+                // No model, moved as one body by its foot movements: rigid
+                // (no flexibility), its points moved (owner 2026-11-16).
+                Err(Rigid::NoModel) => {
+                    return Some(match one_body(t, s, &labels, at, cases.len()) {
+                        Some(Ok(f)) => Ok(f),
+                        Some(Err(why)) => Err(rigid(
+                            s,
+                            format!(
+                                "{}; NOT ON THE SAFE SIDE — its foot movements not taken: {why}",
+                                Rigid::NoModel
+                            ),
+                        )),
+                        None => Err(rigid(s, Rigid::NoModel.to_string())),
+                    });
+                }
                 Err(e) => return Some(Err(rigid(s, e.to_string()))),
             };
             let c = &flexible.condensed;
@@ -648,6 +764,14 @@ fn setup_with(
             }
             let mut notes = c.notes.clone();
             notes.push(c.linearisation.to_owned());
+            notes.extend(flexible.feet_notes.iter().cloned());
+            if !flexible.feet.is_empty() {
+                notes.push(
+                    "on its measured foot movements: its points moved by them (the rigid-body \
+                     motion and the elastic distortion), in every case alike"
+                        .to_owned(),
+                );
+            }
             // Per case of `cases` (a case whose weather is unknown: none).
             let mut by_case = Vec::with_capacity(cases.len());
             let mut k = 0;
@@ -666,6 +790,7 @@ fn setup_with(
                     flexibility: matrix,
                     reference: at.iter().map(|(_, f)| *f).collect(),
                     body: vec![[0.0; 3]; n],
+                    feet: flexible.feet.clone(),
                     approximate: c.approximate,
                     notes,
                 },

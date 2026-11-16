@@ -681,6 +681,13 @@ fn library_dir(
     Ok(Some(dir))
 }
 
+/// What a scene says of a line with a reference state of its structures
+/// or measured foot movements: the server does not check them (it reads
+/// no structure model), so its scene takes the structures as drawn.
+pub(crate) const STRUCTURES_AS_DRAWN: &str = "structures as drawn: the line's reference state \
+    of the structures and their measured foot movements are not used in this view (OHL-Design \
+    and the command line take them)";
+
 /// Makes a scene: the line resolved with the project's libraries (else
 /// the shipped ones) and solved in [`SCENE_CASE`]. What fails is noted.
 pub(crate) fn scene(source: SceneSource, work: &Path) -> Scene {
@@ -723,6 +730,11 @@ pub(crate) fn scene(source: SceneSource, work: &Path) -> Scene {
             Err(e) => notes.push(format!("structure types: {e}")),
         }
         let _ = std::fs::remove_dir_all(work);
+    }
+    // The structures' reference state and foot movements (OHL-Design's)
+    // are not checked here: the scene takes the structures as drawn, said.
+    if line.reference.is_some() || line.has_foot_movements() {
+        notes.push(STRUCTURES_AS_DRAWN.into());
     }
     let case = ohl_weather::WeatherCase::still(
         SCENE_CASE,

@@ -427,15 +427,19 @@ pub(crate) fn load_with_structures(m: &ModelArgs) -> Result<Loaded, String> {
             .map_err(|e| e.to_string())?;
     }
     let sections = match &libs.sections {
-        Some(p) if !line.solver.structures.is_default() || line.reference.is_some() => {
+        Some(p)
+            if !line.solver.structures.is_default()
+                || line.reference.is_some()
+                || line.has_foot_movements() =>
+        {
             ohl_sections::SectionLibrary::load(p).map_err(|e| e.to_string())?
         }
         _ => ohl_sections::SectionLibrary::default(),
     };
     let library = ohl_cables::Library::load(&libs.cables).map_err(|e| e.to_string())?;
-    // A reference state of the structures: checked once the weather
-    // cases are read ([`cases`]).
-    if line.reference.is_some() {
+    // A reference state of the structures (or their foot movements):
+    // checked once the weather cases are read ([`cases`]).
+    if line.reference.is_some() || line.has_foot_movements() {
         crate::reference_run::keep(crate::reference_run::Inputs {
             library: library.clone(),
             types: types.clone(),

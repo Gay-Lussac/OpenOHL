@@ -425,6 +425,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             nodal,
             self_weight: weight,
             member: spread.clone(),
+            prescribed: Vec::new(),
         };
         let (s, usage) = ohl_structures_fe::analyse(
             &model,

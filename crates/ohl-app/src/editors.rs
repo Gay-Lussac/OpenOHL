@@ -33,6 +33,10 @@ pub(crate) use structure_form::*;
 /// it (`T7` → `T8`; `S` → `S-1`); shared with the structure application.
 pub use ohl_structure_edit::next_id;
 
+/// A type's support joints with the type and extension they were read
+/// for ([`StructureForm::support_joints`]).
+pub type SupportJoints = (Option<String>, Option<String>, Vec<String>);
+
 /// A structure being added or changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructureForm {
@@ -77,6 +81,13 @@ pub struct StructureForm {
     /// The resistance of its earthing, Ω
     /// ([`ohl_line::Structure::earthing_resistance_ohm`]).
     pub earthing_resistance_ohm: Option<f64>,
+    /// Its measured foot movements
+    /// ([`ohl_line::Structure::foot_movements`]; none measured: empty).
+    pub foot_movements: ohl_line::feet::FootMovements,
+    /// Its type's support joints (the feet to choose from) with the type and
+    /// extension they were read for, read when the foot movements are
+    /// shown (none: not read yet).
+    pub support_joints: Option<Box<SupportJoints>>,
     /// A new route's name being typed.
     pub new_route: String,
     /// A new route to make with it.

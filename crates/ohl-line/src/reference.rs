@@ -29,6 +29,15 @@
 //!   as deflected in the reference case": as fast as before. A stale or
 //!   unchecked state is never used: the solve takes the structures as
 //!   drawn, and the results say so ([`Line::reference_note`]).
+//! - **Foot movements** ([`crate::feet`], owner 2026-11-16: the structures
+//!   are modelled from their plans, then moved by the measured movements
+//!   of their feet and the lean of the reference case): the state solved
+//!   in the reference case includes them (they are part of its
+//!   [`ReferenceFingerprint`]); without a reference state in use (no
+//!   reference case, or one not solved, out of date or not checked) the
+//!   structures moved by their foot movements alone, solved without loads
+//!   ([`FeetState`], never stored), are used in its place — said
+//!   ([`Line::reference_note`]).
 //! - **Not used** by the coupled solves (levels 3 and 4: each case finds
 //!   its own deflection from the structures as strung,
 //!   [`crate::solve::Coupling::strung`]), nor where a check sets it aside
@@ -173,6 +182,10 @@ pub struct ReferenceFingerprint {
     /// The reference case's weather (and so the structures' own wind and
     /// ice in it).
     pub case: String,
+    /// The structures' measured foot movements ([`feet_fingerprint`];
+    /// empty: none — a state solved before they existed reads so).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub feet: String,
 }
 
 impl ReferenceFingerprint {
@@ -190,6 +203,9 @@ impl ReferenceFingerprint {
         }
         if self.case != now.case {
             out.push("the reference case's weather");
+        }
+        if self.feet != now.feet {
+            out.push("the foot movements");
         }
         out
     }
@@ -273,7 +289,17 @@ pub fn line_fingerprint(line: &Line) -> String {
     h.json(&line.routes);
     h.json(&line.alignments);
     h.json(&line.alignment_points);
-    h.json(&line.structures);
+    if line.structures.iter().any(|s| s.foot_movements.is_some()) {
+        // Without their foot movements: those are a part of their own
+        // (feet_fingerprint), and a line without them hashes as before.
+        let mut structures = line.structures.clone();
+        for s in &mut structures {
+            s.foot_movements = None;
+        }
+        h.json(&structures);
+    } else {
+        h.json(&line.structures);
+    }
     h.json(&line.sections);
     h.json(&line.jumpers);
     h.json(&line.spacers);
@@ -286,13 +312,81 @@ pub fn line_fingerprint(line: &Line) -> String {
     h.hex()
 }
 
+/// The fingerprint of `line`'s measured foot movements
+/// ([`crate::Structure::foot_movements`], by structure id); empty when no
+/// structure has any.
+pub fn feet_fingerprint(line: &Line) -> String {
+    let mut feet: Vec<(&str, &crate::feet::FootMovements)> = line
+        .structures
+        .iter()
+        .filter_map(|s| {
+            s.foot_movements
+                .as_ref()
+                .filter(|f| !f.is_empty())
+                .map(|f| (s.id.as_str(), f))
+        })
+        .collect();
+    if feet.is_empty() {
+        return String::new();
+    }
+    feet.sort_by(|a, b| a.0.cmp(b.0));
+    let mut h = StableHash::default();
+    h.json(&feet);
+    h.hex()
+}
+
+/// The structures moved by their measured foot movements alone
+/// ([`Line::feet_state`]; owner 2026-11-16): solved without loads (each
+/// structure with foot movements on its model, the elastic structure, or
+/// moved as one body), by the program that checks the reference state.
+/// Never stored, and equal in every line (the program's knowledge, not
+/// the line's content).
+#[derive(Debug, Clone, Default)]
+pub struct FeetState {
+    /// The state: per attachment point of each structure with foot
+    /// movements its displacement (line axes, m; forces zero), the
+    /// structures whose movements could not be taken with why, the
+    /// fingerprint ([`ReferenceFingerprint::feet`] and the line's); case
+    /// empty, level 0.
+    pub state: Option<ReferenceState>,
+    /// Whether it may be used (current: made from the line as it is).
+    pub status: ReferenceStatus,
+}
+
+impl PartialEq for FeetState {
+    /// Always equal: what a program computed from the line, not the
+    /// line's content.
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
 impl Line {
     /// The reference state the solves take now: set, solved and checked
-    /// current ([`ReferenceStatus::Current`]); none otherwise.
+    /// current ([`ReferenceStatus::Current`]); else, unless set aside on
+    /// purpose ([`ReferenceStatus::SetAside`]), the structures moved by
+    /// their foot movements alone when that is current ([`FeetState`]);
+    /// none otherwise.
     pub fn reference_in_use(&self) -> Option<&ReferenceState> {
-        let r = self.reference.as_ref()?;
-        (r.status == ReferenceStatus::Current)
-            .then_some(r.state.as_ref())
+        if let Some(r) = self.reference.as_ref() {
+            if r.status == ReferenceStatus::Current
+                && let Some(state) = &r.state
+            {
+                return Some(state);
+            }
+            if matches!(r.status, ReferenceStatus::SetAside(_)) {
+                return None;
+            }
+        }
+        self.feet_in_use()
+    }
+
+    /// The structures moved by their foot movements alone, when current
+    /// and not set aside ([`FeetState`]) — what the solves take without
+    /// a reference state in use.
+    pub fn feet_in_use(&self) -> Option<&ReferenceState> {
+        (self.feet_state.status == ReferenceStatus::Current)
+            .then_some(self.feet_state.state.as_ref())
             .flatten()
     }
 
@@ -320,6 +414,9 @@ impl Line {
         if let Some(r) = line.reference.as_mut() {
             r.status = ReferenceStatus::SetAside(why.to_owned());
         }
+        if line.feet_state.state.is_some() {
+            line.feet_state.status = ReferenceStatus::SetAside(why.to_owned());
+        }
         Cow::Owned(line)
     }
 
@@ -331,6 +428,9 @@ impl Line {
         {
             r.status = ReferenceStatus::Stale(why.to_owned());
         }
+        if self.feet_state.state.is_some() {
+            self.feet_state.status = ReferenceStatus::Stale(why.to_owned());
+        }
     }
 
     /// What a result says of the reference state (none: no reference
@@ -338,13 +438,22 @@ impl Line {
     /// cases keeping that lean, the structures as drawn; else why the
     /// structures are as drawn.
     pub fn reference_note(&self) -> Option<String> {
-        let r = self.reference.as_ref()?;
+        let feet = self.feet_note();
+        let Some(r) = self.reference.as_ref() else {
+            return feet;
+        };
+        // The reference state not in use: the foot movements alone, when
+        // they are, said after why.
+        let instead = |why: String| match self.feet_in_use().and(feet.as_ref()) {
+            Some(f) => format!("{why} — {f}"),
+            None => why,
+        };
         let Some(state) = &r.state else {
-            return Some(format!(
+            return Some(instead(format!(
                 "reference case \"{}\" not solved yet: structures as drawn (Line › Criteria › \
                  Calculation options: Solve)",
                 r.case
-            ));
+            )));
         };
         Some(match &r.status {
             ReferenceStatus::Current => {
@@ -365,8 +474,13 @@ impl Line {
                         }
                     )
                 };
+                let feet = if state.fingerprint.feet.is_empty() {
+                    String::new()
+                } else {
+                    " on their measured foot movements".to_owned()
+                };
                 format!(
-                    "structures as deflected in case \"{}\" (calculation level {}): each \
+                    "structures as deflected in case \"{}\" (calculation level {}){feet}: each \
                      flexible structure's attachment points moved as solved there; every other \
                      case keeps that lean, not its own — NOT ON THE SAFE SIDE where a case \
                      leans the structures further (heavier ice, stronger wind, colder: theory, \
@@ -374,22 +488,63 @@ impl Line {
                     state.case, state.level
                 )
             }
-            ReferenceStatus::Stale(why) => format!(
+            ReferenceStatus::Stale(why) => instead(format!(
                 "reference case \"{}\" out of date ({why}): structures as drawn — solve it again \
                  (Line › Criteria › Calculation options)",
                 r.case
-            ),
+            )),
             ReferenceStatus::SetAside(why) => {
                 format!(
                     "structures as drawn ({why}); the reference case \"{}\" not used here",
                     r.case
                 )
             }
-            ReferenceStatus::Unchecked => format!(
+            ReferenceStatus::Unchecked => instead(format!(
                 "reference case \"{}\" not checked against the structure and wire libraries \
                  here: structures as drawn",
                 r.case
+            )),
+        })
+    }
+
+    /// What a result says of the structures moved by their foot movements
+    /// alone ([`FeetState`]); none when no structure has any.
+    pub fn feet_note(&self) -> Option<String> {
+        if !self.has_foot_movements() {
+            return None;
+        }
+        let f = &self.feet_state;
+        Some(match (&f.state, &f.status) {
+            (Some(state), ReferenceStatus::Current) => {
+                let not = if state.rigid.is_empty() {
+                    String::new()
+                } else {
+                    let list: Vec<String> = state
+                        .rigid
+                        .iter()
+                        .take(10)
+                        .map(|x| format!("{} ({})", x.structure, x.reason))
+                        .collect();
+                    format!(
+                        "; NOT ON THE SAFE SIDE — foot movements not taken: {}{}",
+                        list.join("; "),
+                        if state.rigid.len() > 10 { "; …" } else { "" }
+                    )
+                };
+                format!(
+                    "structures moved by their measured foot movements alone (no reference \
+                     state in use: solved without loads, no lean of a weather case){not}"
+                )
+            }
+            (_, ReferenceStatus::SetAside(why)) => {
+                format!("structures as drawn ({why}); their foot movements not used here")
+            }
+            (_, ReferenceStatus::Stale(why)) => format!(
+                "foot movements out of date ({why}): structures as drawn until checked again"
             ),
+            _ => "foot movements not checked against the structure library here: structures \
+                  as drawn"
+                .to_owned(),
         })
     }
 }
@@ -417,6 +572,7 @@ mod tests {
             wires: "2".into(),
             structures: "3".into(),
             case: "4".into(),
+            feet: String::new(),
         };
         assert!(a.changed(&a).is_empty());
         let b = ReferenceFingerprint {

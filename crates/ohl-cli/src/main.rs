@@ -15,6 +15,7 @@ mod clearance_run;
 mod code_run;
 mod cost_run;
 mod electrical_run;
+mod feet_run;
 mod flexible_run;
 mod ice_shedding_run;
 mod internal_run;
@@ -1016,6 +1017,11 @@ enum StructuresCommand {
     /// project: the command link_point / unlink_point, `ohl project
     /// apply`).
     Link(links_run::LinkArgs),
+    /// A placed structure's measured foot movements in a line file (its
+    /// feet's settlement, a pole's tilt; owner 2026-11-16): listed, set or
+    /// cleared. The structure is modelled from its plans and moved by
+    /// them.
+    Feet(feet_run::FeetArgs),
     /// Pole check (.ohlp, or the type's own [pole]): bending moment along
     /// the pole from the loads at a structure type's attachments, wind,
     /// P-Delta.
@@ -1291,6 +1297,9 @@ fn main() -> ExitCode {
         Some(Command::Structures {
             command: StructuresCommand::Link(args),
         }) => report(links_run::link(&args)),
+        Some(Command::Structures {
+            command: StructuresCommand::Feet(args),
+        }) => report(feet_run::feet(&args)),
         Some(Command::Structures {
             command: StructuresCommand::Analyse(args),
         }) => structure_app_run::analyse(&args),
@@ -2083,7 +2092,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         // The reference state of the structures (plan of 2026-11-15,
         // phase 5b): solved for the run when asked, else checked against
         // the libraries and every weather case of the file.
-        if line.reference.is_some() || solve_reference.is_some() {
+        if line.reference.is_some() || line.has_foot_movements() || solve_reference.is_some() {
             let all = match weather {
                 Some(p) => ohl_weather::WeatherCases::load(p)?.cases,
                 None => cases.clone(),

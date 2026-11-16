@@ -1387,8 +1387,15 @@ the string checks and the loads sent to OHL-Structure; phase 5b (owner
 solved once at level 3 and kept with the line (version 22), the
 structures drawn deflected in it and every level-2 solve taking their
 points as moved there while it is current (the LiDAR comparison by
-default). Next: the clearances taking the level (after the swing-arc
-band work), level 4 (phase 6; the reference state then solved there).
+default); then (owner 2026-11-16: towers built from their plans, moved by
+the measured movements of their feet and the reference case's lean) a
+placed structure's **foot movements** (version 23): prescribed support
+displacements in the structure engine, taken by the reference state,
+level 3, the level-2 solves without a reference state (the feet alone)
+and the structure checks (each member's larger usage of with and
+without), sent to OHL-Structure. Next: the clearances taking the level
+(after the swing-arc band work), level 4 (phase 6; the reference state
+then solved there, and levels 3 and 4 linearised at / started from it).
 
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications and
