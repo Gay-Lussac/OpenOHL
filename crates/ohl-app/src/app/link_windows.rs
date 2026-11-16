@@ -87,7 +87,6 @@ fn link_window(ctx: &egui::Context, r: &mut Ready) {
         return;
     };
     let o = w.offset;
-    let length = o.iter().map(|v| v * v).sum::<f64>().sqrt();
     let tool = if w.moving {
         crate::tools::Tool::MovePoint
     } else {
@@ -111,11 +110,7 @@ fn link_window(ctx: &egui::Context, r: &mut Ready) {
         crate::tool_ui::intro_of(
             ui,
             &if w.ask_how {
-                format!(
-                    "Point {} is {length:.3} m from joint {}: move it onto the joint, or keep its \
-                     position at an offset?",
-                    w.label, w.joint
-                )
+                ohl_ui::link_question::asked(&w.label, &w.joint, o)
             } else {
                 format!("Point {} goes onto joint {}.", w.label, w.joint)
             },
@@ -130,21 +125,15 @@ fn link_window(ctx: &egui::Context, r: &mut Ready) {
             tool,
         );
         if w.ask_how {
-            ui.radio_value(&mut w.how, LinkHow::Onto, "Move the point onto the joint")
-                .on_hover_text(format!(
-                    "The point moves {length:.3} m onto joint {}; the strings hanging from it \
-                     follow (the default)",
-                    w.joint
-                ));
-            ui.radio_value(
+            ohl_ui::link_question::choices(
+                ui,
                 &mut w.how,
+                LinkHow::Onto,
                 LinkHow::KeepPosition,
-                format!(
-                    "Keep its position (offset {:.3}, {:.3}, {:.3} m from the joint)",
-                    o[0], o[1], o[2]
-                ),
-            )
-            .on_hover_text(crate::link_tool::offset_words(o));
+                &w.joint,
+                o,
+                &crate::link_tool::offset_words(o),
+            );
         }
         if w.moving {
             ui.separator();

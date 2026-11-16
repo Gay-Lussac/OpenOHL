@@ -550,7 +550,6 @@ impl StructureApp {
             return;
         };
         let o = ask.offset;
-        let length = o.iter().map(|v| v * v).sum::<f64>().sqrt();
         let mut pressed = None;
         let mut open = true;
         egui::Window::new(format!("Link point {} to joint {}", ask.label, ask.joint))
@@ -561,11 +560,7 @@ impl StructureApp {
             .show(ctx, |ui| {
                 crate::help::tool_intro(
                     ui,
-                    &format!(
-                        "Point {} is {length:.3} m from joint {}: move it onto the joint, or \
-                         keep its position at an offset?",
-                        ask.label, ask.joint
-                    ),
+                    &ohl_ui::link_question::asked(&ask.label, &ask.joint, o),
                     "Onto the joint: the point moves there, and the strings hanging from it \
                      with it (no offset). Keep its position: the point stays where it is, its \
                      distance from the joint kept as its offset — a rigid link whose moment \
@@ -577,21 +572,15 @@ impl StructureApp {
                         _ => Tool::Link.guide(),
                     },
                 );
-                ui.radio_value(&mut ask.how, LinkHow::Onto, "Move the point onto the joint")
-                    .on_hover_text(format!(
-                        "The point moves {length:.3} m onto joint {}; the strings hanging from \
-                         it follow (the default)",
-                        ask.joint
-                    ));
-                ui.radio_value(
+                ohl_ui::link_question::choices(
+                    ui,
                     &mut ask.how,
+                    LinkHow::Onto,
                     LinkHow::KeepPosition,
-                    format!(
-                        "Keep its position (offset {:.3}, {:.3}, {:.3} m from the joint)",
-                        o[0], o[1], o[2]
-                    ),
-                )
-                .on_hover_text(offset_words(o));
+                    &ask.joint,
+                    o,
+                    &offset_words(o),
+                );
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     pressed = Some(ohl_ui::tool_window::Pressed::Action);
                 }

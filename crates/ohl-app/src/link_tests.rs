@@ -568,7 +568,8 @@ fn a_new_point_is_offered_only_attach_joints() {
 /// The structure screen (Strings and points… on T2, type-02, its joint
 /// L10B made an attach joint): the hotbar's Link tool held holds the
 /// screen's; a click on attachment point A1 in its view, then on joint
-/// L10B, links A1 there in the type's file (as edited) where it is; a
+/// L10B, asks (A1 is not on it; owner 2026-11-16), its position kept:
+/// A1 linked there in the type's file (as edited) at the offset; a
 /// right-click cancels a point chosen. Joint L10A (no kind) is not
 /// ringed: under the pointer it says it is not an attach joint, a click
 /// on it links nothing (owner decision 2026-10-21). The Attachment
@@ -633,7 +634,7 @@ fn the_structure_screen_links_with_two_clicks() {
     );
     let before = workspace(&mut h).1;
     click(&mut h, plain, egui::PointerButton::Primary);
-    assert_eq!(workspace(&mut h), (Some(Some("A1".into())), before));
+    assert_eq!(workspace(&mut h), (Some(Some("A1".into())), before.clone()));
     let message = h.state_mut().ready().unwrap().libraries[&LibraryKind::StructureTypes]
         .workspace
         .message
@@ -656,6 +657,20 @@ fn the_structure_screen_links_with_two_clicks() {
         Some("L10B")
     );
     click(&mut h, at, egui::PointerButton::Primary);
+    // A1 is not on L10B: asked (owner 2026-11-16), nothing linked yet;
+    // its position kept, Enter.
+    assert_eq!(workspace(&mut h).1, before);
+    assert!(
+        h.state_mut().ready().unwrap().libraries[&LibraryKind::StructureTypes]
+            .workspace
+            .link_ask
+            .is_some(),
+        "asked"
+    );
+    h.get_by_label_contains("Keep its position").click();
+    h.run();
+    h.key_press(egui::Key::Enter);
+    h.run();
     let (link, text) = workspace(&mut h);
     assert_eq!(link, Some(None));
     assert!(text.contains("node = \"L10B\""), "{text}");
@@ -870,7 +885,8 @@ fn move_attachment_point_this_structure_only() {
 
 /// Move attachment point, the type: A1 moved onto joint A2 in type-02's
 /// file (with the edit functions OHL-Structure uses), read again — T2 and
-/// T4 both follow; the status says it. Refused while the type is open in
+/// T4 both follow; the status says it; joint A1, left with no point, is
+/// no attach joint any more. Refused while the type is open in
 /// OHL-Structure.
 #[test]
 fn move_attachment_point_in_the_type() {
@@ -901,6 +917,16 @@ fn move_attachment_point_in_the_type() {
     let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(&path, &text)
         .unwrap();
     assert_eq!(t.point_link("A1"), Some(("A2", [0.0; 3])));
+    // Joint A1, left with no point, is no attach joint (owner 2026-11-16):
+    // nothing written for it, and the Move tool no longer rings it.
+    assert_eq!(t.joint("A1").unwrap().kind, None);
+    assert!(!text.contains("id = \"A1\"\nkind"), "{text}");
+    assert!(
+        crate::link_tool::joints(&r.model, "T2")
+            .iter()
+            .any(|j| j.id == "A1" && !j.attach),
+        "joint A1 not ringed"
+    );
     for id in ["T2", "T4"] {
         let p = r.model.line.structure(id).unwrap().point("A1").unwrap();
         assert_eq!(p.joint.as_deref(), Some("A2"), "{id}");

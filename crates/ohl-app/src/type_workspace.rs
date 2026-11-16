@@ -26,10 +26,15 @@
 //! (owner decision 2026-10-21), releasing it on another attach joint
 //! relinks it there. The **Link** tool (its button, or the hotbar's Link
 //! tool held): click a point, then a ringed joint — the point is linked
-//! there where it is; a right-click or Escape cancels. Only attach joints
+//! there; a right-click or Escape cancels. A point not on the joint
+//! (farther than 1 mm) — with the Link tool or its joint chosen in the
+//! table — asks first, as everywhere else (owner 2026-11-16, the shared
+//! [`ohl_ui::link_question`]): onto the joint (the default) or its
+//! position kept at an offset ([`LinkAsk`]). Only attach joints
 //! are ringed and take a link; another joint under the pointer says "not
 //! an attach joint: set its kind to attach in OHL-Structure". A row's
-//! menu unlinks a point (it keeps its place as a joint of its own).
+//! menu unlinks a point (it keeps its place, standing alone, linked to no
+//! joint; the joint it left is no attach joint once nothing is on it).
 
 use eframe::egui;
 use eframe::egui_wgpu;
@@ -145,6 +150,26 @@ pub struct Workspace {
     last: Option<(egui::Rect, Camera)>,
     /// [`Workspace::link_held`] in the last frame.
     held_before: bool,
+    /// A link waiting for its answer: the point is not on the joint (owner
+    /// 2026-11-16: "also in OHL design" — asked as everywhere else).
+    pub link_ask: Option<LinkAsk>,
+}
+
+/// A link on the structure screen waiting for its answer (the Link tool,
+/// or a point's joint chosen in the Attachment points table): the point
+/// is farther than [`ohl_structures::ON_JOINT`] from the joint — onto the
+/// joint (the default) or its position kept at an offset
+/// ([`ohl_ui::link_question`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkAsk {
+    /// The attachment point.
+    pub label: String,
+    /// The joint.
+    pub joint: String,
+    /// From the joint to the point as it is, the type's axes, m.
+    pub offset: [f64; 3],
+    /// The answer (default: onto the joint).
+    pub how: edit::links::LinkHow,
 }
 
 impl Default for Workspace {
@@ -176,6 +201,7 @@ impl Default for Workspace {
             link_hover: None,
             last: None,
             held_before: false,
+            link_ask: None,
         }
     }
 }
@@ -407,6 +433,8 @@ impl Workspace {
             }
         }
         changed |= self.confirm_ui(ui, doc, &t);
+        let ctx = ui.ctx().clone();
+        changed |= self.link_ask_window(&ctx, doc);
         let g = geometry(&t, insulators);
         // Split: the tables left, the view right (the divider is dragged;
         // egui keeps its place for the session).
@@ -744,35 +772,9 @@ impl Workspace {
                             Some((format!("joint {j}: {}", ohl_structures::NOT_ATTACH), true));
                     }
                     (_, Some(l)) => match joint_at(at) {
-                        Some((j, jp, _)) => {
-                            let p = t
-                                .points
-                                .iter()
-                                .find(|p| &p.label == l)
-                                .map(|p| p.position().map(|v| v.si()));
-                            if let Some(p) = p {
-                                let o = [0, 1, 2].map(|k| {
-                                    let v = p[k] - jp[k];
-                                    if v.abs() < ohl_structures::SAME_JOINT {
-                                        0.0
-                                    } else {
-                                        v
-                                    }
-                                });
-                                match edit::links::link_point(doc, t, l, &j, o) {
-                                    Ok(()) => {
-                                        changed = true;
-                                        self.message = Some((
-                                            format!(
-                                                "linked attachment point {l} to joint {j}: {}",
-                                                crate::link_tool::offset_words(o)
-                                            ),
-                                            false,
-                                        ));
-                                    }
-                                    Err(e) => self.message = Some((e, true)),
-                                }
-                            }
+                        Some((j, _, _)) => {
+                            // On the joint: linked; not on it: asked.
+                            changed |= self.request_link(doc, t, l, &j);
                             self.link = Some(None);
                         }
                         None => {
@@ -1236,6 +1238,178 @@ fn note(painter: &egui::Painter, at: egui::Pos2, text: String) {
     painter.galley(at, galley, egui::Color32::WHITE);
 }
 
+/// What the structure screen's link question does, for its (?) help.
+const LINK_HELP: &str = "Onto the joint: the point moves there, the strings hanging from it \
+    with it (no offset). Keep its position: the point stays where it is, its distance from the \
+    joint kept as its offset — a rigid link whose moment the structure analysis applies at the \
+    joint. Within 1 mm the point goes onto the joint without this question. Either way one \
+    change of the type's file as edited (every structure of the type follows when it is saved).";
+
+impl Workspace {
+    /// Attachment point `label` to be linked to joint `joint` of `t` (the
+    /// Link tool, or its joint chosen in the Attachment points table):
+    /// refused when the joint takes no link; on the joint (within
+    /// [`ohl_structures::ON_JOINT`]) linked at once; farther, asked first
+    /// ([`LinkAsk`]) — onto the joint or its position kept, as
+    /// OHL-Structure and the Link and Move attachment point tools ask
+    /// (owner 2026-11-16). Whether the file changed.
+    pub fn request_link(
+        &mut self,
+        doc: &mut DocumentMut,
+        t: &StructureType,
+        label: &str,
+        joint: &str,
+    ) -> bool {
+        if let Some(why) = edit::links::not_attach(t, joint) {
+            self.message = Some((why, true));
+            return false;
+        }
+        match edit::links::needs_asking(t, label, joint) {
+            Some(offset) => {
+                self.message = Some((
+                    format!(
+                        "point {label} is not on joint {joint} ({:.3} m from it): move it onto \
+                         the joint, or keep its position at an offset?",
+                        offset.iter().map(|v| v * v).sum::<f64>().sqrt()
+                    ),
+                    false,
+                ));
+                self.link_ask = Some(LinkAsk {
+                    label: label.to_owned(),
+                    joint: joint.to_owned(),
+                    offset,
+                    how: edit::links::LinkHow::Onto,
+                });
+                false
+            }
+            None => self.link_now(doc, t, label, joint, edit::links::LinkHow::Onto),
+        }
+    }
+
+    /// The question's answer `how` taken (its window's Link button): the
+    /// point linked as chosen, one change of the file. Whether it changed.
+    pub fn answer_link(&mut self, doc: &mut DocumentMut, how: edit::links::LinkHow) -> bool {
+        let Some(a) = self.link_ask.take() else {
+            return false;
+        };
+        self.refresh(doc);
+        let Some(t) = self.shown.clone() else {
+            return false;
+        };
+        self.link_now(doc, &t, &a.label, &a.joint, how)
+    }
+
+    /// Links point `label` to joint `joint` as `how` says (the shared edit,
+    /// `ohl_structure_edit::links::relink_point`), said.
+    fn link_now(
+        &mut self,
+        doc: &mut DocumentMut,
+        t: &StructureType,
+        label: &str,
+        joint: &str,
+        how: edit::links::LinkHow,
+    ) -> bool {
+        let kept = edit::links::needs_asking(t, label, joint)
+            .filter(|_| how == edit::links::LinkHow::KeepPosition)
+            .unwrap_or([0.0; 3]);
+        match edit::links::relink_point(doc, t, label, joint, how) {
+            Ok(()) => {
+                self.message = Some((
+                    format!(
+                        "linked attachment point {label} to joint {joint}: {}{}",
+                        crate::link_tool::offset_words(kept),
+                        match how {
+                            edit::links::LinkHow::Onto => " (on the joint, its strings with it)",
+                            edit::links::LinkHow::KeepPosition => " (its position kept)",
+                        }
+                    ),
+                    false,
+                ));
+                self.dirty = true;
+                true
+            }
+            Err(e) => {
+                self.message = Some((e, true));
+                false
+            }
+        }
+    }
+
+    /// The window asking how a point goes to its joint ([`LinkAsk`]): the
+    /// shared question ([`ohl_ui::link_question`]), Link (Enter) or Cancel
+    /// (Escape, or the window closed: nothing changes). Whether the file
+    /// changed.
+    fn link_ask_window(&mut self, ctx: &egui::Context, doc: &mut DocumentMut) -> bool {
+        let Some(mut ask) = self.link_ask.clone() else {
+            return false;
+        };
+        let o = ask.offset;
+        let mut pressed = None;
+        let mut open = true;
+        egui::Window::new(format!("Link point {} to joint {}", ask.label, ask.joint))
+            .id(egui::Id::new("type-workspace-link-ask"))
+            .collapsible(false)
+            .resizable(false)
+            .open(&mut open)
+            .default_pos(ctx.content_rect().center() - egui::vec2(200.0, 80.0))
+            .show(ctx, |ui| {
+                crate::tool_ui::intro_of(
+                    ui,
+                    &ohl_ui::link_question::asked(&ask.label, &ask.joint, o),
+                    LINK_HELP,
+                    crate::tools::Tool::Link,
+                );
+                ohl_ui::link_question::choices(
+                    ui,
+                    &mut ask.how,
+                    edit::links::LinkHow::Onto,
+                    edit::links::LinkHow::KeepPosition,
+                    &ask.joint,
+                    o,
+                    &crate::link_tool::offset_words(o),
+                );
+                pressed = ohl_ui::tool_window::buttons(
+                    ui,
+                    "Link",
+                    true,
+                    None,
+                    ohl_ui::tool_window::Keys::Both,
+                );
+            });
+        if pressed.is_none() && !ctx.text_edit_focused() {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)) {
+                pressed = Some(ohl_ui::tool_window::Pressed::Action);
+            } else if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                pressed = Some(ohl_ui::tool_window::Pressed::Cancel);
+            }
+        }
+        match pressed {
+            Some(ohl_ui::tool_window::Pressed::Action) => {
+                let how = ask.how;
+                self.link_ask = Some(ask);
+                self.answer_link(doc, how)
+            }
+            Some(ohl_ui::tool_window::Pressed::Cancel) => self.cancel_link_ask(),
+            None if !open => self.cancel_link_ask(),
+            None => {
+                self.link_ask = Some(ask);
+                false
+            }
+        }
+    }
+
+    /// The question cancelled: nothing changes.
+    fn cancel_link_ask(&mut self) -> bool {
+        if let Some(a) = self.link_ask.take() {
+            self.message = Some((
+                format!("Link {}: cancelled, nothing changed", a.label),
+                false,
+            ));
+        }
+        false
+    }
+}
+
 /// A point or wire point dragged to `at` (local axes) in type `t`: an
 /// attachment point on a joint keeps its link, its offset the distance
 /// from the joint (`edit::move_to`); released `onto` an attach joint it
@@ -1347,17 +1521,10 @@ impl Workspace {
                                 }
                             });
                     });
-                if joint != p.joint
-                    && let Some(j) = t.joint(&joint)
-                {
-                    let o = [0, 1, 2].map(|k| {
-                        let v = at[k] - j.position[k];
-                        if v.abs() < ohl_structures::SAME_JOINT { 0.0 } else { v }
-                    });
-                    match edit::links::link_point(doc, t, &p.label, &joint, o) {
-                        Ok(()) => changed = true,
-                        Err(e) => self.message = Some((e, true)),
-                    }
+                // Another joint: the point moves there (asked when it is
+                // not on it: onto the joint, or its position kept).
+                if joint != p.joint {
+                    changed |= self.request_link(doc, t, &p.label, &joint);
                 }
                 let mut o = t.point_offset(p);
                 let mut shifted = false;
@@ -1397,7 +1564,7 @@ impl Workspace {
                     changed = true;
                     self.message = Some((
                         format!(
-                            "unlinked attachment point {l}: it keeps its place, a joint of its own"
+                            "unlinked attachment point {l}: it keeps its place, linked to no joint"
                         ),
                         false,
                     ));
@@ -1969,5 +2136,104 @@ node = "N3"
         assert_eq!(t.wires[0].set, Some(set));
         assert_eq!((t.nodes.len(), t.members.len()), (3, 2));
         assert_eq!(compass_radius(&g), 8.75_f64.max(0.35 * 30.0));
+    }
+
+    /// The structure screen asks too (owner 2026-11-16: "also in OHL
+    /// design"): A1, 6 m from joint N2, to be linked there (the Link tool
+    /// or its joint chosen in the table) is not linked at once — asked,
+    /// the default onto the joint; its position kept, the offset is the 6
+    /// m. Onto it: no offset. N3, left with no point, is no attach joint
+    /// any more: linking back is refused. A point on the joint is linked
+    /// without a question; a joint that takes no link is refused, said.
+    #[test]
+    fn the_screen_asks_onto_the_joint_or_an_offset() {
+        let mut doc: DocumentMut = PYLON.parse().unwrap();
+        let t = read(&doc);
+        edit::links::set_joint_kind(&mut doc, &t, "N2", Some(ohl_structures::JointKind::Attach))
+            .unwrap();
+        let start = doc.clone();
+        let t = read(&doc);
+        let mut w = Workspace::default();
+        assert!(!w.request_link(&mut doc, &t, "A1", "N2"));
+        let ask = w.link_ask.clone().expect("asked");
+        assert_eq!(ask.how, edit::links::LinkHow::Onto, "the default");
+        assert_eq!(ask.offset, [-6.0, 0.0, 0.0]);
+        assert_eq!(doc.to_string(), start.to_string(), "nothing linked yet");
+        let mut kept = doc.clone();
+        let mut wk = Workspace {
+            link_ask: Some(ask.clone()),
+            ..Workspace::default()
+        };
+        assert!(wk.answer_link(&mut kept, edit::links::LinkHow::KeepPosition));
+        assert_eq!(read(&kept).point_link("A1"), Some(("N2", [-6.0, 0.0, 0.0])));
+        assert!(w.answer_link(&mut doc, edit::links::LinkHow::Onto));
+        assert!(w.link_ask.is_none());
+        let t = read(&doc);
+        assert_eq!(t.point_link("A1"), Some(("N2", [0.0; 3])));
+        assert_eq!(t.joint("N3").unwrap().kind, None, "N3 left with no point");
+        assert!(!w.request_link(&mut doc, &t, "A1", "N3"));
+        assert!(
+            w.message
+                .as_ref()
+                .is_some_and(|m| m.1 && m.0.contains(ohl_structures::NOT_ATTACH))
+        );
+        assert!(w.link_ask.is_none());
+        // On the joint: linked without a question.
+        let a2 = edit::add_point(&mut doc, &t, [0.0, 0.0, 30.0005]);
+        let t = read(&doc);
+        assert!(w.request_link(&mut doc, &t, &a2, "N2"));
+        assert!(w.link_ask.is_none());
+        assert_eq!(read(&doc).point_link(&a2), Some(("N2", [0.0; 3])));
+    }
+
+    /// The question's window (the shared one): the two choices with the
+    /// distance, Escape cancels (nothing changes), its position kept and
+    /// Enter links at the offset.
+    #[test]
+    fn the_screens_question_window_links_or_cancels() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::Queryable;
+        let mut doc: DocumentMut = PYLON.parse().unwrap();
+        let t = read(&doc);
+        edit::links::set_joint_kind(&mut doc, &t, "N2", Some(ohl_structures::JointKind::Attach))
+            .unwrap();
+        let start = doc.to_string();
+        let t = read(&doc);
+        let mut w = Workspace::default();
+        w.request_link(&mut doc, &t, "A1", "N2");
+        let mut h = Harness::new_ui_state(
+            |ui, s: &mut (Workspace, DocumentMut)| {
+                let ctx = ui.ctx().clone();
+                s.0.link_ask_window(&ctx, &mut s.1);
+            },
+            (w, doc),
+        );
+        h.run();
+        h.get_by_label_contains("Point A1 is 6.000 m from joint N2");
+        h.get_by_label("Move the point onto the joint");
+        h.key_press(egui::Key::Escape);
+        h.run();
+        assert!(h.state().0.link_ask.is_none());
+        assert_eq!(h.state().1.to_string(), start);
+        // Asked again: its position kept, Enter.
+        {
+            let (w, doc) = h.state_mut();
+            let t = read(doc);
+            w.request_link(doc, &t, "A1", "N2");
+        }
+        h.run();
+        h.get_by_label_contains("Keep its position").click();
+        h.run();
+        assert_eq!(
+            h.state().0.link_ask.as_ref().map(|a| a.how),
+            Some(edit::links::LinkHow::KeepPosition)
+        );
+        h.key_press(egui::Key::Enter);
+        h.run();
+        assert!(h.state().0.link_ask.is_none());
+        assert_eq!(
+            read(&h.state().1).point_link("A1"),
+            Some(("N2", [-6.0, 0.0, 0.0]))
+        );
     }
 }
