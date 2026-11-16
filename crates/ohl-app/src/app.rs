@@ -434,6 +434,9 @@ pub struct Ready {
     pub bimetallic_window: Option<ohl_cables::BimetallicModel>,
     /// Line › Criteria › Calculation options (a draft while open).
     pub solver_window: Option<ohl_line::SolverOptions>,
+    /// The line's reference state of the structures: its solve, its
+    /// deflected bodies ([`crate::structure_reference`]).
+    pub structure_reference: crate::structure_reference::ReferenceTool,
     /// A jumper joining two different circuits, waiting for the user
     /// ([`crate::circuit_join`]).
     pub circuit_join: Option<crate::circuit_join::CircuitJoin>,
@@ -621,6 +624,7 @@ impl Ready {
             merge_cases: Default::default(),
             bimetallic_window: None,
             solver_window: None,
+            structure_reference: Default::default(),
             circuit_join: None,
             defaults_window: None,
             crs: Default::default(),
@@ -2707,6 +2711,9 @@ impl App {
         internal_clearances_out(ready, out);
         // Layers drawn from results out of date: dimmed.
         crate::revision::frame(ready);
+        // The reference state of the structures: a solve kept, its
+        // bodies drawn deflected.
+        crate::structure_reference::frame(ready, ctx);
     }
 
     /// The LiDAR classes, the surfaces, the plugins' formats, a project

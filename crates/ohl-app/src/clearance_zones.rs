@@ -686,7 +686,7 @@ impl ZoneWindow {
                 },
             )
             .map(|mut rep| {
-                rep.zone.notes.splice(0..0, local.notes());
+                rep.zone.notes.splice(0..0, local.with_reference());
                 rep.zone.notes.extend(by_default);
                 rep
             });

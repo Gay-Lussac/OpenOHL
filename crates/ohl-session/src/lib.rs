@@ -868,6 +868,10 @@ struct Meta {
         skip_serializing_if = "ohl_line::electrical::ElectricalSettings::is_default"
     )]
     electrical: ohl_line::electrical::ElectricalSettings,
+    /// The reference case of the structures and its state (plan of
+    /// 2026-11-15, phase 5b): its own row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reference: Option<ohl_line::reference::StructureReference>,
 }
 
 impl Meta {
@@ -889,6 +893,7 @@ impl Meta {
             structure_loads: line.structure_loads.clone(),
             structure_groups: line.structure_groups.clone(),
             electrical: line.electrical,
+            reference: line.reference.clone(),
         }
     }
 }
@@ -898,7 +903,7 @@ impl Meta {
 /// undo one each: `line` (name, CRS, display) and one row per setting.
 /// Projects written before kept them all in `line`: read as defaults
 /// under the rows ([`meta_of`]), until the first change writes the rows.
-const META_ROWS: [&str; 10] = [
+const META_ROWS: [&str; 11] = [
     "systems",
     "circuits",
     "creep_stretch",
@@ -909,6 +914,7 @@ const META_ROWS: [&str; 10] = [
     "structure_loads",
     "electrical",
     "structure_groups",
+    "reference",
 ];
 
 /// The settings `meta` as rows: (id, value).
@@ -930,6 +936,7 @@ fn meta_rows(meta: &Meta) -> Vec<(String, Value)> {
             "circuit_starts" => json(&meta.circuit_starts),
             "electrical" => json(&meta.electrical),
             "structure_groups" => json(&meta.structure_groups),
+            "reference" => json(&meta.reference),
             _ => json(&meta.structure_loads),
         };
         out.push((key.to_owned(), serde_json::json!({ key: v })));
@@ -1530,6 +1537,7 @@ fn stored_line_of(objects: &BTreeMap<(Kind, String), Object>) -> Result<Line, Se
         structure_loads: meta.structure_loads,
         structure_groups: meta.structure_groups,
         electrical: meta.electrical,
+        reference: meta.reference,
         condition_cases: Default::default(),
         spacers: vec![],
         defaults: meta.defaults,
@@ -2522,6 +2530,20 @@ impl Session {
     pub fn solver_command(&self, solver: ohl_line::SolverOptions) -> Command {
         let mut line = self.line.clone();
         line.solver = solver;
+        line_settings_change(&self.line, &line)
+    }
+
+    /// The command setting the line's reference case of the structures and
+    /// its solved state (Criteria › Calculation options, plan of
+    /// 2026-11-15, phase 5b; none: as drawn): one logged, undoable put of
+    /// its settings row (`reference`). The sections are solved again by
+    /// the program once it has checked the state current.
+    pub fn reference_command(
+        &self,
+        reference: Option<ohl_line::reference::StructureReference>,
+    ) -> Command {
+        let mut line = self.line.clone();
+        line.reference = reference;
         line_settings_change(&self.line, &line)
     }
 

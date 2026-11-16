@@ -838,7 +838,7 @@ impl SafetyVolumeWindow {
                 &budget,
                 &Default::default(),
             )?;
-            v.notes.splice(0..0, local.notes());
+            v.notes.splice(0..0, local.with_reference());
             local.finish(LOCAL.1, started.elapsed());
             let colors = v
                 .volumes

@@ -42,6 +42,12 @@ pub struct WireFitWindow {
     pub params: FitParams,
     /// Estimate the temperature at the survey.
     pub estimate: bool,
+    /// Compare with the structures as deflected in the line's reference
+    /// case when that state is current (default; plan of 2026-11-15,
+    /// phase 5b); unticked: as drawn.
+    pub reference: bool,
+    /// What the last run said of the reference state.
+    pub reference_note: Option<String>,
     /// The circuits, routes and sections fitted (owner, 2026-10-28), kept
     /// in the project ([`SETTING`]).
     pub scope: check_ui::Scope,
@@ -59,6 +65,8 @@ impl Default for WireFitWindow {
             temperature: 15.0,
             params: FitParams::default(),
             estimate: true,
+            reference: true,
+            reference_note: None,
             scope: check_ui::Scope::default(),
             kept: check_ui::Kept::default(),
             job: Job::default(),
@@ -92,7 +100,11 @@ impl WireFitWindow {
         self.kept = kept;
     }
 
-    fn start(&mut self, model: &Model, ctx: &egui::Context) {
+    pub(crate) fn start(&mut self, model: &Model, ctx: &egui::Context) {
+        // The structures as deflected in the reference case when current
+        // (the switch ticked, the default), else as drawn — said.
+        let line = self.line_compared(model);
+        self.reference_note = line.reference_note();
         let Some(spec) = model.cloud.clone() else {
             self.job.result = Some(Err(check_ui::NO_CLOUD.into()));
             return;
@@ -110,7 +122,6 @@ impl WireFitWindow {
             )));
             return;
         }
-        let line = model.line.clone();
         let library = model.library.clone();
         let params = self.params.clone();
         let (t, estimate) = (self.temperature, self.estimate);
@@ -174,6 +185,19 @@ impl WireFitWindow {
             }
             Ok(rows)
         });
+    }
+
+    /// The line the fit compares with: the model's, its reference state
+    /// set aside when the switch is unticked ([`WireFitWindow::reference`]).
+    pub(crate) fn line_compared(&self, model: &Model) -> ohl_line::Line {
+        if self.reference {
+            model.line.clone()
+        } else {
+            model
+                .line
+                .as_drawn(crate::structure_reference::LIDAR_AS_DRAWN)
+                .into_owned()
+        }
     }
 
     /// What the last fit was computed from that changed since, in words
@@ -271,6 +295,9 @@ impl WireFitWindow {
                             }
                             Some(Ok(r)) => r,
                         };
+                        if let Some(n) = &self.reference_note {
+                            ui.label(egui::RichText::new(n).small());
+                        }
                         let fitted = rows.iter().filter(|r| matches!(r.fit, Some(Ok(_)))).count();
                         let temps: Vec<f64> = rows.iter().filter_map(|r| r.temperature).collect();
                         ui.horizontal_wrapped(|ui| {
@@ -397,7 +424,23 @@ impl WireFitWindow {
                 ui.label("Survey temperature");
                 ui.checkbox(&mut self.estimate, "estimate it");
                 ui.end_row();
+                ui.label("Structures");
+                ui.checkbox(
+                    &mut self.reference,
+                    "as deflected in the reference case (when current)",
+                );
+                ui.end_row();
             });
+        help::explain(
+            ui,
+            "Structures: the model compared with the structures as deflected in the line's \
+             reference case (Line › Criteria › Calculation options), else as drawn.",
+            "Ticked (the default): while the line's reference state is current, the model's \
+             attachment points are those of the structures solved in the reference case — the \
+             survey day's weather makes the model match the scan; unticked, or no current \
+             reference state: the structures as drawn. The results say which. Time: none — the \
+             same solves.",
+        );
         help::explain(
             ui,
             "Model temperature: the model is solved in still air at it, for the sags and \

@@ -493,8 +493,18 @@ to import one). Its *3 Model*, folded (2026-10-31), has a labelled row
 each: **Model temperature** (the still-air case compared with), **Points
 across** and **Points up or down** (how far from the modelled wire a
 LiDAR point may lie to be fitted) and **Survey temperature** (estimated
-from the model's sag at each temperature: longer runs), each with a line
-saying what it changes.
+from the model's sag at each temperature: longer runs) and **Structures**
+(*as deflected in the reference case (when current)*, ticked by default:
+while the line has a current [reference state of the
+structures](calculation-level.md#the-reference-state-of-the-structures),
+the model's attachment points are those of the structures solved in the
+reference case — with the survey day's weather as reference case, the
+model matches the scan; unticked, or no current state: the structures as
+drawn; the results say which), each with a line saying what it changes.
+On the command line `ohl lidar fit-wires … --structure-reference
+ignore` compares with the structures as drawn (default `use`; the
+line's state is checked against the `--weather` file's cases, not used
+without them, said).
 
 ## Electrical: line parameters
 

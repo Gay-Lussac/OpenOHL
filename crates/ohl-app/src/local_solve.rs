@@ -167,8 +167,18 @@ impl Local {
     /// rigid, that it stays rigid ([`ohl_line::rigid_check_note`]; plan of
     /// 2026-11-15, §6.2).
     pub fn rigid_notes(&self) -> Vec<String> {
-        let mut out = self.notes();
+        let mut out = self.with_reference();
         out.extend(ohl_line::rigid_check_note(&self.line));
+        out
+    }
+
+    /// [`Local::notes`] with what the line's reference state of the
+    /// structures does in the check (plan of 2026-11-15, phase 5b: the
+    /// structures as deflected in its case, or why as drawn; none without
+    /// a reference case).
+    pub fn with_reference(&self) -> Vec<String> {
+        let mut out = self.notes();
+        out.extend(self.line.reference_note());
         out
     }
 

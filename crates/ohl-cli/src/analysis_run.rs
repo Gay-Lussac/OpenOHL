@@ -50,6 +50,14 @@ pub struct ModelArgs {
     /// yet say so and stay rigid.
     #[arg(long, value_parser = parse_structures_as)]
     pub structures_as: Option<ohl_line::StructuresInSolve>,
+    /// The line's reference state of the structures (Line › Criteria ›
+    /// Calculation options; in active development): use (default) — when
+    /// it is current against the libraries and the weather cases, every
+    /// level-2 solve takes the structures as deflected in the reference
+    /// case (the structure loads keep them as drawn); ignore — the
+    /// structures as drawn. A state out of date is never used (said).
+    #[arg(long, value_parser = crate::reference_run::parse_use, default_value = "use", action = clap::ArgAction::Set)]
+    pub structure_reference: bool,
 }
 
 /// The structures in the wire solve for `--structures-as` (rigid or
@@ -412,12 +420,22 @@ pub(crate) fn load_with_structures(m: &ModelArgs) -> Result<Loaded, String> {
             .map_err(|e| e.to_string())?;
     }
     let sections = match &libs.sections {
-        Some(p) if !line.solver.structures.is_default() => {
+        Some(p) if !line.solver.structures.is_default() || line.reference.is_some() => {
             ohl_sections::SectionLibrary::load(p).map_err(|e| e.to_string())?
         }
         _ => ohl_sections::SectionLibrary::default(),
     };
     let library = ohl_cables::Library::load(&libs.cables).map_err(|e| e.to_string())?;
+    // A reference state of the structures: checked once the weather
+    // cases are read ([`cases`]).
+    if line.reference.is_some() {
+        crate::reference_run::keep(crate::reference_run::Inputs {
+            library: library.clone(),
+            types: types.clone(),
+            sections: sections.clone(),
+            use_it: m.structure_reference,
+        });
+    }
     Ok(Loaded {
         line,
         library,
@@ -477,6 +495,8 @@ pub(crate) struct RuleSolve {
 pub(crate) fn cases(c: &CaseArgs, line: &mut Line) -> Result<Vec<WeatherCase>, String> {
     let set = WeatherCases::load(&c.weather)?;
     line.set_weather_cases(&set.cases);
+    // The reference state of the structures checked against them.
+    crate::reference_run::checked(line, &set.cases);
     let chosen = set.select(&c.case, &c.tag)?;
     if chosen.is_empty() {
         return Err("no weather case to run".into());
@@ -1270,8 +1290,15 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
 /// Runs `ohl lidar fit-wires`.
 pub fn fit_wires(a: FitArgs) -> Result<(), String> {
     let (mut line, library) = load(&a.model)?;
-    if let Some(w) = &a.weather {
-        line.set_weather_cases(&WeatherCases::load(w)?.cases);
+    match &a.weather {
+        Some(w) => {
+            let all = WeatherCases::load(w)?.cases;
+            line.set_weather_cases(&all);
+            // Compared with the structures as deflected in the reference
+            // case by default (--structure-reference ignore: as drawn).
+            crate::reference_run::checked(&mut line, &all);
+        }
+        None => crate::reference_run::checked(&mut line, &[]),
     }
     let (source, scheme) = source(&a.points)?;
     let classes = classes_of(&scheme, &a.role, &["conductor", "shield_wire"])?;

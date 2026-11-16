@@ -87,6 +87,17 @@ pub fn run(a: &InternalArgs) -> Result<bool, String> {
     }
     let library = ohl_cables::Library::load(&libs.cables).map_err(|e| e.to_string())?;
     let chosen = cases(&a.cases, &mut line)?;
+    // The structures and their strings as drawn: the body is not
+    // deflected in the check (a reference state set aside, said).
+    let line = line
+        .as_drawn(
+            "internal clearances keep the structures and their strings as drawn: the structure \
+             body is not deflected in the check",
+        )
+        .into_owned();
+    if let Some(n) = line.reference_note() {
+        println!("note: {n}");
+    }
     let mut solved = Vec::new();
     for case in &chosen {
         if !set.internal_rules.iter().any(|r| r.applies(&case.name)) {

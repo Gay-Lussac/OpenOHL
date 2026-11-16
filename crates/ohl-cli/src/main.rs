@@ -22,6 +22,7 @@ mod io_run;
 mod lightning_run;
 mod links_run;
 mod project;
+mod reference_run;
 mod safety_run;
 mod sagtension_job;
 mod sheet_run;
@@ -621,6 +622,22 @@ struct LineArgs {
     /// (linear).
     #[arg(long, value_parser = parse_calculation_level)]
     calculation_level: Option<ohl_line::solve::flexible::CalculationLevel>,
+    /// The line's reference state of the structures (in active
+    /// development): use (default) — when it is current against the
+    /// libraries and the weather cases, every weather case is solved with
+    /// the structures as deflected in the reference case; ignore — as
+    /// drawn. A state out of date is never used (said).
+    #[arg(long, value_parser = reference_run::parse_use, default_value = "use", action = clap::ArgAction::Set)]
+    structure_reference: bool,
+    /// Solve the structures in this weather case (of --weather) at
+    /// calculation level 3 and take it as the line's reference state for
+    /// this run (printed: each structure's largest move, the times).
+    #[arg(long, value_name = "CASE", requires = "weather")]
+    solve_reference: Option<String>,
+    /// With --solve-reference: write the line with its reference state to
+    /// this line file (.ohl.json; the input is not changed).
+    #[arg(long, value_name = "FILE", requires = "solve_reference")]
+    save_reference: Option<PathBuf>,
 }
 
 /// A calculation level for `--calculation-level` (2 or 3).
@@ -1935,7 +1952,7 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         loads_per,
         blocks,
         ice_density: _,
-        weather: _,
+        weather,
         case: _,
         tag: _,
         html,
@@ -1997,6 +2014,9 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
         plugin,
         structures_as,
         calculation_level,
+        structure_reference,
+        solve_reference,
+        save_reference,
     } = args;
     use ohl_core::files::shipped_library;
 
@@ -2060,6 +2080,42 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
             Some(io_run::registry(plugin)?)
         };
         let cases = weather_cases(args, &mut line)?;
+        // The reference state of the structures (plan of 2026-11-15,
+        // phase 5b): solved for the run when asked, else checked against
+        // the libraries and every weather case of the file.
+        if line.reference.is_some() || solve_reference.is_some() {
+            let all = match weather {
+                Some(p) => ohl_weather::WeatherCases::load(p)?.cases,
+                None => cases.clone(),
+            };
+            let sections = match sections_arg
+                .clone()
+                .or_else(|| Some(file.parent()?.join("Sections")).filter(|d| d.is_dir()))
+            {
+                Some(p) => ohl_sections::SectionLibrary::load(&p)?,
+                None => ohl_sections::SectionLibrary::default(),
+            };
+            match solve_reference {
+                Some(case) => reference_run::solve(
+                    &mut line,
+                    &library,
+                    &types,
+                    &sections,
+                    &all,
+                    case,
+                    *structure_reference,
+                    save_reference.as_deref(),
+                )?,
+                None => reference_run::check(
+                    &mut line,
+                    &library,
+                    &types,
+                    &sections,
+                    &all,
+                    *structure_reference,
+                ),
+            }
+        }
         // Report tables for the table formats (XLSX).
         let mut extra_tables = Vec::new();
         structure_loads_report(args, &line, &library, &types, &mut extra_tables)?;

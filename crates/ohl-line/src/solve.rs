@@ -1340,6 +1340,11 @@ pub struct Coupling {
     /// levels 3 and 4, in active development). Empty: as given (the solve
     /// unchanged bit for bit).
     pub moved: PointMoves,
+    /// The moves are the whole displacement from the structures as strung
+    /// (the coupled solve of calculation levels 3 and 4): the line's
+    /// reference state is not added ([`mod@crate::reference`]). False (the
+    /// default): a reference state in use moves the points too.
+    pub strung: bool,
     /// Also find its stiffness at those points
     /// ([`SectionShape::support_stiffness`]).
     pub stiffness: bool,
@@ -3461,9 +3466,10 @@ fn solve_fe(
     // In the weather case, other sections' clamps in the assemblies pulled
     // as given (held in the stringing state).
     let mut loaded = pulled(&layout, section, coupling);
-    // Its structure points moved by the structures' deflection (none: as
+    // Its structure points moved by the structures' deflection — the
+    // coupled solve's, else the line's reference state in use (none: as
     // given).
-    support::move_points(&mut loaded, section, &coupling.moved);
+    support::move_points(&mut loaded, section, line, coupling);
     // The jumpers hanging on its clamps, in the weather case (as the
     // line's calculation options say).
     let jumpers = match &coupling.jumpers {

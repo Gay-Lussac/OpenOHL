@@ -46,6 +46,7 @@ pub mod links;
 pub mod local;
 pub mod objects;
 pub mod post;
+pub mod reference;
 mod rod;
 pub mod route;
 pub mod sagging;
@@ -77,7 +78,11 @@ use legacy::{SpanLoad, SpreadLoad};
 
 /// File format identifier.
 pub const LINE_FILE_FORMAT: &str = "ohl-line";
-/// Latest line file version: 21 adds the structures in the wire solve
+/// Latest line file version: 22 adds the reference case of the
+/// structures and the state solved in it (`reference`,
+/// [`reference::StructureReference`]; plan of 2026-11-15, phase 5b),
+/// written only by a line that has one (else 21 or older,
+/// [`Line::to_json`]); 21 adds the structures in the wire solve
 /// (`solver.structures`: rigid, linear or full — the calculation level of
 /// the checks that take it, [`StructuresInSolve`]; plan of 2026-11-15,
 /// phase 5), written only by a line that is not rigid (else 20 or older,
@@ -154,7 +159,12 @@ pub const LINE_FILE_FORMAT: &str = "ohl-line";
 /// [`JumperPlace`]); 4 gave alignments points of their own, 3 routes with
 /// alignments, 2 structures as points and strings. Older files are read
 /// into the current form.
-pub const LINE_FILE_VERSION: u32 = 21;
+pub const LINE_FILE_VERSION: u32 = 22;
+
+/// The version before the reference case of the structures
+/// (`reference`; plan of 2026-11-15, phase 5b): what a line without one
+/// is written as (when its structures are not rigid in the wire solve).
+const BEFORE_REFERENCE_VERSION: u32 = 21;
 
 /// The version before the structures in the wire solve
 /// (`solver.structures`, the calculation level; plan of 2026-11-15, phase
@@ -341,6 +351,12 @@ pub struct Line {
         skip_serializing_if = "electrical::ElectricalSettings::is_default"
     )]
     pub electrical: electrical::ElectricalSettings,
+    /// The reference case of the structures and the state solved in it
+    /// (plan of 2026-11-15, phase 5b; line file version 22 when set,
+    /// [`mod@reference`]): the level-2 solves take the structures as
+    /// deflected there while it is current. None: as drawn (as before).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<reference::StructureReference>,
     /// Those weather cases themselves, given by the program solving the
     /// line ([`crate::Line::set_weather_cases`]); not stored.
     #[serde(skip)]
@@ -3896,7 +3912,8 @@ impl Line {
             .iter()
             .any(|s| s.strings.iter().any(|x| x.hinge_friction_nm.is_some()));
         let written = match (sheaves, winds, shapes) {
-            _ if !self.solver.structures.is_default() => LINE_FILE_VERSION,
+            _ if self.reference.is_some() => LINE_FILE_VERSION,
+            _ if !self.solver.structures.is_default() => BEFORE_REFERENCE_VERSION,
             _ if !self.solver.wind.is_default() => BEFORE_STRUCTURES_VERSION,
             _ if hinge_friction => BEFORE_WIND_OPTIONS_VERSION,
             _ if groups => BEFORE_HINGE_FRICTION_VERSION,

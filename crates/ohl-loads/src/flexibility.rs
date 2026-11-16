@@ -313,6 +313,126 @@ impl Analyses {
     }
 }
 
+impl Analyses {
+    /// The deflected body of placed structure `placed` of type `t` for
+    /// drawing (plan of 2026-11-15, phase 5b; display only): on the
+    /// tangent the condensation takes (at the stringing state `strung`:
+    /// label and force, structure axes, N — as [`Analyses::flexibility_cached`]),
+    /// under the change of the wires' forces from there to `forces` (the
+    /// same labels, structure axes) and the structure's own wind and ice
+    /// of `body` (unfactored) — the linear answer of calculation level 3
+    /// at every joint (a model) or along the axis (a pole). Refused as
+    /// the condensation is.
+    ///
+    /// Expected cost: one reference solve and one factorisation of the
+    /// structure's tangent (as one condensation).
+    pub(crate) fn deflected_body(
+        &self,
+        t: &StructureType,
+        placed: Option<&ohl_line::Structure>,
+        strung: &[(String, [f64; 3])],
+        forces: &[(String, [f64; 3])],
+        body: Option<(&LoadCase, &WeatherCase)>,
+        budget: &Budget,
+    ) -> Result<ohl_structures_fe::drawn::BodyDeflection, Rigid> {
+        let extension = placed.and_then(|s| s.extension.as_deref());
+        let change: Vec<(String, [f64; 3])> = forces
+            .iter()
+            .map(|(l, f)| {
+                let r = strung
+                    .iter()
+                    .find(|(x, _)| x == l)
+                    .map_or([0.0; 3], |(_, r)| *r);
+                (l.clone(), [f[0] - r[0], f[1] - r[1], f[2] - r[2]])
+            })
+            .collect();
+        if let Some((model, extended)) = self.model_of(t, extension) {
+            let model = model.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
+            let nodal_of = |set: &[(String, [f64; 3])]| -> Result<Vec<_>, Rigid> {
+                let mut nodal = Vec::new();
+                for (label, force) in set {
+                    let link = placed_link(placed, label);
+                    if link == Link::Unlinked {
+                        return Err(Rigid::Unlinked(label.clone()));
+                    }
+                    let at = model
+                        .attachment_load(label, &link, *force)
+                        .ok_or_else(|| Rigid::NotInModel(label.clone()))?;
+                    nodal.extend(at.loads);
+                }
+                Ok(nodal)
+            };
+            let linearisation = Linearisation::Tangent(Loads {
+                nodal: nodal_of(strung)?,
+                self_weight: if model.analysis.self_weight { 1.0 } else { 0.0 },
+                ..Loads::default()
+            });
+            let mut loads = nodal_of(&change)?;
+            if let Some((case, w)) = body {
+                let key = (
+                    t.id.clone(),
+                    extension.filter(|_| extended).map(str::to_owned),
+                );
+                let mut ignored = Vec::new();
+                loads.extend(
+                    self.body_loads(&key, model, t, placed, case, Some(w), false, &mut ignored)
+                        .nodal,
+                );
+            }
+            let u = ohl_structures_fe::condense::deflect(model, &linearisation, &loads, budget)?;
+            return Ok(ohl_structures_fe::drawn::BodyDeflection {
+                joints: model
+                    .nodes
+                    .iter()
+                    .zip(u)
+                    .map(|(n, d)| (n.point, [d[0], d[1], d[2]]))
+                    .collect(),
+                pole: Vec::new(),
+            });
+        }
+        if let Some(pole) = self.pole_of(&t.id) {
+            let pole = pole.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
+            let at = |set: &[(String, [f64; 3])]| -> Vec<PoleLoad> {
+                set.iter()
+                    .filter_map(|(l, f)| {
+                        Some(PoleLoad {
+                            point: t.point_local(l, None)?,
+                            force: *f,
+                        })
+                    })
+                    .collect()
+            };
+            let mut own = PoleBody::default();
+            if let Some((case, w)) = body {
+                let foot = t.foot.map_or(0.0, |f| f.si());
+                let mut iced = 1.0;
+                if let Ok(Some(ice)) = case.structure_ice_at(w, placed) {
+                    own.loads = crate::analysis::pole_ice(pole, ice, foot).0;
+                    let top = pole.diameter_at(pole.height());
+                    if top > 0.0 {
+                        iced = (top + 2.0 * ice.thickness) / top;
+                    }
+                }
+                let wind = case.structure_wind_at(w, placed);
+                let [tx, ty] = wind.towards_xy();
+                own.wind = [tx * wind.pressure * iced, ty * wind.pressure * iced];
+            }
+            let axis = ohl_structures_fe::condense::deflect_pole(
+                pole,
+                Some(&at(strung)),
+                &at(&change),
+                &own,
+                budget,
+            )?;
+            return Ok(ohl_structures_fe::drawn::BodyDeflection {
+                joints: Vec::new(),
+                pole: axis,
+            });
+        }
+        Err(Rigid::NoModel)
+    }
+}
+
 /// Condensations by their key, in the structure's axes (or why refused).
 pub(crate) type CondenseCache = Mutex<HashMap<CondenseKey, Result<Condensed, Rigid>>>;
 
@@ -334,7 +454,7 @@ pub struct FlexibleSetup {
 /// Each of `items` through `f`, over the cores (in order); `done` told
 /// after each item (items done, of), `cancel` stops taking new ones (the
 /// items not taken: none).
-fn over_cores<T: Sync, R: Send>(
+pub(crate) fn over_cores<T: Sync, R: Send>(
     items: &[T],
     f: impl Fn(&T) -> R + Sync,
     done: Option<&(dyn Fn(usize, usize) + Sync)>,

@@ -1108,7 +1108,7 @@ impl VegetationWindow {
                 &mut |x, y, z, c| points.push(([mm(x, 0), mm(y, 1), mm(z, 2)], c)),
             )?;
             let at = |v: i32, k: usize| v as f64 / 1000.0 + origin[k];
-            let mut notes = local.notes();
+            let mut notes = local.with_reference();
             if blowouts_only {
                 notes.push(BLOWOUTS_ONLY.to_owned());
             }

@@ -342,7 +342,9 @@ with the same \\( L_0 \\) and w says, to 10⁻⁷.
   phase 5): there, under wind, the points move less than they would —
   **not on the safe side** for leeward clearances, said with the result.
 - **The deflection already present at stringing** is left out (geometry
-  as strung) — not on the safe side where it lowers conductors.
+  as strung) — not on the safe side where it lowers conductors. (A
+  [reference state](#the-reference-state-of-the-structures) puts a
+  reference case's deflection into the level-2 results.)
 - **Translations only**: a hinge's friction moment on a pivoting post and
   a fixed post's tilt are left out (the post moves with its base).
 - **Ruling-span sections** are rigid: their points do not move and the
@@ -543,6 +545,79 @@ kept on this computer (its time, the setup's, its rigid solves', the
 largest change against rigid and the largest move), shown beside each
 choice of the setting; without a level-3 run, an estimate from the last
 rigid run times the expected passes (`EXPECTED_PASSES`, 4).
+
+## The reference state of the structures
+
+*Built, in active development (plan of 2026-11-15, phase 5b; owner
+2026-11-16).* A line may name a **reference case** R — typically the
+survey day's weather. Its state is solved once and kept with the line;
+while it is current, every level-2 solve takes the structures as
+deflected in R.
+
+**Solved** at level 3 (level 4 once built; `REFERENCE_LEVEL` is the one
+place the choice is made): the structures set up as for any level-3
+check (condensed at the stringing state, their own wind and ice of R in
+their deflection), then R's interface loop from the structures as
+strung. Kept per attachment point of each flexible structure: its
+displacement \\( \mathbf u_R \\) (line axes, from the structure as strung)
+and the wires' forces \\( \mathbf F_R \\) and \\( \mathbf F_{ref} \\) (in R and at
+the stringing state). The deflected body drawn is the same linear answer
+at every joint (a pole: along its axis) under
+\\( \mathbf F_R - \mathbf F_{ref} \\) and R's wind and ice on the body —
+display only, made again from the stored forces.
+
+**Used** by a level-2 solve of any case X: the wires stay strung on the
+structures as drawn (the stringing, its memo and the sagging tables are
+unchanged), and each attachment point holds its wires at its drawn
+position plus \\( \mathbf u_R \\) — rigid structures in the geometry of R.
+In R itself this is the level-3 solve's converged pass: the same moves,
+the same section solves (on the example line the two agree to 10⁻⁶,
+`ohl-loads` `reference_tests`). Its cost is a rigid solve's.
+
+**What it changes against a case's own deflection.** Case X keeps R's
+lean \\( \mathbf u_R \\) in place of its own \\( \mathbf u_X \\): the error is
+\\( \mathbf u_X - \mathbf u_R \\) — zero in R, small between cases of
+similar loads, larger the more X's wires and wind differ from R's.
+**NOT ON THE SAFE SIDE** wherever X would lean the structures further
+than R in the direction that closes a clearance:
+
+| Case X against R | Its own deflection | With R's lean | So |
+|---|---|---|---|
+| More ice, colder (tension above R's) | dead ends and angles lean further into the spans, points lower | less sag, conductors higher | **not on the safe side** for clearances below the wires |
+| Stronger wind | points further leeward | conductors less far leeward | **not on the safe side** leeward, conservative windward |
+| Unbalanced ice, a broken wire | the next structures lean towards the loaded span | R's lean | **not on the safe side** (as rigid, by the difference) |
+| Hotter, calmer (tension below R's) | the structures spring back towards drawn | R's lean kept: spans slacker | conservative for sag below the wires (slightly); a windy R kept in a calm case: conductors leeward of their own place — **not on the safe side** windward |
+| The same weather as R | as R | exact | — |
+
+Choose as R a case near the cases checked (the survey state for the
+LiDAR comparison, an everyday case for clearances in everyday
+conditions), and check the extreme cases at **level 3**, where each case
+finds its own deflection (never less safe than rigid). With a reference
+case set, the item *the deflection already present at stringing left
+out* of the level-2 results is replaced by *the reference case's lean
+kept in every case* (above): the level-2 results include the structures'
+deflection from the strung geometry to R. Still left out, as at every
+level: the deflection from the unloaded structure to the strung one (the
+geometry as drawn is the geometry as strung). **Simplification:** the
+attachment points move, the structures' tilt at them does not (the
+swing of a string is measured from its moved top); sections solved by
+the ruling span stay as drawn.
+
+**Kept as drawn** (said in their results): the structure loads and the
+loads sent to OHL-Structure (**Conservative:** rigid, loads never below
+rigid, owner 2026-11-15), internal clearances (the body in the check is
+not deflected: a moved string against an undeflected body would not be
+consistent), and every level-3 run (its own deflection per case).
+
+**Out of date.** The state keeps a stable 128-bit fingerprint (FNV-1a) of
+what it was solved from — the line (geometry, structures as resolved,
+sections, jumpers, settings), the wires' library entries, the structure
+types with their models' files, poles and the cross-sections, and R's
+weather. A program checks it against its inputs before solving; any
+difference, another case named, another level: **out of date, not used**
+(the structures as drawn, bit for bit) and said, until solved again.
+The check is not stored: a line read again is unchecked, and not used,
+until checked.
 
 ## Load factors
 

@@ -54,6 +54,66 @@ pub struct DrawnMember {
     pub solid: Vec<[[f64; 3]; 3]>,
 }
 
+/// A placed structure's deflection, for drawing it deflected (plan of
+/// 2026-11-15, phase 5b: the structures as deflected in the line's
+/// reference case; display only).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BodyDeflection {
+    /// Each joint of its model: its position (the model's axes, m) and
+    /// its translation (structure axes, m).
+    pub joints: Vec<([f64; 3], [f64; 3])>,
+    /// Its pole's axis: each node's height above the ground line and its
+    /// translation (structure axes, m), bottom to top.
+    pub pole: Vec<(f64, [f64; 3])>,
+}
+
+impl BodyDeflection {
+    /// The largest translation of a joint or of the pole's axis, m.
+    pub fn largest(&self) -> f64 {
+        self.joints
+            .iter()
+            .map(|j| j.1)
+            .chain(self.pole.iter().map(|p| p.1))
+            .map(norm)
+            .fold(0.0, f64::max)
+    }
+
+    /// The pole axis' translation at height `z` (linear between its
+    /// nodes, held beyond them); none without a pole.
+    fn pole_at(&self, z: f64) -> Option<[f64; 3]> {
+        let p = &self.pole;
+        let (first, last) = (p.first()?, p.last()?);
+        if z <= first.0 {
+            return Some(first.1);
+        }
+        if z >= last.0 {
+            return Some(last.1);
+        }
+        let k = p.windows(2).position(|w| z <= w[1].0)?;
+        let (a, b) = (p[k], p[k + 1]);
+        let t = if b.0 > a.0 {
+            (z - a.0) / (b.0 - a.0)
+        } else {
+            0.0
+        };
+        Some(std::array::from_fn(|c| a.1[c] + t * (b.1[c] - a.1[c])))
+    }
+
+    /// The translation of the joint nearest `p` (a drawn point, `lift`
+    /// above the model's axes).
+    fn nearest(&self, p: [f64; 3], lift: f64) -> [f64; 3] {
+        let mut best = (f64::INFINITY, [0.0; 3]);
+        for (q, u) in &self.joints {
+            let r = [p[0] - q[0], p[1] - q[1], p[2] - q[2] - lift];
+            let d = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
+            if d < best.0 {
+                best = (d, *u);
+            }
+        }
+        best.1
+    }
+}
+
 /// A structure type's body as drawn, on one extension.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DrawnBody {
@@ -110,6 +170,77 @@ impl DrawnBody {
     /// Whether it has members or polylines (a pole alone has none).
     pub fn has_members(&self) -> bool {
         !self.members.is_empty()
+    }
+
+    /// This body deflected by `d` (display only): each point of a member
+    /// moved by the translation of the model's joint at it (the drawn
+    /// body and the model aligned at their lowest points — the feet; a
+    /// point at no joint, a body polyline's, by the nearest joint's), a
+    /// member's solid by its ends' translations, linear along it; the
+    /// pole's outline ring by ring by its axis' translation at the ring's
+    /// height. Without joints or a pole axis: unchanged.
+    ///
+    /// Expected cost: per drawn point a pass over the joints (a lattice
+    /// tower of some hundred joints: well under a millisecond).
+    pub fn deflected(&self, d: &BodyDeflection) -> DrawnBody {
+        let mut out = self.clone();
+        if !d.joints.is_empty() && !self.members.is_empty() {
+            let drawn_low = self
+                .members
+                .iter()
+                .flat_map(|m| m.points.iter().map(|p| p[2]))
+                .fold(f64::INFINITY, f64::min);
+            let model_low = d
+                .joints
+                .iter()
+                .map(|j| j.0[2])
+                .fold(f64::INFINITY, f64::min);
+            let lift = if drawn_low.is_finite() && model_low.is_finite() {
+                drawn_low - model_low
+            } else {
+                0.0
+            };
+            let add = |p: [f64; 3], u: [f64; 3]| [p[0] + u[0], p[1] + u[1], p[2] + u[2]];
+            for m in &mut out.members {
+                let moves: Vec<[f64; 3]> = m.points.iter().map(|p| d.nearest(*p, lift)).collect();
+                if let (Some(&a), Some(&b), Some(&ua), Some(&ub)) = (
+                    m.points.first(),
+                    m.points.last(),
+                    moves.first(),
+                    moves.last(),
+                ) {
+                    let axis = sub(b, a);
+                    let len2 = axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2];
+                    for tri in &mut m.solid {
+                        for q in tri.iter_mut() {
+                            let r = sub(*q, a);
+                            let t = if len2 > 0.0 {
+                                ((r[0] * axis[0] + r[1] * axis[1] + r[2] * axis[2]) / len2)
+                                    .clamp(0.0, 1.0)
+                            } else {
+                                0.0
+                            };
+                            let u: [f64; 3] = std::array::from_fn(|c| ua[c] + t * (ub[c] - ua[c]));
+                            *q = add(*q, u);
+                        }
+                    }
+                }
+                for (p, u) in m.points.iter_mut().zip(moves) {
+                    *p = add(*p, u);
+                }
+            }
+        }
+        if let Some(pole) = out.pole.as_mut()
+            && !d.pole.is_empty()
+        {
+            pole.shift = pole
+                .rings
+                .iter()
+                .map(|(z, _)| d.pole_at(*z).unwrap_or([0.0; 3]))
+                .collect();
+            pole.solid = pole.make_solid();
+        }
+        out
     }
 
     /// The lines placed at `at` (the structure's position raised by its
@@ -174,7 +305,11 @@ impl DrawnBody {
             let line = p
                 .rings
                 .iter()
-                .map(|(z, _)| to_global(at, rotation_deg, [0.0, 0.0, *z]))
+                .enumerate()
+                .map(|(k, (z, _))| {
+                    let m = p.moved(k);
+                    to_global(at, rotation_deg, [m[0], m[1], *z + m[2]])
+                })
                 .collect();
             let radius = p.rings.iter().map(|(_, d)| 0.5 * d).sum::<f64>() / p.rings.len() as f64;
             out.push((line, radius));
@@ -493,6 +628,9 @@ pub struct DrawnPole {
     /// rings at both ends of a hollow pole, or the end faces of a solid
     /// one.
     pub solid: Vec<[[f64; 3]; 3]>,
+    /// Each ring moved by (as `rings`; structure axes, m): the pole drawn
+    /// deflected ([`DrawnBody::deflected`]); empty: straight.
+    pub shift: Vec<[f64; 3]>,
 }
 
 impl DrawnPole {
@@ -533,6 +671,7 @@ impl DrawnPole {
             sides: p.sides,
             wall,
             solid: Vec::new(),
+            shift: Vec::new(),
         };
         out.solid = out.make_solid();
         Some(out)
@@ -543,16 +682,39 @@ impl DrawnPole {
     pub fn outer_rings(&self) -> Vec<Vec<[f64; 3]>> {
         self.rings
             .iter()
-            .map(|&(z, d)| {
+            .enumerate()
+            .map(|(k, &(z, d))| {
+                let m = self.moved(k);
                 let s = ring(d, self.sides);
-                s.iter().chain(s.first()).map(|q| [q[0], q[1], z]).collect()
+                s.iter()
+                    .chain(s.first())
+                    .map(|q| [q[0] + m[0], q[1] + m[1], z + m[2]])
+                    .collect()
             })
             .collect()
     }
 
+    /// Ring `k`'s move ([`DrawnPole::shift`]; none: zero).
+    fn moved(&self, k: usize) -> [f64; 3] {
+        self.shift.get(k).copied().unwrap_or([0.0; 3])
+    }
+
     fn make_solid(&self) -> Vec<[[f64; 3]; 3]> {
         type Rings = [(f64, Vec<[f64; 2]>)];
-        let at = |q: [f64; 2], z: f64| [q[0], q[1], z];
+        // A ring's points carry its move (straight: none).
+        let shifts: Vec<(f64, [f64; 3])> = self
+            .rings
+            .iter()
+            .enumerate()
+            .map(|(k, r)| (r.0, self.moved(k)))
+            .collect();
+        let at = |q: [f64; 2], z: f64| {
+            let m = shifts
+                .iter()
+                .find(|(h, _)| h.to_bits() == z.to_bits())
+                .map_or([0.0; 3], |(_, m)| *m);
+            [q[0] + m[0], q[1] + m[1], z + m[2]]
+        };
         let outer: Vec<(f64, Vec<[f64; 2]>)> = self
             .rings
             .iter()
@@ -636,6 +798,9 @@ pub fn ring(d: f64, sides: Option<u32>) -> Vec<[f64; 2]> {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Bodies {
     bodies: BTreeMap<(String, Option<String>), DrawnBody>,
+    /// Placed structures drawn with a body of their own (deflected: the
+    /// line's reference state, [`Bodies::with_placed`]), by structure id.
+    placed: BTreeMap<String, DrawnBody>,
 }
 
 impl Bodies {
@@ -711,6 +876,27 @@ impl Bodies {
     /// Whether no type has a body drawn.
     pub fn is_empty(&self) -> bool {
         self.bodies.is_empty()
+    }
+
+    /// These bodies with placed structures drawn with their own
+    /// (`placed`, by structure id: deflected; replacing those given
+    /// before).
+    pub fn with_placed(&self, placed: BTreeMap<String, DrawnBody>) -> Self {
+        Self {
+            bodies: self.bodies.clone(),
+            placed,
+        }
+    }
+
+    /// The body placed structure `structure` is drawn with when it has
+    /// its own ([`Bodies::with_placed`]).
+    pub fn placed(&self, structure: &str) -> Option<&DrawnBody> {
+        self.placed.get(structure)
+    }
+
+    /// The placed structures drawn with their own body.
+    pub fn placed_count(&self) -> usize {
+        self.placed.len()
     }
 }
 

@@ -2061,6 +2061,8 @@ impl View3d {
         if !model.usage_marks.is_empty() {
             crate::loads::paint_usage_legend(&painter, rect, model.usage_out_of_date);
         }
+        // The structures as deflected in the reference case, or why not.
+        crate::structure_reference::paint_note(&painter, rect, model);
         // The cuts' slabs (outlined in the main view).
         if !self.cut_outlines.is_empty() {
             let whole = camera.projector(size);

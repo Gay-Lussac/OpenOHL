@@ -10,6 +10,62 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**A reference state of the structures (structure flexibility, phase
+5b)** (owner: *"Would it be possible to define a weather case at which
+the structure is drawn in OHL design where it would solve at level 4 and
+then keep it for later for example level 2 solves. This could be useful
+to make the model match the lidar scans"*; the proposal accepted: *"Yes
+please"*; built, in active development, not approved yet;
+[user guide](../user-guide/calculation-level.md#the-reference-state-of-the-structures),
+[theory](../theory/structure-flexibility.md#the-reference-state-of-the-structures)).
+
+- **The setting**: an optional per-line *reference case* (a weather case;
+  none: as before, bit for bit), chosen in Line › Criteria › Calculation
+  options under the calculation level: **Solve and keep** (one undoable
+  command when the solve arrives), **Remove** (one command). Solved at
+  **level 3** for now; level 4, once built, takes its place
+  (`ohl_loads::reference::REFERENCE_LEVEL`, the one place) — a state of
+  another level is then out of date.
+- **Kept in the line file** (`reference`, **version 22**, written only
+  when set; a project's settings row `reference`): per attachment point of
+  each flexible structure its displacement and the wires' forces in the
+  case and at stringing, the structures kept as drawn, a fingerprint of
+  what it was solved from. Small (some 60 kB for a hundred towers); the
+  deflected bodies (megabytes) are **not stored**: made again from the
+  stored forces where drawn. Not in OHL XML.
+- **Used by every level-2 solve** while **current**: the one place a
+  section solve takes it (`solve::support::move_points`) adds each point's
+  displacement — as fast as before. The stringing stays on the structures
+  as drawn; ruling-span sections stay as drawn.
+- **Out of date** on any change of the line, the wires' entries, the
+  structure types (models, poles, cross-sections) or the case's weather,
+  another case or level: **never used then** (the structures as drawn,
+  bit for bit), said on every result and in the 3D view, solved again on
+  asking. The check is not stored: a line read again is unchecked, not
+  used, until checked (OHL-Design checks it whenever the line comes from
+  the project; the command line once the weather cases are read). A
+  structure being dragged: out of date until let go.
+- **Drawn**: OHL-Design's 3D view (and the sheets) draws the flexible
+  structures deflected in the reference case, true scale, with a note at
+  the bottom left; out of date, the note says so and they are drawn as
+  drawn.
+- **Results say** "structures as deflected in case X (calculation level
+  3)", that every other case keeps that lean, not its own — **NOT ON THE
+  SAFE SIDE** where a case leans the structures further — and the
+  structures kept as drawn. Set, it takes the place of "the deflection
+  already present at stringing left out" in the level-2 results.
+- **Not taken** (said): level 3 (each case its own deflection), the
+  **structure loads** and the loads sent to OHL-Structure (kept as drawn,
+  rigid: on the safe side — the coordinator's choice, for the owner to
+  confirm), internal clearances (the body is not deflected in the check).
+- **LiDAR**: the As-built wires window compares with the reference state
+  by default when it is current (coordinator's default; the owner may
+  change it), a **Structures** switch for as drawn; `ohl lidar
+  fit-wires --structure-reference ignore` likewise.
+- **Command line**: `--structure-reference use|ignore` (default use) on
+  every command reading a line; `ohl line --solve-reference CASE
+  [--save-reference FILE]`.
+
 **Structure flexibility, phase 5: the line's calculation level, the
 checks taking it** (owner: "Go ahead with the next steps"; built, in
 active development, not approved yet;
