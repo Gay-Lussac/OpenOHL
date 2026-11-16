@@ -10,9 +10,40 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**Structure flexibility, phase 4: calculation level 3 in the structure
+loads** (owner: "Yes"; built, in active development, not approved yet;
+[theory](../theory/structure-flexibility.md#structure-loads-at-level-3)).
+The Structure loads window's **Structures flexible (level 3)** (kept with
+the project's setup, off by default) and `ohl line … --load-cases …
+--calculation-level 3` compute the structure loads and usage with the
+line solved by the interface loop: the structures set up once per run
+(the stringing state solved with every section by finite elements in its
+initial condition, the structures condensed there over the cores, a
+progress stage of its own), each structure's **own wind and ice of the
+case in its deflection** (the check's member wind, ice and snow, or the
+pole's shaft wind and ice, unfactored, on the same tangent), a **broken
+wire as a whole-line solve** (with `"every"`, one per span), at
+unfactored loads with the case's factors on the resulting forces. As the
+owner decided, **never below rigid**: each load at a point is per
+component the larger of the rigid and the flexible solve's; the model and
+pole checks take both solves each on its own and keep the worse (the
+envelope of components is no upper bound of a member force), the member
+checks once per structure and case after the loop. A case whose loop
+does not converge keeps the rigid loads, said. Every level-3 case says
+what it assumed, the structures taken rigid and why, the passes, the time
+and the largest move. OHL-Structure keeps getting the rigid loads until
+the line's own level setting (phase 5); the line-values file can carry
+each case's level (**version 10**, `levels`, written only when a case is
+not rigid). Measured on the example line: the lattice towers' points move
+up to 19 mm leeward in high wind, the pole's 0.3 m, the transverse loads
+change by 0.1 % (1.4 % at the pole); with a broken conductor the other
+circuit's point on the next tower takes up to 40 % more longitudinal
+load than rigid gives it (kept); vertical loads change by at most
+0.05 %; the level-3 solve governs a member check by less than 0.01 %.
+
 **Every wire solve about a local origin** (owner: "fix the rounding";
 built, in active development, not approved yet;
-[theory](../theory/wirefe.md#solver)). The wire solver
+[theory](../theory/wirefe.md#newtonraphson)). The wire solver
 (`ohl_wirefe::Model::solve`, and the wires' stiffness at their supports)
 takes whole kilometres off a model whose first node is more than 10 km
 from the origin and adds them back to its results — so every line solve
@@ -21,8 +52,9 @@ wires, the jumpers, the posts, the final stringing, the coupled solve of
 calculation level 3, whose own translation of the line is gone: pass 0
 and the moved passes now round alike). Exact for the given points (the
 fixed nodes come back bit for bit). **Changed results** on lines in
-projected coordinates (none near the origin: the examples' results are
-unchanged): before, a position was resolved to only about 5·10⁻¹⁰ m and
+projected coordinates (a line near the origin is not moved: the
+examples change only within the solver's tolerance, 10⁻⁴ N and 10⁻⁷ m,
+from the stretch passes below): before, a position was resolved to only about 5·10⁻¹⁰ m and
 the solver's floating-point floor grew with the coordinates, so a
 section with a stiff string stopped up to about 100 N out of balance.
 On a real line (99 weather cases, 554 sections) the tensions changed by

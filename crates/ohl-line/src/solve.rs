@@ -3230,6 +3230,22 @@ pub fn solve_line_breaks(
     broken: &[(&str, Vec<Break>)],
     budget: &Budget,
 ) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
+    solve_line_breaks_based(line, library, case, broken, budget, &Coupling::default())
+}
+
+/// [`solve_line_breaks`], every section solve carrying `base`'s moved
+/// structure points and stiffness ([`coupled::carried`]: a broken wire in
+/// the coupled solve of calculation level 3, the whole line — the other
+/// phases on the same structures hold them, [`flexible`]). With the
+/// default: [`solve_line_breaks`] bit for bit.
+pub(crate) fn solve_line_breaks_based(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    broken: &[(&str, Vec<Break>)],
+    budget: &Budget,
+    base: &Coupling,
+) -> Result<Vec<Result<SectionShape, LineError>>, LineError> {
     let mut by_section: std::collections::BTreeMap<usize, Vec<Break>> = Default::default();
     for (section, spans) in broken {
         let k = line
@@ -3241,11 +3257,11 @@ pub fn solve_line_breaks(
             })?;
         by_section.entry(k).or_default().extend(spans);
     }
-    let mut results = solve_line_with(line, library, case, budget);
+    let mut results = solve_line_based(line, library, case, budget, base);
     let jumpers = crate::jumper::end_loads(line, case, |id| library.get(id));
     let coupling = Coupling {
         jumpers: Some(jumpers),
-        ..Coupling::default()
+        ..coupled::carried(base)
     };
     for (k, spans) in by_section {
         let s = &line.sections[k];

@@ -691,7 +691,10 @@ pub fn placed_values(
 ) -> PlacedValues {
     // A broken wire in every span: a case per break, as the structure's
     // own checks combine the components (the line's envelope is for its
-    // allowable-loads check only; physics review 2026-10-26).
+    // allowable-loads check only; physics review 2026-10-26); at
+    // calculation level 3 the rigid and the flexible solve, each a case
+    // with its level (2026-11-16).
+    let levels: Vec<u8> = loads.iter().flat_map(CaseLoads::each_level).collect();
     let loads: Vec<CaseLoads> = loads.iter().flat_map(CaseLoads::each_break).collect();
     let sources: Vec<CaseSource> = std::iter::repeat_n(CaseSource::LoadCase, loads.len()).collect();
     let loads = loads.as_slice();
@@ -735,6 +738,11 @@ pub fn placed_values(
         others,
         note: (!failed.is_empty()).then(|| format!("values missing — {}", failed.join(" · "))),
         missing: missing_wires(loads, structure),
+        levels: if levels.iter().all(|l| *l == 2) {
+            Vec::new()
+        } else {
+            levels
+        },
         ..PlacedValues::pending(structure, line_name, &structure_type, "")
     }
     // Version 7 only with a set's part of a point's pulls among them.

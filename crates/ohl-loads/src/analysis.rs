@@ -202,6 +202,16 @@ struct Kept {
     checked: Option<Result<(Vec<ohl_structures_fe::MemberUsage>, String), String>>,
 }
 
+/// The loads on a structure's own body ([`Analyses::body_loads`]): at
+/// the model's joints, and per member its total spread along it.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct BodyLoads {
+    /// At the joints (halves of the members' loads), structure axes, N.
+    pub nodal: Vec<ohl_structures_fe::model::NodalLoad>,
+    /// Per member (index) its total force spread along it, N.
+    pub spread: Vec<(usize, [f64; 3])>,
+}
+
 impl Analyses {
     /// Reads the models and poles the types name (each file once), the
     /// members' sections from `sections` first; a type with members
@@ -488,131 +498,11 @@ impl Analyses {
                 )),
             }
         }
-        // Ice and snow on the members (version 4), times the vertical
-        // factor; the ice widens the members for the wind.
-        let mut widening = Vec::new();
-        if let Some(w) = weather
-            && case.ices_or_snows(w)
-        {
-            let ice = match case.structure_ice_at(w, placed) {
-                Ok(i) => i,
-                Err(e) => {
-                    notes.push(format!("model: {e}: no ice"));
-                    None
-                }
-            };
-            let snow = case.structure_snow_at(placed);
-            if case.on_structure.snow && snow.is_none() {
-                notes.push(
-                    "model: snow: no snow on the ground given at this structure (local \
-                     snow_ground or snow_altitude): none"
-                        .into(),
-                );
-            }
-            let weights = body_weights(model, ice, snow.map(|s| s.load()));
-            if let Some(i) = ice {
-                notes.push(format!(
-                    "model: {}ice {:.0} mm of {:.0} kg/m³ on {} member(s), {:.2} kN{}",
-                    if case.takes_local_ice(w) {
-                        "the structure's local "
-                    } else {
-                        ""
-                    },
-                    i.thickness * 1000.0,
-                    i.density,
-                    weights.iced,
-                    weights.ice / 1000.0,
-                    if weights.bare > 0 {
-                        format!(
-                            " ({} member(s) without a profile from the cross-section library: no ice on them, not on the safe side)",
-                            weights.bare
-                        )
-                    } else {
-                        String::new()
-                    }
-                ));
-            }
-            if let Some(s) = snow {
-                notes.push(format!(
-                    "model: snow q = μ·C_e·C_T·s_k = {:.2} × {:.2} kN/m² = {:.2} kN/m² on the \
-                     members' plan, {:.2} kN",
-                    s.factor,
-                    s.ground / 1000.0,
-                    s.load() / 1000.0,
-                    weights.snow / 1000.0
-                ));
-                notes.push(format!(
-                    "model: NOT ON THE SAFE SIDE: {}",
-                    ohl_structures::SNOW_BRIDGING
-                ));
-            }
-            nodal.extend(weights.nodal.iter().map(|l| {
-                let mut l = *l;
-                l.force[2] *= case.vertical;
-                l
-            }));
-            spread.extend(
-                weights
-                    .member
-                    .iter()
-                    .map(|(k, f)| (*k, f.map(|x| x * case.vertical))),
-            );
-            if ice.is_some() {
-                widening = weights.widening;
-            }
-        }
-        if let Some(w) = weather
-            && model.has_profiles()
-        {
-            // The wind blows from the case's direction (by default across
-            // the line, from the right: to −x). The pressure and factor
-            // are the structures' of the load case
-            // (LoadCase::structure_wind_at); drag and shielding factors
-            // from the section library's [wind] when given (else the
-            // model's drag, else the shapes' built-in SIA 261 coefficients, no shielding).
-            let body = case.structure_wind_at(w, placed);
-            let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
-                model,
-                self.wind.as_ref(),
-                self.faces.get(&key).cloned().unwrap_or_default(),
-            );
-            let [tx, ty] = body.towards_xy();
-            let wind = setup.wind_iced(body.factored(), [tx, ty, 0.0], &widening);
-            if !wind.loads.is_empty() {
-                let total = wind.total();
-                notes.push(format!(
-                    "model: member wind from the section profiles, {:.1} kN {}{}{}",
-                    total[0].hypot(total[1]) / 1000.0,
-                    if body.has_longitudinal() {
-                        format!(
-                            "{} ({:.1} kN along the line)",
-                            body.direction.words(),
-                            total[1].abs() / 1000.0
-                        )
-                    } else {
-                        "across the line".to_owned()
-                    },
-                    if t.wind.is_some() {
-                        " (the type's wind bands not in the model)"
-                    } else {
-                        ""
-                    },
-                    if body.is_own() {
-                        format!(
-                            " ({}: {} Pa × {})",
-                            body.origin(),
-                            body.pressure,
-                            body.factor
-                        )
-                    } else {
-                        String::new()
-                    }
-                ));
-                notes.extend(wind.notes.iter().map(|n| format!("model: {n}")));
-                spread.extend(wind.member_forces());
-                nodal.extend(wind.loads);
-            }
-        }
+        // The loads on the structure's own body (ice, snow, member wind),
+        // factored.
+        let own = self.body_loads(&key, model, t, placed, case, weather, true, notes);
+        nodal.extend(own.nodal);
+        spread.extend(own.spread);
         let loads = Loads {
             nodal,
             member: spread,
@@ -826,6 +716,162 @@ impl Analyses {
                 not_safe: 0,
             }),
         }
+    }
+
+    /// The loads on the structure's own body in load case `case` as the
+    /// finite-element check puts them on the joints of `model` (its key
+    /// `key`, type `t`, placed as `placed`): the ice and snow on its
+    /// members and the member wind (the ice widening the members), each
+    /// with its notes — factored as the check takes them (the vertical
+    /// factor on ice and snow, the body wind's factor), or unfactored
+    /// (`factored` false: the structure's own deflection in the line's
+    /// coupled solve, calculation level 3, plan §4.6).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn body_loads(
+        &self,
+        key: &(String, Option<String>),
+        model: &ohl_structures_fe::Model,
+        t: &StructureType,
+        placed: Option<&ohl_line::Structure>,
+        case: &LoadCase,
+        weather: Option<&WeatherCase>,
+        factored: bool,
+        notes: &mut Vec<String>,
+    ) -> BodyLoads {
+        let vertical = if factored { case.vertical } else { 1.0 };
+        let mut nodal = Vec::new();
+        let mut spread: Vec<(usize, [f64; 3])> = Vec::new();
+        // Ice and snow on the members (version 4), times the vertical
+        // factor; the ice widens the members for the wind.
+        let mut widening = Vec::new();
+        if let Some(w) = weather
+            && case.ices_or_snows(w)
+        {
+            let ice = match case.structure_ice_at(w, placed) {
+                Ok(i) => i,
+                Err(e) => {
+                    notes.push(format!("model: {e}: no ice"));
+                    None
+                }
+            };
+            let snow = case.structure_snow_at(placed);
+            if case.on_structure.snow && snow.is_none() {
+                notes.push(
+                    "model: snow: no snow on the ground given at this structure (local \
+                     snow_ground or snow_altitude): none"
+                        .into(),
+                );
+            }
+            let weights = body_weights(model, ice, snow.map(|s| s.load()));
+            if let Some(i) = ice {
+                notes.push(format!(
+                    "model: {}ice {:.0} mm of {:.0} kg/m³ on {} member(s), {:.2} kN{}",
+                    if case.takes_local_ice(w) {
+                        "the structure's local "
+                    } else {
+                        ""
+                    },
+                    i.thickness * 1000.0,
+                    i.density,
+                    weights.iced,
+                    weights.ice / 1000.0,
+                    if weights.bare > 0 {
+                        format!(
+                            " ({} member(s) without a profile from the cross-section library: no ice on them, not on the safe side)",
+                            weights.bare
+                        )
+                    } else {
+                        String::new()
+                    }
+                ));
+            }
+            if let Some(s) = snow {
+                notes.push(format!(
+                    "model: snow q = μ·C_e·C_T·s_k = {:.2} × {:.2} kN/m² = {:.2} kN/m² on the \
+                     members' plan, {:.2} kN",
+                    s.factor,
+                    s.ground / 1000.0,
+                    s.load() / 1000.0,
+                    weights.snow / 1000.0
+                ));
+                notes.push(format!(
+                    "model: NOT ON THE SAFE SIDE: {}",
+                    ohl_structures::SNOW_BRIDGING
+                ));
+            }
+            nodal.extend(weights.nodal.iter().map(|l| {
+                let mut l = *l;
+                l.force[2] *= vertical;
+                l
+            }));
+            spread.extend(
+                weights
+                    .member
+                    .iter()
+                    .map(|(k, f)| (*k, f.map(|x| x * vertical))),
+            );
+            if ice.is_some() {
+                widening = weights.widening;
+            }
+        }
+        if let Some(w) = weather
+            && model.has_profiles()
+        {
+            // The wind blows from the case's direction (by default across
+            // the line, from the right: to −x). The pressure and factor
+            // are the structures' of the load case
+            // (LoadCase::structure_wind_at); drag and shielding factors
+            // from the section library's [wind] when given (else the
+            // model's drag, else the shapes' built-in SIA 261 coefficients, no shielding).
+            let body = case.structure_wind_at(w, placed);
+            let setup = ohl_structures_fe::wind::MemberWindSetup::with_faces(
+                model,
+                self.wind.as_ref(),
+                self.faces.get(key).cloned().unwrap_or_default(),
+            );
+            let [tx, ty] = body.towards_xy();
+            let pressure = if factored {
+                body.factored()
+            } else {
+                body.pressure
+            };
+            let wind = setup.wind_iced(pressure, [tx, ty, 0.0], &widening);
+            if !wind.loads.is_empty() {
+                let total = wind.total();
+                notes.push(format!(
+                    "model: member wind from the section profiles, {:.1} kN {}{}{}",
+                    total[0].hypot(total[1]) / 1000.0,
+                    if body.has_longitudinal() {
+                        format!(
+                            "{} ({:.1} kN along the line)",
+                            body.direction.words(),
+                            total[1].abs() / 1000.0
+                        )
+                    } else {
+                        "across the line".to_owned()
+                    },
+                    if t.wind.is_some() {
+                        " (the type's wind bands not in the model)"
+                    } else {
+                        ""
+                    },
+                    if body.is_own() {
+                        format!(
+                            " ({}: {} Pa × {})",
+                            body.origin(),
+                            body.pressure,
+                            body.factor
+                        )
+                    } else {
+                        String::new()
+                    }
+                ));
+                notes.extend(wind.notes.iter().map(|n| format!("model: {n}")));
+                spread.extend(wind.member_forces());
+                nodal.extend(wind.loads);
+            }
+        }
+        BodyLoads { nodal, spread }
     }
 
     /// The pole check of a structure of type `t`: the loads at the type's

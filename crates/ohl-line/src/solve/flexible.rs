@@ -450,11 +450,12 @@ pub fn level_three_notes() -> Vec<String> {
             .into(),
         "interaction at unfactored loads; a load case's factors go on the resulting forces".into(),
         "NOT ON THE SAFE SIDE for the structures if taken from here: the flexible loads may be \
-         lower than rigid — every structure check still uses the rigid solve (the larger of \
-         rigid and flexible comes with the structure checks)"
+         lower than rigid — the structure loads at level 3 keep, per point, the larger of rigid \
+         and flexible"
             .into(),
         "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, the \
-         structures' own wind and ice (not in their deflection yet), rigid foundations in the \
+         structures' own wind and ice (in their deflection only in the structure loads), rigid \
+         foundations in the \
          models, linearisation stiffer than the case's state where members would go slack — \
          all make the points move less than the real structures"
             .into(),
@@ -487,6 +488,24 @@ pub fn solve_line_flexible(
     structures: &Structures,
     options: &FlexibleOptions,
 ) -> Result<FlexibleSolve, FlexibleFailure> {
+    solve_line_flexible_broken(line, library, case, budget, structures, options, &[])
+}
+
+/// [`solve_line_flexible`] with the wires of `broken` broken (per
+/// section, its spans: [`super::solve_line_breaks`]) in every pass: a
+/// broken wire as a whole-line solve, the structures next to the break
+/// held back by the other wires on them (plan §6.2). Pass 0 is
+/// [`super::solve_line_breaks`] bit for bit. Err: as there (a section not
+/// in the line), the case failed in pass 0.
+pub fn solve_line_flexible_broken(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    structures: &Structures,
+    options: &FlexibleOptions,
+    broken: &[(&str, Vec<Break>)],
+) -> Result<FlexibleSolve, FlexibleFailure> {
     let responses: Vec<&dyn StructureResponse> = structures
         .flexible
         .iter()
@@ -508,6 +527,7 @@ pub fn solve_line_flexible(
         &structures.rigid,
         notes,
         options,
+        broken,
     )
 }
 
@@ -529,6 +549,7 @@ pub fn solve_line_coupled(
     rigid: &[RigidStructure],
     mut notes: Vec<String>,
     options: &FlexibleOptions,
+    broken: &[(&str, Vec<Break>)],
 ) -> Result<FlexibleSolve, FlexibleFailure> {
     let started = Instant::now();
     // The points: per structure its labels, in order.
@@ -580,7 +601,11 @@ pub fn solve_line_coupled(
             stiffness: true,
             ..Coupling::default()
         };
-        solve_line_based(line, library, case, budget, &base)
+        if broken.is_empty() {
+            Ok(solve_line_based(line, library, case, budget, &base))
+        } else {
+            solve_line_breaks_based(line, library, case, broken, budget, &base)
+        }
     };
     // The forces at the points, which points have one, K_w.
     let gather = |results: &[Result<SectionShape, LineError>]| {
@@ -664,7 +689,16 @@ pub fn solve_line_coupled(
             ));
         }
         let pass_started = Instant::now();
-        let results = solve(&u);
+        let results = match solve(&u) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(fail(
+                    format!("the broken wires: {e}"),
+                    passes,
+                    rigid_results,
+                ));
+            }
+        };
         if pass == 0 {
             rigid_results = stripped(&results);
             for (s, r) in line.sections.iter().zip(&results) {
@@ -715,10 +749,24 @@ pub fn solve_line_coupled(
         if pass == 0 {
             rigid_forces = Some((f.clone(), seen.clone()));
         }
-        // A point no section put a force on (its section failed in pass 0):
-        // its force as at the stringing state.
+        // A point no section put a force on: where a section at its
+        // structure failed in pass 0, its force as at the stringing state;
+        // else no wire holds it in this case (removed): no force.
+        let failed_at: std::collections::BTreeSet<&str> = line
+            .sections
+            .iter()
+            .zip(&rigid_results)
+            .filter(|(_, r)| r.is_err())
+            .flat_map(|(s, _)| s.points.iter().map(|p| p.structure.as_str()))
+            .collect();
         for (i, &(r, k)) in owner.iter().enumerate() {
             if !seen[i] {
+                if !failed_at.contains(points[i].0.as_str()) {
+                    for c in 0..3 {
+                        f[3 * i + c] = 0.0;
+                    }
+                    continue;
+                }
                 let reference = responses[r].reference()[k];
                 for c in 0..3 {
                     f[3 * i + c] = reference[c];

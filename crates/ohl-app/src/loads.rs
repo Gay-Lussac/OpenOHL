@@ -64,6 +64,9 @@ pub struct Inputs {
     pub known: Vec<String>,
     /// **Use local conditions** ticked.
     pub local: bool,
+    /// **Structures flexible** ticked: calculation level 3
+    /// ([`ohl_loads::structure_loads_at`]).
+    pub level3: bool,
     /// Per structure, the load cases it is computed for (the window's
     /// setup and the line's groups, [`crate::loads_plan`]); none: every
     /// structure in every case it takes.
@@ -88,7 +91,8 @@ pub struct NotComputed {
 #[derive(Debug, Default)]
 pub struct Stages {
     /// 0: starting, 1: solving the line in each load case, 2: the
-    /// structures, 3: done.
+    /// structures, 3: done, 4: the structures' stiffness at their points
+    /// (calculation level 3, before 1).
     pub stage: std::sync::atomic::AtomicUsize,
     /// Done in the stage.
     pub done: std::sync::atomic::AtomicUsize,
@@ -129,6 +133,7 @@ impl Stages {
                 (done + 1).min(total)
             ),
             2 => format!("Structures: {done} of {total}"),
+            4 => format!("Structures' stiffness (level 3): {done} of {total}"),
             _ => "Starting".to_owned(),
         };
         // The time left in this stage, from its own pace.
@@ -212,10 +217,37 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,
     };
+    let budget = ohl_loads::default_budget().cancel_token(stages.cancel.clone());
+    // Calculation level 3: first the structures' stiffness at their
+    // points and their own wind and ice per case (the structures in
+    // parallel), kept for every case.
+    let level = if i.level3 {
+        stages.begin(4, line.structures.len(), ms());
+        let report = |n: usize, of: usize| {
+            stages.done.store(n, Relaxed);
+            stages.total.store(of, Relaxed);
+        };
+        let setup = ohl_loads::prepare_structure_loads(
+            line,
+            &i.library,
+            &i.types,
+            &sections,
+            &i.weather,
+            &expanded,
+            &budget,
+            Some(&report),
+            Some(&stages.cancel),
+        );
+        if stages.cancel.is_cancelled() {
+            return None;
+        }
+        Some(setup)
+    } else {
+        None
+    };
     // Stage 1: the line in each case (the cases in parallel; each solve
     // as one after the other would).
     stages.begin(1, expanded.len(), ms());
-    let budget = ohl_loads::default_budget().cancel_token(stages.cancel.clone());
     let next = std::sync::atomic::AtomicUsize::new(0);
     let solve_one = || {
         let mut mine = Vec::new();
@@ -225,13 +257,14 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
             }
             let k = next.fetch_add(1, Relaxed);
             let Some(case) = expanded.get(k) else { break };
-            let r = ohl_loads::structure_loads_each(
+            let r = ohl_loads::structure_loads_at(
                 line,
                 &i.library,
                 &i.weather,
                 std::slice::from_ref(case),
                 &i.known,
                 &budget,
+                level.as_ref(),
             )
             .into_iter()
             .next()
@@ -621,6 +654,9 @@ pub struct LoadsPage {
     /// structures' wind for strength and wire ice on their spans, and their
     /// wind for strength on their own wind bands.
     pub local: bool,
+    /// **Structures flexible** (calculation level 3; kept with the
+    /// project, [`SETTING`]).
+    pub level3: bool,
     /// A computation running: since, its answer, where it is.
     running: Option<(Instant, Receiver<Finished>, std::sync::Arc<Stages>)>,
     /// How much of their capacity the structures use, per load case (with
@@ -693,6 +729,7 @@ impl LoadsPage {
     /// follows Use local conditions).
     pub fn keep(&mut self, model: &mut Model, ctx: &egui::Context) {
         self.choice.local = self.local;
+        self.choice.level3 = self.level3;
         let json = serde_json::to_string(&self.choice).unwrap_or_default();
         let mut kept = std::mem::take(&mut self.kept);
         if let crate::check_ui::Step::Load(text) =
@@ -703,6 +740,7 @@ impl LoadsPage {
                 .and_then(|t| serde_json::from_str(t).ok())
                 .unwrap_or_default();
             self.local = self.choice.local;
+            self.level3 = self.choice.level3;
             kept.loaded(serde_json::to_string(&self.choice).unwrap_or_default());
         }
         self.kept = kept;
@@ -888,6 +926,7 @@ impl LoadsPage {
             cases,
             known,
             local: self.local,
+            level3: self.level3,
             plan: Some(plan.clone()),
         };
         self.units.1 = plan.pairs();
@@ -906,6 +945,48 @@ impl LoadsPage {
         self.running = Some((Instant::now(), rx, stages));
         self.run_plan = Some(plan);
         self.runs_started += 1;
+    }
+
+    /// What the last run at level 3 changed and took, for the switch's
+    /// help (settings explain their effect, measured).
+    fn level_effect(&self) -> String {
+        let Some(Ok(cases)) = &self.results else {
+            return "\n\nNot run at level 3 yet: its effect and time are shown after a run.".into();
+        };
+        let mut most: Option<(f64, String)> = None;
+        let mut moved: Option<(f64, String)> = None;
+        for c in cases {
+            let Some(l) = &c.level else { continue };
+            for m in &l.moves {
+                let d = m.local.iter().map(|v| v * v).sum::<f64>().sqrt();
+                if moved.as_ref().is_none_or(|x| d > x.0) {
+                    moved = Some((d, format!("{} {} in {}", m.structure, m.point, c.case.name)));
+                }
+            }
+            let mut structures: Vec<&str> = l.moves.iter().map(|m| m.structure.as_str()).collect();
+            structures.dedup();
+            for s in structures {
+                if let Some((p, k, a, b)) = l.largest_change(s)
+                    && a.abs() > 1.0
+                {
+                    let r = (b - a) / a.abs();
+                    if most.as_ref().is_none_or(|x| r.abs() > x.0.abs()) {
+                        let axis = ["transverse", "longitudinal", "vertical"][k];
+                        most = Some((r, format!("{s} {p} {axis} in {}", c.case.name)));
+                    }
+                }
+            }
+        }
+        match (moved, most) {
+            (Some((d, at)), Some((r, of))) => format!(
+                "\n\nLast run ({:.1} s): largest move {:.1} mm at {at}; largest change of a \
+                 load against rigid {:+.1} % at {of} (the larger kept).",
+                self.took.map_or(0.0, |t| t.as_secs_f64()),
+                d * 1e3,
+                r * 100.0
+            ),
+            _ => "\n\nThe last run was rigid (level 2).".into(),
+        }
     }
 
     /// Stops the run under way (its threads stop between cases and
@@ -1042,9 +1123,21 @@ impl LoadsPage {
                     crate::check_ui::count(plan.solve.len(), "load case"),
                 )),
             };
+            let effect = self.level_effect();
             let local = &mut self.local;
+            let level3 = &mut self.level3;
             match crate::check_ui::run_footer(ui, f, |ui| {
                 crate::local_solve::switch(ui, local, LOCAL.1, LOCAL.0, LOCAL.2, &model.line);
+                ui.checkbox(level3, "Structures flexible (level 3)")
+                    .on_hover_text(format!(
+                        "Calculation level 3 (in active development): every load case's line \
+                         solved again with each structure that has a model (or a pole with an \
+                         elasticity) as a linear stiffness at its attachment points, its own \
+                         wind and ice of the case in its deflection, at unfactored loads. The \
+                         loads and the usage are the larger of the rigid and the flexible \
+                         solve's (never below rigid). Costs one condensation per structure \
+                         first, then 2–5 line solves per case.{effect}"
+                    ));
             }) {
                 crate::check_ui::Action::Run => self.start(model, ui.ctx()),
                 crate::check_ui::Action::Stop => self.stop(),

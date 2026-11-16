@@ -40,6 +40,11 @@ pub struct Choice {
     /// **Use local conditions**.
     #[serde(default)]
     pub local: bool,
+    /// **Structures flexible** (calculation level 3, plan of 2026-11-15,
+    /// phase 4; in active development): the loads and usage the larger
+    /// of the rigid and the coupled solve's.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub level3: bool,
     /// The structure groups **not** run, by name (a group is run by
     /// default, also one added later).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

@@ -284,6 +284,11 @@ pub struct Condensed {
     pub notes: Vec<String>,
     /// The linearisation, in words ([`Linearisation::words`]).
     pub linearisation: &'static str,
+    /// Per extra load set given ([`condense_with`]; the structure's own
+    /// wind and ice of a case, plan §4.6), each place's displacement
+    /// under it, m, in the matrices' axes: the same tangent, one more
+    /// substitution each. Empty: none asked.
+    pub extra: Vec<Vec<[f64; 3]>>,
 }
 
 impl Condensed {
@@ -339,11 +344,28 @@ impl Condensed {
             }
             out
         };
+        let turn_vector = |v: &[f64; 3]| {
+            let w = r * nalgebra::Vector3::from_column_slice(v);
+            [w[0], w[1], w[2]]
+        };
         Self {
             flexibility: turn(&self.flexibility),
             stiffness: self.stiffness.as_ref().map(turn),
+            extra: self
+                .extra
+                .iter()
+                .map(|set| set.iter().map(turn_vector).collect())
+                .collect(),
             ..self.clone()
         }
+    }
+
+    /// Each point's displacement (as `labels`, m, the matrices' axes)
+    /// under extra load set `k` ([`Condensed::extra`]); none when it was
+    /// not asked.
+    pub fn extra_at_points(&self, k: usize) -> Option<Vec<[f64; 3]>> {
+        let set = self.extra.get(k)?;
+        Some(self.place_of.iter().map(|&p| set[p]).collect())
     }
 }
 
@@ -407,6 +429,18 @@ impl CondenseKey {
         }
     }
 
+    /// This key with extra load sets ([`condense_with`],
+    /// [`condense_pole_with`]): another key unless there are none.
+    pub fn with_extra(self, extra: &dyn Debug, empty: bool) -> Self {
+        if empty {
+            return self;
+        }
+        Self {
+            inputs: fingerprint(&[&self.inputs, &"extra", extra]),
+            ..self
+        }
+    }
+
     /// The key of [`condense_pole`].
     pub fn of_pole(
         structure_type: &str,
@@ -445,6 +479,24 @@ pub fn condense(
     model: &Model,
     points: &[Attachment],
     linearisation: &Linearisation,
+    budget: &Budget,
+) -> Result<Condensed, Rigid> {
+    condense_with(model, points, linearisation, &[], budget)
+}
+
+/// [`condense`] with, for each of `extra` (loads at the model's nodes,
+/// structure axes, N — the structure's own wind and ice of a case, as
+/// the structure check puts them on its joints), each place's
+/// displacement under it on the same tangent ([`Condensed::extra`]: the
+/// linear answer, P-Delta of the reference's forces included).
+///
+/// Expected cost: as [`condense`], plus one forward and back
+/// substitution per extra load set.
+pub fn condense_with(
+    model: &Model,
+    points: &[Attachment],
+    linearisation: &Linearisation,
+    extra: &[Vec<crate::model::NodalLoad>],
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
     if points.is_empty() {
@@ -563,6 +615,32 @@ pub fn condense(
     }
     // Symmetric to round-off (Maxwell–Betti): its mean.
     let c = (&c + c.transpose()) * 0.5;
+    // The extra load sets: each place's displacement along each axis.
+    let mut extra_moves = Vec::with_capacity(extra.len());
+    for loads in extra {
+        run.check()
+            .map_err(|stop| Rigid::Stopped(stop.to_string()))?;
+        let mut x = vec![0.0; tangent.n_eq];
+        for l in loads {
+            if l.node < tangent.eq.len() {
+                tangent.put(l.node, l.force, l.moment, &mut x);
+            }
+        }
+        tangent.k.solve(&mut x);
+        extra_moves.push(
+            places
+                .iter()
+                .zip(&place_moments)
+                .map(|(place, moments)| {
+                    [0, 1, 2].map(|i| {
+                        let mut e = [0.0; 3];
+                        e[i] = 1.0;
+                        tangent.read(place.node, e, moments[i], &x)
+                    })
+                })
+                .collect(),
+        );
+    }
 
     // A force at a point carried by a joint held to the ground: refused.
     let ground: Vec<&Stabilisation> = solution
@@ -649,6 +727,7 @@ pub fn condense(
         approximate: solution.stalled || !solution.kept_active.is_empty(),
         notes,
         linearisation: linearisation.words(),
+        extra: extra_moves,
     })
 }
 
@@ -944,6 +1023,32 @@ pub fn condense_pole(
     reference: Option<&[PoleLoad]>,
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
+    condense_pole_with(pole, points, reference, &[], budget)
+}
+
+/// The pole's own loads of a case for [`condense_pole_with`]: the wind on
+/// its shaft and loads on it (its ice), unfactored.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PoleBody {
+    /// The wind pressure on the shaft along where it blows (structure
+    /// axes x, y; Pa): q(z) = p · drag · D(z), as the pole check takes it.
+    pub wind: [f64; 2],
+    /// Loads on the shaft (its ice), as the pole check places them.
+    pub loads: Vec<PoleLoad>,
+}
+
+/// [`condense_pole`] with, for each of `extra`, each point's
+/// displacement under the pole's own loads ([`Condensed::extra`]): the
+/// wind on the shaft lumped on the frame model's nodes (each element's
+/// q at its middle times its length, half at each end), the loads as
+/// the pole check places them.
+pub fn condense_pole_with(
+    pole: &Pole,
+    points: &[(String, [f64; 3])],
+    reference: Option<&[PoleLoad]>,
+    extra: &[PoleBody],
+    budget: &Budget,
+) -> Result<Condensed, Rigid> {
     let e = pole.elasticity.ok_or(Rigid::PoleWithoutElasticity)?;
     if points.is_empty() {
         return Err(Rigid::NoPoints);
@@ -952,7 +1057,12 @@ pub fn condense_pole(
     let heights = points
         .iter()
         .map(|p| p.1[2])
-        .chain(reference.into_iter().flatten().map(|l| l.point[2]));
+        .chain(reference.into_iter().flatten().map(|l| l.point[2]))
+        .chain(
+            extra
+                .iter()
+                .flat_map(|b| b.loads.iter().map(|l| l.point[2])),
+        );
     let (mut model, z) = crate::pole::frame_model(pole, e, heights);
     for (label, at) in points {
         model.joint_points.push(crate::model::JointPoint {
@@ -970,7 +1080,27 @@ pub fn condense_pole(
         }),
     };
     let attachments: Vec<Attachment> = points.iter().map(|p| Attachment::of_type(&p.0)).collect();
-    let mut c = condense(&model, &attachments, &linearisation, budget)?;
+    let extra: Vec<Vec<crate::model::NodalLoad>> = extra
+        .iter()
+        .map(|b| {
+            let mut nodal = crate::pole::axis_loads(&z, top, &b.loads);
+            if b.wind != [0.0; 2] {
+                for k in 0..z.len().saturating_sub(1) {
+                    let length = z[k + 1] - z[k];
+                    let q = pole.drag * pole.diameter_at(0.5 * (z[k] + z[k + 1])) * length;
+                    for node in [k, k + 1] {
+                        nodal.push(crate::model::NodalLoad {
+                            node,
+                            force: [0.5 * q * b.wind[0], 0.5 * q * b.wind[1], 0.0],
+                            moment: [0.0; 3],
+                        });
+                    }
+                }
+            }
+            nodal
+        })
+        .collect();
+    let mut c = condense_with(&model, &attachments, &linearisation, &extra, budget)?;
     c.notes.push(
         "NOT ON THE SAFE SIDE for clearances: the pole fixed at the ground line (its \
          embedment's rotation left out), its crossarms rigid, wood's creep left out — stiffer \

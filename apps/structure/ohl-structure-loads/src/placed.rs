@@ -73,6 +73,13 @@
 //! over the type's, as in the line's structure check). A file is written
 //! at 9 only when it holds links.
 //!
+//! Version 10 (2026-11-16, calculation level 3 in the structure loads)
+//! adds `levels`: the calculation level each case was solved at, in the
+//! order of `cases` (2 rigid, 3 the structures as a linear stiffness at
+//! their points); at level 3 a case comes twice, `<case> (rigid)` and
+//! `<case> (level 3)`, each with its level. Written only when a case is
+//! not at 2; an older file has none: every case rigid.
+//!
 //! Since 2026-11-15 (owner: Line › Criteria › Loads for structures is
 //! gone) the line sends the placed structure's library cases only, each
 //! `load_case`; a case of source `weather_case` (an unfactored weather case
@@ -92,10 +99,14 @@ pub const LINE_VALUES_FILE_FORMAT: &str = "ohl-structure-line-values";
 /// pulls among the values; 7: each set's part of the pulls at a point
 /// holding several sets; 8: the moments at points — a fixed post
 /// insulator's, 2026-11-14; 9: the placed structure's own links of its
-/// attachment points, 2026-11-15; older files are read too). The newest version
+/// attachment points, 2026-11-15; 10: the calculation level of each
+/// case, 2026-11-16; older files are read too). The newest version
 /// read; a file is written at the lowest its values need
 /// ([`PlacedValues::needed_version`]).
-pub const LINE_VALUES_FILE_VERSION: u32 = 9;
+pub const LINE_VALUES_FILE_VERSION: u32 = 10;
+/// The version before the calculation level per case (what a file of
+/// rigid cases only is written as at most).
+pub const LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS: u32 = 9;
 /// The version before the placed structure's own links (what a file
 /// without links is written as at most).
 pub const LINE_VALUES_FILE_VERSION_WITHOUT_LINKS: u32 = 8;
@@ -313,6 +324,13 @@ pub struct PlacedValues {
     /// they differ from its type's (version 9; [`PlacedLink`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<PlacedLink>,
+    /// The calculation level each of `cases` was solved at, in their
+    /// order (version 10, 2026-11-16): 2 the structures rigid, 3 each
+    /// structure a linear stiffness at its points (the line's coupled
+    /// solve). Empty (older files, or every case rigid): every case at 2
+    /// ([`PlacedValues::level_of`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<u8>,
 }
 
 impl PlacedValues {
@@ -332,7 +350,18 @@ impl PlacedValues {
             missing: Vec::new(),
             library_cases: Vec::new(),
             links: Vec::new(),
+            levels: Vec::new(),
         }
+    }
+
+    /// The calculation level case `case` was solved at (2: rigid; a case
+    /// not listed, or a file without levels: 2).
+    pub fn level_of(&self, case: &str) -> u8 {
+        self.cases
+            .iter()
+            .position(|c| c == case)
+            .and_then(|k| self.levels.get(k).copied())
+            .unwrap_or(2)
     }
 
     /// The version a file of these values is written at: 7 when the
@@ -344,8 +373,10 @@ impl PlacedValues {
             self.values.has_set_parts() || self.others.iter().any(|o| o.values.has_set_parts());
         let moments = !self.values.moments.is_empty()
             || self.others.iter().any(|o| !o.values.moments.is_empty());
-        if !self.links.is_empty() {
+        if !self.levels.is_empty() {
             LINE_VALUES_FILE_VERSION
+        } else if !self.links.is_empty() {
+            LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS
         } else if moments {
             LINE_VALUES_FILE_VERSION_WITHOUT_LINKS
         } else if set_parts {

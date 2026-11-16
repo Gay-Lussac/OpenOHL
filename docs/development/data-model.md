@@ -266,7 +266,12 @@ linked to no joint (`[[point]] unlinked = true` with its `point`; owner
 says so: Add a point, Unlink — linking takes the key off); `.ohlfe`, the
 line file and OHL XML are unchanged (a placed structure's point of such a
 type resolves with no joint, as its type links it). The placed
-structure's own links made the line-values file **9** (below).
+structure's own links made the line-values file **9** (below). The calculation level each case was solved at (2026-11-16) made it
+**10** (`levels`, one per case in the order of `cases`, 2 rigid or 3;
+`LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS` 9; written only when a case is
+not at 2 — older files and files without it: every case rigid;
+`PlacedValues::level_of(case)`); OHL-Structure says it in the case's
+description.
 
 ### Coordinates and angles
 
@@ -2716,7 +2721,47 @@ cores — the matrix expanded to its points; no type, no model, refused:
 rigid with the reason; a structure with no wire solved by finite elements
 is left out) and `solve_line_flexible(line, library, types, sections,
 cases, level, budget) -> FlexibleRun { level, setup, cases }`. Nothing
-stored; no check reads it (the structure checks keep the rigid solve).
+stored.
+
+**The structure loads at calculation level 3** (2026-11-16, phase 4 of
+the plan; in memory, no line-file field;
+[theory](../theory/structure-flexibility.md#structure-loads-at-level-3)).
+`ohl_line::solve::flexible::solve_line_flexible_broken(…, broken)`: the
+loop with broken wires in every pass (`solve_line_breaks_based`; pass 0 =
+`solve_line_breaks` bit for bit); a point no section of the line puts a
+force on takes the stringing state's only where a section at its
+structure failed, else none (its wire removed). In `ohl-structures-fe`:
+`condense_with(model, points, linearisation, extra: &[Vec<NodalLoad>],
+budget)` and `condense_pole_with(…, extra: &[PoleBody { wind: [x, y] Pa,
+loads: Vec<PoleLoad> }], …)` — `Condensed::extra` (per extra set, per
+place, the displacement on the same tangent, turned with the matrices;
+`extra_at_points(k)`), `CondenseKey::with_extra`. In `ohl-loads`:
+`Analyses::body_loads(key, model, type, placed, case, weather, factored,
+notes) -> BodyLoads { nodal, spread }` (the check's ice, snow and member
+wind at the joints; the finite-element check takes it factored, the
+deflection unfactored); `prepare_structure_loads(line, cables, types,
+sections, weather, cases, budget, done, cancel) -> LoadsSetup { setup:
+FlexibleSetup, body: BTreeMap<case name, per flexible structure, per
+point: Point (line axes, m)> }` (`structures_for(case)`: the structures
+with that case's body deflection) and `structure_loads_at(line, cables,
+weather, cases, known, budget, level: Option<&LoadsSetup>)`
+(`structure_loads_each` = level none). `CaseLoads::level:
+Option<FlexibleLoads { level (3), rigid, flexible (AttachmentLoad lists),
+rigid_each, flexible_each (BrokenLoads, a broken wire in every span),
+moves: [PointMove { structure, point, local (right, ahead, up, m) }]
+(the largest over the breaks), rigid_structures [(id, why)], passes,
+elapsed, failed: Option<String> }>`
+(`largest_move(s)`, `largest_change(s) -> (point, component, rigid,
+flexible)`); `CaseLoads::loads` then per point and component the larger
+by size of the two. `CaseLoads::check_variants() -> Vec<CheckVariant {
+words, span, level, loads }>`: the load sets the finite-element and pole
+checks take each on its own (the case; each break; at level 3 the rigid
+and the flexible solve, each break of each); `each_break()` makes a case
+of each (`<case> (rigid)`, `<case> (level 3)`, `<case> (span k broken,
+level 3)`), `each_level()` their levels. The Structure loads window's
+setup (`app.structure_loads`, `loads_plan::Choice`) gains `level3`
+(bool, written only when true). The line-values file carries the level
+per case (`levels`, version **10**, below).
 
 `LoadCase` (`ohl-loads`): `name`, `description`, `weather` (a weather
 case name), `condition` (initial, creep, load, max sag), factors
