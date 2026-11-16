@@ -614,12 +614,16 @@ struct LineArgs {
     /// displacements and the change against rigid printed), and with
     /// --load-cases the structure loads and usage take it (each load the
     /// larger of rigid and level 3, the checks the worse: never below
-    /// rigid). The tables, clearances, drawings and files written stay
-    /// rigid (level 2), said. Full structures (level 4) are not built yet.
+    /// rigid). Full (level 4): from level 3's solution, each such
+    /// structure solved in full (P-Delta, tension-only members and guys)
+    /// in every pass, the structures side by side; a structure whose full
+    /// solve fails in a case is taken linear there and said failing. The
+    /// tables, clearances, drawings and files written stay rigid (level
+    /// 2), said.
     #[arg(long, value_parser = analysis_run::parse_structures_as, conflicts_with = "calculation_level")]
     structures_as: Option<ohl_line::StructuresInSolve>,
-    /// The same as --structures-as by the level's number: 2 (rigid) or 3
-    /// (linear).
+    /// The same as --structures-as by the level's number: 2 (rigid), 3
+    /// (linear) or 4 (full).
     #[arg(long, value_parser = parse_calculation_level)]
     calculation_level: Option<ohl_line::solve::flexible::CalculationLevel>,
     /// The line's reference state of the structures (in active
@@ -630,8 +634,9 @@ struct LineArgs {
     #[arg(long, value_parser = reference_run::parse_use, default_value = "use", action = clap::ArgAction::Set)]
     structure_reference: bool,
     /// Solve the structures in this weather case (of --weather) at
-    /// calculation level 3 and take it as the line's reference state for
-    /// this run (printed: each structure's largest move, the times).
+    /// calculation level 3 (4 when the line's setting or --structures-as
+    /// is full) and take it as the line's reference state for this run
+    /// (printed: each structure's largest move, the times).
     #[arg(long, value_name = "CASE", requires = "weather")]
     solve_reference: Option<String>,
     /// With --solve-reference: write the line with its reference state to
@@ -640,14 +645,14 @@ struct LineArgs {
     save_reference: Option<PathBuf>,
 }
 
-/// A calculation level for `--calculation-level` (2 or 3).
+/// A calculation level for `--calculation-level` (2, 3 or 4).
 fn parse_calculation_level(
     text: &str,
 ) -> Result<ohl_line::solve::flexible::CalculationLevel, String> {
     let n: u8 = text
         .trim()
         .parse()
-        .map_err(|_| format!("calculation level \"{text}\": give 2 or 3"))?;
+        .map_err(|_| format!("calculation level \"{text}\": give 2, 3 or 4"))?;
     ohl_line::solve::flexible::CalculationLevel::from_number(n)
 }
 
@@ -2046,21 +2051,14 @@ fn line(args: &LineArgs, drawing_specs: &[DrawingSpec], one_pdf: Option<&str>) -
             line.solver.blocks.describe()
         );
         // The structures in the wire solve (the calculation level): the
-        // command line's over the file's; level 4 refused (not built).
+        // command line's over the file's.
         if let Some(s) = structures_as {
             line.solver.structures = *s;
         }
         if let Some(level) = calculation_level {
-            line.solver.structures = match level {
-                ohl_line::solve::flexible::CalculationLevel::Rigid => {
-                    ohl_line::StructuresInSolve::Rigid
-                }
-                ohl_line::solve::flexible::CalculationLevel::Linear => {
-                    ohl_line::StructuresInSolve::Linear
-                }
-            };
+            line.solver.structures = ohl_line::StructuresInSolve::of_level(*level);
         }
-        let level = line.solver.structures.level()?;
+        let level = line.solver.structures.level();
         if level != ohl_line::solve::flexible::CalculationLevel::Rigid {
             println!(
                 "calculation level {}: {}",
@@ -2920,8 +2918,8 @@ fn weather_cases(
     Ok(cases)
 }
 
-/// Per structure of a level-3 case its largest move and its largest
-/// change of a factored load against rigid (structure axes).
+/// Per structure of a level-3 or level-4 case its largest move and its
+/// largest change of a factored load against rigid (structure axes).
 fn level_changes(l: &ohl_loads::FlexibleLoads) {
     const AXES: [&str; 3] = ["transverse", "longitudinal", "vertical"];
     let mut structures: Vec<&str> = l.moves.iter().map(|m| m.structure.as_str()).collect();
@@ -2930,8 +2928,9 @@ fn level_changes(l: &ohl_loads::FlexibleLoads) {
         return;
     }
     println!(
-        "    level 3, per structure: largest move right/ahead/up (mm); largest change of a \
-         factored load, rigid → level 3 (the larger kept)"
+        "    level {n}, per structure: largest move right/ahead/up (mm); largest change of a \
+         factored load, rigid → level {n} (the larger kept)",
+        n = l.level
     );
     for s in structures {
         let m = l.largest_move(s).map_or([0.0; 3], |m| m.local);
@@ -2991,23 +2990,35 @@ fn structure_loads_report(
             None => ohl_sections::SectionLibrary::default(),
         };
         let budget = ohl_wirefe::default_fe_budget();
-        // Calculation level 3 (in active development): the structures
-        // set up once for every case (their stiffness at the stringing
-        // state, their own wind and ice per case).
-        let level = (line.solver.structures == ohl_line::StructuresInSolve::Linear).then(|| {
-            let setup = ohl_loads::prepare_structure_loads(
-                line, library, types, &sections, &all, &set.cases, &budget, None, None,
+        // Calculation level 3 or 4 (in active development): the
+        // structures set up once for every case (their stiffness at the
+        // stringing state, their own wind and ice per case; level 4 their
+        // full models too).
+        let chosen = line.solver.structures.level();
+        let level = chosen.flexible().then(|| {
+            let setup = ohl_loads::prepare_structure_loads_at(
+                line, library, types, &sections, &all, &set.cases, chosen, &budget, None, None,
             );
             println!(
-                "structure loads at calculation level 3 (in active development): {} structures \
-                 flexible, {} rigid; set up in {:.1?} ({} condensations)",
+                "structure loads at calculation level {} (in active development): {} structures \
+                 flexible, {} rigid; set up in {:.1?} ({} condensations{})",
+                chosen.number(),
                 setup.setup.structures.flexible.len(),
                 setup.setup.structures.rigid.len(),
                 setup.setup.elapsed,
-                setup.setup.condensed
+                setup.setup.condensed,
+                setup.full.as_ref().map_or(String::new(), |f| format!(
+                    "; the full models in {:.1?}",
+                    f.0.elapsed
+                ))
             );
             for r in &setup.setup.structures.rigid {
                 println!("  {} rigid: {}", r.structure, r.reason);
+            }
+            if let Some(f) = &setup.full {
+                for (id, why) in f.linear_only() {
+                    println!("  {id} linear (no full model): {why}");
+                }
             }
             setup
         });

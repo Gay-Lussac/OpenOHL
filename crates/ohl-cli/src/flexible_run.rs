@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! `ohl line … --calculation-level 3`: the weather cases solved again with
-//! the structures flexible (calculation level 3, in active development),
-//! for testing — the setup (flexible and rigid structures, why), per case
-//! the passes, the time, the largest displacement of each structure and
-//! its largest change of load, the largest change of tension and sag of
-//! each section; a case that does not converge printed failed, with why.
+//! `ohl line … --calculation-level 3` (or 4): the weather cases solved
+//! again with the structures flexible (calculation level 3, or level 4
+//! with their full models; in active development), for testing — the
+//! setup (flexible and rigid structures, why), per case the passes, the
+//! time, the largest displacement of each structure and its largest
+//! change of load, the largest change of tension and sag of each section,
+//! at level 4 the change from level 3 and the structures that failed
+//! there; a case that does not converge printed failed, with why.
 //! Printed only: every other output of the command stays rigid.
 
 use std::collections::BTreeMap;
@@ -30,7 +32,7 @@ pub(crate) fn report(
         "calculation level {} (in active development): the tables above, the clearances, the \
          drawings and every file written are the rigid solve's (calculation level 2: they do not \
          take the line's level yet); the structure loads with --load-cases take the larger of \
-         rigid and level 3, `ohl tensions` and `ohl strings` the worse of the two",
+         rigid and level {0}, `ohl tensions` and `ohl strings` the worse of the two",
         level.number()
     );
     let started = std::time::Instant::now();
@@ -44,7 +46,7 @@ pub(crate) fn report(
         &ohl_wirefe::default_fe_budget(),
     );
     let setup = &run.setup;
-    if level == CalculationLevel::Linear {
+    if level.flexible() {
         println!(
             "  setup in {:.1?}: {} structures flexible, {} rigid; {} condensations (the \
              stringing state's solve {:.1?})",
@@ -96,18 +98,44 @@ pub(crate) fn report(
 fn print_case(line: &ohl_line::Line, s: &FlexibleSolve) {
     let rigid_time = s.passes.first().map(|p| p.elapsed).unwrap_or_default();
     let last = s.passes.last();
+    let solves = s.line_solves();
     println!(
-        "  case \"{}\": converged in {} pass{} ({:.1?}; the rigid solve {:.1?}, estimated \
+        "  case \"{}\": converged in {} line solve{} ({:.1?}; the rigid solve {:.1?}, estimated \
          {:.1?}); mismatch {:.4} mm, force change {:.3} N",
         s.case,
-        s.passes.len(),
-        if s.passes.len() == 1 { "" } else { "es" },
+        solves,
+        if solves == 1 { "" } else { "s" },
         s.elapsed,
         rigid_time,
         s.estimate,
         last.map_or(0.0, |p| p.displacement_residual * 1e3),
         last.map_or(0.0, |p| p.force_residual)
     );
+    if s.level == CalculationLevel::Full {
+        let at3 = s.passes.iter().filter(|p| p.level == 3 && p.solved).count();
+        println!(
+            "    level 4: {} line solves at level 3, {} at level 4; {} full structure solves \
+             ({:.1?} in all, side by side){}",
+            at3,
+            solves - at3,
+            s.structure_solves.0,
+            s.structure_solves.1,
+            if s.passes.iter().any(|p| p.relaxed.is_some()) {
+                "; staggered passes (the Newton step could not be taken)"
+            } else {
+                ""
+            }
+        );
+        if let Some(c) = s.change_from_level3() {
+            println!("    {c}");
+        }
+        for f in &s.full_failed {
+            println!(
+                "    {} FAILED at level 4: {} — taken linear (level 3) in this case",
+                f.structure, f.reason
+            );
+        }
+    }
     // Per structure: its point moving most, and its largest change of a
     // load component (structure axes, the whole bundles', unfactored).
     let mut by_structure: BTreeMap<&str, Vec<&ohl_line::solve::flexible::PointResult>> =

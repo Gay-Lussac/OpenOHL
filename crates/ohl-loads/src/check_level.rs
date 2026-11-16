@@ -269,6 +269,12 @@ impl CheckLevel {
                 ))
         ));
         if let Some(c) = change {
+            // The checks' envelopes name the coupled solve "level 3".
+            let c = if self.level == CalculationLevel::Full {
+                c.replace("level 3", "level 4")
+            } else {
+                c
+            };
             out.push(format!("change against rigid: {c}"));
         }
         if let Some(c) = &tally.from_level3 {

@@ -9,7 +9,8 @@
 //! takes the structures as deflected in the reference case; `ignore` sets
 //! it aside (the structures as drawn). A state out of date or not
 //! checkable is never used — said. `ohl line --solve-reference CASE`
-//! solves one (at calculation level 3) for the run, and `--save-reference
+//! solves one (at calculation level 3, or 4 when the line's setting or
+//! `--structures-as` is full) for the run, and `--save-reference
 //! FILE` writes the line with it.
 
 use std::path::Path;
@@ -97,7 +98,8 @@ fn print_note(line: &Line) {
 }
 
 /// `--solve-reference CASE`: `line`'s structures solved in weather case
-/// `case` (among `weather`) at calculation level 3 and kept as its
+/// `case` (among `weather`) at calculation level 3 (4 when the line's
+/// setting is full structures) and kept as its
 /// reference state for this run (checked current, so the run's level-2
 /// solves take it unless `use_it` is false), the points' largest moves
 /// and the times printed; written with the line to `save` when given.

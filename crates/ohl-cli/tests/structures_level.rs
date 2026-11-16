@@ -7,8 +7,10 @@
 //! line's own `solver.structures` taken without it and overridden by
 //! `--structures-as rigid`; `ohl tensions` at level 3 prints the level's
 //! header and both solves' tensions with the same rows; full structures
-//! refused (not built yet); `ohl line --calculation-level 3` still works;
-//! a check that does not take the level says it stays rigid.
+//! (level 4) the same with level 4's header; `ohl line
+//! --calculation-level 3` and `4` work (level 4 printing its passes and
+//! the change from level 3); a check that does not take the level says
+//! it stays rigid.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -108,12 +110,57 @@ fn ohl_tensions_takes_the_lines_level_and_the_run_s() {
         "{text}"
     );
 
-    // Full structures: refused, said why.
+    // Full structures (level 4): the same rows, level 4's header.
     let full = tensions(&line, &["--structures-as", "full"]);
-    assert_eq!(full.status.code(), Some(2));
-    let e = String::from_utf8_lossy(&full.stderr);
-    assert!(e.contains("not built yet"), "{e}");
+    let text = String::from_utf8_lossy(&full.stdout).into_owned();
+    assert_eq!(full.status.code(), rigid.status.code(), "{text}");
+    for said in [
+        "calculation level 4 (in active development)",
+        "never less safe than rigid",
+        " / level 4 ",
+    ] {
+        assert!(text.contains(said), "{said}: {text}");
+    }
+    assert_eq!(rows(&text).len(), a.len(), "{text}");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn ohl_line_at_calculation_level_four() {
+    let line = ex().join("synthetic-line-typed.ohl.json");
+    for args in [
+        &["--calculation-level", "4"][..],
+        &["--structures-as", "full"][..],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+            .arg("line")
+            .arg(&line)
+            .arg("--temperature=5")
+            .arg("--wind-pressure=450")
+            .args(args)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{args:?}: {text}");
+        for said in [
+            "calculation level 4: full structures",
+            "structures flexible",
+            "level 4: ",
+            "against level 3: the points' moves differ by up to",
+        ] {
+            assert!(text.contains(said), "{said}: {text}");
+        }
+        assert!(!text.contains("FAILED"), "{text}");
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_ohl"))
+        .arg("line")
+        .arg(&line)
+        .arg("--calculation-level")
+        .arg("5")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("give 2, 3 or 4"));
 }
 
 #[test]

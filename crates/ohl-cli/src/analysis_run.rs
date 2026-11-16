@@ -45,9 +45,10 @@ pub struct ModelArgs {
     /// setting (Line › Criteria › Calculation options): rigid
     /// (calculation level 2) or linear (level 3: each structure with a
     /// model a linear stiffness at its attachment points; the checks
-    /// that take it keep the worse of rigid and level 3). Full structures
-    /// (level 4) are not built yet. The checks that do not take the level
-    /// yet say so and stay rigid.
+    /// that take it keep the worse of rigid and level 3) or full (level
+    /// 4: from level 3's solution each such structure solved in full in
+    /// every pass). The checks that do not take the level yet say so and
+    /// stay rigid.
     #[arg(long, value_parser = parse_structures_as)]
     pub structures_as: Option<ohl_line::StructuresInSolve>,
     /// The line's reference state of the structures (Line › Criteria ›
@@ -60,14 +61,11 @@ pub struct ModelArgs {
     pub structure_reference: bool,
 }
 
-/// The structures in the wire solve for `--structures-as` (rigid or
-/// linear; full refused: not built yet).
+/// The structures in the wire solve for `--structures-as` (rigid, linear
+/// or full).
 pub(crate) fn parse_structures_as(text: &str) -> Result<ohl_line::StructuresInSolve, String> {
-    match ohl_line::StructuresInSolve::parse(text.trim()) {
-        Some(ohl_line::StructuresInSolve::Full) => Err(ohl_line::FULL_NOT_BUILT.into()),
-        Some(s) => Ok(s),
-        None => Err(format!("structures \"{text}\": rigid or linear")),
-    }
+    ohl_line::StructuresInSolve::parse(text.trim())
+        .ok_or_else(|| format!("structures \"{text}\": rigid, linear or full"))
 }
 
 /// Weather cases from a file.
@@ -455,12 +453,12 @@ pub(crate) fn load_with_structures(m: &ModelArgs) -> Result<Loaded, String> {
 /// The structures of `l` set up for a check in weather cases `cases` at
 /// the line's calculation level (its setting, or `--structures-as`): at
 /// level 3 one condensation per structure first (said, with the time);
-/// level 4 refused (not built yet).
+/// at level 4 one full solve per structure more.
 pub(crate) fn check_level(
     l: &Loaded,
     cases: &[WeatherCase],
 ) -> Result<ohl_loads::CheckLevel, String> {
-    let level = l.line.solver.structures.level()?;
+    let level = l.line.solver.structures.level();
     let started = Instant::now();
     let out = ohl_loads::prepare_check_level(
         &l.line,
@@ -475,8 +473,9 @@ pub(crate) fn check_level(
     );
     if let Some(setup) = &out.setup {
         println!(
-            "calculation level 3 (in active development): {} structures flexible, {} rigid; set \
+            "calculation level {} (in active development): {} structures flexible, {} rigid; set \
              up in {:.1?}",
+            level.number(),
             setup.setup.structures.flexible.len(),
             setup.setup.structures.rigid.len(),
             started.elapsed()
@@ -553,7 +552,9 @@ pub(crate) fn solve_for_rules<R>(
                 case: case.name.clone(),
                 calc: c,
                 rigid: keep(&solve.rigid, ""),
-                flexible: solve.flexible().map(|f| keep(f, " (level 3)")),
+                flexible: solve
+                    .flexible()
+                    .map(|f| keep(f, &format!(" (level {})", level.level.number()))),
             }
         })
         .collect();

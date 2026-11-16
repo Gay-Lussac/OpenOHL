@@ -119,12 +119,17 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
             Measure::Uplift => (format!("{:.2} kN", r.value / 1000.0), "hangs".into()),
             _ => (format!("{:.1}°", r.value), format!("{:.1}°", r.limit)),
         };
-        // At level 3: both solves' values, the worse checked.
+        // At level 3 or 4: both solves' values, the worse checked.
+        let n = level.level.number();
         let both = r.levels.map_or(String::new(), |[a, b]| {
             if r.measure.is_force() {
-                format!("  (rigid {:.2} / level 3 {:.2} kN)", a / 1000.0, b / 1000.0)
+                format!(
+                    "  (rigid {:.2} / level {n} {:.2} kN)",
+                    a / 1000.0,
+                    b / 1000.0
+                )
             } else {
-                format!("  (rigid {a:.1}° / level 3 {b:.1}°)")
+                format!("  (rigid {a:.1}° / level {n} {b:.1}°)")
             }
         });
         println!(

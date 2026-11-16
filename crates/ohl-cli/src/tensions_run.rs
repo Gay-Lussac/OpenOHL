@@ -265,9 +265,14 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
         "rule", "case", "section", "span", "tension kN", "allowed kN", "usage %"
     );
     for r in &report.rows {
-        // At level 3: both solves' tensions, the larger checked.
+        // At level 3 or 4: both solves' tensions, the larger checked.
+        let n = level.level.number();
         let both = r.levels.map_or(String::new(), |[a, b]| {
-            format!("  (rigid {:.2} / level 3 {:.2} kN)", a / 1000.0, b / 1000.0)
+            format!(
+                "  (rigid {:.2} / level {n} {:.2} kN)",
+                a / 1000.0,
+                b / 1000.0
+            )
         });
         println!(
             "{:<24} {:<16} {:<12} {:>4} {:>11.2} {:>11.2} {:>8.1} {}{both}",
