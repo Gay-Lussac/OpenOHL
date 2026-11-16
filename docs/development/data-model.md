@@ -266,7 +266,8 @@ linked to no joint (`[[point]] unlinked = true` with its `point`; owner
 says so: Add a point, Unlink — linking takes the key off); `.ohlfe`, the
 line file and OHL XML are unchanged (a placed structure's point of such a
 type resolves with no joint, as its type links it). The placed
-structure's own links made the line-values file **9** (below). The calculation level each case was solved at (2026-11-16) made it
+structure's own links made the line-values file **9** (below). The
+calculation level each case was solved at (2026-11-16) made it
 **10** (`levels`, one per case in the order of `cases`, 2 rigid or 3;
 `LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS` 9; written only when a case is
 not at 2 — older files and files without it: every case rigid;
@@ -3084,8 +3085,11 @@ file format.
 
 **Line-values file** (`<stem>.<placed structure>.line-values.json`
 beside the structure file, `ohl_structure_loads::PlacedValues`, JSON,
-`format = "ohl-structure-line-values"`, version 6, 7, 8 or 9; versions 1
-to 5 are read too; 9 (2026-11-15, owner: the two applications tell each
+`format = "ohl-structure-line-values"`, version 6 to 10; versions 1
+to 5 are read too; 10 (2026-11-16, calculation level 3 in the structure
+loads) adds `levels`, the level each case was solved at (2 rigid or 3,
+one per case in the order of `cases`, written only when a case is not
+at 2; `PlacedValues::level_of`); 9 (2026-11-15, owner: the two applications tell each
 other when attachment points are linked or moved) adds `links`: the
 placed structure's own links of its attachment points where they differ
 from its type's (`PlacedLink`: `label`, `joint` (none: unlinked),
