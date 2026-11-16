@@ -109,6 +109,11 @@ pub struct Removal {
     /// (version 9; "D1 at N2", "plate G1"), for the confirmation:
     /// [`remove`] takes them from the members and joints.
     pub connections: Vec<String>,
+    /// The joints the points going were linked to (and that stay): each
+    /// falls back from attach once nothing is on it
+    /// ([`crate::links::release_joints`]; owner 2026-11-16). Not listed
+    /// in the confirmation.
+    pub left: Vec<String>,
 }
 
 impl Removal {
@@ -121,6 +126,7 @@ impl Removal {
             (&mut self.wires, more.wires),
             (&mut self.strings, more.strings),
             (&mut self.connections, more.connections),
+            (&mut self.left, more.left),
         ] {
             for x in add {
                 if !all.contains(&x) {
@@ -180,6 +186,13 @@ pub fn removal(t: &StructureType, h: &Handle) -> Removal {
         }
     }
     r.connections = connections_going(t, &r.members, &r.joints);
+    r.left = r
+        .points
+        .iter()
+        .filter_map(|l| crate::links::joint_of(t, l))
+        .filter(|j| !r.joints.contains(j))
+        .collect();
+    r.left.dedup();
     r
 }
 
@@ -211,7 +224,8 @@ pub(crate) fn connections_going(
 
 /// Removes everything in `r` from the file: with the members and joints
 /// their connections and the plates at the joints; a connection onto a
-/// member or plate gone loses its `onto`.
+/// member or plate gone loses its `onto`; a joint whose last point goes
+/// is no longer an attach joint ([`Removal::left`]).
 pub fn remove(doc: &mut DocumentMut, r: &Removal) {
     remove_connections(doc, &r.members, &r.joints);
     for (key, field, gone) in [
@@ -229,6 +243,7 @@ pub fn remove(doc: &mut DocumentMut, r: &Removal) {
             });
         }
     }
+    crate::links::release_joints(doc, &r.left);
 }
 
 /// The connections of `members` and at `joints` and the plates and

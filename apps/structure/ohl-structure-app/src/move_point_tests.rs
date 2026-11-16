@@ -108,6 +108,12 @@ fn the_move_tool_chooses_among_the_points_on_a_joint() {
         ohl_structure_edit::links::points_on(&structure(&h), "A1"),
         ["A1", "A11"]
     );
+    // Joint A2, left with no point, is no attach joint any more (owner
+    // 2026-11-16): made one again to take A1.
+    assert_eq!(structure(&h).joint("A2").unwrap().kind, None);
+    h.state_mut()
+        .set_joint_kind("A2", Some(ohl_structures::JointKind::Attach));
+    h.run();
     let before = text(&h);
     h.state_mut().hold_tool(Tool::MovePoint);
     h.run();
@@ -268,4 +274,132 @@ fn the_lines_links_are_said_and_used() {
         crate::link_tool::with_placed_links(&t, &h.state().file.as_ref().unwrap().text(), &[bad])
             .unwrap_err();
     assert!(e.contains("refused") && e.contains("A1"), "{e}");
+}
+
+/// Whether joint `id` has a `kind` written in the file as edited.
+fn kind_written(h: &egui_kittest::Harness<'_, StructureApp>, id: &str) -> Option<String> {
+    kind_in(&text(h), id)
+}
+
+/// Joint `id`'s `kind` written in file text `text`.
+fn kind_in(text: &str, id: &str) -> Option<String> {
+    let doc: toml_edit::DocumentMut = text.parse().unwrap();
+    doc.get("node")?
+        .as_array_of_tables()?
+        .iter()
+        .find(|n| n.get("id").and_then(toml_edit::Item::as_str) == Some(id))?
+        .get("kind")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// A joint is an attach joint only while attachment points are on it
+/// (owner 2026-11-16: "if no attach points are left on the joint then no
+/// it shouldn't be attach anymore"), on every path: joints A1 and A2 of
+/// type-02 given the kind attach in the Joints table; the list moves
+/// point A1 off joint A1 — joint A1 plain (nothing written, no attach
+/// joint), A2 still attach; undo brings both back, redo again. The Move
+/// attachment point tool takes A11 off A2 to A1: A2 plain. Unlink: the
+/// joint left plain. Delete: the joint left plain, undo
+/// brings the point and the kind back. The line's links (OHL-Design's
+/// move sent in the line-values file): the placed structure's joint left
+/// plain too. Point A1 and joint A1 stay apart throughout.
+#[test]
+fn a_joint_left_by_its_last_point_is_no_attach_joint() {
+    use ohl_structures::JointKind;
+    let path = copy_of("type-02.ohls", "joint-left");
+    let mut h = harness(&path);
+    for j in ["A1", "A2"] {
+        h.state_mut().set_joint_kind(j, Some(JointKind::Attach));
+    }
+    h.run();
+    assert_eq!(kind_written(&h, "A1").as_deref(), Some("attach"));
+    let attach = text(&h);
+    let kind = |h: &egui_kittest::Harness<'_, StructureApp>, id: &str| {
+        structure(h).joint(id).unwrap().kind
+    };
+    // The list: A1 onto joint A2 (asked: onto it).
+    h.state_mut().request_link("A1", "A2", "the list");
+    h.state_mut().answer_link(LinkHow::Onto);
+    h.run();
+    assert_eq!(structure(&h).point_link("A1"), Some(("A2", [0.0; 3])));
+    assert_eq!(kind_written(&h, "A1"), None);
+    assert_eq!(kind(&h, "A1"), None, "joint A1 plain");
+    assert_eq!(kind(&h, "A2"), Some(JointKind::Attach));
+    let moved = text(&h);
+    // Undo: the point back on joint A1, joint A1 attach again; redo.
+    h.state_mut().undo();
+    h.run();
+    assert_eq!(text(&h), attach);
+    assert_eq!(kind(&h, "A1"), Some(JointKind::Attach));
+    assert_eq!(structure(&h).point_link("A1"), Some(("A1", [0.0; 3])));
+    h.state_mut().redo();
+    h.run();
+    assert_eq!(text(&h), moved);
+    h.state_mut().undo();
+    h.run();
+    // The Move attachment point tool: A11 off joint A2 to joint A1.
+    h.state_mut().hold_tool(Tool::MovePoint);
+    h.run();
+    h.state_mut().link_click(Some(Handle::Joint("A2".into())));
+    h.run();
+    h.state_mut().link_click(Some(Handle::Joint("A1".into())));
+    h.run();
+    h.state_mut().answer_link(LinkHow::KeepPosition);
+    h.run();
+    assert_eq!(structure(&h).point_link("A11").map(|l| l.0), Some("A1"));
+    assert_eq!(kind_written(&h, "A2"), None);
+    assert_eq!(kind(&h, "A2"), None, "joint A2 plain");
+    assert_eq!(kind(&h, "A1"), Some(JointKind::Attach));
+    h.state_mut().undo();
+    h.run();
+    assert_eq!(text(&h), attach);
+    h.state_mut().hold_tool(Tool::Select);
+    h.run();
+    // Unlink: joint A1 plain.
+    h.state_mut().unlink_point("A1");
+    h.run();
+    assert_eq!(kind(&h, "A1"), None);
+    h.state_mut().undo();
+    h.run();
+    assert_eq!(text(&h), attach);
+    // Delete (what the window removes): joint A2 plain; undo.
+    h.state_mut().selected = vec![Handle::Point("A11".into())];
+    h.state_mut().ask_delete();
+    h.run();
+    // What its Delete button does (the window's title is "Delete" too).
+    let r = h.state_mut().confirm.take().expect("asked");
+    assert_eq!(r.left, ["A2"]);
+    h.state_mut()
+        .file
+        .as_mut()
+        .unwrap()
+        .edit("delete", |doc, _| ohl_structure_edit::remove(doc, &r));
+    h.run();
+    // (The file then names a point gone in its capacity, so it is checked
+    // as written.)
+    assert!(!text(&h).contains("label = \"A11\""));
+    assert_eq!(kind_written(&h, "A2"), None);
+    assert_eq!(kind_written(&h, "A1").as_deref(), Some("attach"));
+    h.state_mut().undo();
+    h.run();
+    assert_eq!(text(&h), attach);
+    assert_eq!(kind(&h, "A2"), Some(JointKind::Attach));
+    // The line's links: A1 moved to joint A2 in OHL-Design.
+    let link = ohl_structure_loads::PlacedLink {
+        label: "A1".into(),
+        joint: Some("A2".into()),
+        offset: [0.0; 3],
+        unlinked: false,
+    };
+    let (placed, written) = crate::link_tool::with_placed_links(&structure(&h), &attach, &[link])
+        .unwrap()
+        .expect("differs");
+    assert_eq!(placed.point_link("A1"), Some(("A2", [0.0; 3])));
+    assert_eq!(placed.joint("A1").unwrap().kind, None, "joint A1 plain");
+    assert_eq!(placed.joint("A2").unwrap().kind, Some(JointKind::Attach));
+    assert_eq!(kind_in(&written, "A1"), None);
+    assert_eq!(kind_in(&written, "A2").as_deref(), Some("attach"));
+    // The type itself unchanged.
+    assert_eq!(text(&h), attach);
 }

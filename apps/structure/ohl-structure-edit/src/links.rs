@@ -11,6 +11,10 @@
 //!
 //! Only **attach joints** take a link (owner decision 2026-10-21): a
 //! joint without a kind is made one in the Joints table (its kind) first.
+//! A joint is an attach joint only while attachment points are on it
+//! (owner 2026-11-16): when the last one leaves (moved to another joint,
+//! unlinked, deleted) it falls back to its plain kind
+//! ([`release_joints`]).
 //! A point cannot be put on a member: [`insert_joint`] puts a joint on
 //! it (the member split there, continuous), then the point is linked.
 
@@ -145,12 +149,8 @@ pub fn link_point(
              to a joint (a joint of the body, or one added)"
         ));
     }
+    let left = joint_of(t, label).filter(|j| j != joint);
     let p = entry(doc, "point", "label", label).ok_or("no such point in the file")?;
-    let left = p
-        .get("node")
-        .and_then(Item::as_str)
-        .filter(|n| *n != joint)
-        .map(str::to_owned);
     for k in ["point", "node", "member", "at", "offset", "unlinked"] {
         p.remove(k);
     }
@@ -158,21 +158,105 @@ pub fn link_point(
     let shifted = offset != [0.0; 3];
     if shifted {
         p.insert("offset", point_value(offset));
-    }
-    // The joint the point left stays an attach joint (its kind was worked
-    // out from the point on it): a point can be moved back.
-    let mut kind = false;
-    if let Some(n) = left.and_then(|id| entry(doc, "node", "id", &id))
-        && !n.contains_key("kind")
-        && n.get("support").is_none()
-    {
-        n.insert("kind", toml_edit::value(JointKind::Attach.as_str()));
-        kind = true;
-    }
-    if shifted || kind {
         raise_version(doc, LINKS_VERSION);
     }
+    // The joint the point left: no longer an attach joint once nothing is
+    // on it (owner 2026-11-16).
+    release_joints(doc, left.as_slice());
     Ok(())
+}
+
+/// The joint of the structure (a `[[node]]`) attachment point `label` of
+/// `t` is linked to now. None: no such point, standing alone, or on a
+/// place of its own.
+pub fn joint_of(t: &StructureType, label: &str) -> Option<String> {
+    let p = t.points.iter().find(|p| p.label == label && !p.unlinked)?;
+    t.nodes
+        .iter()
+        .any(|n| n.id == p.joint)
+        .then(|| p.joint.clone())
+}
+
+/// The joints in `left` (`[[node]]` ids an attachment point has just
+/// left: moved to another joint, unlinked, deleted) that no attachment
+/// point is linked to any more in `doc` fall back to their plain kind
+/// (owner 2026-11-16: "if no attach points are left on the joint then no
+/// it shouldn't be attach anymore"): their `kind = "attach"` taken off
+/// (worked out again: a support joint with a `support`, else none), and
+/// an `attachment` naming a point that is no longer there. A joint that
+/// still carries a point, a support joint, or a joint gone is left as it
+/// is. Part of the same edit as the point's (one undo step). Whether
+/// anything changed. With such a point written before at a place of its
+/// own and a file that does not read (yet), nothing is changed (the
+/// joint keeps its kind: nothing lost).
+pub fn release_joints(doc: &mut DocumentMut, left: &[String]) -> bool {
+    let mut read: Option<Option<StructureType>> = None;
+    let mut changed = false;
+    let mut seen: Vec<&str> = Vec::new();
+    for joint in left {
+        if seen.contains(&joint.as_str()) {
+            continue;
+        }
+        seen.push(joint.as_str());
+        if entry(doc, "node", "id", joint).is_none() || linked_in(doc, joint) {
+            continue;
+        }
+        // A point written before 2026-10-21 at a place of its own may sit
+        // on the joint by its position or the joint's `attachment`: the
+        // file as read says (read once, only when there is such a point).
+        if placed_points_in(doc) {
+            let now = read.get_or_insert_with(|| {
+                <StructureType as ohl_structures::LibraryItem>::parse(
+                    std::path::Path::new("edited.ohls"),
+                    &doc.to_string(),
+                )
+                .ok()
+            });
+            let Some(now) = now else {
+                continue;
+            };
+            if now.points.iter().any(|p| !p.unlinked && p.joint == *joint) {
+                continue;
+            }
+        }
+        let Some(n) = entry(doc, "node", "id", joint) else {
+            continue;
+        };
+        if n.get("kind").and_then(Item::as_str) == Some(JointKind::Attach.as_str()) {
+            n.remove("kind");
+            changed = true;
+        }
+        if n.remove("attachment").is_some() {
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Whether a `[[point]]` of `doc` is at a place of its own, without a
+/// `node` and not standing alone (a file written before 2026-10-21: on a
+/// joint by its position or the joint's `attachment`).
+fn placed_points_in(doc: &DocumentMut) -> bool {
+    doc.get("point")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|a| {
+            a.iter().any(|p| {
+                !p.contains_key("node") && p.get("unlinked").and_then(Item::as_bool) != Some(true)
+            })
+        })
+}
+
+/// Whether a `[[point]]` of `doc` names joint `joint` as its `node` (and
+/// is not standing alone).
+fn linked_in(doc: &DocumentMut, joint: &str) -> bool {
+    doc.get("point")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|a| {
+            a.iter().any(|p| {
+                p.get("node").and_then(Item::as_str) == Some(joint)
+                    && p.get("unlinked").and_then(Item::as_bool) != Some(true)
+            })
+        })
 }
 
 /// Unlinks attachment point `label`: it keeps its position, standing
@@ -187,6 +271,7 @@ pub fn unlink_point(doc: &mut DocumentMut, t: &StructureType, label: &str) -> Re
         .ok_or_else(|| format!("no attachment point {label}"))?
         .position()
         .map(|v| v.si());
+    let left = joint_of(t, label);
     let p = entry(doc, "point", "label", label).ok_or("no such point in the file")?;
     for k in ["node", "member", "at", "offset"] {
         p.remove(k);
@@ -194,6 +279,9 @@ pub fn unlink_point(doc: &mut DocumentMut, t: &StructureType, label: &str) -> Re
     p.insert("point", point_value(at));
     p.insert("unlinked", toml_edit::value(true));
     raise_version(doc, UNLINKED_VERSION);
+    // Its joint: no longer an attach joint once nothing is on it (owner
+    // 2026-11-16).
+    release_joints(doc, left.as_slice());
     Ok(())
 }
 
@@ -214,6 +302,9 @@ pub fn move_point(
     let entry = entry(doc, "point", "label", label).ok_or("no such point in the file")?;
     let Some(node) = &p.node else {
         entry.insert("point", point_value(at));
+        // A point written before 2026-10-21 on a joint by its position
+        // may leave it: the joint falls back once nothing is on it.
+        release_joints(doc, joint_of(t, label).as_slice());
         return Ok(());
     };
     let j = t
@@ -516,6 +607,13 @@ mod tests {
         assert!(!has(&doc, "point", "label", "A1", "node"));
         assert!(has(&doc, "point", "label", "A1", "unlinked"));
         assert_eq!(doc["version"].as_integer(), Some(17));
+        // Its last point gone, N2 is no attach joint any more (owner
+        // 2026-11-16): made one again to take the link.
+        assert!(!has(&doc, "node", "id", "N2", "kind"));
+        assert_eq!(t.joint("N2").unwrap().kind, None);
+        assert!(link_point(&mut doc.clone(), &t, "A1", "N2", [0.0; 3]).is_err());
+        set_joint_kind(&mut doc, &t, "N2", Some(JointKind::Attach)).unwrap();
+        let t = read(&doc);
         link_point(&mut doc, &t, "A1", "N2", [0.0; 3]).unwrap();
         assert!(!has(&doc, "point", "label", "A1", "unlinked"));
         let t = read(&doc);
@@ -611,6 +709,98 @@ mod tests {
         assert!(e.contains("own place"), "{e}");
         assert!(relink_point(&mut doc.clone(), &t, "A1", "F", LinkHow::Onto).is_err());
         assert!(points_on(&t, "F").is_empty());
+    }
+
+    /// A joint is an attach joint only while attachment points are on it
+    /// (owner 2026-11-16): moved to another joint (onto it or its position
+    /// kept), unlinked, deleted, a point of a file written before moved
+    /// off the joint at its place — the joint left falls back to its plain
+    /// kind once its last point is gone (none, or support with a
+    /// `support`; an `attachment` naming the point taken off), never
+    /// before; the joint the point arrives at stays an attach joint. Two
+    /// links applied one after the other with the structure as it was (the
+    /// line's links in OHL-Structure) see each other's.
+    #[test]
+    fn a_joint_is_attach_only_while_points_are_on_it() {
+        let text = "format = \"ohl-structure\"\nversion = 6\nid = \"T\"\nname = \"t\"\n\
+            kind = \"lattice\"\n\
+            [[node]]\nid = \"N1\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+            [[node]]\nid = \"N2\"\npoint = [\"4 m\", \"0 m\", \"20 m\"]\nkind = \"attach\"\n\
+            [[node]]\nid = \"N3\"\npoint = [\"-4 m\", \"0 m\", \"0 m\"]\nsupport = \"pinned\"\nkind = \"attach\"\n\
+            [[node]]\nid = \"N4\"\npoint = [\"0 m\", \"0 m\", \"25 m\"]\nkind = \"attach\"\n\
+            [[node]]\nid = \"N5\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\nkind = \"attach\"\nattachment = \"P5\"\n\
+            [[node]]\nid = \"N6\"\npoint = [\"0 m\", \"0 m\", \"35 m\"]\nkind = \"attach\"\n\
+            [[member]]\nid = \"M\"\nnodes = [\"N1\", \"N4\"]\n\
+            [[point]]\nlabel = \"A1\"\nnode = \"N2\"\n\
+            [[point]]\nlabel = \"A2\"\nnode = \"N2\"\n\
+            [[point]]\nlabel = \"A3\"\nnode = \"N4\"\n\
+            [[point]]\nlabel = \"A4\"\nnode = \"N3\"\n\
+            [[point]]\nlabel = \"P5\"\npoint = [\"0 m\", \"0 m\", \"30 m\"]\n\
+            [[point]]\nlabel = \"P6\"\npoint = [\"0 m\", \"0 m\", \"35 m\"]\n";
+        let kind = |doc: &DocumentMut, id: &str| read(doc).joint(id).unwrap().kind;
+        let mut doc: DocumentMut = text.parse().unwrap();
+        let start = doc.clone();
+        let t = read(&doc);
+        assert_eq!(points_on(&t, "N2"), ["A1", "A2"]);
+        // Moved (the list, the Move attachment point tool: onto it): N2
+        // keeps A2, still an attach joint.
+        relink_point(&mut doc, &t, "A1", "N4", LinkHow::Onto).unwrap();
+        assert!(has(&doc, "node", "id", "N2", "kind"));
+        assert_eq!(kind(&doc, "N2"), Some(JointKind::Attach));
+        // Its last point moved (its position kept): plain again.
+        let t = read(&doc);
+        relink_point(&mut doc, &t, "A2", "N4", LinkHow::KeepPosition).unwrap();
+        assert!(!has(&doc, "node", "id", "N2", "kind"));
+        assert_eq!(kind(&doc, "N2"), None);
+        // The joint they arrived at stays an attach joint.
+        assert_eq!(kind(&doc, "N4"), Some(JointKind::Attach));
+        assert!(has(&doc, "node", "id", "N4", "kind"));
+        // Unlinked from a joint with a support: back to a support joint.
+        let t = read(&doc);
+        unlink_point(&mut doc, &t, "A4").unwrap();
+        assert!(!has(&doc, "node", "id", "N3", "kind"));
+        assert_eq!(kind(&doc, "N3"), Some(JointKind::Support));
+        // A point of a file written before, on N5 by its `attachment`,
+        // linked elsewhere: N5 plain, its `attachment` gone.
+        let t = read(&doc);
+        assert_eq!(t.point_link("P5"), Some(("N5", [0.0; 3])));
+        link_point(&mut doc, &t, "P5", "N4", [0.0; 3]).unwrap();
+        assert!(!has(&doc, "node", "id", "N5", "kind"));
+        assert!(!has(&doc, "node", "id", "N5", "attachment"));
+        assert_eq!(kind(&doc, "N5"), None);
+        // One on N6 by its position moved off it: N6 plain.
+        let t = read(&doc);
+        assert_eq!(t.point_link("P6"), Some(("N6", [0.0; 3])));
+        move_point(&mut doc, &t, "P6", [1.0, 0.0, 35.0]).unwrap();
+        assert!(!has(&doc, "node", "id", "N6", "kind"));
+        // Deleted: N4 keeps its kind while one is left, plain when the
+        // last ones go together.
+        let t = read(&doc);
+        let mut one = doc.clone();
+        crate::edits::remove(
+            &mut one,
+            &crate::edits::removal(&t, &Handle::Point("A3".into())),
+        );
+        assert_eq!(kind(&one, "N4"), Some(JointKind::Attach));
+        let mut r = crate::edits::removal(&t, &Handle::Point("A1".into()));
+        for l in ["A2", "A3", "P5"] {
+            r.merge(crate::edits::removal(&t, &Handle::Point(l.into())));
+        }
+        assert_eq!(r.left, ["N4"]);
+        crate::edits::remove(&mut doc, &r);
+        assert!(!has(&doc, "node", "id", "N4", "kind"));
+        assert_eq!(kind(&doc, "N4"), None);
+        // Two links one after the other with the structure as it was:
+        // the second sees the first, N2 plain once both have left.
+        let mut doc = start;
+        let t = read(&doc);
+        link_point(&mut doc, &t, "A1", "N4", [0.0; 3]).unwrap();
+        assert!(has(&doc, "node", "id", "N2", "kind"));
+        link_point(&mut doc, &t, "A2", "N4", [0.0; 3]).unwrap();
+        assert!(!has(&doc, "node", "id", "N2", "kind"));
+        // A point and a joint of the same name stay apart: joint N4 is
+        // not taken for a point labelled N4.
+        assert!(joint_of(&t, "N4").is_none());
     }
 
     /// A string hangs from an attachment point, never from a joint (owner

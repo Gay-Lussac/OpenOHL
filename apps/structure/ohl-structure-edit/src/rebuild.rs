@@ -294,14 +294,19 @@ pub fn write(
         array(doc, "member").push(x);
     }
     // Points put on the tips.
+    let mut left = Vec::new();
     for (label, joint) in &body.points {
         if let Some(p) = entry(doc, "point", "label", label) {
             p.remove("point");
             // Linked to the tip now: no longer standing alone.
             p.remove("unlinked");
             p.insert("node", toml_edit::value(joint.clone()));
+            left.extend(crate::links::joint_of(t, label).filter(|j| j != joint));
         }
     }
+    // The joints they left: no longer attach joints once nothing is on
+    // them (owner 2026-11-16).
+    crate::links::release_joints(doc, &left);
     ensure_version(doc);
     Ok(report)
 }
