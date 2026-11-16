@@ -564,20 +564,10 @@ pub fn solve_line_coupled(
             ));
         }
     }
-    // The passes with moved points solve the line about a local origin
-    // (pass 0, the rigid solve, as given): in projected coordinates of
-    // millions of metres a moved point leaves some sections' Newton
-    // iterations at a force noise of about 10⁻³ N (the rounding of the
-    // coordinates, ~5·10⁻¹⁰ m, times the wires' stiffness), above their
-    // tolerance (found on a real line, 2026-11-15); about a local origin
-    // the same sections converge. Their results are moved back.
-    let origin = local_origin(line);
-    let local_line = (origin != [0.0; 2]).then(|| translated(line, origin));
-    let solve = |u: &DVector<f64>, pass: usize| {
-        let on = match &local_line {
-            Some(l) if pass > 0 => l,
-            _ => line,
-        };
+    // Every pass solves as given: the wire solver itself works about a
+    // local origin far from the origin ([`ohl_wirefe::Model::solve`]), so
+    // pass 0 and the passes with moved points round alike.
+    let solve = |u: &DVector<f64>| {
         let mut moved = PointMoves::new();
         for (i, key) in points.iter().enumerate() {
             let d = [u[3 * i], u[3 * i + 1], u[3 * i + 2]];
@@ -590,7 +580,7 @@ pub fn solve_line_coupled(
             stiffness: true,
             ..Coupling::default()
         };
-        solve_line_based(on, library, case, budget, &base)
+        solve_line_based(line, library, case, budget, &base)
     };
     // The forces at the points, which points have one, K_w.
     let gather = |results: &[Result<SectionShape, LineError>]| {
@@ -674,7 +664,7 @@ pub fn solve_line_coupled(
             ));
         }
         let pass_started = Instant::now();
-        let results = solve(&u, pass);
+        let results = solve(&u);
         if pass == 0 {
             rigid_results = stripped(&results);
             for (s, r) in line.sections.iter().zip(&results) {
@@ -853,12 +843,7 @@ pub fn solve_line_coupled(
                     }
                 })
                 .collect();
-            let mut sections = stripped(&results);
-            if pass > 0 && origin != [0.0; 2] {
-                for shape in sections.iter_mut().flatten() {
-                    moved_by(shape, origin);
-                }
-            }
+            let sections = stripped(&results);
             let mut spans = Vec::new();
             for (a, b) in rigid_results.iter().zip(&sections) {
                 let (Ok(a), Ok(b)) = (a, b) else { continue };
@@ -985,75 +970,6 @@ pub fn solve_line_coupled(
         u = &accepted_u + &step;
     }
     unreachable!("the loop returns")
-}
-
-/// Coordinates beyond this (m, x or y of the first structure) are solved
-/// about a local origin in the passes with moved points.
-const FAR_FROM_ORIGIN: f64 = 1e4;
-
-/// The local origin of the passes with moved points: the first
-/// structure's x and y rounded to whole kilometres (whole numbers: the
-/// shift and its reversal are exact for the given points), none ([0, 0])
-/// when it is near the origin already.
-fn local_origin(line: &Line) -> [f64; 2] {
-    let Some(first) = line.structures.first() else {
-        return [0.0; 2];
-    };
-    let [x, y, _] = first.position;
-    if x.abs().max(y.abs()) < FAR_FROM_ORIGIN || !x.is_finite() || !y.is_finite() {
-        return [0.0; 2];
-    }
-    [(x / 1e3).round() * 1e3, (y / 1e3).round() * 1e3]
-}
-
-/// `line` with every coordinate less `origin` (x, y; the structures'
-/// orientations as given: a translation turns nothing).
-fn translated(line: &Line, origin: [f64; 2]) -> Line {
-    let mut out = line.clone();
-    // A translation never fails; the orientations kept exactly (the
-    // transform would work them out again from a point 1 m away).
-    let _ = out.transform_coordinates(|points| {
-        for p in points.iter_mut() {
-            p[0] -= origin[0];
-            p[1] -= origin[1];
-        }
-        Ok(())
-    });
-    for (s, given) in out.structures.iter_mut().zip(&line.structures) {
-        s.orientation_deg = given.orientation_deg;
-    }
-    out
-}
-
-/// A section's solved positions moved by `d` (x, y): back from the local
-/// origin.
-fn moved_by(shape: &mut SectionShape, d: [f64; 2]) {
-    let add = |p: &mut Point| {
-        p[0] += d[0];
-        p[1] += d[1];
-    };
-    shape.clamps.iter_mut().for_each(add);
-    for s in &mut shape.spans {
-        s.points.iter_mut().for_each(add);
-        add(&mut s.mid_point);
-        add(&mut s.low_point);
-    }
-    for st in shape.strings.iter_mut().flatten() {
-        add(&mut st.top);
-        add(&mut st.bottom);
-    }
-    for a in shape.attachment_loads.iter_mut().flatten() {
-        add(&mut a.at);
-    }
-    for (_, p) in shape.nodes.iter_mut().flatten() {
-        add(p);
-    }
-    for (_, p) in &mut shape.span_points {
-        add(p);
-    }
-    for s in &mut shape.spacers {
-        s.ends.iter_mut().for_each(add);
-    }
 }
 
 /// Solves A x = b by Gaussian elimination with partial pivoting within

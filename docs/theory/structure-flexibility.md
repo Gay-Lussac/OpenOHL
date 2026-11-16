@@ -130,16 +130,17 @@ kept with the failure and said rigid. After pass 0 the time is
 estimated as pass 0's time × 4 (level 3 expects 2–5 passes); the result
 gives the estimate, the measured time and each pass's time.
 
-**A local origin for the moved passes.** A line in projected coordinates
-of millions of metres is solved in its passes after pass 0 about a local
-origin (the first structure's position rounded to whole kilometres; pass
-0 stays the rigid solve as given) and its results are moved back: with
-the points moved, some sections' Newton iterations otherwise stall at a
-force noise of about 10⁻³ N — the rounding of such coordinates
-(about 5·10⁻¹⁰ m) times the wires' stiffness — just above their
-tolerance (found on a real line; about the local origin the same
-sections converge). Tested: the same line near and far from the origin
-gives the same results to 10⁻⁶ m and 10⁻³ N.
+**About a local origin.** A line in projected coordinates of millions of
+metres is solved about a local origin in every pass, pass 0 included —
+the wire solver itself takes whole kilometres off a model far from the
+origin and adds them back to its results
+([Finite-element wire systems](wirefe.md), 2026-11-16) — so the rigid
+solve and every pass round alike and pass 0 stays the rigid solve bit
+for bit. Before, in such coordinates some sections' Newton iterations
+stalled at a force noise of about 10⁻³ N with their points moved (found on
+a real line) and the rigid solve itself stopped up to 100 N out of
+balance with stiff strings. Tested: the same line near and far from the
+origin gives the same results, rigid and flexible, to 10⁻⁸ m and 10⁻⁶ N.
 
 **The reference forces** \\( \mathbf F_{ref} \\): each section in still air
 at its stringing temperature, the whole line solved as in any case (one

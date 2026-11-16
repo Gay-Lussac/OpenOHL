@@ -8,6 +8,36 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-16
+
+**Every wire solve about a local origin** (owner: "fix the rounding";
+built, in active development, not approved yet;
+[theory](../theory/wirefe.md#solver)). The wire solver
+(`ohl_wirefe::Model::solve`, and the wires' stiffness at their supports)
+takes whole kilometres off a model whose first node is more than 10 km
+from the origin and adds them back to its results — so every line solve
+does, rigid included (each section, the shared assemblies, the broken
+wires, the jumpers, the posts, the final stringing, the coupled solve of
+calculation level 3, whose own translation of the line is gone: pass 0
+and the moved passes now round alike). Exact for the given points (the
+fixed nodes come back bit for bit). **Changed results** on lines in
+projected coordinates (none near the origin: the examples' results are
+unchanged): before, a position was resolved to only about 5·10⁻¹⁰ m and
+the solver's floating-point floor grew with the coordinates, so a
+section with a stiff string stopped up to about 100 N out of balance.
+On a real line (99 weather cases, 554 sections) the tensions changed by
+up to 293 N (6 % in a short span; 99 % of the spans within 13 N), the
+clamps by up to 9 mm, the sags by up to 6 cm; the new results agree with
+the same line moved near the origin to 0.4 N and 0.01 mm. The price:
+about a third more Newton iterations on such lines (the line solve
+about 15 % longer on that line). Two changes keep the time and the
+robustness: a load step short of the whole loads (the solver's fallback)
+is solved to 10⁻³ of the loads (it is only the next step's start: one
+section of the real line failed one more weather case without it), and
+a pass on the stretches (ice and wind per stretched metre) whose
+stretches will still change is solved to a share of that change, the
+pass returned to the full tolerance.
+
 ## 2026-11-15
 
 **A weather case's own wind direction is kept and never turned by the
