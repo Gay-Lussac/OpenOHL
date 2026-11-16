@@ -509,6 +509,27 @@ pub fn condense_with(
     extra: &[Vec<crate::model::NodalLoad>],
     budget: &Budget,
 ) -> Result<Condensed, Rigid> {
+    condense_state(model, points, State::Of(linearisation), extra, budget)
+}
+
+/// The state a condensation takes its tangent at: the solution of a
+/// linearisation (solved here), or a solution given
+/// ([`crate::tangent::condensed_tangent`]).
+pub(crate) enum State<'a> {
+    /// Solved from the linearisation.
+    Of(&'a Linearisation),
+    /// This solution (its own P-Delta setting).
+    At(&'a Solution),
+}
+
+/// [`condense_with`] at `state`.
+pub(crate) fn condense_state(
+    model: &Model,
+    points: &[Attachment],
+    state: State<'_>,
+    extra: &[Vec<crate::model::NodalLoad>],
+    budget: &Budget,
+) -> Result<Condensed, Rigid> {
     if points.is_empty() {
         return Err(Rigid::NoPoints);
     }
@@ -584,7 +605,17 @@ pub fn condense_with(
     }
 
     // The state: the reference solution, the tangent's settings.
-    let (solution, nonlinear) = reference(model, linearisation, budget)?;
+    let (solution, nonlinear, words) = match state {
+        State::Of(linearisation) => {
+            let (s, nonlinear) = reference(model, linearisation, budget)?;
+            (std::borrow::Cow::Owned(s), nonlinear, linearisation.words())
+        }
+        State::At(s) => (
+            std::borrow::Cow::Borrowed(s),
+            s.nonlinear,
+            crate::tangent::AT_SOLUTION,
+        ),
+    };
     if solution.stalled || !solution.kept_active.is_empty() {
         notes.push(
             "approximate: the reference solve was accepted with tension-only members kept \
@@ -740,7 +771,7 @@ pub fn condense_with(
         stiffness,
         approximate: solution.stalled || !solution.kept_active.is_empty(),
         notes,
-        linearisation: linearisation.words(),
+        linearisation: words,
         extra: extra_moves,
     })
 }
@@ -1110,7 +1141,11 @@ pub fn condense_pole_with(
 /// on the shaft lumped on the nodes (each element's q at its middle times
 /// its length, half at each end), the loads as the pole check places
 /// them.
-fn pole_body_loads(pole: &Pole, z: &[f64], b: &PoleBody) -> Vec<crate::model::NodalLoad> {
+pub(crate) fn pole_body_loads(
+    pole: &Pole,
+    z: &[f64],
+    b: &PoleBody,
+) -> Vec<crate::model::NodalLoad> {
     let mut nodal = crate::pole::axis_loads(z, pole.height(), &b.loads);
     if b.wind != [0.0; 2] {
         for k in 0..z.len().saturating_sub(1) {

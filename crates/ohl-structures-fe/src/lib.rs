@@ -48,6 +48,7 @@ pub mod sia265;
 mod skyline;
 pub mod solve;
 pub mod stabilise;
+pub mod tangent;
 mod units;
 pub mod wind;
 pub mod wind_law;
@@ -532,6 +533,8 @@ mod sia263_tests;
 mod spring_tests;
 #[cfg(test)]
 mod stabilise_tests;
+#[cfg(test)]
+mod tangent_tests;
 #[cfg(test)]
 mod tension_tests;
 #[cfg(test)]

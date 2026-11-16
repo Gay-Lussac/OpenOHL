@@ -483,6 +483,51 @@ pub fn solve(
     options: &Options,
     budget: &Budget,
 ) -> Result<Solution, FeError> {
+    solve_from(model, loads, options, budget, None)
+}
+
+/// [`solve`] with the active-set iterations of the tension-only members
+/// starting from `start` (per member: left out, slack or bowed; none:
+/// every member active, as [`solve`]) — a **warm start** from the set of
+/// a solve under nearby loads (calculation level 4's passes, plan of
+/// 2026-11-15 §5.2; [`crate::tangent`]). The iterations go on from there
+/// as from the cold start, so a solve whose set settles to the one the
+/// cold start finds gives its solution bit for bit (the last solve is the
+/// same); where two sets would both be settled (rare: the iterations'
+/// fixed point is not unique on every model), the warm start may settle
+/// on the other — both balance the loads with every tension-only member
+/// within its law. Entries for members that are not tension-only are
+/// left out; a start of another length is ignored (cold start).
+///
+/// Expected cost: as [`solve`], with fewer solves of the active-set
+/// iterations when the set changes little.
+pub fn solve_from(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    start: Option<&[bool]>,
+) -> Result<Solution, FeError> {
+    // A warm start that fails (members left out together that leave a part
+    // free, which the cold start's iterations would not have reached):
+    // solved again from the cold start, so it never fails where that one
+    // solves.
+    match solve_once(model, loads, options, budget, start) {
+        Err(e) if start.is_some() && !matches!(e, FeError::Stopped { .. }) => {
+            solve_once(model, loads, options, budget, None)
+        }
+        other => other,
+    }
+}
+
+/// [`solve_from`] without the cold start again.
+fn solve_once(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    start: Option<&[bool]>,
+) -> Result<Solution, FeError> {
     // An attachment point on a joint only bars meet, loaded across them:
     // refused with the fix (not held, which would share it to the bars'
     // ends).
@@ -493,7 +538,7 @@ pub fn solve(
     // again at the looser threshold of rounded coordinates; the error
     // stands when the joints still move implausibly far or it is still
     // unstable.
-    let first = solve_at(model, loads, options, budget, crate::stabilise::FREE);
+    let first = solve_at(model, loads, options, budget, crate::stabilise::FREE, start);
     match first.and_then(|s| implausible(model, &s.displacements).map(|()| s)) {
         Err(FeError::Implausible { .. } | FeError::Unstable { .. }) if options.stabilise => {
             let mut s = solve_at(
@@ -502,6 +547,7 @@ pub fn solve(
                 options,
                 budget,
                 crate::stabilise::FREE_ROUNDED,
+                start,
             )?;
             implausible(model, &s.displacements)?;
             s.rounded_stabilisation = true;
@@ -519,9 +565,10 @@ fn solve_at(
     options: &Options,
     budget: &Budget,
     threshold: f64,
+    start: Option<&[bool]>,
 ) -> Result<Solution, FeError> {
     if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
-        return solve_tension_only(model, loads, options, budget, threshold);
+        return solve_tension_only(model, loads, options, budget, threshold, start);
     }
     solve_stabilised_with(model, loads, options, budget, &[], &[], threshold)
 }
@@ -659,6 +706,7 @@ fn solve_tension_only(
     options: &Options,
     budget: &Budget,
     threshold: f64,
+    start: Option<&[bool]>,
 ) -> Result<Solution, FeError> {
     let own = compression_caps(model);
     let run = budget.start();
@@ -667,7 +715,7 @@ fn solve_tension_only(
         |m, ties| {
             let caps = tie_caps(ties, &own);
             let mut residual = f64::NAN;
-            let (s, passes) = settle(m, options.nonlinear, |nonlinear, inactive| {
+            let (s, passes) = settle_from(m, options.nonlinear, start, |nonlinear, inactive| {
                 run.check()
                     .map_err(|stop| FeError::Stopped { stop, residual })?;
                 let opts = Options {
@@ -833,9 +881,26 @@ fn ties_hiding_compression(s: &Solution, ties: &[Vec<usize>], own: &[f64]) -> Ve
 pub(crate) fn settle<S>(
     model: &Model,
     nonlinear: bool,
+    step: impl FnMut(bool, &[bool]) -> Result<(S, Vec<bool>, Vec<f64>), FeError>,
+) -> Result<(S, u32), FeError> {
+    settle_from(model, nonlinear, None, step)
+}
+
+/// [`settle`] from the set `start` (its tension-only members left out
+/// where true; none, or another length: every member active), the warm
+/// start of [`solve_from`].
+pub(crate) fn settle_from<S>(
+    model: &Model,
+    nonlinear: bool,
+    start: Option<&[bool]>,
     mut step: impl FnMut(bool, &[bool]) -> Result<(S, Vec<bool>, Vec<f64>), FeError>,
 ) -> Result<(S, u32), FeError> {
     let mut inactive = vec![false; model.members.len()];
+    if let Some(start) = start.filter(|s| s.len() == inactive.len()) {
+        for (k, out) in inactive.iter_mut().enumerate() {
+            *out = start[k] && model.members[k].kind == MemberKind::Tension;
+        }
+    }
     let mut passes = 0;
     let phases: &[bool] = if nonlinear { &[false, true] } else { &[false] };
     for (phase, &nonlinear) in phases.iter().enumerate() {
