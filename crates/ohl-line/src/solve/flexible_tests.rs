@@ -623,28 +623,35 @@ fn the_rigid_solve_is_unchanged_bit_for_bit() {
     }
 }
 
-/// A line in projected coordinates of millions of metres: the passes with
-/// moved points solve about a local origin (whole kilometres) and give
-/// the results back where the line is — the same as the line near the
-/// origin to rounding (1e-6 m, 1e-3 N), pass 0 still the rigid solve bit
-/// for bit.
+/// A line in projected coordinates of millions of metres solves as near
+/// the origin (2026-11-16: every wire solve about a local origin,
+/// `ohl_wirefe::Model::solve`), rigid and flexible alike: the clamps to
+/// 10⁻⁸ m, the tensions to 10⁻⁶ N, the points' displacements to 10⁻⁸ m;
+/// pass 0 still the rigid solve bit for bit.
 #[test]
 fn a_line_far_from_the_origin_solves_as_near_it() {
     let (near, cable) = unbalanced();
     let lib = library_of(&cable, TWO_SPANS_WIRE);
-    let offset = [2_600_123.25, 1_120_456.5];
-    let mut far = near.clone();
-    far.transform_coordinates(|points| {
-        for p in points.iter_mut() {
-            p[0] += offset[0];
-            p[1] += offset[1];
+    let offset = [2_600_000.0, 1_120_000.0];
+    let moved = |line: &Line, by: [f64; 2]| {
+        let mut out = line.clone();
+        out.transform_coordinates(|points| {
+            for p in points.iter_mut() {
+                p[0] += by[0];
+                p[1] += by[1];
+            }
+            Ok(())
+        })
+        .unwrap();
+        for (s, given) in out.structures.iter_mut().zip(&line.structures) {
+            s.orientation_deg = given.orientation_deg;
         }
-        Ok(())
-    })
-    .unwrap();
-    for (s, given) in far.structures.iter_mut().zip(&near.structures) {
-        s.orientation_deg = given.orientation_deg;
-    }
+        out
+    };
+    // Near: 123.25 m, 456.5 m from the origin; far: that plus whole
+    // kilometres (the local origin's).
+    let near = moved(&near, [123.25, 456.5]);
+    let far = moved(&near, offset);
     let budget = default_fe_budget();
     let case = iced(-5.0, 15.0);
     let k = [5e4, 5e4, 5e6];
@@ -670,24 +677,25 @@ fn a_line_far_from_the_origin_solves_as_near_it() {
         format!("{:?}", b.rigid),
         format!("{:?}", solve_line_with(&far, &lib, &case, &budget))
     );
-    let (x, y) = (
-        a.sections[0].as_ref().unwrap(),
-        b.sections[0].as_ref().unwrap(),
-    );
-    for (p, q) in x.clamps.iter().zip(&y.clamps) {
-        let d = [
-            q[0] - offset[0] - p[0],
-            q[1] - offset[1] - p[1],
-            q[2] - p[2],
-        ];
-        assert!(d.iter().all(|c| c.abs() < 1e-6), "{p:?} {q:?}");
-    }
-    for (s, t) in x.spans.iter().zip(&y.spans) {
-        assert!((s.horizontal_tension - t.horizontal_tension).abs() < 1e-3);
+    assert!(b.passes.len() > 1, "{:?}", b.passes);
+    for (x, y) in [(&a.rigid[0], &b.rigid[0]), (&a.sections[0], &b.sections[0])] {
+        let (x, y) = (x.as_ref().unwrap(), y.as_ref().unwrap());
+        for (p, q) in x.clamps.iter().zip(&y.clamps) {
+            let d = [
+                q[0] - offset[0] - p[0],
+                q[1] - offset[1] - p[1],
+                q[2] - p[2],
+            ];
+            assert!(d.iter().all(|c| c.abs() < 1e-8), "{p:?} {q:?}");
+        }
+        for (s, t) in x.spans.iter().zip(&y.spans) {
+            let d = (s.horizontal_tension - t.horizontal_tension).abs();
+            assert!(d < 1e-6, "{d:e}");
+        }
     }
     for (p, q) in a.points.iter().zip(&b.points) {
         for c in 0..3 {
-            assert!((p.displacement[c] - q.displacement[c]).abs() < 1e-6);
+            assert!((p.displacement[c] - q.displacement[c]).abs() < 1e-8);
         }
     }
 }

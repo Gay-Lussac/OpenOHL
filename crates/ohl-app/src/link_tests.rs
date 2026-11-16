@@ -1002,7 +1002,10 @@ fn the_two_applications_tell_each_other_of_moved_points() {
         crate::structure_app::LineInputs::of(&r.model).write_all(std::slice::from_ref(&placed));
     let v = ohl_structure_loads::PlacedValues::load(&placed.values)
         .unwrap_or_else(|e| panic!("{e} ({errors:?})"));
-    assert_eq!(v.version, ohl_structure_loads::LINE_VALUES_FILE_VERSION);
+    assert_eq!(
+        v.version,
+        ohl_structure_loads::LINE_VALUES_FILE_VERSION_WITHOUT_LEVELS
+    );
     assert_eq!(
         ohl_structure_loads::links_changed("T2", &[], &v.links),
         ["T2: point A1 linked to joint A2"]

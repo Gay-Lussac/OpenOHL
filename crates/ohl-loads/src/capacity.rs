@@ -895,7 +895,8 @@ fn usage_pass(
             _ => None,
         };
         let body_case = turned.as_ref().unwrap_or(&r.case);
-        let (fe, pole) = if r.broken_each.is_empty() {
+        let variants = r.check_variants();
+        let (fe, pole) = if variants.len() == 1 && variants[0].words.is_empty() {
             (
                 type_def.and_then(|t| {
                     analyses.fe(t, structure, &factored, body_case, case, &mut notes)
@@ -905,18 +906,19 @@ fn usage_pass(
                 }),
             )
         } else {
-            // A broken wire in every span: each break on its
-            // own (the envelope of the components is not an
-            // upper bound of a member force), the worst kept.
+            // A broken wire in every span, or the rigid and the flexible
+            // solve at calculation level 3: each set on its own (the
+            // envelope of the components is not an upper bound of a
+            // member force), the worst kept.
             let mut fe: Option<Check> = None;
             let mut pole: Option<Check> = None;
             let mut approximate = false;
             let mut each_notes: Vec<String> = Vec::new();
-            for b in &r.broken_each {
-                let factored = factored_at(&b.loads, id);
+            for v in &variants {
+                let factored = factored_at(v.loads, id);
                 let mark = |c: Option<Check>| {
                     c.map(|mut c| {
-                        c.governs = format!("{} (span {} broken)", c.governs, b.span);
+                        c.governs = format!("{} ({})", c.governs, v.words);
                         c
                     })
                 };
@@ -931,7 +933,7 @@ fn usage_pass(
                 pole = worse(pole, p);
             }
             if let Some(f) = fe.as_mut() {
-                // Approximate when any break's solve was.
+                // Approximate when any set's solve was.
                 f.approximate |= approximate;
             }
             for n in each_notes {

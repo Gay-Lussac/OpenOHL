@@ -112,6 +112,32 @@ The answer is the same, to the last digit, as one case and one structure
 after the other. **Stop** ends the run between cases or structures; the
 previous results stay.
 
+### Structures flexible (level 3)
+
+The footer's **Structures flexible (level 3)** (built, in active
+development; kept with the project's setup, off by default) computes the
+loads at calculation level 3: each structure that has a model (or a pole
+with an elasticity) answers the wires as a linear stiffness at its
+attachment points, its own wind and ice of the case in its deflection,
+and each load case's line is solved again until wires and structures
+agree ([theory](../theory/structure-flexibility.md#structure-loads-at-level-3)).
+A run then has a first stage, **Structures' stiffness (level 3)**
+("Structures' stiffness (level 3): 12 of 78", the structures in
+parallel), before the two above.
+
+The loads and the usage are **never below rigid**: each load at a point
+is, per component, the larger of the rigid and the flexible solve's, and
+each structure's model and pole are checked with both solves and the
+worse kept (its governing check ends with *(rigid)* or *(level 3)*).
+Each load case's notes say what level 3 assumed, the structures taken
+rigid and why, the passes, the time and the largest move; a case whose
+loop does not converge keeps the rigid loads and says so. The switch's
+(?) help shows the last run's largest move, its largest change of a load
+against rigid and its time. It costs one condensation per structure
+(well under a second for a lattice tower) and two to five line solves
+per load case. OHL-Structure still gets the rigid loads (until the line's
+own setting for the level, phase 5).
+
 ## Results
 
 **Loads** (one load case at a time, factored or unfactored, a filter by

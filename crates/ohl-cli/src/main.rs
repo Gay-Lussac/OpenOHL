@@ -608,8 +608,10 @@ struct LineArgs {
     /// testing (in active development): 3 = each structure with a model
     /// (or a pole with an elasticity) a linear stiffness at its attachment
     /// points; prints the points' displacements and the change against
-    /// rigid. Everything else printed and written, every check included,
-    /// stays rigid (level 2, the default).
+    /// rigid. With --load-cases the structure loads and usage take it too
+    /// (each load the larger of rigid and level 3, the checks the worse:
+    /// never below rigid). Everything else printed and written stays
+    /// rigid (level 2, the default).
     #[arg(long, value_parser = parse_calculation_level)]
     calculation_level: Option<ohl_line::solve::flexible::CalculationLevel>,
 }
@@ -2831,6 +2833,43 @@ fn weather_cases(
     Ok(cases)
 }
 
+/// Per structure of a level-3 case its largest move and its largest
+/// change of a factored load against rigid (structure axes).
+fn level_changes(l: &ohl_loads::FlexibleLoads) {
+    const AXES: [&str; 3] = ["transverse", "longitudinal", "vertical"];
+    let mut structures: Vec<&str> = l.moves.iter().map(|m| m.structure.as_str()).collect();
+    structures.dedup();
+    if structures.is_empty() {
+        return;
+    }
+    println!(
+        "    level 3, per structure: largest move right/ahead/up (mm); largest change of a \
+         factored load, rigid → level 3 (the larger kept)"
+    );
+    for s in structures {
+        let m = l.largest_move(s).map_or([0.0; 3], |m| m.local);
+        let change = l.largest_change(s).map_or(String::new(), |(p, k, a, b)| {
+            format!(
+                "{p} {}: {:.2} → {:.2} kN ({:+.1} %)",
+                AXES[k],
+                a / 1e3,
+                b / 1e3,
+                if a.abs() > 0.0 {
+                    (b - a) / a.abs() * 100.0
+                } else {
+                    0.0
+                }
+            )
+        });
+        println!(
+            "      {s:<10} {:>8.1} {:>8.1} {:>8.1}   {change}",
+            m[0] * 1e3,
+            m[1] * 1e3,
+            m[2] * 1e3
+        );
+    }
+}
+
 /// `ohl line` with load cases and a weather file: the structure loads
 /// printed and written, then the structures' usage; both as tables for
 /// the table formats.
@@ -2849,19 +2888,13 @@ fn structure_loads_report(
         load_cases,
         loads_csv,
         usage_csv,
+        calculation_level,
         ..
     } = args;
     if let (Some(lc), Some(w)) = (load_cases, weather) {
         let set = ohl_loads::LoadCases::load(lc)?;
         let all = WeatherCases::load(w)?.cases;
         let started = std::time::Instant::now();
-        let mut results = ohl_loads::structure_loads(
-            line,
-            library,
-            &all,
-            &set.cases,
-            &ohl_wirefe::default_fe_budget(),
-        )?;
         // The structures' sections (the models' members and the wind
         // and ice on them).
         let sections = match sections_arg
@@ -2871,6 +2904,41 @@ fn structure_loads_report(
             Some(p) => ohl_sections::SectionLibrary::load(&p)?,
             None => ohl_sections::SectionLibrary::default(),
         };
+        let budget = ohl_wirefe::default_fe_budget();
+        // Calculation level 3 (in active development): the structures
+        // set up once for every case (their stiffness at the stringing
+        // state, their own wind and ice per case).
+        let level = (*calculation_level
+            == Some(ohl_line::solve::flexible::CalculationLevel::Linear))
+        .then(|| {
+            let setup = ohl_loads::prepare_structure_loads(
+                line, library, types, &sections, &all, &set.cases, &budget, None, None,
+            );
+            println!(
+                "structure loads at calculation level 3 (in active development): {} structures \
+                 flexible, {} rigid; set up in {:.1?} ({} condensations)",
+                setup.setup.structures.flexible.len(),
+                setup.setup.structures.rigid.len(),
+                setup.setup.elapsed,
+                setup.setup.condensed
+            );
+            for r in &setup.setup.structures.rigid {
+                println!("  {} rigid: {}", r.structure, r.reason);
+            }
+            setup
+        });
+        let known: Vec<String> = set.cases.iter().map(|c| c.name.clone()).collect();
+        let mut results = ohl_loads::structure_loads_at(
+            line,
+            library,
+            &all,
+            &set.cases,
+            &known,
+            &budget,
+            level.as_ref(),
+        )
+        .into_iter()
+        .collect::<Result<Vec<_>, String>>()?;
         // The wind on the structures' bands, and the ice and snow on
         // them (load case file version 4).
         ohl_loads::add_structure_loads(&mut results, line, types, &sections, &all);
@@ -2910,6 +2978,9 @@ fn structure_loads_report(
             }
             for n in &r.notes {
                 println!("    note: {n}");
+            }
+            if let Some(l) = &r.level {
+                level_changes(l);
             }
         }
         extra_tables.push(ohl_io::tables::Table::from_csv(

@@ -130,16 +130,17 @@ kept with the failure and said rigid. After pass 0 the time is
 estimated as pass 0's time × 4 (level 3 expects 2–5 passes); the result
 gives the estimate, the measured time and each pass's time.
 
-**A local origin for the moved passes.** A line in projected coordinates
-of millions of metres is solved in its passes after pass 0 about a local
-origin (the first structure's position rounded to whole kilometres; pass
-0 stays the rigid solve as given) and its results are moved back: with
-the points moved, some sections' Newton iterations otherwise stall at a
-force noise of about 10⁻³ N — the rounding of such coordinates
-(about 5·10⁻¹⁰ m) times the wires' stiffness — just above their
-tolerance (found on a real line; about the local origin the same
-sections converge). Tested: the same line near and far from the origin
-gives the same results to 10⁻⁶ m and 10⁻³ N.
+**About a local origin.** A line in projected coordinates of millions of
+metres is solved about a local origin in every pass, pass 0 included —
+the wire solver itself takes whole kilometres off a model far from the
+origin and adds them back to its results
+([Finite-element wire systems](wirefe.md), 2026-11-16) — so the rigid
+solve and every pass round alike and pass 0 stays the rigid solve bit
+for bit. Before, in such coordinates some sections' Newton iterations
+stalled at a force noise of about 10⁻³ N with their points moved (found on
+a real line) and the rigid solve itself stopped up to 100 N out of
+balance with stiff strings. Tested: the same line near and far from the
+origin gives the same results, rigid and flexible, to 10⁻⁸ m and 10⁻⁶ N.
 
 **The reference forces** \\( \mathbf F_{ref} \\): each section in still air
 at its stringing temperature, the whole line solved as in any case (one
@@ -333,10 +334,11 @@ with the same \\( L_0 \\) and w says, to 10⁻⁷.
   taut with the case's load, guys slackening and P-Delta growing are not
   followed (level 4's) — stiffer than the case's state where members
   would go slack.
-- **The structures' own wind and ice** are not in their deflection yet
-  (they come with the structure loads, plan phase 4): under wind the
-  points move less than they would — **not on the safe side** for
-  leeward clearances.
+- **The structures' own wind and ice** are in their deflection in the
+  structure loads (below); not yet in the weather-case runs (the command
+  line's `ohl line … --calculation-level 3`, the clearance checks of
+  phase 5): there, under wind, the points move less than they would —
+  **not on the safe side** for leeward clearances, said with the result.
 - **The deflection already present at stringing** is left out (geometry
   as strung) — not on the safe side where it lowers conductors.
 - **Translations only**: a hinge's friction moment on a pivoting post and
@@ -408,13 +410,80 @@ Each checked by a test against a reference independent of the loop
    the pole's top about 0.2 m, the tensions change by at most 0.1 %
    (3 passes).
 
+## Structure loads at level 3
+
+*(Built, in active development: `ohl_loads::prepare_structure_loads`,
+`structure_loads_at`; the Structure loads window's **Structures
+flexible (level 3)** and `ohl line … --load-cases … --calculation-level
+3`. Plan of 2026-11-15, phase 4.)*
+
+**Set up once per run.** The wires' forces at the stringing state are
+solved with every section by finite elements in its **initial**
+condition (the structures as strung: as the wires were clipped in), in
+still air at its stringing temperature; each placed structure is then
+condensed at that state (above), over the cores, a progress bar counting
+the structures. A load case in another condition (after creep) measures
+its displacements from the same state: the structure as strung.
+
+**The structure's own wind and ice** (plan §4.6) are in its deflection:
+for each load case, the loads the structure check puts on the model's
+joints — the member wind from the section profiles (the ice widening the
+members) and the ice and snow on the members — or, for a pole, the wind
+on its shaft (q = p · drag · D(z), lumped on the pole model's nodes) and
+its ice, **unfactored** (the case's pressure without its body-wind
+factor, the ice without the vertical factor), each solved once on the
+structure's tangent at the stringing state (one more substitution per
+distinct case): \\( \mathbf u = \mathbf C\,(\mathbf F - \mathbf F_{ref}) + \mathbf u_{body} \\).
+A wind relative to the line is turned to each structure's axes, as the
+check turns it. The self-weight cancels against the reference (it is in
+the drawn geometry, §3.3a).
+
+**Each load case** is solved by the interface loop at unfactored loads,
+the sections in the case's condition, every section by finite elements
+(as the rigid structure loads); the case's factors go on the resulting
+forces, as for the rigid loads. A **broken wire is a whole-line solve**:
+the break in every pass, so the structures next to it deflect and the
+other wires on them hold them back (rigid, those wires take none of the
+unbalance); with `span = "every"`, one coupled solve per span. The
+jumpers are solved on the structures as drawn (their ends not moved by
+the deflection) — a simplification, its effect on the loads below the
+millimetres the points move.
+
+**Never below rigid** (owner 2026-11-15). Every case keeps both solves:
+
+- each load at a point is, **per component, the larger by size** of the
+  rigid and the flexible solve's (the loads table, the allowable-loads
+  check, which takes each component on its own) — **conservative**:
+  never below rigid at any point;
+- the finite-element and pole checks take the **rigid and the flexible
+  solve each on its own** (each break of each with a broken wire in
+  every span) and keep the worse, saying which governs (`… (level 3)`):
+  the envelope of the components is not an upper bound of a member force
+  (a member force is a·T + b·L + c·V), so it is not used there —
+  **conservative**: never below the rigid usage, and a member loaded by
+  the redistribution (the other phases' arms in a break) is checked with
+  the flexible forces.
+
+The member checks are made **once per structure and case on the solved
+forces**, after the loop — never inside its passes (owner 2026-11-15).
+OHL-Structure gets both solves as cases of their own (`<case> (rigid)`,
+`<case> (level 3)`), each carrying its level (the line-values file).
+
+**Said with every level-3 case**: the level and what it assumes
+(linearised at the stringing state, the structures' own wind and ice in
+their deflection, unfactored loads, factors on the resulting forces), the
+rule above, the jumpers on the structures as drawn, the structures taken
+rigid with why, the passes, the time and the largest move. A case whose
+loop does not converge **keeps the rigid loads**, said ("calculation
+level 3 failed in this case: …; its loads there are the rigid solve's").
+
 ## Load factors
 
 The interaction is solved at **unfactored** loads (the service state);
 the load case's factors go on the redistributed forces for the structure
 checks, as today (owner 2026-11-15). At level 4 the structure check still
-solves the factored loads with its own P-Delta. Every level 3 or 4 load
-case will say: "structure flexibility at unfactored loads; factors on the
+solves the factored loads with its own P-Delta. Every level 3 load case says
+(and level 4 will): "structure flexibility at unfactored loads; factors on the
 resulting forces".
 
 ## Safe side
@@ -424,34 +493,35 @@ rigid.** The structure check keeps, per structure, point and load case,
 the **larger of the rigid and the flexible result**, and shows the change
 against rigid. Every other result (sags, clearances, swings) takes the
 flexible solve where it is the less favourable, or checks both — per
-check, with the same rule: never less safe than rigid. *(The rule applies
-from the phase that brings levels 3 and 4 to the checks; the parts built
-so far change no result. Until then the level-3 run says with every
-result: "NOT ON THE SAFE SIDE for the structures if taken from here: the
-flexible loads may be lower than rigid — every structure check still uses
-the rigid solve".)*
+check, with the same rule: never less safe than rigid. *(Applied in the
+structure loads and usage since phase 4 (above: per point and component
+the larger load, per structure the worse check); the other checks take
+the level with phase 5. The weather-case run of the command line says
+with every result: "NOT ON THE SAFE SIDE for the structures if taken from
+here: the flexible loads may be lower than rigid".)*
 
 What rigid gives compared with the real, flexible structure, reasoned from
-the mechanics ("to verify": still to be measured on a line with the
-structure loads, plan phase 4; "measured": a hand case above):
+the mechanics ("measured": a hand case above, or the example line's
+structure loads at level 3 — `ohl-loads`, `level_tests` — and a real line
+of 71 flexible towers, 2026-11-16):
 
 | Quantity | Rigid gives | So rigid is | Sure? |
 |---|---|---|---|
 | Tension of dead-end and angle spans in cold or iced cases | higher | conservative for tension limits and structure loads | yes (measured: hand cases 1, 2) |
 | Longitudinal load at the suspension tower next to an unbalanced load or a break | higher | conservative | yes (measured: hand case 3, −4.9 %) |
-| Longitudinal load at towers farther from a break or unbalance | possibly lower (the load spreads further) | **possibly not conservative** | to verify |
-| Loads on the other phases' points of a tower with a broken wire | none (no coupling) | **not conservative** for those points and the torsion they cause | yes (qualitatively) |
-| Vertical (weight span) loads | change with the neighbours' relative vertical movement | either way, small | to verify |
+| Longitudinal load at towers farther from a break or unbalance | possibly lower (the load spreads further) | **possibly not conservative** | measured on the example beyond a rigid tower: −0.1 % (rigid the larger); on a real line the dead-end pairs next to an unbalance change by ±5 % (cold, hot) to ±11 % (ice), either way — at level 3 the larger is kept |
+| Loads on the other phases' points of a tower with a broken wire | none (no coupling) | **not conservative** for those points and the torsion they cause | yes (measured: the example's other circuit on the tower next to a break takes up to 40 % more longitudinal load than rigid; at level 3 the larger is kept) |
+| Vertical (weight span) loads | change with the neighbours' relative vertical movement | either way, small | measured: at most 0.05 % on the example; on a real line up to 13 % at an angle tower in ice, and +107 % at the end of a short, steep span in wind (a 15 m span falling 35 m: its chord, nearly taut, lengthened by some 2 cm as the tower top moved — a stiff span, physical); at level 3 the larger is kept |
 | Transverse (wind) loads | nearly unchanged | neutral | yes |
 | Sag at a tension above the stringing tension (cold, ice, wind) | smaller | **not conservative** for clearances below the wires | yes |
-| Sag at a tension below the stringing tension (hot) | larger (the structure springs back and tightens the span) | conservative (slightly) | yes (measured: hand case 1, 0.10 m at 50 °C) |
+| Sag at a tension below the stringing tension (hot) | larger (the structure springs back and tightens the span) | conservative (slightly) | yes (measured: hand case 1, 0.10 m at 50 °C; the example line's lattice towers 0.1 mm at 80 °C) |
 | Sag of the loaded span in unbalanced ice | smaller | **not conservative** | yes (measured: hand case 3) |
 | Clearances of the remaining spans after a break | smaller sags | **not conservative** | yes |
 | Ground clearance under arms that deflect down | conductors higher | **not conservative** | yes |
 | Horizontal clearances under wind | conductors closer to the tower line | **not conservative** leeward, conservative windward | yes |
 | Longitudinal string swing in unbalanced cases | larger | conservative for swing limits | yes |
 | Internal clearances (to the body) | body and point both undeflected | about neutral; the tower's twist under a one-sided load to verify | to verify |
-| Member usage | rigid forces | conservative for most members, not for those loaded by the redistribution | to verify |
+| Member usage | rigid forces | conservative for most members, not for those loaded by the redistribution | measured: the flexible solve governs a few checks of the example by less than 0.01 %, none in five cases on a real line; at level 3 both are checked, the worse kept |
 
 The page [Finite-element wire systems](wirefe.md) says flexibility "raises
 the sags (on the unsafe side for clearances)": true above the stringing
@@ -503,6 +573,13 @@ afresh, with their stiffness), so the estimate printed after pass 0
 (pass 0 × 4) can be low there — measured times are printed with it. The
 interface system is held dense (3 × flexible points square: about
 90 MB for a thousand points), formed and eliminated within its band.
+
+**Structure loads at level 3** (optimised build without link-time
+optimisation, 2026-11-16): a real line (78 structures, 71 flexible,
+554 sections; five load cases, one with a broken conductor): setup 3.1 s
+(73 condensations, over the cores), the five cases 17 s against 1.4 s
+rigid (4–5 passes each), the whole run with the usage checks (each
+structure checked with both solves) 56 s against 24 s.
 
 ## Sources
 

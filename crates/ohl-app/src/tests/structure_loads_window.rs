@@ -473,6 +473,7 @@ fn a_run_reports_both_stages_and_stops_when_cancelled() {
         cases: Ok(library.cases.clone()),
         known: library.cases.iter().map(|c| c.name.clone()).collect(),
         local: false,
+        level3: false,
         plan: None,
     };
     let stages = crate::loads::Stages::default();
@@ -502,6 +503,84 @@ fn a_run_reports_both_stages_and_stops_when_cancelled() {
     let cancelled = crate::loads::Stages::default();
     cancelled.cancel.cancel();
     assert!(crate::loads::run(&inputs, &cancelled, 0).is_none());
+}
+
+/// **Structures flexible** (calculation level 3): the run first sets up
+/// the structures' stiffness (its own stage, counted structure by
+/// structure), every case then carries both solves, its loads never
+/// below the rigid run's, the usage never below; the same with one thread
+/// as with all; the switch kept with the project's setup.
+#[test]
+fn a_run_at_level_three_keeps_the_larger_of_rigid_and_flexible() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let model = synthetic_project("loads-window-level3");
+    let library = ohl_loads::LoadCases::load(model.sources.load_cases.as_deref().unwrap()).unwrap();
+    let mut inputs = crate::loads::Inputs {
+        line: model.line.clone(),
+        library: model.library.clone(),
+        types: model
+            .types
+            .as_ref()
+            .map(|(t, _)| t.clone())
+            .unwrap_or_default(),
+        weather: model.cases.iter().map(|c| c.case.clone()).collect(),
+        sections: model.section_library(),
+        cases: Ok(library.cases.clone()),
+        known: library.cases.iter().map(|c| c.name.clone()).collect(),
+        local: false,
+        level3: false,
+        plan: None,
+    };
+    let rigid = crate::loads::run(&inputs, &crate::loads::Stages::default(), 0).unwrap();
+    inputs.level3 = true;
+    let stages = crate::loads::Stages::default();
+    let flexible = crate::loads::run(&inputs, &stages, 0).unwrap();
+    assert_eq!(stages.stage.load(Relaxed), 3, "done");
+    let one = crate::loads::run(&inputs, &crate::loads::Stages::default(), 1).unwrap();
+    assert_eq!(format!("{:?}", flexible.usage), format!("{:?}", one.usage));
+    let (a, b) = (rigid.loads.unwrap(), flexible.loads.unwrap());
+    for (r, f) in a.iter().zip(&b) {
+        assert!(r.level.is_none());
+        let level = f.level.as_ref().expect("level 3");
+        assert!(level.failed.is_none(), "{:?}", level.failed);
+        for x in &r.loads {
+            let y = f
+                .loads
+                .iter()
+                .find(|y| y.structure == x.structure && y.point == x.point)
+                .unwrap();
+            for k in 0..3 {
+                assert!(y.factored[k].abs() >= x.factored[k].abs());
+            }
+        }
+    }
+    for (ca, cb) in rigid.usage.iter().zip(&flexible.usage) {
+        for (sa, sb) in ca.structures.iter().zip(&cb.structures) {
+            if let (Some(x), Some(y)) = (&sa.fe, &sb.fe) {
+                assert!(y.usage >= x.usage - 1e-12, "{}: {x:?} {y:?}", sa.structure);
+            }
+        }
+    }
+    let s = crate::loads::Stages::default();
+    s.stage.store(4, Relaxed);
+    s.total.store(7, Relaxed);
+    s.done.store(2, Relaxed);
+    let p = s.progress(std::time::Duration::from_secs(1));
+    assert!(
+        p.text
+            .starts_with("Structures' stiffness (level 3): 2 of 7"),
+        "{}",
+        p.text
+    );
+    // Kept with the project's setup, not written when off.
+    let on = crate::loads_plan::Choice {
+        level3: true,
+        ..Default::default()
+    };
+    let text = serde_json::to_string(&on).unwrap();
+    assert!(text.contains("\"level3\":true"), "{text}");
+    let off = serde_json::to_string(&crate::loads_plan::Choice::default()).unwrap();
+    assert!(!off.contains("level3"), "{off}");
 }
 
 /// Every section the window's **user guide ↗** buttons open is a heading
@@ -602,6 +681,7 @@ fn profile_structure_loads() {
         cases: Ok(library.cases.clone()),
         known: names,
         local: false,
+        level3: false,
         plan: Some(plan),
     };
     let timed = |threads: usize| {

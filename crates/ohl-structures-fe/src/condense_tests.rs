@@ -10,8 +10,8 @@
 use ohl_core::budget::Budget;
 
 use crate::condense::{
-    Attachment, CondenseKey, Linearisation, Link, Rigid, condense, condense_pole,
-    place_displacement,
+    Attachment, CondenseKey, Linearisation, Link, PoleBody, Rigid, condense, condense_pole,
+    condense_pole_with, condense_with, place_displacement,
 };
 use crate::model::{JointPoint, Member, MemberKind, Model, NodalLoad, Node, Section};
 use crate::pole::{Pole, PoleCode, PoleLoad, PoleMaterial};
@@ -485,6 +485,80 @@ fn a_pole_condenses_to_the_cantilever() {
         condense_pole(&uniform_pole(None), &pts, None, &default_budget()),
         Err(Rigid::PoleWithoutElasticity)
     );
+}
+
+/// Extra load sets (a structure's own wind and ice, plan §4.6) are
+/// solved on the same tangent: a force at a point's node gives the
+/// flexibility's column (Maxwell: the point's move under it), a uniform
+/// wind on a pole's shaft gives the cantilever's q a²(6L² − 4La + a²)/(24EI)
+/// (lumped on the frame model's nodes: to 0.5 %), turned with the
+/// matrices; none asked: none given.
+#[test]
+fn extra_loads_deflect_on_the_same_tangent() {
+    let (a, b, area, i) = (7.0, 12.0, 4e-3, 3e-5);
+    let mut m = column(&[a, b], area, i);
+    point(&mut m, "low", 1, [0.0; 3]);
+    point(&mut m, "top", 2, [0.0; 3]);
+    let pts = points(&["low", "top"]);
+    let force = NodalLoad {
+        node: 2,
+        force: [0.0, 1e3, 0.0],
+        moment: [0.0; 3],
+    };
+    let c = condense_with(
+        &m,
+        &pts,
+        &Linearisation::Unloaded,
+        &[vec![force]],
+        &default_budget(),
+    )
+    .unwrap();
+    let at = c.extra_at_points(0).unwrap();
+    for (p, label) in ["low", "top"].iter().enumerate() {
+        let col = c.flexibility_between(label, "top").unwrap();
+        for k in 0..3 {
+            assert!(
+                (at[p][k] - 1e3 * col[(k, 1)]).abs() < 1e-12,
+                "{label}: {:?} against {}",
+                at[p],
+                col
+            );
+        }
+    }
+    assert!(c.extra_at_points(1).is_none());
+    let plain = condense(&m, &pts, &Linearisation::Unloaded, &default_budget()).unwrap();
+    assert!(plain.extra.is_empty());
+    assert_eq!(plain.flexibility, c.flexibility);
+    // Turned a quarter: a move ahead becomes a move to the left.
+    let quarter = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
+    let turned = c.turned(quarter).extra_at_points(0).unwrap();
+    assert!((turned[1][0] + at[1][1]).abs() < 1e-15 && turned[1][1].abs() < 1e-15);
+
+    let e_wood = 11e9;
+    let pole = uniform_pole(Some(e_wood));
+    let ei = e_wood * std::f64::consts::PI / 64.0 * 0.3f64.powi(4);
+    let at: [(String, [f64; 3]); 2] = [
+        ("top".to_owned(), [0.0, 0.0, 12.0]),
+        ("arm".to_owned(), [0.0, 0.0, 9.0]),
+    ];
+    let wind = PoleBody {
+        wind: [-500.0, 0.0],
+        loads: Vec::new(),
+    };
+    let c = condense_pole_with(&pole, &at, None, &[wind], &default_budget()).unwrap();
+    let moved = c.extra_at_points(0).unwrap();
+    let q = -500.0 * 0.3;
+    let l: f64 = 12.0;
+    for (k, h) in [(0, 12.0_f64), (1, 9.0)] {
+        let expected = q * h * h * (6.0 * l * l - 4.0 * l * h + h * h) / (24.0 * ei);
+        assert!(
+            close(moved[k][0], expected, 5e-3),
+            "{} m: {} against {expected}",
+            h,
+            moved[k][0]
+        );
+        assert!(moved[k][1].abs() < 1e-12 * expected.abs());
+    }
 }
 
 /// Structures without a usable model stay rigid, with the reason.

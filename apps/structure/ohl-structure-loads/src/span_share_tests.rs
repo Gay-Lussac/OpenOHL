@@ -404,9 +404,9 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let json = serde_json::to_string(&t).unwrap();
     assert_eq!(serde_json::from_str::<LoadTable>(&json).unwrap(), t);
     // The line-values file.
-    // (Version 9 is the newest read; a file without a set's part of a
+    // (Version 10 is the newest read; a file without a set's part of a
     // point's pulls nor moments is still written at 6.)
-    assert_eq!(LINE_VALUES_FILE_VERSION, 9);
+    assert_eq!(LINE_VALUES_FILE_VERSION, 10);
     let mut placed = PlacedValues::pending("T2", "line", "type", "");
     placed.note = None;
     placed.cases = vec!["calm".into()];
@@ -422,9 +422,23 @@ fn the_pull_quantities_round_trip_through_csv_and_json() {
     let read = PlacedValues::parse(&old_text).unwrap();
     assert_eq!(read.values.get("calm", "A1", &[1], BL), None);
     assert_eq!(read.values.get("calm", "A1", &[1], L), Some(0.0));
-    // (Version 9 is read since 2026-11-15: the next one is the newer.)
-    let newer = text.replace("\"version\": 6", "\"version\": 10");
+    // (Version 10 is read since 2026-11-16: the next one is the newer.)
+    let newer = text.replace("\"version\": 6", "\"version\": 11");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
+    // The calculation level per case (version 10): written only when a
+    // case is not rigid; a file without them, every case rigid.
+    assert!(!text.contains("levels"));
+    assert_eq!(placed.level_of("calm"), 2);
+    let mut level = placed.clone();
+    level.cases = vec!["calm (rigid)".into(), "calm (level 3)".into()];
+    level.levels = vec![2, 3];
+    let level = level.at_needed_version();
+    assert_eq!(level.version, 10);
+    let text = level.to_json();
+    assert!(text.contains("\"levels\""), "{text}");
+    let read = PlacedValues::parse(&text).unwrap();
+    assert_eq!(read.level_of("calm (level 3)"), 3);
+    assert_eq!(read.level_of("calm (rigid)"), 2);
 }
 
 /// A dead-end point D holding two sets (two strings on one point).
@@ -604,6 +618,6 @@ fn the_file_is_version_7_only_with_parts_per_set() {
     });
     assert_eq!(other.at_needed_version().version, 7);
     // A newer file is refused.
-    let newer = text.replace("\"version\": 7", "\"version\": 10");
+    let newer = text.replace("\"version\": 7", "\"version\": 11");
     assert!(PlacedValues::parse(&newer).unwrap_err().contains("newer"));
 }

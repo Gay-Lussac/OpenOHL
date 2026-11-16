@@ -107,7 +107,10 @@ mod options;
 mod write;
 
 pub use body::add_structure_loads;
-pub use flexibility::{FlexibleRun, FlexibleSetup, flexible_structures, solve_line_flexible};
+pub use flexibility::{
+    FlexibleRun, FlexibleSetup, LoadsSetup, flexible_structures, prepare_structure_loads,
+    solve_line_flexible,
+};
 pub use options::{
     DEFAULT_SNOW_EXPOSURE, DEFAULT_SNOW_SHAPE, DEFAULT_SNOW_THERMAL, IceOn, RemovedWire, SnowOn,
     StructureIce, StructureOptions, WindDirection, snow_load,
@@ -1541,6 +1544,116 @@ pub struct CaseLoads {
     /// ([`unknown_case_sets`]; the same in every case): never silently
     /// absent from the checks (2026-11-14).
     pub unknown_sets: Vec<UnknownCases>,
+    /// Computed at calculation level 3 ([`structure_loads_at`]): the
+    /// rigid and the flexible solve's loads, the points' moves, the
+    /// passes. [`CaseLoads::loads`] is then per component the larger of
+    /// the two. None: the rigid solve alone (calculation level 2).
+    pub level: Option<FlexibleLoads>,
+}
+
+/// A load case's loads at calculation level 3 ([`CaseLoads::level`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlexibleLoads {
+    /// The calculation level (3).
+    pub level: u8,
+    /// The loads of the rigid solve (calculation level 2), by structure
+    /// and point.
+    pub rigid: Vec<AttachmentLoad>,
+    /// The loads of the coupled solve (none when it failed).
+    pub flexible: Vec<AttachmentLoad>,
+    /// A broken wire in every span: each break's rigid loads.
+    pub rigid_each: Vec<BrokenLoads>,
+    /// The same, flexible (the breaks whose loop converged).
+    pub flexible_each: Vec<BrokenLoads>,
+    /// Each point of a flexible structure moved by the coupled solve (the
+    /// largest move over the breaks).
+    pub moves: Vec<PointMove>,
+    /// The structures taken rigid, with why.
+    pub rigid_structures: Vec<(String, String)>,
+    /// The most passes of the case's coupled solves.
+    pub passes: usize,
+    /// Their time.
+    pub elapsed: std::time::Duration,
+    /// Why the coupled solve failed (one of a case's solves): its loads
+    /// are then the rigid solve's there.
+    pub failed: Option<String>,
+}
+
+/// A point of a flexible structure moved by a coupled solve
+/// ([`FlexibleLoads::moves`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PointMove {
+    /// The structure.
+    pub structure: String,
+    /// The point's label.
+    pub point: String,
+    /// Its move from the structure as strung, in the structure's axes
+    /// (right of the line, ahead, up), m.
+    pub local: [f64; 3],
+}
+
+impl FlexibleLoads {
+    /// The largest move of a point of structure `structure`, m (none: it
+    /// was rigid or did not move).
+    pub fn largest_move(&self, structure: &str) -> Option<&PointMove> {
+        self.moves
+            .iter()
+            .filter(|m| m.structure == structure)
+            .max_by(|a, b| norm(a.local).total_cmp(&norm(b.local)))
+    }
+
+    /// The largest change of a factored load component at structure
+    /// `structure` from rigid to flexible: (point, component 0–2 —
+    /// transverse, longitudinal, vertical —, rigid, flexible, N); none
+    /// without both solves there.
+    /// With a broken wire in every span, over every break.
+    pub fn largest_change(&self, structure: &str) -> Option<(String, usize, f64, f64)> {
+        let mut best: Option<(String, usize, f64, f64)> = None;
+        let mut pairs: Vec<(&[AttachmentLoad], &[AttachmentLoad])> =
+            vec![(&self.rigid, &self.flexible)];
+        for f in &self.flexible_each {
+            if let Some(r) = self.rigid_each.iter().find(|r| r.span == f.span) {
+                pairs.push((&r.loads, &f.loads));
+            }
+        }
+        for (rigid, flexible) in pairs {
+            for r in rigid.iter().filter(|l| l.structure == structure) {
+                let Some(f) = flexible
+                    .iter()
+                    .find(|l| l.structure == structure && l.point == r.point)
+                else {
+                    continue;
+                };
+                for k in 0..3 {
+                    let d = (f.factored[k] - r.factored[k]).abs();
+                    if best.as_ref().is_none_or(|b| d > (b.3 - b.2).abs()) {
+                        best = Some((r.point.clone(), k, r.factored[k], f.factored[k]));
+                    }
+                }
+            }
+        }
+        best
+    }
+}
+
+fn norm(v: [f64; 3]) -> f64 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+/// One load set of a case the structures' checks take on its own
+/// ([`CaseLoads::check_variants`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CheckVariant<'a> {
+    /// In words (`span 3 broken`, `rigid`, `level 3`, …; empty: the case
+    /// itself).
+    pub words: String,
+    /// The broken span (1 = the section's first), with a broken wire in
+    /// every span.
+    pub span: Option<usize>,
+    /// The calculation level solved at (none: the case's only solve).
+    pub level: Option<u8>,
+    /// Its loads at points.
+    pub loads: &'a [AttachmentLoad],
 }
 
 /// The loads of one break of a broken wire in every span
@@ -1571,41 +1684,130 @@ impl CaseLoads {
         body
     }
 
-    /// This case as the structures' finite-element and pole checks take
-    /// it: itself, or with a broken wire in every span one case per break
-    /// ([`CaseLoads::broken_each`]), named `<case> (span <k> broken)`,
-    /// its broken wire that one span, its loads those of that break (the
-    /// structure wind's loads, at no point, kept in each).
-    pub fn each_break(&self) -> Vec<CaseLoads> {
+    /// The load sets the structures' finite-element and pole checks take
+    /// each on its own, keeping the worst (the envelope of the components
+    /// is not an upper bound of a member force): the case's loads; with
+    /// a broken wire in every span, each break's (`span <k> broken`); at
+    /// calculation level 3 the rigid and the flexible solve's (`rigid`,
+    /// `level 3`; owner 2026-11-15: never below rigid), each break's of
+    /// each. Per set its words (empty: the case itself), the broken span
+    /// (1 = first) and the level, and its loads at points.
+    pub fn check_variants(&self) -> Vec<CheckVariant<'_>> {
+        fn broken(each: &[BrokenLoads], level: Option<u8>) -> Vec<CheckVariant<'_>> {
+            each.iter()
+                .map(|b| CheckVariant {
+                    words: match level {
+                        Some(3) => format!("span {} broken, level 3", b.span),
+                        Some(_) => format!("span {} broken, rigid", b.span),
+                        None => format!("span {} broken", b.span),
+                    },
+                    span: Some(b.span),
+                    level,
+                    loads: &b.loads,
+                })
+                .collect()
+        }
+        if let Some(l) = &self.level {
+            let mut out = Vec::new();
+            if l.rigid_each.is_empty() {
+                out.push(CheckVariant {
+                    words: "rigid".into(),
+                    span: None,
+                    level: Some(2),
+                    loads: &l.rigid,
+                });
+            } else {
+                out.extend(broken(&l.rigid_each, Some(2)));
+            }
+            if l.flexible_each.is_empty() {
+                if !l.flexible.is_empty() {
+                    out.push(CheckVariant {
+                        words: "level 3".into(),
+                        span: None,
+                        level: Some(l.level),
+                        loads: &l.flexible,
+                    });
+                }
+            } else {
+                out.extend(broken(&l.flexible_each, Some(l.level)));
+            }
+            return out;
+        }
         if self.broken_each.is_empty() {
+            return vec![CheckVariant {
+                words: String::new(),
+                span: None,
+                level: None,
+                loads: &self.loads,
+            }];
+        }
+        broken(&self.broken_each, None)
+    }
+
+    /// This case as the structures' finite-element and pole checks take
+    /// it ([`CaseLoads::check_variants`]): itself, or one case per set —
+    /// with a broken wire in every span one per break, named `<case>
+    /// (span <k> broken)`, its broken wire that one span; at calculation
+    /// level 3 the rigid and the flexible solve, `<case> (rigid)` and
+    /// `<case> (level 3)` (each break's: `<case> (span <k> broken,
+    /// level 3)`) — its loads those of the set (the structure wind's
+    /// loads, at no point, kept in each).
+    pub fn each_break(&self) -> Vec<CaseLoads> {
+        let variants = self.check_variants();
+        if variants.len() == 1 && variants[0].words.is_empty() {
             return vec![self.clone()];
         }
-        self.broken_each
-            .iter()
-            .map(|b| {
+        variants
+            .into_iter()
+            .map(|v| {
                 let mut case = self.case.clone();
-                case.name = format!("{} (span {} broken)", self.case.name, b.span);
-                let wires = case
-                    .broken_wires()
-                    .cloned()
-                    .map(|mut w| {
-                        if w.span == BrokenSpan::Every {
-                            w.span = BrokenSpan::One(b.span);
-                        }
-                        w
-                    })
-                    .collect();
-                case.set_broken(wires);
-                let mut loads = b.loads.clone();
+                case.name = format!("{} ({})", self.case.name, v.words);
+                if let Some(span) = v.span {
+                    let wires = case
+                        .broken_wires()
+                        .cloned()
+                        .map(|mut w| {
+                            if w.span == BrokenSpan::Every {
+                                w.span = BrokenSpan::One(span);
+                            }
+                            w
+                        })
+                        .collect();
+                    case.set_broken(wires);
+                }
+                let mut loads = v.loads.to_vec();
                 loads.extend(self.loads.iter().filter(|l| l.point.is_empty()).cloned());
                 CaseLoads {
                     case,
                     loads,
                     broken_each: Vec::new(),
+                    level: None,
+                    notes: match v.level {
+                        Some(n) => {
+                            let mut notes = self.notes.clone();
+                            notes.push(format!(
+                                "calculation level {n}: the loads of the {} solve (the line's \
+                                 check keeps the worse of rigid and flexible)",
+                                if n == 2 { "rigid" } else { "coupled" }
+                            ));
+                            notes
+                        }
+                        None => self.notes.clone(),
+                    },
                     ..self.clone()
                 }
             })
             .collect()
+    }
+
+    /// The calculation level each case of [`CaseLoads::each_break`] was
+    /// solved at (2: rigid), in its order.
+    pub fn each_level(&self) -> Vec<u8> {
+        let variants = self.check_variants();
+        if variants.len() == 1 && variants[0].words.is_empty() {
+            return vec![2];
+        }
+        variants.iter().map(|v| v.level.unwrap_or(2)).collect()
     }
 
     /// The wires missing from the loads of structure `structure`.
@@ -1831,6 +2033,35 @@ pub fn structure_loads_each(
     known: &[String],
     budget: &Budget,
 ) -> Vec<Result<CaseLoads, String>> {
+    structure_loads_at(line, library, weather, cases, known, budget, None)
+}
+
+/// [`structure_loads_each`] at a calculation level: `level` none, the
+/// rigid solve (calculation level 2); given (its structures set up by
+/// [`prepare_structure_loads`] for these cases), **calculation level 3**
+/// (plan of 2026-11-15, phase 4; in active development): each case's
+/// line solved by the interface loop with the structures' linear
+/// stiffness and their own wind and ice of the case
+/// ([`ohl_line::solve::flexible`]; a broken wire as a whole-line solve,
+/// with `"every"` one coupled solve per span), at unfactored loads, the
+/// case's factors on the resulting forces. **Never below rigid** (owner
+/// 2026-11-15): each load at a point is, per component, the larger of the
+/// rigid and the flexible solve's ([`CaseLoads::loads`]); both solves
+/// are kept ([`CaseLoads::level`]) and the structures' checks take each
+/// on its own and keep the worse ([`CaseLoads::check_variants`]). A case
+/// whose loop does not converge keeps the rigid loads, said.
+///
+/// Expected cost: the rigid solves, plus per case 2–5 line solves
+/// (measured: theory, Structure flexibility).
+pub fn structure_loads_at(
+    line: &Line,
+    library: &ohl_cables::Library,
+    weather: &[WeatherCase],
+    cases: &[LoadCase],
+    known: &[String],
+    budget: &Budget,
+    level: Option<&LoadsSetup>,
+) -> Vec<Result<CaseLoads, String>> {
     // A set of wind directions: one case per direction.
     let cases = &expand_directions(cases);
     let mut line = line.clone();
@@ -2005,9 +2236,13 @@ pub fn structure_loads_each(
         // span of "every").
         let first = fixed.first().and_then(|f| f.1.first().map(|b| b.span));
         let mut each = Vec::new();
+        // Calculation level 3: the structures for this case (their own
+        // wind and ice of the case in their deflection).
+        let flexible = level.map(|l| l.structures_for(&case.name));
+        let mut acc = flexible.as_ref().map(|_| LevelAcc::default());
         let (mut loads, failed, mut missing) = match &every {
             None => {
-                let (at, failed, missing) = case_loads(
+                let out = case_loads(
                     solving,
                     library,
                     &wires_weather,
@@ -2015,7 +2250,9 @@ pub fn structure_loads_each(
                     &fixed,
                     first,
                     budget,
+                    flexible.as_ref(),
                 );
+                let (at, failed, missing) = larger_of(out, &line, acc.as_mut(), None);
                 (at.into_values().collect::<Vec<_>>(), failed, missing)
             }
             Some((section, broken)) => {
@@ -2028,7 +2265,7 @@ pub fn structure_loads_each(
                     let k = one.span;
                     let mut all = fixed.clone();
                     all.push((section.clone(), vec![one]));
-                    let (at, f, m) = case_loads(
+                    let out = case_loads(
                         solving,
                         library,
                         &wires_weather,
@@ -2036,6 +2273,13 @@ pub fn structure_loads_each(
                         &all,
                         Some(k),
                         budget,
+                        flexible.as_ref(),
+                    );
+                    let (at, f, m) = larger_of(
+                        out,
+                        &line,
+                        acc.as_mut(),
+                        (broken.len() > 1).then_some(k + 1),
                     );
                     if broken.len() > 1 {
                         each.push(BrokenLoads {
@@ -2064,6 +2308,14 @@ pub fn structure_loads_each(
                 }
                 (worst.into_values().collect(), failed, missing)
             }
+        };
+        let level_loads = match (level, acc) {
+            (Some(l), Some(acc)) => {
+                let (at, notes_of) = acc.finish(l, &case.name);
+                notes.extend(notes_of);
+                Some(at)
+            }
+            _ => None,
         };
         // The structure groups: a structure not taking the case has no
         // loads in it.
@@ -2137,7 +2389,7 @@ pub fn structure_loads_each(
                 ));
             }
         }
-        Ok(CaseLoads {
+        let mut out = CaseLoads {
             case: case.clone(),
             loads,
             failed,
@@ -2146,7 +2398,21 @@ pub fn structure_loads_each(
             broken_each: each,
             notes,
             unknown_sets: unknown.clone(),
-        })
+            level: level_loads,
+        };
+        // A structure not taking the case: none of its loads in the
+        // level's sets either.
+        if sets.has_groups()
+            && let Some(l) = out.level.as_mut()
+        {
+            let takes = |s: &str| sets.takes(s, case.set_name());
+            l.rigid.retain(|x| takes(&x.structure));
+            l.flexible.retain(|x| takes(&x.structure));
+            for b in l.rigid_each.iter_mut().chain(l.flexible_each.iter_mut()) {
+                b.loads.retain(|x| takes(&x.structure));
+            }
+        }
+        Ok(out)
     };
     cases.iter().map(one).collect()
 }
@@ -2403,6 +2669,7 @@ type Loads = (
 /// when given; `named` the broken span the loads name
 /// ([`AttachmentLoad::broken_span`], from 0); with the sections and
 /// jumpers that did not solve.
+#[allow(clippy::too_many_arguments)]
 fn case_loads(
     line: &Line,
     library: &ohl_cables::Library,
@@ -2411,43 +2678,294 @@ fn case_loads(
     broken: &[(String, Vec<Break>)],
     named: Option<usize>,
     budget: &Budget,
-) -> Loads {
+    flexible: Option<&ohl_line::solve::flexible::Structures>,
+) -> CaseOut {
     let calculation = Calculation::ALL
         .into_iter()
         .find(|c| c.condition() == case.condition.condition() && c.method() == Method::Fe)
         .expect("every condition has an FE calculation");
-    // (structure, point) → load.
-    let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
-    let mut failed = Vec::new();
-    let mut missing = Vec::new();
     // Every section in the load case's condition, solved together where
     // they share strings.
     let mut solving = line.clone();
     for s in &mut solving.sections {
         s.calculation = calculation;
     }
-    let results = if broken.is_empty() {
-        ohl_line::solve::solve_line_with(&solving, library, w, budget)
-    } else {
-        let spans: Vec<(&str, Vec<Break>)> = broken
-            .iter()
-            .map(|(s, k)| (s.as_str(), k.clone()))
-            .collect();
-        match ohl_line::solve::solve_line_breaks(&solving, library, w, &spans, budget) {
-            Ok(r) => r,
-            // Checked by the caller (the sections are there).
-            Err(e) => {
-                failed.push(e.to_string());
-                return (at, failed, missing);
-            }
-        }
-    };
+    let spans: Vec<(&str, Vec<Break>)> = broken
+        .iter()
+        .map(|(s, k)| (s.as_str(), k.clone()))
+        .collect();
     let span_of = if broken.is_empty() {
         None
     } else {
         named.map(|k| [k + 1; 3])
     };
+    let loads_of = |results| loads_of(line, library, w, case, results, span_of);
+    // Calculation level 3: the line's coupled solve with the structures'
+    // stiffness (its pass 0 the rigid solve, bit for bit).
+    let mut level_failed = None;
+    if let Some(structures) = flexible {
+        let options = ohl_line::solve::flexible::FlexibleOptions::default();
+        match ohl_line::solve::flexible::solve_line_flexible_broken(
+            &solving, library, w, budget, structures, &options, &spans,
+        ) {
+            Ok(solved) => {
+                let info = LevelInfo {
+                    points: solved.points.clone(),
+                    passes: solved.passes.len(),
+                    elapsed: solved.elapsed,
+                };
+                // The loads act at the structures' points as drawn: the
+                // points' moves are the structures' deflection, not a
+                // lever (a post's lever comes back as drawn).
+                let mut sections = solved.sections;
+                let moved: BTreeMap<(&str, &str), Point> = info
+                    .points
+                    .iter()
+                    .map(|p| ((p.structure.as_str(), p.label.as_str()), p.displacement))
+                    .collect();
+                for (section, shape) in solving.sections.iter().zip(sections.iter_mut()) {
+                    let Ok(shape) = shape else { continue };
+                    for (point, supports) in section.points.iter().zip(&mut shape.attachment_loads)
+                    {
+                        for s in supports {
+                            if let Some(d) =
+                                moved.get(&(point.structure.as_str(), s.label.as_str()))
+                            {
+                                for (at, by) in s.at.iter_mut().zip(d) {
+                                    *at -= by;
+                                }
+                            }
+                        }
+                    }
+                }
+                return CaseOut {
+                    rigid: loads_of(solved.rigid),
+                    flexible: Some(Ok((loads_of(sections), info))),
+                };
+            }
+            Err(f) if !f.rigid.is_empty() => {
+                let why = f.reason.clone();
+                return CaseOut {
+                    rigid: loads_of(f.rigid),
+                    flexible: Some(Err(why)),
+                };
+            }
+            Err(f) => level_failed = Some(f.reason),
+        }
+    }
+    let results = if broken.is_empty() {
+        ohl_line::solve::solve_line_with(&solving, library, w, budget)
+    } else {
+        match ohl_line::solve::solve_line_breaks(&solving, library, w, &spans, budget) {
+            Ok(r) => r,
+            // Checked by the caller (the sections are there).
+            Err(e) => {
+                return CaseOut {
+                    rigid: (BTreeMap::new(), vec![e.to_string()], Vec::new()),
+                    flexible: level_failed.map(Err),
+                };
+            }
+        }
+    };
+    CaseOut {
+        rigid: loads_of(results),
+        flexible: level_failed.map(Err),
+    }
+}
 
+/// What a case's coupled solves gather ([`structure_loads_at`]).
+#[derive(Default)]
+struct LevelAcc {
+    rigid: BTreeMap<(String, String), AttachmentLoad>,
+    flexible: BTreeMap<(String, String), AttachmentLoad>,
+    rigid_each: Vec<BrokenLoads>,
+    flexible_each: Vec<BrokenLoads>,
+    moves: BTreeMap<(String, String), [f64; 3]>,
+    passes: usize,
+    elapsed: std::time::Duration,
+    failed: Option<String>,
+}
+
+impl LevelAcc {
+    /// The level's loads of the case, and its notes.
+    fn finish(self, setup: &LoadsSetup, case: &str) -> (FlexibleLoads, Vec<String>) {
+        let s = &setup.setup.structures;
+        let mut notes = vec![
+            "calculation level 3 (in active development): the line solved with each flexible \
+             structure a linear stiffness at its attachment points (linearised at the stringing \
+             state) and its own wind and ice of the case in its deflection; structure \
+             flexibility at unfactored loads, the case's factors on the resulting forces"
+                .to_owned(),
+            "never below rigid (owner 2026-11-15): each load at a point is per component the \
+             larger of the rigid and the flexible solve's, and the structures' checks take both \
+             solves each on its own and keep the worse"
+                .to_owned(),
+            "the jumpers solved on the structures as drawn (their ends not moved by the \
+             structures' deflection)"
+                .to_owned(),
+        ];
+        if !s.rigid.is_empty() {
+            let mut first: Vec<String> = s
+                .rigid
+                .iter()
+                .take(10)
+                .map(|r| format!("{} ({})", r.structure, r.reason))
+                .collect();
+            if s.rigid.len() > 10 {
+                first.push(format!("and {} more", s.rigid.len() - 10));
+            }
+            notes.push(format!("taken rigid at level 3: {}", first.join("; ")));
+        }
+        notes.extend(s.notes.iter().cloned());
+        if let Some(why) = &self.failed {
+            notes.push(format!(
+                "calculation level 3 failed in this case: {why} — its loads there are the rigid \
+                 solve's (calculation level 2)"
+            ));
+        } else if !s.flexible.is_empty() {
+            let largest = self
+                .moves
+                .iter()
+                .max_by(|a, b| norm(*a.1).total_cmp(&norm(*b.1)));
+            if let Some(((st, p), m)) = largest {
+                notes.push(format!(
+                    "level 3: {} structures flexible, {} passes ({:.1?}); largest move {:.1} mm \
+                     at {st} {p}",
+                    s.flexible.len(),
+                    self.passes,
+                    self.elapsed,
+                    norm(*m) * 1e3
+                ));
+            }
+        }
+        let _ = case;
+        let moves = self
+            .moves
+            .into_iter()
+            .map(|((structure, point), local)| PointMove {
+                structure,
+                point,
+                local,
+            })
+            .collect();
+        (
+            FlexibleLoads {
+                level: 3,
+                rigid: self.rigid.into_values().collect(),
+                flexible: self.flexible.into_values().collect(),
+                rigid_each: self.rigid_each,
+                flexible_each: self.flexible_each,
+                moves,
+                rigid_structures: s
+                    .rigid
+                    .iter()
+                    .map(|r| (r.structure.clone(), r.reason.clone()))
+                    .collect(),
+                passes: self.passes,
+                elapsed: self.elapsed,
+                failed: self.failed,
+            },
+            notes,
+        )
+    }
+}
+
+/// The loads of one coupled solve of a case ([`case_loads`]): per point
+/// and component the larger of the rigid and the flexible solve's (the
+/// owner's rule), both kept in `acc` (with a broken wire in every span,
+/// as break `span`); without a flexible solve, the rigid loads.
+fn larger_of(out: CaseOut, line: &Line, acc: Option<&mut LevelAcc>, span: Option<usize>) -> Loads {
+    let (rigid, failed, missing) = out.rigid;
+    let Some(acc) = acc else {
+        return (rigid, failed, missing);
+    };
+    let keep = |into: &mut BTreeMap<(String, String), AttachmentLoad>,
+                each: &mut Vec<BrokenLoads>,
+                at: &BTreeMap<(String, String), AttachmentLoad>| {
+        match span {
+            Some(k) => each.push(BrokenLoads {
+                span: k,
+                loads: at.values().cloned().collect(),
+            }),
+            None => into.extend(at.iter().map(|(k, v)| (k.clone(), v.clone()))),
+        }
+    };
+    keep(&mut acc.rigid, &mut acc.rigid_each, &rigid);
+    match out.flexible {
+        Some(Ok(((flexible, f_failed, f_missing), info))) => {
+            keep(&mut acc.flexible, &mut acc.flexible_each, &flexible);
+            acc.passes = acc.passes.max(info.passes);
+            acc.elapsed += info.elapsed;
+            for p in info.points {
+                let e = acc.moves.entry((p.structure, p.label)).or_insert([0.0; 3]);
+                if norm(p.local) > norm(*e) {
+                    *e = p.local;
+                }
+            }
+            let mut at = rigid;
+            for (key, l) in flexible {
+                match at.get_mut(&key) {
+                    Some(e) => {
+                        let span = e.broken_span;
+                        envelope(e, &l, line);
+                        e.broken_span = span;
+                    }
+                    None => {
+                        at.insert(key, l);
+                    }
+                }
+            }
+            let (mut failed, mut missing) = (failed, missing);
+            for x in f_failed {
+                if !failed.contains(&x) {
+                    failed.push(x);
+                }
+            }
+            for x in f_missing {
+                if !missing.contains(&x) {
+                    missing.push(x);
+                }
+            }
+            (at, failed, missing)
+        }
+        Some(Err(why)) => {
+            acc.failed.get_or_insert(why);
+            (rigid, failed, missing)
+        }
+        None => (rigid, failed, missing),
+    }
+}
+
+/// What [`case_loads`] gives: the rigid solve's loads and, at
+/// calculation level 3, the flexible solve's with its points (or why the
+/// loop failed: the rigid loads alone then).
+struct CaseOut {
+    rigid: Loads,
+    flexible: Option<Result<(Loads, LevelInfo), String>>,
+}
+
+/// A coupled solve's points and passes ([`case_loads`]).
+struct LevelInfo {
+    points: Vec<ohl_line::solve::flexible::PointResult>,
+    passes: usize,
+    elapsed: std::time::Duration,
+}
+
+/// The loads at the structures' points from the line solved in `w`
+/// (`results`, one per section of `line`), for load case `case`;
+/// `span_of` the broken span the loads name.
+fn loads_of(
+    line: &Line,
+    library: &ohl_cables::Library,
+    w: &WeatherCase,
+    case: &LoadCase,
+    results: Vec<Result<ohl_line::solve::SectionShape, ohl_line::LineError>>,
+    span_of: Option<[usize; 3]>,
+) -> Loads {
+    // (structure, point) → load.
+    let mut at: BTreeMap<(String, String), AttachmentLoad> = BTreeMap::new();
+    let mut failed = Vec::new();
+    let mut missing = Vec::new();
     let mut solved = Vec::with_capacity(results.len());
     let mut pulls: Vec<PointPulls> = Vec::new();
     for (section, result) in line.sections.iter().zip(results) {
@@ -3231,3 +3749,6 @@ mod local_tests;
 mod post_tests;
 #[cfg(test)]
 mod pull_tests;
+
+#[cfg(test)]
+mod level_tests;

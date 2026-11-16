@@ -234,6 +234,25 @@ pub const STRETCH_PASSES: usize = 20;
 /// loads; the stretch's own rounding noise is ~10⁻¹³).
 pub const STRETCH_TOLERANCE: f64 = 1e-11;
 
+/// A model whose first node is farther than this from the origin across
+/// (x or y, m) is solved about a local origin ([`Model::solve`]); a
+/// coordinate below it is resolved to ~2·10⁻¹² m.
+pub const FAR_FROM_ORIGIN: f64 = 1e4;
+
+/// The tolerance of the load steps short of the whole loads (the fallback
+/// of [`Model::solve`]), relative to the loads: only the start of the next
+/// step.
+const INTERMEDIATE_STEP_TOLERANCE: f64 = 1e-3;
+
+/// The tolerance of the first pass on the stretches, relative to the
+/// loads ([`Model::solve`]): the first stretches are a guess off by
+/// some 10⁻⁴.
+const FIRST_PASS_TOLERANCE: f64 = 1e-6;
+
+/// A later pass on the stretches is solved to this share of the last
+/// pass's largest change of a stretch, relative to the loads.
+const STRETCH_SHARE: f64 = 1e-2;
+
 /// Default exit clauses for a structure solve: Newton usually converges in
 /// 5–20 iterations; 100 iterations cover difficult cases (broken wire)
 /// with margin. The time limit only guards against a solve that never ends:
@@ -568,7 +587,59 @@ impl Model {
     /// suspension strings converges in well under 10 ms (with ice or wind,
     /// the passes after the first start at the solution: a few iterations
     /// each).
+    ///
+    /// **About a local origin** (2026-11-16): a model far from the origin
+    /// (projected coordinates of millions of metres) is solved moved to a
+    /// local origin ([`Model::local_origin`]: whole kilometres near its
+    /// first node) and its positions moved back. In such coordinates a
+    /// node's position is resolved to only ~5·10⁻¹⁰ m, which a stiff
+    /// string or a short span turns into a force noise of ~10⁻³ N — above
+    /// the tolerance of some sections — and the tolerance's own floor
+    /// (64 ε × stiffness × the coordinates' size) grows with the
+    /// coordinates. About the local origin a line solves as it would near
+    /// the origin. The move is exact for the given points (fixed nodes
+    /// come back bit for bit); a free node's position comes back as the
+    /// nearest number to the solved one. A model near the origin (every
+    /// coordinate of its first node below [`FAR_FROM_ORIGIN`]) is solved
+    /// as given.
     pub fn solve(&self, budget: &Budget) -> Result<Solution, FeError> {
+        let origin = self.local_origin();
+        if origin == Vector3::zeros() {
+            return self.solve_here(budget);
+        }
+        let mut local = self.clone();
+        for node in &mut local.nodes {
+            node.position -= origin;
+        }
+        let mut solution = local.solve_here(budget)?;
+        for (p, node) in solution.positions.iter_mut().zip(&self.nodes) {
+            *p = if node.fixed {
+                node.position
+            } else {
+                *p + origin
+            };
+        }
+        Ok(solution)
+    }
+
+    /// The local origin [`Model::solve`] and [`Model::support_stiffness`]
+    /// solve about: the first node's x and y rounded to whole kilometres
+    /// (whole numbers: the move and its reversal are exact for the given
+    /// points), z unmoved; zero when that node is within
+    /// [`FAR_FROM_ORIGIN`] of the origin across (or the model is empty).
+    pub fn local_origin(&self) -> Vector3<f64> {
+        let Some(first) = self.nodes.first() else {
+            return Vector3::zeros();
+        };
+        let (x, y) = (first.position.x, first.position.y);
+        if !(x.is_finite() && y.is_finite()) || x.abs().max(y.abs()) < FAR_FROM_ORIGIN {
+            return Vector3::zeros();
+        }
+        Vector3::new((x / 1e3).round() * 1e3, (y / 1e3).round() * 1e3, 0.0)
+    }
+
+    /// [`Model::solve`] in the model's own coordinates.
+    fn solve_here(&self, budget: &Budget) -> Result<Solution, FeError> {
         if self
             .cables
             .iter()
@@ -599,11 +670,21 @@ impl Model {
             .collect();
         let (mut change, mut worst) = (f64::INFINITY, 0);
         let mut iterations = 0;
+        // A pass whose stretches will still change is solved to a share of
+        // that change (relative to the loads; 2026-11-16): its loads move
+        // by about as much in the next pass anyway. The pass returned is
+        // solved to the full tolerance with the stretches settled.
+        let mut loose = FIRST_PASS_TOLERANCE;
         for pass in 1..=STRETCH_PASSES {
             for ((c, own), k) in model.cables.iter_mut().zip(&self.cables).zip(&stretch) {
                 c.properties.load = own.properties.load + own.stretched_load * *k;
             }
-            let mut solution = model.solve_loaded(budget)?;
+            let full = loose <= 1e-9;
+            let mut solution = if full {
+                model.solve_loaded(budget)?
+            } else {
+                model.solve_loaded_to(budget, loose)?
+            };
             iterations += solution.iterations;
             (change, worst) = (0.0, 0);
             for (e, (c, state)) in model.cables.iter().zip(&solution.cables).enumerate() {
@@ -623,11 +704,17 @@ impl Model {
                     solution.iterations
                 );
             }
-            if change <= STRETCH_TOLERANCE {
+            if change <= STRETCH_TOLERANCE && full {
                 solution.stretch_passes = pass;
                 // Every pass's Newton iterations.
                 solution.iterations = iterations;
                 return Ok(solution);
+            }
+            // Settled on a pass solved short of the full tolerance: once
+            // more at the full tolerance.
+            loose = (STRETCH_SHARE * change).min(loose);
+            if change <= STRETCH_TOLERANCE {
+                loose = 0.0;
             }
             for (node, p) in model.nodes.iter_mut().zip(&solution.positions) {
                 node.position = *p;
@@ -643,7 +730,14 @@ impl Model {
     /// [`Model::solve`] with every cable's load as given per unit
     /// unstressed length.
     fn solve_loaded(&self, budget: &Budget) -> Result<Solution, FeError> {
-        match self.solve_direct(budget) {
+        self.solve_loaded_to(budget, 0.0)
+    }
+
+    /// [`Model::solve_loaded`], Newton converged at the larger of its
+    /// tolerance and `relative` of the loads (the fallbacks at the full
+    /// tolerance).
+    fn solve_loaded_to(&self, budget: &Budget, relative: f64) -> Result<Solution, FeError> {
+        match self.solve_direct_to(budget, relative) {
             Ok(solution) => Ok(solution),
             Err(
                 error @ (FeError::NotConverged { .. }
@@ -826,7 +920,18 @@ impl Model {
                 node.position = *p;
             }
             set_loads(&mut model, target);
-            let result = model.solve_direct(budget);
+            // A step short of the whole loads is only the start of the
+            // next: solved to 10⁻⁵ of the loads (2026-11-16: a section
+            // whose Newton converges only linearly near its solution — a
+            // node held by slack strings — reached a step's start
+            // within 2·10⁻³ N but not the full tolerance in 100
+            // iterations, and the stepping failed). The whole loads
+            // keep the full tolerance.
+            let result = if target < 1.0 {
+                model.solve_direct_to(budget, INTERMEDIATE_STEP_TOLERANCE)
+            } else {
+                model.solve_direct(budget)
+            };
             if ohl_core::env::var_os("OHL_FE_TRACE").is_some() {
                 eprintln!(
                     "load steps: {target:.4} of the loads: {}",
@@ -865,6 +970,12 @@ impl Model {
 
     /// Newton–Raphson from the nodes' current positions.
     fn solve_direct(&self, budget: &Budget) -> Result<Solution, FeError> {
+        self.solve_direct_to(budget, 0.0)
+    }
+
+    /// [`Model::solve_direct`] converged at the larger of its tolerance
+    /// and `relative` of the loads.
+    fn solve_direct_to(&self, budget: &Budget, relative: f64) -> Result<Solution, FeError> {
         self.check()?;
         let mut dof = vec![None; self.nodes.len()];
         let mut n_dof = 0;
@@ -957,7 +1068,8 @@ impl Model {
                 .fold(0.0, f64::max);
         let tolerance = (1e-9 * load_scale)
             .max(64.0 * f64::EPSILON * stiffest * coordinate_scale)
-            .max(element_floor);
+            .max(element_floor)
+            .max(relative * load_scale);
         // Initial damping: a small fraction of the stiffest diagonal term.
         let mut mu = 1e-4
             * (0..n_dof)
@@ -1119,12 +1231,18 @@ impl Model {
                 )));
             }
         }
-        // The loads as solved (the stretch frozen).
+        // The loads as solved (the stretch frozen); about the local origin
+        // the solve took ([`Model::solve`]).
         let mut model = self.clone();
         for (c, load) in model.cables.iter_mut().zip(&solution.cable_loads) {
             c.properties.load = *load;
             c.stretched_load = Vector3::zeros();
         }
+        let origin = self.local_origin();
+        for node in &mut model.nodes {
+            node.position -= origin;
+        }
+        let positions: Vec<Vector3<f64>> = solution.positions.iter().map(|p| p - origin).collect();
         // The supports first, then every free node.
         let mut dof = vec![None; n];
         for (k, &s) in nodes.iter().enumerate() {
@@ -1144,7 +1262,7 @@ impl Model {
             .map(|s| Some((s.horizontal, s.v0)))
             .collect();
         let k = model
-            .evaluate(&solution.positions, &dof, n_dof, &mut guesses)?
+            .evaluate(&positions, &dof, n_dof, &mut guesses)?
             .stiffness;
         let nf = n_dof - ns;
         let kss = k.view((0, 0), (ns, ns)).into_owned();
@@ -1522,6 +1640,80 @@ mod support_stiffness_check {
         let s = model.solve(&default_fe_budget()).unwrap();
         assert!(model.support_stiffness(&s, &[2]).is_err());
         assert!(model.support_stiffness(&s, &[1, 1]).is_err());
+    }
+
+    /// A model in projected coordinates of millions of metres solves as
+    /// the same model near the origin (2026-11-16, [`Model::solve`] about
+    /// a local origin): its fixed nodes come back bit for bit, its free
+    /// nodes to their rounding there (~5·10⁻¹⁰ m), its forces and its
+    /// support stiffness as near the origin; a stiff string's tolerance
+    /// no longer grows with the coordinates (the same iterations).
+    #[test]
+    fn a_model_far_from_the_origin_solves_as_near_it() {
+        let near = Model {
+            nodes: vec![
+                Node::fixed(Vector3::new(0.0, 0.0, 527.0)),
+                Node::fixed(Vector3::new(300.0, 10.0, 530.0)),
+                Node::free(Vector3::new(300.0, 10.0, 527.0)),
+                Node::fixed(Vector3::new(650.0, 25.0, 525.0)),
+            ],
+            cables: vec![
+                CableElement::new(0, 2, props(300.4)),
+                CableElement {
+                    stretched_load: Vector3::new(0.0, 6.0, -9.0),
+                    ..CableElement::new(2, 3, props(350.8))
+                },
+            ],
+            trusses: vec![TrussElement {
+                i: 1,
+                j: 2,
+                unstressed_length: 3.0,
+                axial_stiffness: 1e10,
+                tension_only: true,
+                weight: 800.0,
+            }],
+        };
+        assert_eq!(near.local_origin(), Vector3::zeros());
+        let offset = Vector3::new(2_600_000.0, 1_120_000.0, 0.0);
+        // Near: the same model 123.25 m, 456.5 m from the origin; far:
+        // that plus whole kilometres (the local origin's).
+        let mut shifted = near.clone();
+        for n in &mut shifted.nodes {
+            n.position += Vector3::new(123.25, 456.5, 0.0);
+        }
+        let mut far = shifted.clone();
+        for n in &mut far.nodes {
+            n.position += offset;
+        }
+        assert_eq!(far.local_origin(), offset);
+        let budget = default_fe_budget();
+        let a = shifted.solve(&budget).unwrap();
+        let b = far.solve(&budget).unwrap();
+        for (k, node) in far.nodes.iter().enumerate() {
+            if node.fixed {
+                assert_eq!(b.positions[k], node.position);
+            }
+            let d = b.positions[k] - offset - a.positions[k];
+            assert!(d.amax() < 1e-9, "node {k}: {d}");
+        }
+        for (x, y) in a.reactions.iter().zip(&b.reactions) {
+            assert!((x - y).amax() < 1e-6, "{x} {y}");
+        }
+        assert!((a.truss_forces[0] - b.truss_forces[0]).abs() < 1e-6);
+        assert_eq!(a.iterations, b.iterations);
+        let ka = shifted.support_stiffness(&a, &[0, 1, 3]).unwrap();
+        let kb = far.support_stiffness(&b, &[0, 1, 3]).unwrap();
+        // (The free node's position back in projected coordinates is
+        // rounded to ~5e-10 m: 1.3e-6 of the stiffness here — a Newton
+        // step's Jacobian, its error costs iterations, never accuracy.)
+        let dk = (&ka - &kb).abs().max();
+        assert!(dk < 1e-5 * ka.abs().max(), "{dk:e} of {:e}", ka.abs().max());
+        // As given (the former solve): the tolerance's floor, 64 ε × the
+        // stiff string's 3.3·10⁹ N/m × 2.6·10⁶ m, is ~120 N — the clamp
+        // stopped some 3 cm from its equilibrium.
+        let given = far.solve_here(&budget).unwrap();
+        let d = given.positions[2] - offset - a.positions[2];
+        assert!(d.amax() > 1e-3 && d.amax() < 0.1, "{d}");
     }
 }
 
