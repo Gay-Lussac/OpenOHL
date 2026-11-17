@@ -428,7 +428,11 @@ impl TensionRow {
 /// ([`TensionRow::levels`]); a row of one solve only (a case without a
 /// level-3 solve, a section that did not solve) as it is. The notes of
 /// both, each once. With the largest change against rigid, in words.
-pub fn envelope(rigid: TensionReport, level: TensionReport) -> (TensionReport, Option<String>) {
+pub fn envelope(
+    rigid: TensionReport,
+    level: TensionReport,
+    coupled: u8,
+) -> (TensionReport, Option<String>) {
     type Key = (usize, String, crate::calculation::Calc, String, usize);
     let key = |r: &TensionRow| -> Key {
         (
@@ -479,8 +483,8 @@ pub fn envelope(rigid: TensionReport, level: TensionReport) -> (TensionReport, O
     }
     let change = change.map(|(c, at)| {
         format!(
-            "largest change of a span's tension {:+.2} % at {at} (the larger of rigid and level 3 \
-             checked)",
+            "largest change of a span's tension {:+.2} % at {at} (the larger of rigid and level \
+             {coupled} checked)",
             c * 100.0
         )
     });

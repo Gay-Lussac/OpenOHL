@@ -281,7 +281,7 @@ impl StringChecksWindow {
             let mut report = check(&solved);
             let mut change = None;
             if flexible {
-                (report, change) = strings::envelope(report, check(&at_level));
+                (report, change) = strings::envelope(report, check(&at_level), at.level.number());
             }
             notes.extend(at.notes(&tally, change.clone()));
             report.notes.splice(0..0, notes);

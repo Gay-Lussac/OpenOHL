@@ -327,7 +327,7 @@ impl WireTensionsWindow {
             let mut report = check(&solved);
             let mut change = None;
             if flexible {
-                (report, change) = tension::envelope(report, check(&at_level));
+                (report, change) = tension::envelope(report, check(&at_level), at.level.number());
             }
             notes.extend(at.notes(&tally, change.clone()));
             report.notes.splice(0..0, notes);

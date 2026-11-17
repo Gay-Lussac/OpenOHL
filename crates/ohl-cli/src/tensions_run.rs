@@ -254,7 +254,7 @@ pub fn run(a: &TensionsArgs) -> Result<bool, String> {
             &set.tension_rules,
             &Default::default(),
         );
-        (report, change) = tension::envelope(report, at_level);
+        (report, change) = tension::envelope(report, at_level, level.level.number());
     }
     report.notes.splice(0..0, level.notes(&tally, change));
     for n in &report.notes {

@@ -422,7 +422,11 @@ pub struct StringRow {
 /// from the moved top in the structure's axes as drawn (its tilt at the
 /// point left out, said in the notes). With the largest change against
 /// rigid, in words.
-pub fn envelope(rigid: StringReport, mut level: StringReport) -> (StringReport, Option<String>) {
+pub fn envelope(
+    rigid: StringReport,
+    mut level: StringReport,
+    coupled: u8,
+) -> (StringReport, Option<String>) {
     type Key = (
         usize,
         String,
@@ -444,7 +448,7 @@ pub fn envelope(rigid: StringReport, mut level: StringReport) -> (StringReport, 
         )
     };
     for r in &mut level.rows {
-        r.level = 3;
+        r.level = coupled;
     }
     let mut flexible: std::collections::HashMap<Key, StringRow> =
         level.rows.into_iter().map(|r| (key(&r), r)).collect();
@@ -485,17 +489,16 @@ pub fn envelope(rigid: StringReport, mut level: StringReport) -> (StringReport, 
             notes.push(n);
         }
     }
-    notes.push(
-        "level 3: a string's swing measured from its moved top in its structure's axes as \
-         drawn — the structure's tilt at the point left out (under wind the structure leans \
+    notes.push(format!(
+        "level {coupled}: a string's swing measured from its moved top in its structure's axes \
+         as drawn — the structure's tilt at the point left out (under wind the structure leans \
          with the string, so the swing from the vertical is the larger there; under other loads \
          either way)"
-            .to_owned(),
-    );
+    ));
     let change = change.map(|(c, at)| {
         format!(
-            "largest change of a string's value {:+.2} % at {at} (the worse of rigid and level 3 \
-             checked)",
+            "largest change of a string's value {:+.2} % at {at} (the worse of rigid and level \
+             {coupled} checked)",
             c * 100.0
         )
     });

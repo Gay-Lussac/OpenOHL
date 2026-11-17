@@ -100,7 +100,7 @@ pub fn run(a: &StringsArgs) -> Result<bool, String> {
     let mut report = check(false);
     let mut change = None;
     if level.setup.is_some() {
-        (report, change) = strings::envelope(report, check(true));
+        (report, change) = strings::envelope(report, check(true), level.level.number());
     }
     report.notes.splice(0..0, level.notes(&tally, change));
     for n in &report.notes {
