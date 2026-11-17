@@ -10,6 +10,54 @@ of Parts A, B and C).
 
 ## 2026-11-17
 
+**Calculation level 4 faster, no digit changed** (owner: *"go ahead with
+the level 4 speed-up"*, with the standing rule *quality before speed*:
+speed work may only coarsen the display, never computed precision;
+built, in active development, not approved yet;
+[performance](performance.md#calculation-level-4-how-it-is-made-fast-2026-11-17)).
+
+- **Proof of no change**: every step compared bit for bit
+  (`format!("{:?}")` of the results, durations left out) with the
+  solver before it — the example line's level-4 structure loads (five
+  load cases) and a real line's five-case structure loads (read-only,
+  local) — and pinned by tests: the skyline kernels against the textbook
+  loops (`kernels_are_the_textbook_loops_bit_for_bit`: 400 profiles,
+  definite, indefinite, singular, signed zeros), a full model's solves
+  with and without its memo (`the_memo_changes_no_digit`), the interface
+  matrix from the columns a block reaches against the whole width
+  (`the_block_product_is_the_whole_one`).
+- **The skyline solver** (`ohl_structures_fe::skyline`): each sum formed as
+  the textbook loop forms it (the same terms, the same order, the same
+  start; Rust does no fast-math), eight independent ones side by side in
+  the vector units — the rows of eight columns in the factorisation (their
+  factors kept interleaved row by row), eight right-hand sides of a
+  condensation's unit loads, y_j's own sum of the product in a register;
+  the held-to-ground check of a condensation reads only the rows of K·u
+  it needs (the whole product per column before).
+- **What a structure's solves have in common** (`ohl_structures_fe::solve::Memo`,
+  kept in each `FullModel`): a first iteration that failed before the
+  joints were held (a mechanism, or unstable) — keyed by what its matrix
+  is made of (the members left out, their forces, P-Delta), never by the
+  loads — is not factorised again; the first-order factors that the
+  P-Delta solve's first iteration takes again (the same matrix when no
+  member carries a force yet) are reused when the matrix assembled is
+  the same bit for bit, kept only within one solve (a few MB a tower).
+  `FullModel`'s fields are read through methods since, so its memo stays
+  its own.
+- **The passes' order**: the structures of a pass are started the longest
+  first (their last solve's time), so none is left alone at the end; each
+  answer its own, back in their order.
+- **The interface Newton step**: each structure's flexibility multiplies
+  only the columns of the wires' stiffness that reach its points (the
+  others give zero, which adds nothing); the elimination runs down
+  contiguous columns.
+- **Not built (approximations, for the owner)**: see the performance page
+  — the tangent only when the Newton step needs it, P-Delta started from
+  the last pass's state, the first-order check of a warm-started
+  active set skipped, the last P-Delta factorisation as the tangent, a
+  frozen tangent across passes; and, exact but costing memory, the
+  first-order factors kept across passes.
+
 **Stiff jumpers along the falling wind, their second shape in still air,
 those swapping between the band's pressures; a spacer section that did
 not converge** (owner, on the open questions of the jumper review: *"Go

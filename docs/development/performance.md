@@ -562,6 +562,53 @@ Guidelines:
 - `release`: what is shipped (thin LTO, one codegen unit): the slowest to build.
 - `bench-fast`: release optimisation without LTO, 16 codegen units — for local timing runs (`cargo test --profile bench-fast -p ohl-clearance --test zone_speed -- --ignored --nocapture`), much faster to build; its numbers are close to `release` but not the shipped binary's. Results do not depend on the profile.
 
+## Calculation level 4: how it is made fast (2026-11-17)
+
+Calculation level 4 ([theory](../theory/structure-flexibility.md#level-4-the-structures-in-full)) solves every flexible structure in full in every pass of every case: its P-Delta solve (the tension-only members' active set warm-started: a first-order check of the set, then P-Delta, typically 4–6 iterations of one factorisation each) and the condensation of its tangent at the solution (one more factorisation, then a unit load per attachment direction: up to some hundred right-hand sides for a tower of 34 points). The structures of a pass are solved side by side over the cores; between passes the line solve and the interface Newton step run alone. Owner's rule (*quality before speed*): **no computed digit may change** — every step below was compared bit for bit with the solver before it (`format!("{:?}")` of the structure loads, durations left out) on the example line and on a real line's five load cases, and each is pinned by a test.
+
+**Where the time went** (a real line with some seventy lattice towers of thousands of members, 4 000–7 000 equations each; its structure loads in five load cases at level 4; shares of the time in the structures' answers, from `sample` profiles):
+
+| | before | after |
+|---|---|---|
+| the factorisations of the P-Delta solves (failed tries included) | ~50 % | ~56 % |
+| a failed try's mechanism (inverse iteration) before the joints are held | ~6 % | ~2 % |
+| the residual's product K·u, the substitutions, the assembly | ~13 % | ~17 % |
+| the tangent's condensation | ~31 % | ~24 % |
+| — of which the held-to-ground check (a whole K·u per unit load) | ~12 % | under 1 % |
+
+The shares after are of a smaller whole: the processor time of the run fell to about two fifths.
+
+**What was done** (all exact):
+
+1. **The skyline kernels** (`ohl_structures_fe::skyline`). Each sum is the textbook loop's — the same terms, added in the same order, from the same start — but eight independent sums run side by side, one per lane of the vector units: the rows of eight columns in the factorisation (their factors kept interleaved row by row, a lane on a row its sum does not take left as it is), eight right-hand sides of a condensation's unit loads (interleaved likewise), and the product's own row sum in a register. Rust does no fast-math (no reordering, no fused multiply-add), so the digits are the textbook loop's; `kernels_are_the_textbook_loops_bit_for_bit` compares 400 profiles (ragged, definite, indefinite, singular, signed zeros). On a tower-sized matrix (`kernel_speed`: 4 000 equations, columns some 70 high; `cargo test --profile bench-fast -p ohl-structures-fe --lib kernel_speed -- --ignored --nocapture`): the factorisation 3.9 ms (the textbook loop 7.5 ms), 30 right-hand sides solved together 3.5 ms (one by one 7.4 ms), the product K·u 0.2 ms (1.3 ms).
+2. **The held-to-ground check** of a condensation (a point's unit load must not be carried by a joint held to the ground) took a whole product K·u per unit load to read a few of its rows; it now forms only those rows, each the same sum in the same order (`Skyline::row`, `mul_row`).
+3. **What a structure's solves have in common** (`ohl_structures_fe::solve::Memo`, kept in each `FullModel`): a first iteration that failed before the joints were held — a mechanism, or unstable — is not factorised again when its matrix is made of the same (the members left out, their forces, P-Delta; never the loads); and the first-order factors that the P-Delta solve's first iteration takes again (the same matrix while no member carries a force) are reused when the matrix assembled is the same bit for bit (kept only within one solve: a few MB for a large tower). `the_memo_changes_no_digit` solves a stabilised X panel under loads that switch its diagonals with and without the memo.
+4. **The passes' order**: the structures are started the longest first (their last solve's time; the first pass the stringing state's), so no long one is left alone at the end of a pass.
+5. **The interface Newton step** (`ohl_line::solve::flexible`): each structure's flexibility multiplied the whole width of the wires' stiffness (3 × all points); it now multiplies only the columns that reach its points — a zero column adds nothing, and the columns alone are the whole product's bit for bit on the matrix library's same path (`the_block_product_is_the_whole_one`). On a line of 4 400 unknowns: 0.24 s to 0.06 s a pass.
+
+**Measured** (bench-fast build, 10-core M1 Max; another agent's builds and tests on the machine at the same time — runs interleaved, the load average given):
+
+| | before | after |
+|---|---|---|
+| the example line's structure loads at level 4 (five load cases), `ohl line … --load-cases … --calculation-level 4` | 56 ms | 56 ms |
+| its weather-case run at level 4 (five cases, the whole command) | 0.21 s | 0.21 s |
+| a real line's structure loads at level 4 (five load cases, about seventy lattice towers of thousands of members): processor time | 1 | about 0.42 |
+| the same, wall time, at a load average of 8–15 | 1 | about 0.5 |
+| the same against level 3 on the same line (wall, interleaved) | about 3.4× level 3 | about 2.2× level 3 |
+| that line's structure loads at level 3: processor time, wall time | 1, 1 | about 0.65, about 0.8 |
+
+The example's three flexible structures are small (some hundred members): their full solves take about a millisecond per case, so its level 4 is its line solves, unchanged. Levels 2 and 3 take the same kernels (the structure checks, the condensations, the interface step): their results were compared too (both lines, bit for bit) and are faster as well.
+
+**Not built: faster, but changing digits** (for the owner to decide; each would give results within the solver's tolerances, not the same bits):
+
+- *The tangent only where the Newton step needs it*: in the pass that converges it is never used (about a third of the answers). But a structure whose tangent is refused at its converged solution (unstable at the last step, a point carried by a joint held to the ground) is reported failing today; computed lazily it would not be, in that last pass. Expected: about a third of the condensations, some 8 % of level 4.
+- *P-Delta started from the last pass's displacements and forces* instead of from zero: about half the P-Delta iterations, some 30–40 % of level 4; the solution differs within the solver's tolerance (10⁻⁹ of the loads).
+- *The first-order check of a warm-started active set skipped* (straight to P-Delta with the last pass's set): one factorisation of some six per answer, about 10–15 %; a set the first-order check would switch is then found only by P-Delta — rarely another settled set.
+- *The last P-Delta factorisation taken as the tangent* (one iteration behind the converged state, within the tolerance): one factorisation per answer, about 15 %; the Newton steps, and so the converged state's last digits, change.
+- *A frozen tangent across passes* (modified Newton): the condensation once per case, about 20 % — possibly a pass more.
+
+**Exact, but costing memory**: the first-order factors kept across passes and cases (the first-order matrix of a structure with the same active set is the same in every pass): one factorisation of some six per answer (about 10 %), at about 5 MB a tower kept for the whole run (some 350 MB on a line of 70 towers).
+
 ## Magnetic field: performance
 
 *Moved here from the theory page [magnetic-field.md](../theory/magnetic-field.md) on 2026-11-07: how the computation is made fast, with its measured times.*

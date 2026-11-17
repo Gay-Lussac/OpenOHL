@@ -306,14 +306,14 @@ impl Skyline {
                 let (some, every) = g.split_at(all - low);
                 let rows = panels.rows(group, low, i0);
                 let (p_some, p_every) = rows.split_at((all - low) * ROWS);
-                for (k, (p, g)) in p_some.chunks_exact(ROWS).zip(some).enumerate() {
+                for (k, (p, g)) in p_some.as_chunks::<ROWS>().0.iter().zip(some).enumerate() {
                     let r = low + k;
                     for b in 0..ROWS {
                         let added = t[b] + p[b] * g;
                         t[b] = if r >= m[b] { added } else { t[b] };
                     }
                 }
-                for (p, g) in p_every.chunks_exact(ROWS).zip(every) {
+                for (p, g) in p_every.as_chunks::<ROWS>().0.iter().zip(every) {
                     for b in 0..ROWS {
                         t[b] += p[b] * g;
                     }
@@ -395,7 +395,7 @@ impl Skyline {
                 let (above, rest) = x[fj * ROWS..].split_at_mut((j - fj) * ROWS);
                 for (l, y) in self.values[sj..sj + j - fj]
                     .iter()
-                    .zip(above.chunks_exact(ROWS))
+                    .zip(above.as_chunks::<ROWS>().0)
                 {
                     for c in 0..ROWS {
                         t[c] += l * y[c];
@@ -406,7 +406,7 @@ impl Skyline {
                 }
             }
             // D·z = y.
-            for (j, row) in x.chunks_exact_mut(ROWS).enumerate() {
+            for (j, row) in x.as_chunks_mut::<ROWS>().0.iter_mut().enumerate() {
                 let d = self.values[self.at(j, j)];
                 for v in row {
                     *v /= d;
@@ -419,7 +419,9 @@ impl Skyline {
                 let (above, rest) = x[fj * ROWS..].split_at_mut((j - fj) * ROWS);
                 let xj: [f64; ROWS] = std::array::from_fn(|c| rest[c]);
                 for (y, l) in above
-                    .chunks_exact_mut(ROWS)
+                    .as_chunks_mut::<ROWS>()
+                    .0
+                    .iter_mut()
                     .zip(&self.values[sj..sj + j - fj])
                 {
                     for c in 0..ROWS {
@@ -593,8 +595,8 @@ mod tests {
                 })
                 .collect();
             let mut k = Skyline::new(first.clone());
-            for j in 0..n {
-                for i in first[j]..=j {
+            for (j, &top) in first.iter().enumerate() {
+                for i in top..=j {
                     let v = if i == j {
                         // Mostly dominant, some negative or small.
                         match case % 5 {
@@ -667,8 +669,8 @@ mod tests {
             first.push(below.max(first.last().copied().unwrap_or(0)));
         }
         let mut k = Skyline::new(first.clone());
-        for j in 0..n {
-            for i in first[j]..=j {
+        for (j, &top) in first.iter().enumerate() {
+            for i in top..=j {
                 let v = if i == j { 1000.0 } else { x.next() };
                 k.add(i, j, v);
             }
