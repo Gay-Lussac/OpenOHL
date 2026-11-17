@@ -764,11 +764,18 @@ impl Model {
     }
 
     /// Last resort for strings hanging from strings (chains of hinged
-    /// joints that Newton can fold or stall on): dynamic relaxation — each
+    /// joints that Newton can fold or stall on), and for struts — bars
+    /// that take compression at a free node (2026-11-17: a spacer longer
+    /// than the gap between its wires pushes one of them aside; its
+    /// compression makes the tangent indefinite, and Newton stalled at a
+    /// point where the unbalanced force, 617 N, no longer fell in any
+    /// direction it tried — not an equilibrium): dynamic relaxation — each
     /// free node a mass moving under its unbalanced force (masses from the
     /// stiffness, so every step is stable), the motion stopped at each peak
     /// of kinetic energy — until near equilibrium, then Newton from there.
-    /// Only for models with such strings (others: the error stands).
+    /// Only for models with such strings or struts (others: the error
+    /// stands); a model Newton solves never comes here (its results are
+    /// those of before, bit for bit).
     /// Exit clauses: 50 000 steps, and the budget's time limit and cancel
     /// token (those report the stop). No clock of its own: stopping the
     /// relaxation early by the time alone gave Newton a different start on a
@@ -782,8 +789,14 @@ impl Model {
             .trusses
             .iter()
             .any(|t| !self.nodes[t.i].fixed && !self.nodes[t.j].fixed);
-        if !chained {
-            return Err(FeError::InvalidModel("no chained strings".into()));
+        let strut = self
+            .trusses
+            .iter()
+            .any(|t| !t.tension_only && !(self.nodes[t.i].fixed && self.nodes[t.j].fixed));
+        if !chained && !strut {
+            return Err(FeError::InvalidModel(
+                "no chained strings and no struts".into(),
+            ));
         }
         // For the trace only: nothing here may depend on it.
         let started = std::time::Instant::now();
@@ -1771,6 +1784,103 @@ mod jacobian_check {
                     analytic
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod strut_tests {
+    use super::*;
+
+    /// A synthetic section (2026-11-17, after a real line's): a dead end,
+    /// three suspension spans and a dead end, its wire blown across by
+    /// 6.3 N/m; at 200 m into the first span a spacer clamp held by a strut
+    /// (a bar taking compression, 3 m long) to a fixed point 1.1 m away
+    /// downwind and below: longer than the gap, it first pushes the wire
+    /// aside, which the wind then blows past the point. The fixed point
+    /// `at` off the span point's start.
+    fn pushed_aside(at: Vector3<f64>) -> Model {
+        let v = Vector3::new;
+        let props = |l: f64| CableProperties {
+            unstressed_length: l,
+            axial_stiffness: 44e6,
+            load: v(0.0, 6.3, -21.8),
+        };
+        let string = |i, j, l, weight| TrussElement {
+            i,
+            j,
+            unstressed_length: l,
+            axial_stiffness: 5e7,
+            tension_only: true,
+            weight,
+        };
+        let free = |p: Vector3<f64>, load: Vector3<f64>| Node {
+            load,
+            ..Node::free(p)
+        };
+        let point = v(205.5, 0.0, -11.5);
+        Model {
+            nodes: vec![
+                Node::fixed(v(0.0, 0.0, 0.0)),
+                free(v(5.5, 0.0, -0.8), v(0.0, 18.9, -145.0)),
+                Node::fixed(v(450.0, 0.0, 18.0)),
+                free(v(450.0, 0.0, 14.65), v(0.0, 19.5, 0.0)),
+                Node::fixed(v(860.0, 0.0, 12.0)),
+                free(v(860.0, 0.0, 8.65), v(0.0, 19.5, 0.0)),
+                Node::fixed(v(1150.0, 0.0, 10.0)),
+                free(v(1144.3, 0.0, 9.3), v(0.0, 18.9, -141.0)),
+                free(point, v(0.0, 0.0, -10.0)),
+                Node::fixed(point + at),
+            ],
+            cables: vec![
+                CableElement::new(1, 8, props(200.4)),
+                CableElement::new(8, 3, props(244.6)),
+                CableElement::new(3, 5, props(415.8)),
+                CableElement::new(5, 7, props(284.7)),
+            ],
+            trusses: vec![
+                string(0, 1, 5.5, 1190.0),
+                string(2, 3, 3.35, 485.0),
+                string(4, 5, 3.35, 485.0),
+                string(6, 7, 5.7, 1190.0),
+                TrussElement {
+                    i: 8,
+                    j: 9,
+                    unstressed_length: 3.0,
+                    axial_stiffness: 2.5e7,
+                    tension_only: false,
+                    weight: 500.0,
+                },
+            ],
+        }
+    }
+
+    /// A strut on a blown wire (2026-11-17): Newton stalls (its
+    /// unbalanced force stuck at hundreds of newtons where no direction it
+    /// tries lowers it — the strut's compression on the way makes the
+    /// tangent indefinite), and so do the load steps; the dynamic
+    /// relaxation, now also for models with struts, finds the equilibrium,
+    /// and Newton finishes from it: every free node balanced, the strut at
+    /// the length its force gives it.
+    #[test]
+    fn a_strut_pushing_a_wire_aside_is_solved() {
+        let budget = default_fe_budget();
+        for at in [Vector3::new(0.0, 0.9, -0.6), Vector3::new(0.7, 0.9, -0.6)] {
+            let model = pushed_aside(at);
+            assert!(model.solve_direct(&budget).is_err(), "{at:?}: Newton alone");
+            assert!(
+                model.solve_by_load_steps(&budget).is_err(),
+                "{at:?}: the load steps"
+            );
+            let s = model.solve(&budget).expect("solved through the relaxation");
+            assert!(s.residual < 1e-3, "{at:?}: {}", s.residual);
+            let force = s.truss_forces[4];
+            let length = (s.positions[9] - s.positions[8]).norm();
+            let expected = 3.0 * (1.0 + force / 2.5e7);
+            assert!(
+                (length - expected).abs() < 1e-6,
+                "{at:?}: {length} {expected}"
+            );
         }
     }
 }
