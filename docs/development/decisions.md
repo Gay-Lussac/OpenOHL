@@ -8,6 +8,83 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-17
+
+**Stiff jumpers along the falling wind, their second shape in still air,
+those swapping between the band's pressures; a spacer section that did
+not converge** (owner, on the open questions of the jumper review: *"Go
+ahead with recommendations"*; built, in active development, not approved
+yet; [theory](../theory/jumpers.md#as-the-wind-falls-again)).
+
+- **The falling wind** (`jumper::WindPath::falling_from`,
+  `JumperShape::falling`): in the clearance runs (danger trees, safety
+  volumes, `ohl analysis`, the clearance windows, `ohl zones`) a stiff
+  jumper solved below its case's pressure (a band level, a wind step,
+  still air from each side) is also solved as the wind falls from the
+  case's pressure: its rising path walked on to the case's pressure, and
+  where that jumped walked back down; where it ran without a jump the
+  falling shape is the rising one (a stable branch followed back —
+  marked an assumption in the theory). The band and the positions take
+  both shapes; still air reached falling from each side is a band level
+  (a state or job of its own, `fallen_only`, sharing the still air's line
+  solve: without wind the side and direction are out of the solve's key).
+  The NOT ON THE SAFE SIDE note for a jumper that snapped goes where every
+  solve below the snap held its falling wind (said instead: checked in
+  both shapes); it stays where not (a failed falling path, no band or
+  wind steps). Cost (measured, real line, 526 jumpers): a band's jumpers
+  about 1.9 times as long (a 500 Pa case: a side's 4.1 s → 7.8 s, a busy
+  computer); the whole band with the swaps' solves below: a 300 Pa case
+  4.7 s → 18.0 s, a 500 Pa case 364 s → 388 s (a quiet computer); the
+  snapped jumpers of the real line's 300 and 500 Pa cases
+  are now held (said as checked in both shapes).
+- **Two still-air shapes** (`WindPath::still_shapes`,
+  `JumperShape::other_still`): the still air of every clearance run solves
+  each stiff jumper also from its still-air shape mirrored about the
+  vertical plane through its ends; a second stable shape (more than
+  0.05 m away) is said with its distance — only the shape found from the
+  hinged catenary (as hung, as installed) is checked; NOT ON THE SAFE SIDE
+  unless the still air after a wind from a side is that shape (then
+  checked with the band). Real line, 10 °C: 6 of 526 jumpers (1.2–5.5 m
+  apart).
+- **Swaps between the band's pressures** (`ohl_clearance::jumper_swaps`):
+  a jump on a jumper's path (`JumperShape::jumps`; on the clearance runs'
+  paths a step taken thanks to the allowance for its predicted move walked
+  again without it), or its shapes
+  at two neighbouring solved pressures of a side not leading to each other
+  (`cross_swaps`, `jumper::solve_jumper_from`) — the real line's case: each
+  path smooth, its ends held at the pressure solved, but to the one shape
+  at 100, 110, 140 Pa and to the other at 120, 130 Pa: that jumper alone
+  solved every 10 Pa over that interval (with the sections at its
+  structures), its band holding those shapes; said in the results.
+  Measured (10 Pa steps against the band of the default spacing): the
+  jumpers' worst excess 0.62 m → 0.13 m at 300 Pa, 0.19 m → 0.089 m at
+  500 Pa (56 and 94 more solves of the sections at the swapping jumpers'
+  structures).
+- **The section that did not converge** (a real line: the section and the
+  one its spacer joins, solved at every 10 Pa of each of its 55 windy
+  cases from both sides, failed at 194 of them — always from one side,
+  between 160 and 230 Pa by temperature and ice, in 39 cases; band levels
+  among them: 170 Pa at 500 Pa, 160 Pa at 650 Pa, 190 Pa at 1300 Pa, 200
+  Pa at 1000 Pa iced): a spacer
+  of 3 m given length between two phases about 1.1 m apart, solved by the
+  spacers' passes; in the second pass the section holding the spacer (a
+  strut: it takes compression) to the other section's moved point did not
+  converge — Newton stalled at 617 N unbalanced where no step lowered it
+  (the strut's compression makes the tangent indefinite), the load steps
+  too, and the dynamic relaxation was tried for chained strings only. A
+  solver problem: **the relaxation now also for models with struts**
+  (`ohl-wirefe`, `Model::solve_by_relaxation`; models Newton solves never
+  get there: bit for bit as before). With it none of the 194 fails, and no
+  section of the real line fails at the band's pressures (and full
+  pressures) of any of its windy cases.
+- **A test changed** (`ohl-electrical`, `a_jumper_carries_its_phase_current`):
+  its jumper's clamps face each other 0.4 m apart; since 2026-11-16 the
+  stiff jumper takes its stable shape there — a loop crossing itself
+  below the clamps (energy 2.2 kJ) instead of an S-shape of 4.7 kN that
+  was a saddle (6.4 kJ) — whose circulating current lowers the field 2 m
+  below it by 7 %. The test is about the current a jumper carries: its
+  jumper is now a plain wire (EI 0), the U the comparison means.
+
 ## 2026-11-16
 
 **Calculation level 4 — the structures in full (structure flexibility,

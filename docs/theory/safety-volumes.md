@@ -94,8 +94,9 @@ on the user's responsibility; exact: the wind steps): with
 \\( m_j = 0 \\) a jumper's band is not conservative between its solved
 positions — on the example line its jumper's 10 Pa steps lie up to
 0.307 m outside the band without levels and 0.18 m with the default
-levels; on a real line up to 2.1 m without levels and up to 0.62 m with
-them, the jumpers solved as the wind rises (1.9 m before)
+levels; on a real line up to 2.1 m without levels and up to 0.13 m with
+them, the jumpers solved as the wind rises and falls (0.62 m before
+2026-11-17, 1.9 m before 2026-11-16)
 ([the swing arc](lidar-analysis.md#wire-positions-checked)). The user
 enters a value for their jumpers. The jumper's solved positions (blown
 left and right, every step) remain tubes of their own, so the volume

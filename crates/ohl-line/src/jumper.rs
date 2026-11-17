@@ -481,9 +481,9 @@ pub struct JumperShape {
     /// rising, rising further and falling again — a step of the smallest
     /// size ([`RISE_MIN_STEP`]) whose shape lay off the one its path
     /// predicts by more than [`RISE_TOLERANCE`] (a snap, or a smaller swap
-    /// to a near shape), or a step whose new shape, solved again at the
-    /// pressure it came from, lands more than that from the shape it had
-    /// there. Empty: none (or not asked, or not a stiff rod).
+    /// to a near shape; also where a step taken thanks to the allowance for
+    /// its predicted move, walked again without it, does). Empty: none (or
+    /// not asked, or not a stiff rod).
     pub jumps: Vec<f64>,
     /// In still air, asked with [`WindPath::still_shapes`]: a second
     /// stable shape found (the loop to the other side; its points lie
@@ -1255,23 +1255,20 @@ struct Way {
 
 /// What a [`walk`] met: the first snap, and every jump (a step of the
 /// smallest size off its predicted path, a cold restart, or with `back` a
-/// step whose shape does not lead back to the one it came from), Pa.
+/// jump found walking a step again strictly), Pa.
 #[derive(Default)]
 struct Met {
     snap: Option<f64>,
     jumps: Vec<f64>,
-    /// Each step taken checked back (2026-11-17; the clearance runs'
-    /// paths, [`rise_and_fall`]): the pressure it came from solved again
-    /// from the new shape; more than [`RISE_TOLERANCE`] from the shape it
-    /// had there, the jumper went over to another shape inside the step (a
-    /// swap within the tolerance of the predicted move, or the start of a
-    /// branch the step crossed over): a jump at the step's end. The walk
-    /// itself goes on as without. And a step taken only thanks to the
-    /// allowance for its predicted move (off the prediction by more than
-    /// [`RISE_TOLERANCE`]) walked again on its own with no allowance
-    /// (`strict`): a shape that jumps inside it (one shape ending, another
-    /// beginning, a long predicted move hiding the gap) is found where the
-    /// steps reach the smallest size.
+    /// Each step taken only thanks to the allowance for its predicted move
+    /// (off the prediction by more than [`RISE_TOLERANCE`]) walked again on
+    /// its own with no allowance (2026-11-17; the clearance runs' paths,
+    /// [`rise_and_fall`]; `strict`): a shape that jumps inside it (one
+    /// shape ending, another beginning, a long predicted move hiding the
+    /// gap) is found where the steps reach the smallest size. The walk
+    /// itself goes on as without. (Checking every step back as well — its
+    /// new shape solved again at the pressure it came from — cost a third
+    /// of the jumpers' time on a real line and found nothing more: left.)
     back: bool,
     /// Steps off their prediction by more than [`RISE_TOLERANCE`] are
     /// halved whatever their predicted move (a walk checking a step).
@@ -1361,14 +1358,6 @@ fn walk(
                 if off <= tolerance || smallest {
                     // (A first step has no path to lie off yet.)
                     if smallest && off > tolerance && way.before.is_some() {
-                        met.jumps.push(next);
-                    }
-                    if met.back
-                        && !smallest
-                        && solve(at, Some(&new)).map_or(true, |b| {
-                            largest_move(&b.points, &shape.points) > RISE_TOLERANCE
-                        })
-                    {
                         met.jumps.push(next);
                     }
                     if met.back && !smallest && way.before.is_some() && off > RISE_TOLERANCE {
@@ -3253,11 +3242,10 @@ mod tests {
     /// moving 4 cm per pascal, shape A up to 135 Pa, shape B 0.2 m beside
     /// it from 100 Pa up. Rising from 100 to 150 Pa its step lands on B
     /// within the tolerance of a 2 m predicted move, and the rising wind
-    /// sees no jump; the clearance runs' path checks each step back (B
-    /// solved again at 100 Pa stays B, 0.2 m from A there) and finds the
-    /// jump in that step.
+    /// sees no jump; the clearance runs' path walks such a step again
+    /// without that allowance and finds the jump (where A ends).
     #[test]
-    fn a_swap_hidden_in_a_step_is_found_checking_it_back() {
+    fn a_swap_hidden_in_a_step_is_found_walking_it_again() {
         use crate::rod::RodShape;
         let at = |x: f64| RodShape {
             points: vec![Vector3::new(x, 0.0, 0.0), Vector3::new(x, 1.0, 0.0)],

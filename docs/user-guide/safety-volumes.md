@@ -178,7 +178,7 @@ volumes hold.
   0.15 m again. A change marks a run with the arc *out of date*.
 - **jumper band margin** (m, with the swing arc, default 0): the jumpers'
   bands' own widening. At 0 a jumper's band does not hold the jumper
-  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)):
+  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)):
   enter a value for your jumpers, or tick the wind steps. With the arc
   alone and 0 m the window says *NOT ON THE SAFE SIDE for the jumpers*
   under the wind, and the results say it too.
@@ -335,7 +335,7 @@ applies:
   also checked at its wind steps of 10 Pa, said in the results.)
 - **Jumpers with the swing arc, without the wind steps, at a jumper band
   margin of 0 m**: a jumper can lie outside its band between its
-  blowouts (up to 0.31 m on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)). Enter a jumper band
+  blowouts (up to 0.31 m on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)). Enter a jumper band
   margin or tick the wind steps.
 Not said in the results, explained in the theory:
 

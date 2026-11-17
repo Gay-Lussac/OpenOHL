@@ -343,15 +343,21 @@ Two options, alone or together:
   solved positions — on the example line its 10 Pa steps lie up to
   0.307 m outside the band of three positions and 0.18 m outside the
   band with the default levels; on a real line up to 2.1 m without
-  levels, and with the default levels up to 0.62 m since the jumpers are solved as the wind rises (1.9 m before: two jumpers solved in other shapes between 140 and 170 Pa, [Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises))
+  levels, and with the default levels up to 0.13 m since 2026-11-17 (0.62 m on 2026-11-16, solving the jumpers as the wind rises; 1.9 m before: two jumpers solved in other shapes between 140 and 170 Pa, [Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises))
   ([the swing arc](lidar-analysis.md#wire-positions-checked)).
   The value that holds a jumper is the user's to enter for their jumpers
   (the wind steps show it). Since 2026-11-16 a stiff jumper is solved as
   the wind rises from still air, never at an unstable equilibrium
   ([Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises));
-  a jumper that snaps over to another stable shape on the way is said
-  per case, **NOT ON THE SAFE SIDE** (as the wind falls it keeps the new
-  shape, not held below that pressure). A point of a solved position on
+  since 2026-11-17 it is also solved as the wind falls from the case's
+  pressure back to each pressure solved and to still air, and the band
+  holds both shapes; a jumper that snaps over to another stable shape on
+  the way is said per case — checked in both shapes where the falling wind
+  holds it, else **NOT ON THE SAFE SIDE** —, one with a second stable
+  shape in still air is said (**NOT ON THE SAFE SIDE** unless a falling
+  wind reaches it), and one whose shape jumps between the band's pressures
+  is solved every 10 Pa there
+  ([Jumpers](jumpers.md#as-the-wind-falls-again)). A point of a solved position on
   the band's axis (nearer than 1 µm, `positions::ON_AXIS`: a jumper's end
   at the axis's own end clamp) gives the band no angle there — its
   direction was the solver's rounding and could turn a jumper's band

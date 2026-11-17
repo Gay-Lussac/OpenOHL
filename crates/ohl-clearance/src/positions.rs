@@ -1000,9 +1000,11 @@ pub fn band_levels(full: f64, n: usize) -> Vec<f64> {
 /// lies up to 0.307 m outside the example line's jumper's band without
 /// levels (0.293 m on 2026-10-21) and 0.18 m with the default levels (a
 /// level every 200 Pa); on a real line up to 2.1 m without levels, and
-/// with the default levels up to 0.62 m since the jumpers are solved as
-/// the wind rises (1.9 m before, two jumpers solved in other shapes
-/// between 140 and 170 Pa: [`ohl_line::jumper::JumperShape::snap`])
+/// with the default levels up to 0.13 m since the jumpers are solved as
+/// the wind rises and falls and those whose shape jumps between the
+/// levels every 10 Pa there (2026-11-17; 0.62 m before, 1.9 m before
+/// 2026-11-16: two jumpers solved in other shapes between 140 and 170 Pa,
+/// [`ohl_line::jumper::JumperShape::snap`], [`crate::jumper_swaps`])
 /// (`tests/arc_band.rs`). A jumper swings with its clamps and changes its
 /// shape more than a span: the value that holds it is the user's to find
 /// for their jumpers (the wind steps show it).

@@ -718,7 +718,7 @@ pub const JUMPER_BAND_MARGIN_HELP: &str = "A jumper's swing band (about the line
     does not hold the jumper at intermediate wind pressures: it swings with its clamps and changes \
     its shape. Measured with steps of 10 Pa, the example line's jumper lies up to 0.31 m outside \
     its band without levels and 0.18 m with the default levels; on a real line up to 2.1 m \
-    without levels and up to 0.62 m with them (the jumpers solved as the wind rises). The default is 0 m, no widening: not \
+    without levels and up to 0.13 m with them (the jumpers solved as the wind rises and falls). The default is 0 m, no widening: not \
     on the safe side, said in the results, on your responsibility. Enter a value for your jumpers \
     — compare with the wind steps to find it (exact: the wind steps). Separate from the spans' \
     band margin.";

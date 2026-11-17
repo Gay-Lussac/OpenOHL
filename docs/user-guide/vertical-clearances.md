@@ -287,10 +287,25 @@ Not on the safe side, and said in the results each time it applies:
   wind pulls to or above the line between its clamps …*; tick the wind steps.
 - **Jumpers with the swing arc, without the wind steps, at a jumper band
   margin of 0 m** (the default): a jumper's band does not hold the jumper
-  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)). The
+  between its blowouts (up to 0.31 m outside on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)). The
   results then say *NOT ON THE SAFE SIDE: jumpers checked on their swing
   band without a margin …*, and the window says it under the setting.
   Enter a jumper band margin for your jumpers or tick the wind steps.
+- **A jumper with a second stable shape in still air** (a loop that can
+  lie to either side): only the shape it takes hung from its clamps is
+  checked. The results name it and how far apart the two shapes are, *NOT
+  ON THE SAFE SIDE* unless the still air after a wind from a side is that
+  shape (then checked with the band, and said so). Check the jumper's
+  shape on site.
+- **A jumper that snapped over to another shape as the wind rose**, where
+  its shape as the wind falls again is not held (a solve below the snap
+  without it): said per case. With the swing arc or the wind steps each
+  stiff jumper is also solved as the wind falls from the case's pressure
+  back to each pressure solved and to still air, and both shapes are
+  checked — the results then say the jumper is checked in both
+  ([theory](../theory/jumpers.md#as-the-wind-falls-again)). A jumper
+  whose shape jumps between the band's pressures is solved every 10 Pa
+  there and its band holds those shapes (said in the results).
 - **Points not down to the ground**: a vertical point rule without it
   misses a wire passing beside a tall object below its top; the results
   say so per rule

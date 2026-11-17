@@ -288,28 +288,142 @@ Newton's method converges to *any* equilibrium, and two things followed:
   for a jumper with shapes near each other that ends one of them inside
   a 100 Pa step: there the shape reached can depend on the step (on the
   real line one jumper, its shapes 0.2 m apart between 100 and 135 Pa:
-  0.62 m outside its band at 130 Pa; every 10 Pa throughout would take
-  19.7 s instead of 4.1 s for the line's 526 jumpers at 1300 Pa). **Assumption:** the jumper hangs in its still-air
-  shape (as cut, as built) when the wind starts.
+  0.62 m outside its band at 130 Pa; since 2026-11-17 solved every 10 Pa
+  there, [below](#shapes-that-swap-between-the-bands-pressures)).
+  **Assumption:** the jumper hangs in its still-air shape (as cut, as
+  built) when the wind starts ([its other shape in still
+  air](#a-second-shape-in-still-air) is said).
 - **A snap.** Where a shape stops existing (a limit point: on the real
   line one loop at about 1480 Pa from one side) the step halves to 5 Pa
   and the shape moves by more than 0.5 m: the jumper **snaps over** to
   another stable shape (the one the energy leads to from where it was,
   else the one from the hinged catenary). The pressure is kept
-  (`JumperShape::snap`) and the clearance results say it per case:
-  **NOT ON THE SAFE SIDE** — as the wind falls again the jumper keeps its
-  new shape, which the results do not hold below that pressure (a falling
-  wind is not modelled). Exact: the jumper solved along the falling wind
-  too.
+  (`JumperShape::snap`, the case's pressure before the jumper's local
+  wind factor).
 
-Cost: about ⌈P / 100 Pa⌉ solves from a near shape besides still air's,
-a few more where the path bends, and the stability check in every rod
-solve. Measured on the real line (526 jumpers, a quiet computer): all
-jumpers of a 1300 Pa case 2.05 s against 0.33 s solved once from the
-hinged catenary, of a 500 Pa case 1.19 s against 0.12 s — a windy line
-solve takes that much longer (its sections took seconds). Every 10 Pa
-all the way (tried, to settle the jumper above): 19.7 s against 4.1 s
-at 1300 Pa on a busy computer; not taken.
+Cost of the rising wind: about ⌈P / 100 Pa⌉ solves from a near shape
+besides still air's, a few more where the path bends, and the stability
+check in every rod solve. Measured on the real line (526 jumpers, a quiet
+computer): all jumpers of a 1300 Pa case 2.05 s against 0.33 s solved
+once from the hinged catenary, of a 500 Pa case 1.19 s against 0.12 s — a
+windy line solve takes that much longer (its sections took seconds).
+Every 10 Pa all the way (tried, to settle the jumper below): 19.7 s
+against 4.1 s at 1300 Pa on a busy computer; not taken.
+
+### As the wind falls again
+
+Since 2026-11-17 (the owner's decision) the clearance runs (the swing
+bands and wind steps of the danger trees, safety volumes, `ohl analysis`
+and the clearance windows) also solve a stiff jumper **as the wind falls**
+from the case's own pressure back to each pressure solved below it — its
+band's levels, its wind steps, and still air (one solve from each side:
+the still air *after* the wind; `jumper::WindPath::falling_from`,
+`JumperShape::falling`):
+
+- its rising path is walked on from the pressure solved up to the case's
+  own (the same steps, `jumper::walk`); where that runs **without a jump**
+  — no step of the smallest size off its predicted shape, no snap, and
+  none found walking again, without the allowance for its predicted move,
+  a step taken thanks to it — the
+  falling path is the rising one followed back (`Falling::Same`): the
+  shapes of a stable equilibrium change continuously with the wind, and
+  a branch followed up without leaving it is followed back down alike.
+  **Assumption** (not proven for every jumper; exact: the walk down every
+  time, twice the cost): a jump smaller than 0.05 m and a quarter of the
+  step's predicted move, which the walk does not see, is not a change of
+  shape that matters for a clearance;
+- where it jumped, the falling path is walked down from the case's own
+  pressure to the pressure solved (`Falling::Other` when it ends in another
+  shape — more than 1 mm from the rising one —, `Falling::Failed` with why
+  when it cannot be solved);
+- the band and the positions take **both** shapes (the other shape as a
+  level of the band, and checked with the wind steps); still air reached
+  falling from each side is a level of the band too.
+- **NOT ON THE SAFE SIDE** stays said for a jumper that snapped wherever
+  the falling wind is not held: a solve below the snap without its falling
+  path (not solved, or failed), or no still air reached falling (the plain
+  checks of one case's positions without band and wind steps). Held, the
+  results say the jumper is checked in both shapes.
+- **Simplification:** along each path the jumper's ends stay where the
+  sections put them at the pressure solved (the clamps of the pressure
+  solved; as the rising path takes them since 2026-11-16): the path
+  chooses the shape; its last solve is at the pressure solved, exact.
+
+Cost: the walk from the pressure solved up to the case's own besides the
+rising path (its steps taken thanks to the allowance walked again), and
+where it jumped the walk back;
+still air from each side one walk up (and down where it jumped).
+Measured on the real line (526 jumpers, a 500 Pa case, one side, a busy
+computer): at 170 Pa 2.23 s against 1.67 s, at 330 Pa 2.17 s against
+1.13 s, still air reached falling 2.09 s (new), the full pressure 1.26 s
+unchanged: the jumpers of a band about 1.9 times as long. The whole band
+with the swaps below (a quiet computer): a 300 Pa case 18.0 s against
+4.7 s (its sections take little: the jumpers' paths, the checks between
+levels, 2 s, and 56 solves between levels, 4 s, are most of it), a 500 Pa
+case 388 s against 364 s (its sections take most).
+
+### A second shape in still air
+
+A jumper with two stable shapes in still air (the loop lying to either
+side, both stable at 0 Pa on the real line) hangs in one of them as it
+was hung, and after a storm possibly in the other. The still air of every
+clearance run looks for it (`WindPath::still_shapes`): the still-air shape
+mirrored about the vertical plane through the jumper's ends is solved
+again (`jumper::mirror_about_chord`, `Rod::solve_from`); a stable shape
+more than 0.05 m from the first (`OTHER_STILL_APART`) is a second shape
+(`JumperShape::other_still`). **Only the shape found from the hinged
+catenary is checked** — the jumper hung from its clamps as installed —
+and the results say each jumper with a second shape and how far apart:
+**NOT ON THE SAFE SIDE** where no wind solved reaches it, else (the still
+air after a wind from a side is that shape: checked with the band) said
+as checked. Measured on the real line (10 °C): 6 of its 526 jumpers have
+a second still-air shape, 1.2–5.5 m from the first (two loops of 17.6 m
+among them); in a 300 Pa and a 500 Pa case one and two of them are reached
+by the still air after a wind. Cost: one rod solve per stiff jumper in
+still air (0.18 s → 0.25 s for the line's jumpers).
+
+### Shapes that swap between the band's pressures
+
+A jumper whose shapes lie near each other can go over from one to the
+other inside a step of the band (on the real line one jumper, its shapes
+0.2 m apart between 100 and 135 Pa: 0.62 m outside its band at 130 Pa).
+Since 2026-11-17 two things find such a swap between two neighbouring
+solved pressures of a side (still air, the levels, the steps, the full
+pressure):
+
+- **A jump on a path** (`JumperShape::jumps`): a step of 5 Pa off its
+  predicted shape, a snap, or a step taken only thanks to the allowance
+  for its predicted move that, walked again without it, jumps (rising,
+  rising further, or falling);
+- **Shapes that do not lead to each other** (`jumper_swaps::cross_swaps`):
+  the jumper solved at the upper pressure from its shape at the lower one,
+  and at the lower from the upper (`jumper::solve_jumper_from`), lands
+  more than 0.05 m from the shape solved there. This finds the real line's
+  case: each path, its ends held where the sections put them at the
+  pressure solved, ran smoothly — but to the one shape at 100, 110 and
+  140 Pa and to the other at 120 and 130 Pa (which shape a path reaches
+  depends on where the ends are: with the ends moving with the wind the
+  jumper goes over from one to the other in between). Two shapes of two
+  models (a stiff jumper gone taut, solved as a cable) are not compared;
+  nor jumpers on taps on other jumpers.
+
+Either makes that jumper alone
+be solved **every 10 Pa over that interval only**
+(`ohl_clearance::jumper_swaps`), rising and falling, with the sections at
+its structures (`jumper_swaps::jumpers_part`: those with a point at a
+structure it touches, those tapped, and those sharing an assembly or a
+spacer with them); its band holds those shapes too, and the results say
+which jumpers, from which side, over which pressures. Not with wind
+steps of 10 Pa or less (they solve every 10 Pa already). **Simplification:**
+at calculation levels 3 and 4 these solves leave out the wires on the
+structures not solved with them (the structures move less): they add
+levels to a band, never take any away. Measured on the real line (the
+band of the default spacing against 10 Pa steps, both with these solves):
+the jumpers' worst excess over their bands 0.62 m → 0.13 m at 300 Pa (11
+jumpers solved between levels, 56 more solves of the sections at their
+structures) and 0.19 m → 0.089 m at 500 Pa (20 jumpers, 94 solves); none
+more than 0.15 m outside (3 before in each). The jumpers' band margin
+stays 0 by default and its NOT ON THE SAFE SIDE note stays.
 
 ## When a jumper fails
 

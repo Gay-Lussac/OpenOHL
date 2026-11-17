@@ -722,6 +722,36 @@ over to another stable shape on the way (none: it kept its shape). A rod
 solve never returns an unstable equilibrium (`rod::Rod::stable`,
 `least_curvature`). The positions (`Solve::snaps`) and the zone run say
 such jumpers per case (`positions::jumper_snap_note`).
+Since 2026-11-17 `TapContext::path` (`jumper::WindPath`: `falling_from`,
+the case's own pressure, Pa, before the local wind factor; `still_shapes`)
+asks a stiff jumper's solve for more (`jumper::solve_jumpers_on`; the
+default path: `solve_jumpers` bit for bit): `falling`
+(`jumper::Falling`: `NotSolved`, `Same`, `Other(points)`, `Failed(why)`)
+its shape as the wind falls from `falling_from` back to the pressure
+solved (`jumper::walk`, `rise_and_fall`; `JumperShape::fallen` the jumper
+in that shape), `jumps` (Pa, the case's) where its path jumped (a step of
+`RISE_MIN_STEP` off its prediction, a snap, or on the clearance runs'
+paths one found walking a step again without the predicted move's
+allowance), `other_still` (points) a
+second stable shape in still air (`mirror_about_chord`,
+`OTHER_STILL_APART`; `other_still_apart`); `TapContext::start` (points: a stiff jumper solved
+at the case's pressure alone from them, `jumper::solve_jumper_from`). `snap` is the case's pressure
+too since then (before: the jumper's, its local wind factor applied).
+The clearance runs: `positions::Job::{side, top, fallen_only}` and
+`zone::WindState::{top(), fallen_only()}` (still air reached as the wind
+falls from a side: the jumpers' other shapes alone, a level of the band);
+a line solve shared by its key (`positions::solve_key`, the side and
+direction left out without wind since 2026-11-17) and the jumpers solved
+per key and path (`zone::Solved::{fell, other_still, jumps, notes}`;
+`zone::Solved::jumpers` the shapes rising, then the other shapes
+falling); `positions::falling_covers`, `jumper_snap_held_note`,
+`other_still_notes`; `ohl_clearance::jumper_swaps` (`Swap`,
+`swap_pressures`, `cross_swaps` with `Solved`, `jumpers_part`,
+`solve_swaps`, `swaps_note`): a jumper whose path jumped between two
+solved pressures of a side, or whose shapes there do not lead to each
+other, solved every
+`SWAP_STEP` (10 Pa) there, its shapes levels of its band (in the zone run
+carried by the side's still air reached falling).
 A jumper's estimated load on a clamp **fixed to the structure** (a wire
 point without strings, a fixed post's top) goes straight into that
 clamp's `Support` force (`solve_fe`: `on_fixed`; before 2026-11-14 it was

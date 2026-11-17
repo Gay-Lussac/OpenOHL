@@ -960,5 +960,5 @@ pub const WIND_NONE_NOTE: &str = "NOT ON THE SAFE SIDE: the windy cases only blo
 /// without the wind steps.
 pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: the jumpers on their swing bands \
      without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside \
-     the volume (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)). Enter a jumper \
+     the volume (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)). Enter a jumper \
      band margin for your jumpers, or tick the wind steps.";
