@@ -99,21 +99,32 @@ pub fn jumpers_unsafe(
         && arcs.iter().any(|a| a.wire.section.starts_with("jumper:"))
 }
 
-/// The note of bands without levels
-/// ([`crate::positions::band_levels_note`]): a case's band, its wind not
-/// stepped, holding no intermediate pressure where the default would.
+/// The note of bands whose solved pressures lie further apart than
+/// measured ([`crate::positions::band_levels_note`]): a case's band, its
+/// wind not stepped, its still air, levels and full pressure more than
+/// 200 Pa apart somewhere (no levels at all: the band of 2026-11-15).
 pub fn fewer_band_levels(states: &[WindState], cases: &[ArcCase]) -> Option<String> {
-    let none = cases.iter().filter(|c| !c.stepped).any(|c| {
-        c.levels.is_empty()
-            && states.get(c.still).is_some_and(|s| {
-                !crate::positions::band_levels(s.full, crate::positions::BAND_LEVELS).is_empty()
-            })
-    });
-    if none {
-        crate::positions::band_levels_note(0)
+    let banded = cases.iter().filter(|c| !c.stepped);
+    // Without any level: the band of still air and the blowouts alone.
+    let levels = if banded.clone().all(|c| c.levels.is_empty()) {
+        crate::positions::BandLevels::NONE
     } else {
-        None
-    }
+        crate::positions::BandLevels::DEFAULT
+    };
+    let gap = banded
+        .filter_map(|c| {
+            let full = states.get(c.still)?.full;
+            let mut at: Vec<f64> = c
+                .levels
+                .iter()
+                .filter_map(|&k| states.get(k).map(|s| s.pressure))
+                .collect();
+            at.sort_by(f64::total_cmp);
+            at.dedup();
+            Some(crate::positions::largest_gap(full, &at))
+        })
+        .fold(0.0, f64::max);
+    crate::positions::band_levels_note(&levels, gap)
 }
 
 /// Runs a zone check: the sections the rules need ([`sections_needed`];
@@ -331,6 +342,32 @@ pub fn run_zone_check(
                 && let Some(n) = fewer_band_levels(&states, &cases)
             {
                 report.notes.push(n);
+            }
+            // Jumpers that snapped over as the wind rose (2026-11-16):
+            // said, per case.
+            let mut names: Vec<&str> = Vec::new();
+            for s in &states {
+                if !names.contains(&s.name.as_str()) {
+                    names.push(&s.name);
+                }
+            }
+            for name in names {
+                let mut snaps: Vec<(String, f64)> = Vec::new();
+                for (s, jumpers) in states.iter().zip(&solved.jumpers) {
+                    if s.name != name {
+                        continue;
+                    }
+                    for j in jumpers {
+                        let Some(p) = j.snap else { continue };
+                        match snaps.iter_mut().find(|(k, _)| *k == j.jumper) {
+                            Some(x) => x.1 = x.1.min(p),
+                            None => snaps.push((j.jumper.clone(), p)),
+                        }
+                    }
+                }
+                if let Some(n) = crate::positions::jumper_snap_note(name, &snaps) {
+                    report.notes.push(n);
+                }
             }
             // Radial to the points scanned only (owner, 2026-11-12: "yes
             // add the line to the results").

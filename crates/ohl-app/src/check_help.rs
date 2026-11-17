@@ -303,7 +303,9 @@ pub fn solves_per_case(wind: &WindSteps, full: f64, sides_all: bool) -> usize {
         } else {
             Vec::new()
         };
-        n += ohl_clearance::positions::band_levels(full, wind.band_levels)
+        n += wind
+            .band_levels
+            .at(full)
             .iter()
             .filter(|p| !steps.contains(p))
             .count()
@@ -526,48 +528,89 @@ fn band_margin_ui(ui: &mut egui::Ui, id: &str, margin: &mut f64, lines: bool) ->
     changed
 }
 
-/// The swing band's levels (2026-11-16): how many intermediate wind
-/// pressures from each side the band also holds (at least one every
-/// 250 Pa), with what that does and costs (measured). None: a warning
-/// (not on the safe side). True when changed.
-fn band_levels_ui(ui: &mut egui::Ui, id: &str, levels: &mut usize, lines: bool) -> bool {
-    let default = ohl_clearance::positions::BAND_LEVELS;
+/// The swing band's levels (2026-11-16, first a count, then a spacing:
+/// the owner's "go with spacing"): a level at least every so many pascals
+/// between still air and the full pressure, from each side, with what
+/// that does and costs (measured). 0: no levels, a warning (not on the
+/// safe side); coarser than 200 Pa: a warning (beyond what was measured
+/// within the margin). An older file's count (`band_levels`) is said
+/// until the spacing is changed. True when changed.
+fn band_levels_ui(
+    ui: &mut egui::Ui,
+    id: &str,
+    levels: &mut ohl_clearance::positions::BandLevels,
+    lines: bool,
+) -> bool {
+    use ohl_clearance::positions::{BAND_SPACING, BandLevels, MAX_BAND_SPACING};
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label("band levels");
-        changed |= ui
-            .push_id((id, "band-levels"), |ui| {
+        ui.label("band level every");
+        let mut spacing = levels.spacing;
+        let edited = ui
+            .push_id((id, "band-spacing"), |ui| {
                 crate::style::field(
                     ui,
-                    egui::DragValue::new(levels)
-                        .speed(0.1)
-                        .range(0..=ohl_clearance::positions::MAX_BAND_LEVELS)
-                        .suffix(" a side"),
+                    egui::DragValue::new(&mut spacing)
+                        .speed(5.0)
+                        .range(0.0..=MAX_BAND_SPACING)
+                        .max_decimals(0)
+                        .suffix(" Pa"),
                 )
             })
             .inner
             .on_hover_text(BAND_LEVELS_HELP)
             .changed();
-        if *levels != default
-            && ui
-                .small_button(format!("{default}"))
-                .on_hover_text("Back to the default levels")
-                .clicked()
-        {
-            *levels = default;
+        if edited {
+            // Below the 10 Pa the levels are rounded to: 10 Pa (0 stays
+            // none).
+            let spacing = if spacing > 0.0 {
+                spacing.max(ohl_clearance::positions::MIN_BAND_SPACING)
+            } else {
+                0.0
+            };
+            *levels = BandLevels::every(spacing);
             changed = true;
         }
-        if !lines && *levels > 0 {
+        if *levels != BandLevels::DEFAULT
+            && ui
+                .small_button(format!("{BAND_SPACING:.0} Pa"))
+                .on_hover_text("Back to the default: a level every 200 Pa")
+                .clicked()
+        {
+            *levels = BandLevels::DEFAULT;
+            changed = true;
+        }
+        if !lines && !levels.is_none() {
             question_both(ui, BAND_LEVELS_SHORT, BAND_LEVELS_HELP);
         }
     });
-    if *levels == 0 {
+    if let Some(n) = levels.count {
+        ui.label(
+            egui::RichText::new(format!(
+                "From an older file: {n} levels a side, at least one every 200 Pa — kept until \
+                 you change the spacing."
+            ))
+            .small(),
+        );
+    }
+    if levels.is_none() {
         ui.colored_label(
             ui.visuals().warn_fg_color,
             egui::RichText::new(
                 "No levels: the band of still air and the blowouts alone misses the wire between \
                  them by more than its margin on long and steep spans. Not on the safe side.",
             )
+            .small(),
+        )
+        .on_hover_text(BAND_LEVELS_HELP);
+    } else if levels.spacing > BAND_SPACING {
+        ui.colored_label(
+            ui.visuals().warn_fg_color,
+            egui::RichText::new(format!(
+                "Levels {:.0} Pa apart: more than the 200 Pa measured within the band margin \
+                 (about 0.3 mm outside the band per pascal between levels). Not on the safe side.",
+                levels.spacing
+            ))
             .small(),
         )
         .on_hover_text(BAND_LEVELS_HELP);
@@ -578,9 +621,9 @@ fn band_levels_ui(ui: &mut egui::Ui, id: &str, levels: &mut usize, lines: bool) 
 }
 
 /// The band levels' line.
-const BAND_LEVELS_SHORT: &str = "Band levels: the band also holds the wire solved at this many \
-    pressures between still air and the full one (at least one every 200 Pa), from each side \
-    (one more solve each).";
+const BAND_LEVELS_SHORT: &str = "Band level every … Pa: the band also holds the wire solved at \
+    pressures between still air and the full one at most this far apart, from each side (each \
+    level one more solve; 200 Pa: at most 0.063 m outside the band, measured).";
 
 /// The band levels' longer explanation (hover): what they do and cost,
 /// measured.
@@ -593,7 +636,7 @@ const BAND_MARGIN_SHORT: &str =
 /// The band margin's longer explanation (hover).
 pub const BAND_MARGIN_HELP: &str = "The swing band (from the smallest to the largest radius of the \
     still and blown positions and of its levels) does not quite hold the wire between them: \
-    measured with steps of 10 Pa and the default 4 band levels, a span's wire lies up to 0.063 m \
+    measured with steps of 10 Pa and a band level every 200 Pa (the default), a span's wire lies up to 0.063 m \
     outside it on a real line of 930 spans (the strings swing and the sag changes). The margin \
     covers that worst excess plus an allowance for other lines: 0.15 m by default, conservative \
     with the default levels — every distance to the band is taken this much smaller, as if the \
@@ -674,8 +717,8 @@ pub const JUMPER_BAND_MARGIN_HELP: &str = "A jumper's swing band (about the line
     clamps, from the smallest to the largest radius of its still and blown positions and levels) \
     does not hold the jumper at intermediate wind pressures: it swings with its clamps and changes \
     its shape. Measured with steps of 10 Pa, the example line's jumper lies up to 0.31 m outside \
-    its band without levels and 0.04 m with the default levels; on a real line up to 2.1 m \
-    without levels and, for some jumpers, still up to 1.9 m with them. The default is 0 m, no widening: not \
+    its band without levels and 0.18 m with the default levels; on a real line up to 2.1 m \
+    without levels and up to 0.62 m with them (the jumpers solved as the wind rises). The default is 0 m, no widening: not \
     on the safe side, said in the results, on your responsibility. Enter a value for your jumpers \
     — compare with the wind steps to find it (exact: the wind steps). Separate from the spans' \
     band margin.";
@@ -1923,13 +1966,17 @@ mod tests {
         w.arc = false;
         assert_eq!(solves_per_case(&w, 650.0, true), 2);
         w.arc = true;
-        assert_eq!(solves_per_case(&w, 650.0, true), 11);
-        w.band_levels = 0;
+        // A level every 200 Pa: 160, 330, 490 Pa a side.
+        assert_eq!(solves_per_case(&w, 650.0, true), 9);
+        w.band_levels = ohl_clearance::positions::BandLevels::NONE;
         assert_eq!(solves_per_case(&w, 650.0, true), 3);
         w.sides = WindSides::Left;
         assert_eq!(solves_per_case(&w, 650.0, true), 2);
-        w.band_levels = 4;
+        // An older file's 4 levels a side (2026-11-16).
+        w.band_levels = ohl_clearance::positions::BandLevels::from_count(4);
         assert_eq!(solves_per_case(&w, 650.0, true), 6);
+        w.band_levels = ohl_clearance::positions::BandLevels::every(100.0);
+        assert_eq!(solves_per_case(&w, 650.0, true), 8);
         w.arc = false;
         assert_eq!(solves_per_case(&w, 650.0, true), 1);
         assert_eq!(solves_per_case(&w, 0.0, true), 1);

@@ -160,12 +160,14 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
   *The swing arc as a band about the attachment axis, widened by its margin \\( m \\) (schematic).*
 
   **Levels (2026-11-16).** The band also holds the span solved at
-  \\( n \\) intermediate pressures from each side — \\( k\,P/(n + 1) \\),
+  intermediate pressures from each side at most \\( s \\) apart —
+  \\( n = \lceil P/s \rceil - 1 \\) of them at \\( k\,P/(n + 1) \\),
   \\( k = 1 \ldots n \\), each rounded to a whole 10 Pa
-  (`positions::band_levels`), and at least one every 200 Pa
-  (`BAND_LEVEL_SPACING`), 4 by default (**band levels** in the
-  vegetation panel, the clearance windows and the safety volumes;
-  `[wind] band_levels`; `--band-levels`; saved runs record it): at each
+  (`positions::BandLevels::at`), \\( s = 200 \\) Pa by default
+  (`BAND_SPACING`; **band level every … Pa** in the vegetation panel,
+  the clearance windows and the safety volumes; `[wind] band_spacing`;
+  `--band-spacing`; saved runs record it; first, that day, a count a
+  side with at least one every 200 Pa, still read as it asked): at each
   station the band runs from the smallest to the largest radius and
   angle of still air, the blowouts and every level
   (`SwingArc::with_levels`; between two stations the three positions'
@@ -184,7 +186,8 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
   deep-sag spans, spans from a dead end to an angle string and steep
   spans ([Clearances › Wind positions](clearances.md#wind-positions)).
   The example lines' 0.091 m (below) had made it look conservative. A
-  run without levels (band levels 0) says so in its results.
+  run without levels (spacing 0), or with levels more than 200 Pa apart,
+  says so in its results.
 
   **Conservative (measured):** every radius and angle between the
   smallest and the largest of the solved positions, along the whole arc:
@@ -226,7 +229,8 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
   (below) —, ice and wind 0.027 m at 700 Pa), against 0.69 m without. The excess grows with the spacing
   of the solved pressures — about 0.3 mm per pascal, whatever the
   case's pressure (0.063 m at 200 Pa apart, 0.091 m at 260, 0.167 m at
-  433) — hence at least one level every 200 Pa (`BAND_LEVEL_SPACING`). It also takes 0.15 m off the
+  433) — hence the setting is that spacing, 200 Pa by default (coarser:
+  said NOT ON THE SAFE SIDE). It also takes 0.15 m off the
   clearances on the outer side, where the arc alone was already
   conservative (the price of one margin for every side). Exact: a solve
   at every pressure.
@@ -269,8 +273,8 @@ unchanged ([Wind on the line › Clearances and the views](wind.md#clearances-an
   in the results; on the user's responsibility; exact: the wind steps):
   with \\( m_j = 0 \\) a jumper's band is not conservative between its
   solved positions — on the example line it misses the jumper by up to
-  0.307 m without levels and 0.043 m with the default levels; on a real
-  line by up to 2.1 m without levels and still up to 1.9 m with the default levels (a few jumpers: two whose shape changes abruptly between 140 and 170 Pa, others between the last level and the full pressure). A jumper swings with its
+  0.307 m without levels and 0.18 m with the default levels; on a real
+  line by up to 2.1 m without levels, and with the default levels up to 0.62 m since the jumpers are solved as the wind rises (1.9 m before: two jumpers solved in other shapes between 140 and 170 Pa; [Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises)). A jumper swings with its
   clamps and changes its shape about their line more than a span does,
   so no one value holds every line; the user enters a value for their
   jumpers (on the example line about 0.35 m would hold it with an

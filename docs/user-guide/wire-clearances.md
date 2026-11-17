@@ -300,7 +300,7 @@ The rest of the file:
 | `[wind]` | `arc` | false | **swing arc** |
 | `[wind]` | `band_margin` | `"0.15 m"` | **band margin** |
 | `[wind]` | `jumper_band_margin` | `"0 m"` | **jumper band margin** |
-| `[wind]` | `band_levels` | `4` | **band levels** |
+| `[wind]` | `band_spacing` | `"200 Pa"` | **band level every … Pa** |
 | `[wind]` | `steps` | false | **wind stepped** |
 | `[wind]` | `step` | the project's `clearance_wind_step` (50 Pa) | **step** |
 | `[wind]` | `sides` | `"both"` | **from**: `both`, `left`, `right` |
@@ -323,8 +323,8 @@ On the safe side (theory, [Wire to wire on the swing arc](../theory/clearances.m
 - every distance is to the conductor's surface: both radii (iced in a case
   with ice) and the bounds of both polylines taken off;
 - on the swing arc each wire is taken thicker by half the movement between
-  two pressures and by the band margin (0.15 m: with the default 4 band
-  levels the measured worst excess on a real line of 930 spans, 0.063 m,
+  two pressures and by the band margin (0.15 m: with a band level every
+  200 Pa, the default, the measured worst excess on a real line of 930 spans, 0.063 m,
   plus an allowance);
 - a voltage between two rows of a table takes the upper row's distance
   (nothing is interpolated);
@@ -336,7 +336,7 @@ time it applies):
 
 - **Jumpers on the swing arc at a jumper band margin of 0 m** (the
   default), without the wind steps: between its blowouts a jumper can lie
-  outside its swing (up to 0.31 m on the example line and 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m). Enter a jumper
+  outside its swing (up to 0.31 m on the example line and 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)). Enter a jumper
   band margin for your jumpers or tick the wind steps. *Said*, and under
   the wind before Run.
 - **Case pairs** are checked at each case's full wind only, not swung or

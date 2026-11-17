@@ -250,6 +250,67 @@ Newton solves on this path that stall or run out of steps within \\( 10^3 \\) ti
 
 On the first existing line (99 weather cases, the wind from both sides): before, one jumper on two strings that may push failed in most cases with the wind from one side, another (on one string) in a few cases; now all solve but one jumper in one extreme case, a few millimetres too short for its two Vs that may push, said so. Every jumper that solved before has the same shape.
 
+## Stable shapes, and the shape it keeps as the wind rises
+
+A jumper held at points by strings can have **more than one stable
+shape**: on a real line (2026-11-16) two jumpers, each a loop of 17.6 m
+between ends 13.5 m apart held at two clamps on V strings, were stable
+with the loop lying to either side at every pressure up to 1500 Pa.
+Newton's method converges to *any* equilibrium, and two things followed:
+
+- **Unstable equilibria.** Solved from the hinged catenary, the rod
+  stopped on saddles of its energy (tensions of 1.4–2.8 kN between
+  stable shapes of 0.2–0.5 kN): shapes no jumper keeps — 1.2–1.9 m
+  outside its swing band. Since 2026-11-16 every rod solve checks the
+  energy's curvature in the directions the constraints allow (the
+  smallest eigenvalue of the Lagrangian's Hessian on their tangent
+  space, `rod::Rod::least_curvature`); where it is negative, the shape
+  is turned a little along that direction, each way, and solved down
+  the energy (the Hessian shifted by more than its negative curvature,
+  then Newton) to a stable shape, the one of lower energy kept
+  (`Rod::stable`; at most 8 times, else an error in words). A stiff rod
+  forced into a V under a single string is such a case too: the plumb
+  shape is a saddle, the rod buckles sideways (two tests asked for the
+  saddle until then; corrected).
+- **Which stable shape.** From the hinged catenary at each pressure the
+  shape found depended on that start, not on the jumper: on the real
+  line it changed from one loop to the other between 116 and 148 Pa.
+  Since 2026-11-16 a stiff jumper in the wind is solved **as the wind
+  rises from still air** (`jumper::rise`): in still air from the hinged
+  catenary, then at every 100 Pa up to the case's pressure and at that
+  pressure, each from the shape its path predicts there (the last two
+  shapes carried on linearly; `Rod::solve_from`, Newton on the residual
+  from there, the taut strings kept); a shape off that prediction by
+  more than 0.05 m and a quarter of the predicted move halves the step,
+  down to 5 Pa. The path is the same to every pressure up to the last
+  100 Pa step below it (the 100 Pa grid), so the shapes of a case's
+  pressures — its wind steps, its band's levels — are of one path, but
+  for a jumper with shapes near each other that ends one of them inside
+  a 100 Pa step: there the shape reached can depend on the step (on the
+  real line one jumper, its shapes 0.2 m apart between 100 and 135 Pa:
+  0.62 m outside its band at 130 Pa; every 10 Pa throughout would take
+  19.7 s instead of 4.1 s for the line's 526 jumpers at 1300 Pa). **Assumption:** the jumper hangs in its still-air
+  shape (as cut, as built) when the wind starts.
+- **A snap.** Where a shape stops existing (a limit point: on the real
+  line one loop at about 1480 Pa from one side) the step halves to 5 Pa
+  and the shape moves by more than 0.5 m: the jumper **snaps over** to
+  another stable shape (the one the energy leads to from where it was,
+  else the one from the hinged catenary). The pressure is kept
+  (`JumperShape::snap`) and the clearance results say it per case:
+  **NOT ON THE SAFE SIDE** — as the wind falls again the jumper keeps its
+  new shape, which the results do not hold below that pressure (a falling
+  wind is not modelled). Exact: the jumper solved along the falling wind
+  too.
+
+Cost: about ⌈P / 100 Pa⌉ solves from a near shape besides still air's,
+a few more where the path bends, and the stability check in every rod
+solve. Measured on the real line (526 jumpers, a quiet computer): all
+jumpers of a 1300 Pa case 2.05 s against 0.33 s solved once from the
+hinged catenary, of a 500 Pa case 1.19 s against 0.12 s — a windy line
+solve takes that much longer (its sections took seconds). Every 10 Pa
+all the way (tried, to settle the jumper above): 19.7 s against 4.1 s
+at 1300 Pa on a busy computer; not taken.
+
 ## When a jumper fails
 
 - **A section at an end not solved.** The jumper's ends are the solved clamps of the sections through them. When one of those sections fails in a weather case, the jumper fails too and names it, rather than hanging between the attachments' data points.

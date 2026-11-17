@@ -272,7 +272,7 @@ command line `ohl lidar vegetation` takes the same values as options.
 | search distance | `search_distance` | `--corridor` | m | 50 | half width of the corridor read |
 | swing arc | `swing_arc` | `--swing-arc` | — | on in the window (a setting saved without it: off); off on the command line | the positions between the blowouts |
 | band margin | `band_margin` | `--band-margin` | m | 0.15 | the band widened |
-| band levels | `band_levels` | `--band-levels` | — | 4 | the band's intermediate solved pressures a side |
+| band level every | `band_spacing` (at first `band_levels`, a count) | `--band-spacing` | Pa | 200 (0: none) | the band's intermediate solved pressures, at most this far apart |
 | wind stepped, step | `wind_steps`, `wind_step` | `--wind-step` | Pa | off, 50 | still air and every pressure by the step |
 | from | `wind_sides` | `--wind-sides` | `both`, `left`, `right` | both | the stepped wind's sides |
 | unbalanced ice | `unbalanced_ice`, `unbalanced_ice_value` | `--unbalanced-ice` | `case`; mm; N/m; N (command line: `thickness=` in m) | off, 5 | see [Wire positions](#wire-positions) |
@@ -298,8 +298,8 @@ On the safe side (theory, [Danger trees](../theory/lidar-analysis.md#danger-tree
 - falling uphill, the ground's angle is seen from the base (a larger
   sector);
 - on the swing band, every radius and angle between still air and the
-  blowouts, widened by the band margin of 0.15 m — with the default 4
-  band levels the wire between them lies at most 0.063 m outside the
+  blowouts, widened by the band margin of 0.15 m — with a band level
+  every 200 Pa (the default) the wire between them lies at most 0.063 m outside the
   band on a real line of 930 spans (measured with 10 Pa steps), held by
   the margin; a tree's shelter by a ridge is not
   credited on the band;

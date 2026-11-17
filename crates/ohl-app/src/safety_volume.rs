@@ -138,13 +138,21 @@ impl Scope {
 
 /// [`scope_items`] of `model`'s line kept to the route worked on (owner,
 /// 2026-11-01): the systems, circuits and spans with a section on it.
-/// The swing bands' levels a saved run was made with (`band_levels`):
+/// The swing bands' levels a saved run was made with: its
+/// `band_spacing` (Pa, since 2026-11-16), else its `band_levels` (a count
+/// a side, 2026-11-16: [`ohl_clearance::positions::BandLevels::from_count`]);
 /// a run saved before 2026-11-16 took the band of still air and the
-/// blowouts alone (0).
-pub fn band_levels(v: &Value) -> usize {
-    v.get("band_levels").and_then(Value::as_u64).map_or(0, |n| {
-        (n as usize).min(ohl_clearance::positions::MAX_BAND_LEVELS)
-    })
+/// blowouts alone (none).
+pub fn band_levels(v: &Value) -> ohl_clearance::positions::BandLevels {
+    use ohl_clearance::positions::{BandLevels, MAX_BAND_LEVELS};
+    let count = v
+        .get("band_levels")
+        .and_then(Value::as_u64)
+        .map(|n| (n as usize).min(MAX_BAND_LEVELS));
+    match v.get("band_spacing").and_then(Value::as_f64) {
+        Some(spacing) => BandLevels { spacing, count },
+        None => count.map_or(BandLevels::NONE, BandLevels::from_count),
+    }
 }
 
 pub fn scope_items_on(model: &Model, scope: Scope) -> Vec<crate::tick_list::Item> {
@@ -349,7 +357,8 @@ impl Settings {
             "wind": self.wind.as_str(),
             "band_margin": self.steps.band_margin,
             "jumper_band_margin": self.steps.jumper_band_margin,
-            "band_levels": self.steps.band_levels,
+            "band_spacing": self.steps.band_levels.spacing,
+            "band_levels": self.steps.band_levels.count,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
             "per": self.grouping.as_str(),
@@ -402,7 +411,7 @@ impl Settings {
                         num("band_margin", d.steps.band_margin),
                     ),
                     // Runs saved before 2026-11-16: the band of still air
-                    // and the blowouts alone.
+                    // and the blowouts alone; on 2026-11-16 a count.
                     band_levels: band_levels(v),
                 },
                 grouping: text("per").map_or(Ok(d.grouping), Grouping::parse)?,

@@ -10,6 +10,81 @@ of Parts A, B and C).
 
 ## 2026-11-16
 
+**The swing band's levels are a spacing: a level every 200 Pa** (owner,
+on the question whether the setting should be the spacing itself: *"Yes
+go with spacing"*; built, in active development, not approved yet;
+[theory](../theory/clearances.md#wind-positions)).
+
+- **The setting**: **band level every … Pa** (the clearance windows, the
+  vegetation panel, the safety volumes), `[wind] band_spacing`,
+  `--band-spacing` of `ohl zones`, `ohl safety-volume`, `ohl analysis`;
+  `positions::BandLevels`, default `BAND_SPACING` 200 Pa: ⌈P / s⌉ − 1
+  levels a side at k·P/(n + 1), rounded to 10 Pa. 0: none (the band of
+  still air and the blowouts alone), said NOT ON THE SAFE SIDE as before;
+  a spacing above 200 Pa is beyond what was measured within the margin
+  and said NOT ON THE SAFE SIDE too (the note now names the largest step
+  between the solved pressures). Its hover text says the effect (about
+  0.3 mm outside the band per pascal between levels) and the measured
+  time.
+- **Older files and runs**: the count of earlier that day (`band_levels =
+  n`, a count a side with at least one every 200 Pa; `--band-levels`,
+  hidden) is read as it asked (`BandLevels::from_count`: the same levels
+  as then, never fewer) and written back so until the spacing is set —
+  chosen over mapping the count to the default spacing, which would give
+  fewer levels below 1000 Pa than the file asked for (less safe).
+- **Changed results**: from 1000 Pa up the default gives the levels the
+  count's default gave (4 a side, at least one every 200 Pa), bit for
+  bit. Below 1000 Pa fewer levels (300 Pa: 1 a side instead of 4; 500 Pa:
+  2; 650 Pa: 3; 800 Pa: 3), still at most 200 Pa apart: the bands are a
+  little narrower, within what was measured inside the margin (real line
+  of 930 spans: 0.028 m at 300 Pa, 0.041 m at 500 Pa, 0.042 m at 650 Pa;
+  the example lines 0.041 m, 0.009 m with 4 levels). Fewer solves:
+  300 Pa 5 instead of 11, 500 Pa 7 instead of 11.
+
+**A stiff jumper's shape: never an unstable equilibrium, and the one it
+keeps as the wind rises from still air** (owner: *"Yes investigate the
+jumpers"*; built, in active development, not approved yet;
+[theory](../theory/clearances.md#wind-positions)).
+
+- **What it was** (a real line, two jumpers 1.2–1.9 m outside any band
+  between 140 and 170 Pa): each a loop held at two clamps on V strings,
+  with **two stable shapes** at every pressure up to 1500 Pa (the loop to
+  either side). Solved from the hinged catenary at each pressure, the
+  shape found depended on that start: between 116 and 148 Pa it changed
+  from one to the other — through **saddles of the energy** (unstable
+  equilibria Newton converged to, 1.4–2.8 kN against 0.2–0.5 kN in the
+  stable shapes) and a third stable shape. A solver problem (saddles; a
+  shape chosen by the numerical start) on top of a physical one (two
+  stable shapes; one of them ends at about 1480 Pa from one side, where
+  the jumper snaps over).
+- **Fixed in the rod solver** (`ohl-line`, `rod::Rod::stable`): an
+  equilibrium whose energy curves down in a direction the constraints
+  allow is left along it, down the energy, to a stable shape. Two tests
+  of 2026-11-14 had asked for such saddles (a stiff rod forced into a V
+  under an I-string, and under a V: both buckle sideways); corrected.
+- **The rising wind** (`jumper::rise`): a stiff jumper in the wind is
+  solved in still air, then at every 100 Pa up to the case's pressure,
+  each from the shape its path predicts (`Rod::solve_from`); off its
+  path, the step is halved down to 5 Pa; a move of more than 0.5 m there
+  is a snap, recorded (`JumperShape::snap`) and said in the results:
+  NOT ON THE SAFE SIDE — as the wind falls again the jumper keeps its new
+  shape, not held below that pressure. Every jumper's results can change
+  where it had more than one shape; elsewhere the same shapes (to the
+  solver's tolerance). Cost (measured, real line, 526 jumpers): a
+  1300 Pa case's jumpers 2.05 s instead of 0.33 s, 500 Pa 1.19 s instead
+  of 0.12 s, per windy line solve.
+- **The band at its axis**: a solved point nearer the band's axis than
+  1 µm (`positions::ON_AXIS`; a jumper's end at the axis's own end clamp)
+  gives no angle — its direction was the solver's rounding, and turned the
+  tutorial line's jumper band through the top (a vertical clearance of
+  −12 m found to the ground 20 m below) once the jumpers' shapes changed
+  in the last digits.
+- **Measured** on the real line (10 Pa steps, the default spacing): the
+  jumpers' worst excess over their bands 0.62 m at 300 Pa (one jumper
+  with two shapes 0.2 m apart, open) and 0.19 m at 500 Pa, against
+  1.67 m and 1.78 m before; the jumpers' margin stays 0 by default and
+  its NOT ON THE SAFE SIDE note stays.
+
 **A reference state of the structures (structure flexibility, phase
 5b)** (owner: *"Would it be possible to define a weather case at which
 the structure is drawn in OHL design where it would solve at level 4 and

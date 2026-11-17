@@ -226,14 +226,23 @@ Two options, alone or together:
   its solved positions at each place along the span, from the smallest
   to the largest of their angles. Since 2026-11-16 the solved positions
   are still air, the full blowouts **and the band's levels**: the wire
-  solved at \\( n \\) intermediate pressures from each side,
-  \\( k\,P/(n + 1) \\) for \\( k = 1 \ldots n \\), each rounded to a
-  whole 10 Pa, and at least one every 200 Pa (`positions::band_levels`,
-  `BAND_LEVEL_SPACING`; **band levels**, `[wind] band_levels`,
-  `--band-levels`; \\( n = 4 \\) by default), held by the
-  band but not checked as positions themselves; with the wind steps on,
-  every step is a level too (no more solves). Before 2026-11-16 three
-  positions only: \\( r = \min(R_L, R_0, R_R) \\),
+  solved at intermediate pressures from each side at most \\( s \\)
+  apart (2026-11-16, the owner's "go with spacing"; until then a count
+  \\( n \\) a side with at least one every 200 Pa): \\( n = \lceil P / s
+  \rceil - 1 \\) levels at \\( k\,P/(n + 1) \\) for \\( k = 1 \ldots n
+  \\), each rounded to a whole 10 Pa (`positions::BandLevels::at`;
+  **band level every … Pa**, `[wind] band_spacing`, `--band-spacing`;
+  \\( s = 200 \\) Pa by default, `BAND_SPACING`), held by the band but
+  not checked as positions themselves; with the wind steps on, every
+  step is a level too (no more solves). A rule file, option or saved run
+  of 2026-11-16 with a count (`band_levels = n`) is read as it asked:
+  \\( \max(n, \lceil P/200 \rceil - 1) \\) levels, the same as then
+  (never fewer). From 1000 Pa up the default spacing gives the levels
+  the count's default of 2026-11-16 gave (4 a side, at least one every
+  200 Pa), bit for bit; below 1000 Pa fewer (a 500 Pa case: 2 a side
+  instead of 4, 170 and 330 Pa; 300 Pa: 1, 650 Pa: 3) — still at most
+  200 Pa apart, the spacing measured within the margin (below). Before
+  2026-11-16 three positions only: \\( r = \min(R_L, R_0, R_R) \\),
   \\( R = \max(R_L, R_0, R_R) \\). Solves per windy case: 3 + 2n (one
   side, or a wind along the line: 2 + n). For a wind at an angle the
   two blowouts are the direction and its mirror; along the line the band
@@ -256,8 +265,9 @@ Two options, alone or together:
   around 0.45 of the full pressure); steep spans at an angle. On the
   example lines only 0.091 m, which the margin held — the label
   "Conservative" given here until 2026-11-16 was measured on them alone.
-  A result computed without levels (band levels 0) says so
-  (`positions::band_levels_note`).
+  A result computed without levels (spacing 0), or with levels more than
+  200 Pa apart, says so (`positions::band_levels_note`: the largest step
+  between the solved pressures of any case banded).
 
   **Conservative (measured):** with the default levels the band holds
   every 10 Pa step within its margin. Measured 2026-11-16 (the steps
@@ -275,7 +285,9 @@ Two options, alone or together:
   (below) —, ice and wind 0.027 m at 700 Pa), against 0.69 m without. The excess grows with the spacing
   of the solved pressures — about 0.3 mm per pascal, whatever the
   case's pressure (0.063 m at 200 Pa apart, 0.091 m at 260, 0.167 m at
-  433) — hence at least one level every 200 Pa (`BAND_LEVEL_SPACING`). The
+  433) — hence the setting is that spacing, 200 Pa by default
+  (`BAND_SPACING`; a coarser one is said NOT ON THE SAFE SIDE in the
+  results: beyond what was measured within the margin). The
   margin of 0.15 m is that worst excess plus an allowance for other
   lines. Exact: a solve at every pressure (the steps), and between two
   levels the band is a linear envelope of the levels at the stations of
@@ -329,12 +341,21 @@ Two options, alone or together:
   results; on the user's responsibility; exact: the wind steps): with
   \\( m_j = 0 \\) the jumper's band is not conservative between its
   solved positions — on the example line its 10 Pa steps lie up to
-  0.307 m outside the band of three positions and 0.043 m outside the
+  0.307 m outside the band of three positions and 0.18 m outside the
   band with the default levels; on a real line up to 2.1 m without
-  levels and still up to 1.9 m with the default levels (a few jumpers: two whose shape changes abruptly between 140 and 170 Pa, others between the last level and the full pressure)
+  levels, and with the default levels up to 0.62 m since the jumpers are solved as the wind rises (1.9 m before: two jumpers solved in other shapes between 140 and 170 Pa, [Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises))
   ([the swing arc](lidar-analysis.md#wire-positions-checked)).
   The value that holds a jumper is the user's to enter for their jumpers
-  (the wind steps show it).
+  (the wind steps show it). Since 2026-11-16 a stiff jumper is solved as
+  the wind rises from still air, never at an unstable equilibrium
+  ([Jumpers](jumpers.md#stable-shapes-and-the-shape-it-keeps-as-the-wind-rises));
+  a jumper that snaps over to another stable shape on the way is said
+  per case, **NOT ON THE SAFE SIDE** (as the wind falls it keeps the new
+  shape, not held below that pressure). A point of a solved position on
+  the band's axis (nearer than 1 µm, `positions::ON_AXIS`: a jumper's end
+  at the axis's own end clamp) gives the band no angle there — its
+  direction was the solver's rounding and could turn a jumper's band
+  through the top (found 2026-11-16 on the tutorial line).
 
   **Conservative:** the arc runs from the smallest to the largest angle
   of its solved positions (\\( \varphi_L, \varphi_0, \varphi_R \\) and

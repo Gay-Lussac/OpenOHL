@@ -189,8 +189,8 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
     let r = run(Measure::Radial, &arc, &[p]);
     // Still air, the two blowouts and the band's levels (2026-11-16),
     // solved for the band only.
-    let levels =
-        ohl_clearance::positions::band_levels(600.0, ohl_clearance::positions::BAND_LEVELS);
+    let levels = ohl_clearance::positions::BandLevels::DEFAULT.at(600.0);
+    assert_eq!(levels, vec![200.0, 400.0]);
     assert_eq!(r.states.len(), 3 + 2 * levels.len());
     assert_eq!(
         r.states.iter().filter(|s| s.band_only).count(),

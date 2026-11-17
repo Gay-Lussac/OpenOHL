@@ -410,7 +410,8 @@ impl Settings {
             "swing_arc": self.arc,
             "band_margin": self.steps.band_margin,
             "jumper_band_margin": self.steps.jumper_band_margin,
-            "band_levels": self.steps.band_levels,
+            "band_spacing": self.steps.band_levels.spacing,
+            "band_levels": self.steps.band_levels.count,
             "wind_steps": self.steps.stepped,
             "wind_step": self.steps.step,
             "wind_sides": self.steps.sides.as_str(),
@@ -1723,8 +1724,8 @@ impl VegetationWindow {
                 if w.band_margin != ohl_clearance::positions::BAND_MARGIN {
                     rows.push(("band margin, m".into(), format!("{}", w.band_margin)));
                 }
-                if w.band_levels != ohl_clearance::positions::BAND_LEVELS {
-                    rows.push(("band levels a side".into(), format!("{}", w.band_levels)));
+                if w.band_levels != ohl_clearance::positions::BandLevels::DEFAULT {
+                    rows.push(("band levels".into(), w.band_levels.words()));
                 }
                 if w.jumper_band_margin != ohl_clearance::positions::JUMPER_BAND_MARGIN {
                     rows.push((

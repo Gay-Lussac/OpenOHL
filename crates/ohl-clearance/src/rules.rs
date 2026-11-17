@@ -91,9 +91,13 @@
 //!   band margin; `jumper_band_margin = "0.3 m"` (2026-10-21, optional,
 //!   written only when not the default
 //!   [`crate::positions::JUMPER_BAND_MARGIN`], 0) the jumpers';
-//!   `band_levels = 4` (2026-11-16, optional, written only when not the
-//!   default [`crate::positions::BAND_LEVELS`]) the bands' intermediate
-//!   solved pressures from each side.
+//!   `band_spacing = "200 Pa"` (2026-11-16, optional, written only when
+//!   not the default [`crate::positions::BAND_SPACING`]; `"0 Pa"`: none)
+//!   the bands' intermediate solved pressures from each side, at most
+//!   this far apart; an older file's `band_levels = 4` (2026-11-16, a
+//!   count a side with at least one every 200 Pa) is read as it asked
+//!   ([`crate::positions::BandLevels::from_count`]) and written back so
+//!   until the spacing is set.
 //! - `[check]` (`circuits`, `method`, `search_distance`): what the
 //!   desktop clearance windows solve and read ([`CheckScope`]): only the
 //!   circuits named (by circuit name; default every circuit), every
@@ -1179,6 +1183,8 @@ struct RawWind {
     #[serde(default)]
     jumper_band_margin: Option<Length>,
     #[serde(default)]
+    band_spacing: Option<Stress>,
+    #[serde(default)]
     band_levels: Option<usize>,
 }
 
@@ -1263,15 +1269,15 @@ pub struct WindSteps {
     /// its blowouts; exact: the wind steps); the user enters a value for
     /// their jumpers.
     pub jumper_band_margin: f64,
-    /// The swing bands' intermediate levels from each side
-    /// (`[wind] band_levels`, 2026-11-16): the band also holds the wire
-    /// solved at this many pressures between still air and the full one
-    /// ([`crate::positions::band_levels`]), each one more solve per side.
-    /// At least one every [`crate::positions::BAND_LEVEL_SPACING`].
-    /// Default [`crate::positions::BAND_LEVELS`] (measured); 0: the band
-    /// of still air and the blowouts alone, as before 2026-11-16 (not on
+    /// The swing bands' intermediate levels from each side (2026-11-16;
+    /// `[wind] band_spacing`, at first a count): the band also holds the
+    /// wire solved at pressures between still air and the full one at
+    /// most this far apart ([`crate::positions::BandLevels::at`]), each one
+    /// more solve per side. Default a level every
+    /// [`crate::positions::BAND_SPACING`] (measured); none: the band of
+    /// still air and the full blowouts alone, as until 2026-11-16 (not on
     /// the safe side, said).
-    pub band_levels: usize,
+    pub band_levels: crate::positions::BandLevels,
 }
 
 /// Default step of the wind pressure, Pa.
@@ -1286,7 +1292,7 @@ impl Default for WindSteps {
             arc: false,
             band_margin: crate::positions::BAND_MARGIN,
             jumper_band_margin: crate::positions::JUMPER_BAND_MARGIN,
-            band_levels: crate::positions::BAND_LEVELS,
+            band_levels: crate::positions::BandLevels::DEFAULT,
         }
     }
 }
@@ -1954,12 +1960,15 @@ impl RuleSet {
                 if let Some(e) = band_margin_problem(jumper_band_margin) {
                     return Err(format!("[wind] jumper {e}"));
                 }
-                let band_levels = w.band_levels.unwrap_or(crate::positions::BAND_LEVELS);
-                if band_levels > crate::positions::MAX_BAND_LEVELS {
-                    return Err(format!(
-                        "[wind] band_levels {band_levels}: at most {}",
-                        crate::positions::MAX_BAND_LEVELS
-                    ));
+                // The spacing (2026-11-16); an older file's count read as
+                // it asked (2026-11-16: never fewer levels than then).
+                let band_levels = match (w.band_spacing, w.band_levels) {
+                    (Some(s), _) => crate::positions::BandLevels::every(s.si()),
+                    (None, Some(n)) => crate::positions::BandLevels::from_count(n),
+                    (None, None) => crate::positions::BandLevels::DEFAULT,
+                };
+                if let Some(e) = band_levels.problem() {
+                    return Err(format!("[wind] {e}"));
                 }
                 Ok(WindSteps {
                     band_margin,
@@ -2167,8 +2176,16 @@ impl RuleSet {
             if w.jumper_band_margin != crate::positions::JUMPER_BAND_MARGIN {
                 let _ = writeln!(t, "jumper_band_margin = {}", length(w.jumper_band_margin));
             }
-            if w.band_levels != crate::positions::BAND_LEVELS {
-                let _ = writeln!(t, "band_levels = {}", w.band_levels);
+            let levels = w.band_levels;
+            match levels.count {
+                // An older file's count, kept until the spacing is set.
+                Some(n) => {
+                    let _ = writeln!(t, "band_levels = {n}");
+                }
+                None if levels != crate::positions::BandLevels::DEFAULT => {
+                    let _ = writeln!(t, "band_spacing = \"{} Pa\"", levels.spacing);
+                }
+                None => {}
             }
         }
         if let Some(c) = self.check.as_ref().filter(|c| !c.is_empty()) {
@@ -2685,6 +2702,51 @@ mod tests {
         let e = RuleSet::parse(&format!("{head}[wind]\njumper_band_margin = \"-0.1 m\"\n"))
             .unwrap_err();
         assert!(e.contains("jumper band margin"), "{e}");
+    }
+
+    /// `[wind] band_spacing` (2026-11-16): a file without it reads a level
+    /// every 200 Pa and is written without it; another value is read and
+    /// written back; out of bounds refused. An older file's `band_levels`
+    /// (2026-11-16, a count a side) is read as it asked — the same levels
+    /// as then — and written back so; the spacing wins when both are given.
+    #[test]
+    fn the_band_spacing_in_the_wind_table() {
+        use crate::positions::BandLevels;
+        let head = "format = \"ohl-clearance-rules\"\nversion = 1\nname = \"x\"\n";
+        let new = RuleSet::parse(&format!("{head}[wind]\narc = true\n")).unwrap();
+        assert_eq!(new.wind.unwrap().band_levels, BandLevels::DEFAULT);
+        assert!(!new.to_toml().contains("band_"));
+        for (text, levels) in [
+            ("band_spacing = \"100 Pa\"", BandLevels::every(100.0)),
+            ("band_spacing = \"0 Pa\"", BandLevels::NONE),
+            ("band_levels = 6", BandLevels::from_count(6)),
+            ("band_levels = 0", BandLevels::NONE),
+            (
+                "band_levels = 6\nband_spacing = \"150 Pa\"",
+                BandLevels::every(150.0),
+            ),
+        ] {
+            let set = RuleSet::parse(&format!("{head}[wind]\narc = true\n{text}\n")).unwrap();
+            assert_eq!(set.wind.unwrap().band_levels, levels, "{text}");
+            assert_eq!(
+                RuleSet::parse(&set.to_toml()).unwrap().wind,
+                set.wind,
+                "{text}"
+            );
+        }
+        let old = RuleSet::parse(&format!("{head}[wind]\nband_levels = 6\n")).unwrap();
+        assert!(old.to_toml().contains("band_levels = 6"));
+        // The same levels as on 2026-11-16: 6 a side, 1000 Pa.
+        assert_eq!(
+            old.wind.unwrap().band_levels.at(1000.0),
+            crate::positions::band_levels(1000.0, 6)
+        );
+        let set = RuleSet::parse(&format!("{head}[wind]\nband_spacing = \"100 Pa\"\n")).unwrap();
+        assert!(set.to_toml().contains("band_spacing = \"100 Pa\""));
+        for bad in ["band_spacing = \"5 Pa\"", "band_levels = 51"] {
+            let e = RuleSet::parse(&format!("{head}[wind]\n{bad}\n")).unwrap_err();
+            assert!(e.contains("band level"), "{e}");
+        }
     }
 
     /// A rule file read with a project's default values: its search

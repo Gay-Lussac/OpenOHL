@@ -67,8 +67,8 @@ responsibility): at a place \\( s \\) along the
 span's axis the annular sector of centre \\( C(s) \\) from radius
 \\( r(s) \\) to \\( R(s) \\) between \\( \varphi_L(s) \\) and
 \\( \varphi_R(s) \\) — the closed form of the danger-tree page — its solved positions still
-air, the blowouts and the band's levels (2026-11-16: 4 a side by
-default, **band levels**, `--band-levels`) — with its labels
+air, the blowouts and the band's levels (2026-11-16: a level every
+200 Pa by default, **band level every … Pa**, `--band-spacing`) — with its labels
 (**Conservative (measured)** with the default levels, every radius and
 angle from the smallest to the largest and the band's margin; **NOT ON
 THE SAFE SIDE** without levels, said in the results) and its
@@ -93,9 +93,9 @@ meshed as a span's.
 on the user's responsibility; exact: the wind steps): with
 \\( m_j = 0 \\) a jumper's band is not conservative between its solved
 positions — on the example line its jumper's 10 Pa steps lie up to
-0.307 m outside the band without levels and 0.043 m with the default
-levels; on a real line up to 2.1 m without levels and still up to 1.9 m
-with them (a few jumpers)
+0.307 m outside the band without levels and 0.18 m with the default
+levels; on a real line up to 2.1 m without levels and up to 0.62 m with
+them, the jumpers solved as the wind rises (1.9 m before)
 ([the swing arc](lidar-analysis.md#wire-positions-checked)). The user
 enters a value for their jumpers. The jumper's solved positions (blown
 left and right, every step) remain tubes of their own, so the volume
