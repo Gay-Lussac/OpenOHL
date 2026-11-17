@@ -63,7 +63,7 @@ use ohl_line::jumper::JumperShape;
 /// combination the window allows, never silent).
 pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on their swing band \
      without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside its \
-     band (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.04 m and, for some jumpers of the real line, still up to 1.9 m). Enter a jumper band \
+     band (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises, up to 0.62 m on the real line (1.9 m before)). Enter a jumper band \
      margin for your jumpers, or tick the wind steps (exact at the pressures they solve).";
 
 /// What the results say when the radial check measured to LiDAR points
@@ -524,7 +524,7 @@ pub struct WindState {
     /// Side the wind blows from (`None`: no wind).
     pub side: Option<WindSide>,
     /// Solved for the swing band only (one of its levels, 2026-11-16:
-    /// [`crate::positions::band_levels`]), not checked itself.
+    /// [`crate::positions::BandLevels::at`]), not checked itself.
     pub band_only: bool,
 }
 
@@ -577,7 +577,8 @@ pub fn wind_states(
         }
         // The swing band's levels (2026-11-16): those not stepped.
         let levels: Vec<f64> = if wind.arc {
-            crate::positions::band_levels(full, wind.band_levels)
+            wind.band_levels
+                .at(full)
                 .into_iter()
                 .filter(|p| !pressures.contains(p))
                 .collect()
@@ -2406,11 +2407,29 @@ mod tests {
             step: 100.0,
             sides: WindSides::Both,
             arc: true,
+            // An older file's 4 levels a side (2026-11-16).
+            band_levels: crate::positions::BandLevels::from_count(4),
             ..Default::default()
         };
         let mut small = windy(300.0);
         small.name = "smaller".into();
         let states = wind_states(&[windy(600.0), small], |_| true, &wind);
+        // The default spacing: one level every 200 Pa at most (200 and
+        // 400 Pa for 600, steps here; 150 Pa for 300).
+        let default = wind_states(
+            &[windy(600.0), windy(300.0)],
+            |_| true,
+            &WindSteps {
+                band_levels: crate::positions::BandLevels::DEFAULT,
+                ..wind
+            },
+        );
+        let only: Vec<f64> = default
+            .iter()
+            .filter(|s| s.band_only)
+            .map(|s| s.pressure)
+            .collect();
+        assert_eq!(only, vec![150.0, 150.0]);
         // Stepped by 100 Pa: the levels (120, 240, 360, 480 Pa for 600;
         // 60, 120, 180, 240 for 300) those steps do not solve, each side.
         let only: Vec<f64> = states

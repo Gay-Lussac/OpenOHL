@@ -243,13 +243,21 @@ pub struct VegetationArgs {
     /// (conservative); a smaller value is on the user's responsibility.
     #[arg(long, default_value_t = ohl_clearance::positions::BAND_MARGIN)]
     pub band_margin: f64,
-    /// The swing bands' intermediate levels from each side (--swing-arc): the band also
-    /// holds the wire solved at this many wind pressures between still air
-    /// and the full one (each one more solve per side). Default: measured
-    /// (see the theory, Wind positions); 0: still air and the blowouts
-    /// alone, as before 2026-11-16.
-    #[arg(long, default_value_t = ohl_clearance::positions::BAND_LEVELS)]
-    pub band_levels: usize,
+    /// A swing band level at least every this many Pa (the rule file's
+    /// `[wind] band_spacing`; default 200 Pa): the band also holds the
+    /// wire solved at wind pressures between still air and the full one
+    /// at most this far apart, evenly (each level one more solve per side;
+    /// measured: the wire between two levels lies outside the band by
+    /// about 0.3 mm per pascal of their spacing, 0.063 m at 200 Pa, within
+    /// the 0.15 m margin — see the theory, Wind positions). 0: still air
+    /// and the blowouts alone, as before 2026-11-16 (not on the safe
+    /// side, said); above 200 Pa said not on the safe side.
+    #[arg(long, value_name = "PA")]
+    pub band_spacing: Option<f64>,
+    /// At first (2026-11-16): the levels as a count a side (at least one
+    /// every 200 Pa), read as it asked; --band-spacing replaces it.
+    #[arg(long, hide = true)]
+    pub band_levels: Option<usize>,
     /// Step the wind of each windy case by this pressure, Pa: still air
     /// and every pressure up to the case's are checked too (alongside or
     /// instead of --swing-arc), as the desktop clearance windows step it.
@@ -1039,6 +1047,12 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         max_base_ground_distance: Some(a.max_base_ground_distance).filter(|d| d.is_finite()),
         ..VegetationParams::default()
     };
+    let band_levels = ohl_clearance::positions::BandLevels::from_options(
+        a.band_spacing,
+        a.band_levels,
+        ohl_clearance::positions::BandLevels::DEFAULT,
+    )
+    .map_err(|e| format!("--band-spacing: {e}"))?;
     // Exit clause of the whole run (solves, checks, lines).
     let budget = Budget::new().time_limit(Duration::from_secs(a.time_limit));
     let t = Instant::now();
@@ -1059,7 +1073,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
             // The danger-tree check leaves the jumpers out.
             jumpers: false,
             band_margin: a.band_margin,
-            band_levels: a.band_levels,
+            band_levels,
             ..Default::default()
         },
         &budget,
@@ -1105,8 +1119,9 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
         count(PositionKind::Arc),
         if a.swing_arc {
             format!(
-                " (band margin {} m, {} levels a side)",
-                a.band_margin, a.band_levels
+                " (band margin {} m, band levels {})",
+                a.band_margin,
+                band_levels.words()
             )
         } else {
             String::new()

@@ -130,12 +130,33 @@ pub(crate) struct RodShape {
     pub holds: Vec<HoldShape>,
     /// Piece directions (to start the next solve from).
     pub directions: Vec<V>,
+    /// The taut strings, as (hold, string) (to start the next solve from,
+    /// [`Rod::solve_from`]).
+    pub active: Vec<(usize, usize)>,
 }
 
 fn basis(d: V) -> (V, V) {
     let helper = if d.x.abs() < 0.6 { V::x() } else { V::y() };
     let e1 = d.cross(&helper).normalize();
     (e1, d.cross(&e1))
+}
+
+/// The directions `d` turned by `step` (2 per piece, in each one's
+/// [`basis`]) times `factor`.
+fn rotated(d: &[V], step: &[f64], factor: f64) -> Vec<V> {
+    d.iter()
+        .enumerate()
+        .map(|(i, &di)| {
+            let (e1, e2) = basis(di);
+            let v = e1 * step[2 * i] * factor + e2 * step[2 * i + 1] * factor;
+            let angle = v.norm();
+            if angle == 0.0 {
+                di
+            } else {
+                (di * angle.cos() + v / angle * angle.sin()).normalize()
+            }
+        })
+        .collect()
 }
 
 impl Rod {
@@ -735,8 +756,7 @@ impl Rod {
                 }
             }
         }
-        let all = self.strings();
-        let (mut d, mut lambda, mut mu) = if warm {
+        let (d, lambda, mu) = if warm {
             (
                 start.iter().map(|x| x.normalize()).collect(),
                 V::zeros(),
@@ -745,9 +765,98 @@ impl Rod {
         } else {
             self.newton_within(start, &[], budget, 1.0, accept)?
         };
-        let mut active: Vec<(usize, usize)> = Vec::new();
+        let (d, lambda, mu, active) = self.settle(d, lambda, mu, Vec::new(), budget, accept)?;
+        // Never an unstable equilibrium (2026-11-16): Newton also stops on
+        // saddles of the energy, shapes no wire keeps.
+        let (d, lambda, mu, active) = self.stable(d, lambda, mu, active, budget, accept)?;
+        Ok(self.shape_of(d, lambda, &mu, active))
+    }
+
+    /// Solves from a solved shape `from` of a rod alike (the same pieces
+    /// and holds; its loads or ends a little different: the next step of a
+    /// wind rising, [`crate::jumper`]), its taut strings taut from the
+    /// start: the equilibrium nearest it that the energy leads to, stable
+    /// ([`Rod::stable`]).
+    ///
+    /// Expected cost: 2–6 Newton iterations (~50 µs each in release) and
+    /// the stability check. Exit clauses: the budget's for each Newton
+    /// solve; an error when it does not converge.
+    pub(crate) fn solve_from(&self, from: &RodShape, budget: &Budget) -> Result<RodShape, String> {
+        self.in_local(|local| {
+            let n = local.n();
+            if from.directions.len() != n || n < 2 {
+                return Err(format!(
+                    "rod: {} start directions for {n} pieces",
+                    from.directions.len()
+                ));
+            }
+            let all = local.strings();
+            let active: Vec<(usize, usize)> = from
+                .active
+                .iter()
+                .copied()
+                .filter(|c| all.contains(c))
+                .collect();
+            // Taken as converged where no step improves it, within
+            // [`STALL_TOLERANCE`] (next to a string just taut it creeps).
+            let accept = STALL_TOLERANCE;
+            let (d, lambda, mu) =
+                local.newton_by(&from.directions, &active, budget, 1.0, accept, true, 0.0)?;
+            let (d, lambda, mu, active) = local.settle(d, lambda, mu, active, budget, accept)?;
+            let (d, lambda, mu, active) = local.stable(d, lambda, mu, active, budget, accept)?;
+            Ok(local.shape_of(d, lambda, &mu, active))
+        })
+    }
+
+    /// The solved rod of directions `d`, multipliers `lambda` and `mu`,
+    /// taut strings `active`.
+    fn shape_of(&self, d: Vec<V>, lambda: V, mu: &[f64], active: Vec<(usize, usize)>) -> RodShape {
+        let nodes = self.nodes(&d);
+        let holds = self
+            .holds
+            .iter()
+            .enumerate()
+            .map(|(h, x)| HoldShape {
+                point: self.held(x, &nodes, &d),
+                direction: d[x.piece],
+                forces: (0..x.strings.len())
+                    .map(|s| {
+                        active.iter().position(|c| *c == (h, s)).map_or(0.0, |k| {
+                            let f = -2.0 * mu[k] * x.strings[s].length;
+                            if x.strings[s].push { f } else { f.max(0.0) }
+                        })
+                    })
+                    .collect(),
+            })
+            .collect();
+        RodShape {
+            points: nodes,
+            max_tension: self.max_tension(&d, lambda, mu, &active),
+            end_forces: self.end_forces(&d, lambda, mu, &active),
+            end_moments: self.end_moments(&d),
+            holds,
+            directions: d,
+            active,
+        }
+    }
+
+    /// The strings settled from the solved shape `d` (`active` taut):
+    /// those that would push let go (those that may push stay), those
+    /// whose points hang beyond them pulled to their lengths in steps,
+    /// until no string changes ([`Rod::solve_steps`]).
+    #[allow(clippy::type_complexity)]
+    fn settle(
+        &self,
+        mut d: Vec<V>,
+        mut lambda: V,
+        mut mu: Vec<f64>,
+        mut active: Vec<(usize, usize)>,
+        budget: &Budget,
+        accept: f64,
+    ) -> Result<(Vec<V>, V, Vec<f64>, Vec<(usize, usize)>), String> {
+        let all = self.strings();
         let force_scale =
-            self.q.norm() * total + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
+            self.q.norm() * self.length() + self.holds.iter().map(|h| h.load.norm()).sum::<f64>();
         for round in 0.. {
             let nodes = self.nodes(&d);
             // Taut strings that would push: let go (those that may push stay).
@@ -813,32 +922,149 @@ impl Rod {
             }
             active = next;
         }
-        let nodes = self.nodes(&d);
-        let holds = self
-            .holds
-            .iter()
-            .enumerate()
-            .map(|(h, x)| HoldShape {
-                point: self.held(x, &nodes, &d),
-                direction: d[x.piece],
-                forces: (0..x.strings.len())
-                    .map(|s| {
-                        active.iter().position(|c| *c == (h, s)).map_or(0.0, |k| {
-                            let f = -2.0 * mu[k] * x.strings[s].length;
-                            if x.strings[s].push { f } else { f.max(0.0) }
-                        })
-                    })
-                    .collect(),
-            })
+        Ok((d, lambda, mu, active))
+    }
+
+    /// How many times [`Rod::stable`] steps off an unstable equilibrium.
+    const LEAVE: usize = 8;
+
+    /// The solved shape `d`, or, when it is an unstable equilibrium (a
+    /// saddle of the energy: the Hessian of the Lagrangian negative in
+    /// some direction the constraints allow, [`Rod::least_curvature`]),
+    /// the stable one reached from it: the shape is turned a little along
+    /// that direction, each way, and solved again (the line search lowers
+    /// the energy, so it moves off the saddle), the stable result of lower
+    /// energy kept; again from there, at most [`Rod::LEAVE`] times. Newton
+    /// converges to any equilibrium; a jumper held at points by strings
+    /// can have several, and on a real line (2026-11-16) the rod solve
+    /// returned saddles with tensions of 1.4–2.8 kN between two stable
+    /// shapes of 0.2–0.5 kN — shapes no jumper keeps, up to 1.9 m outside
+    /// its swing band.
+    ///
+    /// Expected cost: one symmetric eigen-decomposition of 2n × 2n (n ≤ 40
+    /// pieces: ~0.1 ms) for a stable shape; a few more solves off a
+    /// saddle. Exit clause: [`Rod::LEAVE`] steps; an error says it stayed
+    /// unstable.
+    #[allow(clippy::type_complexity)]
+    fn stable(
+        &self,
+        mut d: Vec<V>,
+        mut lambda: V,
+        mut mu: Vec<f64>,
+        mut active: Vec<(usize, usize)>,
+        budget: &Budget,
+        accept: f64,
+    ) -> Result<(Vec<V>, V, Vec<f64>, Vec<(usize, usize)>), String> {
+        let n = self.n();
+        let stiffness_scale = (self.q.norm() * self.length() * self.mean_piece()
+            + self.ei / self.mean_piece())
+        .max(1e-9);
+        for _ in 0..Self::LEAVE {
+            let (lowest, along) = self.least_curvature(&d, lambda, &mu, &active);
+            if lowest >= -1e-9 * stiffness_scale {
+                return Ok((d, lambda, mu, active));
+            }
+            // A turn of 0.1 rad at the piece turned most.
+            let largest = (0..n)
+                .map(|i| along[2 * i].hypot(along[2 * i + 1]))
+                .fold(0.0, f64::max)
+                .max(1e-12);
+            let mut best: Option<(bool, f64, (Vec<V>, V, Vec<f64>, Vec<(usize, usize)>))> = None;
+            for sign in [1.0, -1.0] {
+                let turned = rotated(&d, &along, sign * 0.1 / largest);
+                // Down the energy from there (Newton alone goes back to the
+                // saddle), then Newton to the minimum.
+                let Ok((down, _, _)) = self.newton_by(
+                    &turned,
+                    &active,
+                    budget,
+                    1.0,
+                    f64::INFINITY,
+                    false,
+                    -2.0 * lowest,
+                ) else {
+                    continue;
+                };
+                let Ok((dd, l, m)) = self.newton_by(
+                    &down,
+                    &active,
+                    budget,
+                    1.0,
+                    accept.max(STALL_TOLERANCE),
+                    true,
+                    0.0,
+                ) else {
+                    continue;
+                };
+                let Ok(found) = self.settle(dd, l, m, active.clone(), budget, accept) else {
+                    continue;
+                };
+                let (lo, _) = self.least_curvature(&found.0, found.1, &found.2, &found.3);
+                let stable = lo >= -1e-9 * stiffness_scale;
+                let energy = self.energy(&found.0);
+                let better = match &best {
+                    None => true,
+                    Some((s, e, _)) => (stable && !*s) || (stable == *s && energy < *e),
+                };
+                if better {
+                    best = Some((stable, energy, found));
+                }
+            }
+            match best {
+                Some((_, _, found)) => (d, lambda, mu, active) = found,
+                None => break,
+            }
+        }
+        let (lowest, _) = self.least_curvature(&d, lambda, &mu, &active);
+        if lowest >= -1e-9 * stiffness_scale {
+            Ok((d, lambda, mu, active))
+        } else {
+            Err(format!(
+                "rod: only an unstable shape found (an equilibrium no wire keeps, after {} \
+                 steps off it)",
+                Self::LEAVE
+            ))
+        }
+    }
+
+    /// The least curvature of the energy at the equilibrium `d` in the
+    /// directions the constraints (far end, taut strings) allow — the
+    /// smallest eigenvalue of the Lagrangian's Hessian on their tangent
+    /// space, N·m per rad² — and that direction (2 per piece, as Newton's
+    /// steps). Negative: an unstable equilibrium.
+    fn least_curvature(
+        &self,
+        d: &[V],
+        lambda: V,
+        mu: &[f64],
+        active: &[(usize, usize)],
+    ) -> (f64, Vec<f64>) {
+        let n = self.n();
+        let j = self.jacobian(d, lambda, mu, active);
+        let h = j.view((0, 0), (2 * n, 2 * n)).into_owned();
+        let h = (&h + h.transpose()) * 0.5;
+        let m = 3 + active.len();
+        let a = j.view((2 * n, 0), (m, 2 * n)).into_owned();
+        // The tangent space: the null space of the constraints' rows.
+        let eig = (a.transpose() * &a).symmetric_eigen();
+        let top = eig.eigenvalues.iter().copied().fold(0.0, f64::max);
+        let free: Vec<usize> = (0..2 * n)
+            .filter(|&k| eig.eigenvalues[k] <= 1e-10 * top)
             .collect();
-        Ok(RodShape {
-            points: nodes,
-            max_tension: self.max_tension(&d, lambda, &mu, &active),
-            end_forces: self.end_forces(&d, lambda, &mu, &active),
-            end_moments: self.end_moments(&d),
-            holds,
-            directions: d,
-        })
+        if free.is_empty() {
+            return (f64::INFINITY, vec![0.0; 2 * n]);
+        }
+        let z = DMatrix::from_fn(2 * n, free.len(), |r, c| eig.eigenvectors[(r, free[c])]);
+        let reduced = (z.transpose() * &h * &z).symmetric_eigen();
+        let (k, lowest) = reduced
+            .eigenvalues
+            .iter()
+            .copied()
+            .enumerate()
+            .min_by(|x, y| x.1.total_cmp(&y.1))
+            .expect("one free direction");
+        let along = &z * reduced.eigenvectors.column(k);
+        (lowest, along.iter().copied().collect())
     }
 
     /// Newton from `start`, the strings in `active` taut, the others left
@@ -852,6 +1078,31 @@ impl Rod {
         budget: &Budget,
         within: f64,
         accept: f64,
+    ) -> Result<(Vec<V>, V, Vec<f64>), String> {
+        self.newton_by(start, active, budget, within, accept, false, 0.0)
+    }
+
+    /// [`Rod::newton_within`]; `near`: from a start near the equilibrium
+    /// sought (the shape of a load a little different, [`Rod::solve_from`]):
+    /// a step is taken where it lowers the residual — Newton's own measure
+    /// for a root —, not the energy with its constraints' penalty, which
+    /// near the constraints refuses Newton's full steps and creeps (on a
+    /// real line's jumpers at 1000–1500 Pa: 150 iterations to 10³ times
+    /// the tolerance). Stability is checked after ([`Rod::stable`]).
+    /// `shift` (N·m per rad², 0: none) is added to the Hessian's diagonal
+    /// at every step: more than its most negative curvature, every step
+    /// goes down the energy — off a saddle to a minimum, not back
+    /// ([`Rod::stable`]; linearly, not Newton's quadratic convergence).
+    #[allow(clippy::too_many_arguments)]
+    fn newton_by(
+        &self,
+        start: &[V],
+        active: &[(usize, usize)],
+        budget: &Budget,
+        within: f64,
+        accept: f64,
+        near: bool,
+        shift: f64,
     ) -> Result<(Vec<V>, V, Vec<f64>), String> {
         let n = self.n();
         let mut d: Vec<V> = start.iter().map(|x| x.normalize()).collect();
@@ -905,7 +1156,7 @@ impl Rod {
             let mut jac = self.jacobian(&d, lambda, &mu, active);
             let diag = (0..2 * n).map(|k| jac[(k, k)].abs()).fold(0.0, f64::max);
             for k in 0..2 * n {
-                jac[(k, k)] += damping * diag.max(1e-12);
+                jac[(k, k)] += damping * diag.max(1e-12) + shift;
             }
             let Some(step) = jac
                 .lu()
@@ -923,18 +1174,7 @@ impl Rod {
                 .fold(0.0, f64::max);
             let mut factor = if largest > 0.3 { 0.3 / largest } else { 1.0 };
             loop {
-                let trial: Vec<V> = (0..n)
-                    .map(|i| {
-                        let (e1, e2) = basis(d[i]);
-                        let v = e1 * step[2 * i] * factor + e2 * step[2 * i + 1] * factor;
-                        let angle = v.norm();
-                        if angle == 0.0 {
-                            d[i]
-                        } else {
-                            (d[i] * angle.cos() + v / angle * angle.sin()).normalize()
-                        }
-                    })
-                    .collect();
+                let trial = rotated(&d, step.as_slice(), factor);
                 let tl = lambda + V::new(step[2 * n], step[2 * n + 1], step[2 * n + 2]) * factor;
                 let tm: Vec<f64> = mu
                     .iter()
@@ -958,7 +1198,12 @@ impl Rod {
                 }
                 let lower = then < now - 1e-13 * now.abs().max(1e-9);
                 let level = (then - now).abs() <= 1e-13 * now.abs().max(1e-9);
-                if lower || (level && squares(&tr) < squares(&r)) {
+                let accepted = if near {
+                    squares(&tr) < squares(&r)
+                } else {
+                    lower || (level && squares(&tr) < squares(&r))
+                };
+                if accepted {
                     let tmerit = scaled(&tr);
                     damping = if factor == 1.0 {
                         (damping * 0.1).max(1e-12)
@@ -1288,11 +1533,34 @@ mod tests {
 
     /// An I-string over the clamp's middle in still air: plumb, carrying
     /// the weight hanging on it (the clamp's, and the rod's less what its
-    /// ends carry); the rod is straight through the clamp, with or without
-    /// bending stiffness.
+    /// ends carry); the rod is straight through the clamp. Stiff (EI
+    /// 50 N·m²), the plumb shape is a saddle of the energy — the rod, 0.9 m
+    /// longer than its ends are apart, bent down to the clamp and back up
+    /// buckles out of that plane: the string swings to the side and the rod
+    /// bends less (until this change the solve stopped on the saddle, and
+    /// this test asked for it).
     #[test]
     fn an_i_string_holds_a_clamp_plumb() {
-        for ei in [0.0, 50.0] {
+        let (stiff, start) = clamped_rod(
+            50.0,
+            V::new(0.0, 0.0, -15.0),
+            vec![string(V::new(1.5, 0.0, 1.0), 1.5)],
+        );
+        let (d, l, m) = stiff
+            .newton_within(&start, &[], &budget(), 1.0, 1.0)
+            .unwrap();
+        let (d, l, m, a) = stiff.settle(d, l, m, Vec::new(), &budget(), 1.0).unwrap();
+        let plumb = stiff.nodes(&d)[19];
+        assert!(plumb.y.abs() < 1e-9, "{plumb:?}");
+        assert!(stiff.least_curvature(&d, l, &m, &a).0 < -1.0);
+        let s = stiff.solve(&start, &budget()).unwrap();
+        assert!(stability(&stiff, &s) > 0.0);
+        assert!(stiff.energy(&s.directions) < stiff.energy(&d) - 50.0);
+        let arm = s.holds[0].point - V::new(1.5, 0.0, 1.0);
+        assert!((arm.norm() - 1.5).abs() < 1e-9, "{}", arm.norm());
+        assert!(arm.y.abs() > 0.5, "swung to the side: {arm:?}");
+        {
+            let ei = 0.0;
             let w = 15.0;
             let (rod, start) = clamped_rod(
                 ei,
@@ -1464,6 +1732,190 @@ mod tests {
                 },
             ],
         }
+    }
+
+    /// A jumper's loop held at two clamps on V strings (two legs each,
+    /// that may push), 13.5 m between its ends, 17.6 m long: the
+    /// geometry of a real line's jumper rounded (2026-11-16), in the wind
+    /// `pressure` (Pa) across it. It has two stable shapes, the loop lying
+    /// to either side, at every pressure up to 300 Pa at least.
+    fn loop_jumper(pressure: f64) -> Rod {
+        let mut pieces = vec![0.446; 9];
+        pieces.push(0.1);
+        pieces.extend(vec![0.4265; 23]);
+        pieces.push(0.1);
+        pieces.extend(vec![0.428; 8]);
+        let v_string = |upper: V, lower: V| {
+            vec![
+                RodString {
+                    top: upper,
+                    length: 4.921,
+                    push: true,
+                },
+                RodString {
+                    top: lower,
+                    length: 3.6,
+                    push: true,
+                },
+            ]
+        };
+        Rod {
+            a: V::zeros(),
+            b: V::new(10.02, 8.95, -1.03),
+            pieces,
+            q: V::new(-0.0246 * pressure, 0.0275 * pressure, -21.84),
+            ei: 1000.0,
+            springs: 0.0,
+            start: Some(V::new(0.533, 0.583, -0.614).normalize()),
+            end: Some(V::new(0.711, 0.534, 0.459).normalize()),
+            holds: vec![
+                RodHold {
+                    piece: 9,
+                    offset: 0.5,
+                    load: V::new(0.0, 0.0, -250.0),
+                    strings: v_string(V::new(3.73, 4.08, 0.25), V::new(3.59, 4.03, -3.05)),
+                },
+                RodHold {
+                    piece: 33,
+                    offset: 0.5,
+                    load: V::new(0.0, 0.0, -250.0),
+                    strings: v_string(V::new(5.50, 5.67, 0.25), V::new(5.57, 5.80, -3.05)),
+                },
+            ],
+        }
+    }
+
+    /// The hinged catenary's start of the loop jumper (as `Stiff::solve`
+    /// takes it) at 140 Pa, rounded.
+    fn loop_start() -> Vec<V> {
+        let v = V::new;
+        vec![
+            v(0.110, 0.212, -0.377),
+            v(0.117, 0.217, -0.372),
+            v(0.124, 0.222, -0.367),
+            v(0.133, 0.227, -0.360),
+            v(0.141, 0.232, -0.354),
+            v(0.151, 0.238, -0.346),
+            v(0.161, 0.244, -0.337),
+            v(0.172, 0.250, -0.327),
+            v(0.184, 0.257, -0.315),
+            v(0.042, 0.058, -0.069),
+            v(0.190, 0.253, -0.286),
+            v(0.201, 0.258, -0.273),
+            v(0.213, 0.264, -0.258),
+            v(0.226, 0.270, -0.240),
+            v(0.239, 0.275, -0.222),
+            v(0.253, 0.280, -0.198),
+            v(0.265, 0.284, -0.176),
+            v(0.279, 0.287, -0.148),
+            v(0.290, 0.288, -0.121),
+            v(0.302, 0.288, -0.089),
+            v(0.311, 0.286, -0.057),
+            v(0.319, 0.282, -0.025),
+            v(0.324, 0.276, 0.010),
+            v(0.328, 0.270, 0.041),
+            v(0.329, 0.260, 0.077),
+            v(0.329, 0.250, 0.106),
+            v(0.326, 0.238, 0.136),
+            v(0.322, 0.227, 0.163),
+            v(0.317, 0.215, 0.188),
+            v(0.311, 0.202, 0.211),
+            v(0.304, 0.190, 0.230),
+            v(0.297, 0.178, 0.250),
+            v(0.290, 0.167, 0.265),
+            v(0.066, 0.037, 0.065),
+            v(0.281, 0.154, 0.283),
+            v(0.273, 0.143, 0.297),
+            v(0.266, 0.134, 0.307),
+            v(0.259, 0.124, 0.317),
+            v(0.252, 0.116, 0.326),
+            v(0.246, 0.108, 0.333),
+            v(0.239, 0.100, 0.340),
+            v(0.234, 0.094, 0.346),
+        ]
+    }
+
+    /// Whether the solved `shape` of `rod` is a stable equilibrium
+    /// ([`Rod::least_curvature`] ≥ 0), and that curvature.
+    fn stability(rod: &Rod, shape: &RodShape) -> f64 {
+        let local = Rod {
+            a: V::zeros(),
+            b: rod.b - rod.a,
+            ..rod.clone()
+        };
+        let (lambda, mu) = local.multipliers(&shape.directions, &shape.active);
+        local
+            .least_curvature(&shape.directions, lambda, &mu, &shape.active)
+            .0
+    }
+
+    /// Newton converges to any equilibrium: from the hinged catenary, the
+    /// loop jumper at 140 Pa was solved (before this change) at a saddle of
+    /// its energy — 2.2 kN in a jumper hanging at 0.2–0.5 kN either side,
+    /// a shape no jumper keeps (on the real line it lay 1.2–1.9 m outside
+    /// any swing band). Now the solve steps off it to a stable shape.
+    #[test]
+    fn a_saddle_of_the_energy_is_not_a_solution() {
+        let start = loop_start();
+        for p in [100.0, 130.0, 140.0, 150.0] {
+            let rod = loop_jumper(p);
+            // Newton and the strings alone: a saddle.
+            let (d, l, m) = rod.newton_within(&start, &[], &budget(), 1.0, 1.0).unwrap();
+            let (d, l, m, a) = rod.settle(d, l, m, Vec::new(), &budget(), 1.0).unwrap();
+            let (lowest, _) = rod.least_curvature(&d, l, &m, &a);
+            assert!(lowest < -300.0, "{p}: {lowest}");
+            assert!(rod.max_tension(&d, l, &m, &a) > 1400.0, "{p}");
+            // The solve: stable, at the tension of the stable shapes.
+            let s = rod.solve(&start, &budget()).unwrap();
+            assert!(stability(&rod, &s) > 100.0, "{p}: {}", stability(&rod, &s));
+            assert!(s.max_tension < 900.0, "{p}: {}", s.max_tension);
+            // The far end where it is.
+            assert!((s.points.last().unwrap() - rod.b).norm() < 1e-6);
+        }
+    }
+
+    /// The loop jumper has two stable shapes at every pressure up to
+    /// 300 Pa (the loop lying to either side). As the wind rises from
+    /// still air it keeps the one it hangs in ([`crate::jumper::rise`]):
+    /// no jump between 10 Pa steps, every shape stable, no snap; solved
+    /// from the hinged catenary at each pressure instead, the shape found
+    /// changes to the other one between 60 and 200 Pa (by 1.9–3.6 m).
+    #[test]
+    fn the_loop_keeps_its_shape_as_the_wind_rises() {
+        let start = loop_start();
+        let solve = |p: f64, from: Option<&RodShape>| match from {
+            Some(f) => loop_jumper(p).solve_from(f, &budget()),
+            None => loop_jumper(p).solve(&start, &budget()),
+        };
+        let mut last: Option<RodShape> = None;
+        let mut p = 0.0;
+        while p <= 300.0 {
+            let (s, snap) = crate::jumper::rise(p, solve).unwrap();
+            assert_eq!(snap, None, "{p}");
+            assert!(stability(&loop_jumper(p), &s) > 100.0, "{p}");
+            if let Some(l) = &last {
+                let moved = l
+                    .points
+                    .iter()
+                    .zip(&s.points)
+                    .map(|(a, b)| (a - b).norm())
+                    .fold(0.0, f64::max);
+                assert!(moved < 0.05, "{p}: {moved}");
+            }
+            last = Some(s);
+            p += 10.0;
+        }
+        // From the hinged catenary at 200 Pa: the other shape.
+        let cold = solve(200.0, None).unwrap();
+        let (kept, _) = crate::jumper::rise(200.0, solve).unwrap();
+        let apart = cold
+            .points
+            .iter()
+            .zip(&kept.points)
+            .map(|(a, b)| (a - b).norm())
+            .fold(0.0, f64::max);
+        assert!(apart > 1.5, "{apart}");
+        assert!(stability(&loop_jumper(200.0), &cold) > 100.0);
     }
 
     /// The start `Stiff::solve` takes: the rod hanging straight-ish down

@@ -118,7 +118,7 @@ sides = "both"      # both, left or right
 arc = true          # each span also on its swing arc (2026-10-20; default false)
 band_margin = "0.15 m"  # the swing band's margin (2026-10-21; default 0.15 m)
 jumper_band_margin = "0.3 m"  # the jumpers' bands' own margin (2026-10-21; default 0 m)
-band_levels = 4     # the bands' intermediate solved pressures a side (2026-11-16; default 4)
+band_spacing = "200 Pa"  # a band level at least every … (2026-11-16; default 200 Pa; "0 Pa": none)
 ```
 
 `sides` is for the weather cases without a direction. A case that gives
@@ -144,15 +144,23 @@ the jumpers' bands' own margin, default 0 m — no widening: a jumper's
 band then does not hold it between its blowouts (a simplification on
 your responsibility; exact: the steps), so enter a value for your
 jumpers. Written only when not 0.
-`band_levels` (2026-11-16, a whole number 0…50): the band also holds
-the wire solved at this many pressures between still air and the full
-one, from each side — k/(n + 1) of the case's pressure, rounded to
-10 Pa, and at least one every 200 Pa — each one more solve a side (with
-the steps, those they solve already cost nothing). Default 4, measured
-on a real line ([Wind positions](../theory/clearances.md#wind-positions));
-0 is the band of still air and the blowouts alone (before 2026-11-16),
-not on the safe side for long and steep spans. Written only when not the
-default.
+`band_spacing` (2026-11-16, a pressure: 0, or 10 Pa to 10 000 Pa): the
+band also holds the wire solved at pressures between still air and the
+full one at most this far apart, from each side — evenly, ⌈pressure /
+spacing⌉ − 1 of them at k/(n + 1) of the case's pressure, rounded to
+10 Pa (a 500 Pa case at 200 Pa: 170 and 330 Pa; 1300 Pa: six) — each one
+more solve a side (with the steps, those they solve already cost
+nothing). Default 200 Pa, measured on a real line ([Wind
+positions](../theory/clearances.md#wind-positions)): about 0.3 mm outside
+the band per pascal between levels, 0.063 m at 200 Pa, within the 0.15 m
+band margin. More than 200 Pa is beyond what was measured within the
+margin and said NOT ON THE SAFE SIDE in the results; `"0 Pa"` is the band
+of still air and the blowouts alone (before 2026-11-16), not on the safe
+side for long and steep spans, said too. Written only when not the
+default. A file of 2026-11-16 with `band_levels = n` (a count a side, at
+least one every 200 Pa) is read as it asked — the same levels as then,
+never fewer — and written back so until the spacing is set; `band_spacing`
+wins when a file has both.
 
 and a `[check]` table — what those windows and `ohl zones` solve and
 read; `ohl line` ignores it too:

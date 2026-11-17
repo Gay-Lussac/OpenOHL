@@ -713,7 +713,15 @@ Solved as a cable its `end_forces` are the catenary element's exact
 forces on its nodes (`ElementState::force_i`, `force_j`; 2026-11-15 —
 before, its tension along the first and last of 64 pieces), and
 `pivots` (2026-11-15) the pivoting posts its ends are at as they settled
-with it (`post::PivotTurn`).
+with it (`post::PivotTurn`), and `snap` (2026-11-16, `Option<f64>`, Pa):
+a stiff jumper in the wind is solved as the wind rises from still air
+(`jumper::rise`: the multiples of `RISE_STEP`, 100 Pa, each from the
+shape its path predicts, `rod::Rod::solve_from`; `RodShape::active` the
+taut strings to start from), and `snap` is the pressure at which it went
+over to another stable shape on the way (none: it kept its shape). A rod
+solve never returns an unstable equilibrium (`rod::Rod::stable`,
+`least_curvature`). The positions (`Solve::snaps`) and the zone run say
+such jumpers per case (`positions::jumper_snap_note`).
 A jumper's estimated load on a clamp **fixed to the structure** (a wire
 point without strings, a fixed post's top) goes straight into that
 clamp's `Support` force (`solve_fe`: `on_fixed`; before 2026-11-14 it was
@@ -1486,12 +1494,17 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   negative one). `zone::run_zone_check` takes the arc as
   `Option<BandMargins>` (none: no arc), its `ZoneCheckResult` has
   `band_margin: Option<BandMargins>`; `zone_arcs` takes the jumpers
-  solved and the margins. Since 2026-11-16 `band_levels` (a whole
-  number 0…50, `WindSteps::band_levels`, default `positions::BAND_LEVELS`;
-  written only when not the default; older programs refuse a file with
-  it): the swing bands' intermediate solved pressures from each side
-  (`positions::band_levels`: at least one every 200 Pa,
-  `BAND_LEVEL_SPACING`; 0: none). `zone::wind_states` adds them as states
+  solved and the margins. Since 2026-11-16 `band_spacing` (a pressure:
+  0, or 10…10 000 Pa; `WindSteps::band_levels` a `positions::BandLevels`
+  { `spacing`, `count` }, default `BandLevels::DEFAULT`, a level every
+  `positions::BAND_SPACING` 200 Pa; written only when not the default;
+  older programs refuse a file with it): the swing bands' intermediate
+  solved pressures from each side, at most this far apart
+  (`BandLevels::at`; 0: none). A file with the first form of that day,
+  `band_levels` (a whole number 0…50, a count a side with at least one
+  every 200 Pa), reads as `BandLevels::from_count` (`count`: the same
+  levels as then) and is written back so until the spacing is set;
+  `band_spacing` wins when both are given. `zone::wind_states` adds them as states
   marked `WindState::band_only` (solved for the band, not checked;
   after the case's other states), `zone_arc::ArcCase::levels` (every
   intermediate state of the case, the steps too) and `ArcCase::stepped`;
@@ -1889,8 +1902,8 @@ writes one back). Full reference: [Terrain and clearances](../user-guide/terrain
   0.15 m; `PositionOptions` no longer derives `Default`, its `Default`
   sets it): every span's band's margin; `PositionOptions::jumper_band_margin`
   (2026-10-21, default 0 m): every jumper's band's;
-  `PositionOptions::band_levels` (2026-11-16, default
-  `positions::BAND_LEVELS`): the bands' levels a side. `SwingArc` holds,
+  `PositionOptions::band_levels` (2026-11-16, a `BandLevels`, default
+  a level every 200 Pa): the bands' levels a side. `SwingArc` holds,
   besides its three positions' points per station, its levels' envelope
   per station (smallest and largest radius and angle;
   `SwingArc::with_levels`, `level_count()`, `lift()`, `above_axis()`);
@@ -3922,8 +3935,10 @@ distance: `"5 m"`, `{ by_voltage = … }`, `{ base = … }`),
 `fall_through_ground` (since 2026-11-05; missing: false),
 `min_tree_height`, `max_tree_height`, `max_base_ground_distance` (null:
 no limit), `search_distance`, `swing_arc`, `band_margin` (m, since
-2026-10-21; absent in older runs: 0.15 m), `band_levels` (since
-2026-11-16; absent in older runs: 0, the band of still air and the
+2026-10-21; absent in older runs: 0.15 m), `band_spacing` (Pa, since
+2026-11-16; 0: none) with `band_levels` (a count a side: the first form
+of 2026-11-16, alone in runs saved then, `BandLevels::from_count`; null
+since; both absent in older runs: none, the band of still air and the
 blowouts alone), `jumper_band_margin` (m,
 since 2026-10-21, kept from the shared wind choice: the check takes no
 jumpers), `loads_per` (2026-10-21: the line's calculation option the run
@@ -3963,8 +3978,9 @@ volumes", 2026-10-20; `ohl-app` `safety_volume::saved`) keep as
 `parameters`: `version` (1), `cases` (weather case names), `distance` (as
 a rule file writes a distance), `margin`, `tolerance` (m), `wind`
 (`none`, `steps`, `arc`, `both`), `band_margin` (m, since 2026-10-21;
-absent in older runs: 0.15 m), `band_levels` (since 2026-11-16; absent
-in older runs: 0), `jumper_band_margin` (m, since
+absent in older runs: 0.15 m), `band_spacing` and `band_levels` (since
+2026-11-16, as the danger trees' runs; both absent in older runs: none),
+`jumper_band_margin` (m, since
 2026-10-21; absent in older runs: their `band_margin`, as their jumpers
 took it), `loads_per` (2026-10-21: the line's calculation option the run
 used; absent in older runs), `wind_step` (Pa), `wind_sides`, `per`

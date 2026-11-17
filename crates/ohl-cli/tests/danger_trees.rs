@@ -129,7 +129,7 @@ fn danger_trees_with_swing_arc_ice_and_isoclearance_lines() {
     // the unbalanced ice of the iced case solved.
     assert!(stdout.contains("swing arcs"), "{stdout}");
     assert!(
-        stdout.contains("(band margin 0.15 m, 4 levels a side)"),
+        stdout.contains("(band margin 0.15 m, band levels every 200 Pa)"),
         "{stdout}"
     );
     assert!(stdout.contains("unbalanced ice:"), "{stdout}");

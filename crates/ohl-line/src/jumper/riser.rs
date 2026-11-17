@@ -411,6 +411,7 @@ pub(super) fn shape(
         surface_radius: case.iced_diameter(cable.diameter).si() / 2.0,
         polyline_error: off,
         pivots: Vec::new(),
+        snap: None,
     })
 }
 

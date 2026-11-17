@@ -737,7 +737,7 @@ impl WireShape {
 /// decision; [`crate::rules::WindSteps::band_margin`],
 /// [`PositionOptions::band_margin`], [`SwingArc::with_margin`]): a smaller
 /// value is on the user's responsibility. **Conservative (measured)**
-/// with the default levels ([`BAND_LEVELS`]): the band of the solved
+/// with the default levels ([`BAND_SPACING`]): the band of the solved
 /// positions does not quite hold the solver's positions between them —
 /// measured 2026-11-16 with steps of 10 Pa from both sides, a step's
 /// centre line lies up to 0.009 m outside it on the example lines and
@@ -749,18 +749,6 @@ impl WireShape {
 /// real line — the margin held only up to about 390 Pa there
 /// ([`band_levels_note`]). Exact: a solve at every pressure.
 pub const BAND_MARGIN: f64 = 0.15;
-
-/// How many intermediate wind pressures (levels) a span's swing band is
-/// solved at by default from each side besides still air and the full
-/// blowout (2026-11-16, [`band_levels`]): the smallest count whose worst
-/// excess over the band, measured on a real line of 930 spans with 10 Pa
-/// steps (across the line up to 1300 Pa, at 30° and 60°, along the line
-/// up to 1000 Pa, with ice), lies within [`BAND_MARGIN`] with an
-/// allowance: 0.063 m (the excess grows with the spacing of the solved
-/// pressures, about 0.3 mm per pascal: [`BAND_LEVEL_SPACING`]; none:
-/// 0.69 m).
-/// Each level is one more solve a side.
-pub const BAND_LEVELS: usize = 4;
 
 /// How far a wire may lie above its own chord before its band is taken
 /// as not holding it ([`SwingArc::above_axis`]), m: 0.1 m, the order of a
@@ -779,20 +767,60 @@ pub const LIFT_TOLERANCE: f64 = 0.1;
 /// than still air.
 pub const STRAIGHT_RATIO: f64 = 0.5;
 
-/// The most levels a band takes from each side (a setting's bound).
+/// A point of a solved position nearer the band's axis than this, m,
+/// has no angle about it ([`SwingArc::place`]): its direction is the
+/// solver's rounding (a jumper's end at the axis's own end clamp). Its
+/// radius is kept; leaving its angle out moves the band by at most twice
+/// this (2 µm).
+pub const ON_AXIS: f64 = 1e-6;
+
+/// The swing band's levels by default: a solved level at least every
+/// this many pascals, Pa (2026-11-16, the owner's "go with spacing"; the
+/// setting **band level every … Pa**, [`BandLevels`]). Measured on a
+/// real line of 930 spans with 10 Pa steps from both sides (across the
+/// line up to 1300 Pa, at 30° and 60°, along the line up to 1450 Pa,
+/// with ice): the wire between two solved pressures lies outside the
+/// band by about 0.3 mm per pascal of their spacing (0.007 m at 60 Pa
+/// apart, 0.019 m at 100, 0.033 m at 130, 0.063 m at 200, 0.082 m at
+/// 250, 0.091 m at 260, 0.124 m at 325, 0.167 m at 433), whatever the
+/// case's pressure — so the spacing keeps the excess within the margin:
+/// at most 200 Pa apart (and the rounding to 10 Pa), at most 0.063 m
+/// measured, held by the 0.15 m [`BAND_MARGIN`] with an allowance of
+/// 0.087 m. None (the band of still air and the blowouts alone, as until
+/// 2026-11-16): up to 0.69 m outside, NOT ON THE SAFE SIDE.
+pub const BAND_SPACING: f64 = 200.0;
+
+/// The spacing of the levels of 2026-11-16 (`band_levels`, a count a
+/// side): at least one every 200 Pa whatever the count asked.
+pub const BAND_LEVEL_SPACING: f64 = BAND_SPACING;
+
+/// The finest spacing a setting takes, Pa: the levels are whole 10 Pa
+/// ([`BAND_LEVEL_ROUNDING`]), so finer gives no more levels.
+pub const MIN_BAND_SPACING: f64 = BAND_LEVEL_ROUNDING;
+
+/// The coarsest spacing a setting takes, Pa (a bound against a typing
+/// slip; anything above the case's pressure is no level at all).
+pub const MAX_BAND_SPACING: f64 = 10_000.0;
+
+/// The most levels a band of 2026-11-16 took from each side (the old
+/// count setting's bound, read from older files).
 pub const MAX_BAND_LEVELS: usize = 50;
 
 /// What the band's levels do and cost, in words (the setting's hover
 /// text; measured, see the theory).
 pub const BAND_LEVELS_HELP: &str = "The swing band holds still air, the full blowouts and the \
-    wire solved at this many intermediate wind pressures from each side (k/(n + 1) of the \
-    case's, rounded to 10 Pa), and at least one every 200 Pa. Measured on a real line of 930 \
-    spans with 10 Pa steps: the wire between two levels lies outside the band by about 0.33 mm \
-    per pascal between them — with the default 4 at most 0.063 m, inside the 0.15 m margin; \
-    without levels (0, as before 2026-11-16) up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa, \
-    not on the safe side. Each level is one more solve of the line a side: on that line a \
-    500 Pa case's band took 15 s without levels and 46 s with 4 (its 10 Pa steps: 64 s; a \
-    computer shared with other work, load about 30 on 10 cores). With the wind steps, the \
+    wire solved at intermediate wind pressures from each side, at most this many pascals \
+    apart (evenly between 0 and the case's pressure, rounded to 10 Pa: a 500 Pa case at \
+    200 Pa gets 2 levels a side, 170 and 330 Pa; 1300 Pa gets 6). Measured on a real line \
+    of 930 spans with 10 Pa steps: the wire between two levels lies outside the band by about \
+    0.3 mm per pascal between them — at 200 Pa (the default) at most 0.063 m, inside the \
+    0.15 m margin; coarser than 200 Pa is beyond what was measured within the margin and said \
+    NOT ON THE SAFE SIDE; 0 (no levels, as before 2026-11-16) up to 0.23 m at 500 Pa and \
+    0.69 m at 1300 Pa, NOT ON THE SAFE SIDE. Each level is one more solve of the line a \
+    side: at 200 Pa a 500 Pa case takes 7 solves (11 with 4 levels, 3 without). On that line a \
+    500 Pa case's band took 15 s without levels and 46 s with 4 levels a side (100 Pa apart); \
+    its 10 Pa steps 64 s (a computer shared with other work, load about 30 on 10 cores; the \
+    band's time is set by its slowest solves, run side by side). With the wind steps, the \
     levels the steps solve cost nothing.";
 
 /// The levels are whole multiples of this, Pa (10 Pa): solves that the
@@ -801,38 +829,164 @@ pub const BAND_LEVELS_HELP: &str = "The swing band holds still air, the full blo
 /// their pressure ([`family_key`]), share.
 pub const BAND_LEVEL_ROUNDING: f64 = 10.0;
 
-/// The levels lie at most this far apart, Pa (2026-11-16): whatever
-/// the count asked for, a band of levels takes at least one every 200 Pa
-/// ([`band_levels`]). Measured on a real line of 930 spans: the wire
-/// between two solved pressures lies outside the band by about 0.3 mm
-/// per pascal of their spacing (0.007 m at 60 Pa apart, 0.063 m at 200,
-/// 0.082 m at 250, 0.091 m at 260, 0.124 m at 325, 0.167 m at 433),
-/// whatever the case's pressure — so the spacing, not the count, keeps
-/// the excess within the margin: at most 200 Pa apart, at most 0.063 m
-/// measured, held by the 0.15 m margin with an allowance of 0.087 m.
-pub const BAND_LEVEL_SPACING: f64 = 200.0;
+/// How a swing band's intermediate levels are chosen (2026-11-16): a
+/// solved level at least every [`BandLevels::spacing`] pascals, evenly
+/// between still air and the case's full pressure ([`BandLevels::at`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BandLevels {
+    /// The levels lie at most this far apart, Pa (`[wind] band_spacing`;
+    /// [`BAND_SPACING`] by default); 0: none, the band of still air and
+    /// the full blowouts alone (as until 2026-11-16, NOT ON THE SAFE
+    /// SIDE, said: [`band_levels_note`]).
+    pub spacing: f64,
+    /// At least this many a side: the count of a rule file, an option or
+    /// a saved run of 2026-11-16 (`band_levels`), read as it was asked —
+    /// with its spacing of 200 Pa the same levels as then, never fewer.
+    /// `None` for every setting made since.
+    pub count: Option<usize>,
+}
 
-/// The intermediate wind pressures of a band of at least `n` levels for
-/// a case of wind pressure `full` (Pa), increasing: k·full/(m + 1) for
-/// k = 1…m, m the larger of `n` and the count that keeps them at most
-/// [`BAND_LEVEL_SPACING`] apart (⌈full / 200 Pa⌉ − 1), each rounded to the
-/// nearest whole multiple of [`BAND_LEVEL_ROUNDING`], those above 0 and
-/// below `full` (each once). Empty for no wind or `n` = 0 (the band of
-/// still air and the blowouts alone, as before 2026-11-16).
-pub fn band_levels(full: f64, n: usize) -> Vec<f64> {
-    let mut out: Vec<f64> = Vec::new();
-    if n == 0 || !(full.is_finite() && full > 0.0) {
-        return out;
-    }
-    let n = n.max(((full / BAND_LEVEL_SPACING).ceil() as usize).saturating_sub(1));
-    for k in 1..=n {
-        let p =
-            (full * k as f64 / (n + 1) as f64 / BAND_LEVEL_ROUNDING).round() * BAND_LEVEL_ROUNDING;
-        if p > 0.0 && p < full && !out.contains(&p) {
-            out.push(p);
+impl BandLevels {
+    /// The default: a level at least every [`BAND_SPACING`].
+    pub const DEFAULT: Self = Self {
+        spacing: BAND_SPACING,
+        count: None,
+    };
+
+    /// No levels: the band of still air and the full blowouts alone.
+    pub const NONE: Self = Self {
+        spacing: 0.0,
+        count: None,
+    };
+
+    /// A level at least every `spacing` Pa (0: none).
+    pub fn every(spacing: f64) -> Self {
+        Self {
+            spacing,
+            count: None,
         }
     }
-    out
+
+    /// The setting of 2026-11-16, `n` levels a side and at least one
+    /// every 200 Pa (`band_levels`; 0: none): the same levels as then.
+    pub fn from_count(n: usize) -> Self {
+        if n == 0 {
+            Self::NONE
+        } else {
+            Self {
+                spacing: BAND_LEVEL_SPACING,
+                count: Some(n),
+            }
+        }
+    }
+
+    /// The levels a command line asks for: `--band-spacing` (Pa) when
+    /// given, else an older script's `--band-levels` count (2026-11-16,
+    /// read as it asked: [`BandLevels::from_count`]), else `otherwise`;
+    /// checked ([`BandLevels::problem`]).
+    pub fn from_options(
+        spacing: Option<f64>,
+        count: Option<usize>,
+        otherwise: Self,
+    ) -> Result<Self, String> {
+        let out = match (spacing, count) {
+            (Some(s), _) => Self::every(s),
+            (None, Some(n)) => Self::from_count(n),
+            (None, None) => otherwise,
+        };
+        match out.problem() {
+            Some(e) => Err(e),
+            None => Ok(out),
+        }
+    }
+
+    /// Whether the band has no levels at all.
+    pub fn is_none(&self) -> bool {
+        self.spacing.is_nan() || self.spacing <= 0.0
+    }
+
+    /// What is wrong with it, if anything: the spacing 0 or between
+    /// [`MIN_BAND_SPACING`] and [`MAX_BAND_SPACING`], the count at most
+    /// [`MAX_BAND_LEVELS`].
+    pub fn problem(&self) -> Option<String> {
+        let s = self.spacing;
+        if !(s == 0.0 || (MIN_BAND_SPACING..=MAX_BAND_SPACING).contains(&s)) {
+            return Some(format!(
+                "band level spacing {s} Pa: 0 (no levels) or {MIN_BAND_SPACING:.0} to \
+                 {MAX_BAND_SPACING:.0} Pa"
+            ));
+        }
+        match self.count {
+            Some(n) if n > MAX_BAND_LEVELS => {
+                Some(format!("band levels {n}: at most {MAX_BAND_LEVELS}"))
+            }
+            _ => None,
+        }
+    }
+
+    /// The intermediate wind pressures of the band of a case of wind
+    /// pressure `full` (Pa), increasing: k·full/(m + 1) for k = 1…m, m
+    /// the count that keeps them at most [`BandLevels::spacing`] apart
+    /// (⌈full / spacing⌉ − 1; at least [`BandLevels::count`] when given),
+    /// each rounded to the nearest whole multiple of
+    /// [`BAND_LEVEL_ROUNDING`], those above 0 and below `full` (each
+    /// once). Empty for no wind or no levels.
+    pub fn at(&self, full: f64) -> Vec<f64> {
+        let mut out: Vec<f64> = Vec::new();
+        if self.is_none() || !(full.is_finite() && full > 0.0) {
+            return out;
+        }
+        let by_spacing = ((full / self.spacing).ceil() as usize).saturating_sub(1);
+        let n = by_spacing.max(self.count.unwrap_or(0));
+        for k in 1..=n {
+            let p = (full * k as f64 / (n + 1) as f64 / BAND_LEVEL_ROUNDING).round()
+                * BAND_LEVEL_ROUNDING;
+            if p > 0.0 && p < full && !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
+    /// The largest step between the solved pressures of a case of
+    /// pressure `full` (still air, the levels, the full one), Pa.
+    pub fn largest_gap(&self, full: f64) -> f64 {
+        largest_gap(full, &self.at(full))
+    }
+
+    /// The setting in words: "every 200 Pa", "none", an older file's
+    /// "4 a side (at least one every 200 Pa)".
+    pub fn words(&self) -> String {
+        match self.count {
+            _ if self.is_none() => "none".to_owned(),
+            Some(n) => format!("{n} a side (at least one every {:.0} Pa)", self.spacing),
+            None => format!("every {:.0} Pa", self.spacing),
+        }
+    }
+}
+
+impl Default for BandLevels {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// The largest step between 0, the `levels` (increasing) and `full`, Pa.
+pub fn largest_gap(full: f64, levels: &[f64]) -> f64 {
+    let mut prev = 0.0;
+    let mut worst: f64 = 0.0;
+    for &p in levels.iter().chain(std::iter::once(&full)) {
+        worst = worst.max(p - prev);
+        prev = p;
+    }
+    worst
+}
+
+/// The intermediate wind pressures of a band of at least `n` levels for
+/// a case of wind pressure `full` (Pa), as on 2026-11-16 (at least one
+/// every 200 Pa): [`BandLevels::from_count`]'s.
+pub fn band_levels(full: f64, n: usize) -> Vec<f64> {
+    BandLevels::from_count(n).at(full)
 }
 
 /// The jumpers' band margin by default, m: **0, no widening** (the
@@ -844,10 +998,11 @@ pub fn band_levels(full: f64, n: usize) -> Vec<f64> {
 /// ([`jumper_band`]) is *not* conservative between its solved positions —
 /// measured with steps of 10 Pa from both sides, a step's centre line
 /// lies up to 0.307 m outside the example line's jumper's band without
-/// levels (0.293 m on 2026-10-21) and 0.043 m with the default levels;
-/// on a real line up to 2.1 m without levels and still up to 1.9 m with
-/// them (a few jumpers: two whose shape changes abruptly between 140 and
-/// 170 Pa, others between the last level and the full pressure)
+/// levels (0.293 m on 2026-10-21) and 0.18 m with the default levels (a
+/// level every 200 Pa); on a real line up to 2.1 m without levels, and
+/// with the default levels up to 0.62 m since the jumpers are solved as
+/// the wind rises (1.9 m before, two jumpers solved in other shapes
+/// between 140 and 170 Pa: [`ohl_line::jumper::JumperShape::snap`])
 /// (`tests/arc_band.rs`). A jumper swings with its clamps and changes its
 /// shape more than a span: the value that holds it is the user's to find
 /// for their jumpers (the wind steps show it).
@@ -1100,7 +1255,15 @@ impl SwingArc {
                 let mut e = [f64::INFINITY, 0.0, f64::INFINITY, f64::NEG_INFINITY];
                 for w in levels {
                     let (r, phi) = arc.polar(sub(w.at(s), centre));
-                    e = [e[0].min(r), e[1].max(r), e[2].min(phi), e[3].max(phi)];
+                    e = [e[0].min(r), e[1].max(r), e[2], e[3]];
+                    if r > ON_AXIS {
+                        e = [e[0], e[1], e[2].min(phi), e[3].max(phi)];
+                    }
+                }
+                if e[2] > e[3] {
+                    // Every level on the axis there: no angle of their own.
+                    e[2] = f64::INFINITY;
+                    e[3] = f64::NEG_INFINITY;
                 }
                 e
             })
@@ -1187,15 +1350,33 @@ impl SwingArc {
             let (r, phi) = self.polar(v);
             radius = radius.max(r);
             inner = inner.min(r);
-            from = from.min(phi);
-            to = to.max(phi);
+            // A point on the axis has no angle (its direction is the
+            // solver's rounding: at a jumper's end clamp, 2026-11-16, it
+            // turned a band through the top).
+            if r > ON_AXIS {
+                from = from.min(phi);
+                to = to.max(phi);
+            }
         }
         if let (Some(a), Some(b)) = (self.levels.get(k - 1), self.levels.get(k)) {
             let at = |i: usize| a[i] + t * (b[i] - a[i]);
             inner = inner.min(at(0));
             radius = radius.max(at(1));
-            from = from.min(at(2));
-            to = to.max(at(3));
+            // Levels on the axis at either station: none of their angles.
+            if a[2] <= a[3] && b[2] <= b[3] {
+                from = from.min(at(2));
+                to = to.max(at(3));
+            } else if a[2] <= a[3] {
+                from = from.min(a[2]);
+                to = to.max(a[3]);
+            } else if b[2] <= b[3] {
+                from = from.min(b[2]);
+                to = to.max(b[3]);
+            }
+        }
+        if from > to {
+            // Every point on the axis here.
+            (from, to) = (0.0, 0.0);
         }
         ArcPlace {
             centre,
@@ -1896,12 +2077,12 @@ pub struct PositionOptions {
     /// default; the user's, 2026-10-21): every distance to a jumper's
     /// band taken this much smaller.
     pub jumper_band_margin: f64,
-    /// The swing bands' intermediate levels from each side
-    /// ([`BAND_LEVELS`] by default, 2026-11-16; [`band_levels`]): each a
-    /// solve of the case at that pressure, held by the band, not checked
-    /// as a position itself. With the wind steps, every step is a level
-    /// too (no more solves).
-    pub band_levels: usize,
+    /// The swing bands' intermediate levels from each side (2026-11-16,
+    /// first a count, then a spacing, [`BAND_SPACING`] by default:
+    /// [`BandLevels::at`]): each a solve of the case at that pressure,
+    /// held by the band, not checked as a position itself. With the wind
+    /// steps, every step is a level too (no more solves).
+    pub band_levels: BandLevels,
 }
 
 impl Default for PositionOptions {
@@ -1912,7 +2093,7 @@ impl Default for PositionOptions {
             jumpers: false,
             band_margin: BAND_MARGIN,
             jumper_band_margin: JUMPER_BAND_MARGIN,
-            band_levels: BAND_LEVELS,
+            band_levels: BandLevels::DEFAULT,
         }
     }
 }
@@ -2185,6 +2366,9 @@ struct Solve {
     shapes: Vec<SectionShape>,
     wires: Vec<Wire>,
     failed: Vec<String>,
+    /// The jumpers that snapped over to another stable shape as the wind
+    /// rose, and at what pressure (Pa; [`ohl_line::jumper::JumperShape::snap`]).
+    snaps: Vec<(String, f64)>,
 }
 
 /// The solves of a run, each once ([`solve_key`]).
@@ -2240,10 +2424,15 @@ impl Solves {
                 }
             }
             let wires = wires_of(line, &shapes, &solved_jumpers);
+            let snaps = solved_jumpers
+                .iter()
+                .filter_map(|j| Some((j.jumper.clone(), j.snap?)))
+                .collect();
             Ok(Solve {
                 shapes,
                 wires,
                 failed,
+                snaps,
             })
         })?;
         self.made.extend(solved);
@@ -2260,19 +2449,60 @@ fn step_kind(side: WindSide) -> PositionKind {
     }
 }
 
-/// What the results of a run with the swing band say when it has no
-/// levels (`levels` 0: the band of still air and the full blowouts
-/// alone, as until 2026-11-16): not on the safe side. None with levels
-/// (at least one every [`BAND_LEVEL_SPACING`]: measured within the
-/// margin).
-pub fn band_levels_note(levels: usize) -> Option<String> {
-    (levels == 0).then(|| {
+/// What the results of a run with the swing band say when its solved
+/// pressures lie further apart than measured within the margin
+/// (`gap`: the largest step between still air, the levels and the full
+/// pressure of any case banded, Pa; more than [`BAND_SPACING`] and the
+/// rounding): not on the safe side — without levels (`levels` none: the
+/// band of still air and the full blowouts alone, as until 2026-11-16),
+/// or with levels set further apart than 200 Pa. None within it.
+pub fn band_levels_note(levels: &BandLevels, gap: f64) -> Option<String> {
+    if gap.is_nan() || gap <= BAND_SPACING + BAND_LEVEL_ROUNDING {
+        return None;
+    }
+    Some(if levels.is_none() {
         "NOT ON THE SAFE SIDE: the swing band without levels (still air and the full blowouts \
          alone): between them a wire can lie outside the band by more than its margin \
          (measured on a real line of 930 spans: up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa \
-         across the line). Set the band levels (4 by default), or tick the wind steps."
+         across the line). Set a band level every 200 Pa (the default), or tick the wind \
+         steps."
             .to_owned()
+    } else {
+        format!(
+            "NOT ON THE SAFE SIDE: swing band levels up to {gap:.0} Pa apart, more than the \
+             200 Pa measured within the band's margin (on a real line of 930 spans a wire lies \
+             outside the band by about 0.3 mm per pascal between its solved pressures: 0.12 m \
+             at 325 Pa, 0.17 m at 433 Pa apart). Set a band level every 200 Pa (the default) \
+             or less, or tick the wind steps."
+        )
     })
+}
+
+/// What a case's results say of the jumpers that went over to another
+/// stable shape as the wind rose (`snaps`: jumper id, the lowest pressure
+/// it snapped at, Pa; [`ohl_line::jumper::JumperShape::snap`],
+/// 2026-11-16): not on the safe side — a jumper is taken in the shape it
+/// reaches as the wind rises from still air, and one that snapped over
+/// keeps its new shape as the wind falls again, which these results do not
+/// hold below that pressure. None without such jumpers.
+pub fn jumper_snap_note(case: &str, snaps: &[(String, f64)]) -> Option<String> {
+    if snaps.is_empty() {
+        return None;
+    }
+    let mut snaps = snaps.to_vec();
+    snaps.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    let list: Vec<String> = snaps
+        .iter()
+        .map(|(j, p)| format!("{j} at about {p:.0} Pa"))
+        .collect();
+    Some(format!(
+        "NOT ON THE SAFE SIDE: case \"{case}\": {} jumper(s) went over to another stable shape \
+         as the wind rose ({}): taken in the shape they reach as the wind rises from still air; \
+         as it falls again they keep the new one, which these results do not hold below that \
+         pressure (check them with that wind from the other side, or their shape)",
+        snaps.len(),
+        list.join(", ")
+    ))
 }
 
 /// The solves a run asks for, in order ([`solve_positions`]).
@@ -2328,7 +2558,7 @@ fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
             // The band's levels (2026-11-16): those the steps do not
             // solve already.
             for &side in full_sides(case) {
-                for p in band_levels(full, options.band_levels) {
+                for p in options.band_levels.at(full) {
                     if stepped.contains(&(step_kind(side), p)) {
                         continue;
                     }
@@ -2415,7 +2645,8 @@ pub fn solve_positions(
     }
     // Per case, the spans the band does not hold.
     let mut unheld: Vec<(usize, Vec<usize>)> = Vec::new();
-    let mut any_band = false;
+    // The largest step between the solved pressures of a case banded.
+    let mut band_gap: f64 = 0.0;
     for (c, list) in by_case.iter().enumerate() {
         let windy = is_windy(&cases[c]);
         let solve_of = |i: usize| &solves.made[of_job[list[i]]];
@@ -2540,7 +2771,8 @@ pub fn solve_positions(
                         lifted += 1;
                         not_held.push(id);
                     }
-                    any_band = true;
+                    band_gap =
+                        band_gap.max(options.band_levels.largest_gap(cases[c].wind_pressure.si()));
                     out.add(id, c, PositionKind::Arc, Shape::Arc(arc));
                 }
                 None if jumper => {
@@ -2561,6 +2793,19 @@ pub fn solve_positions(
         } else {
             "checked at their wind steps (every 10 Pa from both sides) instead"
         };
+        // Jumpers that snapped over as the wind rose (2026-11-16).
+        let mut snaps: Vec<(String, f64)> = Vec::new();
+        for i in 0..list.len() {
+            for (j, p) in &solve_of(i).snaps {
+                match snaps.iter_mut().find(|(k, _)| k == j) {
+                    Some(x) => x.1 = x.1.min(*p),
+                    None => snaps.push((j.clone(), *p)),
+                }
+            }
+        }
+        if let Some(n) = jumper_snap_note(&cases[c].name, &snaps) {
+            out.notes.push(n);
+        }
         if jumpers_out > 0 {
             out.notes.push(format!(
                 "case \"{}\": {jumpers_out} jumpers without a swing band (not solved blown to both sides, or not running steadily along the line through their ends): taken at their solved positions",
@@ -2583,9 +2828,8 @@ pub fn solve_positions(
             unheld.push((c, not_held));
         }
     }
-    if any_band
-        && options.wind_steps.is_none()
-        && let Some(n) = band_levels_note(options.band_levels)
+    if options.wind_steps.is_none()
+        && let Some(n) = band_levels_note(&options.band_levels, band_gap)
     {
         out.notes.push(n);
     }
@@ -2940,37 +3184,100 @@ mod tests {
         assert!((sloped.vertical_outer() - 0.0375).abs() < 1e-15);
     }
 
-    /// The band's levels (2026-11-16): k·full/(n + 1) rounded to whole
-    /// 10 Pa, each once, strictly between 0 and the full pressure, at
-    /// least one every 200 Pa.
+    /// Jumpers that snapped over as the wind rose (2026-11-16): said per
+    /// case, lowest pressure first, not on the safe side; nothing without.
     #[test]
-    fn band_levels_are_rounded_fractions() {
+    fn a_jumper_that_snapped_over_is_said() {
+        assert!(jumper_snap_note("storm", &[]).is_none());
+        let n = jumper_snap_note("storm", &[("J2".into(), 1484.4), ("J1".into(), 620.0)]).unwrap();
+        assert!(
+            n.starts_with("NOT ON THE SAFE SIDE: case \"storm\": 2 jumper(s)"),
+            "{n}"
+        );
+        assert!(
+            n.contains("(J1 at about 620 Pa, J2 at about 1484 Pa)"),
+            "{n}"
+        );
+    }
+
+    /// The band's levels (2026-11-16): at most `spacing` apart, evenly,
+    /// k·full/(m + 1) rounded to whole 10 Pa, each once, strictly between
+    /// 0 and the full pressure; an older file's count (2026-11-16) gives
+    /// the same levels as then.
+    #[test]
+    fn band_levels_are_evenly_spaced_rounded_fractions() {
+        let every = BandLevels::DEFAULT;
+        assert_eq!(every.spacing, 200.0);
+        // ⌈500/200⌉ − 1 = 2: 166.7 → 170, 333.3 → 330.
+        assert_eq!(every.at(500.0), vec![170.0, 330.0]);
+        assert_eq!(every.at(300.0), vec![150.0]);
+        assert_eq!(every.at(200.0), Vec::<f64>::new());
+        // From 1000 Pa up the same as the default of 2026-11-16 (4 a
+        // side, at least one every 200 Pa).
+        for full in [1000.0, 1300.0, 1450.0, 2400.0, 1001.0] {
+            assert_eq!(every.at(full), band_levels(full, 4), "{full}");
+        }
+        assert_eq!(every.at(1000.0), vec![200.0, 400.0, 600.0, 800.0]);
+        assert_eq!(
+            every.at(1300.0),
+            vec![190.0, 370.0, 560.0, 740.0, 930.0, 1110.0]
+        );
+        // Below 1000 Pa fewer than then (4 a side).
         assert_eq!(band_levels(500.0, 4), vec![100.0, 200.0, 300.0, 400.0]);
-        // At least one every 200 Pa: 3 asked, 6 taken at 1300 Pa.
+        // The old count: at least one every 200 Pa whatever asked.
         assert_eq!(
             band_levels(1300.0, 3),
             vec![190.0, 370.0, 560.0, 740.0, 930.0, 1110.0]
         );
         assert_eq!(band_levels(1000.0, 3), vec![200.0, 400.0, 600.0, 800.0]);
-        for (full, n) in [(2400.0, 4), (650.0, 1), (1450.0, 2)] {
-            let v = band_levels(full, n);
-            let mut prev = 0.0;
-            for p in v.iter().copied().chain([full]) {
-                assert!(p - prev <= BAND_LEVEL_SPACING + 10.0, "{full} {n} {v:?}");
-                prev = p;
+        assert_eq!(BandLevels::from_count(0), BandLevels::NONE);
+        // At most the spacing apart (and the rounding), however set.
+        for spacing in [10.0, 60.0, 100.0, 150.0, 200.0, 250.0, 333.0] {
+            for full in [30.0, 95.0, 300.0, 595.0, 650.0, 1450.0, 2400.0] {
+                let l = BandLevels::every(spacing);
+                let v = l.at(full);
+                assert!(
+                    l.largest_gap(full) <= spacing + 10.0,
+                    "{spacing} {full} {v:?}"
+                );
+                assert!(v.windows(2).all(|w| w[0] < w[1]), "{v:?}");
             }
         }
-        assert_eq!(band_levels(595.0, 2), vec![200.0, 400.0]);
+        assert_eq!(
+            BandLevels::every(100.0).at(595.0),
+            vec![100.0, 200.0, 300.0, 400.0, 500.0]
+        );
         // Few pressures below the full one: each once.
+        assert_eq!(BandLevels::every(10.0).at(30.0), vec![10.0, 20.0]);
         assert_eq!(band_levels(30.0, 8), vec![10.0, 20.0]);
-        assert!(band_levels(500.0, 0).is_empty());
-        assert!(band_levels(0.0, 4).is_empty());
-        assert!(band_levels(f64::NAN, 4).is_empty());
+        assert!(BandLevels::NONE.at(500.0).is_empty());
+        assert!(every.at(0.0).is_empty());
+        assert!(every.at(f64::NAN).is_empty());
         // The levels are steps of 10 Pa, bit for bit.
-        for p in band_levels(1450.0, 8) {
+        for p in BandLevels::every(50.0).at(1450.0) {
             let k = (p / 10.0).round() as i64;
             assert_eq!(p, k as f64 * 10.0);
         }
+        // The largest step: still air to the first level, … to the full.
+        assert_eq!(largest_gap(500.0, &[170.0, 330.0]), 170.0);
+        assert_eq!(largest_gap(500.0, &[]), 500.0);
+        // The settings' bounds.
+        assert!(BandLevels::DEFAULT.problem().is_none());
+        assert!(BandLevels::NONE.problem().is_none());
+        assert!(BandLevels::every(5.0).problem().is_some());
+        assert!(BandLevels::every(-1.0).problem().is_some());
+        assert!(BandLevels::every(f64::NAN).problem().is_some());
+        assert!(BandLevels::from_count(51).problem().is_some());
+        // Said where the solved pressures lie further apart than measured.
+        assert!(band_levels_note(&BandLevels::DEFAULT, 210.0).is_none());
+        assert!(band_levels_note(&BandLevels::NONE, 150.0).is_none());
+        let n = band_levels_note(&BandLevels::NONE, 500.0).unwrap();
+        assert!(
+            n.starts_with("NOT ON THE SAFE SIDE: the swing band without levels"),
+            "{n}"
+        );
+        let n = band_levels_note(&BandLevels::every(300.0), 300.0).unwrap();
+        assert!(n.contains("up to 300 Pa apart"), "{n}");
     }
 
     /// A level inside the three positions' radii pulls the band's inner

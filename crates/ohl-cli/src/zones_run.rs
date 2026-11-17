@@ -132,12 +132,20 @@ pub struct ZonesArgs {
     /// wind steps).
     #[arg(long)]
     pub jumper_band_margin: Option<f64>,
-    /// The swing bands' intermediate levels from each side (the rule file's `[wind] band_levels`): the band also
-    /// holds the wire solved at this many wind pressures between still air
-    /// and the full one (each one more solve per side). Default: measured
-    /// (see the theory, Wind positions); 0: still air and the blowouts
-    /// alone, as before 2026-11-16.
-    #[arg(long)]
+    /// A swing band level at least every this many Pa (the rule file's
+    /// `[wind] band_spacing`; default 200 Pa): the band also holds the
+    /// wire solved at wind pressures between still air and the full one
+    /// at most this far apart, evenly (each level one more solve per side;
+    /// measured: the wire between two levels lies outside the band by
+    /// about 0.3 mm per pascal of their spacing, 0.063 m at 200 Pa, within
+    /// the 0.15 m margin — see the theory, Wind positions). 0: still air
+    /// and the blowouts alone, as before 2026-11-16 (not on the safe
+    /// side, said); above 200 Pa said not on the safe side.
+    #[arg(long, value_name = "PA")]
+    pub band_spacing: Option<f64>,
+    /// At first (2026-11-16): the levels as a count a side (at least one
+    /// every 200 Pa), read as it asked; --band-spacing replaces it.
+    #[arg(long, hide = true)]
     pub band_levels: Option<usize>,
     /// Step the wind by this many Pa from 0 up to each case's pressure
     /// (the rule file's `[wind] steps` and `step`).
@@ -443,15 +451,12 @@ pub fn run(args: &ZonesArgs) -> Result<ZoneCheckResult, String> {
         }
         wind.jumper_band_margin = m;
     }
-    if let Some(n) = args.band_levels {
-        if n > ohl_clearance::positions::MAX_BAND_LEVELS {
-            return Err(format!(
-                "--band-levels: at most {}",
-                ohl_clearance::positions::MAX_BAND_LEVELS
-            ));
-        }
-        wind.band_levels = n;
-    }
+    wind.band_levels = ohl_clearance::positions::BandLevels::from_options(
+        args.band_spacing,
+        args.band_levels,
+        wind.band_levels,
+    )
+    .map_err(|e| format!("--band-spacing: {e}"))?;
     if let Some(step) = args.wind_step {
         if !(step.is_finite() && step > 0.0) {
             return Err("--wind-step must be > 0 Pa".into());
@@ -776,8 +781,10 @@ fn describe_check(z: &Zone, wind: &WindSteps, check: &ohl_clearance::CheckScope)
         ohl_clearance::WindSides::Right => "the right",
     };
     let margin = format!(
-        "band margin {} m, jumpers {} m, {} levels a side",
-        wind.band_margin, wind.jumper_band_margin, wind.band_levels
+        "band margin {} m, jumpers {} m, band levels {}",
+        wind.band_margin,
+        wind.jumper_band_margin,
+        wind.band_levels.words()
     );
     parts.push(if wind.stepped && wind.arc {
         format!(
