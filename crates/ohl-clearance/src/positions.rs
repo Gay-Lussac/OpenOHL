@@ -2404,6 +2404,8 @@ struct Solve {
     /// The jumps of each jumper on its way along the wind, Pa
     /// ([`ohl_line::jumper::JumperShape::jumps`]).
     jumps: Vec<(String, Vec<f64>)>,
+    /// The jumpers as the wind rose to the pressure solved.
+    jumpers: Vec<ohl_line::jumper::JumperShape>,
 }
 
 /// The solves of a run, each once ([`solve_key`]; the jumpers' falling
@@ -2574,6 +2576,7 @@ impl Solves {
                 fallen,
                 other_still,
                 jumps,
+                jumpers: solved_jumpers,
             })
         })?;
         self.made.extend(made);
@@ -2732,6 +2735,60 @@ pub fn other_still_notes(others: &[(String, f64, bool)]) -> Vec<String> {
         ));
     }
     out
+}
+
+/// The swaps between neighbouring solved pressures of each side of a
+/// case's jobs `list` ([`crate::jumper_swaps::cross_swaps`]; still air
+/// below both sides' first pressure), the pairs in parallel.
+fn cross_of<'a>(
+    line: &Line,
+    library: &ohl_cables::Library,
+    jobs: &[Job],
+    list: &[usize],
+    solve_of: &(dyn Fn(usize) -> &'a Solve + Sync),
+    budget: &Budget,
+) -> Result<Vec<crate::jumper_swaps::Swap>, String> {
+    let still = list
+        .iter()
+        .position(|&j| jobs[j].side.is_none() && jobs[j].solve.wind_pressure.si() == 0.0);
+    let mut pairs: Vec<(WindSide, usize, usize)> = Vec::new();
+    for side in [WindSide::Right, WindSide::Left] {
+        let mut at: Vec<(f64, usize)> = list
+            .iter()
+            .enumerate()
+            .filter(|(_, j)| jobs[**j].side == Some(side) && !jobs[**j].fallen_only)
+            .map(|(i, j)| (jobs[*j].solve.wind_pressure.si(), i))
+            .collect();
+        if at.is_empty() {
+            continue;
+        }
+        if let Some(s) = still {
+            at.push((0.0, s));
+        }
+        at.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for w in at.windows(2) {
+            pairs.push((side, w[0].1, w[1].1));
+        }
+    }
+    let found = parallel(pairs.len(), budget, |k| {
+        let (side, lo, up) = pairs[k];
+        let of = |i: usize| crate::jumper_swaps::Solved {
+            pressure: jobs[list[i]]
+                .pressure
+                .unwrap_or(jobs[list[i]].solve.wind_pressure.si()),
+            case: &jobs[list[i]].solve,
+            shapes: &solve_of(i).sections.shapes,
+            jumpers: &solve_of(i).jumpers,
+        };
+        Ok(crate::jumper_swaps::cross_swaps(
+            line,
+            library,
+            side,
+            &of(lo),
+            &of(up),
+        ))
+    })?;
+    Ok(found.into_iter().flatten().collect())
 }
 
 /// Whether two shapes of a jumper are one: their points nowhere further
@@ -3029,6 +3086,9 @@ pub fn solve_positions(
                     }
                 }
             }
+            // Neighbouring solved pressures whose jumper shapes do not
+            // lead to each other.
+            swaps.extend(cross_of(line, library, &jobs, list, &solve_of, budget)?);
             let wanted = crate::jumper_swaps::swap_pressures(&solved, &swaps);
             if !wanted.is_empty() {
                 let case = &cases[c];

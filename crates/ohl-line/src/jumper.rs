@@ -326,6 +326,10 @@ pub struct TapContext {
     /// (2026-11-17; the clearance runs): its shape as the wind falls again,
     /// its other shape in still air. The default: neither, as before.
     pub path: WindPath,
+    /// A stiff jumper solved at the case's pressure alone from these points
+    /// (its shape solved at another pressure, `from` to `to`; 2026-11-17,
+    /// [`solve_jumper_from`]): no walk along the wind. None: as always.
+    pub start: Option<Vec<Point>>,
 }
 
 /// What a stiff jumper's solve looks for besides the shape it keeps as the
@@ -349,14 +353,14 @@ pub struct WindPath {
 /// pressure to the pressure solved (2026-11-17; [`JumperShape::falling`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum Falling {
-    /// Not looked for: no [`WindPath::falling_from`], the case at its own
-    /// pressure, or a jumper with one shape only (not a stiff rod in the
-    /// wind).
+    /// Not looked for: no [`WindPath::falling_from`], or the case at its
+    /// own pressure.
     #[default]
     NotSolved,
     /// The shape it rose to: its path from the pressure solved up to the
     /// case's own ran without a jump (a branch of stable shapes followed
-    /// without leaving it is followed back the same way).
+    /// without leaving it is followed back the same way); or a jumper with
+    /// one shape only (a cable, taut, rigid, a riser).
     Same,
     /// Another shape, its points (`from` to `to`): the wind rising further
     /// made it jump, and falling again it keeps another.
@@ -472,11 +476,14 @@ pub struct JumperShape {
     /// Its shape as the wind falls again from the case's own pressure
     /// (2026-11-17; asked with [`WindPath::falling_from`]).
     pub falling: Falling,
-    /// The pressures (the case's, Pa) where its shape jumped on its way —
-    /// rising, and rising further and falling again when asked: a step of
-    /// the smallest size ([`RISE_MIN_STEP`]) whose shape lay off the one
-    /// its path predicts by more than [`RISE_TOLERANCE`] (a snap, or a
-    /// smaller swap to a near shape). Empty: none (or not a stiff rod).
+    /// The pressures (the case's, Pa) where its shape jumped on its way,
+    /// recorded when its falling wind is asked ([`WindPath::falling_from`]):
+    /// rising, rising further and falling again — a step of the smallest
+    /// size ([`RISE_MIN_STEP`]) whose shape lay off the one its path
+    /// predicts by more than [`RISE_TOLERANCE`] (a snap, or a smaller swap
+    /// to a near shape), or a step whose new shape, solved again at the
+    /// pressure it came from, lands more than that from the shape it had
+    /// there. Empty: none (or not asked, or not a stiff rod).
     pub jumps: Vec<f64>,
     /// In still air, asked with [`WindPath::still_shapes`]: a second
     /// stable shape found (the loop to the other side; its points lie
@@ -1247,11 +1254,28 @@ struct Way {
 }
 
 /// What a [`walk`] met: the first snap, and every jump (a step of the
-/// smallest size off its predicted path, or a cold restart), Pa.
+/// smallest size off its predicted path, a cold restart, or with `back` a
+/// step whose shape does not lead back to the one it came from), Pa.
 #[derive(Default)]
 struct Met {
     snap: Option<f64>,
     jumps: Vec<f64>,
+    /// Each step taken checked back (2026-11-17; the clearance runs'
+    /// paths, [`rise_and_fall`]): the pressure it came from solved again
+    /// from the new shape; more than [`RISE_TOLERANCE`] from the shape it
+    /// had there, the jumper went over to another shape inside the step (a
+    /// swap within the tolerance of the predicted move, or the start of a
+    /// branch the step crossed over): a jump at the step's end. The walk
+    /// itself goes on as without. And a step taken only thanks to the
+    /// allowance for its predicted move (off the prediction by more than
+    /// [`RISE_TOLERANCE`]) walked again on its own with no allowance
+    /// (`strict`): a shape that jumps inside it (one shape ending, another
+    /// beginning, a long predicted move hiding the gap) is found where the
+    /// steps reach the smallest size.
+    back: bool,
+    /// Steps off their prediction by more than [`RISE_TOLERANCE`] are
+    /// halved whatever their predicted move (a walk checking a step).
+    strict: bool,
 }
 
 /// Walks a stiff jumper from where `way` is to the pressure `to`, up or
@@ -1326,13 +1350,41 @@ fn walk(
         .into_iter()
         .map(|d| d.try_normalize(1e-12).unwrap_or(d))
         .collect();
-        let tolerance = RISE_TOLERANCE + 0.25 * largest_move(&points, &shape.points);
+        let tolerance = if met.strict {
+            RISE_TOLERANCE
+        } else {
+            RISE_TOLERANCE + 0.25 * largest_move(&points, &shape.points)
+        };
         match solve(next, Some(&from)) {
             Ok(new) => {
                 let off = largest_move(&points, &new.points);
                 if off <= tolerance || smallest {
-                    if smallest && off > tolerance {
+                    // (A first step has no path to lie off yet.)
+                    if smallest && off > tolerance && way.before.is_some() {
                         met.jumps.push(next);
+                    }
+                    if met.back
+                        && !smallest
+                        && solve(at, Some(&new)).map_or(true, |b| {
+                            largest_move(&b.points, &shape.points) > RISE_TOLERANCE
+                        })
+                    {
+                        met.jumps.push(next);
+                    }
+                    if met.back && !smallest && way.before.is_some() && off > RISE_TOLERANCE {
+                        let mut check = Met {
+                            strict: true,
+                            ..Met::default()
+                        };
+                        let from = Way {
+                            at,
+                            shape: shape.clone(),
+                            before: way.before.clone(),
+                        };
+                        if walk(from, next, solve, &mut check).is_err() {
+                            met.jumps.push(next);
+                        }
+                        met.jumps.extend(check.jumps);
                     }
                     if smallest && largest_move(&shape.points, &new.points) > RISE_JUMP {
                         met.snap.get_or_insert(next);
@@ -1369,7 +1421,7 @@ fn walk(
 }
 
 /// A shape found falling that lies within this of the shape found rising
-/// at the same pressure is that shape ([`rise_and_fall`]), m: one
+/// at the same pressure is that shape (`rise_and_fall`), m: one
 /// equilibrium reached from two sides differs by the solver's tolerance
 /// (well under a millimetre); two stable shapes lie further apart (0.2 m
 /// and more on a real line).
@@ -1416,7 +1468,10 @@ fn rise_and_fall(
             jumps: Vec::new(),
         });
     };
-    let mut met = Met::default();
+    let mut met = Met {
+        back: true,
+        ..Met::default()
+    };
     let rising = walk(
         Way {
             at: 0.0,
@@ -1428,12 +1483,18 @@ fn rise_and_fall(
         &mut met,
     )?;
     let snap = met.snap;
-    let mut further = Met::default();
+    let mut further = Met {
+        back: true,
+        ..Met::default()
+    };
     let falling = match walk(rising.clone(), top, &solve, &mut further) {
         Err(e) => Some(Err(e)),
         Ok(_) if further.jumps.is_empty() => None,
         Ok(at_top) => {
-            let mut back = Met::default();
+            let mut back = Met {
+                back: true,
+                ..Met::default()
+            };
             let fallen = walk(at_top, full, &solve, &mut back).map(|w| w.shape);
             further.jumps.extend(back.jumps);
             match fallen {
@@ -2202,7 +2263,29 @@ pub fn solve_jumper_in(
             r.stiff
                 .solve(a, b, l0, r.load, &r.held, ea, &r.objects, from)
         };
+        let start = context.start.as_ref().map(|q| {
+            let points: Vec<Vector3<f64>> = q.iter().map(|x| v(*x)).collect();
+            RodShape {
+                directions: points
+                    .windows(2)
+                    .map(|w| (w[1] - w[0]).try_normalize(1e-12).unwrap_or(w[1] - w[0]))
+                    .collect(),
+                points,
+                max_tension: 0.0,
+                end_forces: [Vector3::zeros(); 2],
+                end_moments: [Vector3::zeros(); 2],
+                holds: Vec::new(),
+                active: Vec::new(),
+            }
+        });
         let (shape, snap, falling, jumps) = match top {
+            // From a given shape (2026-11-17): the case's pressure alone.
+            _ if start.is_some() => {
+                let shape = stiff
+                    .solve(a, b, l0, load, &held, ea, &objects, start.as_ref())
+                    .map_err(invalid)?;
+                (shape, None, Falling::NotSolved, Vec::new())
+            }
             // Also as the wind falls from the case's own pressure
             // (2026-11-17).
             Some(top) => {
@@ -2517,6 +2600,7 @@ pub(crate) fn solve_jumpers_memo(
             .collect(),
         moved: Vec::new(),
         path,
+        start: None,
     };
     let (pivots, unpivoted) = crate::post::jumper_pivots(line);
     for level in levels {
@@ -2870,6 +2954,28 @@ fn on_threads<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync, threads
     done.into_iter().map(|(_, r)| r).collect()
 }
 
+/// Solves a stiff jumper of the line between the solved sections `shapes`
+/// at the case's pressure alone, from the points `start` — its shape
+/// solved at another pressure (2026-11-17: whether its shape at one
+/// pressure leads to the one solved at the next, a swap between them
+/// otherwise; `ohl_clearance::jumper_swaps`). Not a stiff rod: solved as
+/// always. Jumpers on taps on other jumpers: their taps not known here (an
+/// error).
+pub fn solve_jumper_from(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    jumper: &Jumper,
+    start: Vec<Point>,
+) -> Result<JumperShape, LineError> {
+    let context = TapContext {
+        start: Some(start),
+        ..TapContext::default()
+    };
+    solve_one_jumper_in(line, library, case, shapes, jumper, &context)
+}
+
 /// Solves one jumper of the line between the solved sections `shapes`
 /// (see [`solve_jumpers`]).
 pub fn solve_one_jumper(
@@ -2897,12 +3003,21 @@ pub fn solve_one_jumper_in(
             jumper.id, jumper.cable
         ))
     })?;
-    if jumper.length.is_none() && (jumper.sag.is_some() || jumper.tension.is_some()) {
+    let solved = if jumper.length.is_none() && (jumper.sag.is_some() || jumper.tension.is_some()) {
         let mut cut = jumper.clone();
         cut.length = Some(cut_once(line, library, jumper, cable)?);
-        return solve_jumper_in(line, &cut, shapes, cable, case, context);
-    }
-    solve_jumper_in(line, jumper, shapes, cable, case, context)
+        solve_jumper_in(line, &cut, shapes, cable, case, context)
+    } else {
+        solve_jumper_in(line, jumper, shapes, cable, case, context)
+    };
+    // Its falling wind asked of a jumper with one shape (a cable, taut,
+    // rigid, a riser): the shape it rose to (2026-11-17).
+    solved.map(|mut s| {
+        if context.path.falling_from.is_some() && s.falling == Falling::NotSolved {
+            s.falling = Falling::Same;
+        }
+        s
+    })
 }
 
 /// Cut lengths of the jumpers given by their sag, kept between solves (and
@@ -3119,16 +3234,64 @@ mod tests {
             paths.jumps
         );
         // At 200 Pa: snapped rising, B up to 300 Pa without a jump.
-        calls.set(0);
         let paths = rise_and_fall(200.0, 300.0, solve).unwrap();
         assert!((paths.shape.points[0].x - 3.2).abs() < 1e-12);
         assert!(paths.snap.is_some());
         assert!(paths.falling.is_none());
-        let rising_only = calls.get();
-        calls.set(0);
-        let _ = rise(200.0, solve).unwrap();
-        // The walk on to 300 Pa: one 100 Pa step more.
-        assert_eq!(rising_only, calls.get() + 1);
+        assert!(
+            paths
+                .jumps
+                .iter()
+                .all(|j| (123.4..123.4 + RISE_MIN_STEP).contains(j)),
+            "{:?}",
+            paths.jumps
+        );
+        assert!(calls.get() > 0);
+    }
+
+    /// A swap the predicted path hides (2026-11-17): a made-up jumper
+    /// moving 4 cm per pascal, shape A up to 135 Pa, shape B 0.2 m beside
+    /// it from 100 Pa up. Rising from 100 to 150 Pa its step lands on B
+    /// within the tolerance of a 2 m predicted move, and the rising wind
+    /// sees no jump; the clearance runs' path checks each step back (B
+    /// solved again at 100 Pa stays B, 0.2 m from A there) and finds the
+    /// jump in that step.
+    #[test]
+    fn a_swap_hidden_in_a_step_is_found_checking_it_back() {
+        use crate::rod::RodShape;
+        let at = |x: f64| RodShape {
+            points: vec![Vector3::new(x, 0.0, 0.0), Vector3::new(x, 1.0, 0.0)],
+            max_tension: 0.0,
+            end_forces: [Vector3::zeros(); 2],
+            end_moments: [Vector3::zeros(); 2],
+            holds: Vec::new(),
+            directions: Vec::new(),
+            active: Vec::new(),
+        };
+        let a = |p: f64| at(0.04 * p);
+        // (B marked by its far end 1 mm up.)
+        let b = |p: f64| {
+            let mut s = at(0.04 * p + 0.2);
+            s.points[1].z = 1e-3;
+            s
+        };
+        let on_b = |f: &RodShape| f.points[1].z > 5e-4;
+        let solve = |p: f64, from: Option<&RodShape>| -> Result<RodShape, String> {
+            match from {
+                _ if p >= 135.0 => Ok(b(p)),
+                Some(f) if p >= 100.0 && on_b(f) => Ok(b(p)),
+                _ => Ok(a(p)),
+            }
+        };
+        let (s, snap) = rise(150.0, solve).unwrap();
+        assert!((s.points[0].x - b(150.0).points[0].x).abs() < 1e-12);
+        assert_eq!(snap, None);
+        let paths = rise_and_fall(150.0, 300.0, solve).unwrap();
+        assert!(
+            paths.jumps.iter().any(|j| (100.0..=150.0).contains(j)),
+            "{:?}",
+            paths.jumps
+        );
     }
 
     use super::*;

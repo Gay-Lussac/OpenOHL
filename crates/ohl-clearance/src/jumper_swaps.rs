@@ -96,6 +96,89 @@ pub fn swap_pressures(
     kept
 }
 
+/// One solved pressure of a side for [`cross_swaps`]: the pressure, the
+/// case as solved there, its sections, its jumpers as the wind rose (the
+/// first of each id).
+pub struct Solved<'a> {
+    /// Pa.
+    pub pressure: f64,
+    /// The case as solved.
+    pub case: &'a WeatherCase,
+    /// Its sections.
+    pub shapes: &'a [ohl_line::solve::SectionShape],
+    /// Its jumpers (the first shape of each id: as the wind rose).
+    pub jumpers: &'a [JumperShape],
+}
+
+/// The jumpers whose shapes at two neighbouring solved pressures of a side
+/// do not lead to each other (2026-11-17): each jumper solved at the upper
+/// pressure from its shape at the lower one, and at the lower from its
+/// shape at the upper ([`ohl_line::jumper::solve_jumper_from`]); landing
+/// more than [`ohl_line::jumper::RISE_TOLERANCE`] from the shape solved
+/// there, it went over to another shape between them — with its ends
+/// moving with the wind, which each solve's own path does not (its ends
+/// those of the pressure solved: on a real line one jumper's shape at 120
+/// and 130 Pa was the other one of its 100, 110 and 140 Pa, each path
+/// smooth). A [`Swap`] at the upper pressure for each (one whose solve
+/// fails too). Jumpers on taps on other jumpers are left out, and so are
+/// shapes of two models (a stiff jumper gone taut: solved as a cable).
+///
+/// Expected cost: two rod solves from a near shape per stiff jumper and
+/// pair (~1 ms each in release). Exit clause: none of its own (each solve's).
+pub fn cross_swaps(
+    line: &Line,
+    library: &ohl_cables::Library,
+    side: WindSide,
+    lower: &Solved,
+    upper: &Solved,
+) -> Vec<Swap> {
+    // (Shapes of other models — a stiff jumper gone taut, solved as a
+    // cable — have other points: not compared.)
+    let far = |a: &[[f64; 3]], b: &[[f64; 3]]| {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .any(|(x, y)| crate::geometry::distance(*x, *y) > ohl_line::jumper::RISE_TOLERANCE)
+    };
+    let first = |list: &[JumperShape], id: &str| list.iter().find(|j| j.jumper == id).cloned();
+    let mut out = Vec::new();
+    for def in &line.jumpers {
+        // (On a tap on another jumper: that tap not known alone.)
+        if def
+            .taps()
+            .any(|t| matches!(t, ohl_line::Tap::Jumper { .. }))
+        {
+            continue;
+        }
+        let (Some(lo), Some(up)) = (first(lower.jumpers, &def.id), first(upper.jumpers, &def.id))
+        else {
+            continue;
+        };
+        if lo.points.len() != up.points.len() {
+            continue;
+        }
+        let leads = |at: &Solved, from: &JumperShape, own: &JumperShape| {
+            ohl_line::jumper::solve_jumper_from(
+                line,
+                library,
+                at.case,
+                at.shapes,
+                def,
+                from.points.clone(),
+            )
+            .is_ok_and(|s| !far(&s.points, &own.points))
+        };
+        if !leads(upper, &lo, &up) || !leads(lower, &up, &lo) {
+            out.push(Swap {
+                side,
+                jumper: def.id.clone(),
+                at: upper.pressure,
+            });
+        }
+    }
+    out
+}
+
 /// The part of `line` the jumpers `ids` need solved: those jumpers and the
 /// jumpers they hang on (taps on jumpers, all the way), and the sections
 /// with a point at any structure they touch (their ends, their helping

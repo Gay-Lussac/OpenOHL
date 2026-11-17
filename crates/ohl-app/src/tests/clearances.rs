@@ -217,9 +217,11 @@ fn wire_clearances_on_the_swing_arc() {
         ..Default::default()
     };
     let states = ohl_clearance::zone::wind_states(&windy, |_| true, &wind);
-    // Still air, both full blowouts and the band's levels (2026-11-16).
+    // Still air, both full blowouts and the band's levels (2026-11-16);
+    // still air reached as the wind falls from each side (2026-11-17: the
+    // jumpers' other shapes).
     let levels = ohl_clearance::positions::BandLevels::DEFAULT.at(windy[0].wind_pressure.si());
-    assert_eq!(states.len(), 3 + 2 * levels.len());
+    assert_eq!(states.len(), 3 + 2 * levels.len() + 2);
     let run = |arc: bool| {
         crate::clearance::run(&crate::clearance::Input {
             states: states.clone(),
@@ -584,8 +586,10 @@ fn the_vertical_clearances_window_runs_with_the_wind_stepped() {
         let r = harness.state_mut().ready().unwrap();
         if let (Some(rep), false) = r.vertical_clearances.result() {
             let rep = rep.as_ref().unwrap();
-            // 600 Pa in steps of 200 Pa, from both sides, and no wind.
-            assert_eq!(rep.states.len(), 1 + 3 * 2);
+            // 600 Pa in steps of 200 Pa, from both sides, and no wind;
+            // still air after the wind from each side (2026-11-17: the
+            // jumpers' other shapes).
+            assert_eq!(rep.states.len(), 1 + 3 * 2 + 2);
             let spans: usize = r.model.cases[0].shapes.iter().map(|s| s.spans.len()).sum();
             assert_eq!(rep.zone.findings.len(), spans);
             assert!(rep.zone.findings.iter().all(|f| f.class.is_none()));
@@ -831,9 +835,11 @@ fn the_vertical_clearances_window_runs_the_swing_arc() {
             let rep = rep.as_ref().unwrap();
             // Still air, the two blowouts and the band's levels
             // (2026-11-16, for the band only: a level every 200 Pa, 200
-            // and 400 Pa a side); every span's arc.
-            assert_eq!(rep.states.len(), 7);
-            assert_eq!(rep.states.iter().filter(|s| s.band_only).count(), 4);
+            // and 400 Pa a side), and still air after the wind from each
+            // side (2026-11-17: the jumpers' other shapes, for the band
+            // only); every span's arc.
+            assert_eq!(rep.states.len(), 9);
+            assert_eq!(rep.states.iter().filter(|s| s.band_only).count(), 6);
             assert!(rep.arc_spans > 0);
             assert!(rep.zone.findings.iter().any(|f| f.arc.is_some()));
             // The jumper on its band without a margin, no steps: said

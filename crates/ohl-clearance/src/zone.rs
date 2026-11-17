@@ -992,6 +992,48 @@ fn swaps_between_levels(
                 }
             }
         }
+        // Neighbouring solved pressures whose jumper shapes do not lead to
+        // each other.
+        let still = of
+            .iter()
+            .copied()
+            .find(|&k| states[k].side.is_none() && states[k].pressure == 0.0);
+        let mut pairs: Vec<(WindSide, usize, usize)> = Vec::new();
+        for side in [WindSide::Right, WindSide::Left] {
+            let mut at: Vec<(f64, usize)> = of
+                .iter()
+                .copied()
+                .filter(|&k| states[k].side == Some(side) && !states[k].fallen_only())
+                .map(|k| (states[k].pressure, k))
+                .collect();
+            if at.is_empty() {
+                continue;
+            }
+            if let Some(s) = still {
+                at.push((0.0, s));
+            }
+            at.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for w in at.windows(2) {
+                pairs.push((side, w[0].1, w[1].1));
+            }
+        }
+        let found = crate::positions::parallel(pairs.len(), budget, |i| {
+            let (side, lo, up) = pairs[i];
+            let at = |k: usize| crate::jumper_swaps::Solved {
+                pressure: states[k].pressure,
+                case: &states[k].case,
+                shapes: &out.shapes[k],
+                jumpers: &out.jumpers[k],
+            };
+            Ok(crate::jumper_swaps::cross_swaps(
+                line,
+                library,
+                side,
+                &at(lo),
+                &at(up),
+            ))
+        })?;
+        swaps.extend(found.into_iter().flatten());
         let wanted = crate::jumper_swaps::swap_pressures(&solved, &swaps);
         if wanted.is_empty() {
             continue;
@@ -2659,6 +2701,46 @@ mod tests {
         // 0 Pa; 100, 200, 300, 120 and 240 Pa from each side; still air
         // reached falling from each side (2026-11-17).
         assert_eq!(twins, 1 + 6 * 2);
+    }
+
+    /// The jumpers along the falling wind (2026-11-17), on a line whose
+    /// jumpers have one shape each: every state below the full pressure on
+    /// a side solves their falling wind (the same shape: no other shapes
+    /// added, nothing said), still air reached falling carries no sections
+    /// and no jumper (their shape there is still air's), no jumper swaps
+    /// between the band's pressures, no second still-air shape.
+    #[test]
+    fn jumpers_with_one_shape_along_the_falling_wind() {
+        let (line, library) = example();
+        assert!(!line.jumpers.is_empty());
+        let wind = WindSteps {
+            arc: true,
+            ..WindSteps::default()
+        };
+        let states = wind_states(&[windy(600.0)], |_| true, &wind);
+        let done = AtomicUsize::new(0);
+        let solved =
+            solve_states(&line, &library, &states, &[], true, &Budget::new(), &done).unwrap();
+        for (k, s) in states.iter().enumerate() {
+            if s.fallen_only() {
+                assert!(solved.shapes[k].is_empty() && solved.jumpers[k].is_empty());
+            }
+            if s.top().is_some() {
+                assert!(!solved.fell[k].is_empty(), "{}", s.describe());
+            } else {
+                assert!(solved.fell[k].is_empty());
+            }
+            if !s.fallen_only() {
+                assert_eq!(
+                    solved.jumpers[k].len(),
+                    line.jumpers.len(),
+                    "{}",
+                    s.describe()
+                );
+            }
+            assert!(solved.other_still[k].is_empty());
+        }
+        assert!(solved.notes.is_empty(), "{:?}", solved.notes);
     }
 
     /// A rule takes the sections' spans, the jumpers or both: a point under
