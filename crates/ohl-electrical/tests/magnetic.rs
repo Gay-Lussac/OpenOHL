@@ -800,7 +800,18 @@ fn a_jumper_carries_its_phase_current() {
     };
     let (line, library) = example();
     let whole = field(&line, &library, &s(true));
-    let (cut, library) = with_a_jumper();
+    // The jumper as a plain wire (no bending stiffness): the U hanging a
+    // little below the line that this comparison means. Its clamps face
+    // each other 0.4 m apart, and a stiff jumper there takes another
+    // stable shape (2026-11-17): a loop crossing itself below the clamps
+    // — its least energy; the S-shape of 4.7 kN found until 2026-11-16
+    // was an unstable equilibrium (`ohl_line::rod`), and it alone gave
+    // the field of the line uncut within 5 %. The loop's current runs
+    // round it, 2 m above the first point: 49.4 µT there against 53.0 µT
+    // uncut (and 48.1 µT without the jumper), the physics of that loop,
+    // not of a jumper's current.
+    let (mut cut, library) = with_a_jumper();
+    cut.jumpers[0].bending_stiffness = Some(0.0);
     let case = ohl_weather::WeatherCase::still("still", Temperature::from_celsius(40.0));
     let shapes: Vec<_> = ohl_line::solve::solve_line(&cut, &library, &case)
         .into_iter()
