@@ -1321,10 +1321,24 @@ impl App {
         }
     }
 
+    /// Closes a page, as its tab's × does (tests).
+    #[cfg(test)]
+    pub fn close_tab(&mut self, tab: Tab) {
+        viewer::close_page(&mut self.dock, tab);
+    }
+
     /// Asks for a File menu action (tests).
     #[cfg(test)]
     pub fn file_action_for_test(&mut self, action: crate::files::FileAction) {
         self.file_action = Some(action);
+    }
+
+    /// The New project window's values, when it is open (tests: what
+    /// "Choose where to save it and create…" would create; `None` closes
+    /// it, as creating does).
+    #[cfg(test)]
+    pub fn new_project_for_test(&mut self) -> &mut Option<crate::files::NewProject> {
+        &mut self.new_project
     }
 
     /// Why loading failed, if it did (tests).

@@ -2,20 +2,23 @@
 
 [Introduction](introduction.md)
 
-# Tutorial
+# Tutorial, part 1: your first line
 
 - [Start from scratch — your first line](tutorial/index.md)
   - [0. Before you start](tutorial/00-before-you-start.md)
   - [1. A new project and its ground](tutorial/01-new-project.md)
   - [2. The route and the alignment](tutorial/02-route-and-alignment.md)
-  - [3. The first structures](tutorial/03-structures.md)
-  - [4. Strings on the structures](tutorial/04-strings.md)
+  - [3. The structures](tutorial/03-structures.md)
+  - [4. The set numbers](tutorial/04-strings.md)
   - [5. Stringing the wires](tutorial/05-stringing.md)
-  - [6. Jumpers](tutorial/06-jumpers.md)
-  - [7. Results](tutorial/07-results.md)
-  - [8. Checks](tutorial/08-checks.md)
-  - [9. Loads for the structures](tutorial/09-ohl-structure.md)
-  - [10. Saving and what next](tutorial/10-saving.md)
+
+# Tutorial, part 2: going further
+
+- [6. Jumpers](tutorial/06-jumpers.md)
+- [7. Results in detail](tutorial/07-results.md)
+- [8. Checks](tutorial/08-checks.md)
+- [9. Loads for the structures](tutorial/09-ohl-structure.md)
+- [10. Saving and versions](tutorial/10-saving.md)
 
 # User guide
 

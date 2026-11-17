@@ -8,7 +8,7 @@ Standard library only; run from the repository root:
 Checks, in docs/ and in README.md / ROADMAP.md:
 - every relative link `](page.md)` names a file that exists, and every
   `](page.md#anchor)` / `](#anchor)` an anchor of that page;
-- every image `![…](…)` names a file that exists;
+- every image `![…](…)` or `<img src="…">` names a file that exists;
 and in the desktop app (crates/ohl-app/src): every section a window opens
 with `help::heading(ui, title, "anchor")` exists on its file's `GUIDE` page.
 
@@ -26,6 +26,7 @@ LINK = re.compile(r"(!?)\[(?:[^\]\[]|\[[^\]]*\])*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 EXPLICIT = re.compile(r"\{#([A-Za-z0-9_-]+)[^}]*\}\s*$")
 HTML_ID = re.compile(r"<a\s+(?:name|id)=\"([^\"]+)\"")
+IMG = re.compile(r"<img\s[^>]*src=\"([^\"]+)\"")
 
 
 def slug(text):
@@ -94,6 +95,13 @@ def check_markdown(root, problems):
                 if fence:
                     continue
                 line = re.sub(r"`[^`]*`", "", line)
+                for m in IMG.finditer(line):
+                    target = m.group(1)
+                    if re.match(r"^[a-z][a-z0-9+.-]*:", target) or target.startswith("/"):
+                        continue
+                    dest = os.path.normpath(os.path.join(os.path.dirname(path), target))
+                    if not os.path.exists(dest):
+                        problems.append(f"{os.path.relpath(path, root)}:{no}: no file {target}")
                 for m in LINK.finditer(line):
                     image, target = m.group(1), m.group(2)
                     if re.match(r"^[a-z][a-z0-9+.-]*:", target) or target.startswith("/"):

@@ -1,76 +1,60 @@
 # 0. Before you start
 
-**Goal:** know what you need and how the views and the tools work.
+<img src="../images/tutorial/tutorial-start-page.png" alt="The start page: New project from the starter template… under New to OpenOHL?" width="360">
 
 ## What you need
 
-- OHL-Design, built from the OpenOHL source tree: on macOS double-click
-  **Start OHL-Design.command**; elsewhere
-  `cargo run --release -p ohl-app` (see [Getting
-  started](../user-guide/getting-started.md)).
-- The starter template, `examples/starter/` of the source tree. It comes
-  with the program; you do not open it yourself.
-- A mouse with a right button (or a trackpad set up for right-clicks:
-  a right-click opens an object's menu).
+- OHL-Design: on macOS double-click **Start OHL-Design.command** in the
+  OpenOHL folder; elsewhere run `cargo run --release -p ohl-app`.
+- A mouse with a right button.
 
-## The starter template
-
-The starter template is a set of example libraries with invented or
-typical values, clearly marked:
-
-- a **wire library** with an ACSR conductor (`acsr-drake-26-7`);
-- two **structure types** of detail level 1, built from the structure
-  template `delta-1c`: `starter-suspension` (one string per phase, three
-  phases in a delta and an earth wire at the peak) and `starter-tension`
-  (a tension structure: two tension strings at each place, one for the
-  span behind, one for the span ahead);
-- insulator assemblies, five **weather cases** (everyday, max
-  temperature, glaze ice, high wind, minimum temperature), three **load
-  cases** and a **clearance rule file**;
-- `starter-survey.csv`, survey points of an invented piece of ground.
-
-It has **no route, alignment, structure or wire**: those you make in
-this tutorial. The folder's README lists every file.
+The **starter template** comes with the program: a wire type, two
+structure types, five weather cases, load cases, clearance rules and the
+survey points of an invented piece of ground. No route, structure or
+wire — those you make.
 
 ## The window
 
-- **Menus** at the top: File, Edit, View, Terrain, Structures, Sections,
-  Criteria, Checks, Tools, Versions, Plugins, Help. Right of them the
-  **quick bar** (Undo, Redo, Save all, …).
-- **Pages** like browser tabs: **3D**, **Plan**, **Profile**,
-  **Properties** (the selected object), **Next steps**, and others from
-  the View menu. Drag a tab to move it; closed pages come back from View.
-- The **status bar** at the bottom says what a tool expects next. Read
-  it whenever you are unsure.
+![The main window with numbered parts: 1 menus, 2 quick bar, 3 pages,
+4 the 3D view, 5 hotbar, 6 profile, 7 Next steps, 8 Properties, 9 status
+bar](../images/tutorial/tutorial-main-window.png)
 
-## Tools: hold one, click to use it
+1. **Menus**. **Line** holds the line's data: Terrain, Structures,
+   Sections, Criteria.
+2. **Quick bar**: Undo, Redo, Save all, Fit views, Check wire clearances.
+3. **Pages**, like browser tabs: **3D** and **Plan** share this place.
+   A closed page comes back from **View**.
+4. **The 3D view**: drag to turn, scroll to zoom.
+5. **Hotbar**: nine tools; the line under it says what the held tool
+   does.
+6. **Profile**: the ground and the wires along the line.
+7. **Next steps**: what the line still needs; each step is a link.
+8. **Properties**: the selected object and its results.
+9. **Status bar**: what just happened, or what a tool expects next.
 
-The bottom of the 3D view holds the **hotbar**, nine slots of tools.
-Choosing a slot (keys **1–9** or a click) only *holds* the tool. A
-**click** on an object, in the 3D view, the plan or the profile, *uses*
-it; with **Select** held a click selects. **Escape** holds Select again.
-A **right-click** on an object selects it and opens its **menu**:
-Properties, Edit…, Delete…, Zoom to and the tools that apply to it.
-Nothing moves on a click or a drag with Select: a structure moves with
-the **Move structure** tool.
+## Tools: hold one, then click
 
-A new hotbar holds Select, Move structure, Delete, Go to structure,
-Edit, Add structure, Add string, String wire and New alignment. **E**
-opens the **inventory** with every tool; the **Tools** menu lists them
-too (Edit › Tools). Holding a tool that is not in the hotbar puts it
-there.
+- Press **1**–**9** (or click a slot) to *hold* a tool.
+- Click an object in a view to *use* it.
+- Press **Escape** to hold **Select** again. With Select a click only
+  selects.
+- Right-click an object for its menu; press **E** for every tool.
 
-## Next steps
+> **If you get lost:** read the status bar, then the **Next steps**
+> page. Its next step is in bold.
 
-The **Next steps** page (View › Next steps) lists what the line still
-needs, in the order of the work, and each step is a link to where it is
-done: a tool held, a window opened. The next step is in bold. Whenever
-you lose your way in this tutorial, look there.
+<details>
+<summary>Why it works this way</summary>
 
-**What just happened:** nothing yet — but every chapter ends with a
-paragraph like this one, saying what the program did and where to read
-more. The whole window is described in [OHL-Design, the line
-application](../user-guide/desktop-app.md); the controls of each view in
-[Controls](../user-guide/desktop-app.md#controls).
+A tool stays held until you choose another, so you can click many
+objects in a row. A click with Select never moves anything: a structure
+moves only with **Move structure**. A tool held from the inventory (E)
+goes into the hotbar. The starter template is `examples/starter/` of the
+source tree; its README lists every file.
+
+</details>
+
+Read more: [Getting started](../user-guide/getting-started.md),
+[OHL-Design, the line application](../user-guide/desktop-app.md).
 
 Next: [1. A new project and its ground](01-new-project.md).

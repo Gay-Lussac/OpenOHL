@@ -1,22 +1,23 @@
 # 2. The route and the alignment
 
-**Goal:** a route and one alignment of six points, with an angle at the
+<img src="../images/tutorial/tutorial-alignment-plan.png" alt="You will end with this: six alignment points in the plan, straight east, then turning left at the fourth" width="400">
+
+**Goal:** a route, and an alignment of six points with an angle at the
 fourth.
 
 ## Steps
 
-1. On the **Next steps** page click **Next: Name the route…**. The
-   window **New project: first steps** opens again.
-2. Keep the name *route 1* (or type your own), a description if you
-   like, and click **Create the route**. The **New alignment** tool is
-   now held; the status bar says so.
+1. On the **Next steps** page click **Next: Name the route…**.
+2. Keep the name *route 1* and click **Create the route**. The **New
+   alignment** tool is now held.
 
-   ![The first steps window again: the route's name route 1, Create
-   the route](../images/tutorial/tutorial-name-the-route.png)
+   ![The first steps window: route 1, Create the
+   route](../images/tutorial/tutorial-name-the-route.png)
 
-3. Bring the **Plan** page to the front (its tab, next to 3D): the
-   ground seen from above, north up. Scroll to zoom, drag to move.
-4. Click the ground at each of these points, in this order:
+3. Click the ground in the **3D** view, anywhere. The window **Point
+   coordinates** opens.
+4. Type **E** and **N** of point 1 from the table, keep the height and
+   click **Add the point**.
 
    | Point | E (m) | N (m) |
    |---|---|---|
@@ -27,39 +28,46 @@ fourth.
    | 5 | 800 | 100 |
    | 6 | 1000 | 200 |
 
-   Each lies on a survey point of the ground (they are 20 m apart). A
-   click on a survey point takes its place and height at once.
-   Elsewhere the window **Point coordinates** opens with the place you
-   clicked and the ground's height there: type E and N from the table,
-   keep the height, click **Add the point**.
+   ![The Point coordinates window: E 200, N 0, the ground's
+   height](../images/tutorial/tutorial-point-coordinates.png)
 
-   ![The Point coordinates window at the second point: E 200, N 0 and
-   the ground's height there, Add the point](../images/tutorial/tutorial-point-coordinates.png)
+5. Repeat steps 3 and 4 for points 2 to 6. A yellow line joins the
+   points.
 
-   **Backspace** takes the last point back; **Escape** gives the
-   alignment up.
-5. Press **Enter**. The window **New alignment: its route** has *route 1*
-   chosen. Click **Make the alignment**.
+   ![Mid-way: three points, joined by a yellow
+   line](../images/tutorial/tutorial-alignment-clicking.png)
 
-   ![The window New alignment: its route, with route 1 chosen and Make
-   the alignment](../images/tutorial/tutorial-alignment-route.png)
+6. Press **Enter**.
+7. Click **Make the alignment** (*route 1* is chosen).
+
+   ![The window New alignment: its route](../images/tutorial/tutorial-alignment-route.png)
 
 ## What you should see
 
-A line of six points in the plan, named P1 to P6: straight east for
-600 m, then turning left by about 27° (the line angle at P4) for the
-last 447 m. Line › Terrain › Alignment points lists
-them with their E, N and height. A point placed a little off can be put
-right there: type its E and N and apply the change (the table's **Apply** button).
+On the **Plan** page (the tab next to 3D; scroll to zoom): points P1 to
+P6, straight east for 600 m, then turning left by about 27° at P4.
 
-![The Plan page with the six alignment points: straight east, then
-turning left at the fourth; the profile of the ground below](../images/tutorial/tutorial-alignment-plan.png)
+![The Plan page with the six alignment points](../images/tutorial/tutorial-alignment-plan.png)
 
-**What just happened:** a **route** is the path of the line; its
-**alignments** are the polylines the structures stand on, each through
-its **alignment points**. The structures, wires and checks of the line
-belong to the route. See [Routes and
-alignments](../user-guide/desktop-app.md#routes-and-alignments) and the
-[Glossary](../user-guide/glossary.md#the-line-and-its-route).
+> **If a point is wrong:** **Backspace** takes the last point back,
+> **Escape** gives the alignment up. Later, correct E and N in **Line ›
+> Terrain › Alignment points table**.
+>
+> **If no window opens at a click:** the click took an existing point.
+> Press **Backspace** and click beside it.
 
-Next: [3. The first structures](03-structures.md).
+<details>
+<summary>Why it works this way</summary>
+
+A **route** is the path of the line; the structures, wires and checks
+belong to it. Its **alignments** are the polylines the structures stand
+on, through their **alignment points**. Each point of the table lies on
+a survey point, so its height is the surveyed one. You may click in the
+plan instead; the 3D view shows the ground and the points while you
+click.
+
+</details>
+
+Read more: [Routes and alignments](../user-guide/desktop-app.md#routes-and-alignments).
+
+Next: [3. The structures](03-structures.md).

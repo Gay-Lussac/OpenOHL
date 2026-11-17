@@ -3,7 +3,8 @@
 
 Standard library only; run from the repository root with
 
-    python3 -I tools/glossary_figures.py            # writes docs/images/glossary/
+    python3 -I tools/glossary_figures.py            # writes docs/images/glossary/ (and the
+                                                     # tutorial's drawings, docs/images/tutorial/)
     python3 -I tools/glossary_figures.py OUT --theme light|dark [--fit 760]
                                                      # copies with one palette forced and
                                                      # at most 760 px wide (to look at both,
@@ -613,8 +614,128 @@ def rigid_link():
     return f
 
 
+# Tutorial: the starter's set numbers and the clicks of a section ------------------------
+PHASE = {"L1": "wire", "L2": "wire2", "L3": "wire3", "E": "ink"}
+
+
+def set_numbers():
+    f = Fig("tutorial-set-numbers", 860, 660, "The set numbers of the starter's structures",
+            "Left, a suspension structure seen looking ahead along the line: one string per "
+            "phase, set 1 for L1 (left, lower crossarm), set 2 for L2 (right, upper), set 3 for "
+            "L3 (right, lower), set 19 for the earth wire at the peak. Right, a tension "
+            "structure: two strings at each place, sets 21, 22, 23 and 39 towards the span "
+            "behind, 41, 42, 43 and 59 towards the span ahead. Below, seen from the side, the "
+            "four clicks of section S1: T1 set 41, T2 set 1, T3 set 1, T4 set 21, then Enter.")
+
+    def dot(x, y, phase, r=5.5):
+        f.add(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" style="fill:var(--{PHASE[phase]})"/>')
+
+    def mast(cx, ground, peak, arms):
+        f.add(f'<path class="st" d="M{cx-16},{ground} L{cx-5},{peak} L{cx+5},{peak} '
+              f'L{cx+16},{ground} M{cx-12},{ground-40} L{cx+12},{ground-80} '
+              f'M{cx+12},{ground-40} L{cx-12},{ground-80}"/>')
+        for x0, x1, y in arms:
+            f.add(f'<path class="st" d="M{x0},{y} L{x1},{y}"/>')
+        f.add(f'<path class="dash" d="M{cx-140},{ground} L{cx+140},{ground}"/>')
+
+    def badge(x, y, n):
+        f.add(f'<circle cx="{x}" cy="{y}" r="11" style="fill:var(--acc)"/>')
+        f.add(f'<text x="{x}" y="{y + 4.5}" class="c" style="fill:var(--bg);stroke:none;'
+              f'font-weight:600">{n}</text>')
+
+    # The starter's geometry (delta-1c): L1 at x -5 m, z 22 m; L2 at +4 m, 28 m; L3 at
+    # +5 m, 22 m; the earth wire at the peak, 34 m. Heights 6.5 px/m, widths 22 px/m (not
+    # to scale).
+    def z(m):
+        return 330 - 6.5 * m
+
+    places = [(-110, 22, "L1", 1), (88, 28, "L2", 2), (110, 22, "L3", 3)]
+    arms = [(-110, 110, 22), (0, 88, 28)]
+
+    # Suspension structure.
+    cx = 215
+    f.text(20, 26, "The set numbers: which string a click picks", "t")
+    f.text(20, 56, "Suspension structure (T2, T3, T5)", "t")
+    f.text(20, 74, "looking ahead along the line", "lab")
+    mast(cx, z(0), z(34), [(cx + a, cx + b, z(h)) for a, b, h in arms])
+    for dx, zz, phase, n in places:
+        x, y = cx + dx, z(zz)
+        string(f, x, y, x, y + 22)
+        ap(f, x, y)
+        dot(x, y + 22, phase)
+        left = dx < 0
+        f.text(x + (-10 if left else 10), y + 27, f"set {n} · L{n}", "e" if left else "")
+    dot(cx, z(34) - 6, "E")
+    f.text(cx + 12, z(34) - 2, "set 19 · earth wire")
+
+    # Tension structure: each string drawn in an oblique view, ahead up and to the right
+    # (into the picture), behind down and to the left (towards you).
+    cx = 640
+    f.text(445, 56, "Tension structure (T1, T4, T6)", "t")
+    f.text(445, 74, "looking ahead: two strings at each place", "lab")
+    mast(cx, z(0), z(34), [(cx + a, cx + b, z(h)) for a, b, h in arms])
+    ahead, behind = (26, -15), (-28, 16)
+    for dx, zz, phase, n in places:
+        x, y = cx + dx, z(zz)
+        string(f, x, y, x + ahead[0], y + ahead[1])
+        string(f, x, y, x + behind[0], y + behind[1])
+        dot(x + ahead[0], y + ahead[1], phase, 5)
+        dot(x + behind[0], y + behind[1], phase, 5)
+        ap(f, x, y)
+        f.text(x + ahead[0] + 9, y + ahead[1] + 4, f"{40 + n}")
+        f.text(x + behind[0] - 9, y + behind[1] + 4, f"{20 + n}", "e")
+        f.text(x + 6, y + 24, f"L{n}", "lab")
+    y = z(34) - 6
+    f.add(f'<path class="str" style="stroke-width:2" d="M{cx-14},{y+8} L{cx+13},{y-7.5}"/>')
+    dot(cx + 13, y - 7.5, "E", 4.5)
+    dot(cx - 14, y + 8, "E", 4.5)
+    f.text(cx + 22, y - 4, "59 · earth wire")
+    f.text(cx - 22, y + 12, "39", "e")
+    f.text(445, z(0) + 26, "ahead (into the picture) ↗  41, 42, 43, 59", "lab")
+    f.text(445, z(0) + 43, "behind (towards you) ↙  21, 22, 23, 39", "lab")
+
+    # The rule in one line.
+    f.text(20, 412, "Phase n (1, 2, 3): suspension set n; tension set 20 + n behind, "
+           "40 + n ahead. Earth wire: 19, 39, 59.", "t")
+
+    # The clicks of S1, seen from the side (behind on the left, ahead on the right).
+    f.text(20, 452, "The clicks for section S1 (phase L1), seen from the side", "t")
+    ground, top = 612, 500
+    xs = [70, 270, 470, 670]
+    f.add(f'<path class="dash" d="M20,{ground} L840,{ground}"/>')
+    for x, n in zip(xs, ["T1", "T2", "T3", "T4"]):
+        f.add(f'<path class="st" d="M{x},{top} L{x},{ground}"/>')
+        f.text(x, ground + 20, n, "c t")
+    pts = []
+    for i, x in enumerate(xs):
+        if i in (0, 3):
+            string(f, x, top + 6, x - 32, top + 10)
+            string(f, x, top + 6, x + 32, top + 10)
+            pts.append((x + 32, top + 10) if i == 0 else (x - 32, top + 10))
+        else:
+            string(f, x, top + 6, x, top + 34)
+            pts.append((x, top + 34))
+    d = " ".join(sag_path(x0, y0, x1, y1, 34) for (x0, y0), (x1, y1) in zip(pts, pts[1:]))
+    f.add(f'<path class="wire" d="{d}"/>')
+    f.add(f'<path class="wire" stroke-dasharray="5 4" '
+          f'd="{sag_path(xs[3] + 32, top + 10, 840, top + 24, 18)}"/>')
+    for k, ((x, y), s) in enumerate(zip(pts, ["T1 set 41", "T2 set 1", "T3 set 1",
+                                              "T4 set 21"]), start=1):
+        dot(x, y, "L1")
+        badge(x, y - 30, k)
+        f.text(x + 16, y - 26, s)
+    badge(740, 580, 5)
+    f.text(756, 584, "Enter")
+    f.text(20, ground + 44, "S2 then runs on from T4 set 41 over T5 set 1 to T6 set 21 "
+           "(dashed); L2 and L3 the same with their own sets.", "lab")
+    return f
+
+
 FIGURES = [structure_parts, string_combinations, section, systems, circuits, route_plan, clearances,
            cases, extensions, span_objects, rigid_link]
+
+# Written to docs/images/tutorial (the tutorial's drawings, in the glossary's style).
+TUTORIAL_FIGURES = [set_numbers]
 
 
 def main(argv):
@@ -632,12 +753,14 @@ def main(argv):
         del args[i:i + 2]
     if args:
         out = args[0]
-    os.makedirs(out, exist_ok=True)
-    for make in FIGURES:
-        fig = make()
-        with open(os.path.join(out, fig.name + ".svg"), "w", encoding="utf-8") as fh:
-            fh.write(fig.svg(theme, fit))
-    print(f"{len(FIGURES)} drawings written to {out}")
+    tutorial = "docs/images/tutorial" if not args else out
+    for folder, figures in [(out, FIGURES), (tutorial, TUTORIAL_FIGURES)]:
+        os.makedirs(folder, exist_ok=True)
+        for make in figures:
+            fig = make()
+            with open(os.path.join(folder, fig.name + ".svg"), "w", encoding="utf-8") as fh:
+                fh.write(fig.svg(theme, fit))
+        print(f"{len(figures)} drawings written to {folder}")
 
 
 if __name__ == "__main__":

@@ -1,39 +1,42 @@
 # Start from scratch — your first line
 
-This tutorial builds a small overhead line in OHL-Design, step by step,
-from an empty project made from the **starter template**: the ground, a
-route and its alignment, six structures, the strings on them, three
-phases strung in two sections, the jumpers between the sections, then
-the results, the checks and saving. It takes about an hour.
+In this tutorial you build a small overhead line in OHL-Design: the
+ground, a route, six structures and three phases strung on them. Part 1
+takes about 20 minutes.
 
-Every value in it is **invented** — the ground, the structures, the wire
-tensions, the clearance distances. Nothing here is a design code or a
-real line: it is for learning the program, not for design. OpenOHL is
-pre-alpha and in active development (not approved yet); every result
-must be checked by a qualified engineer.
+Every value in it is **invented**: it teaches the program, not design.
+OpenOHL is pre-alpha and in active development; every result must be
+checked by a qualified engineer.
 
-**Help › Start from scratch (tutorial)…** opens this page from the
-program. Each chapter shows the windows of its steps as they look on
-the screen (made by the test that does the tutorial's steps, so they
-stay current). Every tool it uses is explained on its own in
-[Tools](../user-guide/tools.md); the **User guide ↗** button at the top
-of a tool's window opens its section.
+![This is what you will build: six structures on rolling ground, three
+phases strung from T1 to T6, joined by jumpers at the angle
+structure T4](../images/tutorial/tutorial-finished.png)
 
-| Chapter | What you do |
+## Part 1: your first line (about 20 minutes)
+
+| Chapter | You do |
 |---|---|
-| [0. Before you start](00-before-you-start.md) | what you need; the views, the tools, Next steps |
-| [1. A new project and its ground](01-new-project.md) | a project from the starter template; the ground from its survey points |
-| [2. The route and the alignment](02-route-and-alignment.md) | the route; six alignment points with New alignment |
-| [3. The first structures](03-structures.md) | Add structure: tension and suspension structures, in one command |
-| [4. Strings on the structures](04-strings.md) | the strings the structure types bring; looking at one |
-| [5. Stringing the wires](05-stringing.md) | the wire type; String wire, section by section; the weather case shown |
-| [6. Jumpers](06-jumpers.md) | Add jumper at the angle structure |
-| [7. Results](07-results.md) | plan, profile, 3D; sags and tensions in the properties and tables |
-| [8. Checks](08-checks.md) | wire clearances, vertical clearances, wire tensions, string checks |
-| [9. Loads for the structures](09-ohl-structure.md) | the line's forces sent to its structures, and a load case made of them in OHL-Structure |
-| [10. Saving and what next](10-saving.md) | saving, project lines and versions in brief; where to read on |
+| [0. Before you start](00-before-you-start.md) | find your way around the window |
+| [1. A new project and its ground](01-new-project.md) | a project from the starter template; the ground |
+| [2. The route and the alignment](02-route-and-alignment.md) | six points the line runs through |
+| [3. The structures](03-structures.md) | six structures in one window |
+| [4. The set numbers](04-strings.md) | which string is which |
+| [5. Stringing the wires](05-stringing.md) | three phases strung; the result |
 
-The same steps in a few lines, without the explanations: [A new line,
-step by step](../user-guide/getting-started.md#a-new-line-step-by-step).
-The names used here — structure, string, wire point, set, section,
-span, jumper — are those of the [Glossary](../user-guide/glossary.md).
+## Part 2: going further
+
+| Chapter | You do |
+|---|---|
+| [6. Jumpers](06-jumpers.md) | join the sections at the angle |
+| [7. Results in detail](07-results.md) | sags in the profile and the tables |
+| [8. Checks](08-checks.md) | clearances, tensions, strings; a failing check |
+| [9. Loads for the structures](09-ohl-structure.md) | load cases per group; OHL-Structure |
+| [10. Saving and versions](10-saving.md) | saving, project lines, the operation log |
+
+**Help › Start from scratch (tutorial)…** opens this page. The pictures
+are made by a test that does every step, so they match the program.
+
+Read more: [A new line, step by
+step](../user-guide/getting-started.md#a-new-line-step-by-step) (the same
+in a few lines), [Tools](../user-guide/tools.md),
+[Glossary](../user-guide/glossary.md).

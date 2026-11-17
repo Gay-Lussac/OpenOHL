@@ -10,9 +10,9 @@ string** hangs a new string on a structure (or puts a spacer between two
 wires), and **Add post insulator** stands a post insulator on it. This page explains each tool, its windows and every field. The
 words structure, structure type, attachment point, string, wire point and
 set are those of the [Glossary](glossary.md#structures). The tutorial
-places structures and looks at their strings in [3. The first
-structures](../tutorial/03-structures.md) and [4. Strings on the
-structures](../tutorial/04-strings.md).
+places structures and looks at their strings in [3. The
+structures](../tutorial/03-structures.md) and [4. The set
+numbers](../tutorial/04-strings.md).
 
 ## Add structure
 

@@ -1,36 +1,37 @@
 # 5. Stringing the wires
 
+<img src="../images/tutorial/tutorial-strung-3d.png" alt="You will end with this: three phases strung along the line" width="400">
+
 **Goal:** the three phases strung, each in two **sections** — T1 to T4
-and T4 to T6 — and solved in every weather case.
+and T4 to T6 — and a first look at the result.
 
 ## Steps
 
-1. **The wire type.** **Line › Sections › Wires library** shows the project's
-   wire library: the starter's ACSR conductor `acsr-drake-26-7` with its
-   diameter, mass, strength and moduli (typical published values). Close
-   it; nothing to change.
-2. Hold **String wire**.
-3. Click the strings of the first section, in line order (the set
-   labels of chapter 4 help, in the 3D view):
-   T1's string of **set 41**, then T2's **set 1**, T3's **set 1**, and
-   T4's **set 21**.
-   The status bar counts the points; a line is drawn through them.
-   **Backspace** takes the last one back, **Escape** gives up.
-4. Press **Enter**. The window **String wire: new section** opens: id
-   *S1*, wire type `acsr-drake-26-7`, its points (`T1 set 41 ➡ T2 set 1 ➡
-   T3 set 1 ➡ T4 set 21`). Type **circuit** `C1` and **phase** `L1`. Keep the
-   status **in the blocks** and **sagged to a tension**: 20 kN at
-   20 °C (an invented value). Click **Apply**.
+1. Press **8** to hold **String wire**.
+2. Click, in this order: T1's string of **set 41**, T2's **set 1**,
+   T3's **set 1**, T4's **set 21** (see the [drawing in chapter
+   4](04-strings.md)). A yellow line joins them; the status bar counts
+   them.
 
-   ![The plan with the six structures, and the window String wire: new
-   section for S1](../images/tutorial/tutorial-string-wire.png)
-5. The second section of the same phase: click T4's **set 41**,
-   T5's **set 1**, T6's **set 21**, **Enter**. The window starts from the
-   first section's values (circuit C1, phase L1): **Apply**.
-6. The other phases the same way. The window proposes the circuit and
-   the **next phase** of the circuit at that structure (L2, then L3) and,
-   across a tension structure, the same phase again: check it, then
-   **Apply**:
+   ![Mid-way: T1 set 41 and T2 set 1 clicked, joined by a yellow
+   line](../images/tutorial/tutorial-string-wire-clicking.png)
+
+   ![The status bar: String wire: 2 points — click the next string,
+   Enter: section](../images/tutorial/tutorial-string-wire-status.png)
+
+3. Press **Enter**. The window **String wire: new section** opens for
+   *S1*.
+4. Type **circuit** `C1` and **phase** `L1`. Keep the rest (20 kN at
+   20 °C, invented).
+5. Click **Apply**.
+
+   ![The window String wire: new section for
+   S1](../images/tutorial/tutorial-string-wire.png)
+
+6. String S2: click T4's **set 41**, T5's **set 1**, T6's **set 21**,
+   press **Enter**, click **Apply** (the window already says C1, L1).
+7. String the other phases the same way; the window proposes the
+   phase, check it and click **Apply**:
 
    | Section | Strings, in order | Phase |
    |---|---|---|
@@ -39,29 +40,51 @@ and T4 to T6 — and solved in every weather case.
    | S5 | T1 set 43, T2 set 3, T3 set 3, T4 set 23 | L3 |
    | S6 | T4 set 43, T5 set 3, T6 set 23 | L3 |
 
-7. **View › Display weather cases…**: tick **max temperature** beside
-   **everyday**. The wires are drawn in both cases.
+8. Press **Escape** to hold **Select** again.
 
-## What you should see
+> **If the wrong string was picked:** **Backspace** takes the last point
+> back, **Escape** gives the section up. Zoom in until the set labels
+> can be read.
 
-Six sections, each solved at once: the wires hang between the
-structures, the suspension strings plumb in still air, the tension
-strings lined up with their wires. With *max temperature* shown the
-wires hang lower; with *high wind* they swing to one side (the wind is
-from the right, or both sides, as chosen in the same window).
+![The strung line in the 3D view](../images/tutorial/tutorial-strung-3d.png)
 
-**What just happened:** a **section** is a wire strung between two
-tension structures over one or more spans, with its wire type, its
-circuit and phase, and its **stringing**: here a horizontal tension at a
-temperature, the same in every span while it is *in the blocks*. From
-that condition every **weather case** — temperature, wind, ice — is
-solved: the change of state gives each case's tension and sag. You
-may string the earth wire the same way (T1 set 59, T2 and T3 set 19,
-T4 set 39, then T4 set 59, T5 set 19, T6 set 39; circuit and phase cleared:
-it is earthed). See
-[Sag-tension](../theory/sagtension.md), [Stringing and
-status](../user-guide/line-file.md#stringing-and-status), [Weather cases
-shown](../user-guide/desktop-app.md#weather-cases-shown) and the
-[Glossary](../user-guide/glossary.md#sections-spans-and-jumpers).
+## Look at the result
 
-Next: [6. Jumpers](06-jumpers.md).
+1. Choose **View › Display weather cases…**, tick **max temperature**
+   and click **Apply**.
+
+   ![The Display weather cases window: everyday and max temperature
+   ticked](../images/tutorial/tutorial-display-weather-cases.png)
+
+2. Look at the **Profile**: each wire is drawn twice, lower at the
+   maximum temperature.
+
+   ![The profile: the wires everyday and, lower, at the maximum
+   temperature](../images/tutorial/tutorial-two-cases-profile.png)
+
+3. Click the wire between T2 and T3. **Properties** gives, per weather
+   case, its tensions (H, Max T), its **sag** and its lowest point. If
+   the Sag column is cut off, drag the page's left edge to widen it.
+
+   ![Properties of S1 span 2](../images/tutorial/tutorial-span-properties.png)
+
+4. Choose **File › Save all** (⌘S / Ctrl+S). That is your first line.
+
+<details>
+<summary>Why it works this way</summary>
+
+A **section** is one wire strung between two tension structures, over
+one or more spans. It has a wire type, a circuit and phase, and its
+**stringing**: here a horizontal tension at a temperature. From that,
+every **weather case** — temperature, wind, ice — gets its own tension
+and sag, solved as soon as the line changes. A case with wind is drawn
+from both sides. The earth wire is strung the same way (sets 59, 19, 19,
+39, then 59, 19, 39; no circuit or phase).
+
+</details>
+
+Read more: [Sag-tension](../theory/sagtension.md),
+[Stringing and status](../user-guide/line-file.md#stringing-and-status),
+[Weather cases shown](../user-guide/desktop-app.md#weather-cases-shown).
+
+Next: [6. Jumpers](06-jumpers.md) (Part 2).
