@@ -1633,7 +1633,7 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- **255 validation cases pass** (count of 2026-11-13, `ohl validate
+- **274 validation cases pass** (count of 2026-11-17, `ohl validate
   benchmarks`; the last added with O22, 2026-11-11: `tbbim-003`,
   `finstr-001…004`, `saglim-001…002`, `hotcreep-001…003`,
   `ptforce-001…002`, `tbgap-001…003`) and there are 27 theory pages; the
@@ -1853,7 +1853,7 @@ owner.
   plugin points`. Still open: 1.0 itself, and how long the host loads the
   previous major version from then.*
 - [ ] Plugin registry / index — GitHub issue #34
-- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases, a report from `ohl validate --report`; not complete)*
+- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases; 2026-11-17: 274 validation cases, a report from `ohl validate --report`; not complete)*
 - [ ] Translations (i18n)
 - [ ] Public release, governance model, maintainers team
 

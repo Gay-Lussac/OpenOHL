@@ -762,7 +762,7 @@ fn convert(
         return Err(error("final modulus must be positive".into()));
     }
     // Curves must rise over their validity range, or tension cannot be
-    // inverted to strain. Without a range given (every PLS-CADD export):
+    // inverted to strain. Without a range given (as some programs export it):
     // a curve that stops rising before 1 % is held flat from there (owner,
     // 2026-10-27) — near the top of a strong core's range, an aluminium
     // layer's fit may turn — and said ([`curve_turn_warning`]); from
@@ -1284,7 +1284,7 @@ mod tests {
         );
     }
 
-    /// Without a range given (as PLS-CADD exports): a curve that turns
+    /// Without a range given (as some programs export it): a curve that turns
     /// before 1 % is held flat from there (owner, 2026-10-27), said, and
     /// a state beyond it warned about.
     #[test]

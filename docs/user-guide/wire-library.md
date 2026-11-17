@@ -155,7 +155,7 @@ A wire type with any of these problems is **left out**, with its reason, and the
 - total area more than 1 % larger than the area of a circle of the given diameter (a solid wire fills its circle; rounded data may put it a hair over);
 - a curve that stops rising before `max_strain` (when given) or at zero strain; a non-positive `final_modulus`; components with different `reference_temperature`s.
 
-**A curve that stops rising before 1 % strain, without `max_strain`** (as in every PLS-CADD export: e.g. the aluminium layer of an OPGW with a strong steel core turning near its breaking load) is accepted and **held flat from where it stops rising**: that layer takes no more load beyond it, the other layer takes the rest — the wire stretches more than the polynomial would say, so sags are larger (conservative for clearances; see [Sag-tension › The curves' range](../theory/sagtension.md)). It is said when the library loads, and every state beyond it is warned about as beyond the curves' range ("held flat").
+**A curve that stops rising before 1 % strain, without `max_strain`** (as some line-design programs export it: e.g. the aluminium layer of an OPGW with a strong steel core turning near its breaking load) is accepted and **held flat from where it stops rising**: that layer takes no more load beyond it, the other layer takes the rest — the wire stretches more than the polynomial would say, so sags are larger (conservative for clearances; see [Sag-tension › The curves' range](../theory/sagtension.md)). It is said when the library loads, and every state beyond it is warned about as beyond the curves' range ("held flat").
 
 A file that is not a wire library — not TOML, a `format` other than `"ohl-wire"`, or a `version` newer than supported — is refused.
 

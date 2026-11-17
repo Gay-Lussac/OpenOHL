@@ -6785,7 +6785,7 @@ unchanged:
   cables), and the reasons are shown when the library loads (app load
   log and library page, `ohl line` warnings).
 - A stress-strain curve that stops rising before 1 % strain, without a
-  range given (every PLS-CADD export; an OPGW's aluminium layer turning
+  range given (as some programs export it; an OPGW's aluminium layer turning
   at 0.63 %), was refused. The owner chose to accept it and hold the
   curve flat from where it stops rising: the layer takes no more load
   beyond, the wire stretches more (conservative for clearances, marked as
