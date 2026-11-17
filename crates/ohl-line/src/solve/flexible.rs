@@ -1484,16 +1484,7 @@ pub fn solve_line_staged(
             // Newton: (I + C K_w) Δu = −r, C block by block.
             let mut a = DMatrix::<f64>::identity(n, n);
             for (rows, block) in &blocks {
-                let mut kr = DMatrix::<f64>::zeros(rows.len(), n);
-                for (k, &row) in rows.iter().enumerate() {
-                    kr.row_mut(k).copy_from(&kw.row(row));
-                }
-                let product = block * kr;
-                for (k, &row) in rows.iter().enumerate() {
-                    for col in 0..n {
-                        a[(row, col)] += product[(k, col)];
-                    }
-                }
+                add_block_product(&mut a, block, &kw, rows);
             }
             match solve_banded(a, -&r) {
                 Some(delta) if delta.iter().all(|x| x.is_finite()) => Some(delta),
@@ -1550,6 +1541,75 @@ pub fn solve_line_staged(
     unreachable!("the loop returns")
 }
 
+/// Adds C·K_w[rows, ..] (`block` C, the rows `rows` of K_w) to the rows
+/// `rows` of `a` — each entry of `a` gets it from one block only.
+///
+/// Only K_w's columns with an entry on `rows` are multiplied (2026-11-17:
+/// a structure's points are tied by wires to a few others; the product of
+/// C with the whole width cost a fifth of a second per pass on a line of
+/// 4 400 unknowns): a column of K_w that is zero there gives a zero column
+/// of the product, which adds nothing to `a` (each entry of `a` is 1 or 0
+/// before its block's term: x + (±0) = x). The product of the columns
+/// alone is the whole product's columns bit for bit (the matrix product
+/// forms each column from its own column, the same sums whatever the
+/// width — `the_block_product_is_the_whole_one`), taken the same way: at
+/// least [`GEMM_SMALL`] + 1 columns where the whole product has more rows
+/// than that (the matrix library multiplies small matrices otherwise), and
+/// the whole width when C has an entry that is not finite (∞·0 is not 0).
+fn add_block_product(
+    a: &mut DMatrix<f64>,
+    block: &DMatrix<f64>,
+    kw: &DMatrix<f64>,
+    rows: &[usize],
+) {
+    let n = kw.ncols();
+    let mut cols: Vec<usize> = if block.iter().all(|x| x.is_finite()) {
+        (0..n)
+            .filter(|&col| {
+                let c = kw.column(col);
+                rows.iter().any(|&row| c[row] != 0.0)
+            })
+            .collect()
+    } else {
+        (0..n).collect()
+    };
+    if rows.len() > GEMM_SMALL && cols.len() <= GEMM_SMALL {
+        // As many columns as the whole product's path needs (zero ones:
+        // they add nothing).
+        let more: Vec<usize> = (0..n)
+            .filter(|c| !cols.contains(c))
+            .take(GEMM_SMALL + 1 - cols.len())
+            .collect();
+        cols.extend(more);
+        cols.sort_unstable();
+    }
+    if cols.is_empty() {
+        return;
+    }
+    let mut kr = DMatrix::<f64>::zeros(rows.len(), cols.len());
+    for (k, &col) in cols.iter().enumerate() {
+        let from = kw.column(col);
+        let mut to = kr.column_mut(k);
+        for (i, &row) in rows.iter().enumerate() {
+            to[i] = from[row];
+        }
+    }
+    let product = block * kr;
+    for (k, &col) in cols.iter().enumerate() {
+        let from = product.column(k);
+        let mut to = a.column_mut(col);
+        for (i, &row) in rows.iter().enumerate() {
+            to[row] += from[i];
+        }
+    }
+}
+
+/// The largest dimension at which the matrix library (nalgebra 0.35's
+/// `gemm`) multiplies two matrices by its own loops rather than by the
+/// blocked product; [`add_block_product`] keeps each product on the path
+/// the whole one takes.
+const GEMM_SMALL: usize = 5;
+
 /// Solves A x = b by Gaussian elimination with partial pivoting within
 /// A's band (its lower and upper bandwidths found from its entries: the
 /// interface system couples only the points of structures a section
@@ -1602,8 +1662,14 @@ fn solve_banded(mut a: DMatrix<f64>, mut b: DVector<f64>) -> Option<DVector<f64>
             if ajc == 0.0 {
                 continue;
             }
-            for i in j + 1..=last {
-                a[(i, c)] -= factors[i - j] * ajc;
+            // Down the column (its entries one after the other in memory:
+            // the same operations, side by side).
+            let mut column = a.column_mut(c);
+            for (x, f) in column.as_mut_slice()[j + 1..=last]
+                .iter_mut()
+                .zip(&factors[1..])
+            {
+                *x -= f * ajc;
             }
         }
     }
@@ -1649,5 +1715,72 @@ mod band_tests {
             singular[(i, 5)] = 0.0;
         }
         assert!(solve_banded(singular, b).is_none());
+    }
+
+    /// The interface matrix built from the columns of K_w a block reaches
+    /// ([`add_block_product`]) is the one built with the whole width (the
+    /// way before 2026-11-17), bit for bit: blocks of 3 to 102 rows,
+    /// together or apart, K_w reaching none, a few (fewer than the matrix
+    /// library's small size, and more) or many columns, a block with an
+    /// entry that is not finite.
+    #[test]
+    fn the_block_product_is_the_whole_one() {
+        let n = 240;
+        let mut seed = 0x853c_49e6_748f_ea9b_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64 - 0.5
+        };
+        for (case, (size, reach)) in [
+            (3, 2),
+            (3, 40),
+            (6, 0),
+            (6, 3),
+            (6, 6),
+            (9, 5),
+            (54, 4),
+            (54, 60),
+            (102, 7),
+            (102, 200),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let start = (case * 17) % (n - size);
+            let rows: Vec<usize> = if case % 2 == 0 {
+                (start..start + size).collect()
+            } else {
+                (0..size).map(|k| (k * 7 + case) % n).collect()
+            };
+            let mut block = DMatrix::<f64>::from_fn(size, size, |_, _| next());
+            if case == 9 {
+                block[(1, 2)] = f64::INFINITY;
+            }
+            let mut kw = DMatrix::<f64>::zeros(n, n);
+            for c in 0..reach {
+                let col = (c * 13 + case) % n;
+                for &row in &rows {
+                    kw[(row, col)] = next();
+                }
+            }
+            // The whole width, row by row.
+            let mut whole = DMatrix::<f64>::identity(n, n);
+            let mut kr = DMatrix::<f64>::zeros(rows.len(), n);
+            for (k, &row) in rows.iter().enumerate() {
+                kr.row_mut(k).copy_from(&kw.row(row));
+            }
+            let product = &block * kr;
+            for (k, &row) in rows.iter().enumerate() {
+                for col in 0..n {
+                    whole[(row, col)] += product[(k, col)];
+                }
+            }
+            let mut cut = DMatrix::<f64>::identity(n, n);
+            add_block_product(&mut cut, &block, &kw, &rows);
+            let bits = |m: &DMatrix<f64>| m.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            assert_eq!(bits(&cut), bits(&whole), "case {case}");
+        }
     }
 }
