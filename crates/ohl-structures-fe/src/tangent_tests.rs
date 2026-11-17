@@ -238,3 +238,42 @@ fn an_x_panel_is_softer_with_its_slack_diagonal_out() {
         .unwrap();
     assert!(back.inactive[3] && !back.inactive[4]);
 }
+
+/// What a full model's solves keep for the next ([`crate::solve::Memo`],
+/// 2026-11-17: the failed first try before its joints are held, the
+/// factors of the first-order matrix that the P-Delta solve's first
+/// iteration factorises again) changes no digit: an X panel with a top
+/// joint free across its plane (held by the stabilisation), its
+/// diagonals tension-only, with P-Delta, solved under a series of loads
+/// that switches its diagonals, each from the last solve's set as the
+/// level-4 loop does — every answer the same as without the memo, bit for
+/// bit, and the memo taken.
+#[test]
+fn the_memo_changes_no_digit() {
+    let mut m = panel();
+    // C free across the plane: held by the stabilisation.
+    m.nodes[2].spring[1] = 0.0;
+    m.analysis.nonlinear = true;
+    m.analysis.stabilise = true;
+    let full = FullModel::of_model(m, vec![Attachment::of_type("D")]);
+    let budget = default_budget();
+    let mut start: Option<Vec<bool>> = None;
+    let mut sets = Vec::new();
+    for f in [
+        [10e3, 0.0, -5e3],
+        [12e3, 0.0, -5e3],
+        [-10e3, 0.0, -5e3],
+        [-11e3, 0.0, -6e3],
+        [10e3, 0.0, -5e3],
+        [10e3, 0.0, -5e3],
+    ] {
+        let with = full.solve_on(&[f], &[], &[], start.as_deref(), &budget);
+        let without = full.solve_on_unmemoised(&[f], &[], &[], start.as_deref(), &budget);
+        assert_eq!(format!("{with:?}"), format!("{without:?}"), "{f:?}");
+        let with = with.unwrap();
+        sets.push(with.inactive.clone());
+        start = Some(with.inactive);
+    }
+    assert_ne!(sets[0], sets[2], "the diagonals switch: {sets:?}");
+    assert!(full.memo_hits() > 0, "the memo was taken");
+}

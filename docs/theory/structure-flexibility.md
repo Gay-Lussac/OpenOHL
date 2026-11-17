@@ -694,7 +694,11 @@ solves each, the setup 7 ms); level 4 174 ms (1–4 line solves, one or two
 full solves per structure and case, 1.4–3.4 ms of structure solves a
 case). Only in *rime ice + wind* did level 4 take a line solve more: the
 steel pole's P-Delta moved its top 2.8 mm further than level 3, its
-forces changed by 0.01 %.
+forces changed by 0.01 %. With lattice towers of thousands of members
+the structures' full solves are most of the time — some tenths of a
+second each since the speed-up of 2026-11-17, which changed no computed
+digit ([performance](../development/performance.md#calculation-level-4-how-it-is-made-fast-2026-11-17)):
+level 4 then takes about twice level 3's time.
 
 ## The reference state of the structures
 

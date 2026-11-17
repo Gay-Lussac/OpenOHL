@@ -41,9 +41,10 @@ computer** (kept with the application, for every project):
   largest difference from level 3 (a point's move, a point's force) and
   the structures that failed at level 4 in a case. Not run here yet: an
   estimate from the last level-3 run (about 1.5 times its time on the
-  example line, up to some ten times with towers of thousands of members:
-  level 3's line solves, then one to four more, each with a full solve of
-  every flexible structure, side by side), else from the last rigid run.
+  example line, some two to three times with towers of thousands of
+  members: level 3's line solves, then one to four more, each with a full
+  solve of every flexible structure, side by side — some tenths of a
+  second each for such a tower), else from the last rigid run.
 
 The **(?)** beside the title lists the structures that stay rigid at
 levels 3 and 4 and why (no structure type, a type not in the library, a type

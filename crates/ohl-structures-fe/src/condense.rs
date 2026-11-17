@@ -691,10 +691,12 @@ pub(crate) fn condense_state(
             let mut e = [0.0; 3];
             e[k] = 1.0;
             tangent.put(place.node, e, *moment, &mut x);
-            tangent.k.solve(&mut x);
             columns.push(x);
         }
     }
+    // Side by side, each as alone (bit for bit).
+    let mut each: Vec<&mut [f64]> = columns.iter_mut().map(Vec::as_mut_slice).collect();
+    tangent.k.solve_many(&mut each);
     let mut c = DMatrix::<f64>::zeros(3 * n, 3 * n);
     for (p, (place, moments)) in places.iter().zip(&place_moments).enumerate() {
         for (i, moment) in moments.iter().enumerate() {
@@ -709,6 +711,7 @@ pub(crate) fn condense_state(
     let c = (&c + c.transpose()) * 0.5;
     // The extra load sets: each place's displacement along each axis.
     let mut extra_moves = Vec::with_capacity(extra.len());
+    let mut extra_x: Vec<Vec<f64>> = Vec::with_capacity(extra.len());
     for loads in extra {
         run.check()
             .map_err(|stop| Rigid::Stopped(stop.to_string()))?;
@@ -718,7 +721,11 @@ pub(crate) fn condense_state(
                 tangent.put(l.node, l.force, l.moment, &mut x);
             }
         }
-        tangent.k.solve(&mut x);
+        extra_x.push(x);
+    }
+    let mut each: Vec<&mut [f64]> = extra_x.iter_mut().map(Vec::as_mut_slice).collect();
+    tangent.k.solve_many(&mut each);
+    for x in &extra_x {
         extra_moves.push(
             places
                 .iter()
@@ -727,7 +734,7 @@ pub(crate) fn condense_state(
                     [0, 1, 2].map(|i| {
                         let mut e = [0.0; 3];
                         e[i] = 1.0;
-                        tangent.read(place.node, e, moments[i], &x)
+                        tangent.read(place.node, e, moments[i], x)
                     })
                 })
                 .collect(),
@@ -752,6 +759,17 @@ pub(crate) fn condense_state(
         .collect();
     if !ground.is_empty() {
         let full = Tangent::at(model, &solution, nonlinear, true)?;
+        // What the members put on each removed direction: that row of the
+        // product K·u only (the full product's sum for it, in its order).
+        let rows: Vec<Option<Vec<(usize, usize)>>> = ground
+            .iter()
+            .map(|h| {
+                let base = if h.rotation { 3 } else { 0 };
+                h.axis
+                    .and_then(|a| full.eq[h.node][base + a])
+                    .map(|q| full.k.row(q))
+            })
+            .collect();
         for (col, x) in columns.iter().enumerate() {
             let u = tangent.displacements(x);
             let mut ux = vec![0.0; full.n_eq];
@@ -762,14 +780,13 @@ pub(crate) fn condense_state(
                     }
                 }
             }
-            let internal = full.k.mul(&ux);
             // The unit load of this column: at its place's node, force
             // e_k and its offset's moment.
             let (place, k) = (&places[col / 3], col % 3);
             let mut unit = [0.0; 6];
             unit[k] = 1.0;
             unit[3..].copy_from_slice(&place_moments[col / 3][k]);
-            for h in &ground {
+            for (h, row) in ground.iter().zip(&rows) {
                 let base = if h.rotation { 3 } else { 0 };
                 let force: f64 = match h.axis {
                     // A removed direction: what the members put on it,
@@ -781,7 +798,7 @@ pub(crate) fn condense_state(
                         } else {
                             0.0
                         };
-                        full.eq[h.node][base + a].map_or(0.0, |q| internal[q]) - load
+                        row.as_ref().map_or(0.0, |row| full.k.mul_row(row, &ux)) - load
                     }
                     // A spring: its force.
                     None => {
