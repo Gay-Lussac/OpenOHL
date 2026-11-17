@@ -540,16 +540,176 @@ pub fn solve_from(
     budget: &Budget,
     start: Option<&[bool]>,
 ) -> Result<Solution, FeError> {
+    solve_from_memo(model, loads, options, budget, start, None)
+}
+
+/// [`solve_from`] taking from (and keeping in) `memo` what `model`'s
+/// solves under other loads have in common with this one ([`Memo`]): the
+/// same solution bit for bit. `memo` must be `model`'s own: made for it
+/// and used with no other (its owner keeps the two together and the
+/// model unchanged, as [`crate::tangent::FullModel`] does).
+pub(crate) fn solve_from_memo(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    start: Option<&[bool]>,
+    memo: Option<&Memo>,
+) -> Result<Solution, FeError> {
+    let memo = memo.map(|memo| Memoised { memo, model });
     // A warm start that fails (members left out together that leave a part
     // free, which the cold start's iterations would not have reached):
     // solved again from the cold start, so it never fails where that one
     // solves.
-    match solve_once(model, loads, options, budget, start) {
+    match solve_once(model, loads, options, budget, start, memo) {
         Err(e) if start.is_some() && !matches!(e, FeError::Stopped { .. }) => {
-            solve_once(model, loads, options, budget, None)
+            solve_once(model, loads, options, budget, None, memo)
         }
         other => other,
     }
+}
+
+/// What the solves of one model under different loads have in common,
+/// kept to be taken again without a changed digit (calculation level 4's
+/// speed-up, 2026-11-17: the same structure is solved in every pass of
+/// every case). Two things, both depending only on the model and on what
+/// its first iteration's matrix is made of — never on the loads:
+///
+/// - **a first iteration that failed** (a mechanism, or unstable) before
+///   the joints were stabilised: the matrix of the first iteration is
+///   made of the model, the members left out, their constant forces and
+///   whether P-Delta is on; with those the same, it fails again with the
+///   same error — taken from here instead of factorised again (the
+///   failing try and its mechanism's inverse iteration cost about two
+///   factorisations, in every solve of a structure that needs its joints
+///   held);
+/// - **the last first factorisation** (of the solve before): the first
+///   iteration's matrix of a P-Delta solve is the first-order one when no
+///   member carries a force yet (no pretension, nothing bowed), so the
+///   first-order solve of the active-set iterations and the P-Delta solve
+///   after it factorise the same matrix. Its factors are taken when the
+///   matrix assembled now is the same bit for bit (compared entry by
+///   entry, the profile too); kept only until [`Memo::forget_factors`]
+///   (the matrix is a few megabytes for a large tower).
+#[derive(Default)]
+pub struct Memo {
+    inner: std::sync::Mutex<MemoInner>,
+    /// How often what it keeps was taken.
+    hits: std::sync::atomic::AtomicUsize,
+}
+
+#[derive(Default)]
+struct MemoInner {
+    /// The first iterations that failed, without stabilisation: what
+    /// their matrix was made of, and the error (the latest last).
+    failed: Vec<(FirstMatrix, FeError)>,
+    /// The last first factorisation: the matrix as assembled, its factors
+    /// and its negative pivots.
+    last: Option<(Skyline, Skyline, usize)>,
+}
+
+/// What the first iteration's matrix of a solve without stabilisation is
+/// made of besides the model: P-Delta on, per member left out (slack or
+/// bowed) and its axial force then (its pretension, or a bowed member's
+/// compression), as bits.
+#[derive(Debug, Clone, PartialEq)]
+struct FirstMatrix {
+    nonlinear: bool,
+    out: Vec<bool>,
+    axial: Vec<u64>,
+}
+
+/// The first iterations that failed kept at most (the oldest forgotten).
+const MEMO_FAILED: usize = 32;
+
+impl Memo {
+    /// Forgets the factors kept (the failed first iterations stay: they
+    /// take no room).
+    pub fn forget_factors(&self) {
+        self.inner.lock().expect("not poisoned").last = None;
+    }
+
+    /// How often what it keeps was taken (a failed first iteration, or
+    /// factors): for the tests and the timings.
+    pub fn hits(&self) -> usize {
+        self.hits.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn hit(&self) {
+        self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The error of a first iteration made of `key` that failed before.
+    fn failed(&self, key: &FirstMatrix) -> Option<FeError> {
+        let inner = self.inner.lock().expect("not poisoned");
+        inner
+            .failed
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, e)| {
+                self.hit();
+                e.clone()
+            })
+    }
+
+    /// Keeps a first iteration that failed.
+    fn remember_failed(&self, key: FirstMatrix, error: &FeError) {
+        let mut inner = self.inner.lock().expect("not poisoned");
+        if inner.failed.len() >= MEMO_FAILED {
+            inner.failed.remove(0);
+        }
+        inner.failed.push((key, error.clone()));
+    }
+
+    /// `k` factorised: the factors kept when it is the matrix factorised
+    /// last (bit for bit), else factorised (and kept when it succeeds).
+    fn factorize_first(&self, k: &mut Skyline) -> Result<usize, Pivot> {
+        let last = self.inner.lock().expect("not poisoned").last.take();
+        if let Some((before, after, negative)) = &last
+            && before.same(k)
+        {
+            k.take_values(after);
+            let negative = *negative;
+            self.inner.lock().expect("not poisoned").last = last;
+            self.hit();
+            return Ok(negative);
+        }
+        let before = k.clone();
+        let result = k.factorize();
+        if let Ok(negative) = result {
+            self.inner.lock().expect("not poisoned").last = Some((before, k.clone(), negative));
+        }
+        result
+    }
+}
+
+impl Clone for Memo {
+    /// A fresh memo (what it keeps is taken again by the clone's solves).
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl fmt::Debug for Memo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Memo")
+    }
+}
+
+impl PartialEq for Memo {
+    /// Always: what a memo keeps is no part of a value's meaning.
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// A memo with the model it belongs to (used only for solves of that very
+/// model: not for a copy with members changed).
+#[derive(Clone, Copy)]
+struct Memoised<'a> {
+    memo: &'a Memo,
+    model: &'a Model,
 }
 
 /// [`solve_from`] without the cold start again.
@@ -559,6 +719,7 @@ fn solve_once(
     options: &Options,
     budget: &Budget,
     start: Option<&[bool]>,
+    memo: Option<Memoised<'_>>,
 ) -> Result<Solution, FeError> {
     // An attachment point on a joint only bars meet, loaded across them:
     // refused with the fix (not held, which would share it to the bars'
@@ -570,7 +731,15 @@ fn solve_once(
     // again at the looser threshold of rounded coordinates; the error
     // stands when the joints still move implausibly far or it is still
     // unstable.
-    let first = solve_at(model, loads, options, budget, crate::stabilise::FREE, start);
+    let first = solve_at(
+        model,
+        loads,
+        options,
+        budget,
+        crate::stabilise::FREE,
+        start,
+        memo,
+    );
     match first.and_then(|s| implausible(model, &s.displacements).map(|()| s)) {
         Err(FeError::Implausible { .. } | FeError::Unstable { .. }) if options.stabilise => {
             let mut s = solve_at(
@@ -580,6 +749,7 @@ fn solve_once(
                 budget,
                 crate::stabilise::FREE_ROUNDED,
                 start,
+                memo,
             )?;
             implausible(model, &s.displacements)?;
             s.rounded_stabilisation = true;
@@ -598,11 +768,12 @@ fn solve_at(
     budget: &Budget,
     threshold: f64,
     start: Option<&[bool]>,
+    memo: Option<Memoised<'_>>,
 ) -> Result<Solution, FeError> {
     if model.members.iter().any(|m| m.kind == MemberKind::Tension) {
-        return solve_tension_only(model, loads, options, budget, threshold, start);
+        return solve_tension_only(model, loads, options, budget, threshold, start, memo);
     }
-    solve_stabilised_with(model, loads, options, budget, &[], &[], threshold)
+    solve_stabilised_with(model, loads, options, budget, &[], &[], threshold, memo)
 }
 
 /// Solves `model` with the members `inactive` left out (empty: none),
@@ -626,10 +797,13 @@ pub(crate) fn solve_stabilised(
         inactive,
         caps,
         crate::stabilise::FREE,
+        None,
     )
 }
 
-/// [`solve_stabilised`] with the stabilisation threshold `threshold`.
+/// [`solve_stabilised`] with the stabilisation threshold `threshold` (and
+/// the model's memo, [`Memo`]).
+#[allow(clippy::too_many_arguments)]
 fn solve_stabilised_with(
     model: &Model,
     loads: &Loads,
@@ -638,22 +812,26 @@ fn solve_stabilised_with(
     inactive: &[bool],
     caps: &[f64],
     threshold: f64,
+    memo: Option<Memoised<'_>>,
 ) -> Result<Solution, FeError> {
+    let solve = |held: &[Stabilisation]| {
+        solve_with(model, loads, options, budget, held, inactive, caps, memo)
+    };
     // The second try of a near-mechanism holds its joints from the start
     // (its first solve did not fail, it moved them implausibly far).
     if threshold > crate::stabilise::FREE && options.stabilise {
         let held = crate::stabilise::find_with(model, inactive, threshold);
         if !held.is_empty() {
-            return solve_with(model, loads, options, budget, &held, inactive, caps);
+            return solve(&held);
         }
     }
-    match solve_with(model, loads, options, budget, &[], inactive, caps) {
+    match solve(&[]) {
         Err(e @ (FeError::Mechanism { .. } | FeError::Unstable { .. })) if options.stabilise => {
             let held = crate::stabilise::find_with(model, inactive, threshold);
             if held.is_empty() {
                 return Err(e);
             }
-            solve_with(model, loads, options, budget, &held, inactive, caps)
+            solve(&held)
         }
         other => other,
     }
@@ -739,6 +917,7 @@ fn solve_tension_only(
     budget: &Budget,
     threshold: f64,
     start: Option<&[bool]>,
+    memo: Option<Memoised<'_>>,
 ) -> Result<Solution, FeError> {
     let own = compression_caps(model);
     let run = budget.start();
@@ -754,7 +933,9 @@ fn solve_tension_only(
                     nonlinear,
                     ..*options
                 };
-                let s = solve_stabilised_with(m, loads, &opts, budget, inactive, &caps, threshold)?;
+                let s = solve_stabilised_with(
+                    m, loads, &opts, budget, inactive, &caps, threshold, memo,
+                )?;
                 residual = s.residual;
                 let (next, shortening) = next_active_set(m, &s, inactive, ties, &caps);
                 Ok((s, next, shortening))
@@ -762,7 +943,7 @@ fn solve_tension_only(
             let over = ties_hiding_compression(&s, ties, &own);
             Ok((s, passes, over))
         },
-        |m| solve_stabilised_with(m, loads, options, budget, &[], &[], threshold),
+        |m| solve_stabilised_with(m, loads, options, budget, &[], &[], threshold, memo),
     )?;
     s.passes = passes;
     s.kept_active = kept;
@@ -1245,7 +1426,9 @@ fn slack_stretch(model: &Model, s: &Solution, inactive: &[bool]) -> Vec<f64> {
 /// Solves `model` under `loads` with the joint directions `held` and the
 /// members `inactive` left out (tension-only members gone slack or bowed;
 /// empty: none), each carrying the compression `caps` (N; empty or 0:
-/// none, slack) as a constant pair of forces along it.
+/// none, slack) as a constant pair of forces along it; `memo`: the
+/// model's [`Memo`] (used only when it is this very model's).
+#[allow(clippy::too_many_arguments)]
 fn solve_with(
     model: &Model,
     loads: &Loads,
@@ -1254,7 +1437,11 @@ fn solve_with(
     held: &[Stabilisation],
     inactive: &[bool],
     caps: &[f64],
+    memo: Option<Memoised<'_>>,
 ) -> Result<Solution, FeError> {
+    let memo = memo
+        .filter(|m| std::ptr::eq(m.model, model))
+        .map(|m| m.memo);
     model.check().map_err(FeError::Invalid)?;
     let n_nodes = model.nodes.len();
     // Members with a frame's stiffness in this solve: frames, and the
@@ -1554,7 +1741,25 @@ fn solve_with(
             }
             return Err(FeError::Stopped { stop, residual });
         }
-        let negative = match k.factorize() {
+        // The first iteration without stabilisation: its matrix is made of
+        // the model, the members left out, their forces and P-Delta; one
+        // made of the same failed before fails again alike (Memo).
+        let first = slack_solved.is_none();
+        let failing = (memo.is_some() && first && held.is_empty()).then(|| FirstMatrix {
+            nonlinear: options.nonlinear,
+            out: slack.clone(),
+            axial: axial.iter().map(|a| a.to_bits()).collect(),
+        });
+        if let (Some(m), Some(key)) = (memo, &failing)
+            && let Some(e) = m.failed(key)
+        {
+            return Err(e);
+        }
+        let factorised = match memo {
+            Some(m) if first => m.factorize_first(&mut k),
+            _ => k.factorize(),
+        };
+        let negative = match factorised {
             Ok(negative) => negative,
             Err(Pivot::Zero(q)) => {
                 let (n, d) = dof_of[q];
@@ -1569,12 +1774,16 @@ fn solve_with(
                     &mut k,
                 );
                 let (joints, moving) = moving_joints(model, &dof_of, &k.mechanism());
-                return Err(FeError::Mechanism {
+                let e = FeError::Mechanism {
                     node: model.nodes[n].id.clone(),
                     dof: DOF_NAMES[d],
                     joints,
                     moving,
-                });
+                };
+                if let (Some(m), Some(key)) = (memo, failing) {
+                    m.remember_failed(key, &e);
+                }
+                return Err(e);
             }
         };
         if negative > 0 {
@@ -1594,12 +1803,16 @@ fn solve_with(
                 .first()
                 .map(|j| compressed_at(model, j, &axial, &slack))
                 .unwrap_or_default();
-            return Err(FeError::Unstable {
+            let e = FeError::Unstable {
                 iteration: run.iterations(),
                 modes: negative,
                 joints,
                 compressed,
-            });
+            };
+            if let (Some(m), Some(key)) = (memo, failing) {
+                m.remember_failed(key, &e);
+            }
+            return Err(e);
         }
         k.solve(&mut r);
         // Relaxation (2026-10-27): the iterations are a fixed point of the

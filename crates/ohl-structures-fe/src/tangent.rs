@@ -36,7 +36,7 @@ use crate::condense::{
 };
 use crate::model::{JointPoint, Model, NodalLoad};
 use crate::pole::{Pole, PoleLoad};
-use crate::solve::{Loads, Options, Prescribed, Solution, solve_from};
+use crate::solve::{Loads, Memo, Options, Prescribed, Solution, solve_from_memo};
 
 /// The linearisation in words of a tangent condensed at a case's own
 /// solution ([`Condensed::linearisation`]).
@@ -69,21 +69,25 @@ pub fn condensed_tangent(
 
 /// A structure set up for its full solves at its attachment points: its
 /// model, its points (linked as the structure check links their loads),
-/// its own settings.
+/// its own settings — fixed once made (read through its methods), so
+/// what its solves keep for the next ([`Memo`]) stays its own.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FullModel {
     /// The model (a pole: the pole check's frame model, [`FullModel::of_pole`]).
-    pub model: Model,
+    model: Model,
     /// The attachment points, in the order of the forces given.
-    pub points: Vec<Attachment>,
+    points: Vec<Attachment>,
     /// The solve's settings: the model's own P-Delta and stabilisation.
-    pub options: Options,
+    options: Options,
     /// The factor on the members' self-weight in every solve (the model's
     /// own: 1 when it takes it, else 0).
-    pub self_weight: f64,
+    self_weight: f64,
     /// A pole's frame model: its node heights and its height (none: a
     /// structure model).
     pole: Option<(Vec<f64>, f64)>,
+    /// What its solves have in common, taken again without a changed
+    /// digit (2026-11-17).
+    memo: Memo,
 }
 
 /// One full solve at the points ([`FullModel::solve`]).
@@ -124,7 +128,29 @@ impl FullModel {
             options,
             self_weight,
             pole: None,
+            memo: Memo::default(),
         }
+    }
+
+    /// The model (a pole: the pole check's frame model).
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    /// The attachment points, in the order of the forces given.
+    pub fn points(&self) -> &[Attachment] {
+        &self.points
+    }
+
+    /// The solve's settings: the model's own P-Delta and stabilisation.
+    pub fn options(&self) -> &Options {
+        &self.options
+    }
+
+    /// The factor on the members' self-weight in every solve (the model's
+    /// own: 1 when it takes it, else 0).
+    pub fn self_weight(&self) -> f64 {
+        self.self_weight
     }
 
     /// A pole with its points (label, the type's point in the pole's axes,
@@ -231,6 +257,38 @@ impl FullModel {
         start: Option<&[bool]>,
         budget: &Budget,
     ) -> Result<PointsSolve, String> {
+        self.solve_memo(forces, extra, feet, start, budget, Some(&self.memo))
+    }
+
+    /// [`FullModel::solve_on`] without its memo: what it gives without
+    /// taking anything from the solves before (the tests compare the two).
+    #[cfg(test)]
+    pub(crate) fn solve_on_unmemoised(
+        &self,
+        forces: &[[f64; 3]],
+        extra: &[NodalLoad],
+        feet: &[Prescribed],
+        start: Option<&[bool]>,
+        budget: &Budget,
+    ) -> Result<PointsSolve, String> {
+        self.solve_memo(forces, extra, feet, start, budget, None)
+    }
+
+    /// How often its solves took what the solves before kept ([`Memo`]).
+    pub fn memo_hits(&self) -> usize {
+        self.memo.hits()
+    }
+
+    /// [`FullModel::solve_on`] with `memo` (none: without).
+    fn solve_memo(
+        &self,
+        forces: &[[f64; 3]],
+        extra: &[NodalLoad],
+        feet: &[Prescribed],
+        start: Option<&[bool]>,
+        budget: &Budget,
+        memo: Option<&Memo>,
+    ) -> Result<PointsSolve, String> {
         if forces.len() != self.points.len() {
             return Err(format!(
                 "{} forces for {} points",
@@ -255,8 +313,12 @@ impl FullModel {
             prescribed: feet.to_vec(),
             ..Loads::default()
         };
-        let s = solve_from(&self.model, &loads, &self.options, budget, start)
-            .map_err(|e| format!("did not solve under the loads with the line: {e}"))?;
+        // From the solves before what they have in common with this one
+        // (the same solution bit for bit); the factors kept only within
+        // this solve.
+        let solved = solve_from_memo(&self.model, &loads, &self.options, budget, start, memo);
+        self.memo.forget_factors();
+        let s = solved.map_err(|e| format!("did not solve under the loads with the line: {e}"))?;
         let tangent = condensed_tangent(&self.model, &self.points, &s, budget)
             .map_err(|e| format!("its tangent under the loads with the line: {}", at_case(&e)))?;
         let displacement = tangent

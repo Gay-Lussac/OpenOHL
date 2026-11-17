@@ -65,6 +65,23 @@ impl Skyline {
         self.first.len()
     }
 
+    /// The same matrix bit for bit: the same profile and every entry the
+    /// same bits.
+    pub fn same(&self, other: &Skyline) -> bool {
+        self.first == other.first
+            && self.values.len() == other.values.len()
+            && self
+                .values
+                .iter()
+                .zip(&other.values)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+    }
+
+    /// Takes `other`'s entries (of the same profile: its factors).
+    pub fn take_values(&mut self, other: &Skyline) {
+        self.values.copy_from_slice(&other.values);
+    }
+
     /// Sets every entry to 0 (keeps the profile).
     pub fn clear(&mut self) {
         self.values.iter_mut().for_each(|v| *v = 0.0);
