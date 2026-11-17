@@ -81,11 +81,16 @@ codegen-units = 16
 # for a debugger session with variables).
 [profile.dev]
 debug = "line-tables-only"
+# The workspace's own code lightly optimised too (2026-11-17): the
+# finite-element, clearance and jumper tests ran minutes each unoptimised
+# (the whole test run 899 s → 185 s); same results (no fast-math: the same
+# IEEE operations), debug assertions kept, builds a little slower.
+opt-level = 1
 
 # The dependencies optimised (the WebAssembly engine compiling plugins,
 # rendering, SQLite run many times faster in the tests), without debug
-# information; the workspace's own code as usual, with its debug
-# assertions.
+# information; the workspace's own code at opt-level 1 (above), with
+# its debug assertions.
 [profile.dev.package."*"]
 opt-level = 2
 debug = false

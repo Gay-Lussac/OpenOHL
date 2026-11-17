@@ -556,7 +556,9 @@ Guidelines:
 
 ## Build profiles
 
-- `dev` (debug builds and tests): the workspace's crates with line tables only (`debug = "line-tables-only"`: backtraces keep their files and lines, the build folder is several GB smaller and links are faster), the dependencies optimised (`opt-level = 2`) without debug information. For a debugger session with variables, build with `CARGO_PROFILE_DEV_DEBUG=true`.
+- `dev` (debug builds and tests): the workspace's crates lightly optimised (`opt-level = 1`, since 2026-11-17: the finite-element, clearance and jumper tests ran minutes each unoptimised; the whole test run went from 899 s to 185 s with the same results — Rust does no fast-math, so the same IEEE operations — and debug assertions kept) with line tables only (`debug = "line-tables-only"`: backtraces keep their files and lines, the build folder is several GB smaller and links are faster), the dependencies optimised (`opt-level = 2`) without debug information. For a debugger session with variables, build with `CARGO_PROFILE_DEV_DEBUG=true`.
+
+  **Running the tests:** the full check (`tools/check.sh`) runs them with [cargo-nextest](https://nexte.st) when it is installed (`cargo install --locked cargo-nextest`): the test programs side by side instead of one after another, then the doc tests (which nextest does not run) with `cargo test --doc`. Measured 2026-11-17 on a 10-core M1 Max, 2 749 tests: one after another about 1 030 s, side by side 899 s, side by side with `opt-level = 1` 185 s. Each step of the check prints its seconds.
 - `release`: what is shipped (thin LTO, one codegen unit): the slowest to build.
 - `bench-fast`: release optimisation without LTO, 16 codegen units — for local timing runs (`cargo test --profile bench-fast -p ohl-clearance --test zone_speed -- --ignored --nocapture`), much faster to build; its numbers are close to `release` but not the shipped binary's. Results do not depend on the profile.
 

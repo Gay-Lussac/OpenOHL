@@ -111,12 +111,27 @@ for d in plugins/examples/building-cuts; do
 done
 ok plugin-tests-ok
 
-OHL_REQUIRE_PLUGIN_TESTS=1 OHL_REQUIRE_GPU_TESTS=1 $C test -q --no-fail-fast --workspace --exclude ohl-py > "$LOG" 2>&1 || {
-    grep -E "FAILED|panicked|^error" "$LOG" | head -30
-    echo "tests-FAILED (all output: $LOG)"
-    exit 1
-}
-ok "tests-ok ($(grep -c "test result: ok" "$LOG") test binaries)"
+# With cargo-nextest installed, the test programs run side by side
+# (2026-11-17: 899 s instead of about 1,030 s one after another; with the
+# workspace's own code optimised, Cargo.toml [profile.dev], 185 s); it runs
+# no doc tests, so those run after it. Without it, as before.
+if $C nextest --version > /dev/null 2>&1; then
+    { OHL_REQUIRE_PLUGIN_TESTS=1 OHL_REQUIRE_GPU_TESTS=1 $C nextest run --workspace --exclude ohl-py \
+        --no-fail-fast --status-level fail --final-status-level fail \
+        && $C test -q --doc --workspace --exclude ohl-py; } > "$LOG" 2>&1 || {
+        grep -E "FAIL|panicked|^error" "$LOG" | head -30
+        echo "tests-FAILED (all output: $LOG)"
+        exit 1
+    }
+    ok "tests-ok ($(grep -o "[0-9]* tests run: [0-9]* passed" "$LOG" | tail -1), doc tests too)"
+else
+    OHL_REQUIRE_PLUGIN_TESTS=1 OHL_REQUIRE_GPU_TESTS=1 $C test -q --no-fail-fast --workspace --exclude ohl-py > "$LOG" 2>&1 || {
+        grep -E "FAILED|panicked|^error" "$LOG" | head -30
+        echo "tests-FAILED (all output: $LOG)"
+        exit 1
+    }
+    ok "tests-ok ($(grep -c "test result: ok" "$LOG") test binaries)"
+fi
 
 RUSTDOCFLAGS="-D warnings" $C doc -q --no-deps --workspace --exclude ohl-py && ok doc-ok || { echo doc-FAILED; exit 1; }
 mdbook build > /dev/null 2>&1 && ok mdbook-ok || { echo mdbook-FAILED; exit 1; }
