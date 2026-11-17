@@ -270,6 +270,13 @@ pub trait FullAnswer: StructureResponse {
     fn failed(&self) -> Option<String>;
     /// Its full solves in this case and their time.
     fn solves(&self) -> (usize, Duration);
+    /// The time its next full solve is expected to take (its last one's;
+    /// zero: unknown or none): the structures of a pass are started the
+    /// longest first, so that no long one is left alone at its end
+    /// (2026-11-17).
+    fn expected(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 /// Where a level-4 loop is ([`FullProvider::progress`]).
@@ -1014,8 +1021,11 @@ pub fn solve_line_staged(
             Some(stage) => {
                 let done = std::sync::atomic::AtomicUsize::new(0);
                 let of = stage.answers.len();
-                let items: Vec<usize> = (0..of).collect();
-                crate::jumper::in_parallel_each(&items, |&r| {
+                // The longest first (else in their order); each answer is
+                // its own, so the order changes none.
+                let mut items: Vec<usize> = (0..of).collect();
+                items.sort_by_key(|&r| std::cmp::Reverse(stage.answers[r].expected()));
+                let answered = crate::jumper::in_parallel_each(&items, |&r| {
                     if cancelled() {
                         return Err("cancelled".to_owned());
                     }
@@ -1032,7 +1042,17 @@ pub fn solve_line_staged(
                         });
                     }
                     a
-                })
+                });
+                // Back in the structures' order.
+                let mut answers: Vec<Option<Result<Answer, String>>> =
+                    (0..of).map(|_| None).collect();
+                for (&r, a) in items.iter().zip(answered) {
+                    answers[r] = Some(a);
+                }
+                answers
+                    .into_iter()
+                    .map(|a| a.unwrap_or_else(|| Err("not answered".to_owned())))
+                    .collect()
             }
             None => (0..responses.len())
                 .map(|r| responses[r].answer(&forces_of(r, &ids_of(r))))

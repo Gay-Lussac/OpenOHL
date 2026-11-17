@@ -65,6 +65,9 @@ struct FullStructure {
     /// structure check takes it here (a wind relative to the line turned
     /// to the structure's axes) and its weather (index).
     cases: Vec<Option<(LoadCase, usize)>>,
+    /// The time of its solve at the stringing state (what its first solve
+    /// in a case is expected to take).
+    strung_time: Duration,
 }
 
 /// The progress callback of a level-4 run.
@@ -216,9 +219,10 @@ struct State {
     /// Its own wind and ice of the case at its nodes (made at the first
     /// answer).
     body: Option<Vec<NodalLoad>>,
-    /// Solves and their time.
+    /// Solves and their time; the last one's.
     solves: usize,
     time: Duration,
+    last: Option<Duration>,
 }
 
 /// A structure answering in one case's loop.
@@ -276,8 +280,10 @@ impl StructureResponse for Answering<'_> {
             Some(&start),
             &ohl_structures_fe::default_budget(),
         );
+        let took = started.elapsed();
         st.solves += 1;
-        st.time += started.elapsed();
+        st.time += took;
+        st.last = Some(took);
         match solved {
             Ok(p) => {
                 st.inactive = Some(p.inactive);
@@ -321,6 +327,16 @@ impl FullAnswer for Answering<'_> {
     fn solves(&self) -> (usize, Duration) {
         let st = self.state.lock().expect("not poisoned");
         (st.solves, st.time)
+    }
+
+    fn expected(&self) -> Duration {
+        let st = self.state.lock().expect("not poisoned");
+        if st.failed.is_some() {
+            return Duration::ZERO;
+        }
+        st.last
+            .or_else(|| self.s.map(|s| s.strung_time))
+            .unwrap_or_default()
     }
 }
 
@@ -415,6 +431,7 @@ pub(crate) fn prepare_full(
             let placed = line.structure(&l.structure)?.clone();
             let t = types.get(placed.structure_type.as_deref()?)?.clone();
             let mut feet = Vec::new();
+            let mut strung_time = Duration::ZERO;
             let model = full_model(&analyses, &t, &placed, &l.labels).and_then(|(m, f)| {
                 feet = f;
                 let local: Vec<[f64; 3]> = l
@@ -426,9 +443,11 @@ pub(crate) fn prepare_full(
                 // displacements are measured from the structure as drawn
                 // and strung, the feet's moves part of each case's answer
                 // (as level 3 adds them).
+                let solved = Instant::now();
                 let p = m
                     .solve(&local, &[], None, &budget)
                     .map_err(|e| format!("at the stringing state: {e}"))?;
+                strung_time = solved.elapsed();
                 Ok((m, p.displacement, p.inactive))
             });
             let cases = cases
@@ -447,6 +466,7 @@ pub(crate) fn prepare_full(
                 model,
                 feet,
                 cases,
+                strung_time,
             })
         },
         done,
@@ -467,6 +487,7 @@ pub(crate) fn prepare_full(
                     model: Err("stopped before its turn".into()),
                     feet: Vec::new(),
                     cases: Vec::new(),
+                    strung_time: Duration::ZERO,
                 })
             }
         })

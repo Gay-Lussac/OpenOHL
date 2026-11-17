@@ -316,6 +316,7 @@ fn harness_on(
             model: Ok((full, strung.displacement, strung.inactive)),
             feet,
             cases: Vec::new(),
+            strung_time: std::time::Duration::ZERO,
         }],
         cases: Vec::new(),
         weather: Vec::new(),
