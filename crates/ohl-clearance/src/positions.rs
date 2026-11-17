@@ -2321,6 +2321,13 @@ fn as_solved(case: &WeatherCase) -> WeatherCase {
     if k.oblique().is_none() {
         k.wind_direction = None;
     }
+    // Without wind (2026-11-17): its side and direction are not read (a
+    // jumper's falling wind back to still air from either side, the
+    // still air of the case: one line solve).
+    if k.wind_pressure.si() == 0.0 {
+        k.wind_direction = None;
+        k.wind_from = WindSide::Right;
+    }
     k
 }
 
@@ -2359,29 +2366,118 @@ struct Job {
     pressure: Option<f64>,
     /// Solved for the swing band only (a level), not checked itself.
     band_only: bool,
+    /// The side its wind blows from (none: still air of the case).
+    side: Option<WindSide>,
+    /// The case's own pressure when solved below it from a side (a step,
+    /// a level, still air from a side): its stiff jumpers also as the wind
+    /// falls from there (2026-11-17, [`ohl_line::jumper::WindPath`]).
+    top: Option<f64>,
+    /// Gives the jumpers' shapes as the wind falls back to still air from
+    /// its side alone (2026-11-17; the still air of the case is its own
+    /// job): their other shapes, nothing else.
+    fallen_only: bool,
 }
 
-/// One line solve made: the sections solved, the wires, what failed.
-struct Solve {
+/// The sections of one line solve: those solved, and why others were not.
+struct SectionSolve {
     shapes: Vec<SectionShape>,
+    failed: Vec<String>,
+}
+
+/// One solve made: the sections solved, the wires, what failed, and what
+/// the jumpers met along the wind.
+struct Solve {
+    sections: std::sync::Arc<SectionSolve>,
     wires: Vec<Wire>,
     failed: Vec<String>,
     /// The jumpers that snapped over to another stable shape as the wind
     /// rose, and at what pressure (Pa; [`ohl_line::jumper::JumperShape::snap`]).
     snaps: Vec<(String, f64)>,
+    /// The jumpers whose falling wind was solved (2026-11-17; the same
+    /// shape or another, [`ohl_line::jumper::Falling`]).
+    fell: Vec<String>,
+    /// The jumpers' other shapes as the wind falls ([`Falling::Other`]).
+    fallen: Vec<(String, Vec<P3>)>,
+    /// The jumpers with a second stable shape in still air
+    /// ([`ohl_line::jumper::JumperShape::other_still`]).
+    other_still: Vec<(String, Vec<P3>, f64)>,
+    /// The jumps of each jumper on its way along the wind, Pa
+    /// ([`ohl_line::jumper::JumperShape::jumps`]).
+    jumps: Vec<(String, Vec<f64>)>,
 }
 
-/// The solves of a run, each once ([`solve_key`]).
+/// The solves of a run, each once ([`solve_key`]; the jumpers' falling
+/// wind a solve of its own on the sections of the same line solve).
 #[derive(Default)]
 struct Solves {
     keys: std::collections::HashMap<String, usize>,
     made: Vec<Solve>,
     asked: usize,
+    sections: std::collections::HashMap<String, std::sync::Arc<SectionSolve>>,
+}
+
+/// What a solve of the jumpers looks for along the wind (2026-11-17): as
+/// the wind falls from `top`, and in still air (no `top`) their other
+/// shapes.
+fn wind_path(case: &WeatherCase, top: Option<f64>) -> ohl_line::jumper::WindPath {
+    ohl_line::jumper::WindPath {
+        falling_from: top,
+        still_shapes: top.is_none() && case.wind_pressure.si() == 0.0,
+    }
+}
+
+/// What the jumpers solved `solved` met along the wind, for a [`Solve`]:
+/// (snaps, those whose falling wind was solved, their other shapes as it
+/// falls, their other still-air shapes, their jumps).
+#[allow(clippy::type_complexity)]
+pub(crate) fn jumper_paths(
+    solved: &[ohl_line::jumper::JumperShape],
+) -> (
+    Vec<(String, f64)>,
+    Vec<String>,
+    Vec<(String, Vec<P3>)>,
+    Vec<(String, Vec<P3>, f64)>,
+    Vec<(String, Vec<f64>)>,
+) {
+    use ohl_line::jumper::Falling;
+    let snaps = solved
+        .iter()
+        .filter_map(|j| Some((j.jumper.clone(), j.snap?)))
+        .collect();
+    let fell = solved
+        .iter()
+        .filter(|j| matches!(j.falling, Falling::Same | Falling::Other(_)))
+        .map(|j| j.jumper.clone())
+        .collect();
+    let fallen = solved
+        .iter()
+        .filter_map(|j| match &j.falling {
+            Falling::Other(p) => Some((j.jumper.clone(), p.clone())),
+            _ => None,
+        })
+        .collect();
+    let other = solved
+        .iter()
+        .filter_map(|j| {
+            Some((
+                j.jumper.clone(),
+                j.other_still.clone()?,
+                j.other_still_apart()?,
+            ))
+        })
+        .collect();
+    let jumps = solved
+        .iter()
+        .filter(|j| !j.jumps.is_empty())
+        .map(|j| (j.jumper.clone(), j.jumps.clone()))
+        .collect();
+    (snaps, fell, fallen, other, jumps)
 }
 
 impl Solves {
-    /// Solves the jobs whose key was not solved yet (in parallel); the
-    /// solve of each job (index in `made`).
+    /// Solves the jobs whose key was not solved yet (in parallel): the
+    /// sections of each line solve once, then the jumpers of each job's
+    /// key on them; the solve of each job (index in `made`).
     fn run(
         &mut self,
         line: &Line,
@@ -2391,20 +2487,28 @@ impl Solves {
         budget: &Budget,
     ) -> Result<Vec<usize>, String> {
         let mut of_job = Vec::with_capacity(jobs.len());
-        let mut new: Vec<&WeatherCase> = Vec::new();
+        let mut new: Vec<(String, &Job)> = Vec::new();
         for j in jobs {
             let next = self.made.len() + new.len();
-            let k = *self.keys.entry(solve_key(&j.solve)).or_insert_with(|| {
-                new.push(&j.solve);
+            let section = solve_key(&j.solve);
+            let key = format!("{section}|{:?}|{}", j.top, j.fallen_only);
+            let k = *self.keys.entry(key).or_insert_with(|| {
+                new.push((section, j));
                 next
             });
             of_job.push(k);
         }
         self.asked += jobs.len();
+        // The line solves not made yet, each once.
+        let mut lines: Vec<(&String, &WeatherCase)> = Vec::new();
+        for (section, j) in &new {
+            if !self.sections.contains_key(section) && !lines.iter().any(|(k, _)| *k == section) {
+                lines.push((section, &j.solve));
+            }
+        }
         let fe = ohl_wirefe::default_fe_budget();
-        let solved = parallel(new.len(), budget, |k| {
-            let case = new[k];
-            let results = ohl_line::solve::solve_line_memo(line, library, case, &fe);
+        let solved = parallel(lines.len(), budget, |k| {
+            let results = ohl_line::solve::solve_line_memo(line, library, lines[k].1, &fe);
             let mut shapes = Vec::new();
             let mut failed = Vec::new();
             for (section, r) in line.sections.iter().zip(results) {
@@ -2413,29 +2517,66 @@ impl Solves {
                     Err(e) => failed.push(format!("section {} not solved: {e}", section.id)),
                 }
             }
+            Ok(SectionSolve { shapes, failed })
+        })?;
+        for ((key, _), s) in lines.iter().zip(solved) {
+            self.sections.insert((*key).clone(), std::sync::Arc::new(s));
+        }
+        let sections = &self.sections;
+        let made = parallel(new.len(), budget, |k| {
+            let (key, job) = &new[k];
+            let sections = sections[key].clone();
+            let mut failed = if job.fallen_only {
+                // Said by the still air's own solve.
+                Vec::new()
+            } else {
+                sections.failed.clone()
+            };
             let mut solved_jumpers = Vec::new();
             if jumpers && !line.jumpers.is_empty() {
-                let results = ohl_line::jumper::solve_jumpers(line, library, case, &shapes);
+                let results = ohl_line::jumper::solve_jumpers_on(
+                    line,
+                    library,
+                    &job.solve,
+                    &sections.shapes,
+                    wind_path(&job.solve, job.top),
+                );
                 for (def, r) in line.jumpers.iter().zip(results) {
                     match r {
                         Ok(j) => solved_jumpers.push(j),
-                        Err(e) => failed.push(format!("jumper {} not solved: {e}", def.id)),
+                        Err(e) if !job.fallen_only => {
+                            failed.push(format!("jumper {} not solved: {e}", def.id));
+                        }
+                        Err(_) => {}
                     }
                 }
             }
-            let wires = wires_of(line, &shapes, &solved_jumpers);
-            let snaps = solved_jumpers
+            let fallen: Vec<ohl_line::jumper::JumperShape> = solved_jumpers
                 .iter()
-                .filter_map(|j| Some((j.jumper.clone(), j.snap?)))
+                .filter_map(ohl_line::jumper::JumperShape::fallen)
                 .collect();
+            let wires = if job.fallen_only {
+                wires_of(line, &[], &fallen)
+            } else {
+                // The shapes rising first (each jumper's band and span
+                // are made from them), then the other shapes falling.
+                let mut all = solved_jumpers.clone();
+                all.extend(fallen);
+                wires_of(line, &sections.shapes, &all)
+            };
+            let (snaps, fell, fallen, other_still, jumps) = jumper_paths(&solved_jumpers);
             Ok(Solve {
-                shapes,
+                sections,
                 wires,
                 failed,
                 snaps,
+                fell,
+                fallen,
+                other_still,
+                jumps,
             })
         })?;
-        self.made.extend(solved);
+        self.made.extend(made);
         Ok(of_job)
     }
 }
@@ -2505,6 +2646,103 @@ pub fn jumper_snap_note(case: &str, snaps: &[(String, f64)]) -> Option<String> {
     ))
 }
 
+/// The jumpers of `snaps` (jumper id, the lowest pressure it snapped at)
+/// whose shape as the wind falls again the solves below the case's
+/// pressure `below` hold (2026-11-17): (pressure, the jumpers whose
+/// falling wind it solved, whether it is still air reached falling) of
+/// each — still air reached falling solved, and every solve below the
+/// snap with its falling wind solved for the jumper. (Held, not held.)
+#[allow(clippy::type_complexity)]
+pub fn falling_covers(
+    snaps: &[(String, f64)],
+    below: &[(f64, &Vec<String>, bool)],
+) -> (Vec<(String, f64)>, Vec<(String, f64)>) {
+    let mut held = Vec::new();
+    let mut open = Vec::new();
+    for (j, p) in snaps {
+        let fell = |x: &(f64, &Vec<String>, bool)| x.1.contains(j);
+        let ok = below.iter().any(|x| x.2 && fell(x)) && below.iter().all(|x| x.0 >= *p || fell(x));
+        if ok {
+            held.push((j.clone(), *p));
+        } else {
+            open.push((j.clone(), *p));
+        }
+    }
+    (held, open)
+}
+
+/// What a case's results say of the jumpers that snapped over as the wind
+/// rose and are checked in the shapes they keep as it falls again
+/// (2026-11-17; [`falling_covers`]). None without such jumpers.
+pub fn jumper_snap_held_note(case: &str, snaps: &[(String, f64)]) -> Option<String> {
+    if snaps.is_empty() {
+        return None;
+    }
+    let mut snaps = snaps.to_vec();
+    snaps.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    let list: Vec<String> = snaps
+        .iter()
+        .map(|(j, p)| format!("{j} at about {p:.0} Pa"))
+        .collect();
+    Some(format!(
+        "case \"{case}\": {} jumper(s) went over to another stable shape as the wind rose ({}): \
+         checked in the shapes they reach as the wind rises from still air and in those they \
+         keep as it falls again, at every pressure solved",
+        snaps.len(),
+        list.join(", ")
+    ))
+}
+
+/// What the results say of jumpers with a second stable shape in still air
+/// (2026-11-17; `others`: jumper id, the most its points lie from the
+/// shape checked, m, and whether a falling wind reaches it — then checked
+/// in the band). The shape checked in still air is the one a jumper takes
+/// hung from its clamps (solved from the hinged catenary): which of its
+/// shapes a real one is in depends on how it was hung and on the winds
+/// since. Not reached by any wind solved: not on the safe side. None
+/// without such jumpers.
+pub fn other_still_notes(others: &[(String, f64, bool)]) -> Vec<String> {
+    let mut out = Vec::new();
+    let list = |reached: bool| -> Vec<String> {
+        let mut l: Vec<&(String, f64, bool)> = others.iter().filter(|x| x.2 == reached).collect();
+        l.sort_by(|a, b| a.0.cmp(&b.0));
+        l.iter()
+            .map(|(j, d, _)| format!("{j}, up to {d:.2} m apart"))
+            .collect()
+    };
+    let open = list(false);
+    if !open.is_empty() {
+        out.push(format!(
+            "NOT ON THE SAFE SIDE: {} jumper(s) have a second stable shape in still air (the loop \
+             lying to the other side; {}): only the shape a jumper takes hung from its clamps \
+             (solved from the hinged catenary, as installed) is checked, not the other — which \
+             one a real jumper is in depends on how it was hung and on the winds since. Check \
+             its shape on site, or the other shape by hand",
+            open.len(),
+            open.join("; ")
+        ));
+    }
+    let reached = list(true);
+    if !reached.is_empty() {
+        out.push(format!(
+            "{} jumper(s) have a second stable shape in still air ({}): it is the shape they keep \
+             once a wind from a side has fallen again — checked with their swing bands",
+            reached.len(),
+            reached.join("; ")
+        ));
+    }
+    out
+}
+
+/// Whether two shapes of a jumper are one: their points nowhere further
+/// apart than [`ohl_line::jumper::OTHER_STILL_APART`].
+pub(crate) fn same_shape(a: &[P3], b: &[P3]) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .zip(b)
+            .all(|(x, y)| distance(*x, *y) <= ohl_line::jumper::OTHER_STILL_APART)
+}
+
 /// The solves a run asks for, in order ([`solve_positions`]).
 fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
     let mut jobs: Vec<Job> = Vec::new();
@@ -2514,6 +2752,16 @@ fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
         solve,
         pressure,
         band_only,
+        side: None,
+        top: None,
+        fallen_only: false,
+    };
+    // A job below the case's pressure from `side`: its jumpers also as
+    // the wind falls from the case's own (2026-11-17).
+    let below = |mut j: Job, side: WindSide, full: f64| {
+        j.side = Some(side);
+        j.top = Some(full);
+        j
     };
     for (c, case) in cases.iter().enumerate() {
         if !is_windy(case) {
@@ -2521,10 +2769,15 @@ fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
             continue;
         }
         for &side in full_sides(case) {
-            jobs.push(job(c, blown_kind(side), blown(case, side), None, false));
+            let mut j = job(c, blown_kind(side), blown(case, side), None, false);
+            j.side = Some(side);
+            jobs.push(j);
         }
         let full = case.wind_pressure.si();
         let mut stepped: Vec<(PositionKind, f64)> = Vec::new();
+        // The sides solved below the full pressure: the jumpers' falling
+        // wind back to still air from each.
+        let mut fall_sides: Vec<WindSide> = Vec::new();
         if let Some(steps) = &options.wind_steps {
             // Still air (checked, and the arc's middle) and every
             // pressure between 0 and the full one.
@@ -2546,10 +2799,15 @@ fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
                 for &side in &sides {
                     let mut at = blown(case, side);
                     at.wind_pressure = ohl_core::units::Stress::from_si(p);
-                    jobs.push(job(c, step_kind(side), at, Some(p), false));
+                    jobs.push(below(
+                        job(c, step_kind(side), at, Some(p), false),
+                        side,
+                        full,
+                    ));
                     stepped.push((step_kind(side), p));
                 }
             }
+            fall_sides.extend(sides);
         } else if options.swing_arc {
             // Still air: for the arc only.
             jobs.push(job(c, PositionKind::Case, still(case), None, false));
@@ -2564,8 +2822,37 @@ fn jobs_of(cases: &[WeatherCase], options: &PositionOptions) -> Vec<Job> {
                     }
                     let mut at = blown(case, side);
                     at.wind_pressure = ohl_core::units::Stress::from_si(p);
-                    jobs.push(job(c, step_kind(side), at, Some(p), true));
+                    jobs.push(below(
+                        job(c, step_kind(side), at, Some(p), true),
+                        side,
+                        full,
+                    ));
                 }
+                if !fall_sides.contains(&side) {
+                    fall_sides.push(side);
+                }
+            }
+        }
+        // Still air reached as the wind falls from each side (2026-11-17):
+        // the jumpers' shapes then (their other shapes alone), held by the
+        // band, checked with the steps.
+        if options.jumpers {
+            for side in fall_sides {
+                let mut at = blown(case, side);
+                at.wind_pressure = ohl_core::units::Stress::from_si(0.0);
+                let mut j = below(
+                    job(
+                        c,
+                        step_kind(side),
+                        at,
+                        Some(0.0),
+                        options.wind_steps.is_none(),
+                    ),
+                    side,
+                    full,
+                );
+                j.fallen_only = true;
+                jobs.push(j);
             }
         }
     }
@@ -2619,6 +2906,9 @@ pub fn solve_positions(
         solve,
         pressure,
         band_only,
+        side: None,
+        top: None,
+        fallen_only: false,
     };
     let mut solves = Solves::default();
     let of_job = solves.run(line, library, &jobs, options.jumpers, budget)?;
@@ -2668,6 +2958,7 @@ pub fn solve_positions(
                         _ => None,
                     },
                     None => solve
+                        .sections
                         .shapes
                         .iter()
                         .find(|s| s.section == w.section)
@@ -2709,10 +3000,77 @@ pub fn solve_positions(
         ) else {
             continue;
         };
+        // Jumpers whose shape jumps between the band's pressures
+        // (2026-11-17): solved every 10 Pa over that interval alone, their
+        // bands holding those shapes too — unless the wind is stepped at
+        // 10 Pa already.
+        let mut swapped: Vec<(usize, Wire)> = Vec::new();
+        let fine = options
+            .wind_steps
+            .as_ref()
+            .is_some_and(|w| w.step <= crate::jumper_swaps::SWAP_STEP + 1e-9);
+        if options.jumpers && !fine {
+            let full = cases[c].wind_pressure.si();
+            let mut solved: Vec<(WindSide, f64)> =
+                vec![(WindSide::Right, 0.0), (WindSide::Left, 0.0)];
+            let mut swaps = Vec::new();
+            for (i, &j) in list.iter().enumerate() {
+                let Some(side) = jobs[j].side else { continue };
+                if !jobs[j].fallen_only {
+                    solved.push((side, jobs[j].pressure.unwrap_or(full)));
+                }
+                for (id, at) in &solve_of(i).jumps {
+                    for &x in at {
+                        swaps.push(crate::jumper_swaps::Swap {
+                            side,
+                            jumper: id.clone(),
+                            at: x,
+                        });
+                    }
+                }
+            }
+            let wanted = crate::jumper_swaps::swap_pressures(&solved, &swaps);
+            if !wanted.is_empty() {
+                let case = &cases[c];
+                let more = crate::jumper_swaps::solve_swaps(
+                    line,
+                    library,
+                    &wanted,
+                    full,
+                    |side, p| {
+                        let mut at = blown(case, side);
+                        at.wind_pressure = ohl_core::units::Stress::from_si(p);
+                        at
+                    },
+                    budget,
+                )?;
+                for m in &more {
+                    for f in &m.failed {
+                        out.notes.push(format!(
+                            "case \"{}\" ({:.0} Pa from the {}, a jumper's band): {f}",
+                            case.name,
+                            m.pressure,
+                            m.side.as_str()
+                        ));
+                    }
+                    for w in wires_of(line, &[], &m.jumpers) {
+                        if let Some(&id) = span_index.get(&(w.section.clone(), w.span)) {
+                            swapped.push((id, w));
+                        }
+                    }
+                }
+                if let Some(n) = crate::jumper_swaps::swaps_note(&case.name, &wanted) {
+                    out.notes.push(n);
+                }
+            }
+        }
         // The levels of each span: every intermediate solve (the band's
         // levels, and the steps when solved).
         let mut levels_of: std::collections::HashMap<usize, Vec<&Wire>> =
             std::collections::HashMap::new();
+        for (id, w) in &swapped {
+            levels_of.entry(*id).or_default().push(w);
+        }
         for (i, &j) in list.iter().enumerate() {
             if !matches!(
                 jobs[j].kind,
@@ -2793,7 +3151,9 @@ pub fn solve_positions(
         } else {
             "checked at their wind steps (every 10 Pa from both sides) instead"
         };
-        // Jumpers that snapped over as the wind rose (2026-11-16).
+        // Jumpers that snapped over as the wind rose (2026-11-16): checked
+        // in the shape they keep as it falls again where every solve
+        // below the snap solved their falling wind (2026-11-17), else said.
         let mut snaps: Vec<(String, f64)> = Vec::new();
         for i in 0..list.len() {
             for (j, p) in &solve_of(i).snaps {
@@ -2803,7 +3163,22 @@ pub fn solve_positions(
                 }
             }
         }
-        if let Some(n) = jumper_snap_note(&cases[c].name, &snaps) {
+        let below: Vec<(f64, &Vec<String>, bool)> = (0..list.len())
+            .filter(|&i| jobs[list[i]].top.is_some())
+            .map(|i| {
+                let job = &jobs[list[i]];
+                (
+                    job.pressure.unwrap_or(0.0),
+                    &solve_of(i).fell,
+                    job.fallen_only,
+                )
+            })
+            .collect();
+        let (held, open) = falling_covers(&snaps, &below);
+        if let Some(n) = jumper_snap_note(&cases[c].name, &open) {
+            out.notes.push(n);
+        }
+        if let Some(n) = jumper_snap_held_note(&cases[c].name, &held) {
             out.notes.push(n);
         }
         if jumpers_out > 0 {
@@ -2828,6 +3203,28 @@ pub fn solve_positions(
             unheld.push((c, not_held));
         }
     }
+    // Jumpers with a second stable shape in still air (2026-11-17).
+    let mut others: Vec<(String, f64, bool)> = Vec::new();
+    for list in &by_case {
+        let fallen: Vec<&(String, Vec<P3>)> = list
+            .iter()
+            .filter(|&&j| jobs[j].fallen_only)
+            .flat_map(|&j| &solves.made[of_job[j]].fallen)
+            .collect();
+        for &j in list {
+            for (id, other, apart) in &solves.made[of_job[j]].other_still {
+                let reached = fallen.iter().any(|(k, f)| k == id && same_shape(f, other));
+                match others.iter_mut().find(|x| &x.0 == id) {
+                    Some(x) => {
+                        x.1 = x.1.max(*apart);
+                        x.2 &= reached;
+                    }
+                    None => others.push((id.clone(), *apart, reached)),
+                }
+            }
+        }
+    }
+    out.notes.extend(other_still_notes(&others));
     if options.wind_steps.is_none()
         && let Some(n) = band_levels_note(&options.band_levels, band_gap)
     {
@@ -2879,7 +3276,7 @@ pub fn solve_positions(
             }
         }
     }
-    out.solves = (solves.asked, solves.made.len());
+    out.solves = (solves.asked, solves.sections.len());
     Ok(out)
 }
 
@@ -3200,6 +3597,53 @@ mod tests {
         );
     }
 
+    /// A snapped jumper is held by the falling wind (2026-11-17) when
+    /// still air reached falling solved its falling wind and every solve
+    /// below its snap did too; a solve below it without (its falling wind
+    /// failed), or no still air reached falling: still said not on the
+    /// safe side. Held ones are said, as checked.
+    #[test]
+    fn a_snapped_jumper_is_held_where_the_falling_wind_was_solved() {
+        let j = vec!["J1".to_owned()];
+        let none: Vec<String> = Vec::new();
+        let snaps = [("J1".to_owned(), 150.0)];
+        // Still air falling, 100 Pa (both with J1), 200 Pa (above: no
+        // matter).
+        let all = [(0.0, &j, true), (100.0, &j, false), (200.0, &none, false)];
+        let (held, open) = falling_covers(&snaps, &all);
+        assert_eq!((held.len(), open.len()), (1, 0));
+        let n = jumper_snap_held_note("storm", &held).unwrap();
+        assert!(
+            !n.contains("NOT ON THE SAFE SIDE") && n.contains("J1 at about 150 Pa"),
+            "{n}"
+        );
+        // The 100 Pa solve without its falling wind.
+        let gap = [(0.0, &j, true), (100.0, &none, false)];
+        assert_eq!(falling_covers(&snaps, &gap).1.len(), 1);
+        // No still air reached falling.
+        let no_still = [(100.0, &j, false)];
+        assert_eq!(falling_covers(&snaps, &no_still).1.len(), 1);
+        assert!(jumper_snap_held_note("storm", &[]).is_none());
+    }
+
+    /// Jumpers with a second stable shape in still air (2026-11-17): not
+    /// reached by any wind solved, not on the safe side; reached (the
+    /// still air after a wind from a side), said as checked.
+    #[test]
+    fn a_second_still_air_shape_is_said() {
+        assert!(other_still_notes(&[]).is_empty());
+        let n = other_still_notes(&[("J1".into(), 2.61, false), ("J2".into(), 0.4, true)]);
+        assert_eq!(n.len(), 2);
+        assert!(
+            n[0].starts_with("NOT ON THE SAFE SIDE: 1 jumper(s)"),
+            "{}",
+            n[0]
+        );
+        assert!(n[0].contains("J1, up to 2.61 m apart"), "{}", n[0]);
+        assert!(n[0].contains("hung from its clamps"), "{}", n[0]);
+        assert!(n[1].contains("J2, up to 0.40 m apart") && !n[1].contains("NOT ON"));
+    }
+
     /// The band's levels (2026-11-16): at most `spacing` apart, evenly,
     /// k·full/(m + 1) rounded to whole 10 Pa, each once, strictly between
     /// 0 and the full pressure; an older file's count (2026-11-16) gives
@@ -3451,8 +3895,8 @@ mod tests {
         // 270°, share every solve (each is solved from both sides, and
         // blown from one side the two are the same solve: the solve reads
         // the side across the line, not the direction): each solved alone
-        // gives the other's positions bit for bit (but still air, which
-        // keeps its side in the key).
+        // gives the other's positions bit for bit (still air too: without
+        // wind its side is not in the key since 2026-11-17).
         let band = PositionOptions {
             swing_arc: true,
             ..Default::default()
@@ -3469,12 +3913,9 @@ mod tests {
             ..big.clone()
         };
         let one = solve_count(std::slice::from_ref(&right), &band);
-        // (Every blown solve; still air keeps its side, unread without
-        // wind but kept in the key: one more solve.)
-        assert_eq!(
-            solve_count(&[right.clone(), left.clone()], &band).1,
-            one.1 + 1
-        );
+        // (Every blown solve, and still air: its side unread without wind
+        // and out of the key since 2026-11-17 — before, one more solve.)
+        assert_eq!(solve_count(&[right.clone(), left.clone()], &band).1, one.1);
         let r = solve_positions(&line, &library, &[right], band, &Budget::new()).unwrap();
         let l = solve_positions(&line, &library, &[left], band, &Budget::new()).unwrap();
         assert!(wires(of(&r, 0)) == wires(of(&l, 0)));

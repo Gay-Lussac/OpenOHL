@@ -127,6 +127,37 @@ pub fn fewer_band_levels(states: &[WindState], cases: &[ArcCase]) -> Option<Stri
     crate::positions::band_levels_note(&levels, gap)
 }
 
+/// The notes of the jumpers with a second stable shape in still air
+/// ([`crate::positions::other_still_notes`]): reached when the still air
+/// after a wind from a side of the same case has it.
+pub fn other_still_of(states: &[WindState], solved: &crate::zone::Solved) -> Vec<String> {
+    let mut others: Vec<(String, f64, bool)> = Vec::new();
+    for (k, s) in states.iter().enumerate() {
+        let Some(list) = solved.other_still.get(k) else {
+            continue;
+        };
+        for (id, other, apart) in list {
+            let reached = states.iter().enumerate().any(|(i, t)| {
+                t.name == s.name
+                    && t.fallen_only()
+                    && solved.jumpers.get(i).is_some_and(|js| {
+                        js.iter().any(|j| {
+                            &j.jumper == id && crate::positions::same_shape(&j.points, other)
+                        })
+                    })
+            });
+            match others.iter_mut().find(|x| &x.0 == id) {
+                Some(x) => {
+                    x.1 = x.1.max(*apart);
+                    x.2 &= reached;
+                }
+                None => others.push((id.clone(), *apart, reached)),
+            }
+        }
+    }
+    crate::positions::other_still_notes(&others)
+}
+
 /// Runs a zone check: the sections the rules need ([`sections_needed`];
 /// of `check`'s circuits only, every one by `check`'s method, and of
 /// `sections_scope` only when given) solved in every state of `states`
@@ -365,10 +396,25 @@ pub fn run_zone_check(
                         }
                     }
                 }
-                if let Some(n) = crate::positions::jumper_snap_note(name, &snaps) {
+                // Held where every state below the snap solved their
+                // falling wind (2026-11-17).
+                let below: Vec<(f64, &Vec<String>, bool)> = states
+                    .iter()
+                    .zip(&solved.fell)
+                    .filter(|(s, _)| s.name == name && s.top().is_some())
+                    .map(|(s, f)| (s.pressure, f, s.fallen_only()))
+                    .collect();
+                let (held, open) = crate::positions::falling_covers(&snaps, &below);
+                if let Some(n) = crate::positions::jumper_snap_note(name, &open) {
+                    report.notes.push(n);
+                }
+                if let Some(n) = crate::positions::jumper_snap_held_note(name, &held) {
                     report.notes.push(n);
                 }
             }
+            // Jumpers with a second stable shape in still air (2026-11-17).
+            report.notes.extend(other_still_of(&states, &solved));
+            report.notes.extend(solved.notes.iter().cloned());
             // Radial to the points scanned only (owner, 2026-11-12: "yes
             // add the line to the results").
             if radial_to_points {

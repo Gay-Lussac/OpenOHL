@@ -52,6 +52,7 @@ pub mod geometry;
 pub mod ice_shedding;
 pub mod internal;
 pub mod isoclearance;
+pub mod jumper_swaps;
 pub mod lightning;
 pub mod phase_distance;
 pub mod positions;

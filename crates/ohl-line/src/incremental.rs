@@ -684,6 +684,7 @@ impl SolvedLine {
                 &shapes,
                 &self.jumper_weights,
                 Some(&self.memo),
+                crate::jumper::WindPath::default(),
             );
             update.jumpers = all.len();
             jumpers = line.jumpers.iter().map(|j| j.id.clone()).zip(all).collect();

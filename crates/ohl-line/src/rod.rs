@@ -1918,6 +1918,33 @@ mod tests {
         assert!(stability(&loop_jumper(200.0), &cold) > 100.0);
     }
 
+    /// The loop jumper has two stable shapes in still air too (2026-11-17,
+    /// [`crate::jumper::WindPath::still_shapes`]): solved from its
+    /// still-air shape mirrored about the vertical plane through its ends,
+    /// the loop lies to the other side — more than 1.5 m from the first,
+    /// stable as well; the first shape mirrored and solved again from its
+    /// own mirror comes back to itself.
+    #[test]
+    fn the_loop_has_two_shapes_in_still_air() {
+        let rod = loop_jumper(0.0);
+        let first = rod.solve(&loop_start(), &budget()).unwrap();
+        let mirrored = crate::jumper::mirror_about_chord(&first, rod.a, rod.b).unwrap();
+        let other = rod.solve_from(&mirrored, &budget()).unwrap();
+        let apart = |x: &RodShape, y: &RodShape| {
+            x.points
+                .iter()
+                .zip(&y.points)
+                .map(|(a, b)| (a - b).norm())
+                .fold(0.0, f64::max)
+        };
+        assert!(apart(&first, &other) > 1.5, "{}", apart(&first, &other));
+        assert!(stability(&rod, &first) > 100.0);
+        assert!(stability(&rod, &other) > 100.0);
+        let back = crate::jumper::mirror_about_chord(&other, rod.a, rod.b).unwrap();
+        let again = rod.solve_from(&back, &budget()).unwrap();
+        assert!(apart(&first, &again) < 1e-3, "{}", apart(&first, &again));
+    }
+
     /// The start `Stiff::solve` takes: the rod hanging straight-ish down
     /// the chord (here: a parabola below it, sagging with the load).
     fn sagging_start(rod: &Rod) -> Vec<V> {

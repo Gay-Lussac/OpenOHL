@@ -412,6 +412,9 @@ pub(super) fn shape(
         polyline_error: off,
         pivots: Vec::new(),
         snap: None,
+        falling: super::Falling::NotSolved,
+        jumps: Vec::new(),
+        other_still: None,
     })
 }
 

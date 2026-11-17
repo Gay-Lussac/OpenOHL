@@ -70,7 +70,8 @@ pub struct ArcCase {
     pub right: Option<usize>,
     /// Its intermediate pressures from either side (2026-11-16): the
     /// band's levels and the wind steps (indices in the states), each
-    /// held by the band ([`SwingArc::with_levels`]).
+    /// held by the band ([`SwingArc::with_levels`]); still air reached as
+    /// the wind falls from a side (2026-11-17, the jumpers' other shapes).
     pub levels: Vec<usize>,
     /// Its wind is stepped (some of its levels are steps, checked).
     pub stepped: bool,
@@ -94,13 +95,14 @@ pub fn arc_cases(states: &[WindState]) -> Vec<ArcCase> {
         let levels = (0..states.len())
             .filter(|&j| {
                 let t = &states[j];
-                t.name == s.name
-                    && t.side.is_some()
-                    && t.pressure > 0.0
-                    && t.pressure < t.full - 1e-9
+                // (Still air reached falling from a side too: the
+                // jumpers' other shapes, 2026-11-17.)
+                t.name == s.name && t.side.is_some() && t.pressure < t.full - 1e-9
             })
             .collect::<Vec<usize>>();
-        let stepped = levels.iter().any(|&j| !states[j].band_only);
+        let stepped = levels
+            .iter()
+            .any(|&j| !states[j].band_only && !states[j].fallen_only());
         if left.is_some() || right.is_some() {
             out.push(ArcCase {
                 name: s.name.clone(),

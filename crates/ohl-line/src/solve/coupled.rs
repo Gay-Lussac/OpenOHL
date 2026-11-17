@@ -251,7 +251,15 @@ pub(super) fn jumper_pull_based(
             .iter()
             .filter_map(|r| r.as_ref().ok().cloned())
             .collect();
-        let solved = crate::jumper::solve_jumpers_memo(line, library, case, &shapes, &used, memo);
+        let solved = crate::jumper::solve_jumpers_memo(
+            line,
+            library,
+            case,
+            &shapes,
+            &used,
+            memo,
+            crate::jumper::WindPath::default(),
+        );
         // The pull on each clamp or tap: the sum of its jumpers', where all
         // of them solved; else the estimate. Clamps pulled with the jumper
         // pull option, taps with the full loop.

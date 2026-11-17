@@ -188,14 +188,16 @@ fn the_arc_finds_the_wire_at_half_the_wind() {
     };
     let r = run(Measure::Radial, &arc, &[p]);
     // Still air, the two blowouts and the band's levels (2026-11-16),
-    // solved for the band only.
+    // solved for the band only; still air reached as the wind falls from
+    // each side (2026-11-17: the jumpers' other shapes), for the band only.
     let levels = ohl_clearance::positions::BandLevels::DEFAULT.at(600.0);
     assert_eq!(levels, vec![200.0, 400.0]);
-    assert_eq!(r.states.len(), 3 + 2 * levels.len());
+    assert_eq!(r.states.len(), 3 + 2 * levels.len() + 2);
     assert_eq!(
         r.states.iter().filter(|s| s.band_only).count(),
-        2 * levels.len()
+        2 * levels.len() + 2
     );
+    assert_eq!(r.states.iter().filter(|s| s.fallen_only()).count(), 2);
     let f = r
         .zone
         .findings

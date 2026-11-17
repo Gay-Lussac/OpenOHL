@@ -503,6 +503,13 @@ fn ground_of<'a>(
     }
 }
 
+/// A jumper's second stable shape in still air: its id, its points, how
+/// far apart from the shape checked, m.
+pub type OtherStill = (String, Vec<[f64; 3]>, f64);
+
+/// The line solves of a run: per line solve, one result per section.
+type LineSolves = Mutex<Vec<Option<Vec<Result<SectionShape, String>>>>>;
+
 /// One state solved: one result per section, then per jumper.
 type StateSolve = (
     Vec<Result<SectionShape, String>>,
@@ -529,9 +536,34 @@ pub struct WindState {
 }
 
 impl WindState {
+    /// Still air reached as the wind falls from its side (2026-11-17;
+    /// [`wind_states`]): solved for the jumpers' other shapes alone
+    /// ([`ohl_line::jumper::JumperShape::fallen`]), the sections being
+    /// those of still air.
+    pub fn fallen_only(&self) -> bool {
+        self.side.is_some() && self.pressure == 0.0 && self.full > 0.0
+    }
+
+    /// The case's own pressure when this state lies below it on a side (a
+    /// step, a level, still air reached falling): its jumpers are also
+    /// solved as the wind falls from there (2026-11-17,
+    /// [`ohl_line::jumper::WindPath::falling_from`]). None at the full
+    /// pressure and in the case's still air.
+    pub fn top(&self) -> Option<f64> {
+        (self.side.is_some() && self.pressure < self.full - 1e-9).then_some(self.full)
+    }
+
     /// "high wind, 300 of 600 Pa from the left", "everyday"; a wind at an
     /// angle: "storm, 300 of 600 Pa from 45°".
     pub fn describe(&self) -> String {
+        if self.fallen_only() {
+            return format!(
+                "{}, still air after {:.0} Pa {} (jumpers' other shapes)",
+                self.name,
+                self.full,
+                self.from()
+            );
+        }
         match self.side {
             None if self.full > 0.0 => format!("{}, no wind", self.name),
             None => self.name.clone(),
@@ -561,7 +593,9 @@ impl WindState {
 /// pressures of `wind` ([`WindSteps::pressures`]) from each of its sides
 /// (0 Pa once; with the swing arc, still air too, and the band's levels
 /// the steps do not solve, marked [`WindState::band_only`]: after the
-/// case's other states).
+/// case's other states; with the arc or the steps, last, still air reached
+/// as the wind falls from each side, [`WindState::fallen_only`],
+/// 2026-11-17).
 pub fn wind_states(
     cases: &[WeatherCase],
     wanted: impl Fn(&str) -> bool,
@@ -589,8 +623,15 @@ pub fn wind_states(
             .iter()
             .map(|&p| (p, false))
             .chain(levels.iter().map(|&p| (p, true)));
-        for (p, band_only) in all {
-            let sides: Vec<Option<WindSide>> = if p > 0.0 {
+        // Still air reached as the wind falls from each side (2026-11-17):
+        // the jumpers' other shapes then alone ([`WindState::fallen_only`]),
+        // checked with the steps, held by the band.
+        let falling = full > 0.0 && (wind.arc || wind.stepped);
+        let all = all
+            .map(|(p, band_only)| (p, band_only, false))
+            .chain(falling.then_some((0.0, !wind.stepped, true)));
+        for (p, band_only, fallen) in all {
+            let sides: Vec<Option<WindSide>> = if p > 0.0 || fallen {
                 wind.sides.sides().iter().copied().map(Some).collect()
             } else {
                 vec![None]
@@ -660,10 +701,26 @@ fn own_position(c: &mut WeatherCase, side: WindSide, sides: WindSides) -> WindSi
 pub struct Solved {
     /// Per state: the sections solved.
     pub shapes: Vec<Vec<SectionShape>>,
-    /// Per state: the jumpers solved (those between the sections solved).
+    /// Per state: the jumpers solved (those between the sections solved)
+    /// as the wind rises, then those with another shape as it falls from
+    /// the case's own pressure ([`JumperShape::fallen`], 2026-11-17); of
+    /// still air reached falling ([`WindState::fallen_only`]) those other
+    /// shapes alone (and no sections).
     pub jumpers: Vec<Vec<JumperShape>>,
+    /// Per state: the jumpers whose falling wind was solved (2026-11-17;
+    /// the same shape or another, [`ohl_line::jumper::Falling`]).
+    pub fell: Vec<Vec<String>>,
+    /// Per state: the jumpers with a second stable shape in still air
+    /// ([`JumperShape::other_still`]): id, its points, how far apart, m.
+    pub other_still: Vec<Vec<OtherStill>>,
+    /// Per state: the jumps of each jumper on its way along the wind, Pa
+    /// ([`JumperShape::jumps`]).
+    pub jumps: Vec<Vec<(String, Vec<f64>)>>,
     /// Sections that failed, with why (once per section).
     pub failed: Vec<String>,
+    /// What the results should say of the solves (2026-11-17: the jumpers
+    /// solved between the swing band's pressures, [`crate::jumper_swaps`]).
+    pub notes: Vec<String>,
 }
 
 /// Solves the sections `sections` (ids; empty: every one) of `line` in
@@ -729,18 +786,27 @@ pub fn solve_states(
     // Each distinct solve once (2026-11-16): states of cases differing by
     // their name alone — the steps of cases differing by their pressure
     // alone, at the same pressure — share theirs, bit for bit
-    // ([`crate::positions::solve_key`]).
+    // ([`crate::positions::solve_key`]); the jumpers' falling wind from
+    // a case's own pressure (2026-11-17) a solve of its own on the
+    // sections of the same line solve.
+    let mut line_keys: HashMap<String, usize> = HashMap::new();
+    let mut lines: Vec<usize> = Vec::new();
     let mut keys: HashMap<String, usize> = HashMap::new();
-    let mut unique: Vec<usize> = Vec::new();
+    let mut unique: Vec<(usize, usize)> = Vec::new();
     let mut shares: Vec<usize> = Vec::new();
     let of_state: Vec<usize> = states
         .iter()
         .enumerate()
         .map(|(k, s)| {
+            let section = crate::positions::solve_key(&s.case);
+            let l = *line_keys.entry(section.clone()).or_insert_with(|| {
+                lines.push(k);
+                lines.len() - 1
+            });
             let u = *keys
-                .entry(crate::positions::solve_key(&s.case))
+                .entry(format!("{section}|{:?}|{}", s.top(), s.fallen_only()))
                 .or_insert_with(|| {
-                    unique.push(k);
+                    unique.push((k, l));
                     shares.push(0);
                     unique.len() - 1
                 });
@@ -748,61 +814,83 @@ pub fn solve_states(
             u
         })
         .collect();
-    let next = AtomicUsize::new(0);
-    let stop = AtomicBool::new(false);
-    let results: Mutex<Vec<Option<StateSolve>>> = Mutex::new(vec![None; unique.len()]);
     let mut fe = ohl_wirefe::default_fe_budget();
     if let Some(token) = budget.token() {
         fe = fe.cancel_token(token.clone());
     }
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(unique.len())
-        .max(1);
-    let inner = (std::thread::available_parallelism().map_or(1, |n| n.get()) / threads).max(1);
+    let threads_for = |n: usize| {
+        let threads = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .min(n)
+            .max(1);
+        let inner = (std::thread::available_parallelism().map_or(1, |n| n.get()) / threads).max(1);
+        (threads, inner)
+    };
     let stopped: Mutex<Option<String>> = Mutex::new(None);
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                loop {
-                    if stop.load(Ordering::Relaxed) {
-                        return;
+    // Runs `work(k)` for every k < n over the cores (each on its share of
+    // them), stopping when the budget runs out.
+    let spread = |n: usize, work: &(dyn Fn(usize) + Sync)| {
+        let next = AtomicUsize::new(0);
+        let stop = AtomicBool::new(false);
+        let (threads, inner) = threads_for(n);
+        std::thread::scope(|scope| {
+            for _ in 0..threads {
+                scope.spawn(|| {
+                    loop {
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        if let Err(e) = run.check() {
+                            stop.store(true, Ordering::Relaxed);
+                            *stopped.lock().expect("not poisoned") = Some(e.to_string());
+                            return;
+                        }
+                        let k = next.fetch_add(1, Ordering::Relaxed);
+                        if k >= n {
+                            return;
+                        }
+                        ohl_line::jumper::with_threads(inner, || work(k));
                     }
-                    if let Err(e) = run.check() {
-                        stop.store(true, Ordering::Relaxed);
-                        *stopped.lock().expect("not poisoned") = Some(e.to_string());
-                        return;
-                    }
-                    let k = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(state) = unique.get(k).map(|&s| &states[s]) else {
-                        return;
-                    };
-                    let solved: Vec<Result<SectionShape, String>> =
-                        // The states side by side: each line solve on its
-                        // share of the cores.
-                        ohl_line::jumper::with_threads(inner, || {
-                            ohl_line::solve::solve_line_memo(line, library, &state.case, &fe)
-                        })
-                        .into_iter()
-                        .map(|r| r.map_err(|e| e.to_string()))
-                        .collect();
-                    let ok: Vec<SectionShape> = solved
-                        .iter()
-                        .filter_map(|r| r.as_ref().ok().cloned())
-                        .collect();
-                    let jumpers = if !jumpers || line.jumpers.is_empty() {
-                        Vec::new()
-                    } else {
-                        ohl_line::jumper::solve_jumpers(line, library, &state.case, &ok)
-                            .into_iter()
-                            .map(|r| r.map_err(|e| e.to_string()))
-                            .collect()
-                    };
-                    results.lock().expect("not poisoned")[k] = Some((solved, jumpers));
-                    done.fetch_add(shares[k], Ordering::Relaxed);
-                }
-            });
-        }
+                });
+            }
+        });
+    };
+    // The line solves.
+    let sections_of: LineSolves = Mutex::new(vec![None; lines.len()]);
+    spread(lines.len(), &|k| {
+        let state = &states[lines[k]];
+        let solved: Vec<Result<SectionShape, String>> =
+            ohl_line::solve::solve_line_memo(line, library, &state.case, &fe)
+                .into_iter()
+                .map(|r| r.map_err(|e| e.to_string()))
+                .collect();
+        sections_of.lock().expect("not poisoned")[k] = Some(solved);
+    });
+    let sections_of = sections_of.into_inner().expect("not poisoned");
+    // The jumpers of each distinct solve on its line solve's sections.
+    let results: Mutex<Vec<Option<StateSolve>>> = Mutex::new(vec![None; unique.len()]);
+    spread(unique.len(), &|k| {
+        let (s, l) = unique[k];
+        let state = &states[s];
+        let solved = sections_of[l].clone().unwrap_or_default();
+        let ok: Vec<SectionShape> = solved
+            .iter()
+            .filter_map(|r| r.as_ref().ok().cloned())
+            .collect();
+        let jumpers = if !jumpers || line.jumpers.is_empty() {
+            Vec::new()
+        } else {
+            let path = ohl_line::jumper::WindPath {
+                falling_from: state.top(),
+                still_shapes: state.top().is_none() && state.pressure == 0.0,
+            };
+            ohl_line::jumper::solve_jumpers_on(line, library, &state.case, &ok, path)
+                .into_iter()
+                .map(|r| r.map_err(|e| e.to_string()))
+                .collect()
+        };
+        results.lock().expect("not poisoned")[k] = Some((solved, jumpers));
+        done.fetch_add(shares[k], Ordering::Relaxed);
     });
     if let Some(e) = stopped.into_inner().expect("not poisoned") {
         return Err(format!(
@@ -815,10 +903,13 @@ pub fn solve_states(
     let results = results.into_inner().expect("not poisoned");
     for (state, &u) in states.iter().zip(&of_state) {
         let (r, jr) = results[u].clone().unwrap_or_default();
+        let fallen_only = state.fallen_only();
         let mut solved_jumpers = Vec::new();
         for (jumper, r) in line.jumpers.iter().zip(jr) {
             match r {
                 Ok(j) => solved_jumpers.push(j),
+                // Said by the still air's own solve.
+                Err(_) if fallen_only => {}
                 Err(e) => {
                     let id = format!("jumper {}", jumper.id);
                     if !out.failed.iter().any(|f| f.starts_with(&id)) {
@@ -827,6 +918,20 @@ pub fn solve_states(
                 }
             }
         }
+        let (_, fell, _, other_still, jumps) = crate::positions::jumper_paths(&solved_jumpers);
+        out.fell.push(fell);
+        out.other_still.push(other_still);
+        out.jumps.push(jumps);
+        let fallen: Vec<JumperShape> = solved_jumpers
+            .iter()
+            .filter_map(JumperShape::fallen)
+            .collect();
+        if fallen_only {
+            out.jumpers.push(fallen);
+            out.shapes.push(Vec::new());
+            continue;
+        }
+        solved_jumpers.extend(fallen);
         out.jumpers.push(solved_jumpers);
         let mut shapes = Vec::new();
         for (section, r) in line.sections.iter().zip(r) {
@@ -842,7 +947,87 @@ pub fn solve_states(
         }
         out.shapes.push(shapes);
     }
+    if jumpers && !line.jumpers.is_empty() {
+        swaps_between_levels(line, library, states, &mut out, budget)?;
+    }
     Ok(out)
+}
+
+/// The jumpers whose shape jumps between the solved pressures of a side of
+/// a case ([`crate::jumper_swaps`], 2026-11-17): solved every 10 Pa over
+/// that interval alone; their shapes join the jumpers of the case's still
+/// air reached falling from that side ([`WindState::fallen_only`], a level
+/// of the band — checked with the steps), said in `out.notes`.
+fn swaps_between_levels(
+    line: &Line,
+    library: &ohl_cables::Library,
+    states: &[WindState],
+    out: &mut Solved,
+    budget: &Budget,
+) -> Result<(), String> {
+    let mut names: Vec<&str> = Vec::new();
+    for s in states {
+        if s.fallen_only() && !names.contains(&s.name.as_str()) {
+            names.push(&s.name);
+        }
+    }
+    for name in names {
+        let of: Vec<usize> = (0..states.len())
+            .filter(|&k| states[k].name == name)
+            .collect();
+        let mut solved: Vec<(WindSide, f64)> = vec![(WindSide::Right, 0.0), (WindSide::Left, 0.0)];
+        let mut swaps = Vec::new();
+        for &k in &of {
+            let Some(side) = states[k].side else { continue };
+            if !states[k].fallen_only() {
+                solved.push((side, states[k].pressure));
+            }
+            for (id, at) in &out.jumps[k] {
+                for &x in at {
+                    swaps.push(crate::jumper_swaps::Swap {
+                        side,
+                        jumper: id.clone(),
+                        at: x,
+                    });
+                }
+            }
+        }
+        let wanted = crate::jumper_swaps::swap_pressures(&solved, &swaps);
+        if wanted.is_empty() {
+            continue;
+        }
+        let full = states[of[0]].full;
+        let at = |side: WindSide, p: f64| {
+            let mut c = of
+                .iter()
+                .map(|&k| &states[k])
+                .find(|s| s.side == Some(side))
+                .map_or_else(|| states[of[0]].case.clone(), |s| s.case.clone());
+            c.wind_pressure = Stress::from_si(p);
+            c
+        };
+        let more = crate::jumper_swaps::solve_swaps(line, library, &wanted, full, at, budget)?;
+        for m in more {
+            let Some(&k) = of
+                .iter()
+                .find(|&&k| states[k].fallen_only() && states[k].side == Some(m.side))
+            else {
+                continue;
+            };
+            for f in &m.failed {
+                out.notes.push(format!(
+                    "\"{name}\" ({:.0} Pa from the {}, a jumper's band): {f}",
+                    m.pressure,
+                    m.side.as_str()
+                ));
+            }
+            out.jumpers[k].extend(m.jumpers);
+        }
+        if let Some(n) = crate::jumper_swaps::swaps_note(name, &wanted) {
+            out.notes.push(n);
+        }
+    }
+    Ok(())
 }
 
 /// A screen rule's finding in words (owner, 2026-10-27: "say it
@@ -2388,9 +2573,15 @@ mod tests {
         assert_eq!(w(true, 50.0).pressures(600.0, 200).len(), 13);
         // At most `max` steps: the step grows.
         assert_eq!(w(true, 1.0).pressures(600.0, 10).len(), 11);
-        // 0 Pa once, then each side.
+        // 0 Pa once, then each side; last, still air reached as the wind
+        // falls from each side (2026-11-17: the jumpers' other shapes).
         let states = wind_states(&[windy(600.0)], |_| true, &w(true, 200.0));
-        assert_eq!(states.len(), 1 + 3 * 2);
+        assert_eq!(states.len(), 1 + 3 * 2 + 2);
+        assert!(states[7].fallen_only() && states[8].fallen_only());
+        assert_eq!(
+            states[7].describe(),
+            "wind, still air after 600 Pa from the left (jumpers' other shapes)"
+        );
         assert_eq!(states[0].side, None);
         assert_eq!(states[0].describe(), "wind, no wind");
         assert_eq!(states[2].describe(), "wind, 200 of 600 Pa from the right");
@@ -2465,8 +2656,9 @@ mod tests {
             twins += 1;
             assert!(solved.shapes[k] == solved.shapes[twin], "{}", s.describe());
         }
-        // 0 Pa; 100, 200, 300, 120 and 240 Pa from each side.
-        assert_eq!(twins, 1 + 5 * 2);
+        // 0 Pa; 100, 200, 300, 120 and 240 Pa from each side; still air
+        // reached falling from each side (2026-11-17).
+        assert_eq!(twins, 1 + 6 * 2);
     }
 
     /// A rule takes the sections' spans, the jumpers or both: a point under
@@ -2574,7 +2766,8 @@ mod tests {
             states.len(),
             started.elapsed()
         );
-        assert_eq!(states.len(), 1 + 60 * 2);
+        // (And still air reached falling from each side, 2026-11-17.)
+        assert_eq!(states.len(), 1 + 60 * 2 + 2);
         assert!(s1(&r).is_some_and(|f| f.distance < 0.1));
         let (_, last_only) = check(&zone, &rules, &[full], &wind(false), &[p]);
         assert!(s1(&last_only).is_none(), "{:?}", last_only.findings);
