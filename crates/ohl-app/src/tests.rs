@@ -23,6 +23,7 @@ mod checks_spacers;
 mod clearances;
 mod default_cases;
 mod display_codes;
+mod edit_window;
 mod field_setup;
 mod kept;
 mod lidar;

@@ -8,6 +8,51 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (a placed structure's Edit window: strings from the library, set by two angles)
+
+**The Edit window of a structure without a type chooses which string
+hangs there, not its parameters; a click in its view shows the object's
+row; its wire points are set by their string's two angles** (owner,
+2026-11-18: "this window should allow the change of string but not of
+the strings parameter like weight, strength shape and so on"; "when we
+click on something on the small window … the table on the left [should]
+be switched to the right one and show the point data … also the wire
+point table is unnecessary and it would be better to have the up/down
+angle of the string and the compass angle to set it"; built, in active
+development, not approved yet;
+[user guide](../user-guide/desktop-app.md#the-edit-window-of-a-structure-without-a-type)).
+
+- **Strings**: the library entry is chosen (`insulator`); length, kind,
+  weight, wind area, compression and limits are read-only, "from library
+  entry X". A value kept on the structure that differs from its entry is
+  a warning; nothing is changed. A string without an entry: its values
+  read-only, "not from a library entry: choose one, or make one from it",
+  and **Make a library entry from this string** (one command; the entry
+  holds its values exactly, the string keeps its own and names it, the
+  results unchanged). The tools row has no string length or presets
+  there; **+ String from the library…** adds one.
+- **Angles** (conventions to confirm): **from vertical** 0° hanging, 90°
+  level, 180° straight up; **compass** in the structure's axes, 0° ahead
+  along the line, clockwise seen from above; the **true bearing** beside
+  it, read-only (compass − the structure's orientation, from north,
+  clockwise). Typed, the string turns about its attachment point as a
+  drag does (length and attachment point kept, what hangs below along).
+  A V's angles are shown, not typed (said). Shown to 4 decimals; a
+  value typed is applied only when it differs from the one shown.
+- **No Wire points table** in that window (the structure types' screen
+  keeps it); the counterweight is typed in the first string's row.
+- **A click in the view** on a point, wire point or string switches to
+  its table, picks and scrolls to its row and focuses its first value; a
+  row chosen picks its object. Typing an attachment point's position
+  follows the drag's rule (what hangs from it moves along) — on the
+  structure types' screen too.
+- **Positions kept exactly** in that window's document (12 decimals
+  where not on a millimetre; before, every Apply put the points and wire
+  points of the structure on the millimetre of its axes).
+- **The window follows the line** after an Apply, an undo or a redo
+  (before, after an undo it kept showing the change undone, and a later
+  Apply put it back); Apply asks for the views to be drawn again at once.
+
 ## 2026-11-18 (dragging keeps the strings' lengths)
 
 **A dragged wire point turns its string about its attachment point; a
@@ -46,11 +91,11 @@ attachement point)"; built, in active development, not approved yet;
   the edit button the length of the string should not be editable as
   it's only in the string library"): no key frees it; another length is
   another library entry, chosen for the string.
-- **Precision**: the line's 3D view keeps a length to 1e-9 m; a
-  structure type's file (and a placed structure's document) writes
-  positions to the millimetre, so a turned wire point keeps its string's
-  length to the millimetre there (a translated one exactly: the point is
-  put on the millimetre). No computed result and no file format changes.
+- **Precision**: the line's 3D view and a placed structure's Edit window
+  keep a length to 1e-9 m; a structure type's file writes positions to
+  the millimetre, so a turned wire point keeps its string's length to the
+  millimetre there (a translated one exactly: the point is put on the
+  millimetre). No computed result and no file format changes.
 
 ## 2026-11-18 (country server, phase 3)
 

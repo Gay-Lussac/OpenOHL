@@ -63,14 +63,12 @@ pub enum PlacedAction {
     },
 }
 
-/// A position as written in structure types.
+/// A position as written in the document: to the millimetre where it is
+/// on one, else exactly (2026-11-18: written to the millimetre, every
+/// Apply moved the points and wire points off one by up to half a
+/// millimetre, and a string turned by its angles did not read them back).
 fn point(p: [f64; 3]) -> Item {
-    let mut a = Array::new();
-    for v in p {
-        let v = if v.abs() < 5e-4 { 0.0 } else { v };
-        a.push(format!("{v:.3} m"));
-    }
-    Item::Value(Value::Array(a))
+    crate::placed_strings::exact(p)
 }
 
 /// An id a structure type may have (letters, digits, - _ .).
@@ -236,6 +234,9 @@ impl PlacedEditor {
         // Its own button: a file first (Make it a structure file and edit it).
         workspace.app_button = false;
         workspace.ahead = line.display.ahead_deg;
+        // Its strings from their library entries, set by their angles
+        // (owner, 2026-11-18).
+        workspace.library_strings = Some(s.orientation_deg);
         Ok(Self {
             id: id.to_owned(),
             saved: doc.to_string(),

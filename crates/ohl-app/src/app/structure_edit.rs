@@ -434,8 +434,36 @@ impl Ready {
             }
             None => {}
         }
-        if let Some(req) = request {
-            self.workspace_request(req);
+        match request {
+            // A library entry from a string of the structure: one command
+            // (the window shows the line as it is: nothing of its own).
+            Some(crate::type_workspace::Request::MakeStringEntry(label)) => {
+                let made = if p.dirty() {
+                    Err("apply or revert this window's changes first".to_owned())
+                } else {
+                    crate::string_entries::plan_one(&self.model, &p.id, &label)
+                        .and_then(|plan| crate::string_entries::command(&self.model, &plan))
+                };
+                match made {
+                    Ok((what, command)) => {
+                        // Exactly this entry: the other strings are not
+                        // taken into the library with it.
+                        self.cataloguing = true;
+                        let done = self.perform(crate::edit::Action::Command {
+                            what: what.clone(),
+                            command,
+                        });
+                        self.cataloguing = false;
+                        if done {
+                            p.message = Some((what, false));
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                    Err(e) => p.message = Some((e, true)),
+                }
+            }
+            Some(req) => self.workspace_request(req),
+            None => {}
         }
         self.placed = Some(p);
     }
@@ -450,6 +478,8 @@ impl Ready {
             // Taken by the page (the file as saved) or the structure
             // without a type (a file first).
             Request::EditInStructureApp => {}
+            // Taken by the Edit window of a placed structure.
+            Request::MakeStringEntry(_) => {}
             Request::OpenInsulators => {
                 self.open_page = Some((Tab::Library(LibraryKind::Insulators), None));
             }
