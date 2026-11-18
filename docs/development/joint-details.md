@@ -734,8 +734,18 @@ the last run's cases (the analysis twice, on a thread) and the time the
 layout took; [user guide](../user-guide/joint-layout.md),
 [theory](../theory/joint-layout.md).
 
-**Stage 6 — the real towers** (private, local-data only): see the
-theory page's settings for the measured starting values.
+**Stage 6 — the real towers** (private, local-data only; numbers without
+names): the 78 tower files of a real line, whole towers, values given by
+hand replaced — 64 760 joints, 14 306 laid out (9 135 plates, 18 289 ends,
+37 of them shifted, at most 20 mm), 59 319 with members left for a hand
+detail, clashes at the joints 1 048 936 → 999 337, a run again identical
+on all 78. A tower of 3 030 members: 4.3 s for the whole tower, a
+following edit 1.6 s (release). Most of what is left: as imported, the
+bracing lies on the legs' inner faces running towards the angle's other
+leg, or off its flange with no common roll (plan and hip bracing), or
+its axis out of the flange's plane — whether the imported angles are
+turned as built is a question for the owner. The starting values of the
+settings follow from these runs (theory page).
 
 Open: the core's `StructureType::detail()` still says level 4 for a tower
 whose every end has a connection, provisional bolts or not (OHL-Design,

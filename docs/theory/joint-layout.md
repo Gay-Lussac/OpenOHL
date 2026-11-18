@@ -133,7 +133,7 @@ the values a run set before (the record; the members' rolls back to what
 they were), so that it starts from the same joint; ties are broken by
 member id; lengths are rounded as written (a tenth of a millimetre, the
 cut up to the millimetre). A run again on its own result changes nothing
-(tested; also checked on real towers).
+(tested, and on the 78 tower files of the real line measured below).
 
 An edit near a laid-out joint (a member's section, roll or bolts, a
 plate's thickness, a value at an end, a joint moved, a setting) lays that

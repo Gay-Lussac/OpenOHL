@@ -1316,15 +1316,24 @@ pub fn follow(
     };
     let run = lay_out(&text, &ask).ok()?;
     let again: Vec<String> = run.laid_out().map(|o| o.joint.clone()).collect();
+    // Left as it was (the joint did not fit); a joint laid out again with
+    // members still for a hand detail is said with its count.
     let misfits: Vec<(String, String)> = run
         .for_hand()
+        .filter(|o| !o.written)
         .map(|o| (o.joint.clone(), o.hand.join("; ")))
         .collect();
     let mut message = String::new();
     if !again.is_empty() {
+        let partly: usize = run.laid_out().map(|o| o.plan.hand_members.len()).sum();
         message.push_str(&format!(
-            "joint layout followed: {} laid out again",
-            again.join(", ")
+            "joint layout followed: {} laid out again{}",
+            again.join(", "),
+            if partly > 0 {
+                format!(" ({partly} member(s) still for a hand detail, as before)")
+            } else {
+                String::new()
+            }
         ));
     }
     if !misfits.is_empty() {
