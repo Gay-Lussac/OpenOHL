@@ -38,11 +38,20 @@
 //!   and load table as plain data for the exports
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
+mod clash;
+#[cfg(test)]
+mod clash_tests;
 mod export;
+mod joint_layout;
+#[cfg(test)]
+mod joint_layout_tests;
 mod joint_sheet;
 mod joints;
 #[cfg(test)]
 mod joints_tests;
+mod layout_run;
+#[cfg(test)]
+mod layout_run_tests;
 mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;
@@ -58,10 +67,15 @@ mod run;
 mod volumes;
 mod welds;
 
+pub use clash::{BoltPiece, CLASH_TOLERANCE, Clash, ClashPart, clashes};
 pub use export::{
     ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,
     member_axes,
+};
+pub use joint_layout::{
+    BoltArea, EdgeRule, EndPlan, GAP_START, JointPlan, LayoutSettings, Onto, PULL_BACK_START,
+    PlatePlan, SHIFT_LIMIT_START, flat_turns, mm_text, plan_joint,
 };
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
@@ -70,7 +84,12 @@ pub use joints::{
     Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
     JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Problem,
     Profile, Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, bolted_onto,
-    joint_details, part_chains, similar_joints,
+    joint_details, joint_details_at, part_chains, similar_joints,
+};
+pub use layout_run::{
+    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
+    RecordSettings, RunAsk, follow, lay_out, preset_area, presets_by_class, provisional_bolts,
+    provisional_note, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

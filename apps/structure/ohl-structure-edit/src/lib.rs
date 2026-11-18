@@ -49,7 +49,7 @@ pub use edits::{
     set_member_roll, set_member_section, set_redundant_force, set_set, set_string,
     set_structure_kind, set_support, set_tension_compression, set_top_field,
 };
-pub use file::StructureFile;
+pub use file::{AfterEdit, StructureFile};
 pub use generators::{Body, generate};
 pub use geometry::{
     Geometry, Handle, PostDrawn, RigidLink, compass_radius, exit_vector, geometry, geometry_with,

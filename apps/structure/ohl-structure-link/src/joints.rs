@@ -371,6 +371,15 @@ pub enum Problem {
         /// The turn, radians.
         turn: f64,
     },
+    /// Its steel or one of its bolts runs into `with` (another member, a
+    /// plate, a bolt) that it does not bolt to, by `depth` m (2026-11-18,
+    /// [`crate::clashes`]).
+    Clash {
+        /// The other part, in words.
+        with: String,
+        /// How deep, m.
+        depth: f64,
+    },
 }
 
 impl Arrival {
@@ -581,6 +590,10 @@ pub struct JointDetail {
     pub splices: Vec<SpliceDetail>,
     /// How complete.
     pub completeness: Completeness,
+    /// Its parts in the same place (2026-11-18, [`crate::clashes`]): each
+    /// pair of parts that do not bolt to each other and run into each
+    /// other; empty below level 3.
+    pub clashes: Vec<crate::clash::Clash>,
 }
 
 /// Every joint of a structure in detail.
@@ -610,9 +623,29 @@ pub fn joint_details(
     library: &SectionLibrary,
     bolts: &ohl_structures::bolts::BoltLibrary,
 ) -> Result<JointDetails, String> {
+    joint_details_at(text, library, bolts, None)
+}
+
+/// [`joint_details`] of the joints `only` (none: every joint), the others
+/// left out (the automatic layout of a few joints, 2026-11-18).
+pub fn joint_details_at(
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+    only: Option<&std::collections::BTreeSet<String>>,
+) -> Result<JointDetails, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let mut notes = t.connection_notes();
+    // The member ends the automatic layout drew with their gauge line
+    // through the work point (2026-11-18, its record's `gauge` mark).
+    let on_gauge: std::collections::BTreeSet<(String, String)> =
+        crate::layout_run::LayoutRecord::of(&t)
+            .ends
+            .into_iter()
+            .filter(|(_, f)| f.contains("gauge"))
+            .map(|(k, _)| k)
+            .collect();
     // Level 3: the model (design data, sections) and the members' axes and
     // profiles as the exports take them.
     let (model, export) =
@@ -671,6 +704,9 @@ pub fn joint_details(
         .unwrap_or_default();
     let mut joints = Vec::new();
     for n in &t.nodes {
+        if only.is_some_and(|o| !o.contains(&n.id)) {
+            continue;
+        }
         let at = position[n.id.as_str()];
         let mut arrivals = Vec::new();
         for m in &t.members {
@@ -781,7 +817,8 @@ pub fn joint_details(
                     .value
                     .as_ref()
                     .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
-                place_bolts(a, at, c, &snapshot, &seats, host);
+                let gauge = on_gauge.contains(&(a.member.clone(), n.id.clone()));
+                place_bolts(a, at, c, &snapshot, &seats, host, gauge);
                 a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
                 a.other_grip = match a
                     .other_onto
@@ -849,6 +886,20 @@ pub fn joint_details(
             })
             .collect();
         weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
+        // Steel in the same place (2026-11-18): each clash a problem of
+        // the member ends in it, a note of the plates.
+        let clashes = if level3 {
+            crate::clash::clashes(
+                at,
+                &arrivals,
+                &plates,
+                &splices,
+                crate::clash::CLASH_TOLERANCE,
+            )
+        } else {
+            Vec::new()
+        };
+        note_clashes(&clashes, &mut arrivals, &mut plates);
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
             id: n.id.clone(),
@@ -857,6 +908,7 @@ pub fn joint_details(
             plates,
             splices,
             completeness,
+            clashes,
         });
     }
     Ok(JointDetails {
@@ -864,6 +916,38 @@ pub fn joint_details(
         level3: model.is_some(),
         notes,
     })
+}
+
+/// Each clash said where it is: a problem of the member ends whose steel
+/// or bolts are in it (drawn red), a note of the plates in it.
+fn note_clashes(
+    clashes: &[crate::clash::Clash],
+    arrivals: &mut [Arrival],
+    plates: &mut [PlateDetail],
+) {
+    for c in clashes {
+        for (me, other) in [(&c.a, &c.b), (&c.b, &c.a)] {
+            if let Some(m) = me.member()
+                && let Some(a) = arrivals.iter_mut().find(|a| a.member == m)
+            {
+                let text = format!("{}: {}", a.member, c.words());
+                a.misfit = true;
+                a.problems.push((
+                    Problem::Clash {
+                        with: other.words(),
+                        depth: c.depth,
+                    },
+                    text.clone(),
+                ));
+                a.notes.push(text);
+            }
+            if let crate::clash::ClashPart::Plate(id) = me
+                && let Some(p) = plates.iter_mut().find(|p| &p.id == id)
+            {
+                p.notes.push(c.words());
+            }
+        }
+    }
 }
 
 /// The condition of `a` from its connection `c`, its member's design data
@@ -1298,7 +1382,12 @@ fn plate_seats(
             .filter(|c| c.joint == joint && c.onto.as_deref() == Some(p.id.as_str()))
             .filter_map(|c| all.iter().find(|a| a.member == c.member))
             .collect();
-        let leg = on.first().and_then(|a| leg_of(a, all, areas));
+        // No leg (a crossing of two diagonals, 2026-11-18): the member
+        // running through the joint across them.
+        let leg = on.first().and_then(|a| {
+            leg_of(a, all, areas)
+                .or_else(|| crate::joint_layout::through_of(all, a).map(|b| b.member.clone()))
+        });
         let leg_dir = leg
             .as_ref()
             .and_then(|l| all.iter().find(|a| &a.member == l))
@@ -1950,6 +2039,7 @@ fn place_bolts(
     all: &[Arrival],
     seats: &PlateSeats,
     host: bool,
+    on_gauge: bool,
 ) {
     if a.continuous.is_some() {
         a.cut = Valued::of(0.0, Source::WorkedOut);
@@ -2077,6 +2167,26 @@ fn place_bolts(
         },
         shifted,
     );
+    // Laid out by the automatic layout: drawn with its (first) gauge line
+    // through the work point — its normal framing eccentricity, for the
+    // drawings only (the analysis keeps its axis there; 2026-11-18).
+    if on_gauge
+        && let Some(p) = a.profile.as_ref()
+        && let Some(g) = p.angle
+    {
+        let (across, heel, w) = if a.leg_y {
+            (p.axes[1], g.heel[0], g.b)
+        } else {
+            (p.axes[2], g.heel[1], g.h)
+        };
+        let g0 = a
+            .gauges
+            .value
+            .as_ref()
+            .and_then(|v| v.first().copied())
+            .unwrap_or(w / 2.0);
+        a.offset = add(a.offset, scale(across, -(heel + g0)));
+    }
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
         return;
     };
@@ -2185,6 +2295,67 @@ fn place_bolts(
     a.bolt_flat = flat;
     a.other_points = other.iter().map(|q| at_other(q[0], q[1])).collect();
     a.other_flat = other;
+}
+
+/// The flange of the member `host` (an angle, or an angle of a built-up
+/// member: the one facing `a`, [`facing`]) that `a`'s leg bolted lies on,
+/// for the automatic layout (2026-11-18, [`crate::joint_layout`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct HostFlange {
+    /// Its heel at the joint, from the work point, m (the host's offset
+    /// in).
+    pub heel: [f64; 3],
+    /// Across it, from the heel to its toe (unit).
+    pub across: [f64; 3],
+    /// Out of its outer face, the heel's (unit): away from the angle's
+    /// other leg.
+    pub out: [f64; 3],
+    /// Its width, heel to toe, m.
+    pub width: f64,
+    /// The angle's thickness, m.
+    pub t: f64,
+    /// The angle's root radius, m (0 for a built-up member's angle).
+    pub r: f64,
+}
+
+/// [`HostFlange`] of `host` for `a` (none: `a` or `host` no angle, or
+/// their legs not near parallel).
+pub(crate) fn host_flange(a: &Arrival, host: &Arrival) -> Option<HostFlange> {
+    let p = a.profile.as_ref()?;
+    p.angle?;
+    let q = host.profile.as_ref()?;
+    let (c, _) = facing(a, q, None, true)?;
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let across = c.flange(nb);
+    let other = if dot(across, c.ey).abs() > 0.5 {
+        c.ez
+    } else {
+        c.ey
+    };
+    let heel = add(host.offset, c.heel);
+    // Its width: the farthest corner of the host's steel along it within
+    // the angle's thickness of its face.
+    let mut width: f64 = 0.0;
+    for piece in q.pieces() {
+        for pt in piece {
+            let x = sub(
+                add(scale(q.axes[1], pt[0]), scale(q.axes[2], pt[1])),
+                c.heel,
+            );
+            if dot(x, other).abs() <= c.t + 1e-6 {
+                width = width.max(dot(x, across));
+            }
+        }
+    }
+    let r = q.angle.map_or(0.0, |g| g.r);
+    (width > 0.0).then_some(HostFlange {
+        heel,
+        across,
+        out: scale(other, -1.0),
+        width,
+        t: c.t,
+        r,
+    })
 }
 
 /// Where `a`'s steel must stop so it fits, m from the work point: its leg

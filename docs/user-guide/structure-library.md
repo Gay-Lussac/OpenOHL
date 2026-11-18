@@ -478,6 +478,33 @@ made_by = "body"                     # written by generator body: a rebuild repl
 - **Groups**: there is no table of groups; a group is the members naming it. A cross-section set for a group is written on each of its members, so the finite-element model and the level read the members only (the FE model leaves `group` and `made_by` out).
 - **Symmetry**: joints are matched by position (within 1 mm); see [the Body panels](structure-app.md#the-body-panels).
 
+### The joint layout's record
+
+**Lay out joints** ([OHL-Structure](structure-app.md#lay-out-joints), 2026-11-18; built, in active development) writes its values into the ordinary fields — a `[[connection]]`'s `cut`, `shift`, `onto`, `bolts`, `gauge_lines`, a `[[plate]]`, a member's `roll` — and lists what it set in one more `[[generator]]`, so that a run again (or a later edit near the joint) may replace its own values and keeps the ones given by hand:
+
+```toml
+[[generator]]
+id = "joint-layout"
+kind = "joint_layout"
+gap = "10 mm"                         # the settings of the last run
+pull_back = "300 mm"
+shift_limit = "30 mm"
+plates = "bolted"                     # or "welded"
+bolt = "M16-example"                  # the bolt picked (or bolt_diameter alone)
+bolt_diameter = "16 mm"
+presets = [["bracing", "2 x M16"]]    # a connection preset per member class
+joints = ["N2"]                       # laid out
+ends = [["D1", "N2", "cut", "gauge", "onto", "bolts", "gauge_lines"]]  # automatic fields
+rolled = [["D1", "0 deg"]]            # turned flat; the roll it had before
+made = [["G1", "N2", "thickness", "outline"]]   # plates made; their automatic fields
+provisional = [["D1", "N2"]]          # bolts not chosen yet
+hand = [["N7", "R3 and D5 within 4°: no room on one plate …"]]
+```
+
+- `gauge` is a mark, not a field: the end is drawn with its gauge line through the work point (its normal framing eccentricity, gauge to centroid, for the drawings and the clash check only; the analysis keeps the member's axis through the work point).
+- A value the user changes after the run becomes theirs: it leaves the list and is kept from then on.
+- A file without this table reads exactly as before; the core and OHL-Design pass it by.
+
 ### Poles
 
 A pole structure names its pole — `pole = "steel-pole-30m"` (the `.ohlp` file with that id next to the structure; or `pole = "steel-pole-30m.ohlp"`, by file name), level 3 — or, version 3, describes it in the structure file:

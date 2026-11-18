@@ -12,6 +12,10 @@ authors.workspace = true
 ohl-core.workspace = true
 ohl-structures.workspace = true
 ohl-structure-loads.workspace = true
+# The automatic joint layout writes its values and its record into the
+# structure file (the same edits as the application's).
+ohl-structure-edit.workspace = true
+toml_edit = "0.25"
 ohl-line.workspace = true
 ohl-loads.workspace = true
 ohl-cables.workspace = true

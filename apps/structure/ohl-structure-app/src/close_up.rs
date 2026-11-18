@@ -301,7 +301,18 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         } else {
             [200, 202, 196, 255]
         };
-        for (p, axis, grip) in a.bolts_with_axes() {
+        for (index, (p, axis, grip)) in a.bolts_with_axes().enumerate() {
+            // Red where it runs into a part it does not bolt to.
+            let me = ohl_structure_link::ClashPart::Bolt {
+                member: a.member.clone(),
+                index,
+                piece: ohl_structure_link::BoltPiece::Head,
+            };
+            let base = if j.clashes.iter().any(|c| c.involves(&me)) {
+                MISFIT
+            } else {
+                base
+            };
             for (poly, part) in ohl_structure_link::bolt_faces(p, axis, b.diameter, grip, b.drawn) {
                 let poly: Vec<[f64; 3]> = poly.iter().map(|q| rel(*q)).collect();
                 if let Some(nv) = normal_of(&poly) {

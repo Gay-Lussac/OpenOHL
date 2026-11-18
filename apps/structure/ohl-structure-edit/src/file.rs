@@ -22,6 +22,26 @@ fn next_revision() -> u64 {
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
 }
 
+/// What follows an edit (2026-11-18: the automatic joint layout lays out
+/// again the joints an edit touches, in the same undo step): given the
+/// text before and after the edit, the text to keep instead and a message
+/// for the edit (none: nothing to change).
+pub type AfterEdit = Arc<dyn Fn(&str, &str) -> Option<(String, String)> + Send + Sync>;
+
+/// [`AfterEdit`] kept by a file (cloned with it, shown by name only).
+#[derive(Clone, Default)]
+pub struct Follow(Option<AfterEdit>);
+
+impl std::fmt::Debug for Follow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "Follow(set)"
+        } else {
+            "Follow(none)"
+        })
+    }
+}
+
 /// One step of the history: the text before (undo) or after (redo) it.
 #[derive(Debug, Clone)]
 struct Step {
@@ -53,6 +73,10 @@ pub struct StructureFile {
     redo: Vec<Step>,
     /// A group of edits open: the text before it.
     group: Option<Step>,
+    /// What follows each edit ([`StructureFile::set_follow`]).
+    follow: Follow,
+    /// What the last edits' follow said, for the edit's message.
+    followed: Option<String>,
 }
 
 impl StructureFile {
@@ -92,6 +116,8 @@ impl StructureFile {
             undo: Vec::new(),
             redo: Vec::new(),
             group: None,
+            follow: Follow::default(),
+            followed: None,
         })
     }
 
@@ -153,20 +179,69 @@ impl StructureFile {
         self.text_ref() != self.saved
     }
 
+    /// What follows each edit from now on (none: nothing): given the text
+    /// before and after an edit, the text to keep and a message — in the
+    /// same undo step ([`StructureFile::edit`]).
+    pub fn set_follow(&mut self, follow: Option<AfterEdit>) {
+        self.follow = Follow(follow);
+    }
+
+    /// Something follows edits.
+    pub fn has_follow(&self) -> bool {
+        self.follow.0.is_some()
+    }
+
+    /// What the edits' follow said since last asked (the edit's message).
+    pub fn take_followed(&mut self) -> Option<String> {
+        self.followed.take()
+    }
+
     /// Makes an edit (`what`, in words): `f` changes the file given the
     /// structure as last read. One undo step when the text changed (none
     /// inside a group); the redo is dropped. A file whose recipes take a
     /// pressure of the line after the edit is raised to version 6
-    /// ([`crate::raise_for_line_pressures`]).
+    /// ([`crate::raise_for_line_pressures`]). What follows the edit
+    /// ([`StructureFile::set_follow`]) is in the same step.
     pub fn edit<R>(
         &mut self,
         what: &str,
         f: impl FnOnce(&mut DocumentMut, &StructureType) -> R,
     ) -> R {
+        self.edit_with(what, f, true)
+    }
+
+    /// [`StructureFile::edit`] without what follows edits (the automatic
+    /// joint layout's own run).
+    pub fn edit_alone<R>(
+        &mut self,
+        what: &str,
+        f: impl FnOnce(&mut DocumentMut, &StructureType) -> R,
+    ) -> R {
+        self.edit_with(what, f, false)
+    }
+
+    fn edit_with<R>(
+        &mut self,
+        what: &str,
+        f: impl FnOnce(&mut DocumentMut, &StructureType) -> R,
+        follow: bool,
+    ) -> R {
         let before = self.text();
         let r = f(&mut self.doc, &self.read);
         crate::raise_for_line_pressures(&mut self.doc);
-        let after = self.doc.to_string();
+        let mut after = self.doc.to_string();
+        if follow
+            && after != before
+            && let Some(hook) = self.follow.0.clone()
+            && let Some((text, said)) = hook(&before, &after)
+            && let Ok(doc) = text.parse::<DocumentMut>()
+        {
+            self.doc = doc;
+            after = text;
+            if !said.is_empty() {
+                self.followed = Some(said);
+            }
+        }
         // `f` had the document: its text is written again in any case.
         self.text = OnceLock::new();
         if after != before {

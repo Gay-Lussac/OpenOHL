@@ -132,6 +132,9 @@ pub fn completeness_color(c: Completeness) -> [u8; 4] {
     }
 }
 
+/// A joint where steel runs into steel (View › Joints with clashes).
+pub const CLASH_COLOR: [u8; 4] = [215, 40, 40, 255];
+
 impl JointPanel {
     /// What the joint details kept were worked out for: (file revision,
     /// libraries stamp).
@@ -169,14 +172,23 @@ impl StructureApp {
             .file
             .as_ref()
             .is_some_and(|f| ohl_structure_edit::is_tower(f.structure().kind));
-        if !self.joint_colors || !tower {
+        if !(self.joint_colors || self.clash_colors) || !tower {
             return Vec::new();
         }
+        let (by_details, by_clash) = (self.joint_colors, self.clash_colors);
         match self.joint_details().as_deref() {
             Some(Ok(d)) => d
                 .joints
                 .iter()
-                .map(|j| (j.id.clone(), completeness_color(j.completeness)))
+                .filter_map(|j| {
+                    if by_clash && !j.clashes.is_empty() {
+                        Some((j.id.clone(), CLASH_COLOR))
+                    } else if by_details {
+                        Some((j.id.clone(), completeness_color(j.completeness)))
+                    } else {
+                        None
+                    }
+                })
                 .collect(),
             _ => Vec::new(),
         }
@@ -321,6 +333,9 @@ impl StructureApp {
         ui.add_space(4.0);
         // What does not fit here, with the fixes that work (2026-11-08).
         self.problems_box(ui, details, &chosen);
+        // The automatic layout (2026-11-18): the button, what it set here
+        // (automatic), the bolts provisional, a hand detail needed.
+        self.layout_box(ui, &chosen);
         // What the Detail view's Edit tool picked (a bolt, a plate).
         self.picked_box(ui, details);
         if j.arrivals.iter().any(|a| {

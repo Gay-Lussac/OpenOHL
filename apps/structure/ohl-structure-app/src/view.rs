@@ -1361,7 +1361,13 @@ const BOLT_PIXELS: f64 = 3.0;
 fn bolt_scene(bolts: &[ohl_structure_link::BoltSolid]) -> (Scene, f64) {
     let mut s = Scene::new([0.0; 3]);
     for b in bolts {
-        let c = if b.assumed { BOLT_ASSUMED } else { BOLT };
+        let c = if b.clash {
+            crate::close_up::MISFIT
+        } else if b.assumed {
+            BOLT_ASSUMED
+        } else {
+            BOLT
+        };
         for f in &b.faces {
             let mut k = 0.48;
             for (l, share) in LIGHTS {

@@ -278,6 +278,27 @@ pub fn candidates(t: &StructureType, joint: &str, a: &Arrival, p: &Problem) -> V
                 }],
             },
         ],
+        // Steel in the same place (2026-11-18): its end pulled back by the
+        // depth and 5 mm (tried on a copy as every fix: offered only when
+        // the joint has fewer problems after it).
+        Problem::Clash { depth, .. } => {
+            if a.profile.is_none() || a.continuous.is_some() {
+                return Vec::new();
+            }
+            let now = a.cut.value.unwrap_or(0.0).max(0.0);
+            let to = ((now + depth + 0.005) * 1000.0).ceil() / 1000.0;
+            if to > a.length / 2.0 {
+                return Vec::new();
+            }
+            vec![Fix {
+                label: format!(
+                    "{m}'s steel stops at {:.0} mm (pulled back {:.0} mm)",
+                    to * 1000.0,
+                    (to - now) * 1000.0
+                ),
+                changes: vec![field(&m, "cut", Some(FieldValue::Length(to)))],
+            }]
+        }
     }
 }
 
@@ -446,6 +467,11 @@ mod tests {
     }
 
     /// The angles tower with L2 a 45 × 5 nested in L1 at N2, its two bolts
+    /// H1 pulled back at N2 so that it does not run into D1 (the
+    /// fixture's two members otherwise clash, 2026-11-18): the problems
+    /// tested here alone.
+    const H1_APART: &str = "\n[[connection]]\nmember = \"H1\"\njoint = \"N2\"\ncut = \"150 mm\"\n";
+
     /// `gauge` from the heel, the first `end` from the joint.
     fn nested_leg(gauge: &str, end: &str) -> String {
         crate::joint_ui_tests::ANGLES.replacen(
@@ -458,7 +484,7 @@ mod tests {
              bolts = {{ count = 2, diameter = \"12 mm\", grade = \"8.8\" }}\n\
              gauges = [\"{gauge}\"]\ngauge_lines = 1\npitch = \"40 mm\"\n\
              end_distance = \"{end}\"\n"
-        )
+        ) + H1_APART
     }
 
     /// Bolts too near the edge, then too near the end, of an angle nested
@@ -504,7 +530,7 @@ mod tests {
         let text = crate::joint_ui_tests::ANGLES.replace(
             "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"",
             "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nface = \"nested\"",
-        );
+        ) + H1_APART;
         let bolts = Default::default();
         let found = find(&text, &lib, &bolts, "N2");
         let d1 = found
