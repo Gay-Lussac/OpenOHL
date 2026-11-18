@@ -42,6 +42,7 @@ ohl-thermal = { path = "crates/ohl-thermal" }
 ohl-electrical = { path = "crates/ohl-electrical" }
 ohl-bom = { path = "crates/ohl-bom" }
 ohl-spotting = { path = "crates/ohl-spotting" }
+ohl-synth = { path = "crates/ohl-synth" }
 ohl-structure-loads = { path = "apps/structure/ohl-structure-loads" }
 ohl-structure-link = { path = "apps/structure/ohl-structure-link" }
 ohl-structure-edit = { path = "apps/structure/ohl-structure-edit" }

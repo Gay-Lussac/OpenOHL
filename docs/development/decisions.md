@@ -48,8 +48,15 @@ to ADR-0004, 0005, 0008 and 0010, the draft
 - **Country libraries**: locks per kind or file, maintainers (role
   assignments), library reviews, requests that may be refused, releases;
   built lines pinned, designs in progress following the latest.
-- **Measured first**: a synthetic country of the owner's size before any
-  phase that changes the session (phases 1 and 2 follow in this round).
+- **Measured first** (phase 1): `ohl synth country` (`crates/ohl-synth`)
+  makes a synthetic country of the owner's size — 12 000 pylons, 2.47
+  systems per pylon, 10.5 % of them shared by two routes, 147 routes,
+  4 195 km, 50 936 sections, 43 041 jumpers — deterministically (its
+  SHA-256 tested per seed); LiDAR only on four sample tiles, the
+  country's **extrapolated** from them (≈ 90 GB), said so. Today's code
+  on it as one project: open 25 s, ≈ 0.9 GB, **every edit ≈ 32 s** (the
+  whole line rebuilt and validated per command) — what phase 3 must
+  remove ([performance](performance.md#synthetic-country-todays-session-on-a-whole-country-2026-11-18)).
 
 ## 2026-11-18 (second round)
 

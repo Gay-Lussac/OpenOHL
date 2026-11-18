@@ -4073,6 +4073,7 @@ dependencies = [
  "ohl-spotting",
  "ohl-structures",
  "ohl-structures-fe",
+ "ohl-synth",
  "ohl-terrain",
  "ohl-thermal",
  "ohl-validation",
@@ -4472,6 +4473,21 @@ dependencies = [
  "ohl-structures",
  "serde",
  "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "ohl-synth"
+version = "0.0.2"
+dependencies = [
+ "ohl-core",
+ "ohl-lidar",
+ "ohl-line",
+ "ohl-pointcloud",
+ "ohl-session",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
