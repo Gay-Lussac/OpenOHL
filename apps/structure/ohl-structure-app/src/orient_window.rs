@@ -373,7 +373,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
     }
     let line = |o: &ohl_structure_link::OrientedMember| {
         format!(
-            "{}: {} {:+.1}° (roll {}{} → {:.2}°){}",
+            "{}: {} {:+.1}° (roll {}{} to {:.2}°){}",
             o.member,
             match o.kind {
                 OrientKind::Chord => "leg/chord",
