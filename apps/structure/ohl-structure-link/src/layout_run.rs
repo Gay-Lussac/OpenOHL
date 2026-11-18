@@ -65,8 +65,9 @@ pub struct LayoutRecord {
     /// Each member end's automatic fields: (member, joint) → fields.
     pub ends: BTreeMap<(String, String), BTreeSet<String>>,
     /// Members turned flat by the layout (their roll automatic) and the
-    /// roll each had before, radians (a run again starts from it).
-    pub rolled: BTreeMap<String, f64>,
+    /// roll each had before, as written (empty: none; a run again starts
+    /// from exactly it).
+    pub rolled: BTreeMap<String, String>,
     /// The plates the layout made: id → its joint and its automatic
     /// fields (`thickness`, `welded_to`).
     pub made: BTreeMap<String, (String, BTreeSet<String>)>,
@@ -263,15 +264,7 @@ impl LayoutRecord {
             rolled: rows("rolled")
                 .into_iter()
                 .filter(|r| r.len() == 2)
-                .map(|r| {
-                    let deg = r[1]
-                        .trim()
-                        .trim_end_matches("deg")
-                        .trim()
-                        .parse::<f64>()
-                        .unwrap_or(0.0);
-                    (r[0].clone(), deg.to_radians())
-                })
+                .map(|r| (r[0].clone(), r[1].clone()))
                 .collect(),
             ..Default::default()
         };
@@ -404,12 +397,7 @@ impl LayoutRecord {
                     list(
                         self.rolled
                             .iter()
-                            .map(|(m, r)| {
-                                vec![
-                                    m.clone(),
-                                    format!("{} deg", (r.to_degrees() * 100.0).round() / 100.0),
-                                ]
-                            })
+                            .map(|(m, r)| vec![m.clone(), r.clone()])
                             .collect(),
                     ),
                 );
@@ -564,7 +552,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     let clashes_before = count_clashes(&before, &targets);
     // The members the layout turned before, at the joints asked: back to
     // the roll they had (a run again starts from the same).
-    let restored: BTreeMap<String, f64> = record
+    let restored: BTreeMap<String, String> = record
         .rolled
         .iter()
         .filter(|(m, _)| {
@@ -573,10 +561,10 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
                 .find(|x| &x.id == *m)
                 .is_some_and(|x| x.nodes.iter().any(|n| targets.contains(n)))
         })
-        .map(|(m, r)| (m.clone(), *r))
+        .map(|(m, r)| (m.clone(), r.clone()))
         .collect();
     for (m, r) in &restored {
-        ohl_structure_edit::edits::set_member_roll(&mut planning, m, *r);
+        put_roll(&mut planning, m, r);
     }
     let details = at(&planning.to_string())?;
     // 2. The members lying off what they bolt onto turned flat, where every
@@ -645,13 +633,28 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             turned_at.entry(j.clone()).or_default().push(m.clone());
         }
     }
-    let roll_of = |m: &str| {
-        restored.get(m).copied().unwrap_or_else(|| {
+    // A member's roll before this run (as written; radians).
+    let roll_text = |m: &str| -> String {
+        restored.get(m).cloned().unwrap_or_else(|| {
             t.members
                 .iter()
                 .find(|x| x.id == m)
-                .map_or(0.0, ohl_structure_edit::edits::member_roll)
+                .and_then(|x| x.roll.as_ref())
+                .map(|v| match v {
+                    toml::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_default()
         })
+    };
+    let roll_of = |m: &str| -> f64 {
+        let text = roll_text(m);
+        if text.is_empty() {
+            return 0.0;
+        }
+        toml::Value::String(text)
+            .try_into::<ohl_core::units::Angle>()
+            .map_or(0.0, |a| a.radians())
     };
     for (m, turn) in &turned {
         ohl_structure_edit::edits::set_member_roll(&mut planning, m, roll_of(m) + turn);
@@ -702,12 +705,12 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         // The rolls (the members of the joints asked): those turned before
         // back, then the turns of this run.
         for (m, r) in &restored {
-            ohl_structure_edit::edits::set_member_roll(&mut doc, m, *r);
+            put_roll(&mut doc, m, r);
             rec.rolled.remove(m);
         }
         for (m, turn) in &turned {
             ohl_structure_edit::edits::set_member_roll(&mut doc, m, roll_of(m) + turn);
-            rec.rolled.insert(m.clone(), roll_of(m));
+            rec.rolled.insert(m.clone(), roll_text(m));
         }
         for o in &mut outcomes {
             o.written = false;
@@ -844,6 +847,24 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     })
 }
 
+/// Member `m`'s roll written as `text` (empty: none), exactly.
+fn put_roll(doc: &mut DocumentMut, m: &str, text: &str) {
+    if let Some(e) = doc
+        .get_mut("member")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|x| x.get("id").and_then(Item::as_str) == Some(m))
+        })
+    {
+        if text.is_empty() {
+            e.remove("roll");
+        } else {
+            e.insert("roll", toml_edit::value(text));
+        }
+    }
+}
+
 /// A flange's heel line: a point on it and across the flange (m, unit).
 type HeelLine = ([f64; 3], [f64; 3]);
 
@@ -898,6 +919,8 @@ fn strip(
     for j in targets {
         strip_joint(doc, t, &mut rec, j, replace_hand);
     }
+    // The record without them (its marks, `gauge`, read by the drawing).
+    rec.write(doc);
     old
 }
 

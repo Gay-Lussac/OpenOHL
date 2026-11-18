@@ -30,7 +30,7 @@ use ohl_structure_link::{
 use crate::app::StructureApp;
 
 /// The manual's section of the window (page, anchor).
-pub const LAYOUT_PAGE: (&str, &str) = ("user-guide/structure-app", LAYOUT_ANCHOR);
+pub const LAYOUT_PAGE: (&str, &str) = ("user-guide/joint-layout", LAYOUT_ANCHOR);
 const LAYOUT_ANCHOR: &str = "lay-out-joints";
 
 /// The member classes a preset may be given for.
@@ -798,6 +798,23 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
          (measured).",
         p.run.clashes.0, p.run.clashes.1, p.run.seconds
     ));
+    let shifted = p
+        .run
+        .laid_out()
+        .flat_map(|o| &o.plan.ends)
+        .filter(|e| e.shift.is_some_and(|s| s.abs() >= 5e-5))
+        .count();
+    if shifted > 0 {
+        ui.label(
+            egui::RichText::new(format!(
+                "{shifted} end(s) moved sideways: the analysis takes each move as an \
+                 eccentricity where a frame member meets the joint; where only bars meet it, it \
+                 is left out — NOT ON THE SAFE SIDE there (said per member in the results)"
+            ))
+            .small()
+            .color(ui.visuals().warn_fg_color),
+        );
+    }
     for n in p.run.notes.iter().take(3) {
         ui.label(egui::RichText::new(n).small().weak());
     }

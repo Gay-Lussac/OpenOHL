@@ -671,6 +671,79 @@ leaves them (the cut only clearing the leg's heel, the bolts at the
 drawing's assumed gauge, pitch and end distance), so the bracing on one
 flange overlaps — the case the layout's stages 2 to 4 are for.
 
+**Stage 2 — the plane layout engine** (`joint_layout.rs`, `plan_joint`:
+a pure function of a `JointDetail`, `LayoutSettings` and the code's edge
+distance rule). Candidates: ends bolting by one leg of a single angle onto
+a member's flange at the joint (`host_flange`: the angle, or the facing
+angle of a built-up member), not in line with it (20° to 160°), not
+running on, not nested; an end without `onto` takes the member running
+through the joint (`through_of`: a crossing; also where a plate on no leg
+lies). Each is a 2D strip in its flange's axes (along the host, across the
+flange from the heel), grouped by plane (the outer or inner face). In
+order (class, wider leg, larger angle, id): concentric (its gauge line
+through the work point), then pulled back until clear of the heel (inner
+face: the other leg and root by half the gap), the strips before it
+(half-strips widened by half the gap, clipped as convex polygons) and the
+bolts on that face not laid out; over the longest pull-back a sideways
+move, a millimetre at a time up to the shift limit; then direct (every
+bolt on the flange: from t + r + nut to width − edge) or one plate per
+plane (bolts past the flange by nut and gap; not on an inner face or a
+built-up leg). What does not fit: `hand` with why, left as it is; the
+rest laid out. Tests (`joint_layout_tests.rs`): K-brace, X-brace (onto
+the member running through), a shallow redundant (shifted or a hand
+detail, never forced), two faces at a corner (two planes, a plate each),
+a built-up leg (its facing angle's inner face, said), plates of the
+thickest leg, the same plan twice.
+
+**Stage 3 — plates and the run on a file** (`layout_run.rs`). `lay_out`:
+the record's values taken out at the joints asked (and the members' rolls
+back to what they were), members turned flat where their ends agree
+within 5° (the middle of their turns), each joint planned, written into
+the file as it was (`cut`, `shift` beyond concentric, `onto`, provisional
+`bolts`/`gauge_lines` or a preset's fields), plates made (thickness the
+thickest leg bolted on it, a hand thickness kept, ids kept for a run
+again; outline round the bolts written cut at the flange's heel by half
+the gap; welded together as a choice), the record written; then the
+joint details and the clash check again, a joint whose laid-out parts
+would clash taken back. `follow`: an edit's touched joints (`touched`:
+members, connections, plates, positions, settings) laid out again, an
+automatic value changed by the edit made the user's; no fit: the edit
+and the old layout kept, the joint in the record's `hand`, said. The
+record: `[[generator]] kind = "joint_layout"` ([data model](data-model.md),
+[format](../user-guide/structure-library.md#the-joint-layouts-record)),
+read by the structure application only; `body::generators` leaves it out.
+A concentric end is drawn with its gauge line through the work point (the
+record's `gauge` mark, `joints::place_bolts`): display and clash check
+only — the analysis keeps the member's axis there and the code's curve
+takes that normal framing eccentricity (ASCE 10-97 3.7.4.2, C3.7.4, C2.4),
+`shift` is only a move beyond it.
+
+**Stage 4 — the app** (`layout_window.rs`): Design › Lay out joints… and
+Joint details › Lay out joint… (the tool-window pattern), the preview on
+a thread (`joint_details_at`: the joints asked only), Apply as one undo
+step (`StructureFile::edit_alone`), Joint details' *laid out
+automatically* / *provisional bolts* / *Needs a hand detail*, the follow
+of edits (`StructureFile::set_follow`, the edit's message), the header's
+level 3 while bolts are provisional and `analyse_structure` reading the
+file without `joint_details` then (the core's level is unchanged: a core
+change would be needed for OHL-Design and the core to say level 3 too —
+not made, see the open points).
+
+**Stage 5 — effect and docs**: the window's usage before and after for
+the last run's cases (the analysis twice, on a thread) and the time the
+layout took; [user guide](../user-guide/joint-layout.md),
+[theory](../theory/joint-layout.md).
+
+**Stage 6 — the real towers** (private, local-data only): see the
+theory page's settings for the measured starting values.
+
+Open: the core's `StructureType::detail()` still says level 4 for a tower
+whose every end has a connection, provisional bolts or not (OHL-Design,
+`ohl structures`): the record is the structure application's; making the
+core read it is a core change, not made. Plates on an inner face and on
+built-up legs, members on both sides of one plate, bent plates for
+members no roll lays flat at both ends: by hand.
+
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

@@ -44,6 +44,11 @@ fn every_tool_has_its_section() {
         ohl_ui::tool_window::has_heading(&read(page), a),
         "{page}: {a}"
     );
+    let (page, a) = crate::layout_window::LAYOUT_PAGE;
+    assert!(
+        ohl_ui::tool_window::has_heading(&read(page), a),
+        "{page}: {a}"
+    );
 }
 
 /// Escape on a tool's window (or the inventory) closes it, nothing done,
