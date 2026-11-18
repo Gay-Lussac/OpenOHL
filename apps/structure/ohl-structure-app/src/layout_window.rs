@@ -775,9 +775,18 @@ impl StructureApp {
         let sections = self.loads.sections.clone();
         let bolts = self.bolt_library();
         let presets = self.preset_list();
-        let hook: ohl_structure_edit::AfterEdit = std::sync::Arc::new(move |before, after| {
-            ohl_structure_link::follow(before, after, &sections, &bolts.0, &presets)
-                .map(|f| (f.text, f.message))
+        // The file as the edit left it (not read again: quick on a large
+        // tower).
+        let hook: ohl_structure_edit::AfterEdit = std::sync::Arc::new(move |e| {
+            ohl_structure_link::follow_read(
+                e.before,
+                e.after_text,
+                e.after.clone(),
+                &sections,
+                &bolts.0,
+                &presets,
+            )
+            .map(|f| (f.text, f.message))
         });
         if let Some(f) = self.file.as_mut() {
             f.set_follow(Some(hook));

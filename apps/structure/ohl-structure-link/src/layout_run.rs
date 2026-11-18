@@ -1515,16 +1515,45 @@ fn follow_with(
     if !after.contains(RECORD_KIND) {
         return None;
     }
-    let path = std::path::Path::new("structure.ohls");
-    let t0 = StructureType::parse(path, before).ok()?;
-    let t1 = StructureType::parse(path, after).ok()?;
+    let t0 = StructureType::parse(std::path::Path::new("structure.ohls"), before).ok()?;
+    let doc: DocumentMut = after.parse().ok()?;
+    follow_parsed(&t0, after, doc, library, bolts, presets, cut)
+}
+
+/// [`follow`] of an edit as the application has it: the structure before
+/// as read, the text and document after (the file not read again: quick
+/// on a large tower).
+pub fn follow_read(
+    before: &StructureType,
+    after_text: &str,
+    after: DocumentMut,
+    library: &SectionLibrary,
+    bolts: &BoltLibrary,
+    presets: &[(String, Table)],
+) -> Option<Followed> {
+    follow_parsed(before, after_text, after, library, bolts, presets, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn follow_parsed(
+    t0: &StructureType,
+    after: &str,
+    mut doc: DocumentMut,
+    library: &SectionLibrary,
+    bolts: &BoltLibrary,
+    presets: &[(String, Table)],
+    cut: bool,
+) -> Option<Followed> {
+    if !after.contains(RECORD_KIND) {
+        return None;
+    }
+    let t1 = StructureType::parse(std::path::Path::new("structure.ohls"), after).ok()?;
     let mut record = LayoutRecord::of(&t1);
     if record.joints.is_empty() {
         return None;
     }
     let settings = record.settings.clone()?;
     // An automatic value the edit changed is the user's now.
-    let mut doc: DocumentMut = after.parse().ok()?;
     let mut changed_record = false;
     for ((m, j), fields) in record.ends.iter_mut() {
         let (a, b) = (t0.connection(m, j), t1.connection(m, j));
@@ -1553,7 +1582,7 @@ fn follow_with(
             .and_then(|x| x.roll.clone())
     };
     let before_rolled = record.rolled.len();
-    record.rolled.retain(|m, _| roll(&t0, m) == roll(&t1, m));
+    record.rolled.retain(|m, _| roll(t0, m) == roll(&t1, m));
     changed_record |= record.rolled.len() != before_rolled;
     for (id, (_, fields)) in record.made.iter_mut() {
         let (a, b) = (
@@ -1564,7 +1593,7 @@ fn follow_with(
             changed_record = true;
         }
     }
-    let touched: BTreeSet<String> = touched(&t0, &t1)
+    let touched: BTreeSet<String> = touched(t0, &t1)
         .into_iter()
         .filter(|j| record.joints.contains(j))
         .collect();

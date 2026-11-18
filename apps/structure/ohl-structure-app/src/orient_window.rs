@@ -310,10 +310,7 @@ impl StructureApp {
                     if p.run.left.is_empty() {
                         String::new()
                     } else {
-                        format!(
-                            "; {} leg(s) left (the window says why)",
-                            p.run.left.len()
-                        )
+                        format!("; {} leg(s) left (the window says why)", p.run.left.len())
                     }
                 ),
                 false,

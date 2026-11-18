@@ -92,7 +92,7 @@ pub use joints::{
 };
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, follow_whole, lay_out, lay_out_whole, preset_area,
+    RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole, preset_area,
     presets_by_class, provisional_bolts, touched,
 };
 pub use member_solids::{

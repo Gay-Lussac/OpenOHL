@@ -24,9 +24,24 @@ fn next_revision() -> u64 {
 
 /// What follows an edit (2026-11-18: the automatic joint layout lays out
 /// again the joints an edit touches, in the same undo step): given the
-/// text before and after the edit, the text to keep instead and a message
-/// for the edit (none: nothing to change).
-pub type AfterEdit = Arc<dyn Fn(&str, &str) -> Option<(String, String)> + Send + Sync>;
+/// file before and after the edit ([`Edited`]), the text to keep instead
+/// and a message for the edit (none: nothing to change).
+pub type AfterEdit = Arc<dyn Fn(&Edited<'_>) -> Option<(String, String)> + Send + Sync>;
+
+/// An edit as [`AfterEdit`] is given it: the file before (its text and as
+/// read) and after (its text and document), so that what follows need not
+/// read the file again.
+#[derive(Debug, Clone, Copy)]
+pub struct Edited<'a> {
+    /// The text before.
+    pub before_text: &'a str,
+    /// The structure before, as read.
+    pub before: &'a StructureType,
+    /// The text after.
+    pub after_text: &'a str,
+    /// The document after.
+    pub after: &'a DocumentMut,
+}
 
 /// [`AfterEdit`] kept by a file (cloned with it, shown by name only).
 #[derive(Clone, Default)]
@@ -179,7 +194,7 @@ impl StructureFile {
         self.text_ref() != self.saved
     }
 
-    /// What follows each edit from now on (none: nothing): given the text
+    /// What follows each edit from now on (none: nothing): given the file
     /// before and after an edit, the text to keep and a message — in the
     /// same undo step ([`StructureFile::edit`]).
     pub fn set_follow(&mut self, follow: Option<AfterEdit>) {
@@ -233,7 +248,12 @@ impl StructureFile {
         if follow
             && after != before
             && let Some(hook) = self.follow.0.clone()
-            && let Some((text, said)) = hook(&before, &after)
+            && let Some((text, said)) = hook(&Edited {
+                before_text: &before,
+                before: &self.read,
+                after_text: &after,
+                after: &self.doc,
+            })
             && let Ok(doc) = text.parse::<DocumentMut>()
         {
             self.doc = doc;
