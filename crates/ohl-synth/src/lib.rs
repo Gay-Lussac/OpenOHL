@@ -44,6 +44,12 @@ pub const CRS: &str = "synthetic national grid (invented)";
 pub const CABLE: &str = "acsr-drake-26-7";
 /// A level-0 tile's width, m (the project grid's default, ADR-0008).
 pub const TILE: f64 = 256.0;
+/// With sections of more than two spans asked ([`Settings::section_spans`]),
+/// an angle point gets a strain tower once the section has this share of
+/// the spans asked (else an angle suspension tower): chosen so that the
+/// sections have about the spans asked on average (5 asked: 4.94 at the
+/// default size, seed 1).
+pub const ANGLE_RUN: f64 = 0.6;
 
 /// What to generate.
 #[derive(Debug, Clone, PartialEq)]
@@ -58,7 +64,11 @@ pub struct Settings {
     /// Spans per tension section, on average (2.0 by default: the plan's
     /// estimate scaled from a real line — ≈ 60 000 sections, ≈ 55 000
     /// jumpers for 12 000 pylons; real long lines often have longer
-    /// sections, which only makes fewer, longer sections).
+    /// sections, which only makes fewer, longer sections). Above 2, angle
+    /// points get suspension towers until a section has about its spans
+    /// ([`ANGLE_RUN`]): legs between angle points are shorter than long
+    /// sections. The default draws as before (the same country, bit for
+    /// bit); another value draws otherwise (another layout of routes).
     pub section_spans: f64,
     /// Share of the routes that branch off another one and share its
     /// towers for 2 to 5 legs (multi-circuit towers of two lines).
@@ -384,6 +394,8 @@ pub fn country(settings: &Settings) -> Result<Country, String> {
             route.points.push(points.len() - 1);
         }
         // Own legs: straight between angle points, 2 to 8 spans each.
+        // Spans since the route's last strain tower.
+        let mut run = 0usize;
         while route.towers.len() < target && towers.len() < settings.pylons {
             let spans = rng
                 .int(2, 8)
@@ -400,7 +412,18 @@ pub fn country(settings: &Settings) -> Result<Country, String> {
                 let length = rng.range(250.0, 450.0);
                 at = [at[0] + heading[0] * length, at[1] + heading[1] * length];
                 let last = k + 1 == spans;
-                let strain = last || rng.f64() < inline;
+                run += 1;
+                // At an angle point a strain tower — or, with sections of
+                // more than two spans asked, an angle suspension tower
+                // until the section has about its spans (no random draw
+                // more: the default country stays the same, bit for bit).
+                let angle_strain = last
+                    && (settings.section_spans <= 2.0
+                        || run as f64 >= settings.section_spans * ANGLE_RUN);
+                let strain = angle_strain || rng.f64() < inline;
+                if strain {
+                    run = 0;
+                }
                 own += 1;
                 towers.push(Tower {
                     id: format!("{code}-T{own:03}"),

@@ -95,7 +95,7 @@ fn written_project_opens_and_takes_an_edit() {
     let tiles = project::add_lidar(&c, &path, 0.2, std::time::Duration::from_secs(60)).unwrap();
     assert_eq!(tiles.len(), c.sample_tiles.len());
     assert!(tiles.iter().all(|t| t.bytes > 0));
-    let b = project::measure(&path, "synth", 2, std::time::Duration::from_secs(60)).unwrap();
+    let b = project::measure(&path, "synth", 2, std::time::Duration::from_secs(60), false).unwrap();
     assert_eq!(b.move_s.len(), 2);
     assert_eq!(b.undo_s.len(), 2);
     assert!(b.stopped.is_none());
@@ -107,6 +107,153 @@ fn written_project_opens_and_takes_an_edit() {
         c.line.structures[1].position
     );
     drop(session);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Sections of five spans asked: about five on average, the default's
+/// output unchanged (its hashes above).
+#[test]
+fn longer_sections_when_asked() {
+    let c = country(&Settings {
+        pylons: 3000,
+        section_spans: 5.0,
+        ..Settings::default()
+    })
+    .unwrap();
+    let spans = c.summary.wire_spans as f64 / c.summary.sections as f64;
+    assert!((4.5..5.5).contains(&spans), "{spans}");
+    c.line.validate().unwrap();
+}
+
+/// The rows of a project file that matter, times left out.
+fn rows(path: &std::path::Path) -> Vec<String> {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let mut out = Vec::new();
+    for (table, cols) in [
+        ("model_object", "line, kind, id, ord, version, json, gone"),
+        (
+            "oplog",
+            "seq, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line",
+        ),
+        (
+            "spatial_index",
+            "rowid, line, kind, id, level, tx, ty, xmin, ymin, xmax, ymax",
+        ),
+    ] {
+        let mut stmt = conn
+            .prepare(&format!("SELECT {cols} FROM {table} ORDER BY rowid"))
+            .unwrap();
+        let n = stmt.column_count();
+        let mut q = stmt.query([]).unwrap();
+        while let Some(r) = q.next().unwrap() {
+            let mut row = format!("{table}:");
+            for k in 0..n {
+                let v: rusqlite::types::Value = r.get(k).unwrap();
+                row.push_str(&format!(" {v:?}"));
+            }
+            out.push(row);
+        }
+    }
+    out
+}
+
+/// A small synthetic country (towers of two routes, jumpers at every
+/// strain tower, alignment points tied to the angle towers): random
+/// commands applied in place and the whole way (country server, phase
+/// 3) give the same answers, lines and files; the line kept in place is
+/// the line made again from the objects.
+#[test]
+fn in_place_equals_the_whole_way_on_a_small_country() {
+    use ohl_session::{Command, Kind, Session};
+    let dir = std::env::temp_dir().join(format!("ohl-synth-inplace-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    for (k, spans) in [(3u64, 2.0), (4, 5.0)] {
+        let c = country(&Settings {
+            pylons: 400,
+            seed: k,
+            section_spans: spans,
+            ..Settings::default()
+        })
+        .unwrap();
+        let (pa, pb) = (dir.join(format!("a{k}.ohl")), dir.join(format!("b{k}.ohl")));
+        project::write_project(&c, &pa, "synth").unwrap();
+        project::write_project(&c, &pb, "synth").unwrap();
+        let mut a = Session::open(&pa).unwrap();
+        let mut b = Session::open(&pb).unwrap();
+        b.set_whole_only(true);
+        let mut rng = Rng(k.wrapping_mul(0x2545_F491_4F6C_DD1D) ^ 77);
+        let answer = |r: Result<ohl_session::Applied, ohl_session::SessionError>| match r {
+            Ok(v) => format!("ok {v:?}"),
+            Err(e) => format!("err {e:?}"),
+        };
+        for step in 0..120 {
+            let line = a.line();
+            let t = &line.structures[rng.int(0, line.structures.len() - 1)];
+            let sec = &line.sections[rng.int(0, line.sections.len() - 1)];
+            let command = match rng.int(0, 9) {
+                0..=3 => Command::MoveStructure {
+                    id: t.id.clone(),
+                    position: [
+                        t.position[0] + rng.range(-10.0, 10.0),
+                        t.position[1] + rng.range(-10.0, 10.0),
+                        t.position[2],
+                    ],
+                },
+                4 => Command::SetStringing {
+                    section: sec.id.clone(),
+                    stringing: ohl_line::Stringing::Tension {
+                        horizontal_tension: rng.range(-1000.0, 30000.0),
+                        temperature: 15.0,
+                        condition: Default::default(),
+                    },
+                },
+                5 => Command::Delete {
+                    kind: Kind::Structure,
+                    id: t.id.clone(),
+                    confirm: rng.f64() < 0.7,
+                },
+                6 => Command::Delete {
+                    kind: Kind::Section,
+                    id: sec.id.clone(),
+                    confirm: true,
+                },
+                7 => Command::Rename {
+                    kind: Kind::Structure,
+                    id: t.id.clone(),
+                    new_id: format!("{}-r", t.id),
+                },
+                _ => Command::DeleteAttachment {
+                    structure: sec.points[0].structure.clone(),
+                    set: sec.points[0].set,
+                    phase: None,
+                    confirm: true,
+                },
+            };
+            let at = format!("seed {k} step {step}: {command:?}");
+            match rng.int(0, 5) {
+                0 => assert_eq!(
+                    answer(a.undo("synth")),
+                    answer(b.undo("synth")),
+                    "{at}: undo"
+                ),
+                1 => assert_eq!(
+                    answer(a.redo("synth")),
+                    answer(b.redo("synth")),
+                    "{at}: redo"
+                ),
+                _ => assert_eq!(
+                    answer(a.apply("synth", command.clone())),
+                    answer(b.apply("synth", command)),
+                    "{at}"
+                ),
+            }
+            assert!(a.line() == b.line(), "{at}: line");
+            a.check_kept().unwrap_or_else(|e| panic!("{at}: {e}"));
+        }
+        drop((a, b));
+        assert_eq!(rows(&pa), rows(&pb), "seed {k}: the files");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
