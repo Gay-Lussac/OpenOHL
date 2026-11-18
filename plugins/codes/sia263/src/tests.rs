@@ -381,6 +381,60 @@ fn a_fillet_weld() {
     assert!(weld(&thin, 1e3).notes.iter().any(|n| n.contains("6.3.6.3")));
 }
 
+/// A fillet weld with the moments of its force (invented values, by
+/// hand; SIA 263 6.3.1.7, 6.3.2.1): a = 6 mm, L = 200 mm, plates at 90°,
+/// S355; F = 60 kN, its moment about the weld's middle M = 2 kN m,
+/// about the seam T = 0.1 kN m. At the most loaded end, per unit length:
+/// F/L = 300 kN/m, 6M/L² = 6 × 2 / 0.04 = 300 kN/m, on the throat
+/// 6T/(L a) = 0.6 / (0.2 × 0.006) = 500 kN/m — 1 100 kN/m, so (87) takes
+/// 1 100 × 0.2 = 220 kN against a L 0.6 f_uE / γ_M2 = 0.006 × 0.2 × 306
+/// / 1.25 = 293.76 kN: 74.9 %. On the contact s = 6√2 = 8.485 mm:
+/// 6T/(L s) = 353.6 kN/m, 953.6 kN/m × 0.2 = 190.7 kN against s L 0.8
+/// f_y / γ_M2 = 385.6 kN. Without moments: the force alone (the check of
+/// before). T said not on the safe side (6.3.6.5).
+#[test]
+fn a_fillet_weld_with_its_moments() {
+    let w = WeldInput {
+        kind: WeldKind::Fillet,
+        size: Some(0.006),
+        length: 0.200,
+        length_given: true,
+        angle: 90.0,
+        fy: Some(355e6),
+        thickness: [0.010, 0.010],
+    };
+    let x = joints::Extra {
+        in_plane: 2e3,
+        out_of_plane: 100.0,
+        ..Default::default()
+    };
+    let c = joints::weld_with(&w, 60e3, &x);
+    let t = find(&c, "(87)");
+    assert!((t.demand - 220e3).abs() < 1e-6, "{}", t.demand);
+    assert!((t.resistance - 293.76e3).abs() < 1e-6);
+    let s = 0.006 * 2f64.sqrt();
+    let c88 = find(&c, "(88)");
+    let q = 300e3 + 300e3 + 6.0 * 100.0 / (0.2 * s);
+    assert!((c88.demand - q * 0.2).abs() < 1e-6, "{}", c88.demand);
+    assert!((c88.resistance - s * 0.2 * 0.8 * 355e6 / 1.25).abs() < 1e-6);
+    let (u, g) = c.governing(1.0).unwrap();
+    assert!(g.what.contains("(87)") && (u - 220.0 / 293.76).abs() < 1e-12);
+    assert!(c.not_safe.iter().any(|n| n.contains("6.3.6.5")));
+    // Without moments: the force alone, nothing said not safe.
+    let c = joints::weld_with(&w, 60e3, &joints::Extra::default());
+    assert!((find(&c, "(87)").demand - 60e3).abs() < 1e-9);
+    assert!(c.not_safe.is_empty());
+    assert_eq!(c, weld(&w, 60e3));
+    // The in-plane moment alone: (300 + 300) × 0.2 = 120 kN.
+    let m = joints::Extra {
+        in_plane: 2e3,
+        ..Default::default()
+    };
+    let c = joints::weld_with(&w, 60e3, &m);
+    assert!((find(&c, "(87)").demand - 120e3).abs() < 1e-6);
+    assert!(c.not_safe.is_empty());
+}
+
 /// The parameter file's γ_M1 changes the members' design values, and the
 /// standard's values give the core's numbers.
 #[test]

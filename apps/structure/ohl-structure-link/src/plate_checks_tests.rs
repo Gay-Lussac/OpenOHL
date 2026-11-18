@@ -245,6 +245,16 @@ fn plates_and_welds_are_checked_by_sia263() {
     assert!((weld.force - 40e3).abs() < 1e-6, "{weld:?}");
     assert!(weld.governs.contains("(87)"), "{weld:?}");
     assert!(weld.notes.iter().any(|n| n.contains("the seam's")));
+    // With the moments of the forces about the weld (2026-11-18): the
+    // members' bolts lie away from the seam, so the force per unit length
+    // at its most loaded end is larger than the force spread evenly — the
+    // usage at least that of the force alone, a L 0.6 f_uE / γ_M2.
+    assert!(
+        weld.governs.contains("kN/m at its most loaded end"),
+        "{weld:?}"
+    );
+    let alone = 40e3 / (0.006 * w.seam_length() * 0.6 * 510e6 / 1.25);
+    assert!(weld.usage.unwrap() > alone, "{weld:?} {alone}");
     let w2 = rows[1]
         .iter()
         .find(|p| matches!(&p.part, PlatePart::Weld(_)))

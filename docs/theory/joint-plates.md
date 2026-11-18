@@ -4,10 +4,12 @@ Implemented in the design codes' bundled plugins since 2026-11-18 — ASCE
 10-97 in `plugins/codes/asce10/src/joints.rs` (`bolted`, `weld`,
 `PlateCheck`, `Checked::governing`; the core's `plates.rs` until then),
 SIA 263:2013 in `plugins/codes/sia263/src/joints.rs` (`bolted`, `weld`,
-`contact_width`), the same checks moved there, reached through the plugin
-interface `joint-check-full` with the structure's parameter file for the
-plugin (one call with every part and case; `crates/ohl-structures-fe/src/plates.rs`
-keeps the parts' records) — with the geometry and
+`contact_width`, `weld_with`, `line_force`), the same checks moved there,
+reached through the plugin interface `joint-check-moments` (2026-11-18:
+`joint-check-full`'s records with what acts on a part beside its force)
+with the structure's parameter file for the plugin (one call with every
+part and case; `crates/ohl-structures-fe/src/plates.rs` keeps the parts'
+records) — with the geometry and
 forces of `apps/structure/ohl-structure-link/src/plate_checks.rs`
 (`plate_plans`, `plate_usage`, the weld's force, the distances to the
 plate's edge), run with every case of OHL-Structure's analysis (Results ›
@@ -208,10 +210,31 @@ The resultant \\( F_{Ed} \\) per unit length is checked on two sections
   seam's length where the two plates meet, worked out from their
   outlines, **one side only** (**on the safe side** for a weld on both
   sides).
-- **The force spread evenly along the weld**, \\( F_{Ed} = F / L \\), as
-  6.3.1.7 allows ("une distribution simplifiée des contraintes"). The
-  moment of the force about the seam is **not taken** (**not on the safe
-  side**: a resultant acting off the seam's middle loads one end more).
+- **The force per unit length at the weld's most loaded end**
+  (2026-11-18; before, the force spread evenly and its moment **not
+  taken** — not on the safe side). 6.3.1.7 allows a simplified
+  distribution of the stresses ("une distribution simplifiée des
+  contraintes") and 6.3.2.1 checks the resultant per unit length
+  \\( F_{Ed} \\) (Figure 33), whatever its direction. The weld is taken as
+  a line of length \\( L \\), elastic: its force \\( F \\) spread evenly,
+  the moment \\( M \\) of that force about the weld's middle bending it
+  along its length (the moment's part square to the seam) by the line's
+  section modulus \\( L^2/6 \\), and the moment \\( T \\) about the
+  seam's own line by the section of width \\( w \\) (the throat \\( a \\)
+  for (87), the contact width \\( s \\) for (88)) bent across, \\( L w^2/6 \\):
+
+  \\[ F_{Ed} = \frac{F}{L} + \frac{6M}{L^2} + \frac{6T}{L\,w} \\]
+
+  — the three sizes added (**on the safe side**: their directions at the
+  weld's end may differ, so the resultant is at most their sum; elastic,
+  so no redistribution along the weld is counted). (87) and (88) are
+  checked as \\( F_{Ed}\,L \\) against the whole length's resistance.
+  Without moments \\( F_{Ed} = F/L \\), as before. A moment \\( T \\) about
+  the seam bends the fillet across; 6.3.6.5 asks to avoid a fillet on one
+  side only loaded so, and the data do not tell whether the weld is on one
+  side or both: whenever \\( T > 0 \\) the result says **NOT ON THE SAFE
+  SIDE** (the throat's elastic bending is on the safe side for a weld on
+  both sides, not proven for one side only).
 - Said when broken: a length below 40 mm (6.3.6.2), \\( a \\) above 0.7
   times the thinner plate (6.3.6.3), a plate thinner than 4 mm (6.3.1.3:
   the chapter does not apply), \\( a \\) below the least recommended for
@@ -235,6 +258,26 @@ joint's leg) passes part of it there, so the weld carries no more. Welds
 closing a ring (no split): the sum of every member's \\( |N_i| \\) on the
 welded plate (more on the safe side). The joint's legs' own forces are not
 counted (they do not bolt onto the plates).
+
+**Its moments** (2026-11-18). Each member's force acts along its own line
+through its bolts' centroid \\( \mathbf p_i \\) (the joint's work point
+when its bolts are not placed). About the seam's middle \\( \mathbf c \\),
+on each side \\( \mathbf M = \sum (\mathbf p_i - \mathbf c) \times N_i\,\mathbf u_i \\);
+with \\( \mathbf e \\) the seam's direction, \\( T = |\mathbf M\cdot\mathbf e| \\)
+about the seam's line and \\( M = |\mathbf M - (\mathbf M\cdot\mathbf e)\,\mathbf e| \\)
+bending the weld along its length (for one plate on that side, its
+members in its plane, \\( T = 0 \\): the moment of forces in a plane lies
+square to it). The weld takes the larger \\( M \\) and the larger \\( T \\) of
+the two sides, each on its own (with the larger force: **on the safe
+side**, the three may come from different sides); a ring, the sums of
+every member's sizes (**on the safe side**). A **weld shorter than the
+seam** (its length given) lies somewhere along it, where is not given: its
+middle may be up to \\( (L_\text{seam} - L)/2 \\) from the seam's, so
+\\( M \\) is taken at its largest there, \\( M + \tfrac{L_\text{seam} - L}{2}\,|\mathbf e \times \mathbf R| \\)
+(**on the safe side**). A plugin without `joint-check-moments` gets the
+force alone (`joint-check-full`): the weld's result then says the moments
+were not sent, **NOT ON THE SAFE SIDE**. **ASCE 10-97** has no weld rule,
+with or without moments (5.2.5): the weld stays not checked, said.
 
 ## Results
 
@@ -265,3 +308,14 @@ compared, core against plugin: identical to the last bit:
   checked (it has no weld rule), and said.
 - `a_weld_carries_the_larger_resultant`, `rays_reach_the_outline`: the
   force a weld carries and the plate's outline.
+- `a_weld_carries_the_moments_of_its_force` (2026-11-18): a 0.2 m seam
+  along z, a member pulling 100 kN along x through bolts 0.15 m off the
+  seam and 0.08 m above its middle (\\( M \\) = 8 kN m), one pushing 50 kN
+  across at 0.15 m (\\( T \\) = 7.5 kN m); a 0.12 m weld on that seam
+  anywhere along it: \\( M \\) = 8 + 0.04 × 111.8 = 12.47 kN m; a ring: the
+  sums.
+- `a_fillet_weld_with_its_moments` (SIA 263, 2026-11-18): a 6 × 200 mm
+  fillet at 90° under F = 60 kN, M = 2 kN m, T = 0.1 kN m: 300 + 300 +
+  500 = 1 100 kN/m on the throat, (87) 220 kN of 293.76 kN (74.9 %), (88)
+  190.7 kN of 385.6 kN; T said not on the safe side (6.3.6.5); without
+  moments the force alone, as before.

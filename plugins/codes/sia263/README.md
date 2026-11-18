@@ -16,7 +16,7 @@ is rewritten). Theory: `docs/theory/sia263.md`.
 | --- | --- |
 | `member-check` | its method `sia263-2013` (`check-members` refused: the check needs the full records) |
 | `member-check-full` | every checked member in one call, with everything the core's check read |
-| `joint-check`, `joint-check-full` | a member's bolts in a gusset plate or cover; a weld between two plates (with the parameter file: `joint-check-full`) |
+| `joint-check`, `joint-check-full`, `joint-check-moments` | a member's bolts in a gusset plate or cover; a weld between two plates (with the parameter file: `joint-check-full`; with the moments of a weld's force and a frame member's end shear and moments: `joint-check-moments`) |
 | `bolt-distances`, `bolt-distances-full` | Table 17 by bolt size; the force per bolt shown with them without an analysis its own design shear resistance by Table 16 (73)/(74) over γ_M2 (third round, 2026-11-18; Table 17 takes no force) |
 
 ## Parameters
@@ -31,7 +31,7 @@ mechanism: a parameter file per method; the template is the plugin's
 | `resistance.gamma_m2` | γ_M2, net sections and connections (4.1.3) | 1.25 |
 | `welds.filler_ultimate` | f_uE, MPa (6.3.2.2) | 510 |
 
-The member check, the joints' plates and welds (`joint-check-full`) and
+The member check, the joints' plates and welds (`joint-check-moments`, `joint-check-full`) and
 Member details all take the file's values (since 2026-11-18: before, the
 joints and Member details took the standard's); the run's note names the
 file. The bolt tools' minimum distances (Table 17) do not depend on them; the force per bolt shown with them (Table 16 over γ_M2) does.

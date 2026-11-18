@@ -12,7 +12,7 @@ member with everything its check reads through the plugin interface
 them out (`crates/ohl-structures-fe/src/member_ends.rs`,
 `end_conditions`), the section properties
 (`crates/ohl-sections/src/lib.rs`, `Section::properties`,
-`Shape::symmetry`) —, its joints through `joint-check-full`, and the bolt
+`Shape::symmetry`) —, its joints through `joint-check-moments` (2026-11-18; with what acts on a part beside its force), and the bolt
 tools ask it through `bolt-distances-full` (with the bolts, its own bolt capacity)
 ([Plugins](../development/plugins.md#member-checks)). The usage that
 follows from the capacities is on the

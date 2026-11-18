@@ -125,6 +125,25 @@ pub struct Checked {
     pub checks: Vec<PlateCheck>,
     /// What was assumed or not checked, in words.
     pub notes: Vec<String>,
+    /// What is not on the safe side, in words (the part's `not-safe`).
+    pub not_safe: Vec<String>,
+}
+
+/// What acts on a part beside its force in one load case (sizes, N and
+/// N·m; the interface's `part-moments`, 2026-11-18).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Extra {
+    /// A bolt group: the member's end shear in the plate's plane.
+    pub shear: f64,
+    /// A bolt group: the member's moment about the plate's normal at the
+    /// bolts' centroid. A weld: the moment of its force about the weld's
+    /// middle, bending it along its length.
+    pub in_plane: f64,
+    /// A bolt group: the moment bending the plate out of its plane. A
+    /// weld: the moment about the seam's own line.
+    pub out_of_plane: f64,
+    /// A bolt group: the force square to the plate.
+    pub normal: f64,
 }
 
 impl Checked {
@@ -328,10 +347,18 @@ pub struct WeldInput {
 }
 /// The checks of a weld: none — ASCE 10-97 gives no weld resistance
 /// (said).
-pub fn weld(_w: &WeldInput, _force: f64) -> Checked {
+pub fn weld(w: &WeldInput, force: f64) -> Checked {
+    weld_with(w, force, &Extra::default())
+}
+
+/// The checks of a weld with the moments of its force about it: none —
+/// ASCE 10-97 gives no weld resistance, with or without them (said;
+/// 2026-11-18: no rule in ASCE 10-97 for a weld's moment either).
+pub fn weld_with(_w: &WeldInput, _force: f64, _x: &Extra) -> Checked {
     Checked {
         checks: Vec::new(),
         notes: vec![WELD_NOT_CHECKED.into()],
+        not_safe: Vec::new(),
     }
 }
 

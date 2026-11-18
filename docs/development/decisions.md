@@ -8,6 +8,35 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (lattice towers: the safe-side items)
+
+**Queue A of the lattice towers' open items** (owner, 2026-11-18: "Go
+ahead", queue A first; built, in active development, not approved yet).
+Every change makes a usage equal or larger; the results say where
+something is still not on the safe side.
+
+- **A weld's moments** ([theory](../theory/joint-plates.md#the-force-a-weld-carries)).
+  Before, the force a weld carries was spread evenly along it and the
+  moment of that force about the weld was not taken (not on the safe
+  side, said). Now each member's force acts along its line through its
+  bolts; about the weld's middle the moment bending the weld along its
+  length (M) and the moment about the seam's line (T), the larger of the
+  two sides' (a ring: the sums); a weld shorter than the seam where along
+  it its moment is largest. The SIA 263 plugin checks (87) and (88) on the
+  force per unit length at the weld's most loaded end, F/L + 6M/L² +
+  6T/(L w) (6.3.1.7: a simplified distribution; 6.3.2.1: the resultant
+  per unit length) — without moments the force alone, as before. T > 0
+  is said NOT ON THE SAFE SIDE (6.3.6.5: a one-sided fillet bent across
+  should be avoided; one side or both is not in the data). ASCE 10-97 has
+  no weld rule, with or without moments: not checked, said.
+- **Plugin interface** (additive, interface version stays 0.3): a new
+  optional export `joint-check-moments` — `joint-check-full`'s records
+  with, per part and case, what acts on it beside its force
+  (`part-moments`) and a bolt group's plate's free length in compression.
+  OpenOHL calls it first; a plugin without it gets `joint-check-full` and
+  each part concerned is said NOT ON THE SAFE SIDE (what was not sent).
+  Both bundled plugins have it.
+
 ## 2026-11-18 (third round)
 
 **The bolt tools' force basis into the code plugins; default minimum bolt

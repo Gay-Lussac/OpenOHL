@@ -14,9 +14,11 @@
 //!   (82) and block shear (83) of 6.2.4.3, the gross section (38) and in
 //!   tension the net section (39) (5.1.2.1), the end and edge distances
 //!   of Table 17.
-//! - **A weld between two plates** ([`weld`]): 6.3.2 for a fillet weld —
-//!   (87) on its throat a, (88) on its contact width s — under the force
-//!   it carries spread evenly along it (6.3.1.7); a full penetration weld
+//! - **A weld between two plates** ([`weld`], [`weld_with`]): 6.3.2 for a
+//!   fillet weld — (87) on its throat a, (88) on its contact width s —
+//!   under the force per unit length at its most loaded end: the force it
+//!   carries spread evenly and, since 2026-11-18, the moments of that force
+//!   about it, elastic ([`line_force`]; 6.3.1.7, 6.3.2.1); a full penetration weld
 //!   is as strong as the weaker plate (6.3.3.4) and not checked (6.3.1.8).
 //! - A plate in compression: SIA 263 gives no rule for a gusset plate's
 //!   buckling — "plate buckling not checked", said.
@@ -106,6 +108,25 @@ pub struct Checked {
     pub checks: Vec<PlateCheck>,
     /// What was assumed or not checked, in words.
     pub notes: Vec<String>,
+    /// What is not on the safe side, in words (the part's `not-safe`).
+    pub not_safe: Vec<String>,
+}
+
+/// What acts on a part beside its force in one load case (sizes, N and
+/// N·m; the interface's `part-moments`, 2026-11-18).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Extra {
+    /// A bolt group: the member's end shear in the plate's plane.
+    pub shear: f64,
+    /// A bolt group: the member's moment about the plate's normal at the
+    /// bolts' centroid. A weld: the moment of its force about the weld's
+    /// middle, bending it along its length.
+    pub in_plane: f64,
+    /// A bolt group: the moment bending the plate out of its plane. A
+    /// weld: the moment about the seam's own line.
+    pub out_of_plane: f64,
+    /// A bolt group: the force square to the plate.
+    pub normal: f64,
 }
 
 impl Checked {
@@ -369,8 +390,42 @@ pub fn contact_width(a: f64, angle: f64) -> f64 {
     a / (theta.to_radians() / 2.0).cos()
 }
 
-/// The checks of a weld carrying `force` (N: the resultant it carries).
+/// The checks of a weld carrying `force` (N: the resultant it carries)
+/// and no moment.
 pub fn weld(w: &WeldInput, force: f64) -> Checked {
+    weld_with(w, force, &Extra::default())
+}
+
+/// The force per unit length a weld of length `l` (m) and throat or
+/// contact width `width` (m) takes at its most loaded end, N/m: its force
+/// `force` spread evenly (F / L) plus, elastically, the moment of that
+/// force about the weld's middle bending it along its length (6 M / L²,
+/// the line's section modulus L² / 6) and the moment about the seam's own
+/// line taken by the section `width` wide bent across (6 T / (L w)) —
+/// the sizes added (on the safe side: their directions may differ). SIA
+/// 263 6.3.1.7 admits a simplified distribution of the stresses; 6.3.2.1
+/// checks the resultant per unit length (Figure 33).
+pub fn line_force(force: f64, x: &Extra, l: f64, width: f64) -> f64 {
+    if l <= 0.0 {
+        return f64::INFINITY;
+    }
+    let mut q = force.abs() / l + 6.0 * x.in_plane / (l * l);
+    if x.out_of_plane > 0.0 {
+        q += if width > 0.0 {
+            6.0 * x.out_of_plane / (l * width)
+        } else {
+            f64::INFINITY
+        };
+    }
+    q
+}
+
+/// The checks of a weld carrying `force` (N: the resultant it carries)
+/// with the moments of that force about it (`x`, 2026-11-18): (87) and
+/// (88) on the force per unit length at its most loaded end
+/// ([`line_force`]), as an equivalent force (that force per unit length
+/// times the weld's length) against the resistance of the whole length.
+pub fn weld_with(w: &WeldInput, force: f64, x: &Extra) -> Checked {
     let mut out = Checked::default();
     if w.kind == WeldKind::FullPenetration {
         out.notes.push(
@@ -392,20 +447,57 @@ pub fn weld(w: &WeldInput, force: f64) -> Checked {
         ));
     }
     let l = w.length;
-    out.notes.push(
-        "the force spread evenly along the weld (SIA 263 6.3.1.7); its moment about the seam \
-         not taken (not on the safe side)"
-            .into(),
-    );
+    let moments = x.in_plane > 0.0 || x.out_of_plane > 0.0;
+    out.notes.push(if moments {
+        "the force per unit length at the weld's most loaded end: its force spread evenly, \
+         its moments about the weld's middle and about the seam taken elastically (SIA 263 \
+         6.3.1.7, 6.3.2.1)"
+            .into()
+    } else {
+        "the force spread evenly along the weld (SIA 263 6.3.1.7)".into()
+    });
+    if x.out_of_plane > 0.0 {
+        out.not_safe.push(format!(
+            "the weld bent about its seam ({:.2} kN m): taken by its throat bent across, \
+             elastic — a fillet weld on one side only, bent so, should be avoided (SIA 263 \
+             6.3.6.5)",
+            x.out_of_plane / 1000.0
+        ));
+    }
+    // The equivalent force: the force per unit length at the most loaded
+    // end over the whole length (without moments: the force itself).
+    let words = |w: f64| {
+        if moments {
+            format!(
+                "; {:.1} kN/m at its most loaded end: F/L {:.1}, 6M/L² {:.1}, 6T/(L·{:.1} mm) \
+                 {:.1}",
+                line_force(force, x, l, w) / 1000.0,
+                force.abs() / l / 1000.0,
+                6.0 * x.in_plane / (l * l) / 1000.0,
+                mm(w),
+                6.0 * x.out_of_plane / (l * w) / 1000.0
+            )
+        } else {
+            String::new()
+        }
+    };
+    let demand = |w: f64| {
+        if moments {
+            line_force(force, x, l, w) * l
+        } else {
+            force
+        }
+    };
     out.checks.push(PlateCheck {
         what: format!(
             "fillet weld a {:.0} mm × {:.0} mm, throat (SIA 263 6.3.2.2, (87), f_uE {:.0} \
-             N/mm²)",
+             N/mm²{})",
             mm(a),
             mm(l),
-            filler_ultimate() / 1e6
+            filler_ultimate() / 1e6,
+            words(a)
         ),
-        demand: force,
+        demand: demand(a),
         resistance: a * l * 0.6 * filler_ultimate() / gamma_m2(),
         distance: false,
     });
@@ -413,10 +505,11 @@ pub fn weld(w: &WeldInput, force: f64) -> Checked {
     match w.fy {
         Some(fy) => out.checks.push(PlateCheck {
             what: format!(
-                "fillet weld s {:.1} mm, contact (SIA 263 6.3.2.2, (88))",
-                mm(s)
+                "fillet weld s {:.1} mm, contact (SIA 263 6.3.2.2, (88){})",
+                mm(s),
+                words(s)
             ),
-            demand: force,
+            demand: demand(s),
             resistance: s * l * 0.8 * fy / gamma_m2(),
             distance: false,
         }),

@@ -22,8 +22,15 @@
 //! the weld, the larger of the two sides' resultants (each member's axial
 //! force along its direction from the joint; a welded plate whose welds
 //! close a ring: the sum of every member's force on it, more on the safe
-//! side). The moment of that force about the seam is not taken (not on
-//! the safe side, said).
+//! side). With it, since 2026-11-18, the **moments of those forces about
+//! the weld** ([`weld_loads`]): each member's force acting along its line
+//! through its bolts, about the weld's middle — the part bending the weld
+//! along its length (in its plane) and the part about the seam's own line
+//! — the larger of the two sides' (a ring: the sums of their sizes); a
+//! weld shorter than the seam is taken anywhere along it (the moment's
+//! largest). The plugin's joint check takes them (`joint-check-moments`;
+//! SIA 263 6.3.1.7, 6.3.2.1); a plugin without that export: said NOT ON
+//! THE SAFE SIDE on the weld.
 //!
 //! Only a member's axial force goes into the plate checks (its end shear
 //! and moments, in a frame member, are not taken — said for frames).
@@ -94,16 +101,37 @@ enum Plan {
     Weld {
         with: String,
         input: WeldInput,
-        /// The members (and their direction from the joint) on each side
-        /// of the weld; one list (`ring`) when the welds close a ring.
-        sides: [Vec<(String, [f64; 3])>; 2],
+        /// The members on each side of the weld; one list (`ring`) when
+        /// the welds close a ring.
+        sides: [Vec<SideMember>; 2],
         ring: bool,
+        /// Where the weld is.
+        at: WeldPlace,
     },
     /// Two plates welded to each other that do not meet: no seam, not
     /// checked.
     NoSeam { with: String },
     /// A member's bolts not placed in a cover: not checked (said).
     Unplaced { member: String },
+}
+
+/// A member on one side of a weld: its id, its direction from the joint
+/// (unit) and a point of its force's line (its bolts' centroid, else the
+/// joint), structure axes.
+pub(crate) type SideMember = (String, [f64; 3], [f64; 3]);
+
+/// Where a weld is (structure axes): the seam's middle, its direction
+/// (unit), its length and the weld's (m).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct WeldPlace {
+    /// The seam's middle.
+    pub middle: [f64; 3],
+    /// Along the seam, unit.
+    pub along: [f64; 3],
+    /// The seam's length.
+    pub seam: f64,
+    /// The weld's length (given, else the seam's).
+    pub length: f64,
 }
 
 /// One planned part.
@@ -287,13 +315,30 @@ pub fn plate_plans_in(
                 let mut notes = Vec::new();
                 notes.push(if ring {
                     "the welds close a ring: the weld taken carrying every member's force on \
-                     the welded plate (on the safe side)"
+                     the welded plate, and the sum of their moments about it (on the safe side)"
                         .to_owned()
                 } else {
                     "the weld's force: the larger resultant of the member forces on either side \
-                     of it (on the safe side)"
+                     of it, with the larger moments of those forces about the weld (on the safe \
+                     side)"
                         .to_owned()
                 });
+                if w.length.is_some_and(|l| l < w.seam_length() - 1e-6) {
+                    notes.push(
+                        "the weld shorter than the seam: taken where along it its moment is \
+                         largest (on the safe side; where it is is not given)"
+                            .to_owned(),
+                    );
+                }
+                let at = WeldPlace {
+                    middle: scale(add(w.ends[0], w.ends[1]), 0.5),
+                    along: {
+                        let d = sub(w.ends[1], w.ends[0]);
+                        scale(d, 1.0 / norm(d).max(1e-12))
+                    },
+                    seam: w.seam_length(),
+                    length: w.length(),
+                };
                 out.parts.push(Planned {
                     joint: j.id.clone(),
                     plate: p.id.clone(),
@@ -310,6 +355,7 @@ pub fn plate_plans_in(
                         },
                         sides,
                         ring,
+                        at,
                     },
                     notes,
                 });
@@ -593,10 +639,10 @@ fn bolt_group(
 
 /// The members on each side of the weld between plates `a` and `b` of
 /// joint `j` (the welded plate split there), with their direction from
-/// the joint; a ring (b reached from a without that weld): every member
-/// of the welded plate on one side.
-#[allow(clippy::type_complexity)]
-fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<(String, [f64; 3])>; 2], bool) {
+/// the joint and a point of their force's line (their bolts' centroid,
+/// else the joint); a ring (b reached from a without that weld): every
+/// member of the welded plate on one side.
+fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<SideMember>; 2], bool) {
     let linked = |x: &str, y: &str| {
         j.plates
             .iter()
@@ -617,7 +663,7 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<(String, [f64; 3])>; 2
         }
         seen
     };
-    let members = |plates: &[String]| -> Vec<(String, [f64; 3])> {
+    let members = |plates: &[String]| -> Vec<SideMember> {
         j.arrivals
             .iter()
             .filter(|x| {
@@ -625,7 +671,17 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<(String, [f64; 3])>; 2
                     || x.other_onto.as_ref().is_some_and(|o| plates.contains(o)))
                     && !x.modelling
             })
-            .map(|x| (x.member.clone(), x.direction))
+            .map(|x| {
+                let point = if x.bolt_points.is_empty() {
+                    j.position
+                } else {
+                    let n = x.bolt_points.len() as f64;
+                    x.bolt_points
+                        .iter()
+                        .fold([0.0; 3], |s, q| add(s, scale(*q, 1.0 / n)))
+                };
+                (x.member.clone(), x.direction, point)
+            })
             .collect()
     };
     let (sa, sb) = (reach(a), reach(b));
@@ -675,6 +731,7 @@ pub fn plate_usage(
                     input,
                     sides,
                     ring,
+                    ..
                 } => {
                     let f = weld_force(sides, *ring, axial);
                     (
@@ -733,6 +790,26 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
         Plan::NoSeam { .. } => 0.0,
         Plan::Weld { sides, ring, .. } => weld_force(sides, *ring, axial),
     };
+    // What acts on a part beside its force, per case (2026-11-18): a
+    // weld's moments about it.
+    let extra_of = |x: &Planned| -> by_plugin::Extra {
+        match &x.plan {
+            Plan::Weld {
+                sides, ring, at, ..
+            } => by_plugin::Extra {
+                moments: cases
+                    .iter()
+                    .map(|c| {
+                        let l = weld_loads(sides, *ring, at, c.2);
+                        [0.0, l[1], l[2], 0.0]
+                    })
+                    .collect(),
+                free_length: None,
+            },
+            _ => by_plugin::Extra::default(),
+        }
+    };
+    let mut extra: Vec<by_plugin::Extra> = Vec::new();
     let sent: Vec<by_plugin::Part> = plans
         .parts
         .iter()
@@ -756,6 +833,7 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
                 }
                 Plan::NoSeam { .. } | Plan::Unplaced { .. } => return None,
             };
+            extra.push(extra_of(x));
             Some(by_plugin::Part {
                 id: k as u32,
                 joint: x.joint.clone(),
@@ -770,10 +848,17 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
             })
         })
         .collect();
-    let checked = if sent.is_empty() {
-        by_plugin::JointsChecked::Results(Vec::new())
+    // Which parts something acts on beside their force (by part number).
+    let acted: Vec<u32> = sent
+        .iter()
+        .zip(&extra)
+        .filter(|(_, x)| x.acts())
+        .map(|(p, _)| p.id)
+        .collect();
+    let (checked, moments_sent) = if sent.is_empty() {
+        (by_plugin::JointsChecked::Results(Vec::new()), true)
     } else {
-        by_plugin::check_joints(
+        by_plugin::check_joints_with(
             p,
             &by_plugin::JointInput {
                 structure: plans.structure.clone(),
@@ -786,6 +871,7 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
                     .collect(),
                 parts: sent,
             },
+            &extra,
         )
     };
     let not_checked = by_plugin::not_checked_by(p);
@@ -855,6 +941,15 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
                         row.governs
                             .push_str(&format!(" {} {w}]", ohl_structures_fe::check::NOT_SAFE));
                     }
+                    // Something acts on it beside its force that the
+                    // plugin was not sent (it has no joint-check-moments).
+                    if !moments_sent && acted.contains(&(k as u32)) {
+                        row.governs.push_str(&format!(
+                            " {} {}]",
+                            ohl_structures_fe::check::NOT_SAFE,
+                            not_sent_words(&p.plugin, &x.plan)
+                        ));
+                    }
                     row
                 })
                 .collect()
@@ -862,27 +957,86 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
         .collect()
 }
 
+/// What a plugin without `joint-check-moments` was not sent of a part.
+fn not_sent_words(plugin: &str, plan: &Plan) -> String {
+    let what = match plan {
+        Plan::Weld { .. } => "the moments of its force about the weld",
+        _ => "the member's end shear and moments, the plate's free length",
+    };
+    format!("{what} not sent: the plugin {plugin} has no joint-check-moments")
+}
+
 /// The force a weld carries: the larger resultant of the member forces on
 /// its two sides (a ring: the sum of every member's force), N.
-fn weld_force(
-    sides: &[Vec<(String, [f64; 3])>; 2],
+fn weld_force(sides: &[Vec<SideMember>; 2], ring: bool, axial: &BTreeMap<String, f64>) -> f64 {
+    weld_loads_with(sides, ring, None, axial)[0]
+}
+
+/// What a weld carries (2026-11-18): `[F, M, T]` — the force (as
+/// [`weld_force`]), the moment of the member forces about the weld's
+/// middle bending it along its length (the moment's part square to the
+/// seam, N·m) and the moment about the seam's own line (N·m) — each the
+/// larger of the two sides' (a ring: the sums of every member's sizes).
+/// Each member's force acts along its direction through its point
+/// ([`SideMember`]). A weld shorter than the seam lies anywhere along it
+/// (where it is is not given): its middle up to (seam − weld) / 2 from
+/// the seam's, the in-plane moment taken at its largest, |M| + that
+/// distance × |u × F| (on the safe side).
+pub(crate) fn weld_loads(
+    sides: &[Vec<SideMember>; 2],
     ring: bool,
+    at: &WeldPlace,
     axial: &BTreeMap<String, f64>,
-) -> f64 {
+) -> [f64; 3] {
+    weld_loads_with(sides, ring, Some(at), axial)
+}
+
+fn weld_loads_with(
+    sides: &[Vec<SideMember>; 2],
+    ring: bool,
+    at: Option<&WeldPlace>,
+    axial: &BTreeMap<String, f64>,
+) -> [f64; 3] {
     let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
+    // The moment of forces about the weld's middle split into its part
+    // about the seam (T) and the rest (M), M at its largest along the
+    // seam for a shorter weld.
+    let split = |m: [f64; 3], f: [f64; 3]| -> [f64; 2] {
+        let Some(at) = at else {
+            return [0.0, 0.0];
+        };
+        let t = dot(m, at.along);
+        let rest = sub(m, scale(at.along, t));
+        let slack = ((at.seam - at.length) / 2.0).max(0.0);
+        [norm(rest) + slack * norm(cross(at.along, f)), t.abs()]
+    };
+    let middle = at.map_or([0.0; 3], |a| a.middle);
     if ring {
-        return sides[0].iter().map(|(m, _)| n(m).abs()).sum();
+        let mut out = [0.0; 3];
+        for (m, d, q) in &sides[0] {
+            let f = scale(*d, n(m));
+            let [mm, t] = split(cross(sub(*q, middle), f), f);
+            out[0] += n(m).abs();
+            out[1] += mm;
+            out[2] += t;
+        }
+        return out;
     }
-    sides
-        .iter()
-        .map(|s| {
-            let r = s.iter().fold([0.0; 3], |r, (m, d)| {
-                let f = n(m);
-                [r[0] + f * d[0], r[1] + f * d[1], r[2] + f * d[2]]
-            });
-            dot(r, r).sqrt()
-        })
-        .fold(0.0, f64::max)
+    let mut out = [0.0f64; 3];
+    for s in sides {
+        let mut r = [0.0; 3];
+        let mut mo = [0.0; 3];
+        for (m, d, q) in s {
+            let f = scale(*d, n(m));
+            r = add(r, f);
+            mo = add(mo, cross(sub(*q, middle), f));
+        }
+        let [mm, t] = split(mo, r);
+        out[0] = out[0].max(norm(r));
+        out[1] = out[1].max(mm);
+        out[2] = out[2].max(t);
+    }
+    out
 }
 
 /// The worst plate usage per joint of a case's plate checks.
@@ -954,6 +1108,10 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
+fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
 fn scale(a: [f64; 3], k: f64) -> [f64; 3] {
     [a[0] * k, a[1] * k, a[2] * k]
 }
@@ -994,11 +1152,12 @@ mod tests {
     /// the sum 190 kN.
     #[test]
     fn a_weld_carries_the_larger_resultant() {
+        let o = [0.0; 3];
         let sides = [
-            vec![("A".to_owned(), [0.0, 0.0, 1.0])],
+            vec![("A".to_owned(), [0.0, 0.0, 1.0], o)],
             vec![
-                ("B".to_owned(), [1.0, 0.0, 0.0]),
-                ("C".to_owned(), [0.0, 1.0, 0.0]),
+                ("B".to_owned(), [1.0, 0.0, 0.0], o),
+                ("C".to_owned(), [0.0, 1.0, 0.0], o),
             ],
         ];
         let axial: BTreeMap<String, f64> = [("A", 30e3), ("B", 100e3), ("C", -60e3)]
@@ -1012,5 +1171,59 @@ mod tests {
             Vec::new(),
         ];
         assert!((weld_force(&all, true, &axial) - 190e3).abs() < 1e-6);
+    }
+
+    /// The moments of a weld's force (invented data, worked by hand): a
+    /// seam along z from (0, 0, 0) to (0, 0, 0.2), its middle (0, 0,
+    /// 0.1). One side: member B pulling 100 kN along x through its bolts
+    /// at (0.15, 0, 0.18) — r = (0.15, 0, 0.08), F = (100, 0, 0) kN, r × F
+    /// = (0, 0.08·100, 0) = (0, 8, 0) kN m: square to the seam, so M =
+    /// 8 kN m bending the weld along its length, T = 0 about the seam.
+    /// Member C on the same side pushing 50 kN along y at (0.15, 0, 0.1):
+    /// r = (0.15, 0, 0), F = (0, −50, 0), r × F = (0, 0, −7.5) kN m —
+    /// about the seam: T = 7.5 kN m (its side's resultant √(100² + 50²)
+    /// = 111.8 kN). The other side: member A 30 kN along z at the middle,
+    /// no moment. A weld of 0.12 m on the 0.2 m seam lies anywhere along
+    /// it: its middle up to 0.04 m off, M up to 8 + 0.04 × |u × F| = 8 +
+    /// 0.04 × 111.8 = 12.47 kN m.
+    #[test]
+    fn a_weld_carries_the_moments_of_its_force() {
+        let sides = [
+            vec![("A".to_owned(), [0.0, 0.0, 1.0], [0.0, 0.0, 0.1])],
+            vec![
+                ("B".to_owned(), [1.0, 0.0, 0.0], [0.15, 0.0, 0.18]),
+                ("C".to_owned(), [0.0, 1.0, 0.0], [0.15, 0.0, 0.1]),
+            ],
+        ];
+        let axial: BTreeMap<String, f64> = [("A", 30e3), ("B", 100e3), ("C", -50e3)]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect();
+        let mut at = WeldPlace {
+            middle: [0.0, 0.0, 0.1],
+            along: [0.0, 0.0, 1.0],
+            seam: 0.2,
+            length: 0.2,
+        };
+        let [f, m, t] = weld_loads(&sides, false, &at, &axial);
+        assert!((f - 100e3f64.hypot(50e3)).abs() < 1e-6, "{f}");
+        assert!((m - 8e3).abs() < 1e-6, "{m}");
+        assert!((t - 7.5e3).abs() < 1e-6, "{t}");
+        at.length = 0.12;
+        let [_, m, _] = weld_loads(&sides, false, &at, &axial);
+        assert!(
+            (m - (8e3 + 0.04 * 100e3f64.hypot(50e3))).abs() < 1e-6,
+            "{m}"
+        );
+        // A ring: the sums of the sizes (A's none, B's 8 + 0.04 × 100,
+        // C's 0 + 0.04 × 50 in plane; T: C's 7.5).
+        let all = [
+            sides[0].iter().chain(&sides[1]).cloned().collect(),
+            Vec::new(),
+        ];
+        let [f, m, t] = weld_loads(&all, true, &at, &axial);
+        assert!((f - 180e3).abs() < 1e-6, "{f}");
+        assert!((m - (8e3 + 0.04 * 100e3 + 0.04 * 50e3)).abs() < 1e-6, "{m}");
+        assert!((t - 7.5e3).abs() < 1e-6, "{t}");
     }
 }

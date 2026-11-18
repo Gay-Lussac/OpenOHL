@@ -59,7 +59,8 @@
 //!   ([`check_bundled`]), never a fallback to another code; they are given
 //!   a longer time and more memory a call than user plugins ([`host`]).
 //! - **Their settings everywhere** (2026-11-18): the structure's parameter
-//!   file reaches the joint check (`joint-check-full`, [`joints`]) and
+//!   file reaches the joint check (`joint-check-moments`, else
+//!   `joint-check-full`, [`joints`]) and
 //!   Member details ([`with_parameters`]) as it reaches the member check.
 //!
 //! This crate is the one place that knows both the finite-element
