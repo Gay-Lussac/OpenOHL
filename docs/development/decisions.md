@@ -42,10 +42,10 @@ attachement point)"; built, in active development, not approved yet;
   where the dragged leg takes it); refused where the legs cannot meet.
 - **What hangs below** a wire point that moves (a chain): moved by the
   same displacement (its strings keep their lengths and directions).
-- **Lengths free on purpose**: Ctrl (⌘ on a Mac) held while dragging — a
-  wire point goes where the pointer is, an attachment point moves alone;
-  said in the readout and the status bar. A length is also typed in the
-  string window and the Strings table, as before.
+- **No drag changes a length** (owner, 2026-11-18: "in this window from
+  the edit button the length of the string should not be editable as
+  it's only in the string library"): no key frees it; another length is
+  another library entry, chosen for the string.
 - **Precision**: the line's 3D view keeps a length to 1e-9 m; a
   structure type's file (and a placed structure's document) writes
   positions to the millimetre, so a turned wire point keeps its string's

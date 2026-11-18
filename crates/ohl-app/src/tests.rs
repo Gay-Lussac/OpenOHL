@@ -34,6 +34,7 @@ mod multi_select;
 mod navigation;
 mod objects;
 mod other_line_winds;
+mod placed_apply;
 mod plugins_hosting;
 mod project;
 mod session_edits;

@@ -10,7 +10,6 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ohl_structure_edit::Handle;
-use ohl_structures::InsulatorLibrary;
 use ohl_structures::structures::to_local;
 
 use crate::app::App;
@@ -83,7 +82,8 @@ fn with_v(name: &str) -> crate::model::Model {
 /// the pointer was and the string's length changed. An attachment point
 /// dragged takes its string along — the wire point moved by the same
 /// vector; before, the wire point stayed and the string's length
-/// changed. With Ctrl held the length changes on purpose. Apply puts it
+/// changed. No key held changes a length (owner, 2026-11-18: a string's
+/// length is its library entry's). Apply puts it
 /// on the line (one command), the lengths as dragged.
 #[test]
 fn the_edit_window_keeps_the_strings_lengths() {
@@ -105,9 +105,12 @@ fn the_edit_window_keeps_the_strings_lengths() {
     // Where the window's document has a point or wire point, and where it
     // is drawn.
     let at = |h: &mut Harness<'_, App>, l: &str| -> [f64; 3] {
-        let p = h.state_mut().ready().unwrap().placed.as_ref().unwrap();
+        let r = h.state_mut().ready().unwrap();
+        let empty = ohl_structures::InsulatorLibrary::default();
+        let insulators = r.model.types.as_ref().map_or(&empty, |(_, i)| i);
+        let p = r.placed.as_ref().unwrap();
         let t = p.workspace.shown().unwrap();
-        crate::type_workspace::geometry(t, &InsulatorLibrary::default())
+        crate::type_workspace::geometry(t, insulators)
             .at(l)
             .unwrap()
     };
@@ -182,7 +185,7 @@ fn the_edit_window_keeps_the_strings_lengths() {
         assert!(distance(w, w1_now) < 1e-3, "{w:?} {w1_now:?}");
         assert!(!r.placed.as_ref().unwrap().dirty());
     }
-    // Ctrl held: lengths free, W1 goes where the pointer is.
+    // Ctrl held: the length kept all the same.
     let w1 = at(&mut h, "W1");
     let from = screen(&mut h, w1);
     drag(
@@ -192,18 +195,18 @@ fn the_edit_window_keeps_the_strings_lengths() {
         egui::Modifiers::COMMAND,
     );
     let w1_now = at(&mut h, "W1");
+    assert!(distance(w1_now, w1) > 0.3, "{w1:?} ➡ {w1_now:?}");
     assert!(
-        (distance(a1, w1_now) - 3.5).abs() > 0.05,
+        (distance(a1, w1_now) - 3.5).abs() < 1e-3,
         "S1 {} m",
         distance(a1, w1_now)
     );
     let (m, _) = message(&mut h);
-    assert!(m.contains("lengths free: string S1 changes length"), "{m}");
+    assert!(m.contains("lengths kept: S1 3.50"), "{m}");
 }
 
 /// The line's 3D view, the commands: W1 of T3 dragged far away keeps
-/// S1's length (to 1e-9 m) and A1, pointing at the pointer; lengths free
-/// it goes there; a V point dragged turns the V about its other point,
+/// S1's length (to 1e-9 m) and A1, pointing at the pointer; a V point dragged turns the V about its other point,
 /// both lengths kept (said), one undo back exactly; three strings
 /// holding a wire point refuse its drag, said.
 #[test]
@@ -234,19 +237,6 @@ fn the_3d_views_commands_keep_the_lengths() {
     let cos =
         (0..3).map(|k| u[k] * v[k]).sum::<f64>() / distance([0.0; 3], u) / distance([0.0; 3], v);
     assert!((cos - 1.0).abs() < 1e-9, "{cos}");
-    // Lengths free: where the pointer is.
-    let (what, command) =
-        crate::handles::command_drag(&m, "T3", &Handle::Wire("W1".into()), to, None, true).unwrap();
-    assert!(
-        what.contains("lengths free: string S1 changes length"),
-        "{what}"
-    );
-    let ohl_session::Command::Put { value, .. } = command else {
-        panic!("{command:?}")
-    };
-    let put: ohl_line::Structure = serde_json::from_value(value).unwrap();
-    let got = local(put.wire("W1").unwrap().position);
-    assert!(distance(got, to) < 1e-9, "{got:?} {to:?}");
     // The V: A2 up 0.5 m, W2 turns about A3, S2 and S2b keep their
     // lengths.
     let stored_before = m.stored_line().unwrap().structure("T3").unwrap().clone();
@@ -331,8 +321,8 @@ fn the_3d_views_commands_keep_the_lengths() {
 
 /// The line's 3D view (the Move tool, T3's Edit window open): W1 dragged
 /// turns S1 about A1 — the readout gives S1's length and angles, released
-/// S1 is 3.5 m long (to 1e-9 m) and A1 has not moved; with Ctrl held the
-/// readout says lengths free and S1's length changes.
+/// S1 is 3.5 m long (to 1e-9 m) and A1 has not moved; with Ctrl held
+/// too (no key changes a length).
 #[test]
 fn the_3d_view_turns_a_dragged_wire_point() {
     use crate::handle_tests::{harness, on_screen, screen_aside};
@@ -387,7 +377,7 @@ fn the_3d_view_turns_a_dragged_wire_point() {
         assert!(distance(w, w1) > 0.3, "{w:?} {w1:?}");
         w
     };
-    // Ctrl held: lengths free.
+    // Ctrl held: the same.
     h.run();
     let at = on_screen(&mut h, w1_now);
     let ctrl = egui::Modifiers::COMMAND;
@@ -405,7 +395,7 @@ fn the_3d_view_turns_a_dragged_wire_point() {
         .handles
         .readout()
         .unwrap();
-    assert!(readout.contains("lengths free"), "{readout}");
+    assert!(readout.contains("lengths kept: S1 3.500 m"), "{readout}");
     pointer(&mut h, at + egui::vec2(-60.0, 72.0), Some(false), ctrl);
     h.input_mut()
         .events
@@ -414,10 +404,6 @@ fn the_3d_view_turns_a_dragged_wire_point() {
     let r = h.state_mut().ready().unwrap();
     let s = r.model.line.structure("T3").unwrap();
     let w = s.wire("W1").unwrap().position;
-    assert!((distance(a1, w) - 3.5).abs() > 0.05, "{}", distance(a1, w));
-    assert!(
-        r.status.as_ref().unwrap().0.contains("lengths free"),
-        "{:?}",
-        r.status
-    );
+    assert!((distance(a1, w) - 3.5).abs() < 1e-9, "{}", distance(a1, w));
+    assert!(distance(w, w1_now) > 0.3, "{w:?} {w1_now:?}");
 }

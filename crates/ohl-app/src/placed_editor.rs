@@ -41,6 +41,8 @@ pub struct PlacedEditor {
     pub type_id: Option<String>,
     /// The type made is opened in the structure application.
     pub then_edit: bool,
+    /// The version of the line it last looked at ([`PlacedEditor::follow`]).
+    seen: Option<u64>,
 }
 
 /// The button making a structure without a type a structure file, opened
@@ -247,6 +249,7 @@ impl PlacedEditor {
             message: None,
             type_id: None,
             then_edit: false,
+            seen: None,
         })
     }
 
@@ -444,6 +447,44 @@ impl PlacedEditor {
     /// Applied: the text kept as the one to compare with.
     pub fn applied(&mut self) {
         self.saved = self.doc.to_string();
+    }
+
+    /// The line at `version` (it changed: an Apply, an undo or redo,
+    /// another edit of the structure): without changes of its own the
+    /// editor shows the structure as it is in the line now (2026-11-18:
+    /// after an undo it kept showing the change undone, so a later Apply
+    /// put it back); with changes not applied, it keeps them and says the
+    /// structure changed under them (Apply puts its version, Revert takes
+    /// the line's).
+    pub fn follow(&mut self, line: &Line, version: u64) {
+        if self.seen == Some(version) {
+            return;
+        }
+        self.seen = Some(version);
+        let Some(s) = line.structure(&self.id) else {
+            return;
+        };
+        let now = as_type(s);
+        let text = now.to_string();
+        if text == self.saved {
+            return;
+        }
+        if self.dirty() {
+            self.saved = text;
+            self.message = Some((
+                format!(
+                    "structure {} changed in the line since this window's changes began (an \
+                     undo, a redo or another edit): Apply puts this window's version over it, \
+                     Revert takes the line's",
+                    self.id
+                ),
+                true,
+            ));
+        } else {
+            self.doc = now;
+            self.saved = text;
+            self.workspace.redraw();
+        }
     }
 
     /// The editor: Apply, Revert, Make it a type…; then the pylon

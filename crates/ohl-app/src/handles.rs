@@ -32,10 +32,8 @@
 //!   same displacement (the strings keep their length and direction); a
 //!   V whose other leg hangs from a point not dragged turns about that
 //!   point, both lengths kept (refused where they cannot meet). What
-//!   hangs below a wire point that moves moves along with it.
-//!   **Ctrl (⌘ on a Mac)** held while dragging: lengths free — a wire
-//!   point goes where the pointer is, a point moves alone, their strings
-//!   change length (the readout and the status bar say so).
+//!   hangs below a wire point that moves moves along with it. No drag
+//!   changes a length: a string's length is its library entry's.
 //! - Released, **one command** (one undo): a point takes its new place
 //!   (as typed in the Attachment points table), the wire points moving
 //!   with it theirs. A point, wire point or string that comes from the
@@ -157,9 +155,6 @@ pub struct Drag {
     /// The handle it snapped onto (a joint: the point is relinked there
     /// when released).
     pub onto: Option<Handle>,
-    /// Lengths free ([`crate::string_drag::FREE_KEY`] held): its strings
-    /// change length.
-    pub free: bool,
     /// What its strings do, in words (the readout).
     pub note: Option<String>,
     /// Why it cannot move there (said when released; nothing moves).
@@ -179,8 +174,6 @@ pub enum Done {
         at: [f64; 3],
         /// The handle it was released on (snapped onto), if any.
         onto: Option<Handle>,
-        /// Lengths free: its strings change length.
-        free: bool,
     },
     /// A handle that is not dragged, or a drag that cannot be made now.
     Refused(String),
@@ -255,23 +248,19 @@ pub fn hold(s: &Structure, d: &mut Drag, at: [f64; 3]) {
     d.at = at;
     d.refused = None;
     d.note = None;
-    let free = format!("lengths free ({} let go: lengths kept)", sd::FREE_KEY);
     match &d.handle {
-        Handle::Wire(w) if !d.free => {
+        Handle::Wire(w) => {
             if net.strings.iter().any(|x| &x.wire == w) {
                 // Not snapped: where its strings reach.
                 d.snapped = None;
                 d.onto = None;
             }
-            match sd::drag(&net, &d.handle, global(at), false) {
+            match sd::drag(&net, &d.handle, global(at)) {
                 Ok(m) => {
                     d.at = local(m.at);
                     let words = sd::strings_words(&net, w, m.at, local);
                     if !words.is_empty() {
-                        d.note = Some(format!(
-                            "lengths kept: {words} ({} held: lengths free)",
-                            sd::FREE_KEY
-                        ));
+                        d.note = Some(format!("lengths kept: {words}"));
                     }
                 }
                 Err(e) => {
@@ -280,12 +269,7 @@ pub fn hold(s: &Structure, d: &mut Drag, at: [f64; 3]) {
                 }
             }
         }
-        Handle::Wire(w) => {
-            let words = sd::strings_words(&net, w, global(at), local);
-            d.note = Some(format!("{free}: {words}"));
-        }
-        Handle::Point(_) if d.free => d.note = Some(format!("{free}: the point moves alone")),
-        Handle::Point(_) => match sd::drag(&net, &d.handle, global(at), false) {
+        Handle::Point(_) => match sd::drag(&net, &d.handle, global(at)) {
             Ok(m) => {
                 let words = m.describe();
                 if let Some(w) = words.strip_prefix("; ") {
@@ -450,34 +434,20 @@ pub fn command(
     handle: &Handle,
     at: [f64; 3],
 ) -> Result<(String, Command), String> {
-    command_drag(model, id, handle, at, None, false)
+    command_onto(model, id, handle, at, None)
 }
 
-/// [`command_drag`] with the lengths kept.
-#[cfg(test)]
+/// The command of a drag released at `at` on `onto` (snapped onto it),
+/// the strings following by their rule ([`crate::string_drag`]): an
+/// attachment point of a typed structure released on a joint its type
+/// lets it be linked to is relinked there (no offset); otherwise a linked
+/// point keeps its joint, its offset the distance from it.
 pub fn command_onto(
     model: &Model,
     id: &str,
     handle: &Handle,
     at: [f64; 3],
     onto: Option<&Handle>,
-) -> Result<(String, Command), String> {
-    command_drag(model, id, handle, at, onto, false)
-}
-
-/// The command of a drag released at `at` on `onto` (snapped onto it),
-/// the strings following by their rule ([`crate::string_drag`]; `free`:
-/// lengths free): an attachment point of a typed structure released on a
-/// joint its type lets it be linked to is relinked there (no offset);
-/// otherwise a linked point keeps its joint, its offset the distance from
-/// it.
-pub fn command_drag(
-    model: &Model,
-    id: &str,
-    handle: &Handle,
-    at: [f64; 3],
-    onto: Option<&Handle>,
-    free: bool,
 ) -> Result<(String, Command), String> {
     model.can_edit()?;
     let stored = model
@@ -572,7 +542,7 @@ pub fn command_drag(
     }
     // The strings' rule: where the wire points go.
     let net = crate::string_drag::Net::of_structure(resolved);
-    let moved = crate::string_drag::drag(&net, handle, global, free)?;
+    let moved = crate::string_drag::drag(&net, handle, global)?;
     if let Handle::Wire(_) = handle {
         global = moved.at;
     }
@@ -608,7 +578,7 @@ pub fn command_drag(
 /// `s` (as stored, a dragged point already put) takes the wire points of
 /// `moved` where they go — put as their string windows put them (those of
 /// the type becoming the structure's own, named in `own`), with the
-/// strings changing length (lengths free) — at their exact places: those
+/// at their exact places: those
 /// moving where `moved` puts them, the others as they were (not turned
 /// into the structure's axes and back). A string whose ends moved alike
 /// keeps its length and direction as given; the others take theirs from
@@ -624,16 +594,8 @@ fn put_wires(
     moved: &crate::string_drag::Moved,
     own: &mut Vec<String>,
 ) -> Result<(), String> {
-    // The wire points whose string windows are put: those moving, and
-    // those at the end of a string changing length.
-    let mut ends: Vec<String> = moved.wires.iter().map(|w| w.0.clone()).collect();
-    for x in &moved.longer {
-        if let Some(x) = resolved.string(x)
-            && !ends.contains(&x.wire)
-        {
-            ends.push(x.wire.clone());
-        }
-    }
+    // The wire points whose string windows are put: those moving.
+    let ends: Vec<String> = moved.wires.iter().map(|w| w.0.clone()).collect();
     let wires_before: Vec<String> = s.wires.iter().map(|w| w.label.clone()).collect();
     let strings_before: Vec<String> = s.strings.iter().map(|x| x.label.clone()).collect();
     let mut put_wires: Vec<String> = Vec::new();
@@ -695,7 +657,7 @@ fn put_wires(
             x.angle_deg = r.angle_deg;
             x.direction_deg = r.direction_deg;
         } else if !alike {
-            // Turned (or longer, lengths free): its length and direction
+            // Turned: its length and direction
             // taken from where its ends are now.
             x.length = 0.0;
             x.angle_deg = 0.0;

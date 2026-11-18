@@ -1074,7 +1074,6 @@ impl View3d {
                         constraint: crate::handles::Constraint::Free,
                         snapped: None,
                         onto: None,
-                        free: false,
                         note: None,
                         refused: None,
                     });
@@ -1135,9 +1134,7 @@ impl View3d {
                         crate::handles::snap(at, d.constraint, grid, onto.as_ref())
                     };
                     d.onto = onto.filter(|_| !unsnapped).map(|s| s.handle);
-                    // The strings' rule (lengths kept, or free with the
-                    // key held).
-                    d.free = ui.input(|i| i.modifiers.command);
+                    // The strings' rule: lengths kept.
                     let at = d.at;
                     crate::handles::hold(s, d, at);
                 }
@@ -1155,7 +1152,6 @@ impl View3d {
                         handle: d.handle,
                         at: d.at,
                         onto: d.onto,
-                        free: d.free,
                     });
                 }
             }

@@ -860,11 +860,9 @@ impl Workspace {
                     let s: f64 = (0..3).map(|k| (m.on[k] - a[k]) * m.normal[k]).sum::<f64>() / dn;
                     let mut at = [0, 1, 2].map(|k| a[k] + s * d[k]);
                     // The strings' rule: lengths kept (a wire point held
-                    // by strings turns about their tops, not snapped),
-                    // else free with the key held.
-                    let free = ui.input(|i| i.modifiers.command);
+                    // by strings turns about their tops, not snapped).
                     let turning = matches!(&m.handle, Handle::Wire(w)
-                        if !free && m.start.strings.iter().any(|x| &x.wire == w));
+                        if m.start.strings.iter().any(|x| &x.wire == w));
                     if self.grid > 0.0 && !turning {
                         at = at.map(|v| (v / self.grid).round() * self.grid);
                     }
@@ -891,7 +889,7 @@ impl Workspace {
                     {
                         at = *p;
                     }
-                    match drag_strings(doc, t, g, &m.start, &m.handle, at, onto.as_deref(), free) {
+                    match drag_strings(doc, t, g, &m.start, &m.handle, at, onto.as_deref()) {
                         Ok(Some(words)) => {
                             changed = true;
                             self.message = Some((words, false));
@@ -1093,8 +1091,8 @@ impl Workspace {
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
             "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-             wheel: zoom; drag a point or wire point to move it (the strings keep their lengths; Ctrl / ⌘ held: \
-             free); Shift + click: pick another",
+             wheel: zoom; drag a point or wire point to move it (the strings keep their lengths); \
+             Shift + click: pick another",
             egui::FontId::proportional(11.0),
             egui::Color32::GRAY,
         );
@@ -1445,7 +1443,7 @@ fn drag_point(
 
 /// A point or wire point of type `t` (drawn as `g`) dragged to `at`
 /// (local axes; released `onto` an attach joint) by the strings' rule
-/// ([`crate::string_drag`]; `free`: lengths free), from `start` (the
+/// ([`crate::string_drag`]), from `start` (the
 /// points, wire points and strings when the drag started): the dragged
 /// one put by [`drag_point`], the wire points that move with it written
 /// where they go — those the file places by their strings follow them
@@ -1461,7 +1459,6 @@ fn drag_strings(
     h: &Handle,
     at: [f64; 3],
     onto: Option<&str>,
-    free: bool,
 ) -> Result<Option<String>, (String, bool)> {
     use crate::string_drag as sd;
     // Lengths kept, a wire point turns (its place is not on the file's
@@ -1469,11 +1466,11 @@ fn drag_strings(
     // along moves by exactly as much.
     let mm = |p: [f64; 3]| p.map(|v| (v * 1000.0).round() / 1000.0);
     let to = match h {
-        Handle::Wire(_) if !free => at,
+        Handle::Wire(_) => at,
         _ if onto.is_some() => at,
         _ => mm(at),
     };
-    let moved = sd::drag(start, h, to, free).map_err(|e| (e, false))?;
+    let moved = sd::drag(start, h, to).map_err(|e| (e, false))?;
     let mut writes: Vec<(Handle, [f64; 3])> = vec![(h.clone(), moved.at)];
     for (w, p) in &moved.wires {
         let wire = Handle::Wire(w.clone());
@@ -1503,14 +1500,7 @@ fn drag_strings(
     if let Handle::Wire(w) = h {
         let strings = sd::strings_words(start, w, a, |p| p);
         if !strings.is_empty() {
-            words.push_str(&if free {
-                format!(" — lengths free: {strings}")
-            } else {
-                format!(
-                    " — lengths kept: {strings} ({} held: lengths free)",
-                    sd::FREE_KEY
-                )
-            });
+            words.push_str(&format!(" — lengths kept: {strings}"));
         }
     }
     words.push_str(&moved.describe());

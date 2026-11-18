@@ -26,18 +26,13 @@
 //!   top**: every string keeps its length, the wire point goes where the
 //!   lengths meet nearest to where the moving legs take it; where they
 //!   cannot meet the drag is refused with the reason.
-//! - **Lengths free** ([`FREE_KEY`] held while dragging): a length
-//!   changes on purpose — a wire point goes where the pointer is (its
-//!   strings change length, what hangs below moves along), an attachment
-//!   point moves alone (its strings change length). A string's length is
-//!   also typed in the string window.
+//! - **No drag changes a length** (owner, 2026-11-18: a string's length
+//!   is its library entry's; another length is another entry, chosen in
+//!   the Strings table or the string window).
 
 use std::collections::BTreeMap;
 
 use ohl_structure_edit::Handle;
-
-/// The key held while dragging for lengths free, in words.
-pub const FREE_KEY: &str = "Ctrl (⌘ on a Mac)";
 
 /// Within this, two tops are one, m.
 const SAME_TOP: f64 = 1e-9;
@@ -141,8 +136,6 @@ pub struct Moved {
     /// The wire points turned about a top that does not move (a V), their
     /// strings keeping their lengths.
     pub turned: Vec<String>,
-    /// The strings changing length (lengths free only).
-    pub longer: Vec<String>,
 }
 
 impl Moved {
@@ -169,14 +162,6 @@ impl Moved {
                  about it, every string keeping its length",
                 s(self.turned.len()),
                 self.turned.join(", ")
-            ));
-        }
-        if !self.longer.is_empty() {
-            out.push_str(&format!(
-                "; lengths free: string{} {} change{} length",
-                s(self.longer.len()),
-                self.longer.join(", "),
-                if self.longer.len() > 1 { "" } else { "s" },
             ));
         }
         out
@@ -333,7 +318,7 @@ pub fn on_strings(net: &Net, wire: &str, to: [f64; 3]) -> Result<[f64; 3], Strin
         let names: Vec<&str> = legs.iter().map(|x| x.label.as_str()).collect();
         return Err(format!(
             "wire point {wire} is held by {} strings ({}): it cannot move without changing a \
-             length ({FREE_KEY} held while dragging: lengths free)",
+             length (a length is its string's library entry)",
             legs.len(),
             names.join(", ")
         ));
@@ -343,10 +328,10 @@ pub fn on_strings(net: &Net, wire: &str, to: [f64; 3]) -> Result<[f64; 3], Strin
 }
 
 /// The drag of `handle` (an attachment point or a wire point of `net`) to
-/// `to` (the same axes), the lengths kept (`free`: lengths free): where
+/// `to` (the same axes), the lengths kept: where
 /// it goes and which wire points move where (module docs). An error says
 /// why it cannot move.
-pub fn drag(net: &Net, handle: &Handle, to: [f64; 3], free: bool) -> Result<Moved, String> {
+pub fn drag(net: &Net, handle: &Handle, to: [f64; 3]) -> Result<Moved, String> {
     let (grabbed, at) = match handle {
         Handle::Point(l) => {
             net.points
@@ -355,15 +340,7 @@ pub fn drag(net: &Net, handle: &Handle, to: [f64; 3], free: bool) -> Result<Move
                 .ok_or_else(|| format!("no point {l}"))?;
             (l.as_str(), to)
         }
-        Handle::Wire(l) => {
-            let at = if free {
-                net.at(l).ok_or_else(|| format!("no wire point {l}"))?;
-                to
-            } else {
-                on_strings(net, l, to)?
-            };
-            (l.as_str(), at)
-        }
+        Handle::Wire(l) => (l.as_str(), on_strings(net, l, to)?),
         Handle::Joint(j) => return Err(format!("joint {j}: not dragged here")),
         Handle::Member(m) => return Err(format!("member {m}: move its joints")),
     };
@@ -371,26 +348,6 @@ pub fn drag(net: &Net, handle: &Handle, to: [f64; 3], free: bool) -> Result<Move
         at,
         ..Default::default()
     };
-    let wire_dragged = matches!(handle, Handle::Wire(_));
-    if free {
-        // Its strings change length.
-        out.longer = net
-            .strings
-            .iter()
-            .filter(|x| {
-                if wire_dragged {
-                    x.wire == grabbed
-                } else {
-                    x.top == grabbed
-                }
-            })
-            .map(|x| x.label.clone())
-            .collect();
-        if !wire_dragged {
-            // A point moves alone.
-            return Ok(out);
-        }
-    }
     let mut new: BTreeMap<String, [f64; 3]> = BTreeMap::new();
     new.insert(grabbed.to_owned(), at);
     // The wire points below the dragged one (through strings).
@@ -449,7 +406,7 @@ pub fn drag(net: &Net, handle: &Handle, to: [f64; 3], free: bool) -> Result<Move
             let p = meet(&spheres, add(was, mean), was).ok_or_else(|| {
                 format!(
                     "wire point {w}: strings {} cannot keep their lengths — their tops would \
-                     be too far apart (or too close); {FREE_KEY} held: lengths free",
+                     be too far apart (or too close)",
                     names.join(", ")
                 )
             })?;
@@ -540,25 +497,17 @@ mod tests {
             &[("S1", "A1", "W1")],
         );
         let to = [40.0, -25.0, 3.0];
-        let m = drag(&n, &wire("W1"), to, false).unwrap();
+        let m = drag(&n, &wire("W1"), to).unwrap();
         let top = [2.0, 1.0, 30.0];
         assert!((distance(top, m.at) - 3.5).abs() < 1e-9, "{m:?}");
         let (u, v) = (sub(m.at, top), sub(to, top));
         let cos = dot(u, v) / norm(u) / norm(v);
         assert!((cos - 1.0).abs() < 1e-12, "{cos}");
         assert_eq!(m.wires, [("W1".to_owned(), m.at)]);
-        assert!(m.longer.is_empty() && m.along.is_empty());
+        assert!(m.along.is_empty());
         // The pointer on the top: where it is.
-        let m = drag(&n, &wire("W1"), top, false).unwrap();
+        let m = drag(&n, &wire("W1"), top).unwrap();
         assert_eq!(m.at, [2.0, 1.0, 26.5]);
-        // Lengths free: where the pointer is, the string longer.
-        let m = drag(&n, &wire("W1"), to, true).unwrap();
-        assert_eq!(m.at, to);
-        assert_eq!(m.longer, ["S1"]);
-        assert!(
-            m.describe()
-                .contains("lengths free: string S1 changes length")
-        );
     }
 
     /// A V: dragged anywhere its wire point stays where both legs reach
@@ -574,12 +523,12 @@ mod tests {
         );
         let (la, lb) = (distance(a, w), distance(b, w));
         for to in [[5.0, 3.0, 20.0], [0.0, -4.0, 30.0], [0.0, 0.0, 10.0]] {
-            let m = drag(&n, &wire("W1"), to, false).unwrap();
+            let m = drag(&n, &wire("W1"), to).unwrap();
             assert!((distance(a, m.at) - la).abs() < 1e-9, "{to:?} {m:?}");
             assert!((distance(b, m.at) - lb).abs() < 1e-9, "{to:?} {m:?}");
         }
         // Swung ahead: y > 0, still in the plane x = 0.
-        let m = drag(&n, &wire("W1"), [0.0, 3.0, 28.0], false).unwrap();
+        let m = drag(&n, &wire("W1"), [0.0, 3.0, 28.0]).unwrap();
         assert!(m.at[0].abs() < 1e-12 && m.at[1] > 1.0, "{m:?}");
     }
 
@@ -597,13 +546,11 @@ mod tests {
             &[("W1", w)],
             &[("S1", "A1", "W1"), ("S2", "A2", "W1"), ("S3", "A3", "W1")],
         );
-        let e = drag(&n, &wire("W1"), [3.0, 3.0, 25.0], false).unwrap_err();
+        let e = drag(&n, &wire("W1"), [3.0, 3.0, 25.0]).unwrap_err();
         assert!(
             e.contains("held by 3 strings (S1, S2, S3): it cannot move without changing a length"),
             "{e}"
         );
-        // Lengths free: it moves.
-        assert!(drag(&n, &wire("W1"), [3.0, 3.0, 25.0], true).is_ok());
         let n = net(
             &[
                 ("A1", [-1.0, 0.0, 30.0]),
@@ -613,7 +560,7 @@ mod tests {
             &[("W1", w)],
             &[("S1", "A1", "W1"), ("S2", "A2", "W1"), ("S3", "A3", "W1")],
         );
-        let m = drag(&n, &wire("W1"), [0.0, 3.0, 28.0], false).unwrap();
+        let m = drag(&n, &wire("W1"), [0.0, 3.0, 28.0]).unwrap();
         for a in [[-1.0, 0.0, 30.0], [1.0, 0.0, 30.0], [3.0, 0.0, 30.0]] {
             assert!((distance(a, m.at) - distance(a, w)).abs() < 1e-9);
         }
@@ -629,21 +576,20 @@ mod tests {
             &[("W1", [0.0, 0.0, 28.0]), ("W2", [0.0, 0.0, 25.0])],
             &[("S1", "A1", "W1"), ("S2", "W1", "W2")],
         );
-        let m = drag(&n, &wire("W1"), [2.0, 0.0, 28.0], false).unwrap();
+        let m = drag(&n, &wire("W1"), [2.0, 0.0, 28.0]).unwrap();
         let w2 = m.wire("W2").unwrap();
         let d = sub(m.at, [0.0, 0.0, 28.0]);
         assert!(distance(w2, add([0.0, 0.0, 25.0], d)) < 1e-12);
         assert!((distance([0.0, 0.0, 30.0], m.at) - 2.0).abs() < 1e-9);
         assert_eq!(m.along, ["W2"]);
-        let m = drag(&n, &wire("W2"), [5.0, 0.0, 28.0], false).unwrap();
+        let m = drag(&n, &wire("W2"), [5.0, 0.0, 28.0]).unwrap();
         assert!((distance([0.0, 0.0, 28.0], m.at) - 3.0).abs() < 1e-9);
         assert_eq!(m.wires.len(), 1);
     }
 
     /// An attachment point dragged: every wire point hanging from it (and
     /// below) moves by the same vector; a V whose other leg hangs from a
-    /// point not dragged turns about that point, both lengths kept; with
-    /// lengths free the point moves alone.
+    /// point not dragged turns about that point, both lengths kept.
     #[test]
     fn a_point_takes_what_hangs_along() {
         let n = net(
@@ -667,7 +613,7 @@ mod tests {
             ],
         );
         let to = [0.5, 1.0, 31.0];
-        let m = drag(&n, &Handle::Point("A1".into()), to, false).unwrap();
+        let m = drag(&n, &Handle::Point("A1".into()), to).unwrap();
         assert_eq!(m.at, to);
         let d = [0.5, 1.0, 1.0];
         assert_eq!(m.wire("W1"), Some(add([0.0, 0.0, 27.0], d)));
@@ -677,19 +623,15 @@ mod tests {
         // A V: A2 up 0.5 m, W2 turns about A3.
         let w2 = [5.0, 0.0, 27.0];
         let to = [4.0, 0.0, 30.5];
-        let m = drag(&n, &Handle::Point("A2".into()), to, false).unwrap();
+        let m = drag(&n, &Handle::Point("A2".into()), to).unwrap();
         let p = m.wire("W2").unwrap();
         assert!((distance(to, p) - distance([4.0, 0.0, 30.0], w2)).abs() < 1e-9);
         assert!((distance([6.0, 0.0, 30.0], p) - distance([6.0, 0.0, 30.0], w2)).abs() < 1e-9);
         assert_eq!(m.turned, ["W2"]);
         assert!(m.describe().contains("turned about it"), "{}", m.describe());
         // Too far: the legs cannot meet.
-        let e = drag(&n, &Handle::Point("A2".into()), [-10.0, 0.0, 30.0], false).unwrap_err();
+        let e = drag(&n, &Handle::Point("A2".into()), [-10.0, 0.0, 30.0]).unwrap_err();
         assert!(e.contains("cannot keep their lengths"), "{e}");
-        // Lengths free: the point alone.
-        let m = drag(&n, &Handle::Point("A1".into()), [0.5, 1.0, 31.0], true).unwrap();
-        assert!(m.wires.is_empty());
-        assert_eq!(m.longer, ["S1"]);
     }
 
     /// The readout of a string: its length and angles from the vertical.

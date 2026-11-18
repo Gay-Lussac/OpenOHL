@@ -322,14 +322,12 @@ impl Ready {
                 handle,
                 at,
                 onto,
-                free,
-            } => match crate::handles::command_drag(
+            } => match crate::handles::command_onto(
                 &self.model,
                 &structure,
                 &handle,
                 at,
                 onto.as_ref(),
-                free,
             ) {
                 Ok((what, command)) => {
                     log::info!("{what}");
@@ -394,6 +392,8 @@ impl Ready {
         };
         let empty = ohl_structures::InsulatorLibrary::default();
         let insulators = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
+        // The structure as the line has it now (after an Apply, an undo…).
+        p.follow(&self.model.line, self.model.line_version);
         // The line is only read while the page is shown; the line as
         // stored is copied only for the action that changes the model
         // while reading it (2026-11-10: both were copied on every frame).
@@ -407,6 +407,10 @@ impl Ready {
                         if self.perform(crate::edit::Action::Command { what, command }) {
                             p.applied();
                             p.message = Some(("applied".into(), false));
+                            // The views drawn before this page in this
+                            // frame show the line as it was: drawn again
+                            // now, not at the next movement of the mouse.
+                            ui.ctx().request_repaint();
                         }
                     }
                     Err(e) => p.message = Some((e, true)),
