@@ -159,20 +159,7 @@ impl Model {
         // The cases the views asked for lately, shown or picked: at once;
         // the others not solved any more, solved again from the new line
         // when wanted (in the background, or by a check).
-        let now = Instant::now();
-        let live: std::collections::BTreeSet<usize> = self
-            .shown_cases
-            .iter()
-            .copied()
-            .chain(self.display_cases.values().flatten().copied())
-            .chain(self.selection_case)
-            .chain(
-                self.recently_wanted
-                    .iter()
-                    .filter(|(_, t)| now.duration_since(**t) < KEEP_LIVE)
-                    .map(|(k, _)| *k),
-            )
-            .collect();
+        let live = self.live_cases();
         let (mut solved, mut deferred) = (0, 0);
         if solving {
             for (k, c) in self.cases.iter_mut().enumerate() {
@@ -183,6 +170,9 @@ impl Model {
                     deferred += 1;
                 }
             }
+            // The others in the background once the edits have settled
+            // (owner, 2026-11-18).
+            self.edited_at = Some(Instant::now());
         }
         self.line = line;
         self.line_version += 1;
@@ -194,6 +184,27 @@ impl Model {
             self.cases.len() - deferred,
             started.elapsed()
         ))
+    }
+
+    /// The weather cases kept up to date at once after an edit: those
+    /// shown (the main views, the sections' own, the selection's) and
+    /// those a view asked for in the last [`KEEP_LIVE`]; the others are
+    /// solved again when wanted (in the background, or by a check:
+    /// [`Model::ensure_solved`]).
+    pub(crate) fn live_cases(&self) -> std::collections::BTreeSet<usize> {
+        let now = Instant::now();
+        self.shown_cases
+            .iter()
+            .copied()
+            .chain(self.display_cases.values().flatten().copied())
+            .chain(self.selection_case)
+            .chain(
+                self.recently_wanted
+                    .iter()
+                    .filter(|(_, t)| now.duration_since(**t) < KEEP_LIVE)
+                    .map(|(k, _)| *k),
+            )
+            .collect()
     }
 
     /// Applies a command as the editing user.

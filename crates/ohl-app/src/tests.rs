@@ -24,6 +24,7 @@ mod clearances;
 mod default_cases;
 mod display_codes;
 mod edit_window;
+mod edit_window_cases;
 mod field_setup;
 mod kept;
 mod lidar;

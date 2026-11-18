@@ -2015,6 +2015,8 @@ impl Ready {
             self.view3d.dirty.insert(crate::scene::Layer::OtherLines);
         }
         self.model.want(need, ctx);
+        // The cases an edit left to solve, once the edits have settled.
+        self.model.catch_up(ctx);
         let done = self.model.poll_solving();
         if std::mem::take(&mut self.model.mirrors_changed) {
             self.refresh_views();

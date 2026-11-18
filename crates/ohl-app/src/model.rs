@@ -165,6 +165,10 @@ pub struct UnsolvedDrawn {
 /// Weather cases solved in the background at once at most ([`Model::want`]).
 const SOLVING_AT_ONCE: usize = 4;
 
+/// How long after the last edit the weather cases it left to solve are
+/// worked out in the background ([`Model::catch_up`]).
+pub const SETTLE: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// One solved weather case.
 #[derive(Debug, Clone)]
 pub struct Solved {
@@ -736,6 +740,17 @@ pub struct Model {
     /// those asked for lately are brought up to date at once after an edit,
     /// the others solved again when next wanted ([`Model::sync`]).
     pub recently_wanted: std::collections::BTreeMap<usize, std::time::Instant>,
+    /// When the line last changed by an edit or a library read again
+    /// ([`Model::catch_up`]: the cases not solved since, worked out in the
+    /// background once edits have settled).
+    pub edited_at: Option<std::time::Instant>,
+    /// The edit a wake-up is set for ([`Model::catch_up`]).
+    catch_up_armed: Option<std::time::Instant>,
+    /// How long after the last edit the cases left to solve are worked
+    /// out in the background ([`SETTLE`]); none: only when shown or asked
+    /// for. None in the tests, which drive their own frames (a background
+    /// solve would keep them drawing); a test of it sets it.
+    pub catch_up_after: Option<std::time::Duration>,
     /// A structure is being dragged (its line changed in memory only,
     /// [`Model::preview_move`]): nothing solved in the background from that
     /// line meanwhile.
@@ -1686,31 +1701,70 @@ impl Model {
         let now = std::time::Instant::now();
         for k in wanted {
             self.recently_wanted.insert(k, now);
-            // (Not from a line being dragged: solved when it is let go.)
-            if self.previewing {
-                continue;
+            self.start_solving(k, ctx);
+        }
+    }
+
+    /// Solves weather case `k` in the background when it is not solved
+    /// (nor being solved), a few at a time.
+    fn start_solving(&mut self, k: usize, ctx: &eframe::egui::Context) {
+        // (Not from a line being dragged: solved when it is let go.)
+        if self.previewing || k >= self.cases.len() {
+            return;
+        }
+        let mirror = self.show_mirror(k);
+        let c = &self.cases[k];
+        if c.solved_for(mirror) || self.solving.iter().any(|(j, _, _)| *j == k) {
+            return;
+        }
+        // A few at a time (each spreads over the cores): the next
+        // started when one is in (asked again every frame).
+        if self.solving.len() >= SOLVING_AT_ONCE {
+            return;
+        }
+        let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Solved::with_mirror(&line, &library, case, mirror));
+            ctx.request_repaint();
+        });
+        self.solving.push((k, self.line_version, rx));
+    }
+
+    /// The weather cases an edit left to solve (owner, 2026-11-18: an edit
+    /// re-solves only the cases shown), worked out in the background once
+    /// the edits have settled ([`SETTLE`] after the last): the window
+    /// edited never waits on them, and a check or a table needing one
+    /// solves it first ([`Model::ensure_solved`]) — none is shown or used
+    /// stale. Not counted as wanted (the next edit does not wait on them
+    /// either).
+    pub fn catch_up(&mut self, ctx: &eframe::egui::Context) {
+        let (Some(at), Some(settle)) = (self.edited_at, self.catch_up_after) else {
+            return;
+        };
+        if !self.cases.iter().any(|c| !c.ready) {
+            self.edited_at = None;
+            return;
+        }
+        let since = at.elapsed();
+        if since < settle {
+            // A frame then, without input (a thread waking it: not a
+            // repaint asked now, which would keep the window drawing).
+            if self.catch_up_armed != Some(at) {
+                self.catch_up_armed = Some(at);
+                let (ctx, wait) = (ctx.clone(), settle - since);
+                std::thread::spawn(move || {
+                    std::thread::sleep(wait);
+                    ctx.request_repaint();
+                });
             }
-            if k >= self.cases.len() {
-                continue;
+            return;
+        }
+        for k in 0..self.cases.len() {
+            if !self.cases[k].ready {
+                self.start_solving(k, ctx);
             }
-            let mirror = self.show_mirror(k);
-            let c = &self.cases[k];
-            if c.solved_for(mirror) || self.solving.iter().any(|(j, _, _)| *j == k) {
-                continue;
-            }
-            // A few at a time (each spreads over the cores): the next
-            // started when one is in (asked again every frame).
-            if self.solving.len() >= SOLVING_AT_ONCE {
-                continue;
-            }
-            let (line, library, case) = (self.line.clone(), self.library.clone(), c.case.clone());
-            let (tx, rx) = std::sync::mpsc::channel();
-            let ctx = ctx.clone();
-            std::thread::spawn(move || {
-                let _ = tx.send(Solved::with_mirror(&line, &library, case, mirror));
-                ctx.request_repaint();
-            });
-            self.solving.push((k, self.line_version, rx));
         }
     }
 
@@ -2415,7 +2469,11 @@ impl Model {
 
     /// Reads the libraries again (wires, structure types, insulators,
     /// weather cases) after one was edited, resolves the line again and
-    /// solves every case. Nothing changes when one does not load.
+    /// solves the cases shown that were solved (owner, 2026-11-18: before,
+    /// every case); the others are solved when shown, asked for (a check:
+    /// [`Model::ensure_solved`]), or in the background once the edits have
+    /// settled ([`Model::catch_up`]). Nothing changes when one does not
+    /// load.
     pub fn reload_libraries(&mut self) -> Result<String, String> {
         let started = Instant::now();
         // The weather case file may have been written even when the
@@ -2444,14 +2502,20 @@ impl Model {
             &self.sections_folder(),
             &shown,
         );
-        // The cases solved before (by name, and the first) again; the
-        // others when shown.
+        // The cases solved before (by name, and the first) and shown
+        // (the cases an edit re-solves at once: owner 2026-11-18, a
+        // library change re-solved every case before), at once; the others
+        // when shown, asked for, or in the background once the edits have
+        // settled ([`Model::catch_up`]).
+        let live = self.live_cases();
         let was: Vec<String> = self
             .cases
             .iter()
-            .filter(|c| c.ready)
-            .map(|c| c.case.name.clone())
+            .enumerate()
+            .filter(|(k, c)| c.ready && live.contains(k))
+            .map(|(_, c)| c.case.name.clone())
             .collect();
+        self.edited_at = Some(Instant::now());
         self.solving.clear();
         self.line_version += 1;
         self.revisions.libraries += 1;
@@ -2491,8 +2555,10 @@ impl Model {
                 log::warn!("project line {name}: {e}");
             }
         }
+        let solved = self.cases.iter().filter(|c| c.ready).count();
         Ok(format!(
-            "libraries read again, {} weather cases solved in {:.1?}{}",
+            "libraries read again, {solved} of {} weather cases solved in {:.1?} (the others \
+             when shown, asked for, or once the edits settle){}",
             self.cases.len(),
             started.elapsed(),
             if failed > 0 {
@@ -3025,6 +3091,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         result_case: None,
         selected_also: Vec::new(),
         recently_wanted: Default::default(),
+        edited_at: None,
+        catch_up_armed: None,
+        catch_up_after: (!cfg!(test)).then_some(SETTLE),
         previewing: false,
         usage_marks: Default::default(),
         usage_out_of_date: false,

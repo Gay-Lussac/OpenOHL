@@ -8,6 +8,28 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (an edit re-solves the weather cases shown; the others later)
+
+**An edit re-solves at once only the weather cases shown; the others are
+worked out later** (owner, 2026-11-18: "when something is edited in that
+window it recomputes all weather cases where it could only recompute the
+displayed one which would be quicker"; built, in active development, not
+approved yet; [user guide](../user-guide/desktop-app.md)).
+
+- **Where all were solved**: a command already re-solved only the cases
+  shown (the others marked not solved), but a **library read again** — a
+  structure type or an insulator entry saved, and the first Apply of an
+  Edit window, which takes the structure's strings into the insulator
+  library — solved every case solved before, fully, in the window's
+  frame. It now solves the cases shown (the same set as a command:
+  `Model::live_cases`), the others marked not solved.
+- **The others catch up**: when shown or asked for (a check, a table, an
+  export solves its case first: `Model::ensure_solved`), or in the
+  background 2 s after the last edit (`Model::catch_up`), a few at a time;
+  nothing shows or uses an old solution (a case not solved has none).
+- **Precision unchanged**: the same solve, only later; a case caught up
+  equals a full solve of the line (tested).
+
 ## 2026-11-18 (a placed structure's Edit window: strings from the library, set by two angles)
 
 **The Edit window of a structure without a type chooses which string
