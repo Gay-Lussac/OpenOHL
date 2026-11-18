@@ -3738,6 +3738,7 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 | `vc_head` | `branch:NAME`: the project line the file opens on (`ohl project checkout`) |
 | `routes_alignments`, `alignment_points` | `1`: the one-off conversion to routes, alignments and alignment points is done |
 | `setting.<key>` | the applications' settings (below) |
+| `part` | a file holding a part of a line only (`Session::write_part`, 2026-11-18): the working set, JSON `[[kind, id], …]` ([below](#a-part-of-a-line-ols_meta-key-part-2026-11-18)) |
 
 #### The applications' settings (`setting.<key>`)
 
@@ -3803,6 +3804,59 @@ One row per object of a project line — or, for a line kept as differences (sch
   **review** (`vc_review`) names a branch, its target and the revision
   submitted.
 - `vc_head` in `ols_meta` is the line the file opens on.
+
+#### What the session keeps in memory, and how a command changes it (2026-11-18, country server phase 3)
+
+Nothing of this is stored: the file is the same as before.
+
+- Per project line: its objects (`(kind, id)` → ord, version, JSON),
+  the **line** made of them (`ohl_line::Line`), its spatial index entries
+  and, for the line worked on, its **reference index**
+  (`ohl_line::index::LineIndex`, made when the file opens): per kind, id
+  → place in the line's list; per target — an object `(kind, id)` or a
+  structure's wire point `(structure, set)` — the objects referring to
+  it (`Item::targets`: an alignment its route and points, an alignment
+  point its structure, a structure its routes, a section its structures
+  and wire points, a jumper its ends' structures and wire points, the
+  section or jumper it taps and its support clamps' structures, a spacer
+  its two sections); the sections with a span point placed by station.
+- A command is **applied in place** (`ohl_session::in_place`): the
+  objects it puts and deletes change in the map, the line's objects
+  changed are read again from their JSON and put in the line where their
+  `ord` places them (a section a changed spacer ends on is read again
+  too: its bare end gets its clamp), the circuit starts follow, the line
+  is validated **locally** (`Line::validate_local`: the objects changed
+  and those whose checks read them — every check and its reach in
+  `ohl_line::validate`'s notes), the dirty sections come from the
+  objects changed (`ohl_line::diff::sections_to_solve_again_local`), the
+  index entries of the objects whose bounds may change are worked out
+  again (`spatial::entry_of`). The same line, refusals, log rows and
+  index rows as the whole way.
+- **The whole way** (as before: every object read again into a new line,
+  validated whole, the dirty sections from the two lines, the whole
+  index worked out) is taken for the import, a change of the line's
+  settings (`meta` rows), an object in a form of older files (routes of
+  version 2, alignments of version 3, a structure's own load case sets,
+  a section's circuit name no circuit has, or a line whose circuits were
+  given when it was read), and commands changing more than 2 000 line
+  objects plus an eighth of the line (`in_place::WHOLE_ABOVE`).
+- A refused command, and every command of a unit of work that fails,
+  is put back from its journal (the objects, the line's objects and the
+  index entries as they were); a command the whole way keeps the state it
+  replaced, as before.
+
+#### A part of a line (`ols_meta` key `part`, 2026-11-18)
+
+`Session::write_part` writes a working set — the objects asked for and
+what they refer to (`Item::targets`, all the way: the context) — with
+the line's settings and its library files into a new project file (one
+import, the library files one more entry); `ols_meta` `part` holds the
+working set as JSON (`[[kind, id], …]`). A session opened on such a file
+(`Session::part`) works like any other over fewer objects, but changes
+no object of the context and refuses deletions and renames (and what is
+made of them): what they take with them may be outside the part. A
+program that does not know the key opens the file as a project of its
+own.
 
 ### Project lines kept as differences (schema 6)
 

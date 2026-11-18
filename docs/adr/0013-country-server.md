@@ -136,7 +136,11 @@ A command is validated on what it touches and on what refers to it (a
 **reference index**: who refers to structure S, by kind and set, kept with
 every write), not on the whole line (phase 3). Property tests check that
 local validation answers as the whole validation does, and that the line
-changed in place equals the line rebuilt from every object.
+changed in place equals the line rebuilt from every object. Built
+2026-11-18 (in active development): `ohl_line::index`,
+`Line::validate_local` (every check and its reach in the
+[decision log](../development/decisions.md#2026-11-18-country-server-phase-3)),
+`ohl_session::in_place`; what goes the whole way is listed there too.
 
 ### Working set and context
 

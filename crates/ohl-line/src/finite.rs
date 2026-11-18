@@ -51,6 +51,25 @@ pub fn check(value: &impl Serialize) -> Result<(), String> {
         .map_err(|e| e.0)
 }
 
+/// [`check`] of a value that is part of a larger one, at `at` in it (as
+/// `structures[12]`): the place said is the same as [`check`] of the
+/// larger value says.
+pub fn check_at(value: &impl Serialize, at: &str) -> Result<(), String> {
+    let quick = Walk {
+        at: String::new(),
+        track: false,
+    };
+    if value.serialize(quick).is_ok() {
+        return Ok(());
+    }
+    value
+        .serialize(Walk {
+            at: at.to_owned(),
+            track: true,
+        })
+        .map_err(|e| e.0)
+}
+
 /// The walker, at a place of the value (kept only when `track`).
 struct Walk {
     at: String,

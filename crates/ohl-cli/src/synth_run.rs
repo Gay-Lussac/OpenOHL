@@ -53,9 +53,9 @@ pub enum SynthCommand {
         #[arg(long, default_value_t = 600)]
         seconds: u64,
     },
-    /// Measure today's session on a project file: open time, memory,
-    /// whole validation, edit and undo latency (structures moved by 1 m
-    /// and back); prints JSON.
+    /// Measure the session on a project file: open time, memory, whole
+    /// validation, edit, undo and redo latency (structures moved by 1 m,
+    /// back and again); prints JSON.
     Measure {
         /// Project file (.ohl; changed by the edits, then undone).
         project: PathBuf,
@@ -65,9 +65,14 @@ pub enum SynthCommand {
         /// User (must be allowed to edit).
         #[arg(long, default_value = "synth")]
         user: String,
-        /// Time limit for the edits and undos, s.
+        /// Time limit for the edits, undos and redos, s.
         #[arg(long, default_value_t = 600)]
         seconds: u64,
+        /// Every command the whole way (the line made again from every
+        /// object and validated whole, as before the commands were applied
+        /// in place): to compare.
+        #[arg(long)]
+        whole: bool,
     },
 }
 
@@ -178,8 +183,9 @@ pub fn run(command: SynthCommand) -> Result<(), String> {
             edits,
             user,
             seconds,
+            whole,
         } => {
-            let b = project::measure(&project, &user, edits, Duration::from_secs(seconds))?;
+            let b = project::measure(&project, &user, edits, Duration::from_secs(seconds), whole)?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&b).map_err(|e| e.to_string())?

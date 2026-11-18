@@ -169,8 +169,15 @@ pub struct Baseline {
     pub validate_s: f64,
     /// Seconds per edit: a structure moved by 1 m (each a logged command).
     pub move_s: Vec<f64>,
+    /// Sections to solve again after each move (the log's dirty sections).
+    pub move_sections: Vec<usize>,
     /// Seconds per undo of those moves.
     pub undo_s: Vec<f64>,
+    /// Seconds per redo of those undos.
+    pub redo_s: Vec<f64>,
+    /// The commands went the whole way (`--whole`: the line made again
+    /// from every object and validated whole, as before phase 3).
+    pub whole: bool,
     /// Resident memory after the edits, MB.
     pub rss_after_edits_mb: f64,
     /// Edits stopped by the time limit (said in the report).
@@ -189,15 +196,23 @@ pub fn rss_mb() -> f64 {
         .map_or(0.0, |kb| (kb / 1024.0 * 10.0).round() / 10.0)
 }
 
-/// Opens the project at `path` with today's session and times it, then
-/// moves `edits` structures (spread over the country) by 1 m each and
-/// undoes them, as `user`. Exit clause: `limit` for the edits and undos
-/// together — stopped there, the report says so (opening itself is
-/// timed whole: it cannot be stopped from outside the session).
-pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result<Baseline, String> {
+/// Opens the project at `path` with the session and times it, then
+/// moves `edits` structures (spread over the country) by 1 m each,
+/// undoes them, and times a redo of each move's undo, as `user` (`whole`: every command the
+/// whole way, as before phase 3). Exit clause: `limit` for the edits,
+/// undos and redos together — stopped there, the report says so (opening
+/// itself is timed whole: it cannot be stopped from outside the session).
+pub fn measure(
+    path: &Path,
+    user: &str,
+    edits: usize,
+    limit: Duration,
+    whole: bool,
+) -> Result<Baseline, String> {
     let file_bytes = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
     let t = Instant::now();
     let mut session = Session::open(path).map_err(|e| e.to_string())?;
+    session.set_whole_only(whole);
     let open_s = secs(t);
     let rss_after_open_mb = rss_mb();
     let t = Instant::now();
@@ -215,7 +230,9 @@ pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result
     };
     let started = Instant::now();
     let mut move_s = Vec::new();
+    let mut move_sections = Vec::new();
     let mut undo_s = Vec::new();
+    let mut redo_s = Vec::new();
     let mut stopped = None;
     for (id, p) in &picks {
         if started.elapsed() > limit {
@@ -228,7 +245,7 @@ pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result
             break;
         }
         let t = Instant::now();
-        session
+        let applied = session
             .apply(
                 user,
                 Command::MoveStructure {
@@ -238,6 +255,7 @@ pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result
             )
             .map_err(|e| format!("move {id}: {e}"))?;
         move_s.push(secs(t));
+        move_sections.push(applied.sections.len());
     }
     for _ in 0..move_s.len() {
         if started.elapsed() > limit {
@@ -254,6 +272,34 @@ pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result
         session.undo(user).map_err(|e| format!("undo: {e}"))?;
         undo_s.push(secs(t));
     }
+    // A redo follows an undo only: each move made and undone again (not
+    // timed), its undo redone (timed), and undone (not timed).
+    for (id, p) in picks.iter().take(undo_s.len()) {
+        if started.elapsed() > limit {
+            stopped.get_or_insert_with(|| {
+                format!(
+                    "redos stopped after {}: over {} s",
+                    redo_s.len(),
+                    limit.as_secs()
+                )
+            });
+            break;
+        }
+        session
+            .apply(
+                user,
+                Command::MoveStructure {
+                    id: id.clone(),
+                    position: [p[0] + 1.0, p[1], p[2]],
+                },
+            )
+            .map_err(|e| format!("move {id}: {e}"))?;
+        session.undo(user).map_err(|e| format!("undo: {e}"))?;
+        let t = Instant::now();
+        session.redo(user).map_err(|e| format!("redo: {e}"))?;
+        redo_s.push(secs(t));
+        session.undo(user).map_err(|e| format!("undo: {e}"))?;
+    }
     let rss_after_edits_mb = rss_mb();
     Ok(Baseline {
         file_bytes,
@@ -261,7 +307,10 @@ pub fn measure(path: &Path, user: &str, edits: usize, limit: Duration) -> Result
         rss_after_open_mb,
         validate_s,
         move_s,
+        move_sections,
         undo_s,
+        redo_s,
+        whole,
         rss_after_edits_mb,
         stopped,
     })

@@ -8,6 +8,117 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (country server, phase 3)
+
+**An edit costs what it touches: commands applied in place, a reference
+index, the local validation; the whole validation, the index and the wind
+sides worked out without searches; a session over a part of a line;
+longer sections in the synthetic country** (owner, 2026-11-18: phases 0–3
+approved; "it could be nice to compartimentalise the validation per
+route", then "which validation need the whole system? Mostly just edit
+and validate whatever is modified. Your option is also valid"; built, in
+active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md), the
+[data model](data-model.md#what-the-session-keeps-in-memory-and-how-a-command-changes-it-2026-11-18-country-server-phase-3)).
+
+- **Reference index** (`ohl_line::index::LineIndex`): per kind, id →
+  place in the line; per target (an object, or a structure's wire point)
+  the objects referring to it; the sections with a span point by
+  station. Made when the file opens, kept up to date by the commands.
+- **Commands applied in place** (`ohl_session::in_place`): the objects
+  map, the line and the spatial index change where the command changes
+  them; nothing is copied, nothing read again from every object's JSON.
+  **The same result as before**, to the byte: the same line (it is the
+  line read again from the objects), refusals and their words, log
+  entries with their dirty sections, index rows. The **whole way** stays
+  for the import, a change of the line's settings, objects in a form of
+  older files that reading changes others for (routes of version 2,
+  alignments of version 3, own load case sets, circuit names given
+  circuits when read), and commands changing more than 2 000 line objects
+  plus an eighth of the line (faster whole; the same result). A refusal,
+  and a unit of work failing half-way, is put back from a journal.
+- **Local validation** (`Line::validate_local`): what an edit changed and
+  what refers to it, by the reference index — the same checks in the same
+  order as the whole validation, so the same first problem. Every check
+  and its reach:
+
+  | Check | Reach when an edit is validated |
+  |---|---|
+  | Every number finite | the objects changed |
+  | Ids given and unique (every kind) | the objects changed (a lookup in the id index) |
+  | Structure: resistances, load cases, foot movements, place, strings, points | the structures changed |
+  | Structure: its routes there | the structures changed and those giving a route changed |
+  | Alignment point: finite, its structure there and within 1 mm | the points changed and those tied to a structure changed |
+  | Alignment: its route and points there, no point twice | the alignments changed, through a point changed, of a route changed |
+  | Section: structures and wire points there, stringing, local wind and ice, span points inside their spans, spreads, colour, bundle | the sections changed and through a structure changed; with a structure, alignment, point or route changed, every section with a span point placed by station (its station reads the routes and every structure) |
+  | Jumper: ends there, bundle (from the first section at its end or the tap's), taps, points, length/sag/tension, support clamps | the jumpers changed, at a structure changed, at a wire point of a section changed, tapping a section or jumper changed, and those tapping them, all the way |
+  | Spacer: its sections, spacer clamps, finite elements, one span, values | the spacers changed and on a section changed |
+  | One system phase per conductor path (paths join sections across routes: shared wire points, jumpers) | every path through a section changed, a section at its wire points or a changed jumper's end section — each path whole |
+  | Circuit starts: section points, each once | every start, when a section changed |
+  | No ring of jumpers on taps | whole, when a changed jumper taps a jumper |
+  | Settings: bimetallic, creep-stretch, electrical, structure groups, format, heights' datum, display, defaults, circuits, systems | whole: a change of the settings goes the whole way |
+
+  Clearances, crossings and loads are engineering checks, not part of the
+  validation: scoped in phase 10. **Per-route blocks of findings are not
+  kept** (the owner's refinement: optional): a valid line has none, and
+  the reach above is finer than a route (an edit on one route re-checks
+  the objects of other routes that refer to it — a shared tower's
+  sections, a jumper or spacer between routes, a conductor path through
+  both — never skipped because the edit stayed on one route).
+- **The whole validation** looks objects up in the index instead of
+  searching the lists (a jumper's section, a tap's, a spacer's, a
+  structure, the circuit starts): 16.2 s → 0.56 s on the 12 000-pylon
+  country, the same answers (the validation as it was kept as the tests'
+  reference). **The wind sides** of the sections (which routes give the
+  wind from which side, `sections_against_the_line`) through a grid of
+  the routes' segments, the same nearest segment, and kept by the
+  session (`ohl_line::solve::Sides`): an edit moving a route's point (a
+  tower with its tied point) works out again only the sections as near
+  to a segment that changed as to their own nearest one, and those whose
+  ends moved — exactly the sections whose side can turn. **The spatial
+  index's entries** by the index.
+- **A session over a part of a line** (`Session::write_part`, `ols_meta`
+  `part`): a working set and what it refers to written into a file of its
+  own, worked on in place; no change to the context, no deletion or
+  rename there (what they take may be outside); what refers to the
+  working set from outside is not seen there — the whole line's session
+  (the server) has the last word. The single-file desktop and the server
+  keep loading everything.
+- **Synthetic country**: `--section-spans` above 2 now makes angle
+  suspension towers until a section has about the spans asked (5 asked:
+  4.94 on average at 12 000 pylons, seed 1); the default country is the
+  same, bit for bit (its hashes tested). `ohl synth measure` also times
+  redos, says the dirty sections per move and with `--whole` sends every
+  command the whole way.
+- **Proof**: random command sequences (moves, puts valid and not,
+  deletions with what they take, renames, alignment points, spacers,
+  taps, undo, redo, rollbacks, project lines, units of work failing
+  half-way) on two project files, one in place and one the whole way:
+  the same answers, objects, lines (also the line read again), spatial
+  and reference indexes after every step, the same rows in both files at
+  the end; the same on two small synthetic countries (towers of two
+  routes, 2 and 5 spans per section); random edits of a line with every
+  kind of reference, valid and not: the whole validation by the index,
+  the local one and the dirty sections equal the reference. Files written
+  by the build before and after through the example lines and an
+  800-pylon synthetic country: the same `sqlite3 .dump`, times aside.
+- **Measured** (12 000 pylons, seed 1; before → after;
+  [performance](performance.md#synthetic-country-phase-3-an-edit-costs-what-it-touches-2026-11-18)):
+  sections of ≈ 2 spans — a move 29–59 s → median 2 ms (at most 4 ms
+  over 50 moves), an undo 27–54 s → < 1 ms (at most 9 ms), a redo → < 1
+  ms, opening 24.6 s → 1.8 s, the whole validation 16.2 s → 0.44 s, peak
+  memory 1.32 → 1.19 GB, a command the whole way (a settings change) →
+  1.0–1.5 s; sections of ≈ 5 spans — a move 10–12 s → 1 ms, opening 9.5 s
+  → 1.0 s. An edit touches 4 to 26 sections to solve again, whatever the
+  network's size.
+- **Also faster, the same results**: the dirty sections of two whole lines
+  (`sections_to_solve_again`, the whole way and OHL-Design's other project
+  lines) look the jumpers and spacers up instead of searching them
+  (quadratic before: half a minute per settings change on the country).
+- **Open**: opening still reads and checks everything once (seconds); a
+  partial replica fed by the server (phase 5–6); per-route blocks of
+  findings not kept (above).
+
 ## 2026-11-18 (third round)
 
 **The bolt tools' force basis into the code plugins; default minimum bolt

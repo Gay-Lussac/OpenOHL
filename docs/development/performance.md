@@ -587,6 +587,45 @@ not the size of the network. The synthetic LiDAR compresses about as a
 real survey does (≈ 6.7 against ≈ 8 bytes a point) but is less structured
 (no buildings, no wires): the extrapolation is a guide.
 
+## Synthetic country: phase 3, an edit costs what it touches (2026-11-18)
+
+The country server's phase 3 ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-18-country-server-phase-3)): commands
+applied in place with a reference index and validated locally; the whole
+validation, the spatial index and the wind sides without searches. The
+same results and files as before (compared dump against dump).
+
+```bash
+ohl synth country --out DIR [--section-spans 5]   # 5: angle suspension towers, ≈ 5 spans a section
+ohl synth measure DIR/country.ohl --edits 50       # also redo; --whole: every command the whole way
+```
+
+Seed 1, 12 000 pylons, before (main at phase 2: 5 moves and their
+undos) → after (50 moves, undos and redos); Apple M-series, 10 cores,
+`bench-fast`, one run each. The machine was shared with other builds
+during some runs (opening varied up to 15 s, the edits stayed in
+milliseconds); the values below are from the quietest runs.
+
+| Measure | Sections of ≈ 2 spans (50 936 sections, 43 041 jumpers, 147 routes) | Sections of ≈ 5 spans (20 018 sections, 16 416 jumpers, 132 routes) |
+|---|---|---|
+| Open | 24.6 s → 1.8 s | 9.5 s → 1.0 s |
+| Whole validation | 16.2 s → 0.44 s | 2.8 s → 0.23 s |
+| Move a structure by 1 m | 29.0–59.0 s → median 2 ms, 95 % ≤ 4 ms, at most 4 ms | 9.9–11.8 s → median 1 ms, 95 % ≤ 2 ms, at most 3 ms |
+| Undo | 26.5–54.3 s → median < 1 ms, 95 % ≤ 2 ms, at most 9 ms | 8.5–11.5 s → median < 1 ms, 95 % ≤ 2 ms |
+| Redo | (the whole way, as an undo) → median < 1 ms, 95 % ≤ 2 ms | → median < 1 ms, 95 % ≤ 2 ms |
+| Memory after opening / after the edits / peak | 958 / 1 188 / 1 315 MB → 1 077 / 1 170 / 1 185 MB | 657 / 828 / 931 MB → 759 / 841 / 840 MB |
+| A command the whole way (`--whole`: a change of the settings, the import) | 29–59 s → 1.0–1.5 s | 8.5–11.8 s → 0.6–0.7 s |
+
+A move touches its structure, the alignment point tied to it (angle
+towers), 4 to 26 sections to solve again and their index entries — the
+same whatever the size of the network. Opening still reads and checks
+every object once (the line made from the rows, validated whole, the
+spatial and reference indexes and the wind sides worked out): about a
+second, not half a minute. The memory grows by the reference index and
+the wind sides (≈ 100 MB at this size). The whole way is faster too: the
+validation and the dirty sections of two lines no longer search (the
+latter was quadratic in the jumpers).
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:
