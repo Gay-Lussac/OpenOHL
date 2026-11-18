@@ -71,8 +71,14 @@ fn the_bundled_plugin_loads() {
 
 /// One structure file checked as the core's comparison of 2026-11-18 did
 /// it (variants and load cases alike): its lines `file|variant|case|
-/// member|usage bits|governs`.
-fn lines(path: &Path, sections: &ohl_sections::SectionLibrary, out: &mut String) {
+/// member|usage bits|governs`; `plugin`: checked by the bundled plugin
+/// named by this old name, else by the core's own ASCE 10-97.
+fn lines(
+    path: &Path,
+    sections: &ohl_sections::SectionLibrary,
+    plugin: Option<&str>,
+    out: &mut String,
+) {
     for variant in ["base", "redundant", "angles", "no-compression"] {
         let mut model = Model::load_with(path, sections).unwrap();
         match variant {
@@ -91,11 +97,11 @@ fn lines(path: &Path, sections: &ohl_sections::SectionLibrary, out: &mut String)
             _ => {}
         }
         // As the comparison set it: the method by its old name.
-        model.capacity_plugin = Some(
-            ohl_structures_fe::model::PluginMethod::parse("sia263-2013")
+        model.capacity_plugin = plugin.map(|p| {
+            ohl_structures_fe::model::PluginMethod::parse(p)
                 .unwrap()
-                .unwrap(),
-        );
+                .unwrap()
+        });
         let model = ohl_member_check::find(model, path.parent()).unwrap();
         let runs = [
             ("A", [6e3, 0.0, 12e3], 1.0),
@@ -120,18 +126,18 @@ fn lines(path: &Path, sections: &ohl_sections::SectionLibrary, out: &mut String)
                 self_weight: 1.0,
                 prescribed: Vec::new(),
             };
-            if let Ok((s, _)) = ohl_structures_fe::analyse(
+            if let Ok((s, u)) = ohl_structures_fe::analyse(
                 &model,
                 &loads,
                 strength,
                 &ohl_structures_fe::default_budget(),
             ) {
-                solved.push((name, strength, s));
+                solved.push((name, strength, s, u));
             }
         }
         let list: Vec<ohl_member_check::Solved> = solved
             .iter()
-            .map(|(n, st, s)| ohl_member_check::Solved {
+            .map(|(n, st, s, _)| ohl_member_check::Solved {
                 name: n,
                 strength: *st,
                 self_weight: 1.0,
@@ -139,10 +145,16 @@ fn lines(path: &Path, sections: &ohl_sections::SectionLibrary, out: &mut String)
                 moved: None,
             })
             .collect();
-        let c = ohl_member_check::check(&model, &list)
-            .expect("a plugin")
-            .expect("checked");
-        for ((name, _, _), usage) in solved.iter().zip(&c.usage) {
+        let usages: Vec<Vec<ohl_structures_fe::MemberUsage>> = match plugin {
+            Some(_) => {
+                ohl_member_check::check(&model, &list)
+                    .expect("a plugin")
+                    .expect("checked")
+                    .usage
+            }
+            None => solved.iter().map(|x| x.3.clone()).collect(),
+        };
+        for ((name, _, _, _), usage) in solved.iter().zip(&usages) {
             for u in usage {
                 let _ = writeln!(
                     out,
@@ -184,10 +196,28 @@ fn the_examples_give_the_cores_numbers() {
         "examples/synthetic-line/Structures/type-02.ohls",
         "examples/exports/every-profile.ohls",
     ] {
-        lines(&repo().join(f), &sections, &mut out);
+        lines(&repo().join(f), &sections, Some("sia263-2013"), &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
     assert_eq!(fnv(&out), 0x8b2d_471e_2dd6_7097, "{out}");
+}
+
+/// The same examples by the core's ASCE 10-97 (the default), recorded at
+/// commit 01cc57ec before the SIA 263 move (and unchanged by it): the
+/// numbers ASCE 10-97's plugin must give when it moves out of the core in
+/// its turn.
+#[test]
+fn the_examples_keep_the_cores_asce10_numbers() {
+    let sections = ohl_sections::SectionLibrary::load(&repo().join("libraries/sections")).unwrap();
+    let mut out = String::new();
+    for f in [
+        "examples/synthetic-line/Structures/type-02.ohls",
+        "examples/exports/every-profile.ohls",
+    ] {
+        lines(&repo().join(f), &sections, None, &mut out);
+    }
+    assert_eq!(out.lines().count(), 2256);
+    assert_eq!(fnv(&out), 0xa2ac_8421_7e06_e804, "{out}");
 }
 
 fn library() -> ohl_sections::SectionLibrary {
