@@ -82,7 +82,8 @@ window for your tower):
   eccentricity).
 - A **shift** is a rigid end offset: the moments where a frame member
   meets the joint change, and so the usages; where only bars meet it, the
-  offset is left out and said (**NOT ON THE SAFE SIDE** there).
+  shifted member's own check takes the moment (since 2026-11-18; a
+  cable's is left out, said **NOT ON THE SAFE SIDE**).
 - **Provisional bolts** do not enter the calculation of the joint details:
   the tower stays at level 3 until no bolt is provisional.
 

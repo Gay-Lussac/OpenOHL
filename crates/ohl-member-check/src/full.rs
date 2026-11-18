@@ -181,7 +181,11 @@ pub(crate) fn input(model: &Model, cases: &[Case], parameters: &str) -> wit::Ful
                 wit::CaseForces {
                     load_case: n as u32,
                     axial: f.axial,
-                    end_forces: f.end_forces.to_vec(),
+                    // The moments of eccentric ends the solve could not carry
+                    // (only bars meet the joint), in its check (2026-11-18).
+                    end_forces: ohl_structures_fe::offsets::with_eccentric_moments(model, k, f)
+                        .end_forces
+                        .to_vec(),
                     partner_axial: d
                         .crossing
                         .and_then(|p| c.solution.members.get(p))

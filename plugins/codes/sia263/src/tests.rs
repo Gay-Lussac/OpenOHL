@@ -449,3 +449,44 @@ fn parameters_change_the_design_values() {
     crate::params::set(crate::params::Params::default());
     assert!(c2.tension.unwrap().0 < gross.0);
 }
+
+/// A shift where only bars meet (2026-11-18): OpenOHL puts its moment N·e
+/// in a truss's end forces as a uniform moment; SIA 263's plugin then
+/// checks the truss with it as a frame (its stability check, formulas
+/// 50, 62, 63, with the moment). An L 60×6 S355, 2 m, 20 kN compression,
+/// 0.3 kN m about each axis: its usage larger than without, which is the
+/// axial check alone (the connection's eccentricity of 5.4.1.2 as
+/// before).
+#[test]
+fn a_truss_with_the_moment_of_its_shift() {
+    use crate::check::{member_usage, shifted};
+    use crate::model::{Analysis, MemberForces};
+    let (m, _) = angle(0.060, 0.006, 355e6, 2.0);
+    crate::params::set(crate::params::Params::default());
+    let plain = MemberForces {
+        axial: -20e3,
+        end_forces: [0.0; 12],
+        slack: false,
+        bowed: false,
+        length: 2.0,
+        span_load: [0.0; 3],
+        lumped_load: [0.0; 3],
+    };
+    let mut bent = plain.clone();
+    for (i, j) in [(4, 10), (5, 11)] {
+        bent.end_forces[i] = -300.0;
+        bent.end_forces[j] = 300.0;
+    }
+    assert!(shifted(&m, &bent) && !shifted(&m, &plain));
+    let a = Analysis {
+        single_angle_moments: false,
+        no_compression: false,
+        redundant_force: None,
+    };
+    let u0 = member_usage(&a, &m, &plain, None, false, 1.0, None);
+    let u1 = member_usage(&a, &m, &bent, None, false, 1.0, None);
+    assert!(
+        u1.usage.unwrap() > u0.usage.unwrap() + 0.01,
+        "{u0:?} {u1:?}"
+    );
+}

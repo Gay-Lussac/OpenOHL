@@ -196,11 +196,12 @@ fn a_frame_with_an_offset_end_gives_the_joint_n_e() {
 }
 
 /// The same truss shifted at N3, where only it meets (N3 held in y and
-/// z): the moment cannot be carried there — that offset left out (the
-/// force through the work point), said, and the solve runs with the
-/// results of no shift.
+/// z): the moment cannot be carried there in the solve — that offset left
+/// out of it (the force through the work point), and the solve runs with
+/// the results of no shift; since 2026-11-18 the member's own check takes
+/// the moment, said.
 #[test]
-fn onto_a_bar_only_joint_the_moment_is_left_out_and_said() {
+fn onto_a_bar_only_joint_the_member_takes_the_moment() {
     let text = |shift: bool| {
         let mut m = tower("truss", "support = [\"y\", \"z\"]", None, false);
         if shift {
@@ -216,14 +217,73 @@ fn onto_a_bar_only_joint_the_moment_is_left_out_and_said() {
     assert_eq!(s.members, s0.members);
     assert_eq!(s.displacements, s0.displacements);
     let note = eccentricity_note(&m, &s).unwrap();
-    assert!(note.contains("LEFT OUT at 1 end(s)"), "{note}");
+    assert!(
+        note.contains("the member's own check takes the moment"),
+        "{note}"
+    );
     assert!(note.contains("T at N3 0.20 kN m"), "{note}");
+    assert!(!note.contains("LEFT OUT"), "{note}");
     let usage = member_usage(&m, &s, 1.0);
     assert!(
-        usage[1].governs.contains("LEFT OUT"),
+        usage[1].governs.contains("0.20 kN m in its own check"),
         "{}",
         usage[1].governs
     );
+}
+
+/// The moment of a shift where only bars meet, in the member's own check
+/// (2026-11-18), by hand: T (a truss, 1 000 mm², f_y 355 MPa, moment
+/// capacities 2 kN m about both axes) pulled by P = 10 kN, shifted
+/// e = 20 mm at N3 down (−z). Its local axes: x along +x, z = x × (0, 0,
+/// 1) = (0, −1, 0), y = (0, 0, 1). At N3 the joint is pulled towards N2,
+/// F = (−P, 0, 0), r = (0, 0, −e): r × F = (0, e P, 0) = (0, 200, 0) N m —
+/// about its local z 200 N m, about y nothing. Its check: tension 10 /
+/// 355 = 2.817 % plus Mz 0.2 / 2 = 10 %: 12.817 % (before: 2.817 %, the
+/// moment left out). The moment uniform along it: its end forces carry
+/// −200 at its first end and +200 at its second about z (internal M_i =
+/// M_j = 200 N m). (Exactly: F along the chord from N2 to the offset end,
+/// tilted by e / 3 m, so 200 × 3 / √(9 + e²) = 199.9956 N m.) A cable
+/// cannot bend: left out, said NOT ON THE SAFE SIDE.
+#[test]
+fn a_shift_where_only_bars_meet_is_in_the_members_check() {
+    let mut m = tower("truss", "support = [\"y\", \"z\"]", None, false);
+    m.members[1].offsets[1] = [0.0, 0.0, -SHIFT];
+    let k = m.members[1].section;
+    m.sections[k].yield_strength = Some(355e6);
+    m.sections[k].moment_y = Some(2e3);
+    m.sections[k].moment_z = Some(2e3);
+    let s = run(&m, [P, 0.0, 0.0], false);
+    assert!((s.members[1].axial - P).abs() < 1e-6 * P);
+    let mz = P * SHIFT * 3.0 / (9.0 + SHIFT * SHIFT).sqrt();
+    let add = crate::offsets::uncarried_moments(&m, 1, P).unwrap();
+    assert!(add[0].abs() < 1e-9 && (add[1] - mz).abs() < 1e-9, "{add:?}");
+    let f = crate::offsets::with_eccentric_moments(&m, 1, &s.members[1]);
+    assert!((-f.end_forces[5] - mz).abs() < 1e-9, "{:?}", f.end_forces);
+    assert!((f.end_forces[11] - mz).abs() < 1e-9, "{:?}", f.end_forces);
+    assert!(crate::offsets::eccentric_bending(&m, 1));
+    let u = member_usage(&m, &s, 1.0);
+    let want = P / (1000e-6 * 355e6) + mz / 2e3;
+    assert!((u[1].usage.unwrap() - want).abs() < 1e-12, "{:?}", u[1]);
+    assert!(
+        u[1].governs.contains("Mz 0.2 kN m of 2.0"),
+        "{}",
+        u[1].governs
+    );
+    // Without the shift: the axial force alone.
+    let mut plain = m.clone();
+    plain.members[1].offsets[1] = [0.0; 3];
+    let u0 = member_usage(&plain, &run(&plain, [P, 0.0, 0.0], false), 1.0);
+    assert!((u0[1].usage.unwrap() - P / (1000e-6 * 355e6)).abs() < 1e-12);
+    assert!(u[1].usage.unwrap() > u0[1].usage.unwrap());
+    // A cable: left out, said not on the safe side.
+    let mut c = tower("cable", "support = [\"y\", \"z\"]", None, false);
+    c.members[1].offsets[1] = [0.0, 0.0, -SHIFT];
+    let sc = run(&c, [P, 0.0, 0.0], false);
+    assert!(crate::offsets::uncarried_moments(&c, 1, P).is_none());
+    let note = eccentricity_note(&c, &sc).unwrap();
+    assert!(note.contains("LEFT OUT at 1 cable end(s)"), "{note}");
+    let w = crate::offsets::eccentricity_words(&c, 1, P).unwrap();
+    assert!(w.contains("NOT ON THE SAFE SIDE"), "{w}");
 }
 
 /// P-Delta with the shift: converges, in balance, and close to the first

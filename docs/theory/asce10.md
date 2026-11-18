@@ -520,6 +520,11 @@ be told from the model's data and stay said here only.
   ([structure analysis](structures-fe.md#member-usage)), without the
   standard's amplification and \\( C_m \\); single angles and lattice
   members are axial only (their eccentricity is in the curves of step 3).
+  A truss whose forces carry end moments — the moment of a shift where
+  only bars meet, which OpenOHL puts into the member's own check
+  (2026-11-18, [structure analysis](structures-fe.md#eccentric-member-ends-rigid-end-offsets))
+  — is checked by the same linear sum as a frame (the shift is an
+  eccentricity beyond the one the curves take).
 - 3.14, 3.15: beams (lateral-torsional buckling) and shear.
 - 4.3.3–4.6: bolts in tension, end and edge distances, spacing,
   attachment holes.

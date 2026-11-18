@@ -29,6 +29,25 @@ something is still not on the safe side.
   is said NOT ON THE SAFE SIDE (6.3.6.5: a one-sided fillet bent across
   should be avoided; one side or both is not in the data). ASCE 10-97 has
   no weld rule, with or without moments: not checked, said.
+- **A shift where only bars meet** ([theory](../theory/structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+  Before, the moment of a connection's shift at a joint only bars meet
+  was left out (said, not on the safe side). Chosen of the two ways the
+  plan named: the moment N·e into the shifted member's own check, not a
+  rigid link making the end a frame end (that would change the solve and
+  add rotations nothing else holds at such a joint; frame towers' results
+  are untouched either way). The solve is unchanged; the check takes the
+  moment about the member's local axes as a uniform moment (the larger
+  end's), the member alone taking it (on the safe side for it,
+  statically admissible for the joint); the plugins check a truss whose
+  forces carry end moments as a frame (ASCE 10-97: the linear sum;
+  SIA 263: its stability check). A cable cannot bend: left out, said NOT
+  ON THE SAFE SIDE. The end shears N e / L are not put into the solve
+  (about e/L of the force, said in the theory). Found on the way, in the
+  SIA 263 plugin: the stability check took a frame angle's moments only
+  about axes named y and z — an angle's axes are u and v, so they were
+  dropped (with `single_angle_moments`); and an eccentric angle's (50)
+  replaced the frame moments by N·e. Both fixed on the safe side: about u
+  and v the bound |M_y| + |M_z| (uniform), added to N·e.
 - **Plugin interface** (additive, interface version stays 0.3): a new
   optional export `joint-check-moments` — `joint-check-full`'s records
   with, per part and case, what acts on it beside its force

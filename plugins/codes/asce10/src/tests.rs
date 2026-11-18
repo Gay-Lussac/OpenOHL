@@ -500,3 +500,47 @@ fn asce10_bolt_shear_by_hand() {
     );
     assert_eq!(bolt_shear(0.016, 1, None, None, None, None), None);
 }
+
+/// A shift where only bars meet (2026-11-18), by hand: OpenOHL puts its
+/// moment N·e in a truss's end forces as a uniform moment; ASCE 10-97's
+/// plugin then checks the truss with it as a frame — the linear sum N /
+/// N_c + M_y / M_y,c + M_z / M_z,c (the frames' rule). Invented: 1 000
+/// mm², f_y 355 MPa, M_z,c = 2 kN m; 10 kN tension and 0.2 kN m about z
+/// (−200 N m at its first end, +200 at its second): the moment adds
+/// 0.2 / 2 = 10 % to its axial usage; without it the axial check alone.
+#[test]
+fn a_truss_with_the_moment_of_its_shift() {
+    use crate::check::{member_usage, shifted};
+    use crate::model::{Analysis, MemberForces};
+    let mut s = elastic(1000e-6, 2e-6);
+    s.yield_strength = Some(355e6);
+    s.moment_y = Some(2e3);
+    s.moment_z = Some(2e3);
+    let m = member("T", s, 3.0, MemberDesign::default(), None);
+    let plain = MemberForces {
+        axial: 10e3,
+        end_forces: [0.0; 12],
+        slack: false,
+        bowed: false,
+        length: 3.0,
+        span_load: [0.0; 3],
+        lumped_load: [0.0; 3],
+    };
+    let mut bent = plain.clone();
+    bent.end_forces[5] = -200.0;
+    bent.end_forces[11] = 200.0;
+    assert!(shifted(&m, &bent) && !shifted(&m, &plain));
+    let a = Analysis {
+        single_angle_moments: false,
+        no_compression: false,
+        redundant_force: None,
+    };
+    let u0 = member_usage(&a, &m, &plain, None, false, 1.0, None);
+    let u1 = member_usage(&a, &m, &bent, None, false, 1.0, None);
+    assert!(
+        (u1.usage.unwrap() - u0.usage.unwrap() - 0.1).abs() < 1e-12,
+        "{u0:?} {u1:?}"
+    );
+    assert!(u1.governs.contains("Mz 0.2 kN m of 2.0"), "{u1:?}");
+    assert!(!u0.governs.contains("Mz"), "{u0:?}");
+}
