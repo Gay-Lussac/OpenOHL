@@ -180,6 +180,92 @@ pub fn bolted(g: &BoltGroup, s: &PlateSteel, n: f64) -> Checked {
     out
 }
 
+/// The effective length factor of a gusset plate taken as a strut in
+/// compression (2026-11-18; neither ASCE 10-97 nor SIA 263 gives a rule):
+/// 2, the column fixed at one end and free to sway at the other — the
+/// largest of the classic cases (Timoshenko & Gere, *Theory of Elastic
+/// Stability*, 2nd ed., 1961, §2.1); a plate held at both ends buckles
+/// over less. An assumption on the safe side.
+pub const PLATE_K: f64 = 2.0;
+
+/// Whitmore's width of a bolt group (Whitmore, R. E., 1952, *Experimental
+/// investigation of stresses in gusset plates*, University of Tennessee
+/// Engineering Experiment Station Bulletin No. 16): lines spread at 30°
+/// from the outer bolts of the first row to the last row — the span
+/// between the outer gauge lines plus 2 L tan 30°, L the bolts' length
+/// along the force ((n − 1) p). None: no pitch known for several bolts a
+/// line, or one row (L = 0) of one gauge line (no width).
+pub fn whitmore_width(g: &BoltGroup) -> Option<f64> {
+    let l = if g.per_line > 1 {
+        f64::from(g.per_line - 1) * g.pitch?
+    } else {
+        0.0
+    };
+    let w = g.span + 2.0 * l * 30f64.to_radians().tan();
+    (w > 0.0).then_some(w)
+}
+
+/// The checks of a plate where a member bolts onto it ([`bolted`]) with
+/// what else acts on it (`x`) and the plate's free length in compression
+/// (`free`, m; 2026-11-18): in compression the plate's buckling as a strut
+/// ([`plate_buckling`]).
+pub fn bolted_with(g: &BoltGroup, s: &PlateSteel, n: f64, x: &Extra, free: Option<f64>) -> Checked {
+    let _ = x;
+    let mut out = bolted(g, s, n);
+    if n < 0.0 && g.count > 0 {
+        plate_buckling(g, s, n, free, &mut out);
+    }
+    out
+}
+
+/// ASCE 10-97's modulus of elasticity of steel, 200 000 MPa (Appendix A).
+const E_STEEL: f64 = 200e9;
+
+/// A plate in compression as a strut (2026-11-18): neither ASCE 10-97 nor
+/// SIA 263 gives a rule for a gusset plate's buckling — an assumption on
+/// the safe side, said: a strut of Whitmore's width ([`whitmore_width`];
+/// at most the width the plate's sections take, `g.width`), the plate's
+/// thickness, over its free length `free` with K = [`PLATE_K`], by ASCE
+/// 10-97's column curve (3.6: F_a = [1 − ½ (KL/r / C_c)²] F_y up to C_c =
+/// π √(2E/F_y), π² E / (KL/r)² beyond; r = t / √12). Without its free
+/// length or width: not checked, said not on the safe side.
+fn plate_buckling(g: &BoltGroup, s: &PlateSteel, n: f64, free: Option<f64>, out: &mut Checked) {
+    out.notes.retain(|x| x != BUCKLING_NOT_CHECKED);
+    let t = s.thickness;
+    let (Some(l), Some(w), Some(fy)) = (free, whitmore_width(g), s.fy) else {
+        out.not_safe.push(format!(
+            "plate buckling not checked ({}; neither ASCE 10-97 nor SIA 263 gives a rule)",
+            match (free, whitmore_width(g), s.fy) {
+                (None, _, _) => "its free length not known",
+                (_, None, _) => "no Whitmore width: one bolt, or no pitch",
+                _ => "no yield strength",
+            }
+        ));
+        return;
+    };
+    let b = w.min(g.width);
+    let r = t / 12f64.sqrt();
+    let kl_r = PLATE_K * l / r;
+    let fa = crate::asce10::column_stress(fy, E_STEEL, kl_r);
+    out.checks.push(PlateCheck {
+        what: format!(
+            "plate buckling as a strut (an assumption, on the safe side — no rule in ASCE 10-97 \
+             or SIA 263): Whitmore width {:.0} mm{}, t {:.0} mm, free length {:.0} mm, K {:.0}, \
+             KL/r {:.0}, F_a {:.0} N/mm² (ASCE 10-97 3.6)",
+            mm(b),
+            if b < w { " (the sections' width)" } else { "" },
+            mm(t),
+            mm(l),
+            PLATE_K,
+            kl_r,
+            fa / 1e6
+        ),
+        demand: n.abs(),
+        resistance: fa * b * t,
+        distance: false,
+    });
+}
+
 /// The end distance in the force's direction.
 fn end_of(g: &BoltGroup, n: f64) -> Option<f64> {
     g.end[if n >= 0.0 { 0 } else { 1 }]
@@ -446,5 +532,48 @@ mod tests {
         let c = bolted(&group(), &STEEL, 200e3);
         let e = find(&c, "end distance");
         assert!((e.demand - 0.0208).abs() < 1e-9 && (e.usage(1.0) - 0.52).abs() < 1e-9);
+    }
+
+    /// A gusset plate in compression as a strut (2026-11-18; an
+    /// assumption: no rule in ASCE 10-97), by hand: the same plate, 200 kN
+    /// compression, free length 150 mm. Whitmore's width 60 + 2 × 50 ×
+    /// tan 30° = 117.7 mm (below the sections' 120 mm), r = 10/√12 =
+    /// 2.887 mm, KL/r = 2 × 150 / 2.887 = 103.9; C_c = π √(2 × 200 000 /
+    /// 355) = 105.5, F_a = (1 − ½ (103.9/105.5)²) × 355 = 182.6 N/mm²: 182.6
+    /// × 117.7 × 10 = 215.0 kN. Without its free length, or one bolt: not
+    /// checked, said not on the safe side; in tension nothing more.
+    #[test]
+    fn a_plate_in_compression_as_a_strut() {
+        let free = Some(0.150);
+        let c = bolted_with(&group(), &STEEL, -200e3, &Extra::default(), free);
+        let b = 0.060 + 2.0 * 0.050 * 30f64.to_radians().tan();
+        assert!((whitmore_width(&group()).unwrap() - b).abs() < 1e-12);
+        let kl_r = 2.0 * 0.150 / (0.010 / 12f64.sqrt());
+        let cc = std::f64::consts::PI * (2.0 * 200e9 / 355e6f64).sqrt();
+        let fa = (1.0 - 0.5 * (kl_r / cc).powi(2)) * 355e6;
+        let k = find(&c, "plate buckling as a strut");
+        assert!((k.resistance - fa * b * 0.010).abs() < 1e-6, "{k:?}");
+        assert!((k.resistance - 215.0e3).abs() < 0.2e3, "{k:?}");
+        assert!((k.demand - 200e3).abs() < 1e-9);
+        assert!(!c.notes.iter().any(|n| n == BUCKLING_NOT_CHECKED));
+        assert!(c.not_safe.is_empty());
+        let c = bolted_with(&group(), &STEEL, -200e3, &Extra::default(), None);
+        assert!(
+            c.not_safe
+                .iter()
+                .any(|n| n.contains("free length not known"))
+        );
+        let one = BoltGroup {
+            count: 1,
+            lines: 1,
+            per_line: 1,
+            pitch: None,
+            span: 0.0,
+            ..group()
+        };
+        let c = bolted_with(&one, &STEEL, -20e3, &Extra::default(), free);
+        assert!(c.not_safe.iter().any(|n| n.contains("no Whitmore width")));
+        let c = bolted_with(&group(), &STEEL, 200e3, &Extra::default(), free);
+        assert!(!c.checks.iter().any(|x| x.what.contains("strut")));
     }
 }

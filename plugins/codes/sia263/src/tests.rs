@@ -490,3 +490,44 @@ fn a_truss_with_the_moment_of_its_shift() {
         "{u0:?} {u1:?}"
     );
 }
+
+/// A gusset plate in compression as a strut (2026-11-18; an assumption:
+/// no rule in SIA 263), by hand: the plate of `plate_by_hand`, 200 kN
+/// compression, free length 150 mm. Whitmore's width 60 + 2 × 50 × tan
+/// 30° = 117.7 mm, i = 10/√12 = 2.887 mm, λ_K = 2 × 150 / 2.887 = 103.9,
+/// λ_E = π √(210 000/355) = 76.4, λ̄_K = 1.360; curve c (α 0.49): Φ =
+/// ½ (1 + 0.49 × 1.160 + 1.850) = 1.709, χ = 1 / (1.709 + √(1.709² −
+/// 1.850)) = 0.364; N_K,Rd = 0.364 × 355 × 1 177 / 1.05 = 145.0 kN.
+#[test]
+fn a_plate_in_compression_as_a_strut() {
+    crate::params::set(crate::params::Params::default());
+    let c = joints::bolted_with(
+        &group(),
+        &STEEL,
+        -200e3,
+        &joints::Extra::default(),
+        Some(0.150),
+    );
+    let b = 0.060 + 2.0 * 0.050 * 30f64.to_radians().tan();
+    let lb =
+        2.0 * 0.150 / (0.010 / 12f64.sqrt()) / (std::f64::consts::PI * (210e9 / 355e6f64).sqrt());
+    let phi = 0.5 * (1.0 + 0.49 * (lb - 0.2) + lb * lb);
+    let chi = 1.0 / (phi + (phi * phi - lb * lb).sqrt());
+    let k = find(&c, "plate buckling as a strut");
+    assert!(
+        (k.resistance - chi * 355e6 * b * 0.010 / 1.05).abs() < 1e-6,
+        "{k:?}"
+    );
+    assert!((k.resistance - 145.0e3).abs() < 0.3e3, "{k:?}");
+    assert!(
+        !c.notes
+            .iter()
+            .any(|n| n.contains("plate buckling not checked"))
+    );
+    let c = joints::bolted_with(&group(), &STEEL, -200e3, &joints::Extra::default(), None);
+    assert!(
+        c.not_safe
+            .iter()
+            .any(|n| n.contains("free length not known"))
+    );
+}

@@ -97,6 +97,8 @@ enum Plan {
         /// The share of the member's force this plate takes (1; a
         /// splice's cover: its share by area).
         share: f64,
+        /// The plate's free length in compression ([`free_length`]), m.
+        free: Option<f64>,
     },
     Weld {
         with: String,
@@ -257,6 +259,7 @@ pub fn plate_plans_in(
                 else {
                     continue;
                 };
+                let free = free_length(a, &p.id, j, &group);
                 if model
                     .members
                     .iter()
@@ -277,6 +280,7 @@ pub fn plate_plans_in(
                         group,
                         steel,
                         share,
+                        free,
                     },
                     notes,
                 });
@@ -413,10 +417,11 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                 let x: Vec<f64> = c.outline.iter().map(|q| dot(*q, across)).collect();
                 let width = x.iter().copied().fold(f64::NEG_INFINITY, f64::max)
                     - x.iter().copied().fold(f64::INFINITY, f64::min);
-                planned.push((name, group, steel, notes, width * c.thickness));
+                let free = free_length(a, &sp.id, j, &group);
+                planned.push((name, group, steel, notes, width * c.thickness, free));
             }
             let total: f64 = planned.iter().map(|x| x.4).sum();
-            for (name, group, steel, mut notes, area) in planned {
+            for (name, group, steel, mut notes, area, free) in planned {
                 let share = if total > 0.0 { area / total } else { 1.0 };
                 if on.len() > 1 {
                     notes.push(format!(
@@ -435,12 +440,59 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         group,
                         steel,
                         share,
+                        free,
                     },
                     notes,
                 });
             }
         }
     }
+}
+
+/// A plate's free length in compression where member `a` bolts onto it
+/// (`plate`: the plate's or splice's id; 2026-11-18): from the bolts
+/// nearest the joint, along the member towards the joint, to the nearest
+/// bolt of one of the joint's legs ([`crate::welds::joint_legs`]) bolted
+/// onto the same plate that lies within the bolt group's spread (Whitmore's
+/// width at 30°, about its gauge lines' middle) — what holds the plate
+/// there —, else to the plate's edge that way (`g.end[1]`). On the safe
+/// side: another member's bolts are not taken as holding it, the plate's
+/// whole length to its edge where no leg's bolt is in the way. None: the
+/// plate's edge not reached.
+fn free_length(a: &Arrival, plate: &str, j: &JointDetail, g: &BoltGroup) -> Option<f64> {
+    let to_edge = g.end[1]?;
+    let (along, across) = crate::joints::keep_axes(a);
+    let rel = |q: &[f64; 3]| sub(*q, j.position);
+    let inner = a
+        .bolt_points
+        .iter()
+        .map(|q| dot(rel(q), along))
+        .fold(f64::INFINITY, f64::min);
+    let xs: Vec<f64> = a.bolt_points.iter().map(|q| dot(rel(q), across)).collect();
+    let mid = (xs.iter().copied().fold(f64::INFINITY, f64::min)
+        + xs.iter().copied().fold(f64::NEG_INFINITY, f64::max))
+        / 2.0;
+    let rows = if g.per_line > 1 {
+        f64::from(g.per_line - 1) * g.pitch.unwrap_or(0.0)
+    } else {
+        0.0
+    };
+    let half = g.span / 2.0 + rows * 30f64.to_radians().tan();
+    let legs = crate::welds::joint_legs(j);
+    let mut best = to_edge;
+    for l in legs.iter().filter(|l| {
+        l.member != a.member
+            && (l.onto.value.as_deref() == Some(plate) || l.other_onto.as_deref() == Some(plate))
+    }) {
+        for q in &l.bolt_points {
+            let ahead = inner - dot(rel(q), along);
+            let off = (dot(rel(q), across) - mid).abs();
+            if ahead > 1e-6 && off <= half + 1e-9 {
+                best = best.min(ahead);
+            }
+        }
+    }
+    Some(best)
 }
 
 /// A plate's or cover's steel: its material's, else (assumed) the
@@ -708,6 +760,7 @@ pub fn plate_usage(
                     group,
                     steel,
                     share,
+                    ..
                 } => {
                     let n = axial.get(member).copied().unwrap_or(0.0) * share;
                     (
@@ -806,6 +859,11 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
                     .collect(),
                 free_length: None,
             },
+            // A bolt group: its plate's free length in compression.
+            Plan::Bolted { free, .. } => by_plugin::Extra {
+                moments: Vec::new(),
+                free_length: *free,
+            },
             _ => by_plugin::Extra::default(),
         }
     };
@@ -852,7 +910,7 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
     let acted: Vec<u32> = sent
         .iter()
         .zip(&extra)
-        .filter(|(_, x)| x.acts())
+        .filter(|(p, x)| x.acts() || (x.free_length.is_some() && p.forces.iter().any(|f| *f < 0.0)))
         .map(|(p, _)| p.id)
         .collect();
     let (checked, moments_sent) = if sent.is_empty() {
@@ -961,7 +1019,9 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
 fn not_sent_words(plugin: &str, plan: &Plan) -> String {
     let what = match plan {
         Plan::Weld { .. } => "the moments of its force about the weld",
-        _ => "the member's end shear and moments, the plate's free length",
+        _ => {
+            "the plate's free length in compression (its buckling), the member's end shear and moments"
+        }
     };
     format!("{what} not sent: the plugin {plugin} has no joint-check-moments")
 }

@@ -147,6 +147,94 @@ impl Checked {
     }
 }
 
+/// The effective length factor of a gusset plate taken as a strut in
+/// compression (2026-11-18; neither ASCE 10-97 nor SIA 263 gives a rule):
+/// 2, the column fixed at one end and free to sway at the other — the
+/// largest of the classic cases (Timoshenko & Gere, *Theory of Elastic
+/// Stability*, 2nd ed., 1961, §2.1); a plate held at both ends buckles
+/// over less. An assumption on the safe side.
+pub const PLATE_K: f64 = 2.0;
+
+/// Whitmore's width of a bolt group (Whitmore, R. E., 1952, *Experimental
+/// investigation of stresses in gusset plates*, University of Tennessee
+/// Engineering Experiment Station Bulletin No. 16): lines spread at 30°
+/// from the outer bolts of the first row to the last row — the span
+/// between the outer gauge lines plus 2 L tan 30°, L the bolts' length
+/// along the force ((n − 1) p). None: no pitch known for several bolts a
+/// line, or one row (L = 0) of one gauge line (no width).
+pub fn whitmore_width(g: &BoltGroup) -> Option<f64> {
+    let l = if g.per_line > 1 {
+        f64::from(g.per_line - 1) * g.pitch?
+    } else {
+        0.0
+    };
+    let w = g.span + 2.0 * l * 30f64.to_radians().tan();
+    (w > 0.0).then_some(w)
+}
+
+/// The checks of a plate where a member bolts onto it ([`bolted`]) with
+/// what else acts on it (`x`) and the plate's free length in compression
+/// (`free`, m; 2026-11-18): in compression the plate's buckling as a strut
+/// ([`plate_buckling`]).
+pub fn bolted_with(g: &BoltGroup, s: &PlateSteel, n: f64, x: &Extra, free: Option<f64>) -> Checked {
+    let _ = x;
+    let mut out = bolted(g, s, n);
+    if n < 0.0 && g.count > 0 {
+        plate_buckling(g, s, n, free, &mut out);
+    }
+    out
+}
+
+/// SIA 263's modulus of elasticity of steel, 210 kN/mm² (3.2.2.1).
+const E_STEEL: f64 = 210e9;
+
+/// A plate in compression as a strut (2026-11-18): neither SIA 263 nor
+/// ASCE 10-97 gives a rule for a gusset plate's buckling — an assumption
+/// on the safe side, said: a strut of Whitmore's width
+/// ([`whitmore_width`]; at most the width the plate's sections take,
+/// `g.width`), the plate's thickness, over its free length `free` with K
+/// = [`PLATE_K`], by SIA 263's buckling (4.5.1: N_K,Rd = χ_K f_y A /
+/// γ_M1, λ̄_K = (K L / i) / (π √(E/f_y)), i = t / √12; curve c, the
+/// curve of Figure 7 for solid sections, "sections pleines"). Without
+/// its free length or width: not checked, said not on the safe side.
+fn plate_buckling(g: &BoltGroup, s: &PlateSteel, n: f64, free: Option<f64>, out: &mut Checked) {
+    out.notes.retain(|x| x != BUCKLING_NOT_CHECKED);
+    let t = s.thickness;
+    let (Some(l), Some(w), Some(fy)) = (free, whitmore_width(g), s.fy) else {
+        out.not_safe.push(format!(
+            "plate buckling not checked ({}; neither SIA 263 nor ASCE 10-97 gives a rule)",
+            match (free, whitmore_width(g), s.fy) {
+                (None, _, _) => "its free length not known",
+                (_, None, _) => "no Whitmore width: one bolt, or no pitch",
+                _ => "no yield strength",
+            }
+        ));
+        return;
+    };
+    let b = w.min(g.width);
+    let i = t / 12f64.sqrt();
+    let lambda = PLATE_K * l / i;
+    let lambda_bar = lambda / (std::f64::consts::PI * (E_STEEL / fy).sqrt());
+    let chi = sia263::chi(lambda_bar, sia263::Curve::C.alpha());
+    out.checks.push(PlateCheck {
+        what: format!(
+            "plate buckling as a strut (an assumption, on the safe side — no rule in SIA 263 or \
+             ASCE 10-97): Whitmore width {:.0} mm{}, t {:.0} mm, free length {:.0} mm, K {:.0}, \
+             λ̄_K {:.2}, χ_K {:.3} (SIA 263 4.5.1, curve c)",
+            mm(b),
+            if b < w { " (the sections' width)" } else { "" },
+            mm(t),
+            mm(l),
+            PLATE_K,
+            lambda_bar,
+            chi
+        ),
+        demand: n.abs(),
+        resistance: chi * fy * b * t / gamma_m1(),
+        distance: false,
+    });
+}
+
 /// The end distance in the force's direction.
 fn end_of(g: &BoltGroup, n: f64) -> Option<f64> {
     g.end[if n >= 0.0 { 0 } else { 1 }]

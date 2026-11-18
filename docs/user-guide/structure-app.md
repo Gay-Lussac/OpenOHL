@@ -1010,8 +1010,12 @@ out. Each change is one undo step.
   (87), (88)) — each its bundled plugin's joint check since 2026-11-18,
   with the structure's parameter file for it (the panel shows each part's
   governing check; a weld ASCE 10-97 does not check reads NOT CHECKED, NOT
-  ON THE SAFE SIDE); the simple check checks neither. A plate in compression:
-  plate buckling not checked. Every assumption is on the theory page
+  ON THE SAFE SIDE); the simple check checks neither. A plate in compression
+  (2026-11-18): checked as a strut of Whitmore's width over its free length
+  (to the nearest bolt of a leg on it, else its edge), K = 2, by the code's
+  column curve — an assumption on the safe side, said in the check's name;
+  one bolt, or no free length known: not checked, said NOT ON THE SAFE
+  SIDE. Every assumption is on the theory page
   [Gusset plates and their welds](../theory/joint-plates.md).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`

@@ -233,10 +233,17 @@ fn plates_and_welds_are_checked_by_sia263() {
         .iter()
         .find(|p| p.part == PlatePart::Member("D2".into()))
         .unwrap();
+    // In compression (2026-11-18): its plate's buckling as a strut, or
+    // said not checked and not on the safe side — no longer a plain note.
     assert!(
-        d2.notes
-            .iter()
-            .any(|n| n.contains("plate buckling not checked"))
+        !d2.notes.iter().any(|n| n
+            == "plate buckling not checked (neither ASCE 10-97 nor SIA 263 gives a rule for a \
+                gusset plate in compression)"),
+        "{d2:?}"
+    );
+    assert!(
+        d2.governs.contains("as a strut") || d2.governs.contains("plate buckling not checked ("),
+        "{d2:?}"
     );
     let weld = u
         .iter()

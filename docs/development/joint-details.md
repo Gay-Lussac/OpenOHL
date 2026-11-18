@@ -315,15 +315,17 @@ Built, in active development, not approved yet:
   the resultant of the member forces on the plates it holds (on the safe
   side). ASCE 10-97 gives no weld rule (5.2.5: AWS D1.1): welds not
   checked under it, said; the simple check checks neither. A plate in
-  compression: plate buckling not checked. Joint details lists each
+  compression: a strut of Whitmore's width (2026-11-18, an assumption on
+  the safe side; one bolt or no free length: not checked, said). Joint
+  details lists each
   part's usage (the case shown and the largest), what governs with its
   clause, each check in a box; the 3D view marks the joints by their
   plates' worst usage (orange, red); the structure report has a table.
 
-Open: the moment of a weld's force about its seam (not taken: not on the
-safe side); tearing paths of a bolt group towards a plate's side edge; a
-frame member's end shear and moments in the plate checks; a gusset
-plate's buckling (neither standard gives a rule).
+Open: a frame member's end shear and moments in the plate checks.
+Done: the tearing path towards a plate's side edge (2026-11-08); the
+moment of a weld's force about it and a gusset plate's buckling as a
+strut (2026-11-18, the lattice towers' safe-side items).
 
 > **Owner:**
 

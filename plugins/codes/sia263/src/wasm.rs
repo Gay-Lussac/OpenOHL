@@ -498,7 +498,6 @@ use exports::ohl::plugin::joint_check::{CaseUsage as PartUsage, JointInput, Part
 /// One joint part's checks under force `n` with what else acts on it
 /// (`x`) and its plate's free length in compression (`free`).
 fn part_checked(p: &Part, n: f64, x: &joints::Extra, free: Option<f64>) -> Option<joints::Checked> {
-    let _ = free;
     match p.kind.as_str() {
         "bolts" => {
             let (b, s) = (p.bolts.as_ref()?, p.steel.as_ref()?);
@@ -520,7 +519,7 @@ fn part_checked(p: &Part, n: f64, x: &joints::Extra, free: Option<f64>) -> Optio
                 fy: s.fy,
                 fu: s.fu,
             };
-            Some(joints::bolted(&g, &steel, n))
+            Some(joints::bolted_with(&g, &steel, n, x, free))
         }
         "weld" => {
             let w = p.weld.as_ref()?;

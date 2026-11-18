@@ -48,6 +48,19 @@ something is still not on the safe side.
   dropped (with `single_angle_moments`); and an eccentric angle's (50)
   replaced the frame moments by N·e. Both fixed on the safe side: about u
   and v the bound |M_y| + |M_z| (uniform), added to N·e.
+- **A gusset plate in compression** ([theory](../theory/joint-plates.md#a-plate-in-compression-an-assumption)).
+  Neither standard has a rule; before, "plate buckling not checked" was a
+  note and the part's usage left it out. Now a strut, an assumption said
+  as such: Whitmore's width (the primary source, Whitmore 1952; Thornton
+  1984 for the strut), at most the width the plate's sections take; the
+  free length from the bolts nearest the joint to the nearest bolt of a
+  leg on the plate within that spread, else to the plate's edge (other
+  members' bolts not taken as holding it); K = 2, the largest classic
+  case (no tests of these plates: the conservative value, a question to
+  the owner); the code's own column curve (ASCE 10-97 3.6 with E =
+  200 000 MPa of its Appendix A; SIA 263 4.5.1 on curve c, Figure 7's for
+  solid sections, E = 210 kN/mm² of 3.2.2.1). One bolt (no Whitmore
+  width) or no free length: not checked, said NOT ON THE SAFE SIDE.
 - **Plugin interface** (additive, interface version stays 0.3): a new
   optional export `joint-check-moments` — `joint-check-full`'s records
   with, per part and case, what acts on it beside its force

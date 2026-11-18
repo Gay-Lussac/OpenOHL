@@ -476,8 +476,10 @@ block shear by Eq. 3.10-1 (stated for angles: applied to the plate's
 block, said), its net section in tension (3.10.1) and its end and edge
 distances (4.5.1, 4.5.3). **ASCE 10-97 gives no weld resistance** (5.2.5
 leaves welding procedures to AWS D1.1): welds are not checked under it,
-said. A plate in compression: plate buckling not checked (no rule in the
-standard).
+said. A plate in compression: no rule in the standard — checked as a
+strut of Whitmore's width by the column curve of 3.6, an assumption on
+the safe side ([joint plates](joint-plates.md#a-plate-in-compression-an-assumption);
+2026-11-18).
 
 ## Not covered by the program
 
