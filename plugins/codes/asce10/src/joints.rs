@@ -206,16 +206,162 @@ pub fn whitmore_width(g: &BoltGroup) -> Option<f64> {
 }
 
 /// The checks of a plate where a member bolts onto it ([`bolted`]) with
-/// what else acts on it (`x`) and the plate's free length in compression
-/// (`free`, m; 2026-11-18): in compression the plate's buckling as a strut
+/// what else acts on it (`x`: a frame member's end shear and moments at
+/// its bolts) and the plate's free length in compression (`free`, m;
+/// 2026-11-18): in compression the plate's buckling as a strut
 /// ([`plate_buckling`]).
+///
+/// With a shear or moments (on the safe side, the sizes added): the
+/// bolts' bearing under the force of the most loaded bolt times their
+/// number, |N| + V + M k ([`moment_factor`]: the bolt group elastic about
+/// its centroid), its end distance the smaller of the end and edge
+/// distances (the force's direction then not along the member); every
+/// other check under |N| + V + 6 M / w + 6 M_out / t (the plate's section
+/// of width w, as `g.width`, bent in its plane and out of it), in tension
+/// and in compression both (the moment puts one edge in each). The force
+/// square to the plate and the moment bending it out of its plane pull on
+/// the bolts: bolts in tension not checked, said not on the safe side.
 pub fn bolted_with(g: &BoltGroup, s: &PlateSteel, n: f64, x: &Extra, free: Option<f64>) -> Checked {
-    let _ = x;
-    let mut out = bolted(g, s, n);
-    if n < 0.0 && g.count > 0 {
-        plate_buckling(g, s, n, free, &mut out);
+    let more = x.shear > 0.0 || x.in_plane > 0.0 || x.out_of_plane > 0.0 || x.normal > 0.0;
+    if !more || g.count == 0 {
+        let mut out = bolted(g, s, n);
+        if n < 0.0 && g.count > 0 {
+            plate_buckling(g, s, n, free, &mut out);
+        }
+        return out;
+    }
+    let t = s.thickness;
+    let bend = |m: f64, w: f64| {
+        if m > 0.0 {
+            if w > 0.0 { 6.0 * m / w } else { f64::INFINITY }
+        } else {
+            0.0
+        }
+    };
+    let ns = n.abs() + x.shear + bend(x.in_plane, g.width) + bend(x.out_of_plane, t);
+    let k = moment_factor(g);
+    // Said when it adds 1 % or more to |N| + V (as members' moments are).
+    let base = n.abs() + x.shear;
+    let matters = |add: f64| add > 0.0 && add >= 0.01 * base;
+    // One bolt is a pin: the moment does not pass through it (its bearing
+    // under |N| + V); said when the moment matters.
+    let nb = base
+        + if x.in_plane > 0.0 && k.is_finite() {
+            x.in_plane * k
+        } else {
+            0.0
+        };
+    let words = format!(
+        " with its end shear {:.1} kN and moments {:.2} kN m in the plate's plane, {:.2} kN m \
+         out of it",
+        x.shear / 1000.0,
+        x.in_plane / 1000.0,
+        x.out_of_plane / 1000.0
+    );
+    // Both signs when a moment bends the plate (an edge in each).
+    let signs: Vec<f64> = if x.in_plane > 0.0 || x.out_of_plane > 0.0 {
+        vec![1.0, -1.0]
+    } else if n < 0.0 {
+        vec![-1.0]
+    } else {
+        vec![1.0]
+    };
+    let mut out = Checked::default();
+    for sign in signs {
+        let mut c = bolted(g, s, sign * ns);
+        if sign < 0.0 {
+            plate_buckling(g, s, sign * ns, free, &mut c);
+        }
+        // Bearing: the most loaded bolt's force, the nearer edge.
+        let near = |e: Option<f64>| match (e, g.edge) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, None) => a,
+            (None, b) => b,
+        };
+        let gb = BoltGroup {
+            end: [near(g.end[0]), near(g.end[1])],
+            ..g.clone()
+        };
+        let cb = bolted(&gb, s, sign * nb);
+        c.checks.retain(|p| !p.what.starts_with("bearing"));
+        c.checks.extend(
+            cb.checks
+                .into_iter()
+                .filter(|p| p.what.starts_with("bearing")),
+        );
+        for p in &mut c.checks {
+            if !p.distance {
+                p.what.push_str(&words);
+            }
+        }
+        for w in c.notes {
+            if !out.notes.contains(&w) {
+                out.notes.push(w);
+            }
+        }
+        for w in c.not_safe {
+            if !out.not_safe.contains(&w) {
+                out.not_safe.push(w);
+            }
+        }
+        out.checks.extend(c.checks);
+    }
+    out.notes.push(
+        "a frame member's end shear and moments: sizes added to its axial force, on the safe \
+         side (the bearing by the most loaded bolt, elastic, at the nearer of the end and edge \
+         distances)"
+            .into(),
+    );
+    if !k.is_finite() && matters(bend(x.in_plane, g.width)) {
+        out.not_safe.push(format!(
+            "one bolt cannot carry the member's end moment in the plate's plane ({:.2} kN m): \
+             a pin there, the frame end of the analysis not what the joint does",
+            x.in_plane / 1000.0
+        ));
+    }
+    if matters(x.normal + bend(x.out_of_plane, t)) {
+        out.not_safe.push(format!(
+            "its force square to the plate ({:.1} kN) and the moment bending the plate out of \
+             its plane ({:.2} kN m) pull on its bolts: bolts in tension not checked",
+            x.normal / 1000.0,
+            x.out_of_plane / 1000.0
+        ));
     }
     out
+}
+
+/// How much a moment M about the plate's normal adds to the force of the
+/// bolt group's most loaded bolt times their number: M k with k = n r_max
+/// / Σ r² — the group elastic about its centroid, the bolts on a regular
+/// grid of its gauge lines (`span` apart at the outer ones) and rows
+/// (`pitch` apart), m⁻¹. A group not filling that grid: Σ r² taken as
+/// r_max² alone (on the safe side); one bolt: no lever, infinite.
+pub fn moment_factor(g: &BoltGroup) -> f64 {
+    let lines = g.lines.max(1);
+    let rows = g.per_line.max(1);
+    let gauge = if lines > 1 {
+        g.span / f64::from(lines - 1)
+    } else {
+        0.0
+    };
+    let pitch = g.pitch.unwrap_or(0.0);
+    let mut sum = 0.0;
+    let mut rmax: f64 = 0.0;
+    for i in 0..lines {
+        for k in 0..rows {
+            let y = (f64::from(i) - f64::from(lines - 1) / 2.0) * gauge;
+            let x = (f64::from(k) - f64::from(rows - 1) / 2.0) * pitch;
+            sum += x * x + y * y;
+            rmax = rmax.max((x * x + y * y).sqrt());
+        }
+    }
+    if g.count != lines * rows {
+        sum = rmax * rmax;
+    }
+    if sum <= 0.0 {
+        return f64::INFINITY;
+    }
+    f64::from(g.count) * rmax / sum
 }
 
 /// ASCE 10-97's modulus of elasticity of steel, 200 000 MPa (Appendix A).
@@ -232,6 +378,8 @@ const E_STEEL: f64 = 200e9;
 fn plate_buckling(g: &BoltGroup, s: &PlateSteel, n: f64, free: Option<f64>, out: &mut Checked) {
     out.notes.retain(|x| x != BUCKLING_NOT_CHECKED);
     let t = s.thickness;
+    // One bolt (one row of one line) has no Whitmore width: Whitmore's
+    // spread is from a first row to a last one — not checked, said.
     let (Some(l), Some(w), Some(fy)) = (free, whitmore_width(g), s.fy) else {
         out.not_safe.push(format!(
             "plate buckling not checked ({}; neither ASCE 10-97 nor SIA 263 gives a rule)",
@@ -575,5 +723,80 @@ mod tests {
         assert!(c.not_safe.iter().any(|n| n.contains("no Whitmore width")));
         let c = bolted_with(&group(), &STEEL, 200e3, &Extra::default(), free);
         assert!(!c.checks.iter().any(|x| x.what.contains("strut")));
+    }
+
+    /// A frame member's end shear and moment in the plate (2026-11-18), by
+    /// hand: the same plate, 100 kN tension, 10 kN shear in its plane,
+    /// 1 kN m about its normal. The four bolts on a grid ±25 mm along and
+    /// ±30 mm across: Σ r² = 4 × 1 525 = 6 100 mm², r_max = 39.05 mm, k = 4
+    /// × 39.05 / 6 100 = 25.61 /m — bearing under 100 + 10 + 25.61 =
+    /// 135.61 kN (of 489.6 kN); the other checks under 100 + 10 + 6 × 1 /
+    /// 0.120 = 160 kN, in tension (net section 160 of 286.84 kN) and in
+    /// compression too (the moment puts an edge in each: the strut 160 of
+    /// 215.0 kN governs). A force square to the plate: bolts in tension
+    /// not checked, said.
+    #[test]
+    fn a_frame_members_shear_and_moment_in_the_plate() {
+        let g = group();
+        let k = moment_factor(&g);
+        let r = (0.025f64.powi(2) + 0.030f64.powi(2)).sqrt();
+        assert!((k - 4.0 * r / (4.0 * r * r)).abs() < 1e-9, "{k}");
+        let x = Extra {
+            shear: 10e3,
+            in_plane: 1e3,
+            ..Extra::default()
+        };
+        let c = bolted_with(&g, &STEEL, 100e3, &x, Some(0.150));
+        let b = find(&c, "bearing");
+        assert!((b.demand - (110e3 + 1e3 * k)).abs() < 1e-6, "{b:?}");
+        assert!((b.demand - 135.61e3).abs() < 0.01e3, "{b:?}");
+        assert!((b.resistance - 489.6e3).abs() < 1.0);
+        let net = find(&c, "net section");
+        assert!((net.demand - 160e3).abs() < 1e-6, "{net:?}");
+        let strut = find(&c, "as a strut");
+        assert!((strut.demand - 160e3).abs() < 1e-6, "{strut:?}");
+        let (u, gov) = c.governing(1.0).unwrap();
+        assert!(gov.what.contains("as a strut"), "{gov:?}");
+        assert!((u - 160.0 / 215.0).abs() < 0.002, "{u}");
+        assert!(c.not_safe.is_empty(), "{c:?}");
+        // Without: the axial force alone (the check of before).
+        let plain = bolted_with(&g, &STEEL, 100e3, &Extra::default(), Some(0.150));
+        assert_eq!(plain, bolted(&g, &STEEL, 100e3));
+        assert!(u > plain.governing(1.0).unwrap().0);
+        let pull = Extra {
+            normal: 2e3,
+            ..Extra::default()
+        };
+        let c = bolted_with(&g, &STEEL, 100e3, &pull, Some(0.150));
+        assert!(
+            c.not_safe
+                .iter()
+                .any(|n| n.contains("bolts in tension not checked"))
+        );
+        // Below 1 % of |N| + V: not said.
+        let tiny = Extra {
+            normal: 0.5e3,
+            ..Extra::default()
+        };
+        let c = bolted_with(&g, &STEEL, 100e3, &tiny, Some(0.150));
+        assert!(c.not_safe.is_empty(), "{c:?}");
+        // One bolt cannot take a moment.
+        let one = BoltGroup {
+            count: 1,
+            lines: 1,
+            per_line: 1,
+            pitch: None,
+            span: 0.0,
+            ..group()
+        };
+        assert!(moment_factor(&one).is_infinite());
+        // One bolt is a pin: its bearing under |N| + V, the moment said.
+        let c = bolted_with(&one, &STEEL, 10e3, &x, Some(0.150));
+        assert!((find(&c, "bearing").demand - 20e3).abs() < 1e-6, "{c:?}");
+        assert!(
+            c.not_safe
+                .iter()
+                .any(|n| n.contains("one bolt cannot carry"))
+        );
     }
 }

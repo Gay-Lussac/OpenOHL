@@ -1015,7 +1015,10 @@ out. Each change is one undo step.
   (to the nearest bolt of a leg on it, else its edge), K = 2, by the code's
   column curve — an assumption on the safe side, said in the check's name;
   one bolt, or no free length known: not checked, said NOT ON THE SAFE
-  SIDE. Every assumption is on the theory page
+  SIDE. A frame member's end shear and moments at its bolts are taken
+  with its axial force (2026-11-18; a force square to the plate pulls on
+  the bolts: bolts in tension not checked, said). Every assumption is on
+  the theory page
   [Gusset plates and their welds](../theory/joint-plates.md).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`

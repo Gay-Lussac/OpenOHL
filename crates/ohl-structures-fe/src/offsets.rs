@@ -216,6 +216,30 @@ pub fn member_axes(model: &Model, idx: usize) -> [[f64; 3]; 3] {
     [0, 1, 2].map(|k| [r[(k, 0)], r[(k, 1)], r[(k, 2)]])
 }
 
+/// Member `idx`'s end forces `f` (on the member, its local axes) in
+/// structure axes, per end `[F_x, F_y, F_z, M_x, M_y, M_z]` (N, N·m;
+/// 2026-11-18: the plate checks take a frame member's end shear and
+/// moments).
+pub fn global_end_forces(
+    model: &Model,
+    idx: usize,
+    f: &crate::solve::MemberForces,
+) -> [[f64; 6]; 2] {
+    let ax = member_axes(model, idx);
+    let mut out = [[0.0; 6]; 2];
+    for (e, o) in out.iter_mut().enumerate() {
+        for part in 0..2 {
+            for (k, row) in ax.iter().enumerate() {
+                let v = f.end_forces[6 * e + 3 * part + k];
+                for (c, r) in row.iter().enumerate() {
+                    o[3 * part + c] += v * r;
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Member `idx`'s forces `f` as its check takes them (2026-11-18): with
 /// the moments of its eccentric ends the solve could not carry
 /// ([`uncarried_moments`]) added as a **uniform** bending moment along it

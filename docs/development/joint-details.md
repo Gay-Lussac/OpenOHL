@@ -322,10 +322,12 @@ Built, in active development, not approved yet:
   clause, each check in a box; the 3D view marks the joints by their
   plates' worst usage (orange, red); the structure report has a table.
 
-Open: a frame member's end shear and moments in the plate checks.
 Done: the tearing path towards a plate's side edge (2026-11-08); the
-moment of a weld's force about it and a gusset plate's buckling as a
-strut (2026-11-18, the lattice towers' safe-side items).
+moment of a weld's force about it, a gusset plate's buckling as a strut
+and a frame member's end shear and moments in the plate checks
+(2026-11-18, the lattice towers' safe-side items). Open: bolts in tension
+(a force square to the plate, a moment bending it out of its plane: said
+not on the safe side).
 
 > **Owner:**
 

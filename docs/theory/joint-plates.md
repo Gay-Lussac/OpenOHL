@@ -41,10 +41,10 @@ For each gusset plate (`[[plate]]`) and each case solved:
   against its resistance.
 
 The force is the member's **axial force** at the joint from the analysis
-(tension positive). A frame member's end shear and moments are not taken
-into the plate checks (**not on the safe side** for frame members; said
-per member). The case's strength factor \\( \phi \\) multiplies every
-resistance, as for the members.
+(tension positive), and for a frame member since 2026-11-18 its **end
+shear and moments** at its bolts ([below](#a-frame-members-end-shear-and-moments);
+before, not taken — not on the safe side, said). The case's strength
+factor \\( \phi \\) multiplies every resistance, as for the members.
 
 A part's usage is its largest share over its checks. A distance is kept
 or not: it counts only when it is not kept (its share above 1), never as
@@ -286,6 +286,49 @@ force alone (`joint-check-full`): the weld's result then says the moments
 were not sent, **NOT ON THE SAFE SIDE**. **ASCE 10-97** has no weld rule,
 with or without moments (5.2.5): the weld stays not checked, said.
 
+## A frame member's end shear and moments
+
+*2026-11-18.* A frame member's end forces from the analysis (structure
+axes, `MemberResult::end_forces`) are split at its bolt group in the
+plate (`plate_checks::bolt_loads`), with \\( \mathbf n \\) the plate's normal
+(the bolts' axis), \\( \mathbf a \\) the member's direction in the plate and
+\\( \mathbf c = \mathbf n \times \mathbf a \\):
+
+- \\( V = |\mathbf F\cdot\mathbf c| \\), the shear in the plate's plane;
+  \\( V_n = |\mathbf F\cdot\mathbf n| \\), the force square to the plate;
+- \\( M = |\mathbf M\cdot\mathbf n| + d\,V \\), the moment about the plate's
+  normal carried to the bolts' centroid a distance \\( d \\) from the joint
+  along the member (the sizes added: **on the safe side**);
+- \\( M_o = |\mathbf M - (\mathbf M\cdot\mathbf n)\mathbf n| + d\,V_n \\),
+  the rest, bending the plate out of its plane (with the member's
+  torsion).
+
+A splice's cover takes them times its share. The plugin
+(`joint-check-moments`) checks, the sizes added (**on the safe side**: by
+the triangle inequality, never less than the true resultant):
+
+- **bearing** under the force of the most loaded bolt times the bolts'
+  number, \\( |N| + V + M\,k \\), \\( k = n\,r_{max}/\sum r^2 \\) — the group
+  elastic about its centroid, the bolts on the grid of its gauge lines and
+  rows (a group that does not fill that grid: \\( \sum r^2 = r_{max}^2 \\),
+  more on the safe side) — at the **nearer of the end and edge
+  distances** (the force's direction is then not along the member);
+- **one bolt** is a pin: no moment passes through it. Its bearing is
+  checked under \\( |N| + V \\); where the moment would add 1 % or more to
+  the section's check (\\( 6M/w \ge 0.01\,(|N| + V) \\)) the part says **NOT
+  ON THE SAFE SIDE**: the analysis' frame end is not what the joint does
+  (the moment goes elsewhere in the tower);
+- **every other check** under \\( |N| + V + 6M/w + 6M_o/t \\) (the plate's
+  section of width \\( w \\) bent in its plane, of thickness \\( t \\) bent out
+  of it), **in tension and in compression both** when a moment bends the
+  plate (an edge in each), the strut too;
+- \\( V_n \\) and \\( M_o \\) pull on the bolts: **bolts in tension are not
+  checked** — said NOT ON THE SAFE SIDE on the part where they add 1 % or
+  more (\\( V_n + 6M_o/t \ge 0.01\,(|N| + V) \\); below, as for members'
+  moments, not said).
+
+A truss's end forces have no shear or moment: its checks are as before.
+
 ## A plate in compression (an assumption)
 
 *2026-11-18.* Neither ASCE 10-97 nor SIA 263 gives a rule for a gusset
@@ -362,6 +405,14 @@ compared, core against plugin: identical to the last bit:
   checked (it has no weld rule), and said.
 - `a_weld_carries_the_larger_resultant`, `rays_reach_the_outline`: the
   force a weld carries and the plate's outline.
+- `a_frame_members_shear_and_moment_in_the_plate` (2026-11-18, both
+  plugins): the same plate, 100 kN tension, 10 kN shear, 1 kN m: k = 4 ×
+  39.05 / 6 100 = 25.61 /m, bearing under 135.61 kN (SIA 263 at the edge
+  distance 30 mm: 369.9 kN), the other checks under 160 kN in tension
+  and compression (ASCE 10-97: the strut 160 of 215.0 kN governs); a force
+  square to the plate said not on the safe side (2 kN of 110: said; 0.5
+  kN: below 1 %, not said); one bolt: its bearing under |N| + V, the
+  moment said.
 - `a_plate_in_compression_as_a_strut` (2026-11-18, both plugins): the
   plate of the hand checks above under 200 kN compression, free length
   150 mm: Whitmore's width 60 + 2 × 50 × tan 30° = 117.7 mm, KL/r = 2 ×

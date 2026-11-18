@@ -531,3 +531,32 @@ fn a_plate_in_compression_as_a_strut() {
             .any(|n| n.contains("free length not known"))
     );
 }
+
+/// A frame member's end shear and moment in the plate (2026-11-18), by
+/// hand: the plate of `plate_by_hand`, 100 kN tension, 10 kN shear in its
+/// plane, 1 kN m about its normal: k = 4 r_max / Σ r² = 25.61 /m (the
+/// bolts ±25 mm, ±30 mm), bearing under 100 + 10 + 25.61 = 135.61 kN at
+/// the nearer of the end (40 mm) and edge (30 mm) distances: (76) with
+/// e_1 = 30 mm, 4 × 0.85 × 30/18 × 510 × 16 × 10 / 1.25 = 369.9 kN; the
+/// other checks under 160 kN (net section (39) 160 of 308.4 kN).
+#[test]
+fn a_frame_members_shear_and_moment_in_the_plate() {
+    crate::params::set(crate::params::Params::default());
+    let x = joints::Extra {
+        shear: 10e3,
+        in_plane: 1e3,
+        ..Default::default()
+    };
+    let c = joints::bolted_with(&group(), &STEEL, 100e3, &x, Some(0.150));
+    let k = joints::moment_factor(&group());
+    let b = find(&c, "(76)");
+    assert!((b.demand - (110e3 + 1e3 * k)).abs() < 1e-6, "{b:?}");
+    let one = 0.85 * 30.0 / 18.0 * 510e6 * 0.016 * 0.010 / 1.25;
+    assert!((b.resistance - 4.0 * one).abs() < 1.0, "{b:?}");
+    assert!((b.resistance - 369.9e3).abs() < 0.1e3, "{b:?}");
+    let net = find(&c, "(39)");
+    assert!((net.demand - 160e3).abs() < 1e-6, "{net:?}");
+    assert!(c.checks.iter().any(|p| p.what.contains("as a strut")));
+    let plain = joints::bolted_with(&group(), &STEEL, 100e3, &joints::Extra::default(), None);
+    assert_eq!(plain, bolted(&group(), &STEEL, 100e3));
+}

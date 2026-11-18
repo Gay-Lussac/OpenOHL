@@ -32,8 +32,13 @@
 //! SIA 263 6.3.1.7, 6.3.2.1); a plugin without that export: said NOT ON
 //! THE SAFE SIDE on the weld.
 //!
-//! Only a member's axial force goes into the plate checks (its end shear
-//! and moments, in a frame member, are not taken — said for frames).
+//! A member's axial force goes into the plate checks and, since
+//! 2026-11-18, a frame member's **end shear and moments** at its bolt
+//! group ([`bolt_loads`]): the shear in the plate's plane, the moment
+//! about the plate's normal and the rest bending the plate out of its
+//! plane, and the force square to it — sent to the plugin's joint check
+//! with the part (`joint-check-moments`), which takes them on the safe
+//! side.
 
 use std::collections::BTreeMap;
 
@@ -99,6 +104,8 @@ enum Plan {
         share: f64,
         /// The plate's free length in compression ([`free_length`]), m.
         free: Option<f64>,
+        /// Where the member's end and bolts are.
+        at: BoltPlace,
     },
     Weld {
         with: String,
@@ -115,6 +122,70 @@ enum Plan {
     NoSeam { with: String },
     /// A member's bolts not placed in a cover: not checked (said).
     Unplaced { member: String },
+}
+
+/// Where a member's end bolts onto a plate: which end, the plate's normal
+/// (the bolts' axis), the member's direction in the plate from the joint
+/// and how far its bolts' centroid lies along it from the joint (m).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct BoltPlace {
+    /// The member's end at the joint: 0 its first, 1 its second.
+    pub end: usize,
+    /// The plate's normal, unit.
+    pub normal: [f64; 3],
+    /// Along the member in the plate's plane, from the joint, unit.
+    pub along: [f64; 3],
+    /// From the joint to the bolts' centroid along it, m.
+    pub lever: f64,
+}
+
+impl BoltPlace {
+    fn of(a: &Arrival, j: &JointDetail) -> BoltPlace {
+        let (along, _) = crate::joints::keep_axes(a);
+        let n = a.bolt_points.len().max(1) as f64;
+        let c = a
+            .bolt_points
+            .iter()
+            .fold([0.0; 3], |s, q| add(s, scale(sub(*q, j.position), 1.0 / n)));
+        BoltPlace {
+            end: a.end,
+            normal: a.bolt_axis,
+            along,
+            lever: dot(c, along).max(0.0),
+        }
+    }
+}
+
+/// Each member's end forces in one case, by id: at its first and second
+/// end, on it, structure axes, `[F_x, F_y, F_z, M_x, M_y, M_z]` (N, N·m;
+/// `MemberResult::end_forces`).
+pub type EndForces = BTreeMap<String, [[f64; 6]; 2]>;
+
+/// What a member's end forces `ef` put on its bolt group in a plate
+/// beside its axial force (2026-11-18), `[shear, in-plane, out-of-plane,
+/// normal]` (sizes, N and N·m), times the plate's `share`: the shear in
+/// the plate's plane square to the member; the moment about the plate's
+/// normal at the bolts' centroid, |M·n| + lever × shear (the end's moment
+/// carried to the centroid, the sizes added: on the safe side); the
+/// rest of the moment (bending the plate out of its plane, with the
+/// member's torsion), |M − (M·n) n| + lever × the normal force; the force
+/// square to the plate.
+pub(crate) fn bolt_loads(at: &BoltPlace, ef: &[f64; 6], share: f64) -> [f64; 4] {
+    let f = [ef[0], ef[1], ef[2]];
+    let m = [ef[3], ef[4], ef[5]];
+    let n = at.normal;
+    let c = cross(n, at.along);
+    let c = scale(c, 1.0 / norm(c).max(1e-12));
+    let v = dot(f, c).abs();
+    let vn = dot(f, n).abs();
+    let mn = dot(m, n);
+    let rest = norm(sub(m, scale(n, mn)));
+    [
+        v * share,
+        (mn.abs() + at.lever * v) * share,
+        (rest + at.lever * vn) * share,
+        vn * share,
+    ]
 }
 
 /// A member on one side of a weld: its id, its direction from the joint
@@ -267,8 +338,8 @@ pub fn plate_plans_in(
                     .is_some_and(|m| m.is_frame())
                 {
                     notes.push(
-                        "a frame member: its axial force only (its end shear and moments not in \
-                         the plate checks)"
+                        "a frame member: its end shear and moments at its bolts taken with its \
+                         axial force (sizes added, on the safe side)"
                             .into(),
                     );
                 }
@@ -281,6 +352,7 @@ pub fn plate_plans_in(
                         steel,
                         share,
                         free,
+                        at: BoltPlace::of(a, j),
                     },
                     notes,
                 });
@@ -441,6 +513,7 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         steel,
                         share,
                         free,
+                        at: BoltPlace::of(a, j),
                     },
                     notes,
                 });
@@ -833,6 +906,18 @@ pub type PlateCase<'a> = (&'a str, f64, &'a BTreeMap<String, f64>);
 /// ASCE 10-97 in its place; so is a part or a load case it returns
 /// nothing for. What it flags as not safe is said with the part.
 pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<PlateUsage>> {
+    plate_usage_cases_with(plans, cases, &[])
+}
+
+/// [`plate_usage_cases`] with each case's members' end forces (`ends`,
+/// one per case of `cases`, or empty: none known): a frame member's end
+/// shear and moments at its bolts go to the plugin with the part
+/// ([`bolt_loads`], 2026-11-18).
+pub fn plate_usage_cases_with(
+    plans: &PlatePlans,
+    cases: &[PlateCase],
+    ends: &[&EndForces],
+) -> Vec<Vec<PlateUsage>> {
     use ohl_member_check::joints as by_plugin;
     let Some(p) = &plans.plugin else {
         return cases.iter().map(|c| plate_usage(plans, c.2, c.1)).collect();
@@ -859,9 +944,25 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
                     .collect(),
                 free_length: None,
             },
-            // A bolt group: its plate's free length in compression.
-            Plan::Bolted { free, .. } => by_plugin::Extra {
-                moments: Vec::new(),
+            // A bolt group: its plate's free length in compression and
+            // the member's end shear and moments at its bolts.
+            Plan::Bolted {
+                member,
+                free,
+                at,
+                share,
+                ..
+            } => by_plugin::Extra {
+                moments: if ends.len() == cases.len() {
+                    ends.iter()
+                        .map(|e| {
+                            e.get(member)
+                                .map_or([0.0; 4], |f| bolt_loads(at, &f[at.end], *share))
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
                 free_length: *free,
             },
             _ => by_plugin::Extra::default(),
@@ -1231,6 +1332,30 @@ mod tests {
             Vec::new(),
         ];
         assert!((weld_force(&all, true, &axial) - 190e3).abs() < 1e-6);
+    }
+
+    /// A frame member's end forces at its bolt group (invented, by hand):
+    /// the plate's normal z, the member along x, its bolts' centroid 0.1 m
+    /// from the joint; F = (100, 5, 2) kN, M = (0.3, 0.4, 1.0) kN m. The
+    /// shear in the plane (along y = z × x) 5 kN, square to it 2 kN; about
+    /// the normal 1.0 + 0.1 × 5 = 1.5 kN m; the rest |(0.3, 0.4, 0)| plus
+    /// 0.1 × 2, 0.5 + 0.2 = 0.7 kN m; a cover's share 0.5 halves them.
+    #[test]
+    fn a_frame_members_end_forces_at_its_bolts() {
+        let at = BoltPlace {
+            end: 0,
+            normal: [0.0, 0.0, 1.0],
+            along: [1.0, 0.0, 0.0],
+            lever: 0.1,
+        };
+        let ef = [100e3, 5e3, 2e3, 300.0, 400.0, 1000.0];
+        let l = bolt_loads(&at, &ef, 1.0);
+        let want = [5e3, 1500.0, 700.0, 2e3];
+        for k in 0..4 {
+            assert!((l[k] - want[k]).abs() < 1e-9, "{l:?}");
+        }
+        let h = bolt_loads(&at, &ef, 0.5);
+        assert!((h[1] - 750.0).abs() < 1e-9, "{h:?}");
     }
 
     /// The moments of a weld's force (invented data, worked by hand): a

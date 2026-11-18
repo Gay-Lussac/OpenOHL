@@ -113,8 +113,8 @@ pub use orient::{
     orient_angles,
 };
 pub use plate_checks::{
-    PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_plans_in,
-    plate_usage, plate_usage_cases,
+    EndForces, PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans,
+    plate_plans_in, plate_usage, plate_usage_cases, plate_usage_cases_with,
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
 pub use run::{
@@ -1339,6 +1339,10 @@ pub struct MemberResult {
     /// ([`ohl_structures_fe::offsets::eccentricity_words`]); none: its
     /// ends at its joints.
     pub eccentric: Option<String>,
+    /// Its end forces on it at its first and second end, structure axes:
+    /// `[F_x, F_y, F_z, M_x, M_y, M_z]`, N and N·m (2026-11-18: a frame
+    /// member's end shear and moments in the plate checks).
+    pub end_forces: [[f64; 6]; 2],
 }
 
 /// A support's reaction: the force and moment on the structure.
@@ -1886,6 +1890,11 @@ fn analyse_one(
                     model,
                     k,
                     solution.members[k].axial,
+                ),
+                end_forces: ohl_structures_fe::offsets::global_end_forces(
+                    model,
+                    k,
+                    &solution.members[k],
                 ),
             }
         })

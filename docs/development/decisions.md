@@ -61,6 +61,23 @@ something is still not on the safe side.
   200 000 MPa of its Appendix A; SIA 263 4.5.1 on curve c, Figure 7's for
   solid sections, E = 210 kN/mm² of 3.2.2.1). One bolt (no Whitmore
   width) or no free length: not checked, said NOT ON THE SAFE SIDE.
+- **A frame member's end shear and moments in the plate checks**
+  ([theory](../theory/joint-plates.md#a-frame-members-end-shear-and-moments)).
+  Before, the axial force only (said). Now the analysis' end forces at the
+  member's bolt group, split by the plate's plane, go with the part; the
+  plugins add their sizes: bearing by the most loaded bolt of the group
+  elastic about its centroid, at the nearer of the end and edge
+  distances; the other checks under N + V + 6M/w + 6M_o/t in tension and
+  compression. The force square to the plate and the out-of-plane moment
+  pull on the bolts: bolts in tension are not checked, said NOT ON THE
+  SAFE SIDE where they add 1 % or more. One bolt is a pin: no moment
+  through it (its bearing under N + V); a moment adding 1 % or more said
+  NOT ON THE SAFE SIDE (the analysis' frame end is not what the joint
+  does). Measured first without the 1 % rule and with an infinite bearing
+  for one bolt: nearly every part of the real towers' plates said or
+  failed for moments of a few N m (numerical) — hence the rule, as for
+  members' moments. The tearing path towards a plate's side edge (the other half
+  of this item) was already built on 2026-11-08 under both codes: kept.
 - **Plugin interface** (additive, interface version stays 0.3): a new
   optional export `joint-check-moments` — `joint-check-full`'s records
   with, per part and case, what acts on it beside its force
