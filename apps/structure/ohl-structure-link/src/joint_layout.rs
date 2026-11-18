@@ -649,7 +649,7 @@ fn through_member<'a>(j: &'a JointDetail, a: &Arrival) -> Option<&'a Arrival> {
 /// in the joint's member order:
 ///
 /// - an end bolting onto nothing named (no `onto` given or worked out):
-///   the member running through the joint ([`through_member`]), so that
+///   the member running through the joint (`through_member`), so that
 ///   the end's leg bolted is the one lying on it and a turn that lays it
 ///   flat is found (tuning on real towers, 2026-11-18: such ends were left
 ///   with "its axis runs out of the face", measured against the leg that
@@ -658,7 +658,7 @@ fn through_member<'a>(j: &'a JointDetail, a: &Arrival) -> Option<&'a Arrival> {
 ///   axis lies in neither flange's plane of that member (no turn lays it
 ///   flat there: a plan diagonal at a vertical post): a member running
 ///   through the joint in a flange's plane of which its axis lies (the
-///   horizontal running through), if there is one ([`host_in_plane`]).
+///   horizontal running through), if there is one (`host_in_plane`).
 pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
     j.arrivals
