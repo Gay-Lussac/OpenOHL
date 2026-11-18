@@ -16,5 +16,6 @@
 | [0010](0010-version-control.md) | Version control, edit rights and reviews in the project file | Accepted |
 | [0011](0011-license-agpl.md) | Licence (AGPL-3.0-or-later; plugin interface MPL-2.0) | Accepted |
 | [0012](0012-plugin-interface-versions.md) | Plugin interface versions and compatibility | Proposed |
+| [0013](0013-country-server.md) | Country server: store interface, PostgreSQL, working sets, rights and country libraries | Proposed |
 
 Template: copy `0000-template.md`, give it the next number, open a PR.

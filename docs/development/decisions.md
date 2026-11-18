@@ -8,6 +8,49 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (country server, phases 0–2)
+
+**A country server with PostgreSQL started: the decisions written down
+(ADR-0013), a synthetic country to measure on, the session's SQL moving
+behind a store interface** (owner, 2026-11-16: "PostgreSQL is good", the
+plan's recommendations accepted, "Just reduce the synthetic test"; owner,
+2026-11-18: "the rights and roles should be applied to almost every
+element and library", "the single user model should still be saved under
+the current format but the server could use the postgresql as a place to
+store all the models and models element then each model could be exported
+individually in the OHL format from the server"; in active development,
+not approved yet; [ADR-0013](../adr/0013-country-server.md), amendments
+to ADR-0004, 0005, 0008 and 0010, the draft
+[server database](data-model.md#server-database-postgresql--draft)).
+
+- **Two modes, one session**: the desktop keeps the single-file `.ohl`
+  (schema 6, unchanged — files written before and after the store
+  interface are compared dump against dump); a server keeps every model
+  and model element in PostgreSQL; any one model exports as a standalone
+  `.ohl` (rights-filtered, the *export* permission, audited).
+- **One writer**, each command one transaction; the line model of the
+  network whole in the server's memory, the heavy parts (LiDAR, terrain,
+  structure types' models, results) streamed and cached within bounds.
+- **Working set and context**: whole routes, a part of a route (station
+  range or structure A to B) or an area on the map, always snapped out to
+  whole tension sections; the rest streamed as light, read-only tiles.
+- **Computations** on the working set plus what touches it, each check by
+  its own distance; a neighbour not pulled in makes a check *not all
+  checked*, never a pass.
+- **Rights and roles on almost every element and library**: roles are
+  named sets of permissions (see, edit, create, delete, review, export,
+  lock, request, manage rights); assignments give a role to a user or
+  group on a scope (network, region, line, route or part, element kind,
+  object, library kind, file or entry); default deny, union of grants,
+  *see* needed for the rest, an explicit deny by a network admin
+  overrides. Derived data (tiles, caches, indexes) follows its sources.
+  The desktop file keeps today's three roles.
+- **Country libraries**: locks per kind or file, maintainers (role
+  assignments), library reviews, requests that may be refused, releases;
+  built lines pinned, designs in progress following the latest.
+- **Measured first**: a synthetic country of the owner's size before any
+  phase that changes the session (phases 1 and 2 follow in this round).
+
 ## 2026-11-18 (second round)
 
 **ASCE 10-97, the default member check, moved out of the core into a

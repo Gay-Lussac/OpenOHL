@@ -32,3 +32,26 @@ Several users must be able to work on one project at the same time, like players
 `ohl-server`: one authority thread owns the session; clients join with an invitation (address, access code, certificate fingerprint), receive a consistent copy of the project file (`VACUUM INTO`), and replay the broadcast operations with the same session code, checking the log sequence numbers (a mismatch: join again). Users known to the project join only with a personal invitation (its code derived from the server's secret and the name). Not yet: optimistic prediction (edits wait for the answer), interest management (the whole project is copied), the WebSocket fallback for the desktop client, OIDC.
 
 Web client (2026-10): an optional HTTPS listener (same self-signed certificate; the browser trusts it once, the user compares the fingerprint) serves an embedded HTML/JavaScript client and a WebSocket speaking the same JSON messages (`ClientMsg`/`ServerMsg`, one per text message), checked by the same authority, codes and size limits. A browser keeps no replica: the welcome has `size` 0 and a new `ServerMsg::Scene` follows — the line, its wires solved on the server in one weather case (cached per line revision, one solve at a time) — and again after each edit of the line or its libraries. The protocol number is unchanged: QUIC clients never receive a `Scene`.
+
+## Amendment (2026-11-18): country server
+
+[ADR-0013](0013-country-server.md), in active development (not approved
+yet):
+
+- The authority owns a session over a **store** (PostgreSQL on a country
+  server, SQLite on a desktop server and alone); still **one writer**, one
+  order, each command one transaction committed before it is broadcast.
+- **Interest management** is built as working sets and context tiles: a
+  client holds the routes it picked (full, editable) and light tiles around
+  its camera; it keeps a partial replica fed by the operations that touch
+  what it holds, with a heartbeat carrying the current `seq` (protocol 3).
+  A joining desktop no longer gets a copy of the whole project.
+- **Roles and permissions** are detailed: named roles (shipped: viewer,
+  designer, checker, library maintainer, line admin, network admin) of
+  permissions (see, edit, create, delete, review, export, lock, request,
+  manage rights), assigned to users or groups on a scope — almost every
+  element kind and every library kind is a scope; default deny; an
+  explicit deny overrides grants; one function resolves it for commands
+  and for everything the server sends. A desktop project keeps today's
+  three roles and edit grants.
+- **OIDC/SSO** sign-in becomes needed on a country server.

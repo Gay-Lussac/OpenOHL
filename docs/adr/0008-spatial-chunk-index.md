@@ -16,3 +16,14 @@ Rendering (ADR-0006), partial loading of the project file (ADR-0004) and the ser
 - The renderer and the server stream by tile from the start; level-of-detail data (simplified terrain, point subsets, structure LODs) will be stored per tile of the same grid.
 - Bounds are those of the model (attachment points), not of a solved weather case: callers looking for swung wires grow the query area.
 - Changing the grid size of an existing project needs a re-index (cheap: computed from the model).
+
+## Amendment (2026-11-18): one grid for a network
+
+[ADR-0013](0013-country-server.md), in active development (not approved
+yet): a country server has **one grid for the whole network** (size and
+origin in `net_meta`), so a tile means the same thing to every line. Its
+`spatial` table keeps the tile key (B-tree, as here: streaming and interest
+by tile) and adds a PostGIS geometry with a GiST index for polygons
+(regions, rights, reach queries). Every log entry names the tiles and lines
+it touched, so the operation stream is filtered by interest and a client
+catches up on its tiles. A project file's index is unchanged.

@@ -221,3 +221,22 @@ working state above:
 
 The server protocol is version 2: requests and broadcasts carry the line,
 and soft locks are per line.
+
+## Amendment (2026-11-18): versions on a country server
+
+[ADR-0013](0013-country-server.md), in active development (not approved
+yet):
+
+- On a server the project lines are called **branches**, so that *line*
+  means a design unit; one protected `main` for the whole network,
+  designers work on branches over their working set, kept as differences
+  (schema 6 already).
+- **Trees split** into a tree of trees (by line, kind, tile bucket) so that
+  a commit costs what changed, as the Consequences above foresaw; old flat
+  trees still read (a tree version field).
+- A merge (or bring in) that would break another line's connection at a
+  shared tower is a **conflict**, never applied.
+- **Country libraries** are released as revisions of the library (each
+  release a tag); built lines pin entry versions, designs in progress
+  follow the latest.
+- A project file keeps this record's storage unchanged.
