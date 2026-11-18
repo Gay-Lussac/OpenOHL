@@ -533,8 +533,6 @@ mod pole_extension_tests;
 #[cfg(test)]
 mod prescribed_tests;
 #[cfg(test)]
-mod sia263_tests;
-#[cfg(test)]
 mod spring_tests;
 #[cfg(test)]
 mod stabilise_tests;

@@ -22,7 +22,7 @@
 #
 # Each application holds its programs (OHL-Design also OHL-Structure and
 # ohl, so it finds them beside itself), the shipped libraries, the
-# examples, the manual (the built book, which Help and the windows' user
+# examples, the bundled design-code plugins (plugins/codes), the manual (the built book, which Help and the windows' user
 # guide buttons open, and its Markdown sources) and the licence. Signed ad hoc only (no Apple
 # developer certificate): on another Mac the first start needs
 # right-click > Open, or System Settings > Privacy & Security > Open
@@ -120,6 +120,28 @@ for b in ohl-design ohl-structure ohl; do
     [ -x "$BIN/$b" ] || { echo "not built: $BIN/$b (run without --no-build)" >&2; exit 1; }
 done
 
+# The design codes bundled as plugins (2026-11-18: SIA 263:2013), built
+# for WebAssembly and shipped as plugins/codes/<name> (the manifest and
+# its entry file, at the path the manifest names): the programs find them
+# there beside themselves before any of the user's, and say at start when
+# one does not load (never another code in its place).
+BUNDLED_PLUGINS="sia263"
+rustup target list --installed 2> /dev/null | grep -qx wasm32-wasip2 || {
+    echo "the WebAssembly target is not installed: rustup target add wasm32-wasip2" >&2
+    exit 2
+}
+PLUGINS="$STAGE/plugins"
+for p in $BUNDLED_PLUGINS; do
+    if [ "$BUILD" = 1 ]; then
+        (cd "plugins/codes/$p" && env -u CARGO_TARGET_DIR cargo build --release --locked --target wasm32-wasip2)
+    fi
+    entry=$(sed -n 's/^entry = "\(.*\)"/\1/p' "plugins/codes/$p/ohl-plugin.toml")
+    [ -f "plugins/codes/$p/$entry" ] || { echo "not built: plugins/codes/$p/$entry" >&2; exit 1; }
+    mkdir -p "$PLUGINS/codes/$p/$(dirname "$entry")"
+    cp "plugins/codes/$p/ohl-plugin.toml" "$PLUGINS/codes/$p/"
+    cp "plugins/codes/$p/$entry" "$PLUGINS/codes/$p/$entry"
+done
+
 # The manual as the applications open it (Help, the windows' user guide
 # buttons): the book built, offline.
 BOOK="$STAGE/book"
@@ -160,11 +182,12 @@ bundle() { # "OHL-Design" org.openohl.design ohl-design icon.svg [more programsâ
     # What the programs look for beside themselves (libraries, examples,
     # the manual): kept in Resources, linked from MacOS where they look.
     cp -R libraries examples "$app/Contents/Resources/"
+    cp -R "$PLUGINS" "$app/Contents/Resources/plugins"
     mkdir -p "$app/Contents/Resources/docs"
     cp -R docs/user-guide docs/tutorial docs/theory docs/images "$app/Contents/Resources/docs/" 2> /dev/null || true
     cp -R "$BOOK" "$app/Contents/Resources/book"
     cp LICENSE "$app/Contents/Resources/"
-    for d in libraries examples docs book; do
+    for d in libraries examples docs book plugins; do
         ln -s "../Resources/$d" "$app/Contents/MacOS/$d"
     done
     cat > "$app/Contents/Info.plist" << EOF
@@ -208,6 +231,7 @@ CLI="$STAGE/$NAME-cli"
 mkdir -p "$CLI"
 cp "$BIN/ohl" LICENSE README.md "$CLI/"
 cp -R examples libraries "$CLI/"
+cp -R "$PLUGINS" "$CLI/plugins"
 sign "$CLI/ohl"
 tar -czf "$DIST/$NAME-cli.tar.gz" -C "$STAGE" "$NAME-cli"
 

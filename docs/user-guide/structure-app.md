@@ -1098,8 +1098,10 @@ its list — from its own side:
   end first): the same `[[connection]]` data the joints show and edit, so
   bolts, gauges, pitch, holes set here are the joint's, and the reverse;
   the bolt layout form and presets as in Joint details;
-- its **resistance worked out live** (ASCE 10-97, as the check works it
-  out): the tension and compression capacities and what governs each
+- its **resistance worked out live** (by the structure's design code,
+  as the check works it out: ASCE 10-97; a plugin's method — SIA
+  263:2013, the bundled plugin `sia263`, since 2026-11-18 — the plugin's
+  capacities, its title naming it; a plugin without capacities says why): the tension and compression capacities and what governs each
   (the net section, the bolts' shear or bearing at an end, KL/r), KL/r,
   a slenderness beyond its class's limit, where each end's conditions
   come from and what was assumed — recomputed on every change; and the

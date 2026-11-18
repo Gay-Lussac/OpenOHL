@@ -4514,6 +4514,7 @@ dependencies = [
  "ohl-electrical",
  "ohl-line",
  "ohl-loads",
+ "ohl-member-check",
  "ohl-sagtension",
  "ohl-sections",
  "ohl-spotting",

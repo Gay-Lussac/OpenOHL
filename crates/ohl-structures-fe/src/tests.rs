@@ -822,9 +822,8 @@ fn portal(section: &str, extra: &str) -> String {
 /// The clauses not covered, named on the members they apply to
 /// (2026-11-08): the portal's columns (compressed frames) of an I section
 /// under ASCE 10-97 name the effective widths, the amplification, the
-/// lateral-torsional buckling and the shear; under SIA 263 the shear only
-/// (its stability check takes the rest); two angles back to back as
-/// trusses name their stitch bolts (ASCE 10-97) or battens (SIA 263);
+/// lateral-torsional buckling and the shear; two angles back to back as
+/// trusses name their stitch bolts (ASCE 10-97; SIA 263's in its plugin);
 /// a compression resistance given on the member covers the compression
 /// clauses.
 #[test]
@@ -859,12 +858,16 @@ fn clauses_not_covered_are_named_on_the_members() {
         );
     }
     assert!(crate::check::not_safe(&g));
+    // SIA 263 is its bundled plugin's (2026-11-18; its clauses there:
+    // ohl-member-check's tests): the core checks no member by another
+    // code in its place.
     let (m, u) = run(&portal("I200", "capacity = \"sia263-2013\"\n"));
     let g = governs(&m, &u, "c2");
     assert!(
-        g.contains("(SIA 263 5.1.4, 5.1.7)") && !g.contains("ASCE"),
+        g.starts_with(crate::check::PLUGIN_NOT_RUN) && !g.contains("ASCE"),
         "{g}"
     );
+    assert!(u.iter().all(|x| x.usage.is_none()));
     // Two angles back to back as trusses: a two-bar truss, one compressed.
     let truss = |extra: &str, given: &str| {
         format!(
@@ -887,8 +890,6 @@ fn clauses_not_covered_are_named_on_the_members() {
         !governs(&m, &u, "tie").contains("3.11"),
         "in tension: not said"
     );
-    let (m, u) = run(&truss("capacity = \"sia263-2013\"\n", ""));
-    assert!(governs(&m, &u, "a").contains("(SIA 263 5.5)"));
     let (m, u) = run(&truss("", "capacity_compression = \"50 kN\"\n"));
     assert!(
         !governs(&m, &u, "a").contains("3.11"),

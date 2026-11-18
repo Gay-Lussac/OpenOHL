@@ -2,8 +2,9 @@
 
 Implemented in `crates/ohl-structures-fe/src/member_ends.rs`
 (`worked_planes`, `link_continuous`, `continuous_problem`) and
-`crates/ohl-structures-fe/src/asce10.rs` / `sia263.rs` (`end_bolts`,
-`onto_leg`, each member end's connection check), with the data of
+`crates/ohl-structures-fe/src/asce10.rs` (`end_bolts`, `onto_leg`, each
+member end's connection check; SIA 263's in its bundled plugin since
+2026-11-18, `plugins/codes/sia263`, the same rules), with the data of
 `crates/ohl-structures/src/connections.rs` (`Face`, `TypeSplice`,
 `ConnectionKind::Continuous`). Built, in active development (not approved
 yet; [proposal](../development/joint-details.md#lap-joints-double-covers-continuous-members-proposal-2026-11-05));

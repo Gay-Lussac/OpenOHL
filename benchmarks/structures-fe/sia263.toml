@@ -1,0 +1,148 @@
+# SIA 263:2013 member capacities (the bundled plugin sia263, moved out of
+# the core on 2026-11-18; a model's capacity = "sia263-2013" names its
+# method), run through the plugin as a structure's check runs it, on
+# invented single bars against values computed by hand from the published
+# formulas of SIA 263:2013, Construction en acier (Swiss Society of
+# Engineers and Architects): flexural buckling by curve d (formula 8,
+# Table 8; a section without a library profile: curve d and class 3,
+# assumed and said), the design values with γ_M1 = 1.05 (4.1.3), the
+# gross section in tension (38). Each bar: 10 cm2, iy = iz = 50 cm4,
+# i_min = 20 cm4 (r_v = 1.414 cm), E = 210 GPa, pinned at a, held across
+# at b, loaded along it at b, no bolts given (the connection not checked:
+# said NOT ON THE SAFE SIDE in what governs); first order. The usage is the
+# force over the capacity (strength factor 1). Values evaluated in double
+# precision (chi = 1/(phi + sqrt(phi^2 - lb^2)), phi = 0.5 (1 + 0.76 (lb -
+# 0.2) + lb^2), lb = (L/r)/(pi sqrt(E/fy))). They run only where the
+# plugin is built (the full check builds it; packages ship it).
+
+[[case]]
+id = "sia263-001"
+title = "Compression, concentric, L/r_v 212 (curve d): N_K,Rd = chi f_y A / gamma_M1 about the minor axis"
+calculation = "structures.fe"
+reference = "SIA 263:2013, Construction en acier (SIA), formulas (7) and (8), Table 8, evaluated by hand"
+notes = "L = 3 m, fy = 355 MPa: lambda_K = 212.1320 about v, lambda_bar = 2.776265, N_K,Rd = 34.19956 kN; 20 kN"
+max_seconds = 5.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "sia263-2013"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["3 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "none"
+end_restraint = "none"
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.58480279540064606, rel_tol = 1e-9 }
+
+[[case]]
+id = "sia263-002"
+title = "Compression, concentric, L/r_v 106 (curve d), S 235"
+calculation = "structures.fe"
+reference = "SIA 263:2013, Construction en acier (SIA), formulas (7) and (8), Table 8, evaluated by hand"
+notes = "L = 1.5 m, fy = 235 MPa: lambda_K = 106.0660 about v, lambda_bar = 1.129408, N_K,Rd = 90.82097 kN; 20 kN"
+max_seconds = 5.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "sia263-2013"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "235 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "none"
+end_restraint = "none"
+[[load]]
+node = "b"
+force = ["-20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.22021347125792323, rel_tol = 1e-9 }
+
+[[case]]
+id = "sia263-003"
+title = "Tension without bolts: the gross section (38), f_y A / gamma_M1"
+calculation = "structures.fe"
+reference = "SIA 263:2013, Construction en acier (SIA), formula (38), evaluated by hand"
+notes = "fy = 355 MPa, A = 10 cm2: N_Rd = 338.0952 kN; 20 kN"
+max_seconds = 5.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "sia263-2013"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "10 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["3 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+length_ratios = [1, 1, 1]
+end_eccentricity = "none"
+end_restraint = "none"
+[[load]]
+node = "b"
+force = ["20 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.059154929577464786, rel_tol = 1e-9 }

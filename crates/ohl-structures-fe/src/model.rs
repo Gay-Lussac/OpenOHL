@@ -816,9 +816,6 @@ pub enum CapacityMethod {
     /// ASCE 10-97 (`"asce10-97"`, the default; [`crate::asce10`]).
     #[default]
     Asce10,
-    /// SIA 263:2013 (`"sia263-2013"`; [`crate::sia263`]): design values
-    /// with γ_M (owner 2026-11-03).
-    Sia263,
     /// The simple check (`"simple"`): Euler buckling and gross yield —
     /// not a design code, unsafe compared with design codes.
     Simple,
@@ -829,22 +826,25 @@ impl CapacityMethod {
     pub fn as_str(self) -> &'static str {
         match self {
             CapacityMethod::Asce10 => crate::asce10::NAME,
-            CapacityMethod::Sia263 => crate::sia263::NAME,
             CapacityMethod::Simple => "simple",
         }
     }
 
-    /// The method of a name in files.
+    /// The core's method of a name in files (a bundled plugin's method by
+    /// its old name, `sia263-2013`, is [`PluginMethod::parse`]'s).
     pub fn parse(name: &str) -> Result<Self, String> {
         match name.trim() {
             crate::asce10::NAME => Ok(CapacityMethod::Asce10),
-            crate::sia263::NAME => Ok(CapacityMethod::Sia263),
             "simple" => Ok(CapacityMethod::Simple),
             other => Err(format!(
                 "capacity \"{other}\": {} (default), {}, simple, or a plugin's method \
                  (plugin:<plugin>/<method>)",
                 crate::asce10::NAME,
-                crate::sia263::NAME
+                BUNDLED_ALIASES
+                    .iter()
+                    .map(|a| a.0)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )),
         }
     }
@@ -905,6 +905,13 @@ pub struct Model {
     /// not checked ([`crate::check::PLUGIN_NOT_RUN`]) — never by another
     /// method in its place.
     pub capacity_plugin: Option<PluginMethod>,
+    /// Per member, the compression the plugin's method resists
+    /// ([`Model::capacity_plugin`]; N, none: it gives none), asked by the
+    /// runner that found the plugin before any solve (2026-11-18): the
+    /// solve's cap on a tension-only member's compression
+    /// ([`crate::check::design_compression`]), as the core's own methods
+    /// give theirs. Empty: not asked (the Euler load alone caps).
+    pub method_compression: Vec<Option<f64>>,
 }
 
 /// A member-check method of a plugin, as a file names it.
@@ -916,20 +923,41 @@ pub struct PluginMethod {
     pub method: String,
     /// Where the plugin is installed, once a runner found it.
     pub dir: Option<std::path::PathBuf>,
+    /// The structure's parameter file for the plugin, once a runner
+    /// found it (`Plugins/<plugin>.toml` beside the structure, 2026-11-18):
+    /// its path and text; none: no file (the method's own values).
+    pub parameters: Option<(std::path::PathBuf, String)>,
 }
+
+/// The names of `[analysis] capacity` that were the core's own methods
+/// and are now methods of plugins bundled with OpenOHL (2026-11-18, owner
+/// 2026-11-17: the codes move out of the core, files keep reading
+/// unchanged): (name in files, plugin, method). Nothing is rewritten; a
+/// file keeps its name and its version.
+pub const BUNDLED_ALIASES: &[(&str, &str, &str)] = &[("sia263-2013", "sia263", "sia263-2013")];
 
 impl PluginMethod {
     /// What starts a plugin's method in `[analysis] capacity`.
     pub const PREFIX: &'static str = "plugin:";
 
-    /// `plugin:<plugin>/<method>` read (none: not a plugin's method).
+    /// `plugin:<plugin>/<method>` read, or a name of [`BUNDLED_ALIASES`]
+    /// (none: not a plugin's method).
     pub fn parse(text: &str) -> Option<Result<Self, String>> {
+        if let Some((_, plugin, method)) = BUNDLED_ALIASES.iter().find(|a| a.0 == text.trim()) {
+            return Some(Ok(Self {
+                plugin: (*plugin).to_owned(),
+                method: (*method).to_owned(),
+                dir: None,
+                parameters: None,
+            }));
+        }
         let rest = text.strip_prefix(Self::PREFIX)?;
         Some(match rest.split_once('/') {
             Some((p, m)) if !p.trim().is_empty() && !m.trim().is_empty() => Ok(Self {
                 plugin: p.trim().to_owned(),
                 method: m.trim().to_owned(),
                 dir: None,
+                parameters: None,
             }),
             _ => Err(format!(
                 "capacity \"{text}\": a plugin's method is written plugin:<plugin>/<method>"
@@ -937,9 +965,22 @@ impl PluginMethod {
         })
     }
 
-    /// As a file names it.
+    /// As a file names it (a bundled plugin's method by its old name,
+    /// [`BUNDLED_ALIASES`]).
     pub fn name(&self) -> String {
-        format!("{}{}/{}", Self::PREFIX, self.plugin, self.method)
+        match self.alias() {
+            Some(a) => a.to_owned(),
+            None => format!("{}{}/{}", Self::PREFIX, self.plugin, self.method),
+        }
+    }
+
+    /// The old name of a bundled plugin's method ([`BUNDLED_ALIASES`];
+    /// none: another plugin's).
+    pub fn alias(&self) -> Option<&'static str> {
+        BUNDLED_ALIASES
+            .iter()
+            .find(|a| a.1 == self.plugin && a.2 == self.method)
+            .map(|a| a.0)
     }
 }
 
@@ -1265,6 +1306,7 @@ impl Model {
             unlinked_points: Vec::new(),
             joint_use: JointUse::default(),
             capacity_plugin,
+            method_compression: Vec::new(),
         };
         model.check()?;
         Ok(model)

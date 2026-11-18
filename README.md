@@ -10,7 +10,7 @@ An open-source, modular set of desktop applications and engines for designing an
 
 **Names:** OpenOHL is the project; **OHL-Design** is the line application (sag-tension, clearances, line layout), **OHL-Structure** the structure application (structures and their loading) and `ohl` the command line. The launchers are `Start OHL-Design.command` and `Start OHL-Structure.command`.
 
-OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open and documented in a theory manual; validation cases with reference results check them (274 cases on 2026-11-17).
+OpenOHL covers terrain and LiDAR, conductor sag-tension, finite-element wire systems, loads and structure checks, clearances, thermal rating, spotting and drawings. Use it from the desktop applications OHL-Design and OHL-Structure, the `ohl` command-line tool or Python, alone or with several people on one project. Every calculation is open and documented in a theory manual; validation cases with reference results check them (277 cases on 2026-11-18).
 
 > **Pre-alpha.** Phases 0 to 3 of the [roadmap](ROADMAP.md) are built and Phases 4 and 5 are built as a base, all in active development (nothing is approved yet). A qualified engineer must check every engineering result.
 

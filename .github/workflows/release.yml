@@ -132,6 +132,8 @@ jobs:
         with:
           ref: ${{ needs.draft.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
       - uses: Swatinem/rust-cache@v2
       # The manual is built into the folder (as the CI's docs job does).
       - uses: taiki-e/install-action@v2
@@ -144,8 +146,13 @@ jobs:
         run: |
           cargo build --release --locked -p ohl-app --no-default-features
           cargo build --release --locked -p ohl-structure-app -p ohl-cli
+          # The design codes bundled as plugins (2026-11-18: SIA 263:2013),
+          # found beside the programs before the user's, an error at start
+          # when one does not load.
+          (cd plugins/codes/sia263 && env -u CARGO_TARGET_DIR cargo build --release --locked --target wasm32-wasip2)
       # One folder with the programs side by side and, beside them, what
-      # they look for there: the libraries, the examples and the manual.
+      # they look for there: the libraries, the examples, the bundled
+      # plugins and the manual.
       # The archive is this folder; the installer installs its contents.
       - name: Stage
         shell: bash
@@ -157,6 +164,14 @@ jobs:
           done
           cp LICENSE README.md "$STAGE/"
           cp -r examples libraries "$STAGE/"
+          # The bundled plugins as plugins/codes/<name>: the manifest and
+          # its entry file at the path the manifest names.
+          for p in sia263; do
+            entry=$(sed -n 's/^entry = "\(.*\)"/\1/p' "plugins/codes/$p/ohl-plugin.toml")
+            mkdir -p "$STAGE/plugins/codes/$p/$(dirname "$entry")"
+            cp "plugins/codes/$p/ohl-plugin.toml" "$STAGE/plugins/codes/$p/"
+            cp "plugins/codes/$p/$entry" "$STAGE/plugins/codes/$p/$entry"
+          done
           cp -r docs/user-guide docs/tutorial docs/theory docs/images "$STAGE/docs/"
           # The manual as the applications open it (Help, the windows'
           # user guide buttons): the book built, offline.

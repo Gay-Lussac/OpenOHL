@@ -1,4 +1,4 @@
-// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL ontributors.
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
@@ -69,14 +69,21 @@ pub const SIMPLE: &str = "simple check (Euler buckling, gross yield): not a desi
 /// `usage`), or [`SIMPLE`].
 pub fn capacity_note(model: &Model, usage: &[MemberUsage]) -> String {
     let mut text = capacity_words(model, usage);
+    text.push_str(&shifted_note(usage));
+    text
+}
+
+/// The members with eccentric ends, counted, for a capacity note ("" none).
+pub fn shifted_note(usage: &[MemberUsage]) -> String {
     let shifted = usage.iter().filter(|u| u.governs.contains(SHIFTED)).count();
     if shifted > 0 {
-        text.push_str(&format!(
+        format!(
             "; {shifted} member(s) with eccentric ends (\"{SHIFTED} …]\": the moment of a shift \
              in the frames at the joint, not in an axial check)"
-        ));
+        )
+    } else {
+        String::new()
     }
-    text
 }
 
 fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
@@ -90,52 +97,53 @@ fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
     }
     match model.analysis.capacity {
         CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
-        CapacityMethod::Asce10 | CapacityMethod::Sia263 => {
-            let assumed = usage.iter().filter(|u| u.governs.contains(ASSUMED)).count();
-            let simple = usage
-                .iter()
-                .filter(|u| u.governs.contains(NO_YIELD))
-                .count();
-            let mut text = if model.analysis.capacity == CapacityMethod::Sia263 {
-                format!(
-                    "member capacities: {} (Construction en acier; design values with γ_M1 {}, \
-                     γ_M2 {})",
-                    crate::sia263::TITLE,
-                    crate::sia263::GAMMA_M1,
-                    crate::sia263::GAMMA_M2
-                )
-            } else {
+        CapacityMethod::Asce10 => {
+            let mut text =
                 "member capacities: ASCE 10-97 (Design of Latticed Steel Transmission Structures)"
-                    .to_owned()
-            };
-            if assumed > 0 {
-                text.push_str(&format!(
-                    "; {assumed} member(s) with data assumed on the safe side (\"{ASSUMED} …]\" in \
-                     what governs)"
-                ));
-            }
-            let not_safe = usage.iter().filter(|u| not_safe(&u.governs)).count();
-            if not_safe > 0 {
-                text.push_str(&format!(
-                    "; {not_safe} member(s) NOT ON THE SAFE SIDE: part of their check not done \
-                     (\"{NOT_SAFE} …]\" in what governs says which; their usage may be too low)"
-                ));
-            }
-            let joints = usage.iter().filter(|u| u.governs.contains(JOINTS)).count();
-            if joints > 0 {
-                text.push_str(&format!(
-                    "; {joints} member(s) with end conditions from their connections (\"{JOINTS} \
-                     …]\")"
-                ));
-            }
-            if simple > 0 {
-                text.push_str(&format!(
-                    "; {simple} member(s) without a yield strength: {SIMPLE}"
-                ));
-            }
+                    .to_owned();
+            text.push_str(&marks_note(usage));
             text
         }
     }
+}
+
+/// What the marks in what governs the members say, counted, for a design
+/// code's note (its own or a plugin's; 2026-11-18: one wording for
+/// both): the members with data assumed on the safe side, not on the safe
+/// side, with end conditions from their connections, and without a yield
+/// strength; "" none.
+pub fn marks_note(usage: &[MemberUsage]) -> String {
+    let mut text = String::new();
+    let assumed = usage.iter().filter(|u| u.governs.contains(ASSUMED)).count();
+    let simple = usage
+        .iter()
+        .filter(|u| u.governs.contains(NO_YIELD))
+        .count();
+    if assumed > 0 {
+        text.push_str(&format!(
+            "; {assumed} member(s) with data assumed on the safe side (\"{ASSUMED} …]\" in what \
+             governs)"
+        ));
+    }
+    let not_safe = usage.iter().filter(|u| not_safe(&u.governs)).count();
+    if not_safe > 0 {
+        text.push_str(&format!(
+            "; {not_safe} member(s) NOT ON THE SAFE SIDE: part of their check not done \
+             (\"{NOT_SAFE} …]\" in what governs says which; their usage may be too low)"
+        ));
+    }
+    let joints = usage.iter().filter(|u| u.governs.contains(JOINTS)).count();
+    if joints > 0 {
+        text.push_str(&format!(
+            "; {joints} member(s) with end conditions from their connections (\"{JOINTS} …]\")"
+        ));
+    }
+    if simple > 0 {
+        text.push_str(&format!(
+            "; {simple} member(s) without a yield strength: {SIMPLE}"
+        ));
+    }
+    text
 }
 
 /// The mark before what a capacity method assumed for a member's missing
@@ -248,9 +256,11 @@ pub fn moments_along(f: &crate::solve::MemberForces) -> [f64; 2] {
 
 /// The compression a member resists by its design (N): its
 /// `capacity_compression` given, else its section's allowable
-/// compression, else the model's capacity method's (ASCE 10-97 or SIA
-/// 263, its crossing partner taken as not bracing it: the lower); none
-/// with the simple check or without a yield strength.
+/// compression, else the model's capacity method's (ASCE 10-97, its
+/// crossing partner taken as not bracing it: the lower; a plugin's method:
+/// the compression capacity its runner asked of the plugin,
+/// [`Model::method_compression`], 2026-11-18); none with the simple check
+/// or without a yield strength.
 pub fn design_compression(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
     let s = &model.sections[m.section];
@@ -258,12 +268,13 @@ pub fn design_compression(model: &Model, member: usize) -> Option<f64> {
         return Some(c);
     }
     s.yield_strength?;
+    // A plugin's method: its own compression, as its runner asked it
+    // ([`Model::method_compression`]) — never another code's in its place.
+    if model.capacity_plugin.is_some() {
+        return model.method_compression.get(member).copied().flatten();
+    }
     match model.analysis.capacity {
         CapacityMethod::Asce10 => crate::asce10::capacity(model, member, Some(false))
-            .compression
-            .map(|c| c.0),
-        CapacityMethod::Sia263 => crate::sia263::capacity(model, member, Some(false))
-            .0
             .compression
             .map(|c| c.0),
         CapacityMethod::Simple => None,
@@ -989,17 +1000,11 @@ fn usage_of(
                 .design
                 .crossing
                 .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
-            let mut stability = None;
             let asce = match given {
                 Some(g) => Some(g),
                 None if s.yield_strength.is_none() => None,
                 None => match model.analysis.capacity {
                     CapacityMethod::Asce10 => Some(crate::asce10::capacity(model, idx, partner)),
-                    CapacityMethod::Sia263 => {
-                        let (c, st) = crate::sia263::capacity(model, idx, partner);
-                        stability = st;
-                        Some(c)
-                    }
                     CapacityMethod::Simple => None,
                 },
             };
@@ -1160,54 +1165,6 @@ fn usage_of(
             if !not_safe_notes.is_empty() {
                 suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
             }
-            // SIA 263: compression with the bending of an eccentric
-            // connection, class 4 and frames by the stability check
-            // (formulas 50, 62, 63), the larger of it and the axial one
-            // (the connection's).
-            if let Some(st) = &stability {
-                let frame =
-                    m.is_frame() && !(axial_member(m, s) && !model.analysis.single_angle_moments);
-                let given_cap = if n < 0.0 {
-                    m.capacity_compression.is_some()
-                } else {
-                    m.capacity_tension.is_some()
-                };
-                if !given_cap && (frame || (n < 0.0 && (st.eccentric || st.class4))) {
-                    let moments = if frame {
-                        // A moment larger between the joints: as a uniform
-                        // moment that large (on the safe side).
-                        let mut mm = crate::sia263::frame_moments(st, &f.end_forces);
-                        let [my, mz] = moments_along(f);
-                        for (k, a) in st.axes.iter().enumerate() {
-                            let along = match a.name {
-                                "y" => my,
-                                "z" => mz,
-                                _ => 0.0,
-                            };
-                            if along > mm[k][0].abs().max(mm[k][1].abs()) + 1e-9 {
-                                mm[k] = [along, along];
-                            }
-                        }
-                        mm
-                    } else {
-                        [[0.0; 2]; 2]
-                    };
-                    let (u, words) = st.usage(n, moments, strength);
-                    let (u, words) = match &axial {
-                        Some((ua, wa)) if *ua > u || u.is_nan() && !ua.is_nan() => {
-                            (*ua, wa.clone())
-                        }
-                        _ => (u, words),
-                    };
-                    let mut words = words;
-                    words.push_str(&suffix);
-                    return MemberUsage {
-                        member: idx,
-                        usage: Some(u),
-                        governs: words,
-                    };
-                }
-            }
             let axial = axial.map(|(u, mut words)| {
                 words.push_str(&suffix);
                 (u, words)
@@ -1268,23 +1225,23 @@ fn usage_of(
 
 /// The capacity method's clauses that apply to member `idx` under its
 /// forces `f` but are not covered by the program (2026-11-08): each named,
-/// for the member's `[not on the safe side: …]`. Under ASCE 10-97 and
-/// SIA 263 only (the simple check says it is no design code; a design
-/// code's capacities given are the code's); a resistance given on the
-/// member (`capacity_compression`) covers the compression clauses.
+/// for the member's `[not on the safe side: …]`. Under ASCE 10-97 only
+/// (the simple check says it is no design code; a design code's
+/// capacities given are the code's; SIA 263's are its plugin's since
+/// 2026-11-18); a resistance given on the member (`capacity_compression`)
+/// covers the compression clauses.
 ///
-/// - a compressed tube, channel or I section under ASCE 10-97: its
-///   elements' effective widths (3.9.3) are not applied;
+/// - a compressed tube, channel or I section: its elements' effective
+///   widths (3.9.3) are not applied;
 /// - a compressed built-up member (two angles, a star or cross of angles,
-///   two channels): its stitch bolts or battens (ASCE 10-97 3.11, SIA 263
-///   5.5), each part buckling between them;
-/// - a frame checked with its moments under ASCE 10-97: compression with
-///   bending by the linear sum, without the amplification and C_m (3.12,
-///   3.13); an I section, channel or two channels bent about its major
-///   axis: lateral-torsional buckling (3.14);
-/// - a frame under either: its shear and torsion (ASCE 10-97 3.15, SIA
-///   263 5.1.4, 5.1.7), when the shear reaches 1 % of A·f_y/√3 (the
-///   torsion given with it).
+///   two channels): its stitch bolts (3.11), each part buckling between
+///   them;
+/// - a frame checked with its moments: compression with bending by the
+///   linear sum, without the amplification and C_m (3.12, 3.13); an I
+///   section, channel or two channels bent about its major axis:
+///   lateral-torsional buckling (3.14);
+/// - a frame: its shear and torsion (3.15), when the shear reaches 1 % of
+///   A·f_y/√3 (the torsion given with it).
 ///
 /// Each only above 1 % of the member's capacity where a share can be
 /// worked out (the moments, the shear), as the moments' notes.
@@ -1332,11 +1289,7 @@ fn uncovered_clauses(
             )
         )
     {
-        out.push(if asce {
-            "stitch bolts of the built-up member not checked (ASCE 10-97 3.11)".to_owned()
-        } else {
-            "battens and connectors of the built-up member not checked (SIA 263 5.5)".to_owned()
-        });
+        out.push("stitch bolts of the built-up member not checked (ASCE 10-97 3.11)".to_owned());
     }
     let frame = m.is_frame() && !(axial_member(m, s) && !model.analysis.single_angle_moments);
     if !frame {
@@ -1370,14 +1323,9 @@ fn uncovered_clauses(
         let cap = s.area * fy / 3f64.sqrt();
         if cap > 0.0 && shear / (strength * cap) >= ANGLE_MOMENTS_SAID {
             out.push(format!(
-                "shear {:.1} kN and torsion {:.2} kN m not checked ({})",
+                "shear {:.1} kN and torsion {:.2} kN m not checked (ASCE 10-97 3.15)",
                 shear / 1000.0,
                 torsion / 1000.0,
-                if asce {
-                    "ASCE 10-97 3.15"
-                } else {
-                    "SIA 263 5.1.4, 5.1.7"
-                }
             ));
         }
     }

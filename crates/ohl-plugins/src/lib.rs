@@ -253,6 +253,28 @@ pub mod bolt_distances {
 /// Export name of the optional `bolt-distances` interface of any plugin.
 pub const BOLT_DISTANCES_EXPORT: &str = "ohl:plugin/bolt-distances@0.1.0";
 
+mod member_check_full_bindings {
+    wasmtime::component::bindgen!({
+        world: "member-check-full-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `member-check-full` interface (2026-11-18): a
+/// structure's members with everything OpenOHL's own checks read, the
+/// plugin's parameter file, and what a plugin's method gives for each.
+pub mod member_check_full {
+    pub use super::member_check_full_bindings::exports::ohl::plugin::member_check_full::{
+        Braced, Capacity, CaseForces, CaseResult, Condition, EndBolts, EndConnection, FullInput,
+        FullOutput, LoadCase, Member, MemberBolts, MemberEnd, MemberResult, OntoLeg,
+        ProfileProperties, Section,
+    };
+}
+
+/// Export name of the optional `member-check-full` interface of any
+/// plugin.
+pub const MEMBER_CHECK_FULL_EXPORT: &str = "ohl:plugin/member-check-full@0.1.0";
+
 /// Extension point of plugins checking the members of structures by a
 /// design method (the `member-check` export, 2026-11-11).
 pub const MEMBER_CHECK: &str = "member-check";
@@ -1150,6 +1172,12 @@ pub struct WasmHost {
     linker: Linker<HostState>,
     limits: Limits,
     _ticker: EpochTicker,
+    /// The components compiled by this host, by entry file, with the file's
+    /// time and length when compiled (2026-11-18: a plugin of 400 kB took
+    /// 0.7 s to compile at every call; a file changed is compiled again).
+    compiled: std::sync::Mutex<
+        std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, Component)>,
+    >,
 }
 
 impl WasmHost {
@@ -1171,12 +1199,38 @@ impl WasmHost {
             linker,
             limits,
             _ticker: ticker,
+            compiled: std::sync::Mutex::new(std::collections::HashMap::new()),
         })
     }
 
     /// Limits applied to plugin calls.
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+
+    /// The component of the WebAssembly file `entry`, compiled once per host
+    /// while the file stays the same (its time and length).
+    fn component(&self, entry: &Path) -> Result<Component, PluginError> {
+        let stamp = std::fs::metadata(entry)
+            .ok()
+            .and_then(|m| Some((m.modified().ok()?, m.len())));
+        let compiled = || {
+            self.compiled
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        };
+        if let Some((t, n)) = stamp
+            && let Some((t0, n0, c)) = compiled().get(entry)
+            && *t0 == t
+            && *n0 == n
+        {
+            return Ok(c.clone());
+        }
+        let c = Component::from_file(&self.engine, entry)?;
+        if let Some((t, n)) = stamp {
+            compiled().insert(entry.to_path_buf(), (t, n, c.clone()));
+        }
+        Ok(c)
     }
 
     /// Reads and checks the manifest in `dir` (WebAssembly tier,
@@ -1201,7 +1255,7 @@ impl WasmHost {
             });
         }
         let limits = self.limits.for_manifest(&manifest);
-        let component = Component::from_file(&self.engine, manifest.entry_path())?;
+        let component = self.component(&manifest.entry_path())?;
         // No stdio, environment, file system or network: a fully sandboxed guest.
         let state = HostState {
             wasi: WasiCtxBuilder::new().build(),
@@ -2143,12 +2197,119 @@ impl WasmHost {
                         r.id, u.load_case
                     )));
                 }
-                if !(u.usage.is_finite() && u.usage >= 0.0) {
+                // Infinite: failing (a resistance of nothing, 2026-11-18: as the
+                // core's own plate checks report it).
+                if u.usage.is_nan() || u.usage < 0.0 {
                     return Err(bad(format!(
                         "joint part {}: a usage that is not a number or is negative",
                         r.id
                     )));
                 }
+            }
+        }
+        Ok(Some(given))
+    }
+
+    /// Whether the plugin in `dir` has the `member-check-full` export.
+    pub fn has_member_check_full(&self, dir: &Path) -> Result<bool, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(false);
+        }
+        let p = self.prepare(dir, None)?;
+        Ok(p.component
+            .get_export_index(None, MEMBER_CHECK_FULL_EXPORT)
+            .is_some())
+    }
+
+    /// The parameter template of method `method` of the plugin in `dir`
+    /// (its `member-check-full` export). None: the plugin has no such
+    /// export; `Some(None)`: the method takes no parameters.
+    pub fn member_check_parameters_template(
+        &self,
+        dir: &Path,
+        method: &str,
+    ) -> Result<Option<Option<String>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, MEMBER_CHECK_FULL_EXPORT)? else {
+            return Ok(None);
+        };
+        let export =
+            member_check_full_bindings::MemberCheckFullExport::new(&mut p.store, &instance)
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        export
+            .ohl_plugin_member_check_full()
+            .call_parameters_template(&mut p.store, method)
+            .map(Some)
+            .map_err(|e| classify(e, &p.manifest, "member-check-full", p.limits))
+    }
+
+    /// The members of `input` checked by method `method` of the plugin in
+    /// `dir` through its `member-check-full` export, every member and load
+    /// case in this one call. None: the plugin has no such export (the
+    /// caller then calls `member-check`'s [`WasmHost::check_members`]).
+    /// What comes back is what the plugin gave, by member id: a member of
+    /// `input` without a result, or a load case without one, is for the
+    /// caller to report as not checked, never as passing; a usage may be
+    /// empty (no capacity), infinite or not a number (failing). Errors,
+    /// each naming the plugin: its own error, a result for a member or a
+    /// load case that was not sent or sent twice, a negative usage, a
+    /// capacity that is not a positive number.
+    pub fn check_members_full(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &member_check_full::FullInput,
+    ) -> Result<Option<member_check_full::FullOutput>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, MEMBER_CHECK_FULL_EXPORT)? else {
+            return Ok(None);
+        };
+        let export =
+            member_check_full_bindings::MemberCheckFullExport::new(&mut p.store, &instance)
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_member_check_full()
+            .call_check_members_full(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "member-check-full", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+        let sent: std::collections::HashSet<&str> =
+            input.members.iter().map(|m| m.id.as_str()).collect();
+        let mut seen = std::collections::HashSet::new();
+        for r in &given.results {
+            if !sent.contains(r.id.as_str()) {
+                return Err(bad(format!(
+                    "a result for member {}, which was not sent",
+                    r.id
+                )));
+            }
+            if !seen.insert(r.id.as_str()) {
+                return Err(bad(format!("two results for member {}", r.id)));
+            }
+            let mut cases = std::collections::HashSet::new();
+            for u in &r.cases {
+                if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
+                    return Err(bad(format!(
+                        "member {}: a result for load case {} (not sent, or given twice)",
+                        r.id, u.load_case
+                    )));
+                }
+                // Infinite or not a number: failing, kept as it is (as the
+                // core's own methods report it); a negative share: wrong.
+                if u.usage.is_some_and(|x| x < 0.0) {
+                    return Err(bad(format!("member {}: a negative usage", r.id)));
+                }
+            }
+            if r.capacities
+                .iter()
+                .any(|c| !(c.value.is_finite() && c.value >= 0.0))
+            {
+                return Err(bad(format!(
+                    "member {}: a capacity that is not a number or is negative",
+                    r.id
+                )));
             }
         }
         Ok(Some(given))

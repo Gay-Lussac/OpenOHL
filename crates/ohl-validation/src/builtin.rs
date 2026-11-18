@@ -1203,6 +1203,11 @@ impl Calculation for StructureFe {
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
         let model = ohl_structures_fe::Model::parse(string_input(inputs, "model")?)?;
+        // A plugin's method (a code bundled as a plugin by its old name,
+        // `sia263-2013`; 2026-11-18): found as a run finds it and called
+        // once, so a code's benchmarks run through its plugin; not found:
+        // refused, never checked by another method.
+        let model = ohl_member_check::find(model, None)?;
         let weight = match inputs.get("self_weight") {
             Some(_) => float_input(inputs, "self_weight")?,
             None => 0.0,
@@ -1212,9 +1217,23 @@ impl Calculation for StructureFe {
             self_weight: weight,
             ..Default::default()
         };
-        let (s, usage) =
+        let (s, mut usage) =
             ohl_structures_fe::analyse(&model, &loads, 1.0, &ohl_structures_fe::default_budget())
                 .map_err(|e| e.to_string())?;
+        if let Some(c) = ohl_member_check::check(
+            &model,
+            &[ohl_member_check::Solved {
+                name: "model",
+                strength: 1.0,
+                self_weight: weight,
+                solution: &s,
+                moved: None,
+            }],
+        )
+        .transpose()?
+        {
+            usage = c.usage.into_iter().next().unwrap_or_default();
+        }
         let dofs = ohl_structures_fe::solve::DOF_NAMES;
         let mut out = Outputs::new();
         for (n, d) in model.nodes.iter().zip(&s.displacements) {

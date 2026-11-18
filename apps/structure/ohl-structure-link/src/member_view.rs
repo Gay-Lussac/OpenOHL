@@ -204,9 +204,14 @@ pub fn elevation(m: &MemberEnds) -> Option<Elevation> {
     })
 }
 
-/// A member's capacities as the ASCE 10-97 check works them out.
+/// A member's capacities as its design code works them out: the core's
+/// ASCE 10-97, or the plugin's method the structure names (a bundled
+/// one: SIA 263:2013; 2026-11-18).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MemberCapacity {
+    /// The code, in words ("ASCE 10-97", "SIA 263:2013 (method sia263-2013
+    /// of the plugin sia263)").
+    pub code: String,
     /// Tension capacity, N, and what governs it.
     pub tension: Option<(f64, String)>,
     /// Compression capacity, N, and what governs it.
@@ -241,14 +246,10 @@ pub fn member_capacity(
         .iter()
         .position(|m| m.id == id)
         .ok_or_else(|| format!("no member {id} in the model"))?;
-    // A plugin's method: its capacities come with a run's results, and
+    // A plugin's method: its own capacities, asked now (no load case);
     // no other code's are shown in their place.
     if let Some(p) = &model.capacity_plugin {
-        return Err(format!(
-            "{RESISTANCE_FROM_PLUGIN} {} after a run (method {}): the member's usage and what \
-             governs are in Results; no other code's resistance is shown in its place",
-            p.plugin, p.method
-        ));
+        return plugin_capacity(&model, p, id);
     }
     let c = ohl_structures_fe::asce10::capacity(&model, idx, None);
     let mut assumed = c.compression_assumed.clone();
@@ -258,6 +259,7 @@ pub fn member_capacity(
         }
     }
     Ok(MemberCapacity {
+        code: "ASCE 10-97".into(),
         tension: c.tension,
         compression: c.compression,
         kl_r: c.kl_r,
@@ -267,8 +269,69 @@ pub fn member_capacity(
     })
 }
 
+/// Member `id`'s capacities by the plugin's method `p` of `model`
+/// (2026-11-18: Member details shows them as the core's): the plugin
+/// asked without a load case (its parameter file not known here: the
+/// method's own values, said). Err ([`RESISTANCE_FROM_PLUGIN`]): the
+/// plugin is not found, failed, or gave nothing for the member — never
+/// another code's resistance in its place.
+fn plugin_capacity(
+    model: &Model,
+    p: &ohl_structures_fe::model::PluginMethod,
+    id: &str,
+) -> Result<MemberCapacity, String> {
+    let from = |why: String| {
+        format!(
+            "{RESISTANCE_FROM_PLUGIN} {} (method {}): {why}; no other code's resistance is \
+             shown in its place",
+            p.plugin, p.method
+        )
+    };
+    let given = ohl_member_check::capacities(model).map_err(from)?;
+    let g = given
+        .iter()
+        .find(|g| g.id == id)
+        .ok_or_else(|| from("nothing for this member: NOT CHECKED, NOT ON THE SAFE SIDE".into()))?;
+    let capacity = |name: &str| {
+        g.capacities
+            .iter()
+            .find(|c| c.0 == name)
+            .map(|c| (c.1, c.2.clone()))
+    };
+    let mut assumed = Vec::new();
+    let mut joints = Vec::new();
+    let mut limit = Vec::new();
+    for n in &g.notes {
+        if let Some(j) = n.strip_prefix("joints: ") {
+            joints.push(j.to_owned());
+        } else if let Some(l) = n.strip_prefix("limit: ") {
+            limit.push(l.to_owned());
+        } else {
+            assumed.push(n.clone());
+        }
+    }
+    if let Some(w) = &g.not_safe {
+        assumed.push(format!("NOT ON THE SAFE SIDE: {w}"));
+    }
+    assumed.push(
+        "the method's own parameters (a parameter file beside the structure, Plugins/<plugin>.toml, \
+         is taken by a run)"
+            .into(),
+    );
+    Ok(MemberCapacity {
+        code: format!("method {} of the plugin {}", p.method, p.plugin),
+        tension: capacity("tension"),
+        compression: capacity("compression"),
+        kl_r: capacity("slenderness").map(|c| c.0),
+        assumed,
+        joints,
+        limit: (!limit.is_empty()).then(|| limit.join("; ")),
+    })
+}
+
 /// How [`member_capacity`]'s message starts when the structure's method
-/// is a plugin's: "resistance: from the plugin after a run".
+/// is a plugin's and gives no resistance: "resistance: from the plugin
+/// …".
 pub const RESISTANCE_FROM_PLUGIN: &str = "resistance: from";
 
 /// The minimum distances of member `idx`'s end `end` in `model`

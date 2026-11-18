@@ -1509,7 +1509,16 @@ pub fn analyse_cases(
 
 /// One case solved, with its solution kept when a plugin checks the
 /// members (for the one call with every case, [`plugin_checked`]).
-pub(crate) type SolvedCase = Result<(CaseResult, Option<ohl_structures_fe::Solution>), String>;
+pub(crate) type SolvedCase = Result<
+    (
+        CaseResult,
+        Option<(
+            ohl_structures_fe::Solution,
+            Option<ohl_structures_fe::Solution>,
+        )>,
+    ),
+    String,
+>;
 
 /// The cases' results with the members checked by the plugin the model's
 /// file names: **one call** for all the solved cases
@@ -1538,7 +1547,8 @@ pub(crate) fn plugin_checked(
                     } else {
                         0.0
                     },
-                    solution: solution.as_ref()?,
+                    solution: &solution.as_ref()?.0,
+                    moved: solution.as_ref()?.1.as_ref(),
                 },
             ))
         })
@@ -1566,7 +1576,9 @@ pub(crate) fn plugin_checked(
                 result
                     .notes
                     .retain(|n| !n.starts_with("member capacities:"));
-                result.notes.push(c.note.clone());
+                result
+                    .notes
+                    .push(c.notes.get(n).cloned().unwrap_or_else(|| c.note.clone()));
                 Ok(result)
             }
             (Ok(_), Some(_), Some(Err(e))) => Err(e.clone()),
@@ -1742,6 +1754,7 @@ fn analyse_one(
                 ohl_structures_fe::refusal_text(model, &e)
             )
         })?;
+    let mut plain = None;
     let (solution, usage) = match &moved {
         None => (solution, usage),
         Some(moved) => {
@@ -1757,6 +1770,7 @@ fn analyse_one(
                  each member's usage the larger of with and without them"
                     .to_owned(),
             );
+            plain = Some(solution);
             (s, ohl_structures_fe::feet::larger_usage(&usage, with))
         }
     };
@@ -1884,7 +1898,15 @@ fn analyse_one(
         plates: Vec::new(),
         climbing,
     };
-    Ok((result, keep.then_some(solution)))
+    // Both solves with foot movements (the plugin takes each member's
+    // larger usage of the two, as the core's methods do): (without, with).
+    Ok((
+        result,
+        keep.then_some(match plain {
+            Some(p) => (p, Some(solution)),
+            None => (solution, None),
+        }),
+    ))
 }
 
 #[cfg(test)]

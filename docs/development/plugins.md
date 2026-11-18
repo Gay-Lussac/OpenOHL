@@ -845,9 +845,10 @@ the interface (host test, CLI test).
 code check should actually be moved out of the core in plugins that can
 access the infos they need. Same as for the rules in the clearances";
 "Go ahead with the interface first once done we'll move the codes into
-plugins".* The core's own methods (ASCE 10-97, SIA 263:2013, the simple
-check) are untouched and stay the default; this is the interface they
-will move behind.
+plugins".* The core's own methods (ASCE 10-97, the simple check) stay
+the default; this is the interface the codes move behind — SIA 263:2013
+moved on 2026-11-18 ([below](#the-full-records-parameters-foot-movements-bundled-codes)),
+ASCE 10-97 follows.
 
 A plugin checks the members of a structure through the optional export
 `member-check` (`crates/ohl-plugins/wit/code.wit`: the
@@ -980,9 +981,11 @@ take their minimum distances from `bolt-distances`
 (`ohl_member_check::joints::bolt_rules`; asked once per different bolt
 and part in a session); without it there are none and the bolt layout
 says **"no minimum distances from <plugin>: …"** and that the layout is
-not checked against them. Member details' live *Resistance* reads
-**"resistance: from <plugin> after a run"** instead of another code's
-values. `ohl_structures_fe::bolt_rules::rules_in` gives none for a model
+not checked against them. Member details' live *Resistance* shows the
+plugin's capacities, asked live without a load case (2026-11-18; before:
+"resistance: from <plugin> after a run"), or **"resistance: from
+<plugin> …"** with why there are none — never another code's values.
+`ohl_structures_fe::bolt_rules::rules_in` gives none for a model
 that names a plugin (the core has none of its rules). A model built from
 a file's text alone does not know its folder: the plugin is looked for
 in `Plugins/` beside the structures opened or run in the session, then
@@ -1013,6 +1016,97 @@ structure); `crates/ohl-cli/tests/structures_fe_capacity.rs`
 (`ohl-structure-app`, `self_sufficient_tests.rs`). They skip when the
 example is not built, and fail instead with `OHL_REQUIRE_PLUGIN_TESTS`
 set.
+
+### The full records, parameters, foot movements, bundled codes
+
+*2026-11-18; built, in active development, not approved yet. Owner,
+2026-11-17: "yes go ahead with your recommendations" — the design codes
+move out of the core into plugins, SIA 263:2013 first.* What the core's
+own check of a member reads is more than `member-check`'s records carry
+(the section's allowable values, the profile's properties, the loads
+along the member, a bowed or kept-active tension-only member, the
+redundant-force check's braced member, the joints' ids and the legs the
+ends bolt onto). Records of a released interface cannot grow, so a
+further optional export carries them:
+
+- `member-check-full` (`code.wit`, found by its export name, its own
+  records): `check-members-full(method, full-input) ->
+  result<full-output, string>` and `parameters-template(method) ->
+  option<string>`. `full-input` is `check-input` with, per member, its
+  frame flag, the capacities given on it (`capacity_tension`,
+  `capacity_compression`), its `section` (id, shape, dimensions, the
+  library's given values, the profile's properties as OpenOHL works
+  them out — area, centroid, I_y, I_z, I_yz, I_u, I_v, the principal
+  angle, I_t, the shear centre, C_w, the elastic and plastic moduli —,
+  area, I's, J, W's, E, G, f_y, f_u, the section's allowable tension,
+  compression and moments), its two `ends` (the joint, the eccentricity
+  and restraint with why, the joint detail with the leg it bolts onto
+  and why its shear planes are so) and per case the forces with
+  `bowed`, `kept-active`, the length, the loads along the member and
+  `braced` (or `braced-why`); and the run's `single-angle-moments`,
+  `tension-compression`, `redundant-share` and **`parameters`**. No load
+  case: the capacities only (Member details, the solve's cap below).
+  Back (`full-output`): the method in words for the run's note and per
+  member its capacities (`tension`, `compression`, `slenderness`), per
+  case a usage that **may be empty** (no capacity: the check says why)
+  **or infinite or not a number** (failing, as the core's own methods
+  report it; the host refuses only a negative one), what governs, notes
+  (`joints: …`, `limit: …` for Member details), not-safe. A plugin with
+  it is called by it instead of `check-members`.
+- **Parameters** (the design-code plugins' mechanism: the user's
+  parameter file, TOML, the plugin's template): the structure's
+  parameter file for a plugin is `Plugins/<plugin>.toml` beside the
+  structure file (`ohl_member_check::parameters`), sent as text; none:
+  the method's own values, said in its note. No file format changes.
+  The joint check and Member details do not know the structure's folder
+  and take the method's own values (said; the SIA 263 plugin says NOT ON
+  THE SAFE SIDE when the file's factors are larger).
+- **Foot movements** (`ohl_member_check::Solved::moved`): a case solved
+  with the structure's measured foot movements is sent twice in the same
+  call — as solved without them and on its moved feet (`<case> (on its
+  moved feet)`) — and each member keeps the larger usage of the two
+  (`ohl_structures_fe::feet::larger_usage`), as the core's own methods;
+  for every plugin, built before or after (no interface change needed).
+  OHL-Structure's run and the line's structure check keep both solves.
+- **The solve's cap** on a tension-only member's compression (its
+  buckling load, capped by its design compression where lower): with a
+  plugin's method, the plugin's own compression capacity, asked once
+  without a load case when the plugin is found
+  (`ohl_member_check::prepare`, `Model::method_compression`;
+  `ohl_structures_fe::check::design_compression`) — before, ASCE 10-97's
+  was taken in its place. Every runner finds the plugin before solving
+  (OHL-Structure, `ohl structures fe`, and the line's `Analyses::load`,
+  so its coupled solves and reference state take it too).
+- **Bundled codes.** `[analysis] capacity = "sia263-2013"` — the old name
+  of the core's method — is an alias of the bundled plugin `sia263`'s
+  method `sia263-2013` (`ohl_structures_fe::model::BUNDLED_ALIASES`;
+  written back by its old name: no file is rewritten, no version
+  raised). A bundled plugin is looked for in OpenOHL's own
+  `plugins/codes/<name>` only (`ohl_member_check::bundled_root`: beside
+  the program or above it — a package's folder, the source tree — else
+  above the current folder), before and instead of any of the user's: no
+  other plugin of that name can take its place. OHL-Design and
+  OHL-Structure check it as they start
+  (`ohl_member_check::check_bundled`): one that does not load is **an
+  error at start**, and every structure naming it is refused with that
+  message — never another code in its place. The packages ship it
+  (`tools/package-macos.sh`, the release workflow): the manifest and its
+  WebAssembly file at the path the manifest names, under `plugins/codes/`
+  beside the programs. The full check builds, lints and tests it
+  (`plugins/codes/*`, its native tests). `simple` stays in the core;
+  ASCE 10-97 (the default) follows in a second round; the pole codes stay
+  in the core until a pole export exists.
+- **Joints of a bundled code** go through `joint-check`: the usage and the
+  governing check are the core's as before; the joint panel shows the
+  governing check only (the interface carries no per-check list) — the
+  core showed every check of the part with its usage.
+- **Interface version.** All of this is additive (a new interface, a new
+  world, optional exports): plugins built against 0.3 load and answer as
+  before; the version stays 0.3 (ADR-0012: additive changes keep it;
+  before 1.0 a raised minor would refuse every plugin built for 0.3).
+- Proof of the move: `crates/ohl-member-check/tests/sia263.rs` (the
+  shipped examples' 2 256 member results, bits and words, against those
+  the core gave), [SIA 263 theory](../theory/sia263.md#validation).
 
 ## Field presets
 

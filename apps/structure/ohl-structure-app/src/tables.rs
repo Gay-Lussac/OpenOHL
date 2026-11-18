@@ -1989,14 +1989,22 @@ impl StructureApp {
                             "SIA 263:2013: buckling curves, section classes, angles bolted by \
                              one leg with their eccentricity, bolts by Table 16; design values \
                              with γM1 1.05 and γM2 1.25 (set the load cases' strength factor to \
-                             1); missing data assumed on the safe side, said per member",
+                             1); missing data assumed on the safe side, said per member. \
+                             The plugin sia263 bundled with OpenOHL (moved out of the core \
+                             on 2026-11-18, the same results); its factors from \
+                             Plugins/sia263.toml beside the structure when there is one",
                         );
                     ui.selectable_value(&mut chosen, "simple".to_owned(), "simple")
                         .on_hover_text(
                             "Simple check (Euler buckling, gross yield): not a design code; \
                              unsafe compared with design codes",
                         );
-                    for (p, m, what) in plugins.iter() {
+                    // A bundled plugin's methods are offered by their old
+                    // names above (sia263-2013).
+                    for (p, m, what) in plugins
+                        .iter()
+                        .filter(|(p, _, _)| !ohl_structure_link::plugin_check::is_bundled(p))
+                    {
                         let name = name_of(p, m);
                         ui.selectable_value(&mut chosen, name.clone(), &name)
                             .on_hover_text(format!(

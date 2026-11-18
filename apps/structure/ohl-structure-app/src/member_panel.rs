@@ -265,7 +265,11 @@ impl StructureApp {
             return;
         }
         ui.group(|ui| {
-            ui.strong("Resistance (ASCE 10-97, worked out live)");
+            let code = match c.as_ref() {
+                Ok(c) => c.code.clone(),
+                Err(_) => String::new(),
+            };
+            ui.strong(format!("Resistance ({code}, worked out live)"));
             if simple {
                 ui.label(
                     egui::RichText::new(
