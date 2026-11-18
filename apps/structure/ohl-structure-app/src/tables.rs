@@ -1982,7 +1982,9 @@ impl StructureApp {
                         .on_hover_text(
                             "ASCE 10-97 (the default): effective slenderness, local buckling, \
                              column curve, bolts and net section from the members' design \
-                             data; missing data assumed on the safe side, said per member",
+                             data; missing data assumed on the safe side, said per member. \
+                             The plugin asce10 bundled with OpenOHL (moved out of the core \
+                             on 2026-11-18, the same results); it takes no parameters",
                         );
                     ui.selectable_value(&mut chosen, "sia263-2013".to_owned(), "sia263-2013")
                         .on_hover_text(

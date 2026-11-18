@@ -505,7 +505,7 @@ method was also compared, privately, with a tower design program's
 capacities on a real line's towers (theory page).
 
 Torsional and torsional-flexural buckling (2026-11-03): the unit test
-`asce10::tests::standard_examples_15_and_16` reproduces the standard's
+the plugin `asce10`'s `tests::standard_examples_15_and_16` (the core's `asce10::tests` until 2026-11-18) reproduces the standard's
 own worked Examples 15 and 16 (Appendix B, 60° angles: r_t 1.33 in,
 r_tf 1.21 in, KL/r_tf 88.8, F_a 26.7 ksi; K'/r_tf 0.878 with mixed ends,
 using the printed inputs). `torsional_buckling_by_profile` checks which

@@ -19,6 +19,35 @@ use ohl_structure_loads::{
 use ohl_structures::{LibraryItem, StructureLibrary, StructureType};
 use ohl_structures_fe::{Loads, Model};
 
+/// The members' usage of `model` under `loads` by its design code (ASCE
+/// 10-97, the default: the bundled plugin asce10's since 2026-11-18),
+/// solved and checked as a run does.
+fn checked(model: &Model, loads: &Loads, strength: f64) -> Vec<ohl_structures_fe::MemberUsage> {
+    use ohl_structure_link::plugin_check;
+    let model = plugin_check::find(model.clone(), Some(&ex().join("Structures"))).unwrap();
+    let (s, _) = ohl_structures_fe::analyse(
+        &model,
+        loads,
+        strength,
+        &ohl_structures_fe::default_budget(),
+    )
+    .unwrap();
+    plugin_check::check(
+        &model,
+        &[plugin_check::Solved {
+            name: "case",
+            strength,
+            self_weight: loads.self_weight,
+            solution: &s,
+            moved: None,
+        }],
+    )
+    .expect("the bundled plugin")
+    .unwrap()
+    .usage
+    .remove(0)
+}
+
 fn ex() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../examples/synthetic-line")
 }
@@ -187,8 +216,8 @@ fn the_table_loads_the_model_as_the_line_run_does() {
             moment: [0.0; 3],
         });
     }
-    let (_, a) = ohl_structures_fe::analyse(&model, &from_table, wind.strength, &budget).unwrap();
-    let (_, b) = ohl_structures_fe::analyse(&model, &direct, wind.strength, &budget).unwrap();
+    let a = checked(&model, &from_table, wind.strength);
+    let b = checked(&model, &direct, wind.strength);
     let worst = |u: &[ohl_structures_fe::MemberUsage]| {
         u.iter().filter_map(|m| m.usage).fold(0.0_f64, f64::max)
     };
@@ -291,7 +320,7 @@ fn the_cases_of_the_table_are_solved_through_the_link() {
             .nodal
             .extend(model.point_loads(p, [f[0], f[1], -f[2]]).unwrap());
     }
-    let (_, b) = ohl_structures_fe::analyse(&model, &direct, 1.0, &budget).unwrap();
+    let b = checked(&model, &direct, 1.0);
     let worst = b.iter().filter_map(|m| m.usage).fold(0.0_f64, f64::max);
     assert!((wind.governing().unwrap().usage.unwrap() - worst).abs() < 1e-9);
     // "body wind" has no areas: its rows are said, only the weight acts.

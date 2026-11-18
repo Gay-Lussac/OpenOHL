@@ -484,8 +484,19 @@ fn example_model_parses() {
     )
     .unwrap();
     assert!(sol.residual < 1e-9);
+    // Its code, ASCE 10-97 (the default), is the bundled plugin asce10's
+    // since 2026-11-18: the core runs none, so no member is checked by
+    // another method in its place (the plugin's usage: ohl-member-check's
+    // tests, the examples' numbers bit for bit).
+    assert!(usage.iter().all(|u| u.usage.is_none()
+        && (u.governs.starts_with(check::PLUGIN_NOT_RUN) || u.governs == check::NOT_CHECKED)));
+    assert!(usage[0].governs.contains("asce10-97"), "{:?}", usage[0]);
+    // The core's own (simple) check of the same solve.
+    let mut simple = m.clone();
+    simple.analysis.capacity = crate::CapacityMethod::Simple;
+    let usage = member_usage(&simple, &sol, 1.0);
     let w = check::worst(&usage).unwrap();
-    assert!(w.usage.unwrap() > 0.0 && w.usage.unwrap() < 1.0, "{w:?}");
+    assert!(w.usage.unwrap() > 0.0, "{w:?}");
     // Bad files are refused with a reason.
     for bad in [
         "[[node]]\nid = \"a\"\npoint = [0, 0, 0]\nsupport = \"glued\"\n",
@@ -819,83 +830,39 @@ fn portal(section: &str, extra: &str) -> String {
     )
 }
 
-/// The clauses not covered, named on the members they apply to
-/// (2026-11-08): the portal's columns (compressed frames) of an I section
-/// under ASCE 10-97 name the effective widths, the amplification, the
-/// lateral-torsional buckling and the shear; two angles back to back as
-/// trusses name their stitch bolts (ASCE 10-97; SIA 263's in its plugin);
-/// a compression resistance given on the member covers the compression
-/// clauses.
+/// The clauses not covered by a design code are its plugin's to name
+/// (2026-11-18: ASCE 10-97's moved with it into the bundled plugin asce10,
+/// tested in ohl-member-check; SIA 263's in sia263): the core checks no
+/// member by a code, its own or another's, in their place — the portal of
+/// I sections by the default and by SIA 263 alike not checked here.
 #[test]
-fn clauses_not_covered_are_named_on_the_members() {
+fn clauses_not_covered_are_the_codes_plugins() {
     let lib = ohl_sections::SectionLibrary::parse(&format!(
         "{LIBRARY}[[section]]\nid = \"I200\"\nshape = \"i_section\"\nmaterial = \"steel\"\n\
-         h = \"200 mm\"\nb = \"100 mm\"\ntw = \"5.6 mm\"\ntf = \"8.5 mm\"\nr = \"12 mm\"\n\
-         [[section]]\nid = \"2L\"\nshape = \"double_angle\"\nmaterial = \"steel\"\n\
-         h = \"60 mm\"\nb = \"60 mm\"\nt = \"6 mm\"\nr = \"8 mm\"\ngap = \"10 mm\"\n"
+         h = \"200 mm\"\nb = \"100 mm\"\ntw = \"5.6 mm\"\ntf = \"8.5 mm\"\nr = \"12 mm\"\n"
     ))
     .unwrap();
-    let run = |text: &str| {
-        let m = Model::parse_with(text, &lib).unwrap();
+    for extra in [
+        "",
+        "capacity = \"asce10-97\"\n",
+        "capacity = \"sia263-2013\"\n",
+    ] {
+        let m = Model::parse_with(&portal("I200", extra), &lib).unwrap();
         let loads = Loads {
             nodal: m.loads.clone(),
             self_weight: 1.0,
             ..Default::default()
         };
         let (_, u) = analyse(&m, &loads, 1.0, &default_budget()).unwrap();
-        (m, u)
-    };
-    let governs = |m: &Model, u: &[MemberUsage], id: &str| {
-        let k = m.members.iter().position(|x| x.id == id).unwrap();
-        u.iter().find(|x| x.member == k).unwrap().governs.clone()
-    };
-    let (m, u) = run(&portal("I200", ""));
-    let g = governs(&m, &u, "c2");
-    for clause in ["3.9.3", "3.12, 3.13", "3.14", "3.15"] {
-        assert!(
-            g.contains(&format!("(ASCE 10-97 {clause})")),
-            "{clause}: {g}"
-        );
+        for x in &u {
+            assert!(
+                x.usage.is_none()
+                    && x.governs.starts_with(crate::check::PLUGIN_NOT_RUN)
+                    && !x.governs.contains("ASCE 10-97 3."),
+                "{extra}: {x:?}"
+            );
+        }
     }
-    assert!(crate::check::not_safe(&g));
-    // SIA 263 is its bundled plugin's (2026-11-18; its clauses there:
-    // ohl-member-check's tests): the core checks no member by another
-    // code in its place.
-    let (m, u) = run(&portal("I200", "capacity = \"sia263-2013\"\n"));
-    let g = governs(&m, &u, "c2");
-    assert!(
-        g.starts_with(crate::check::PLUGIN_NOT_RUN) && !g.contains("ASCE"),
-        "{g}"
-    );
-    assert!(u.iter().all(|x| x.usage.is_none()));
-    // Two angles back to back as trusses: a two-bar truss, one compressed.
-    let truss = |extra: &str, given: &str| {
-        format!(
-            "[analysis]\nnonlinear = false\nself_weight = false\n{extra}\
-             [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
-             [[node]]\nid = \"B\"\npoint = [4, 0, 0]\nsupport = \"pinned\"\n\
-             [[node]]\nid = \"C\"\npoint = [2, 0, 1]\n\
-             [[member]]\nid = \"a\"\nnodes = [\"A\", \"C\"]\nsection = \"2L\"\n{given}\
-             [[member]]\nid = \"b\"\nnodes = [\"B\", \"C\"]\nsection = \"2L\"\n{given}\
-             [[member]]\nid = \"tie\"\nnodes = [\"A\", \"B\"]\nsection = \"2L\"\n\
-             [[load]]\nnode = \"C\"\nforce = [0, 0, \"-10 kN\"]\n"
-        )
-    };
-    let (m, u) = run(&truss("", ""));
-    assert!(
-        governs(&m, &u, "a")
-            .contains("stitch bolts of the built-up member not checked (ASCE 10-97 3.11)")
-    );
-    assert!(
-        !governs(&m, &u, "tie").contains("3.11"),
-        "in tension: not said"
-    );
-    let (m, u) = run(&truss("", "capacity_compression = \"50 kN\"\n"));
-    assert!(
-        !governs(&m, &u, "a").contains("3.11"),
-        "{}",
-        governs(&m, &u, "a")
-    );
 }
 
 /// A member whose section is in the section library gives the same
@@ -926,8 +893,11 @@ fn library_sections_resolve_first() {
         };
         analyse(m, &loads, 1.0, &default_budget()).unwrap()
     };
-    let from_lib = Model::parse_with(&portal("T200", ""), &lib).unwrap();
-    let local = Model::parse(&portal("local", &table)).unwrap();
+    // The core's own (simple) check: a design code's is its plugin's
+    // (2026-11-18).
+    let simple = "capacity = \"simple\"\n";
+    let from_lib = Model::parse_with(&portal("T200", simple), &lib).unwrap();
+    let local = Model::parse(&portal("local", &format!("{simple}{table}"))).unwrap();
     assert!(from_lib.sections[0].profile.is_some() && local.sections[0].profile.is_none());
     assert!(close(from_lib.weight(), local.weight(), 1e-12));
     let ((a, ua), (b, ub)) = (run(&from_lib), run(&local));
@@ -944,15 +914,7 @@ fn library_sections_resolve_first() {
             close(x.usage.unwrap(), y.usage.unwrap(), 1e-9),
             "{x:?} {y:?}"
         );
-        // The library's tube is known to be one: its effective widths
-        // said not applied (2026-11-08); the table's section has no shape.
-        assert_eq!(
-            x.governs.replace(
-                "effective widths of its elements not applied (ASCE 10-97 3.9.3), ",
-                ""
-            ),
-            y.governs
-        );
+        assert_eq!(x.governs, y.governs);
     }
     // A table of the same id: the library's is used.
     let shadowed = table.replace("id = \"local\"", "id = \"T200\"");
@@ -1090,8 +1052,13 @@ fn single_angles_are_checked_axially_by_default() {
         };
         analyse(&m, &loads, 1.0, &default_budget()).unwrap().1
     };
-    let axial = run("L100", "");
-    let both = run("L100", "single_angle_moments = true\n");
+    // The core's own (simple) check makes the same choice; a design
+    // code's plugin too (ohl-member-check's tests).
+    let axial = run("L100", "capacity = \"simple\"\n");
+    let both = run(
+        "L100",
+        "capacity = \"simple\"\nsingle_angle_moments = true\n",
+    );
     for (a, b) in axial.iter().zip(&both) {
         assert!(
             !a.governs.contains("+ My") && b.governs.contains("+ My"),
@@ -1106,7 +1073,7 @@ fn single_angles_are_checked_axially_by_default() {
         );
         assert!(!b.governs.contains("would add"), "{b:?}");
     }
-    let tube = run("T200", "");
+    let tube = run("T200", "capacity = \"simple\"\n");
     assert!(tube.iter().all(|u| u.governs.contains("My")), "{tube:?}");
 }
 
@@ -1151,8 +1118,10 @@ fn the_moment_along_a_member_is_checked() {
             assert!(ends < 1e-6 * w * l * l, "{ends}");
         }
     }
-    // A truss bar with wind on it, put on its joints as halves.
-    let m = Model::from_structure_type_with(&beam("pinned", "truss"), &lib).unwrap();
+    // A truss bar with wind on it, put on its joints as halves (the
+    // core's own check: a design code's is its plugin's, 2026-11-18).
+    let mut m = Model::from_structure_type_with(&beam("pinned", "truss"), &lib).unwrap();
+    m.analysis.capacity = crate::CapacityMethod::Simple;
     let q = 2000.0;
     let total = [0.0, q * l, 0.0];
     let loads = Loads {

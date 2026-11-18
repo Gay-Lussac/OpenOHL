@@ -381,6 +381,24 @@ impl Analyses {
         self.models.get(&(t.id.clone(), own)).map(|m| (m, extended))
     }
 
+    /// Why the plugin of the design code the model of `t` on `extension`
+    /// names was not found or failed (none: found, or no such model):
+    /// that model is then not solved as flexible either (2026-11-18: its
+    /// tension-only members' cap is its code's, never another's).
+    pub(crate) fn plugin_error_of(
+        &self,
+        t: &StructureType,
+        extension: Option<&str>,
+    ) -> Option<&String> {
+        let own = extension
+            .filter(|e| {
+                self.models
+                    .contains_key(&(t.id.clone(), Some((*e).to_owned())))
+            })
+            .map(str::to_owned);
+        self.plugin_errors.get(&(t.id.clone(), own))
+    }
+
     /// The pole of type `id`, when it has one.
     pub(crate) fn pole_of(&self, id: &str) -> Option<&Result<Pole, String>> {
         self.poles.get(id)

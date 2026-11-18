@@ -120,12 +120,13 @@ for b in ohl-design ohl-structure ohl; do
     [ -x "$BIN/$b" ] || { echo "not built: $BIN/$b (run without --no-build)" >&2; exit 1; }
 done
 
-# The design codes bundled as plugins (2026-11-18: SIA 263:2013), built
+# The design codes bundled as plugins (2026-11-18: SIA 263:2013 and ASCE
+# 10-97, the default), built
 # for WebAssembly and shipped as plugins/codes/<name> (the manifest and
 # its entry file, at the path the manifest names): the programs find them
 # there beside themselves before any of the user's, and say at start when
 # one does not load (never another code in its place).
-BUNDLED_PLUGINS="sia263"
+BUNDLED_PLUGINS="asce10 sia263"
 rustup target list --installed 2> /dev/null | grep -qx wasm32-wasip2 || {
     echo "the WebAssembly target is not installed: rustup target add wasm32-wasip2" >&2
     exit 2

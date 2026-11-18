@@ -179,10 +179,14 @@ fn the_example_line_gives_the_same_results_as_before() {
     );
 }
 
+/// 2026-11-18: ASCE 10-97 moved into its bundled plugin — every number
+/// the same (the CSVs compared column by column), only the usage CSV's
+/// notes now name the plugin's method ("… — method asce10-97 of the
+/// plugin asce10"): a new digest (before: 0x0e5e_5589_c259_806e).
 #[test]
 fn the_typed_example_line_gives_the_same_results_as_before() {
     assert_eq!(
         digest("synthetic-line-typed.ohl.json", "typed"),
-        0x0e5e_5589_c259_806e
+        0x99b0_4263_1f60_c370
     );
 }

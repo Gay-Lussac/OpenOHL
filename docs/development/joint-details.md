@@ -22,7 +22,7 @@ on the calculations later on." Open point O19 in the
 | Joints | a position, supports and springs, a kind (*attach*, *support* or none). Nothing about what meets there or how | `ohl_structures::Joint`, `ohl_structures_fe::Node` |
 | Members | truss, frame, cable or tension-only, between two joints; a section with a roll | `ohl_structures_fe::Member` |
 | A member's connection | **one set for the whole member, the same at both ends**: bolts (count, diameter, hole, shear planes, strength, holes in the section), edge and end distance, spacing, the connected leg, end eccentricity and end restraint (none, one end, both ends), its class and its crossing partner | `ohl_structures_fe::design::MemberDesign` |
-| Checks using it | ASCE 10-97 (the default): the slenderness curve from the end eccentricity and restraint, bolt shear, bearing, the net section; missing data take conservative assumptions, said per member | `ohl_structures_fe::asce10` |
+| Checks using it | ASCE 10-97 (the default): the slenderness curve from the end eccentricity and restraint, bolt shear, bearing, the net section; missing data take conservative assumptions, said per member | the bundled plugin `asce10` (`plugins/codes/asce10`; the core's `ohl_structures_fe::asce10` until 2026-11-18) |
 | Bolts and plates elsewhere | only as a factor on the self-weight (`dead_load_factor`) | |
 
 So the calculation already depends on the joints, but the joints are

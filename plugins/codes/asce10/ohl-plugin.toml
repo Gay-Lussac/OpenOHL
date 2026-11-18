@@ -1,0 +1,8 @@
+[plugin]
+name = "asce10"
+version = "0.1.0"
+description = "ASCE 10-97 (Design of Latticed Steel Transmission Structures): members, joints and bolt distances of lattice structures, OpenOHL's default code — bundled with OpenOHL"
+sdk = "0.3"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/asce10.wasm"
+extension-points = ["member-check"]

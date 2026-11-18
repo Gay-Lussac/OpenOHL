@@ -35,8 +35,10 @@ use ohl_structures::connections::{
     TypeSplice,
 };
 
-use crate::design::{ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, Onto};
-use crate::model::Model;
+use crate::design::{
+    Bolts, ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, MemberDesign, Onto,
+};
+use crate::model::{Model, Section};
 
 /// Where an end's condition comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -669,4 +671,153 @@ pub fn worked_planes(onto: Option<&Onto>, face: Option<Face>) -> Option<(u32, St
         Onto::Plate { .. } => Some((1, "lapped onto the plate".into())),
         Onto::Other(_) => None,
     }
+}
+
+/// Bolt shear stress over the bolt's ultimate strength, on the root area
+/// with the threads in the shear plane (ASCE 10-97 4.3.2): the force basis
+/// of the bolt tools' minimum distances without an analysis
+/// ([`bolt_shear_per_bolt`]).
+const BOLT_SHEAR: f64 = 0.62;
+
+/// The root area over the gross area when the bolt gives no shear
+/// capacity: 0.6, the root of a 60° thread (d₃ = d − 1.2269 P) of pitch up
+/// to d/5.4 — on the safe side for usual bolts; a bolt's own shear
+/// capacity gives the real value.
+const ROOT_AREA: f64 = 0.6;
+
+/// The leg geometry of a section's profile: (largest leg, thickness, root
+/// radius), m — angles only.
+fn angle_legs(s: &Section) -> Option<(f64, f64, f64)> {
+    match s.profile.as_ref()?.shape {
+        ohl_sections::Shape::EqualAngle { h, t, r } => Some((h, t, r)),
+        ohl_sections::Shape::UnequalAngle { h, b, t, r } => Some((h.max(b), t, r)),
+        _ => None,
+    }
+}
+
+/// The leg of the member an end bolts onto directly (lapped, on either
+/// face or nested; 2026-11-05): the bolts bear on it too.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OntoLeg {
+    /// The member's id.
+    pub id: String,
+    /// Its leg's thickness, m.
+    pub thickness: f64,
+    /// Its steel's ultimate strength, Pa.
+    pub fu: Option<f64>,
+}
+
+/// The leg member `idx`'s `end` bolts onto, when it bolts onto a member
+/// (given or worked out) whose thickness is known (its design data's,
+/// else its angle's); only at an end with a connection, none for a
+/// continuous end.
+pub fn onto_leg(model: &Model, idx: usize, end: usize) -> Option<OntoLeg> {
+    // Only at an end with a connection: a member without stays as before.
+    let e = model.members[idx].design.ends[end].as_ref()?;
+    if e.continuous.is_some() || e.kind.is_some_and(|k| k != ConnectionKind::Bolted) {
+        return None;
+    }
+    let (Onto::Member(k), _) = onto(model, idx, end)? else {
+        return None;
+    };
+    let o = &model.members[k];
+    let s = &model.sections[o.section];
+    let thickness = o.design.thickness.or(angle_legs(s).map(|l| l.1))?;
+    Some(OntoLeg {
+        id: o.id.clone(),
+        thickness,
+        fu: s.ultimate,
+    })
+}
+
+/// The bolts at one end (moved from the core's ASCE 10-97 code,
+/// 2026-11-18: the joints' data merged, read by the plate checks and the
+/// bolt tools whatever the code): what the end's connection gives over the
+/// member's (a diameter, hole, shear capacity of the member's only for
+/// bolts of the same diameter); with the library's shear capacity with
+/// the threads out of the shear plane and whether the threads are in it.
+pub fn end_bolts(
+    d: &MemberDesign,
+    end: Option<&EndDesign>,
+    notes: &mut Vec<String>,
+) -> Option<(Bolts, Option<f64>, Option<bool>)> {
+    let layout = end.and_then(|e| e.holes);
+    let member = d.bolts.map(|mut b| {
+        if layout.is_some() {
+            b.holes = layout;
+        }
+        (b, None, None)
+    });
+    let Some(e) = end else {
+        return member;
+    };
+    if e.continuous.is_some() {
+        notes.push("continuous through the joint: no connection to check".into());
+        return None;
+    }
+    let Some(own) = e.bolts else {
+        if let Some(k) = e.kind
+            && k != ConnectionKind::Bolted
+        {
+            notes.push(format!(
+                "{}: no bolts, the connection not checked",
+                k.as_str()
+            ));
+            return None;
+        }
+        return member;
+    };
+    let Some(diameter) = own.diameter else {
+        notes.push("bolt diameter unknown: the member's bolts".into());
+        return member;
+    };
+    let same = d.bolts.filter(|b| (b.diameter - diameter).abs() < 1e-9);
+    let b = Bolts {
+        diameter,
+        hole: own.hole.or(same.and_then(|b| b.hole)),
+        count: own.count,
+        shear_planes: {
+            let worked = e.planes.as_ref();
+            if let (Some(g), Some((w, why))) = (own.shear_planes, worked)
+                && g != *w
+            {
+                notes.push(format!("shear planes: {g} given ({w} worked out: {why})"));
+            }
+            // A splice's covers count over the member's design data (they
+            // are the end's own); a lap's one plane only where nothing
+            // else says (as before: the member's, else 1).
+            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice { .. })));
+            own.shear_planes
+                .or(splice.map(|w| w.0))
+                .or(d.bolts.map(|b| b.shear_planes))
+                .or(worked.map(|w| w.0))
+                .unwrap_or(1)
+        },
+        shear_capacity: own.shear_capacity.or(same.and_then(|b| b.shear_capacity)),
+        ultimate: own.ultimate.or(d.bolts.and_then(|b| b.ultimate)),
+        holes: layout.or(d.bolts.and_then(|b| b.holes)),
+        grade: own.grade.or(same.and_then(|b| b.grade)),
+    };
+    Some((b, own.shear_capacity_shank, own.threads_in_shear))
+}
+
+/// The design shear capacity of one bolt at a member end, N (all its
+/// shear planes: the end's bolts over the member's, a given capacity,
+/// else ASCE 10-97 4.3.2's 0.62 f_ub on the root area), and the bolts'
+/// diameter and count; none without bolts or a capacity. The force basis
+/// of the bolt tools' minimum distances when no analysis gives one, for
+/// any code (`bolt_rules::basis`; kept in the core when ASCE 10-97's
+/// check moved into its plugin, 2026-11-18, so that the distances asked of
+/// a plugin stay what they were).
+pub fn bolt_shear_per_bolt(d: &MemberDesign, end: Option<&EndDesign>) -> Option<(f64, f64, u32)> {
+    let (b, shank, threads_in) = end_bolts(d, end, &mut Vec::new())?;
+    let gross = std::f64::consts::PI * b.diameter.powi(2) / 4.0;
+    let out_given = threads_in == Some(false);
+    let per_plane = match (shank.filter(|_| out_given), b.shear_capacity, b.ultimate) {
+        (Some(v), _, _) => v,
+        (None, Some(v), _) => v,
+        (None, None, Some(fub)) => BOLT_SHEAR * fub * ROOT_AREA * gross,
+        _ => return None,
+    };
+    Some((per_plane * f64::from(b.shear_planes), b.diameter, b.count))
 }

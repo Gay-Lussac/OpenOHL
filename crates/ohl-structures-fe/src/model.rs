@@ -17,7 +17,8 @@
 //! stabilise = true          # hold joint directions without stiffness (default)
 //! dead_load_factor = 1.0    # members' self-weight × this (bolts, plates; default 1)
 //! single_angle_moments = false  # true: a single angle's frame end moments in its usage (version 4)
-//! capacity = "asce10-97"    # member capacities: asce10-97 (default) | simple (version 4)
+//! capacity = "asce10-97"    # member capacities: asce10-97 (default; the bundled plugin
+//!                           # asce10 since 2026-11-18) | sia263-2013 | simple (version 4)
 //! tension_compression = "buckling"  # tension-only members in compression: up to their
 //!                           # buckling load (default) | "none": slack once shortened (version 6)
 //! # redundant_force = 2.5   # optional: redundant members also checked for this percentage of
@@ -813,33 +814,38 @@ impl TensionCompression {
 /// 2026-10-27).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CapacityMethod {
-    /// ASCE 10-97 (`"asce10-97"`, the default; [`crate::asce10`]).
+    /// A design code (the default): since 2026-11-18 every design code is
+    /// a plugin's method, [`Model::capacity_plugin`] — by default ASCE
+    /// 10-97 of the bundled plugin `asce10` ([`DEFAULT_METHOD`]; until
+    /// 2026-11-18 this was the core's own ASCE 10-97, `Asce10`). The core
+    /// runs no plugins: its runners do (`ohl-member-check`).
     #[default]
-    Asce10,
+    Code,
     /// The simple check (`"simple"`): Euler buckling and gross yield —
     /// not a design code, unsafe compared with design codes.
     Simple,
 }
 
 impl CapacityMethod {
-    /// Name in files.
+    /// Name in files (a design code: the default's,
+    /// [`DEFAULT_METHOD`]; the model's own is its plugin method's,
+    /// [`PluginMethod::name`]).
     pub fn as_str(self) -> &'static str {
         match self {
-            CapacityMethod::Asce10 => crate::asce10::NAME,
+            CapacityMethod::Code => DEFAULT_METHOD,
             CapacityMethod::Simple => "simple",
         }
     }
 
-    /// The core's method of a name in files (a bundled plugin's method by
-    /// its old name, `sia263-2013`, is [`PluginMethod::parse`]'s).
+    /// The core's method of a name in files: `simple` (a design code's
+    /// name — `asce10-97`, `sia263-2013`, `plugin:<plugin>/<method>` — is
+    /// [`PluginMethod::parse`]'s).
     pub fn parse(name: &str) -> Result<Self, String> {
         match name.trim() {
-            crate::asce10::NAME => Ok(CapacityMethod::Asce10),
             "simple" => Ok(CapacityMethod::Simple),
             other => Err(format!(
-                "capacity \"{other}\": {} (default), {}, simple, or a plugin's method \
-                 (plugin:<plugin>/<method>)",
-                crate::asce10::NAME,
+                "capacity \"{other}\": {}, simple, or a plugin's method \
+                 (plugin:<plugin>/<method>); none given: {DEFAULT_METHOD}",
                 BUNDLED_ALIASES
                     .iter()
                     .map(|a| a.0)
@@ -861,7 +867,7 @@ impl Default for Analysis {
             dead_load_factor: 1.0,
             dead_load_given: false,
             single_angle_moments: false,
-            capacity: CapacityMethod::Asce10,
+            capacity: CapacityMethod::Code,
             tension_compression: TensionCompression::Buckling,
             redundant_force: None,
             climbing_load: None,
@@ -929,12 +935,20 @@ pub struct PluginMethod {
     pub parameters: Option<(std::path::PathBuf, String)>,
 }
 
+/// The default member check's name in files (`[analysis] capacity`
+/// missing): ASCE 10-97 (owner 2026-10-27), since 2026-11-18 the method of
+/// the bundled plugin `asce10` ([`BUNDLED_ALIASES`]).
+pub const DEFAULT_METHOD: &str = "asce10-97";
+
 /// The names of `[analysis] capacity` that were the core's own methods
 /// and are now methods of plugins bundled with OpenOHL (2026-11-18, owner
 /// 2026-11-17: the codes move out of the core, files keep reading
 /// unchanged): (name in files, plugin, method). Nothing is rewritten; a
 /// file keeps its name and its version.
-pub const BUNDLED_ALIASES: &[(&str, &str, &str)] = &[("sia263-2013", "sia263", "sia263-2013")];
+pub const BUNDLED_ALIASES: &[(&str, &str, &str)] = &[
+    ("asce10-97", "asce10", "asce10-97"),
+    ("sia263-2013", "sia263", "sia263-2013"),
+];
 
 impl PluginMethod {
     /// What starts a plugin's method in `[analysis] capacity`.
@@ -1075,13 +1089,14 @@ impl Model {
             MODEL_FILE_VERSION,
             "structure model",
         )?;
-        // A plugin's method: kept beside the core's default, which then
-        // only serves what the plugin interface does not carry yet.
+        // The design code: a plugin's method (2026-11-18: every code is,
+        // none named the default ASCE 10-97 of the bundled plugin asce10;
+        // nothing rewritten), or the core's simple check.
         let capacity_plugin = match file
             .analysis
             .capacity
             .as_deref()
-            .and_then(PluginMethod::parse)
+            .map_or(PluginMethod::parse(DEFAULT_METHOD), PluginMethod::parse)
         {
             None => None,
             Some(p) => Some(p.map_err(|e| format!("analysis: {e}"))?),

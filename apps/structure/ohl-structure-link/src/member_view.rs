@@ -8,15 +8,19 @@
 //! impacts on the bar's resistance"): its two ends as the joints see them
 //! ([`crate::joint_details`]: the same `[[connection]]` data, so what is
 //! set from the member is what the joint shows), its leg bolted laid flat
-//! with the holes and bolts of both ends, and its ASCE 10-97 capacities
-//! worked out from them ([`ohl_structures_fe::asce10::capacity`], as the
-//! check takes them).
+//! with the holes and bolts of both ends, and its capacities worked out
+//! from them by the structure's design code — ASCE 10-97 (the default) or
+//! another, each a plugin's since 2026-11-18 (the bundled `asce10` and
+//! `sia263`; asked without a load case, with the structure's parameter
+//! file for the plugin, as the check takes them).
 
 use ohl_sections::SectionLibrary;
 use ohl_structures::bolts::BoltLibrary;
 use ohl_structures_fe::model::Model;
 
 use crate::joints::{Arrival, JointDetails, Source};
+use crate::plugin_check;
+use ohl_structures_fe::model::PluginMethod;
 
 /// A member's two ends as the joints see them.
 #[derive(Debug, Clone, PartialEq)]
@@ -226,53 +230,68 @@ pub struct MemberCapacity {
     pub limit: Option<String>,
 }
 
-/// The ASCE 10-97 capacities of member `id` of the structure `text`, with
-/// the connections and the bolt library as the check reads them when the
-/// joint details are taken (always read here, an aid to the joints'
-/// design: a run takes them only with `joint_details = true` at level 4,
-/// 2026-11-11); a
-/// crossing diagonal's partner not known (no load case: as the check
-/// without one). Err: the model is not built (below level 3), or no such
-/// member.
+/// The capacities of member `id` of the structure `text` by its design
+/// code, with the connections and the bolt library as the check reads them
+/// when the joint details are taken (always read here, an aid to the
+/// joints' design: a run takes them only with `joint_details = true` at
+/// level 4, 2026-11-11); a crossing diagonal's partner taken as not in
+/// tension (no load case: as the solve's cap takes it). The structure's
+/// folder not known: the plugin's own parameters ([`member_capacity_in`]
+/// takes the structure's). Err: the model is not built (below level 3),
+/// no such member, or no design code's resistance.
 pub fn member_capacity(
     text: &str,
     sections: &SectionLibrary,
     bolts: &BoltLibrary,
     id: &str,
 ) -> Result<MemberCapacity, String> {
-    let model = Model::from_structure_type_with_joint_details(text, sections, bolts, None)?;
-    let idx = model
-        .members
-        .iter()
-        .position(|m| m.id == id)
-        .ok_or_else(|| format!("no member {id} in the model"))?;
-    // A plugin's method: its own capacities, asked now (no load case);
-    // no other code's are shown in their place.
-    if let Some(p) = &model.capacity_plugin {
-        return plugin_capacity(&model, p, id);
+    member_capacity_in(text, sections, bolts, id, None)
+}
+
+/// [`member_capacity`] of a structure whose file is in `dir`: the plugin
+/// asked with the structure's parameter file for it (`Plugins/<plugin>.toml`
+/// beside the structure, 2026-11-18), as a run asks it.
+pub fn member_capacity_in(
+    text: &str,
+    sections: &SectionLibrary,
+    bolts: &BoltLibrary,
+    id: &str,
+    dir: Option<&std::path::Path>,
+) -> Result<MemberCapacity, String> {
+    let mut model = Model::from_structure_type_with_joint_details(text, sections, bolts, None)?;
+    if !model.members.iter().any(|m| m.id == id) {
+        return Err(format!("no member {id} in the model"));
     }
-    let c = ohl_structures_fe::asce10::capacity(&model, idx, None);
-    let mut assumed = c.compression_assumed.clone();
-    for a in &c.tension_assumed {
-        if !assumed.contains(a) {
-            assumed.push(a.clone());
-        }
+    // The design code's own capacities (a plugin's), asked now (no load
+    // case); no other code's are shown in their place. The simple check
+    // (no design code): ASCE 10-97's, the default's, as an aid to the
+    // joints' design (as before the move), said.
+    let simple = model.capacity_plugin.is_none();
+    if simple {
+        model.capacity_plugin =
+            PluginMethod::parse(ohl_structures_fe::model::DEFAULT_METHOD).and_then(Result::ok);
     }
-    Ok(MemberCapacity {
-        code: "ASCE 10-97".into(),
-        tension: c.tension,
-        compression: c.compression,
-        kl_r: c.kl_r,
-        assumed,
-        joints: c.joints,
-        limit: c.limit,
-    })
+    let Some(p) = model.capacity_plugin.clone() else {
+        return Err(format!("{RESISTANCE_FROM_PLUGIN} no design code"));
+    };
+    plugin_check::with_parameters(&mut model, dir)?;
+    let mut c = plugin_capacity(&model, &p, id)?;
+    if simple {
+        c.assumed.insert(
+            0,
+            "the structure's check is the simple one (not a design code): ASCE 10-97's \
+             capacities shown as an aid"
+                .into(),
+        );
+    }
+    Ok(c)
 }
 
 /// Member `id`'s capacities by the plugin's method `p` of `model`
 /// (2026-11-18: Member details shows them as the core's): the plugin
-/// asked without a load case (its parameter file not known here: the
-/// method's own values, said). Err ([`RESISTANCE_FROM_PLUGIN`]): the
+/// asked without a load case, with the model's parameter file for it
+/// ([`plugin_check::with_parameters`]; none: the method's own values,
+/// said). Err ([`RESISTANCE_FROM_PLUGIN`]): the
 /// plugin is not found, failed, or gave nothing for the member — never
 /// another code's resistance in its place.
 fn plugin_capacity(
@@ -313,13 +332,22 @@ fn plugin_capacity(
     if let Some(w) = &g.not_safe {
         assumed.push(format!("NOT ON THE SAFE SIDE: {w}"));
     }
-    assumed.push(
-        "the method's own parameters (a parameter file beside the structure, Plugins/<plugin>.toml, \
-         is taken by a run)"
-            .into(),
-    );
+    match model
+        .capacity_plugin
+        .as_ref()
+        .and_then(|m| m.parameters.as_ref())
+    {
+        Some((path, _)) => assumed.push(format!("parameters: {}", path.display())),
+        None => assumed.push(format!(
+            "the method's own parameters (no parameter file Plugins/{}.toml beside the structure)",
+            p.plugin
+        )),
+    }
     Ok(MemberCapacity {
-        code: format!("method {} of the plugin {}", p.method, p.plugin),
+        code: match p.alias() {
+            Some(a) => format!("{a} (the bundled plugin {})", p.plugin),
+            None => format!("method {} of the plugin {}", p.method, p.plugin),
+        },
         tension: capacity("tension"),
         compression: capacity("compression"),
         kl_r: capacity("slenderness").map(|c| c.0),
@@ -391,7 +419,23 @@ pub fn bolt_rules(
     joint: &str,
     force: Option<f64>,
 ) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
-    let model = Model::from_structure_type_with_joint_details(text, sections, bolts, None).ok()?;
+    bolt_rules_in(text, sections, bolts, id, joint, force, None)
+}
+
+/// [`bolt_rules`] of a structure whose file is in `dir` (its plugins
+/// looked for beside it first, the folder remembered for the session).
+pub fn bolt_rules_in(
+    text: &str,
+    sections: &SectionLibrary,
+    bolts: &BoltLibrary,
+    id: &str,
+    joint: &str,
+    force: Option<f64>,
+    dir: Option<&std::path::Path>,
+) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
+    let mut model =
+        Model::from_structure_type_with_joint_details(text, sections, bolts, None).ok()?;
+    plugin_check::with_parameters(&mut model, dir).ok()?;
     let idx = model.members.iter().position(|m| m.id == id)?;
     let m = &model.members[idx];
     let end = if model.nodes[m.i].id == joint {

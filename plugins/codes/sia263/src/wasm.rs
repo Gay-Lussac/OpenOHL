@@ -544,48 +544,142 @@ fn part_checked(p: &Part, n: f64) -> Option<joints::Checked> {
     }
 }
 
+/// Every part of `input` checked (the parameters already set): one
+/// result per part it checks.
+fn joint_results(input: &JointInput) -> Vec<PartResult> {
+    input
+        .parts
+        .iter()
+        .filter_map(|p| {
+            let mut notes: Vec<String> = Vec::new();
+            let mut usages = Vec::new();
+            let mut governs = String::new();
+            let mut worst: Option<f64> = None;
+            for (n, case) in input.cases.iter().enumerate() {
+                let force = p.forces.get(n).copied().unwrap_or(0.0);
+                let checked = part_checked(p, force)?;
+                for note in &checked.notes {
+                    if !notes.contains(note) {
+                        notes.push(note.clone());
+                    }
+                }
+                if let Some((u, c)) = checked.governing(case.strength) {
+                    if worst.is_none_or(|w| check::usage_order(u, w).is_gt()) {
+                        worst = Some(u);
+                        governs = c.what.clone();
+                    }
+                    usages.push(PartUsage {
+                        load_case: n as u32,
+                        usage: u,
+                        check: c.what.clone(),
+                    });
+                }
+            }
+            Some(PartResult {
+                id: p.id,
+                usages,
+                governs,
+                notes,
+                not_safe: None,
+            })
+        })
+        .collect()
+}
+
 impl exports::ohl::plugin::joint_check::Guest for Sia263 {
     fn check_joints(method: String, input: JointInput) -> Result<Vec<PartResult>, String> {
         ours(&method)?;
-        // The joint check has no parameter file in its interface: the
-        // standard's values (said in each part's notes when the members'
-        // parameters differ is not known here).
+        // The structure's parameter file comes with `joint-check-full`
+        // (OpenOHL calls that one): here, an OpenOHL without it, the
+        // standard's values.
         params::set(params::Params::default());
-        Ok(input
+        Ok(joint_results(&input))
+    }
+}
+
+use exports::ohl::plugin::joint_check_full as jfull;
+
+/// A `joint-check-full` input as `joint-check`'s (the same records).
+fn plain_input(i: &jfull::JointInput) -> JointInput {
+    use exports::ohl::plugin::joint_check as j;
+    JointInput {
+        structure: i.structure.clone(),
+        cases: i
+            .cases
+            .iter()
+            .map(|c| j::LoadCase {
+                name: c.name.clone(),
+                strength: c.strength,
+            })
+            .collect(),
+        parts: i
             .parts
             .iter()
-            .filter_map(|p| {
-                let mut notes: Vec<String> = Vec::new();
-                let mut usages = Vec::new();
-                let mut governs = String::new();
-                let mut worst: Option<f64> = None;
-                for (n, case) in input.cases.iter().enumerate() {
-                    let force = p.forces.get(n).copied().unwrap_or(0.0);
-                    let checked = part_checked(p, force)?;
-                    for note in &checked.notes {
-                        if !notes.contains(note) {
-                            notes.push(note.clone());
-                        }
-                    }
-                    if let Some((u, c)) = checked.governing(case.strength) {
-                        if worst.is_none_or(|w| check::usage_order(u, w).is_gt()) {
-                            worst = Some(u);
-                            governs = c.what.clone();
-                        }
-                        usages.push(PartUsage {
-                            load_case: n as u32,
-                            usage: u,
-                            check: c.what.clone(),
-                        });
-                    }
-                }
-                Some(PartResult {
-                    id: p.id,
-                    usages,
-                    governs,
-                    notes,
-                    not_safe: None,
-                })
+            .map(|p| Part {
+                id: p.id,
+                joint: p.joint.clone(),
+                plate: p.plate.clone(),
+                kind: p.kind.clone(),
+                other: p.other.clone(),
+                bolts: p.bolts.as_ref().map(|b| j::BoltGroup {
+                    count: b.count,
+                    diameter: b.diameter,
+                    hole: b.hole,
+                    bolt_ultimate: b.bolt_ultimate,
+                    lines: b.lines,
+                    per_line: b.per_line,
+                    pitch: b.pitch,
+                    span: b.span,
+                    end_tension: b.end_tension,
+                    end_compression: b.end_compression,
+                    edge: b.edge,
+                    width: b.width,
+                    width_note: b.width_note.clone(),
+                }),
+                steel: p.steel.map(|s| j::PlateSteel {
+                    thickness: s.thickness,
+                    fy: s.fy,
+                    fu: s.fu,
+                }),
+                weld: p.weld.as_ref().map(|w| j::Weld {
+                    kind: w.kind.clone(),
+                    throat: w.throat,
+                    length: w.length,
+                    length_given: w.length_given,
+                    angle: w.angle,
+                    fy: w.fy,
+                    thicknesses: w.thicknesses.clone(),
+                }),
+                forces: p.forces.clone(),
+                notes: p.notes.clone(),
+            })
+            .collect(),
+    }
+}
+
+impl jfull::Guest for Sia263 {
+    fn check_joints_full(
+        method: String,
+        input: jfull::JointInput,
+    ) -> Result<Vec<jfull::PartResult>, String> {
+        ours(&method)?;
+        params::set(params::parse(&input.parameters)?);
+        Ok(joint_results(&plain_input(&input))
+            .into_iter()
+            .map(|r| jfull::PartResult {
+                id: r.id,
+                usages: r
+                    .usages
+                    .into_iter()
+                    .map(|u| jfull::CaseUsage {
+                        load_case: u.load_case,
+                        usage: u.usage,
+                        check: u.check,
+                    })
+                    .collect(),
+                governs: r.governs,
+                notes: r.notes,
+                not_safe: r.not_safe,
             })
             .collect())
     }

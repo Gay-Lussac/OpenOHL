@@ -1,0 +1,28 @@
+[package]
+name = "asce10"
+description = "OpenOHL structure-code plugin: ASCE 10-97 member, joint and bolt-distance checks of lattice structures, OpenOHL's default code (moved from the core, 2026-11-18)"
+version = "0.1.0"
+edition = "2024"
+# The code was OpenOHL's (AGPL-3.0-or-later) before it moved into this
+# plugin, and it uses OpenOHL's section library (ohl-sections): it keeps
+# OpenOHL's licence.
+license = "AGPL-3.0-or-later"
+publish = false
+
+# Built separately from the main workspace, for the wasm32-wasip2 target
+# (its native tests: `cargo test` in this folder).
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wit-bindgen = "0.62"
+toml = "0.9"
+# The profiles' shapes and symmetry (torsional buckling, an angle's legs).
+ohl-sections = { path = "../../../crates/ohl-sections" }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

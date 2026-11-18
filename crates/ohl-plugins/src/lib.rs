@@ -235,6 +235,24 @@ pub mod joint_check {
 /// Export name of the optional `joint-check` interface of any plugin.
 pub const JOINT_CHECK_EXPORT: &str = "ohl:plugin/joint-check@0.1.0";
 
+mod joint_check_full_bindings {
+    wasmtime::component::bindgen!({
+        world: "joint-check-full-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `joint-check-full` interface (2026-11-18): the
+/// joint check of `joint-check` with the plugin's parameter file.
+pub mod joint_check_full {
+    pub use super::joint_check_full_bindings::exports::ohl::plugin::joint_check_full::{
+        BoltGroup, CaseUsage, JointInput, LoadCase, Part, PartResult, PlateSteel, Weld,
+    };
+}
+
+/// Export name of the optional `joint-check-full` interface of any plugin.
+pub const JOINT_CHECK_FULL_EXPORT: &str = "ohl:plugin/joint-check-full@0.1.0";
+
 mod bolt_distances_bindings {
     wasmtime::component::bindgen!({
         world: "bolt-distances-export",
@@ -988,6 +1006,24 @@ pub struct Limits {
 impl Limits {
     /// The most time a manifest may ask for one call.
     pub const MAX_TIMEOUT: Duration = Duration::from_secs(600);
+
+    /// The time one call of a plugin bundled with OpenOHL may take
+    /// ([`WasmHost::with_bundled_root`]; the design codes that were the
+    /// core's, 2026-11-18): a structure's whole member check, every member
+    /// and load case in one call. Measured on the largest tower of the
+    /// real-line comparison (3 030 members with its joint details: 11.7 s
+    /// for 91 load cases, under load; `docs/development/plugins.md`), some
+    /// ten times that, within [`Limits::MAX_TIMEOUT`]. User plugins keep
+    /// 5 s.
+    pub const BUNDLED_CALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+    /// The memory a plugin bundled with OpenOHL may grow to in one call:
+    /// the most a 32-bit WebAssembly memory addresses
+    /// ([`Limits::MAX_MEMORY_BYTES`]; 2026-11-18: a tower of 3 000 members
+    /// with its joint details in 100 load cases does not fit the 256 MiB of
+    /// a user plugin — every member's forces and words of every case cross
+    /// in one call). Only what it uses is taken.
+    pub const BUNDLED_MAX_MEMORY: usize = Self::MAX_MEMORY_BYTES;
     /// The most memory a manifest may ask for (WebAssembly 32-bit: 4 GiB).
     pub const MAX_MEMORY_BYTES: usize = 4 << 30;
 
@@ -1029,6 +1065,44 @@ impl Default for Limits {
             max_memory_bytes: 256 * 1024 * 1024,
         }
     }
+}
+
+/// What a joint check gave (`joint-check` or `joint-check-full`), each
+/// part's number with its usages (load case, usage), checked against what
+/// was sent: a result for a part or a load case not sent or given twice,
+/// a usage that is not a number or is negative, is an error naming the
+/// plugin `name`. An infinite usage is kept (failing: a resistance of
+/// nothing, as the core's own plate checks report it).
+fn check_part_results(
+    name: &str,
+    sent: impl Iterator<Item = u32>,
+    cases: usize,
+    given: impl Iterator<Item = (u32, Vec<(u32, f64)>)>,
+) -> Result<(), PluginError> {
+    let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+    let sent: std::collections::HashSet<u32> = sent.collect();
+    let mut seen = std::collections::HashSet::new();
+    for (id, usages) in given {
+        if !sent.contains(&id) || !seen.insert(id) {
+            return Err(bad(format!(
+                "a result for joint part {id} (not sent, or given twice)"
+            )));
+        }
+        let mut done = std::collections::HashSet::new();
+        for (case, usage) in usages {
+            if case as usize >= cases || !done.insert(case) {
+                return Err(bad(format!(
+                    "joint part {id}: a usage for load case {case} (not sent, or given twice)"
+                )));
+            }
+            if usage.is_nan() || usage < 0.0 {
+                return Err(bad(format!(
+                    "joint part {id}: a usage that is not a number or is negative"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resolution of the plugin time limit.
@@ -1178,6 +1252,10 @@ pub struct WasmHost {
     compiled: std::sync::Mutex<
         std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, Component)>,
     >,
+    /// The folder of the plugins bundled with OpenOHL (its own
+    /// `plugins/codes`, [`WasmHost::with_bundled_root`]): a plugin there is
+    /// given [`Limits::BUNDLED_CALL_TIMEOUT`] a call; none: no plugin is.
+    bundled_root: Option<PathBuf>,
 }
 
 impl WasmHost {
@@ -1200,7 +1278,30 @@ impl WasmHost {
             limits,
             _ticker: ticker,
             compiled: std::sync::Mutex::new(std::collections::HashMap::new()),
+            bundled_root: None,
         })
+    }
+
+    /// This host with `root` the folder of the plugins bundled with
+    /// OpenOHL (its own `plugins/codes`, found beside the program): a
+    /// plugin inside it is given at least [`Limits::BUNDLED_CALL_TIMEOUT`]
+    /// a call (2026-11-18, owner: the design codes moved out of the core
+    /// check a whole structure with every load case in one call); every
+    /// other plugin keeps its limits ([`Limits::default`], raised only as
+    /// its manifest asks and the user allowed).
+    pub fn with_bundled_root(mut self, root: Option<PathBuf>) -> Self {
+        self.bundled_root = root.map(|r| r.canonicalize().unwrap_or(r));
+        self
+    }
+
+    /// Whether the plugin in `dir` is one bundled with OpenOHL (inside
+    /// [`WasmHost::with_bundled_root`]'s folder).
+    pub fn is_bundled(&self, dir: &Path) -> bool {
+        let Some(root) = &self.bundled_root else {
+            return false;
+        };
+        let dir = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        dir.starts_with(root)
     }
 
     /// Limits applied to plugin calls.
@@ -1254,7 +1355,11 @@ impl WasmHost {
                 message: format!("{kind} lists the extension point \"{point}\""),
             });
         }
-        let limits = self.limits.for_manifest(&manifest);
+        let mut limits = self.limits.for_manifest(&manifest);
+        if self.is_bundled(dir) {
+            limits.call_timeout = limits.call_timeout.max(Limits::BUNDLED_CALL_TIMEOUT);
+            limits.max_memory_bytes = limits.max_memory_bytes.max(Limits::BUNDLED_MAX_MEMORY);
+        }
         let component = self.component(&manifest.entry_path())?;
         // No stdio, environment, file system or network: a fully sandboxed guest.
         let state = HostState {
@@ -2179,34 +2284,55 @@ impl WasmHost {
             .call_check_joints(&mut p.store, method, input)
             .map_err(|e| classify(e, &p.manifest, "joint-check", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
-        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
-        let sent: std::collections::HashSet<u32> = input.parts.iter().map(|x| x.id).collect();
-        let mut seen = std::collections::HashSet::new();
-        for r in &given {
-            if !sent.contains(&r.id) || !seen.insert(r.id) {
-                return Err(bad(format!(
-                    "a result for joint part {} (not sent, or given twice)",
-                    r.id
-                )));
-            }
-            let mut cases = std::collections::HashSet::new();
-            for u in &r.usages {
-                if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
-                    return Err(bad(format!(
-                        "joint part {}: a usage for load case {} (not sent, or given twice)",
-                        r.id, u.load_case
-                    )));
-                }
-                // Infinite: failing (a resistance of nothing, 2026-11-18: as the
-                // core's own plate checks report it).
-                if u.usage.is_nan() || u.usage < 0.0 {
-                    return Err(bad(format!(
-                        "joint part {}: a usage that is not a number or is negative",
-                        r.id
-                    )));
-                }
-            }
-        }
+        check_part_results(
+            &name,
+            input.parts.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint parts of `input` checked by method `method` of the
+    /// plugin in `dir` through its `joint-check-full` export, with the
+    /// parameters `input` carries (2026-11-18), every part and load case
+    /// in this one call. None: the plugin has no such export (the caller
+    /// then calls `joint-check`'s [`WasmHost::check_joints`]). Errors as
+    /// [`WasmHost::check_joints`]'s.
+    pub fn check_joints_full(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_full::JointInput,
+    ) -> Result<Option<Vec<joint_check_full::PartResult>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_FULL_EXPORT)? else {
+            return Ok(None);
+        };
+        let export = joint_check_full_bindings::JointCheckFullExport::new(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_joint_check_full()
+            .call_check_joints_full(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-full", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.parts.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
         Ok(Some(given))
     }
 
@@ -2861,6 +2987,32 @@ mod tests {
             "[plugin]\nname = \"t\"\nversion = \"1.0.0\"\nsdk = \"{sdk}\"\ntier = \"wasm\"\nentry = \"t.wasm\"\n{extra}"
         );
         Manifest::parse(&text, Path::new("/plugins/t")).unwrap()
+    }
+
+    /// The bundled plugins' longer time and larger memory (2026-11-18)
+    /// apply inside OpenOHL's own `plugins/codes` only: a user plugin
+    /// elsewhere, or beside it, keeps the defaults; within the most a
+    /// manifest may ask.
+    #[test]
+    fn bundled_plugins_alone_get_the_longer_limits() {
+        let root = std::env::temp_dir().join(format!("ohl-bundled-{}", std::process::id()));
+        let codes = root.join("plugins").join("codes");
+        std::fs::create_dir_all(codes.join("asce10")).unwrap();
+        std::fs::create_dir_all(root.join("mine")).unwrap();
+        let host = WasmHost::new()
+            .unwrap()
+            .with_bundled_root(Some(codes.clone()));
+        assert!(host.is_bundled(&codes.join("asce10")));
+        assert!(!host.is_bundled(&root.join("mine")));
+        assert!(!host.is_bundled(&root.join("plugins")));
+        assert!(!WasmHost::new().unwrap().is_bundled(&codes.join("asce10")));
+        let d = Limits::default();
+        let (time, memory) = (Limits::BUNDLED_CALL_TIMEOUT, Limits::BUNDLED_MAX_MEMORY);
+        assert_eq!(d.call_timeout, Duration::from_secs(5));
+        assert!(time > d.call_timeout && time <= Limits::MAX_TIMEOUT);
+        assert!(memory > d.max_memory_bytes && memory <= Limits::MAX_MEMORY_BYTES);
+        assert_eq!(host.limits().call_timeout, d.call_timeout);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

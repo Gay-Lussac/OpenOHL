@@ -1293,6 +1293,9 @@ impl Calculation for StructureFePoint {
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
         let model =
             ohl_structures_fe::Model::from_structure_type(string_input(inputs, "structure")?)?;
+        // Its design code's plugin found first (2026-11-18: every code is
+        // one), so that a tension-only member is capped as a run caps it.
+        let model = ohl_member_check::find(model, None)?;
         let label = string_input(inputs, "point")?;
         let force = [
             float_input(inputs, "force_x")?,

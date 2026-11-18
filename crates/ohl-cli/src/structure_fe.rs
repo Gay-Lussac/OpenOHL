@@ -290,9 +290,11 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             }
         }
     }
-    if args.capacity_plugin.is_some() {
-        model.capacity_plugin = None;
-    }
+    // A `member-capacity` plugin (`--capacity-plugin`): its capacities
+    // replace the design code's in the usage below; the design code's
+    // plugin (by default the bundled asce10) still gives the solve's cap on
+    // the tension-only members, as the core's ASCE 10-97 did before
+    // 2026-11-18.
     // The member check by the plugin the file names
     // (`[analysis] capacity = "plugin:<plugin>/<method>"`): looked for in
     // `Plugins/` beside the file, then in the user's plugin folder; not
@@ -443,7 +445,11 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         .map_err(|e| format!("{case}: {}", ohl_structures_fe::refusal_text(&model, &e)))?;
         solved.push((case, s, usage, started.elapsed()));
     }
-    let by_plugin = {
+    // A `member-capacity` plugin's capacities replace the code's below:
+    // the code's plugin is not asked for the usage then.
+    let by_plugin = if plugin.is_some() {
+        None
+    } else {
         let cases: Vec<ohl_member_check::Solved> = solved
             .iter()
             .map(|(case, s, _, _)| ohl_member_check::Solved {
@@ -629,7 +635,7 @@ fn plugin_capacities(
     strength: f64,
     model: &Model,
     s: &ohl_structures_fe::Solution,
-) -> Result<Vec<ohl_structures_fe::asce10::Capacity>, String> {
+) -> Result<Vec<ohl_structures_fe::capacity::Capacity>, String> {
     let inputs: Vec<ohl_plugins::MemberInput> =
         ohl_structures_fe::capacity::capacity_inputs(model, s)
             .into_iter()
@@ -661,7 +667,7 @@ fn plugin_capacities(
         .map_err(|e| e.to_string())?;
     Ok(results
         .into_iter()
-        .map(|r| ohl_structures_fe::asce10::Capacity {
+        .map(|r| ohl_structures_fe::capacity::Capacity {
             compression: r.compression.map(|c| (c, r.compression_governs.clone())),
             tension: r.tension.map(|t| (t, r.tension_governs.clone())),
             kl_r: None,

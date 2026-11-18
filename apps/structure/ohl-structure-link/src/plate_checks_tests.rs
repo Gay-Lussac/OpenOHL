@@ -46,6 +46,88 @@ fn sia263_built() -> bool {
     false
 }
 
+/// Whether the bundled plugin `asce10` is built (else skip, or fail when
+/// the plugin tests are required).
+fn asce10_built() -> bool {
+    let wasm = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../plugins/codes/asce10/target/wasm32-wasip2/release/asce10.wasm");
+    if wasm.is_file() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+        "plugins/codes/asce10 not built"
+    );
+    eprintln!("skipping: plugins/codes/asce10 not built");
+    false
+}
+
+/// The structure's parameter file for its plugin (`Plugins/sia263.toml`
+/// beside it) reaches the joint check and Member details too, not only
+/// the member check (owner 2026-11-18; before, they took the standard's
+/// values): a γ_M2 of 1.5 instead of 1.25 raises each bolted plate part's
+/// usage by 1.5/1.25 where γ_M2 governs it, lowers D1's tension in Member
+/// details by that much, and names the file; without the folder (or the
+/// file) the standard's values, as before.
+#[test]
+fn a_changed_factor_changes_the_joint_check_and_member_details() {
+    if !sia263_built() {
+        return;
+    }
+    let _guard = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let sia = format!("{}\n[analysis]\ncapacity = \"sia263-2013\"\n", welded());
+    let dir = std::env::temp_dir().join(format!("ohl-sia263-params-{}", std::process::id()));
+    let plugins = dir.join(ohl_member_check::BESIDE);
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(
+        plugins.join("sia263.toml"),
+        "[resistance]\ngamma_m2 = 1.5\n",
+    )
+    .unwrap();
+    let forces = axial();
+    let rows = |dir: Option<&std::path::Path>| {
+        let plans = crate::plate_plans_in(&sia, &library(), &Default::default(), dir).unwrap();
+        crate::plate_usage_cases(&plans, &[("one", 1.0, &forces)]).remove(0)
+    };
+    let (standard, factored) = (rows(None), rows(Some(&dir)));
+    let d1 = |u: &[crate::PlateUsage]| {
+        u.iter()
+            .find(|p| p.part == PlatePart::Member("D1".into()))
+            .cloned()
+            .unwrap()
+    };
+    let (a, b) = (d1(&standard), d1(&factored));
+    assert_eq!(a.governs, b.governs, "{a:?} {b:?}");
+    assert!(
+        a.governs.contains("γ_M2") || a.governs.contains("SIA 263"),
+        "{a:?}"
+    );
+    let ratio = b.usage.unwrap() / a.usage.unwrap();
+    assert!((ratio - 1.5 / 1.25).abs() < 1e-9, "{ratio}: {a:?} {b:?}");
+    // Member details: the same file, D1's tension (net section or bolts by
+    // γ_M2) lower by the same ratio, the file named.
+    let c0 = crate::member_capacity_in(&sia, &library(), &Default::default(), "D1", None).unwrap();
+    let c1 =
+        crate::member_capacity_in(&sia, &library(), &Default::default(), "D1", Some(&dir)).unwrap();
+    let (t0, t1) = (c0.tension.unwrap(), c1.tension.unwrap());
+    assert!(t1.0 < t0.0, "{t0:?} {t1:?}");
+    assert!(
+        c1.assumed.iter().any(|n| n.contains("sia263.toml")),
+        "{:?}",
+        c1.assumed
+    );
+    assert!(
+        c0.assumed
+            .iter()
+            .any(|n| n.contains("the method's own parameters")),
+        "{:?}",
+        c0.assumed
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Under SIA 263 — the bundled plugin `sia263`'s joint check since
 /// 2026-11-18, one call with every part and case — each member's bolts are
 /// checked in its plate (bearing, block shear, sections, distances) and
@@ -100,24 +182,41 @@ fn plates_and_welds_are_checked_by_sia263() {
     assert!(j["N2"] >= weld.usage.unwrap());
 }
 
-/// Under ASCE 10-97 (the default) the weld is not checked (the standard
-/// has no weld rule), said; the bolts are (4.4 …); the simple check
-/// checks nothing, said.
+/// Under ASCE 10-97 (the default; the bundled plugin `asce10`'s joint
+/// check since 2026-11-18) the weld is not checked (the standard has no
+/// weld rule), said — NOT CHECKED, NOT ON THE SAFE SIDE; the bolts are;
+/// the simple check checks nothing, said.
 #[test]
 fn asce10_has_no_weld_rule_and_simple_checks_nothing() {
+    if !asce10_built() {
+        return;
+    }
     let plans = plate_plans(&welded(), &library(), &Default::default()).unwrap();
-    let u = plate_usage(&plans, &axial(), 1.0);
+    assert!(plans.plugin.is_some(), "the default: the bundled plugin");
+    let forces = axial();
+    let u = crate::plate_usage_cases(&plans, &[("one", 1.0, &forces)]).remove(0);
     let weld = u
         .iter()
         .find(|p| matches!(&p.part, PlatePart::Weld(_)))
         .unwrap();
     assert!(
-        weld.usage.is_none() && weld.governs.contains("AWS D1.1"),
+        weld.usage.is_none()
+            && weld
+                .governs
+                .starts_with("NOT CHECKED by asce10, NOT ON THE SAFE SIDE")
+            && weld.notes.iter().any(|n| n.contains("AWS D1.1")),
         "{weld:?}"
     );
     assert!(
         u.iter()
-            .any(|p| p.checks.iter().any(|c| c.0.contains("4.4")))
+            .any(|p| p.usage.is_some() && p.governs.contains("ASCE 10-97")),
+        "{u:?}"
+    );
+    // The core alone (no plugin run): not checked, said.
+    assert!(
+        plate_usage(&plans, &axial(), 1.0)
+            .iter()
+            .all(|p| p.usage.is_none())
     );
     let simple = format!("{}\n[analysis]\ncapacity = \"simple\"\n", welded());
     let plans = plate_plans(&simple, &library(), &Default::default()).unwrap();
@@ -350,10 +449,10 @@ fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {
         )
     );
     std::fs::remove_dir_all(&dir).ok();
-    // The core's own method: its rules, no such note.
+    // The default, the bundled plugin asce10: its rules, no such note.
     assert!(crate::no_bolt_rules(&welded()).is_none());
     assert!(
         crate::bolt_rules(&welded(), &library(), &Default::default(), "D1", "N2", None)
-            .is_some_and(|r| r.code == "ASCE 10-97")
+            .is_some_and(|r| r.code == "asce10-97")
     );
 }

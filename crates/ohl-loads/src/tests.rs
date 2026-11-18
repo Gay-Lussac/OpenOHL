@@ -31,6 +31,9 @@ fn other_notes(notes: &[String]) -> Vec<&String> {
     notes
         .iter()
         .filter(|n| !n.starts_with("model: NOT ON THE SAFE SIDE"))
+        // The design code's note (2026-11-18: ASCE 10-97, the default, is
+        // the bundled plugin asce10's; its run says so).
+        .filter(|n| !n.starts_with("model: member capacities:"))
         .collect()
 }
 
@@ -781,8 +784,11 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
     // points and the member wind (high wind × 1.4 transverse, to −x: the
     // wind comes from the right).
     let t = types.get("type-02").unwrap();
-    let model =
-        ohl_structures_fe::Model::load_with(types.path("type-02").unwrap(), &sections).unwrap();
+    let path = types.path("type-02").unwrap();
+    let model = ohl_structures_fe::Model::load_with(path, &sections).unwrap();
+    // Its design code (ASCE 10-97, the default) is the bundled plugin
+    // asce10's (2026-11-18): found and asked as the line's run does.
+    let model = ohl_member_check::find(model, path.parent()).unwrap();
     assert!(model.has_profiles());
     let case = &cases.cases[1];
     let w = weather.iter().find(|w| w.name == case.weather).unwrap();
@@ -811,13 +817,27 @@ fn member_wind_replaces_the_bands_in_the_fe_check() {
         self_weight: case.vertical,
         ..Default::default()
     };
-    let (_, usage) = ohl_structures_fe::analyse(
+    let (solution, _) = ohl_structures_fe::analyse(
         &model,
         &fe_loads,
         case.strength,
         &ohl_structures_fe::default_budget(),
     )
     .unwrap();
+    let usage = ohl_member_check::check(
+        &model,
+        &[ohl_member_check::Solved {
+            name: "wind",
+            strength: case.strength,
+            self_weight: case.vertical,
+            solution: &solution,
+            moved: None,
+        }],
+    )
+    .expect("the bundled plugin")
+    .unwrap()
+    .usage
+    .remove(0);
     let worst = ohl_structures_fe::check::worst(&usage).unwrap();
     let fe = wind.fe.clone().unwrap();
     assert!(
@@ -1424,14 +1444,17 @@ fn the_structures_take_the_load_cases_own_wind() {
         at
     };
     // The tower by hand: its model, the wires' loads, the member wind.
-    let model =
-        ohl_structures_fe::Model::load_with(types.path("type-02").unwrap(), &sections).unwrap();
+    let path = types.path("type-02").unwrap();
+    let model = ohl_structures_fe::Model::load_with(path, &sections).unwrap();
+    // Its design code (ASCE 10-97, the default) is the bundled plugin
+    // asce10's (2026-11-18): found and asked as the line's run does.
+    let model = ohl_member_check::find(model, path.parent()).unwrap();
     let mut nodal = Vec::new();
     for (label, [tr, lo, ve]) in factored_at("T2") {
         nodal.extend(model.point_loads(&label, [tr, lo, -ve]).unwrap());
     }
     nodal.extend(model.member_wind(1080.0, [-1.0, 0.0, 0.0]));
-    let (_, usage) = ohl_structures_fe::analyse(
+    let (solution, _) = ohl_structures_fe::analyse(
         &model,
         &ohl_structures_fe::Loads {
             nodal,
@@ -1442,6 +1465,20 @@ fn the_structures_take_the_load_cases_own_wind() {
         &ohl_structures_fe::default_budget(),
     )
     .unwrap();
+    let usage = ohl_member_check::check(
+        &model,
+        &[ohl_member_check::Solved {
+            name: "wind",
+            strength: wind_case.strength,
+            self_weight: wind_case.vertical,
+            solution: &solution,
+            moved: None,
+        }],
+    )
+    .expect("the bundled plugin")
+    .unwrap()
+    .usage
+    .remove(0);
     let worst = ohl_structures_fe::check::worst(&usage).unwrap();
     let fe = at(&own, "T2").fe.unwrap();
     assert!((fe.usage - worst.usage.unwrap()).abs() < 1e-12, "{fe:?}");

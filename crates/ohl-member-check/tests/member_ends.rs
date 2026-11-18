@@ -7,14 +7,87 @@
 //! given, the member's, worked out or assumed; the connection's capacity
 //! at each end, the weaker governing; a library bolt's strengths; a tower
 //! without connections checked as before. Values by hand.
+//!
+//! Moved from the core's tests (`ohl_structures_fe::member_ends_tests`)
+//! when ASCE 10-97 moved into its bundled plugin (2026-11-18): the
+//! capacities are now the plugin's (`asce10`, asked without a load case
+//! as Member details asks), the same values and words.
 
 use ohl_sections::SectionLibrary;
 use ohl_structures::bolts::BoltLibrary;
 
-use crate::asce10::{self, effective_slenderness};
-use crate::design::Ends;
-use crate::member_ends::{Source, end_conditions};
-use crate::model::Model;
+use ohl_structures_fe::design::Ends;
+use ohl_structures_fe::member_ends::{Source, end_conditions};
+use ohl_structures_fe::model::Model;
+
+/// ASCE 10-97's effective slenderness (curves 1–6), by hand for the
+/// expected values.
+fn effective_slenderness(l_r: f64, eccentricity: Ends, restraint: Ends) -> f64 {
+    if l_r <= 120.0 {
+        match eccentricity {
+            Ends::None => l_r,
+            Ends::OneEnd => 30.0 + 0.75 * l_r,
+            Ends::BothEnds => 60.0 + 0.5 * l_r,
+        }
+    } else {
+        match restraint {
+            Ends::None => l_r,
+            Ends::OneEnd => 28.6 + 0.762 * l_r,
+            Ends::BothEnds => 46.2 + 0.615 * l_r,
+        }
+    }
+}
+
+/// A member's capacities as the core's ASCE 10-97 code gave them (the
+/// record `asce10::Capacity` before 2026-11-18), from the plugin's: its
+/// notes are the assumptions of both (compression and tension, each once),
+/// its `joints: …` and `limit: …` notes apart.
+#[derive(Debug, Clone, PartialEq)]
+struct Capacity {
+    compression: Option<(f64, String)>,
+    tension: Option<(f64, String)>,
+    kl_r: Option<f64>,
+    compression_assumed: Vec<String>,
+    tension_assumed: Vec<String>,
+    limit: Option<String>,
+    joints: Vec<String>,
+}
+
+/// Member `idx`'s capacities by ASCE 10-97, the bundled plugin `asce10`
+/// (the model's default method), asked without a load case.
+fn capacity(m: &Model, idx: usize) -> Capacity {
+    let model = ohl_member_check::find(m.clone(), None).expect("the bundled plugin asce10");
+    let id = &model.members[idx].id;
+    let given = ohl_member_check::capacities(&model).expect("checked");
+    let g = given.iter().find(|g| &g.id == id).expect("a result");
+    let by = |name: &str| {
+        g.capacities
+            .iter()
+            .find(|c| c.0 == name)
+            .map(|c| (c.1, c.2.clone()))
+    };
+    let mut assumed = Vec::new();
+    let mut joints = Vec::new();
+    let mut limit = None;
+    for n in &g.notes {
+        if let Some(j) = n.strip_prefix("joints: ") {
+            joints.push(j.to_owned());
+        } else if let Some(l) = n.strip_prefix("limit: ") {
+            limit = Some(l.to_owned());
+        } else {
+            assumed.push(n.clone());
+        }
+    }
+    Capacity {
+        compression: by("compression"),
+        tension: by("tension"),
+        kl_r: by("slenderness").map(|c| c.0),
+        compression_assumed: assumed.clone(),
+        tension_assumed: assumed,
+        limit,
+        joints,
+    }
+}
 
 /// A leg in two members (sections "L", 20 cm²) N1–N2–N3 and a diagonal
 /// D1 (section "D", 10 cm², 6 mm) from N4 to N2: 5 m long, r_v 1.414 cm,
@@ -136,7 +209,7 @@ fn a_connection_at_one_end_only() {
         (e.eccentricity, e.restraint),
         (Ends::BothEnds, Ends::OneEnd)
     );
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     let kl_r = 28.6 + 0.762 * l_r();
     assert!((c.kl_r.unwrap() - kl_r).abs() < 1e-9, "{c:?}");
     assert!((c.compression.as_ref().unwrap().0 - column(kl_r)).abs() < 1e-6);
@@ -163,7 +236,7 @@ fn a_connection_at_one_end_only() {
     );
     // Without the connection: no restraint (assumed, both ends), L/r.
     let m = model("", &BoltLibrary::default());
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     assert!((c.kl_r.unwrap() - l_r()).abs() < 1e-9);
     assert!(
         c.compression_assumed
@@ -200,7 +273,7 @@ fn given_then_the_members_then_worked_out() {
     assert_eq!(e.restrained[0].value, Some(true));
     assert_eq!(e.restrained[0].source, Source::Member);
     assert_eq!(e.restraint, Ends::OneEnd);
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     let kl_r = effective_slenderness(l_r(), Ends::BothEnds, Ends::OneEnd);
     assert!((c.kl_r.unwrap() - kl_r).abs() < 1e-9);
 }
@@ -215,7 +288,7 @@ fn the_weaker_end_governs() {
         "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nbolts = { count = 1, diameter = \"16 mm\" }\n",
         &BoltLibrary::default(),
     );
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     let (t, what) = c.tension.clone().unwrap();
     assert!((t - 60e3).abs() < 1e-6, "{t}");
     assert_eq!(what, "bolt shear at N2");
@@ -225,7 +298,7 @@ fn the_weaker_end_governs() {
     // Both ends with two bolts: the bearing of two, 146.9 kN, above the
     // shear: 120 kN, no end named (the ends alike).
     let m = model("", &BoltLibrary::default());
-    let (t, what) = asce10::capacity(&m, D1, None).tension.unwrap();
+    let (t, what) = capacity(&m, D1).tension.unwrap();
     assert!((t - 120e3).abs() < 1e-6);
     assert_eq!(what, "bolt shear");
     // Two gauge lines at N2: two holes in its section, the net section
@@ -237,7 +310,7 @@ fn the_weaker_end_governs() {
         "[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nbolts = { count = 4, diameter = \"16 mm\" }\ngauge_lines = 2\n",
         &BoltLibrary::default(),
     );
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     assert_eq!(c.tension.as_ref().unwrap().1, "bolt shear at N4");
     let m2 = {
         let mut m2 = m.clone();
@@ -252,7 +325,7 @@ fn the_weaker_end_governs() {
         m2.members[D1].design.bolts.as_mut().unwrap().count = 40;
         m2
     };
-    let (t, what) = asce10::capacity(&m2, D1, None).tension.unwrap();
+    let (t, what) = capacity(&m2, D1).tension.unwrap();
     assert!((t - net).abs() < 1e-6, "{t} {what}");
     assert_eq!(what, "net section at N2");
 }
@@ -280,19 +353,19 @@ fn a_library_bolt_gives_its_strength() {
         .si();
     let threads = lib.get("X17-example").unwrap().shear_capacity.unwrap().si();
     let m = model(&conn(", threads_in_shear = false"), &lib);
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     let (t, what) = c.tension.clone().unwrap();
     // Bearing of one 17 mm bolt: 1.5 × 510 MPa × 17 mm × 6 mm = 78.03 kN.
     let bearing = 1.5 * 510e6 * 0.017 * 0.006;
     assert!((t - shank.min(bearing)).abs() < 1e-6, "{t} {what}");
     assert!(c.joints.iter().any(|j| j.contains("bolt X17-example")));
     let m = model(&conn(""), &lib);
-    let (t, what) = asce10::capacity(&m, D1, None).tension.unwrap();
+    let (t, what) = capacity(&m, D1).tension.unwrap();
     assert!((t - threads.min(bearing)).abs() < 1e-6, "{t}");
     assert_eq!(what, "bolt shear at N2");
     // Not in the library: said; the member's bolts at that end.
     let m = model(&conn(""), &BoltLibrary::default());
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     assert!(c.joints.iter().any(|j| j.contains("in no bolt library")));
     assert_eq!(c.tension.unwrap().1, "bolt shear");
 }
@@ -317,7 +390,7 @@ fn without_connections_as_before() {
         None,
     )
     .unwrap();
-    let before = asce10::capacity(&base, D1, None);
+    let before = capacity(&base, D1);
     // By hand: KL/r = L/r (no restraint), Euler; tension the bolts' shear.
     assert!((before.kl_r.unwrap() - l_r()).abs() < 1e-9);
     assert!((before.compression.as_ref().unwrap().0 - column(l_r())).abs() < 1e-6);
@@ -333,7 +406,7 @@ fn without_connections_as_before() {
         None,
     )
     .unwrap();
-    assert_eq!(asce10::capacity(&m, D1, None), before);
+    assert_eq!(capacity(&m, D1), before);
     let same = format!(
         "{}[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nleg = \"long\"\n",
         flags(TOWER)
@@ -345,7 +418,7 @@ fn without_connections_as_before() {
         None,
     )
     .unwrap();
-    let mut after = asce10::capacity(&m, D1, None);
+    let mut after = capacity(&m, D1);
     assert!(!after.joints.is_empty());
     after.joints.clear();
     assert_eq!(after, before);
@@ -384,7 +457,7 @@ fn file(option: &str, all: bool) -> String {
 /// detail): not applied, the simple form, and said.
 #[test]
 fn the_joint_details_are_taken_only_when_asked_for_at_level_4() {
-    use crate::model::JointUse;
+    use ohl_structures_fe::model::JointUse;
     let lib = BoltLibrary::load(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../libraries/bolts/example-bolts.ohlb"),
@@ -393,11 +466,8 @@ fn the_joint_details_are_taken_only_when_asked_for_at_level_4() {
     let read = |t: &str| {
         Model::from_structure_type_with_bolts(t, &SectionLibrary::default(), &lib, None).unwrap()
     };
-    let capacities = |m: &Model| -> Vec<_> {
-        (0..m.members.len())
-            .map(|k| asce10::capacity(m, k, None))
-            .collect()
-    };
+    let capacities =
+        |m: &Model| -> Vec<_> { (0..m.members.len()).map(|k| capacity(m, k)).collect() };
     // No connections: nothing to say.
     let bare_text = file("", true)
         .split("[[connection]]")
@@ -496,7 +566,7 @@ fn restraint_by_plate_and_by_stiffness() {
     assert_eq!(end_conditions(&m, D1).restrained[1].value, Some(true));
     // Worked out by the I/L rule, which cannot know the case or the
     // plane: said, not on the safe side (2026-11-08; D1's L/r above 120).
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     assert!(
         c.compression_assumed
             .iter()
@@ -519,7 +589,7 @@ fn restraint_by_plate_and_by_stiffness() {
 /// one; given on the bolts: as given, the difference said.
 #[test]
 fn a_splice_gives_its_shear_planes() {
-    use crate::design::Onto;
+    use ohl_structures_fe::design::Onto;
     let splice = |covers: &str, planes: &str| {
         format!(
             "[[splice]]\nid = \"S1\"\njoint = \"N2\"\nmembers = [\"D1\", \"L1\"]\n{covers}\
@@ -532,7 +602,7 @@ fn a_splice_gives_its_shear_planes() {
     let planes = |m: &Model| {
         let d = &m.members[D1].design;
         let mut notes = Vec::new();
-        let b = asce10::end_bolts(d, d.ends[1].as_ref(), &mut notes)
+        let b = ohl_structures_fe::member_ends::end_bolts(d, d.ends[1].as_ref(), &mut notes)
             .unwrap()
             .0;
         (b.shear_planes, notes)
@@ -594,7 +664,7 @@ fn a_continuous_leg_has_no_connection_at_the_joint() {
     assert_ne!(e.restrained[0].source, Source::WorkedOut);
     let mut notes = Vec::new();
     let d = &m.members[l1].design;
-    assert!(asce10::end_bolts(d, d.ends[1].as_ref(), &mut notes).is_none());
+    assert!(ohl_structures_fe::member_ends::end_bolts(d, d.ends[1].as_ref(), &mut notes).is_none());
     assert_eq!(
         notes,
         ["continuous through the joint: no connection to check"]
@@ -622,13 +692,13 @@ fn the_bolts_bear_on_the_thinner_leg_they_bolt_onto() {
         &BoltLibrary::default(),
     );
     m.members[0].design.thickness = Some(0.004);
-    let c = asce10::capacity(&m, D1, None);
+    let c = capacity(&m, D1);
     let (t, what) = c.tension.clone().unwrap();
     assert!((t - 2.0 * 1.5 * 510e6 * 0.016 * 0.004).abs() < 1e-6, "{t}");
     assert_eq!(what, "bearing at N2");
     // L1 as thick as D1: D1's own bearing, as before.
     m.members[0].design.thickness = Some(0.006);
-    let (_, what) = asce10::capacity(&m, D1, None).tension.unwrap();
+    let (_, what) = capacity(&m, D1).tension.unwrap();
     assert_eq!(what, "bolt shear");
 }
 

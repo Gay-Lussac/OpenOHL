@@ -368,13 +368,14 @@ impl StructureApp {
                 Some((k, r)) if *k == key => r.clone(),
                 _ => {
                     let f = self.file.as_ref().expect("checked above");
-                    let r = ohl_structure_link::bolt_rules(
+                    let r = ohl_structure_link::bolt_rules_in(
                         f.text_ref(),
                         &self.loads.sections,
                         &bolts.0,
                         m,
                         j,
                         force,
+                        f.path().and_then(std::path::Path::parent),
                     );
                     self.joint_tools
                         .rules

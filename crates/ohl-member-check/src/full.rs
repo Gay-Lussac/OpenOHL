@@ -47,7 +47,9 @@ fn given(g: &ohl_sections::Given) -> Vec<(String, f64)> {
 
 /// The properties of a profile as the core's checks take them.
 fn properties(p: &ohl_sections::Section) -> wit::ProfileProperties {
-    let q = p.properties();
+    // Worked out once per profile and thread (the core's store, 2026-11-18:
+    // most of a large tower's call went into working them out again).
+    let q = ohl_structures_fe::check::properties(p);
     wit::ProfileProperties {
         area: q.area,
         centroid: (q.centroid[0], q.centroid[1]),
@@ -106,7 +108,7 @@ fn connection(model: &Model, k: usize, end: usize) -> Option<wit::EndConnection>
         planes: c.planes.as_ref().map(|p| p.0),
         planes_why: c.planes.as_ref().map_or(String::new(), |p| p.1.clone()),
         continuous: c.continuous.is_some(),
-        onto_leg: ohl_structures_fe::asce10::onto_leg(model, k, end).map(|o| wit::OntoLeg {
+        onto_leg: ohl_structures_fe::member_ends::onto_leg(model, k, end).map(|o| wit::OntoLeg {
             member: o.id,
             thickness: o.thickness,
             fu: o.fu,

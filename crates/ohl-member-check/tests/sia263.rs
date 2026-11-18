@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! SIA 263:2013 as the bundled plugin `sia263` (moved out of the core
-//! 2026-11-18): found in OpenOHL's own folder, the old name an alias of
-//! its method, **the same numbers and words as the core gave before the
-//! move** (recorded from the core on the shipped examples), its clauses
-//! named, the foot movements' larger usage, the solve's cap by its own
-//! compression capacity. The plugin is built for wasm32-wasip2 by the full
-//! check; without it these tests skip (fail with
-//! `OHL_REQUIRE_PLUGIN_TESTS`).
+//! SIA 263:2013 and ASCE 10-97 as the bundled plugins `sia263` and
+//! `asce10` (moved out of the core 2026-11-18, ASCE 10-97 in the second
+//! round): found in OpenOHL's own folder, the old names aliases of their
+//! methods (ASCE 10-97 also the default, no name given), **the same
+//! numbers and words as the core gave before the move** (recorded from the
+//! core on the shipped examples), the clauses named, the foot movements'
+//! larger usage, the solve's cap by the plugin's own compression capacity.
+//! The plugins are built for wasm32-wasip2 by the full check; without them
+//! these tests skip (fail with `OHL_REQUIRE_PLUGIN_TESTS`).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -20,18 +21,27 @@ fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Whether the bundled plugin is built (else skip, or fail when the
+/// Whether the bundled plugins are built (else skip, or fail when the
 /// plugin tests are required).
 fn built() -> bool {
-    let wasm = repo().join("plugins/codes/sia263/target/wasm32-wasip2/release/sia263.wasm");
-    if wasm.is_file() {
+    let missing: Vec<&str> = ["sia263", "asce10"]
+        .into_iter()
+        .filter(|p| {
+            !repo()
+                .join(format!(
+                    "plugins/codes/{p}/target/wasm32-wasip2/release/{p}.wasm"
+                ))
+                .is_file()
+        })
+        .collect();
+    if missing.is_empty() {
         return true;
     }
     assert!(
         std::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
-        "plugins/codes/sia263 not built"
+        "plugins/codes/{missing:?} not built"
     );
-    eprintln!("skipping: plugins/codes/sia263 not built");
+    eprintln!("skipping: plugins/codes/{missing:?} not built");
     false
 }
 
@@ -53,9 +63,43 @@ fn the_old_name_is_the_bundled_plugins_method() {
     // Written back by its old name: no file changes.
     assert_eq!(p.name(), "sia263-2013");
     assert!(ohl_member_check::is_bundled("sia263"));
+    assert_eq!(m.analysis.capacity, ohl_structures_fe::CapacityMethod::Code);
+    // ASCE 10-97: the default (no name given) and its old name, both the
+    // bundled plugin asce10's method; the file keeps what it says.
+    for (name, written) in [
+        ("", "asce10-97"),
+        ("[analysis]\ncapacity = \"asce10-97\"\n", "asce10-97"),
+    ] {
+        let m = Model::parse(&format!(
+            "{name}[[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\n\
+             [[section]]\nid = \"a\"\nmaterial = \"s\"\narea = \"1 cm2\"\niy = \"1 cm4\"\n\
+             iz = \"1 cm4\"\n[[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
+             [[node]]\nid = \"B\"\npoint = [1, 0, 0]\nsupport = \"pinned\"\n\
+             [[member]]\nid = \"m\"\nnodes = [\"A\", \"B\"]\nsection = \"a\"\n"
+        ))
+        .unwrap();
+        let p = m.capacity_plugin.as_ref().expect("the bundled asce10");
+        assert_eq!(
+            (p.plugin.as_str(), p.method.as_str()),
+            ("asce10", "asce10-97")
+        );
+        assert_eq!(p.name(), written);
+        assert_eq!(m.analysis.capacity, ohl_structures_fe::CapacityMethod::Code);
+    }
+    assert!(ohl_member_check::is_bundled("asce10"));
+    // The simple check stays the core's: no plugin.
+    let m = Model::parse(
+        "[analysis]\ncapacity = \"simple\"\n[[material]]\nid = \"s\"\nelasticity = \"210 GPa\"\n\
+         [[section]]\nid = \"a\"\nmaterial = \"s\"\narea = \"1 cm2\"\niy = \"1 cm4\"\niz = \"1 cm4\"\n\
+         [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
+         [[node]]\nid = \"B\"\npoint = [1, 0, 0]\nsupport = \"pinned\"\n\
+         [[member]]\nid = \"m\"\nnodes = [\"A\", \"B\"]\nsection = \"a\"\n",
+    )
+    .unwrap();
+    assert!(m.capacity_plugin.is_none());
     assert_eq!(
         m.analysis.capacity,
-        ohl_structures_fe::CapacityMethod::Asce10
+        ohl_structures_fe::CapacityMethod::Simple
     );
 }
 
@@ -71,14 +115,9 @@ fn the_bundled_plugin_loads() {
 
 /// One structure file checked as the core's comparison of 2026-11-18 did
 /// it (variants and load cases alike): its lines `file|variant|case|
-/// member|usage bits|governs`; `plugin`: checked by the bundled plugin
-/// named by this old name, else by the core's own ASCE 10-97.
-fn lines(
-    path: &Path,
-    sections: &ohl_sections::SectionLibrary,
-    plugin: Option<&str>,
-    out: &mut String,
-) {
+/// member|usage bits|governs`; checked by the bundled plugin named by
+/// the old name `plugin`.
+fn lines(path: &Path, sections: &ohl_sections::SectionLibrary, plugin: &str, out: &mut String) {
     for variant in ["base", "redundant", "angles", "no-compression"] {
         let mut model = Model::load_with(path, sections).unwrap();
         match variant {
@@ -97,11 +136,11 @@ fn lines(
             _ => {}
         }
         // As the comparison set it: the method by its old name.
-        model.capacity_plugin = plugin.map(|p| {
-            ohl_structures_fe::model::PluginMethod::parse(p)
+        model.capacity_plugin = Some(
+            ohl_structures_fe::model::PluginMethod::parse(plugin)
                 .unwrap()
-                .unwrap()
-        });
+                .unwrap(),
+        );
         let model = ohl_member_check::find(model, path.parent()).unwrap();
         let runs = [
             ("A", [6e3, 0.0, 12e3], 1.0),
@@ -126,18 +165,18 @@ fn lines(
                 self_weight: 1.0,
                 prescribed: Vec::new(),
             };
-            if let Ok((s, u)) = ohl_structures_fe::analyse(
+            if let Ok((s, _)) = ohl_structures_fe::analyse(
                 &model,
                 &loads,
                 strength,
                 &ohl_structures_fe::default_budget(),
             ) {
-                solved.push((name, strength, s, u));
+                solved.push((name, strength, s));
             }
         }
         let list: Vec<ohl_member_check::Solved> = solved
             .iter()
-            .map(|(n, st, s, _)| ohl_member_check::Solved {
+            .map(|(n, st, s)| ohl_member_check::Solved {
                 name: n,
                 strength: *st,
                 self_weight: 1.0,
@@ -145,16 +184,11 @@ fn lines(
                 moved: None,
             })
             .collect();
-        let usages: Vec<Vec<ohl_structures_fe::MemberUsage>> = match plugin {
-            Some(_) => {
-                ohl_member_check::check(&model, &list)
-                    .expect("a plugin")
-                    .expect("checked")
-                    .usage
-            }
-            None => solved.iter().map(|x| x.3.clone()).collect(),
-        };
-        for ((name, _, _, _), usage) in solved.iter().zip(&usages) {
+        let usages = ohl_member_check::check(&model, &list)
+            .expect("a plugin")
+            .expect("checked")
+            .usage;
+        for ((name, _, _), usage) in solved.iter().zip(&usages) {
             for u in usage {
                 let _ = writeln!(
                     out,
@@ -196,25 +230,28 @@ fn the_examples_give_the_cores_numbers() {
         "examples/synthetic-line/Structures/type-02.ohls",
         "examples/exports/every-profile.ohls",
     ] {
-        lines(&repo().join(f), &sections, Some("sia263-2013"), &mut out);
+        lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
     assert_eq!(fnv(&out), 0x8b2d_471e_2dd6_7097, "{out}");
 }
 
-/// The same examples by the core's ASCE 10-97 (the default), recorded at
-/// commit 01cc57ec before the SIA 263 move (and unchanged by it): the
-/// numbers ASCE 10-97's plugin must give when it moves out of the core in
-/// its turn.
+/// The same examples by ASCE 10-97 (the default), now its bundled plugin
+/// `asce10` (2026-11-18): the numbers the core's own ASCE 10-97 gave,
+/// recorded at commit 01cc57ec before the SIA 263 move (and unchanged by
+/// it) — the same hash, every usage's bits and what governs.
 #[test]
 fn the_examples_keep_the_cores_asce10_numbers() {
+    if !built() {
+        return;
+    }
     let sections = ohl_sections::SectionLibrary::load(&repo().join("libraries/sections")).unwrap();
     let mut out = String::new();
     for f in [
         "examples/synthetic-line/Structures/type-02.ohls",
         "examples/exports/every-profile.ohls",
     ] {
-        lines(&repo().join(f), &sections, None, &mut out);
+        lines(&repo().join(f), &sections, "asce10-97", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
     assert_eq!(fnv(&out), 0xa2ac_8421_7e06_e804, "{out}");

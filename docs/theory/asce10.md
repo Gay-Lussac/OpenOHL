@@ -1,15 +1,24 @@
 # Member capacities by ASCE 10-97
 
-Implemented in `crates/ohl-structures-fe/src/asce10.rs` (`capacity`,
+Implemented in the plugin **`asce10`, bundled with OpenOHL**
+(`plugins/codes/asce10`: `asce10.rs` — `capacity`,
 `effective_slenderness`, `local_buckling_stress`, `column_stress`,
-`torsional_radius`, `torsional_flexural_radius`,
-`torsional_slenderness`), with the conditions of the member ends in
-`crates/ohl-structures-fe/src/member_ends.rs` (`end_conditions`) and the
-section properties in `crates/ohl-sections/src/lib.rs`
-(`Section::properties`, `Shape::symmetry`). The usage that follows from the
-capacities is on the [structure analysis](structures-fe.md#member-usage)
-page. Built, in active development (not approved yet); pre-alpha: results
-must be verified by a qualified engineer.
+`torsional_radius`, `torsional_flexural_radius`, `torsional_slenderness`,
+`bolt_minimums` —, `check.rs` the member's usage, `joints.rs` the plates;
+owner 2026-11-17, moved out of the core on 2026-11-18 with the same
+formulas and words, after SIA 263:2013). OpenOHL sends it every checked
+member with everything its check reads through the plugin interface
+`member-check-full` — the conditions of the member ends as the core works
+them out (`crates/ohl-structures-fe/src/member_ends.rs`,
+`end_conditions`), the section properties
+(`crates/ohl-sections/src/lib.rs`, `Section::properties`,
+`Shape::symmetry`) —, its joints through `joint-check-full`, and the bolt
+tools ask it through `bolt-distances`
+([Plugins](../development/plugins.md#member-checks)). The usage that
+follows from the capacities is on the
+[structure analysis](structures-fe.md#member-usage) page. Built, in active
+development (not approved yet); pre-alpha: results must be verified by a
+qualified engineer.
 
 **Source.** ASCE 10-97, *Design of Latticed Steel Transmission
 Structures*, American Society of Civil Engineers (1998), Section 3
@@ -18,9 +27,13 @@ are the standard's. The standard gives its formulas in US units with a
 factor Ψ for metric use (Ψ = 1 for ksi, 2.62 for MPa); the program
 computes in SI with \\( f_y \\) in MPa where Ψ appears.
 
-**Where it is used.** `[analysis] capacity = "asce10-97"`, the default
-(owner: "for the tower the ASCE 10-97 should be an
-option in the core, if safer even the default"). Every checked truss or
+**Where it is used.** `[analysis] capacity = "asce10-97"`, the default —
+no `capacity` given is the same (owner: "for the tower the ASCE 10-97
+should be an option in the core, if safer even the default"; since
+2026-11-18 the name is an alias of the bundled plugin's method, no file
+changes). The method takes **no parameters** (its design strengths carry
+no resistance factor to set): a parameter file `Plugins/asce10.toml` with a
+value in it is refused, named. Every checked truss or
 frame member whose material has a yield strength gets a compression and a
 tension capacity from this page; the usage is the force over the capacity
 times the load case's strength factor \\( \phi \\). A member without a
@@ -333,8 +346,9 @@ in the shear plane").
 
 ### Minimum distances of bolts
 
-`asce10::bolt_minimums`, used through `bolt_rules::rules` by the bolt
-layout form and the Add / Move bolt tools, with \\( d \\) the
+`asce10::bolt_minimums` (the plugin's `bolt-distances`), asked through
+`ohl_member_check::joints::bolt_rules` by the bolt layout form and the
+Add / Move bolt tools, with \\( d \\) the
 bolt diameter, \\( t \\) the connected thickness, \\( f_u \\) its tensile
 strength and \\( P \\) the force one bolt transmits:
 
@@ -506,16 +520,42 @@ be told from the model's data and stay said here only.
 
 ## Validation
 
+**The move (2026-11-18): the same numbers bit for bit.** Before the core's
+copy was removed, the members of the shipped example towers, of the
+lattice towers of two conversions of a real line (72 towers each, 579 to
+3 030 members) and of three of those towers made level 4 with a joint
+detail at every member end (bolts, legs, gauge lines, distances, onto
+members and plates, library bolts, given conditions) were checked by the
+core and by the plugin in four load cases and up to five variants (as
+given, with the redundant-force check, with single angles' moments, with
+tension-only members carrying no compression, with the joint details):
+4 487 212 member results, every usage identical to the last bit and every
+"what governs" identical word for word; the joints' plate checks of the
+three level-4 towers (9 452 part results in four cases) likewise; the
+validation cases' values identical to all 17 digits the report prints. A
+test keeps the shipped examples' 2 256 results (their hash) against the
+plugin (`crates/ohl-member-check/tests/sia263.rs`,
+`the_examples_keep_the_cores_asce10_numbers`).
+
 - `benchmarks/structures-fe/asce10.toml`: the curves, local buckling, the
   column curve, tension by net section, bolt shear and bearing against
   values computed by hand from the formulas above
-  ([list](../validation/textbook.md#member-capacities-by-asce-10-97-benchmarksstructures-feasce10toml)).
-- Unit tests (`asce10::tests::connection_rules_by_hand`): holes, the short-leg rule, block shear, bearing on the bolt's f_u, the root area and the w/t limit on an invented unequal angle by hand; (`member_ends_tests::restraint_by_plate_and_by_stiffness`) a plate alone and the I/L rule.
-- Unit tests (`asce10::tests`): the standard's own Examples 15 and 16
+  ([list](../validation/textbook.md#member-capacities-by-asce-10-97-benchmarksstructures-feasce10toml)),
+  run through the bundled plugin.
+- Unit tests (the plugin's, `cargo test` in `plugins/codes/asce10`, moved
+  with the code: `tests::connection_rules_by_hand`): holes, the short-leg
+  rule, block shear, bearing on the bolt's f_u, the root area and the w/t
+  limit on an invented unequal angle by hand; (the core's tests moved to
+  `crates/ohl-member-check/tests/member_ends.rs`,
+  `restraint_by_plate_and_by_stiffness`) a plate alone and the I/L rule.
+- Unit tests (the plugin's `tests`): the standard's own Examples 15 and 16
   (Appendix B: \\( r_t \\), \\( r_{tf} \\), \\( KL/r \\), \\( F_a \\)); which
-  profile takes which clause; the crossing diagonal; the end conditions
-  (`member_ends_tests`); the section properties against hand values
-  (`ohl_sections` tests).
+  profile takes which clause; the crossing diagonal; the bolt minimums;
+  the end conditions through the plugin
+  (`crates/ohl-member-check/tests/member_ends.rs`); the clauses not
+  covered and single angles' axial check
+  (`crates/ohl-member-check/tests/asce10.rs`); the section properties
+  against hand values (`ohl_sections` tests).
 - Compared privately with a tower design program's capacities on a real
   line's 73 towers: compression within 0.5 % on 95.5 % of the
   members, tension within 0.5 % on 95.3 %; the differences were the

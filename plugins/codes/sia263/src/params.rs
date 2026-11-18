@@ -133,9 +133,9 @@ pub fn words(p: &Params) -> String {
             String::new()
         } else {
             format!(
-                ", f_uE {:.0} MPa (from the parameter file; the standard's: γ_M1 {GAMMA_M1}, \
-                 γ_M2 {GAMMA_M2}, f_uE {:.0} MPa); the joints' plates and welds and Member \
-                 details take the standard's — NOT ON THE SAFE SIDE where these are larger",
+                ", f_uE {:.0} MPa (from the parameter file, for the members, the joints' \
+                 plates and welds and Member details alike; the standard's: γ_M1 {GAMMA_M1}, \
+                 γ_M2 {GAMMA_M2}, f_uE {:.0} MPa)",
                 p.filler_ultimate / 1e6,
                 FILLER_ULTIMATE / 1e6
             )

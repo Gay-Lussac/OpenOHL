@@ -86,11 +86,14 @@ impl StructureApp {
         }
         let bolts = self.bolt_library();
         let f = self.file.as_ref().expect("checked above");
-        let c = Arc::new(ohl_structure_link::member_capacity(
+        // With the structure's folder: its plugin asked with the
+        // parameter file beside it, as a run asks it (2026-11-18).
+        let c = Arc::new(ohl_structure_link::member_capacity_in(
             f.text_ref(),
             &self.loads.sections,
             &bolts.0,
             member,
+            f.path().and_then(std::path::Path::parent),
         ));
         self.joints.capacity = Some((key, c.clone()));
         c

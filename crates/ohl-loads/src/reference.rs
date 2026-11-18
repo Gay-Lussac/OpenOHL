@@ -712,6 +712,10 @@ fn feet_moves(
         let model = model
             .as_ref()
             .map_err(|e| format!("its model could not be read: {e}"))?;
+        // Its design code's plugin not found: not solved (2026-11-18).
+        if let Some(e) = analyses.plugin_error_of(t, extension) {
+            return Err(e.clone());
+        }
         let feet = crate::feet::on_model(model, Some(s))?.unwrap_or_default();
         let u = ohl_structures_fe::condense::deflect_full(
             model,

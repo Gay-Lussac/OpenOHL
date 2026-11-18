@@ -8,6 +8,78 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (second round)
+
+**ASCE 10-97, the default member check, moved out of the core into a
+bundled plugin; a plugin's settings reach its joint checks and Member
+details; a longer time limit for the bundled plugins** (owner,
+2026-11-18, on round 1's open points: settings to the joints and Member
+details, the file name kept; the time limit raised for bundled plugins
+only; built, in active development, not approved yet;
+[theory](../theory/asce10.md), [plugins](plugins.md#the-full-records-parameters-foot-movements-bundled-codes)).
+
+- **ASCE 10-97 moved, not rewritten** (`plugins/codes/asce10`, AGPL like
+  `sia263`): the members' check (the core's `asce10.rs` and its part of
+  `check.rs`: the usage, the clauses not covered, the redundant-force
+  check), the plates (`plates.rs`' ASCE part) through `joint-check`, the
+  bolt distances of 4.5 through `bolt-distances`. It takes no parameters
+  (a parameter file with a value is refused, named). **The same numbers
+  bit for bit**: before the core's copy was removed, the shipped example
+  towers, the lattice towers of two conversions of a real line (144
+  structure files, 579 to 3 030 members) and three of them made level 4
+  with a joint detail at every member end were checked by both in four
+  load cases and up to five variants — 4 487 212 member results, every
+  usage identical to the last bit and every "what governs" word for
+  word; the three level-4 towers' plate checks (9 452 part results) and
+  the validation report's values likewise. The examples' 2 256 results
+  stay a test against the plugin (the hash recorded before the first
+  round). Then the core's copy was removed.
+- **What the core keeps**: the simple check; `CapacityMethod::Code` (any
+  design code: a plugin's method, `Model::capacity_plugin`) instead of
+  `Asce10`; the joints' data merged (`member_ends::end_bolts`,
+  `onto_leg`) and the bolt tools' force basis without an analysis
+  (`member_ends::bolt_shear_per_bolt`: a bolt's shear capacity as ASCE
+  10-97 4.3.2 gives it, 0.62 f_ub on the root area, whatever the code —
+  kept so that the distances asked of a plugin stay what they were;
+  listed for the owner); a model of a design code solved and checked
+  without its plugin (tests, a library caller) reports every member not
+  checked and caps its tension-only members by their Euler load only — the
+  runners (OHL-Structure, `ohl structures fe`, the line, the validation)
+  find the plugin first, as since round 1. In the line, a structure whose
+  code's plugin is not found is refused (its check, named) and, at levels
+  3 and 4, taken rigid with that reason — not solved as flexible with
+  another cap (`Analyses::plugin_error_of`).
+- **Old files unchanged**: no `capacity`, or `capacity = "asce10-97"`, is
+  the plugin's method (an alias, written back as it was: none stays
+  none); nothing rewritten, no version raised. ("none" read as *no name
+  given*: a file saying `capacity = "none"` is still refused — a literal
+  "none" could be meant as *no check*.)
+- **Settings reach the joints and Member details**: an additive interface
+  `joint-check-full` (`joint-check`'s records with the parameter file's
+  text), called before `joint-check`; OHL-Structure passes the structure's
+  folder to Member details, the plate checks and the bolt tools
+  (`member_capacity_in`, `plate_plans_in`, `bolt_rules_in`), so
+  `Plugins/<plugin>.toml` is read there as a run reads it. Round 1's "NOT
+  ON THE SAFE SIDE where the file's factors are larger" is gone with its
+  cause (test: a γ_M2 of 1.5 raises a plate part's usage by 1.5/1.25 and
+  lowers Member details' tension). The bolt tools' minimum distances get
+  no parameters (neither bundled code's depend on them): open.
+- **Time limit**: a plugin in OpenOHL's own `plugins/codes` is given 120 s
+  and 4 GiB a call (`Limits::BUNDLED_CALL_TIMEOUT`, `BUNDLED_MAX_MEMORY`);
+  user plugins keep 5 s and 256 MiB. Measured on the largest tower
+  (3 030 members, joint details): 11.7 s with 91 load cases in one call
+  (a 10-core laptop with other builds running; some ten times under the
+  limit); 256 MiB did not hold that call (a wasm trap). Found on the way: the host worked
+  out every profile's properties again for every member of a call (9.9 s
+  for a 2 926-member tower in 4 cases, under load); it now takes the
+  core's store — 0.18 s, the same numbers.
+- **Interface version** stays 0.3 (additive: a new interface and an
+  export added to the bundled codes' world; plugins built against 0.3
+  load and answer as before).
+- **Open**: the pole codes (ASCE/SEI 48-19, SIA 263 shafts, SIA 265) stay
+  in the core until a pole export exists; the bolt tools' force basis
+  (ASCE 10-97's bolt shear) in the core; parameters for `bolt-distances`.
+
 ## 2026-11-18
 
 **SIA 263:2013 moved out of the core into a bundled plugin; the plugin

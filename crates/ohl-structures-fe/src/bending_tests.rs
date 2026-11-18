@@ -206,6 +206,9 @@ fn a_member_not_checked_has_no_usage() {
     m.sections[0].wy = Some(1e-5);
     m.sections[0].wz = Some(1e-5);
     m.members[0].check = false;
+    // The core's own check (a design code's usage is its plugin's since
+    // 2026-11-18): MB's capacities A·f_y and W·f_y alike.
+    m.analysis.capacity = crate::CapacityMethod::Simple;
     let s = run(&m, vec![force(2, [H, 0.0, 0.0]), force(1, [0.0, 0.0, -P])]).unwrap();
     assert!(s.members[0].axial > 0.0);
     let u = member_usage(&m, &s, 1.0);

@@ -14,7 +14,9 @@
 //!   `bolt-distances`: no minimum distances, said ([`bolt_rules`]'s
 //!   error) — not ASCE 10-97's, not SIA 263's.
 //! - **One call per structure** for the joint parts, with every load
-//!   case ([`check_joints`]).
+//!   case ([`check_joints`]), with the structure's parameter file for the
+//!   plugin when it has the `joint-check-full` export (2026-11-18), else by
+//!   `joint-check` (the method's own values).
 //! - **Where the plugin is.** A model built from a file's text alone does
 //!   not know its folder: the plugin is looked for where structures were
 //!   opened or run in this session ([`crate::roots`] remembers the
@@ -30,6 +32,7 @@ use ohl_plugins::bolt_distances as dist;
 pub use ohl_plugins::bolt_distances::DistanceInput;
 use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
+use ohl_plugins::joint_check_full as full;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
 use ohl_structures_fe::bolt_rules::{Basis, BoltRules};
@@ -141,13 +144,103 @@ pub fn check_joints(p: &PluginMethod, input: &wit::JointInput) -> JointsChecked 
         Err(e) => return JointsChecked::NotChecked(format!("the plugin host does not start: {e}")),
     };
     JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    match host.check_joints(&dir, &p.method, input) {
+    // With the structure's parameter file when the plugin takes it
+    // (`joint-check-full`, 2026-11-18), else `joint-check` (the method's
+    // own values).
+    let params = p.parameters.as_ref().map_or("", |x| x.1.as_str());
+    let full = host
+        .check_joints_full(&dir, &p.method, &full_input(input, params))
+        .map(|r| r.map(|r| r.into_iter().map(plain_result).collect::<Vec<_>>()));
+    let given = match full {
+        Ok(Some(r)) => Ok(Some(r)),
+        Ok(None) => host.check_joints(&dir, &p.method, input),
+        Err(e) => Err(e),
+    };
+    match given {
         Ok(Some(r)) => JointsChecked::Results(r),
         Ok(None) => JointsChecked::NotChecked(format!(
             "the plugin {} has no joint check (no joint-check export)",
             p.plugin
         )),
         Err(e) => JointsChecked::NotChecked(format!("the joint check failed: {e}")),
+    }
+}
+
+/// `input` as `joint-check-full` takes it, with the plugin's `parameters`
+/// (TOML; "" none).
+fn full_input(input: &wit::JointInput, parameters: &str) -> full::JointInput {
+    full::JointInput {
+        structure: input.structure.clone(),
+        parameters: parameters.to_owned(),
+        cases: input
+            .cases
+            .iter()
+            .map(|c| full::LoadCase {
+                name: c.name.clone(),
+                strength: c.strength,
+            })
+            .collect(),
+        parts: input
+            .parts
+            .iter()
+            .map(|p| full::Part {
+                id: p.id,
+                joint: p.joint.clone(),
+                plate: p.plate.clone(),
+                kind: p.kind.clone(),
+                other: p.other.clone(),
+                bolts: p.bolts.as_ref().map(|b| full::BoltGroup {
+                    count: b.count,
+                    diameter: b.diameter,
+                    hole: b.hole,
+                    bolt_ultimate: b.bolt_ultimate,
+                    lines: b.lines,
+                    per_line: b.per_line,
+                    pitch: b.pitch,
+                    span: b.span,
+                    end_tension: b.end_tension,
+                    end_compression: b.end_compression,
+                    edge: b.edge,
+                    width: b.width,
+                    width_note: b.width_note.clone(),
+                }),
+                steel: p.steel.map(|s| full::PlateSteel {
+                    thickness: s.thickness,
+                    fy: s.fy,
+                    fu: s.fu,
+                }),
+                weld: p.weld.as_ref().map(|w| full::Weld {
+                    kind: w.kind.clone(),
+                    throat: w.throat,
+                    length: w.length,
+                    length_given: w.length_given,
+                    angle: w.angle,
+                    fy: w.fy,
+                    thicknesses: w.thicknesses.clone(),
+                }),
+                forces: p.forces.clone(),
+                notes: p.notes.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// A `joint-check-full` result as `joint-check`'s (the same record).
+fn plain_result(r: full::PartResult) -> wit::PartResult {
+    wit::PartResult {
+        id: r.id,
+        usages: r
+            .usages
+            .into_iter()
+            .map(|u| wit::CaseUsage {
+                load_case: u.load_case,
+                usage: u.usage,
+                check: u.check,
+            })
+            .collect(),
+        governs: r.governs,
+        notes: r.notes,
+        not_safe: r.not_safe,
     }
 }
 
@@ -234,7 +327,12 @@ pub fn bolt_rules(
         let mut clauses = d.clauses.into_iter();
         let mut next = || clauses.next().unwrap_or_default();
         BoltRules {
-            code: format!("{} of the plugin {}", p.method, p.plugin),
+            // A bundled code by its name in files ("asce10-97"), another
+            // plugin's method with its plugin.
+            code: p.alias().map_or_else(
+                || format!("{} of the plugin {}", p.method, p.plugin),
+                str::to_owned,
+            ),
             end: d.end,
             spacing: d.spacing,
             edge: d.edge,

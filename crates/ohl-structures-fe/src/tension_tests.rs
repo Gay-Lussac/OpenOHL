@@ -52,6 +52,10 @@ fn panel(kind: MemberKind, crossing: bool) -> Model {
         sections: vec![Section::elastic("s", E, 1e-3, 0.0)],
         ..Model::default()
     };
+    // The core's own check (the simple one) for the usage: a design code's
+    // is its plugin's since 2026-11-18 (tested in ohl-member-check); the
+    // words for slack and bowed members are the same.
+    m.analysis.capacity = crate::CapacityMethod::Simple;
     m.nodes = vec![
         Node::pinned("A", [0.0, 0.0, 0.0]),
         Node::pinned("B", [4.0, 0.0, 0.0]),
