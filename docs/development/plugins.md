@@ -240,7 +240,7 @@ entry        plugins/examples/geojson/target/wasm32-wasip2/release/geojson.wasm
   format geojson-structures: Structures from GeoJSON Point features (.geojson, importer)
 ```
 
-Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout) and a memory cap (default 256 MiB, for all the plugin's memories together, not each; since 2026-10-26 also at most 64 instances, 16 memories and 64 tables of at most 2^20 elements in its store). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
+Plugins run sandboxed — no file system, network, environment variables or standard I/O — with **exit clauses** on every call: a time limit (default 5 s; a runaway plugin is interrupted and reported as a timeout; the design codes bundled with OpenOHL 120 s, 2026-11-18) and a memory cap (default 256 MiB; the bundled codes 4 GiB; for all the plugin's memories together, not each; since 2026-10-26 also at most 64 instances, 16 memories and 64 tables of at most 2^20 elements in its store). `plugins/tests/runaway` is a deliberately endless plugin used to test this.
 
 ## File-format plugins
 
@@ -1058,9 +1058,16 @@ further optional export carries them:
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the
   structure file (`ohl_member_check::parameters`), sent as text; none:
   the method's own values, said in its note. No file format changes.
-  The joint check and Member details do not know the structure's folder
-  and take the method's own values (said; the SIA 263 plugin says NOT ON
-  THE SAFE SIDE when the file's factors are larger).
+  Since the second round (2026-11-18) the same file reaches **the joint
+  check** — a further optional export `joint-check-full`, `joint-check`'s
+  records repeated with `joint-input.parameters` (`check-joints-full`;
+  `ohl_plugins::joint_check_full`, called before `joint-check` by
+  `ohl_member_check::joints::check_joints`) — and **Member details**
+  (`ohl_member_check::with_parameters`: OHL-Structure passes the
+  structure's folder, `member_capacity_in`, `plate_plans_in`,
+  `bolt_rules_in`; the old forms without a folder take the method's own
+  values, said). The bolt tools' minimum distances get no parameters
+  (neither bundled code's depend on them; a plugin whose would: open).
 - **Foot movements** (`ohl_member_check::Solved::moved`): a case solved
   with the structure's measured foot movements is sent twice in the same
   call — as solved without them and on its moved feet (`<case> (on its
@@ -1095,7 +1102,30 @@ further optional export carries them:
   beside the programs. The full check builds, lints and tests it
   (`plugins/codes/*`, its native tests). `simple` stays in the core;
   ASCE 10-97 (the default) follows in a second round; the pole codes stay
-  in the core until a pole export exists.
+  in the core until a pole export exists. **Second round (2026-11-18):
+  ASCE 10-97**, the default, is the bundled plugin `asce10`
+  (`plugins/codes/asce10`): `"asce10-97"` and no `capacity` at all are
+  aliases of its method `asce10-97`; the core runs no design code any
+  more — a model of a code solved without its plugin reports every member
+  `PLUGIN_NOT_RUN` and caps its tension-only members by their Euler load
+  only.
+- **Time and memory of a bundled plugin.** A plugin in OpenOHL's own
+  `plugins/codes` (`WasmHost::with_bundled_root`, set by
+  `ohl_member_check::host`) is given `Limits::BUNDLED_CALL_TIMEOUT` =
+  **120 s** and `Limits::BUNDLED_MAX_MEMORY` = 4 GiB a call; user plugins
+  keep 5 s and 256 MiB (raised only as their manifest asks and the user
+  allows). Measured (2026-11-18, a 10-core laptop, other builds
+  running): the largest tower of the real-line comparison (3 030
+  members, its joint details at every end) took 11.7 s in one call
+  with 91 load cases (100 asked, 9 refused by the solve), and a
+  2 926-member tower 0.18 s with 4 —
+  after the host stopped working out each profile's properties again for
+  every member (it took 9.9 s before, near twice the old 5 s); a call
+  grows about linearly with members × cases, so 120 s leaves a margin of
+  some ten times over 90 cases on the largest tower (some 900 cases, or 450
+  with foot movements, which send each case twice). The memory: that call
+  did not fit 256 MiB (every member's forces and words of every case cross
+  in one call).
 - **Joints of a bundled code** go through `joint-check`: the usage and the
   governing check are the core's as before; the joint panel shows the
   governing check only (the interface carries no per-check list) — the
@@ -1104,9 +1134,11 @@ further optional export carries them:
   world, optional exports): plugins built against 0.3 load and answer as
   before; the version stays 0.3 (ADR-0012: additive changes keep it;
   before 1.0 a raised minor would refuse every plugin built for 0.3).
-- Proof of the move: `crates/ohl-member-check/tests/sia263.rs` (the
+- Proof of the moves: `crates/ohl-member-check/tests/sia263.rs` (the
   shipped examples' 2 256 member results, bits and words, against those
-  the core gave), [SIA 263 theory](../theory/sia263.md#validation).
+  the core gave — by SIA 263 and by ASCE 10-97), [SIA 263
+  theory](../theory/sia263.md#validation), [ASCE 10-97
+  theory](../theory/asce10.md#validation).
 
 ## Field presets
 

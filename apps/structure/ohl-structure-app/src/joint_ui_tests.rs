@@ -602,7 +602,7 @@ fn member_details_follow_the_bolts_live() {
     assert_eq!(h.state().joints.member.as_deref(), Some("D1"));
     menu(&mut h, "Design", "Member details");
     h.run();
-    h.get_by_label_contains("Resistance (ASCE 10-97");
+    h.get_by_label_contains("Resistance (asce10-97 (the bundled plugin asce10)");
     h.get_by_label("Tension");
     // The Detail view's heading (the Inspector a tab behind the details).
     assert_eq!(h.get_all_by_label("Member D1").count(), 1);
@@ -829,7 +829,10 @@ fn bolt_tools_keep_the_code() {
     let ends = [("H1".to_owned(), "N2".to_owned())];
     let rules = h.state_mut().bolt_rules_of(&ends);
     let r = rules.get(&ends[0]).expect("ASCE 10-97 rules").clone();
-    assert_eq!(r.code, "ASCE 10-97");
+    assert_eq!(
+        r.code, "asce10-97",
+        "the bundled plugin asce10's, by its name"
+    );
     assert!(r.end >= 1.3 * 0.016 - 1e-9 && r.spacing >= 0.6 * 0.016);
     let a = details
         .joint("N2")

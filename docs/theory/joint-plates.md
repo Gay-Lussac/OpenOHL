@@ -1,11 +1,13 @@
 # Gusset plates and their welds
 
-Implemented in `crates/ohl-structures-fe/src/plates.rs` (`bolted`, `weld`,
-`PlateCheck`, `Checked::governing`; ASCE 10-97) and, for SIA 263:2013, in
-its bundled plugin since 2026-11-18 (`plugins/codes/sia263/src/joints.rs`,
-the same checks moved there: `bolted`, `weld`, `contact_width`; reached
-through the plugin interface `joint-check`, one call with every part and
-case) with the geometry and
+Implemented in the design codes' bundled plugins since 2026-11-18 — ASCE
+10-97 in `plugins/codes/asce10/src/joints.rs` (`bolted`, `weld`,
+`PlateCheck`, `Checked::governing`; the core's `plates.rs` until then),
+SIA 263:2013 in `plugins/codes/sia263/src/joints.rs` (`bolted`, `weld`,
+`contact_width`), the same checks moved there, reached through the plugin
+interface `joint-check-full` with the structure's parameter file for the
+plugin (one call with every part and case; `crates/ohl-structures-fe/src/plates.rs`
+keeps the parts' records) — with the geometry and
 forces of `apps/structure/ohl-structure-link/src/plate_checks.rs`
 (`plate_plans`, `plate_usage`, the weld's force, the distances to the
 plate's edge), run with every case of OHL-Structure's analysis (Results ›
@@ -227,9 +229,11 @@ usage over the cases and the governing case.
 
 ## Validation
 
-Unit tests in `crates/ohl-structures-fe/src/plates.rs` (ASCE 10-97) and in
-the plugin `plugins/codes/sia263` (`src/tests.rs`: SIA 263's, moved with
-the code), by hand on invented data:
+Unit tests in the plugins `plugins/codes/asce10` (`src/joints.rs`: ASCE
+10-97's, moved with the code) and `plugins/codes/sia263` (`src/tests.rs`:
+SIA 263's), by hand on invented data; before the ASCE 10-97 move its plate
+checks of three level-4 towers (9 452 part results in four cases) were
+compared, core against plugin: identical to the last bit:
 
 - `asce10_plate_by_hand`: four M16 bolts (hole 18 mm, punched 19.6 mm)
   in two lines 60 mm apart, two to a line 50 mm apart, 40 mm to the

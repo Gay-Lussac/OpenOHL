@@ -51,11 +51,16 @@
 //!   is capped by the plugin's own compression capacity, asked once when
 //!   the plugin is found ([`find`], [`prepare`]), never another code's.
 //! - **Bundled plugins** (2026-11-18): the design codes that were the
-//!   core's own (`[analysis] capacity = "sia263-2013"`,
+//!   core's own (`[analysis] capacity = "asce10-97"`, the default also when
+//!   none is given, and `"sia263-2013"`,
 //!   [`ohl_structures_fe::model::BUNDLED_ALIASES`]) are plugins shipped
 //!   with OpenOHL, found in its own folder ([`bundled_root`]) before any
 //!   other and only there; one that does not load is an error at start
-//!   ([`check_bundled`]), never a fallback to another code.
+//!   ([`check_bundled`]), never a fallback to another code; they are given
+//!   a longer time and more memory a call than user plugins ([`host`]).
+//! - **Their settings everywhere** (2026-11-18): the structure's parameter
+//!   file reaches the joint check (`joint-check-full`, [`joints`]) and
+//!   Member details ([`with_parameters`]) as it reaches the member check.
 //!
 //! This crate is the one place that knows both the finite-element
 //! results and the plugin host: `ohl-structures-fe` runs no plugins, and
@@ -79,9 +84,16 @@ use ohl_structures_fe::{Model, Solution};
 pub fn host() -> Result<&'static ohl_plugins::WasmHost, String> {
     static HOST: std::sync::OnceLock<Result<ohl_plugins::WasmHost, String>> =
         std::sync::OnceLock::new();
-    HOST.get_or_init(|| ohl_plugins::WasmHost::new().map_err(|e| e.to_string()))
-        .as_ref()
-        .map_err(Clone::clone)
+    // The bundled plugins (OpenOHL's own design codes) get their longer
+    // time a call ([`ohl_plugins::Limits::BUNDLED_CALL_TIMEOUT`]); every
+    // other plugin keeps its own limits.
+    HOST.get_or_init(|| {
+        ohl_plugins::WasmHost::new()
+            .map(|h| h.with_bundled_root(bundled_root()))
+            .map_err(|e| e.to_string())
+    })
+    .as_ref()
+    .map_err(Clone::clone)
 }
 
 /// Said for a member the plugin gave nothing for.
@@ -318,6 +330,22 @@ pub fn find(mut model: Model, dir: Option<&Path>) -> Result<Model, String> {
     }
     prepare(&mut model)?;
     Ok(model)
+}
+
+/// The plugin `model`'s file names given the structure's parameter file
+/// for it (`Plugins/<plugin>.toml` beside the structure in `dir`,
+/// [`parameters`]) without looking for the plugin or running it
+/// (2026-11-18: the paths that ask the plugin later from a file's text —
+/// Member details, the joints' checks — take the file's parameters as a
+/// run does); `dir` is remembered as a folder plugins are looked for in
+/// ([`roots`]). A model naming no plugin is left as it is. Err: the
+/// parameter file does not read.
+pub fn with_parameters(model: &mut Model, dir: Option<&Path>) -> Result<(), String> {
+    if let Some(p) = &mut model.capacity_plugin {
+        roots(dir);
+        p.parameters = parameters(&p.plugin, dir)?;
+    }
+    Ok(())
 }
 
 /// The structure's parameter file for `plugin`: `Plugins/<plugin>.toml`

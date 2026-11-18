@@ -8,13 +8,14 @@
 //! The capacities come from the model's capacity method
 //! (`[analysis] capacity`, [`CapacityMethod`], 2026-10-27):
 //!
-//! - **ASCE 10-97** (the default, [`crate::asce10`]): compression by the
-//!   effective slenderness, local buckling and the column curve, the
-//!   least with the bolts' shear and bearing; tension the least of the net
-//!   section, bolt shear and bearing — from the member's design data
-//!   ([`crate::design`]), missing data assumed on the safe side and said
-//!   per member (`[assumed: …]`). A member whose section has no yield
-//!   strength falls back to the simple check.
+//! - **A design code** ([`CapacityMethod::Code`]): ASCE 10-97 by default,
+//!   SIA 263:2013 or another plugin's method — since 2026-11-18 every
+//!   design code is a plugin's (the bundled `asce10` and `sia263`,
+//!   [`Model::capacity_plugin`]): the core runs no plugins, so a model
+//!   whose code no runner checked reports every member not checked
+//!   ([`PLUGIN_NOT_RUN`]) — never another method in its place. The runners
+//!   (`ohl-member-check`: OHL-Structure, `ohl structures fe`, the line's
+//!   structure check) replace the usage with the plugin's.
 //! - **Simple** ([`SIMPLE`]): tension against the section's allowable
 //!   tension, else area × yield; compression against the allowable
 //!   compression (else area × yield), but not above the Euler load
@@ -87,24 +88,30 @@ pub fn shifted_note(usage: &[MemberUsage]) -> String {
 }
 
 fn capacity_words(model: &Model, usage: &[MemberUsage]) -> String {
-    if let Some(p) = &model.capacity_plugin
-        && usage.iter().any(|u| u.governs.starts_with(PLUGIN_NOT_RUN))
-    {
-        return format!(
-            "member capacities: {PLUGIN_NOT_RUN} ({}); no other method was used in its place",
-            p.name()
-        );
-    }
     match model.analysis.capacity {
         CapacityMethod::Simple => format!("member capacities: {SIMPLE}"),
-        CapacityMethod::Asce10 => {
-            let mut text =
-                "member capacities: ASCE 10-97 (Design of Latticed Steel Transmission Structures)"
-                    .to_owned();
+        CapacityMethod::Code if usage.iter().any(|u| u.governs.starts_with(PLUGIN_NOT_RUN)) => {
+            format!(
+                "member capacities: {PLUGIN_NOT_RUN} ({}); no other method was used in its place",
+                code_name(model)
+            )
+        }
+        // Capacities given from outside (a `member-capacity` plugin).
+        CapacityMethod::Code => {
+            let mut text = format!("member capacities: {}", code_name(model));
             text.push_str(&marks_note(usage));
             text
         }
     }
+}
+
+/// The design code a model's members are checked by, as its file names it
+/// (the default: [`crate::model::DEFAULT_METHOD`]).
+fn code_name(model: &Model) -> String {
+    model
+        .capacity_plugin
+        .as_ref()
+        .map_or_else(|| crate::model::DEFAULT_METHOD.to_owned(), |p| p.name())
 }
 
 /// What the marks in what governs the members say, counted, for a design
@@ -178,7 +185,7 @@ pub const ANGLE_MOMENTS_SAID: f64 = 0.01;
 /// The mark before the conditions a member's ends take from their
 /// connections, per end, in what governs: `[joints: N2 eccentric (worked
 /// out: one leg bolted), restrained (given); N4 …]`
-/// ([`crate::asce10::Capacity::joints`]).
+/// ([`crate::capacity::Capacity::joints`]).
 pub const JOINTS: &str = "[joints:";
 
 /// The mark before a member's eccentric ends (connection shifts, rigid
@@ -256,11 +263,12 @@ pub fn moments_along(f: &crate::solve::MemberForces) -> [f64; 2] {
 
 /// The compression a member resists by its design (N): its
 /// `capacity_compression` given, else its section's allowable
-/// compression, else the model's capacity method's (ASCE 10-97, its
-/// crossing partner taken as not bracing it: the lower; a plugin's method:
-/// the compression capacity its runner asked of the plugin,
-/// [`Model::method_compression`], 2026-11-18); none with the simple check
-/// or without a yield strength.
+/// compression, else the model's design code's: the compression capacity
+/// its runner asked of the code's plugin ([`Model::method_compression`],
+/// 2026-11-18; ASCE 10-97, the default, its crossing partner taken as not
+/// bracing it); none with the simple check, without a yield strength, or
+/// when no runner asked (a model solved without its code's plugin: the
+/// Euler load alone caps, as for every other check the core cannot make).
 pub fn design_compression(model: &Model, member: usize) -> Option<f64> {
     let m = &model.members[member];
     let s = &model.sections[m.section];
@@ -268,15 +276,10 @@ pub fn design_compression(model: &Model, member: usize) -> Option<f64> {
         return Some(c);
     }
     s.yield_strength?;
-    // A plugin's method: its own compression, as its runner asked it
-    // ([`Model::method_compression`]) — never another code's in its place.
-    if model.capacity_plugin.is_some() {
-        return model.method_compression.get(member).copied().flatten();
-    }
     match model.analysis.capacity {
-        CapacityMethod::Asce10 => crate::asce10::capacity(model, member, Some(false))
-            .compression
-            .map(|c| c.0),
+        // The code's own compression, as its runner asked its plugin —
+        // never another code's in its place.
+        CapacityMethod::Code => model.method_compression.get(member).copied().flatten(),
         CapacityMethod::Simple => None,
     }
 }
@@ -319,7 +322,7 @@ thread_local! {
 /// The properties of profile `p` ([`ohl_sections::Section::properties`]),
 /// worked out once per thread for each profile (the same answer: the same
 /// function of the same profile).
-pub(crate) fn properties(p: &ohl_sections::Section) -> ohl_sections::Properties {
+pub fn properties(p: &ohl_sections::Section) -> ohl_sections::Properties {
     let kept = PROFILES.with(|c| {
         c.borrow()
             .1
@@ -360,13 +363,15 @@ pub fn member_usage_with(
     model: &Model,
     solution: &Solution,
     strength: f64,
-    given: Option<&[crate::asce10::Capacity]>,
+    given: Option<&[crate::capacity::Capacity]>,
 ) -> Vec<MemberUsage> {
     #[cfg(test)]
     CHECKS_MADE.with(|n| n.set(n.get() + 1));
-    // The file asks for a plugin's member check and none was run here:
-    // no member is checked by another method in its place.
-    if let (Some(p), None) = (&model.capacity_plugin, given) {
+    // The model's design code is a plugin's (every code since 2026-11-18,
+    // ASCE 10-97 the default) and none was run here: no member is checked
+    // by another method in its place.
+    if given.is_none() && model.analysis.capacity == CapacityMethod::Code {
+        let name = code_name(model);
         return model
             .members
             .iter()
@@ -375,7 +380,7 @@ pub fn member_usage_with(
                 member: k,
                 usage: None,
                 governs: if m.check {
-                    format!("{PLUGIN_NOT_RUN} ({})", p.name())
+                    format!("{PLUGIN_NOT_RUN} ({name})")
                 } else {
                     NOT_CHECKED.to_owned()
                 },
@@ -596,7 +601,7 @@ fn with_redundant_force(
     model: &Model,
     solution: &Solution,
     strength: f64,
-    given: Option<crate::asce10::Capacity>,
+    given: Option<crate::capacity::Capacity>,
     share: f64,
     supported: &Option<Result<Supported, String>>,
     mut own: MemberUsage,
@@ -968,7 +973,7 @@ fn usage_of(
     idx: usize,
     f: &crate::solve::MemberForces,
     strength: f64,
-    given: Option<crate::asce10::Capacity>,
+    given: Option<crate::capacity::Capacity>,
 ) -> MemberUsage {
     {
         {
@@ -994,29 +999,12 @@ fn usage_of(
             }
             let n = f.axial;
             let kn = |x: f64| x / 1000.0;
-            // The design method's capacities (none: the simple check).
-            let external = given.is_some();
-            let partner = m
-                .design
-                .crossing
-                .map(|p| solution.members.get(p).is_some_and(|f| f.axial > 0.0));
-            let asce = match given {
-                Some(g) => Some(g),
-                None if s.yield_strength.is_none() => None,
-                None => match model.analysis.capacity {
-                    CapacityMethod::Asce10 => Some(crate::asce10::capacity(model, idx, partner)),
-                    CapacityMethod::Simple => None,
-                },
-            };
+            // The capacities given from outside (none: the simple check;
+            // a design code's are its plugin's, [`member_usage_with`]).
+            let asce = given;
             let mut assumed: &[String] = &[];
             let mut joints: &[String] = &[];
             let mut extra = String::new();
-            if !external
-                && model.analysis.capacity != CapacityMethod::Simple
-                && s.yield_strength.is_none()
-            {
-                extra = format!(" ({NO_YIELD})");
-            }
             // Axial: (ratio, words).
             let axial: Option<(f64, String)> = if n >= 0.0 {
                 match (
@@ -1159,9 +1147,6 @@ fn usage_of(
                     ));
                 }
             }
-            if !external {
-                not_safe_notes.extend(uncovered_clauses(model, idx, f, strength));
-            }
             if !not_safe_notes.is_empty() {
                 suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
             }
@@ -1221,115 +1206,6 @@ fn usage_of(
             }
         }
     }
-}
-
-/// The capacity method's clauses that apply to member `idx` under its
-/// forces `f` but are not covered by the program (2026-11-08): each named,
-/// for the member's `[not on the safe side: …]`. Under ASCE 10-97 only
-/// (the simple check says it is no design code; a design code's
-/// capacities given are the code's; SIA 263's are its plugin's since
-/// 2026-11-18); a resistance given on the member (`capacity_compression`)
-/// covers the compression clauses.
-///
-/// - a compressed tube, channel or I section: its elements' effective
-///   widths (3.9.3) are not applied;
-/// - a compressed built-up member (two angles, a star or cross of angles,
-///   two channels): its stitch bolts (3.11), each part buckling between
-///   them;
-/// - a frame checked with its moments: compression with bending by the
-///   linear sum, without the amplification and C_m (3.12, 3.13); an I
-///   section, channel or two channels bent about its major axis:
-///   lateral-torsional buckling (3.14);
-/// - a frame: its shear and torsion (3.15), when the shear reaches 1 % of
-///   A·f_y/√3 (the torsion given with it).
-///
-/// Each only above 1 % of the member's capacity where a share can be
-/// worked out (the moments, the shear), as the moments' notes.
-fn uncovered_clauses(
-    model: &Model,
-    idx: usize,
-    f: &crate::solve::MemberForces,
-    strength: f64,
-) -> Vec<String> {
-    use ohl_sections::Shape;
-    let m = &model.members[idx];
-    let s = &model.sections[m.section];
-    let method = model.analysis.capacity;
-    if method == CapacityMethod::Simple || m.kind == MemberKind::Cable {
-        return Vec::new();
-    }
-    let asce = method == CapacityMethod::Asce10;
-    let shape = s.profile.as_ref().map(|p| &p.shape);
-    let compressed = f.axial < 0.0 && m.capacity_compression.is_none();
-    let mut out = Vec::new();
-    if compressed
-        && asce
-        && matches!(
-            shape,
-            Some(
-                Shape::Channel { .. }
-                    | Shape::ISection { .. }
-                    | Shape::RectangularHollow { .. }
-                    | Shape::CircularHollow { .. }
-                    | Shape::PolygonalHollow { .. }
-                    | Shape::DoubleChannel { .. }
-            )
-        )
-    {
-        out.push("effective widths of its elements not applied (ASCE 10-97 3.9.3)".to_owned());
-    }
-    if compressed
-        && matches!(
-            shape,
-            Some(
-                Shape::DoubleAngle { .. }
-                    | Shape::StarAngle { .. }
-                    | Shape::CrossAngle { .. }
-                    | Shape::DoubleChannel { .. }
-            )
-        )
-    {
-        out.push("stitch bolts of the built-up member not checked (ASCE 10-97 3.11)".to_owned());
-    }
-    let frame = m.is_frame() && !(axial_member(m, s) && !model.analysis.single_angle_moments);
-    if !frame {
-        return out;
-    }
-    let fy = s.yield_strength;
-    let [my, mz] = moments_along(f);
-    let cap_y = s.moment_y.or(s.wy.zip(fy).map(|(w, y)| w * y));
-    let cap_z = s.moment_z.or(s.wz.zip(fy).map(|(w, y)| w * y));
-    let share = |mo: f64, cap: Option<f64>| cap.map_or(0.0, |c| mo / (strength * c));
-    if asce {
-        if f.axial < 0.0 && share(my, cap_y) + share(mz, cap_z) >= ANGLE_MOMENTS_SAID {
-            out.push(
-                "compression with bending by the linear sum, without the amplification and C_m \
-                 (ASCE 10-97 3.12, 3.13)"
-                    .to_owned(),
-            );
-        }
-        if matches!(
-            shape,
-            Some(Shape::ISection { .. } | Shape::Channel { .. } | Shape::DoubleChannel { .. })
-        ) && share(my, cap_y) >= ANGLE_MOMENTS_SAID
-        {
-            out.push("lateral-torsional buckling not checked (ASCE 10-97 3.14)".to_owned());
-        }
-    }
-    let e = &f.end_forces;
-    let shear = e[1].hypot(e[2]).max(e[7].hypot(e[8]));
-    let torsion = e[3].abs().max(e[9].abs());
-    if let Some(fy) = fy {
-        let cap = s.area * fy / 3f64.sqrt();
-        if cap > 0.0 && shear / (strength * cap) >= ANGLE_MOMENTS_SAID {
-            out.push(format!(
-                "shear {:.1} kN and torsion {:.2} kN m not checked (ASCE 10-97 3.15)",
-                shear / 1000.0,
-                torsion / 1000.0,
-            ));
-        }
-    }
-    out
 }
 
 /// Whether a section is a single angle: its profile an `equal_angle` or

@@ -13,22 +13,16 @@
 //! (`docs/theory/joint-plates.md`) explains every step and marks every
 //! assumption conservative or not.
 //!
-//! Per member bolting onto a plate ([`bolted`]):
-//!
-//! - **ASCE 10-97**: bearing 1.5 F_u d t (4.4; F_u the lower of the
-//!   plate's and the bolt's), block shear by Eq. 3.10-1 (P = 0.60 A_v
-//!   F_u plus A_t F_y; the standard states it for angles bolted by one
-//!   leg — the same formula applied to the plate's block round the bolt
-//!   group, said), the net section F_y A_n in tension (3.10.1; holes taken
-//!   as punched, 1.6 mm larger), the end and edge distances (4.5.1, 4.5.3
-//!   with the bolt's force);
-//! - **SIA 263:2013**: the bundled plugin `sia263`'s joint check since
-//!   2026-11-18 (`plugins/codes/sia263`, the same checks moved there);
-//! - **Simple**: not checked (said).
-//!
-//! A weld between two plates ([`weld`]): SIA 263 6.3.2 in its plugin.
-//! ASCE 10-97 gives no weld resistance (5.2.5 leaves welding procedures to
-//! AWS D1.1): not checked under it, said.
+//! Per member bolting onto a plate ([`bolted`]) and per weld between two
+//! plates ([`weld`]), since 2026-11-18 every design code's checks are its
+//! plugin's joint check (`joint-check`, `joint-check-full`): **ASCE 10-97**
+//! (the default) in the bundled plugin `asce10` (bearing, block shear, the
+//! net section, the end and edge distances; no weld resistance in the
+//! standard, said), **SIA 263:2013** in the bundled plugin `sia263` — the
+//! same checks moved there (`plugins/codes`), run by
+//! `ohl_structure_link::plate_checks`. Here: the parts' records, and
+//! **Simple**: not checked (said); a design code without its plugin run:
+//! not checked, said ([`NOT_RUN`]).
 //!
 //! A plate in compression: neither standard gives a rule for a gusset
 //! plate's buckling — "plate buckling not checked", said.
@@ -37,16 +31,13 @@ use ohl_structures::connections::WeldKind;
 
 use crate::model::{CapacityMethod, Model};
 
-/// A punched hole is taken this much larger in the net section and block
-/// shear (ASCE 10-97 3.10.1, 3.10.2: 1/16 in.), m.
-const PUNCHED: f64 = 0.0016;
-
-/// A standard hole is this much larger than its bolt (ASCE 10-97 4.1), m.
-const STANDARD_HOLE: f64 = 0.0016;
-
 /// What plate checks say when the capacity method has none.
 pub const SIMPLE_NOT_CHECKED: &str =
     "simple check: plates and welds not checked (not a design code)";
+
+/// What the core says of a joint part of a design code's (a plugin's)
+/// when no plugin was run (the runners send them to its joint check).
+pub const NOT_RUN: &str = "NOT CHECKED, NOT ON THE SAFE SIDE: the joint check is the design code's plugin's, not run here";
 
 /// What is said of a plate in compression.
 pub const BUCKLING_NOT_CHECKED: &str = "plate buckling not checked (neither ASCE 10-97 nor SIA \
@@ -165,13 +156,13 @@ impl Checked {
 pub fn end_bolts(model: &Model, idx: usize, end: usize) -> Option<crate::design::Bolts> {
     let m = model.members.get(idx)?;
     let e = m.design.ends.get(end).and_then(Option::as_ref);
-    crate::asce10::end_bolts(&m.design, e, &mut Vec::new()).map(|b| b.0)
+    crate::member_ends::end_bolts(&m.design, e, &mut Vec::new()).map(|b| b.0)
 }
 
 /// The checks of a plate where a member bolts onto it: its bolt group `g`
 /// in plate `s`, the member's axial force `n` at the joint (N, tension
 /// positive), by `method`.
-pub fn bolted(method: CapacityMethod, g: &BoltGroup, s: &PlateSteel, n: f64) -> Checked {
+pub fn bolted(method: CapacityMethod, g: &BoltGroup, _s: &PlateSteel, n: f64) -> Checked {
     let mut out = Checked::default();
     if g.count == 0 {
         out.notes.push("no bolts: not checked".into());
@@ -182,156 +173,9 @@ pub fn bolted(method: CapacityMethod, g: &BoltGroup, s: &PlateSteel, n: f64) -> 
     }
     match method {
         CapacityMethod::Simple => out.notes.push(SIMPLE_NOT_CHECKED.into()),
-        CapacityMethod::Asce10 => asce10_bolted(g, s, n, &mut out),
+        CapacityMethod::Code => out.notes.push(NOT_RUN.into()),
     }
     out
-}
-
-/// The end distance in the force's direction.
-fn end_of(g: &BoltGroup, n: f64) -> Option<f64> {
-    g.end[if n >= 0.0 { 0 } else { 1 }]
-}
-
-fn mm(x: f64) -> f64 {
-    x * 1000.0
-}
-
-fn asce10_bolted(g: &BoltGroup, s: &PlateSteel, n: f64, out: &mut Checked) {
-    let t = s.thickness;
-    let force = n.abs();
-    let d = g.diameter;
-    let hole = g.hole.unwrap_or_else(|| {
-        out.notes
-            .push("standard hole, the bolt + 1.6 mm (ASCE 10-97 4.1)".into());
-        d + STANDARD_HOLE
-    });
-    let dh = hole + PUNCHED;
-    let nb = f64::from(g.count);
-    // Bearing (4.4): 1.5 F_u of the connected part or of the bolt.
-    let fu_b = match (s.fu, g.bolt_ultimate) {
-        (Some(p), Some(b)) => Some(p.min(b)),
-        (Some(p), None) => {
-            out.notes
-                .push("bearing on the plate's F_u (the bolt's not given)".into());
-            Some(p)
-        }
-        (None, _) => None,
-    };
-    match fu_b {
-        Some(fu) => out.checks.push(PlateCheck {
-            what: "bearing on the plate (ASCE 10-97 4.4)".into(),
-            demand: force,
-            resistance: nb * 1.5 * fu * d * t,
-            distance: false,
-        }),
-        None => out
-            .notes
-            .push("bearing not checked (no ultimate strength)".into()),
-    }
-    let e = end_of(g, n);
-    // Block shear (Eq. 3.10-1, applied to the plate's block).
-    match (s.fu, s.fy, e) {
-        (Some(fu), Some(fy), Some(e)) => {
-            let k = f64::from(g.per_line.max(1));
-            match (g.per_line > 1, g.pitch) {
-                (true, None) => out.notes.push("block shear not checked (no pitch)".into()),
-                (_, p) => {
-                    let p = p.unwrap_or(0.0);
-                    let av = 2.0 * t * (e + (k - 1.0) * p - (k - 0.5) * dh).max(0.0);
-                    let at = t * (g.span - f64::from(g.lines.max(1) - 1) * dh).max(0.0);
-                    out.checks.push(PlateCheck {
-                        what: "block shear of the plate (ASCE 10-97 Eq. 3.10-1, stated for \
-                               angles: applied to the plate's block round the bolts)"
-                            .into(),
-                        demand: force,
-                        resistance: 0.60 * av * fu + at * fy,
-                        distance: false,
-                    });
-                    // Torn out towards the plate's side edge (2026-11-08):
-                    // one shear plane along the line farthest from it, the
-                    // tension plane from that line to the side edge across
-                    // the others — the angle's own block of Eq. 3.10-1.
-                    match g.edge {
-                        Some(edge) => {
-                            let lines = f64::from(g.lines.max(1));
-                            let av1 = t * (e + (k - 1.0) * p - (k - 0.5) * dh).max(0.0);
-                            let at1 = t * (edge + g.span - (lines - 0.5) * dh).max(0.0);
-                            out.checks.push(PlateCheck {
-                                what: "block shear of the plate towards its side edge (ASCE \
-                                       10-97 Eq. 3.10-1)"
-                                    .into(),
-                                demand: force,
-                                resistance: 0.60 * av1 * fu + at1 * fy,
-                                distance: false,
-                            });
-                        }
-                        None => out.notes.push(
-                            "block shear towards the side edge not checked (the plate's side \
-                             edge not reached)"
-                                .into(),
-                        ),
-                    }
-                }
-            }
-        }
-        (_, _, None) => out
-            .notes
-            .push("block shear not checked (the plate's edge not reached)".into()),
-        _ => out
-            .notes
-            .push("block shear not checked (no yield or ultimate strength)".into()),
-    }
-    // Net section (3.10.1), tension.
-    if n > 0.0 {
-        match s.fy {
-            Some(fy) => out.checks.push(PlateCheck {
-                what: format!(
-                    "net section of the plate (ASCE 10-97 3.10.1; width {})",
-                    g.width_words
-                ),
-                demand: force,
-                resistance: fy * t * (g.width - f64::from(g.lines.max(1)) * dh).max(0.0),
-                distance: false,
-            }),
-            None => out
-                .notes
-                .push("net section not checked (no yield strength)".into()),
-        }
-    }
-    // End and edge distances (4.5.1, 4.5.3; the plate's edge sheared or
-    // flame-cut: the larger edge distance).
-    if let Some(fu) = s.fu {
-        let [end_min, _, edge_min] =
-            crate::asce10::bolt_minimums(d, t, fu, Some(force / nb), false, true);
-        match e {
-            Some(e) => out.checks.push(PlateCheck {
-                what: format!(
-                    "end distance in the plate {:.0} mm, ≥ {:.0} mm (ASCE 10-97 4.5.1)",
-                    mm(e),
-                    mm(end_min)
-                ),
-                demand: end_min,
-                resistance: e,
-                distance: true,
-            }),
-            None => out
-                .notes
-                .push("end distance not checked (the plate's edge not reached)".into()),
-        }
-        if let Some(f) = g.edge {
-            out.checks.push(PlateCheck {
-                what: format!(
-                    "edge distance in the plate {:.0} mm, ≥ {:.0} mm (ASCE 10-97 4.5.3, Eq. \
-                     4.5-7: sheared edge)",
-                    mm(f),
-                    mm(edge_min)
-                ),
-                demand: edge_min,
-                resistance: f,
-                distance: true,
-            });
-        }
-    }
 }
 
 /// A weld between two plates as its check takes it.
@@ -352,18 +196,15 @@ pub struct WeldInput {
     /// The two plates' thicknesses, m.
     pub thickness: [f64; 2],
 }
-/// The checks of a weld by `method`: none — ASCE 10-97 gives no weld
-/// resistance, the simple check is no design code (both said); SIA 263's
-/// weld checks are its plugin's since 2026-11-18 (`plugins/codes/sia263`).
+/// The checks of a weld by `method`: none here — the simple check is no
+/// design code, a design code's weld checks are its plugin's since
+/// 2026-11-18 (`plugins/codes`; ASCE 10-97 gives no weld resistance, said
+/// by its plugin) — both said.
 pub fn weld(method: CapacityMethod, _w: &WeldInput, _force: f64) -> Checked {
     let mut out = Checked::default();
     match method {
         CapacityMethod::Simple => out.notes.push(SIMPLE_NOT_CHECKED.into()),
-        CapacityMethod::Asce10 => out.notes.push(
-            "ASCE 10-97 gives no weld resistance (5.2.5 leaves welding procedures to AWS D1.1): \
-             weld not checked"
-                .into(),
-        ),
+        CapacityMethod::Code => out.notes.push(NOT_RUN.into()),
     }
     out
 }
@@ -372,8 +213,12 @@ pub fn weld(method: CapacityMethod, _w: &WeldInput, _force: f64) -> Checked {
 mod tests {
     use super::*;
 
-    fn group() -> BoltGroup {
-        BoltGroup {
+    /// No check in the core (2026-11-18: ASCE 10-97's, the plate test
+    /// with it, moved into its plugin `asce10`): the simple check and a
+    /// design code without its plugin run say so, without a usage.
+    #[test]
+    fn the_core_checks_no_plate() {
+        let g = BoltGroup {
             count: 4,
             diameter: 0.016,
             hole: Some(0.018),
@@ -386,65 +231,22 @@ mod tests {
             edge: Some(0.030),
             width: 0.120,
             width_words: "the bolts' 60 mm + 2 × 30 mm".into(),
-        }
-    }
-
-    const STEEL: PlateSteel = PlateSteel {
-        thickness: 0.010,
-        fy: Some(355e6),
-        fu: Some(510e6),
-    };
-
-    fn find<'a>(c: &'a Checked, what: &str) -> &'a PlateCheck {
-        c.checks
-            .iter()
-            .find(|x| x.what.contains(what))
-            .unwrap_or_else(|| panic!("no {what} in {c:?}"))
-    }
-
-    /// ASCE 10-97 by hand (invented data): four M16 (hole 18 mm, punched
-    /// 19.6 mm) in two lines 60 mm apart, two a line 50 mm apart, 40 mm
-    /// to the plate's edge, 10 mm S355 (f_u 510 MPa), bolts f_u 800 MPa:
-    /// bearing 4 × 1.5 × 510 × 16 × 10 = 489.6 kN; block shear A_v = 2 × 10
-    /// × (40 + 50 − 1.5 × 19.6) = 1212 mm², A_t = 10 × (60 − 19.6) = 404
-    /// mm²: 0.6 × 1212 × 510 + 404 × 355 = 514.3 kN; net section 355 × 10 ×
-    /// (120 − 2 × 19.6) = 286.84 kN.
-    #[test]
-    fn asce10_plate_by_hand() {
-        let c = bolted(CapacityMethod::Asce10, &group(), &STEEL, 200e3);
-        let b = find(&c, "bearing");
-        assert!((b.resistance - 489.6e3).abs() < 1.0, "{b:?}");
-        let s = find(&c, "block shear");
-        let want = 0.6 * 1212e-6 * 510e6 + 404e-6 * 355e6;
-        assert!((s.resistance - want).abs() < 1.0, "{s:?} {want}");
-        // Towards the side edge (30 mm): A_v = 10 × (40 + 50 − 1.5 × 19.6)
-        // = 606 mm² (one plane), A_t = 10 × (30 + 60 − 1.5 × 19.6) = 606
-        // mm²: 0.6 × 606 × 510 + 606 × 355 = 400.6 kN.
-        let side = find(&c, "towards its side edge");
-        let want = 0.6 * 606e-6 * 510e6 + 606e-6 * 355e6;
-        assert!((side.resistance - want).abs() < 1.0, "{side:?} {want}");
-        let n = find(&c, "net section");
-        assert!((n.resistance - 286.84e3).abs() < 1.0, "{n:?}");
-        // The net section governs at 200 kN: 0.697.
-        let (u, g) = c.governing(1.0).unwrap();
-        assert!(g.what.contains("net section") && (u - 200.0 / 286.84).abs() < 1e-6);
-        // In compression: no net section, buckling said; the end distance
-        // the far one (200 mm).
-        let c = bolted(CapacityMethod::Asce10, &group(), &STEEL, -200e3);
-        assert!(!c.checks.iter().any(|x| x.what.contains("net section")));
+        };
+        let steel = PlateSteel {
+            thickness: 0.010,
+            fy: Some(355e6),
+            fu: Some(510e6),
+        };
+        let c = bolted(CapacityMethod::Simple, &g, &steel, 200e3);
+        assert!(c.checks.is_empty() && c.notes[0].contains("not checked"));
+        let c = bolted(CapacityMethod::Code, &g, &steel, -200e3);
+        assert!(c.checks.is_empty());
+        assert!(c.notes.iter().any(|n| n == NOT_RUN));
         assert!(
             c.notes
                 .iter()
                 .any(|n| n.contains("plate buckling not checked"))
         );
-        assert!(find(&c, "end distance in the plate 200 mm").usage(1.0) < 1.0);
-        // The end distance by Eq. 4.5-1 at 200 kN: P = 50 kN a bolt, 1.2 ×
-        // 50e3 / (510e6 × 0.010) = 11.8 mm < 1.3 d = 20.8 mm.
-        let c = bolted(CapacityMethod::Asce10, &group(), &STEEL, 200e3);
-        let e = find(&c, "end distance");
-        assert!((e.demand - 0.0208).abs() < 1e-9 && (e.usage(1.0) - 0.52).abs() < 1e-9);
-        // Simple: nothing checked, said.
-        let c = bolted(CapacityMethod::Simple, &group(), &STEEL, 200e3);
-        assert!(c.checks.is_empty() && c.notes[0].contains("not checked"));
+        assert!(c.governing(1.0).is_none());
     }
 }

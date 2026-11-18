@@ -7,13 +7,15 @@
 //! or move them on joints or members actually take the codes into account
 //! and either snap on existing lines or offer to create a new one that
 //! respect the norm? … And if the code changes that it adapts to the
-//! code"): the code's minimum end distance, spacing and edge distance
-//! ([`rules`], one function per code: ASCE 10-97 4.5 in
-//! [`crate::asce10::bolt_minimums`]; the simple check has none), the bolts
-//! that break them ([`breaches`]) and where a bolt asked for may go
-//! ([`snap`]: on a gauge line, or a new line offered). The structure
-//! application's bolt tools and layout form use these, so a change of
-//! capacity method changes what they allow.
+//! code"): the code's minimum end distance, spacing and edge distance —
+//! since 2026-11-18 every design code's are its plugin's (`bolt-distances`:
+//! ASCE 10-97 4.5 in the bundled plugin `asce10`, SIA 263 Table 17 in
+//! `sia263`), asked by `ohl_member_check::joints::bolt_rules` from what
+//! [`basis`] works out here; the simple check has none ([`rules`]: none
+//! in the core) — the bolts that break them ([`breaches`]) and where a
+//! bolt asked for may go ([`snap`]: on a gauge line, or a new line
+//! offered). The structure application's bolt tools and layout form use
+//! these, so a change of capacity method changes what they allow.
 //!
 //! Bolt places are as the connections give them (`bolt_points`): along
 //! the member from the joint's work point, across the bolted leg from the
@@ -21,7 +23,7 @@
 //! end's cut).
 
 use crate::design::MemberClass;
-use crate::model::{CapacityMethod, Model};
+use crate::model::Model;
 
 /// Where the force one bolt transmits comes from.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -112,9 +114,10 @@ impl BoltRules {
 
 /// The code's minimums for the bolts of member `idx` at its end `end` (0
 /// at its first joint), `force`: the largest axial force over the
-/// analysis' cases, N (none: no analysis — the bolt's shear capacity
-/// then). None: the capacity method has no such rules (the simple
-/// check), or the end has no bolts of known diameter.
+/// analysis' cases, N (none: no analysis). None from the core since
+/// 2026-11-18: every design code's minimums are its plugin's
+/// (`ohl_member_check::joints::bolt_rules` asks it, from [`basis`]), and
+/// the simple check has none — never another code's in their place.
 pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Option<BoltRules> {
     rules_in(model, idx, end, force, None)
 }
@@ -122,67 +125,15 @@ pub fn rules(model: &Model, idx: usize, end: usize, force: Option<f64>) -> Optio
 /// [`rules`] in another connected part than the member's leg (owner
 /// 2026-11-03: a plate's edges by the plate's own thickness and steel):
 /// `part` its thickness, m, and its ultimate strength, Pa (none: the
-/// member's). The force and the bolts are the member end's.
+/// member's). None from the core (see [`rules`]).
 pub fn rules_in(
-    model: &Model,
-    idx: usize,
-    end: usize,
-    force: Option<f64>,
-    part: Option<(f64, Option<f64>)>,
+    _model: &Model,
+    _idx: usize,
+    _end: usize,
+    _force: Option<f64>,
+    _part: Option<(f64, Option<f64>)>,
 ) -> Option<BoltRules> {
-    // A plugin's method: the core has none of its rules, and never
-    // gives another code's in their place (the runner asks the plugin).
-    if model.capacity_plugin.is_some() {
-        return None;
-    }
-    let Basis {
-        diameter,
-        thickness: t,
-        ultimate,
-        force,
-        leg,
-        root,
-        sheared,
-        redundant,
-    } = basis(model, idx, end, force, part)?;
-    match model.analysis.capacity {
-        CapacityMethod::Asce10 => {
-            let [end_min, spacing, edge] = crate::asce10::bolt_minimums(
-                diameter,
-                t,
-                ultimate.unwrap_or(0.0),
-                force.value(),
-                redundant,
-                sheared,
-            );
-            Some(BoltRules {
-                code: "ASCE 10-97".into(),
-                end: end_min,
-                spacing,
-                edge,
-                clauses: [
-                    if redundant {
-                        "4.5.1, redundant"
-                    } else {
-                        "4.5.1"
-                    },
-                    "4.5.2",
-                    if sheared {
-                        "4.5.3, Eq. 4.5-7"
-                    } else {
-                        "4.5.3, Eq. 4.5-6"
-                    },
-                ]
-                .map(str::to_owned),
-                force,
-                diameter,
-                leg,
-                root,
-                sheared,
-            })
-        }
-        CapacityMethod::Simple => None,
-    }
+    None
 }
 
 /// What a code's minimum distances at a member end are worked out from:
@@ -221,7 +172,7 @@ pub fn basis(
     let d = &m.design;
     let e = d.ends.get(end).and_then(Option::as_ref);
     let s = &model.sections[m.section];
-    let (shear, diameter, count) = match crate::asce10::bolt_shear_per_bolt(d, e) {
+    let (shear, diameter, count) = match crate::member_ends::bolt_shear_per_bolt(d, e) {
         Some(x) => (Some(x.0), x.1, x.2),
         None => {
             let b = e
@@ -459,26 +410,6 @@ pub fn snap(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// ASCE 10-97 4.5 by hand: M16 bolts in a 6 mm leg of f_u 510 MPa
-    /// carrying P = 30 kN each: 1.2 P/(f_u t) = 11.76 mm, 1.3 d = 20.8 mm,
-    /// t + d/2 = 14 mm → e_min 20.8 mm; s_min = 11.76 + 9.6 = 21.36 mm;
-    /// sheared edge 0.85 × 20.8 + 1.5875 = 19.27 mm, rolled 17.68 mm. At
-    /// 60 kN the force term governs the end: 23.53 mm. Redundant: the
-    /// larger of 14 and 19.2 mm.
-    #[test]
-    fn asce10_minimums_by_hand() {
-        let m = crate::asce10::bolt_minimums(0.016, 0.006, 510e6, Some(30e3), false, true);
-        assert!((m[0] - 0.0208).abs() < 1e-9, "{m:?}");
-        assert!((m[1] - (1.2 * 30e3 / (510e6 * 0.006) + 0.0096)).abs() < 1e-9);
-        assert!((m[2] - (0.85 * 0.0208 + 0.0015875)).abs() < 1e-9);
-        let rolled = crate::asce10::bolt_minimums(0.016, 0.006, 510e6, Some(30e3), false, false);
-        assert!((rolled[2] - 0.85 * 0.0208).abs() < 1e-9);
-        let heavy = crate::asce10::bolt_minimums(0.016, 0.006, 510e6, Some(60e3), false, true);
-        assert!((heavy[0] - 1.2 * 60e3 / (510e6 * 0.006)).abs() < 1e-9);
-        let red = crate::asce10::bolt_minimums(0.016, 0.006, 510e6, Some(60e3), true, true);
-        assert!((red[0] - 0.0192).abs() < 1e-9);
-    }
 
     fn rules() -> BoltRules {
         BoltRules {

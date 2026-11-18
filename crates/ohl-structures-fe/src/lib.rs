@@ -28,7 +28,6 @@
 //! The theory manual (`docs/theory/structures-fe.md`) gives the
 //! formulation and its references.
 
-pub mod asce10;
 pub mod asce48;
 pub mod bolt_rules;
 pub mod capacity;
@@ -520,8 +519,6 @@ mod condense_tests;
 mod guard_tests;
 #[cfg(test)]
 mod held_limit_tests;
-#[cfg(test)]
-mod member_ends_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]

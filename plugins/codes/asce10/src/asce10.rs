@@ -4,13 +4,15 @@
 
 //! Member capacities by **ASCE 10-97** (*Design of Latticed Steel
 //! Transmission Structures*, American Society of Civil Engineers, 1998),
-//! metric form — the default capacity method of the structure check
-//! (owner, 2026-10-27). Built, in active development, not approved yet.
+//! metric form — OpenOHL's default capacity method of the structure check
+//! (owner, 2026-10-27), the core's `ohl_structures_fe::asce10` moved into
+//! this plugin unchanged (2026-11-18). Built, in active development, not
+//! approved yet.
 //!
 //! Compression:
 //!
 //! - L/r = max(r_y·L/r_y, r_z·L/r_z, r_v·L/r_v) with the member's length
-//!   ratios ([`crate::design::MemberDesign::length_ratios`], else its `k`
+//!   ratios ([`crate::model::MemberDesign::length_ratios`], else its `k`
 //!   on all three), L its `lk` when given, else its length; r_y, r_z the
 //!   radii of gyration about the section's y and z, r_v the minor
 //!   principal one.
@@ -46,7 +48,7 @@
 //!
 //! **At each end** (2026-11-02, stage 4.1 and 4.2 of the joint details):
 //! the ends' eccentricity and restraint are each end's
-//! ([`crate::member_ends`]: given at the end's `[[connection]]`, the
+//! (OpenOHL's `member_ends`, sent with the member: given at the end's `[[connection]]`, the
 //! member's flags, worked out at an end with a connection, else assumed),
 //! the two together giving the curves' none / one end / both ends. The
 //! bolt shear, bearing and net section are taken at each end with what
@@ -75,18 +77,20 @@
 //! the tension is on the gross section (said so). Local buckling is
 //! checked on angles (and on sections given a `width_thickness`) only.
 
-use ohl_structures::connections::ConnectionKind;
-
-use crate::design::{Bolts, ConnectedLeg, EndDesign, Ends, MemberClass, MemberDesign, Onto};
-use crate::member_ends::{self, Source};
-use crate::model::{Member, Model, Section};
+use crate::model::{
+    Bolts, Condition, ConnectedLeg, EndDesign, Ends, Member, MemberClass, MemberDesign, Onto,
+    OntoLeg, Section, Source,
+};
 
 /// The method's name in files and results.
 pub const NAME: &str = "asce10-97";
 
+/// The method in words, for the run's notes (as the core's note named it).
+pub const TITLE: &str = "ASCE 10-97 (Design of Latticed Steel Transmission Structures)";
+
 /// A standard hole is this much larger than its bolt (ASCE 10-97 4.1:
 /// 1/16 in.), m — the hole when not given.
-const STANDARD_HOLE: f64 = 0.0016;
+pub const STANDARD_HOLE: f64 = 0.0016;
 
 /// A punched hole is taken this much larger than its nominal diameter in
 /// the net section and block shear (3.10.1, 3.10.2: 1/16 in.), m; holes
@@ -213,7 +217,8 @@ pub fn torsional_slenderness(
     if matches!(sym, Symmetry::Angle | Symmetry::Closed) {
         return None;
     }
-    let q = crate::check::properties(p);
+    // The properties as OpenOHL worked them out (sent with every profile).
+    let q = s.properties.as_ref()?;
     let (Some(sc), Some(cw)) = (q.shear_centre, q.warping) else {
         return Some(Err(()));
     };
@@ -272,47 +277,18 @@ fn angle_legs(s: &Section) -> Option<(f64, f64, f64)> {
     }
 }
 
-/// The leg of the member an end bolts onto directly (lapped, on either
-/// face or nested; 2026-11-05): the bolts bear on it too.
-#[derive(Debug, Clone, PartialEq)]
-pub struct OntoLeg {
-    /// The member's id.
-    pub id: String,
-    /// Its leg's thickness, m.
-    pub thickness: f64,
-    /// Its steel's ultimate strength, Pa.
-    pub fu: Option<f64>,
-}
-
-/// The leg member `idx`'s `end` bolts onto, when it bolts onto a member
-/// (given or worked out) whose thickness is known (its design data's,
-/// else its angle's); only at an end with a connection, none for a
-/// continuous end.
-pub fn onto_leg(model: &Model, idx: usize, end: usize) -> Option<OntoLeg> {
-    // Only at an end with a connection: a member without stays as before.
-    let e = model.members[idx].design.ends[end].as_ref()?;
-    if e.continuous.is_some() || e.kind.is_some_and(|k| k != ConnectionKind::Bolted) {
-        return None;
-    }
-    let (crate::design::Onto::Member(k), _) = crate::member_ends::onto(model, idx, end)? else {
-        return None;
-    };
-    let o = &model.members[k];
-    let s = &model.sections[o.section];
-    let thickness = o.design.thickness.or(angle_legs(s).map(|l| l.1))?;
-    Some(OntoLeg {
-        id: o.id.clone(),
-        thickness,
-        fu: s.ultimate,
+/// The ASCE 10-97 capacities of member `m`. `partner_in_tension`: for a
+/// crossing diagonal with a partner, whether that partner is in tension
+/// in this load case (none: no partner, or not a crossing diagonal).
+/// Worked out once per member and partner in a call ([`crate::memo`]).
+pub fn capacity(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
+    crate::memo::capacity(&m.id, partner_in_tension, || {
+        capacity_of(m, partner_in_tension)
     })
 }
 
-/// The ASCE 10-97 capacities of member `idx`. `partner_in_tension`: for a
-/// crossing diagonal with a partner, whether that partner is in tension
-/// in this load case (none: no partner, or not a crossing diagonal).
-pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> Capacity {
-    let m: &Member = &model.members[idx];
-    let s = &model.sections[m.section];
+fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
+    let s = &m.section;
     let d = &m.design;
     let mut out = Capacity::default();
     let Some(fy) = s.yield_strength else {
@@ -322,7 +298,7 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     let a = s.area;
     let mut assumed: Vec<String> = Vec::new();
     // Slenderness.
-    let length = m.lk.unwrap_or_else(|| model.length(m));
+    let length = m.lk.unwrap_or(m.length);
     let ratios = match d.length_ratios {
         Some(r) => r,
         None => {
@@ -343,7 +319,7 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     if crossing {
         let geometric = radii[0].min(radii[1]);
         let unsupported = if geometric > 0.0 {
-            model.length(m) / geometric
+            m.length / geometric
         } else {
             0.0
         };
@@ -378,12 +354,12 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
         Some(Err(())) => assumed.push("torsional buckling not checked (general profile)".into()),
         _ => {}
     }
-    // The ends' eccentricity and restraint, end by end (crate::member_ends).
-    let ends = member_ends::end_conditions(model, idx);
-    let at = |end: usize| model.nodes[if end == 0 { m.i } else { m.j }].id.as_str();
-    let assumed_at = |c: &[member_ends::Condition; 2]| -> [bool; 2] {
-        [0, 1].map(|e| c[e].source == Source::Assumed)
-    };
+    // The ends' eccentricity and restraint, end by end (OpenOHL's
+    // member_ends, sent with the member).
+    let ends = &m.conditions;
+    let at = |end: usize| m.joints[end].as_str();
+    let assumed_at =
+        |c: &[Condition; 2]| -> [bool; 2] { [0, 1].map(|e| c[e].source == Source::Assumed) };
     match assumed_at(&ends.eccentric) {
         [true, true] => assumed.push("both ends eccentric".into()),
         [true, false] => assumed.push(format!("eccentric at {}", at(0))),
@@ -422,7 +398,7 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
             ));
         }
     }
-    let kl_r = effective_slenderness(l_r, ends.eccentricity, ends.restraint);
+    let kl_r = effective_slenderness(l_r, ends.eccentricity(), ends.restraint());
     out.kl_r = Some(kl_r);
     if let Some((limit, class)) = class_limit(d.class)
         && kl_r > limit
@@ -469,8 +445,15 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     // The connection, at each end: the end's own data over the member's.
     let thickness = d.thickness.or(legs.map(|l| l.1));
     let checks = [0, 1].map(|end| {
-        let onto = onto_leg(model, idx, end);
-        end_check(d, d.ends[end].as_ref(), s, thickness, fy, a, onto.as_ref())
+        end_check(
+            d,
+            d.ends[end].as_ref(),
+            s,
+            thickness,
+            fy,
+            a,
+            m.onto[end].as_ref(),
+        )
     });
     // Ends alike (no connection data, or the same capacities at both): as
     // one, as before; else what governs named by its end (a note of one
@@ -533,7 +516,7 @@ pub fn capacity(model: &Model, idx: usize, partner_in_tension: Option<bool>) -> 
     // Where the conditions come from, for a member with connections.
     if ends.connected.contains(&true) {
         for end in 0..2 {
-            let say = |c: &member_ends::Condition, yes: &str, no: &str| {
+            let say = |c: &Condition, yes: &str, no: &str| {
                 let word = match c.value {
                     Some(true) => yes.to_owned(),
                     Some(false) => no.to_owned(),
@@ -585,7 +568,7 @@ struct EndCheck {
 /// member's (a diameter, hole, shear capacity of the member's only for
 /// bolts of the same diameter); with the library's shear capacity with
 /// the threads out of the shear plane and whether the threads are in it.
-pub(crate) fn end_bolts(
+pub fn end_bolts(
     d: &MemberDesign,
     end: Option<&EndDesign>,
     notes: &mut Vec<String>,
@@ -600,18 +583,15 @@ pub(crate) fn end_bolts(
     let Some(e) = end else {
         return member;
     };
-    if e.continuous.is_some() {
+    if e.continuous {
         notes.push("continuous through the joint: no connection to check".into());
         return None;
     }
     let Some(own) = e.bolts else {
-        if let Some(k) = e.kind
-            && k != ConnectionKind::Bolted
+        if let Some(k) = &e.kind
+            && k != "bolted"
         {
-            notes.push(format!(
-                "{}: no bolts, the connection not checked",
-                k.as_str()
-            ));
+            notes.push(format!("{k}: no bolts, the connection not checked"));
             return None;
         }
         return member;
@@ -635,7 +615,7 @@ pub(crate) fn end_bolts(
             // A splice's covers count over the member's design data (they
             // are the end's own); a lap's one plane only where nothing
             // else says (as before: the member's, else 1).
-            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice { .. })));
+            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice)));
             own.shear_planes
                 .or(splice.map(|w| w.0))
                 .or(d.bolts.map(|b| b.shear_planes))
@@ -876,23 +856,6 @@ pub fn bolt_minimums(
     [end, spacing, edge]
 }
 
-/// The design shear capacity of one bolt at a member end, N (all its
-/// shear planes; as the check takes it: the end's bolts over the
-/// member's, a given capacity, else 0.62 f_ub on the root area), and the
-/// bolts' diameter and count; none without bolts or a capacity.
-pub fn bolt_shear_per_bolt(d: &MemberDesign, end: Option<&EndDesign>) -> Option<(f64, f64, u32)> {
-    let (b, shank, threads_in) = end_bolts(d, end, &mut Vec::new())?;
-    let gross = std::f64::consts::PI * b.diameter.powi(2) / 4.0;
-    let out_given = threads_in == Some(false);
-    let per_plane = match (shank.filter(|_| out_given), b.shear_capacity, b.ultimate) {
-        (Some(v), _, _) => v,
-        (None, Some(v), _) => v,
-        (None, None, Some(fub)) => BOLT_SHEAR * fub * ROOT_AREA * gross,
-        _ => return None,
-    };
-    Some((per_plane * f64::from(b.shear_planes), b.diameter, b.count))
-}
-
 /// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =
 /// t (e + (n − 1) s − (n − ½) d_h) along a bolt line of n bolts (the
 /// bolts shared out over the gauge lines), A_t = t (c − ½ d_h) from the
@@ -950,378 +913,5 @@ fn block_shear(
             Ok((all.min(outer * f64::from(lines)), None))
         }
         None => Ok((outer, Some("block shear: the outer gauge line alone"))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const E: f64 = 210e9;
-
-    /// A crossing diagonal braced at mid-length (length ratios 0.5): with
-    /// its partner in tension its L/r is half its length over r_v; with
-    /// the partner compressed (or no partner) at least its whole length
-    /// over its smaller geometric radius, said in its assumptions. Each
-    /// missing datum is named; given data are not.
-    #[test]
-    fn crossing_diagonal_and_assumptions() {
-        use crate::model::{Member, MemberKind, Node, Section};
-        let mut s = Section::elastic("s", E, 10e-4, 50e-8);
-        s.i_min = 20e-8;
-        s.yield_strength = Some(355e6);
-        let mut m = Model {
-            sections: vec![s],
-            ..Model::default()
-        };
-        m.nodes = vec![
-            Node::pinned("a", [0.0, 0.0, 0.0]),
-            Node::pinned("b", [3.0, 0.0, 3.0]),
-            Node::pinned("c", [3.0, 0.0, 0.0]),
-            Node::pinned("d", [0.0, 0.0, 3.0]),
-        ];
-        let mut d1 = Member::new("d1", MemberKind::Truss, 0, 1, 0);
-        d1.design.class = Some(MemberClass::Crossing);
-        d1.design.crossing = Some(1);
-        d1.design.length_ratios = Some([0.5; 3]);
-        d1.design.end_eccentricity = Some(Ends::BothEnds);
-        m.members = vec![d1, Member::new("d2", MemberKind::Truss, 2, 3, 0)];
-        let l = 18f64.sqrt();
-        let (ry, rv) = ((50e-8f64 / 10e-4).sqrt(), (20e-8f64 / 10e-4).sqrt());
-        let braced = capacity(&m, 0, Some(true));
-        let lr = 0.5 * l / rv;
-        assert!(
-            (braced.kl_r.unwrap() - effective_slenderness(lr, Ends::BothEnds, Ends::None)).abs()
-                < 1e-9
-        );
-        assert!(
-            !braced
-                .compression_assumed
-                .iter()
-                .any(|a| a.contains("crossing"))
-        );
-        let free = capacity(&m, 0, Some(false));
-        let lr = l / ry;
-        assert!(
-            (free.kl_r.unwrap() - effective_slenderness(lr, Ends::BothEnds, Ends::None)).abs()
-                < 1e-9
-        );
-        assert!(
-            free.compression_assumed
-                .iter()
-                .any(|a| a.contains("not in tension")),
-            "{free:?}"
-        );
-        assert!(free.compression.unwrap().0 < braced.compression.unwrap().0);
-        // The partner without data: every assumption named.
-        let bare = capacity(&m, 1, None);
-        for a in ["length ratios 1", "both ends eccentric", "no bolts given"] {
-            assert!(
-                bare.compression_assumed.iter().any(|x| x.contains(a)),
-                "{a}: {bare:?}"
-            );
-        }
-        assert_eq!(bare.tension.as_ref().unwrap().1, "gross section, no holes");
-        // Bolts counted 0: the holes only — the net section, no bolt check.
-        m.members[1].design.bolts = Some(crate::design::Bolts {
-            diameter: 0.016,
-            hole: Some(0.0175),
-            count: 0,
-            shear_planes: 1,
-            shear_capacity: Some(60e3),
-            ultimate: None,
-            holes: Some(1),
-            grade: None,
-        });
-        m.members[1].design.thickness = Some(0.006);
-        m.members[1].design.connected_leg = Some(crate::design::ConnectedLeg::Both);
-        let holes = capacity(&m, 1, None);
-        // The given hole taken as punched: + 1.6 mm (3.10.1).
-        let net = (10e-4 - (0.0175 + 0.0016) * 0.006) * 355e6;
-        assert!(
-            (holes.tension.as_ref().unwrap().0 - net).abs() < 1e-6,
-            "{holes:?}"
-        );
-        assert!(
-            holes
-                .tension_assumed
-                .iter()
-                .any(|a| a.contains("no end bolts"))
-        );
-        // No yield strength: no capacity (the check falls back).
-        m.sections[0].yield_strength = None;
-        assert!(capacity(&m, 0, None).compression.is_none());
-    }
-
-    /// ASCE 10-97 Appendix B, Examples 15 and 16 (60° angles, inches and
-    /// ksi as printed): r_t 1.33 in, r_tf 1.21 in, KL/r_tf 88.8 and F_a
-    /// 26.7 ksi; with the mixed ends of Example 16 (r_t / K_t, K_t 0.5,
-    /// taking r_t 0.663 in as printed) K'/r_tf 0.878.
-    #[test]
-    fn standard_examples_15_and_16() {
-        let rt = torsional_radius(3.68, 0.646, 172.0, 9.0 * 12.0);
-        assert!((rt - 1.33).abs() < 0.005, "{rt}");
-        let rps = (172.0f64 / 7.75).sqrt();
-        let rtf = torsional_flexural_radius(rt, 2.40, 3.58, rps);
-        assert!((rtf - 1.21).abs() < 0.01, "{rtf}");
-        let kl_r = 9.0 * 12.0 / rtf;
-        assert!((kl_r - 88.8).abs() < 0.2, "{kl_r}");
-        let fa = column_stress(35.2, 29_000.0, kl_r);
-        assert!((fa - 26.7).abs() < 0.05, "{fa}");
-        let k = 1.0 / torsional_flexural_radius(0.663 / 0.5, 1.84, 2.71, 3.57);
-        assert!((k - 0.878).abs() < 0.001, "{k}");
-    }
-
-    /// Torsional buckling by the profile: a short-legged I section braced
-    /// about both axes at mid-length but free to twist over its length
-    /// governs by L/r_t (3.9.4, said); a channel by L/r_tf (3.9.5); an
-    /// angle and a tube are not touched; a `general` profile is said not
-    /// checked.
-    #[test]
-    fn torsional_buckling_by_profile() {
-        use crate::model::{Member, MemberKind, Node, Section};
-        use ohl_sections::Shape;
-        let with = |shape: Shape| {
-            let p = ohl_sections::Section {
-                id: "p".into(),
-                name: String::new(),
-                description: String::new(),
-                shape,
-                material: None,
-                given: ohl_sections::Given::default(),
-            };
-            let q = p.properties();
-            let mut s = Section::elastic("s", E, q.area, q.iy);
-            s.iz = q.iz;
-            s.i_min = q.iv;
-            s.j = q.it.unwrap_or(q.iy + q.iz);
-            s.yield_strength = Some(355e6);
-            s.profile = Some(p);
-            let mut m = Model {
-                sections: vec![s],
-                ..Model::default()
-            };
-            m.nodes = vec![
-                Node::pinned("a", [0.0, 0.0, 0.0]),
-                Node::pinned("b", [0.0, 0.0, 4.0]),
-            ];
-            let mut b = Member::new("b", MemberKind::Truss, 0, 1, 0);
-            b.design.length_ratios = Some([0.25; 3]);
-            b.design.end_eccentricity = Some(Ends::None);
-            m.members = vec![b];
-            (capacity(&m, 0, None), q)
-        };
-        let i = Shape::ISection {
-            h: 0.3,
-            b: 0.3,
-            tw: 0.006,
-            tf: 0.006,
-            r: 0.0,
-        };
-        let (c, q) = with(i.clone());
-        let ips = q.iy + q.iz;
-        let rt = torsional_radius(q.warping.unwrap(), q.it.unwrap(), ips, 4.0);
-        assert!((c.kl_r.unwrap() - 4.0 / rt).abs() < 1e-9, "{c:?}");
-        assert!(
-            c.compression
-                .as_ref()
-                .unwrap()
-                .1
-                .contains("torsional, 3.9.4")
-        );
-        assert!(c.compression_assumed.iter().any(|a| a.contains("K_t 1")));
-        let (c, _) = with(Shape::Channel {
-            h: 0.3,
-            b: 0.1,
-            tw: 0.006,
-            tf: 0.006,
-            r: 0.0,
-        });
-        assert!(
-            c.compression
-                .as_ref()
-                .unwrap()
-                .1
-                .contains("torsional-flexural, 3.9.5"),
-            "{c:?}"
-        );
-        for shape in [
-            Shape::EqualAngle {
-                h: 0.1,
-                t: 0.006,
-                r: 0.0,
-            },
-            Shape::CircularHollow { d: 0.1, t: 0.003 },
-        ] {
-            let (c, q) = with(shape);
-            assert!(!c.compression.as_ref().unwrap().1.contains("torsional"));
-            assert!(
-                !c.compression_assumed
-                    .iter()
-                    .any(|a| a.contains("torsional"))
-            );
-            let rv = (q.iv / q.area).sqrt();
-            assert!((c.kl_r.unwrap() - 0.25 * 4.0 / rv).abs() < 1e-6, "{c:?}");
-        }
-        let (c, _) = with(Shape::General { h: 0.1, b: 0.1 });
-        assert!(
-            c.compression_assumed
-                .iter()
-                .any(|a| a.contains("torsional buckling not checked"))
-        );
-    }
-
-    /// The connection rules of ASCE 10-97 by hand, on an unequal angle
-    /// 100 × 60 × 8 mm (no root radius; f_y 355, f_u 510 MPa) bolted by
-    /// its short leg with three M16 bolts (pitch 50 mm, end distance 20
-    /// mm, 25 mm to the toe, no hole given):
-    /// - the hole: standard (16 + 1.6) taken as punched, + 1.6: 19.2 mm;
-    /// - the area: the long leg counted as 60 mm (3.10.2): A − 40 × 8 mm²;
-    /// - net section: (1216 − 320 − 19.2 × 8) mm² × 355 × 0.9 = 237.2 kN;
-    /// - block shear (Eq. 3.10-1): A_v = 8 (20 + 2 × 50 − 2.5 × 19.2) =
-    ///   576 mm², A_t = 8 (25 − 9.6) = 123.2 mm², P = 0.6 × 576 × 510 +
-    ///   123.2 × 355 = 219.99 kN;
-    /// - bearing on the bolt's f_u when lower (4.4): 3 × 1.5 × 300 × 16 ×
-    ///   8 = 172.8 kN;
-    /// - bolt shear from f_ub alone on 0.6 of the gross area: 3 × 0.62 ×
-    ///   300 × 0.6 × 201.06 = 67.31 kN;
-    /// - a leg of w/t above 25 said (3.7.1).
-    #[test]
-    fn connection_rules_by_hand() {
-        use crate::design::{Bolts, ConnectedLeg};
-        use crate::model::{Member, MemberKind, Node, Section};
-        let p = ohl_sections::Section {
-            id: "L".into(),
-            name: String::new(),
-            description: String::new(),
-            shape: ohl_sections::Shape::UnequalAngle {
-                h: 0.1,
-                b: 0.06,
-                t: 0.008,
-                r: 0.0,
-            },
-            material: None,
-            given: ohl_sections::Given::default(),
-        };
-        let q = p.properties();
-        let mut s = Section::elastic("s", E, q.area, q.iy);
-        s.iz = q.iz;
-        s.i_min = q.iv;
-        s.yield_strength = Some(355e6);
-        s.ultimate = Some(510e6);
-        s.profile = Some(p);
-        let mut m = Model {
-            sections: vec![s],
-            ..Model::default()
-        };
-        m.nodes = vec![
-            Node::pinned("a", [0.0, 0.0, 0.0]),
-            Node::pinned("b", [0.0, 0.0, 2.0]),
-        ];
-        let mut b = Member::new("b", MemberKind::Truss, 0, 1, 0);
-        b.design.connected_leg = Some(ConnectedLeg::Short);
-        b.design.end_distance = Some(0.02);
-        b.design.spacing = Some(0.05);
-        b.design.edge_distance = Some(0.025);
-        b.design.bolts = Some(Bolts {
-            diameter: 0.016,
-            hole: None,
-            count: 3,
-            shear_planes: 1,
-            shear_capacity: None,
-            ultimate: Some(300e6),
-            holes: Some(1),
-            grade: None,
-        });
-        m.members = vec![b];
-        let c = capacity(&m, 0, None);
-        let gross = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
-        let shear = 3.0 * 0.62 * 300e6 * 0.6 * gross;
-        let (t, what) = c.tension.clone().unwrap();
-        assert!((t - shear).abs() < 1e-6, "{c:?}");
-        assert_eq!(what, "bolt shear");
-        // The bolts strong: bearing on the bolt's f_u, then block shear.
-        m.members[0].design.bolts.as_mut().unwrap().shear_capacity = Some(1e6);
-        let (t, what) = capacity(&m, 0, None).tension.unwrap();
-        assert!((t - 3.0 * 1.5 * 300e6 * 0.016 * 0.008).abs() < 1e-6, "{t}");
-        assert_eq!(what, "bearing");
-        m.members[0].design.bolts.as_mut().unwrap().ultimate = Some(800e6);
-        let c = capacity(&m, 0, None);
-        let (t, what) = c.tension.clone().unwrap();
-        let block = 0.6 * 576e-6 * 510e6 + 123.2e-6 * 355e6;
-        assert!((t - block).abs() < 1e-3, "{c:?}");
-        assert_eq!(what, "block shear");
-        // Without the block shear's data: the net section, short leg.
-        m.members[0].design.end_distance = None;
-        let c = capacity(&m, 0, None);
-        let net = (q.area - 0.04 * 0.008 - 0.0192 * 0.008) * 355e6 * 0.9;
-        let (t, what) = c.tension.clone().unwrap();
-        assert!((t - net).abs() < 1e-3, "{c:?}");
-        assert_eq!(what, "net section");
-        for n in [
-            "standard hole",
-            "holes punched",
-            "block shear not checked (no end distance)",
-        ] {
-            assert!(
-                c.tension_assumed.iter().any(|a| a.contains(n)),
-                "{n}: {c:?}"
-            );
-        }
-        // w/t: (100 − 8)/8 = 11.5 within 25; a 4 mm leg, 23, too; 3 mm, 31.
-        assert!(c.limit.is_none());
-        m.members[0].design.width_thickness = Some(31.0);
-        assert!(
-            capacity(&m, 0, None)
-                .limit
-                .unwrap()
-                .contains("w/t 31.0 above 25 (3.7.1)")
-        );
-    }
-
-    /// The six curves at L/r 100 and 150 (hand values).
-    #[test]
-    fn effective_slenderness_curves() {
-        assert_eq!(effective_slenderness(100.0, Ends::None, Ends::None), 100.0);
-        assert_eq!(
-            effective_slenderness(100.0, Ends::OneEnd, Ends::None),
-            105.0
-        );
-        assert_eq!(
-            effective_slenderness(100.0, Ends::BothEnds, Ends::None),
-            110.0
-        );
-        assert_eq!(
-            effective_slenderness(150.0, Ends::BothEnds, Ends::None),
-            150.0
-        );
-        assert!((effective_slenderness(150.0, Ends::None, Ends::OneEnd) - 142.9).abs() < 1e-9);
-        assert!((effective_slenderness(150.0, Ends::None, Ends::BothEnds) - 138.45).abs() < 1e-9);
-    }
-
-    /// Local buckling for f_y 355 MPa: (w/t)_lim = 11.12, the linear
-    /// range to 20.06, then elastic.
-    #[test]
-    fn local_buckling() {
-        let fy = 355e6;
-        assert_eq!(local_buckling_stress(fy, E, 10.0), fy);
-        let lim = 209.6 / 355f64.sqrt();
-        let f = local_buckling_stress(fy, E, 14.0);
-        assert!((f - (1.677 - 0.677 * 14.0 / lim) * fy).abs() < 1.0);
-        let f = local_buckling_stress(fy, E, 25.0);
-        assert!((f - 0.0332 * std::f64::consts::PI.powi(2) * E / 625.0).abs() < 1.0);
-    }
-
-    /// The column curve: C_c for f_y 355 MPa is 108.06; at KL/r 80
-    /// F_a = (1 − ½(80/107.4)²) f_y; at 150 the Euler stress.
-    #[test]
-    fn column_curve() {
-        let fy = 355e6;
-        let cc = std::f64::consts::PI * (2.0 * E / fy).sqrt();
-        assert!((cc - 108.06).abs() < 0.01, "{cc}");
-        let f = column_stress(fy, E, 80.0);
-        assert!((f - (1.0 - 0.5 * (80.0 / cc).powi(2)) * fy).abs() < 1.0);
-        let f = column_stress(fy, E, 150.0);
-        assert!((f - std::f64::consts::PI.powi(2) * E / 22500.0).abs() < 1.0);
     }
 }

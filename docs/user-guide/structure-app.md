@@ -1003,7 +1003,10 @@ out. Each change is one undo step.
   plate, net section 3.10.1, distances 4.5; no weld rule in the standard:
   welds not checked, said) or SIA 263 (bearing (76), net and block shear
   (82), (83), sections (38), (39), Table 17's distances, fillet welds
-  (87), (88)); the simple check checks neither. A plate in compression:
+  (87), (88)) — each its bundled plugin's joint check since 2026-11-18,
+  with the structure's parameter file for it (the panel shows each part's
+  governing check; a weld ASCE 10-97 does not check reads NOT CHECKED, NOT
+  ON THE SAFE SIDE); the simple check checks neither. A plate in compression:
   plate buckling not checked. Every assumption is on the theory page
   [Gusset plates and their welds](../theory/joint-plates.md).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
@@ -1099,9 +1102,12 @@ its list — from its own side:
   bolts, gauges, pitch, holes set here are the joint's, and the reverse;
   the bolt layout form and presets as in Joint details;
 - its **resistance worked out live** (by the structure's design code,
-  as the check works it out: ASCE 10-97; a plugin's method — SIA
-  263:2013, the bundled plugin `sia263`, since 2026-11-18 — the plugin's
-  capacities, its title naming it; a plugin without capacities says why): the tension and compression capacities and what governs each
+  as the check works it out — each a plugin's since 2026-11-18: ASCE
+  10-97 the bundled plugin `asce10`, SIA 263:2013 the bundled plugin
+  `sia263`, another plugin's method — its title naming it, with the
+  structure's parameter file for the plugin, `Plugins/<plugin>.toml`
+  beside it, as a run takes it; a plugin without capacities says why; the
+  simple check, no design code: ASCE 10-97's as an aid, said): the tension and compression capacities and what governs each
   (the net section, the bolts' shear or bearing at an end, KL/r), KL/r,
   a slenderness beyond its class's limit, where each end's conditions
   come from and what was assumed — recomputed on every change; and the
@@ -1257,7 +1263,8 @@ its hover gives the joint's problems before and after. A click makes it
 (one undo step). A problem no fix helps says so: change it by hand.
 
 **The code's distances** (2026-11-03). The member view shows each end's
-minimums in one line above the drawing (`ASCE 10-97: end ≥ 21 mm
+minimums in one line above the drawing (since 2026-11-18 named by the
+code's bundled plugin, `asce10-97 of the plugin asce10: end ≥ 21 mm`; before, `ASCE 10-97: end ≥ 21 mm
 (4.5.1), spacing ≥ 52 mm (4.5.2), edge ≥ 19 mm (4.5.3, Eq. 4.5-7;
 sheared edge) — P 30.2 kN per bolt from the analysis`), the bolt layout
 form the same with what of the layout breaks them, and both views ring

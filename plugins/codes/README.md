@@ -33,13 +33,19 @@ not part of the public code.
 
 ## Structure codes (bundled)
 
-`sia263` is of another kind: the member, joint and bolt-distance checks
-of lattice structures by SIA 263:2013 (`structure-code-plugin` world:
-`member-check`, `member-check-full`, `joint-check`, `bolt-distances`),
-moved out of the core on 2026-11-18 and **shipped with OpenOHL** — found
-before the user's plugins, an error at start when it does not load. A
-structure's `[analysis] capacity = "sia263-2013"` names it. See its
-README; its parameter file is `Plugins/sia263.toml` beside a structure.
+`asce10` and `sia263` are of another kind: the member, joint and
+bolt-distance checks of lattice structures by ASCE 10-97 (the default)
+and by SIA 263:2013 (`structure-code-plugin` world: `member-check`,
+`member-check-full`, `joint-check`, `joint-check-full`,
+`bolt-distances`), moved out of the core on 2026-11-18 (SIA 263 first,
+then ASCE 10-97, each with the same numbers bit for bit) and **shipped
+with OpenOHL** — found before the user's plugins, an error at start when
+one does not load, given 120 s a call (user plugins 5 s). A structure
+without `[analysis] capacity`, or with `capacity = "asce10-97"`, is
+checked by `asce10`; `capacity = "sia263-2013"` names `sia263`. See their
+READMEs; a plugin's parameter file is `Plugins/<plugin>.toml` beside a
+structure (`sia263`: γ_M1, γ_M2, f_uE, reaching the members, the joints
+and Member details; `asce10` takes none).
 
 `common/` is shared by the plugins (parameter files, writing the files,
 clearance presets).

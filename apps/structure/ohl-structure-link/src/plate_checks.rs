@@ -163,16 +163,30 @@ pub fn plate_plans(
     library: &SectionLibrary,
     bolts: &BoltLibrary,
 ) -> Result<PlatePlans, String> {
+    plate_plans_in(text, library, bolts, None)
+}
+
+/// [`plate_plans`] of a structure whose file is in `dir`: its plugin's
+/// joint check is then given the structure's parameter file for it
+/// (`Plugins/<plugin>.toml` beside the structure, 2026-11-18), as the
+/// member check is.
+pub fn plate_plans_in(
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &BoltLibrary,
+    dir: Option<&std::path::Path>,
+) -> Result<PlatePlans, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     if t.plates.is_empty() && t.splices.is_empty() {
         return Ok(PlatePlans::default());
     }
     let details = crate::joint_details(text, library, bolts)?;
-    let Ok(model) = Model::from_structure_type_with_joint_details(text, library, bolts, None)
+    let Ok(mut model) = Model::from_structure_type_with_joint_details(text, library, bolts, None)
     else {
         return Ok(PlatePlans::default());
     };
+    crate::plugin_check::with_parameters(&mut model, dir)?;
     let mut out = PlatePlans {
         method: model.analysis.capacity,
         plugin: model.capacity_plugin.clone(),

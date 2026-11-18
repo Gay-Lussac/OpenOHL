@@ -920,7 +920,7 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                     &beside
                 }
             };
-            match crate::plate_plans(input.text, input.sections, bolts) {
+            match crate::plate_plans_in(input.text, input.sections, bolts, input.dir) {
                 Ok(p) => {
                     run.notes.extend(p.notes.iter().cloned());
                     Some(p)

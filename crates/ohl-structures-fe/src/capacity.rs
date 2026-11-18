@@ -15,6 +15,30 @@ use crate::design::MemberDesign;
 use crate::model::Model;
 use crate::solve::Solution;
 
+/// The capacities of one member and what they rest on: given by a method
+/// outside the core (a `member-capacity` plugin) for
+/// [`crate::check::member_usage_with`] (until 2026-11-18 also the core's
+/// own ASCE 10-97 record, `asce10::Capacity`).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Capacity {
+    /// Compression capacity, N, and what governs it in words.
+    pub compression: Option<(f64, String)>,
+    /// Tension capacity, N, and what governs it in words.
+    pub tension: Option<(f64, String)>,
+    /// The effective slenderness KL/r (compression).
+    pub kl_r: Option<f64>,
+    /// What the compression capacity assumed for missing data, in words.
+    pub compression_assumed: Vec<String>,
+    /// What the tension capacity assumed for missing data, in words.
+    pub tension_assumed: Vec<String>,
+    /// Slenderness above the class's limit, in words.
+    pub limit: Option<String>,
+    /// For a member with connections (`[[connection]]`): per end, its
+    /// conditions and where each comes from, in words ("N2 eccentric
+    /// (worked out: one leg bolted), restrained (given)"); empty without.
+    pub joints: Vec<String>,
+}
+
 /// One member as a capacity method receives it, SI units.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CapacityInput {

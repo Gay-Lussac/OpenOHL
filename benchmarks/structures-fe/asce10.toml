@@ -1,5 +1,6 @@
 # ASCE 10-97 member capacities (the default capacity method of the
-# structure check, ohl_structures_fe::asce10), on invented single bars
+# structure check, since 2026-11-18 the bundled plugin plugins/codes/asce10,
+# the core's ohl_structures_fe::asce10 before), on invented single bars
 # against values computed by hand from the published formulas of ASCE
 # 10-97, Design of Latticed Steel Transmission Structures (American
 # Society of Civil Engineers), metric form: effective slenderness curves
@@ -8,7 +9,8 @@
 # i_min = 20 cm4 (r_v = 1.414 cm), E = 210 GPa, pinned at a, held across
 # at b, loaded along it at b; first order. The usage is the force over
 # the capacity (strength factor 1). Values evaluated in double precision
-# (scratch script reproduced in the notes).
+# (scratch script reproduced in the notes). Run through the plugin (its
+# first call compiles it): 5 s a case, as SIA 263's (1 s before the move).
 
 [[case]]
 id = "asce10-001"
@@ -16,7 +18,7 @@ title = "Compression, concentric, L/r 212 > 120 (curve 4): Euler stress"
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 3 m, fy = 355 MPa: L/r = 212.1320, KL/r = 212.1320, Fcr = 355.0000 MPa, P = 46.0582 kN; 20 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -61,7 +63,7 @@ title = "Compression, both ends eccentric, L/r 106 (curve 3): 60 + L/r/2 on the 
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 1.5 m, fy = 235 MPa: L/r = 106.0660, KL/r = 113.0330, Fcr = 235.0000 MPa, P = 149.8926 kN; 20 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -106,7 +108,7 @@ title = "Compression, one end eccentric (curve 2), length ratio 0.5 about the mi
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 1.5 m, fy = 355 MPa: L/r = 67.0820, KL/r = 80.3115, Fcr = 292.8750 MPa, P = 226.1419 kN; 20 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -151,7 +153,7 @@ title = "Compression, L/r 177 restrained at both ends (curve 6), legs w/t 25 (el
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 2.5 m, fy = 355 MPa: L/r = 176.7767, KL/r = 154.9177, Fcr = 110.0974 MPa, P = 75.0079 kN; 20 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -196,7 +198,7 @@ title = "Tension: least of net section (one leg, 0.9 fy An), bolt shear, bearing
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "2 M16 bolts in 17.5 mm holes (taken as punched: 19.1 mm, 3.10.1), one per section, t = 6 mm, long leg bolted: net 282.8853 kN, shear 2 x 60.17 = 120.34 kN, bearing 2 x 1.5 fu d t = 141.12 kN; 60 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -244,7 +246,7 @@ title = "Compression of a short bolted bar: bolt shear governs over the column"
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 1 m concentric: L/r = 70.7107, P = 278.9940 kN, bolt shear 120.34 kN; 60 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -292,7 +294,7 @@ title = "Compression without design data: assumed on the safe side (length ratio
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "L = 1.5 m, no design data, no profile (no local buckling): L/r = 106.0660, KL/r = 113.0330 (curve 3), P = 162.2215 kN; 20 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -332,7 +334,7 @@ title = "Tension without design data: the gross section (no bolts given, connect
 calculation = "structures.fe"
 reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), the member formulas evaluated by hand"
 notes = "A fy = 355 kN; 60 kN"
-max_seconds = 1.0
+max_seconds = 5.0
 inputs.model = '''
 [analysis]
 nonlinear = false

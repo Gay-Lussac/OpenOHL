@@ -106,7 +106,7 @@ ok plugins-built
 
 # The plugins' own native tests (plain Rust, beside their WebAssembly
 # build; built in the check's target folder, pruned with it).
-for d in plugins/examples/building-cuts plugins/codes/sia263; do
+for d in plugins/examples/building-cuts plugins/codes/sia263 plugins/codes/asce10; do
     (cd "$d" && $C fmt --check && CARGO_TARGET_DIR="$OUT" $C test -q > /dev/null) || { echo "plugin-tests-FAILED $d"; exit 1; }
 done
 ok plugin-tests-ok

@@ -3,18 +3,22 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The comparison of a design code in the core and as a plugin, bit for
-//! bit (2026-11-18: how SIA 263:2013's move was proved; ASCE 10-97's next):
+//! bit (2026-11-18: how the moves of SIA 263:2013 and then of ASCE 10-97
+//! were proved; since then the core's only own method is `simple`):
 //! the members' usage of structure files in four load cases (loads at every
 //! attachment point) and the variants as given, with the redundant-force
 //! check, with single angles' moments, with tension-only members carrying
 //! no compression and with the joint details taken (a file with
 //! connections) — every member of every case as `file|variant|case|member|
 //! usage bits|governs`. Two runs (before and after a move) compared with
-//! `cmp`.
+//! `cmp`. It prints the slowest plugin call (the measure of a bundled
+//! plugin's time limit); `OHL_COMPARE_CASES=N` checks N load cases instead
+//! of four (the four again, their loads scaled) for timing it.
 //!
 //! `cargo run -p ohl-member-check --example compare_codes -- MODE OUT SECTIONS FILE...`
-//! MODE: `core:<method>` (the core's method, e.g. `core:asce10-97`) or a
-//! plugin's method (`sia263-2013`, `plugin:<plugin>/<method>`: found as a
+//! MODE: `core:<method>` (the core's method, `core:simple`; it was
+//! `core:asce10-97` before the move) or a plugin's method (`asce10-97`,
+//! `sia263-2013`, `plugin:<plugin>/<method>`: found as a
 //! structure's run finds it); SECTIONS: a section library (file or
 //! folder).
 
@@ -30,6 +34,9 @@ fn main() {
     let sections = ohl_sections::SectionLibrary::load(Path::new(&args[2])).expect("sections");
     let mut text = String::new();
     let (mut members, mut cases, mut files) = (0usize, 0usize, 0usize);
+    // The slowest plugin call (seconds, which): the measure of a bundled
+    // plugin's time limit (2026-11-18).
+    let mut slowest = (0.0f64, String::new());
     for f in &args[3..] {
         let path = Path::new(f);
         let src = std::fs::read_to_string(path).expect("read");
@@ -85,12 +92,23 @@ fn main() {
                     Err(e) => panic!("{e}"),
                 };
             }
-            let runs: Vec<(&str, [f64; 3], f64)> = vec![
-                ("A", [6e3, 0.0, 12e3], 1.0),
-                ("B", [0.0, 8e3, 10e3], 1.0),
-                ("C", [-15e3, -3e3, 20e3], 0.9),
-                ("D", [40e3, 10e3, 60e3], 1.0),
+            let mut runs: Vec<(String, [f64; 3], f64)> = vec![
+                ("A".into(), [6e3, 0.0, 12e3], 1.0),
+                ("B".into(), [0.0, 8e3, 10e3], 1.0),
+                ("C".into(), [-15e3, -3e3, 20e3], 0.9),
+                ("D".into(), [40e3, 10e3, 60e3], 1.0),
             ];
+            // More cases for timing a plugin call (OHL_COMPARE_CASES, e.g.
+            // 100: the four again with their loads scaled; 2026-11-18).
+            let wanted: usize = std::env::var("OHL_COMPARE_CASES")
+                .ok()
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(4);
+            for k in 4..wanted {
+                let (name, [t, l, v], s) = runs[k % 4].clone();
+                let f = 1.0 + 0.05 * (k / 4) as f64;
+                runs.push((format!("{name}{k}"), [t * f, l * f, v * f], s));
+            }
             let mut solved = Vec::new();
             for (name, [t, l, v], strength) in &runs {
                 let mut nodal = Vec::new();
@@ -116,7 +134,7 @@ fn main() {
                     *strength,
                     &ohl_structures_fe::default_budget(),
                 ) {
-                    Ok((s, u)) => solved.push((*name, *strength, s, u)),
+                    Ok((s, u)) => solved.push((name.as_str(), *strength, s, u)),
                     Err(e) => {
                         let _ = writeln!(text, "{f}|{variant}|{name}|refused|{e:?}");
                     }
@@ -133,9 +151,22 @@ fn main() {
                         moved: None,
                     })
                     .collect();
+                let t0 = std::time::Instant::now();
                 let c = ohl_member_check::check(&model, &list)
                     .expect("a plugin")
                     .expect("checked");
+                let took = t0.elapsed().as_secs_f64();
+                if took > slowest.0 {
+                    slowest = (
+                        took,
+                        format!(
+                            "{} ({variant}, {} members, {} cases)",
+                            path.file_name().unwrap().to_string_lossy(),
+                            model.members.len(),
+                            list.len()
+                        ),
+                    );
+                }
                 for (run, u) in solved.iter_mut().zip(c.usage) {
                     run.3 = u;
                 }
@@ -159,5 +190,8 @@ fn main() {
         }
     }
     std::fs::write(out, text).expect("write");
+    if slowest.0 > 0.0 {
+        println!("slowest plugin call: {:.2} s, {}", slowest.0, slowest.1);
+    }
     println!("{files} file variants, {cases} cases, {members} member results");
 }

@@ -78,15 +78,16 @@ pub use member_solids::{
 };
 pub use member_view::{
     Elevation, FlatLeg, Hole, MemberCapacity, MemberEnds, RESISTANCE_FROM_PLUGIN, bolt_rules,
-    elevation, flat_leg, member_capacity, member_ends, no_bolt_rules,
+    bolt_rules_in, elevation, flat_leg, member_capacity, member_capacity_in, member_ends,
+    no_bolt_rules,
 };
 pub use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,
 };
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
 pub use plate_checks::{
-    PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_usage,
-    plate_usage_cases,
+    PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_plans_in,
+    plate_usage, plate_usage_cases,
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
 pub use run::{

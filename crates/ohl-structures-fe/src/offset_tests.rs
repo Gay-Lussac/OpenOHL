@@ -38,6 +38,8 @@ fn tower(kind: &str, n3: &str, shift: Option<f64>, nonlinear: bool) -> Model {
 [analysis]
 nonlinear = {nonlinear}
 self_weight = false
+# The core's own check: a design code's usage is its plugin's (2026-11-18).
+capacity = "simple"
 
 [[material]]
 id = "steel"

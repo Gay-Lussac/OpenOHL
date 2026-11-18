@@ -194,6 +194,12 @@ impl Analyses {
         let (key, condensed, of_case) = if let Some((model, extended)) = self.model_of(t, extension)
         {
             let model = model.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
+            // Its design code's plugin not found (or failing): not flexible
+            // either — its solve would cap the tension-only members by
+            // another rule than its code's (2026-11-18).
+            if let Some(e) = self.plugin_error_of(t, extension) {
+                return Err(Rigid::ModelNotRead(e.clone()));
+            }
             // Its measured foot movements (owner 2026-11-16): the
             // reference state with its feet moved, and each point's move.
             let feet = crate::feet::on_model(model, placed)
@@ -382,6 +388,12 @@ impl Analyses {
             .collect();
         if let Some((model, extended)) = self.model_of(t, extension) {
             let model = model.as_ref().map_err(|e| Rigid::ModelNotRead(e.clone()))?;
+            // Its design code's plugin not found (or failing): not flexible
+            // either — its solve would cap the tension-only members by
+            // another rule than its code's (2026-11-18).
+            if let Some(e) = self.plugin_error_of(t, extension) {
+                return Err(Rigid::ModelNotRead(e.clone()));
+            }
             let nodal_of = |set: &[(String, [f64; 3])]| -> Result<Vec<_>, Rigid> {
                 let mut nodal = Vec::new();
                 for (label, force) in set {

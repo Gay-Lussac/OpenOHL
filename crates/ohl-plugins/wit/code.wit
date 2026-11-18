@@ -875,6 +875,162 @@ world joint-check-export {
     export joint-check;
 }
 
+/// The joint check with the method's **parameters** (optional export of
+/// any plugin beside `joint-check`, found by its export name;
+/// 2026-11-18, owner: a plugin's settings reach its joint checks too,
+/// not only its member check). The same check as `joint-check`, its
+/// records repeated (a separate interface, so that plugins built against
+/// `joint-check` load as they are), the input carrying the text of the
+/// structure's parameter file for the plugin (TOML; "" none — the
+/// method's own values), as `member-check-full` does. A plugin that has
+/// it is called by `check-joints-full` instead of `joint-check`'s
+/// `check-joints`. SI units throughout.
+interface joint-check-full {
+    /// A load case of the run.
+    record load-case {
+        /// Its name.
+        name: string,
+        /// Its strength factor (the plugin applies it to its usage).
+        strength: f64,
+    }
+
+    /// A member's bolt group in a plate (or a splice's cover).
+    record bolt-group {
+        /// How many bolts.
+        count: u32,
+        /// Their diameter, m.
+        diameter: f64,
+        /// Their hole, m (none: not given).
+        hole: option<f64>,
+        /// The bolts' ultimate strength, Pa (none: not given).
+        bolt-ultimate: option<f64>,
+        /// Gauge lines: the bolts across the force.
+        lines: u32,
+        /// Bolts along each line (the most on one).
+        per-line: u32,
+        /// Between bolts along a line, m (none: not known, or one bolt).
+        pitch: option<f64>,
+        /// Between the outer gauge lines, m (0: one line).
+        span: f64,
+        /// From the last bolts to the plate's edge along the force with
+        /// the member in tension, m (none: the edge not reached).
+        end-tension: option<f64>,
+        /// The same with the member in compression, m.
+        end-compression: option<f64>,
+        /// From the outer gauge lines to the plate's edge across the
+        /// force, m (the nearer side; none: not known).
+        edge: option<f64>,
+        /// The plate's width a net section crosses, m, as OpenOHL took it.
+        width: f64,
+        /// How that width was taken, in words.
+        width-note: string,
+    }
+
+    /// A plate's thickness and steel.
+    record plate-steel {
+        /// Thickness, m.
+        thickness: f64,
+        /// Yield strength, Pa.
+        fy: option<f64>,
+        /// Ultimate strength, Pa.
+        fu: option<f64>,
+    }
+
+    /// A weld between two plates.
+    record weld {
+        /// `fillet` or `full_penetration`.
+        kind: string,
+        /// A fillet's throat, m (none: not given).
+        throat: option<f64>,
+        /// Its length, m.
+        length: f64,
+        /// The length is given (false: the seam's, one side).
+        length-given: bool,
+        /// The angle between the two plates at the seam, degrees.
+        angle: f64,
+        /// The lower yield strength of the two plates, Pa.
+        fy: option<f64>,
+        /// The two plates' thicknesses, m.
+        thicknesses: list<f64>,
+    }
+
+    /// One part to check.
+    record part {
+        /// Its number: the result names it.
+        id: u32,
+        /// The joint.
+        joint: string,
+        /// The plate (or cover).
+        plate: string,
+        /// `bolts` (a member's bolt group in the plate) or `weld` (the
+        /// plate's weld to another).
+        kind: string,
+        /// The member whose bolts these are, or the other plate of the weld.
+        other: string,
+        /// The bolt group (kind `bolts`).
+        bolts: option<bolt-group>,
+        /// The plate's steel (kind `bolts`).
+        steel: option<plate-steel>,
+        /// The weld (kind `weld`).
+        weld: option<weld>,
+        /// The force on the part in each load case, N: the member's axial
+        /// force times the share this plate takes (tension positive), or
+        /// the resultant the weld carries.
+        forces: list<f64>,
+        /// What OpenOHL says about this part's data.
+        notes: list<string>,
+    }
+
+    /// Everything of one structure for one call.
+    record joint-input {
+        /// The structure's name.
+        structure: string,
+        /// The plugin's parameter file of the structure (TOML; "" none).
+        parameters: string,
+        /// The load cases of the run.
+        cases: list<load-case>,
+        /// The parts.
+        parts: list<part>,
+    }
+
+    /// A part's usage in one load case.
+    record case-usage {
+        /// Its place in `joint-input.cases`.
+        load-case: u32,
+        /// Share used (1 = 100 %), the case's strength factor applied.
+        usage: f64,
+        /// The check that gives it, with its clause, in words.
+        check: string,
+    }
+
+    /// What the method gives for one part.
+    record part-result {
+        /// The part's number.
+        id: u32,
+        /// One per load case; a case left out is reported as not checked.
+        usages: list<case-usage>,
+        /// The governing check with its clause, in words.
+        governs: string,
+        /// Notes (assumptions, limits), in words.
+        notes: list<string>,
+        /// What is not on the safe side or not checked for this part
+        /// (none: nothing). OpenOHL shows it with the result.
+        not-safe: option<string>,
+    }
+
+    /// Checks the parts of `input` by method `method` (a name of the
+    /// plugin's `member-check` methods) with the parameters it carries:
+    /// one result per part it checks. The error says why there is no
+    /// result (a parameter file it cannot read, a method it does not have).
+    check-joints-full: func(method: string, input: joint-input) -> result<list<part-result>, string>;
+}
+
+/// The `joint-check-full` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world joint-check-full-export {
+    export joint-check-full;
+}
+
 /// Minimum bolt distances by a design method (optional export of any
 /// plugin beside `member-check`, found by its export name;
 /// 2026-11-11): what OpenOHL's bolt tools place and check bolts by when
@@ -1357,10 +1513,12 @@ world member-check-full-export {
 
 /// A plugin giving a design code for structures (2026-11-18): its members
 /// by `member-check` and `member-check-full`, its joints by
-/// `joint-check`, the bolt tools' minimum distances by `bolt-distances`.
+/// `joint-check` and (with its parameters) `joint-check-full`, the bolt
+/// tools' minimum distances by `bolt-distances`.
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
     export joint-check;
+    export joint-check-full;
     export bolt-distances;
 }

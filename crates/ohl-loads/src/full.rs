@@ -516,6 +516,10 @@ fn full_model(
     let extension = placed.extension.as_deref();
     if let Some((model, _)) = analyses.model_of(t, extension) {
         let model = model.as_ref().map_err(Clone::clone)?;
+        // Its design code's plugin not found: not solved (2026-11-18).
+        if let Some(e) = analyses.plugin_error_of(t, extension) {
+            return Err(e.clone());
+        }
         let feet = crate::feet::on_model(model, Some(placed))
             .map_err(|e| format!("foot movements: {e}"))?
             .map(|f| f.prescribed)
