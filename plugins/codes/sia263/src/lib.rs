@@ -21,7 +21,10 @@
 //!   details the check would not be SIA 263's.
 //! - `joint-check`: a member's bolts in a gusset plate or cover, a weld
 //!   between two plates ([`joints`]).
-//! - `bolt-distances`: SIA 263 Table 17 by bolt size.
+//! - `bolt-distances` (and `bolt-distances-full`): SIA 263 Table 17 by
+//!   bolt size; without an analysis the force per bolt shown with them is
+//!   the bolt's own design shear resistance by Table 16 over γ_M2
+//!   ([`sia263::bolt_shear`]; third round, 2026-11-18).
 //! - **Parameters** (`Plugins/sia263.toml` beside a structure): γ_M1, γ_M2,
 //!   f_uE ([`params`]); without a file, the standard's.
 //!

@@ -189,6 +189,77 @@ fn from_edge(outline: &[[f64; 3]], n: [f64; 3], q: [f64; 3]) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
+/// Where no code gives minimums (the simple check) the bolt tools and the
+/// plate outline keep the structure's default minimums (owner 2026-11-18,
+/// third round): 1.5, 3 and 1.5 bolt diameters to start with, the file's
+/// `[default_bolt_minimums]` when given — said as "default minimum,
+/// assumed, not a code's"; the drawing's pitch and end distance not given
+/// follow them. Under ASCE 10-97 (the default) the code's own, whatever
+/// the file's defaults.
+#[test]
+fn the_default_minimums_where_no_code_gives_any() {
+    use ohl_structures::LibraryItem as _;
+    let plate = "[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n";
+    let at = AT_N2
+        .replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"")
+        .replace("pitch = \"50 mm\"\nend_distance = \"30 mm\"\n", "");
+    let simple = |defaults: &str| {
+        format!("{TOWER}{at}{plate}\n[analysis]\ncapacity = \"simple\"\n{defaults}")
+    };
+    // The starting values.
+    let text = simple("");
+    let r = crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None)
+        .expect("the default minimums");
+    assert_eq!(r.code, ohl_structures::bolts::DEFAULT_MINIMUM_WORDS);
+    assert!(r.assumed.as_deref().unwrap().contains("the simple check"));
+    let d = r.diameter;
+    assert!((r.end - 1.5 * d).abs() < 1e-12 && (r.edge - 1.5 * d).abs() < 1e-12);
+    assert!((r.spacing - 3.0 * d).abs() < 1e-12);
+    assert!(r.words().contains("(1.5 d)") && r.words().contains("(3 d)"));
+    // The file's: end 2, spacing 4 (edge left at 1.5).
+    let text = simple("\n[default_bolt_minimums]\nend = 2\nspacing = 4\n");
+    let r = crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None).unwrap();
+    assert!((r.end - 2.0 * d).abs() < 1e-12 && (r.spacing - 4.0 * d).abs() < 1e-12);
+    assert!((r.edge - 1.5 * d).abs() < 1e-12);
+    let details = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = details.joint("N2").unwrap();
+    let a = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert!(
+        (a.pitch.value.unwrap() - 4.0 * d).abs() < 1e-12,
+        "{:?}",
+        a.pitch
+    );
+    assert!((a.end_distance.value.unwrap() - 2.0 * d).abs() < 1e-12);
+    let p = &n2.plates[0];
+    assert!(
+        p.edges[0].contains("default minimum, assumed, not a code's: 2 d, 1.5 d"),
+        "{:?}",
+        p.edges
+    );
+    for b in &a.bolt_points {
+        let e = from_edge(&p.outline, a.bolt_axis, *b);
+        assert!(e >= 1.5 * d - 1e-6, "{e}");
+    }
+    // A wrong value is refused by name.
+    assert!(
+        ohl_structures::StructureType::parse(
+            std::path::Path::new("t.ohls"),
+            &simple("\n[default_bolt_minimums]\nend = 0\n")
+        )
+        .unwrap_err()
+        .message
+        .contains("default_bolt_minimums: end")
+    );
+    // A code's own minimums are never replaced (ASCE 10-97, the default).
+    let asce = format!("{TOWER}{at}{plate}\n[default_bolt_minimums]\nend = 2\nspacing = 4\n");
+    if let Some(r) = crate::bolt_rules(&asce, &library(), &Default::default(), "D1", "N2", None)
+        && r.assumed.is_none()
+    {
+        assert_eq!(r.code, "asce10-97");
+        assert!((r.spacing - 4.0 * d).abs() > 1e-6, "{r:?}");
+    }
+}
+
 /// The plate drawn around its bolts keeps the design code's minimum edge
 /// and end distances from each of them (the member end's, ASCE 10-97 by
 /// default) and says where they come from; an outline given too small has

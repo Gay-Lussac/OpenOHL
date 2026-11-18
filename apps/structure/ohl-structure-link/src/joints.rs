@@ -810,6 +810,7 @@ pub fn joint_details_at(
                 bolts,
                 ends,
                 &seats,
+                &t.default_bolt_minimums.unwrap_or_default(),
             );
             if level3 {
                 let host = a
@@ -964,6 +965,7 @@ fn condition(
     bolts: &ohl_structures::bolts::BoltLibrary,
     ends: Option<&member_ends::EndConditions>,
     seats: &PlateSeats,
+    defaults: &ohl_structures::bolts::DefaultBoltMinimums,
 ) {
     use Source::*;
     let si = |l: &ohl_core::units::Length| l.si();
@@ -1139,8 +1141,11 @@ fn condition(
     a.pitch = match (c.and_then(|c| c.pitch), design.and_then(|d| d.spacing)) {
         (Some(p), _) => Valued::of(p.si(), Given),
         (None, Some(p)) => Valued::of(p, Member),
-        // For the drawing only: three diameters.
-        (None, None) => diameter.map_or(Valued::none(), |d| Valued::of(3.0 * d, Assumed)),
+        // For the drawing only: the structure's default minimum spacing
+        // (3 diameters to start with; third round, 2026-11-18).
+        (None, None) => diameter.map_or(Valued::none(), |d| {
+            Valued::of(defaults.spacing * d, Assumed)
+        }),
     };
     a.end_distance = match (
         c.and_then(|c| c.end_distance),
@@ -1148,8 +1153,9 @@ fn condition(
     ) {
         (Some(p), _) => Valued::of(p.si(), Given),
         (None, Some(p)) => Valued::of(p, Member),
-        // For the drawing only: one and a half diameters.
-        (None, None) => diameter.map_or(Valued::none(), |d| Valued::of(1.5 * d, Assumed)),
+        // For the drawing only: the structure's default minimum end
+        // distance (1.5 diameters to start with).
+        (None, None) => diameter.map_or(Valued::none(), |d| Valued::of(defaults.end * d, Assumed)),
     };
     a.edge_distance = match (
         c.and_then(|c| c.edge_distance),
@@ -2410,9 +2416,11 @@ fn fit_cut(a: &Arrival, all: &[Arrival], given: Option<Face>) -> Option<f64> {
 
 /// How far a plate's edge keeps from the bolts of `a` (onto it): the
 /// code's minimum end distance along the member and edge distance across
-/// it ([`ohl_structures_fe::bolt_rules::rules_in`], worked out with the
-/// plate's thickness and steel, the member end's force and bolts); a capacity method without such
-/// rules: the end's own end and edge distances, else 1.5 bolt diameters
+/// it (`member_view::rules_in`, worked out with the plate's thickness and
+/// steel, the member end's force and bolts); where no code gives any, the
+/// structure's default minimums (third round, 2026-11-18: "default
+/// minimum, assumed, not a code's"); no bolts of known diameter: the end's
+/// own end and edge distances, else 1.5 bolt diameters of an M16
 /// (assumed). With the words for the panel.
 fn keep(
     a: &Arrival,
@@ -2425,11 +2433,12 @@ fn keep(
                 across: r.edge,
             },
             format!(
-                "{}: end ≥ {:.0} mm, edge ≥ {:.0} mm ({} {}, {}; in the plate)",
+                "{}: end ≥ {:.0} mm, edge ≥ {:.0} mm ({}{} {}, {}; in the plate)",
                 a.member,
                 r.end * 1000.0,
                 r.edge * 1000.0,
                 r.code,
+                if r.assumed.is_some() { ":" } else { "" },
                 r.clauses[0],
                 r.clauses[2]
             ),

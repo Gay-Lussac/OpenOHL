@@ -856,6 +856,34 @@ pub fn bolt_minimums(
     [end, spacing, edge]
 }
 
+/// The force basis of the bolt tools' minimum distances without an
+/// analysis (third round, 2026-11-18; before, the core's
+/// `member_ends::bolt_shear_per_bolt`, moved here unchanged): the design
+/// shear capacity of one bolt, all its shear planes, N — a given capacity
+/// through the shank when the threads are said to be out of the shear
+/// plane, else the given capacity, else 4.3.2's design shear stress 0.62
+/// f_u of the bolt on the root area (taken as 0.6 of the gross area: the
+/// threads in the shear plane, on the safe side); none without either.
+/// `shear` and `shank` per plane, N; `fub` Pa; `d` m.
+pub fn bolt_shear(
+    d: f64,
+    planes: u32,
+    shear: Option<f64>,
+    shank: Option<f64>,
+    threads_in: Option<bool>,
+    fub: Option<f64>,
+) -> Option<f64> {
+    let gross = std::f64::consts::PI * d.powi(2) / 4.0;
+    let out_given = threads_in == Some(false);
+    let per_plane = match (shank.filter(|_| out_given), shear, fub) {
+        (Some(v), _, _) => v,
+        (None, Some(v), _) => v,
+        (None, None, Some(fub)) => BOLT_SHEAR * fub * ROOT_AREA * gross,
+        _ => return None,
+    };
+    Some(per_plane * f64::from(planes))
+}
+
 /// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =
 /// t (e + (n − 1) s − (n − ½) d_h) along a bolt line of n bolts (the
 /// bolts shared out over the gauge lines), A_t = t (c − ½ d_h) from the

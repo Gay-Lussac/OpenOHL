@@ -1455,3 +1455,45 @@ fn the_export_window_chooses_the_profile_side_lines() {
     h.run_steps(2);
     assert_eq!(sheet(&mut h).profile_circuits, None);
 }
+
+/// A tower whose joint layout left provisional bolts is level 3 in
+/// OHL-Design too (owner 2026-11-18, third round): the structure picker's
+/// row gives level 3 and says why (what level 4 lacks); with the bolt
+/// confirmed, level 4 and nothing said.
+#[test]
+fn provisional_bolts_hold_a_type_at_level_3_in_the_picker() {
+    use ohl_structures::LibraryItem as _;
+    let text = |record: &str| {
+        format!(
+            "id = \"P\"\nname = \"p\"\nkind = \"lattice\"\n\
+             [[material]]\nid = \"steel\"\nelasticity = \"210 GPa\"\n\
+             [[section]]\nid = \"s\"\nmaterial = \"steel\"\narea = \"10 cm2\"\n\
+             [[node]]\nid = \"N1\"\npoint = [0, 0, 0]\nsupport = \"fixed\"\n\
+             [[node]]\nid = \"N2\"\npoint = [0, 0, 4]\n\
+             [[node]]\nid = \"N3\"\npoint = [3, 0, 4]\nsupport = \"pinned\"\n\
+             [[member]]\nid = \"C\"\nnodes = [\"N1\", \"N2\"]\nsection = \"s\"\n\
+             [[member]]\nid = \"T\"\nnodes = [\"N2\", \"N3\"]\nsection = \"s\"\n\
+             [[connection]]\nmember = \"T\"\njoint = \"N2\"\nonto = \"C\"\n\
+             [[connection]]\nmember = \"T\"\njoint = \"N3\"\n\
+             [[connection]]\nmember = \"C\"\njoint = \"N1\"\n\
+             [[connection]]\nmember = \"C\"\njoint = \"N2\"\n\
+             [[generator]]\nkind = \"joint_layout\"\nprovisional = [{record}]\n"
+        )
+    };
+    let parse =
+        |s: &str| ohl_structures::StructureType::parse(std::path::Path::new("p.ohls"), s).unwrap();
+    let insulators = ohl_structures::InsulatorLibrary::default();
+    let held = parse(&text("[\"T\", \"N2\"]"));
+    let row = crate::structure_picker::TypeRow::of(&held, &insulators, None);
+    assert_eq!(row.level, 3);
+    assert_eq!(row.lacks.len(), 1, "{:?}", row.lacks);
+    assert!(
+        row.lacks[0].contains("1 member end(s) with provisional bolts"),
+        "{:?}",
+        row.lacks
+    );
+    let confirmed = parse(&text(""));
+    let row = crate::structure_picker::TypeRow::of(&confirmed, &insulators, None);
+    assert_eq!(row.level, 4);
+    assert!(row.lacks.is_empty(), "{:?}", row.lacks);
+}

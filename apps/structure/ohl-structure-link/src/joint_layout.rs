@@ -80,6 +80,12 @@ pub struct LayoutSettings {
     /// The plates of a joint welded together (else each bolted to its
     /// flange of the leg, the default).
     pub welded: bool,
+    /// The structure's default minimum bolt distances (third round,
+    /// 2026-11-18; [`crate::lay_out`] takes the file's): an end's pitch and
+    /// end distance not given, and the edge distance a bolt keeps in the
+    /// flange where no code gives one — "default minimum, assumed, not a
+    /// code's".
+    pub defaults: ohl_structures::bolts::DefaultBoltMinimums,
 }
 
 impl Default for LayoutSettings {
@@ -91,6 +97,7 @@ impl Default for LayoutSettings {
             presets: BTreeMap::new(),
             bolt: None,
             welded: false,
+            defaults: Default::default(),
         }
     }
 }
@@ -115,9 +122,11 @@ pub struct BoltArea {
     pub flats: Option<f64>,
     /// Gauges from the heel, m (empty: the leg divided evenly, as drawn).
     pub gauges: Vec<f64>,
-    /// Pitch, m (none: three diameters, as drawn).
+    /// Pitch, m (none: the default minimum spacing, three diameters to
+    /// start with, as drawn).
     pub pitch: Option<f64>,
-    /// End distance, m (none: one and a half diameters, as drawn).
+    /// End distance, m (none: the default minimum end distance, one and a
+    /// half diameters to start with, as drawn).
     pub end: Option<f64>,
 }
 
@@ -145,8 +154,9 @@ impl BoltArea {
 }
 
 /// What a member end's leg needs of the flange it bolts onto: the code's
-/// minimum edge distance of a bolt in a part of thickness `t` (m), none:
-/// the end's own edge distance, else 1.5 diameters (the drawing's).
+/// minimum edge distance of a bolt in a part of thickness `t` (m), where no
+/// code gives one the structure's default minimum; none (no bolts of known
+/// diameter): the end's own edge distance, else the default minimum.
 pub type EdgeRule<'a> = &'a dyn Fn(&Arrival, f64) -> Option<f64>;
 
 /// Where a member end is to bolt.
@@ -733,8 +743,9 @@ fn strip_of(
             .map(|k| leg_w * k as f64 / (lines as f64 + 1.0))
             .collect()
     };
-    let pitch = area.pitch.unwrap_or(3.0 * d);
-    let end = area.end.unwrap_or(1.5 * d);
+    let [end_min, spacing_min, edge_min] = s.defaults.of(d);
+    let pitch = area.pitch.unwrap_or(spacing_min);
+    let end = area.end.unwrap_or(end_min);
     // As the drawing places them (`joints::place_bolts`): along from the
     // steel's end, every second line staggered by half a pitch.
     let bolts: Vec<(f64, usize)> = (0..area.count)
@@ -749,7 +760,7 @@ fn strip_of(
     let nut = flats / 3f64.sqrt();
     let edge = edge(a, f.t)
         .or(a.edge_distance.value.filter(|_| a.edge_distance.known()))
-        .unwrap_or(1.5 * d);
+        .unwrap_or(edge_min);
     // The data's shift: along `shift.1`, per metre along `v`.
     // (Towards the member it is to bolt onto, as the drawing measures it
     // once `onto` names it: `ohl_structures::connections::shift_direction`.)

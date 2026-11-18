@@ -48,6 +48,24 @@ A part's usage is its largest share over its checks. A distance is kept
 or not: it counts only when it is not kept (its share above 1), never as
 a share of a resistance.
 
+## Where no code gives minimum bolt distances
+
+A plate's outline worked out keeps the member end's minimum end distance
+along the member and edge distance across it from every bolt onto it —
+the design code's (its plugin's `bolt-distances`, with the plate's
+thickness and steel and the bolt's force). Where no code gives any — the
+simple check, a plugin without minimum distances, or one that gives none
+for the bolt — the outline, the bolt tools, the bolt layout form and the
+joint layout keep the structure's **default minimums** (owner
+2026-11-18: `[default_bolt_minimums]`, editable in OHL-Structure's Design
+› Analysis): end and edge 1.5, spacing 3 bolt diameters to start with —
+the values the joints' drawing already assumed. They are a **default
+minimum, assumed, not a code's**, said so wherever shown, and never take
+the place of a code's own minimums. They take no force: a code's
+force-dependent minimum (ASCE 10-97 4.5.1's \\( 1.2P/(f_u t) \\)) can be
+larger, so they are **NOT ON THE SAFE SIDE** in that sense — said with
+them where a plugin gives none (the simple check checks no joint).
+
 ## The bolt group in the plate
 
 ![Left: a member in tension bolted onto a gusset plate by two gauge lines of three bolts, with the pitch p, the span between the outer lines, the end distance e1 to the plate's edge in the force's direction, the edge distance e2, and the block shear path: two shear planes along the outer gauge lines and the tension plane between them. Right: a fillet weld between plates at θ with its throat a and contact width s](../images/theory/joint-plate.svg)

@@ -365,8 +365,13 @@ pub const RESISTANCE_FROM_PLUGIN: &str = "resistance: from";
 /// The minimum distances of member `idx`'s end `end` in `model`
 /// (arguments as [`ohl_structures_fe::bolt_rules::rules_in`]): the
 /// capacity method's own, or — the method a plugin's — that plugin's
-/// (its `bolt-distances` export; none when it gives none: never another
-/// code's).
+/// (its `bolt-distances-full` or `bolt-distances` export: never another
+/// code's). Where no code gives any — the simple check, a plugin without
+/// minimum distances or one that returns none for the bolt — the
+/// structure's default minimums (third round, 2026-11-18:
+/// [`ohl_structures_fe::bolt_rules::assumed`], "default minimum, assumed,
+/// not a code's", with why). None: the end has no bolts of known
+/// diameter.
 pub(crate) fn rules_in(
     model: &Model,
     idx: usize,
@@ -374,10 +379,61 @@ pub(crate) fn rules_in(
     force: Option<f64>,
     part: Option<(f64, Option<f64>)>,
 ) -> Option<ohl_structures_fe::bolt_rules::BoltRules> {
+    use ohl_structures_fe::bolt_rules::assumed;
     match ohl_member_check::joints::bolt_rules(model, idx, end, force, part) {
-        Some(by_plugin) => by_plugin.ok(),
-        None => ohl_structures_fe::bolt_rules::rules_in(model, idx, end, force, part),
+        Some(Ok(r)) => Some(r),
+        Some(Err(why)) => assumed(
+            model,
+            idx,
+            end,
+            part,
+            format!("{why}; NOT ON THE SAFE SIDE where the code's own minimums would be larger"),
+        ),
+        None => {
+            ohl_structures_fe::bolt_rules::rules_in(model, idx, end, force, part).or_else(|| {
+                assumed(
+                    model,
+                    idx,
+                    end,
+                    part,
+                    "the capacity method gives no minimum distances (the simple check)".to_owned(),
+                )
+            })
+        }
     }
+}
+
+/// The parameter file the plugin of structure file `text` reads beside it
+/// in `dir` (`Plugins/<plugin>.toml`; no `capacity` given: the bundled
+/// default's), whether it is there or not; none: the method is no
+/// plugin's (the simple check), or the structure has no folder. For the
+/// application's caches (third round, 2026-11-18: Member details and the
+/// bolt tools worked out again when only that file changes,
+/// [`parameter_stamp`]).
+pub fn parameter_file(text: &str, dir: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let d = dir?;
+    let t: toml::Table = text.parse().ok()?;
+    let name = t
+        .get("analysis")
+        .and_then(|a| a.get("capacity"))
+        .and_then(toml::Value::as_str)
+        .unwrap_or(ohl_structures_fe::model::DEFAULT_METHOD);
+    let p = ohl_structures_fe::model::PluginMethod::parse(name)?.ok()?;
+    Some(
+        d.join(ohl_member_check::BESIDE)
+            .join(format!("{}.toml", p.plugin)),
+    )
+}
+
+/// A stamp of the parameter file `path`'s content: its bytes hashed (the
+/// same for no file, or one that does not read). Read whole each time
+/// (a few hundred bytes): a change of content changes it, whatever the
+/// file's time says.
+pub fn parameter_stamp(path: Option<&std::path::Path>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.and_then(|p| std::fs::read(p).ok()).hash(&mut h);
+    h.finish()
 }
 
 /// Why the structure file `text` has no bolt rules of a design code: its

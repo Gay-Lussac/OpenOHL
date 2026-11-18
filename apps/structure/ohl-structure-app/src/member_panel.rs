@@ -37,8 +37,9 @@ pub enum Subject {
     Member,
 }
 
-/// The capacities worked out, for (file revision, libraries, member).
-pub type CapacityCache = Option<((u64, u64, String), Arc<Result<MemberCapacity, String>>)>;
+/// The capacities worked out, for (file revision, libraries, the plugin's
+/// parameter file's content, member).
+pub type CapacityCache = Option<((u64, u64, u64, String), Arc<Result<MemberCapacity, String>>)>;
 
 impl StructureApp {
     /// The joint or member shown follows what was selected last (in the
@@ -72,13 +73,39 @@ impl StructureApp {
         }
     }
 
+    /// A stamp of the content of the parameter file the structure's
+    /// plugin reads (`Plugins/<plugin>.toml` beside it; third round,
+    /// 2026-11-18): the file looked for once per revision of the structure,
+    /// read at every call (a few hundred bytes), so that a change of the
+    /// parameter file alone is seen.
+    pub(crate) fn parameters_stamp(&mut self) -> u64 {
+        let Some(f) = self.file.as_ref() else {
+            return 0;
+        };
+        let rev = f.revision();
+        let path = match &self.joints.parameter_file {
+            Some((r, p)) if *r == rev => p.clone(),
+            _ => {
+                let p = ohl_structure_link::parameter_file(
+                    f.text_ref(),
+                    f.path().and_then(std::path::Path::parent),
+                );
+                self.joints.parameter_file = Some((rev, p.clone()));
+                p
+            }
+        };
+        ohl_structure_link::parameter_stamp(path.as_deref())
+    }
+
     /// The capacities of `member`, worked out again when the file, the
-    /// libraries or the member change.
+    /// libraries, the plugin's parameter file (its content) or the member
+    /// change.
     pub(crate) fn member_capacity(&mut self, member: &str) -> Arc<Result<MemberCapacity, String>> {
+        let stamp = self.parameters_stamp();
         let Some(f) = self.file.as_ref() else {
             return Arc::new(Err("no structure open".into()));
         };
-        let key = (f.revision(), self.libs_stamp, member.to_owned());
+        let key = (f.revision(), self.libs_stamp, stamp, member.to_owned());
         if let Some((k, c)) = &self.joints.capacity
             && *k == key
         {

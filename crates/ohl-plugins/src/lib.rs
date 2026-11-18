@@ -271,6 +271,27 @@ pub mod bolt_distances {
 /// Export name of the optional `bolt-distances` interface of any plugin.
 pub const BOLT_DISTANCES_EXPORT: &str = "ohl:plugin/bolt-distances@0.1.0";
 
+mod bolt_distances_full_bindings {
+    wasmtime::component::bindgen!({
+        world: "bolt-distances-full-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `bolt-distances-full` interface (2026-11-18, third
+/// round): the minimum distances with the end's bolts and the plugin's
+/// parameter file, the force per bolt the plugin's own when no analysis
+/// gives one.
+pub mod bolt_distances_full {
+    pub use super::bolt_distances_full_bindings::exports::ohl::plugin::bolt_distances_full::{
+        Bolts, DistanceInput, Distances,
+    };
+}
+
+/// Export name of the optional `bolt-distances-full` interface of any
+/// plugin.
+pub const BOLT_DISTANCES_FULL_EXPORT: &str = "ohl:plugin/bolt-distances-full@0.1.0";
+
 mod member_check_full_bindings {
     wasmtime::component::bindgen!({
         world: "member-check-full-export",
@@ -2471,6 +2492,52 @@ impl WasmHost {
             {
                 return Err(PluginError::Runtime(format!(
                     "plugin {name}: a minimum distance that is not a positive number"
+                )));
+            }
+            if d.clauses.len() != 3 {
+                return Err(PluginError::Runtime(format!(
+                    "plugin {name}: the clauses of the minimum distances are not three (end, \
+                     spacing, edge)"
+                )));
+            }
+        }
+        Ok(Some(given))
+    }
+
+    /// The minimum bolt distances by method `method` of the plugin in
+    /// `dir` with the end's bolts and the parameter file (its
+    /// `bolt-distances-full` export; 2026-11-18, third round). None: the
+    /// plugin has no such export; `Some(None)`: the method gives none for
+    /// this bolt. Errors as [`Self::minimum_distances`]'s, and a force per
+    /// bolt that is not a positive number.
+    pub fn minimum_distances_full(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &bolt_distances_full::DistanceInput,
+    ) -> Result<Option<Option<bolt_distances_full::Distances>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, BOLT_DISTANCES_FULL_EXPORT)? else {
+            return Ok(None);
+        };
+        let export =
+            bolt_distances_full_bindings::BoltDistancesFullExport::new(&mut p.store, &instance)
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_bolt_distances_full()
+            .call_minimum_distances_full(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "bolt-distances-full", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        if let Some(d) = &given {
+            let positive = |x: f64| x.is_finite() && x > 0.0;
+            if !(positive(d.end) && positive(d.spacing) && positive(d.edge))
+                || d.hole.is_some_and(|h| !positive(h))
+                || d.bolt_force.is_some_and(|f| !positive(f))
+            {
+                return Err(PluginError::Runtime(format!(
+                    "plugin {name}: a minimum distance or a force per bolt that is not a \
+                     positive number"
                 )));
             }
             if d.clauses.len() != 3 {

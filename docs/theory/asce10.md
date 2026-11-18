@@ -13,7 +13,7 @@ them out (`crates/ohl-structures-fe/src/member_ends.rs`,
 `end_conditions`), the section properties
 (`crates/ohl-sections/src/lib.rs`, `Section::properties`,
 `Shape::symmetry`) —, its joints through `joint-check-full`, and the bolt
-tools ask it through `bolt-distances`
+tools ask it through `bolt-distances-full` (with the bolts, its own bolt capacity)
 ([Plugins](../development/plugins.md#member-checks)). The usage that
 follows from the capacities is on the
 [structure analysis](structures-fe.md#member-usage) page. Built, in active
@@ -360,8 +360,16 @@ strength and \\( P \\) the force one bolt transmits:
 
 \\( P \\) is the member's largest axial force over the last analysis
 divided by its bolts at that end; without an analysis the bolt's design
-shear capacity (**conservative**: no bolt carries more); without either the
-force terms are left out (said). **Conservative:** the edge is taken as
+shear capacity (**conservative**: no bolt carries more) — 4.3.2: the
+capacity given for the bolt (through the shank when the threads are said
+to be out of the shear plane), else \\( F_v = 0.62 f_u \\) of the bolt on
+the root area, taken as 0.6 of the gross area (the threads in the shear
+plane, **conservative**), times its shear planes. Since 2026-11-18 (third
+round) the plugin works this out itself (`asce10::bolt_shear`, its
+`bolt-distances-full`; before, OpenOHL's core did, for every code — the
+same numbers bit for bit on the shipped examples and the real towers
+compared, 4 013 640 member-end rows). Without either the force terms
+are left out (said). **Conservative:** the edge is taken as
 sheared unless the connection says `rolled_edge = true`; holes as punched
 (Eq. 4.5-3 applies; it does not for drilled holes); the spacing is
 checked between any two bolts, also on different gauge lines (the

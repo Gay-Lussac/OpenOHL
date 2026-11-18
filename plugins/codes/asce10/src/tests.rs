@@ -473,3 +473,30 @@ fn asce10_minimums_by_hand() {
     let red = bolt_minimums(0.016, 0.006, 510e6, Some(60e3), true, true);
     assert!((red[0] - 0.0192).abs() < 1e-9);
 }
+
+/// The bolt's design shear capacity, the force basis of the minimum
+/// distances without an analysis (third round, 2026-11-18; the core's
+/// `bolt_shear_per_bolt` moved): 4.3.2's 0.62 f_u on 0.6 of the gross area
+/// times the planes, bit for bit as the core worked it out; a given
+/// capacity over it, the shank's when the threads are out; none without
+/// either.
+#[test]
+fn asce10_bolt_shear_by_hand() {
+    use crate::asce10::bolt_shear;
+    let gross = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+    let v = bolt_shear(0.016, 2, None, None, None, Some(800e6)).unwrap();
+    assert_eq!(v.to_bits(), ((0.62 * 800e6 * 0.6 * gross) * 2.0).to_bits());
+    assert_eq!(
+        bolt_shear(0.016, 1, Some(60e3), None, None, Some(800e6)),
+        Some(60e3)
+    );
+    assert_eq!(
+        bolt_shear(0.016, 1, Some(60e3), Some(75e3), Some(false), None),
+        Some(75e3)
+    );
+    assert_eq!(
+        bolt_shear(0.016, 1, Some(60e3), Some(75e3), Some(true), None),
+        Some(60e3)
+    );
+    assert_eq!(bolt_shear(0.016, 1, None, None, None, None), None);
+}

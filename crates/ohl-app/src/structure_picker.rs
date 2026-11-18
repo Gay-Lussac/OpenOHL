@@ -98,7 +98,8 @@ impl Column {
             Column::Name => "The type's name",
             Column::Kind => "Lattice, pole, portal or other",
             Column::Level => {
-                "Detail level: 1 stick figure, 2 outline (members or body lines), 3 full design"
+                "Detail level: 1 stick figure, 2 outline (members or body lines), 3 full design, \
+                 4 joint details (every member end detailed, no provisional bolt)"
             }
             Column::Sets => "Sets of wire points / wire points",
             Column::Height => "Height of the highest point above the feet",
@@ -133,11 +134,12 @@ pub struct TypeRow {
     pub name: String,
     /// Its kind, in words.
     pub kind: &'static str,
-    /// Detail level (1–3).
+    /// Detail level (1–4).
     pub level: u8,
     /// The level's name.
     pub level_name: &'static str,
-    /// What it lacks for the next level (empty at level 3).
+    /// What it lacks for the next level (empty at level 3, but for
+    /// provisional bolts that hold a tower at 3: owner 2026-11-18).
     pub lacks: Vec<String>,
     /// Number of sets.
     pub sets: usize,
@@ -189,7 +191,11 @@ impl TypeRow {
                 Some(p) if t.members.is_empty() => p.missing_for_design(),
                 _ => t.missing_for_design(),
             },
-            ohl_structures::Detail::Design | ohl_structures::Detail::Joints => Vec::new(),
+            // Provisional bolts (the joint layout's) hold a tower at level
+            // 3: said (third round, 2026-11-18).
+            ohl_structures::Detail::Design | ohl_structures::Detail::Joints => {
+                t.level_note().into_iter().collect()
+            }
         };
         let source = t.source.clone().unwrap_or_default();
         let notes = path
@@ -854,7 +860,10 @@ fn type_row(
         &mut cell,
         Column::Level,
         row.level.to_string(),
-        Some(&format!("level {} — {}", row.level, row.level_name)),
+        Some(&match row.lacks.first().filter(|_| row.level >= 3) {
+            Some(why) => format!("level {} — {} ({why})", row.level, row.level_name),
+            None => format!("level {} — {}", row.level, row.level_name),
+        }),
     );
     text(
         &mut cell,

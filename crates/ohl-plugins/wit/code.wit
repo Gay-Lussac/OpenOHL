@@ -1081,6 +1081,97 @@ world bolt-distances-export {
     export bolt-distances;
 }
 
+/// The minimum bolt distances with the end's bolts and the method's
+/// **parameters** (optional export of any plugin beside `bolt-distances`,
+/// found by its export name; 2026-11-18, third round, owner: "1 yes go
+/// ahead"): without an analysis the plugin works out the force one bolt
+/// transmits itself — its own design shear capacity of the bolt, from
+/// the bolts' data sent here — instead of the host sending one. A
+/// separate interface with its own records, so that plugins built
+/// against `bolt-distances` load as they are: a plugin that has it is
+/// called by `minimum-distances-full` instead of `bolt-distances`'
+/// `minimum-distances`. SI units.
+interface bolt-distances-full {
+    /// The bolts of the member end, as OpenOHL merges them (the end's
+    /// connection over the member's design data, the bolt library's
+    /// values).
+    record bolts {
+        /// How many bolts.
+        count: u32,
+        /// Shear planes per bolt.
+        shear-planes: u32,
+        /// One bolt's shear capacity per plane through the threads, N
+        /// (given: the library's or the member's).
+        shear-capacity: option<f64>,
+        /// The same through the shank, N.
+        shear-capacity-shank: option<f64>,
+        /// The bolt's ultimate strength, Pa.
+        ultimate: option<f64>,
+        /// The threads are in the shear plane (none: not said).
+        threads-in-shear: option<bool>,
+        /// Its grade as the files name it ("" not given).
+        grade: string,
+    }
+
+    /// One bolt in one connected part.
+    record distance-input {
+        /// The bolt's diameter, m.
+        diameter: f64,
+        /// The connected part's thickness, m (0: not known).
+        thickness: f64,
+        /// The connected part's ultimate strength, Pa (none: not known).
+        ultimate: option<f64>,
+        /// The force one bolt transmits by the last analysis, N (none: no
+        /// analysis — the plugin takes its own, e.g. the bolt's design
+        /// shear capacity, or leaves the force terms out).
+        analysis-force: option<f64>,
+        /// The end's bolts (none: only their diameter is known).
+        bolts: option<bolts>,
+        /// The part's edge is sheared (false: rolled).
+        sheared-edge: bool,
+        /// The member is a redundant.
+        redundant: bool,
+        /// The text of the structure's parameter file for the plugin
+        /// (TOML; "" none: the method's own values), as `member-check-full`
+        /// and `joint-check-full` get it.
+        parameters: string,
+    }
+
+    /// The minimums, m, and the force they took.
+    record distances {
+        /// From where the steel stops to a bolt, along the force.
+        end: f64,
+        /// Between two bolts.
+        spacing: f64,
+        /// From a bolt to the free edge across the force.
+        edge: f64,
+        /// The hole's diameter (none: the method gives none).
+        hole: option<f64>,
+        /// The clause of each: end, spacing, edge (3 entries).
+        clauses: list<string>,
+        /// Notes, in words.
+        notes: list<string>,
+        /// The force per bolt the minimums took, N: the analysis' when
+        /// sent, else the plugin's own (none: none taken — the force terms
+        /// left out, or the method's minimums take no force).
+        bolt-force: option<f64>,
+        /// Where the plugin's own force comes from, in words ("the bolt's
+        /// design shear capacity, ASCE 10-97 4.3.2"; "" the analysis' or
+        /// none).
+        force-basis: string,
+    }
+
+    /// The minimum distances by method `method` (none: the method has
+    /// none for this bolt). The error says why.
+    minimum-distances-full: func(method: string, input: distance-input) -> result<option<distances>, string>;
+}
+
+/// The `bolt-distances-full` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world bolt-distances-full-export {
+    export bolt-distances-full;
+}
+
 /// The member check with everything of the structure that OpenOHL's own
 /// methods read (optional export of any plugin beside `member-check`,
 /// found by its export name; 2026-11-18, owner: "yes go ahead with your
@@ -1514,11 +1605,13 @@ world member-check-full-export {
 /// A plugin giving a design code for structures (2026-11-18): its members
 /// by `member-check` and `member-check-full`, its joints by
 /// `joint-check` and (with its parameters) `joint-check-full`, the bolt
-/// tools' minimum distances by `bolt-distances`.
+/// tools' minimum distances by `bolt-distances` (and, with the bolts'
+/// data and its parameters, `bolt-distances-full`: third round).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
     export joint-check;
     export joint-check-full;
     export bolt-distances;
+    export bolt-distances-full;
 }

@@ -91,6 +91,20 @@ const REDUNDANT_FORCE_HELP: &str = "Optional, off when empty. A percentage (e.g.
      the safe side. Writes redundant_force in [analysis] (structure file version 16); every \
      check takes it, OHL-Design's structure usage too";
 
+/// The Analysis row's default minimum bolt distances
+/// (`[default_bolt_minimums]`, owner 2026-11-18, third round): what they
+/// do (the settings say their effect).
+const DEFAULT_BOLT_MINIMUMS_HELP: &str = "Default minimum, assumed, not a code's: the end, \
+     edge and spacing of bolts in bolt diameters (empty: 1.5, 1.5 and 3) that the bolt tools, \
+     the bolt layout form, the plate outlines and the joint layout keep where no design code \
+     gives minimums — the simple check, a plugin without minimum distances, or one that gives \
+     none for the bolt. Never in place of a code's own minimums (ASCE 10-97 4.5, SIA 263 \
+     Table 17 through their plugins). They change where bolts may go, the bolts placed by the \
+     joint layout and the plate outlines worked out (so what a plate check reads from them), \
+     not the members' checks; they take no force, so they may be smaller than \
+     a code's would be (not on the safe side in that sense, said wherever shown). Writes \
+     [default_bolt_minimums] (structure file version 18); instant (no calculation)";
+
 /// The Analysis row's climbing load (`[analysis] climbing_load`, owner
 /// 2026-11-15): what it does to the results.
 const CLIMBING_LOAD_HELP: &str = "Optional, off when empty. A force (e.g. 1100 N, ASCE 10-97 \
@@ -2044,6 +2058,54 @@ impl StructureApp {
                 })
             {
                 self.message = Some((e, true));
+            }
+        });
+        // A row of its own (the Analysis row above keeps its width).
+        ui.horizontal_wrapped(|ui| {
+            // The default minimum bolt distances where no code gives any
+            // (owner 2026-11-18, third round): editable, said as assumed.
+            ui.label("default bolt minimums [d]")
+                .on_hover_text(DEFAULT_BOLT_MINIMUMS_HELP);
+            let given = t.default_bolt_minimums;
+            for (key, label, start, value) in [
+                (
+                    "end",
+                    "end",
+                    ohl_structures::bolts::DefaultBoltMinimums::END,
+                    given.map(|d| d.end),
+                ),
+                (
+                    "edge",
+                    "edge",
+                    ohl_structures::bolts::DefaultBoltMinimums::EDGE,
+                    given.map(|d| d.edge),
+                ),
+                (
+                    "spacing",
+                    "spacing",
+                    ohl_structures::bolts::DefaultBoltMinimums::SPACING,
+                    given.map(|d| d.spacing),
+                ),
+            ] {
+                ui.label(label);
+                // Shown only when the file gives a value other than the
+                // starting one (the placeholder shows that).
+                let current = value
+                    .filter(|v| (v - start).abs() > 1e-12)
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
+                if let Some(typed) = text_cell(
+                    ui,
+                    &mut self.buffers,
+                    format!("default_bolt_minimums/{key}"),
+                    &current,
+                    &start.to_string(),
+                    DEFAULT_BOLT_MINIMUMS_HELP,
+                ) && let Err(e) = f.edit(&format!("default bolt minimum {key}"), |doc, _| {
+                    edit::set_default_bolt_minimum(doc, key, &typed)
+                }) {
+                    self.message = Some((e, true));
+                }
             }
         });
         let mut insert: Option<String> = None;

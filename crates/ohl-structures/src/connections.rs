@@ -735,7 +735,13 @@ impl StructureType {
         if self.joint_details != Some(true) || self.detail() == crate::Detail::Joints {
             return None;
         }
-        Some(if self.model.is_some() || self.pole.is_some() {
+        Some(if let Some(why) = self.level_note() {
+            // Provisional bolts (owner 2026-11-18): level 3 until none is.
+            format!(
+                "joint details asked for (joint_details = true) but not taken: {why}; members \
+                 checked in the simple form"
+            )
+        } else if self.model.is_some() || self.pole.is_some() {
             "joint details asked for (joint_details = true) but not taken: a pole or a \
              separate model has no level 4; members checked in the simple form"
                 .to_owned()

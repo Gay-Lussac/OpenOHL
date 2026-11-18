@@ -73,6 +73,11 @@ pub struct JointPanel {
     pub member: Option<String>,
     /// Its capacities worked out.
     pub capacity: crate::member_panel::CapacityCache,
+    /// The parameter file the structure's plugin reads
+    /// (`Plugins/<plugin>.toml` beside it; none: no plugin or no folder),
+    /// for the file's revision it was found for
+    /// (`StructureApp::parameters_stamp`).
+    pub parameter_file: Option<(u64, Option<std::path::PathBuf>)>,
     /// The Detail view's tool held ([`crate::detail_tools`]).
     pub tool: crate::detail_tools::DetailTool,
     /// A member end being dragged with Member end.

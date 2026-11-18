@@ -783,15 +783,16 @@ impl StructureApp {
             ui.separator();
             // Level 4 by what it adds (owner 2026-11-11); with provisional bolts
             // (the joint layout's, not chosen yet) level 3 for the joint
-            // details (owner 2026-11-18).
-            let provisional = ohl_structure_link::provisional_bolts(t).len();
-            let (level, chip) = match d {
-                ohl_structures::Detail::Joints if provisional > 0 => (
-                    3,
-                    format!("full design ({provisional} provisional bolts: level 4 once none is)"),
+            // details (owner 2026-11-18; the core's level since the third
+            // round, said here as everywhere the level is shown).
+            let provisional = t.level_note().map(|_| t.provisional_bolts().len());
+            let (level, chip) = match (d, provisional) {
+                (_, Some(n)) => (
+                    d.level(),
+                    format!("full design ({n} provisional bolts: level 4 once none is)"),
                 ),
-                ohl_structures::Detail::Joints => (4, "joint details".to_owned()),
-                d => (d.level(), d.name().to_owned()),
+                (ohl_structures::Detail::Joints, None) => (4, "joint details".to_owned()),
+                (d, None) => (d.level(), d.name().to_owned()),
             };
             let badge = egui::RichText::new(format!("Level {level} — {chip}"))
                 .strong()
