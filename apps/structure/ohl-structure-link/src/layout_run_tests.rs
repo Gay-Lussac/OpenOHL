@@ -396,3 +396,63 @@ fn an_automatic_roll_is_taken_back_when_its_joints_become_hand_details() {
     assert!(roll_of(&f.text, "D1").is_none(), "{}", f.text);
     assert!(!LayoutRecord::of(&parse(&f.text)).rolled.contains_key("D1"));
 }
+
+/// A tall body (eight panels) for the faster follow: a few joints are
+/// worked out from the file cut down to what they read.
+fn tall() -> String {
+    let levels: Vec<(f64, f64, f64)> = (0..9)
+        .map(|i| {
+            let w = 3.0 - 0.2 * i as f64;
+            (3.0 * i as f64, w, w)
+        })
+        .collect();
+    crate::orient_tests::body(&levels, &[2, 5])
+}
+
+#[test]
+fn a_few_joints_in_detail_from_the_file_cut_down_are_as_from_the_whole() {
+    let text =
+        crate::orient::orient_angles(&tall(), &library(), &crate::orient::OrientAsk::default())
+            .unwrap()
+            .text;
+    let doc: toml_edit::DocumentMut = text.parse().unwrap();
+    for j in ["J10", "J21", "J52", "J83"] {
+        let joints = BTreeSet::from([j.to_owned()]);
+        let keep = crate::reduce::members_for(&doc, &joints);
+        let small = crate::reduce::cut_down(&doc, &keep).expect("cut down");
+        let a =
+            crate::joints::joint_details_at(&text, &library(), &Default::default(), Some(&joints))
+                .unwrap();
+        let b = crate::joints::joint_details_at(
+            &small.to_string(),
+            &library(),
+            &Default::default(),
+            Some(&joints),
+        )
+        .unwrap();
+        assert_eq!(a.joints, b.joints, "{j}");
+        assert!(!a.joints.is_empty());
+    }
+    // A run on a few joints and its follow: the same file either way.
+    let s = settings();
+    let lib = library();
+    let bolts = Default::default();
+    let ask = RunAsk {
+        library: &lib,
+        bolts: &bolts,
+        settings: &s,
+        preset_fields: BTreeMap::new(),
+        joints: Some(BTreeSet::from(["J21".to_owned(), "J52".to_owned()])),
+        replace_hand: false,
+    };
+    let fast = lay_out(&text, &ask).unwrap();
+    let whole = crate::layout_run::lay_out_whole(&text, &ask).unwrap();
+    assert_eq!(fast.text, whole.text);
+    assert_eq!(fast.joints, whole.joints);
+    assert_eq!(fast.clashes, whole.clashes);
+    let edited = fast.text.replacen("gap = \"10 mm\"", "gap = \"14 mm\"", 1);
+    assert_ne!(edited, fast.text);
+    let a = follow(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
+    let b = crate::layout_run::follow_whole(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
+    assert_eq!(a, b);
+}

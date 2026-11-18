@@ -63,6 +63,7 @@ mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
 mod plate_frame;
+mod reduce;
 /// The member check by a plugin: the core crate `ohl-member-check`
 /// (shared with `ohl structures fe` and the line's structure check).
 pub use ohl_member_check as plugin_check;
@@ -91,8 +92,8 @@ pub use joints::{
 };
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, lay_out, preset_area, presets_by_class, provisional_bolts,
-    touched,
+    RecordSettings, RunAsk, follow, follow_whole, lay_out, lay_out_whole, preset_area,
+    presets_by_class, provisional_bolts, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

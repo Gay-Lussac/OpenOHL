@@ -634,6 +634,17 @@ pub fn joint_details_at(
     bolts: &ohl_structures::bolts::BoltLibrary,
     only: Option<&std::collections::BTreeSet<String>>,
 ) -> Result<JointDetails, String> {
+    joint_details_and_model(text, library, bolts, only).map(|x| x.0)
+}
+
+/// [`joint_details_at`] and the model they were worked out on (none: not
+/// built), for the layout's code rules without building it again.
+pub(crate) fn joint_details_and_model(
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+    only: Option<&std::collections::BTreeSet<String>>,
+) -> Result<(JointDetails, Option<Model>), String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let mut notes = t.connection_notes();
@@ -651,7 +662,9 @@ pub fn joint_details_at(
     let (model, export) =
         match Model::from_structure_type_with_joint_details(text, library, bolts, None) {
             Ok(m) if !m.members.is_empty() => {
-                let e = crate::export_structure(text, library, None, &[]).ok();
+                // The members' axes and sections as the exports take them,
+                // from this model (built once).
+                let e = crate::export::export_of(&t, &m, library, None, &[]).ok();
                 (Some(m), e)
             }
             Ok(_) => (None, None),
@@ -912,11 +925,15 @@ pub fn joint_details_at(
             clashes,
         });
     }
-    Ok(JointDetails {
-        joints,
-        level3: model.is_some(),
-        notes,
-    })
+    let level3 = model.is_some();
+    Ok((
+        JointDetails {
+            joints,
+            level3,
+            notes,
+        },
+        model,
+    ))
 }
 
 /// Each clash said where it is: a problem of the member ends whose steel

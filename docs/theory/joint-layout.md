@@ -35,9 +35,11 @@ turns them as a lattice tower is built, from the tower's shape alone:
 - **Legs and chords** (class `leg`, or angles running on in line within
   10° through a joint): heel out, a flange in each of the two faces
   meeting at the member. The faces come from the neighbouring legs'
-  lines: the section of the tower's legs and chords (those within 70° of
-  the member) through the member's middle, normal to it, is a convex
-  polygon of which the member is a corner; the two corners next to it
+  lines: the section of the tower's legs and chords through the member's
+  middle, seen along it — those within 70° of it whose lines a member
+  joins to its line (a face's bracing, a plan member; a portal's other
+  column, joined only through its beam, is not a neighbour) — is a
+  convex polygon of which the member is a corner; the two corners next to it
   give the two faces. Where the faces meet at θ ≠ 90° (seen along the
   member), no angle lies in both: the bisector of the angle's legs is
   put on the bisector of the faces, each flange |θ − 90°| / 2 off its
@@ -200,6 +202,19 @@ plate's thickness, a value at an end, a joint moved, a setting) lays that
 joint out again in the same undo step; a value the user changed is theirs
 and kept. A plate made thicker moves the members on it out (their seat)
 and lengthens their bolts (the grip), as before; the cuts follow.
+
+Only the joints an edit touches are laid out again, and their details are
+worked out from the file cut down to what they read (since 2026-11-18,
+`ohl_structure_link::reduce`): every joint, the members meeting at them,
+the members meeting those members' other joints (an end's conditions
+read the other end's: one end eccentric, the other not; what a member
+bolts onto holds it by its stiffness against the members at that joint),
+the members they name (what they bolt onto, run on into, a crossing
+partner), their connections, the plates and splices at their joints and
+the layout record's marks of their ends. The details of those joints are
+the same as from the whole file — tested on invented towers, and the
+files written by the follow compared byte for byte with the follow
+working from the whole file on edits of seven real towers (below).
 
 ## The settings
 
