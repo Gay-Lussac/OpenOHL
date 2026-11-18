@@ -525,6 +525,68 @@ a point with its sweep along the span — 23 ms on a real span (on the
 click; under the cursor only the point's own, without the sweep) — and
 Wire to wire between two spans, 0.04 ms.
 
+## Synthetic country: today's session on a whole country (2026-11-18)
+
+The country server's phase 1 ([ADR-0013](../adr/0013-country-server.md)):
+a synthetic network of the owner's size, generated deterministically, and
+today's code measured on it as one project — to see where it breaks before
+anything changes.
+
+```bash
+ohl synth country --out DIR          # 12 000 pylons, 2.5 systems each; --seed N, --json
+ohl synth measure DIR/country.ohl    # open, validate, 5 edits and their undos (JSON)
+```
+
+The generator (`crates/ohl-synth`, every coordinate and name invented):
+routes as straight legs between angle points over a smooth synthetic
+heightfield, spans 250–450 m, 1–4 systems per route (50 to 380 kV),
+suspension structures between strain structures (sections of about two
+spans, the plan's proportions), routes branching off another and sharing
+its towers for 3–6 legs (towers of two lines), one section per phase and
+earth wire, jumpers at strain structures. Deterministic: the same seed
+gives the same line bit for bit (its SHA-256 is tested per seed; only
+`+ − × ÷ √` shape it, the one angle is rounded). **LiDAR is not generated
+for the country**: four sample tiles (256 m, 16 points/m², ground and
+vegetation) are made and stored, and the country's LiDAR is
+**extrapolated** from them.
+
+Seed 1, default settings:
+
+| What | Value |
+|---|---|
+| Pylons / shared by two or more routes | 12 000 / 1 259 (10.5 %) |
+| Routes / length | 147 / 4 195 km |
+| Systems per pylon | 2.47 |
+| Sections / wire spans / jumpers | 50 936 / 102 110 / 43 041 |
+| Line file (JSON) | 53 MB |
+| Line's SHA-256 | `1c14a252…053d7a` |
+
+Today's code on it (Apple M-series, 10 cores, 32 GB; `bench-fast`
+profile; one run each, nothing else running):
+
+| Measure | Value |
+|---|---|
+| Generate (most of it one whole validation) | 18.5 s, peak 3.2 GB |
+| Import into a new project file (`Session::import`, one command) | 94.7 s |
+| Project file (line, log, index, the four LiDAR tiles) | 188 MB |
+| **Open** (`Session::open`: every object read, the line built and validated, the index read) | **25.0 s** |
+| **Memory** after opening / after 3 edits / peak | **919 MB / 1 117 MB / 1.30 GB** |
+| Whole validation once (`Line::validate`) | 18.6 s |
+| **Edit** (a structure moved by 1 m, logged) | **31.5–34.2 s each** |
+| Undo of that edit | 17.2–18.2 s each |
+| LiDAR sample tile (1.05 million points) | 0.28–0.43 s to store, 6.6–6.8 bytes a point |
+| LiDAR of the country, **extrapolated** (200 m corridor, 16 points/m²) | ≈ 1.3·10¹⁰ points, ≈ 90 GB, ≈ 1.2 h to import |
+
+What it says: opening the country as one project works but takes half a
+minute and a gigabyte; **every edit costs half a minute**, because each
+command copies the object map, rebuilds the whole line from every
+object's JSON and validates it whole (the whole validation alone is
+18.6 s at this size). This is what phase 3 (an incremental, locally
+validated session) has to remove: an edit should cost what it touches,
+not the size of the network. The synthetic LiDAR compresses about as a
+real survey does (≈ 6.7 against ≈ 8 bytes a point) but is less structured
+(no buildings, no wires): the extrapolation is a guide.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

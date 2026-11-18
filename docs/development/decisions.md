@@ -65,6 +65,68 @@ in active development, not approved yet).
   OHL-Structure's own workaround (its run reading the file without
   `joint_details`) is gone. No file format change; older files unchanged.
 
+## 2026-11-18 (country server, phases 0–2)
+
+**A country server with PostgreSQL started: the decisions written down
+(ADR-0013), a synthetic country to measure on, the session's SQL moving
+behind a store interface** (owner, 2026-11-16: "PostgreSQL is good", the
+plan's recommendations accepted, "Just reduce the synthetic test"; owner,
+2026-11-18: "the rights and roles should be applied to almost every
+element and library", "the single user model should still be saved under
+the current format but the server could use the postgresql as a place to
+store all the models and models element then each model could be exported
+individually in the OHL format from the server"; in active development,
+not approved yet; [ADR-0013](../adr/0013-country-server.md), amendments
+to ADR-0004, 0005, 0008 and 0010, the draft
+[server database](data-model.md#server-database-postgresql--draft)).
+
+- **Two modes, one session**: the desktop keeps the single-file `.ohl`
+  (schema 6, unchanged — files written before and after the store
+  interface are compared dump against dump); a server keeps every model
+  and model element in PostgreSQL; any one model exports as a standalone
+  `.ohl` (rights-filtered, the *export* permission, audited).
+- **One writer**, each command one transaction; the line model of the
+  network whole in the server's memory, the heavy parts (LiDAR, terrain,
+  structure types' models, results) streamed and cached within bounds.
+- **Working set and context**: whole routes, a part of a route (station
+  range or structure A to B) or an area on the map, always snapped out to
+  whole tension sections; the rest streamed as light, read-only tiles.
+- **Computations** on the working set plus what touches it, each check by
+  its own distance; a neighbour not pulled in makes a check *not all
+  checked*, never a pass.
+- **Rights and roles on almost every element and library**: roles are
+  named sets of permissions (see, edit, create, delete, review, export,
+  lock, request, manage rights); assignments give a role to a user or
+  group on a scope (network, region, line, route or part, element kind,
+  object, library kind, file or entry); default deny, union of grants,
+  *see* needed for the rest, an explicit deny by a network admin
+  overrides. Derived data (tiles, caches, indexes) follows its sources.
+  The desktop file keeps today's three roles.
+- **Country libraries**: locks per kind or file, maintainers (role
+  assignments), library reviews, requests that may be refused, releases;
+  built lines pinned, designs in progress following the latest.
+- **Measured first** (phase 1): `ohl synth country` (`crates/ohl-synth`)
+  makes a synthetic country of the owner's size — 12 000 pylons, 2.47
+  systems per pylon, 10.5 % of them shared by two routes, 147 routes,
+  4 195 km, 50 936 sections, 43 041 jumpers — deterministically (its
+  SHA-256 tested per seed); LiDAR only on four sample tiles, the
+  country's **extrapolated** from them (≈ 90 GB), said so. Today's code
+  on it as one project: open 25 s, ≈ 0.9 GB, **every edit ≈ 32 s** (the
+  whole line rebuilt and validated per command) — what phase 3 must
+  remove ([performance](performance.md#synthetic-country-todays-session-on-a-whole-country-2026-11-18)).
+- **Store interface** (phase 2): the session writes no SQL any more
+  (a test keeps it so); `ohl_session::store::Store` offers what it needs
+  in its own words (objects, log, spatial index, versions, grants and
+  reviews, surfaces, settings, nested steps) and `SqliteStore` holds every
+  statement and the upgrades of older files, moved unchanged. **No change
+  of behaviour or file**: every existing test passes unchanged, and files
+  written before and after through the example lines (import, edits,
+  undo, redo, branches, tags, a review merged, grants, a rollback, a
+  deletion, a bundle, a surface) and through a synthetic country (an
+  800-pylon one written whole; the 12 000-pylon one edited and undone)
+  give the same `sqlite3 .dump`, times aside. The point-cloud and
+  background stores still open the file themselves (for later).
+
 ## 2026-11-18 (second round)
 
 **ASCE 10-97, the default member check, moved out of the core into a

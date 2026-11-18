@@ -32,6 +32,7 @@ mod strings_run;
 mod structure_app_run;
 mod structure_fe;
 mod surface;
+mod synth_run;
 mod tensions_run;
 mod thermal_run;
 mod versions;
@@ -238,6 +239,12 @@ enum Command {
     Plugin {
         #[command(subcommand)]
         command: PluginCommand,
+    },
+    /// The synthetic country (invented lines of the owner's size) to
+    /// measure the session and the server on.
+    Synth {
+        #[command(subcommand)]
+        command: synth_run::SynthCommand,
     },
     /// Host a project for several users (server mode, pre-alpha): prints the
     /// invitation to give them; runs until stopped (Ctrl+C: every edit is
@@ -1359,6 +1366,13 @@ fn main() -> ExitCode {
         })),
         Some(Command::Pointcloud { command }) => pointcloud(command),
         Some(Command::Crs { command }) => match crs(command) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Some(Command::Synth { command }) => match synth_run::run(command) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("error: {error}");

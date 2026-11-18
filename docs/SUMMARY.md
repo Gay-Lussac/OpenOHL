@@ -132,6 +132,7 @@
   - [ADR-0010: Version control, edit rights and reviews](adr/0010-version-control.md)
   - [ADR-0011: Licence — AGPL-3.0-or-later, plugin interface MPL-2.0](adr/0011-license-agpl.md)
   - [ADR-0012: Plugin interface versions and compatibility](adr/0012-plugin-interface-versions.md)
+  - [ADR-0013: Country server](adr/0013-country-server.md)
   - [ADR template](adr/0000-template.md)
 
 # Development

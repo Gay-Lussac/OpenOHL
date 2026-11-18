@@ -27,3 +27,22 @@ Version control in the file: [ADR-0010](0010-version-control.md).
 
 ## Consequences
 - Project files are binary (not line-diffable in git); version tracking is provided by OpenOHL itself (DESIGN_GOALS §7) and by the JSON export.
+
+## Amendment (2026-11-18): the desktop's format; models of a server in PostgreSQL
+
+[ADR-0013](0013-country-server.md), in active development (not approved
+yet):
+
+- **The `.ohl` stays the single-user desktop's format**, session schema 6,
+  unchanged (owner, 2026-11-18). The session reaches it through a store
+  interface (`ohl_session::store`, SQLite implementation); moving the SQL
+  behind it changes no byte of what a file holds (tested by comparing
+  `sqlite3 .dump` of files written before and after).
+- **A country server keeps every model and model element in PostgreSQL**
+  (the PostgreSQL store, a crate of its own), not in project files.
+- **Each model on a server can be exported on its own as an `.ohl`** in
+  this format, openable by the desktop alone; its `ols_meta` then names
+  the network, the revision and the library pins it was exported with.
+- The "stable UUIDv7 ids" above were never built: objects are keyed by the
+  names users see (`T12`), unique per project; in a network a clash is
+  renamed at import with the line's short code.

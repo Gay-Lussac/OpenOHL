@@ -6,17 +6,8 @@
 //! each a mesh (points and triangles) stored compressed. Like libraries,
 //! they are part of the project, not of the line: not logged, not undone.
 
-use rusqlite::{OptionalExtension, params};
-
+use crate::store::Store;
 use crate::{Role, Session, SessionError, refused};
-
-/// Table of the surfaces.
-pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS surface (
-    name TEXT PRIMARY KEY,
-    time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    user TEXT NOT NULL, source TEXT NOT NULL,
-    points INTEGER NOT NULL, triangles INTEGER NOT NULL,
-    bounds TEXT NOT NULL, data BLOB NOT NULL);";
 
 /// What is known of a stored surface without reading it.
 #[derive(Debug, Clone, PartialEq)]
@@ -104,23 +95,18 @@ fn check_name(name: &str) -> Result<(), SessionError> {
 impl Session {
     /// The surfaces kept in the project, by name.
     pub fn surfaces(&self) -> Result<Vec<SurfaceInfo>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT name, time, user, source, points, triangles, bounds FROM surface ORDER BY name",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, i64>(4)?,
-                r.get::<_, i64>(5)?,
-                r.get::<_, String>(6)?,
-            ))
-        })?;
+        let rows = self.conn.surfaces()?;
         let mut out = Vec::new();
         for row in rows {
-            let (name, time, user, source, points, triangles, bounds) = row?;
+            let crate::store::SurfaceRow {
+                name,
+                time,
+                user,
+                source,
+                points,
+                triangles,
+                bounds,
+            } = row;
             out.push(SurfaceInfo {
                 name,
                 time,
@@ -136,14 +122,7 @@ impl Session {
 
     /// Surface `name`: its points and triangles.
     pub fn surface(&self, name: &str) -> Result<Mesh, SessionError> {
-        let data: Option<Vec<u8>> = self
-            .conn
-            .query_row(
-                "SELECT data FROM surface WHERE name = ?1",
-                params![name],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let data: Option<Vec<u8>> = self.conn.surface_data(name)?;
         decode(&data.ok_or_else(|| refused(format!("no surface \"{name}\"")))?)
     }
 
@@ -178,24 +157,15 @@ impl Session {
             })
         });
         let data = encode(points, triangles)?;
-        self.conn.execute(
-            "INSERT INTO surface (name, user, source, points, triangles, bounds, data)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(name) DO UPDATE SET user = excluded.user, source = excluded.source,
-                 points = excluded.points, triangles = excluded.triangles,
-                 bounds = excluded.bounds, data = excluded.data,
-                 time = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
-            params![
-                name,
-                user,
-                source,
-                points.len() as i64,
-                triangles.len() as i64,
-                serde_json::to_string(&bounds).unwrap_or_else(|_| "null".into()),
-                data
-            ],
-        )?;
-        Ok(())
+        self.conn.put_surface(&crate::store::NewSurface {
+            name,
+            user,
+            source,
+            points: points.len() as i64,
+            triangles: triangles.len() as i64,
+            bounds: serde_json::to_string(&bounds).unwrap_or_else(|_| "null".into()),
+            data,
+        })
     }
 
     /// Renames surface `from` to `to` (a new name).
@@ -205,10 +175,7 @@ impl Session {
         if self.surfaces()?.iter().any(|s| s.name == to) {
             return Err(refused(format!("a surface \"{to}\" exists already")));
         }
-        let n = self.conn.execute(
-            "UPDATE surface SET name = ?2 WHERE name = ?1",
-            params![from, to],
-        )?;
+        let n = self.conn.rename_surface(from, to)?;
         if n == 0 {
             return Err(refused(format!("no surface \"{from}\"")));
         }
@@ -218,9 +185,7 @@ impl Session {
     /// Removes surface `name` from the project.
     pub fn delete_surface(&self, user: &str, name: &str) -> Result<(), SessionError> {
         self.require(user, Role::Designer)?;
-        let n = self
-            .conn
-            .execute("DELETE FROM surface WHERE name = ?1", params![name])?;
+        let n = self.conn.delete_surface(name)?;
         if n == 0 {
             return Err(refused(format!("no surface \"{name}\"")));
         }

@@ -1,0 +1,365 @@
+# ADR-0013: Country server — a store interface, PostgreSQL, working sets, rights and country libraries
+
+- **Status:** Proposed (in active development since 2026-11-18; the owner
+  answered the plan's questions on 2026-11-16 and started the work on
+  2026-11-18 — this record is not approved yet)
+- **Date:** 2026-11-18
+- **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
+  stays the desktop's format; the server stores models in PostgreSQL),
+  [ADR-0005](0005-collaboration-session-model.md) (authority over a store,
+  interest management by working set and tile, roles in detail),
+  [ADR-0008](0008-spatial-chunk-index.md) (one grid for the whole network,
+  geometry beside the tile key), [ADR-0010](0010-version-control.md)
+  (branches over working sets, trees split, library releases)
+
+## Context
+
+A utility wants every line of a country in one place: in the owner's words
+a network of **12 000 pylons carrying on average 2.5 electrical systems**,
+with users who work on a few routes at a time, see only what they may see,
+and compute without choosing among the whole network.
+
+Today one project is one `ohl_line::Line` in one SQLite file
+([ADR-0004](0004-project-file-format.md)). The session reads every object of
+every project line into memory when it opens, and every command copies the
+object map, rebuilds the whole line from every object's JSON and validates
+it whole. The server ([ADR-0005](0005-collaboration-session-model.md)) owns
+that session and hands every joining desktop a full copy of the file. About
+160 SQL statements are spread over the session's modules; the point-cloud,
+background, import and app crates open the file themselves.
+
+Scaled from a real line of about 80 structures (*estimates*, to be measured
+on the synthetic country): the line model of the country is ≈150 MB of
+JSON (≈0.3–0.6 GB as objects in memory); what hangs around it is far
+larger — LiDAR ≈110–120 GB, terrain ≈8 GB, structure types' finite-element
+models 0.5–13 GB, solved results. The line model fits in a server's memory;
+the rest must stream.
+
+## Options considered
+
+1. **One huge project file on a file share**: no change of code, but every
+   user loads everything, and SQLite is not a multi-user server.
+2. **A database behind an ORM**, the session's SQL generated: the queries
+   are few and specific (range scans, upserts, savepoints); an ORM hides
+   them and adds a layer both stores must follow.
+3. **A store interface in the session's own words, with two
+   implementations — SQLite (today's code moved behind it) and PostgreSQL**
+   (chosen; owner, 2026-11-16: "PostgreSQL is good").
+4. **Several databases, one per region**: splits the shared towers and
+   corridors that cross regions; the engineering order of one writer is
+   lost.
+
+## Decision
+
+### Two modes, one session
+
+- **The single-user desktop keeps today's format** (owner, 2026-11-18): the
+  SQLite `.ohl` project file, session schema 6, unchanged. The same session
+  code runs over the SQLite store with the whole project in scope. Moving
+  the SQL behind the interface changes no byte of what a project file holds
+  (tested: `sqlite3 .dump` of files written before and after compared).
+- **The server keeps every model and every model element in PostgreSQL**
+  (with PostGIS for regions, rights polygons and reach queries): every line
+  (design unit), its routes, structures, sections, jumpers, spacers,
+  libraries, terrain, point clouds, versions, users, roles and the audit.
+- **Each model can be exported on its own as an `.ohl` file** (§ Export
+  below), openable by the desktop alone.
+
+### Words
+
+- **Network**: everything a server holds.
+- **Line**: a design unit, as a project is today — its settings (criteria,
+  calculation options, electrical systems, defaults, structure groups), its
+  routes and their wires. A tower may carry wires of several lines.
+- **Route**: as today (`ohl_line::Route`), a path made of alignments; what a
+  user picks to work on.
+- **Branch**: what the desktop calls a *project line* (ADR-0010 amendment of
+  2026-10-06). On the server it is called a branch so that *line* means the
+  design unit; the desktop keeps "project lines" until both meet.
+- **Working set**: what a user picked — full, editable, solved, in the
+  computation tabs.
+- **Context**: everything else the user may see, streamed by tile around
+  the camera, read-only and light.
+
+### The store interface
+
+`ohl_session::store` defines a `Store` interface in the session's words; the
+session no longer writes SQL itself. Its groups:
+
+| Group | What it offers |
+|---|---|
+| Meta and settings | key–value rows (`ols_meta` / `net_meta`), the schema number |
+| Users | users and their project role (desktop: `session_user`) |
+| Objects | rows of a branch by key, by kind, by tile range; put and delete rows (`ord`, `version`, `gone`) |
+| Log | append an entry (returns its `seq`), read entries by seq range, user, branch, objects; mark undone |
+| Spatial | write the index's differences, query an area (tile ranges, then bounds) |
+| Versions | blobs by hash, revisions, refs, trees |
+| Collaboration | grants, reviews and their notes (later: roles, assignments, groups — § Rights) |
+| Libraries | (later) files, entries, releases, locks, uses, requests — § Country libraries |
+| Terrain, point clouds, backgrounds | blocks and tiles by key range; the point-cloud and background stores take their connection from the store |
+| Units of work | begin, commit, roll back a step; steps nest (savepoints) |
+
+Two implementations: **SQLite** (`store/sqlite.rs`, phase 2: the file format
+unchanged, every existing test unchanged) and **PostgreSQL** (a crate of its
+own, `ohl-store-pg`, phase 4: the synchronous `postgres` client — the
+authority is one thread — and a connection pool for the readers). The same
+store tests run on both. Nothing PostgreSQL-specific enters the session
+before phase 4.
+
+### One writer, transactions, order
+
+- **One authority applies every command, in one order**, as today: each
+  command is one PostgreSQL transaction (savepoints for the steps of a unit
+  of work), committed before it is broadcast; `seq` comes from it and has
+  no gaps. Validation, per-user undo and the replicas' replay rely on this
+  order ([ADR-0005](0005-collaboration-session-model.md)).
+- Readers (the tile packager, the compute workers) read at a snapshot
+  (`REPEATABLE READ`) and label what they make with the `seq` they read at.
+- Only one authority per database: it takes a PostgreSQL advisory lock at
+  start; a second server process refuses to start as writer.
+
+### Server memory
+
+The line model of the network (with its spatial and reference indexes) is
+kept **whole in the server's memory** and changed in place by each command
+(phase 3); what is heavy streams from the database and is kept in bounded
+caches: structure types' models (per type, LRU), resolved structures,
+solved section shapes (per section revision and case), check results, tile
+packages (per tile, tile revision and rights class). LiDAR blocks, terrain
+tiles and backgrounds are never held whole. Targets (to measure, phase 1
+onwards): server start < 60 s, idle memory < 2 GB for the 12 000-pylon
+country, a command applied and broadcast < 50 ms at p95.
+
+### Local validation
+
+A command is validated on what it touches and on what refers to it (a
+**reference index**: who refers to structure S, by kind and set, kept with
+every write), not on the whole line (phase 3). Property tests check that
+local validation answers as the whole validation does, and that the line
+changed in place equals the line rebuilt from every object.
+
+### Working set and context
+
+- **Picking** (owner, 2026-11-16): whole routes (a list, or clicked on the
+  map); a part of a route by station range or from structure A to
+  structure B; or an area drawn on the map (a polygon, or a corridor along
+  the alignment). A part **always snaps out to whole tension sections**
+  (strain structure to strain structure), because a section is solved
+  whole; the snapped extent is shown before it is confirmed, and what lies
+  beyond is context. Working sets can be saved under a name. The same
+  picking gives the scope of a rights assignment (§ Rights).
+- The working set is an `ohl_line::Line` per design line, as today: every
+  table, check and drawing keeps working on a whole `Line`. Structures
+  shared with routes outside it come in whole; the other routes' wires on
+  them come as context.
+- **Context** tiles (ADR-0006 render distances, an LRU with a memory bound):
+  per structure its id, position, orientation, type, height, a stick
+  drawing; per section its wires solved in one *context case* (a network
+  setting); routes as polylines. Never in the tables or checks except as
+  pulled-in neighbours.
+- The desktop on a server keeps a **partial replica**: the session over a
+  local SQLite store holding the working set and the context it has seen,
+  fed by the operations of its interest. The desktop alone: the whole
+  project is the working set, no context — no change.
+- The operation stream is filtered by interest (each operation names its
+  lines and tiles; a heartbeat carries the current `seq`), protocol
+  version 3; alpha clients are refused with a message.
+
+### Computations on the working set and what touches it
+
+A check runs on the working set's routes the user ticks in its Setup, and
+**pulls in, for each part, what can change its answer, by that check's own
+distance** (owner, 2026-11-16): the wires on a checked structure (other
+lines' too, each solved with its own line's settings), wires within a
+clearance rule's reach, terrain and LiDAR in the corridor, other lines
+within the field distance (500 m by default, a setting, said in the
+result). Every result lists what was pulled in and why. **Safe side**: a
+neighbour that could not be pulled in makes the check *not all checked*,
+never a pass; a check with no known reach (a plugin that declares none)
+runs on the working set only and says so. A neighbour the user may not see
+is computed on the server and reported on the user's own span without its
+details. A structure carrying wires of several lines is checked under each
+line's load cases, the worst kept. (Engine changes in phase 10; the plugin
+interface step is asked first.)
+
+### Towers shared by several routes
+
+A user may edit a tower shared with routes outside the working set (owner,
+2026-11-16); a change that breaks another line's connection is **refused**,
+naming the other route and objects: the tower deleted or renamed; a wire
+point another line's section or jumper ends on removed or omitted; the
+string it hangs on removed; a suspension point changed to strain or back
+where another section passes or ends; a clamp or assembly removed; the
+other route taken off the tower; anything that makes the other line fail
+its local validation. Changes that only move the other line's wires are
+allowed; its results go stale and its owners are told (a review instead on
+a protected or built line). Parts used only by the other line need rights
+on it. The same rule makes a merge that would break a connection a
+conflict.
+
+### Rights and roles on (almost) every element and library
+
+Owner, 2026-11-18: "the rights and roles should be applied to almost every
+element and library".
+
+- **Permissions**: `see`, `edit`, `create`, `delete`, `review` (approve or
+  reject), `export`, `lock`, `request` (library additions), `manage_rights`.
+- **Roles** are named sets of permissions that an admin defines. Shipped
+  defaults: *viewer* (see), *designer* (see, edit, create, delete, export,
+  request), *checker* (see, review, export), *library maintainer* (see,
+  edit, create, delete, review on library scopes; lock), *line admin*
+  (everything on its lines, including manage_rights for them), *network
+  admin* (everything everywhere).
+- **Assignments** are (user or group, role, scope). A **scope** is one of:
+  the network; a region (a polygon); a line; a route or part of a route
+  (whole tension sections, picked as a working set); an object kind; a
+  single object; a library kind, a library file or a single library entry.
+  Every model element kind (meta/settings, routes, alignments, alignment
+  points, structures, sections, jumpers, spacers, annotations, reports,
+  point clouds, surfaces, backgrounds) and every library kind is a scope;
+  a scope can combine a kind with a line, route or region ("the costs of
+  line B").
+- **The exceptions** — not scopes of their own: derived data (tiles and
+  tile packages, solved shapes, caches, spatial index rows, reference and
+  use index rows, stale marks) follows the rights of the objects it comes
+  from; a log entry or a revision is visible as far as its objects are
+  (an entry touching a hidden object shows "an object you have no access
+  to"); the schema and meta rows of the database itself, and the audit,
+  belong to network admins only.
+- **Evaluation**: nothing without a grant (default deny). A user's
+  permissions on an object are the union of the permissions of their
+  assignments (their own and their groups') whose scope covers it.
+  *edit*, *create*, *delete*, *review* and *export* need *see*. An explicit
+  **deny** assignment, set by a network admin (rare: a contractor's group
+  barred from one line's costs), overrides every grant on its scope. One
+  function in the session resolves it; every command (edit side) and the
+  server's outgoing filter (see side: tiles, operations, search, properties,
+  check results, diffs, impacts, merge plans, reviews, error messages,
+  exports) use it. Rights classes are cached per tile and per working set.
+- **Tests**: property tests over random roles and assignments — no command
+  succeeds without the right; no outgoing message holds a hidden id or
+  coordinate; every command kind and every library kind is listed in a
+  test, so that a new one cannot be added without a rights rule.
+- **The desktop project file is unchanged**: its users keep today's three
+  roles (viewer, designer, admin) and edit grants; they map onto the
+  shipped roles when a project is imported into a network. Built in phase 7
+  (rights) and phase 9 (libraries); the store's collaboration group keeps
+  room for them.
+
+### Country libraries
+
+- Every library kind a project keeps today (wires, structure types,
+  insulator assemblies, weather and load cases, clearance rules, galloping,
+  ambient, costs, poles, finite-element models, cross-sections and steel
+  materials, bolts, field plans, typed structure loads), and the kinds read
+  only from folders today when wanted, can be kept **once for the whole
+  network**.
+- An admin **locks** a library kind or file. A locked library changes only
+  through a **library review** (a maintainer proposes, another maintainer
+  approves, then it is released); an admin may change it directly in an
+  emergency, logged in the audit. Library maintainers are assignments of
+  the *library maintainer* role scoped to a library kind (no list of their
+  own).
+- Users **request** additions to a locked library (owner: "it might not be
+  granted"): draft, requested, granted, refused, withdrawn. While
+  requested the entry may be used in the requester's own branch as a
+  marked pending draft; such a branch cannot be submitted, merged into
+  `main` or marked built.
+- References stay by name; each **release** of a library is a tag, each
+  entry has a version (content hash, first release). **Built lines are
+  pinned** to the entry versions they used; **designs in progress follow
+  the latest** (owner, 2026-11-16: the recommendation). A pinned line moves
+  its pins as one logged, undoable command after an impact run (through a
+  review when protected). A withdrawn entry flags every result using it
+  *not on the safe side* until the pin moves or an admin acknowledges it.
+- A **use index** answers "where is this entry used"; only changes are
+  stored (entries as content-addressed blobs, releases as revisions).
+
+### Export of one model as a project file
+
+Owner, 2026-11-18: "each model could be exported individually in the OHL
+format from the server".
+
+- Any one model — a line with its routes, its structures and their types,
+  the library entries it uses (pinned versions copied in), optionally its
+  terrain and LiDAR in a corridor — is written as a **standalone `.ohl`
+  project file in today's format** (schema 6), openable by the desktop
+  alone. Its `ols_meta` gains a few keys naming the network, the revision
+  it was exported at and the library pins; nothing else differs from a
+  project made on the desktop.
+- Rights-filtered (only what the exporter may see) and only with the
+  *export* permission; every export is in the audit.
+- Distinct from an **offline working set** (exported with read-only
+  neighbours, brought back as a bundle and merged like a branch). An
+  exported model can be imported again as a new model.
+- Built in phase 4 (PostgreSQL → SQLite writer through the store
+  interface), with a round-trip test: a project imported into the network
+  and exported back has the same objects (dump compared, ids mapped).
+
+### Import of existing projects
+
+`ohl network import PROJECT.ohl --line CODE`: one CRS and one grid for the
+network (a project in another is refused, to be reprojected first); ids
+stay the names users see, a clash renamed with the line's short code
+(`A-T12`) with everything that refers to it; a tower modelled in two
+projects (found by position and type) is listed for an admin to merge or
+keep — never merged silently; the current state (and tags if asked) comes
+in as **one** log entry per line, the file kept as an archive; libraries
+mapped to the country libraries (same content mapped, conflicts to a
+maintainer, never silently replaced); a report lists every decision.
+
+### Versions at the scale of a country
+
+One protected `main` for the network; designers work on branches over
+their working set, kept as differences (schema 6 already). A revision's tree
+becomes a tree of trees (by line, kind, tile bucket), so a commit costs what
+changed; old flat trees still read. No whole-network snapshots or
+whole-branch copies (owner rule: only changes logged).
+
+### Security and operations
+
+Sign-in by OIDC/SSO with the owner's identity provider (personal
+invitations stay for the desktop server); only the server talks to
+PostgreSQL, with its own least-privilege role; the rights filter is the
+security boundary and gets a dedicated review before real data goes in.
+Shipped deployment: a Docker Compose file (server, PostgreSQL with PostGIS,
+backup job), plain binaries as the other option — the owner's IT decides.
+Backups by base backup and WAL archiving, with a restore drill; a schema
+migration is refused when the last backup is older than a setting.
+
+### Measured first
+
+A **synthetic country** of the owner's size (12 000 pylons, 2.5 systems
+each, routes, alignments, structures, sections and wires; synthetic LiDAR
+on a handful of sample tiles only, its scaling measured per tile and
+extrapolated) is generated deterministically (`ohl synth country`, a hash
+per seed tested) and every phase is measured on it. No stress setting
+beyond the owner's size (owner: "Just reduce the synthetic test"). Real
+utility data is never in the repository; it is measured locally only.
+
+### Phases
+
+0 decisions · 1 synthetic country and baseline · 2 store interface (SQLite)
+· 3 incremental, locally validated session · 4 PostgreSQL store, import and
+per-model export · 5 server on the database · 6 client working set and
+context · 7 rights and roles · 8 shared towers rule · 9 country libraries ·
+10 scoped computations · 11 versions at scale · 12 offline working set ·
+13 security, deployment, backups · 14 scale validation. Phases 2 and 3 come
+first: they also make big desktop projects faster.
+
+## Consequences
+
+- The session talks to a store, not to SQLite; new SQL goes into a store
+  implementation. Every store test runs on both stores (phase 4 on).
+- The project file stays the exchange and desktop format; nothing in it
+  changes for the server, except the meta keys of a model exported from
+  a network.
+- Checks gain a reach and a pulled-in list (phase 10, an engine change);
+  plugin checks gain an optional reach (an additive plugin interface step,
+  [ADR-0012](0012-plugin-interface-versions.md), asked before it is made).
+- Two modes could drift apart: one session code, one test suite on both
+  stores.
+- The owner's side runs a database server, backups and upgrades.
+- Not decided yet (later phases): splitting the network into writers per
+  region (not planned); object storage for point clouds (only if backups or
+  size demand it).

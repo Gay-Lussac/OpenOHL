@@ -162,24 +162,8 @@ impl crate::Session {
     /// An undo is a change here too (**conservative**: the points may be
     /// as before).
     pub fn points_state(&self) -> String {
-        let seq: i64 = self
-            .conn
-            .query_row(
-                "SELECT COALESCE(MAX(seq), 0) FROM oplog WHERE objects LIKE '%\"point_cloud\"%'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or(0);
-        let clouds: String = self
-            .conn
-            .query_row(
-                "SELECT COALESCE(group_concat(name || ':' || points || ':' || created, ';'), '')
-                 FROM (SELECT name, points, created FROM pointcloud ORDER BY name)",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap_or_default();
-        format!("{seq}|{clouds}")
+        use crate::store::Store;
+        self.conn.points_state()
     }
 }
 

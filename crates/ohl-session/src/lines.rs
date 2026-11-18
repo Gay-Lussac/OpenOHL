@@ -50,8 +50,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::store::Store;
 use ohl_line::Line;
-use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use crate::versions::{
@@ -137,103 +137,25 @@ pub fn empty_line() -> Line {
     }
 }
 
-fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool, SessionError> {
-    Ok(conn
-        .prepare("SELECT 1 FROM pragma_table_info(?1) WHERE name = ?2")?
-        .exists(params![table, column])?)
-}
-
-/// Schema 2 → 3: the objects, log and index of each project line (those
-/// of earlier files become the main line's). The index is rebuilt from
-/// the objects when the session opens.
-pub(crate) fn migrate(conn: &Connection) -> Result<(), SessionError> {
-    if !has_column(conn, "model_object", "line")? {
-        let tx = crate::Step::begin(conn)?;
-        tx.execute_batch(
-            "ALTER TABLE model_object RENAME TO model_object_v2;
-             CREATE TABLE model_object (
-                 line TEXT NOT NULL DEFAULT 'main',
-                 kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL,
-                 version INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (line, kind, id));
-             INSERT INTO model_object (line, kind, id, ord, version, json)
-                 SELECT 'main', kind, id, ord, version, json FROM model_object_v2;
-             DROP TABLE model_object_v2;",
-        )?;
-        tx.commit()?;
-    }
-    if !has_column(conn, "oplog", "line")? {
-        conn.execute(
-            "ALTER TABLE oplog ADD COLUMN line TEXT NOT NULL DEFAULT 'main'",
-            [],
-        )?;
-    }
-    let has_index: bool = conn
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'spatial_index'")?
-        .exists([])?;
-    if has_index && !has_column(conn, "spatial_index", "line")? {
-        conn.execute_batch("DROP INDEX IF EXISTS spatial_tile; DROP TABLE spatial_index;")?;
-    }
-    Ok(())
-}
-
 /// Longest description of a line, characters.
 pub const MAX_DESCRIPTION: usize = 20_000;
 
-/// Lines get a description (added within schema 3), and (schema 6) the
-/// revision they keep their differences from (`base`; none: the line
-/// keeps all its objects, as every line of older files).
-pub(crate) fn migrate_descriptions(conn: &Connection) -> Result<(), SessionError> {
-    if !has_column(conn, "vc_ref", "description")? {
-        conn.execute(
-            "ALTER TABLE vc_ref ADD COLUMN description TEXT NOT NULL DEFAULT ''",
-            [],
-        )?;
-    }
-    if !has_column(conn, "vc_ref", "base")? {
-        conn.execute("ALTER TABLE vc_ref ADD COLUMN base TEXT", [])?;
-    }
-    Ok(())
-}
-
-/// Schema 6: rows of `model_object` may be tombstones (`gone`: an object
-/// of the line's base deleted on the line). Nothing else changes: the
-/// lines of older files keep all their objects.
-pub(crate) fn migrate_tombstones(conn: &Connection) -> Result<(), SessionError> {
-    if !has_column(conn, "model_object", "gone")? {
-        conn.execute(
-            "ALTER TABLE model_object ADD COLUMN gone INTEGER NOT NULL DEFAULT 0",
-            [],
-        )?;
-    }
-    Ok(())
-}
-
 /// The revision line `name` keeps its differences from (`None`: it keeps
 /// all its objects).
-pub(crate) fn line_base(conn: &Connection, name: &str) -> Result<Option<String>, SessionError> {
-    Ok(conn
-        .prepare_cached("SELECT base FROM vc_ref WHERE name = ?1 AND kind = 'branch'")?
-        .query_row(params![name], |r| r.get::<_, Option<String>>(0))
-        .optional()?
-        .flatten())
+pub(crate) fn line_base(store: &dyn Store, name: &str) -> Result<Option<String>, SessionError> {
+    store.line_base(name)
 }
 
 /// Writes the place of object `kind`/`id` of line `line`: its base's
 /// object, unchanged, at place `o.ord` (`gone` = 2, no JSON).
 pub(crate) fn write_place(
-    conn: &Connection,
+    store: &dyn Store,
     line: &str,
     kind: Kind,
     id: &str,
     o: &Object,
 ) -> Result<(), SessionError> {
-    conn.prepare_cached(
-        "INSERT INTO model_object (line, kind, id, ord, version, json, gone) VALUES (?1, ?2, ?3, ?4, ?5, 'null', 2)
-         ON CONFLICT(line, kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version,
-             json = excluded.json, gone = excluded.gone",
-    )?
-    .execute(params![line, kind.as_str(), id, o.ord, o.version])?;
-    Ok(())
+    store.write_place(line, kind, id, o.ord, o.version)
 }
 
 /// Per line, its base's objects at a place of their own: (place,
@@ -253,35 +175,26 @@ pub(crate) enum Row<'a> {
 /// Writes object `kind`/`id` of line `line` (`None`: a tombstone, the
 /// object of its base deleted).
 pub(crate) fn write_row(
-    conn: &Connection,
+    store: &dyn Store,
     line: &str,
     kind: Kind,
     id: &str,
     object: Option<&Object>,
 ) -> Result<(), SessionError> {
-    let mut stmt = conn.prepare_cached(
-        "INSERT INTO model_object (line, kind, id, ord, version, json, gone) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-         ON CONFLICT(line, kind, id) DO UPDATE SET ord = excluded.ord, version = excluded.version,
-             json = excluded.json, gone = excluded.gone",
-    )?;
     match object {
-        Some(o) => stmt.execute(params![
+        Some(o) => store.write_object(
             line,
-            kind.as_str(),
+            kind,
             id,
-            o.ord,
-            o.version,
-            o.value.to_string(),
-            false
-        ])?,
-        None => stmt.execute(params![line, kind.as_str(), id, 0, 0, "null", true])?,
-    };
-    Ok(())
+            Some((o.ord, o.version, &o.value.to_string())),
+        ),
+        None => store.write_object(line, kind, id, None),
+    }
 }
 
-fn write_objects(conn: &Connection, line: &str, objects: &Objects) -> Result<(), SessionError> {
+fn write_objects(store: &dyn Store, line: &str, objects: &Objects) -> Result<(), SessionError> {
     for ((kind, id), o) in objects {
-        write_row(conn, line, *kind, id, Some(o))?;
+        write_row(store, line, *kind, id, Some(o))?;
     }
     Ok(())
 }
@@ -478,10 +391,10 @@ impl Session {
         name: &str,
         entries: &BTreeMap<(Kind, String), spatial::Entry>,
     ) -> Result<(), SessionError> {
-        let stored = spatial::load(&self.conn, name)?;
+        let stored = self.conn.spatial_load(name)?;
         if stored != *entries {
             let tx = crate::Step::begin(&self.conn)?;
-            spatial::write_diff(&tx, name, &stored, entries)?;
+            tx.spatial_write_diff(name, &stored, entries)?;
             tx.commit()?;
         }
         Ok(())
@@ -501,19 +414,9 @@ impl Session {
     ) -> Result<(), SessionError> {
         // Frozen project lines of earlier files: editable lines now.
         // (Files made since schema 4 have no such table.)
-        let has_saved = self
-            .conn
-            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'line_snapshot'")?
-            .exists([])?;
-        let saved: Vec<(String, String, String, String)> = if !has_saved {
-            Vec::new()
-        } else {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT name, user, note, json FROM line_snapshot ORDER BY time, name")?;
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-                .collect::<Result<_, _>>()?
-        };
+        let saved = self.conn.legacy_snapshots()?;
+        let has_saved = saved.is_some();
+        let saved = saved.unwrap_or_default();
         let refs = self.refs()?;
         for (name, user, note, json) in saved {
             let line: Line = serde_json::from_str(&json)
@@ -528,17 +431,14 @@ impl Session {
             }
             let objects = objects_of_line(&line);
             let tx = crate::Step::begin(&self.conn)?;
-            write_objects(&tx, &new, &objects)?;
-            tx.execute(
-                "INSERT INTO vc_ref (name, kind, revision, user, note) VALUES (?1, 'branch', NULL, ?2, ?3)",
-                params![new, user, note],
-            )?;
-            tx.execute("DELETE FROM line_snapshot WHERE name = ?1", params![name])?;
+            write_objects(&*tx, &new, &objects)?;
+            tx.add_branch_noted(&new, &user, &note)?;
+            tx.delete_legacy_snapshot(&name)?;
             tx.commit()?;
             by_line.insert(new, objects);
         }
         if has_saved {
-            self.conn.execute("DROP TABLE line_snapshot", [])?;
+            self.conn.drop_legacy_snapshots()?;
         }
         // Lines kept as differences: their base revision's state (read
         // once for the lines sharing it) with their rows laid over it.
@@ -582,13 +482,10 @@ impl Session {
                 // Its line's objects only, as these branches always had
                 // (their revision's library files left out: tombstones).
                 let tx = crate::Step::begin(&self.conn)?;
-                tx.execute(
-                    "UPDATE vc_ref SET base = ?1 WHERE name = ?2 AND kind = 'branch'",
-                    params![rev, r.name],
-                )?;
+                tx.set_line_base(&r.name, rev)?;
                 for (k, o) in base {
                     if k.0 == Kind::Library {
-                        write_row(&tx, &r.name, k.0, &k.1, None)?;
+                        write_row(&*tx, &r.name, k.0, &k.1, None)?;
                     } else {
                         objects.insert(k, o);
                     }
@@ -600,20 +497,12 @@ impl Session {
         // Objects of a line without a branch (written outside a session).
         for name in by_line.keys() {
             if self.find_ref(name)?.is_none() {
-                self.conn.execute(
-                    "INSERT INTO vc_ref (name, kind, revision, user) VALUES (?1, 'branch', NULL, '')",
-                    params![name],
-                )?;
+                self.conn.add_branch(name, "")?;
             }
         }
         let head: Option<String> = self
             .conn
-            .query_row(
-                "SELECT value FROM ols_meta WHERE key = 'vc_head'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?
+            .meta("vc_head")?
             .and_then(|v: String| v.strip_prefix("branch:").map(str::to_owned));
         let current = head
             .filter(|h| by_line.contains_key(h))
@@ -676,15 +565,7 @@ impl Session {
             })
             .collect();
         for l in &mut out {
-            l.description = self
-                .conn
-                .query_row(
-                    "SELECT description FROM vc_ref WHERE name = ?1 AND kind = 'branch'",
-                    params![l.name],
-                    |r| r.get(0),
-                )
-                .optional()?
-                .unwrap_or_default();
+            l.description = self.conn.line_description(&l.name)?.unwrap_or_default();
         }
         out.sort_by_key(|l| (!l.is_main(), l.name.clone()));
         Ok(out)
@@ -881,23 +762,20 @@ impl Session {
         };
         let revision = base.as_ref().map(|(rev, _)| rev.clone());
         let tx = crate::Step::begin(&self.conn)?;
-        tx.execute(
-            "INSERT INTO vc_ref (name, kind, revision, user, note, base) VALUES (?1, 'branch', ?2, ?3, ?4, ?2)",
-            params![name, revision, user, format!("from {from}")],
-        )?;
+        tx.add_line_branch(&name, revision.as_deref(), user, &format!("from {from}"))?;
         match &base {
             // Only what differs from the base: nothing, or a few library
             // files placed otherwise.
             Some((_, base)) => {
                 for (k, row) in overlay(&objects, base) {
                     match row {
-                        Row::Object(o) => write_row(&tx, &name, k.0, &k.1, Some(o))?,
-                        Row::Place(o) => write_place(&tx, &name, k.0, &k.1, o)?,
-                        Row::Gone => write_row(&tx, &name, k.0, &k.1, None)?,
+                        Row::Object(o) => write_row(&*tx, &name, k.0, &k.1, Some(o))?,
+                        Row::Place(o) => write_place(&*tx, &name, k.0, &k.1, o)?,
+                        Row::Gone => write_row(&*tx, &name, k.0, &k.1, None)?,
                     }
                 }
             }
-            None => write_objects(&tx, &name, &objects)?,
+            None => write_objects(&*tx, &name, &objects)?,
         }
         tx.commit()?;
         let state = if self.is_line(from) {
@@ -931,11 +809,7 @@ impl Session {
                 "a description of at most {MAX_DESCRIPTION} characters"
             )));
         }
-        self.conn.execute(
-            "UPDATE vc_ref SET description = ?2 WHERE name = ?1 AND kind = 'branch'",
-            params![name, description.trim_end()],
-        )?;
-        Ok(())
+        self.conn.set_line_description(name, description.trim_end())
     }
 
     /// Deletes project line `name` with its working state (its revisions
@@ -951,17 +825,9 @@ impl Session {
         }
         let reviews = self.ref_deletion(name)?.reviews;
         let tx = crate::Step::begin(&self.conn)?;
-        tx.execute("DELETE FROM model_object WHERE line = ?1", params![name])?;
-        tx.execute("DELETE FROM spatial_index WHERE line = ?1", params![name])?;
-        tx.execute(
-            "DELETE FROM vc_ref WHERE name = ?1 AND kind = 'branch'",
-            params![name],
-        )?;
+        tx.delete_line(name)?;
         for id in reviews {
-            tx.execute(
-                "UPDATE vc_review SET state = 'closed' WHERE id = ?1",
-                params![id],
-            )?;
+            tx.set_review_state(id, "closed")?;
         }
         tx.commit()?;
         self.others.remove(name);
@@ -974,24 +840,7 @@ impl Session {
         self.may_manage_line(user, from)?;
         let to = self.check_ref_name(to)?;
         let tx = crate::Step::begin(&self.conn)?;
-        for table in ["model_object", "oplog", "spatial_index"] {
-            tx.execute(
-                &format!("UPDATE {table} SET line = ?2 WHERE line = ?1"),
-                params![from, to],
-            )?;
-        }
-        tx.execute(
-            "UPDATE vc_ref SET name = ?2 WHERE name = ?1 AND kind = 'branch'",
-            params![from, to],
-        )?;
-        tx.execute(
-            "UPDATE vc_review SET branch = ?2 WHERE branch = ?1",
-            params![from, to],
-        )?;
-        tx.execute(
-            "UPDATE vc_review SET target = ?2 WHERE target = ?1",
-            params![from, to],
-        )?;
+        tx.rename_line(from, &to)?;
         tx.commit()?;
         if self.current == from {
             self.current = to.clone();
