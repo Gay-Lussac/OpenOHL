@@ -61,7 +61,7 @@ pub struct CapacityInput {
 }
 
 /// A profile's dimensions by name, m.
-fn dimensions(shape: &ohl_sections::Shape) -> Vec<(String, f64)> {
+pub fn dimensions(shape: &ohl_sections::Shape) -> Vec<(String, f64)> {
     use ohl_sections::Shape as S;
     let named = |v: &[(&str, f64)]| v.iter().map(|(k, x)| ((*k).to_owned(), *x)).collect();
     match *shape {

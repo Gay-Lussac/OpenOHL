@@ -122,6 +122,10 @@ pub use flexibility::{
     FlexibleRun, FlexibleSetup, LoadsSetup, flexible_structures, prepare_structure_loads,
     prepare_structure_loads_at, solve_line_flexible,
 };
+/// The design codes bundled with OpenOHL as plugins, checked as the
+/// applications start (2026-11-18): one that does not load is an error at
+/// start, never a fallback to another code ([`ohl_member_check::check_bundled`]).
+pub use ohl_member_check::check_bundled as check_bundled_plugins;
 pub use options::{
     DEFAULT_SNOW_EXPOSURE, DEFAULT_SNOW_SHAPE, DEFAULT_SNOW_THERMAL, IceOn, RemovedWire, SnowOn,
     StructureIce, StructureOptions, WindDirection, snow_load,

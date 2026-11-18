@@ -31,6 +31,16 @@ from the standard and national annex you design to.
 A plugin for the Swiss LeV / OLEI (SR 734.31) exists separately; it is
 not part of the public code.
 
+## Structure codes (bundled)
+
+`sia263` is of another kind: the member, joint and bolt-distance checks
+of lattice structures by SIA 263:2013 (`structure-code-plugin` world:
+`member-check`, `member-check-full`, `joint-check`, `bolt-distances`),
+moved out of the core on 2026-11-18 and **shipped with OpenOHL** — found
+before the user's plugins, an error at start when it does not load. A
+structure's `[analysis] capacity = "sia263-2013"` names it. See its
+README; its parameter file is `Plugins/sia263.toml` beside a structure.
+
 `common/` is shared by the plugins (parameter files, writing the files,
 clearance presets).
 

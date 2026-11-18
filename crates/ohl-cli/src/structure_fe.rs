@@ -40,8 +40,9 @@ pub struct FeArgs {
     linear: bool,
     /// Member capacities, whatever the model says: `asce10-97` (ASCE
     /// 10-97, the default), `sia263-2013` (SIA 263:2013, design values
-    /// with γ_M) or `simple` (Euler buckling, gross yield: not a design
-    /// code, unsafe compared with design codes).
+    /// with γ_M: the bundled plugin sia263), `simple` (Euler buckling,
+    /// gross yield: not a design code, unsafe compared with design codes)
+    /// or a plugin's method `plugin:<plugin>/<method>`.
     #[arg(long)]
     capacity: Option<String>,
     /// What the tension-only members carry in compression, whatever the
@@ -279,9 +280,15 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         && args.capacity_plugin.is_none()
     {
         // Asked for on the command line, whatever the model says — also
-        // instead of a plugin's method the file names.
-        model.analysis.capacity = ohl_structures_fe::CapacityMethod::parse(c)?;
-        model.capacity_plugin = None;
+        // instead of a plugin's method the file names (a bundled plugin's
+        // method by its old name, `sia263-2013`, or `plugin:<plugin>/<method>`).
+        match ohl_structures_fe::model::PluginMethod::parse(c) {
+            Some(p) => model.capacity_plugin = Some(p?),
+            None => {
+                model.analysis.capacity = ohl_structures_fe::CapacityMethod::parse(c)?;
+                model.capacity_plugin = None;
+            }
+        }
     }
     if args.capacity_plugin.is_some() {
         model.capacity_plugin = None;
@@ -444,17 +451,18 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
                 strength: args.strength,
                 self_weight: weight,
                 solution: s,
+                moved: None,
             })
             .collect();
         ohl_member_check::check(&model, &cases).transpose()?
     };
-    let plugin_note = by_plugin.as_ref().map(|c| c.note.clone());
+    let plugin_notes = by_plugin.as_ref().map(|c| c.notes.clone());
     if let Some(c) = by_plugin {
         for (run, usage) in solved.iter_mut().zip(c.usage) {
             run.2 = usage;
         }
     }
-    for (case, s, mut usage, took) in solved {
+    for (n, (case, s, mut usage, took)) in solved.into_iter().enumerate() {
         if let Some((host, dir, method)) = &plugin {
             let given = plugin_capacities(host, dir, method, args.strength, &model, &s)
                 .map_err(|e| format!("{case}: {e}"))?;
@@ -513,8 +521,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         match &plugin {
             None => println!(
                 "  {}",
-                plugin_note
-                    .clone()
+                plugin_notes
+                    .as_ref()
+                    .and_then(|v| v.get(n).cloned())
                     .unwrap_or_else(|| ohl_structures_fe::check::capacity_note(&model, &usage))
             ),
             Some((_, dir, method)) => println!(

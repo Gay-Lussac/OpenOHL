@@ -30,28 +30,50 @@ fn axial() -> BTreeMap<String, f64> {
         .collect()
 }
 
-/// Under SIA 263 each member's bolts are checked in its plate (bearing,
-/// block shear, sections, distances) and the weld by (87) and (88) under
-/// the larger resultant of its two sides (D1's 40 kN against D2's 25
-/// kN); the strength factor scales the resistances.
+/// Whether the bundled plugin `sia263` is built (else skip, or fail when
+/// the plugin tests are required).
+fn sia263_built() -> bool {
+    let wasm = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../plugins/codes/sia263/target/wasm32-wasip2/release/sia263.wasm");
+    if wasm.is_file() {
+        return true;
+    }
+    assert!(
+        std::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+        "plugins/codes/sia263 not built"
+    );
+    eprintln!("skipping: plugins/codes/sia263 not built");
+    false
+}
+
+/// Under SIA 263 — the bundled plugin `sia263`'s joint check since
+/// 2026-11-18, one call with every part and case — each member's bolts are
+/// checked in its plate (bearing, block shear, sections, distances) and
+/// the weld by (87) and (88) under the larger resultant of its two sides
+/// (D1's 40 kN against D2's 25 kN); the strength factor scales the
+/// resistances.
 #[test]
 fn plates_and_welds_are_checked_by_sia263() {
+    if !sia263_built() {
+        return;
+    }
     let sia = format!("{}\n[analysis]\ncapacity = \"sia263-2013\"\n", welded());
     let d = joint_details(&sia, &library(), &Default::default()).unwrap();
     let w = &d.joint("N2").unwrap().plates[0].welds[0];
     assert_eq!(w.size, Some(0.006));
     assert_eq!(w.label().as_deref(), Some("a6"));
     let plans = plate_plans(&sia, &library(), &Default::default()).unwrap();
-    let u = plate_usage(&plans, &axial(), 1.0);
+    assert!(plans.plugin.is_some(), "the old name: the bundled plugin");
+    let forces = axial();
+    let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &forces), ("half", 0.5, &forces)]);
+    let u = &rows[0];
     let d1 = u
         .iter()
         .find(|p| p.part == PlatePart::Member("D1".into()))
         .unwrap();
     assert_eq!(d1.plate, "G1");
     assert!(d1.usage.is_some_and(|x| x > 0.0 && x < 1.0), "{d1:?}");
-    for c in ["(76)", "(83)", "(39)", "e_1"] {
-        assert!(d1.checks.iter().any(|x| x.0.contains(c)), "{c}: {d1:?}");
-    }
+    assert!(d1.governs.contains("SIA 263"), "{d1:?}");
     let d2 = u
         .iter()
         .find(|p| p.part == PlatePart::Member("D2".into()))
@@ -68,14 +90,13 @@ fn plates_and_welds_are_checked_by_sia263() {
     assert!((weld.force - 40e3).abs() < 1e-6, "{weld:?}");
     assert!(weld.governs.contains("(87)"), "{weld:?}");
     assert!(weld.notes.iter().any(|n| n.contains("the seam's")));
-    let half = plate_usage(&plans, &axial(), 0.5);
-    let w2 = half
+    let w2 = rows[1]
         .iter()
         .find(|p| matches!(&p.part, PlatePart::Weld(_)))
         .unwrap();
     assert!((w2.usage.unwrap() - 2.0 * weld.usage.unwrap()).abs() < 1e-12);
     // The worst per joint.
-    let j = crate::joint_plate_usage(&u);
+    let j = crate::joint_plate_usage(u);
     assert!(j["N2"] >= weld.usage.unwrap());
 }
 
@@ -111,15 +132,20 @@ fn asce10_has_no_weld_rule_and_simple_checks_nothing() {
 /// leg is checked as a plate for its share of L1's force by area — the
 /// outer cover across the leg's 61 mm, the inner from the root's 15 mm,
 /// 46 mm (both 8 mm thick): 61/107 and 46/107 of it; the short leg's
-/// cover holds none of L1's bolts and is not checked for it.
+/// cover holds none of L1's bolts and is not checked for it. (SIA 263:
+/// the bundled plugin's joint check.)
 #[test]
 fn a_splices_covers_share_the_force_by_area() {
+    if !sia263_built() {
+        return;
+    }
     use crate::joints_tests::SPLICED;
     let text = format!("{TOWER}{SPLICED}\n[analysis]\ncapacity = \"sia263-2013\"\n");
     let plans = plate_plans(&text, &library(), &Default::default()).unwrap();
     let mut axial = axial();
     axial.insert("L1".into(), 100e3);
-    let u = plate_usage(&plans, &axial, 1.0);
+    let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &axial)]);
+    let u = &rows[0];
     let l1: Vec<_> = u
         .iter()
         .filter(|p| p.part == PlatePart::Member("L1".into()))
@@ -135,10 +161,7 @@ fn a_splices_covers_share_the_force_by_area() {
     );
     assert!((outer.force + inner.force - 100e3).abs() < 1e-6);
     assert!(outer.usage.is_some_and(|x| x > 0.0 && x < 1.0), "{outer:?}");
-    assert!(
-        outer.checks.iter().any(|x| x.0.contains("(76)")),
-        "{outer:?}"
-    );
+    assert!(outer.governs.contains("SIA 263"), "{outer:?}");
     assert!(
         outer
             .notes
@@ -273,11 +296,20 @@ fn a_plugins_joint_check_and_minimum_distances_are_used() {
             .any(|b| b.what.contains("example: 4 × diameter")),
         "{close:?}"
     );
-    let e = crate::member_capacity(&text, &library(), &Default::default(), "D1").unwrap_err();
-    assert!(
-        e.starts_with("resistance: from member-check-example after a run"),
-        "{e}"
+    // Member details: the plugin's own capacities, worked out live
+    // (2026-11-18), the code named — never another code's.
+    let c = crate::member_capacity(&text, &library(), &Default::default(), "D1").unwrap();
+    assert_eq!(
+        c.code,
+        "method example-yield-euler of the plugin member-check-example"
     );
+    assert!(
+        c.compression
+            .as_ref()
+            .is_some_and(|x| x.1.contains("(example)")),
+        "{c:?}"
+    );
+    assert!(c.tension.is_some(), "{c:?}");
     std::fs::remove_dir_all(&dir).ok();
 }
 

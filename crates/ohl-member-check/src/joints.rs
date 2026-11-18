@@ -136,7 +136,7 @@ pub fn check_joints(p: &PluginMethod, input: &wit::JointInput) -> JointsChecked 
         Ok(d) => d,
         Err(e) => return JointsChecked::NotChecked(e),
     };
-    let host = match ohl_plugins::WasmHost::new() {
+    let host = match crate::host() {
         Ok(h) => h,
         Err(e) => return JointsChecked::NotChecked(format!("the plugin host does not start: {e}")),
     };
@@ -185,8 +185,7 @@ pub fn minimum_distances(
         .get_or_insert_with(HashMap::new)
         .entry(key)
         .or_insert_with(|| {
-            let host = ohl_plugins::WasmHost::new()
-                .map_err(|e| format!("the plugin host does not start: {e}"))?;
+            let host = crate::host().map_err(|e| format!("the plugin host does not start: {e}"))?;
             match host.minimum_distances(&dir, &p.method, input) {
                 Ok(Some(d)) => Ok(d),
                 Ok(None) => Err("the plugin has no bolt-distances export".to_owned()),

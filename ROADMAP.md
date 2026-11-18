@@ -1163,10 +1163,9 @@ user guide, the theory and the [decision log](https://github.com/Gay-Lussac/Open
 stage than OHL-Design: built as a base, in active development (not
 approved yet), with the open points and limitations below.
 
-**Next up** (2026-11-14): O4's next step, moving ASCE 10-97 and SIA
-263:2013 out of the core into plugins behind the code-check interface
-built on 2026-11-11 (the owner's order of 2026-11-11: the interface
-first, then the codes). Open besides: O19's buckling lengths from what
+**Next up** (2026-11-18): O4's next step, moving ASCE 10-97 out of the
+core into a bundled plugin as SIA 263:2013 was on 2026-11-18 (the
+owner's order of 2026-11-11: the interface first, then the codes). Open besides: O19's buckling lengths from what
 braces a member, end releases and bolt slip, the joints' own checks
 beyond the plates and covers, weight and quantities, and the validation;
 O20's B3 to B5; O21 (equipment); the hotbar's drawing and the check
@@ -1219,9 +1218,18 @@ All built, in active development (not approved yet):
 OHL-Structure, `ohl structures fe` and the line's structure check), the
 joints' (`joint-check`: plates, covers, welds, bolt groups) and the
 bolts' minimum distances (`bolt-distances`), with an example plugin, are
-built, in active development (not approved yet). Next step, not started:
-moving ASCE 10-97 and SIA 263:2013 out of the core into plugins behind
-them; what that still needs is listed in the decision log (2026-11-11).*
+built, in active development (not approved yet). 2026-11-18 (owner
+2026-11-17: "yes go ahead with your recommendations"): **SIA 263:2013
+moved out of the core** into the bundled plugin `sia263`
+(`plugins/codes/sia263`; members, plates and welds, bolt distances),
+behind a further export `member-check-full` (everything the core's check
+read, the plugin's parameter file `Plugins/sia263.toml`); its numbers
+bit for bit the core's (303 557 member results compared before the core's
+copy went); `capacity = "sia263-2013"` an alias, no file changed; the
+plugin checks take the worse of with and without foot movements; Member
+details shows a plugin's capacities; the bundled plugin ships with the
+applications, an error at start when it does not load. Next: ASCE 10-97
+(the default) the same way; the pole codes when a pole export exists.*
 
 A plugin interface for code checks: what the core hands over (member
 forces, buckling lengths, sections, joint details), what comes back
@@ -1230,11 +1238,11 @@ forces, buckling lengths, sections, joint details), what comes back
 > code: SIA 263 for steel. Members first, then joints. The theory of the
 > checks goes in a theory page of the book.
 
-Until the move, the member capacities are in the core: ASCE 10-97 the
-default (2026-10-27) and SIA 263:2013 as a second method (`[analysis]
-capacity = "sia263-2013"`, 2026-11-03, [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md));
-the joints' plates and fillet welds checked by the structure's capacity
-method (O19).
+Until its move, ASCE 10-97 (the default, 2026-10-27) is in the core; SIA
+263:2013 (`[analysis] capacity = "sia263-2013"`, 2026-11-03,
+[theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/sia263.md))
+is the bundled plugin `sia263` since 2026-11-18; the joints' plates and
+fillet welds are checked by the structure's capacity method (O19).
 
 ### O19. Joint details of towers: show and define them
 A tool in OHL-Structure to see and define, at each joint of a tower:
@@ -1603,7 +1611,7 @@ and placed in the line by a position, an angle and a height adjustment.*
 - [x] **Load-case recipes** per structure (`[[load_case]]`, `.ohlslc` or CSV): which line value, factor, one-sided share, on which points or members, surface loads (wind, snow); evaluated by the core with the line's values at each placed structure; the loads in a table, editable (typed values kept over the evaluation), exported and imported *(since 2026-10-25 a load case of two parts — the line's forces, unfactored and a windy case from both sides, with their factors and a tick per point; the loads on the structure itself: self weight, wind on the body in eight directions, ice, point loads — in the Load case editor; the older form still read; [spec](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/structure-load-cases-spec.md))*
 - [x] **Cross-section library**: a project library kind the structures refer to (not copied), exported and imported *(base: `.ohlsec` profiles and materials with computed properties; a member's section from the library first, then the structure's tables; the FE check's member wind on the profiles, the wind bands kept out of the model; member areas for surface loads; sections typed in OHL-Structure (Sections & materials › Cross-section library: the library's shapes, properties computed as typed, what is wrong said, each change an undo step in order with the structure's edits; members pick them); wind factors for structures as data (`[wind]`: drag per shape, a lattice face's drag and shielding by solidity ratio and spacing) from a design-code plugin's optional `structure-wind` (WIT `code-wind-plugin`, interface 0.3 unchanged for older plugins; the code plugins' stubs give none) or typed, with the faces, solidity ratios and shielding computed from the geometry (`docs/theory/structure-wind.md`, validation cases structwind-001/002). Since 2026-10-25: materials typed in the editor, and the load cases' wind on the body takes the member wind with these factors. Later: the codes' factors in their plugins (O9))*
 - [x] Structure exports: IFC4 (member solids and the analysis model with load cases), IFC2x3 for steel-detailing programs, SAF 2.2 (xlsx) for analysis programs, CSV tables; checked with free tools (IfcOpenShell validation with the schema's rules, geometry and content; SAF sheets, columns and references; `tools/check_structure_exports.py`, test run when `OHL_IFC_PYTHON` is set) and sample files in `examples/exports/`; a tension-only member that bends is exported as a frame with its tension-only behaviour and `check = false` as information (IFC property set, the analysis member's description, SAF layer, CSV columns) *(not yet: the imports tried in another program; other tower programs)*
-- [ ] Code checks of members and joints as plugins (e.g. SIA 263) *(2026-11-11, built, in active development (not approved yet): the interface — `member-check`, `joint-check`, `bolt-distances` — with an example plugin; not yet: ASCE 10-97 and SIA 263:2013 moved out of the core into plugins, O4)*
+- [ ] Code checks of members and joints as plugins (e.g. SIA 263) *(2026-11-11, built, in active development (not approved yet): the interface — `member-check`, `joint-check`, `bolt-distances`, 2026-11-18 `member-check-full` — with an example plugin; SIA 263:2013 moved into the bundled plugin `sia263` on 2026-11-18; not yet: ASCE 10-97, O4)*
 - [ ] **Fully integrated structure editors with a 3D preview** for every detail level (1 stick figure, 2 sticks of the structure, 3 full design), all in one window: geometry, members, sections, materials, supports, strings and wire points, the type's use in the line, checks — lattice towers and **poles of wood, steel (and concrete)** alike *(base: OHL-Structure, with poles in Body › Pole and Design › Pole, sections and materials typed; still to come: checks per level, the use in the line)*
 
 ### Structure–line interaction — levels of computation
@@ -1633,8 +1641,9 @@ server and version control, validation and docs, 1.0 and further ahead.
   FE with joint stabilisation and tension-only members (compression up to
   their own buckling load), cross-section library,
   exports) is in place with the limits listed below.
-- **274 validation cases pass** (count of 2026-11-17, `ohl validate
-  benchmarks`; the last added with O22, 2026-11-11: `tbbim-003`,
+- **277 validation cases pass** (count of 2026-11-18, `ohl validate
+  benchmarks`; the last added 2026-11-18: `sia263-001…003`, run through
+  the bundled plugin; with O22, 2026-11-11: `tbbim-003`,
   `finstr-001…004`, `saglim-001…002`, `hotcreep-001…003`,
   `ptforce-001…002`, `tbgap-001…003`) and there are 27 theory pages; the
   private Swiss plugin and the importers of another program's files live
@@ -1853,7 +1862,7 @@ owner.
   plugin points`. Still open: 1.0 itself, and how long the host loads the
   previous major version from then.*
 - [ ] Plugin registry / index — GitHub issue #34
-- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases; 2026-11-17: 274 validation cases, a report from `ohl validate --report`; not complete)*
+- [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases; 2026-11-17: 274 validation cases, a report from `ohl validate --report`; 2026-11-18: 277; not complete)*
 - [ ] Translations (i18n)
 - [ ] Public release, governance model, maintainers team
 

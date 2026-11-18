@@ -427,6 +427,7 @@ joint = "N2"
                 strength: 1.0,
                 self_weight: 0.0,
                 solution: &solution,
+                moved: None,
             }],
         )
         .expect("a plugin's method")

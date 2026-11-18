@@ -8,6 +8,75 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18
+
+**SIA 263:2013 moved out of the core into a bundled plugin; the plugin
+interface completed for it** (owner, 2026-11-17, on the order proposed on
+2026-11-11: *"yes go ahead with your recommendations"*; built, in active
+development, not approved yet;
+[theory](../theory/sia263.md), [plugins](plugins.md#the-full-records-parameters-foot-movements-bundled-codes)).
+
+- **The interface's gaps closed** (additive: a new interface
+  `member-check-full` and world `structure-code-plugin`, optional exports
+  found by name; plugins built against 0.3 load and answer as before; the
+  interface version stays 0.3 — ADR-0012 keeps it for additions, and
+  before 1.0 a raised minor would refuse every plugin built for 0.3):
+  everything the core's own check reads (the sections' values and the
+  profiles' properties, the capacities given on members, the ends' joints,
+  conditions with why and the legs they bolt onto, the loads along each
+  member, bowed and kept-active members, the redundant-force check's
+  braced member, the run's switches); a usage that may be empty,
+  infinite or not a number as the core reports it; the plugin's
+  **parameter file** (`Plugins/<plugin>.toml` beside the structure, the
+  design-code plugins' mechanism: a TOML file, the plugin's template; no
+  file format changed); **Member details** shows a plugin's capacities
+  (asked live, no load case), and the reports show what the core's did
+  (the same words in what governs).
+- **Foot movements** (the decision of 2026-11-16 left the plugin path on
+  the moved feet only): a plugin's check now takes **each member's larger
+  usage of with and without** them — both solves sent in the same call,
+  for every plugin (no interface change needed) — in OHL-Structure, the
+  line's structure check and the command line.
+- **The solve's cap** on a tension-only member's compression: with a
+  plugin's method, the plugin's own compression capacity, asked when the
+  plugin is found (`Model::method_compression`). Before, ASCE 10-97's
+  design compression capped it even under a plugin's method — another
+  code in its place; changed (a small engine change, needed for the same
+  numbers: listed for the owner).
+- **SIA 263:2013 moved, not rewritten** (`plugins/codes/sia263`, the
+  `structure-code-plugin` world): the members' check (the core's
+  `sia263.rs` and its part of `check.rs`), the plates and welds
+  (`plates.rs`' SIA part) through `joint-check`, the bolt distances of
+  Table 17 through `bolt-distances`; γ_M1, γ_M2 and f_uE its parameters
+  (the standard's values without a file). **The same numbers bit for
+  bit**: before the core's copy was removed, the shipped example towers,
+  11 real lattice towers (579 to 3 019 members) and a level-4 tower with
+  its joint details were checked by both in four load cases and four
+  variants — 303 557 member results, every usage identical to the last bit
+  and every "what governs" word for word; the shipped examples' 2 256
+  results stay a test against the plugin. Then the core's copy was
+  removed; the pole shafts by SIA 263 stay in the core (no pole export
+  yet). The joint panel shows a plugin joint part's governing check only
+  (the interface has no per-check list; the usage and what governs are
+  the core's).
+- **Bundled and found first**: shipped inside the applications' packages
+  and the command line's (`plugins/codes/sia263`, beside the programs),
+  looked for there only (no other plugin of that name takes its place);
+  OHL-Design and OHL-Structure check it at start — one that does not load
+  is an error at start, and its structures are refused, never checked by
+  another code. The full check builds, lints and tests it.
+- **Old files unchanged**: `capacity = "sia263-2013"` is an alias of the
+  plugin's method, written back by its old name — no file rewritten, no
+  version raised; the default stays ASCE 10-97 (in the core until the
+  second round); `simple` stays in the core.
+- **Open**: ASCE 10-97 the same way (second round); a plugin's own time
+  limit (5 s a call) for very large structures with many cases (a tower
+  of 3 000 members in four cases took well under it); the joints and
+  Member details do not know the structure's folder and take a plugin's
+  own parameters (said, NOT ON THE SAFE SIDE where the file's are larger);
+  the plugin is AGPL-3.0-or-later (the core's code, and it uses
+  `ohl-sections`), unlike the MPL design-code plugins.
+
 ## 2026-11-17
 
 **Stiff jumpers along the falling wind, their second shape in still air,

@@ -197,7 +197,15 @@ struct Kept {
     case: String,
     strength: f64,
     self_weight: f64,
-    solution: Result<ohl_structures_fe::Solution, String>,
+    /// Its solve, and its solve on the structure's moved feet when it has
+    /// foot movements (the plugin takes each member's larger usage).
+    solution: Result<
+        (
+            ohl_structures_fe::Solution,
+            Option<ohl_structures_fe::Solution>,
+        ),
+        String,
+    >,
     /// The plugin's usage and its note, once it was called.
     checked: Option<Result<(Vec<ohl_structures_fe::MemberUsage>, String), String>>,
 }
@@ -258,30 +266,46 @@ impl Analyses {
                 }
             }
         }
+        // The plugins the models' files name for their member check, found
+        // now (2026-11-18): every solve of these models — the checks, the
+        // line's coupled solves, the reference state — caps a tension-only
+        // member's compression by the plugin's own capacity.
+        out.find_plugins_now(types);
         out
     }
 
-    /// Looks for the plugins the models' files name for their member
-    /// check (`Plugins/` beside each type's file, then the user's plugin
-    /// folder); true: at least one model names a plugin. One not found
-    /// refuses that model's check, the plugin named.
-    pub fn find_plugins(&mut self, types: &StructureLibrary) -> bool {
-        let mut any = false;
+    /// Looks for the plugins the models' files name for their member check
+    /// (a bundled plugin in OpenOHL's own folder, else `Plugins/` beside
+    /// each type's file, then the user's plugin folder), with the
+    /// structure's parameter file for it, and asks each for its members'
+    /// compression capacities ([`ohl_member_check::prepare`]). One not found
+    /// or failing refuses that model's check, the plugin named.
+    fn find_plugins_now(&mut self, types: &StructureLibrary) {
         for (key, model) in &mut self.models {
             let Ok(m) = model else { continue };
             let Some(p) = &mut m.capacity_plugin else {
                 continue;
             };
-            any = true;
             let dir = types.path(&key.0).and_then(Path::parent);
-            match ohl_member_check::resolve(p, &ohl_member_check::roots(dir)) {
-                Ok(found) => p.dir = Some(found),
-                Err(e) => {
-                    self.plugin_errors.insert(key.clone(), e);
-                }
+            let found = ohl_member_check::resolve(p, &ohl_member_check::roots(dir))
+                .and_then(|found| {
+                    p.dir = Some(found);
+                    p.parameters = ohl_member_check::parameters(&p.plugin, dir)?;
+                    Ok(())
+                })
+                .and_then(|()| ohl_member_check::prepare(m));
+            if let Err(e) = found {
+                self.plugin_errors.insert(key.clone(), e);
             }
         }
-        any
+    }
+
+    /// Whether at least one model names a plugin for its member check
+    /// (found when the models were read, [`Analyses::load`]).
+    pub fn find_plugins(&mut self, _types: &StructureLibrary) -> bool {
+        self.models
+            .values()
+            .any(|m| m.as_ref().is_ok_and(|m| m.capacity_plugin.is_some()))
     }
 
     /// The first pass of a run with plugins on (solve and keep) or off.
@@ -313,7 +337,8 @@ impl Analyses {
                             name: &k.case,
                             strength: k.strength,
                             self_weight: k.self_weight,
-                            solution: k.solution.as_ref().ok()?,
+                            solution: &k.solution.as_ref().ok()?.0,
+                            moved: k.solution.as_ref().ok()?.1.as_ref(),
                         })
                     })
                     .collect();
@@ -573,7 +598,22 @@ impl Analyses {
         let solved = if !by_plugin {
             solve()
         } else if collecting {
-            let solution = solve().map(|(s, _)| s);
+            // Both solves kept (with foot movements): the plugin takes each
+            // member's larger usage of the two, as the core's methods do.
+            let budget = ohl_structures_fe::default_budget();
+            let solution = ohl_structures_fe::analyse(model, &loads, case.strength, &budget)
+                .map_err(|e| ohl_structures_fe::refusal_text(model, &e))
+                .and_then(|(plain, _)| match &moved_loads {
+                    None => Ok((plain, None)),
+                    Some(moved) => ohl_structures_fe::analyse(model, moved, case.strength, &budget)
+                        .map(|(s, _)| (plain, Some(s)))
+                        .map_err(|e| {
+                            format!(
+                                "with its foot movements: {}",
+                                ohl_structures_fe::refusal_text(model, &e)
+                            )
+                        }),
+                });
             self.plugin_runs
                 .lock()
                 .expect("not poisoned")
@@ -604,13 +644,15 @@ impl Analyses {
                 ) {
                     (Err(e), _) => Err(e),
                     (Ok(_), Some(Err(e))) => Err(e),
-                    (Ok(s), Some(Ok((usage, note)))) => {
+                    (Ok((plain, moved)), Some(Ok((usage, note)))) => {
+                        let s = moved.unwrap_or(plain);
                         plugin_note = Some(note);
                         Ok((s, usage))
                     }
                     // No plugin was called: the core's own words (every
                     // member not checked).
-                    (Ok(s), None) => {
+                    (Ok((plain, moved)), None) => {
+                        let s = moved.unwrap_or(plain);
                         let usage = ohl_structures_fe::member_usage(model, &s, case.strength);
                         Ok((s, usage))
                     }

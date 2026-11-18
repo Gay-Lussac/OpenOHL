@@ -1,7 +1,11 @@
 # Gusset plates and their welds
 
 Implemented in `crates/ohl-structures-fe/src/plates.rs` (`bolted`, `weld`,
-`contact_width`, `PlateCheck`, `Checked::governing`) with the geometry and
+`PlateCheck`, `Checked::governing`; ASCE 10-97) and, for SIA 263:2013, in
+its bundled plugin since 2026-11-18 (`plugins/codes/sia263/src/joints.rs`,
+the same checks moved there: `bolted`, `weld`, `contact_width`; reached
+through the plugin interface `joint-check`, one call with every part and
+case) with the geometry and
 forces of `apps/structure/ohl-structure-link/src/plate_checks.rs`
 (`plate_plans`, `plate_usage`, the weld's force, the distances to the
 plate's edge), run with every case of OHL-Structure's analysis (Results ›
@@ -223,8 +227,9 @@ usage over the cases and the governing case.
 
 ## Validation
 
-Unit tests in `crates/ohl-structures-fe/src/plates.rs`, by hand on
-invented data:
+Unit tests in `crates/ohl-structures-fe/src/plates.rs` (ASCE 10-97) and in
+the plugin `plugins/codes/sia263` (`src/tests.rs`: SIA 263's, moved with
+the code), by hand on invented data:
 
 - `asce10_plate_by_hand`: four M16 bolts (hole 18 mm, punched 19.6 mm)
   in two lines 60 mm apart, two to a line 50 mm apart, 40 mm to the

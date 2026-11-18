@@ -365,6 +365,13 @@ fn main() -> std::process::ExitCode {
                 app.quickbar = q;
             }
             app.plugins = plugins::Plugins::load(cc.storage, plugins::Plugins::default_user_dir());
+            // The design codes bundled as plugins (SIA 263:2013, 2026-11-18): one
+            // that does not load is an error at start, never another code in
+            // its place.
+            if let Err(e) = ohl_loads::check_bundled_plugins() {
+                log::error!("{e}");
+                app.notices.observe(&Some((e, true)), 0.0);
+            }
             app.ui_scale = style::load_scale(cc.storage);
             ohl_ui::snap_marker::Settings::load(cc.storage, app::SNAP_MARKER_KEY).set(&cc.egui_ctx);
             if let Some(st) = cc.storage {

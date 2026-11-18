@@ -1,0 +1,8 @@
+[plugin]
+name = "sia263"
+version = "0.1.0"
+description = "SIA 263:2013 (Construction en acier): members, joints and bolt distances of lattice structures — bundled with OpenOHL"
+sdk = "0.3"
+tier = "wasm"
+entry = "target/wasm32-wasip2/release/sia263.wasm"
+extension-points = ["member-check"]

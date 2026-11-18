@@ -208,6 +208,19 @@ fn main() -> std::process::ExitCode {
             if let Some(f) = &args.file {
                 app.open(f);
             }
+            // The design codes bundled as plugins (SIA 263:2013, 2026-11-18): one
+            // that does not load is an error at start, never another code in
+            // its place.
+            if let Err(e) = ohl_structure_link::plugin_check::check_bundled() {
+                log::error!("{e}");
+                app.message = Some((
+                    match app.message.take() {
+                        Some((m, _)) => format!("{e}\n{m}"),
+                        None => e,
+                    },
+                    true,
+                ));
+            }
             Ok(Box::new(app))
         }),
     );

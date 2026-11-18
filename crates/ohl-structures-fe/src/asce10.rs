@@ -275,7 +275,7 @@ fn angle_legs(s: &Section) -> Option<(f64, f64, f64)> {
 /// The leg of the member an end bolts onto directly (lapped, on either
 /// face or nested; 2026-11-05): the bolts bear on it too.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct OntoLeg {
+pub struct OntoLeg {
     /// The member's id.
     pub id: String,
     /// Its leg's thickness, m.
@@ -288,7 +288,7 @@ pub(crate) struct OntoLeg {
 /// (given or worked out) whose thickness is known (its design data's,
 /// else its angle's); only at an end with a connection, none for a
 /// continuous end.
-pub(crate) fn onto_leg(model: &Model, idx: usize, end: usize) -> Option<OntoLeg> {
+pub fn onto_leg(model: &Model, idx: usize, end: usize) -> Option<OntoLeg> {
     // Only at an end with a connection: a member without stays as before.
     let e = model.members[idx].design.ends[end].as_ref()?;
     if e.continuous.is_some() || e.kind.is_some_and(|k| k != ConnectionKind::Bolted) {
