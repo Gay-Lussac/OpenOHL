@@ -48,6 +48,96 @@ pub const BOLT_FILE_VERSION: u32 = 1;
 /// The folder of bolt libraries beside a structure.
 pub const BOLTS_FOLDER: &str = "Bolts";
 
+/// How the bolt tools, the bolt layout form, the plate outlines and the
+/// joint layout name the default minimums wherever they show them (owner
+/// 2026-11-18: "said everywhere as default minimum, assumed, not a
+/// code's").
+pub const DEFAULT_MINIMUM_WORDS: &str = "default minimum, assumed, not a code's";
+
+/// The default minimum bolt distances of a structure, in bolt diameters
+/// (owner 2026-11-18, third round: "ok but put a default minimum"): what
+/// the bolt tools, the bolt layout form, the plate outlines and the joint
+/// layout keep where no design code gives minimums — the simple check, a
+/// plugin without minimum distances, or one that returns none for the
+/// bolt. Never in place of a code's own minimums, and not a code's:
+/// assumed, said so wherever shown. A structure file's
+/// `[default_bolt_minimums]` (version 18, the file raised only when one is
+/// given); every key optional.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DefaultBoltMinimums {
+    /// End distance (from where the steel stops to a bolt), bolt
+    /// diameters.
+    #[serde(default = "DefaultBoltMinimums::end_start")]
+    pub end: f64,
+    /// Edge distance (from a bolt to the leg's or plate's free edge
+    /// across the force), bolt diameters.
+    #[serde(default = "DefaultBoltMinimums::edge_start")]
+    pub edge: f64,
+    /// Spacing (between two bolts), bolt diameters.
+    #[serde(default = "DefaultBoltMinimums::spacing_start")]
+    pub spacing: f64,
+}
+
+impl DefaultBoltMinimums {
+    /// The starting end distance: 1.5 bolt diameters (what the plate
+    /// outlines and the joints' drawing already assumed).
+    pub const END: f64 = 1.5;
+    /// The starting edge distance: 1.5 bolt diameters.
+    pub const EDGE: f64 = 1.5;
+    /// The starting spacing: 3 bolt diameters (what the joints' drawing
+    /// already assumed for a pitch not given).
+    pub const SPACING: f64 = 3.0;
+
+    fn end_start() -> f64 {
+        Self::END
+    }
+
+    fn edge_start() -> f64 {
+        Self::EDGE
+    }
+
+    fn spacing_start() -> f64 {
+        Self::SPACING
+    }
+
+    /// Each value a number above 0. Err: which is not.
+    pub fn validate(&self) -> Result<(), String> {
+        for (v, what) in [
+            (self.end, "end"),
+            (self.edge, "edge"),
+            (self.spacing, "spacing"),
+        ] {
+            if !(v.is_finite() && v > 0.0) {
+                return Err(format!(
+                    "default_bolt_minimums: {what} must be a number of bolt diameters above 0"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The minimums for a bolt of diameter `d`, m: end, spacing, edge.
+    pub fn of(&self, d: f64) -> [f64; 3] {
+        [self.end * d, self.spacing * d, self.edge * d]
+    }
+
+    /// The clause words of each: "1.5 d" (end, spacing, edge).
+    pub fn clauses(&self) -> [String; 3] {
+        [self.end, self.spacing, self.edge].map(|x| format!("{x} d"))
+    }
+}
+
+impl Default for DefaultBoltMinimums {
+    fn default() -> Self {
+        Self {
+            end: Self::END,
+            edge: Self::EDGE,
+            spacing: Self::SPACING,
+        }
+    }
+}
+
 /// A bolt of a library.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

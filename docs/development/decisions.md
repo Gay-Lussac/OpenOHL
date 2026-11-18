@@ -8,6 +8,63 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (third round)
+
+**The bolt tools' force basis into the code plugins; default minimum bolt
+distances; Member details follow the parameter file; provisional bolts
+keep a tower at level 3 everywhere** (owner, 2026-11-18, on round 2's
+open points: "1 yes go ahead, 2 ok but put a default minimum, 3 yes fix
+it"; the core change for provisional bolts approved the same day; built,
+in active development, not approved yet).
+
+- **The force basis is the plugin's own.** Without an analysis the bolt
+  tools' minimum distances take the force one bolt transmits as the
+  bolt's design shear capacity; before, the core worked it out by ASCE
+  10-97 4.3.2 for every code (`member_ends::bolt_shear_per_bolt`). Now
+  each design-code plugin works out its own through an additive export
+  `bolt-distances-full` (`bolt-distances`' records with the end's merged
+  bolts, the analysis' force per bolt and the parameter file; back the
+  force taken and where it comes from). **ASCE 10-97** (`asce10`): the
+  same formula moved — compared before the core's use was removed on the
+  shipped examples and two conversions of a real line's towers plus three
+  level-4 towers (146 + 3 structure files and the 2 examples), every
+  member end in the leg and in two plates, with and without an analysis
+  force: 4 013 640 rows, every distance, force and clause identical to
+  the last bit. **SIA 263** (`sia263`): its own Table 16 resistance over
+  γ_M2 (the parameter file's), smaller than ASCE 10-97's (0.80 of it for a
+  given capacity, 0.65 for f_ub alone with the factor 0.5); Table 17's
+  minimums take no force, so **no distance changed** (the same 4 013 640
+  rows: 2 113 356 show the smaller force, 0 a changed distance). A plugin
+  built without the new export is asked as before (the analysis' force,
+  else ASCE 10-97 4.3.2's bolt shear — `bolt_shear_per_bolt` kept for
+  that alone, `bolt_rules::shear_without_plugin`). Interface version
+  stays 0.3 (additive).
+- **Default minimum bolt distances** where no code gives any (the simple
+  check, a plugin without `bolt-distances`, one that returns none): end
+  and edge 1.5, spacing 3 bolt diameters to start with (what the plate
+  outlines and the joints' drawing already assumed), editable in
+  OHL-Structure's Design › Analysis (`[default_bolt_minimums]`, structure
+  file version 18, raised only when given). The bolt tools, the bolt
+  layout form, the plate outlines and the joint layout use them, said
+  everywhere as "default minimum, assumed, not a code's" with why; never
+  in place of a code's own minimums. They take no force: NOT ON THE SAFE
+  SIDE where a code's force-dependent minimum would be larger (said with
+  a plugin that gives none; theory: joint plates). The joint layout's
+  provisional bolts take the default spacing and end distance for a pitch
+  and end distance not given, and the default edge distance where no code
+  gives one — before, a given edge distance of the end was taken first
+  in the simple check.
+- **Member details and the bolt tools** in OHL-Structure are worked out
+  again when only `Plugins/<plugin>.toml` changes (their caches keyed on
+  the file's content; tested with SIA 263's factors).
+- **Provisional bolts keep a tower at level 3 in the core**
+  (`StructureType::provisional_bolts`, reading only the joint layout
+  record's `provisional` list; `detail()`, `level_note()`): OHL-Design's
+  structure picker, properties and type workspace, `ohl structures fe` and
+  the line's calculation level 4 give level 3 and say why;
+  OHL-Structure's own workaround (its run reading the file without
+  `joint_details`) is gone. No file format change; older files unchanged.
+
 ## 2026-11-18 (second round)
 
 **ASCE 10-97, the default member check, moved out of the core into a

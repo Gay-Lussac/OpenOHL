@@ -469,9 +469,14 @@ line offered (mm from the heel; the nearest gauge that keeps the code's
 distances, up to three lines) and why. **Add the line and the bolt**
 writes both (one undo step); **Cancel** or **Escape** writes nothing.
 
-**Good to know.** With the simple check (no design code) the bolt goes on
-the nearest line, along to 5 mm. Bolts that break the code are drawn red,
-the clause on hover.
+**Good to know.** Where the design code gives no minimum distances (the
+simple check, a plugin without them) the bolt is placed by the
+structure's **default minimums** — end and edge 1.5, spacing 3 bolt
+diameters to start with, set in Design › Analysis — said as *default
+minimum, assumed, not a code's* (2026-11-18). Bolts that break the
+minimums are drawn red, the clause on hover. Without an analysis the
+force per bolt the code's minimums take is the code plugin's own bolt
+capacity (ASCE 10-97 4.3.2, SIA 263 Table 16).
 
 ### Move bolt
 

@@ -207,8 +207,13 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
                 s.structure_type
                     .as_deref()
                     .and_then(|t| model.types.as_ref()?.0.get(t))
-                    .map_or("—".into(), |t| {
-                        format!("{} — {}", t.detail().level(), t.detail().name())
+                    .map_or("—".into(), |t| match t.level_note() {
+                        // Provisional bolts hold a tower at level 3
+                        // (owner 2026-11-18): said.
+                        Some(why) => {
+                            format!("{} — {} ({why})", t.detail().level(), t.detail().name())
+                        }
+                        None => format!("{} — {}", t.detail().level(), t.detail().name()),
                     }),
             ),
             (

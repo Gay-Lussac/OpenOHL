@@ -580,6 +580,51 @@ pub(crate) fn shear_factor(grade: Option<crate::model::Grade>) -> (f64, bool) {
 /// of Table 16).
 const ROOT_AREA: f64 = 0.6;
 
+/// The force basis of the bolt tools' minimum distances without an
+/// analysis (third round, 2026-11-18; before, ASCE 10-97's bolt shear
+/// from the core for every code): the design shear resistance of one bolt
+/// by Table 16, all its shear planes, N, as the member check takes it
+/// ([`end_check`]) — a given capacity (through the shank when the threads
+/// are said to be out of the shear plane) over γ_M2, else F_v,Rd = 0.6
+/// (73) or 0.5 (74; a grade not known: 0.5) f_ub A_s/γ_M2 with A_s taken
+/// as 0.6 of the gross area; and the words of where it comes from. None
+/// without a capacity or f_ub. (Table 17's minimum distances take no
+/// force: this changes the force shown with them, not the distances.)
+pub fn bolt_shear(
+    d: f64,
+    planes: u32,
+    shear: Option<f64>,
+    shank: Option<f64>,
+    threads_in: Option<bool>,
+    fub: Option<f64>,
+    grade: Option<crate::model::Grade>,
+) -> Option<(f64, String)> {
+    let area = std::f64::consts::PI * d.powi(2) / 4.0;
+    let out = threads_in == Some(false);
+    let (per_plane, words) = match (shank.filter(|_| out), shear, fub) {
+        (Some(v), _, _) | (None, Some(v), _) => (
+            v / gamma_m2(),
+            format!(
+                "the bolt's design shear resistance, its given capacity / γ_M2 {} (SIA 263 Table 16)",
+                gamma_m2()
+            ),
+        ),
+        (None, None, Some(fub)) => {
+            let (k, _) = shear_factor(grade);
+            (
+                k * fub * ROOT_AREA * area / gamma_m2(),
+                format!(
+                    "the bolt's design shear resistance, SIA 263 Table 16 ({}): {k} f_ub A_s / γ_M2 {}, A_s 0.6 of the gross",
+                    if k == 0.6 { "73" } else { "74" },
+                    gamma_m2()
+                ),
+            )
+        }
+        _ => return None,
+    };
+    Some((f64::from(planes) * per_plane, words))
+}
+
 /// One end's connection as the check takes it.
 struct EndCheck {
     /// The bolts' shear, N.

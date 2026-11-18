@@ -12,7 +12,14 @@
 //!   `joint-check` export, or one that fails: every joint part is
 //!   [`not_checked_by`] the plugin, without a usage. A plugin without
 //!   `bolt-distances`: no minimum distances, said ([`bolt_rules`]'s
-//!   error) — not ASCE 10-97's, not SIA 263's.
+//!   error) — not ASCE 10-97's, not SIA 263's (the bolt tools then keep
+//!   the structure's default minimums, said as not a code's).
+//! - **The force per bolt** without an analysis is the plugin's own
+//!   (third round, 2026-11-18): its `bolt-distances-full` export gets the
+//!   end's bolts and the structure's parameter file and works out the
+//!   bolt's design shear capacity by its code. A plugin built without it
+//!   gets the bolt's shear capacity as ASCE 10-97 4.3.2 gives it, as
+//!   before ([`ohl_structures_fe::bolt_rules::shear_without_plugin`]).
 //! - **One call per structure** for the joint parts, with every load
 //!   case ([`check_joints`]), with the structure's parameter file for the
 //!   plugin when it has the `joint-check-full` export (2026-11-18), else by
@@ -30,12 +37,13 @@ use std::sync::Mutex;
 
 use ohl_plugins::bolt_distances as dist;
 pub use ohl_plugins::bolt_distances::DistanceInput;
+use ohl_plugins::bolt_distances_full as dist_full;
 use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
 use ohl_plugins::joint_check_full as full;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
-use ohl_structures_fe::bolt_rules::{Basis, BoltRules};
+use ohl_structures_fe::bolt_rules::{Basis, BoltRules, Force};
 use ohl_structures_fe::model::PluginMethod;
 use ohl_structures_fe::plates::{BoltGroup, PlateSteel, WeldInput};
 
@@ -291,12 +299,83 @@ pub fn minimum_distances(
         .ok_or_else(|| none("its method gives none for this bolt".to_owned()))
 }
 
+/// The minimum distances of one bolt with its bolts and the parameter
+/// file, by the text of the input (kept for the session).
+type FullDistances =
+    HashMap<(PathBuf, String, String), Result<Option<dist_full::Distances>, String>>;
+
+static FULL_DISTANCES: Mutex<Option<FullDistances>> = Mutex::new(None);
+
+/// The input's every value, exactly (the cache's key).
+fn full_key(i: &dist_full::DistanceInput) -> String {
+    let bits = |x: Option<f64>| x.map_or("-".to_owned(), |v| format!("{:x}", v.to_bits()));
+    let bolts = i.bolts.as_ref().map_or("-".to_owned(), |b| {
+        format!(
+            "{}|{}|{}|{}|{}|{:?}|{}",
+            b.count,
+            b.shear_planes,
+            bits(b.shear_capacity),
+            bits(b.shear_capacity_shank),
+            bits(b.ultimate),
+            b.threads_in_shear,
+            b.grade
+        )
+    });
+    format!(
+        "{}|{}|{}|{}|{bolts}|{}|{}|{}",
+        bits(Some(i.diameter)),
+        bits(Some(i.thickness)),
+        bits(i.ultimate),
+        bits(i.analysis_force),
+        i.sheared_edge,
+        i.redundant,
+        i.parameters
+    )
+}
+
+/// The plugin's minimum distances for `input` by its `bolt-distances-full`
+/// export (third round, 2026-11-18). Ok(None): the plugin has no such
+/// export (ask `bolt-distances`). Err: why there are none — "no minimum
+/// distances from the plugin: …".
+pub fn minimum_distances_full(
+    p: &PluginMethod,
+    input: &dist_full::DistanceInput,
+) -> Result<Option<dist_full::Distances>, String> {
+    let none = |why: String| format!("no minimum distances from {}: {why}", p.plugin);
+    let dir = installed(p).map_err(none)?;
+    let key = (dir.clone(), p.method.clone(), full_key(input));
+    let mut kept = FULL_DISTANCES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let given = kept
+        .get_or_insert_with(HashMap::new)
+        .entry(key)
+        .or_insert_with(|| {
+            let host = crate::host().map_err(|e| format!("the plugin host does not start: {e}"))?;
+            match host.minimum_distances_full(&dir, &p.method, input) {
+                Ok(Some(Some(d))) => Ok(Some(d)),
+                Ok(Some(None)) => Err("its method gives none for this bolt".to_owned()),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e.to_string()),
+            }
+        })
+        .clone();
+    given.map_err(none)
+}
+
 /// The minimum distances at member `idx`'s end `end` of `model` (whose
 /// file names a plugin's method) from that plugin, as the bolt tools take
 /// them (arguments as [`ohl_structures_fe::bolt_rules::rules_in`]). Err:
 /// the words to show instead — "no minimum distances from the plugin: …" —
 /// never another code's values. None: the model names no plugin, or the
 /// end has no bolts of known diameter.
+///
+/// The plugin's `bolt-distances-full` first (third round, 2026-11-18): the
+/// end's bolts and the structure's parameter file sent, the force per bolt
+/// the analysis' or else the plugin's own (the bolt's design shear
+/// capacity by its code); a plugin without it by `bolt-distances` with
+/// the analysis' force, else the bolt's shear capacity as ASCE 10-97 4.3.2
+/// gives it (as before; said).
 pub fn bolt_rules(
     model: &Model,
     idx: usize,
@@ -309,12 +388,92 @@ pub fn bolt_rules(
         diameter,
         thickness,
         ultimate,
-        force,
+        analysis,
+        bolts,
         leg,
         root,
         sheared,
         redundant,
     } = ohl_structures_fe::bolt_rules::basis(model, idx, end, force, part)?;
+    let input = dist_full::DistanceInput {
+        diameter,
+        thickness,
+        ultimate,
+        analysis_force: analysis,
+        bolts: bolts.map(|b| dist_full::Bolts {
+            count: b.count,
+            shear_planes: b.shear_planes,
+            shear_capacity: b.shear_capacity,
+            shear_capacity_shank: b.shear_capacity_shank,
+            ultimate: b.ultimate,
+            threads_in_shear: b.threads_in_shear,
+            grade: b.grade.unwrap_or_default(),
+        }),
+        sheared_edge: sheared,
+        redundant,
+        parameters: p
+            .parameters
+            .as_ref()
+            .map(|x| x.1.clone())
+            .unwrap_or_default(),
+    };
+    // A bundled code by its name in files ("asce10-97"), another plugin's
+    // method with its plugin.
+    let code = p.alias().map_or_else(
+        || format!("{} of the plugin {}", p.method, p.plugin),
+        str::to_owned,
+    );
+    let rules = |end_d: f64,
+                 spacing: f64,
+                 edge: f64,
+                 clauses: Vec<String>,
+                 force: Force,
+                 force_basis: String| {
+        let mut clauses = clauses.into_iter();
+        let mut next = || clauses.next().unwrap_or_default();
+        BoltRules {
+            code: code.clone(),
+            end: end_d,
+            spacing,
+            edge,
+            clauses: [next(), next(), next()],
+            force,
+            force_basis,
+            diameter,
+            leg,
+            root,
+            sheared,
+            assumed: None,
+        }
+    };
+    let full = match minimum_distances_full(p, &input) {
+        Err(e) => return Some(Err(e)),
+        Ok(full) => full,
+    };
+    if let Some(d) = full {
+        let force = match (analysis, d.bolt_force) {
+            (Some(a), _) => Force::Analysis(a),
+            (None, Some(v)) => Force::Capacity(v),
+            (None, None) => Force::Unknown,
+        };
+        return Some(Ok(rules(
+            d.end,
+            d.spacing,
+            d.edge,
+            d.clauses,
+            force,
+            d.force_basis,
+        )));
+    }
+    // A plugin built against `bolt-distances` alone: the force as before.
+    let force = match (
+        analysis,
+        ohl_structures_fe::bolt_rules::shear_without_plugin(model, idx, end),
+    ) {
+        (Some(a), _) => Force::Analysis(a),
+        (None, Some(v)) => Force::Capacity(v),
+        (None, None) => Force::Unknown,
+    };
     let input = dist::DistanceInput {
         diameter,
         thickness,
@@ -324,24 +483,19 @@ pub fn bolt_rules(
         redundant,
     };
     Some(minimum_distances(p, &input).map(|d| {
-        let mut clauses = d.clauses.into_iter();
-        let mut next = || clauses.next().unwrap_or_default();
-        BoltRules {
-            // A bundled code by its name in files ("asce10-97"), another
-            // plugin's method with its plugin.
-            code: p.alias().map_or_else(
-                || format!("{} of the plugin {}", p.method, p.plugin),
-                str::to_owned,
-            ),
-            end: d.end,
-            spacing: d.spacing,
-            edge: d.edge,
-            clauses: [next(), next(), next()],
+        rules(
+            d.end,
+            d.spacing,
+            d.edge,
+            d.clauses,
             force,
-            diameter,
-            leg,
-            root,
-            sheared,
-        }
+            if matches!(force, Force::Capacity(_)) {
+                "the bolt's shear capacity as ASCE 10-97 4.3.2 gives it (the plugin works out \
+                 none of its own)"
+                    .to_owned()
+            } else {
+                String::new()
+            },
+        )
     }))
 }

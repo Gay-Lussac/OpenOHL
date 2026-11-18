@@ -441,6 +441,41 @@ fn level_4_is_a_full_design_with_every_end_detailed() {
     let on = parse(&format!("joint_details = true\n{all}")).unwrap();
     assert!(on.joint_details_taken());
     assert_eq!(on.joint_details_not_applied(), None);
+    // Provisional bolts (the joint layout's record lists D1 at N4; owner
+    // 2026-11-18, third round): level 3 in the core, said, the joint
+    // details not taken; the bolt confirmed (the list empty): level 4.
+    let record = |list: &str| {
+        format!(
+            "joint_details = true\n{all}\n[[generator]]\nkind = \"joint_layout\"\nid = \
+             \"joint-layout\"\nprovisional = [{list}]\n"
+        )
+    };
+    let held = parse(&record("[\"D1\", \"N4\"]")).unwrap();
+    assert_eq!(held.provisional_bolts(), vec![("D1".into(), "N4".into())]);
+    assert_eq!(held.detail(), Detail::Design);
+    assert!(!held.joint_details_taken());
+    let why = held.level_note().unwrap();
+    assert!(
+        why.contains("1 member end(s) with provisional bolts"),
+        "{why}"
+    );
+    let not = held.joint_details_not_applied().unwrap();
+    assert!(
+        not.contains("provisional bolts") && not.contains("simple form"),
+        "{not}"
+    );
+    let confirmed = parse(&record("")).unwrap();
+    assert!(confirmed.provisional_bolts().is_empty());
+    assert_eq!(confirmed.detail(), Detail::Joints);
+    assert!(confirmed.joint_details_taken());
+    assert_eq!(confirmed.level_note(), None);
+    // Below level 4 for another reason: no note about bolts.
+    let partial = parse(&format!(
+        "{most}\n[[generator]]\nkind = \"joint_layout\"\nprovisional = [[\"D1\", \"N4\"]]\n"
+    ))
+    .unwrap();
+    assert_eq!(partial.detail(), Detail::Design);
+    assert_eq!(partial.level_note(), None);
     // A modelling member (check = false) needs none.
     let modelling = most.replace(
         "[\"N4\", \"N2\"]\nsection = \"S\"",

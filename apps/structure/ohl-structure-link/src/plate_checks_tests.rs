@@ -128,6 +128,79 @@ fn a_changed_factor_changes_the_joint_check_and_member_details() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The bolt tools' force per bolt without an analysis is the plugin's own
+/// (third round, 2026-11-18): SIA 263 (the bundled `sia263`) its bolt's
+/// design shear resistance by Table 16 with γ_M2 — the parameter file's
+/// when there is one (1.5 instead of 1.25: the force × 1.25/1.5) —, ASCE
+/// 10-97 (`asce10`) 4.3.2's; Table 17's minimum distances the same for
+/// either force; with an analysis its force per bolt.
+#[test]
+fn the_force_basis_is_the_plugins_own() {
+    if !sia263_built() || !asce10_built() {
+        return;
+    }
+    let _guard = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    use ohl_structures_fe::bolt_rules::Force;
+    // D1's two bolts of grade 8.8, f_ub 800 MPa (no shear capacity given).
+    let bolted = welded().replace(
+        "bolts = { diameter = \"16 mm\", count = 1 }",
+        "bolts = { diameter = \"16 mm\", count = 2, ultimate = \"800 MPa\", grade = \"8.8\" }",
+    );
+    let sia = format!("{bolted}\n[analysis]\ncapacity = \"sia263-2013\"\n");
+    let dir = std::env::temp_dir().join(format!("ohl-sia263-basis-{}", std::process::id()));
+    let plugins = dir.join(ohl_member_check::BESIDE);
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(
+        plugins.join("sia263.toml"),
+        "[resistance]\ngamma_m2 = 1.5\n",
+    )
+    .unwrap();
+    let rules = |text: &str, dir: Option<&std::path::Path>, force: Option<f64>| {
+        crate::bolt_rules_in(
+            text,
+            &library(),
+            &Default::default(),
+            "D1",
+            "N2",
+            force,
+            dir,
+        )
+        .expect("the plugin's rules")
+    };
+    let (standard, factored) = (rules(&sia, None, None), rules(&sia, Some(&dir), None));
+    let (Force::Capacity(a), Force::Capacity(b)) = (standard.force, factored.force) else {
+        panic!("{standard:?} {factored:?}")
+    };
+    assert!((b / a - 1.25 / 1.5).abs() < 1e-12, "{a} {b}");
+    assert!(
+        standard.force_basis.contains("SIA 263 Table 16"),
+        "{}",
+        standard.force_basis
+    );
+    assert!(
+        standard.words().contains("SIA 263 Table 16"),
+        "{}",
+        standard.words()
+    );
+    assert_eq!(
+        (standard.end, standard.spacing, standard.edge),
+        (factored.end, factored.spacing, factored.edge)
+    );
+    // ASCE 10-97: its own bolt shear (4.3.2), larger than SIA 263's.
+    let asce = rules(&bolted, None, None);
+    let Force::Capacity(c) = asce.force else {
+        panic!("{asce:?}")
+    };
+    assert!(asce.force_basis.contains("ASCE 10-97 4.3.2"), "{asce:?}");
+    assert!(c > a, "{c} {a}");
+    // With an analysis: its force per bolt (D1's two bolts).
+    let analysed = rules(&sia, None, Some(-40e3));
+    assert_eq!(analysed.force, Force::Analysis(20e3));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Under SIA 263 — the bundled plugin `sia263`'s joint check since
 /// 2026-11-18, one call with every part and case — each member's bolts are
 /// checked in its plate (bearing, block shear, sections, distances) and
@@ -441,7 +514,21 @@ fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {
             "{row:?}"
         );
     }
-    assert!(crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None).is_none());
+    // The bolt tools: the structure's default minimums (third round,
+    // 2026-11-18), said as not a code's, with why.
+    let r = crate::bolt_rules(&text, &library(), &Default::default(), "D1", "N2", None)
+        .expect("the default minimums");
+    assert_eq!(r.code, ohl_structures::bolts::DEFAULT_MINIMUM_WORDS);
+    assert!((r.end - 1.5 * r.diameter).abs() < 1e-12);
+    assert!((r.edge - 1.5 * r.diameter).abs() < 1e-12);
+    assert!((r.spacing - 3.0 * r.diameter).abs() < 1e-12);
+    let words = r.words();
+    assert!(
+        words.starts_with("default minimum, assumed, not a code's: end ≥")
+            && words.contains("no minimum distances from member-check-only")
+            && words.contains("NOT ON THE SAFE SIDE"),
+        "{words}"
+    );
     assert_eq!(
         crate::no_bolt_rules(&text).as_deref(),
         Some(

@@ -138,6 +138,8 @@ impl LayoutWindow {
                 lib.and_then(|b| b.drawn()[0]),
             )),
             welded: self.welded,
+            // The structure file's default minimums, taken by the run.
+            defaults: Default::default(),
         }
     }
 
@@ -490,7 +492,10 @@ impl StructureApp {
                             "Bolt where an end has none",
                             "Two in one gauge line, provisional (marked so) until the code \
                              step chooses the bolts; a tower with provisional bolts stays at \
-                             level 3.",
+                             level 3. Their pitch and end distance, and the edge distance a \
+                             bolt keeps in the flange where the design code gives none, are \
+                             the structure's default minimums (Design › Analysis; default \
+                             minimum, assumed, not a code's).",
                         );
                         ui.horizontal(|ui| {
                             let text = w.bolt.clone().unwrap_or_else(|| "typed".into());

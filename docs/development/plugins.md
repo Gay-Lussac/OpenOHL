@@ -968,6 +968,20 @@ before; the method names are `member-check`'s):
   a sheared or rolled edge and whether the member is a redundant, the
   minimum end distance, spacing and edge distance with their clauses
   (and optionally the hole's diameter).
+- `bolt-distances-full` (third round, 2026-11-18; additive, found by its
+  export name, called before `bolt-distances`) —
+  `minimum-distances-full(method, distance-input) ->
+  result<option<distances>, string>`: `bolt-distances`' input with the
+  end's bolts (`bolts`: count, shear planes, the given shear capacities
+  through the threads and the shank, f_ub, whether the threads are in the
+  shear plane, the grade), the analysis' force per bolt
+  (`analysis-force`; none: no analysis) and the structure's parameter
+  file (`parameters`); back the same minimums with the force per bolt
+  they took (`bolt-force`) and where it comes from (`force-basis`).
+  Without an analysis **the plugin works out the bolt's own design shear
+  capacity by its code** — before, OpenOHL sent ASCE 10-97 4.3.2's for
+  every code. A plugin built without it is asked by `bolt-distances` as
+  before (the analysis' force, else ASCE 10-97 4.3.2's bolt shear, said).
 
 **Never another code in their place.** With a structure whose method is
 a plugin's: the plates', covers', welds' and bolt groups' rows come from
@@ -979,9 +993,12 @@ the *plates* check lists the cases as not run — no silent ASCE 10-97.
 The bolt tools (Joint details, the bolt layout, the Detail view's tools)
 take their minimum distances from `bolt-distances`
 (`ohl_member_check::joints::bolt_rules`; asked once per different bolt
-and part in a session); without it there are none and the bolt layout
-says **"no minimum distances from <plugin>: …"** and that the layout is
-not checked against them. Member details' live *Resistance* shows the
+and part in a session); without it there are none of the code's: the
+bolt tools keep the structure's **default minimums** (third round,
+2026-11-18: `[default_bolt_minimums]`, end and edge 1.5, spacing 3 bolt
+diameters to start with) and say **"default minimum, assumed, not a
+code's … no minimum distances from <plugin>: …; NOT ON THE SAFE SIDE
+where the code's own minimums would be larger"**. Member details' live *Resistance* shows the
 plugin's capacities, asked live without a load case (2026-11-18; before:
 "resistance: from <plugin> after a run"), or **"resistance: from
 <plugin> …"** with why there are none — never another code's values.
@@ -1066,8 +1083,11 @@ further optional export carries them:
   (`ohl_member_check::with_parameters`: OHL-Structure passes the
   structure's folder, `member_capacity_in`, `plate_plans_in`,
   `bolt_rules_in`; the old forms without a folder take the method's own
-  values, said). The bolt tools' minimum distances get no parameters
-  (neither bundled code's depend on them; a plugin whose would: open).
+  values, said). Since the third round (2026-11-18) it reaches the bolt
+  tools' minimum distances too, through `bolt-distances-full` (the
+  plugin's own bolt capacity: SIA 263's γ_M2), and OHL-Structure works
+  Member details and the bolt tools out again when only that file
+  changes (their caches keyed on its content).
 - **Foot movements** (`ohl_member_check::Solved::moved`): a case solved
   with the structure's measured foot movements is sent twice in the same
   call — as solved without them and on its moved feet (`<case> (on its

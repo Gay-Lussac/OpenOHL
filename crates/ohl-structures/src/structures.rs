@@ -268,8 +268,23 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// attachment point standing alone, linked to no joint (`[[point]]`
 /// `unlinked = true` with its `point`: [`TypePoint::unlinked`],
 /// [`UNLINKED_POINT_VERSION`]); a file is written at 17 only when a point
-/// says so.
-pub const STRUCTURE_FILE_VERSION: u32 = 17;
+/// says so. Version 18 (2026-11-18, third round) adds the structure's
+/// default minimum bolt distances (`[default_bolt_minimums]`:
+/// [`crate::bolts::DefaultBoltMinimums`], [`DEFAULT_BOLT_MINIMUMS_VERSION`]);
+/// a file is written at 18 only when it gives them.
+pub const STRUCTURE_FILE_VERSION: u32 = 18;
+
+/// The structure file version of `[default_bolt_minimums]` (owner
+/// 2026-11-18, third round): the default minimum end, edge and spacing of
+/// bolts where no design code gives any, in bolt diameters.
+pub const DEFAULT_BOLT_MINIMUMS_VERSION: u32 = 18;
+
+/// The `[[generator]] kind` of the automatic joint layout's record
+/// (written by the structure application; 2026-11-18). The core reads
+/// only its `provisional` list (`[[member, joint], …]`: the member ends
+/// whose bolts the layout gave and nobody chose yet), for the level
+/// ([`StructureType::provisional_bolts`]).
+pub const JOINT_LAYOUT_RECORD: &str = "joint_layout";
 
 /// The structure file version of an attachment point linked to no joint
 /// (`[[point]] unlinked = true`; owner, 2026-11-15: "an attachment point
@@ -1317,6 +1332,11 @@ pub struct StructureType {
     /// ([`crate::templates::recorded`]), to build it again.
     #[serde(default)]
     pub template: Option<toml::Table>,
+    /// The default minimum bolt distances where no design code gives any
+    /// (version 18; none: the starting values,
+    /// [`crate::bolts::DefaultBoltMinimums::default`]).
+    #[serde(default)]
+    pub default_bolt_minimums: Option<crate::bolts::DefaultBoltMinimums>,
 }
 
 /// An attachment of a placed structure, in global coordinates.
@@ -1444,6 +1464,9 @@ impl LibraryItem for StructureType {
         )?;
         self.check_members()?;
         self.check_connections()?;
+        if let Some(d) = &self.default_bolt_minimums {
+            d.validate()?;
+        }
         let mut seen = std::collections::BTreeSet::new();
         for a in &self.attachments {
             if !seen.insert((a.set, a.phase)) {
@@ -2311,15 +2334,22 @@ impl StructureType {
     /// named `.ohlp` file or a `[pole]` with everything the pole check
     /// needs a full design, a `[pole]` outline (diameters at two heights)
     /// the outline; the higher of the two counts.
+    ///
+    /// Level 4 (joint details) also needs every bolt chosen: while the
+    /// automatic joint layout's record lists provisional bolts
+    /// ([`StructureType::provisional_bolts`]; owner 2026-11-18) the
+    /// structure is level 3, everywhere its level is read.
     pub fn detail(&self) -> Detail {
         let pole = self.pole_detail().unwrap_or(Detail::Stick);
         let body = if self.model.is_some() || self.missing_for_design().is_empty() {
             // Level 4: the members' own design with every end's joint
-            // detail; a pole or a separate model stays at 3.
+            // detail and no provisional bolt; a pole or a separate model
+            // stays at 3.
             if self.model.is_none()
                 && self.pole.is_none()
                 && !self.connections.is_empty()
                 && self.ends_without_joint_details().is_empty()
+                && self.provisional_bolts().is_empty()
             {
                 Detail::Joints
             } else {
@@ -2331,6 +2361,48 @@ impl StructureType {
             Detail::Stick
         };
         body.max(pole)
+    }
+
+    /// The member ends (member, joint) whose bolts are provisional: the
+    /// automatic joint layout gave them (a class's preset or the bolt
+    /// picked) and nobody chose them yet — its record's `provisional` list
+    /// (`[[generator]] kind = "joint_layout"`, [`JOINT_LAYOUT_RECORD`];
+    /// the rest of the record is the structure application's). Any such
+    /// end keeps the structure at level 3 (owner 2026-11-18): the joint
+    /// details are not taken in a calculation.
+    pub fn provisional_bolts(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
+            .generators
+            .iter()
+            .filter(|g| g.get("kind").and_then(toml::Value::as_str) == Some(JOINT_LAYOUT_RECORD))
+            .filter_map(|g| g.get("provisional")?.as_array())
+            .flatten()
+            .filter_map(|row| match row.as_array()?.as_slice() {
+                [m, j] => Some((m.as_str()?.to_owned(), j.as_str()?.to_owned())),
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// Why a structure that would be level 4 is level 3 (none: it is not
+    /// held back): provisional bolts, in words for wherever the level is
+    /// shown.
+    pub fn level_note(&self) -> Option<String> {
+        let n = self.provisional_bolts().len();
+        let otherwise_4 = self.model.is_none()
+            && self.pole.is_none()
+            && !self.connections.is_empty()
+            && self.missing_for_design().is_empty()
+            && self.ends_without_joint_details().is_empty();
+        (n > 0 && otherwise_4).then(|| {
+            format!(
+                "level 3, not 4: {n} member end(s) with provisional bolts (the joint layout's, \
+                 not chosen yet) — level 4 once none is"
+            )
+        })
     }
 
     /// The level of the pole (none: no pole): a `.ohlp` file named, or a

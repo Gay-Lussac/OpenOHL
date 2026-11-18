@@ -675,8 +675,8 @@ pub fn worked_planes(onto: Option<&Onto>, face: Option<Face>) -> Option<(u32, St
 
 /// Bolt shear stress over the bolt's ultimate strength, on the root area
 /// with the threads in the shear plane (ASCE 10-97 4.3.2): the force basis
-/// of the bolt tools' minimum distances without an analysis
-/// ([`bolt_shear_per_bolt`]).
+/// of the bolt tools' minimum distances without an analysis for a plugin
+/// that works out none ([`bolt_shear_per_bolt`]).
 const BOLT_SHEAR: f64 = 0.62;
 
 /// The root area over the gross area when the bolt gives no shear
@@ -804,11 +804,11 @@ pub fn end_bolts(
 /// The design shear capacity of one bolt at a member end, N (all its
 /// shear planes: the end's bolts over the member's, a given capacity,
 /// else ASCE 10-97 4.3.2's 0.62 f_ub on the root area), and the bolts'
-/// diameter and count; none without bolts or a capacity. The force basis
-/// of the bolt tools' minimum distances when no analysis gives one, for
-/// any code (`bolt_rules::basis`; kept in the core when ASCE 10-97's
-/// check moved into its plugin, 2026-11-18, so that the distances asked of
-/// a plugin stay what they were).
+/// diameter and count; none without bolts or a capacity. Since the third
+/// round (2026-11-18) a design code's plugin works out its own bolt
+/// capacity for the bolt tools' force basis (`bolt-distances-full`); this
+/// one is left only for a plugin built without that export
+/// (`bolt_rules::shear_without_plugin`), so that it answers as before.
 pub fn bolt_shear_per_bolt(d: &MemberDesign, end: Option<&EndDesign>) -> Option<(f64, f64, u32)> {
     let (b, shank, threads_in) = end_bolts(d, end, &mut Vec::new())?;
     let gross = std::f64::consts::PI * b.diameter.powi(2) / 4.0;

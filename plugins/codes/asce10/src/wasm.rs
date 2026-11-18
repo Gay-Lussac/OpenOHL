@@ -729,4 +729,55 @@ impl exports::ohl::plugin::bolt_distances::Guest for Asce10 {
     }
 }
 
+impl exports::ohl::plugin::bolt_distances_full::Guest for Asce10 {
+    fn minimum_distances_full(
+        method: String,
+        input: exports::ohl::plugin::bolt_distances_full::DistanceInput,
+    ) -> Result<Option<exports::ohl::plugin::bolt_distances_full::Distances>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        // The analysis' force per bolt, else the bolt's own design shear
+        // capacity (4.3.2; third round, 2026-11-18: worked out here, as the
+        // core did before for every code).
+        let own = input.bolts.as_ref().and_then(|b| {
+            asce10::bolt_shear(
+                input.diameter,
+                b.shear_planes,
+                b.shear_capacity,
+                b.shear_capacity_shank,
+                b.threads_in_shear,
+                b.ultimate,
+            )
+        });
+        let bolt_force = input.analysis_force.or(own);
+        let d = <Asce10 as exports::ohl::plugin::bolt_distances::Guest>::minimum_distances(
+            method,
+            DistanceInput {
+                diameter: input.diameter,
+                thickness: input.thickness,
+                ultimate: input.ultimate,
+                bolt_force,
+                sheared_edge: input.sheared_edge,
+                redundant: input.redundant,
+            },
+        )?;
+        Ok(
+            d.map(|d| exports::ohl::plugin::bolt_distances_full::Distances {
+                end: d.end,
+                spacing: d.spacing,
+                edge: d.edge,
+                hole: d.hole,
+                clauses: d.clauses,
+                notes: d.notes,
+                bolt_force,
+                force_basis: if input.analysis_force.is_none() && own.is_some() {
+                    "the bolt's design shear capacity, ASCE 10-97 4.3.2".to_owned()
+                } else {
+                    String::new()
+                },
+            }),
+        )
+    }
+}
+
 export!(Asce10);

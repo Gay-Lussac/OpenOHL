@@ -609,6 +609,37 @@ fn the_optional_checks_are_edited() {
     assert!(text.contains("version = 16"), "{text}");
 }
 
+/// The default minimum bolt distances (owner 2026-11-18, third round): a
+/// number typed (in bolt diameters, `2 d` too) writes it into
+/// `[default_bolt_minimums]` and raises the file to version 18, read back
+/// by the structure; a typing that is not above 0 is refused; empty
+/// removes it (the table when left empty, the version kept).
+#[test]
+fn the_default_bolt_minimums_are_edited() {
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 8\n{PYLON}")
+        .parse()
+        .unwrap();
+    set_default_bolt_minimum(&mut doc, "end", "2").unwrap();
+    set_default_bolt_minimum(&mut doc, "spacing", "3.5 d").unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("version = 18"), "{text}");
+    let d = read(&doc).default_bolt_minimums.unwrap();
+    assert_eq!((d.end, d.edge, d.spacing), (2.0, 1.5, 3.5));
+    for bad in ["0", "-1", "wide"] {
+        assert!(
+            set_default_bolt_minimum(&mut doc, "edge", bad).is_err(),
+            "{bad}"
+        );
+    }
+    assert!(set_default_bolt_minimum(&mut doc, "pitch", "2").is_err());
+    set_default_bolt_minimum(&mut doc, "end", "").unwrap();
+    set_default_bolt_minimum(&mut doc, "spacing", " ").unwrap();
+    let text = doc.to_string();
+    assert!(!text.contains("default_bolt_minimums"), "{text}");
+    assert!(text.contains("version = 18"), "{text}");
+    assert_eq!(read(&doc).default_bolt_minimums, None);
+}
+
 /// A member's analysis fields typed (one member, or every member of a
 /// group), read back by the structure; empty removes them.
 #[test]

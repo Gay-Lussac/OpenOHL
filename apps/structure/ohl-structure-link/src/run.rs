@@ -820,26 +820,9 @@ fn pole_case(
 /// each case.
 pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureRun, String> {
     // Joint details asked for on a tower whose joint layout left
-    // provisional bolts (owner 2026-11-18): level 3 until none is
-    // provisional, the joint details not taken — the file read without
-    // `joint_details`, said.
-    if input.structure.joint_details == Some(true)
-        && let Some(why) = crate::layout_run::provisional_note(input.structure)
-        && let Ok(mut doc) = input.text.parse::<toml_edit::DocumentMut>()
-    {
-        doc.remove("joint_details");
-        let text = doc.to_string();
-        let mut structure = input.structure.clone();
-        structure.joint_details = None;
-        let capped = RunInput {
-            structure: &structure,
-            text: &text,
-            ..*input
-        };
-        let mut run = analyse_structure(&capped, budget)?;
-        run.notes.insert(0, why);
-        return Ok(run);
-    }
+    // provisional bolts (owner 2026-11-18): the core gives such a tower
+    // level 3 (`StructureType::detail`, third round), so the model leaves
+    // the joint details out and says why (`JointUse::NotApplied`).
     let t = input.structure;
     let dz = match input.extension {
         Some(e) => t

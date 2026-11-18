@@ -918,6 +918,11 @@ pub struct Model {
     /// ([`crate::check::design_compression`]), as the core's own methods
     /// give theirs. Empty: not asked (the Euler load alone caps).
     pub method_compression: Vec<Option<f64>>,
+    /// The default minimum bolt distances of the structure
+    /// (`[default_bolt_minimums]`, structure file version 18; 2026-11-18,
+    /// third round): what the bolt tools keep where no design code gives
+    /// minimums ([`crate::bolt_rules::assumed`]) — never in a check.
+    pub bolt_defaults: ohl_structures::bolts::DefaultBoltMinimums,
 }
 
 /// A member-check method of a plugin, as a file names it.
@@ -1322,6 +1327,7 @@ impl Model {
             joint_use: JointUse::default(),
             capacity_plugin,
             method_compression: Vec::new(),
+            bolt_defaults: Default::default(),
         };
         model.check()?;
         Ok(model)
@@ -1458,6 +1464,16 @@ impl Model {
             crate::member_ends::read_connections(&mut out, &file, bolts)?;
         }
         out.joint_use = joints;
+        // The structure's default minimum bolt distances (version 18): the
+        // bolt tools' where no code gives any.
+        if let Some(d) = file.get("default_bolt_minimums") {
+            let d: ohl_structures::bolts::DefaultBoltMinimums = d
+                .clone()
+                .try_into()
+                .map_err(|e| format!("default_bolt_minimums: {e}"))?;
+            d.validate()?;
+            out.bolt_defaults = d;
+        }
         out.check()?;
         Ok(out)
     }

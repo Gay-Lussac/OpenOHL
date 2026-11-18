@@ -708,4 +708,49 @@ impl exports::ohl::plugin::bolt_distances::Guest for Sia263 {
     }
 }
 
+impl exports::ohl::plugin::bolt_distances_full::Guest for Sia263 {
+    fn minimum_distances_full(
+        method: String,
+        input: exports::ohl::plugin::bolt_distances_full::DistanceInput,
+    ) -> Result<Option<exports::ohl::plugin::bolt_distances_full::Distances>, String> {
+        ours(&method)?;
+        // γ_M2 from the structure's parameter file, as the joints take it.
+        params::set(params::parse(&input.parameters)?);
+        // The analysis' force per bolt, else the bolt's own design shear
+        // resistance by Table 16 (third round, 2026-11-18; before, ASCE
+        // 10-97's from the core). Table 17's minimums take no force.
+        let own = input.bolts.as_ref().and_then(|b| {
+            sia263::bolt_shear(
+                input.diameter,
+                b.shear_planes,
+                b.shear_capacity,
+                b.shear_capacity_shank,
+                b.threads_in_shear,
+                b.ultimate,
+                Grade::parse(&b.grade),
+            )
+        });
+        let bolt_force = input.analysis_force.or(own.as_ref().map(|o| o.0));
+        Ok(
+            sia263::bolt_minimums(input.diameter).map(|[end, spacing, edge]| {
+                exports::ohl::plugin::bolt_distances_full::Distances {
+                    end,
+                    spacing,
+                    edge,
+                    hole: sia263::standard_hole(input.diameter),
+                    clauses: ["Table 17, e_1", "Table 17, p_1", "Table 17, e_2"]
+                        .map(str::to_owned)
+                        .to_vec(),
+                    notes: vec!["Table 17's minimums do not depend on the force".to_owned()],
+                    bolt_force,
+                    force_basis: match (&input.analysis_force, own) {
+                        (None, Some((_, words))) => words,
+                        _ => String::new(),
+                    },
+                }
+            }),
+        )
+    }
+}
+
 export!(Sia263);

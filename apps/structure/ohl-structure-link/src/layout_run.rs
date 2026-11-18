@@ -173,6 +173,8 @@ impl RecordSettings {
                 .clone()
                 .map(|(id, d)| BoltArea::picked(id, d, None)),
             welded: self.welded,
+            // The structure file's, taken by the run.
+            defaults: Default::default(),
         }
     }
 
@@ -453,22 +455,12 @@ impl LayoutRecord {
 
 /// The member ends of structure `t` whose bolts are provisional (the
 /// layout's, until the code step chooses bolts): a tower with any stays at
-/// level 3 for the joint details (owner 2026-11-18, question 6).
+/// level 3 for the joint details (owner 2026-11-18, question 6) — read by
+/// the core since the third round
+/// ([`ohl_structures::StructureType::provisional_bolts`], so that every
+/// application and the command line give level 3).
 pub fn provisional_bolts(t: &StructureType) -> Vec<(String, String)> {
-    LayoutRecord::of(t).provisional.into_iter().collect()
-}
-
-/// Why the joint details are not taken although asked for and level 4 by
-/// the file: provisional bolts (none: none provisional, or not asked).
-pub fn provisional_note(t: &StructureType) -> Option<String> {
-    let n = provisional_bolts(t).len();
-    (n > 0).then(|| {
-        format!(
-            "{n} member end(s) with provisional bolts (the joint layout's, not chosen yet): \
-             level 3 until no bolt is provisional — the joint details are not taken in the \
-             calculation"
-        )
-    })
+    t.provisional_bolts()
 }
 
 /// One joint's outcome of a run.
@@ -540,6 +532,13 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         .map_err(|e| e.message)?;
     let doc0: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
     let record = LayoutRecord::of(&t);
+    // The structure's default minimum bolt distances (third round,
+    // 2026-11-18): for the ends' pitch and end distance not given and the
+    // edge distance where no code gives one.
+    let settings = LayoutSettings {
+        defaults: t.default_bolt_minimums.unwrap_or_default(),
+        ..ask.settings.clone()
+    };
     let targets: BTreeSet<String> = match &ask.joints {
         Some(j) => j.clone(),
         None => t.nodes.iter().map(|n| n.id.clone()).collect(),
@@ -682,7 +681,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         .iter()
         .filter(|j| targets.contains(&j.id))
         .map(|j| {
-            let plan = plan_joint(j, ask.settings, &edge);
+            let plan = plan_joint(j, &settings, &edge);
             JointOutcome {
                 joint: j.id.clone(),
                 hand: plan.hand.clone(),

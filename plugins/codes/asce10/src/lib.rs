@@ -26,7 +26,8 @@
 //!   plate or cover; a weld between two plates is not checked (ASCE 10-97
 //!   gives no weld resistance) ([`joints`]).
 //! - `bolt-distances` (and `bolt-distances-full`): ASCE 10-97 4.5 with the
-//!   bolt's force.
+//!   bolt's force; without an analysis the bolt's own design shear
+//!   capacity (4.3.2, [`asce10::bolt_shear`]; third round, 2026-11-18).
 //! - **Parameters**: none — ASCE 10-97's design strengths have no factors
 //!   to set ([`params`]); a parameter file `Plugins/asce10.toml` that is not
 //!   empty is refused, so that a value meant for it is never silently left

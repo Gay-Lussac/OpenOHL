@@ -349,6 +349,9 @@ impl StructureApp {
             return out;
         };
         let bolts = self.bolt_library();
+        // The plugin's parameter file reaches its minimum distances (its
+        // bolt capacity, third round): a change of it alone counts too.
+        let params = self.parameters_stamp();
         for (m, j) in ends {
             let force = self.largest_force(m);
             let key = {
@@ -359,6 +362,7 @@ impl StructureApp {
                     self.libs_stamp,
                     self.results.generation,
                     force.map(f64::to_bits),
+                    params,
                 )
                     .hash(&mut h);
                 h.finish()
@@ -1005,8 +1009,10 @@ impl StructureApp {
                 ui.strong(format!("Bolt layout — {} at {}", e.member, e.joint))
                     .on_hover_text(
                         "The bolts of this member end in one go, checked against the minimum \
-                         distances of the design code of the capacity method (the simple \
-                         check has none).",
+                         distances of the design code of the capacity method; where it gives \
+                         none (the simple check, a plugin without them), against the \
+                         structure's default minimums (Design › Analysis: default minimum, \
+                         assumed, not a code's).",
                     );
                 if ui.small_button("Close").clicked() {
                     open = false;
@@ -1168,7 +1174,13 @@ impl StructureApp {
                 );
             }
             if let Some(r) = &rules {
-                ui.label(egui::RichText::new(r.words()).small());
+                if r.assumed.is_some() {
+                    // The structure's default minimums, no code's (third
+                    // round, 2026-11-18): said as such, with why.
+                    crate::app::error_label(ui, r.words());
+                } else {
+                    ui.label(egui::RichText::new(r.words()).small());
+                }
                 let lines = l.gauges.len().max(1) as u32;
                 let pts: Vec<[f64; 2]> = (0..l.count)
                     .map(|k| {

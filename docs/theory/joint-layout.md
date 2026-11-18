@@ -17,8 +17,10 @@ gusset plate), the member's roll that lays it flat, and the plates
 are those given (or its member's design data), else a connection preset
 for its class, else two of a bolt picked in the window in one gauge line
 — those are **provisional**, and a tower with provisional bolts stays at
-level 3 for the joint details (the calculation reads the file without
-`joint_details` and says so) until the design codes choose the bolts.
+level 3 for the joint details until the design codes choose the bolts:
+since 2026-11-18 (third round) the core's level reads the layout's list
+of provisional bolts, so every application, the command line and the
+line's calculation level 4 leave the joint details out and say why.
 
 ## Concentric first
 
@@ -91,8 +93,13 @@ very few ends (see the settings below).
 When every bolt of a plane lands on the flange — at least the angle's
 thickness, root radius and the nut's corner radius from the heel, and
 at most the flange's width less the edge distance (the code's minimum
-from its plugin, else the end's given edge distance, else 1.5 bolt
-diameters as drawn — an assumption) from it — the ends bolt on directly.
+from its plugin, else the structure's default minimum edge distance —
+1.5 bolt diameters to start with, `[default_bolt_minimums]`; a default
+minimum, assumed, not a code's: it takes no force, so it may be smaller
+than a code's would be, **NOT ON THE SAFE SIDE** in that sense) from it —
+the ends bolt on directly. A provisional bolt's pitch and end distance
+not given are the default minimum spacing and end distance (3 and 1.5
+bolt diameters to start with), as the joints are drawn.
 Otherwise every end of the plane goes onto one plate on that flange, each
 pulled back further where needed so that its bolts lie past the flange's
 toe (or heel) by the nut and the gap: the nuts behind the plate clear of

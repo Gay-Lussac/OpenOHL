@@ -17,6 +17,16 @@
 //! offered). The structure application's bolt tools and layout form use
 //! these, so a change of capacity method changes what they allow.
 //!
+//! Without an analysis the force one bolt transmits is the plugin's own
+//! (third round, 2026-11-18: its `bolt-distances-full` works out the
+//! bolt's design shear capacity by its code from the bolts' data [`basis`]
+//! sends). Where no code gives minimums (the simple check, a plugin
+//! without minimum distances, one that returns none for the bolt) the
+//! tools keep the structure's **default minimums** ([`assumed`]: end and
+//! edge 1.5, spacing 3 bolt diameters to start with,
+//! `[default_bolt_minimums]`) — "default minimum, assumed, not a code's",
+//! never in place of a code's own.
+//!
 //! Bolt places are as the connections give them (`bolt_points`): along
 //! the member from the joint's work point, across the bolted leg from the
 //! heel, m. The end distance is taken from where the steel stops (the
@@ -60,10 +70,12 @@ impl Force {
     }
 }
 
-/// The code's minimums at one member end, m.
+/// The code's minimums at one member end, m (or, [`BoltRules::assumed`],
+/// the structure's default minimums where no code gives any).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoltRules {
-    /// The code (as the results name it; a plugin's method: its name).
+    /// The code (as the results name it; a plugin's method: its name);
+    /// the default minimums: [`ohl_structures::bolts::DEFAULT_MINIMUM_WORDS`].
     pub code: String,
     /// Minimum end distance, from where the steel stops to a bolt.
     pub end: f64,
@@ -75,6 +87,9 @@ pub struct BoltRules {
     pub clauses: [String; 3],
     /// The force per bolt used.
     pub force: Force,
+    /// Where a [`Force::Capacity`] comes from, in words (the plugin's:
+    /// "the bolt's design shear capacity, ASCE 10-97 4.3.2"; "" not said).
+    pub force_basis: String,
     /// The bolts' diameter, m.
     pub diameter: f64,
     /// The bolted leg's width (heel to toe) and thickness, m (none: not
@@ -84,12 +99,30 @@ pub struct BoltRules {
     pub root: f64,
     /// The edge taken as sheared.
     pub sheared: bool,
+    /// Not a code's: the structure's default minimums ([`assumed`]), and
+    /// why no code's ("the simple check gives no minimum distances", "no
+    /// minimum distances from sia263: …"). None: the code's.
+    pub assumed: Option<String>,
 }
 
 impl BoltRules {
     /// The minimums in one line: "ASCE 10-97 4.5: end ≥ 31 mm, spacing ≥
-    /// 52 mm, edge ≥ 28 mm (sheared edge; P …)".
+    /// 52 mm, edge ≥ 28 mm (sheared edge; P …)"; the default minimums
+    /// "default minimum, assumed, not a code's: end ≥ 24 mm (1.5 d), … —
+    /// why".
     pub fn words(&self) -> String {
+        if let Some(why) = &self.assumed {
+            return format!(
+                "{}: end ≥ {:.0} mm ({}), spacing ≥ {:.0} mm ({}), edge ≥ {:.0} mm ({}) — {why}",
+                self.code,
+                self.end * 1000.0,
+                self.clauses[0],
+                self.spacing * 1000.0,
+                self.clauses[1],
+                self.edge * 1000.0,
+                self.clauses[2],
+            );
+        }
         format!(
             "{}: end ≥ {:.0} mm ({}), spacing ≥ {:.0} mm ({}), edge ≥ {:.0} mm ({}; {} edge) — {}",
             self.code,
@@ -100,8 +133,20 @@ impl BoltRules {
             self.edge * 1000.0,
             self.clauses[2],
             if self.sheared { "sheared" } else { "rolled" },
-            self.force.words()
+            self.force_words()
         )
+    }
+
+    /// The force per bolt in words, with where a capacity comes from.
+    pub fn force_words(&self) -> String {
+        match self.force {
+            Force::Capacity(p) if !self.force_basis.is_empty() => format!(
+                "P {:.1} kN per bolt: {} (no analysis)",
+                p / 1000.0,
+                self.force_basis
+            ),
+            f => f.words(),
+        }
     }
 
     /// The smallest gauge from the heel a bolt line may take: its hole
@@ -136,9 +181,63 @@ pub fn rules_in(
     None
 }
 
+/// The structure's default minimums for the bolts of member `idx`'s end
+/// `end` where no code gives any (owner 2026-11-18, third round: the
+/// simple check, a plugin without minimum distances, one that returns
+/// none): [`Model::bolt_defaults`] times the bolts' diameter, said as
+/// "default minimum, assumed, not a code's" with `why` (no code's). `part`
+/// as [`rules_in`]'s (the leg's width only matters). None: the end has no
+/// bolts of known diameter. Never in place of a code's own minimums.
+pub fn assumed(
+    model: &Model,
+    idx: usize,
+    end: usize,
+    part: Option<(f64, Option<f64>)>,
+    why: String,
+) -> Option<BoltRules> {
+    let b = basis(model, idx, end, None, part)?;
+    let [e, s, g] = model.bolt_defaults.of(b.diameter);
+    Some(BoltRules {
+        code: ohl_structures::bolts::DEFAULT_MINIMUM_WORDS.to_owned(),
+        end: e,
+        spacing: s,
+        edge: g,
+        clauses: model.bolt_defaults.clauses(),
+        force: Force::Unknown,
+        force_basis: String::new(),
+        diameter: b.diameter,
+        leg: b.leg,
+        root: b.root,
+        sheared: b.sheared,
+        assumed: Some(why),
+    })
+}
+
+/// The bolts of a member end as the minimum distances' force basis takes
+/// them: the end's connection over the member's design data
+/// ([`crate::member_ends::end_bolts`]), what a design code's plugin works
+/// out the bolt's own shear capacity from (third round, 2026-11-18).
+#[derive(Debug, Clone, PartialEq)]
+pub struct EndBolts {
+    /// How many bolts.
+    pub count: u32,
+    /// Shear planes per bolt.
+    pub shear_planes: u32,
+    /// One bolt's shear capacity per plane through the threads, N (given).
+    pub shear_capacity: Option<f64>,
+    /// The same through the shank, N.
+    pub shear_capacity_shank: Option<f64>,
+    /// The bolt's ultimate strength, Pa.
+    pub ultimate: Option<f64>,
+    /// The threads are in the shear plane (none: not said).
+    pub threads_in_shear: Option<bool>,
+    /// Its grade as written ("8.8"; none: not given).
+    pub grade: Option<String>,
+}
+
 /// What a code's minimum distances at a member end are worked out from:
-/// the data of the end, whatever the code ([`rules_in`]'s own, or a
-/// plugin's method through its runner).
+/// the data of the end, whatever the code (a plugin's method through its
+/// runner).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Basis {
     /// The bolts' diameter, m.
@@ -147,8 +246,11 @@ pub struct Basis {
     pub thickness: f64,
     /// The connected part's ultimate strength, Pa.
     pub ultimate: Option<f64>,
-    /// The force per bolt.
-    pub force: Force,
+    /// The force per bolt by the analysis, N (none: no analysis, or no
+    /// bolts counted) — without it the plugin takes its own.
+    pub analysis: Option<f64>,
+    /// The end's bolts (none: only their diameter is known).
+    pub bolts: Option<EndBolts>,
     /// The bolted leg's width and thickness, m (none: not an angle).
     pub leg: Option<(f64, f64)>,
     /// The leg's root radius, m.
@@ -172,14 +274,29 @@ pub fn basis(
     let d = &m.design;
     let e = d.ends.get(end).and_then(Option::as_ref);
     let s = &model.sections[m.section];
-    let (shear, diameter, count) = match crate::member_ends::bolt_shear_per_bolt(d, e) {
-        Some(x) => (Some(x.0), x.1, x.2),
+    // The bolts as the checks merge them (their diameter and count as
+    // before the third round: the merged bolts', else the end's own of
+    // known diameter, else the member's).
+    let (diameter, count, bolts) = match crate::member_ends::end_bolts(d, e, &mut Vec::new()) {
+        Some((b, shank, threads)) => (
+            b.diameter,
+            b.count,
+            Some(EndBolts {
+                count: b.count,
+                shear_planes: b.shear_planes,
+                shear_capacity: b.shear_capacity,
+                shear_capacity_shank: shank,
+                ultimate: b.ultimate,
+                threads_in_shear: threads,
+                grade: b.grade.map(|g| format!("{}.{}", g.major, g.minor)),
+            }),
+        ),
         None => {
             let b = e
                 .and_then(|e| e.bolts)
                 .and_then(|b| b.diameter.map(|dia| (dia, b.count)));
             let (dia, n) = b.or(d.bolts.map(|b| (b.diameter, b.count)))?;
-            (None, dia, n)
+            (dia, n, None)
         }
     };
     let (leg, root) = match s.profile.as_ref().map(|p| p.shape.clone()) {
@@ -199,22 +316,34 @@ pub fn basis(
         Some((t, _)) => t,
         None => d.thickness.or(leg.map(|l| l.1)).unwrap_or(0.0),
     };
-    let force = match (force, shear) {
-        (Some(n), _) if count > 0 => Force::Analysis(n.abs() / f64::from(count)),
-        (_, Some(v)) => Force::Capacity(v),
-        _ => Force::Unknown,
-    };
+    let analysis = force
+        .filter(|_| count > 0)
+        .map(|n| n.abs() / f64::from(count));
     let sheared = !e.and_then(|e| e.rolled_edge).unwrap_or(false);
     Some(Basis {
         diameter,
         thickness: t,
         ultimate: part.and_then(|p| p.1).or(s.ultimate),
-        force,
+        analysis,
+        bolts,
         leg,
         root,
         sheared,
         redundant: d.class == Some(MemberClass::Redundant),
     })
+}
+
+/// The force basis of a plugin that works out none itself (one built
+/// against `bolt-distances` alone, without `bolt-distances-full`): the
+/// bolt's shear capacity as ASCE 10-97 4.3.2 gives it
+/// ([`crate::member_ends::bolt_shear_per_bolt`]), sent as the force per
+/// bolt so that such a plugin answers as it did before the third round —
+/// the only use of that function left (2026-11-18). N; none: no bolts or
+/// no capacity.
+pub fn shear_without_plugin(model: &Model, idx: usize, end: usize) -> Option<f64> {
+    let d = &model.members.get(idx)?.design;
+    let e = d.ends.get(end).and_then(Option::as_ref);
+    crate::member_ends::bolt_shear_per_bolt(d, e).map(|x| x.0)
 }
 
 /// A bolt that breaks a rule, in words with the clause.
@@ -419,10 +548,12 @@ mod tests {
             edge: 0.025,
             clauses: ["4.5.1", "4.5.2", "4.5.3"].map(str::to_owned),
             force: Force::Unknown,
+            force_basis: String::new(),
             diameter: 0.016,
             leg: Some((0.1, 0.008)),
             root: 0.01,
             sheared: true,
+            assumed: None,
         }
     }
 

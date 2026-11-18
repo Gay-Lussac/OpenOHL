@@ -722,8 +722,9 @@ pub struct Symmetry {
 
 /// The kind of the `[[generator]]` that records the automatic joint layout
 /// (2026-11-18, `ohl_structure_link::layout_run`): what it set and its
-/// settings, not a body generator (left out here).
-pub const JOINT_LAYOUT_KIND: &str = "joint_layout";
+/// settings, not a body generator (left out here). The core's name for it
+/// (it reads the record's provisional bolts for the level).
+pub const JOINT_LAYOUT_KIND: &str = ohl_structures::structures::JOINT_LAYOUT_RECORD;
 
 /// The generators of `t`, in file order (the joint layout's record left
 /// out).

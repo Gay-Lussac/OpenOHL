@@ -89,7 +89,7 @@ pub use joints::{
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
     RecordSettings, RunAsk, follow, lay_out, preset_area, presets_by_class, provisional_bolts,
-    provisional_note, touched,
+    touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
@@ -98,7 +98,7 @@ pub use member_solids::{
 pub use member_view::{
     Elevation, FlatLeg, Hole, MemberCapacity, MemberEnds, RESISTANCE_FROM_PLUGIN, bolt_rules,
     bolt_rules_in, elevation, flat_leg, member_capacity, member_capacity_in, member_ends,
-    no_bolt_rules,
+    no_bolt_rules, parameter_file, parameter_stamp,
 };
 pub use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,

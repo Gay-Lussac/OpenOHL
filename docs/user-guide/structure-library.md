@@ -77,6 +77,7 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `node`, `member` | no | The structure's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's cross-sections, materials, analysis options (version 14: `tension_compression`; version 16: the optional checks `redundant_force`, `climbing_load`) and own loads — see [Structure analysis](structure-analysis.md). |
+| `default_bolt_minimums` | no | Version 18 (2026-11-18): the default minimum bolt distances in bolt diameters — `end`, `edge` (1.5 when not given) and `spacing` (3) — that OHL-Structure's bolt tools, the plate outlines and the joint layout keep where no design code gives minimums (the simple check, a plugin without them). A default minimum, assumed, not a code's; never in place of a code's own. OHL-Structure: Design › Analysis, *default bolt minimums [d]*. |
 | `model` | no | A separate structure model (`.ohlfe`, path relative to this file) for the finite-element check, instead of the members here. |
 | `pole` | no | The pole: `pole = "id"` (a `.ohlp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
 
@@ -208,7 +209,7 @@ A structure file describes its structure at one of four levels. The level is **w
 | **1 — stick figure** | Only the points, strings and wire points: a shaft from the centre to the top and crossarms to the points are drawn — or `[[body]]` polylines that all lie in one plane (a face of the structure). | Placing the wires, drawings, the 3D view. |
 | **2 — sticks of the structure** | Joints (`[[node]]`) and members (`[[member]]`) without cross-sections, or `[[body]]` polylines that make a 3D object (their points, all together, not in one plane — more than 1 mm off it). | Drawings and the 3D view with the structure's members; distances to the structure (planned). |
 | **3 — full design** | Every member with a `section` (from `[[section]]` and `[[material]]`), and at least one supported joint (a joint with a `support`; a joint held only by a `spring` does not count, so a structure standing only on springs stays at level 2) — or a separate `model = "….ohlfe"`. An extension with a body: its members with cross-sections and a supported joint too. | Structure analysis (finite elements) and fabrication. |
-| **4 — full design with joint details** | A level 3 lattice tower whose every checked member end has its joint detail: a `[[connection]]` for that end, or the end running on through the joint as one part (a continuous leg). A pole and a structure with a separate model stay at level 3. | As level 3; and the calculation may take the joint details (`joint_details = true`, OHL-Structure: Results › *Joint details in the calculation*). Without that option the members are checked in the simple form. |
+| **4 — full design with joint details** | A level 3 lattice tower whose every checked member end has its joint detail: a `[[connection]]` for that end, or the end running on through the joint as one part (a continuous leg), and no bolt left provisional by the joint layout (2026-11-18; said where the level is shown). A pole and a structure with a separate model stay at level 3. | As level 3; and the calculation may take the joint details (`joint_details = true`, OHL-Structure: Results › *Joint details in the calculation*). Without that option the members are checked in the simple form. |
 
 A **pole** has the first three levels ([Poles](#poles)): without an outline it adds nothing (level 1); its outline — diameters at two heights at least — makes level 2; with what the pole check needs (material, strength, its wall thickness, `solid`, or a cross-section) level 3. A pole named by a `.ohlp` file is level 3. The structure's level is the higher of its members' and its pole's.
 
@@ -503,7 +504,7 @@ hand = [["N7", "R3 and D5 within 4°: no room on one plate …"]]
 
 - `gauge` is a mark, not a field: the end is drawn with its gauge line through the work point (its normal framing eccentricity, gauge to centroid, for the drawings and the clash check only; the analysis keeps the member's axis through the work point).
 - A value the user changes after the run becomes theirs: it leaves the list and is kept from then on.
-- A file without this table reads exactly as before; the core and OHL-Design pass it by.
+- A file without this table reads exactly as before. The core reads only `provisional` (2026-11-18, third round): while it lists a bolt the structure is **level 3**, not 4 — in OHL-Structure, OHL-Design (the structure picker and the structure's properties say why) and on the command line (`ohl structures fe` says the joint details are not taken and why); the rest of the record is OHL-Structure's.
 
 ### Poles
 

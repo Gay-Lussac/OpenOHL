@@ -747,10 +747,16 @@ its axis out of the flange's plane — whether the imported angles are
 turned as built is a question for the owner. The starting values of the
 settings follow from these runs (theory page).
 
-Open: the core's `StructureType::detail()` still says level 4 for a tower
-whose every end has a connection, provisional bolts or not (OHL-Design,
-`ohl structures`): the record is the structure application's; making the
-core read it is a core change, not made. Plates on an inner face and on
+Third round (2026-11-18, owner-approved core change): the core reads the
+record's `provisional` list (`StructureType::provisional_bolts`, only
+that list; `JOINT_LAYOUT_RECORD`) and `StructureType::detail()` gives
+level 3 while any bolt is provisional, `level_note()` says why — OHL-Design
+(structure picker, properties, the type's workspace), `ohl structures fe`
+(the model's joint-use note) and the line's level 4 alike; OHL-Structure's
+own workaround (the run reading the file without `joint_details`) is
+gone. Where no code gives minimum bolt distances the layout keeps the
+structure's default minimums (`[default_bolt_minimums]`, `LayoutSettings::defaults`
+from the file). Open: plates on an inner face and on
 built-up legs, members on both sides of one plate, bent plates for
 members no roll lays flat at both ends: by hand.
 

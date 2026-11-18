@@ -1590,6 +1590,55 @@ pub fn set_redundant_force(doc: &mut DocumentMut, typed: &str) -> Result<(), Str
     set_analysis_field(doc, "redundant_force", &v.to_string())
 }
 
+/// One of the structure's default minimum bolt distances
+/// (`[default_bolt_minimums]` `end`, `edge` or `spacing`, in bolt
+/// diameters; owner 2026-11-18, third round), as typed: a number above 0
+/// (`1.5`, `1.5 d`) writes it and raises the file to version 18
+/// ([`ohl_structures::structures::DEFAULT_BOLT_MINIMUMS_VERSION`]); empty
+/// removes it (the starting value again: end and edge 1.5, spacing 3), the
+/// table too when left empty, the version left as it is.
+pub fn set_default_bolt_minimum(
+    doc: &mut DocumentMut,
+    key: &str,
+    typed: &str,
+) -> Result<(), String> {
+    const TABLE: &str = "default_bolt_minimums";
+    if !["end", "edge", "spacing"].contains(&key) {
+        return Err(format!(
+            "default bolt minimum \"{key}\": end, edge or spacing"
+        ));
+    }
+    let t = typed.trim();
+    if t.is_empty() {
+        if let Some(table) = doc.get_mut(TABLE).and_then(Item::as_table_mut) {
+            table.remove(key);
+            if table.is_empty() {
+                doc.remove(TABLE);
+            }
+        }
+        return Ok(());
+    }
+    let number = t.trim_end_matches('d').trim();
+    let v = ohl_core::units::parse_finite(number)
+        .ok()
+        .filter(|v| *v > 0.0)
+        .ok_or_else(|| {
+            format!("default minimum {key} \"{t}\": a number of bolt diameters above 0 (e.g. 1.5)")
+        })?;
+    raise_version(
+        doc,
+        i64::from(ohl_structures::structures::DEFAULT_BOLT_MINIMUMS_VERSION),
+    );
+    if doc.get(TABLE).and_then(Item::as_table).is_none() {
+        doc.insert(TABLE, Item::Table(Table::new()));
+    }
+    doc.get_mut(TABLE)
+        .and_then(Item::as_table_mut)
+        .ok_or(format!("[{TABLE}] is not a table"))?
+        .insert(key, toml_edit::value(v));
+    Ok(())
+}
+
 /// The optional climbing-load check (`[analysis] climbing_load`; owner
 /// 2026-11-15), as typed: a force above 0 (`1100 N`, `1.1 kN`; a plain
 /// number in N) writes it and raises the file to version 16

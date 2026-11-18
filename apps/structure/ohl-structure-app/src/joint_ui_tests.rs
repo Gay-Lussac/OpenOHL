@@ -671,6 +671,66 @@ fn member_details_follow_the_bolts_live() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// Member details are worked out again when only the plugin's parameter
+/// file changes (third round, 2026-11-18, owner: "yes fix it"): the
+/// structure checked by SIA 263 (the bundled plugin `sia263`), a
+/// `Plugins/sia263.toml` written beside it with larger factors — the
+/// structure file untouched — lowers D1's tension at once; the file taken
+/// away gives the standard's values again.
+#[test]
+fn member_details_follow_the_parameter_file() {
+    let wasm = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../plugins/codes/sia263/target/wasm32-wasip2/release/sia263.wasm");
+    if !wasm.is_file() {
+        assert!(
+            ohl_core::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "plugins/codes/sia263 not built"
+        );
+        eprintln!("skipping: plugins/codes/sia263 not built");
+        return;
+    }
+    let path = copy_of("type-02.ohls", "member-details-params");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(
+        &tower,
+        format!("{ANGLES}\n[analysis]\ncapacity = \"sia263-2013\"\n"),
+    )
+    .unwrap();
+    let mut h = harness(&tower);
+    h.run();
+    let revision = h.state().file.as_ref().unwrap().revision();
+    let tension = |h: &mut egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        let c = h.state_mut().member_capacity("D1");
+        let c = c.as_ref().as_ref().unwrap();
+        (c.tension.clone().unwrap().0, c.assumed.join("; "))
+    };
+    let (standard, said) = tension(&mut h);
+    assert!(said.contains("the method's own parameters"), "{said}");
+    let plugins = dir.join(ohl_structure_link::plugin_check::BESIDE);
+    std::fs::create_dir_all(&plugins).unwrap();
+    std::fs::write(
+        plugins.join("sia263.toml"),
+        "[resistance]\ngamma_m1 = 1.5\ngamma_m2 = 1.5\n",
+    )
+    .unwrap();
+    let (factored, said) = tension(&mut h);
+    assert_eq!(h.state().file.as_ref().unwrap().revision(), revision);
+    assert!(factored < standard, "{standard} {factored}");
+    assert!(said.contains("sia263.toml"), "{said}");
+    std::fs::remove_file(plugins.join("sia263.toml")).unwrap();
+    let (again, _) = tension(&mut h);
+    assert_eq!(again.to_bits(), standard.to_bits());
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// The Detail view's tools (owner 2026-11-02): the strip shows in the
 /// face view and the member view; a bolt placed by hand, a member end's
 /// cut and shift, a plate's outline written — each one undo step.

@@ -357,7 +357,13 @@ impl Workspace {
         // body (drawn only) and the structure application for it.
         ui.horizontal_wrapped(|ui| {
             let d = t.detail();
-            ui.strong(format!("Level {} — {}", d.level(), d.name()));
+            let level = ui.strong(format!("Level {} — {}", d.level(), d.name()));
+            // Provisional bolts hold a tower at level 3 (owner
+            // 2026-11-18): said.
+            if let Some(why) = t.level_note() {
+                level.on_hover_text(&why);
+                ui.label(egui::RichText::new(why).small().weak());
+            }
             ui.separator();
             let sets = t.wires.iter().filter(|w| w.set.is_some()).count();
             ui.label(format!(
