@@ -322,12 +322,14 @@ impl Ready {
                 handle,
                 at,
                 onto,
-            } => match crate::handles::command_onto(
+                free,
+            } => match crate::handles::command_drag(
                 &self.model,
                 &structure,
                 &handle,
                 at,
                 onto.as_ref(),
+                free,
             ) {
                 Ok((what, command)) => {
                     log::info!("{what}");

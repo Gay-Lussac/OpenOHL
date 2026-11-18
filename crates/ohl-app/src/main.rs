@@ -126,6 +126,7 @@ mod staking;
 mod starter;
 mod string_builder;
 mod string_checks;
+mod string_drag;
 mod structure_app;
 mod structure_desk;
 mod structure_groups;
@@ -185,6 +186,8 @@ mod revision_tests;
 mod rule_editor_tests;
 #[cfg(test)]
 mod safety_volume_tests;
+#[cfg(test)]
+mod string_drag_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

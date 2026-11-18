@@ -335,6 +335,10 @@ impl Controls {
             "hold it in the plane across that axis".into(),
         ));
         out.push(("Alt (dragging)".into(), "no snapping".into()));
+        out.push((
+            "Ctrl / ⌘ (dragging)".into(),
+            "lengths free: its strings change length (else kept)".into(),
+        ));
         out.push(("Esc (dragging)".into(), "cancel the drag".into()));
         out
     }

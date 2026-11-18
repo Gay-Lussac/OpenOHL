@@ -8,6 +8,50 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (dragging keeps the strings' lengths)
+
+**A dragged wire point turns its string about its attachment point; a
+dragged attachment point takes its strings along** (owner, 2026-11-18:
+"moving the attachement point should move the whole string (translation)
+and moving the wire point should only influence the angel of the string
+(same length and same attachement point -> rotation centered on the
+attachement point)"; built, in active development, not approved yet;
+[user guide](../user-guide/desktop-app.md#what-a-drag-does-to-the-strings)).
+
+- **Where**: the structure screen's drags (`type_workspace`), so also a
+  placed structure's **Edit** window (`placed_editor`, the structure
+  screen on a structure without a type — the owner's report), and the
+  line's 3D view handles (`handles`): one rule, `ohl-app`
+  `string_drag::drag`, on the points, wire points and strings in any
+  axes.
+- **Before**: the structure screen wrote a dragged wire point where the
+  pointer was (its strings' lengths changed: a placed structure's
+  document gives every wire point its position) and moved a dragged
+  attachment point alone (its strings' wire points stayed, so their
+  lengths changed); the 3D view's handles moved I-strings along but left a
+  V's wire point where it was (a length changed) and moved a dragged wire
+  point freely.
+- **Wire point dragged**: on the sphere of its string's length about its
+  top (nearest the pointer, not snapped); a V on the circle both legs
+  reach; three strings or more from tops not in one line: refused, said.
+  The readout gives the string's length and its angle from the vertical,
+  across and along the line.
+- **Attachment point dragged**: everything hanging from it moves by the
+  same displacement. A V whose other leg hangs from a point not dragged
+  turns about that point (every length kept; the wire point nearest to
+  where the dragged leg takes it); refused where the legs cannot meet.
+- **What hangs below** a wire point that moves (a chain): moved by the
+  same displacement (its strings keep their lengths and directions).
+- **Lengths free on purpose**: Ctrl (⌘ on a Mac) held while dragging — a
+  wire point goes where the pointer is, an attachment point moves alone;
+  said in the readout and the status bar. A length is also typed in the
+  string window and the Strings table, as before.
+- **Precision**: the line's 3D view keeps a length to 1e-9 m; a
+  structure type's file (and a placed structure's document) writes
+  positions to the millimetre, so a turned wire point keeps its string's
+  length to the millimetre there (a translated one exactly: the point is
+  put on the millimetre). No computed result and no file format changes.
+
 ## 2026-11-18 (country server, phase 3)
 
 **An edit costs what it touches: commands applied in place, a reference

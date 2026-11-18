@@ -92,6 +92,10 @@ struct Move {
     on: [f64; 3],
     /// The plane's normal.
     normal: [f64; 3],
+    /// The points, wire points and strings when it started: each frame
+    /// puts them from there by the strings' rule ([`crate::string_drag`]),
+    /// so the lengths do not wander with the rounding of the file.
+    start: crate::string_drag::Net,
 }
 
 /// State of the workspace.
@@ -843,6 +847,7 @@ impl Workspace {
                 handle: h,
                 on: at,
                 normal: n.map(|v| v / len),
+                start: crate::string_drag::Net::of_type(t, g),
             });
         }
         if let Some(m) = self.drag.clone() {
@@ -854,47 +859,50 @@ impl Workspace {
                 if dn.abs() > 1e-9 {
                     let s: f64 = (0..3).map(|k| (m.on[k] - a[k]) * m.normal[k]).sum::<f64>() / dn;
                     let mut at = [0, 1, 2].map(|k| a[k] + s * d[k]);
-                    if self.grid > 0.0 {
+                    // The strings' rule: lengths kept (a wire point held
+                    // by strings turns about their tops, not snapped),
+                    // else free with the key held.
+                    let free = ui.input(|i| i.modifiers.command);
+                    let turning = matches!(&m.handle, Handle::Wire(w)
+                        if !free && m.start.strings.iter().any(|x| &x.wire == w));
+                    if self.grid > 0.0 && !turning {
                         at = at.map(|v| (v / self.grid).round() * self.grid);
                     }
                     // Onto an attach joint near the pointer (a point:
                     // linked there); another joint: snapped to.
                     let here = local(pos);
                     let mut onto: Option<String> = None;
-                    if let Some((id, p, _)) = linkable.iter().find(|j| {
-                        Handle::Joint(j.0.clone()) != m.handle
-                            && j.2
-                            && project(j.1)
-                                .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
-                    }) {
+                    if !turning
+                        && let Some((id, p, _)) = linkable.iter().find(|j| {
+                            Handle::Joint(j.0.clone()) != m.handle
+                                && j.2
+                                && project(j.1)
+                                    .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
+                        })
+                    {
                         at = *p;
                         onto = Some(id.clone());
-                    } else if let Some((_, p, _)) = g.joints.iter().find(|j| {
-                        Handle::Joint(j.0.clone()) != m.handle
-                            && project(j.1)
-                                .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
-                    }) {
+                    } else if !turning
+                        && let Some((_, p, _)) = g.joints.iter().find(|j| {
+                            Handle::Joint(j.0.clone()) != m.handle
+                                && project(j.1)
+                                    .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
+                        })
+                    {
                         at = *p;
                     }
-                    if position(g, &m.handle) != Some(at) {
-                        match drag_point(doc, t, &m.handle, at, onto.as_deref()) {
-                            Ok(()) => {
-                                changed = true;
-                                self.message = Some((
-                                    format!(
-                                        "{} at {:.3}, {:.3}, {:.3} m",
-                                        m.handle.describe(),
-                                        at[0],
-                                        at[1],
-                                        at[2]
-                                    ),
-                                    false,
-                                ));
-                            }
-                            Err(e) => {
-                                self.message = Some((e, true));
-                                self.drag = None;
-                            }
+                    match drag_strings(doc, t, g, &m.start, &m.handle, at, onto.as_deref(), free) {
+                        Ok(Some(words)) => {
+                            changed = true;
+                            self.message = Some((words, false));
+                        }
+                        Ok(None) => {}
+                        // Cannot move there (lengths kept): said, the drag
+                        // goes on.
+                        Err((e, false)) => self.message = Some((e, true)),
+                        Err((e, true)) => {
+                            self.message = Some((e, true));
+                            self.drag = None;
                         }
                     }
                 }
@@ -1085,7 +1093,8 @@ impl Workspace {
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
             "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-             wheel: zoom; drag a point or wire point to move it; Shift + click: pick another",
+             wheel: zoom; drag a point or wire point to move it (the strings keep their lengths; Ctrl / ⌘ held: \
+             free); Shift + click: pick another",
             egui::FontId::proportional(11.0),
             egui::Color32::GRAY,
         );
@@ -1432,6 +1441,80 @@ fn drag_point(
         (Handle::Point(l), Some(j)) => edit::links::link_point(doc, t, l, j, [0.0; 3]),
         _ => edit::move_to(doc, t, h, at),
     }
+}
+
+/// A point or wire point of type `t` (drawn as `g`) dragged to `at`
+/// (local axes; released `onto` an attach joint) by the strings' rule
+/// ([`crate::string_drag`]; `free`: lengths free), from `start` (the
+/// points, wire points and strings when the drag started): the dragged
+/// one put by [`drag_point`], the wire points that move with it written
+/// where they go — those the file places by their strings follow them
+/// by themselves. With what it did in words; `None`: nothing to change.
+/// An error, with whether the drag ends (else it cannot move there, the
+/// drag going on).
+#[allow(clippy::too_many_arguments)]
+fn drag_strings(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    g: &Geometry,
+    start: &crate::string_drag::Net,
+    h: &Handle,
+    at: [f64; 3],
+    onto: Option<&str>,
+    free: bool,
+) -> Result<Option<String>, (String, bool)> {
+    use crate::string_drag as sd;
+    // Lengths kept, a wire point turns (its place is not on the file's
+    // millimetre); anything else is put on the millimetre, so what moves
+    // along moves by exactly as much.
+    let mm = |p: [f64; 3]| p.map(|v| (v * 1000.0).round() / 1000.0);
+    let to = match h {
+        Handle::Wire(_) if !free => at,
+        _ if onto.is_some() => at,
+        _ => mm(at),
+    };
+    let moved = sd::drag(start, h, to, free).map_err(|e| (e, false))?;
+    let mut writes: Vec<(Handle, [f64; 3])> = vec![(h.clone(), moved.at)];
+    for (w, p) in &moved.wires {
+        let wire = Handle::Wire(w.clone());
+        if &wire != h && t.wires.iter().any(|x| &x.label == w && x.point.is_some()) {
+            writes.push((wire, *p));
+        }
+    }
+    let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 5e-4);
+    if writes
+        .iter()
+        .all(|(x, p)| position(g, x).is_some_and(|q| same(q, *p)))
+    {
+        return Ok(None);
+    }
+    drag_point(doc, t, h, moved.at, onto).map_err(|e| (e, true))?;
+    for (x, p) in &writes[1..] {
+        edit::move_to(doc, t, x, *p).map_err(|e| (e, true))?;
+    }
+    let a = moved.at;
+    let mut words = format!(
+        "{} at {:.3}, {:.3}, {:.3} m",
+        h.describe(),
+        a[0],
+        a[1],
+        a[2]
+    );
+    if let Handle::Wire(w) = h {
+        let strings = sd::strings_words(start, w, a, |p| p);
+        if !strings.is_empty() {
+            words.push_str(&if free {
+                format!(" — lengths free: {strings}")
+            } else {
+                format!(
+                    " — lengths kept: {strings} ({} held: lengths free)",
+                    sd::FREE_KEY
+                )
+            });
+        }
+    }
+    words.push_str(&moved.describe());
+    Ok(Some(words))
 }
 
 impl Workspace {

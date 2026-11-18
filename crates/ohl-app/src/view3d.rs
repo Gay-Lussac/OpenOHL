@@ -1074,6 +1074,9 @@ impl View3d {
                         constraint: crate::handles::Constraint::Free,
                         snapped: None,
                         onto: None,
+                        free: false,
+                        note: None,
+                        refused: None,
                     });
                     response.request_focus();
                 }
@@ -1132,6 +1135,11 @@ impl View3d {
                         crate::handles::snap(at, d.constraint, grid, onto.as_ref())
                     };
                     d.onto = onto.filter(|_| !unsnapped).map(|s| s.handle);
+                    // The strings' rule (lengths kept, or free with the
+                    // key held).
+                    d.free = ui.input(|i| i.modifiers.command);
+                    let at = d.at;
+                    crate::handles::hold(s, d, at);
                 }
             }
             if !primary_down {
@@ -1139,12 +1147,15 @@ impl View3d {
                 // A press and release without moving is a click: it
                 // selects, it never moves (or snaps) the point.
                 let click = ui.input(|i| i.pointer.could_any_button_be_click());
-                if d.at != d.from && !click {
+                if let Some(why) = d.refused.filter(|_| !click) {
+                    self.handles.done = Some(crate::handles::Done::Refused(why));
+                } else if d.at != d.from && !click {
                     self.handles.done = Some(crate::handles::Done::Moved {
                         structure: d.structure,
                         handle: d.handle,
                         at: d.at,
                         onto: d.onto,
+                        free: d.free,
                     });
                 }
             }
