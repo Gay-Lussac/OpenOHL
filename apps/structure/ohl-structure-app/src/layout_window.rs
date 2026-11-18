@@ -374,7 +374,8 @@ impl StructureApp {
                     "Places the member ends of the joints so that they fit: pulled back, moved \
                      sideways only where needed, onto the leg or onto plates.",
                     "Each member end bolting by one leg onto another member's flange is laid flat \
-                     and its gauge line put through the work point (concentric); its end is \
+                     (turned only where a joint of it is then laid out and no flat end is \
+                     spoilt) and its gauge line put through the work point (concentric); its end is \
                      pulled back until its steel clears the flange's heel and the members placed \
                      before it by the gap. Only where that would need more than the longest \
                      pull-back is it moved sideways, the smallest move that fits, up to the shift \
