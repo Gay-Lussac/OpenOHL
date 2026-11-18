@@ -882,7 +882,7 @@ On the two towers (Orient angles, then Lay out joints, values given by
 hand replaced): joints laid out whole 71 → 225 (of 942) and 22 → 355 (of
 1 006), joints written 306 → 579 and 243 → 708, member ends laid out
 410 → 1 460 and 334 → 1 722; on all 78 tower files of the line (64 760
-joints) laid out whole 1 414 → 17 848, written 15 122 → 43 576, a run
+joints) laid out whole 1 414 → 17 829, written 15 122 → 43 608, a run
 again identical. The settings are unchanged: none was too strict for
 these towers once the members lay as built. Left by hand, with their
 reasons (joints with each): a laid-out part that would clash (members
