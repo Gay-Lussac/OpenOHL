@@ -572,36 +572,79 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     let at = |text: &str| joint_details_at(text, ask.library, ask.bolts, Some(&targets));
     let before = at(text)?;
     let clashes_before = count_clashes(&before, &targets);
-    // The members the layout turned before, at the joints asked: back to
-    // the roll they had (a run again starts from the same).
-    let restored: BTreeMap<String, String> = record
-        .rolled
+    // The members at the joints asked and their other joints (their ends
+    // there: flat or not, laid out or not).
+    let members_here: BTreeMap<&str, &[String; 2]> = t
+        .members
         .iter()
-        .filter(|(m, _)| {
-            t.members
-                .iter()
-                .find(|x| &x.id == *m)
-                .is_some_and(|x| x.nodes.iter().any(|n| targets.contains(n)))
-        })
-        .map(|(m, r)| (m.clone(), r.clone()))
+        .filter(|m| m.nodes.iter().any(|n| targets.contains(n)))
+        .map(|m| (m.id.as_str(), &m.nodes))
         .collect();
+    let around: BTreeSet<String> = members_here
+        .values()
+        .flat_map(|n| n.iter().cloned())
+        .chain(targets.iter().cloned())
+        .collect();
+    // An end of `m` laid out at a joint not asked (with its roll now).
+    let laid_elsewhere = |m: &str| -> Option<&str> {
+        record
+            .ends
+            .keys()
+            .find(|(x, j)| x == m && !targets.contains(j))
+            .map(|(_, j)| j.as_str())
+    };
+    // The members the layout turned before, at the joints asked: back to
+    // the roll they had (a run again starts from the same) — unless an end
+    // of theirs not asked is laid out with that turn: it still helps
+    // there, kept (owner 2026-11-18: turned only where it helps).
+    let mut restored: BTreeMap<String, String> = BTreeMap::new();
+    let mut held: BTreeSet<String> = BTreeSet::new();
+    for (m, r) in &record.rolled {
+        if !members_here.contains_key(m.as_str()) {
+            continue;
+        }
+        if laid_elsewhere(m).is_some() {
+            held.insert(m.clone());
+        } else {
+            restored.insert(m.clone(), r.clone());
+        }
+    }
     for (m, r) in &restored {
         put_roll(&mut planning, m, r);
     }
-    let details = at(&planning.to_string())?;
-    // 2. The members lying off what they bolt onto turned flat, where every
-    // end asked agrees (a member's roll given by hand kept unless
-    // replaced).
+    let planning_text = planning.to_string();
+    let around_details = joint_details_at(&planning_text, ask.library, ask.bolts, Some(&around))?;
+    // 2. The members lying off what they bolt onto: a turn that lays them
+    // flat where every end agrees within the flatness allowed (those at
+    // joints not asked too: a turn never spoils an end that was flat); a
+    // roll given by hand kept unless replaced, a leg's or chord's turned
+    // to the tower's faces (Orient angles) always.
     let mut notes = Vec::new();
+    let member = |m: &str| t.members.iter().find(|x| x.id == m);
     let mut asked: BTreeMap<String, Vec<(String, f64)>> = BTreeMap::new();
-    for j in details.joints.iter().filter(|j| targets.contains(&j.id)) {
+    for j in around_details
+        .joints
+        .iter()
+        .filter(|j| targets.contains(&j.id))
+    {
         for (m, turn) in flat_turns(j) {
-            let by_hand = t
-                .members
-                .iter()
-                .find(|x| x.id == m)
-                .is_some_and(|x| x.roll.is_some())
-                && !record.rolled.contains_key(&m);
+            if held.contains(&m) {
+                continue;
+            }
+            if record
+                .oriented
+                .get(&m)
+                .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+            {
+                notes.push(format!(
+                    "{m}: lies off what it bolts onto at {}; a leg or chord turned to the tower's \
+                     faces (Orient angles): kept",
+                    j.id
+                ));
+                continue;
+            }
+            let automatic = record.rolled.contains_key(&m) || record.oriented.contains_key(&m);
+            let by_hand = member(&m).is_some_and(|x| x.roll.is_some()) && !automatic;
             if by_hand && !ask.replace_hand {
                 notes.push(format!(
                     "{m}: lies off what it bolts onto at {}, its roll given by hand kept",
@@ -613,11 +656,11 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         }
     }
     let mut turned: BTreeMap<String, f64> = BTreeMap::new();
-    let mut turned_at: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    // Each such member's turns at all its ends asked (those flat already
-    // too: the turn keeps them flat).
     for (m, ends) in asked.iter_mut() {
-        for j in details.joints.iter().filter(|j| targets.contains(&j.id)) {
+        // Its turns at all its ends (those flat already too: the turn
+        // keeps them flat), each within a quarter turn of the first (a
+        // turn and a half turn more lay a leg flat alike).
+        for j in &around_details.joints {
             if ends.iter().any(|(x, _)| x == &j.id) {
                 continue;
             }
@@ -630,19 +673,20 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
                 ends.push((j.id.clone(), f.turn));
             }
         }
-    }
-    for (m, ends) in &asked {
+        let first = ends[0].1;
+        for e in ends.iter_mut() {
+            e.1 -= std::f64::consts::PI * ((e.1 - first) / std::f64::consts::PI).round();
+        }
         // Within the flatness allowed of each other: the middle of them (each
         // end then within half their spread of flat), to a hundredth of a
         // degree as written.
         let lo = ends.iter().map(|e| e.1).fold(f64::INFINITY, f64::min);
         let hi = ends.iter().map(|e| e.1).fold(f64::NEG_INFINITY, f64::max);
-        let first = (((lo + hi) / 2.0).to_degrees() * 100.0).round() / 100.0;
-        let first = first.to_radians();
+        let mid = (((lo + hi) / 2.0).to_degrees() * 100.0).round() / 100.0;
         if (hi - lo).to_degrees() > crate::FLAT_OFF {
             notes.push(format!(
                 "{m}: lies off what it bolts onto at {}, by different turns (one roll for \
-                 both ends): not turned",
+                 both ends; the turn would spoil the other): not turned",
                 ends.iter()
                     .map(|(j, x)| format!("{j} ({:.1}°)", x.to_degrees()))
                     .collect::<Vec<_>>()
@@ -650,17 +694,20 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             ));
             continue;
         }
-        turned.insert(m.clone(), first);
-        for (j, _) in ends {
-            turned_at.entry(j.clone()).or_default().push(m.clone());
+        if mid.abs() >= 0.005
+            && let Some(j) = laid_elsewhere(m)
+        {
+            notes.push(format!(
+                "{m}: not turned: its end at {j} is laid out (not asked) with its roll now"
+            ));
+            continue;
         }
+        turned.insert(m.clone(), mid.to_radians());
     }
     // A member's roll before this run (as written; radians).
     let roll_text = |m: &str| -> String {
         restored.get(m).cloned().unwrap_or_else(|| {
-            t.members
-                .iter()
-                .find(|x| x.id == m)
+            member(m)
                 .and_then(|x| x.roll.as_ref())
                 .map(|v| match v {
                     toml::Value::String(s) => s.clone(),
@@ -678,63 +725,179 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             .try_into::<ohl_core::units::Angle>()
             .map_or(0.0, |a| a.radians())
     };
-    for (m, turn) in &turned {
-        ohl_structure_edit::edits::set_member_roll(&mut planning, m, roll_of(m) + turn);
-    }
-    let details = if turned.is_empty() {
-        details
-    } else {
-        at(&planning.to_string())?
-    };
-    // 3. Each joint planned.
-    let model = ohl_structures_fe::model::Model::from_structure_type_with_joint_details(
-        &planning.to_string(),
-        ask.library,
-        ask.bolts,
-        None,
-    )
-    .ok();
-    let edge = |a: &crate::Arrival, thick: f64| -> Option<f64> {
-        let m = model.as_ref()?;
-        let idx = m.members.iter().position(|x| x.id == a.member)?;
-        crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None))).map(|r| r.edge)
-    };
-    let mut outcomes: Vec<JointOutcome> = details
-        .joints
-        .iter()
-        .filter(|j| targets.contains(&j.id))
-        .map(|j| {
-            let plan = plan_joint(j, &settings, &edge);
-            JointOutcome {
-                joint: j.id.clone(),
-                hand: plan.hand.clone(),
-                written: false,
-                turned: turned_at.get(&j.id).cloned().unwrap_or_default(),
-                plates: Vec::new(),
-                plan,
+    // 3.–4. Each joint planned with the turns and written; a turned member
+    // none of whose joints is laid out with the turn is not turned (its
+    // roll as before), and the joints planned again without it — until
+    // every turn left helps.
+    let mut refused: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let turns: BTreeMap<&String, f64> = turned
+            .iter()
+            .filter(|(m, _)| !refused.contains(*m))
+            .map(|(m, x)| (m, *x))
+            .collect();
+        let mut turned_at: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for m in turns.keys() {
+            for j in members_here[m.as_str()].iter() {
+                if targets.contains(j) {
+                    turned_at.entry(j.clone()).or_default().push((*m).clone());
+                }
             }
-        })
-        .collect();
-    // 4. Written into the file as it was; then the clash check: a joint
-    // whose laid-out parts run into anything taken back.
+        }
+        let mut plan_doc = planning.clone();
+        for (m, turn) in &turns {
+            ohl_structure_edit::edits::set_member_roll(&mut plan_doc, m, roll_of(m) + turn);
+        }
+        let plan_text = plan_doc.to_string();
+        let details = if turns.is_empty() {
+            None
+        } else {
+            Some(at(&plan_text)?)
+        };
+        let details = details.as_ref().unwrap_or(&around_details);
+        let model = ohl_structures_fe::model::Model::from_structure_type_with_joint_details(
+            &plan_text,
+            ask.library,
+            ask.bolts,
+            None,
+        )
+        .ok();
+        let edge = |a: &crate::Arrival, thick: f64| -> Option<f64> {
+            let m = model.as_ref()?;
+            let idx = m.members.iter().position(|x| x.id == a.member)?;
+            crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None))).map(|r| r.edge)
+        };
+        let mut outcomes: Vec<JointOutcome> = details
+            .joints
+            .iter()
+            .filter(|j| targets.contains(&j.id))
+            .map(|j| {
+                let plan = plan_joint(j, &settings, &edge);
+                JointOutcome {
+                    joint: j.id.clone(),
+                    hand: plan.hand.clone(),
+                    written: false,
+                    turned: turned_at.get(&j.id).cloned().unwrap_or_default(),
+                    plates: Vec::new(),
+                    plan,
+                }
+            })
+            .collect();
+        // A turn that helps no joint is not made: the member among the
+        // ends laid out at none of its joints — as planned first (nothing
+        // written yet), then as written (a joint taken back by the clash
+        // check).
+        let unhelpful = |outcomes: &[JointOutcome], written: bool| -> Vec<String> {
+            turns
+                .keys()
+                .filter(|m| {
+                    !outcomes.iter().any(|o| {
+                        (o.written || !written) && o.plan.ends.iter().any(|e| e.member == ***m)
+                    })
+                })
+                .map(|m| (*m).clone())
+                .collect()
+        };
+        let mut useless = unhelpful(&outcomes, false);
+        let mut done = None;
+        if useless.is_empty() {
+            let written = write_rounds(
+                &Rounds {
+                    doc0: &doc0,
+                    t: &t,
+                    record: &record,
+                    ask,
+                    targets: &targets,
+                    restored: &restored,
+                    turns: &turns,
+                    roll_of: &roll_of,
+                    roll_text: &roll_text,
+                    hand_plates: &hand_plates,
+                    at: &at,
+                },
+                &mut outcomes,
+            )?;
+            useless = unhelpful(&outcomes, true);
+            done = Some(written);
+        }
+        if !useless.is_empty() {
+            for m in useless {
+                let at_joints: Vec<&str> = members_here[m.as_str()]
+                    .iter()
+                    .filter(|j| targets.contains(*j))
+                    .map(String::as_str)
+                    .collect();
+                notes.push(format!(
+                    "{m}: not turned: no joint of it is laid out with the turn ({} left for a \
+                     hand detail); its roll as before",
+                    at_joints.join(" and ")
+                ));
+                refused.insert(m);
+            }
+            continue;
+        }
+        let Some((result, after_count)) = done else {
+            continue;
+        };
+        for m in restored.keys() {
+            if !turns.contains_key(m) {
+                notes.push(format!(
+                    "{m}: its automatic roll taken back (no joint of it laid out with it)"
+                ));
+            }
+        }
+        return Ok(LayoutRun {
+            text: result,
+            joints: outcomes,
+            clashes: (clashes_before, after_count),
+            notes,
+            seconds: start.elapsed().as_secs_f64(),
+        });
+    }
+}
+
+/// What [`write_rounds`] writes with.
+struct Rounds<'a> {
+    doc0: &'a DocumentMut,
+    t: &'a StructureType,
+    record: &'a LayoutRecord,
+    ask: &'a RunAsk<'a>,
+    targets: &'a BTreeSet<String>,
+    /// The rolls turned before at the joints asked, back as written.
+    restored: &'a BTreeMap<String, String>,
+    /// This run's turns.
+    turns: &'a BTreeMap<&'a String, f64>,
+    roll_of: &'a dyn Fn(&str) -> f64,
+    roll_text: &'a dyn Fn(&str) -> String,
+    hand_plates: &'a [OldPlate],
+    at: &'a dyn Fn(&str) -> Result<JointDetails, String>,
+}
+
+/// The plans of `outcomes` written into the file as it was, with the rolls
+/// (those turned before at the joints asked back, this run's turns on
+/// them); then the clash check: a joint whose laid-out parts run into
+/// anything taken back (a second round). The file after and the clashes
+/// at the joints asked after.
+fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String, usize), String> {
+    let ask = r.ask;
     let mut take_back: BTreeSet<String> = BTreeSet::new();
     let mut result = String::new();
     let mut after_count = 0;
     for _round in 0..2 {
-        let mut doc = doc0.clone();
-        let mut rec = record.clone();
+        let mut doc = r.doc0.clone();
+        let mut rec = r.record.clone();
         rec.settings = Some(RecordSettings::of(ask.settings));
         // The rolls (the members of the joints asked): those turned before
         // back, then the turns of this run.
-        for (m, r) in &restored {
-            put_roll(&mut doc, m, r);
+        for (m, roll) in r.restored {
+            put_roll(&mut doc, m, roll);
             rec.rolled.remove(m);
         }
-        for (m, turn) in &turned {
-            ohl_structure_edit::edits::set_member_roll(&mut doc, m, roll_of(m) + turn);
-            rec.rolled.insert(m.clone(), roll_text(m));
+        for (m, turn) in r.turns {
+            ohl_structure_edit::edits::set_member_roll(&mut doc, m, (r.roll_of)(m) + turn);
+            rec.rolled.insert((*m).clone(), (r.roll_text)(m));
         }
-        for o in &mut outcomes {
+        for o in outcomes.iter_mut() {
             o.written = false;
             o.plates.clear();
             if !take_back.contains(&o.joint) {
@@ -743,7 +906,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             if !o.plan.laid_out() || take_back.contains(&o.joint) {
                 if o.plan.ends.is_empty() && o.plan.hand.is_empty() {
                     // Nothing to lay out: the old automatic values go.
-                    strip_joint(&mut doc, &t, &mut rec, &o.joint, ask.replace_hand);
+                    strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand);
                     rec.joints.remove(&o.joint);
                     rec.hand.remove(&o.joint);
                 } else if !o.hand.is_empty() {
@@ -751,8 +914,8 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
                 }
                 continue;
             }
-            strip_joint(&mut doc, &t, &mut rec, &o.joint, ask.replace_hand);
-            o.plates = write_plan(&mut doc, &t, &mut rec, &o.plan, ask, &hand_plates);
+            strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand);
+            o.plates = write_plan(&mut doc, r.t, &mut rec, &o.plan, ask, r.hand_plates);
             o.written = true;
             rec.joints.insert(o.joint.clone());
             if o.plan.hand.is_empty() {
@@ -778,7 +941,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         if !heels.is_empty() {
             // The record first: the drawing reads its marks.
             rec.write(&mut doc);
-            let mid = at(&doc.to_string())?;
+            let mid = (r.at)(&doc.to_string())?;
             for (id, (heel, across)) in &heels {
                 let Some(p) = mid
                     .joints
@@ -802,7 +965,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         }
         rec.write(&mut doc);
         result = doc.to_string();
-        let after = at(&result)?;
+        let after = (r.at)(&result)?;
         let mut again = false;
         for o in outcomes.iter_mut().filter(|o| o.written) {
             let Some(j) = after.joint(&o.joint) else {
@@ -853,20 +1016,14 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
                 again = true;
             }
         }
-        after_count = count_clashes(&after, &targets);
+        after_count = count_clashes(&after, r.targets);
         if !again {
             break;
         }
     }
     // Still clashing after the second round: those taken back are left as
     // they were (the second round wrote none of them).
-    Ok(LayoutRun {
-        text: result,
-        joints: outcomes,
-        clashes: (clashes_before, after_count),
-        notes,
-        seconds: start.elapsed().as_secs_f64(),
-    })
+    Ok((result, after_count))
 }
 
 /// Member `m`'s roll written as `text` (empty: none), exactly.
