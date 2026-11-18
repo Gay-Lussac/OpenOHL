@@ -419,7 +419,8 @@ fn a_few_joints_in_detail_from_the_file_cut_down_are_as_from_the_whole() {
     for j in ["J10", "J21", "J52", "J83"] {
         let joints = BTreeSet::from([j.to_owned()]);
         let keep = crate::reduce::members_for(&doc, &joints);
-        let small = crate::reduce::cut_down(&doc, &keep).expect("cut down");
+        assert!(crate::reduce::worth(&doc, &keep));
+        let small = crate::reduce::cut_down(&doc, &keep);
         let a =
             crate::joints::joint_details_at(&text, &library(), &Default::default(), Some(&joints))
                 .unwrap();

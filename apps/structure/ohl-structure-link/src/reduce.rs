@@ -84,17 +84,20 @@ pub fn members_for(doc: &DocumentMut, joints: &BTreeSet<String>) -> BTreeSet<Str
     keep
 }
 
-/// `doc` cut down to the members `keep`, their connections and the
-/// plates and splices at their joints (every other table as it is); none
-/// when that keeps most of the file (the whole file is as quick).
-pub fn cut_down(doc: &DocumentMut, keep: &BTreeSet<String>) -> Option<DocumentMut> {
+/// Cutting `doc` down to the members `keep` is worth it: it keeps a
+/// small part of the file (else the whole file is as quick).
+pub fn worth(doc: &DocumentMut, keep: &BTreeSet<String>) -> bool {
     let all = doc
         .get("member")
         .and_then(Item::as_array_of_tables)
         .map_or(0, ArrayOfTables::len);
-    if all == 0 || keep.len() as f64 > WORTH * all as f64 {
-        return None;
-    }
+    all > 0 && keep.len() as f64 <= WORTH * all as f64
+}
+
+/// `doc` cut down to the members `keep`, their connections and the
+/// plates and splices at their joints, the layout record's marks of their
+/// ends (every other table as it is).
+pub fn cut_down(doc: &DocumentMut, keep: &BTreeSet<String>) -> DocumentMut {
     let mut nodes: BTreeSet<String> = BTreeSet::new();
     let mut out = DocumentMut::new();
     for (k, v) in doc.iter() {
@@ -166,5 +169,5 @@ pub fn cut_down(doc: &DocumentMut, keep: &BTreeSet<String>) -> Option<DocumentMu
             });
         }
     }
-    Some(out)
+    out
 }

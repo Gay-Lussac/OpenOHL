@@ -597,34 +597,6 @@ fn lay_out_read(
         Some(j) => j.clone(),
         None => t.nodes.iter().map(|n| n.id.clone()).collect(),
     };
-    // 1. The automatic values (and hand ones when replaced) taken out.
-    let mut planning = doc0.clone();
-    let hand_plates = strip(&mut planning, t, &record, &targets, ask.replace_hand);
-    // The joints `joints` in detail from the file cut down to what they
-    // read, when that is quicker ([`crate::reduce`]; the members kept
-    // found once: the run changes no member's joints, and what an end
-    // bolts onto stays at its joint).
-    let keep_for =
-        |joints: &BTreeSet<String>| cut.then(|| crate::reduce::members_for(&doc0, joints));
-    let keep_targets = keep_for(&targets);
-    let text_of = |doc: &DocumentMut, keep: &Option<BTreeSet<String>>| -> String {
-        keep.as_ref()
-            .and_then(|k| crate::reduce::cut_down(doc, k))
-            .map_or_else(|| doc.to_string(), |d| d.to_string())
-    };
-    let at = |doc: &DocumentMut| {
-        joint_details_at(
-            &text_of(doc, &keep_targets),
-            ask.library,
-            ask.bolts,
-            Some(&targets),
-        )
-    };
-    let clashes_before = if count {
-        count_clashes(&at(&doc0)?, &targets)
-    } else {
-        0
-    };
     // The members at the joints asked and their other joints (their ends
     // there: flat or not, laid out or not).
     let members_here: BTreeMap<&str, &[String; 2]> = t
@@ -638,6 +610,45 @@ fn lay_out_read(
         .flat_map(|n| n.iter().cloned())
         .chain(targets.iter().cloned())
         .collect();
+    // The joints `joints` in detail from the file cut down to what they
+    // read, when that is quicker ([`crate::reduce`]; the members kept
+    // found once: the run changes no member's joints, and what an end
+    // bolts onto stays at its joint).
+    let keep_for = |joints: &BTreeSet<String>| {
+        if !cut {
+            return None;
+        }
+        let k = crate::reduce::members_for(&doc0, joints);
+        crate::reduce::worth(&doc0, &k).then_some(k)
+    };
+    let keep_targets = keep_for(&targets);
+    let keep_around = keep_for(&around);
+    let text_of = |doc: &DocumentMut, keep: &Option<BTreeSet<String>>| -> String {
+        keep.as_ref().map_or_else(
+            || doc.to_string(),
+            |k| crate::reduce::cut_down(doc, k).to_string(),
+        )
+    };
+    // 1. The automatic values (and hand ones when replaced) taken out (of
+    // the file cut down to the joints and their neighbours when it is).
+    let mut planning = match &keep_around {
+        Some(k) => crate::reduce::cut_down(&doc0, k),
+        None => doc0.clone(),
+    };
+    let hand_plates = strip(&mut planning, t, &record, &targets, ask.replace_hand);
+    let at = |doc: &DocumentMut| {
+        joint_details_at(
+            &text_of(doc, &keep_targets),
+            ask.library,
+            ask.bolts,
+            Some(&targets),
+        )
+    };
+    let clashes_before = if count {
+        count_clashes(&at(&doc0)?, &targets)
+    } else {
+        0
+    };
     // An end of `m` laid out at a joint not asked (with its roll now).
     let laid_elsewhere = |m: &str| -> Option<&str> {
         record
@@ -667,7 +678,7 @@ fn lay_out_read(
     }
     // (Its model gives the code's edge distances when no member turns.)
     let (around_details, around_model) = crate::joints::joint_details_and_model(
-        &text_of(&planning, &keep_for(&around)),
+        &text_of(&planning, &keep_around),
         ask.library,
         ask.bolts,
         Some(&around),
