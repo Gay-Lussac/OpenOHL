@@ -481,6 +481,18 @@ fn line_menu(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<Command>) {
         item(ui, Command::Library(LibraryKind::StructureTypes), out);
         item(ui, Command::Library(LibraryKind::Insulators), out);
         item(ui, Command::StringBuilder, out);
+        if ui
+            .button(crate::string_library_window::MENU)
+            .on_hover_text(
+                "Every string written inline (on the structures, in the project's structure \
+                 types) gets an entry of the project's insulator library: a preview first, \
+                 then one command",
+            )
+            .clicked()
+        {
+            r.open_string_library();
+            ui.close();
+        }
         ui.separator();
         ui.label(egui::RichText::new("Tables").small().weak());
         item(ui, Command::Table(TableKind::Structures), out);

@@ -102,7 +102,6 @@ impl Values {
 
     /// Of a string of structure type `t` (`stiffness`: the line's
     /// default).
-    #[allow(dead_code)] // The project-wide command (next commit).
     pub fn of_type(
         x: &ohl_structures::structures::TypeString,
         t: &StructureType,
@@ -248,7 +247,6 @@ pub enum Place {
 
 impl Place {
     /// In words.
-    #[allow(dead_code)] // The project-wide command (next commit).
     pub fn describe(&self) -> String {
         match self {
             Place::Structure(id) => format!("structure {id}"),
@@ -363,7 +361,6 @@ fn library_of(model: &Model) -> (InsulatorLibrary, f64) {
 /// Every inline string of the project: the structures' own strings
 /// (`stored`: the line as stored, `resolved`: as resolved) and those of the
 /// project's structure type files (`types`: file name, text).
-#[allow(dead_code)] // The project-wide command (next commit).
 fn inline_strings(
     stored: &Line,
     resolved: &Line,
@@ -411,7 +408,6 @@ fn type_files(model: &Model) -> Vec<(String, String)> {
 
 /// What putting every inline string of the project in its library would
 /// do (the preview).
-#[allow(dead_code)] // The project-wide command (next commit).
 pub fn plan(model: &Model) -> Result<Plan, String> {
     let stored = model
         .stored_line()
@@ -511,6 +507,9 @@ pub fn command(model: &Model, plan: &Plan) -> Result<(String, Command), String> 
                     .find(|(x, _)| Some(x.as_str()) == l.as_deref())
                 {
                     t.insert("insulator", toml_edit::value(id.as_str()));
+                    // A type's string gives an insulator or a length, not
+                    // both: its entry's length is its own, exactly.
+                    t.remove("length");
                 }
             }
         }

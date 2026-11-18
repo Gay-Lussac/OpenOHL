@@ -357,6 +357,54 @@ impl Ready {
         }
     }
 
+    /// **Put the project's strings in a library…**: its preview window
+    /// (or why not, in the status bar).
+    pub fn open_string_library(&mut self) {
+        match crate::string_entries::plan(&self.model) {
+            Ok(plan) => {
+                self.string_library =
+                    Some(crate::string_library_window::Window { plan, error: None });
+            }
+            Err(e) => self.status = Some((e, true)),
+        }
+    }
+
+    /// The preview window of **Put the project's strings in a library…**:
+    /// Apply makes it one command (the strings named exactly as shown:
+    /// not taken into the library again by the edit's own labelling);
+    /// refused, the window stays with the reason.
+    pub(crate) fn string_library_frame(&mut self, ctx: &egui::Context) {
+        use crate::string_library_window::{Asked, show};
+        let Some(mut w) = self.string_library.take() else {
+            return;
+        };
+        match show(ctx, &mut w) {
+            Some(Asked::Cancel) => {
+                self.status = Some(("strings left as they were".into(), false));
+                return;
+            }
+            Some(Asked::Apply) => match crate::string_entries::command(&self.model, &w.plan) {
+                Ok((what, command)) => {
+                    self.cataloguing = true;
+                    let done = self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    });
+                    self.cataloguing = false;
+                    if done {
+                        self.status = Some((what, false));
+                        ctx.request_repaint();
+                        return;
+                    }
+                    w.error = self.status.as_ref().map(|s| s.0.clone());
+                }
+                Err(e) => w.error = Some(e),
+            },
+            None => {}
+        }
+        self.string_library = Some(w);
+    }
+
     /// Opens structure `id` (one without a type) in the pylon editor.
     pub fn edit_structure(&mut self, id: &str) {
         if self

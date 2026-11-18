@@ -8,6 +8,38 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (put the project's strings in a library)
+
+**A one-off command for existing projects: every string written inline
+gets an entry of the project's insulator library** (owner, 2026-11-18:
+"yes do the one-off command for existing projects"; built, in active
+development, not approved yet;
+[user guide](../user-guide/structure-library.md#put-the-projects-strings-in-a-library)).
+
+- **Line › Structures › Put the project's strings in a library…**: the
+  structures' own strings and the strings of the project's structure
+  type files without an `insulator`.
+- **Grouped exactly**: kind, length, weight, wind area, axial stiffness
+  (the line's default where a string gives none), rated load, the three
+  swing limits, and whether it is a leg of a V — compared as stored, to
+  the last bit; an entry of the project's library with exactly those
+  values is reused; new ones are labelled by kind, length, weight and
+  rating, unique, renamable in the preview.
+- **Left inline, with the reason**: no weight (an entry would give it
+  one), a post insulator (made in the library, with its ratings), own
+  volumes, a type string without a length.
+- **Apply**: the new `.ohli` files, the structures and the type files
+  changed as one command of the session (one undo). Each string keeps
+  its values and names its entry: the results are unchanged (tested: the
+  typed example solved in every weather case before and after, equal).
+  The Edit window's **Make a library entry from this string** is the same
+  function for one string (`string_entries`).
+- **Not changed**: the automatic labelling an edit of a structure does
+  (strings of the same values to the millimetre, since 2026-10-21) stays
+  as it was; this command and the Edit window's button bypass it so
+  their entries hold the values exactly. Nothing new is stored (the
+  `insulator` field exists).
+
 ## 2026-11-18 (an edit re-solves the weather cases shown; the others later)
 
 **An edit re-solves at once only the weather cases shown; the others are

@@ -42,6 +42,7 @@ mod project;
 mod session_edits;
 mod snap_marker;
 mod string_builder;
+mod string_library;
 mod strings_colours;
 mod strings_picking;
 mod structure_loads_window;

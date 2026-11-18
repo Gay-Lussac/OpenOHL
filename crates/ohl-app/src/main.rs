@@ -129,6 +129,7 @@ mod string_builder;
 mod string_checks;
 mod string_drag;
 mod string_entries;
+mod string_library_window;
 mod structure_app;
 mod structure_desk;
 mod structure_groups;
