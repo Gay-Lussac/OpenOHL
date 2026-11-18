@@ -352,7 +352,7 @@ impl Session {
         changed: &[(Kind, String)],
         before: &BTreeMap<(Kind, String), Entry>,
         after: &BTreeMap<(Kind, String), Entry>,
-        lines: Option<(&ohl_line::Line, &ohl_line::Line)>,
+        points: Option<(&Points, &Points)>,
     ) -> Result<(), SessionError> {
         if self.role(user)? == Some(Role::Admin) {
             return Ok(());
@@ -373,7 +373,7 @@ impl Session {
             }
             // Points tied to structures the user may move follow them.
             if key.0 == Kind::AlignmentPoint
-                && let Some((old, new)) = lines
+                && let Some((old, new)) = points
                 && follows_structures(old, new, &key.1, changed)
             {
                 continue;
@@ -397,15 +397,13 @@ impl Session {
     }
 }
 
+/// Alignment points by id (those a command changed, before or after it).
+pub(crate) type Points = BTreeMap<String, ohl_line::AlignmentPoint>;
+
 /// Whether alignment point `id` only moved with the structure it is
 /// tied to (one of the `changed` objects).
-fn follows_structures(
-    old: &ohl_line::Line,
-    new: &ohl_line::Line,
-    id: &str,
-    changed: &[(Kind, String)],
-) -> bool {
-    let (Some(p), Some(q)) = (old.alignment_point(id), new.alignment_point(id)) else {
+fn follows_structures(old: &Points, new: &Points, id: &str, changed: &[(Kind, String)]) -> bool {
+    let (Some(p), Some(q)) = (old.get(id), new.get(id)) else {
         return false;
     };
     (&p.structure, &p.description) == (&q.structure, &q.description)

@@ -68,6 +68,8 @@ pub(crate) struct LineState {
     pub(crate) objects: BTreeMap<(Kind, String), Object>,
     pub(crate) line: Line,
     pub(crate) spatial: BTreeMap<(Kind, String), spatial::Entry>,
+    /// The reference index of `line`, when made ([`ohl_line::index`]).
+    pub(crate) index: Option<ohl_line::index::LineIndex>,
     /// Whether the file's spatial index of the line is `spatial` (written
     /// when the line is first worked on).
     pub(crate) indexed: bool,
@@ -380,6 +382,7 @@ impl Session {
             objects,
             line,
             spatial: current,
+            index: None,
             indexed: index,
         })
     }
@@ -518,6 +521,8 @@ impl Session {
                 self.objects = state.objects;
                 self.line = state.line;
                 self.spatial = state.spatial;
+                self.index = state.index;
+                self.sides = None;
             } else {
                 self.others.insert(name, state);
             }
@@ -631,8 +636,11 @@ impl Session {
             objects: std::mem::replace(&mut self.objects, next.objects),
             line: std::mem::replace(&mut self.line, next.line),
             spatial: std::mem::replace(&mut self.spatial, next.spatial),
+            index: std::mem::replace(&mut self.index, next.index),
             indexed: true,
         };
+        // The wind sides kept are the line's worked on only.
+        self.sides = None;
         let old = std::mem::replace(&mut self.current, name.to_owned());
         self.others.insert(old, previous);
         Ok(())
@@ -785,6 +793,7 @@ impl Session {
                 spatial: spatial::entries(&line, &self.grid),
                 objects,
                 line,
+                index: None,
                 indexed: false,
             }
         } else {

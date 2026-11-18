@@ -815,6 +815,9 @@ pub struct LogEntry {
     pub line: String,
 }
 
+/// Points of the project's point clouds changed, by cloud.
+pub(crate) type PointsChanged = Vec<(String, Vec<points::PointChange>)>;
+
 /// Result of an applied command.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Applied {
@@ -1071,6 +1074,29 @@ pub struct Session {
     /// While a unit of work runs ([`Session::unit`]): what to put back
     /// should it fail.
     unit: Option<UnitKept>,
+    /// The reference index of `line` ([`ohl_line::index`]), made when
+    /// first needed and kept up to date by the commands applied in place
+    /// ([`in_place`]); none after the line was made again whole.
+    index: Option<ohl_line::index::LineIndex>,
+    /// Every command the whole way (the line made again from its objects
+    /// and validated whole), as before phase 3: for the tests comparing
+    /// both ways.
+    whole_only: bool,
+    /// The wind sides of `line`'s sections, kept up to date by the
+    /// commands applied in place ([`ohl_line::solve::Sides`]); none until
+    /// needed, and after the line was made again whole.
+    sides: Option<ohl_line::solve::Sides>,
+    /// The working set, when the project file holds a part of a line
+    /// ([`part`]).
+    part: Option<BTreeSet<(Kind, String)>>,
+}
+
+/// What a command of a unit of work replaced, to put back should the unit
+/// fail: the line's whole state (a command applied the whole way), or the
+/// journal of a command applied in place.
+pub(crate) enum Kept {
+    State(Box<lines::LineState>),
+    Journal(in_place::Journal),
 }
 
 /// What a unit of work keeps to undo itself in memory ([`Session::unit`]):
@@ -1078,7 +1104,7 @@ pub struct Session {
 /// first, and the lines whose spatial index it wrote to the file.
 #[derive(Default)]
 struct UnitKept {
-    replaced: Vec<(String, lines::LineState)>,
+    replaced: Vec<(String, Kept)>,
     indexed: Vec<String>,
 }
 
@@ -1774,14 +1800,34 @@ impl Session {
             others: BTreeMap::new(),
             renamed: None,
             unit: None,
+            index: None,
+            whole_only: false,
+            sides: None,
+            part: None,
         };
         session.load_lines(by_line, gone, placed)?;
+        session.read_part()?;
+        // The reference index of the line worked on, made now: the first
+        // edit then costs what it touches too.
+        session.line_index();
+        if !session.line.alignments.is_empty() {
+            session.sides = Some(ohl_line::solve::Sides::of(&session.line));
+        }
         Ok(session)
     }
 
     /// The current line.
     pub fn line(&self) -> &Line {
         &self.line
+    }
+
+    /// Every command the whole way (`true`: the line made again from its
+    /// objects and validated whole, as before the commands were applied in
+    /// place): for tests and measurements comparing both ways; the
+    /// results are the same.
+    #[doc(hidden)]
+    pub fn set_whole_only(&mut self, whole: bool) {
+        self.whole_only = whole;
     }
 
     /// The project's chunk grid.
@@ -2115,6 +2161,7 @@ impl Session {
     pub fn apply(&mut self, user: &str, command: Command) -> Result<Applied, SessionError> {
         self.require_to_apply(user, &command)?;
         self.check_line_write(user)?;
+        self.check_part_command(&command)?;
         self.apply_as(user, command, "do", None, false, true)
     }
 
@@ -3183,6 +3230,14 @@ impl Session {
     /// changed) taken out of the line's settings: out of the settings
     /// `prims` put, else by a put added.
     fn starts_follow(&self, prims: &mut Vec<Command>) {
+        // No start and none put: nothing to follow (without reading every
+        // section's points).
+        let starts_given = prims.iter().any(
+            |p| matches!(p, Command::Put { kind: Kind::Meta, id, .. } if id == "circuit_starts"),
+        );
+        if self.line.circuit_starts.is_empty() && !starts_given {
+            return;
+        }
         let mut sections: BTreeMap<String, Vec<ohl_line::SectionPoint>> = self
             .line
             .sections
@@ -3284,14 +3339,41 @@ impl Session {
         if out.is_err() {
             // (After a failed RELEASE the savepoint is still there.)
             let _ = self.conn.roll_back_to("ohl_unit");
-            for (name, state) in kept.replaced.into_iter().rev() {
-                if name == self.current {
-                    self.objects = state.objects;
-                    self.line = state.line;
-                    self.spatial = state.spatial;
-                } else if let Some(other) = self.others.get_mut(&name) {
-                    let indexed = other.indexed;
-                    *other = lines::LineState { indexed, ..state };
+            for (name, kept) in kept.replaced.into_iter().rev() {
+                match kept {
+                    Kept::State(state) => {
+                        let state = *state;
+                        if name == self.current {
+                            self.objects = state.objects;
+                            self.line = state.line;
+                            self.spatial = state.spatial;
+                            self.index = state.index;
+                            self.sides = None;
+                        } else if let Some(other) = self.others.get_mut(&name) {
+                            let indexed = other.indexed;
+                            *other = lines::LineState { indexed, ..state };
+                        }
+                    }
+                    Kept::Journal(j) => {
+                        if name == self.current {
+                            self.sides = None;
+                            in_place::revert(
+                                &mut self.objects,
+                                &mut self.line,
+                                &mut self.index,
+                                &mut self.spatial,
+                                j,
+                            );
+                        } else if let Some(other) = self.others.get_mut(&name) {
+                            in_place::revert(
+                                &mut other.objects,
+                                &mut other.line,
+                                &mut other.index,
+                                &mut other.spatial,
+                                j,
+                            );
+                        }
+                    }
                 }
             }
             // An index written by the unit is not in the file any more.
@@ -3322,6 +3404,7 @@ impl Session {
         if cascade {
             deleted_once(&mut prims);
             self.starts_follow(&mut prims);
+            self.check_part_objects(&prims)?;
         }
         // Settings rows unchanged are left out: a setting changed touches
         // its own row only ([`META_ROWS`]).
@@ -3340,18 +3423,26 @@ impl Session {
         let (point_prims, mut prims): (Vec<Command>, Vec<Command>) = prims
             .into_iter()
             .partition(|c| matches!(c, Command::ChangePoints { .. }));
+        // In place when it can (the same result: [`in_place`]).
+        if !import
+            && self.suits_in_place(&prims)
+            && let Some(applied) = self.apply_in_place(
+                user,
+                prims.clone(),
+                point_prims.clone(),
+                entry_kind,
+                undoes,
+                cascade,
+                note.clone(),
+            )?
+        {
+            return Ok(applied);
+        }
         // Apply to a copy, collect the inverse (in reverse order).
         let mut objects = self.objects.clone();
         let mut inverse = Vec::new();
         let mut changed: Vec<(Kind, String)> = Vec::new();
-        let next_ord = |objects: &BTreeMap<(Kind, String), Object>, kind: Kind| {
-            objects
-                .iter()
-                .filter(|((k, _), _)| *k == kind)
-                .map(|(_, o)| o.ord)
-                .max()
-                .map_or(0, |m| m + 1)
-        };
+        let next_ord = in_place::next_ord;
         for p in &prims {
             match p {
                 Command::Put {
@@ -3490,12 +3581,20 @@ impl Session {
                 .filter(|(k, _)| *k != Kind::PointCloud)
                 .cloned()
                 .collect();
+            let points = |l: &Line| -> BTreeMap<String, ohl_line::AlignmentPoint> {
+                objects_only
+                    .iter()
+                    .filter(|(k, _)| *k == Kind::AlignmentPoint)
+                    .filter_map(|(_, id)| Some((id.clone(), l.alignment_point(id)?.clone())))
+                    .collect()
+            };
+            let (before, after) = (points(&self.line), points(&line));
             self.check_edit(
                 user,
                 &objects_only,
                 &self.spatial,
                 &spatial,
-                Some((&self.line, &line)),
+                Some((&before, &after)),
             )?;
             for p in &point_prims {
                 if let Command::ChangePoints { cloud, points } = p {
@@ -3511,7 +3610,64 @@ impl Session {
             }
         }
 
-        // Persist atomically: points, objects and log entry.
+        let (seq, points_changed) = self.persist(
+            user,
+            entry_kind,
+            undoes,
+            note,
+            point_prims,
+            prims,
+            inverse,
+            &changed,
+            &objects,
+            &sections,
+            &self.spatial,
+            &spatial,
+        )?;
+        // The state replaced: dropped, or kept (moved) by the unit of work
+        // this command is part of, to put back should the unit fail.
+        let replaced = lines::LineState {
+            objects: std::mem::replace(&mut self.objects, objects),
+            line: std::mem::replace(&mut self.line, line),
+            spatial: std::mem::replace(&mut self.spatial, spatial),
+            index: self.index.take(),
+            indexed: true,
+        };
+        // The wind sides kept are worked out again when next needed.
+        self.sides = None;
+        if let Some(kept) = &mut self.unit {
+            kept.replaced
+                .push((self.current.clone(), Kept::State(Box::new(replaced))));
+        }
+        Ok(Applied {
+            seq,
+            objects: changed,
+            sections,
+            points: points_changed,
+        })
+    }
+
+    /// Writes a command atomically: the points changed (`point_prims`),
+    /// the rows of the objects `changed` as `objects` holds them, the log
+    /// entry (the command `prims` as applied, its `inverse`, the dirty
+    /// `sections`) and the index entries that differ between `old` and
+    /// `new`. Gives the entry's number and the points as changed.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn persist(
+        &self,
+        user: &str,
+        entry_kind: &str,
+        undoes: Option<i64>,
+        note: Option<String>,
+        point_prims: Vec<Command>,
+        mut prims: Vec<Command>,
+        inverse: Vec<Command>,
+        changed: &[(Kind, String)],
+        objects: &BTreeMap<(Kind, String), Object>,
+        sections: &[String],
+        old: &BTreeMap<(Kind, String), spatial::Entry>,
+        new: &BTreeMap<(Kind, String), spatial::Entry>,
+    ) -> Result<(i64, PointsChanged), SessionError> {
         let tx = Step::begin(&self.conn)?;
         let mut point_inverses = Vec::new();
         let mut points_changed = Vec::new();
@@ -3537,7 +3693,7 @@ impl Session {
         // A line kept as differences from a revision keeps a tombstone
         // for an object deleted ([`lines`]).
         let based = tx.line_base(&self.current)?.is_some();
-        for (kind, id) in &changed {
+        for (kind, id) in changed {
             if *kind == Kind::PointCloud {
                 continue;
             }
@@ -3574,25 +3730,9 @@ impl Session {
         if let Some(u) = undoes {
             tx.mark_undone(u, seq)?;
         }
-        tx.spatial_write_diff(&self.current, &self.spatial, &spatial)?;
+        tx.spatial_write_diff(&self.current, old, new)?;
         tx.commit()?;
-        // The state replaced: dropped, or kept (moved) by the unit of work
-        // this command is part of, to put back should the unit fail.
-        let replaced = lines::LineState {
-            objects: std::mem::replace(&mut self.objects, objects),
-            line: std::mem::replace(&mut self.line, line),
-            spatial: std::mem::replace(&mut self.spatial, spatial),
-            indexed: true,
-        };
-        if let Some(kept) = &mut self.unit {
-            kept.replaced.push((self.current.clone(), replaced));
-        }
-        Ok(Applied {
-            seq,
-            objects: changed,
-            sections,
-            points: points_changed,
-        })
+        Ok((seq, points_changed))
     }
 
     /// The operation log, oldest first.
@@ -3852,10 +3992,16 @@ impl Session {
 pub mod annotations;
 pub mod collab;
 pub mod impact;
+pub(crate) mod in_place;
+#[cfg(test)]
+mod in_place_tests;
 pub mod library_merge;
 pub mod lines;
 pub mod live;
 pub mod packing;
+pub mod part;
+#[cfg(test)]
+mod part_tests;
 pub mod points;
 pub mod replace;
 pub mod reports;
