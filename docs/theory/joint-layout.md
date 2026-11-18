@@ -35,18 +35,22 @@ turns them as a lattice tower is built, from the tower's shape alone:
 - **Legs and chords** (class `leg`, or angles running on in line within
   10° through a joint): heel out, a flange in each of the two faces
   meeting at the member. The faces come from the neighbouring legs'
-  lines: the section of the tower's legs and chords through the member's
-  middle, seen along it — those within 70° of it whose lines a member
-  joins to its line (a face's bracing, a plan member; a portal's other
-  column, joined only through its beam, is not a neighbour) — is a
-  convex polygon of which the member is a corner; the two corners next to it
+  lines: the section of the tower's legs (for a leg; the chords for a
+  chord) through the member's middle, seen along it — those within 70°
+  of it whose lines a member joins to its line, lying in one plane with
+  both within 5° (a face's bracing, a plan member; a portal's other
+  column, joined only through its beam, and an arm's chord joined to a
+  leg by the arm's bracing are not neighbours) — is a convex polygon of
+  which the member is a corner; the two corners next to it
   give the two faces. Where the faces meet at θ ≠ 90° (seen along the
   member), no angle lies in both: the bisector of the angle's legs is
   put on the bisector of the faces, each flange |θ − 90°| / 2 off its
   face (said per member). For a square or rectangular body this is a
   fraction of a degree; for a triangular crossarm 15° — more than the 5°
   a member is laid flat within, so the bracing there needs a bent plate
-  or a hand detail.
+  or a hand detail. Faces meeting at less than 45° or more than 135°
+  (each flange more than 22.5° off) are taken as no corner: the member
+  is left (an assumption of the tool).
 - **Plan and hip members** (horizontal within 5°, in no steep face of
   the tower): one leg horizontal, the other pointing down — **an
   assumption** of this tool (no water lying in the angle), not a

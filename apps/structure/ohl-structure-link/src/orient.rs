@@ -12,7 +12,8 @@
 //!   run on in line (within [`IN_LINE_DEG`]) through a joint: each turned
 //!   so that its heel points out of the tower and its two flanges lie in
 //!   the two faces of the tower meeting at it. The faces are those of its
-//!   neighbouring legs' lines: the tower's legs and chords beside it
+//!   neighbouring legs' lines (a leg's from the other legs, a chord's from
+//!   the other chords): the tower's legs and chords beside it
 //!   (within [`PARALLEL_DEG`] of it, their lines joined to its line by a
 //!   member — a face's bracing, a plan member; each by its point nearest
 //!   the member's middle) seen along it make a polygon; the member is a corner
@@ -57,6 +58,12 @@ pub const IN_LINE_DEG: f64 = 10.0;
 /// this angle of it, degrees (a tapering body's opposite legs, a
 /// crossarm's converging chords).
 pub const PARALLEL_DEG: f64 = 70.0;
+
+/// The faces at a leg or chord meeting at an angle within these, degrees
+/// (seen along it): a corner its angle is turned to (each flange then at
+/// most 22.5° off its face); else it is left (an assumption of this
+/// command, not a standard's).
+pub const CORNER_DEG: [f64; 2] = [45.0, 135.0];
 
 /// A corner of the tower's section lying within this distance of the line
 /// through its neighbours is on a face, not a corner, m.
@@ -257,22 +264,28 @@ pub fn orient_angles(
         .collect();
     // The lines of legs and chords next to each other: joined by a member
     // (a face's bracing, a plan member) from a joint of one to a joint of
-    // the other. Only those make a member's faces: a portal's other column,
-    // a far crossarm's chords are not its neighbours however parallel.
-    let mut lines_at: BTreeMap<&str, BTreeSet<usize>> = BTreeMap::new();
+    // the other, lying in one plane with both (within [`FLAT_OFF`]). Only
+    // those make a member's faces: a portal's other column, a far
+    // crossarm's chords, an arm's chord joined to a leg by the arm's
+    // bracing are not its neighbours however parallel.
+    let mut lines_at: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
     for &k in &chords {
         let m = t
             .members
             .iter()
             .find(|m| m.id == lines[k].id)
             .expect("listed");
+        let r = root(&mut line_of, k);
         for n in &m.nodes {
-            lines_at
-                .entry(n.as_str())
-                .or_default()
-                .insert(root(&mut line_of, k));
+            lines_at.entry(n.as_str()).or_default().push((r, k));
         }
     }
+    let position: BTreeMap<&str, [f64; 3]> = t
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.point.map(|v| v.si())))
+        .collect();
+    let flat = FLAT_OFF.to_radians().sin();
     let mut next_to: BTreeSet<(usize, usize)> = BTreeSet::new();
     for m in &t.members {
         let (Some(a), Some(b)) = (
@@ -281,12 +294,28 @@ pub fn orient_angles(
         ) else {
             continue;
         };
-        for &x in a {
-            for &y in b {
-                if x != y {
-                    next_to.insert((x, y));
-                    next_to.insert((y, x));
+        let (Some(pa), Some(pb)) = (
+            position.get(m.nodes[0].as_str()),
+            position.get(m.nodes[1].as_str()),
+        ) else {
+            continue;
+        };
+        let d = sub(*pb, *pa);
+        if norm(d) <= 1e-9 {
+            continue;
+        }
+        let d = unit(d);
+        for &(x, kx) in a {
+            for &(y, ky) in b {
+                if x == y {
+                    continue;
                 }
+                let n = cross(lines[kx].x, d);
+                if norm(n) < flat || dot(unit(n), lines[ky].x).abs() > flat {
+                    continue;
+                }
+                next_to.insert((x, y));
+                next_to.insert((y, x));
             }
         }
     }
@@ -312,6 +341,11 @@ pub fn orient_angles(
                 continue;
             }
             let o = &lines[n];
+            // A leg's faces from the other legs, a chord's from the other
+            // chords (not an arm's members joined to a leg in its face).
+            if o.class_leg != l.class_leg {
+                continue;
+            }
             if angle_deg(l.x, o.x).min(180.0 - angle_deg(l.x, o.x)) > PARALLEL_DEG {
                 continue;
             }
@@ -389,6 +423,21 @@ pub fn orient_angles(
                 left.push((
                     l.id.clone(),
                     "two angles back to back: no corner to turn to the faces".into(),
+                ));
+            }
+            continue;
+        }
+        // Faces meeting far from square (nearly one plane, or a sharp
+        // edge): no corner an angle's legs can follow.
+        if !(CORNER_DEG[0]..=CORNER_DEG[1]).contains(&theta) {
+            if asked(&l.id) && l.class_leg {
+                left.push((
+                    l.id.clone(),
+                    format!(
+                        "its two faces meet at {theta:.0}°, too far from square for an angle's \
+                         legs (a corner between {:.0}° and {:.0}°)",
+                        CORNER_DEG[0], CORNER_DEG[1]
+                    ),
                 ));
             }
             continue;

@@ -109,7 +109,8 @@ pub use ohl_structures::connections::{
 };
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
 pub use orient::{
-    IN_LINE_DEG, OrientAsk, OrientKind, OrientRun, OrientedMember, PARALLEL_DEG, orient_angles,
+    CORNER_DEG, IN_LINE_DEG, OrientAsk, OrientKind, OrientRun, OrientedMember, PARALLEL_DEG,
+    orient_angles,
 };
 pub use plate_checks::{
     PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_plans_in,
