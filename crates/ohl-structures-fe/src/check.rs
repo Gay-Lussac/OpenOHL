@@ -979,6 +979,10 @@ fn usage_of(
         {
             let m = &model.members[idx];
             let s = &model.sections[m.section];
+            // The moments of eccentric ends the solve could not carry
+            // (only bars meet the joint), in its check (2026-11-18).
+            let shifted = crate::offsets::eccentric_bending(model, idx);
+            let f = &crate::offsets::with_eccentric_moments(model, idx, f);
             if !m.check {
                 // A modelling member: solved, not checked.
                 return MemberUsage {
@@ -1123,8 +1127,8 @@ fn usage_of(
             // Likewise any member checked for its axial force alone: its
             // bending between its joints from the loads along it (its own
             // weight, member wind, ice), said when it would add.
-            let axial_only =
-                !m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments);
+            let axial_only = !shifted
+                && (!m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments));
             if axial_only && m.kind != MemberKind::Cable {
                 let [my, mz] = moments_along(f);
                 let fy = s.yield_strength;
@@ -1154,7 +1158,7 @@ fn usage_of(
                 words.push_str(&suffix);
                 (u, words)
             });
-            if !m.is_frame() || (axial_member(m, s) && !model.analysis.single_angle_moments) {
+            if axial_only {
                 return MemberUsage {
                     member: idx,
                     usage: axial.as_ref().map(|a| a.0),

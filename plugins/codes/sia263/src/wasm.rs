@@ -495,8 +495,9 @@ impl full::Guest for Sia263 {
 use exports::ohl::plugin::bolt_distances::{DistanceInput, Distances};
 use exports::ohl::plugin::joint_check::{CaseUsage as PartUsage, JointInput, Part, PartResult};
 
-/// One joint part's checks under force `n`.
-fn part_checked(p: &Part, n: f64) -> Option<joints::Checked> {
+/// One joint part's checks under force `n` with what else acts on it
+/// (`x`) and its plate's free length in compression (`free`).
+fn part_checked(p: &Part, n: f64, x: &joints::Extra, free: Option<f64>) -> Option<joints::Checked> {
     match p.kind.as_str() {
         "bolts" => {
             let (b, s) = (p.bolts.as_ref()?, p.steel.as_ref()?);
@@ -518,7 +519,7 @@ fn part_checked(p: &Part, n: f64) -> Option<joints::Checked> {
                 fy: s.fy,
                 fu: s.fu,
             };
-            Some(joints::bolted(&g, &steel, n))
+            Some(joints::bolted_with(&g, &steel, n, x, free))
         }
         "weld" => {
             let w = p.weld.as_ref()?;
@@ -538,7 +539,7 @@ fn part_checked(p: &Part, n: f64) -> Option<joints::Checked> {
                     w.thicknesses.get(1).copied().unwrap_or(0.0),
                 ],
             };
-            Some(joints::weld(&input, n))
+            Some(joints::weld_with(&input, n, x))
         }
         _ => None,
     }
@@ -547,20 +548,40 @@ fn part_checked(p: &Part, n: f64) -> Option<joints::Checked> {
 /// Every part of `input` checked (the parameters already set): one
 /// result per part it checks.
 fn joint_results(input: &JointInput) -> Vec<PartResult> {
+    joint_results_with(input, &[])
+}
+
+/// What acts on one part beside its force, per load case, and its
+/// plate's free length in compression (`joint-check-moments`).
+type PartExtra = (Vec<joints::Extra>, Option<f64>);
+
+/// [`joint_results`] with what acts on each part beside its force
+/// (`extra`, by the part's place in `input`; none: nothing).
+fn joint_results_with(input: &JointInput, extra: &[PartExtra]) -> Vec<PartResult> {
     input
         .parts
         .iter()
-        .filter_map(|p| {
+        .enumerate()
+        .filter_map(|(k, p)| {
             let mut notes: Vec<String> = Vec::new();
+            let mut not_safe: Vec<String> = Vec::new();
             let mut usages = Vec::new();
             let mut governs = String::new();
             let mut worst: Option<f64> = None;
+            let none = (Vec::new(), None);
+            let (xs, free) = extra.get(k).unwrap_or(&none);
             for (n, case) in input.cases.iter().enumerate() {
                 let force = p.forces.get(n).copied().unwrap_or(0.0);
-                let checked = part_checked(p, force)?;
+                let x = xs.get(n).copied().unwrap_or_default();
+                let checked = part_checked(p, force, &x, *free)?;
                 for note in &checked.notes {
                     if !notes.contains(note) {
                         notes.push(note.clone());
+                    }
+                }
+                for w in &checked.not_safe {
+                    if !not_safe.contains(w) {
+                        not_safe.push(w.clone());
                     }
                 }
                 if let Some((u, c)) = checked.governing(case.strength) {
@@ -580,7 +601,7 @@ fn joint_results(input: &JointInput) -> Vec<PartResult> {
                 usages,
                 governs,
                 notes,
-                not_safe: None,
+                not_safe: (!not_safe.is_empty()).then(|| not_safe.join("; ")),
             })
         })
         .collect()
@@ -672,6 +693,115 @@ impl jfull::Guest for Sia263 {
                     .usages
                     .into_iter()
                     .map(|u| jfull::CaseUsage {
+                        load_case: u.load_case,
+                        usage: u.usage,
+                        check: u.check,
+                    })
+                    .collect(),
+                governs: r.governs,
+                notes: r.notes,
+                not_safe: r.not_safe,
+            })
+            .collect())
+    }
+}
+
+use exports::ohl::plugin::joint_check_moments as jmom;
+
+/// A `joint-check-moments` input as `joint-check`'s (the same records)
+/// and, per part, what else acts on it and its plate's free length.
+fn moments_input(i: &jmom::JointInput) -> (JointInput, Vec<PartExtra>) {
+    use exports::ohl::plugin::joint_check as j;
+    let input = JointInput {
+        structure: i.structure.clone(),
+        cases: i
+            .cases
+            .iter()
+            .map(|c| j::LoadCase {
+                name: c.name.clone(),
+                strength: c.strength,
+            })
+            .collect(),
+        parts: i
+            .parts
+            .iter()
+            .map(|p| Part {
+                id: p.id,
+                joint: p.joint.clone(),
+                plate: p.plate.clone(),
+                kind: p.kind.clone(),
+                other: p.other.clone(),
+                bolts: p.bolts.as_ref().map(|b| j::BoltGroup {
+                    count: b.count,
+                    diameter: b.diameter,
+                    hole: b.hole,
+                    bolt_ultimate: b.bolt_ultimate,
+                    lines: b.lines,
+                    per_line: b.per_line,
+                    pitch: b.pitch,
+                    span: b.span,
+                    end_tension: b.end_tension,
+                    end_compression: b.end_compression,
+                    edge: b.edge,
+                    width: b.width,
+                    width_note: b.width_note.clone(),
+                }),
+                steel: p.steel.map(|s| j::PlateSteel {
+                    thickness: s.thickness,
+                    fy: s.fy,
+                    fu: s.fu,
+                }),
+                weld: p.weld.as_ref().map(|w| j::Weld {
+                    kind: w.kind.clone(),
+                    throat: w.throat,
+                    length: w.length,
+                    length_given: w.length_given,
+                    angle: w.angle,
+                    fy: w.fy,
+                    thicknesses: w.thicknesses.clone(),
+                }),
+                forces: p.forces.clone(),
+                notes: p.notes.clone(),
+            })
+            .collect(),
+    };
+    let extra = i
+        .parts
+        .iter()
+        .map(|p| {
+            (
+                p.moments
+                    .iter()
+                    .map(|m| joints::Extra {
+                        shear: m.shear.abs(),
+                        in_plane: m.in_plane.abs(),
+                        out_of_plane: m.out_of_plane.abs(),
+                        normal: m.normal.abs(),
+                    })
+                    .collect(),
+                p.free_length,
+            )
+        })
+        .collect();
+    (input, extra)
+}
+
+impl jmom::Guest for Sia263 {
+    fn check_joints_moments(
+        method: String,
+        input: jmom::JointInput,
+    ) -> Result<Vec<jmom::PartResult>, String> {
+        ours(&method)?;
+        params::set(params::parse(&input.parameters)?);
+        let (plain, extra) = moments_input(&input);
+        Ok(joint_results_with(&plain, &extra)
+            .into_iter()
+            .map(|r| jmom::PartResult {
+                id: r.id,
+                usages: r
+                    .usages
+                    .into_iter()
+                    .map(|u| jmom::CaseUsage {
                         load_case: u.load_case,
                         usage: u.usage,
                         check: u.check,

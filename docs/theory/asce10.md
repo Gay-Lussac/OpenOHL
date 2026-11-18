@@ -12,7 +12,7 @@ member with everything its check reads through the plugin interface
 them out (`crates/ohl-structures-fe/src/member_ends.rs`,
 `end_conditions`), the section properties
 (`crates/ohl-sections/src/lib.rs`, `Section::properties`,
-`Shape::symmetry`) —, its joints through `joint-check-full`, and the bolt
+`Shape::symmetry`) —, its joints through `joint-check-moments` (2026-11-18; with what acts on a part beside its force), and the bolt
 tools ask it through `bolt-distances-full` (with the bolts, its own bolt capacity)
 ([Plugins](../development/plugins.md#member-checks)). The usage that
 follows from the capacities is on the
@@ -476,8 +476,10 @@ block shear by Eq. 3.10-1 (stated for angles: applied to the plate's
 block, said), its net section in tension (3.10.1) and its end and edge
 distances (4.5.1, 4.5.3). **ASCE 10-97 gives no weld resistance** (5.2.5
 leaves welding procedures to AWS D1.1): welds are not checked under it,
-said. A plate in compression: plate buckling not checked (no rule in the
-standard).
+said. A plate in compression: no rule in the standard — checked as a
+strut of Whitmore's width by the column curve of 3.6, an assumption on
+the safe side ([joint plates](joint-plates.md#a-plate-in-compression-an-assumption);
+2026-11-18).
 
 ## Not covered by the program
 
@@ -520,6 +522,11 @@ be told from the model's data and stay said here only.
   ([structure analysis](structures-fe.md#member-usage)), without the
   standard's amplification and \\( C_m \\); single angles and lattice
   members are axial only (their eccentricity is in the curves of step 3).
+  A truss whose forces carry end moments — the moment of a shift where
+  only bars meet, which OpenOHL puts into the member's own check
+  (2026-11-18, [structure analysis](structures-fe.md#eccentric-member-ends-rigid-end-offsets))
+  — is checked by the same linear sum as a frame (the shift is an
+  eccentricity beyond the one the curves take).
 - 3.14, 3.15: beams (lateral-torsional buckling) and shear.
 - 4.3.3–4.6: bolts in tension, end and edge distances, spacing,
   attachment holes.

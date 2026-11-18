@@ -381,6 +381,60 @@ fn a_fillet_weld() {
     assert!(weld(&thin, 1e3).notes.iter().any(|n| n.contains("6.3.6.3")));
 }
 
+/// A fillet weld with the moments of its force (invented values, by
+/// hand; SIA 263 6.3.1.7, 6.3.2.1): a = 6 mm, L = 200 mm, plates at 90°,
+/// S355; F = 60 kN, its moment about the weld's middle M = 2 kN m,
+/// about the seam T = 0.1 kN m. At the most loaded end, per unit length:
+/// F/L = 300 kN/m, 6M/L² = 6 × 2 / 0.04 = 300 kN/m, on the throat
+/// 6T/(L a) = 0.6 / (0.2 × 0.006) = 500 kN/m — 1 100 kN/m, so (87) takes
+/// 1 100 × 0.2 = 220 kN against a L 0.6 f_uE / γ_M2 = 0.006 × 0.2 × 306
+/// / 1.25 = 293.76 kN: 74.9 %. On the contact s = 6√2 = 8.485 mm:
+/// 6T/(L s) = 353.6 kN/m, 953.6 kN/m × 0.2 = 190.7 kN against s L 0.8
+/// f_y / γ_M2 = 385.6 kN. Without moments: the force alone (the check of
+/// before). T said not on the safe side (6.3.6.5).
+#[test]
+fn a_fillet_weld_with_its_moments() {
+    let w = WeldInput {
+        kind: WeldKind::Fillet,
+        size: Some(0.006),
+        length: 0.200,
+        length_given: true,
+        angle: 90.0,
+        fy: Some(355e6),
+        thickness: [0.010, 0.010],
+    };
+    let x = joints::Extra {
+        in_plane: 2e3,
+        out_of_plane: 100.0,
+        ..Default::default()
+    };
+    let c = joints::weld_with(&w, 60e3, &x);
+    let t = find(&c, "(87)");
+    assert!((t.demand - 220e3).abs() < 1e-6, "{}", t.demand);
+    assert!((t.resistance - 293.76e3).abs() < 1e-6);
+    let s = 0.006 * 2f64.sqrt();
+    let c88 = find(&c, "(88)");
+    let q = 300e3 + 300e3 + 6.0 * 100.0 / (0.2 * s);
+    assert!((c88.demand - q * 0.2).abs() < 1e-6, "{}", c88.demand);
+    assert!((c88.resistance - s * 0.2 * 0.8 * 355e6 / 1.25).abs() < 1e-6);
+    let (u, g) = c.governing(1.0).unwrap();
+    assert!(g.what.contains("(87)") && (u - 220.0 / 293.76).abs() < 1e-12);
+    assert!(c.not_safe.iter().any(|n| n.contains("6.3.6.5")));
+    // Without moments: the force alone, nothing said not safe.
+    let c = joints::weld_with(&w, 60e3, &joints::Extra::default());
+    assert!((find(&c, "(87)").demand - 60e3).abs() < 1e-9);
+    assert!(c.not_safe.is_empty());
+    assert_eq!(c, weld(&w, 60e3));
+    // The in-plane moment alone: (300 + 300) × 0.2 = 120 kN.
+    let m = joints::Extra {
+        in_plane: 2e3,
+        ..Default::default()
+    };
+    let c = joints::weld_with(&w, 60e3, &m);
+    assert!((find(&c, "(87)").demand - 120e3).abs() < 1e-6);
+    assert!(c.not_safe.is_empty());
+}
+
 /// The parameter file's γ_M1 changes the members' design values, and the
 /// standard's values give the core's numbers.
 #[test]
@@ -394,4 +448,115 @@ fn parameters_change_the_design_values() {
     let (c2, _) = sia263::capacity(&m, None);
     crate::params::set(crate::params::Params::default());
     assert!(c2.tension.unwrap().0 < gross.0);
+}
+
+/// A shift where only bars meet (2026-11-18): OpenOHL puts its moment N·e
+/// in a truss's end forces as a uniform moment; SIA 263's plugin then
+/// checks the truss with it as a frame (its stability check, formulas
+/// 50, 62, 63, with the moment). An L 60×6 S355, 2 m, 20 kN compression,
+/// 0.3 kN m about each axis: its usage larger than without, which is the
+/// axial check alone (the connection's eccentricity of 5.4.1.2 as
+/// before).
+#[test]
+fn a_truss_with_the_moment_of_its_shift() {
+    use crate::check::{member_usage, shifted};
+    use crate::model::{Analysis, MemberForces};
+    let (m, _) = angle(0.060, 0.006, 355e6, 2.0);
+    crate::params::set(crate::params::Params::default());
+    let plain = MemberForces {
+        axial: -20e3,
+        end_forces: [0.0; 12],
+        slack: false,
+        bowed: false,
+        length: 2.0,
+        span_load: [0.0; 3],
+        lumped_load: [0.0; 3],
+    };
+    let mut bent = plain.clone();
+    for (i, j) in [(4, 10), (5, 11)] {
+        bent.end_forces[i] = -300.0;
+        bent.end_forces[j] = 300.0;
+    }
+    assert!(shifted(&m, &bent) && !shifted(&m, &plain));
+    let a = Analysis {
+        single_angle_moments: false,
+        no_compression: false,
+        redundant_force: None,
+    };
+    let u0 = member_usage(&a, &m, &plain, None, false, 1.0, None);
+    let u1 = member_usage(&a, &m, &bent, None, false, 1.0, None);
+    assert!(
+        u1.usage.unwrap() > u0.usage.unwrap() + 0.01,
+        "{u0:?} {u1:?}"
+    );
+}
+
+/// A gusset plate in compression as a strut (2026-11-18; an assumption:
+/// no rule in SIA 263), by hand: the plate of `plate_by_hand`, 200 kN
+/// compression, free length 150 mm. Whitmore's width 60 + 2 × 50 × tan
+/// 30° = 117.7 mm, i = 10/√12 = 2.887 mm, λ_K = 2 × 150 / 2.887 = 103.9,
+/// λ_E = π √(210 000/355) = 76.4, λ̄_K = 1.360; curve c (α 0.49): Φ =
+/// ½ (1 + 0.49 × 1.160 + 1.850) = 1.709, χ = 1 / (1.709 + √(1.709² −
+/// 1.850)) = 0.364; N_K,Rd = 0.364 × 355 × 1 177 / 1.05 = 145.0 kN.
+#[test]
+fn a_plate_in_compression_as_a_strut() {
+    crate::params::set(crate::params::Params::default());
+    let c = joints::bolted_with(
+        &group(),
+        &STEEL,
+        -200e3,
+        &joints::Extra::default(),
+        Some(0.150),
+    );
+    let b = 0.060 + 2.0 * 0.050 * 30f64.to_radians().tan();
+    let lb =
+        2.0 * 0.150 / (0.010 / 12f64.sqrt()) / (std::f64::consts::PI * (210e9 / 355e6f64).sqrt());
+    let phi = 0.5 * (1.0 + 0.49 * (lb - 0.2) + lb * lb);
+    let chi = 1.0 / (phi + (phi * phi - lb * lb).sqrt());
+    let k = find(&c, "plate buckling as a strut");
+    assert!(
+        (k.resistance - chi * 355e6 * b * 0.010 / 1.05).abs() < 1e-6,
+        "{k:?}"
+    );
+    assert!((k.resistance - 145.0e3).abs() < 0.3e3, "{k:?}");
+    assert!(
+        !c.notes
+            .iter()
+            .any(|n| n.contains("plate buckling not checked"))
+    );
+    let c = joints::bolted_with(&group(), &STEEL, -200e3, &joints::Extra::default(), None);
+    assert!(
+        c.not_safe
+            .iter()
+            .any(|n| n.contains("free length not known"))
+    );
+}
+
+/// A frame member's end shear and moment in the plate (2026-11-18), by
+/// hand: the plate of `plate_by_hand`, 100 kN tension, 10 kN shear in its
+/// plane, 1 kN m about its normal: k = 4 r_max / Σ r² = 25.61 /m (the
+/// bolts ±25 mm, ±30 mm), bearing under 100 + 10 + 25.61 = 135.61 kN at
+/// the nearer of the end (40 mm) and edge (30 mm) distances: (76) with
+/// e_1 = 30 mm, 4 × 0.85 × 30/18 × 510 × 16 × 10 / 1.25 = 369.9 kN; the
+/// other checks under 160 kN (net section (39) 160 of 308.4 kN).
+#[test]
+fn a_frame_members_shear_and_moment_in_the_plate() {
+    crate::params::set(crate::params::Params::default());
+    let x = joints::Extra {
+        shear: 10e3,
+        in_plane: 1e3,
+        ..Default::default()
+    };
+    let c = joints::bolted_with(&group(), &STEEL, 100e3, &x, Some(0.150));
+    let k = joints::moment_factor(&group());
+    let b = find(&c, "(76)");
+    assert!((b.demand - (110e3 + 1e3 * k)).abs() < 1e-6, "{b:?}");
+    let one = 0.85 * 30.0 / 18.0 * 510e6 * 0.016 * 0.010 / 1.25;
+    assert!((b.resistance - 4.0 * one).abs() < 1.0, "{b:?}");
+    assert!((b.resistance - 369.9e3).abs() < 0.1e3, "{b:?}");
+    let net = find(&c, "(39)");
+    assert!((net.demand - 160e3).abs() < 1e-6, "{net:?}");
+    assert!(c.checks.iter().any(|p| p.what.contains("as a strut")));
+    let plain = joints::bolted_with(&group(), &STEEL, 100e3, &joints::Extra::default(), None);
+    assert_eq!(plain, bolted(&group(), &STEEL, 100e3));
 }

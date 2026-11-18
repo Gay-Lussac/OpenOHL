@@ -19,7 +19,7 @@ plugin's method `asce10-97`; no file is rewritten). Theory:
 | --- | --- |
 | `member-check` | its method `asce10-97` (`check-members` refused: the check needs the full records) |
 | `member-check-full` | every checked member in one call, with everything the core's check read |
-| `joint-check`, `joint-check-full` | a member's bolts in a gusset plate or cover (bearing, block shear, net section, end and edge distances); a weld between two plates is not checked (ASCE 10-97 gives no weld resistance), said |
+| `joint-check`, `joint-check-full`, `joint-check-moments` | a member's bolts in a gusset plate or cover (bearing, block shear, net section, end and edge distances); a weld between two plates is not checked (ASCE 10-97 gives no weld resistance), said |
 | `bolt-distances`, `bolt-distances-full` | 4.5 with the bolt's force; without an analysis its own design shear capacity (4.3.2: a given capacity, else 0.62 f_u on 0.6 of the gross area, times the shear planes), worked out by the plugin since 2026-11-18 (third round; before, by the core — the same numbers) |
 
 ## Parameters

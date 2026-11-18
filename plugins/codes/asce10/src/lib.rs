@@ -22,9 +22,9 @@
 //!   ([`check`], [`asce10`]); `member-check`'s `check-members` (the
 //!   smaller record) is refused: without the section's and the forces'
 //!   details the check would not be ASCE 10-97's.
-//! - `joint-check` (and `joint-check-full`): a member's bolts in a gusset
-//!   plate or cover; a weld between two plates is not checked (ASCE 10-97
-//!   gives no weld resistance) ([`joints`]).
+//! - `joint-check` (and `joint-check-full`, `joint-check-moments`): a
+//!   member's bolts in a gusset plate or cover; a weld between two plates
+//!   is not checked (ASCE 10-97 gives no weld resistance) ([`joints`]).
 //! - `bolt-distances` (and `bolt-distances-full`): ASCE 10-97 4.5 with the
 //!   bolt's force; without an analysis the bolt's own design shear
 //!   capacity (4.3.2, [`asce10::bolt_shear`]; third round, 2026-11-18).

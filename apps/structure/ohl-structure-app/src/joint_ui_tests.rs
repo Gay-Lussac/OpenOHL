@@ -1295,7 +1295,20 @@ fn joint_details_show_the_plate_checks() {
     assert!(h.get_all_by_label_contains("ASCE 10-97").count() >= 1);
     h.get_by_label_contains("Each check in case").click();
     h.run();
-    assert!(h.get_all_by_label_contains("bearing on the plate").count() >= 1);
+    // The governing check of the case with its clause: bearing, the net
+    // section (since 2026-11-18 a frame member's end shear and moments are
+    // in the plate checks) or the plate in compression as a strut.
+    assert!(
+        [
+            "bearing on the plate",
+            "net section of the plate",
+            "as a strut"
+        ]
+        .iter()
+        .map(|w| h.query_all_by_label_contains(w).count())
+        .sum::<usize>()
+            >= 1
+    );
     assert!(
         h.get_all_by_label_contains("do not meet (parallel, or apart)")
             .count()

@@ -428,7 +428,8 @@ fn usage_of(
     // Any member checked for its axial force alone: its bending between
     // its joints from the loads along it (its own weight, member wind,
     // ice), said when it would add.
-    let axial_only = !m.is_frame() || (axial_member(m) && !analysis.single_angle_moments);
+    let axial_only =
+        !shifted(m, f) && (!m.is_frame() || (axial_member(m) && !analysis.single_angle_moments));
     if axial_only && m.kind != MemberKind::Cable {
         let [my, mz] = moments_along(f);
         let fy = s.yield_strength;
@@ -459,7 +460,8 @@ fn usage_of(
     // class 4 and frames by the stability check (formulas 50, 62, 63), the
     // larger of it and the axial one (the connection's).
     if let Some(st) = &stability {
-        let frame = m.is_frame() && !(axial_member(m) && !analysis.single_angle_moments);
+        let frame =
+            shifted(m, f) || (m.is_frame() && !(axial_member(m) && !analysis.single_angle_moments));
         let given_cap = if n < 0.0 {
             m.capacity_compression.is_some()
         } else {
@@ -502,7 +504,7 @@ fn usage_of(
         words.push_str(&suffix);
         (u, words)
     });
-    if !m.is_frame() || (axial_member(m) && !analysis.single_angle_moments) {
+    if axial_only {
         return MemberUsage {
             usage: axial.as_ref().map(|a| a.0),
             governs: axial.map(|a| a.1).unwrap_or_default(),
@@ -590,7 +592,8 @@ fn uncovered_clauses(
             "battens and connectors of the built-up member not checked (SIA 263 5.5)".to_owned(),
         );
     }
-    let frame = m.is_frame() && !(axial_member(m) && !analysis.single_angle_moments);
+    let frame =
+        shifted(m, f) || (m.is_frame() && !(axial_member(m) && !analysis.single_angle_moments));
     if !frame {
         return out;
     }
@@ -609,6 +612,18 @@ fn uncovered_clauses(
         }
     }
     out
+}
+
+/// Whether a truss (or tension-only) member's forces carry end moments:
+/// the moments of its eccentric ends its solve could not carry, only bars
+/// meeting the joint — OpenOHL puts them in its end forces as a uniform
+/// moment (2026-11-18; a truss's solve gives none). Such a member is
+/// checked with its bending, by the code's interaction of axial force and
+/// bending, as a frame is.
+pub fn shifted(m: &Member, f: &MemberForces) -> bool {
+    !m.is_frame()
+        && m.kind != MemberKind::Cable
+        && [4, 5, 10, 11].iter().any(|&k| f.end_forces[k] != 0.0)
 }
 
 /// Whether a section is a single angle (a profile `equal_angle` or

@@ -41,6 +41,7 @@ use ohl_plugins::bolt_distances_full as dist_full;
 use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
 use ohl_plugins::joint_check_full as full;
+use ohl_plugins::joint_check_moments as mom;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
 use ohl_structures_fe::bolt_rules::{Basis, BoltRules, Force};
@@ -141,36 +142,184 @@ pub fn joint_calls() -> usize {
 }
 
 /// The joint parts of `input` checked by the plugin `p` names: one call
-/// with every part and load case.
+/// with every part and load case (nothing beside the parts' forces sent:
+/// [`check_joints_with`] sends the rest).
 pub fn check_joints(p: &PluginMethod, input: &wit::JointInput) -> JointsChecked {
+    check_joints_with(p, input, &[]).0
+}
+
+/// What acts on one part beside its force (2026-11-18), for the plugin's
+/// `joint-check-moments` export: per load case (as the part's `forces`)
+/// `[shear, in-plane, out-of-plane, normal]` (sizes, N and N·m; the
+/// interface's `part-moments`), and a bolt group's plate's free length
+/// in compression, m.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Extra {
+    /// Per load case: shear, in-plane moment, out-of-plane moment, normal
+    /// force (empty: nothing else acts).
+    pub moments: Vec<[f64; 4]>,
+    /// The plate's free length in compression (a bolt group), m.
+    pub free_length: Option<f64>,
+}
+
+impl Extra {
+    /// Something acts on the part beside its force in some case.
+    pub fn acts(&self) -> bool {
+        self.moments.iter().any(|m| m.iter().any(|x| *x > 0.0))
+    }
+}
+
+/// [`check_joints`] with what acts on each part beside its force
+/// (`extra`, one per part of `input` in its order, or empty): through the
+/// plugin's `joint-check-moments` when it has it (true with the results),
+/// else `joint-check-full` or `joint-check` without it (false: the caller
+/// says, on each part something else acts on, that it was not sent).
+pub fn check_joints_with(
+    p: &PluginMethod,
+    input: &wit::JointInput,
+    extra: &[Extra],
+) -> (JointsChecked, bool) {
     let dir = match installed(p) {
         Ok(d) => d,
-        Err(e) => return JointsChecked::NotChecked(e),
+        Err(e) => return (JointsChecked::NotChecked(e), false),
     };
     let host = match crate::host() {
         Ok(h) => h,
-        Err(e) => return JointsChecked::NotChecked(format!("the plugin host does not start: {e}")),
+        Err(e) => {
+            return (
+                JointsChecked::NotChecked(format!("the plugin host does not start: {e}")),
+                false,
+            );
+        }
     };
     JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    // With the structure's parameter file when the plugin takes it
+    let params = p.parameters.as_ref().map_or("", |x| x.1.as_str());
+    // Every force on a part (`joint-check-moments`, 2026-11-18), else
+    // with the structure's parameter file when the plugin takes it
     // (`joint-check-full`, 2026-11-18), else `joint-check` (the method's
     // own values).
-    let params = p.parameters.as_ref().map_or("", |x| x.1.as_str());
-    let full = host
-        .check_joints_full(&dir, &p.method, &full_input(input, params))
-        .map(|r| r.map(|r| r.into_iter().map(plain_result).collect::<Vec<_>>()));
-    let given = match full {
-        Ok(Some(r)) => Ok(Some(r)),
-        Ok(None) => host.check_joints(&dir, &p.method, input),
-        Err(e) => Err(e),
+    let moments = host
+        .check_joints_moments(&dir, &p.method, &moments_input(input, params, extra))
+        .map(|r| r.map(|r| r.into_iter().map(moments_result).collect::<Vec<_>>()));
+    let (given, sent) = match moments {
+        Ok(Some(r)) => (Ok(Some(r)), true),
+        Err(e) => (Err(e), false),
+        Ok(None) => {
+            let full = host
+                .check_joints_full(&dir, &p.method, &full_input(input, params))
+                .map(|r| r.map(|r| r.into_iter().map(plain_result).collect::<Vec<_>>()));
+            let given = match full {
+                Ok(Some(r)) => Ok(Some(r)),
+                Ok(None) => host.check_joints(&dir, &p.method, input),
+                Err(e) => Err(e),
+            };
+            (given, false)
+        }
     };
-    match given {
+    let checked = match given {
         Ok(Some(r)) => JointsChecked::Results(r),
         Ok(None) => JointsChecked::NotChecked(format!(
             "the plugin {} has no joint check (no joint-check export)",
             p.plugin
         )),
         Err(e) => JointsChecked::NotChecked(format!("the joint check failed: {e}")),
+    };
+    (checked, sent)
+}
+
+/// `input` as `joint-check-moments` takes it, with the plugin's
+/// `parameters` (TOML; "" none) and what else acts on each part (`extra`,
+/// by place; a part without one: nothing).
+fn moments_input(input: &wit::JointInput, parameters: &str, extra: &[Extra]) -> mom::JointInput {
+    let f = full_input(input, parameters);
+    mom::JointInput {
+        structure: f.structure,
+        parameters: f.parameters,
+        cases: f
+            .cases
+            .into_iter()
+            .map(|c| mom::LoadCase {
+                name: c.name,
+                strength: c.strength,
+            })
+            .collect(),
+        parts: f
+            .parts
+            .into_iter()
+            .enumerate()
+            .map(|(k, p)| {
+                let x = extra.get(k);
+                mom::Part {
+                    id: p.id,
+                    joint: p.joint,
+                    plate: p.plate,
+                    kind: p.kind,
+                    other: p.other,
+                    bolts: p.bolts.map(|b| mom::BoltGroup {
+                        count: b.count,
+                        diameter: b.diameter,
+                        hole: b.hole,
+                        bolt_ultimate: b.bolt_ultimate,
+                        lines: b.lines,
+                        per_line: b.per_line,
+                        pitch: b.pitch,
+                        span: b.span,
+                        end_tension: b.end_tension,
+                        end_compression: b.end_compression,
+                        edge: b.edge,
+                        width: b.width,
+                        width_note: b.width_note,
+                    }),
+                    steel: p.steel.map(|s| mom::PlateSteel {
+                        thickness: s.thickness,
+                        fy: s.fy,
+                        fu: s.fu,
+                    }),
+                    weld: p.weld.map(|w| mom::Weld {
+                        kind: w.kind,
+                        throat: w.throat,
+                        length: w.length,
+                        length_given: w.length_given,
+                        angle: w.angle,
+                        fy: w.fy,
+                        thicknesses: w.thicknesses,
+                    }),
+                    forces: p.forces,
+                    notes: p.notes,
+                    moments: x.map_or(Vec::new(), |x| {
+                        x.moments
+                            .iter()
+                            .map(|m| mom::PartMoments {
+                                shear: m[0],
+                                in_plane: m[1],
+                                out_of_plane: m[2],
+                                normal: m[3],
+                            })
+                            .collect()
+                    }),
+                    free_length: x.and_then(|x| x.free_length),
+                }
+            })
+            .collect(),
+    }
+}
+
+/// A `joint-check-moments` result as `joint-check`'s (the same record).
+fn moments_result(r: mom::PartResult) -> wit::PartResult {
+    wit::PartResult {
+        id: r.id,
+        usages: r
+            .usages
+            .into_iter()
+            .map(|u| wit::CaseUsage {
+                load_case: u.load_case,
+                usage: u.usage,
+                check: u.check,
+            })
+            .collect(),
+        governs: r.governs,
+        notes: r.notes,
+        not_safe: r.not_safe,
     }
 }
 

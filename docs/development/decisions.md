@@ -119,6 +119,84 @@ active development, not approved yet;
   partial replica fed by the server (phase 5–6); per-route blocks of
   findings not kept (above).
 
+## 2026-11-18 (lattice towers: the safe-side items)
+
+**Queue A of the lattice towers' open items** (owner, 2026-11-18: "Go
+ahead", queue A first; built, in active development, not approved yet).
+Every change makes a usage equal or larger; the results say where
+something is still not on the safe side.
+
+- **A weld's moments** ([theory](../theory/joint-plates.md#the-force-a-weld-carries)).
+  Before, the force a weld carries was spread evenly along it and the
+  moment of that force about the weld was not taken (not on the safe
+  side, said). Now each member's force acts along its line through its
+  bolts; about the weld's middle the moment bending the weld along its
+  length (M) and the moment about the seam's line (T), the larger of the
+  two sides' (a ring: the sums); a weld shorter than the seam where along
+  it its moment is largest. The SIA 263 plugin checks (87) and (88) on the
+  force per unit length at the weld's most loaded end, F/L + 6M/L² +
+  6T/(L w) (6.3.1.7: a simplified distribution; 6.3.2.1: the resultant
+  per unit length) — without moments the force alone, as before. T > 0
+  is said NOT ON THE SAFE SIDE (6.3.6.5: a one-sided fillet bent across
+  should be avoided; one side or both is not in the data). ASCE 10-97 has
+  no weld rule, with or without moments: not checked, said.
+- **A shift where only bars meet** ([theory](../theory/structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+  Before, the moment of a connection's shift at a joint only bars meet
+  was left out (said, not on the safe side). Chosen of the two ways the
+  plan named: the moment N·e into the shifted member's own check, not a
+  rigid link making the end a frame end (that would change the solve and
+  add rotations nothing else holds at such a joint; frame towers' results
+  are untouched either way). The solve is unchanged; the check takes the
+  moment about the member's local axes as a uniform moment (the larger
+  end's), the member alone taking it (on the safe side for it,
+  statically admissible for the joint); the plugins check a truss whose
+  forces carry end moments as a frame (ASCE 10-97: the linear sum;
+  SIA 263: its stability check). A cable cannot bend: left out, said NOT
+  ON THE SAFE SIDE. The end shears N e / L are not put into the solve
+  (about e/L of the force, said in the theory). Found on the way, in the
+  SIA 263 plugin: the stability check took a frame angle's moments only
+  about axes named y and z — an angle's axes are u and v, so they were
+  dropped (with `single_angle_moments`); and an eccentric angle's (50)
+  replaced the frame moments by N·e. Both fixed on the safe side: about u
+  and v the bound |M_y| + |M_z| (uniform), added to N·e.
+- **A gusset plate in compression** ([theory](../theory/joint-plates.md#a-plate-in-compression-an-assumption)).
+  Neither standard has a rule; before, "plate buckling not checked" was a
+  note and the part's usage left it out. Now a strut, an assumption said
+  as such: Whitmore's width (the primary source, Whitmore 1952; Thornton
+  1984 for the strut), at most the width the plate's sections take; the
+  free length from the bolts nearest the joint to the nearest bolt of a
+  leg on the plate within that spread, else to the plate's edge (other
+  members' bolts not taken as holding it); K = 2, the largest classic
+  case (no tests of these plates: the conservative value, a question to
+  the owner); the code's own column curve (ASCE 10-97 3.6 with E =
+  200 000 MPa of its Appendix A; SIA 263 4.5.1 on curve c, Figure 7's for
+  solid sections, E = 210 kN/mm² of 3.2.2.1). One bolt (no Whitmore
+  width) or no free length: not checked, said NOT ON THE SAFE SIDE.
+- **A frame member's end shear and moments in the plate checks**
+  ([theory](../theory/joint-plates.md#a-frame-members-end-shear-and-moments)).
+  Before, the axial force only (said). Now the analysis' end forces at the
+  member's bolt group, split by the plate's plane, go with the part; the
+  plugins add their sizes: bearing by the most loaded bolt of the group
+  elastic about its centroid, at the nearer of the end and edge
+  distances; the other checks under N + V + 6M/w + 6M_o/t in tension and
+  compression. The force square to the plate and the out-of-plane moment
+  pull on the bolts: bolts in tension are not checked, said NOT ON THE
+  SAFE SIDE where they add 1 % or more. One bolt is a pin: no moment
+  through it (its bearing under N + V); a moment adding 1 % or more said
+  NOT ON THE SAFE SIDE (the analysis' frame end is not what the joint
+  does). Measured first without the 1 % rule and with an infinite bearing
+  for one bolt: nearly every part of the real towers' plates said or
+  failed for moments of a few N m (numerical) — hence the rule, as for
+  members' moments. The tearing path towards a plate's side edge (the other half
+  of this item) was already built on 2026-11-08 under both codes: kept.
+- **Plugin interface** (additive, interface version stays 0.3): a new
+  optional export `joint-check-moments` — `joint-check-full`'s records
+  with, per part and case, what acts on it beside its force
+  (`part-moments`) and a bolt group's plate's free length in compression.
+  OpenOHL calls it first; a plugin without it gets `joint-check-full` and
+  each part concerned is said NOT ON THE SAFE SIDE (what was not sent).
+  Both bundled plugins have it.
+
 ## 2026-11-18 (third round)
 
 **The bolt tools' force basis into the code plugins; default minimum bolt

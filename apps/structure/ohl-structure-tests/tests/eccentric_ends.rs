@@ -151,11 +151,11 @@ fn onto_a_frame_leg_the_moment_goes_to_the_leg_and_is_said() {
 }
 
 #[test]
-fn onto_a_bar_only_joint_the_moment_is_left_out_and_said() {
+fn onto_a_bar_only_joint_the_member_takes_the_moment() {
     let r = solved(&text("truss", "support = [\"x\", \"y\"]"));
     let t = r.members.iter().find(|m| m.id == "T").unwrap();
     assert!(
-        t.eccentric.as_deref().unwrap().contains("LEFT OUT"),
+        t.eccentric.as_deref().unwrap().contains("in its own check"),
         "{t:?}"
     );
     // The force through the work point: T carries P.
@@ -163,7 +163,8 @@ fn onto_a_bar_only_joint_the_moment_is_left_out_and_said() {
     assert!(
         r.notes
             .iter()
-            .any(|n| n.contains("LEFT OUT at 1 end(s)") && n.contains("T at N2 0.20 kN m")),
+            .any(|n| n.contains("the member's own check takes the moment")
+                && n.contains("T at N2 0.20 kN m")),
         "{:?}",
         r.notes
     );

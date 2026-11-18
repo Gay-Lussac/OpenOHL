@@ -4,10 +4,12 @@ Implemented in the design codes' bundled plugins since 2026-11-18 — ASCE
 10-97 in `plugins/codes/asce10/src/joints.rs` (`bolted`, `weld`,
 `PlateCheck`, `Checked::governing`; the core's `plates.rs` until then),
 SIA 263:2013 in `plugins/codes/sia263/src/joints.rs` (`bolted`, `weld`,
-`contact_width`), the same checks moved there, reached through the plugin
-interface `joint-check-full` with the structure's parameter file for the
-plugin (one call with every part and case; `crates/ohl-structures-fe/src/plates.rs`
-keeps the parts' records) — with the geometry and
+`contact_width`, `weld_with`, `line_force`), the same checks moved there,
+reached through the plugin interface `joint-check-moments` (2026-11-18:
+`joint-check-full`'s records with what acts on a part beside its force)
+with the structure's parameter file for the plugin (one call with every
+part and case; `crates/ohl-structures-fe/src/plates.rs` keeps the parts'
+records) — with the geometry and
 forces of `apps/structure/ohl-structure-link/src/plate_checks.rs`
 (`plate_plans`, `plate_usage`, the weld's force, the distances to the
 plate's edge), run with every case of OHL-Structure's analysis (Results ›
@@ -39,10 +41,10 @@ For each gusset plate (`[[plate]]`) and each case solved:
   against its resistance.
 
 The force is the member's **axial force** at the joint from the analysis
-(tension positive). A frame member's end shear and moments are not taken
-into the plate checks (**not on the safe side** for frame members; said
-per member). The case's strength factor \\( \phi \\) multiplies every
-resistance, as for the members.
+(tension positive), and for a frame member since 2026-11-18 its **end
+shear and moments** at its bolts ([below](#a-frame-members-end-shear-and-moments);
+before, not taken — not on the safe side, said). The case's strength
+factor \\( \phi \\) multiplies every resistance, as for the members.
 
 A part's usage is its largest share over its checks. A distance is kept
 or not: it counts only when it is not kept (its share above 1), never as
@@ -144,7 +146,10 @@ Exact: the split from a model of the joint, or given.
   welding procedures to ANSI/AWS D1.1. Welds are **not checked** under
   ASCE 10-97, said in the results (no rule is invented).
 - **Compression**: the standard gives no rule for a gusset plate in
-  compression: "plate buckling not checked", said.
+  compression: the plate's buckling as a strut, an assumption on the safe side
+  ([below](#a-plate-in-compression-an-assumption); 2026-11-18 — before,
+  "plate buckling not checked", said), by its column curve (3.6) with
+  \\( E \\) = 200 000 MPa (Appendix A).
 
 ## SIA 263:2013
 
@@ -177,8 +182,12 @@ Design values with \\( \gamma_{M1} = 1.05 \\), \\( \gamma_{M2} = 1.25 \\)
 - **Gross section** (38) in tension and compression; the net section (39)
   in tension only (6.2.4.1: in compression the holes are not deducted).
 - **Compression**: SIA 263 gives no rule for a gusset plate's buckling
-  (its 4.5.3 effective widths are for the elements of members): "plate
-  buckling not checked", said.
+  (its 4.5.3 effective widths are for the elements of members):
+  the plate's buckling as a strut, an assumption on the safe side
+  ([below](#a-plate-in-compression-an-assumption); 2026-11-18 — before,
+  "plate buckling not checked", said), by its buckling (4.5.1) on curve c — Figure 7's
+  curve for solid sections ("sections pleines") — with \\( E \\) = 210
+  kN/mm² (3.2.2.1).
 
 ### Fillet welds (6.3.2)
 
@@ -208,10 +217,31 @@ The resultant \\( F_{Ed} \\) per unit length is checked on two sections
   seam's length where the two plates meet, worked out from their
   outlines, **one side only** (**on the safe side** for a weld on both
   sides).
-- **The force spread evenly along the weld**, \\( F_{Ed} = F / L \\), as
-  6.3.1.7 allows ("une distribution simplifiée des contraintes"). The
-  moment of the force about the seam is **not taken** (**not on the safe
-  side**: a resultant acting off the seam's middle loads one end more).
+- **The force per unit length at the weld's most loaded end**
+  (2026-11-18; before, the force spread evenly and its moment **not
+  taken** — not on the safe side). 6.3.1.7 allows a simplified
+  distribution of the stresses ("une distribution simplifiée des
+  contraintes") and 6.3.2.1 checks the resultant per unit length
+  \\( F_{Ed} \\) (Figure 33), whatever its direction. The weld is taken as
+  a line of length \\( L \\), elastic: its force \\( F \\) spread evenly,
+  the moment \\( M \\) of that force about the weld's middle bending it
+  along its length (the moment's part square to the seam) by the line's
+  section modulus \\( L^2/6 \\), and the moment \\( T \\) about the
+  seam's own line by the section of width \\( w \\) (the throat \\( a \\)
+  for (87), the contact width \\( s \\) for (88)) bent across, \\( L w^2/6 \\):
+
+  \\[ F_{Ed} = \frac{F}{L} + \frac{6M}{L^2} + \frac{6T}{L\,w} \\]
+
+  — the three sizes added (**on the safe side**: their directions at the
+  weld's end may differ, so the resultant is at most their sum; elastic,
+  so no redistribution along the weld is counted). (87) and (88) are
+  checked as \\( F_{Ed}\,L \\) against the whole length's resistance.
+  Without moments \\( F_{Ed} = F/L \\), as before. A moment \\( T \\) about
+  the seam bends the fillet across; 6.3.6.5 asks to avoid a fillet on one
+  side only loaded so, and the data do not tell whether the weld is on one
+  side or both: whenever \\( T > 0 \\) the result says **NOT ON THE SAFE
+  SIDE** (the throat's elastic bending is on the safe side for a weld on
+  both sides, not proven for one side only).
 - Said when broken: a length below 40 mm (6.3.6.2), \\( a \\) above 0.7
   times the thinner plate (6.3.6.3), a plate thinner than 4 mm (6.3.1.3:
   the chapter does not apply), \\( a \\) below the least recommended for
@@ -235,6 +265,116 @@ joint's leg) passes part of it there, so the weld carries no more. Welds
 closing a ring (no split): the sum of every member's \\( |N_i| \\) on the
 welded plate (more on the safe side). The joint's legs' own forces are not
 counted (they do not bolt onto the plates).
+
+**Its moments** (2026-11-18). Each member's force acts along its own line
+through its bolts' centroid \\( \mathbf p_i \\) (the joint's work point
+when its bolts are not placed). About the seam's middle \\( \mathbf c \\),
+on each side \\( \mathbf M = \sum (\mathbf p_i - \mathbf c) \times N_i\,\mathbf u_i \\);
+with \\( \mathbf e \\) the seam's direction, \\( T = |\mathbf M\cdot\mathbf e| \\)
+about the seam's line and \\( M = |\mathbf M - (\mathbf M\cdot\mathbf e)\,\mathbf e| \\)
+bending the weld along its length (for one plate on that side, its
+members in its plane, \\( T = 0 \\): the moment of forces in a plane lies
+square to it). The weld takes the larger \\( M \\) and the larger \\( T \\) of
+the two sides, each on its own (with the larger force: **on the safe
+side**, the three may come from different sides); a ring, the sums of
+every member's sizes (**on the safe side**). A **weld shorter than the
+seam** (its length given) lies somewhere along it, where is not given: its
+middle may be up to \\( (L_\text{seam} - L)/2 \\) from the seam's, so
+\\( M \\) is taken at its largest there, \\( M + \tfrac{L_\text{seam} - L}{2}\,|\mathbf e \times \mathbf R| \\)
+(**on the safe side**). A plugin without `joint-check-moments` gets the
+force alone (`joint-check-full`): the weld's result then says the moments
+were not sent, **NOT ON THE SAFE SIDE**. **ASCE 10-97** has no weld rule,
+with or without moments (5.2.5): the weld stays not checked, said.
+
+## A frame member's end shear and moments
+
+*2026-11-18.* A frame member's end forces from the analysis (structure
+axes, `MemberResult::end_forces`) are split at its bolt group in the
+plate (`plate_checks::bolt_loads`), with \\( \mathbf n \\) the plate's normal
+(the bolts' axis), \\( \mathbf a \\) the member's direction in the plate and
+\\( \mathbf c = \mathbf n \times \mathbf a \\):
+
+- \\( V = |\mathbf F\cdot\mathbf c| \\), the shear in the plate's plane;
+  \\( V_n = |\mathbf F\cdot\mathbf n| \\), the force square to the plate;
+- \\( M = |\mathbf M\cdot\mathbf n| + d\,V \\), the moment about the plate's
+  normal carried to the bolts' centroid a distance \\( d \\) from the joint
+  along the member (the sizes added: **on the safe side**);
+- \\( M_o = |\mathbf M - (\mathbf M\cdot\mathbf n)\mathbf n| + d\,V_n \\),
+  the rest, bending the plate out of its plane (with the member's
+  torsion).
+
+A splice's cover takes them times its share. The plugin
+(`joint-check-moments`) checks, the sizes added (**on the safe side**: by
+the triangle inequality, never less than the true resultant):
+
+- **bearing** under the force of the most loaded bolt times the bolts'
+  number, \\( |N| + V + M\,k \\), \\( k = n\,r_{max}/\sum r^2 \\) — the group
+  elastic about its centroid, the bolts on the grid of its gauge lines and
+  rows (a group that does not fill that grid: \\( \sum r^2 = r_{max}^2 \\),
+  more on the safe side) — at the **nearer of the end and edge
+  distances** (the force's direction is then not along the member);
+- **one bolt** is a pin: no moment passes through it. Its bearing is
+  checked under \\( |N| + V \\); where the moment would add 1 % or more to
+  the section's check (\\( 6M/w \ge 0.01\,(|N| + V) \\)) the part says **NOT
+  ON THE SAFE SIDE**: the analysis' frame end is not what the joint does
+  (the moment goes elsewhere in the tower);
+- **every other check** under \\( |N| + V + 6M/w + 6M_o/t \\) (the plate's
+  section of width \\( w \\) bent in its plane, of thickness \\( t \\) bent out
+  of it), **in tension and in compression both** when a moment bends the
+  plate by 1 % or more of \\( |N| + V \\) (an edge in each), the strut too;
+- \\( V_n \\) and \\( M_o \\) pull on the bolts: **bolts in tension are not
+  checked** — said NOT ON THE SAFE SIDE on the part where they add 1 % or
+  more (\\( V_n + 6M_o/t \ge 0.01\,(|N| + V) \\); below, as for members'
+  moments, not said).
+
+A truss's end forces have no shear or moment: its checks are as before.
+
+## A plate in compression (an assumption)
+
+*2026-11-18.* Neither ASCE 10-97 nor SIA 263 gives a rule for a gusset
+plate's buckling. A member in compression bolted onto a plate pushes it
+towards the joint; the plate is checked as a **strut** — the method of
+Thornton (W. A. Thornton, "Bracing connections for heavy construction",
+*Engineering Journal* (AISC) 21 (3), 1984, pp. 139–148), who models the
+plate as a column of the width of the bolt group's spread — with every
+value chosen on the safe side. **An assumption, not a code's rule**; the
+result names it so.
+
+- **Width**: Whitmore's width (R. E. Whitmore, *Experimental investigation
+  of stresses in gusset plates*, University of Tennessee Engineering
+  Experiment Station Bulletin No. 16, 1952): lines spreading at 30° from
+  the outer bolts of the first row to the last row,
+  \\( b_W = \text{span} + 2\,(n - 1)\,p\,\tan 30^\circ \\) (span between the
+  outer gauge lines, \\( n \\) bolts a line, pitch \\( p \\)), taken **at most
+  the width the plate's sections are checked with** (the bolts' span plus
+  the code's minimum edge distance each side, or the plate's own width:
+  **on the safe side**, the narrower). One row of one gauge line (one
+  bolt) has no Whitmore width: **not checked**, said NOT ON THE SAFE SIDE
+  (never a pass).
+- **Free length** \\( L \\): from the bolts nearest the joint, along the member
+  towards the joint, to the nearest bolt of one of the joint's legs bolted
+  onto the same plate within the bolt group's spread (what holds the plate
+  there), else to the plate's edge that way. **On the safe side**: no
+  other member's bolts are taken as holding it; where no leg's bolt is in
+  the way, the plate's whole length to its edge. Not known (the edge not
+  reached): not checked, said NOT ON THE SAFE SIDE.
+- **Effective length factor** \\( K = 2 \\): the column fixed at one end and
+  free to sway at the other, the largest of the classic cases (Timoshenko
+  & Gere, *Theory of Elastic Stability*, 2nd ed., 1961, §2.1). Practice
+  takes smaller factors for gussets held at both ends; without tests of
+  these plates the largest is kept (**on the safe side**; a question to
+  the owner).
+- **Radius of gyration** \\( r = t/\sqrt{12} \\) (a solid rectangle bending
+  about its weak axis, out of the plate's plane).
+- **Resistance** by the code's own column curve: ASCE 10-97 3.6,
+  \\( F_a = [1 - \tfrac12 (KL/r\,/\,C_c)^2] F_y \\) up to
+  \\( C_c = \pi\sqrt{2E/F_y} \\), \\( \pi^2 E/(KL/r)^2 \\) beyond, times
+  \\( b\,t \\); SIA 263 4.5.1, \\( N_{K,Rd} = \chi_K f_y A/\gamma_{M1} \\) with
+  \\( \bar\lambda_K = (KL/i)/\pi\sqrt{E/f_y} \\) on curve c.
+
+The core works out the free length (`plate_checks::free_length`) and
+sends it with the part (`joint-check-moments`, `free-length`); the
+plugins check it (`plate_buckling`, `whitmore_width`, `PLATE_K`).
 
 ## Results
 
@@ -265,3 +405,28 @@ compared, core against plugin: identical to the last bit:
   checked (it has no weld rule), and said.
 - `a_weld_carries_the_larger_resultant`, `rays_reach_the_outline`: the
   force a weld carries and the plate's outline.
+- `a_frame_members_shear_and_moment_in_the_plate` (2026-11-18, both
+  plugins): the same plate, 100 kN tension, 10 kN shear, 1 kN m: k = 4 ×
+  39.05 / 6 100 = 25.61 /m, bearing under 135.61 kN (SIA 263 at the edge
+  distance 30 mm: 369.9 kN), the other checks under 160 kN in tension
+  and compression (ASCE 10-97: the strut 160 of 215.0 kN governs); a force
+  square to the plate said not on the safe side (2 kN of 110: said; 0.5
+  kN: below 1 %, not said); one bolt: its bearing under |N| + V, the
+  moment said.
+- `a_plate_in_compression_as_a_strut` (2026-11-18, both plugins): the
+  plate of the hand checks above under 200 kN compression, free length
+  150 mm: Whitmore's width 60 + 2 × 50 × tan 30° = 117.7 mm, KL/r = 2 ×
+  150 / 2.887 = 103.9; ASCE 10-97: \\( C_c \\) = 105.5, \\( F_a \\) = 182.6
+  N/mm², 215.0 kN; SIA 263: \\( \bar\lambda_K \\) = 1.360, \\( \chi_K \\) = 0.364,
+  145.0 kN. Without a free length, or one bolt: not checked, said.
+- `a_weld_carries_the_moments_of_its_force` (2026-11-18): a 0.2 m seam
+  along z, a member pulling 100 kN along x through bolts 0.15 m off the
+  seam and 0.08 m above its middle (\\( M \\) = 8 kN m), one pushing 50 kN
+  across at 0.15 m (\\( T \\) = 7.5 kN m); a 0.12 m weld on that seam
+  anywhere along it: \\( M \\) = 8 + 0.04 × 111.8 = 12.47 kN m; a ring: the
+  sums.
+- `a_fillet_weld_with_its_moments` (SIA 263, 2026-11-18): a 6 × 200 mm
+  fillet at 90° under F = 60 kN, M = 2 kN m, T = 0.1 kN m: 300 + 300 +
+  500 = 1 100 kN/m on the throat, (87) 220 kN of 293.76 kN (74.9 %), (88)
+  190.7 kN of 385.6 kN; T said not on the safe side (6.3.6.5); without
+  moments the force alone, as before.

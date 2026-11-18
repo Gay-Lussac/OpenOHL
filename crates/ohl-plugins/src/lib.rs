@@ -253,6 +253,27 @@ pub mod joint_check_full {
 /// Export name of the optional `joint-check-full` interface of any plugin.
 pub const JOINT_CHECK_FULL_EXPORT: &str = "ohl:plugin/joint-check-full@0.1.0";
 
+mod joint_check_moments_bindings {
+    wasmtime::component::bindgen!({
+        world: "joint-check-moments-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `joint-check-moments` interface (2026-11-18): the
+/// joint check of `joint-check-full` with every force on a part — a frame
+/// member's end shear and moments, a weld's moments — and a plate's free
+/// length in compression.
+pub mod joint_check_moments {
+    pub use super::joint_check_moments_bindings::exports::ohl::plugin::joint_check_moments::{
+        BoltGroup, CaseUsage, JointInput, LoadCase, Part, PartMoments, PartResult, PlateSteel, Weld,
+    };
+}
+
+/// Export name of the optional `joint-check-moments` interface of any
+/// plugin.
+pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
+
 mod bolt_distances_bindings {
     wasmtime::component::bindgen!({
         world: "bolt-distances-export",
@@ -2342,6 +2363,45 @@ impl WasmHost {
             .ohl_plugin_joint_check_full()
             .call_check_joints_full(&mut p.store, method, input)
             .map_err(|e| classify(e, &p.manifest, "joint-check-full", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.parts.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint parts of `input` checked by method `method` of the
+    /// plugin in `dir` through its `joint-check-moments` export (with
+    /// every force on a part, 2026-11-18), every part and load case in
+    /// this one call. None: the plugin has no such export (the caller then
+    /// calls [`WasmHost::check_joints_full`]). Errors as
+    /// [`WasmHost::check_joints`]'s.
+    pub fn check_joints_moments(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_moments::JointInput,
+    ) -> Result<Option<Vec<joint_check_moments::PartResult>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_MOMENTS_EXPORT)? else {
+            return Ok(None);
+        };
+        let export =
+            joint_check_moments_bindings::JointCheckMomentsExport::new(&mut p.store, &instance)
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_joint_check_moments()
+            .call_check_joints_moments(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-moments", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_part_results(
             &name,

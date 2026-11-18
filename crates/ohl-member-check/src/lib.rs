@@ -59,7 +59,8 @@
 //!   ([`check_bundled`]), never a fallback to another code; they are given
 //!   a longer time and more memory a call than user plugins ([`host`]).
 //! - **Their settings everywhere** (2026-11-18): the structure's parameter
-//!   file reaches the joint check (`joint-check-full`, [`joints`]) and
+//!   file reaches the joint check (`joint-check-moments`, else
+//!   `joint-check-full`, [`joints`]) and
 //!   Member details ([`with_parameters`]) as it reaches the member check.
 //!
 //! This crate is the one place that knows both the finite-element
@@ -613,7 +614,11 @@ pub fn input(model: &Model, cases: &[Solved]) -> wit::CheckInput {
                 wit::CaseForces {
                     load_case: n as u32,
                     axial: f.axial,
-                    end_forces: f.end_forces.to_vec(),
+                    // The moments of eccentric ends the solve could not carry
+                    // (only bars meet the joint), in its check (2026-11-18).
+                    end_forces: ohl_structures_fe::offsets::with_eccentric_moments(model, k, f)
+                        .end_forces
+                        .to_vec(),
                     partner_axial: m
                         .design
                         .crossing

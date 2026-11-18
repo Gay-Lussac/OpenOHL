@@ -470,8 +470,12 @@ impl Stability {
         )];
         for (a, ax) in self.axes.iter().enumerate() {
             let (m, psi) = ends(a);
+            // An eccentric connection's N·e, and with it (2026-11-18;
+            // before, left out) the moments OpenOHL sends — a frame's, a
+            // shift's where only bars meet — added by size, uniform (on
+            // the safe side).
             let (m, psi) = if self.eccentric {
-                (comp * ax.e.abs(), 1.0)
+                (comp * ax.e.abs() + m, 1.0)
             } else {
                 (m, psi)
             };
@@ -1447,12 +1451,18 @@ fn lateral_torsional(
 /// The internal end moments `[[M_i, M_j]; 2]` of a frame member about the
 /// stability check's two axes (major first), from its end forces in
 /// local axes (`[.., M_y,i (4), M_z,i (5), .., M_y,j (10), M_z,j (11)]`).
+/// Principal axes u, v (an angle; 2026-11-18 — before, an angle's moments
+/// about its geometric axes were dropped here, not on the safe side): the
+/// moment about either is at most |M_y| + |M_z| whatever the axes' angle,
+/// taken about each, uniform at the larger end's (on the safe side: the
+/// largest size, ψ = 1).
 pub fn frame_moments(st: &Stability, end_forces: &[f64; 12]) -> [[f64; 2]; 2] {
     let my = [-end_forces[4], end_forces[10]];
     let mz = [-end_forces[5], end_forces[11]];
+    let bound = (my[0].abs() + mz[0].abs()).max(my[1].abs() + mz[1].abs());
     st.axes.each_ref().map(|a| match a.name {
         "y" => my,
         "z" => mz,
-        _ => [0.0, 0.0],
+        _ => [bound, bound],
     })
 }

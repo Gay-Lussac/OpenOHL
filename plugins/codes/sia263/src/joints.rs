@@ -14,9 +14,11 @@
 //!   (82) and block shear (83) of 6.2.4.3, the gross section (38) and in
 //!   tension the net section (39) (5.1.2.1), the end and edge distances
 //!   of Table 17.
-//! - **A weld between two plates** ([`weld`]): 6.3.2 for a fillet weld —
-//!   (87) on its throat a, (88) on its contact width s — under the force
-//!   it carries spread evenly along it (6.3.1.7); a full penetration weld
+//! - **A weld between two plates** ([`weld`], [`weld_with`]): 6.3.2 for a
+//!   fillet weld — (87) on its throat a, (88) on its contact width s —
+//!   under the force per unit length at its most loaded end: the force it
+//!   carries spread evenly and, since 2026-11-18, the moments of that force
+//!   about it, elastic ([`line_force`]; 6.3.1.7, 6.3.2.1); a full penetration weld
 //!   is as strong as the weaker plate (6.3.3.4) and not checked (6.3.1.8).
 //! - A plate in compression: SIA 263 gives no rule for a gusset plate's
 //!   buckling — "plate buckling not checked", said.
@@ -106,6 +108,25 @@ pub struct Checked {
     pub checks: Vec<PlateCheck>,
     /// What was assumed or not checked, in words.
     pub notes: Vec<String>,
+    /// What is not on the safe side, in words (the part's `not-safe`).
+    pub not_safe: Vec<String>,
+}
+
+/// What acts on a part beside its force in one load case (sizes, N and
+/// N·m; the interface's `part-moments`, 2026-11-18).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Extra {
+    /// A bolt group: the member's end shear in the plate's plane.
+    pub shear: f64,
+    /// A bolt group: the member's moment about the plate's normal at the
+    /// bolts' centroid. A weld: the moment of its force about the weld's
+    /// middle, bending it along its length.
+    pub in_plane: f64,
+    /// A bolt group: the moment bending the plate out of its plane. A
+    /// weld: the moment about the seam's own line.
+    pub out_of_plane: f64,
+    /// A bolt group: the force square to the plate.
+    pub normal: f64,
 }
 
 impl Checked {
@@ -124,6 +145,243 @@ impl Checked {
             .max_by(order);
         counted.or_else(|| all.iter().copied().max_by(order))
     }
+}
+
+/// The effective length factor of a gusset plate taken as a strut in
+/// compression (2026-11-18; neither ASCE 10-97 nor SIA 263 gives a rule):
+/// 2, the column fixed at one end and free to sway at the other — the
+/// largest of the classic cases (Timoshenko & Gere, *Theory of Elastic
+/// Stability*, 2nd ed., 1961, §2.1); a plate held at both ends buckles
+/// over less. An assumption on the safe side.
+pub const PLATE_K: f64 = 2.0;
+
+/// Whitmore's width of a bolt group (Whitmore, R. E., 1952, *Experimental
+/// investigation of stresses in gusset plates*, University of Tennessee
+/// Engineering Experiment Station Bulletin No. 16): lines spread at 30°
+/// from the outer bolts of the first row to the last row — the span
+/// between the outer gauge lines plus 2 L tan 30°, L the bolts' length
+/// along the force ((n − 1) p). None: no pitch known for several bolts a
+/// line, or one row (L = 0) of one gauge line (no width).
+pub fn whitmore_width(g: &BoltGroup) -> Option<f64> {
+    let l = if g.per_line > 1 {
+        f64::from(g.per_line - 1) * g.pitch?
+    } else {
+        0.0
+    };
+    let w = g.span + 2.0 * l * 30f64.to_radians().tan();
+    (w > 0.0).then_some(w)
+}
+
+/// The checks of a plate where a member bolts onto it ([`bolted`]) with
+/// what else acts on it (`x`: a frame member's end shear and moments at
+/// its bolts) and the plate's free length in compression (`free`, m;
+/// 2026-11-18): in compression the plate's buckling as a strut
+/// ([`plate_buckling`]).
+///
+/// With a shear or moments (on the safe side, the sizes added): the
+/// bolts' bearing under the force of the most loaded bolt times their
+/// number, |N| + V + M k ([`moment_factor`]: the bolt group elastic about
+/// its centroid), its end distance the smaller of the end and edge
+/// distances (the force's direction then not along the member); every
+/// other check under |N| + V + 6 M / w + 6 M_out / t (the plate's section
+/// of width w, as `g.width`, bent in its plane and out of it), in tension
+/// and in compression both (the moment puts one edge in each). The force
+/// square to the plate and the moment bending it out of its plane pull on
+/// the bolts: bolts in tension not checked, said not on the safe side.
+pub fn bolted_with(g: &BoltGroup, s: &PlateSteel, n: f64, x: &Extra, free: Option<f64>) -> Checked {
+    let more = x.shear > 0.0 || x.in_plane > 0.0 || x.out_of_plane > 0.0 || x.normal > 0.0;
+    if !more || g.count == 0 {
+        let mut out = bolted(g, s, n);
+        if n < 0.0 && g.count > 0 {
+            plate_buckling(g, s, n, free, &mut out);
+        }
+        return out;
+    }
+    let t = s.thickness;
+    let bend = |m: f64, w: f64| {
+        if m > 0.0 {
+            if w > 0.0 { 6.0 * m / w } else { f64::INFINITY }
+        } else {
+            0.0
+        }
+    };
+    let ns = n.abs() + x.shear + bend(x.in_plane, g.width) + bend(x.out_of_plane, t);
+    let k = moment_factor(g);
+    // Said when it adds 1 % or more to |N| + V (as members' moments are).
+    let base = n.abs() + x.shear;
+    let matters = |add: f64| add > 0.0 && add >= 0.01 * base;
+    // One bolt is a pin: the moment does not pass through it (its bearing
+    // under |N| + V); said when the moment matters.
+    let nb = base
+        + if x.in_plane > 0.0 && k.is_finite() {
+            x.in_plane * k
+        } else {
+            0.0
+        };
+    let words = format!(
+        " with its end shear {:.1} kN and moments {:.2} kN m in the plate's plane, {:.2} kN m \
+         out of it",
+        x.shear / 1000.0,
+        x.in_plane / 1000.0,
+        x.out_of_plane / 1000.0
+    );
+    // Both signs when a moment bends the plate (an edge in each) by 1 %
+    // or more of |N| + V.
+    let signs: Vec<f64> = if matters(bend(x.in_plane, g.width) + bend(x.out_of_plane, t)) {
+        vec![1.0, -1.0]
+    } else if n < 0.0 {
+        vec![-1.0]
+    } else {
+        vec![1.0]
+    };
+    let mut out = Checked::default();
+    for sign in signs {
+        let mut c = bolted(g, s, sign * ns);
+        if sign < 0.0 {
+            plate_buckling(g, s, sign * ns, free, &mut c);
+        }
+        // Bearing: the most loaded bolt's force, the nearer edge.
+        let near = |e: Option<f64>| match (e, g.edge) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, None) => a,
+            (None, b) => b,
+        };
+        let gb = BoltGroup {
+            end: [near(g.end[0]), near(g.end[1])],
+            ..g.clone()
+        };
+        let cb = bolted(&gb, s, sign * nb);
+        c.checks.retain(|p| !p.what.starts_with("bearing"));
+        c.checks.extend(
+            cb.checks
+                .into_iter()
+                .filter(|p| p.what.starts_with("bearing")),
+        );
+        for p in &mut c.checks {
+            if !p.distance {
+                p.what.push_str(&words);
+            }
+        }
+        for w in c.notes {
+            if !out.notes.contains(&w) {
+                out.notes.push(w);
+            }
+        }
+        for w in c.not_safe {
+            if !out.not_safe.contains(&w) {
+                out.not_safe.push(w);
+            }
+        }
+        out.checks.extend(c.checks);
+    }
+    out.notes.push(
+        "a frame member's end shear and moments: sizes added to its axial force, on the safe \
+         side (the bearing by the most loaded bolt, elastic, at the nearer of the end and edge \
+         distances)"
+            .into(),
+    );
+    if !k.is_finite() && matters(bend(x.in_plane, g.width)) {
+        out.not_safe.push(format!(
+            "one bolt cannot carry the member's end moment in the plate's plane ({:.2} kN m): \
+             a pin there, the frame end of the analysis not what the joint does",
+            x.in_plane / 1000.0
+        ));
+    }
+    if matters(x.normal + bend(x.out_of_plane, t)) {
+        out.not_safe.push(format!(
+            "its force square to the plate ({:.1} kN) and the moment bending the plate out of \
+             its plane ({:.2} kN m) pull on its bolts: bolts in tension not checked",
+            x.normal / 1000.0,
+            x.out_of_plane / 1000.0
+        ));
+    }
+    out
+}
+
+/// How much a moment M about the plate's normal adds to the force of the
+/// bolt group's most loaded bolt times their number: M k with k = n r_max
+/// / Σ r² — the group elastic about its centroid, the bolts on a regular
+/// grid of its gauge lines (`span` apart at the outer ones) and rows
+/// (`pitch` apart), m⁻¹. A group not filling that grid: Σ r² taken as
+/// r_max² alone (on the safe side); one bolt: no lever, infinite.
+pub fn moment_factor(g: &BoltGroup) -> f64 {
+    let lines = g.lines.max(1);
+    let rows = g.per_line.max(1);
+    let gauge = if lines > 1 {
+        g.span / f64::from(lines - 1)
+    } else {
+        0.0
+    };
+    let pitch = g.pitch.unwrap_or(0.0);
+    let mut sum = 0.0;
+    let mut rmax: f64 = 0.0;
+    for i in 0..lines {
+        for k in 0..rows {
+            let y = (f64::from(i) - f64::from(lines - 1) / 2.0) * gauge;
+            let x = (f64::from(k) - f64::from(rows - 1) / 2.0) * pitch;
+            sum += x * x + y * y;
+            rmax = rmax.max((x * x + y * y).sqrt());
+        }
+    }
+    if g.count != lines * rows {
+        sum = rmax * rmax;
+    }
+    if sum <= 0.0 {
+        return f64::INFINITY;
+    }
+    f64::from(g.count) * rmax / sum
+}
+
+/// SIA 263's modulus of elasticity of steel, 210 kN/mm² (3.2.2.1).
+const E_STEEL: f64 = 210e9;
+
+/// A plate in compression as a strut (2026-11-18): neither SIA 263 nor
+/// ASCE 10-97 gives a rule for a gusset plate's buckling — an assumption
+/// on the safe side, said: a strut of Whitmore's width
+/// ([`whitmore_width`]; at most the width the plate's sections take,
+/// `g.width`), the plate's thickness, over its free length `free` with K
+/// = [`PLATE_K`], by SIA 263's buckling (4.5.1: N_K,Rd = χ_K f_y A /
+/// γ_M1, λ̄_K = (K L / i) / (π √(E/f_y)), i = t / √12; curve c, the
+/// curve of Figure 7 for solid sections, "sections pleines"). Without
+/// its free length or width: not checked, said not on the safe side.
+fn plate_buckling(g: &BoltGroup, s: &PlateSteel, n: f64, free: Option<f64>, out: &mut Checked) {
+    out.notes.retain(|x| x != BUCKLING_NOT_CHECKED);
+    let t = s.thickness;
+    // One bolt (one row of one line) has no Whitmore width: Whitmore's
+    // spread is from a first row to a last one — not checked, said.
+    let (Some(l), Some(w), Some(fy)) = (free, whitmore_width(g), s.fy) else {
+        out.not_safe.push(format!(
+            "plate buckling not checked ({}; neither SIA 263 nor ASCE 10-97 gives a rule)",
+            match (free, whitmore_width(g), s.fy) {
+                (None, _, _) => "its free length not known",
+                (_, None, _) => "no Whitmore width: one bolt, or no pitch",
+                _ => "no yield strength",
+            }
+        ));
+        return;
+    };
+    let b = w.min(g.width);
+    let i = t / 12f64.sqrt();
+    let lambda = PLATE_K * l / i;
+    let lambda_bar = lambda / (std::f64::consts::PI * (E_STEEL / fy).sqrt());
+    let chi = sia263::chi(lambda_bar, sia263::Curve::C.alpha());
+    out.checks.push(PlateCheck {
+        what: format!(
+            "plate buckling as a strut (an assumption, on the safe side — no rule in SIA 263 or \
+             ASCE 10-97): Whitmore width {:.0} mm{}, t {:.0} mm, free length {:.0} mm, K {:.0}, \
+             λ̄_K {:.2}, χ_K {:.3} (SIA 263 4.5.1, curve c)",
+            mm(b),
+            if b < w { " (the sections' width)" } else { "" },
+            mm(t),
+            mm(l),
+            PLATE_K,
+            lambda_bar,
+            chi
+        ),
+        demand: n.abs(),
+        resistance: chi * fy * b * t / gamma_m1(),
+        distance: false,
+    });
 }
 
 /// The end distance in the force's direction.
@@ -369,8 +627,42 @@ pub fn contact_width(a: f64, angle: f64) -> f64 {
     a / (theta.to_radians() / 2.0).cos()
 }
 
-/// The checks of a weld carrying `force` (N: the resultant it carries).
+/// The checks of a weld carrying `force` (N: the resultant it carries)
+/// and no moment.
 pub fn weld(w: &WeldInput, force: f64) -> Checked {
+    weld_with(w, force, &Extra::default())
+}
+
+/// The force per unit length a weld of length `l` (m) and throat or
+/// contact width `width` (m) takes at its most loaded end, N/m: its force
+/// `force` spread evenly (F / L) plus, elastically, the moment of that
+/// force about the weld's middle bending it along its length (6 M / L²,
+/// the line's section modulus L² / 6) and the moment about the seam's own
+/// line taken by the section `width` wide bent across (6 T / (L w)) —
+/// the sizes added (on the safe side: their directions may differ). SIA
+/// 263 6.3.1.7 admits a simplified distribution of the stresses; 6.3.2.1
+/// checks the resultant per unit length (Figure 33).
+pub fn line_force(force: f64, x: &Extra, l: f64, width: f64) -> f64 {
+    if l <= 0.0 {
+        return f64::INFINITY;
+    }
+    let mut q = force.abs() / l + 6.0 * x.in_plane / (l * l);
+    if x.out_of_plane > 0.0 {
+        q += if width > 0.0 {
+            6.0 * x.out_of_plane / (l * width)
+        } else {
+            f64::INFINITY
+        };
+    }
+    q
+}
+
+/// The checks of a weld carrying `force` (N: the resultant it carries)
+/// with the moments of that force about it (`x`, 2026-11-18): (87) and
+/// (88) on the force per unit length at its most loaded end
+/// ([`line_force`]), as an equivalent force (that force per unit length
+/// times the weld's length) against the resistance of the whole length.
+pub fn weld_with(w: &WeldInput, force: f64, x: &Extra) -> Checked {
     let mut out = Checked::default();
     if w.kind == WeldKind::FullPenetration {
         out.notes.push(
@@ -392,20 +684,57 @@ pub fn weld(w: &WeldInput, force: f64) -> Checked {
         ));
     }
     let l = w.length;
-    out.notes.push(
-        "the force spread evenly along the weld (SIA 263 6.3.1.7); its moment about the seam \
-         not taken (not on the safe side)"
-            .into(),
-    );
+    let moments = x.in_plane > 0.0 || x.out_of_plane > 0.0;
+    out.notes.push(if moments {
+        "the force per unit length at the weld's most loaded end: its force spread evenly, \
+         its moments about the weld's middle and about the seam taken elastically (SIA 263 \
+         6.3.1.7, 6.3.2.1)"
+            .into()
+    } else {
+        "the force spread evenly along the weld (SIA 263 6.3.1.7)".into()
+    });
+    if x.out_of_plane > 0.0 {
+        out.not_safe.push(format!(
+            "the weld bent about its seam ({:.2} kN m): taken by its throat bent across, \
+             elastic — a fillet weld on one side only, bent so, should be avoided (SIA 263 \
+             6.3.6.5)",
+            x.out_of_plane / 1000.0
+        ));
+    }
+    // The equivalent force: the force per unit length at the most loaded
+    // end over the whole length (without moments: the force itself).
+    let words = |w: f64| {
+        if moments {
+            format!(
+                "; {:.1} kN/m at its most loaded end: F/L {:.1}, 6M/L² {:.1}, 6T/(L·{:.1} mm) \
+                 {:.1}",
+                line_force(force, x, l, w) / 1000.0,
+                force.abs() / l / 1000.0,
+                6.0 * x.in_plane / (l * l) / 1000.0,
+                mm(w),
+                6.0 * x.out_of_plane / (l * w) / 1000.0
+            )
+        } else {
+            String::new()
+        }
+    };
+    let demand = |w: f64| {
+        if moments {
+            line_force(force, x, l, w) * l
+        } else {
+            force
+        }
+    };
     out.checks.push(PlateCheck {
         what: format!(
             "fillet weld a {:.0} mm × {:.0} mm, throat (SIA 263 6.3.2.2, (87), f_uE {:.0} \
-             N/mm²)",
+             N/mm²{})",
             mm(a),
             mm(l),
-            filler_ultimate() / 1e6
+            filler_ultimate() / 1e6,
+            words(a)
         ),
-        demand: force,
+        demand: demand(a),
         resistance: a * l * 0.6 * filler_ultimate() / gamma_m2(),
         distance: false,
     });
@@ -413,10 +742,11 @@ pub fn weld(w: &WeldInput, force: f64) -> Checked {
     match w.fy {
         Some(fy) => out.checks.push(PlateCheck {
             what: format!(
-                "fillet weld s {:.1} mm, contact (SIA 263 6.3.2.2, (88))",
-                mm(s)
+                "fillet weld s {:.1} mm, contact (SIA 263 6.3.2.2, (88){})",
+                mm(s),
+                words(s)
             ),
-            demand: force,
+            demand: demand(s),
             resistance: s * l * 0.8 * fy / gamma_m2(),
             distance: false,
         }),

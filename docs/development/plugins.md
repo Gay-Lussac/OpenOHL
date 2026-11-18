@@ -1083,7 +1083,15 @@ further optional export carries them:
   (`ohl_member_check::with_parameters`: OHL-Structure passes the
   structure's folder, `member_capacity_in`, `plate_plans_in`,
   `bolt_rules_in`; the old forms without a folder take the method's own
-  values, said). Since the third round (2026-11-18) it reaches the bolt
+  values, said). Since the safe-side items of the lattice towers
+  (2026-11-18) a further export `joint-check-moments` repeats
+  `joint-check-full`'s records with, per part and case, what acts on it
+  beside its force (`part-moments`: `shear`, `in-plane`, `out-of-plane`,
+  `normal` — a weld's moments about it; a frame member's end shear and
+  moments at its bolt group) and a bolt group's plate's `free-length` in
+  compression; called first (`check-joints-moments`), a plugin without it
+  gets `joint-check-full` and OpenOHL says on each part concerned that
+  those were not sent (NOT ON THE SAFE SIDE). Since the third round (2026-11-18) it reaches the bolt
   tools' minimum distances too, through `bolt-distances-full` (the
   plugin's own bolt capacity: SIA 263's γ_M2), and OHL-Structure works
   Member details and the bolt tools out again when only that file

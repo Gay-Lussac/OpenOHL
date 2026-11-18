@@ -1011,7 +1011,12 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         .as_ref()
         .filter(|p| !p.is_empty() && p.plugin.is_some())
     {
-        let solved: Vec<(usize, std::collections::BTreeMap<String, f64>)> = fes
+        #[allow(clippy::type_complexity)]
+        let solved: Vec<(
+            usize,
+            std::collections::BTreeMap<String, f64>,
+            crate::plate_checks::EndForces,
+        )> = fes
             .iter()
             .enumerate()
             .filter_map(|(k, r)| {
@@ -1019,14 +1024,20 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                 Some((
                     k,
                     r.members.iter().map(|m| (m.id.clone(), m.axial)).collect(),
+                    r.members
+                        .iter()
+                        .map(|m| (m.id.clone(), m.end_forces))
+                        .collect(),
                 ))
             })
             .collect();
         let list: Vec<crate::plate_checks::PlateCase> = solved
             .iter()
-            .map(|(k, axial)| (cases[*k].name.as_str(), cases[*k].strength, axial))
+            .map(|(k, axial, _)| (cases[*k].name.as_str(), cases[*k].strength, axial))
             .collect();
-        let rows = crate::plate_checks::plate_usage_cases(p, &list);
+        let ends: Vec<&crate::plate_checks::EndForces> = solved.iter().map(|x| &x.2).collect();
+        // With each frame member's end shear and moments (2026-11-18).
+        let rows = crate::plate_checks::plate_usage_cases_with(p, &list, &ends);
         if let Some(bare) = rows
             .iter()
             .flatten()
@@ -1034,7 +1045,7 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         {
             run.notes.push(format!("plates: {}", bare.governs));
         }
-        for ((k, _), rows) in solved.iter().zip(rows) {
+        for ((k, _, _), rows) in solved.iter().zip(rows) {
             if let Some(Some(Ok(r))) = fes.get_mut(*k) {
                 r.plates = rows;
             }

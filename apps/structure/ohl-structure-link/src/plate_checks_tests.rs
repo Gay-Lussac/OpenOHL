@@ -233,10 +233,17 @@ fn plates_and_welds_are_checked_by_sia263() {
         .iter()
         .find(|p| p.part == PlatePart::Member("D2".into()))
         .unwrap();
+    // In compression (2026-11-18): its plate's buckling as a strut, or
+    // said not checked and not on the safe side — no longer a plain note.
     assert!(
-        d2.notes
-            .iter()
-            .any(|n| n.contains("plate buckling not checked"))
+        !d2.notes.iter().any(|n| n
+            == "plate buckling not checked (neither ASCE 10-97 nor SIA 263 gives a rule for a \
+                gusset plate in compression)"),
+        "{d2:?}"
+    );
+    assert!(
+        d2.governs.contains("as a strut") || d2.governs.contains("plate buckling not checked ("),
+        "{d2:?}"
     );
     let weld = u
         .iter()
@@ -245,6 +252,16 @@ fn plates_and_welds_are_checked_by_sia263() {
     assert!((weld.force - 40e3).abs() < 1e-6, "{weld:?}");
     assert!(weld.governs.contains("(87)"), "{weld:?}");
     assert!(weld.notes.iter().any(|n| n.contains("the seam's")));
+    // With the moments of the forces about the weld (2026-11-18): the
+    // members' bolts lie away from the seam, so the force per unit length
+    // at its most loaded end is larger than the force spread evenly — the
+    // usage at least that of the force alone, a L 0.6 f_uE / γ_M2.
+    assert!(
+        weld.governs.contains("kN/m at its most loaded end"),
+        "{weld:?}"
+    );
+    let alone = 40e3 / (0.006 * w.seam_length() * 0.6 * 510e6 / 1.25);
+    assert!(weld.usage.unwrap() > alone, "{weld:?} {alone}");
     let w2 = rows[1]
         .iter()
         .find(|p| matches!(&p.part, PlatePart::Weld(_)))
@@ -541,5 +558,68 @@ fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {
     assert!(
         crate::bolt_rules(&welded(), &library(), &Default::default(), "D1", "N2", None)
             .is_some_and(|r| r.code == "asce10-97")
+    );
+}
+
+/// A frame member's end shear and moments reach the plugin's plate checks
+/// (2026-11-18): D1's end at N2 given 5 kN of shear across it in G1's
+/// plane and 0.5 kN m about G1's normal (its end forces, structure axes)
+/// — its part's usage under SIA 263 larger than with its axial force
+/// alone (the case of before); a force square to the plate said not on
+/// the safe side (bolts in tension not checked).
+#[test]
+fn a_frame_members_end_shear_and_moments_reach_the_plate_checks() {
+    if !sia263_built() {
+        return;
+    }
+    let sia = format!("{}\n[analysis]\ncapacity = \"sia263-2013\"\n", welded());
+    let d = joint_details(&sia, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let a = j.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let n = a.bolt_axis;
+    let (along, _) = crate::joints::keep_axes(a);
+    let c = [
+        n[1] * along[2] - n[2] * along[1],
+        n[2] * along[0] - n[0] * along[2],
+        n[0] * along[1] - n[1] * along[0],
+    ];
+    let mut f = [[0.0; 6]; 2];
+    f[a.end] = [
+        5e3 * c[0],
+        5e3 * c[1],
+        5e3 * c[2],
+        500.0 * n[0],
+        500.0 * n[1],
+        500.0 * n[2],
+    ];
+    let plans = plate_plans(&sia, &library(), &Default::default()).unwrap();
+    let forces = axial();
+    let ends: crate::EndForces = [("D1".to_owned(), f)].into_iter().collect();
+    let d1 = |rows: &[crate::PlateUsage]| {
+        rows.iter()
+            .find(|p| p.part == PlatePart::Member("D1".into()))
+            .cloned()
+            .unwrap()
+    };
+    let plain = d1(&crate::plate_usage_cases(&plans, &[("one", 1.0, &forces)])[0]);
+    let with = d1(&crate::plate_usage_cases_with(&plans, &[("one", 1.0, &forces)], &[&ends])[0]);
+    assert!(
+        with.usage.unwrap() > plain.usage.unwrap(),
+        "{plain:?} {with:?}"
+    );
+    assert!(
+        with.notes
+            .iter()
+            .any(|x| x.contains("a frame member's end shear and moments")),
+        "{with:?}"
+    );
+    // Square to the plate: bolts in tension not checked, said.
+    let mut g = [[0.0; 6]; 2];
+    g[a.end] = [2e3 * n[0], 2e3 * n[1], 2e3 * n[2], 0.0, 0.0, 0.0];
+    let ends: crate::EndForces = [("D1".to_owned(), g)].into_iter().collect();
+    let pull = d1(&crate::plate_usage_cases_with(&plans, &[("one", 1.0, &forces)], &[&ends])[0]);
+    assert!(
+        pull.governs.contains("bolts in tension not checked"),
+        "{pull:?}"
     );
 }
