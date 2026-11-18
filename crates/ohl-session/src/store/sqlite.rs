@@ -7,7 +7,7 @@
 //! here unchanged — the same rows, in the same order, so a file written
 //! through the store is the file written before (tested by comparing
 //! `sqlite3 .dump`s). Its tables, schema 6, and the upgrades of older
-//! files ([`SqliteStore::prepare`]) are this store's own.
+//! files (`SqliteStore::prepare`) are this store's own.
 
 use std::collections::BTreeMap;
 use std::path::Path;

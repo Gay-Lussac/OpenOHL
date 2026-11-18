@@ -17,7 +17,7 @@
 //!
 //! | Group | Methods |
 //! |---|---|
-//! | Units of work | [`Store::savepoint`], [`Store::release`], [`Store::roll_back_to`] (nested steps, [`crate::Step`]) |
+//! | Units of work | [`Store::savepoint`], [`Store::release`], [`Store::roll_back_to`] (nested steps) |
 //! | Meta and settings | [`Store::meta`], [`Store::set_meta`], [`Store::delete_meta`] |
 //! | Users | [`Store::user_count`], [`Store::put_user`], [`Store::user_role`], [`Store::users`] |
 //! | Objects | [`Store::object_rows`], [`Store::write_object`], [`Store::write_place`], [`Store::delete_object`], … |
