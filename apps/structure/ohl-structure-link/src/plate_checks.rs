@@ -912,7 +912,7 @@ pub fn plate_usage_cases(plans: &PlatePlans, cases: &[PlateCase]) -> Vec<Vec<Pla
 /// [`plate_usage_cases`] with each case's members' end forces (`ends`,
 /// one per case of `cases`, or empty: none known): a frame member's end
 /// shear and moments at its bolts go to the plugin with the part
-/// ([`bolt_loads`], 2026-11-18).
+/// (`bolt_loads`, 2026-11-18).
 pub fn plate_usage_cases_with(
     plans: &PlatePlans,
     cases: &[PlateCase],

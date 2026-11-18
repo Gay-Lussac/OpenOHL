@@ -246,7 +246,7 @@ pub fn global_end_forces(
 /// — the larger end's about each axis over its whole length (on the safe
 /// side: the largest moment everywhere, the most onerous shape for its
 /// buckling), with the sign that adds to the moment its solve gave
-/// (internal moment M_i = −F[4], M_j = F[10] about y; 5, 11 about z).
+/// (internal moment `M_i = −F[4]`, `M_j = F[10]` about y; 5, 11 about z).
 /// A member without such an end: `f` as it is.
 pub fn with_eccentric_moments(
     model: &Model,
