@@ -720,9 +720,19 @@ pub struct Symmetry {
     pub groups: Vec<String>,
 }
 
-/// The generators of `t`, in file order.
+/// The kind of the `[[generator]]` that records the automatic joint layout
+/// (2026-11-18, `ohl_structure_link::layout_run`): what it set and its
+/// settings, not a body generator (left out here).
+pub const JOINT_LAYOUT_KIND: &str = "joint_layout";
+
+/// The generators of `t`, in file order (the joint layout's record left
+/// out).
 pub fn generators(t: &StructureType) -> Result<Vec<Generator>, String> {
-    t.generators.iter().map(Generator::from_table).collect()
+    t.generators
+        .iter()
+        .filter(|g| g.get("kind").and_then(toml::Value::as_str) != Some(JOINT_LAYOUT_KIND))
+        .map(Generator::from_table)
+        .collect()
 }
 
 /// The symmetries of `t`.

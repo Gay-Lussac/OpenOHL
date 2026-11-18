@@ -49,6 +49,9 @@ mod joint_sheet;
 mod joints;
 #[cfg(test)]
 mod joints_tests;
+mod layout_run;
+#[cfg(test)]
+mod layout_run_tests;
 mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;
@@ -82,6 +85,10 @@ pub use joints::{
     JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Problem,
     Profile, Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, bolted_onto,
     joint_details, part_chains, similar_joints,
+};
+pub use layout_run::{
+    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
+    RecordSettings, RunAsk, follow, lay_out, provisional_bolts, provisional_note, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
