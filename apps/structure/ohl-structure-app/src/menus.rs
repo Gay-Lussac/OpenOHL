@@ -689,6 +689,20 @@ impl StructureApp {
                 if entry(
                     ui,
                     None,
+                    "Orient angles…",
+                    None,
+                    tower,
+                    "Turns the legs and chords heel out with their flanges in the tower's faces \
+                     and lays the plan and hip members flat, for a tower without orientation \
+                     data (an import, a tower drawn by hand); a preview first, Apply is one undo \
+                     step",
+                    "A tower with members first",
+                ) {
+                    self.open_orient_window();
+                }
+                if entry(
+                    ui,
+                    None,
                     "Lay out joints…",
                     None,
                     tower,

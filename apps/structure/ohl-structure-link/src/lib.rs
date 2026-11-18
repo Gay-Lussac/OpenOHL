@@ -56,10 +56,14 @@ mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;
 mod member_view;
+mod orient;
+#[cfg(test)]
+mod orient_tests;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
 mod plate_frame;
+mod reduce;
 /// The member check by a plugin: the core crate `ohl-member-check`
 /// (shared with `ohl structures fe` and the line's structure check).
 pub use ohl_member_check as plugin_check;
@@ -88,8 +92,8 @@ pub use joints::{
 };
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, lay_out, preset_area, presets_by_class, provisional_bolts,
-    touched,
+    RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole, preset_area,
+    presets_by_class, provisional_bolts, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
@@ -104,6 +108,10 @@ pub use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,
 };
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
+pub use orient::{
+    CORNER_DEG, IN_LINE_DEG, OrientAsk, OrientKind, OrientRun, OrientedMember, PARALLEL_DEG,
+    orient_angles,
+};
 pub use plate_checks::{
     PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_plans_in,
     plate_usage, plate_usage_cases,

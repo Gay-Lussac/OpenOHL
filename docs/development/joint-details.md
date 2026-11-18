@@ -760,6 +760,68 @@ from the file). Open: plates on an inner face and on
 built-up legs, members on both sides of one plate, bent plates for
 members no roll lays flat at both ends: by hand.
 
+Fourth round (2026-11-18, owner: the legs' turn of an imported tower is
+an import artefact — the export carries no member orientation —, "only
+turn where it helps"):
+
+- **Orient angles** (`orient.rs`, `orient_angles`; Design › Orient
+  angles…, `orient_window.rs`): the legs (class `leg`) and the angles
+  running on in line within 10° through a joint turned heel out with a
+  flange in each of the two faces meeting at them — the faces from the
+  neighbouring legs' lines (a leg's from the other legs, a chord's from
+  the other chords, joined to its line by a member lying in one plane
+  with both): seen along the member they make a convex polygon, the
+  member a corner of it (`IN_LINE_DEG`, `PARALLEL_DEG`, `CORNER_DEG`);
+  the angle's bisector on the faces' bisector; stars and crosses alike,
+  back-to-back angles left; horizontal plan and hip members in no steep
+  face laid flat, the other leg down (assumed). Rolls given by hand kept
+  unless replaced; the record's `oriented` ([data model](data-model.md)).
+  Tests: square and rectangular bodies, a taper change, a box crossarm, a
+  portal of two columns, hand rolls, legs with fewer than two
+  neighbours.
+- **Turned only where it helps** (`layout_run.rs`): a member is turned
+  only when one roll lays it flat at all its ends (those at joints not
+  asked too), no end of it not asked is laid out with its roll now, and a
+  joint of it is laid out with the turn (planned, then written and
+  clash-checked); else its roll stays, said, and the joints are planned
+  again without the turn. An automatic roll is taken back when none of
+  its joints is laid out with it any more; a leg's or chord's roll from
+  Orient angles is never turned.
+- **Faster follow** (`reduce.rs`): the touched joints are worked out
+  from the file cut down to what their details read (every joint, the
+  members at them and at those members' other joints, the members they
+  name, their connections, plates, splices and record marks), the
+  planning done on that cut, the joint details building their model once
+  (the exports' axes from it, section properties once per thread), and
+  the structure file's after-edit hook giving the file as read
+  (`ohl_structure_edit::Edited`, `follow_read`). A following edit on the
+  private real tower of 3 030 members: 1.72 s at the start of the round,
+  1.85 s with the turn checks from the whole file, **0.135 s** now
+  (release optimisation, the machine shared with another build); 2 217
+  members 0.09–0.10 s. The files written compared byte for byte with the
+  whole-file follow on 35 edits of 7 real towers (a plate made thicker, a
+  section, a roll, a joint moved, the gap setting): identical
+  (`lay_out_whole`, `follow_whole` kept for that comparison).
+- **On the 78 real tower files** (Orient angles, then Lay out joints,
+  values given by hand replaced): joints laid out 14 306 → 15 122 (9 135 →
+  8 384 plates), with a hand detail 59 319 → 59 159, clashes at the joints
+  999 337 → 1 004 965 after (1 054 242 before, with the legs turned), a
+  run again identical on all 78; Orient angles turned 58 646 members
+  (36 335 legs and chords, 23 548 plan members) in 26 s for all 78, left
+  1 083 legs (950 with fewer than two neighbours: the leg extensions at
+  the foot). The whole tower of 3 030 members: 0.4 s to orient, 5.3 s to
+  lay out (4.2 s before: the turns planned again where one does not
+  help). Of the 59 159 joints left with a hand detail, by the kinds of
+  their reasons: 12 691 only because a member's axis runs out of the
+  plane of the flange it bolts onto (mostly redundants and crossings
+  onto bracing that does not lie in its face: the bracing's own roll),
+  11 054 only because a laid-out part would clash, 3 230 only an inner
+  face (19 438 with it), 3 608 only a member no roll lays flat (17 467
+  with it), 2 220 only a built-up leg (4 496 with it). Next: lay the face
+  bracing in its face (Orient angles for bracing: one flange in the face
+  its line lies in), then plates on an inner face; then bent plates and
+  built-up legs; members on both sides of one plate by hand.
+
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

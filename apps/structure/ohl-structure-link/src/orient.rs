@@ -1,0 +1,699 @@
+// This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+// SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
+// License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
+
+//! **Orient angles from the tower's shape** (2026-11-18, owner: the legs'
+//! turn of an imported tower is an import artefact — the export carries no
+//! member orientation — "and yeah only turn where it helps"): the rolls of
+//! a tower without orientation data (an import, a tower drawn by hand)
+//! worked out from where its members are.
+//!
+//! - **Legs and chords** — the members of class `leg` and the angles that
+//!   run on in line (within [`IN_LINE_DEG`]) through a joint: each turned
+//!   so that its heel points out of the tower and its two flanges lie in
+//!   the two faces of the tower meeting at it. The faces are those of its
+//!   neighbouring legs' lines (a leg's from the other legs, a chord's from
+//!   the other chords): the tower's legs and chords beside it
+//!   (within [`PARALLEL_DEG`] of it, their lines joined to its line by a
+//!   member — a face's bracing, a plan member; each by its point nearest
+//!   the member's middle) seen along it make a polygon; the member is a corner
+//!   of its outline (else it is left: inside the tower, on a face, or with
+//!   fewer than two neighbours), the two corners next to it are its
+//!   neighbours. An
+//!   angle's legs are at 90°, the faces seldom exactly: the angle is
+//!   turned so that the middle of its legs is the middle of the faces
+//!   (each flange off its face by half the difference, said). A built-up
+//!   leg of two angles in a star or four in a cross is turned the same way
+//!   (its legs along the faces); two angles back to back are left.
+//! - **Plan and hip members** — horizontal angles (within [`FLAT_OFF`])
+//!   lying in no steep face of the tower: one leg flat (horizontal) and the
+//!   other pointing down (assumed: no water lying in it — a choice of this
+//!   command, not a standard's), the flat leg towards the tower's middle.
+//! - **Bracing** is left: the layout lays it flat on what it bolts onto
+//!   ([`crate::lay_out`], turned only where that helps).
+//!
+//! A roll given by hand (a `roll`, `reference` or `orientation` in the
+//! file not set by this command or by the layout) is kept unless replaced.
+//! What it sets is marked automatic in the joint layout's record
+//! (`oriented`: the member, its roll before, `chord` or `plan`); the
+//! layout keeps a leg's or chord's roll set here (the tower's shape) and
+//! may turn a plan member's. The same file gives the same result: a run
+//! again changes nothing.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use ohl_sections::{SectionLibrary, Shape};
+use ohl_structures::{LibraryItem, StructureType};
+use toml_edit::DocumentMut;
+
+use crate::joints::FLAT_OFF;
+use crate::layout_run::LayoutRecord;
+
+/// Two members running on in line through a joint: within this angle of
+/// each other, degrees (a taper change of a tower's leg is a few degrees;
+/// an assumption of this command, not a standard's).
+pub const IN_LINE_DEG: f64 = 10.0;
+
+/// The legs and chords taken into a member's section of the tower: within
+/// this angle of it, degrees (a tapering body's opposite legs, a
+/// crossarm's converging chords).
+pub const PARALLEL_DEG: f64 = 70.0;
+
+/// The faces at a leg or chord meeting at an angle within these, degrees
+/// (seen along it): a corner its angle is turned to (each flange then at
+/// most 22.5° off its face); else it is left (an assumption of this
+/// command, not a standard's).
+pub const CORNER_DEG: [f64; 2] = [45.0, 135.0];
+
+/// A corner of the tower's section lying within this distance of the line
+/// through its neighbours is on a face, not a corner, m.
+const ON_FACE: f64 = 0.005;
+
+/// What a member was turned as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrientKind {
+    /// A leg or chord: heel outward, its flanges in the two faces.
+    Chord,
+    /// A plan or hip member: one leg flat, the other down.
+    Plan,
+}
+
+impl OrientKind {
+    /// As the record writes it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Chord => "chord",
+            Self::Plan => "plan",
+        }
+    }
+
+    /// From the record.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "chord" => Some(Self::Chord),
+            "plan" => Some(Self::Plan),
+            _ => None,
+        }
+    }
+}
+
+/// One member turned.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OrientedMember {
+    /// The member.
+    pub member: String,
+    /// As what.
+    pub kind: OrientKind,
+    /// Its roll before, as written (empty: none).
+    pub before: String,
+    /// Its roll now, degrees (as written: to a hundredth).
+    pub roll: f64,
+    /// The turn, degrees (−180 to 180).
+    pub turn: f64,
+    /// A leg or chord: each flange's angle off its face, degrees (half the
+    /// faces' difference from 90°).
+    pub off: f64,
+    /// Its neighbours (a leg or chord: the members whose lines make its
+    /// two faces).
+    pub neighbours: Vec<String>,
+}
+
+/// What to orient.
+#[derive(Debug, Clone, Default)]
+pub struct OrientAsk {
+    /// The members (none: every member).
+    pub members: Option<BTreeSet<String>>,
+    /// Rolls given by hand replaced too.
+    pub replace_hand: bool,
+}
+
+/// A run of Orient angles on a structure file.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OrientRun {
+    /// The file after (the same text when nothing changed).
+    pub text: String,
+    /// The members turned (their roll changed), in the file's order.
+    pub turned: Vec<OrientedMember>,
+    /// The members already as this command turns them (unchanged).
+    pub same: Vec<OrientedMember>,
+    /// The members whose roll given by hand was kept, and as what they
+    /// would be turned.
+    pub kept: Vec<OrientedMember>,
+    /// Legs (class `leg`) not turned, with why (an angle running on that
+    /// is no corner of the tower's section is bracing: not listed).
+    pub left: Vec<(String, String)>,
+    /// How long it took, s.
+    pub seconds: f64,
+}
+
+/// A member as this command sees it.
+struct Line {
+    id: String,
+    a: [f64; 3],
+    b: [f64; 3],
+    x: [f64; 3],
+    /// Its local y and z with no roll (its reference, or the default).
+    base: [[f64; 3]; 2],
+    /// A single angle, or angles in a star or a cross; false: two angles
+    /// back to back (a chord left).
+    turnable: bool,
+    /// An angle of some kind.
+    angle: bool,
+    class_leg: bool,
+}
+
+/// The tower's legs and chords and its plan members turned as they stand
+/// (as the module docs say) in `text`, as `ask` says.
+pub fn orient_angles(
+    text: &str,
+    library: &SectionLibrary,
+    ask: &OrientAsk,
+) -> Result<OrientRun, String> {
+    let start = std::time::Instant::now();
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+        .map_err(|e| e.message)?;
+    let model = ohl_structures_fe::model::Model::from_structure_type_with(text, library)
+        .map_err(|e| format!("the model is not built ({e}): nothing to orient"))?;
+    let record = LayoutRecord::of(&t);
+    let mut lines: Vec<Line> = Vec::new();
+    for m in &t.members {
+        let Some(fm) = model.members.iter().find(|x| x.id == m.id) else {
+            continue;
+        };
+        let (a, b) = (model.nodes[fm.i].point, model.nodes[fm.j].point);
+        let d = sub(b, a);
+        let l = norm(d);
+        if l <= 1e-9 {
+            continue;
+        }
+        // Its axes with no roll (its reference, or the default).
+        let [x, y, z] = crate::member_axes(a, b, fm.reference, 0.0);
+        let shape = m
+            .section
+            .as_deref()
+            .and_then(|s| library.section(s))
+            .map(|s| &s.shape);
+        let (angle, turnable) = match shape {
+            Some(Shape::EqualAngle { .. } | Shape::UnequalAngle { .. }) => (true, true),
+            Some(Shape::StarAngle { .. } | Shape::CrossAngle { .. }) => (true, true),
+            Some(Shape::DoubleAngle { .. }) => (true, false),
+            _ => (false, false),
+        };
+        let class_leg = m
+            .design
+            .as_ref()
+            .and_then(|d| d.get("class"))
+            .and_then(toml::Value::as_str)
+            == Some("leg");
+        lines.push(Line {
+            id: m.id.clone(),
+            a,
+            b,
+            x,
+            base: [y, z],
+            turnable,
+            angle,
+            class_leg,
+        });
+    }
+    // Running on in line through a joint: at each joint, the pairs of
+    // angles nearest in line first.
+    let mut running: BTreeSet<usize> = BTreeSet::new();
+    // Each member's line (the members running on in line, joined).
+    let mut line_of: Vec<usize> = (0..lines.len()).collect();
+    let mut at_joint: BTreeMap<String, Vec<(usize, [f64; 3])>> = BTreeMap::new();
+    for (k, l) in lines.iter().enumerate() {
+        if !l.angle {
+            continue;
+        }
+        let m = t.members.iter().find(|m| m.id == l.id).expect("listed");
+        at_joint
+            .entry(m.nodes[0].clone())
+            .or_default()
+            .push((k, l.x));
+        at_joint
+            .entry(m.nodes[1].clone())
+            .or_default()
+            .push((k, scale(l.x, -1.0)));
+    }
+    for ends in at_joint.values() {
+        let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+        for i in 0..ends.len() {
+            for j in i + 1..ends.len() {
+                let dev = 180.0 - angle_deg(ends[i].1, ends[j].1);
+                if dev <= IN_LINE_DEG {
+                    pairs.push((dev, ends[i].0, ends[j].0));
+                }
+            }
+        }
+        pairs.sort_by(|p, q| p.0.total_cmp(&q.0).then((p.1, p.2).cmp(&(q.1, q.2))));
+        let mut used: BTreeSet<usize> = BTreeSet::new();
+        for (_, i, j) in pairs {
+            if used.contains(&i) || used.contains(&j) {
+                continue;
+            }
+            used.insert(i);
+            used.insert(j);
+            running.insert(i);
+            running.insert(j);
+            join(&mut line_of, i, j);
+        }
+    }
+    let chords: Vec<usize> = (0..lines.len())
+        .filter(|&k| lines[k].angle && (lines[k].class_leg || running.contains(&k)))
+        .collect();
+    // The lines of legs and chords next to each other: joined by a member
+    // (a face's bracing, a plan member) from a joint of one to a joint of
+    // the other, lying in one plane with both (within [`FLAT_OFF`]). Only
+    // those make a member's faces: a portal's other column, a far
+    // crossarm's chords, an arm's chord joined to a leg by the arm's
+    // bracing are not its neighbours however parallel.
+    let mut lines_at: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
+    for &k in &chords {
+        let m = t
+            .members
+            .iter()
+            .find(|m| m.id == lines[k].id)
+            .expect("listed");
+        let r = root(&mut line_of, k);
+        for n in &m.nodes {
+            lines_at.entry(n.as_str()).or_default().push((r, k));
+        }
+    }
+    let position: BTreeMap<&str, [f64; 3]> = t
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.point.map(|v| v.si())))
+        .collect();
+    let flat = FLAT_OFF.to_radians().sin();
+    let mut next_to: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for m in &t.members {
+        let (Some(a), Some(b)) = (
+            lines_at.get(m.nodes[0].as_str()),
+            lines_at.get(m.nodes[1].as_str()),
+        ) else {
+            continue;
+        };
+        let (Some(pa), Some(pb)) = (
+            position.get(m.nodes[0].as_str()),
+            position.get(m.nodes[1].as_str()),
+        ) else {
+            continue;
+        };
+        let d = sub(*pb, *pa);
+        if norm(d) <= 1e-9 {
+            continue;
+        }
+        let d = unit(d);
+        for &(x, kx) in a {
+            for &(y, ky) in b {
+                if x == y {
+                    continue;
+                }
+                let n = cross(lines[kx].x, d);
+                if norm(n) < flat || dot(unit(n), lines[ky].x).abs() > flat {
+                    continue;
+                }
+                next_to.insert((x, y));
+                next_to.insert((y, x));
+            }
+        }
+    }
+    let asked = |id: &str| ask.members.as_ref().is_none_or(|s| s.contains(id));
+    // Each leg's or chord's target axes, and the tower's steep faces.
+    let mut target: BTreeMap<usize, (f64, f64, Vec<String>)> = BTreeMap::new();
+    let mut faces: Vec<([f64; 3], [f64; 3])> = Vec::new();
+    let mut left: Vec<(String, String)> = Vec::new();
+    for &k in &chords {
+        let l = &lines[k];
+        let p = scale(add(l.a, l.b), 0.5);
+        // The section normal to it through its middle.
+        let e1 = l.base[0];
+        let e2 = l.base[1];
+        let mut pts: Vec<([f64; 2], usize)> = vec![([0.0, 0.0], k)];
+        let own = root(&mut line_of, k);
+        for &n in &chords {
+            if n == k {
+                continue;
+            }
+            let other = root(&mut line_of, n);
+            if !next_to.contains(&(own, other)) {
+                continue;
+            }
+            let o = &lines[n];
+            // A leg's faces from the other legs, a chord's from the other
+            // chords (not an arm's members joined to a leg in its face).
+            if o.class_leg != l.class_leg {
+                continue;
+            }
+            if angle_deg(l.x, o.x).min(180.0 - angle_deg(l.x, o.x)) > PARALLEL_DEG {
+                continue;
+            }
+            // Its point nearest the member's middle (beside it, not far
+            // along: a leg of the same panel, or of the next past a taper
+            // change). Any point of a neighbouring leg's line lies in their
+            // common face: seen along the member, it gives the face.
+            let d = sub(o.b, o.a);
+            let s = dot(sub(p, o.a), d) / dot(d, d).max(1e-18);
+            if !(-0.5..=1.5).contains(&s) {
+                continue;
+            }
+            let q = sub(add(o.a, scale(d, s.clamp(0.0, 1.0))), p);
+            let q2 = [dot(q, e1), dot(q, e2)];
+            if pts
+                .iter()
+                .any(|(x, _)| (x[0] - q2[0]).hypot(x[1] - q2[1]) < ON_FACE)
+            {
+                continue;
+            }
+            pts.push((q2, n));
+        }
+        let hull = hull(&pts.iter().map(|x| x.0).collect::<Vec<_>>());
+        let Some(at) = hull.iter().position(|&i| i == 0) else {
+            if asked(&l.id) && l.class_leg {
+                left.push((
+                    l.id.clone(),
+                    if hull.len() < 3 {
+                        format!(
+                            "fewer than two neighbouring legs or chords across it ({} in its \
+                             section): its faces are not known",
+                            pts.len() - 1
+                        )
+                    } else {
+                        "not at a corner of the tower's section (inside it, or on a face)".into()
+                    },
+                ));
+            }
+            continue;
+        };
+        if hull.len() < 3 {
+            // One line of legs or chords (a frame of two legs): its plane
+            // is a face all the same (for the plan members).
+            if let Some((q, _)) = pts
+                .iter()
+                .skip(1)
+                .max_by(|a, b| a.0[0].hypot(a.0[1]).total_cmp(&b.0[0].hypot(b.0[1])))
+            {
+                let to3 = add(scale(e1, q[0]), scale(e2, q[1]));
+                faces.push((unit(cross(l.x, to3)), p));
+            }
+            if asked(&l.id) && l.class_leg {
+                left.push((
+                    l.id.clone(),
+                    format!(
+                        "fewer than two neighbouring legs or chords across it ({} in its \
+                         section): its faces are not known",
+                        pts.len() - 1
+                    ),
+                ));
+            }
+            continue;
+        }
+        let prev = hull[(at + hull.len() - 1) % hull.len()];
+        let next = hull[(at + 1) % hull.len()];
+        let to3 = |q: [f64; 2]| add(scale(e1, q[0]), scale(e2, q[1]));
+        let f1 = unit(to3(pts[prev].0));
+        let f2 = unit(to3(pts[next].0));
+        let theta = angle_deg(f1, f2);
+        for f in [f1, f2] {
+            faces.push((unit(cross(l.x, f)), p));
+        }
+        if !l.turnable {
+            if asked(&l.id) && l.class_leg {
+                left.push((
+                    l.id.clone(),
+                    "two angles back to back: no corner to turn to the faces".into(),
+                ));
+            }
+            continue;
+        }
+        // Faces meeting far from square (nearly one plane, or a sharp
+        // edge): no corner an angle's legs can follow.
+        if !(CORNER_DEG[0]..=CORNER_DEG[1]).contains(&theta) {
+            if asked(&l.id) && l.class_leg {
+                left.push((
+                    l.id.clone(),
+                    format!(
+                        "its two faces meet at {theta:.0}°, too far from square for an angle's \
+                         legs (a corner between {:.0}° and {:.0}°)",
+                        CORNER_DEG[0], CORNER_DEG[1]
+                    ),
+                ));
+            }
+            continue;
+        }
+        let bis = unit(add(f1, f2));
+        let c = cross(l.x, bis);
+        let y = scale(sub(bis, c), std::f64::consts::FRAC_1_SQRT_2);
+        let roll = dot(y, l.base[1]).atan2(dot(y, l.base[0]));
+        target.insert(
+            k,
+            (
+                roll,
+                (theta - 90.0).abs() / 2.0,
+                vec![lines[pts[prev].1].id.clone(), lines[pts[next].1].id.clone()],
+            ),
+        );
+    }
+    // Plan and hip members: horizontal angles in no steep face.
+    let centre = {
+        let n = model.nodes.len().max(1) as f64;
+        let s = model
+            .nodes
+            .iter()
+            .fold([0.0; 3], |acc, x| add(acc, x.point));
+        [s[0] / n, s[1] / n]
+    };
+    let steep: Vec<&([f64; 3], [f64; 3])> = faces
+        .iter()
+        .filter(|(n, _)| n[2].abs() < std::f64::consts::FRAC_1_SQRT_2)
+        .collect();
+    let mut plan: BTreeMap<usize, f64> = BTreeMap::new();
+    for (k, l) in lines.iter().enumerate() {
+        if target.contains_key(&k) || l.class_leg || !l.angle || !l.turnable {
+            continue;
+        }
+        if l.x[2].abs() > FLAT_OFF.to_radians().sin() {
+            continue;
+        }
+        let len = norm(sub(l.b, l.a));
+        let tol = 0.02 + 0.005 * len;
+        let in_face = steep
+            .iter()
+            .any(|(n, q)| dot(sub(l.a, *q), *n).abs() <= tol && dot(sub(l.b, *q), *n).abs() <= tol);
+        if in_face {
+            continue;
+        }
+        // Down, and the flat leg across it towards the middle.
+        let down = [0.0, 0.0, -1.0];
+        let mut flat = unit(cross(l.x, down));
+        let mid = scale(add(l.a, l.b), 0.5);
+        let inward = [centre[0] - mid[0], centre[1] - mid[1], 0.0];
+        if dot(flat, inward) < 0.0 {
+            flat = scale(flat, -1.0);
+        }
+        // Right-handed (z = x × y): the flat leg along y when x × it
+        // points down, else the leg down along y.
+        let y = if dot(cross(l.x, flat), down) > 0.0 {
+            flat
+        } else {
+            down
+        };
+        plan.insert(k, dot(y, l.base[1]).atan2(dot(y, l.base[0])));
+    }
+    // Written: hand values kept unless replaced.
+    let mut doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+    let mut rec = record.clone();
+    let mut run = OrientRun::default();
+    let mut all: Vec<(usize, OrientKind, f64, f64, Vec<String>)> = target
+        .iter()
+        .map(|(k, (r, off, n))| (*k, OrientKind::Chord, *r, *off, n.clone()))
+        .chain(
+            plan.iter()
+                .map(|(k, r)| (*k, OrientKind::Plan, *r, 0.0, Vec::new())),
+        )
+        .collect();
+    all.sort_by_key(|x| x.0);
+    for (k, kind, roll, off, neighbours) in all {
+        let l = &lines[k];
+        if !asked(&l.id) {
+            continue;
+        }
+        let m = t.members.iter().find(|m| m.id == l.id).expect("listed");
+        let before = roll_text(m.roll.as_ref());
+        let now = m.roll.as_ref().map_or(0.0, roll_deg);
+        let deg = round_deg(roll.to_degrees());
+        let auto = rec.oriented.contains_key(&l.id) || rec.rolled.contains_key(&l.id);
+        let by_hand =
+            !auto && (m.roll.is_some() || m.reference.is_some() || m.orientation.is_some());
+        let o = OrientedMember {
+            member: l.id.clone(),
+            kind,
+            before: before.clone(),
+            roll: deg,
+            turn: round_deg(deg - now),
+            off,
+            neighbours,
+        };
+        if by_hand && !ask.replace_hand {
+            if o.turn.abs() >= 0.005 {
+                run.kept.push(o);
+            } else {
+                run.same.push(o);
+            }
+            continue;
+        }
+        // The roll before this command (or the layout) first turned it.
+        let first = rec
+            .oriented
+            .get(&l.id)
+            .map(|x| x.0.clone())
+            .or_else(|| rec.rolled.get(&l.id).cloned())
+            .unwrap_or_else(|| before.clone());
+        rec.rolled.remove(&l.id);
+        if o.turn.abs() < 0.005 {
+            rec.oriented.insert(l.id.clone(), (first, kind));
+            run.same.push(o);
+            continue;
+        }
+        ohl_structure_edit::edits::set_member_roll(&mut doc, &l.id, deg.to_radians());
+        rec.oriented.insert(l.id.clone(), (first, kind));
+        run.turned.push(o);
+    }
+    if rec != record {
+        rec.write(&mut doc);
+    }
+    run.text = if rec == record && run.turned.is_empty() {
+        text.to_owned()
+    } else {
+        doc.to_string()
+    };
+    run.left = left;
+    run.seconds = start.elapsed().as_secs_f64();
+    Ok(run)
+}
+
+/// The line member `k` is on (union-find with path halving).
+fn root(line_of: &mut [usize], mut k: usize) -> usize {
+    while line_of[k] != k {
+        line_of[k] = line_of[line_of[k]];
+        k = line_of[k];
+    }
+    k
+}
+
+/// Members `a` and `b` on one line.
+fn join(line_of: &mut [usize], a: usize, b: usize) {
+    let (x, y) = (root(line_of, a), root(line_of, b));
+    if x != y {
+        line_of[x.max(y)] = x.min(y);
+    }
+}
+
+/// A roll as written (empty: none).
+fn roll_text(v: Option<&toml::Value>) -> String {
+    match v {
+        None => String::new(),
+        Some(toml::Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// A roll value in degrees.
+fn roll_deg(v: &toml::Value) -> f64 {
+    v.clone()
+        .try_into::<ohl_core::units::Angle>()
+        .map_or(0.0, |a| a.radians().to_degrees())
+}
+
+/// Degrees in (−180, 180], to a hundredth (as the files write a roll).
+fn round_deg(d: f64) -> f64 {
+    let mut d = d % 360.0;
+    if d > 180.0 {
+        d -= 360.0;
+    } else if d <= -180.0 {
+        d += 360.0;
+    }
+    let r = (d * 100.0).round() / 100.0;
+    if r == 0.0 { 0.0 } else { r }
+}
+
+/// The convex outline of `pts` (2D), counter-clockwise, as indices; points
+/// within [`ON_FACE`] of an edge left out.
+fn hull(pts: &[[f64; 2]]) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..pts.len()).collect();
+    idx.sort_by(|&a, &b| {
+        pts[a][0]
+            .total_cmp(&pts[b][0])
+            .then(pts[a][1].total_cmp(&pts[b][1]))
+    });
+    if idx.len() < 3 {
+        return idx;
+    }
+    // Left of o→a by more than ON_FACE (distance of b from the line).
+    let left = |o: usize, a: usize, b: usize| {
+        let (p, q, r) = (pts[o], pts[a], pts[b]);
+        let cr = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+        let len = (q[0] - p[0]).hypot(q[1] - p[1]).max(1e-12);
+        cr / len
+    };
+    let mut lower: Vec<usize> = Vec::new();
+    for &i in &idx {
+        while lower.len() >= 2 && left(lower[lower.len() - 2], lower[lower.len() - 1], i) <= ON_FACE
+        {
+            lower.pop();
+        }
+        lower.push(i);
+    }
+    let mut upper: Vec<usize> = Vec::new();
+    for &i in idx.iter().rev() {
+        while upper.len() >= 2 && left(upper[upper.len() - 2], upper[upper.len() - 1], i) <= ON_FACE
+        {
+            upper.pop();
+        }
+        upper.push(i);
+    }
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower
+}
+
+fn angle_deg(a: [f64; 3], b: [f64; 3]) -> f64 {
+    (dot(a, b) / (norm(a) * norm(b)).max(1e-300))
+        .clamp(-1.0, 1.0)
+        .acos()
+        .to_degrees()
+}
+
+fn unit(a: [f64; 3]) -> [f64; 3] {
+    scale(a, 1.0 / norm(a).max(1e-300))
+}
+
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+fn scale(a: [f64; 3], k: f64) -> [f64; 3] {
+    [a[0] * k, a[1] * k, a[2] * k]
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn norm(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
+}

@@ -264,3 +264,196 @@ fn a_preset_gives_its_bolt_area() {
         Some("2 x M16")
     );
 }
+
+/// The K-brace with D1 on the outer face of the leg's flange at N2 but
+/// turned 60° off it, by its reference (no roll of its own: the layout may
+/// turn it).
+fn d1_off() -> String {
+    let t = k_brace().replacen(
+        "orientation = \"y-z+\"",
+        "reference = [-0.665, 0.5, -0.554]",
+        1,
+    );
+    assert_ne!(t, k_brace());
+    t
+}
+
+fn roll_of(text: &str, m: &str) -> Option<toml::Value> {
+    parse(text)
+        .members
+        .into_iter()
+        .find(|x| x.id == m)
+        .and_then(|x| x.roll)
+}
+
+#[test]
+fn a_member_is_turned_where_its_joint_is_laid_out_with_the_turn() {
+    let r = run(&d1_off(), &settings(), Some(&["N2"]), false);
+    let n2 = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(n2.written, "{:?} {:?}", n2.hand, r.notes);
+    assert!(
+        n2.plan.ends.iter().any(|e| e.member == "D1"),
+        "{:?}",
+        n2.plan
+    );
+    assert_eq!(n2.turned, ["D1"]);
+    assert!(roll_of(&r.text, "D1").is_some());
+    let rec = LayoutRecord::of(&parse(&r.text));
+    assert_eq!(rec.rolled.get("D1").map(String::as_str), Some(""));
+    // A run again: the same.
+    assert_eq!(run(&r.text, &settings(), Some(&["N2"]), false).text, r.text);
+}
+
+#[test]
+fn a_turn_that_helps_no_joint_is_not_made() {
+    // D1's cut given by hand too short at N2: D1 is left for a hand detail
+    // there whatever its roll, and its other end lays out nothing: not
+    // turned, said; the rest of N2 laid out.
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\ncut = \"1 mm\"\n",
+        d1_off()
+    );
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    assert!(roll_of(&r.text, "D1").is_none(), "turned: {}", r.text);
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("D1: not turned: no joint of it is laid out")),
+        "{:?}",
+        r.notes
+    );
+    let rec = LayoutRecord::of(&parse(&r.text));
+    assert!(!rec.rolled.contains_key("D1"));
+    let n2 = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(n2.turned.is_empty());
+    assert!(
+        n2.plan.hand_members.iter().any(|m| m == "D1"),
+        "{:?}",
+        n2.plan
+    );
+}
+
+#[test]
+fn a_turn_that_would_spoil_an_end_that_was_flat_is_not_made() {
+    // The legs turned 30° (by hand): D1 lies 30° off at N2; at N4 it
+    // bolts onto the bottom chord H0–H1 (running on through N4), flat
+    // there. Laying out N2 alone may not turn it.
+    let text = format!(
+        "{}\n[[node]]\nid = \"N6\"\npoint = [\"5 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"H0\"\nnodes = [\"N1\", \"N4\"]\nsection = \"EA-61x7\"\n\
+         design = {{ class = \"bracing\" }}\n\
+         \n[[member]]\nid = \"H1\"\nnodes = [\"N4\", \"N6\"]\nsection = \"EA-61x7\"\n\
+         design = {{ class = \"bracing\" }}\n\
+         \n[[connection]]\nmember = \"D1\"\njoint = \"N4\"\nonto = \"H0\"\n",
+        k_brace().replace(
+            "orientation = \"x+y+\"\n",
+            "orientation = \"x+y+\"\nroll = \"30 deg\"\n"
+        )
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let flat = |j: &str| {
+        d.joint(j)
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "D1")
+            .and_then(|a| a.flat)
+            .map(|f| f.off)
+    };
+    assert!(flat("N2").unwrap() > 20.0, "{:?}", flat("N2"));
+    assert!(flat("N4").unwrap() < 1.0, "{:?}", flat("N4"));
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    assert!(roll_of(&r.text, "D1").is_none());
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("D1:") && n.contains("spoil")),
+        "{:?}",
+        r.notes
+    );
+}
+
+#[test]
+fn an_automatic_roll_is_taken_back_when_its_joints_become_hand_details() {
+    let r = run(&d1_off(), &settings(), Some(&["N2"]), false);
+    assert!(roll_of(&r.text, "D1").is_some());
+    // D1's cut at N2 given by hand, too short: N2 laid out again (the
+    // follow), D1 now a hand detail there and nowhere laid out: its roll
+    // back to what it was (none).
+    let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
+    ohl_structure_edit::connection_edits::set_connection_field(
+        &mut doc,
+        "D1",
+        "N2",
+        "cut",
+        Some(&ohl_structure_edit::connection_edits::FieldValue::Length(
+            0.001,
+        )),
+    )
+    .unwrap();
+    let edited = doc.to_string();
+    let f = follow(&r.text, &edited, &library(), &Default::default(), &[]).expect("followed");
+    assert!(roll_of(&f.text, "D1").is_none(), "{}", f.text);
+    assert!(!LayoutRecord::of(&parse(&f.text)).rolled.contains_key("D1"));
+}
+
+/// A tall body (eight panels) for the faster follow: a few joints are
+/// worked out from the file cut down to what they read.
+fn tall() -> String {
+    let levels: Vec<(f64, f64, f64)> = (0..9)
+        .map(|i| {
+            let w = 3.0 - 0.2 * i as f64;
+            (3.0 * i as f64, w, w)
+        })
+        .collect();
+    crate::orient_tests::body(&levels, &[2, 5])
+}
+
+#[test]
+fn a_few_joints_in_detail_from_the_file_cut_down_are_as_from_the_whole() {
+    let text =
+        crate::orient::orient_angles(&tall(), &library(), &crate::orient::OrientAsk::default())
+            .unwrap()
+            .text;
+    let doc: toml_edit::DocumentMut = text.parse().unwrap();
+    for j in ["J10", "J21", "J52", "J83"] {
+        let joints = BTreeSet::from([j.to_owned()]);
+        let keep = crate::reduce::members_for(&doc, &joints);
+        assert!(crate::reduce::worth(&doc, &keep));
+        let small = crate::reduce::cut_down(&doc, &keep);
+        let a =
+            crate::joints::joint_details_at(&text, &library(), &Default::default(), Some(&joints))
+                .unwrap();
+        let b = crate::joints::joint_details_at(
+            &small.to_string(),
+            &library(),
+            &Default::default(),
+            Some(&joints),
+        )
+        .unwrap();
+        assert_eq!(a.joints, b.joints, "{j}");
+        assert!(!a.joints.is_empty());
+    }
+    // A run on a few joints and its follow: the same file either way.
+    let s = settings();
+    let lib = library();
+    let bolts = Default::default();
+    let ask = RunAsk {
+        library: &lib,
+        bolts: &bolts,
+        settings: &s,
+        preset_fields: BTreeMap::new(),
+        joints: Some(BTreeSet::from(["J21".to_owned(), "J52".to_owned()])),
+        replace_hand: false,
+    };
+    let fast = lay_out(&text, &ask).unwrap();
+    let whole = crate::layout_run::lay_out_whole(&text, &ask).unwrap();
+    assert_eq!(fast.text, whole.text);
+    assert_eq!(fast.joints, whole.joints);
+    assert_eq!(fast.clashes, whole.clashes);
+    let edited = fast.text.replacen("gap = \"10 mm\"", "gap = \"14 mm\"", 1);
+    assert_ne!(edited, fast.text);
+    let a = follow(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
+    let b = crate::layout_run::follow_whole(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
+    assert_eq!(a, b);
+}

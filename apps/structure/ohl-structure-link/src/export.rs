@@ -571,6 +571,43 @@ pub fn export_structure(
         &ohl_structures::bolts::BoltLibrary::default(),
         None,
     )?;
+    export_of(&structure, &model, library, table, recipes)
+}
+
+/// A library section's properties, each worked out once per thread (the
+/// plastic moduli are slow to integrate and the joint layout exports the
+/// same sections many times over); keyed by the whole section as read.
+fn properties_of(p: &ohl_sections::Section) -> ohl_sections::Properties {
+    thread_local! {
+        static DONE: std::cell::RefCell<std::collections::HashMap<String, ohl_sections::Properties>> =
+            Default::default();
+    }
+    let key = format!("{p:?}");
+    DONE.with(|d| {
+        if let Some(q) = d.borrow().get(&key) {
+            return q.clone();
+        }
+        let q = p.properties();
+        let mut d = d.borrow_mut();
+        // Bounded: a long session editing sections starts again.
+        if d.len() > 10_000 {
+            d.clear();
+        }
+        d.insert(key, q.clone());
+        q
+    })
+}
+
+/// [`export_structure`] of the structure read already: `structure` and its
+/// model with the joint details (`model`; the bolt library it was built
+/// with changes no member's axes or section).
+pub(crate) fn export_of(
+    structure: &StructureType,
+    model: &Model,
+    library: &SectionLibrary,
+    table: Option<&LoadTable>,
+    recipes: &[LoadCaseRecipe],
+) -> Result<ExportStructure, String> {
     if model.members.is_empty() {
         return Err(format!(
             "structure {}: no members (exports need level 3: joints, members with \
@@ -654,7 +691,7 @@ pub fn export_structure(
         };
         let (shape, wpl, size, centroid, name) = match profile {
             Some(p) => {
-                let q = p.properties();
+                let q = properties_of(p);
                 let general = matches!(p.shape, Shape::General { .. });
                 (
                     Some(p.shape.clone()),

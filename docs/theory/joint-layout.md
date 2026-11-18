@@ -22,6 +22,65 @@ since 2026-11-18 (third round) the core's level reads the layout's list
 of provisional bolts, so every application, the command line and the
 line's calculation level 4 leave the joint details out and say why.
 
+## The angles' orientation first
+
+The layout works from the members' rolls. A tower imported from an
+export that carries no member orientation (the tower program's own
+files have it, its export does not), or drawn by hand, has every angle
+at the default orientation: its legs stand turned anyhow and much of the
+bracing then lies on the inner face of a leg's flange, or its axis out of
+the flange's plane. **Orient angles** (`ohl_structure_link::orient`)
+turns them as a lattice tower is built, from the tower's shape alone:
+
+- **Legs and chords** (class `leg`, or angles running on in line within
+  10° through a joint): heel out, a flange in each of the two faces
+  meeting at the member. The faces come from the neighbouring legs'
+  lines: the section of the tower's legs (for a leg; the chords for a
+  chord) through the member's middle, seen along it — those within 70°
+  of it whose lines a member joins to its line, lying in one plane with
+  both within 5° (a face's bracing, a plan member; a portal's other
+  column, joined only through its beam, and an arm's chord joined to a
+  leg by the arm's bracing are not neighbours) — is a convex polygon of
+  which the member is a corner; the two corners next to it
+  give the two faces. Where the faces meet at θ ≠ 90° (seen along the
+  member), no angle lies in both: the bisector of the angle's legs is
+  put on the bisector of the faces, each flange |θ − 90°| / 2 off its
+  face (said per member). For a square or rectangular body this is a
+  fraction of a degree; for a triangular crossarm 15° — more than the 5°
+  a member is laid flat within, so the bracing there needs a bent plate
+  or a hand detail. Faces meeting at less than 45° or more than 135°
+  (each flange more than 22.5° off) are taken as no corner: the member
+  is left (an assumption of the tool).
+- **Plan and hip members** (horizontal within 5°, in no steep face of
+  the tower): one leg horizontal, the other pointing down — **an
+  assumption** of this tool (no water lying in the angle), not a
+  standard's; the horizontal leg towards the tower's middle.
+- **Bracing** is left to the layout.
+
+A roll is written to a hundredth of a degree; the same tower gives the
+same rolls (a run again changes nothing).
+
+## Turned only where it helps
+
+(Owner, 2026-11-18: "only turn where it helps".) A member lying off what
+it bolts onto (more than 5°) is turned by the layout only when
+
+1. one roll lays it flat at all its ends — those at joints not laid out
+   in this run too: the turns that make each end flat lie within 5° of
+   each other (a turn and a half turn more lay a leg flat alike); the
+   middle of them is taken, so a turn never spoils an end that was flat;
+2. no end of it at a joint not laid out in this run is laid out with its
+   roll now (that joint would change unasked);
+3. at least one of its joints is laid out **with** the turn (the member
+   among the ends laid out there, after the clash check).
+
+A turn failing 3 is not made: the joints are planned again without it,
+until every turn left helps (a member's roll unchanged is never worse for
+the joints the run did not lay out). A roll the layout set before is
+taken back — the member's roll as it was — when none of its joints is
+laid out with it any more (both its joints left for a hand detail). A
+roll set by Orient angles on a leg or chord is kept (the tower's shape).
+
 ## Concentric first
 
 Every end is first placed **concentric**: the members' gauge lines meet
@@ -147,6 +206,19 @@ plate's thickness, a value at an end, a joint moved, a setting) lays that
 joint out again in the same undo step; a value the user changed is theirs
 and kept. A plate made thicker moves the members on it out (their seat)
 and lengthens their bolts (the grip), as before; the cuts follow.
+
+Only the joints an edit touches are laid out again, and their details are
+worked out from the file cut down to what they read (since 2026-11-18,
+`ohl_structure_link::reduce`): every joint, the members meeting at them,
+the members meeting those members' other joints (an end's conditions
+read the other end's: one end eccentric, the other not; what a member
+bolts onto holds it by its stiffness against the members at that joint),
+the members they name (what they bolt onto, run on into, a crossing
+partner), their connections, the plates and splices at their joints and
+the layout record's marks of their ends. The details of those joints are
+the same as from the whole file — tested on invented towers, and the
+files written by the follow compared byte for byte with the follow
+working from the whole file on edits of seven real towers (below).
 
 ## The settings
 
