@@ -309,6 +309,50 @@ pub fn approximate_end(line: &Line, end: &crate::JumperEnd, depth: usize) -> Opt
     }
 }
 
+/// [`approximate_end`] with the objects found by the line's reference
+/// index (the same point; no search through the line).
+pub fn approximate_end_in(
+    line: &Line,
+    index: &crate::index::LineIndex,
+    end: &crate::JumperEnd,
+    depth: usize,
+) -> Option<Point> {
+    match end.as_tap() {
+        None => index.wire_point(line, end.point()?).map(|w| w.position),
+        Some(crate::Tap::Span(r)) => {
+            let s = index.section(line, &r.section)?;
+            let s = line.section_with_fractions(s);
+            let p = s.span_points.iter().find(|p| p.label == r.point)?;
+            let w = s.points.get(p.span..=p.span + 1)?;
+            let (a, b) = (
+                index.wire_point(line, &w[0])?.position,
+                index.wire_point(line, &w[1])?.position,
+            );
+            let f =
+                p.at.fraction_of((b[0] - a[0]).hypot(b[1] - a[1]))
+                    .clamp(0.0, 1.0);
+            Some([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k])))
+        }
+        Some(crate::Tap::Jumper {
+            jumper,
+            point: label,
+        }) if depth < 16 => {
+            let h = index.jumper(line, jumper)?;
+            let a = approximate_end_in(line, index, &h.from, depth + 1)?;
+            let b = approximate_end_in(line, index, &h.to, depth + 1)?;
+            let p = h.points.iter().find(|p| &p.label == label)?;
+            let chord = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+            let f = place_fraction(
+                &p.at,
+                h.length.unwrap_or(chord),
+                (b[0] - a[0]).hypot(b[1] - a[1]),
+            );
+            Some([0, 1, 2].map(|k| a[k] + f * (b[k] - a[k])))
+        }
+        Some(_) => None,
+    }
+}
+
 /// What a jumper solve takes from the jumpers solved before it: where
 /// their points are (its taps on them), and the loads of the jumpers
 /// hanging on its own points (the whole bundle's, N, by label).

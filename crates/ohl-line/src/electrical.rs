@@ -846,9 +846,27 @@ impl Line {
             self.sections.iter().map(|s| (s.id.as_str(), s)).collect();
         let mut out = BTreeMap::new();
         for path in conductor_paths(self) {
+            let a = self.path_phase(path.iter().map(|id| (id.as_str(), by_id[id.as_str()])))?;
+            for id in path {
+                out.insert(id, a);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The system and phase of one conductor path (its sections in line
+    /// order, by id): the first section giving a system gives it; an
+    /// unknown system or phase, or a section of the path giving another
+    /// one, is refused ([`Line::section_phases`]; the local validation
+    /// checks so the paths an edit touches).
+    pub(crate) fn path_phase<'s>(
+        &self,
+        path: impl Iterator<Item = (&'s str, &'s crate::Section)>,
+    ) -> Result<Option<(usize, usize)>, LineError> {
+        let invalid = |m: String| LineError::Invalid(m);
+        {
             let mut assigned: Option<(usize, usize, String)> = None;
-            for id in &path {
-                let s = by_id[id.as_str()];
+            for (id, s) in path {
                 let Some(sys) = &s.system else { continue };
                 let k = self
                     .systems
@@ -872,7 +890,7 @@ impl Line {
                         ))
                     })?;
                 match &assigned {
-                    None => assigned = Some((k, p, id.clone())),
+                    None => assigned = Some((k, p, id.to_owned())),
                     Some((k0, p0, first)) if (*k0, *p0) != (k, p) => {
                         return Err(invalid(format!(
                             "sections {first} and {id} are joined (jumpers or a shared attachment) but assigned to {} {} and {} {}",
@@ -885,12 +903,8 @@ impl Line {
                     Some(_) => {}
                 }
             }
-            let a = assigned.map(|(k, p, _)| (k, p));
-            for id in path {
-                out.insert(id, a);
-            }
+            Ok(assigned.map(|(k, p, _)| (k, p)))
         }
-        Ok(out)
     }
 
     /// The operating current of every section whose system gives one

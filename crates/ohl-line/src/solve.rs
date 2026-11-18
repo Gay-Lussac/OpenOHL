@@ -4063,7 +4063,352 @@ fn core_branch(
 /// at their middle, the routes made once): the sections
 /// solved with the wind's side swapped. A section whose answer differs
 /// between two versions of a line is solved again (its wind's side).
+///
+/// The same answer as asking [`Line::direction_at`] for every section,
+/// found through a grid of the routes' segments (country server, phase 3:
+/// the whole line's sections against thousands of segments were seconds):
+/// the nearest segment is the same one (the first of the nearest in the
+/// routes' order), its distance worked out the same way.
 pub fn sections_against_the_line(line: &Line) -> std::collections::BTreeMap<String, bool> {
+    Sides::of(line).against()
+}
+
+/// One section's wind side: whether it runs against the line, the middle
+/// of its ends (none: an end not found) and its distance to the nearest
+/// segment of the routes (infinite: none).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SideOf {
+    against: bool,
+    mid: Option<[f64; 2]>,
+    dist: f64,
+}
+
+/// The wind sides of a line's sections ([`sections_against_the_line`]),
+/// kept up to date through edits (country server, phase 3): an edit moving
+/// a route's points works out again only the sections whose nearest
+/// segment may change — those whose middle is as near to a segment that
+/// changed as to their nearest one — and those whose ends moved.
+#[derive(Debug, Clone)]
+pub struct Sides {
+    grid: SegmentGrid,
+    of: std::collections::HashMap<String, SideOf>,
+    /// The sections' middles in the grid's cells.
+    mids: std::collections::HashMap<(i64, i64), std::collections::BTreeSet<String>>,
+    /// At least every section's distance to its nearest segment (up to
+    /// [`Sides::FAR`]).
+    reach: f64,
+    /// The sections farther than [`Sides::FAR`] from every segment (or with
+    /// none): worked out again whenever a segment changes.
+    far: std::collections::BTreeSet<String>,
+}
+
+impl Sides {
+    /// Sections farther than this from every route segment are worked out
+    /// again whenever a segment changes, m.
+    const FAR: f64 = 20_000.0;
+
+    /// The sides of every section of `line`.
+    pub fn of(line: &Line) -> Self {
+        let mut sides = Self {
+            grid: SegmentGrid::of(line),
+            of: Default::default(),
+            mids: Default::default(),
+            reach: 0.0,
+            far: Default::default(),
+        };
+        let mut structures: std::collections::HashMap<&str, &crate::Structure> =
+            std::collections::HashMap::with_capacity(line.structures.len());
+        for s in &line.structures {
+            structures.entry(s.id.as_str()).or_insert(s);
+        }
+        let wire =
+            |p: &crate::SectionPoint| structures.get(p.structure.as_str())?.wire_at_set(p.set);
+        for s in &line.sections {
+            let ends = (|| Some((wire(s.points.first()?)?, wire(s.points.last()?)?)))();
+            let side = sides.side_of(ends.map(|(a, b)| (a.position, b.position)));
+            // (Of an id given twice, the last: as a map of them keeps it.)
+            sides.remove(&s.id);
+            sides.put(&s.id, side);
+        }
+        sides
+    }
+
+    /// Whether each section runs against the line (by id).
+    pub fn against(&self) -> std::collections::BTreeMap<String, bool> {
+        self.of
+            .iter()
+            .map(|(id, s)| (id.clone(), s.against))
+            .collect()
+    }
+
+    fn side_of(&self, ends: Option<(crate::Point, crate::Point)>) -> SideOf {
+        let Some((a, b)) = ends else {
+            return SideOf {
+                against: false,
+                mid: None,
+                dist: f64::INFINITY,
+            };
+        };
+        let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
+        match self.grid.nearest(mid) {
+            Some((dist, d)) => SideOf {
+                against: (b[0] - a[0]) * d[0] + (b[1] - a[1]) * d[1] < 0.0,
+                mid: Some(mid),
+                dist,
+            },
+            None => SideOf {
+                against: false,
+                mid: Some(mid),
+                dist: f64::INFINITY,
+            },
+        }
+    }
+
+    fn cell(&self, at: [f64; 2]) -> (i64, i64) {
+        (
+            (at[0] / self.grid.cell).floor() as i64,
+            (at[1] / self.grid.cell).floor() as i64,
+        )
+    }
+
+    fn put(&mut self, id: &str, side: SideOf) {
+        if let Some(m) = side.mid {
+            if side.dist > Self::FAR {
+                self.far.insert(id.to_owned());
+            } else {
+                self.reach = self.reach.max(side.dist);
+            }
+            let c = self.cell(m);
+            self.mids.entry(c).or_default().insert(id.to_owned());
+        }
+        self.of.insert(id.to_owned(), side);
+    }
+
+    fn remove(&mut self, id: &str) -> Option<SideOf> {
+        let side = self.of.remove(id)?;
+        if let Some(m) = side.mid {
+            let c = self.cell(m);
+            if let Some(ids) = self.mids.get_mut(&c) {
+                ids.remove(id);
+                if ids.is_empty() {
+                    self.mids.remove(&c);
+                }
+            }
+            self.far.remove(id);
+        }
+        Some(side)
+    }
+
+    /// Brings the sides up to date with `line` (indexed by `index`) after
+    /// an edit that changed only the sections `moved` (changed, added,
+    /// deleted or through a structure changed) and, when `routes`, routes,
+    /// alignments or alignment points. Gives the sections of `line` whose
+    /// side differs from before (or that are new).
+    pub fn update(
+        &mut self,
+        line: &Line,
+        index: &crate::index::LineIndex,
+        moved: &std::collections::BTreeSet<String>,
+        routes: bool,
+    ) -> std::collections::BTreeSet<String> {
+        type Key = ((usize, usize), [u64; 2], [u64; 2]);
+        let key = |s: &Segment| -> Key { (s.0, s.1.map(f64::to_bits), s.2.map(f64::to_bits)) };
+        let mut todo = moved.clone();
+        if routes {
+            let grid = SegmentGrid::of(line);
+            let old: std::collections::HashSet<Key> = self.grid.segments.iter().map(key).collect();
+            let new: std::collections::HashSet<Key> = grid.segments.iter().map(key).collect();
+            let changed: Vec<([f64; 2], [f64; 2], f64)> = self
+                .grid
+                .segments
+                .iter()
+                .filter(|s| !new.contains(&key(s)))
+                .chain(grid.segments.iter().filter(|s| !old.contains(&key(s))))
+                .map(|s| (s.1, s.2, s.3))
+                .collect();
+            if !changed.is_empty() {
+                todo.extend(self.far.iter().cloned());
+                let cell = self.grid.cell;
+                let at = |x: f64| (x / cell).floor() as i64;
+                for (w0, [dx, dy], len2) in changed {
+                    let (x0, x1) = (w0[0].min(w0[0] + dx), w0[0].max(w0[0] + dx));
+                    let (y0, y1) = (w0[1].min(w0[1] + dy), w0[1].max(w0[1] + dy));
+                    for x in at(x0 - self.reach)..=at(x1 + self.reach) {
+                        for y in at(y0 - self.reach)..=at(y1 + self.reach) {
+                            for id in self.mids.get(&(x, y)).into_iter().flatten() {
+                                let side = self.of[id];
+                                let Some(m) = side.mid else { continue };
+                                let t = (((m[0] - w0[0]) * dx + (m[1] - w0[1]) * dy) / len2)
+                                    .clamp(0.0, 1.0);
+                                let dist = (m[0] - w0[0] - t * dx).hypot(m[1] - w0[1] - t * dy);
+                                if dist <= side.dist {
+                                    todo.insert(id.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            self.grid = grid;
+        }
+        let mut out = std::collections::BTreeSet::new();
+        for id in todo {
+            let old = self.remove(&id);
+            let Some(s) = index.section(line, &id) else {
+                continue;
+            };
+            let ends = (|| {
+                Some((
+                    index.wire_point(line, s.points.first()?)?.position,
+                    index.wire_point(line, s.points.last()?)?.position,
+                ))
+            })();
+            let side = self.side_of(ends);
+            if old.map(|o| o.against) != Some(side.against) {
+                out.insert(id.clone());
+            }
+            self.put(&id, side);
+        }
+        out
+    }
+}
+
+/// A segment of a route's centreline: (alignment, segment) order, start,
+/// delta, length², length.
+type Segment = ((usize, usize), [f64; 2], [f64; 2], f64, f64);
+
+/// The routes' centreline segments (each alignment's points, as
+/// [`Line::alignment_views`] gives them) in square cells, to find the
+/// nearest to a point without measuring every one.
+#[derive(Debug, Clone)]
+struct SegmentGrid {
+    /// (alignment, segment) order, start, delta, length², length.
+    segments: Vec<Segment>,
+    cell: f64,
+    cells: std::collections::HashMap<(i64, i64), Vec<u32>>,
+    /// The cells' range.
+    min: (i64, i64),
+    max: (i64, i64),
+}
+
+impl SegmentGrid {
+    /// Cell side, m.
+    const CELL: f64 = 1000.0;
+
+    fn of(line: &Line) -> Self {
+        let mut points: std::collections::HashMap<&str, &crate::AlignmentPoint> =
+            std::collections::HashMap::with_capacity(line.alignment_points.len());
+        for p in &line.alignment_points {
+            points.entry(p.id.as_str()).or_insert(p);
+        }
+        let cell = Self::CELL;
+        let at = |x: f64| (x / cell).floor() as i64;
+        let mut grid = Self {
+            segments: Vec::new(),
+            cell,
+            cells: Default::default(),
+            min: (i64::MAX, i64::MAX),
+            max: (i64::MIN, i64::MIN),
+        };
+        for (k, a) in line.alignments.iter().enumerate() {
+            let pts: Vec<crate::Point> = a
+                .points
+                .iter()
+                .filter_map(|id| points.get(id.as_str()).map(|p| p.position))
+                .collect();
+            for (j, w) in pts.windows(2).enumerate() {
+                let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+                let len2 = dx * dx + dy * dy;
+                if len2 <= 0.0 {
+                    continue;
+                }
+                let n = grid.segments.len() as u32;
+                grid.segments
+                    .push(((k, j), [w[0][0], w[0][1]], [dx, dy], len2, len2.sqrt()));
+                let (x0, x1) = (at(w[0][0].min(w[1][0])), at(w[0][0].max(w[1][0])));
+                let (y0, y1) = (at(w[0][1].min(w[1][1])), at(w[0][1].max(w[1][1])));
+                grid.min = (grid.min.0.min(x0), grid.min.1.min(y0));
+                grid.max = (grid.max.0.max(x1), grid.max.1.max(y1));
+                for x in x0..=x1 {
+                    for y in y0..=y1 {
+                        grid.cells.entry((x, y)).or_default().push(n);
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    /// The distance to the nearest segment to `at` and its direction (the
+    /// first in the routes' order of those nearest), as
+    /// `Line::direction_at_in`.
+    fn nearest(&self, at: [f64; 2]) -> Option<(f64, [f64; 2])> {
+        if self.segments.is_empty() {
+            return None;
+        }
+        let c = (
+            (at[0] / self.cell).floor() as i64,
+            (at[1] / self.cell).floor() as i64,
+        );
+        // Rings of cells around `at` until nothing farther can be nearer.
+        let reach = [
+            c.0 - self.min.0,
+            self.max.0 - c.0,
+            c.1 - self.min.1,
+            self.max.1 - c.1,
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0)
+        .max(0);
+        let mut best: Option<(f64, (usize, usize), usize)> = None;
+        for r in 0..=reach {
+            for x in c.0 - r..=c.0 + r {
+                for y in c.1 - r..=c.1 + r {
+                    if (x - c.0).abs() != r && (y - c.1).abs() != r {
+                        continue;
+                    }
+                    for &n in self.cells.get(&(x, y)).into_iter().flatten() {
+                        let (order, w0, [dx, dy], len2, _) = self.segments[n as usize];
+                        let t =
+                            (((at[0] - w0[0]) * dx + (at[1] - w0[1]) * dy) / len2).clamp(0.0, 1.0);
+                        let dist = (at[0] - w0[0] - t * dx).hypot(at[1] - w0[1] - t * dy);
+                        if best.is_none_or(|b| dist < b.0 || (dist == b.0 && order < b.1)) {
+                            best = Some((dist, order, n as usize));
+                        }
+                    }
+                }
+            }
+            // A segment not seen has its nearest point (and the cell it
+            // is in) outside the cells seen: at least as far as their
+            // border (less a micrometre for the rounding of the cells'
+            // numbers). Nearer than that, the nearest and every one as
+            // near are known.
+            let border = [
+                at[0] - (c.0 - r) as f64 * self.cell,
+                (c.0 + r + 1) as f64 * self.cell - at[0],
+                at[1] - (c.1 - r) as f64 * self.cell,
+                (c.1 + r + 1) as f64 * self.cell - at[1],
+            ]
+            .into_iter()
+            .fold(f64::INFINITY, f64::min)
+                - 1e-6;
+            if best.is_some_and(|b| b.0 < border) {
+                break;
+            }
+        }
+        let (dist, _, n) = best?;
+        let (_, _, [dx, dy], _, len) = self.segments[n];
+        Some((dist, [dx / len, dy / len]))
+    }
+}
+
+/// The answer of [`sections_against_the_line`] as it was worked out
+/// before (every section against every segment): the tests' reference.
+#[cfg(test)]
+pub(crate) fn sections_against_the_line_reference(
+    line: &Line,
+) -> std::collections::BTreeMap<String, bool> {
     let views = line.alignment_views();
     line.sections
         .iter()

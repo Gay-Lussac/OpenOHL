@@ -93,8 +93,9 @@ impl Differences {
         // only in one of them).
         let mut spaced: std::collections::BTreeSet<&str> = Default::default();
         for (a, b) in [(ours, other), (other, ours)] {
+            let theirs = by_id(&b.spacers, |s| s.id.as_str());
             for s in &a.spacers {
-                if b.spacers.iter().find(|x| x.id == s.id) != Some(s) {
+                if theirs.get(s.id.as_str()).copied() != Some(s) {
                     spaced.insert(s.a.section.as_str());
                     spaced.insert(s.b.section.as_str());
                 }
@@ -152,6 +153,54 @@ impl Differences {
 pub fn sections_to_solve_again(ours: &Line, other: &Line) -> std::collections::BTreeSet<String> {
     let d = Differences::between_with(ours, other, &Default::default());
     let mut out = d.sections;
+    // Each line's jumpers by id (the first of an id, as a search finds
+    // it): looked up, not searched for every jumper.
+    fn by_id(line: &Line) -> std::collections::HashMap<&str, &crate::Jumper> {
+        let mut m = std::collections::HashMap::with_capacity(line.jumpers.len());
+        for j in &line.jumpers {
+            m.entry(j.id.as_str()).or_insert(j);
+        }
+        m
+    }
+    let (our_jumpers, other_jumpers) = (by_id(ours), by_id(other));
+    let same = |a: &crate::Jumper, m: &std::collections::HashMap<&str, &crate::Jumper>| {
+        m.get(a.id.as_str()).copied() == Some(a)
+    };
+    let mut ends: Vec<&crate::Jumper> = other
+        .jumpers
+        .iter()
+        .filter(|j| !same(j, &our_jumpers))
+        .collect();
+    ends.extend(ours.jumpers.iter().filter(|j| !same(j, &other_jumpers)));
+    if !ends.is_empty() {
+        // The sections at each wire point.
+        let mut at: std::collections::HashMap<&crate::SectionPoint, Vec<&str>> =
+            std::collections::HashMap::new();
+        for s in &other.sections {
+            for p in &s.points {
+                at.entry(p).or_default().push(s.id.as_str());
+            }
+        }
+        for j in ends {
+            for p in j.points() {
+                for id in at.get(p).into_iter().flatten() {
+                    out.insert((*id).to_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// [`sections_to_solve_again`] as it was before (every jumper searched
+/// for): the tests' reference.
+#[cfg(test)]
+pub(crate) fn sections_to_solve_again_reference(
+    ours: &Line,
+    other: &Line,
+) -> std::collections::BTreeSet<String> {
+    let d = Differences::between_with(ours, other, &Default::default());
+    let mut out = d.sections;
     let same =
         |a: &crate::Jumper, line: &Line| line.jumpers.iter().find(|x| x.id == a.id) == Some(a);
     let mut ends: Vec<&crate::Jumper> = other.jumpers.iter().filter(|j| !same(j, ours)).collect();
@@ -160,6 +209,69 @@ pub fn sections_to_solve_again(ours: &Line, other: &Line) -> std::collections::B
         for s in &other.sections {
             if s.points.iter().any(|p| j.is_at(p)) {
                 out.insert(s.id.clone());
+            }
+        }
+    }
+    out
+}
+
+/// [`sections_to_solve_again`] for an edit that changed only the objects
+/// `before` lists (kind, id and value before it, none when it was added),
+/// `other` being the line after it and `index` its reference index: the
+/// same sections, found from the objects changed and those referring to
+/// them (country server, phase 3) instead of comparing the two lines
+/// whole. `sides`: the sections whose wind side differs
+/// ([`crate::solve::Sides::update`]), given when a route, an alignment or
+/// an alignment point is among the objects. The line's settings must be
+/// the same before and after.
+pub fn sections_to_solve_again_local(
+    before: &[(crate::index::Of, String, Option<crate::index::Item>)],
+    other: &Line,
+    index: &crate::index::LineIndex,
+    sides: Option<&std::collections::BTreeSet<String>>,
+) -> std::collections::BTreeSet<String> {
+    use crate::index::{Item, Of};
+    let mut out = std::collections::BTreeSet::new();
+    let mut structures: Vec<&str> = Vec::new();
+    let mut spaced: std::collections::BTreeSet<String> = Default::default();
+    let mut ends: Vec<Item> = Vec::new();
+    for (of, id, old) in before {
+        let new = index.get(other, *of, id);
+        if new == *old {
+            continue;
+        }
+        match of {
+            Of::Structure if new.is_some() => structures.push(id),
+            Of::Section if new.is_some() => {
+                out.insert(id.clone());
+            }
+            Of::Spacer => {
+                for v in [old.as_ref(), new.as_ref()].into_iter().flatten() {
+                    if let Item::Spacer(s) = v {
+                        spaced.insert(s.a.section.clone());
+                        spaced.insert(s.b.section.clone());
+                    }
+                }
+            }
+            Of::Jumper => ends.extend([old.clone(), new].into_iter().flatten()),
+            _ => {}
+        }
+    }
+    for s in structures {
+        out.extend(index.referrers_of(Of::Structure, s, Of::Section).cloned());
+    }
+    out.extend(
+        spaced
+            .into_iter()
+            .filter(|s| index.position(Of::Section, s).is_some()),
+    );
+    if let Some(sides) = sides {
+        out.extend(sides.iter().cloned());
+    }
+    for j in &ends {
+        if let Item::Jumper(j) = j {
+            for p in j.points() {
+                out.extend(index.at_point(&p.structure, p.set, Of::Section).cloned());
             }
         }
     }
