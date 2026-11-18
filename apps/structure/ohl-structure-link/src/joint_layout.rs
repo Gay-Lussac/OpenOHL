@@ -171,6 +171,14 @@ pub struct EndPlan {
     pub shift: Option<f64>,
     /// The gauge line's distance off the work point, m (0: concentric).
     pub off: f64,
+    /// Drawn with its gauge line through the work point (the record's
+    /// `gauge` mark): its normal framing eccentricity, gauge to centroid,
+    /// for the drawings and the clash check only — the analysis keeps the
+    /// member's axis through the work point and the code's slenderness
+    /// curve takes that eccentricity (ASCE 10-97 C3.7.4); `shift` is only
+    /// a move beyond it. False: drawn as before (a shift given by hand,
+    /// or no direction to move in).
+    pub on_gauge: bool,
     /// What it bolts onto.
     pub onto: Onto,
     /// The provisional bolts to give it (none: it has its own).
@@ -509,11 +517,19 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
     placed_all.sort_by_key(|p| p.k);
     for p in placed_all {
         let x = &strips[p.k];
+        // Concentric: the gauge line through the work point, drawn so (the
+        // `gauge` mark), no shift; a move beyond it is the shift.
+        let on_gauge = !x.hand_shift && x.shift_per.is_some();
+        let concentric = if on_gauge {
+            -x.gauges.first().copied().unwrap_or(0.0)
+        } else {
+            0.0
+        };
         let shift = if x.hand_shift {
             None
         } else {
             x.shift_per
-                .map(|per| round_to(x.shift_now + p.moved * per, 1e-4))
+                .map(|per| round_to(x.shift_now + (p.moved - concentric) * per, 1e-4))
         };
         let off = x.gauges.first().map_or(0.0, |g| g + p.moved);
         if let Some(b) = &x.give {
@@ -527,6 +543,7 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
             cut: x.hand_cut.is_none().then_some(p.cut),
             shift,
             off,
+            on_gauge,
             onto: match plate_of.get(&p.k) {
                 Some(i) => Onto::Plate(*i),
                 None => Onto::Member(x.host.clone()),

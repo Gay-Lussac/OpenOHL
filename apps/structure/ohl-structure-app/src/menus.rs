@@ -686,6 +686,28 @@ impl StructureApp {
                 ) {
                     self.open_continuous_window();
                 }
+                if entry(
+                    ui,
+                    None,
+                    "Lay out joints…",
+                    None,
+                    tower,
+                    "Places the member ends of the joints picked, a member group's or the whole \
+                     tower's so that they fit (pulled back, moved sideways only where needed, \
+                     onto the leg or onto plates), with a preview of each joint before and after \
+                     and the joints left for a hand detail; Apply is one undo step",
+                    "A tower with members first",
+                ) {
+                    let picked = self
+                        .selected
+                        .iter()
+                        .any(|h| matches!(h, ohl_structure_edit::Handle::Joint(_)));
+                    self.open_layout_window(if picked {
+                        crate::layout_window::Scope::Picked
+                    } else {
+                        crate::layout_window::Scope::Tower
+                    });
+                }
             }
             Area::LoadCases => self.load_actions(ui),
             Area::Results => self.results_actions(ui),

@@ -637,6 +637,15 @@ pub fn joint_details_at(
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let mut notes = t.connection_notes();
+    // The member ends the automatic layout drew with their gauge line
+    // through the work point (2026-11-18, its record's `gauge` mark).
+    let on_gauge: std::collections::BTreeSet<(String, String)> =
+        crate::layout_run::LayoutRecord::of(&t)
+            .ends
+            .into_iter()
+            .filter(|(_, f)| f.contains("gauge"))
+            .map(|(k, _)| k)
+            .collect();
     // Level 3: the model (design data, sections) and the members' axes and
     // profiles as the exports take them.
     let (model, export) =
@@ -808,7 +817,8 @@ pub fn joint_details_at(
                     .value
                     .as_ref()
                     .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
-                place_bolts(a, at, c, &snapshot, &seats, host);
+                let gauge = on_gauge.contains(&(a.member.clone(), n.id.clone()));
+                place_bolts(a, at, c, &snapshot, &seats, host, gauge);
                 a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
                 a.other_grip = match a
                     .other_onto
@@ -2029,6 +2039,7 @@ fn place_bolts(
     all: &[Arrival],
     seats: &PlateSeats,
     host: bool,
+    on_gauge: bool,
 ) {
     if a.continuous.is_some() {
         a.cut = Valued::of(0.0, Source::WorkedOut);
@@ -2156,6 +2167,26 @@ fn place_bolts(
         },
         shifted,
     );
+    // Laid out by the automatic layout: drawn with its (first) gauge line
+    // through the work point — its normal framing eccentricity, for the
+    // drawings only (the analysis keeps its axis there; 2026-11-18).
+    if on_gauge
+        && let Some(p) = a.profile.as_ref()
+        && let Some(g) = p.angle
+    {
+        let (across, heel, w) = if a.leg_y {
+            (p.axes[1], g.heel[0], g.b)
+        } else {
+            (p.axes[2], g.heel[1], g.h)
+        };
+        let g0 = a
+            .gauges
+            .value
+            .as_ref()
+            .and_then(|v| v.first().copied())
+            .unwrap_or(w / 2.0);
+        a.offset = add(a.offset, scale(across, -(heel + g0)));
+    }
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
         return;
     };

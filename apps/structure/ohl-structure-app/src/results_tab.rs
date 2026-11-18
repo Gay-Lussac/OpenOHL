@@ -371,6 +371,12 @@ impl StructureApp {
         true
     }
 
+    /// The load table and recipes of the last run (the joint layout's
+    /// usage before and after takes its cases).
+    pub fn ran_with_of(&self) -> (LoadTable, Vec<LoadCaseRecipe>) {
+        self.results.ran_with.clone()
+    }
+
     /// Results › Cancel: stops the run going on.
     pub fn cancel_results(&mut self) {
         if let Some((_, _, cancel)) = &self.results.running {

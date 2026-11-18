@@ -65,6 +65,20 @@ fn written(text: &str, p: &JointPlan) -> String {
             ));
         }
     }
+    // The ends drawn with their gauge line through the work point: the
+    // record's mark (as the layout run writes it).
+    let marks: Vec<String> = p
+        .ends
+        .iter()
+        .filter(|e| e.on_gauge)
+        .map(|e| format!("[\"{}\", \"{}\", \"gauge\"]", e.member, p.joint))
+        .collect();
+    if !marks.is_empty() {
+        out.push_str(&format!(
+            "\n[[generator]]\nid = \"joint-layout\"\nkind = \"joint_layout\"\nends = [{}]\n",
+            marks.join(", ")
+        ));
+    }
     out
 }
 

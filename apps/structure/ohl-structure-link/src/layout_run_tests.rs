@@ -70,7 +70,13 @@ fn a_run_writes_the_layout_records_it_and_a_run_again_changes_nothing() {
     assert_eq!(r.clashes.1, 0);
     // A run again: the same file.
     let again = run(&r.text, &settings(), Some(&["N2"]), false);
-    assert_eq!(again.text, r.text);
+    let diff: Vec<(&str, &str)> = again
+        .text
+        .lines()
+        .zip(r.text.lines())
+        .filter(|(a, b)| a != b)
+        .collect();
+    assert_eq!(again.text, r.text, "{diff:?}");
     // And over the whole tower.
     let all = run(&r.text, &settings(), None, false);
     let all2 = run(&all.text, &settings(), None, false);
@@ -144,15 +150,7 @@ fn plates_are_made_bolted_or_welded_and_follow_a_thickness_given_by_hand() {
     let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
     ohl_structure_edit::connection_edits::set_plate(&mut doc, &p.id, Some(0.012), None).unwrap();
     let edited = doc.to_string();
-    let f = follow(
-        &r.text,
-        &edited,
-        &library(),
-        &Default::default(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-    )
-    .expect("followed");
+    let f = follow(&r.text, &edited, &library(), &Default::default(), &[]).expect("followed");
     assert_eq!(f.again, ["N2"]);
     let t2 = parse(&f.text);
     let p2 = t2
@@ -172,17 +170,7 @@ fn plates_are_made_bolted_or_welded_and_follow_a_thickness_given_by_hand() {
     assert!((p3.thickness.si() - 0.012).abs() < 1e-9);
     // No edit near a laid-out joint: nothing to follow.
     let far = edited.replace("name = \"k\"", "name = \"k2\"");
-    assert!(
-        follow(
-            &edited,
-            &far,
-            &library(),
-            &Default::default(),
-            &BTreeMap::new(),
-            &BTreeMap::new()
-        )
-        .is_none()
-    );
+    assert!(follow(&edited, &far, &library(), &Default::default(), &[]).is_none());
 }
 
 #[test]
@@ -216,15 +204,7 @@ fn an_edit_that_no_longer_fits_keeps_the_edit_and_the_old_layout() {
         .text
         .replace("pull_back = \"300 mm\"", "pull_back = \"1 mm\"");
     assert_ne!(edited, r.text);
-    let f = follow(
-        &r.text,
-        &edited,
-        &library(),
-        &Default::default(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-    )
-    .expect("followed");
+    let f = follow(&r.text, &edited, &library(), &Default::default(), &[]).expect("followed");
     assert_eq!(f.misfits.len(), 1, "{f:?}");
     assert!(f.message.contains("needs a hand detail"), "{}", f.message);
     let (before, after) = (parse(&r.text), parse(&f.text));
@@ -234,4 +214,53 @@ fn an_edit_that_no_longer_fits_keeps_the_edit_and_the_old_layout() {
     let rec = LayoutRecord::of(&after);
     assert!(rec.hand.contains_key("N2"));
     assert!(f.text.contains("pull_back = \"1 mm\""));
+}
+
+#[test]
+fn a_preset_gives_its_bolt_area() {
+    let presets = ohl_structure_edit::connection_edits::parse_presets(
+        "format = \"ohl-connection-presets\"\nversion = 1\n\n[[preset]]\nname = \"2 x M16\"\nbolts = { count = 2, diameter = \"16 mm\" }\ngauge_lines = 1\npitch = \"55 mm\"\n",
+    )
+    .unwrap();
+    let all: Vec<(String, toml_edit::Table)> = presets
+        .iter()
+        .map(|p| (p.name.clone(), p.fields.clone()))
+        .collect();
+    let by = BTreeMap::from([("bracing".to_owned(), "2 x M16".to_owned())]);
+    let (areas, fields) = crate::layout_run::presets_by_class(&by, &all, &Default::default());
+    let a = &areas["bracing"];
+    assert_eq!((a.count, a.lines), (2, 1));
+    assert!((a.diameter - 0.016).abs() < 1e-12);
+    assert_eq!(a.pitch.map(|p| (p * 1000.0).round()), Some(55.0));
+    assert_eq!(a.preset.as_deref(), Some("2 x M16"));
+    assert!(fields["bracing"].contains_key("bolts"));
+    // A run with it: the preset's fields written, provisional.
+    let s = LayoutSettings {
+        presets: areas,
+        ..settings()
+    };
+    let lib = library();
+    let bolts = Default::default();
+    let ask = RunAsk {
+        library: &lib,
+        bolts: &bolts,
+        settings: &s,
+        preset_fields: fields,
+        joints: Some(BTreeSet::from(["N2".to_owned()])),
+        replace_hand: false,
+    };
+    let r = lay_out(&k_brace(), &ask).unwrap();
+    let t = parse(&r.text);
+    let c = t.connection("D1", "N2").unwrap();
+    assert_eq!(c.pitch.map(|p| (p.si() * 1000.0).round()), Some(55.0));
+    assert_eq!(provisional_bolts(&t).len(), 2);
+    let rec = LayoutRecord::of(&t);
+    assert_eq!(
+        rec.settings
+            .unwrap()
+            .presets
+            .get("bracing")
+            .map(String::as_str),
+        Some("2 x M16")
+    );
 }

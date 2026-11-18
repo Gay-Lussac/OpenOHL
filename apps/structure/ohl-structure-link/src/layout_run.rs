@@ -90,6 +90,73 @@ pub struct RecordSettings {
     pub welded: bool,
     /// The bolt picked (a library bolt) and its diameter, m.
     pub bolt: Option<(Option<String>, f64)>,
+    /// The connection preset for each member class, by name.
+    pub presets: BTreeMap<String, String>,
+}
+
+/// The bolt area of connection preset `name` (its fields as a
+/// connection's): its bolts (count, a library bolt or a diameter), gauge
+/// lines, gauges, pitch and end distance. None: no bolts in it.
+pub fn preset_area(name: &str, fields: &Table, bolts: &BoltLibrary) -> Option<BoltArea> {
+    let len = |v: Option<&Item>| {
+        v.and_then(Item::as_str)
+            .and_then(|s| s.parse::<ohl_core::units::Length>().ok())
+            .map(|l| l.si())
+    };
+    let b = fields.get("bolts")?;
+    let get = |k: &str| -> Option<&Item> { b.get(k) };
+    let count = get("count").and_then(Item::as_integer)? as u32;
+    let bolt = get("bolt").and_then(Item::as_str).map(str::to_owned);
+    let lib = bolt.as_deref().and_then(|id| bolts.get(id));
+    let diameter = len(get("diameter")).or(lib.map(|l| l.diameter.si()))?;
+    let lines = fields
+        .get("gauge_lines")
+        .and_then(Item::as_integer)
+        .unwrap_or(1)
+        .max(1) as u32;
+    let gauges = fields
+        .get("gauges")
+        .and_then(Item::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str()?.parse::<ohl_core::units::Length>().ok())
+                .map(|l| l.si())
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(BoltArea {
+        from: format!("preset {name}"),
+        preset: Some(name.to_owned()),
+        count,
+        lines,
+        bolt,
+        diameter,
+        flats: lib.and_then(|l| l.drawn()[0]),
+        gauges,
+        pitch: len(fields.get("pitch")),
+        end: len(fields.get("end_distance")),
+    })
+}
+
+/// The engine's presets by class and the fields to write, from the
+/// presets named by class (`by_class`: class → name) among `all` (name,
+/// fields).
+pub fn presets_by_class(
+    by_class: &BTreeMap<String, String>,
+    all: &[(String, Table)],
+    bolts: &BoltLibrary,
+) -> (BTreeMap<String, BoltArea>, BTreeMap<String, Table>) {
+    let mut areas = BTreeMap::new();
+    let mut fields = BTreeMap::new();
+    for (class, name) in by_class {
+        if let Some((_, f)) = all.iter().find(|(n, _)| n == name)
+            && let Some(a) = preset_area(name, f, bolts)
+        {
+            areas.insert(class.clone(), a);
+            fields.insert(class.clone(), f.clone());
+        }
+    }
+    (areas, fields)
 }
 
 impl RecordSettings {
@@ -116,6 +183,11 @@ impl RecordSettings {
             shift_limit: s.shift_limit,
             welded: s.welded,
             bolt: s.bolt.as_ref().map(|b| (b.bolt.clone(), b.diameter)),
+            presets: s
+                .presets
+                .iter()
+                .filter_map(|(c, a)| a.preset.clone().map(|n| (c.clone(), n)))
+                .collect(),
         }
     }
 }
@@ -169,6 +241,11 @@ impl LayoutRecord {
                 pull_back,
                 shift_limit,
                 welded: g.get("plates").and_then(toml::Value::as_str) == Some("welded"),
+                presets: rows("presets")
+                    .into_iter()
+                    .filter(|r| r.len() == 2)
+                    .map(|r| (r[0].clone(), r[1].clone()))
+                    .collect(),
                 bolt: len("bolt_diameter").map(|d| {
                     (
                         g.get("bolt")
@@ -275,6 +352,12 @@ impl LayoutRecord {
                     t.insert("bolt_diameter", toml_edit::value(crate::mm_text(*d)));
                 }
             }
+            let presets: Vec<Vec<String>> = self
+                .settings
+                .iter()
+                .flat_map(|s| &s.presets)
+                .map(|(c, n)| vec![c.clone(), n.clone()])
+                .collect();
             let list = |items: Vec<Vec<String>>| -> Item {
                 let mut out = Array::new();
                 for row in items {
@@ -294,6 +377,9 @@ impl LayoutRecord {
                 Item::Value(Value::Array(out))
             };
             let one = |s: &BTreeSet<String>| s.iter().map(|x| vec![x.clone()]).collect();
+            if !presets.is_empty() {
+                t.insert("presets", list(presets));
+            }
             if !self.joints.is_empty() {
                 t.insert("joints", list(one(&self.joints)));
             }
@@ -665,6 +751,8 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             })
             .collect();
         if !heels.is_empty() {
+            // The record first: the drawing reads its marks.
+            rec.write(&mut doc);
             let mid = at(&doc.to_string())?;
             for (id, (heel, across)) in &heels {
                 let Some(p) = mid
@@ -870,6 +958,9 @@ fn strip_joint(
             go.insert("onto");
         }
         for f in go {
+            if f == "gauge" {
+                continue;
+            }
             if f == "preset" {
                 for k in connection_edits::CARRIED {
                     let _ = connection_edits::set_connection_field(doc, &c.member, j, k, None);
@@ -966,6 +1057,11 @@ fn write_plan(
         };
         set(doc, "onto", FieldValue::Word(onto));
         fields.insert("onto".into());
+        // Drawn with its gauge line through the work point (the record's
+        // mark only: no field of the file).
+        if e.on_gauge {
+            fields.insert("gauge".into());
+        }
         if let Some(c) = e.cut {
             set(doc, "cut", FieldValue::Length(c));
             fields.insert("cut".into());
@@ -1111,8 +1207,7 @@ pub fn follow(
     after: &str,
     library: &SectionLibrary,
     bolts: &BoltLibrary,
-    presets: &BTreeMap<String, BoltArea>,
-    preset_fields: &BTreeMap<String, Table>,
+    presets: &[(String, Table)],
 ) -> Option<Followed> {
     if !after.contains(RECORD_KIND) {
         return None;
@@ -1137,6 +1232,8 @@ pub fn follow(
                 "onto" => a.map(|c| &c.onto) == b.map(|c| &c.onto),
                 "bolts" | "preset" => a.map(|c| &c.bolts) == b.map(|c| &c.bolts),
                 "gauge_lines" => a.map(|c| &c.gauge_lines) == b.map(|c| &c.gauge_lines),
+                // The drawing's mark: the user's once the shift is.
+                "gauge" => a.map(|c| &c.shift) == b.map(|c| &c.shift),
                 _ => true,
             };
             if !same {
@@ -1184,12 +1281,13 @@ pub fn follow(
         record.write(&mut doc);
     }
     let text = doc.to_string();
-    let s = settings.layout(presets.clone());
+    let (areas, preset_fields) = presets_by_class(&settings.presets, presets, bolts);
+    let s = settings.layout(areas);
     let ask = RunAsk {
         library,
         bolts,
         settings: &s,
-        preset_fields: preset_fields.clone(),
+        preset_fields,
         joints: Some(touched.clone()),
         replace_hand: false,
     };

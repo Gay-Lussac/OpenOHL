@@ -333,6 +333,9 @@ impl StructureApp {
         ui.add_space(4.0);
         // What does not fit here, with the fixes that work (2026-11-08).
         self.problems_box(ui, details, &chosen);
+        // The automatic layout (2026-11-18): the button, what it set here
+        // (automatic), the bolts provisional, a hand detail needed.
+        self.layout_box(ui, &chosen);
         // What the Detail view's Edit tool picked (a bolt, a plate).
         self.picked_box(ui, details);
         if j.arrivals.iter().any(|a| {

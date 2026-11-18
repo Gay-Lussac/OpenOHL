@@ -216,6 +216,10 @@ pub struct StructureApp {
     pub joints: crate::joint_panel::JointPanel,
     /// Its tools' windows and the presets ([`crate::joint_tools`]).
     pub joint_tools: crate::joint_tools::JointTools,
+    /// The Lay out joints window ([`crate::layout_window`]).
+    pub layout_window: Option<crate::layout_window::LayoutWindow>,
+    /// The libraries' stamp the layout's follow of edits was set with.
+    pub follow_stamp: Option<u64>,
     /// The joints coloured by how complete their details are (View › Display options ›
     /// Joints by their details; off by default).
     pub joint_colors: bool,
@@ -299,6 +303,8 @@ impl StructureApp {
             inventory: false,
             joints: Default::default(),
             joint_tools: Default::default(),
+            layout_window: None,
+            follow_stamp: None,
             joint_colors: false,
             clash_colors: false,
             usage_legend: true,
@@ -571,7 +577,7 @@ impl StructureApp {
     /// while typing in a field, which has its own undo and its own
     /// Delete).
     /// Escape on a tool's window (Delete, Open in the Detail view?, New
-    /// gauge line?, Continuous members) or the inventory: closed, nothing
+    /// gauge line?, Continuous members, Lay out joints) or the inventory: closed, nothing
     /// done. False: none was open.
     fn close_tool_window(&mut self) -> bool {
         // The link question, or the Move attachment point chooser: closed
@@ -584,8 +590,10 @@ impl StructureApp {
             || self.joints.ask_open.is_some()
             || self.joint_tools.offer.is_some()
             || self.joint_tools.continuous.is_some()
+            || self.layout_window.is_some()
             || self.inventory;
         self.confirm = None;
+        self.layout_window = None;
         self.joints.ask_open = None;
         self.joint_tools.offer = None;
         self.joint_tools.continuous = None;
@@ -773,12 +781,19 @@ impl StructureApp {
                 ui.colored_label(ui.visuals().warn_fg_color, "* unsaved");
             }
             ui.separator();
-            // Level 4 by what it adds (owner 2026-11-11).
-            let chip = match d {
-                ohl_structures::Detail::Joints => "joint details",
-                d => d.name(),
+            // Level 4 by what it adds (owner 2026-11-11); with provisional bolts
+            // (the joint layout's, not chosen yet) level 3 for the joint
+            // details (owner 2026-11-18).
+            let provisional = ohl_structure_link::provisional_bolts(t).len();
+            let (level, chip) = match d {
+                ohl_structures::Detail::Joints if provisional > 0 => (
+                    3,
+                    format!("full design ({provisional} provisional bolts: level 4 once none is)"),
+                ),
+                ohl_structures::Detail::Joints => (4, "joint details".to_owned()),
+                d => (d.level(), d.name().to_owned()),
             };
-            let badge = egui::RichText::new(format!("Level {} — {chip}", d.level()))
+            let badge = egui::RichText::new(format!("Level {level} — {chip}"))
                 .strong()
                 .color(ui.visuals().strong_text_color());
             egui::Frame::new()
@@ -1163,10 +1178,18 @@ impl eframe::App for StructureApp {
             f.end();
         }
         self.results.poll();
+        // The joint layout follows edits (2026-11-18); what it said is the
+        // edit's message.
+        self.follow_setup();
+        if let Some(said) = self.file.as_mut().and_then(|f| f.take_followed()) {
+            let misfit = said.contains("no longer fits");
+            self.message = Some((said, misfit));
+        }
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         self.follow_link_tool();
         self.inventory_window(&ctx);
         self.continuous_window(&ctx);
+        self.layout_window(&ctx);
         self.status_bar(ui);
         self.notices.observe(&self.message, ctx.input(|i| i.time));
         // Above the 3D view's hotbar: a notice never covers a tool (the

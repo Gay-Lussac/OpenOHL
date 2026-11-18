@@ -84,11 +84,12 @@ pub use joints::{
     Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
     JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Problem,
     Profile, Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, bolted_onto,
-    joint_details, part_chains, similar_joints,
+    joint_details, joint_details_at, part_chains, similar_joints,
 };
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, lay_out, provisional_bolts, provisional_note, touched,
+    RecordSettings, RunAsk, follow, lay_out, preset_area, presets_by_class, provisional_bolts,
+    provisional_note, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

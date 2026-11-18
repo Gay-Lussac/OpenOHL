@@ -50,6 +50,7 @@ mod joint_panel;
 mod joint_sketch;
 mod joint_tools;
 mod layout;
+mod layout_window;
 mod libraries;
 mod link_tool;
 mod load_cases_tab;
@@ -95,6 +96,8 @@ mod joint_lap_ui_tests;
 mod joint_ui_tests;
 #[cfg(test)]
 mod layout_tests;
+#[cfg(test)]
+mod layout_ui_tests;
 #[cfg(test)]
 mod link_tests;
 #[cfg(test)]
