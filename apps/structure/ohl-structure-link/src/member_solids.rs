@@ -353,6 +353,9 @@ pub struct BoltSolid {
     pub at: [f64; 3],
     /// Its layout partly assumed (drawn in the close-up's orange).
     pub assumed: bool,
+    /// It runs into a part it does not bolt to (2026-11-18,
+    /// [`crate::clash`]): drawn red.
+    pub clash: bool,
     /// Its diameter, m.
     pub diameter: f64,
     /// Its faces, each normal out of the bolt.
@@ -369,7 +372,13 @@ pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
             let Some(b) = &a.bolts.value else { continue };
             let assumed = a.gauges.source == crate::Source::Assumed
                 || a.pitch.source == crate::Source::Assumed;
-            for (p, axis, grip) in a.bolts_with_axes() {
+            for (index, (p, axis, grip)) in a.bolts_with_axes().enumerate() {
+                let me = crate::clash::ClashPart::Bolt {
+                    member: a.member.clone(),
+                    index,
+                    piece: crate::clash::BoltPiece::Head,
+                };
+                let clash = j.clashes.iter().any(|c| c.involves(&me));
                 let polys = crate::bolt_faces(p, axis, b.diameter, grip, b.drawn);
                 // Its middle, on its axis: each face's normal away from it
                 // (across the axis for the sides, along it for the ends).
@@ -393,6 +402,7 @@ pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
                     member: a.member.clone(),
                     at: p,
                     assumed,
+                    clash,
                     diameter: b.diameter,
                     faces,
                 });
@@ -421,7 +431,9 @@ pub fn plate_solids(d: &JointDetails) -> Vec<PlateSolid> {
                     thickness: p.thickness,
                     ends: s.0,
                     faces: s.1,
-                    misfit: misfit_onto(&p.id) || (p.outline_given && !p.notes.is_empty()),
+                    misfit: misfit_onto(&p.id)
+                        || (p.outline_given && !p.notes.is_empty())
+                        || j.clashes.iter().any(|c| c.involves_plate(&p.id)),
                 });
             }
         }

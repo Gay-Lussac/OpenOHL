@@ -634,6 +634,43 @@ as the cross-sections)?
 
 > **Owner:**
 
+### Automatic layout — built 2026-11-18, in active development
+
+(Owner, 2026-11-18: "a plan for an automatic setting on the joints …
+so that it's physically doable (no crossing members or beams)".) Built
+in stages, each usable on its own.
+
+**Stage 1 — the 3D clash check** (`ohl-structure-link` `clash.rs`).
+Every solid at a joint — each member's steel as placed from its cut to
+half its length (the other half is the other joint's), the plates and
+covers, every bolt's head, shank and nut — is cut into convex pieces (a
+profile's outline into convex polygons by its ears merged, run along
+the member; a plate's outline the same through its thickness) and each
+pair of pieces of parts that do not bolt to each other is tested by
+separating axes (faces' normals and edges' cross products: exact for
+convex solids). Run into each other by more than `CLASH_TOLERANCE`
+(1 mm, the program's own: touching faces and the drawings' rounding)
+along every axis: a `Clash` (the two parts, the depth, about where) in
+`JointDetail::clashes`, a `Problem::Clash` of each member end in it
+(drawn red: `misfit`), a note of a plate in it (`PlateSolid::misfit`),
+`BoltSolid::clash` (red in the 3D view and the close-up). Not tested,
+as bolting together: a member and what it bolts onto (and the member
+running on from that in line, within 20°), a member and the member it
+runs on into, a plate and its leg (and the leg running on), the plates
+of a welded plate, a bolt and its member, a bolt's shank and what its
+member bolts onto, the bolts of two members one bolting onto the other,
+a bolt and a built-up member it bolts onto. The Problems list offers a
+member's cut pulled back by the depth and 5 mm (tried on a copy). View ›
+Display options › Joints with clashes colours the joints. Cost: worked
+out with the joint details (a real tower of 3030 members, 1145 joints:
+0.57 s for the details with the clashes, dev build).
+
+On the private real towers (imported, never laid out) nearly every joint
+has clashes: their members' ends are where the tower program's export
+leaves them (the cut only clearing the leg's heel, the bolts at the
+drawing's assumed gauge, pitch and end distance), so the bracing on one
+flange overlaps — the case the layout's stages 2 to 4 are for.
+
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

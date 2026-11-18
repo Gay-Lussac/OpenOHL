@@ -246,7 +246,7 @@ in active development):
 |---|---|
 | **File** | **New structure…** (⌘N), **Open…** (⌘O), **Open recent ›** (a file no longer there greyed out) · **Save** (⌘S), **Save as…** (Shift+⌘S) · **Import ›** (per library kind — *Cross-section libraries*, *Bolt libraries*, *Insulator assemblies*, *Poles*, *Structure models*, *Load-case recipes*, *Structure templates* — each *A file…* or *The files of a folder…*; **Load recipes…**, **Load table…**; [Libraries](#libraries)) · **Export ›** (the file formats…, [below](#export); **Libraries it uses…**, **Every library…**; **Load recipes…**, **Load table…**, **Structure report…**; **Export options…**: the cross-section library, bolt library and load table the formats take) · **Plugins ›** (**Plugin manager…**, [below](#plugins)) · **Close** (the structure: the start page again; greyed out with unsaved changes), **Quit** (⌘Q; asks first with unsaved changes) |
 | **Edit** | **Undo** (⌘Z), **Redo** (Shift+⌘Z), each naming what it undoes · **Delete selected…** (Delete or Backspace: everything selected, with what goes with each, asked first; one undo step), **Clear selection** · **Tools ›** (**Tool inventory** (E), then every tool of the 3D view by its group — *Select and edit*, *Geometry*, *Body* —, its hotbar key 1–9 shown, the one held marked; the menu stays open until a tool is chosen) |
-| **View** | **Fit the view** · the main panels ticked (**3D view**, **Detail view**, **Inspector**, **To do**, **Libraries**) · **Tables ›** (every other panel, ticked, under a grey heading per menu; one of another structure kind greyed out, why on hover) · **Display options ›** (**Rigid links**, **Profiles as placed**, **Joints by their details**, **Volumes on the strings**, **Load arrows**, **Deformed**, **Reactions**, **Usage legend**) · **UI scale ›**, **Reset layout** |
+| **View** | **Fit the view** · the main panels ticked (**3D view**, **Detail view**, **Inspector**, **To do**, **Libraries**) · **Tables ›** (every other panel, ticked, under a grey heading per menu; one of another structure kind greyed out, why on hover) · **Display options ›** (**Rigid links**, **Profiles as placed**, **Joints by their details**, **Joints with clashes**, **Volumes on the strings**, **Load arrows**, **Deformed**, **Reactions**, **Usage legend**) · **UI scale ›**, **Reset layout** |
 | **Geometry** | **Structure kind ›** · its panels · **Add a point**, **One string below the point**, **Two strings to one wire point** |
 | **Body** | its panels (Pole not for a tower without a pole) · **Add a joint**, **Add a member**, **Point on the joint** · **Symmetry ›** (none, or a mirror; **Make symmetric**) |
 | **Design** | its panels (Joint and Member details not for a pole, Pole design not for a tower without a pole) · **Support the feet (pinned)** |
@@ -297,7 +297,9 @@ for the next start). **View › Display options ›** gathers what the 3D
 view draws: **Rigid links** shows or hides the
 rigid links, **Joints by their details** (off by default; a
 tower's joints coloured green complete, orange partly assumed, red no
-connection data — see [Joint details](#joint-details-towers)), **Volumes on the strings** (off by default)
+connection data — see [Joint details](#joint-details-towers)), **Joints with clashes** (off by default; a
+tower's joints where steel runs into steel in red — see
+[Clashes](#clashes)), **Volumes on the strings** (off by default)
 draws the shapes of the strings' insulator assemblies — fittings, horns,
 rings — on the strings as they hang in still air, grounded grey,
 electrified orange, insulated pale (placed as OHL-Design places them on
@@ -1261,6 +1263,36 @@ the background; "trying the fixes on a copy…" meanwhile) and offered only
 when the joint has fewer problems after it and none is added elsewhere;
 its hover gives the joint's problems before and after. A click makes it
 (one undo step). A problem no fix helps says so: change it by hand.
+
+### Clashes
+
+(2026-11-18; built, in active development.) Every solid at a joint is
+tested against every other it does not bolt to: each member's steel as
+placed (from where it stops out to half its length — the other half is
+the other joint's), the plates and a splice's covers, and every bolt
+with its head, shank and nut. Two that run into each other by more than
+1 mm (faces lying on each other only touch; the 1 mm is the program's
+own tolerance for the drawings' rounding, not a standard's value) are a
+**clash**: a problem of each member end in it under **Problems (n)**
+("D12 and D13 run 6 mm into each other", "the nut of D12's bolt 2 and
+L1 run 8 mm into each other"), the members and bolts in it red in the
+close-up and the 3D view, a plate in it red with the clash in its notes.
+**View › Display options › Joints with clashes** (off by default) colours
+every joint with a clash red in the 3D view. The fix offered for a
+member: its steel stopping further out (the depth and 5 mm more), tried
+on a copy as every fix.
+
+What bolts to what, and so is not tested: a member and what it bolts
+onto (a member, and the member running on from it in line through the
+joint; a plate; a splice's covers), the member it runs on into as one
+part; a plate and the joint's leg it lies on, the plates of one welded
+plate; a bolt and its own member; a bolt's shank and what its member
+bolts onto (its head and nut are tested: they lie on its faces); the
+bolts of two members one bolting onto the other (they may be the same
+bolts); a bolt and a built-up member it bolts onto (taken as passing
+through its angles with their fillers). A joint never laid out — a
+tower brought in from another program, with its bolts where the program
+assumes them — usually has many clashes.
 
 **The code's distances** (2026-11-03). The member view shows each end's
 minimums in one line above the drawing (since 2026-11-18 named by the

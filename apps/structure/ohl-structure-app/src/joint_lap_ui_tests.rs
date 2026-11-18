@@ -91,7 +91,15 @@ fn the_face_is_chosen_and_a_misfit_said() {
     assert_eq!(file(&h).connection("D1", "N2").unwrap().face, Some(worked));
     let b = arrival(&details(&mut h), "D1");
     assert_eq!(b.offset, a.offset);
-    assert!(!b.misfit);
+    // No misfit but the fixture's D1 and H1 running into each other
+    // (2026-11-18: a clash, not what is tested here).
+    assert!(
+        b.problems
+            .iter()
+            .all(|(p, _)| matches!(p, ohl_structure_link::Problem::Clash { .. })),
+        "{:?}",
+        b.problems
+    );
     // Nested: D1 runs across L1, it cannot nest in it.
     let d = details(&mut h);
     h.state_mut().apply_joint_acts(

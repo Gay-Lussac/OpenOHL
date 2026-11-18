@@ -219,6 +219,9 @@ pub struct StructureApp {
     /// The joints coloured by how complete their details are (View › Display options ›
     /// Joints by their details; off by default).
     pub joint_colors: bool,
+    /// The joints where steel runs into steel coloured red (View ›
+    /// Display options › Joints with clashes; off by default, 2026-11-18).
+    pub clash_colors: bool,
     /// The usage legend over the 3D view with results shown (View › Display options ›
     /// Display options › Usage legend; on by default).
     pub usage_legend: bool,
@@ -297,6 +300,7 @@ impl StructureApp {
             joints: Default::default(),
             joint_tools: Default::default(),
             joint_colors: false,
+            clash_colors: false,
             usage_legend: true,
             export_options: false,
             profiles: true,
@@ -1329,6 +1333,7 @@ impl StructureApp {
                 ^ u64::from(self.rigid_links)
                 ^ (u64::from(self.string_volumes) << 1)
                 ^ (u64::from(self.joint_colors) << 2)
+                ^ (u64::from(self.clash_colors) << 63)
                 ^ (self.libs_stamp << 3),
             self.body.preview_stamp() ^ shown.as_ref().map_or(0, |n| n.len() + 1),
             usage_key,

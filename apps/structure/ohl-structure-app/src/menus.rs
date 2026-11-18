@@ -601,6 +601,12 @@ impl StructureApp {
                 "A tower's joints coloured by how complete their details are (Design › Joint \
                  details): green complete, orange partly assumed, red no connection data",
             );
+        ui.checkbox(&mut self.clash_colors, "Joints with clashes")
+            .on_hover_text(
+                "A tower's joints where steel runs into steel coloured red: two members, a \
+                 member and a plate, or a bolt's head or nut and a part it does not bolt to \
+                 (Design › Joint details lists each clash)",
+            );
         ui.checkbox(&mut self.string_volumes, "Volumes on the strings")
             .on_hover_text(
                 "The shapes of the strings' insulator assemblies (fittings, horns, rings) on \

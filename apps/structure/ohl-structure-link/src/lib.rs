@@ -38,6 +38,9 @@
 //!   and load table as plain data for the exports
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
+mod clash;
+#[cfg(test)]
+mod clash_tests;
 mod export;
 mod joint_sheet;
 mod joints;
@@ -58,6 +61,7 @@ mod run;
 mod volumes;
 mod welds;
 
+pub use clash::{BoltPiece, CLASH_TOLERANCE, Clash, ClashPart, clashes};
 pub use export::{
     ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,

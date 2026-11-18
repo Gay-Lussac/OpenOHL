@@ -371,6 +371,15 @@ pub enum Problem {
         /// The turn, radians.
         turn: f64,
     },
+    /// Its steel or one of its bolts runs into `with` (another member, a
+    /// plate, a bolt) that it does not bolt to, by `depth` m (2026-11-18,
+    /// [`crate::clash`]).
+    Clash {
+        /// The other part, in words.
+        with: String,
+        /// How deep, m.
+        depth: f64,
+    },
 }
 
 impl Arrival {
@@ -581,6 +590,10 @@ pub struct JointDetail {
     pub splices: Vec<SpliceDetail>,
     /// How complete.
     pub completeness: Completeness,
+    /// Its parts in the same place (2026-11-18, [`crate::clash`]): each
+    /// pair of parts that do not bolt to each other and run into each
+    /// other; empty below level 3.
+    pub clashes: Vec<crate::clash::Clash>,
 }
 
 /// Every joint of a structure in detail.
@@ -849,6 +862,20 @@ pub fn joint_details(
             })
             .collect();
         weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
+        // Steel in the same place (2026-11-18): each clash a problem of
+        // the member ends in it, a note of the plates.
+        let clashes = if level3 {
+            crate::clash::clashes(
+                at,
+                &arrivals,
+                &plates,
+                &splices,
+                crate::clash::CLASH_TOLERANCE,
+            )
+        } else {
+            Vec::new()
+        };
+        note_clashes(&clashes, &mut arrivals, &mut plates);
         let completeness = completeness(&arrivals, level3);
         joints.push(JointDetail {
             id: n.id.clone(),
@@ -857,6 +884,7 @@ pub fn joint_details(
             plates,
             splices,
             completeness,
+            clashes,
         });
     }
     Ok(JointDetails {
@@ -864,6 +892,38 @@ pub fn joint_details(
         level3: model.is_some(),
         notes,
     })
+}
+
+/// Each clash said where it is: a problem of the member ends whose steel
+/// or bolts are in it (drawn red), a note of the plates in it.
+fn note_clashes(
+    clashes: &[crate::clash::Clash],
+    arrivals: &mut [Arrival],
+    plates: &mut [PlateDetail],
+) {
+    for c in clashes {
+        for (me, other) in [(&c.a, &c.b), (&c.b, &c.a)] {
+            if let Some(m) = me.member()
+                && let Some(a) = arrivals.iter_mut().find(|a| a.member == m)
+            {
+                let text = format!("{}: {}", a.member, c.words());
+                a.misfit = true;
+                a.problems.push((
+                    Problem::Clash {
+                        with: other.words(),
+                        depth: c.depth,
+                    },
+                    text.clone(),
+                ));
+                a.notes.push(text);
+            }
+            if let crate::clash::ClashPart::Plate(id) = me
+                && let Some(p) = plates.iter_mut().find(|p| &p.id == id)
+            {
+                p.notes.push(c.words());
+            }
+        }
+    }
 }
 
 /// The condition of `a` from its connection `c`, its member's design data

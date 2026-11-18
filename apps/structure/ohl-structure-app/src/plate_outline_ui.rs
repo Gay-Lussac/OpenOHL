@@ -548,6 +548,7 @@ mod tests {
             }],
             splices: Vec::new(),
             completeness: ohl_structure_link::Completeness::Complete,
+            clashes: Vec::new(),
         }
     }
 
