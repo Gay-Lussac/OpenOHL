@@ -163,7 +163,7 @@ struct Line {
 }
 
 /// The tower's legs and chords and its plan members turned as they stand
-/// ([module docs](self)) in `text`, as `ask` says.
+/// (as the module docs say) in `text`, as `ask` says.
 pub fn orient_angles(
     text: &str,
     library: &SectionLibrary,

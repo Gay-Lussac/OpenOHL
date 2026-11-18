@@ -556,7 +556,7 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
 }
 
 /// [`lay_out`] with the joints in detail from the whole file, never from
-/// the file cut down to what they read ([`crate::reduce`]): the same
+/// the file cut down to what they read (`reduce`): the same
 /// result, slower on a large tower; for the comparison of the two.
 #[doc(hidden)]
 pub fn lay_out_whole(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
