@@ -258,8 +258,9 @@ pub fn bolted_with(g: &BoltGroup, s: &PlateSteel, n: f64, x: &Extra, free: Optio
         x.in_plane / 1000.0,
         x.out_of_plane / 1000.0
     );
-    // Both signs when a moment bends the plate (an edge in each).
-    let signs: Vec<f64> = if x.in_plane > 0.0 || x.out_of_plane > 0.0 {
+    // Both signs when a moment bends the plate (an edge in each) by 1 %
+    // or more of |N| + V.
+    let signs: Vec<f64> = if matters(bend(x.in_plane, g.width) + bend(x.out_of_plane, t)) {
         vec![1.0, -1.0]
     } else if n < 0.0 {
         vec![-1.0]

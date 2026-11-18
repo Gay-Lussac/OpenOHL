@@ -321,7 +321,7 @@ the triangle inequality, never less than the true resultant):
 - **every other check** under \\( |N| + V + 6M/w + 6M_o/t \\) (the plate's
   section of width \\( w \\) bent in its plane, of thickness \\( t \\) bent out
   of it), **in tension and in compression both** when a moment bends the
-  plate (an edge in each), the strut too;
+  plate by 1 % or more of \\( |N| + V \\) (an edge in each), the strut too;
 - \\( V_n \\) and \\( M_o \\) pull on the bolts: **bolts in tension are not
   checked** — said NOT ON THE SAFE SIDE on the part where they add 1 % or
   more (\\( V_n + 6M_o/t \ge 0.01\,(|N| + V) \\); below, as for members'

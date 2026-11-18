@@ -984,10 +984,16 @@ fn the_structure_report_shows_the_plate_checks() {
         assert!(r.html.contains(shown), "{shown}");
     }
     // The governing check names its clause: bearing (4.4) or, since the
-    // path towards the side edge is checked too (2026-11-08), block shear.
+    // path towards the side edge is checked too (2026-11-08), block shear;
+    // since 2026-11-18 a plate in compression as a strut by the column
+    // curve (3.6, an assumption: said so) — D2 is compressed here.
     assert!(
-        r.html.contains("ASCE 10-97 4.4") || r.html.contains("ASCE 10-97 Eq. 3.10-1"),
-        "the clause"
+        r.html.contains("ASCE 10-97 4.4")
+            || r.html.contains("ASCE 10-97 Eq. 3.10-1")
+            || r.html.contains("an assumption, on the safe side")
+                && r.html.contains("(ASCE 10-97 3.6)"),
+        "the clause {}",
+        &r.html[r.html.find("Plates and welds — largest").unwrap_or(0)..]
     );
 }
 
