@@ -218,7 +218,11 @@ fn fnv(text: &str) -> u64 {
 /// and word for word, what the core's SIA 263 gave before the move
 /// (recorded 2026-11-18 from the core at commit 01cc57ec: 2 256 member
 /// results, every usage's bits and what governs; the hash of those
-/// lines).
+/// lines). Recorded again the same day (the lattice towers' safe-side
+/// items): 6 results of the variant with `single_angle_moments` changed —
+/// an angle's moments about its principal axes, dropped before, now taken
+/// (each larger: `every-profile.ohls` m-EA-2 and m-UA in cases A, B, C;
+/// the other 2 250 the same).
 #[test]
 fn the_examples_give_the_cores_numbers() {
     if !built() {
@@ -233,7 +237,7 @@ fn the_examples_give_the_cores_numbers() {
         lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0x8b2d_471e_2dd6_7097, "{out}");
+    assert_eq!(fnv(&out), 0xc0af_556a_a502_75d7, "{out}");
 }
 
 /// The same examples by ASCE 10-97 (the default), now its bundled plugin

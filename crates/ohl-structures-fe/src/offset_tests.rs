@@ -234,8 +234,8 @@ fn onto_a_bar_only_joint_the_member_takes_the_moment() {
 /// The moment of a shift where only bars meet, in the member's own check
 /// (2026-11-18), by hand: T (a truss, 1 000 mm², f_y 355 MPa, moment
 /// capacities 2 kN m about both axes) pulled by P = 10 kN, shifted
-/// e = 20 mm at N3 down (−z). Its local axes: x along +x, z = x × (0, 0,
-/// 1) = (0, −1, 0), y = (0, 0, 1). At N3 the joint is pulled towards N2,
+/// e = 20 mm at N3 down (−z). Its local axes: x along +x, z = x × the
+/// vertical = (0, −1, 0), y = (0, 0, 1). At N3 the joint is pulled towards N2,
 /// F = (−P, 0, 0), r = (0, 0, −e): r × F = (0, e P, 0) = (0, 200, 0) N m —
 /// about its local z 200 N m, about y nothing. Its check: tension 10 /
 /// 355 = 2.817 % plus Mz 0.2 / 2 = 10 %: 12.817 % (before: 2.817 %, the
