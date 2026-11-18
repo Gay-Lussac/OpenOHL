@@ -452,3 +452,61 @@ fn only_the_members_asked() {
     let turned: Vec<&str> = r.turned.iter().map(|o| o.member.as_str()).collect();
     assert_eq!(turned, ["L00"]);
 }
+
+/// A portal: two square columns 16 m apart (the second a copy of the
+/// first, its ids `K…`, `M…`, `E…`, `G…`), joined at their tops by a
+/// beam chord (two members through a middle joint).
+fn portal() -> String {
+    let one = body(&[(0.0, 0.5, 0.5), (4.0, 0.5, 0.5), (8.0, 0.5, 0.5)], &[]);
+    let body_part = &one[one.find("\n[[node]]").unwrap()..];
+    let mut other = String::new();
+    for line in body_part.lines() {
+        let line = line
+            .replace("\"J", "\"K")
+            .replace("id = \"L", "id = \"M")
+            .replace("id = \"D", "id = \"E")
+            .replace("id = \"H", "id = \"G");
+        match line.strip_prefix("point = [\"") {
+            Some(rest) => {
+                let (x, tail) = rest.split_once(" m\"").unwrap();
+                let x: f64 = x.parse().unwrap();
+                let _ = writeln!(other, "point = [\"{} m\"{tail}", x + 16.0);
+            }
+            None => {
+                let _ = writeln!(other, "{line}");
+            }
+        }
+    }
+    // The beam: one chord of two members through a middle joint.
+    let beam = "\n[[node]]\nid = \"Z\"\npoint = [\"8 m\", \"0.5 m\", \"8 m\"]\n\
+                \n[[member]]\nid = \"B1\"\nnodes = [\"J20\", \"Z\"]\nsection = \"EA-61x7\"\n\
+                \n[[member]]\nid = \"B2\"\nnodes = [\"Z\", \"K21\"]\nsection = \"EA-61x7\"\n";
+    format!("{one}{other}{beam}")
+}
+
+#[test]
+fn a_portals_columns_each_have_their_own_faces() {
+    let text = portal();
+    let r = orient(&text, false);
+    let legs = r
+        .turned
+        .iter()
+        .chain(&r.same)
+        .filter(|o| {
+            o.kind == OrientKind::Chord && (o.member.starts_with('L') || o.member.starts_with('M'))
+        })
+        .count();
+    assert_eq!(legs, 16, "left {:?}", r.left);
+    // Each leg heel out of its own column, its neighbours in its column.
+    for o in r.turned.iter().filter(|o| o.member.starts_with('M')) {
+        assert!(o.neighbours.iter().all(|n| n.starts_with('M')), "{o:?}");
+    }
+    let column = |p: [f64; 3]| {
+        if p[0] > 8.0 {
+            [16.0, 0.0, p[2]]
+        } else {
+            [0.0, 0.0, p[2]]
+        }
+    };
+    assert_heel_out_flanges_in_faces(&r.text, "L", column, body_neighbours, 0.5);
+}

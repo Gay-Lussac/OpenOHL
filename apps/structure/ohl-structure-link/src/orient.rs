@@ -13,8 +13,9 @@
 //!   so that its heel points out of the tower and its two flanges lie in
 //!   the two faces of the tower meeting at it. The faces are those of its
 //!   neighbouring legs' lines: the tower's legs and chords beside it
-//!   (within [`PARALLEL_DEG`] of it; each by its point nearest the
-//!   member's middle) seen along it make a polygon; the member is a corner
+//!   (within [`PARALLEL_DEG`] of it, their lines joined to its line by a
+//!   member — a face's bracing, a plan member; each by its point nearest
+//!   the member's middle) seen along it make a polygon; the member is a corner
 //!   of its outline (else it is left: inside the tower, on a face, or with
 //!   fewer than two neighbours), the two corners next to it are its
 //!   neighbours. An
@@ -211,6 +212,8 @@ pub fn orient_angles(
     // Running on in line through a joint: at each joint, the pairs of
     // angles nearest in line first.
     let mut running: BTreeSet<usize> = BTreeSet::new();
+    // Each member's line (the members running on in line, joined).
+    let mut line_of: Vec<usize> = (0..lines.len()).collect();
     let mut at_joint: BTreeMap<String, Vec<(usize, [f64; 3])>> = BTreeMap::new();
     for (k, l) in lines.iter().enumerate() {
         if !l.angle {
@@ -246,11 +249,47 @@ pub fn orient_angles(
             used.insert(j);
             running.insert(i);
             running.insert(j);
+            join(&mut line_of, i, j);
         }
     }
     let chords: Vec<usize> = (0..lines.len())
         .filter(|&k| lines[k].angle && (lines[k].class_leg || running.contains(&k)))
         .collect();
+    // The lines of legs and chords next to each other: joined by a member
+    // (a face's bracing, a plan member) from a joint of one to a joint of
+    // the other. Only those make a member's faces: a portal's other column,
+    // a far crossarm's chords are not its neighbours however parallel.
+    let mut lines_at: BTreeMap<&str, BTreeSet<usize>> = BTreeMap::new();
+    for &k in &chords {
+        let m = t
+            .members
+            .iter()
+            .find(|m| m.id == lines[k].id)
+            .expect("listed");
+        for n in &m.nodes {
+            lines_at
+                .entry(n.as_str())
+                .or_default()
+                .insert(root(&mut line_of, k));
+        }
+    }
+    let mut next_to: BTreeSet<(usize, usize)> = BTreeSet::new();
+    for m in &t.members {
+        let (Some(a), Some(b)) = (
+            lines_at.get(m.nodes[0].as_str()),
+            lines_at.get(m.nodes[1].as_str()),
+        ) else {
+            continue;
+        };
+        for &x in a {
+            for &y in b {
+                if x != y {
+                    next_to.insert((x, y));
+                    next_to.insert((y, x));
+                }
+            }
+        }
+    }
     let asked = |id: &str| ask.members.as_ref().is_none_or(|s| s.contains(id));
     // Each leg's or chord's target axes, and the tower's steep faces.
     let mut target: BTreeMap<usize, (f64, f64, Vec<String>)> = BTreeMap::new();
@@ -263,8 +302,13 @@ pub fn orient_angles(
         let e1 = l.base[0];
         let e2 = l.base[1];
         let mut pts: Vec<([f64; 2], usize)> = vec![([0.0, 0.0], k)];
+        let own = root(&mut line_of, k);
         for &n in &chords {
             if n == k {
+                continue;
+            }
+            let other = root(&mut line_of, n);
+            if !next_to.contains(&(own, other)) {
                 continue;
             }
             let o = &lines[n];
@@ -478,6 +522,23 @@ pub fn orient_angles(
     run.left = left;
     run.seconds = start.elapsed().as_secs_f64();
     Ok(run)
+}
+
+/// The line member `k` is on (union-find with path halving).
+fn root(line_of: &mut [usize], mut k: usize) -> usize {
+    while line_of[k] != k {
+        line_of[k] = line_of[line_of[k]];
+        k = line_of[k];
+    }
+    k
+}
+
+/// Members `a` and `b` on one line.
+fn join(line_of: &mut [usize], a: usize, b: usize) {
+    let (x, y) = (root(line_of, a), root(line_of, b));
+    if x != y {
+        line_of[x.max(y)] = x.min(y);
+    }
 }
 
 /// A roll as written (empty: none).
