@@ -354,7 +354,7 @@ pub struct BoltSolid {
     /// Its layout partly assumed (drawn in the close-up's orange).
     pub assumed: bool,
     /// It runs into a part it does not bolt to (2026-11-18,
-    /// [`crate::clash`]): drawn red.
+    /// [`crate::clashes`]): drawn red.
     pub clash: bool,
     /// Its diameter, m.
     pub diameter: f64,

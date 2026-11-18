@@ -373,7 +373,7 @@ pub enum Problem {
     },
     /// Its steel or one of its bolts runs into `with` (another member, a
     /// plate, a bolt) that it does not bolt to, by `depth` m (2026-11-18,
-    /// [`crate::clash`]).
+    /// [`crate::clashes`]).
     Clash {
         /// The other part, in words.
         with: String,
@@ -590,7 +590,7 @@ pub struct JointDetail {
     pub splices: Vec<SpliceDetail>,
     /// How complete.
     pub completeness: Completeness,
-    /// Its parts in the same place (2026-11-18, [`crate::clash`]): each
+    /// Its parts in the same place (2026-11-18, [`crate::clashes`]): each
     /// pair of parts that do not bolt to each other and run into each
     /// other; empty below level 3.
     pub clashes: Vec<crate::clash::Clash>,
