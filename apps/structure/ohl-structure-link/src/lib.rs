@@ -42,6 +42,9 @@ mod clash;
 #[cfg(test)]
 mod clash_tests;
 mod export;
+mod joint_layout;
+#[cfg(test)]
+mod joint_layout_tests;
 mod joint_sheet;
 mod joints;
 #[cfg(test)]
@@ -66,6 +69,10 @@ pub use export::{
     ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,
     ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,
     member_axes,
+};
+pub use joint_layout::{
+    BoltArea, EdgeRule, EndPlan, GAP_START, JointPlan, LayoutSettings, Onto, PULL_BACK_START,
+    PlatePlan, SHIFT_LIMIT_START, flat_turns, mm_text, plan_joint,
 };
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,

@@ -623,6 +623,18 @@ pub fn clashes(
                         Together::ShankOnly
                     }
                     Plate(m) if Some(m.as_str()) == onto => Together::ShankOnly,
+                    // A bolt of the leg a plate lies on (a splice's, at a
+                    // leg running on through the joint): through the plate
+                    // too (a common bolt).
+                    Plate(m)
+                        if plates
+                            .iter()
+                            .find(|q| &q.id == m)
+                            .and_then(|q| q.leg.as_deref())
+                            .is_some_and(|l| same_run(l, member)) =>
+                    {
+                        Together::Yes
+                    }
                     // A bolt of a member end bolted onto this one's member
                     // (or the other way): they may be the same bolts.
                     Bolt { member: m2, .. }

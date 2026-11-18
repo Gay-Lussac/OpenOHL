@@ -623,6 +623,17 @@ pub fn joint_details(
     library: &SectionLibrary,
     bolts: &ohl_structures::bolts::BoltLibrary,
 ) -> Result<JointDetails, String> {
+    joint_details_at(text, library, bolts, None)
+}
+
+/// [`joint_details`] of the joints `only` (none: every joint), the others
+/// left out (the automatic layout of a few joints, 2026-11-18).
+pub fn joint_details_at(
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+    only: Option<&std::collections::BTreeSet<String>>,
+) -> Result<JointDetails, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let mut notes = t.connection_notes();
@@ -684,6 +695,9 @@ pub fn joint_details(
         .unwrap_or_default();
     let mut joints = Vec::new();
     for n in &t.nodes {
+        if only.is_some_and(|o| !o.contains(&n.id)) {
+            continue;
+        }
         let at = position[n.id.as_str()];
         let mut arrivals = Vec::new();
         for m in &t.members {
@@ -1358,7 +1372,12 @@ fn plate_seats(
             .filter(|c| c.joint == joint && c.onto.as_deref() == Some(p.id.as_str()))
             .filter_map(|c| all.iter().find(|a| a.member == c.member))
             .collect();
-        let leg = on.first().and_then(|a| leg_of(a, all, areas));
+        // No leg (a crossing of two diagonals, 2026-11-18): the member
+        // running through the joint across them.
+        let leg = on.first().and_then(|a| {
+            leg_of(a, all, areas)
+                .or_else(|| crate::joint_layout::through_of(all, a).map(|b| b.member.clone()))
+        });
         let leg_dir = leg
             .as_ref()
             .and_then(|l| all.iter().find(|a| &a.member == l))
@@ -2245,6 +2264,67 @@ fn place_bolts(
     a.bolt_flat = flat;
     a.other_points = other.iter().map(|q| at_other(q[0], q[1])).collect();
     a.other_flat = other;
+}
+
+/// The flange of the member `host` (an angle, or an angle of a built-up
+/// member: the one facing `a`, [`facing`]) that `a`'s leg bolted lies on,
+/// for the automatic layout (2026-11-18, [`crate::joint_layout`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct HostFlange {
+    /// Its heel at the joint, from the work point, m (the host's offset
+    /// in).
+    pub heel: [f64; 3],
+    /// Across it, from the heel to its toe (unit).
+    pub across: [f64; 3],
+    /// Out of its outer face, the heel's (unit): away from the angle's
+    /// other leg.
+    pub out: [f64; 3],
+    /// Its width, heel to toe, m.
+    pub width: f64,
+    /// The angle's thickness, m.
+    pub t: f64,
+    /// The angle's root radius, m (0 for a built-up member's angle).
+    pub r: f64,
+}
+
+/// [`HostFlange`] of `host` for `a` (none: `a` or `host` no angle, or
+/// their legs not near parallel).
+pub(crate) fn host_flange(a: &Arrival, host: &Arrival) -> Option<HostFlange> {
+    let p = a.profile.as_ref()?;
+    p.angle?;
+    let q = host.profile.as_ref()?;
+    let (c, _) = facing(a, q, None, true)?;
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let across = c.flange(nb);
+    let other = if dot(across, c.ey).abs() > 0.5 {
+        c.ez
+    } else {
+        c.ey
+    };
+    let heel = add(host.offset, c.heel);
+    // Its width: the farthest corner of the host's steel along it within
+    // the angle's thickness of its face.
+    let mut width: f64 = 0.0;
+    for piece in q.pieces() {
+        for pt in piece {
+            let x = sub(
+                add(scale(q.axes[1], pt[0]), scale(q.axes[2], pt[1])),
+                c.heel,
+            );
+            if dot(x, other).abs() <= c.t + 1e-6 {
+                width = width.max(dot(x, across));
+            }
+        }
+    }
+    let r = q.angle.map_or(0.0, |g| g.r);
+    (width > 0.0).then_some(HostFlange {
+        heel,
+        across,
+        out: scale(other, -1.0),
+        width,
+        t: c.t,
+        r,
+    })
 }
 
 /// Where `a`'s steel must stop so it fits, m from the work point: its leg
