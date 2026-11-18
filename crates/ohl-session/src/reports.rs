@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::store::Store;
 use crate::{Command, Kind, Session, SessionError, refused};
 
 /// File format id of an exported report.
@@ -243,11 +244,7 @@ impl Session {
     /// fingerprints of its objects (reports left out) and of the
     /// project's library files.
     pub fn check_state(&self) -> Result<LineState, SessionError> {
-        let seq = self.conn.query_row(
-            "SELECT COALESCE(MAX(seq), 0) FROM oplog WHERE line = ?1",
-            [self.current_line()],
-            |r| r.get(0),
-        )?;
+        let seq = self.conn.last_seq_of_line(self.current_line())?;
         let objects: BTreeMap<String, String> = self
             .objects
             .iter()
@@ -289,11 +286,7 @@ impl Session {
 
     /// The time now, UTC (`YYYY-MM-DDTHH:MM:SSZ`).
     pub fn now(&self) -> Result<String, SessionError> {
-        Ok(self
-            .conn
-            .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')", [], |r| {
-                r.get(0)
-            })?)
+        self.conn.now()
     }
 }
 

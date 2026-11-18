@@ -53,57 +53,18 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use ohl_line::Line;
-use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::store::{RevisionRow, Store};
 use crate::{Applied, Command, Kind, Object, Role, Session, SessionError, json, line_of, refused};
-
-/// Tables of the version control.
-pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS vc_blob (
-        hash TEXT PRIMARY KEY, data BLOB NOT NULL);
-    CREATE TABLE IF NOT EXISTS vc_revision (
-        id TEXT PRIMARY KEY, parents TEXT NOT NULL, author TEXT NOT NULL,
-        time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        message TEXT NOT NULL, tree TEXT NOT NULL, seq INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS vc_ref (
-        name TEXT PRIMARY KEY, kind TEXT NOT NULL, revision TEXT,
-        protected INTEGER NOT NULL DEFAULT 0, user TEXT NOT NULL,
-        time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', base TEXT);";
 
 /// The first branch of every project.
 pub const MAIN: &str = "main";
 
 /// zstd level of the blobs.
 const LEVEL: i32 = 3;
-
-/// Makes the branch `main` and the head when missing (new projects and
-/// files of schema 1).
-/// Whether [`init`] has nothing to add: the main branch and the head
-/// are there.
-pub(crate) fn initialised(conn: &Connection) -> Result<bool, SessionError> {
-    let branch = conn
-        .prepare("SELECT 1 FROM vc_ref WHERE name = ?1 AND kind = 'branch'")?
-        .exists(params![MAIN])?;
-    let head = conn
-        .prepare("SELECT 1 FROM ols_meta WHERE key = 'vc_head'")?
-        .exists([])?;
-    Ok(branch && head)
-}
-
-pub(crate) fn init(conn: &Connection) -> Result<(), SessionError> {
-    conn.execute(
-        "INSERT OR IGNORE INTO vc_ref (name, kind, revision, user) VALUES (?1, 'branch', NULL, '')",
-        params![MAIN],
-    )?;
-    conn.execute(
-        "INSERT OR IGNORE INTO ols_meta (key, value) VALUES ('vc_head', ?1)",
-        params![format!("branch:{MAIN}")],
-    )?;
-    Ok(())
-}
 
 /// A state of the project under version control.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1482,26 +1443,16 @@ fn store(e: impl std::fmt::Display) -> SessionError {
 }
 
 impl Session {
-    fn write_blob(conn: &Connection, h: &str, text: &str) -> Result<(), SessionError> {
-        let exists = conn
-            .prepare_cached("SELECT 1 FROM vc_blob WHERE hash = ?1")?
-            .exists(params![h])?;
-        if !exists {
+    fn write_blob(conn: &dyn Store, h: &str, text: &str) -> Result<(), SessionError> {
+        if !conn.has_blob(h)? {
             let data = zstd::encode_all(text.as_bytes(), LEVEL).map_err(store)?;
-            conn.execute(
-                "INSERT INTO vc_blob (hash, data) VALUES (?1, ?2)",
-                params![h, data],
-            )?;
+            conn.put_blob(h, &data)?;
         }
         Ok(())
     }
 
     fn read_blob(&self, h: &str) -> Result<String, SessionError> {
-        let data: Option<Vec<u8>> = self
-            .conn
-            .prepare_cached("SELECT data FROM vc_blob WHERE hash = ?1")?
-            .query_row(params![h], |r| r.get(0))
-            .optional()?;
+        let data: Option<Vec<u8>> = self.conn.blob(h)?;
         let data = data.ok_or_else(|| store(format!("version store: blob {h} missing")))?;
         let raw = zstd::decode_all(data.as_slice()).map_err(store)?;
         String::from_utf8(raw).map_err(store)
@@ -1528,84 +1479,65 @@ impl Session {
         Ok(state)
     }
 
-    fn revision_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(Revision, String)> {
-        Ok((
-            Revision {
-                id: r.get(0)?,
-                parents: vec![],
-                author: r.get(2)?,
-                time: r.get(3)?,
-                message: r.get(4)?,
-                tree: r.get(5)?,
-                seq: r.get(6)?,
-            },
-            r.get(1)?,
-        ))
+    fn revision_of(r: RevisionRow) -> Result<Revision, SessionError> {
+        Ok(Revision {
+            parents: serde_json::from_str(&r.parents).map_err(store)?,
+            id: r.id,
+            author: r.author,
+            time: r.time,
+            message: r.message,
+            tree: r.tree,
+            seq: r.seq,
+        })
     }
 
     /// Revision `id` (the full id).
     pub fn revision(&self, id: &str) -> Result<Revision, SessionError> {
         let row = self
             .conn
-            .query_row(
-                "SELECT id, parents, author, time, message, tree, seq FROM vc_revision WHERE id = ?1",
-                params![id],
-                Self::revision_row,
-            )
-            .optional()?
+            .revision(id)?
             .ok_or_else(|| refused(format!("no revision {id}")))?;
-        let (mut rev, parents) = row;
-        rev.parents = serde_json::from_str(&parents).map_err(store)?;
-        Ok(rev)
+        Self::revision_of(row)
     }
 
     /// Every revision, newest first.
     pub fn revisions(&self) -> Result<Vec<Revision>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, parents, author, time, message, tree, seq FROM vc_revision ORDER BY rowid DESC",
-        )?;
-        let rows = stmt.query_map([], Self::revision_row)?;
-        rows.map(|r| {
-            let (mut rev, parents) = r?;
-            rev.parents = serde_json::from_str(&parents).map_err(store)?;
-            Ok(rev)
-        })
-        .collect()
+        self.conn
+            .revisions()?
+            .into_iter()
+            .map(Self::revision_of)
+            .collect()
     }
 
     /// The branches and tags, by name.
     pub fn refs(&self) -> Result<Vec<Ref>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT name, kind, revision, protected, user, time, note FROM vc_ref ORDER BY kind, name",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, Option<String>>(2)?,
-                r.get::<_, bool>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-            ))
-        })?;
-        rows.map(|r| {
-            let (name, kind, revision, protected, user, time, note) = r?;
-            Ok(Ref {
-                name,
-                kind: if kind == "tag" {
-                    RefKind::Tag
-                } else {
-                    RefKind::Branch
-                },
-                revision,
-                protected,
-                user,
-                time,
-                note,
+        let rows = self.conn.refs()?;
+        rows.into_iter()
+            .map(|r| {
+                let crate::store::RefRow {
+                    name,
+                    kind,
+                    revision,
+                    protected,
+                    user,
+                    time,
+                    note,
+                } = r;
+                Ok(Ref {
+                    name,
+                    kind: if kind == "tag" {
+                        RefKind::Tag
+                    } else {
+                        RefKind::Branch
+                    },
+                    revision,
+                    protected,
+                    user,
+                    time,
+                    note,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     pub(crate) fn find_ref(&self, name: &str) -> Result<Option<Ref>, SessionError> {
@@ -1650,12 +1582,7 @@ impl Session {
                 .ok_or_else(|| refused(format!("branch \"{name}\" has no revision yet")));
         }
         if name.len() >= 4 && name.chars().all(|c| c.is_ascii_hexdigit()) {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT id FROM vc_revision WHERE id LIKE ?1 || '%' LIMIT 2")?;
-            let found: Vec<String> = stmt
-                .query_map(params![name.to_ascii_lowercase()], |r| r.get(0))?
-                .collect::<Result<_, _>>()?;
+            let found: Vec<String> = self.conn.revisions_starting(&name.to_ascii_lowercase())?;
             match found.len() {
                 1 => return Ok(found[0].clone()),
                 0 => {}
@@ -1790,35 +1717,27 @@ impl Session {
             )));
         }
         let id = revision_id(&tree_hash, &parents, user, message);
-        let exists = self
-            .conn
-            .prepare("SELECT 1 FROM vc_revision WHERE id = ?1")?
-            .exists(params![id])?;
+        let exists = self.conn.has_revision(&id)?;
         if exists {
             return Err(refused(format!("revision {} exists already", short(&id))));
         }
         let seq = self.last_seq()?;
         let tx = crate::Step::begin(&self.conn)?;
         for (h, t) in &blobs {
-            Self::write_blob(&tx, h, t)?;
+            Self::write_blob(&*tx, h, t)?;
         }
-        Self::write_blob(&tx, &tree_hash, &text)?;
-        tx.execute(
-            "INSERT INTO vc_revision (id, parents, author, message, tree, seq) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                id,
-                serde_json::to_string(&parents).expect("serialises"),
-                user,
-                message,
-                tree_hash,
-                seq
-            ],
-        )?;
+        Self::write_blob(&*tx, &tree_hash, &text)?;
+        tx.put_revision(&RevisionRow {
+            id: id.clone(),
+            parents: serde_json::to_string(&parents).expect("serialises"),
+            author: user.to_owned(),
+            time: String::new(),
+            message: message.to_owned(),
+            tree: tree_hash.clone(),
+            seq,
+        })?;
         if let Some(b) = branch {
-            tx.execute(
-                "UPDATE vc_ref SET revision = ?1 WHERE name = ?2 AND kind = 'branch'",
-                params![id, b],
-            )?;
+            tx.set_branch_revision(b, &id)?;
         }
         tx.commit()?;
         self.revision(&id)
@@ -1894,10 +1813,7 @@ impl Session {
                 .head_revision()?
                 .ok_or_else(|| refused("no revision yet: commit first"))?,
         };
-        self.conn.execute(
-            "INSERT INTO vc_ref (name, kind, revision, user, note) VALUES (?1, 'tag', ?2, ?3, ?4)",
-            params![name, rev, user, note.trim()],
-        )?;
+        self.conn.add_tag(&name, &rev, user, note.trim())?;
         Ok(rev)
     }
 
@@ -1911,11 +1827,7 @@ impl Session {
     ) -> Result<(), SessionError> {
         self.require(admin, Role::Admin)?;
         self.branch_revision(name)?;
-        self.conn.execute(
-            "UPDATE vc_ref SET protected = ?1 WHERE name = ?2 AND kind = 'branch'",
-            params![protected, name],
-        )?;
-        Ok(())
+        self.conn.set_protected(name, protected)
     }
 
     /// Every revision's parents (read once for the walks of one plan).
@@ -2036,12 +1948,9 @@ impl Session {
             return Err(refused(format!("{d} — repeat with confirmation to apply")));
         }
         let tx = crate::Step::begin(&self.conn)?;
-        tx.execute("DELETE FROM vc_ref WHERE name = ?1", params![name])?;
+        tx.delete_ref(name)?;
         for id in &d.reviews {
-            tx.execute(
-                "UPDATE vc_review SET state = 'closed' WHERE id = ?1",
-                params![id],
-            )?;
+            tx.set_review_state(*id, "closed")?;
         }
         tx.commit()?;
         Ok(d)
@@ -2111,10 +2020,7 @@ impl Session {
                     false,
                     false,
                 )?;
-                s.conn.execute(
-                    "UPDATE oplog SET note = ?1 WHERE seq = ?2",
-                    params![note, a.seq],
-                )?;
+                s.conn.set_entry_note(a.seq, note)?;
                 Ok(a)
             })?)
         };
@@ -2141,11 +2047,7 @@ impl Session {
             )));
         }
         self.select_line(target)?;
-        self.conn.execute(
-            "INSERT INTO ols_meta (key, value) VALUES ('vc_head', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![format!("branch:{target}")],
-        )?;
+        self.conn.set_meta("vc_head", &format!("branch:{target}"))?;
         Ok((None, false))
     }
 
@@ -2275,10 +2177,7 @@ impl Session {
             let (applied, libraries_changed) = s.set_working(user, &plan.merged, &note)?;
             let revision = match plan.kind {
                 MergeKind::FastForward => {
-                    s.conn.execute(
-                        "UPDATE vc_ref SET revision = ?1 WHERE name = ?2 AND kind = 'branch'",
-                        params![plan.theirs, branch],
-                    )?;
+                    s.conn.set_branch_revision(&branch, &plan.theirs)?;
                     None
                 }
                 _ => {
@@ -2457,11 +2356,7 @@ impl Session {
                 )));
             }
             let has = |h: &str| -> Result<bool, SessionError> {
-                Ok(bundle.blobs.contains_key(h)
-                    || self
-                        .conn
-                        .prepare_cached("SELECT 1 FROM vc_blob WHERE hash = ?1")?
-                        .exists(params![h])?)
+                Ok(bundle.blobs.contains_key(h) || self.conn.has_blob(h)?)
             };
             if !has(&r.tree)? {
                 return Err(refused(format!("bundle: tree of {} missing", r.short())));
@@ -2539,27 +2434,21 @@ impl Session {
         self.unit(|s| {
             let tx = crate::Step::begin(&s.conn)?;
             for (h, text) in &bundle.blobs {
-                Self::write_blob(&tx, h, text)?;
+                Self::write_blob(&*tx, h, text)?;
             }
             for r in &new {
-                tx.execute(
-                    "INSERT INTO vc_revision (id, parents, author, time, message, tree, seq) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![
-                        r.id,
-                        serde_json::to_string(&r.parents).expect("serialises"),
-                        r.author,
-                        r.time,
-                        r.message,
-                        r.tree,
-                        r.seq
-                    ],
-                )?;
+                tx.put_revision_with_time(&RevisionRow {
+                    id: r.id.clone(),
+                    parents: serde_json::to_string(&r.parents).expect("serialises"),
+                    author: r.author.clone(),
+                    time: r.time.clone(),
+                    message: r.message.clone(),
+                    tree: r.tree.clone(),
+                    seq: r.seq,
+                })?;
             }
             if existing.is_some() {
-                tx.execute(
-                    "UPDATE vc_ref SET revision = ?1 WHERE name = ?2",
-                    params![bundle.head, name],
-                )?;
+                tx.set_ref_revision(&name, &bundle.head)?;
             }
             tx.commit()?;
             // The line's working state: the bundle's head.

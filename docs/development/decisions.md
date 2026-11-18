@@ -57,6 +57,18 @@ to ADR-0004, 0005, 0008 and 0010, the draft
   on it as one project: open 25 s, ≈ 0.9 GB, **every edit ≈ 32 s** (the
   whole line rebuilt and validated per command) — what phase 3 must
   remove ([performance](performance.md#synthetic-country-todays-session-on-a-whole-country-2026-11-18)).
+- **Store interface** (phase 2): the session writes no SQL any more
+  (a test keeps it so); `ohl_session::store::Store` offers what it needs
+  in its own words (objects, log, spatial index, versions, grants and
+  reviews, surfaces, settings, nested steps) and `SqliteStore` holds every
+  statement and the upgrades of older files, moved unchanged. **No change
+  of behaviour or file**: every existing test passes unchanged, and files
+  written before and after through the example lines (import, edits,
+  undo, redo, branches, tags, a review merged, grants, a rollback, a
+  deletion, a bundle, a surface) and through a synthetic country (an
+  800-pylon one written whole; the 12 000-pylon one edited and undone)
+  give the same `sqlite3 .dump`, times aside. The point-cloud and
+  background stores still open the file themselves (for later).
 
 ## 2026-11-18 (second round)
 

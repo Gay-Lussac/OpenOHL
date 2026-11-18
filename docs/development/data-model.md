@@ -3488,6 +3488,17 @@ savepoint; `Step` is a write step that nests in it); the file's schema is
 unchanged (still 6), and `both` is a new value of a choice sent to a
 server (`ohl-server`), which older servers refuse.
 
+**The store** (2026-11-18, [ADR-0013](../adr/0013-country-server.md),
+phase 2): the session reaches the file only through
+`ohl_session::store::Store`, an interface in its own words (objects, log,
+spatial index, versions, grants and reviews, surfaces, settings, steps);
+`store/sqlite.rs` (`SqliteStore`) holds every statement and the upgrades
+below, moved from the session's modules unchanged. Nothing of the file
+changed: files written before and after give the same `sqlite3 .dump`
+(times aside). A PostgreSQL store for a country server is to come
+(phase 4). The point-cloud and background stores still open the file
+themselves.
+
 #### Opening a file: schema checks and upgrades
 
 `Session::open` (every program that opens a project to write it:
@@ -3560,7 +3571,7 @@ text, `strftime('%Y-%m-%dT%H:%M:%fZ')`, the point-cloud and background
 ones `datetime('now')`):
 
 ```sql
--- ohl-session (lib.rs, lines.rs)
+-- ohl-session, all made by store/sqlite.rs (SqliteStore::prepare)
 ols_meta      (key TEXT PRIMARY KEY, value TEXT NOT NULL)
 session_user  (name TEXT PRIMARY KEY, role TEXT NOT NULL)            -- viewer | designer | admin
 model_object  (line TEXT NOT NULL DEFAULT 'main', kind TEXT NOT NULL, id TEXT NOT NULL,
@@ -3572,24 +3583,24 @@ oplog         (seq INTEGER PRIMARY KEY, time TEXT NOT NULL, user TEXT NOT NULL,
                objects TEXT NOT NULL, sections TEXT NOT NULL,
                undoes INTEGER, undone_by INTEGER, note TEXT,
                line TEXT NOT NULL DEFAULT 'main')
--- spatial.rs
+-- spatial index (store/sqlite.rs, SPATIAL_SCHEMA)
 spatial_index (line TEXT NOT NULL DEFAULT 'main', kind TEXT NOT NULL, id TEXT NOT NULL,
                level INTEGER NOT NULL, tx INTEGER NOT NULL, ty INTEGER NOT NULL,
                xmin REAL NOT NULL, ymin REAL NOT NULL, xmax REAL NOT NULL, ymax REAL NOT NULL,
                PRIMARY KEY (line, kind, id))
 INDEX spatial_tile ON spatial_index (line, level, tx, ty)
--- surfaces.rs
+-- surfaces (SURFACES_SCHEMA)
 surface       (name TEXT PRIMARY KEY, time TEXT NOT NULL, user TEXT NOT NULL, source TEXT NOT NULL,
                points INTEGER NOT NULL, triangles INTEGER NOT NULL,
                bounds TEXT NOT NULL, data BLOB NOT NULL)
--- versions.rs
+-- versions (VERSIONS_SCHEMA)
 vc_blob       (hash TEXT PRIMARY KEY, data BLOB NOT NULL)
 vc_revision   (id TEXT PRIMARY KEY, parents TEXT NOT NULL, author TEXT NOT NULL, time TEXT NOT NULL,
                message TEXT NOT NULL, tree TEXT NOT NULL, seq INTEGER NOT NULL)
 vc_ref        (name TEXT PRIMARY KEY, kind TEXT NOT NULL, revision TEXT,
                protected INTEGER NOT NULL DEFAULT 0, user TEXT NOT NULL, time TEXT NOT NULL,
                note TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '', base TEXT)
--- collab.rs
+-- grants and reviews (COLLAB_SCHEMA)
 edit_grant    (id INTEGER PRIMARY KEY, subject TEXT NOT NULL, kinds TEXT NOT NULL,
                objects TEXT NOT NULL, area TEXT, user TEXT NOT NULL, time TEXT NOT NULL,
                note TEXT NOT NULL DEFAULT '')

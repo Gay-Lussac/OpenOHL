@@ -524,7 +524,7 @@ fn structure(seed: u64, towers: &[Tower], routes: &[RouteGen], t: usize) -> Valu
             for p in 0..3 {
                 let base = set_of(tower, r, s, Some(p));
                 let g = (base as usize - 1) / 10;
-                let side = if g % 2 == 0 { -1.0 } else { 1.0 };
+                let side = if g.is_multiple_of(2) { -1.0 } else { 1.0 };
                 let lateral = side * (4.0 + 3.5 * p as f64);
                 let h = base_h + 7.0 * (g / 2) as f64;
                 holds.push((base, lateral, h, weight));

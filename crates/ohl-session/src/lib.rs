@@ -55,6 +55,11 @@
 //! plan bounds and home tile of the project's chunk grid, updated with
 //! every command: [`Session::objects_in`] answers "what is in this area"
 //! from the file, the basis for partial loading and streaming.
+//!
+//! The session writes no SQL: it keeps the project in a [`store::Store`]
+//! (ADR-0013) — today the project file, [`store::sqlite::SqliteStore`],
+//! which holds the tables above, their statements and the upgrades of
+//! older files.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -63,9 +68,11 @@ use std::sync::Arc;
 
 use ohl_core::grid::{Bounds, Grid, Tile};
 use ohl_line::{Jumper, Line, Point, Route, Section, Stringing, Structure};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use store::Store;
+use store::sqlite::SqliteStore;
 
 /// Schema version of the session tables: 6 keeps a project line started
 /// since as the revision it starts from (`vc_ref.base`) and only what it
@@ -1036,23 +1043,6 @@ pub fn line_circuits_change(before: &Line, after: &Line) -> Result<Command, Stri
     Ok(Command::Batch { commands })
 }
 
-/// A raw log row: seq, time, user, kind, command, inverse, objects,
-/// sections, undoes, undone_by, note, line.
-type EntryRow = (
-    i64,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    String,
-    Option<i64>,
-    Option<i64>,
-    Option<String>,
-    String,
-);
-
 /// One object of the model. Its JSON is shared (not copied) by the
 /// lines and states holding it unchanged.
 #[derive(Debug, Clone, PartialEq)]
@@ -1064,7 +1054,10 @@ struct Object {
 
 /// An open project.
 pub struct Session {
-    conn: Connection,
+    /// The store the project is kept in ([`store`]; named `conn` as the
+    /// SQLite connection it replaced, which this crate's tests still read
+    /// it as).
+    conn: SqliteStore,
     objects: BTreeMap<(Kind, String), Object>,
     line: Line,
     grid: Grid,
@@ -1089,52 +1082,51 @@ struct UnitKept {
     indexed: Vec<String>,
 }
 
-/// A step written to the file as a whole or not at all, inside a larger
-/// one or alone: an SQLite savepoint (alone it is a transaction, as
-/// before; inside a [`Session::unit`] it is part of the unit's). Left
-/// without [`Step::commit`], it is rolled back.
+/// A step written to the store as a whole or not at all, inside a
+/// larger one or alone: a savepoint of the store (alone it is a
+/// transaction; inside a [`Session::unit`] it is part of the unit's).
+/// Left without [`Step::commit`], it is rolled back. It reads as the
+/// store it writes to.
 pub(crate) struct Step<'c> {
-    conn: &'c Connection,
+    store: &'c dyn Store,
     name: String,
     done: bool,
 }
 
 impl<'c> Step<'c> {
-    pub(crate) fn begin(conn: &'c Connection) -> Result<Self, SessionError> {
+    pub(crate) fn begin(store: &'c dyn Store) -> Result<Self, SessionError> {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let name = format!(
             "ohl_step_{}",
             N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
-        conn.execute_batch(&format!("SAVEPOINT {name}"))?;
+        store.savepoint(&name)?;
         Ok(Self {
-            conn,
+            store,
             name,
             done: false,
         })
     }
 
     pub(crate) fn commit(mut self) -> Result<(), SessionError> {
-        self.conn.execute_batch(&format!("RELEASE {}", self.name))?;
+        self.store.release(&self.name)?;
         self.done = true;
         Ok(())
     }
 }
 
-impl std::ops::Deref for Step<'_> {
-    type Target = Connection;
+impl<'c> std::ops::Deref for Step<'c> {
+    type Target = dyn Store + 'c;
 
-    fn deref(&self) -> &Connection {
-        self.conn
+    fn deref(&self) -> &(dyn Store + 'c) {
+        self.store
     }
 }
 
 impl Drop for Step<'_> {
     fn drop(&mut self) {
         if !self.done {
-            let _ = self
-                .conn
-                .execute_batch(&format!("ROLLBACK TO {0}; RELEASE {0}", self.name));
+            let _ = self.store.roll_back_to(&self.name);
         }
     }
 }
@@ -1609,71 +1601,6 @@ fn affected_sections(lines: [&Line; 2], changed: &[(Kind, String)]) -> Vec<Strin
         .collect()
 }
 
-/// Upgrade steps of older project files that come before the current
-/// tables are made, in schema order. A new file has none of them. Each
-/// step looks for what it changes, so a file of an in-between build (its
-/// schema number already raised) is upgraded too, and a done step does
-/// nothing; the steps after the tables are [`lines::migrate_descriptions`]
-/// (schema 3) and [`migrate_library_files`] (schema 4).
-fn upgrade_before_tables(conn: &Connection) -> Result<(), SessionError> {
-    // Schema 1, before its first release: the log's note column.
-    let has_note: bool = conn
-        .prepare("SELECT 1 FROM pragma_table_info('oplog') WHERE name = 'note'")?
-        .exists([])?;
-    if !has_note {
-        conn.execute("ALTER TABLE oplog ADD COLUMN note TEXT", [])?;
-    }
-    // Schema 3: every project line has its own objects, log and index.
-    lines::migrate(conn)?;
-    // Schema 6: lines kept as differences have tombstones.
-    lines::migrate_tombstones(conn)
-}
-
-/// Schema 4: library files of the `library_file` table (schema 3 and
-/// before: one set for all project lines) made `library` objects of every
-/// project line, then the table dropped. Nothing to do once done.
-fn migrate_library_files(conn: &Connection) -> Result<(), SessionError> {
-    let exists = conn
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'library_file'")?
-        .exists([])?;
-    if !exists {
-        return Ok(());
-    }
-    let files: Vec<(String, String, String)> = conn
-        .prepare("SELECT kind, name, text FROM library_file ORDER BY kind, name")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .collect::<Result<_, _>>()?;
-    let mut lines: Vec<String> = conn
-        .prepare("SELECT DISTINCT line FROM model_object")?
-        .query_map([], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
-    if !lines.iter().any(|l| l == versions::MAIN) {
-        lines.push(versions::MAIN.to_owned());
-    }
-    let tx = conn.unchecked_transaction()?;
-    for line in &lines {
-        for (k, (kind, name, text)) in files.iter().enumerate() {
-            // Names that were refused when put are left out.
-            if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
-                continue;
-            }
-            tx.execute(
-                "INSERT OR IGNORE INTO model_object (line, kind, id, ord, version, json)
-                 VALUES (?1, 'library', ?2, ?3, 1, ?4)",
-                params![
-                    line,
-                    library_id(kind, name),
-                    k as i64,
-                    library_value(kind, name, text).to_string()
-                ],
-            )?;
-        }
-    }
-    tx.execute("DROP TABLE library_file", [])?;
-    tx.commit()?;
-    Ok(())
-}
-
 /// Whether a setting's value is an absolute path of this computer (`/…`,
 /// `~/…`, `C:\…`, `\\server\…`): not handed to others.
 pub fn is_local_path(value: &str) -> bool {
@@ -1685,32 +1612,6 @@ pub fn is_local_path(value: &str) -> bool {
             && b[0].is_ascii_alphabetic()
             && b[1] == b':'
             && matches!(b[2], b'\\' | b'/'))
-}
-
-/// The SQLite URI reading `path` read-only (`immutable`: as a file no
-/// program changes meanwhile — no locks, no `-wal` or `-shm`): the
-/// characters a URI path gives a meaning (`%`, `?`, `#`) and spaces
-/// escaped, a Windows path's backslashes as slashes.
-fn read_only_uri(path: &Path, immutable: bool) -> String {
-    let text = path.to_string_lossy().replace('\\', "/");
-    let mut escaped = String::new();
-    for c in text.chars() {
-        match c {
-            '%' => escaped.push_str("%25"),
-            '?' => escaped.push_str("%3f"),
-            '#' => escaped.push_str("%23"),
-            ' ' => escaped.push_str("%20"),
-            c => escaped.push(c),
-        }
-    }
-    // A drive letter (C:/…) after a slash, as SQLite wants it.
-    if escaped.as_bytes().get(1) == Some(&b':') {
-        escaped.insert(0, '/');
-    }
-    format!(
-        "file:{escaped}?mode=ro{}",
-        if immutable { "&immutable=1" } else { "" }
-    )
 }
 
 /// Settings of every connection to a project file, which may come from
@@ -1729,9 +1630,7 @@ impl Session {
     /// Opens a project file (created if missing; an empty project has no
     /// line until [`Session::import`]).
     pub fn open(path: &Path) -> Result<Self, SessionError> {
-        let conn = Connection::open(path)?;
-        harden(&conn)?;
-        Self::open_connection(conn, path, true)
+        Self::open_store(SqliteStore::open(path)?, path, true)
     }
 
     /// Opens an existing project file to read it only (2026-11-15, owner:
@@ -1748,183 +1647,45 @@ impl Session {
     /// session ("attempt to write a readonly database"), or changes only
     /// the copy in memory.
     pub fn open_read_only(path: &Path) -> Result<Self, SessionError> {
-        use rusqlite::OpenFlags;
         if !path.is_file() {
             return Err(SessionError::Store(format!(
                 "{}: no such project file",
                 path.display()
             )));
         }
-        let mut wal = path.as_os_str().to_owned();
-        wal.push("-wal");
-        let immutable = !Path::new(&wal).exists();
-        let uri = read_only_uri(path, immutable);
-        let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
-            | OpenFlags::SQLITE_OPEN_URI
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-        let conn = Connection::open_with_flags(&uri, flags)?;
-        harden(&conn)?;
-        match Self::open_connection(conn, path, false) {
+        match Self::open_store(SqliteStore::open_read_only(path)?, path, false) {
             Err(SessionError::Store(m)) if m.contains("readonly database") => {
                 // Something to write before it can be read (an upgrade):
                 // done on a copy in memory.
-                let from = Connection::open_with_flags(&uri, flags)?;
-                let mut copy = Connection::open_in_memory()?;
-                rusqlite::backup::Backup::new(&from, &mut copy)?.run_to_completion(
-                    1024,
-                    std::time::Duration::ZERO,
-                    None,
-                )?;
-                drop(from);
-                harden(&copy)?;
-                Self::open_connection(copy, path, true)
+                Self::open_store(SqliteStore::copy_in_memory(path)?, path, true)
             }
             other => other,
         }
     }
 
-    /// Opens the project of connection `conn` (to `path`): its tables made
-    /// and upgraded, its objects read. `writable`: false for a read-only
-    /// connection — no journal mode set; anything else that would write
-    /// fails with SQLite's "readonly database" error
+    /// Opens the project kept in `conn` (the file at `path`): its tables
+    /// made and upgraded ([`SqliteStore::prepare`]), its objects read.
+    /// `writable`: false for a read-only store — anything that would
+    /// write fails with the store's "readonly database" error
     /// ([`Session::open_read_only`]).
-    fn open_connection(
-        conn: Connection,
-        path: &Path,
-        writable: bool,
-    ) -> Result<Self, SessionError> {
-        // A newer project file is refused before anything in it changes.
-        let has_meta = conn
-            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ols_meta'")?
-            .exists([])?;
-        if has_meta {
-            let version: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM ols_meta WHERE key = 'session_schema'",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(v) = version
-                && v.parse::<u32>().ok().is_none_or(|v| v > SCHEMA_VERSION)
-            {
-                return Err(SessionError::Store(format!(
-                    "{}: session schema {v} newer than supported ({SCHEMA_VERSION})",
-                    path.display()
-                )));
-            }
-        }
-        if writable {
-            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
-        }
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS ols_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS session_user (name TEXT PRIMARY KEY, role TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS model_object (
-                 line TEXT NOT NULL DEFAULT 'main',
-                 kind TEXT NOT NULL, id TEXT NOT NULL, ord INTEGER NOT NULL,
-                 version INTEGER NOT NULL, json TEXT NOT NULL, gone INTEGER NOT NULL DEFAULT 0,
-                 PRIMARY KEY (line, kind, id));
-             CREATE TABLE IF NOT EXISTS oplog (
-                 seq INTEGER PRIMARY KEY, time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                 user TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL, inverse TEXT NOT NULL,
-                 objects TEXT NOT NULL, sections TEXT NOT NULL,
-                 undoes INTEGER, undone_by INTEGER, note TEXT,
-                 line TEXT NOT NULL DEFAULT 'main');",
-        )?;
-        // Steps of older files, before the tables they need are made.
-        if has_meta {
-            upgrade_before_tables(&conn)?;
-        }
-        conn.execute_batch(spatial::SCHEMA)?;
-        conn.execute_batch(surfaces::SCHEMA)?;
-        conn.execute_batch(versions::SCHEMA)?;
-        conn.execute_batch(collab::SCHEMA)?;
-        if has_meta {
-            lines::migrate_descriptions(&conn)?;
-        }
-        // The chunk grid is fixed when the project is created.
-        let grid_size: Option<String> = conn
-            .query_row(
-                "SELECT value FROM ols_meta WHERE key = 'grid_size'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?;
-        let grid = match grid_size {
-            Some(text) => text
-                .parse::<f64>()
-                .map_err(|e| e.to_string())
-                .and_then(Grid::new)
-                .map_err(|e| SessionError::Store(format!("grid_size \"{text}\": {e}")))?,
-            None => {
-                let g = Grid::default();
-                conn.execute(
-                    "INSERT INTO ols_meta (key, value) VALUES ('grid_size', ?1)",
-                    params![g.size.to_string()],
-                )?;
-                g
-            }
-        };
-        let version: Option<String> = conn
-            .query_row(
-                "SELECT value FROM ols_meta WHERE key = 'session_schema'",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?;
-        match version.as_deref().map(str::parse::<u32>) {
-            None => {
-                conn.execute(
-                    "INSERT INTO ols_meta (key, value) VALUES ('session_schema', ?1)",
-                    params![SCHEMA_VERSION.to_string()],
-                )?;
-            }
-            Some(Ok(v)) if v == SCHEMA_VERSION => {}
-            // Older files: the new tables were just made; nothing else
-            // changes.
-            Some(Ok(v)) if v < SCHEMA_VERSION => {
-                conn.execute(
-                    "UPDATE ols_meta SET value = ?1 WHERE key = 'session_schema'",
-                    params![SCHEMA_VERSION.to_string()],
-                )?;
-            }
-            Some(_) => {
-                return Err(SessionError::Store(format!(
-                    "{}: session schema newer than supported ({SCHEMA_VERSION})",
-                    path.display()
-                )));
-            }
-        }
-        // Read-only: written only when missing (else a readonly error and
-        // the copy in memory, [`Session::open_read_only`]).
-        if writable || !versions::initialised(&conn)? {
-            versions::init(&conn)?;
-        }
-        if has_meta {
-            migrate_library_files(&conn)?;
-        }
+    fn open_store(conn: SqliteStore, path: &Path, writable: bool) -> Result<Self, SessionError> {
+        let grid = conn.prepare(path, writable)?;
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         // Tombstones of lines kept as differences ([`lines`]).
         let mut gone: BTreeMap<String, BTreeSet<(Kind, String)>> = BTreeMap::new();
         // Their base's objects at a place of their own (`gone` = 2).
         let mut placed: lines::Places = BTreeMap::new();
         {
-            let mut stmt =
-                conn.prepare("SELECT line, kind, id, ord, version, json, gone FROM model_object")?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, i64>(3)?,
-                    r.get::<_, i64>(4)?,
-                    r.get::<_, String>(5)?,
-                    r.get::<_, i64>(6)?,
-                ))
-            })?;
-            for row in rows {
-                let (line, kind, id, ord, version, text, gone_as) = row?;
+            for row in conn.object_rows()? {
+                let store::ObjectRow {
+                    line,
+                    kind,
+                    id,
+                    ord,
+                    version,
+                    json: text,
+                    gone: gone_as,
+                } = row;
                 if gone_as == 2 {
                     placed
                         .entry(line)
@@ -1952,19 +1713,10 @@ impl Session {
         }
         // Older projects: read into routes, alignments and alignment
         // points once (the objects rewritten in place; not a logged edit).
-        let done = |key: &str| -> Result<bool, SessionError> {
-            Ok(conn
-                .query_row(
-                    "SELECT value FROM ols_meta WHERE key = ?1",
-                    params![key],
-                    |r| r.get::<_, String>(0),
-                )
-                .optional()?
-                .is_some())
-        };
+        let done = |key: &str| -> Result<bool, SessionError> { Ok(conn.meta(key)?.is_some()) };
         let before_routes = !done("routes_alignments")?;
         if before_routes || !done("alignment_points")? || !done("structure_groups")? {
-            let tx = conn.unchecked_transaction()?;
+            let tx = Step::begin(&conn)?;
             for (name, objects) in &mut by_line {
                 let Some(new) = upgraded_objects(objects, before_routes)? else {
                     continue;
@@ -1984,11 +1736,7 @@ impl Session {
                         Some(o) => (if reorder { place } else { o.ord }, o.version + 1),
                         None => (if reorder { place } else { k as i64 }, 1),
                     };
-                    tx.execute(
-                        "INSERT OR REPLACE INTO model_object (line, kind, id, ord, version, json)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        params![name, kind.as_str(), id, ord, version, value.to_string()],
-                    )?;
+                    tx.replace_object(name, kind, &id, ord, version, &value.to_string())?;
                     objects.insert(
                         key,
                         Object {
@@ -2009,18 +1757,11 @@ impl Session {
                     .cloned()
                     .collect();
                 for (kind, id) in gone {
-                    tx.execute(
-                        "DELETE FROM model_object WHERE line = ?1 AND kind = ?2 AND id = ?3",
-                        params![name, kind.as_str(), id],
-                    )?;
+                    tx.delete_object(name, kind, &id)?;
                     objects.remove(&(kind, id));
                 }
             }
-            tx.execute_batch(
-                "INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('routes_alignments', '1');
-                 INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('alignment_points', '1');
-                 INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('structure_groups', '1');",
-            )?;
+            conn.mark_object_upgrades_done()?;
             tx.commit()?;
         }
         let mut session = Self {
@@ -2059,7 +1800,7 @@ impl Session {
         &self,
         area: &Bounds,
     ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
-        spatial::query(&self.conn, &self.current, &self.grid, area)
+        self.conn.spatial_query(&self.current, &self.grid, area)
     }
 
     /// Number of objects of each kind by home tile.
@@ -2087,19 +1828,12 @@ impl Session {
     /// by anyone and becomes the reference admin; afterwards only admins
     /// manage users.
     pub fn set_user(&self, by: &str, name: &str, role: Role) -> Result<(), SessionError> {
-        let users: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM session_user", [], |r| r.get(0))?;
+        let users: i64 = self.conn.user_count()?;
         if users > 0 && self.role(by)? != Some(Role::Admin) {
             return Err(refused(format!("{by} is not an admin")));
         }
         let role = if users == 0 { Role::Admin } else { role };
-        self.conn.execute(
-            "INSERT INTO session_user (name, role) VALUES (?1, ?2)
-             ON CONFLICT(name) DO UPDATE SET role = excluded.role",
-            params![name, role.as_str()],
-        )?;
-        Ok(())
+        self.conn.put_user(name, role.as_str())
     }
 
     /// The library files kept with the current project line of one kind
@@ -2279,109 +2013,55 @@ impl Session {
     /// not exist): what a client joining a server receives. Takes about as
     /// long as reading the file.
     pub fn copy_to(&self, path: &Path) -> Result<(), SessionError> {
-        self.conn
-            .execute("VACUUM INTO ?1", params![path.to_string_lossy()])?;
-        Ok(())
+        self.conn.copy_to(path)
     }
 
     /// [`Session::copy_to`] for another computer: the settings that hold
     /// a path of this one (e.g. `app.weather`, the weather case file used
     /// last) keep only its file name (security review 2026-10-26, M5).
     pub fn copy_for_others(&self, path: &Path) -> Result<(), SessionError> {
-        self.copy_to(path)?;
-        let conn = Connection::open(path)?;
-        harden(&conn)?;
-        let mut stmt =
-            conn.prepare("SELECT key, value FROM ols_meta WHERE key LIKE 'setting.%'")?;
-        let local: Vec<(String, String)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-            .collect::<Result<Vec<(String, String)>, _>>()?
-            .into_iter()
-            .filter(|(_, v)| is_local_path(v))
-            .collect();
-        drop(stmt);
-        for (key, value) in local {
-            let name = value
-                .rsplit(['/', '\\'])
-                .next()
-                .unwrap_or_default()
-                .to_owned();
-            conn.execute(
-                "UPDATE ols_meta SET value = ?2 WHERE key = ?1",
-                params![key, name],
-            )?;
-        }
-        Ok(())
+        self.conn.copy_for_others(path)
     }
 
     /// The last log entry's sequence number (0: none).
     pub fn last_seq(&self) -> Result<i64, SessionError> {
-        Ok(self
-            .conn
-            .query_row("SELECT COALESCE(MAX(seq), 0) FROM oplog", [], |r| r.get(0))?)
+        self.conn.last_seq()
     }
 
     /// Writes everything into the project file itself (no change is ever
     /// waiting: every command is stored as it is applied).
     pub fn checkpoint(&self) -> Result<(), SessionError> {
-        self.conn
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
-        Ok(())
+        self.conn.checkpoint()
     }
 
     /// A setting of the project kept for the applications (not part of the
     /// line, not logged), e.g. `app.weather` — the weather case file used.
     pub fn setting(&self, key: &str) -> Result<Option<String>, SessionError> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT value FROM ols_meta WHERE key = ?1",
-                params![format!("setting.{key}")],
-                |r| r.get(0),
-            )
-            .optional()?)
+        self.conn.meta(&format!("setting.{key}"))
     }
 
     /// Sets (or, with `None`, removes) a setting ([`Session::setting`]).
     pub fn set_setting(&self, key: &str, value: Option<&str>) -> Result<(), SessionError> {
         let key = format!("setting.{key}");
         match value {
-            Some(v) => self.conn.execute(
-                "INSERT INTO ols_meta (key, value) VALUES (?1, ?2)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                params![key, v],
-            )?,
-            None => self
-                .conn
-                .execute("DELETE FROM ols_meta WHERE key = ?1", params![key])?,
-        };
-        Ok(())
+            Some(v) => self.conn.set_meta(&key, v),
+            None => self.conn.delete_meta(&key),
+        }
     }
 
     /// A user's role (`None`: unknown user).
     pub fn role(&self, user: &str) -> Result<Option<Role>, SessionError> {
-        let r: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT role FROM session_user WHERE name = ?1",
-                params![user],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let r: Option<String> = self.conn.user_role(user)?;
         r.map(|r| Role::parse(&r)).transpose()
     }
 
     /// Users and roles.
     pub fn users(&self) -> Result<Vec<(String, Role)>, SessionError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT name, role FROM session_user ORDER BY name")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-        rows.map(|r| {
-            let (n, role) = r?;
-            Ok((n, Role::parse(&role)?))
-        })
-        .collect()
+        self.conn
+            .users()?
+            .into_iter()
+            .map(|(n, role)| Ok((n, Role::parse(&role)?)))
+            .collect()
     }
 
     /// Refuses unless `user` has at least the role `at_least`.
@@ -2462,14 +2142,7 @@ impl Session {
         if self.role(user)? == Some(Role::Viewer)
             && let Some(seq) = seq
         {
-            let objects: Option<String> = self
-                .conn
-                .query_row(
-                    "SELECT objects FROM oplog WHERE seq = ?1",
-                    params![seq],
-                    |r| r.get(0),
-                )
-                .optional()?;
+            let objects: Option<String> = self.conn.entry_objects(seq)?;
             let changed: Vec<(Kind, String, i64)> = objects
                 .and_then(|t| serde_json::from_str(&t).ok())
                 .unwrap_or_default();
@@ -3600,19 +3273,17 @@ impl Session {
         if self.unit.is_some() {
             return f(self);
         }
-        self.conn.execute_batch("SAVEPOINT ohl_unit")?;
+        self.conn.savepoint("ohl_unit")?;
         self.unit = Some(UnitKept::default());
         let out = f(self);
         let kept = self.unit.take().expect("set above");
         let out = out.and_then(|v| {
-            self.conn.execute_batch("RELEASE ohl_unit")?;
+            self.conn.release("ohl_unit")?;
             Ok(v)
         });
         if out.is_err() {
             // (After a failed RELEASE the savepoint is still there.)
-            let _ = self
-                .conn
-                .execute_batch("ROLLBACK TO ohl_unit; RELEASE ohl_unit");
+            let _ = self.conn.roll_back_to("ohl_unit");
             for (name, state) in kept.replaced.into_iter().rev() {
                 if name == self.current {
                     self.objects = state.objects;
@@ -3829,11 +3500,12 @@ impl Session {
             for p in &point_prims {
                 if let Command::ChangePoints { cloud, points } = p {
                     let key = (Kind::PointCloud, cloud.clone());
-                    let area: BTreeMap<(Kind, String), spatial::Entry> =
-                        points::entry(&self.conn, &self.grid, cloud, points)
-                            .map(|e| (key.clone(), e))
-                            .into_iter()
-                            .collect();
+                    let area: BTreeMap<(Kind, String), spatial::Entry> = self
+                        .conn
+                        .points_entry(&self.grid, cloud, points)
+                        .map(|e| (key.clone(), e))
+                        .into_iter()
+                        .collect();
                     self.check_edit(user, &[key], &area, &area, None)?;
                 }
             }
@@ -3845,7 +3517,7 @@ impl Session {
         let mut points_changed = Vec::new();
         for p in point_prims {
             if let Command::ChangePoints { cloud, points } = p {
-                let (applied, back) = points::apply(&tx, &cloud, &points)?;
+                let (applied, back) = tx.change_points(&cloud, &points)?;
                 points_changed.push((cloud.clone(), applied.clone()));
                 prims.push(Command::ChangePoints {
                     cloud: cloud.clone(),
@@ -3864,20 +3536,15 @@ impl Session {
         let inverse = point_inverses;
         // A line kept as differences from a revision keeps a tombstone
         // for an object deleted ([`lines`]).
-        let based = lines::line_base(&tx, &self.current)?.is_some();
+        let based = tx.line_base(&self.current)?.is_some();
         for (kind, id) in &changed {
             if *kind == Kind::PointCloud {
                 continue;
             }
             match objects.get(&(*kind, id.clone())) {
-                Some(o) => lines::write_row(&tx, &self.current, *kind, id, Some(o))?,
-                None if based => lines::write_row(&tx, &self.current, *kind, id, None)?,
-                None => {
-                    tx.execute(
-                        "DELETE FROM model_object WHERE kind = ?1 AND id = ?2 AND line = ?3",
-                        params![kind.as_str(), id, self.current],
-                    )?;
-                }
+                Some(o) => lines::write_row(&*tx, &self.current, *kind, id, Some(o))?,
+                None if based => lines::write_row(&*tx, &self.current, *kind, id, None)?,
+                None => tx.delete_object(&self.current, *kind, id)?,
             }
         }
         let applied = Command::Batch { commands: prims };
@@ -3893,28 +3560,21 @@ impl Session {
                 )
             })
             .collect();
-        tx.execute(
-            "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes, note, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                user,
-                entry_kind,
-                serde_json::to_string(&applied).expect("serialises"),
-                serde_json::to_string(&inverse).expect("serialises"),
-                serde_json::to_string(&after).expect("serialises"),
-                serde_json::to_string(&sections).expect("serialises"),
-                undoes,
-                note,
-                self.current
-            ],
-        )?;
-        let seq = tx.last_insert_rowid();
+        let seq = tx.append_entry(&store::NewEntry {
+            user,
+            kind: entry_kind,
+            command: serde_json::to_string(&applied).expect("serialises"),
+            inverse: serde_json::to_string(&inverse).expect("serialises"),
+            objects: serde_json::to_string(&after).expect("serialises"),
+            sections: serde_json::to_string(&sections).expect("serialises"),
+            undoes,
+            note,
+            line: &self.current,
+        })?;
         if let Some(u) = undoes {
-            tx.execute(
-                "UPDATE oplog SET undone_by = ?1 WHERE seq = ?2",
-                params![seq, u],
-            )?;
+            tx.mark_undone(u, seq)?;
         }
-        spatial::write_diff(&tx, &self.current, &self.spatial, &spatial)?;
+        tx.spatial_write_diff(&self.current, &self.spatial, &spatial)?;
         tx.commit()?;
         // The state replaced: dropped, or kept (moved) by the unit of work
         // this command is part of, to put back should the unit fail.
@@ -3935,62 +3595,43 @@ impl Session {
         })
     }
 
-    fn entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<EntryRow> {
-        Ok((
-            r.get(0)?,
-            r.get(1)?,
-            r.get(2)?,
-            r.get(3)?,
-            r.get(4)?,
-            r.get(5)?,
-            r.get(6)?,
-            r.get(7)?,
-            r.get(8)?,
-            r.get(9)?,
-            r.get(10)?,
-            r.get(11)?,
-        ))
-    }
-
     /// The operation log, oldest first.
     pub fn log(&self) -> Result<Vec<LogEntry>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line FROM oplog ORDER BY seq",
-        )?;
-        let rows = stmt.query_map([], Self::entry_row)?;
+        let rows = self.conn.entries()?;
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
-        rows.map(|r| {
-            let (
-                seq,
-                time,
-                user,
-                kind,
-                command,
-                _,
-                objects,
-                sections,
-                undoes,
-                undone_by,
-                note,
-                line,
-            ) = r?;
-            let objects: Vec<(Kind, String, i64)> =
-                serde_json::from_str(&objects).map_err(store)?;
-            Ok(LogEntry {
-                seq,
-                time,
-                user,
-                kind,
-                command: serde_json::from_str(&command).map_err(store)?,
-                objects: objects.into_iter().map(|(k, id, _)| (k, id)).collect(),
-                sections: serde_json::from_str(&sections).map_err(store)?,
-                undoes,
-                undone_by,
-                note,
-                line,
+        rows.into_iter()
+            .map(|r| {
+                let (
+                    seq,
+                    time,
+                    user,
+                    kind,
+                    command,
+                    _,
+                    objects,
+                    sections,
+                    undoes,
+                    undone_by,
+                    note,
+                    line,
+                ) = r;
+                let objects: Vec<(Kind, String, i64)> =
+                    serde_json::from_str(&objects).map_err(store)?;
+                Ok(LogEntry {
+                    seq,
+                    time,
+                    user,
+                    kind,
+                    command: serde_json::from_str(&command).map_err(store)?,
+                    objects: objects.into_iter().map(|(k, id, _)| (k, id)).collect(),
+                    sections: serde_json::from_str(&sections).map_err(store)?,
+                    undoes,
+                    undone_by,
+                    note,
+                    line,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     /// Reverses log entry `seq` as `user`, logged as `kind`. Refused if one
@@ -3999,12 +3640,7 @@ impl Session {
     fn reverse(&mut self, user: &str, seq: i64, kind: &str) -> Result<Applied, SessionError> {
         let row = self
             .conn
-            .query_row(
-                "SELECT seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line FROM oplog WHERE seq = ?1",
-                params![seq],
-                Self::entry_row,
-            )
-            .optional()?
+            .entry(seq)?
             .ok_or_else(|| refused(format!("no log entry {seq}")))?;
         let (_, _, _, entry_kind, command, inverse, _, _, _, undone_by, _, line) = row;
         if line != self.current {
@@ -4043,7 +3679,7 @@ impl Session {
                     }
                     // The points it changed must be as it left them.
                     Command::ChangePoints { cloud, points } => {
-                        let there = points::still_there(&self.conn, &cloud, &points)?;
+                        let there = self.conn.points_still_there(&cloud, &points)?;
                         if !there {
                             return Err(refused(format!(
                                 "points of point cloud {cloud} were changed after entry {seq}: \
@@ -4067,36 +3703,19 @@ impl Session {
         let inverse: Command = serde_json::from_str(&inverse).map_err(store)?;
         let applied = self.apply_as(user, inverse, kind, Some(seq), false, false)?;
         // Say what was reversed.
-        self.conn.execute(
-            "UPDATE oplog SET note = 'reverses ' || ?2 || COALESCE(': ' || (SELECT note FROM oplog WHERE seq = ?2), '') WHERE seq = ?1",
-            params![applied.seq, seq],
-        )?;
+        self.conn.note_reversal(applied.seq, seq)?;
         Ok(applied)
     }
 
     /// The log entry `user`'s next undo on project line `line` reverses.
     pub fn undo_entry(&self, user: &str, line: &str) -> Result<Option<i64>, SessionError> {
-        Ok(self
-            .conn
-            .query_row(
-                "SELECT seq FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'redo') AND undone_by IS NULL ORDER BY seq DESC LIMIT 1",
-                params![user, line],
-                |r| r.get(0),
-            )
-            .optional()?)
+        self.conn.last_undoable(user, line)
     }
 
     /// The log entry (an undo) `user`'s next redo on project line `line`
     /// reverses, if nothing of theirs happened since.
     pub fn redo_entry(&self, user: &str, line: &str) -> Result<Option<i64>, SessionError> {
-        let last: Option<(i64, String, Option<i64>)> = self
-            .conn
-            .query_row(
-                "SELECT seq, kind, undone_by FROM oplog WHERE user = ?1 AND line = ?2 AND kind IN ('do', 'undo', 'redo') ORDER BY seq DESC LIMIT 1",
-                params![user, line],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?;
+        let last: Option<(i64, String, Option<i64>)> = self.conn.last_own_entry(user, line)?;
         Ok(match last {
             Some((seq, kind, None)) if kind == "undo" => Some(seq),
             _ => None,
@@ -4105,14 +3724,7 @@ impl Session {
 
     /// The objects log entry `seq` changed (what reversing it changes).
     pub fn entry_objects(&self, seq: i64) -> Result<Vec<(Kind, String)>, SessionError> {
-        let objects: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT objects FROM oplog WHERE seq = ?1",
-                params![seq],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let objects: Option<String> = self.conn.entry_objects(seq)?;
         let Some(objects) = objects else {
             return Ok(Vec::new());
         };
@@ -4161,13 +3773,7 @@ impl Session {
         seq: i64,
     ) -> Result<Option<Applied>, SessionError> {
         self.require(admin, Role::Admin)?;
-        let mut stmt = self
-            .conn
-            .prepare("SELECT inverse FROM oplog WHERE seq > ?1 AND line = ?2 ORDER BY seq DESC")?;
-        let inverses: Vec<String> = stmt
-            .query_map(params![seq, self.current], |r| r.get(0))?
-            .collect::<Result<_, _>>()?;
-        drop(stmt);
+        let inverses: Vec<String> = self.conn.inverses_after(seq, &self.current)?;
         let store = |e: serde_json::Error| SessionError::Store(e.to_string());
         let mut target: BTreeMap<(Kind, String), (Value, Option<i64>)> = self
             .objects
@@ -4237,10 +3843,8 @@ impl Session {
             false,
             false,
         )?;
-        self.conn.execute(
-            "UPDATE oplog SET undone_by = ?1 WHERE seq > ?2 AND seq < ?1 AND undone_by IS NULL AND line = ?3",
-            params![applied.seq, seq, self.current],
-        )?;
+        self.conn
+            .mark_undone_after(applied.seq, seq, &self.current)?;
         Ok(Some(applied))
     }
 }
@@ -4257,6 +3861,7 @@ pub mod replace;
 pub mod reports;
 pub mod reproject;
 pub mod spatial;
+pub mod store;
 pub mod surfaces;
 pub mod versions;
 

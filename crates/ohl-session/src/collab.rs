@@ -36,28 +36,12 @@
 use std::collections::BTreeMap;
 
 use ohl_core::grid::Bounds;
-use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use crate::spatial::Entry;
+use crate::store::Store;
 use crate::versions::{Choices, MergeOutcome};
 use crate::{Kind, Role, Session, SessionError, refused};
-
-/// Tables of grants and reviews.
-pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS edit_grant (
-        id INTEGER PRIMARY KEY, subject TEXT NOT NULL, kinds TEXT NOT NULL,
-        objects TEXT NOT NULL, area TEXT, user TEXT NOT NULL,
-        time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        note TEXT NOT NULL DEFAULT '');
-    CREATE TABLE IF NOT EXISTS vc_review (
-        id INTEGER PRIMARY KEY, branch TEXT NOT NULL, target TEXT NOT NULL,
-        revision TEXT NOT NULL, author TEXT NOT NULL,
-        time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        note TEXT NOT NULL, reviewers TEXT NOT NULL, state TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS vc_review_note (
-        seq INTEGER PRIMARY KEY, review INTEGER NOT NULL, user TEXT NOT NULL,
-        time TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-        verdict TEXT NOT NULL, comment TEXT NOT NULL);";
 
 /// Kinds a grant may name.
 pub const GRANT_KINDS: [&str; 8] = [
@@ -285,62 +269,56 @@ impl Session {
 
     /// Every grant.
     pub fn grants(&self) -> Result<Vec<GrantEntry>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, subject, kinds, objects, area, user, time, note FROM edit_grant ORDER BY id",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-            ))
-        })?;
+        let rows = self.conn.grants()?;
         let bad = |e: serde_json::Error| SessionError::Store(e.to_string());
-        rows.map(|r| {
-            let (id, subject, kinds, objects, area, by, time, note) = r?;
-            Ok(GrantEntry {
-                id,
-                grant: Grant {
+        rows.into_iter()
+            .map(|r| {
+                let crate::store::GrantRow {
+                    id,
                     subject,
-                    kinds: serde_json::from_str(&kinds).map_err(bad)?,
-                    objects: serde_json::from_str(&objects).map_err(bad)?,
-                    area: area
-                        .map(|a| serde_json::from_str(&a))
-                        .transpose()
-                        .map_err(bad)?,
+                    kinds,
+                    objects,
+                    area,
+                    user: by,
+                    time,
                     note,
-                },
-                by,
-                time,
+                } = r;
+                Ok(GrantEntry {
+                    id,
+                    grant: Grant {
+                        subject,
+                        kinds: serde_json::from_str(&kinds).map_err(bad)?,
+                        objects: serde_json::from_str(&objects).map_err(bad)?,
+                        area: area
+                            .map(|a| serde_json::from_str(&a))
+                            .transpose()
+                            .map_err(bad)?,
+                        note,
+                    },
+                    by,
+                    time,
+                })
             })
-        })
-        .collect()
+            .collect()
     }
 
     /// Admin: adds a grant. Returns its id.
     pub fn grant(&self, admin: &str, grant: &Grant) -> Result<i64, SessionError> {
         self.require(admin, Role::Admin)?;
         grant.check()?;
-        self.conn.execute(
-            "INSERT INTO edit_grant (subject, kinds, objects, area, user, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                grant.subject.trim(),
-                serde_json::to_string(&grant.kinds).expect("serialises"),
-                serde_json::to_string(&grant.objects).expect("serialises"),
-                grant
-                    .area
-                    .as_ref()
-                    .map(|a| serde_json::to_string(a).expect("serialises")),
-                admin,
-                grant.note
-            ],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        self.conn.add_grant(&crate::store::GrantRow {
+            id: 0,
+            subject: grant.subject.trim().to_owned(),
+            kinds: serde_json::to_string(&grant.kinds).expect("serialises"),
+            objects: serde_json::to_string(&grant.objects).expect("serialises"),
+            area: grant
+                .area
+                .as_ref()
+                .map(|a| serde_json::to_string(a).expect("serialises")),
+            user: admin.to_owned(),
+            time: String::new(),
+            note: grant.note.clone(),
+        })
     }
 
     /// Admin: removes grant `id` (the subject's edits are then limited by
@@ -352,8 +330,7 @@ impl Session {
             .into_iter()
             .find(|g| g.id == id)
             .ok_or_else(|| refused(format!("no grant {id}")))?;
-        self.conn
-            .execute("DELETE FROM edit_grant WHERE id = ?1", params![id])?;
+        self.conn.delete_grant(id)?;
         Ok(g.grant)
     }
 
@@ -460,25 +437,20 @@ impl Session {
 
     /// Every review, newest first.
     pub fn reviews(&self) -> Result<Vec<Review>, SessionError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, branch, target, revision, author, time, note, reviewers, state FROM vc_review ORDER BY id DESC",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, String>(6)?,
-                r.get::<_, String>(7)?,
-                r.get::<_, String>(8)?,
-            ))
-        })?;
+        let rows = self.conn.reviews()?;
         let mut out = Vec::new();
         for row in rows {
-            let (id, branch, target, revision, author, time, note, reviewers, state) = row?;
+            let crate::store::ReviewRow {
+                id,
+                branch,
+                target,
+                revision,
+                author,
+                time,
+                note,
+                reviewers,
+                state,
+            } = row;
             out.push(Review {
                 id,
                 branch,
@@ -493,23 +465,16 @@ impl Session {
                 notes: vec![],
             });
         }
-        drop(stmt);
-        let mut stmt = self.conn.prepare(
-            "SELECT review, user, time, verdict, comment FROM vc_review_note ORDER BY seq",
-        )?;
-        let notes = stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
+        for n in self.conn.review_notes()? {
+            let (review, note) = (
+                n.review,
                 ReviewNote {
-                    user: r.get(1)?,
-                    time: r.get(2)?,
-                    verdict: r.get(3)?,
-                    comment: r.get(4)?,
+                    user: n.user,
+                    time: n.time,
+                    verdict: n.verdict,
+                    comment: n.comment,
                 },
-            ))
-        })?;
-        for n in notes {
-            let (review, note) = n?;
+            );
             if let Some(r) = out.iter_mut().find(|r| r.id == review) {
                 r.notes.push(note);
             }
@@ -563,31 +528,23 @@ impl Session {
                 Some(_) => {}
             }
         }
-        let open: Option<i64> = self
-            .conn
-            .query_row(
-                "SELECT id FROM vc_review WHERE branch = ?1 AND target = ?2 AND state IN ('open', 'approved')",
-                params![branch, target],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let open: Option<i64> = self.conn.open_review(branch, target)?;
         if let Some(id) = open {
             return Err(refused(format!(
                 "review #{id} of {branch} into {target} is still open"
             )));
         }
-        self.conn.execute(
-            "INSERT INTO vc_review (branch, target, revision, author, note, reviewers, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open')",
-            params![
-                branch,
-                target,
-                revision,
-                user,
-                note.trim(),
-                serde_json::to_string(reviewers).expect("serialises")
-            ],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        self.conn.add_review(&crate::store::ReviewRow {
+            id: 0,
+            branch: branch.to_owned(),
+            target: target.to_owned(),
+            revision,
+            author: user.to_owned(),
+            time: String::new(),
+            note: note.trim().to_owned(),
+            reviewers: serde_json::to_string(reviewers).expect("serialises"),
+            state: "open".to_owned(),
+        })
     }
 
     /// Who approves or rejects a review: a named reviewer who is (still) a
@@ -649,18 +606,12 @@ impl Session {
             ReviewState::Rejected
         };
         let tx = crate::Step::begin(&self.conn)?;
-        tx.execute(
-            "UPDATE vc_review SET state = ?1 WHERE id = ?2",
-            params![state.as_str(), id],
-        )?;
-        tx.execute(
-            "INSERT INTO vc_review_note (review, user, verdict, comment) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                id,
-                user,
-                if approve { "approve" } else { "reject" },
-                comment.trim()
-            ],
+        tx.set_review_state(id, state.as_str())?;
+        tx.add_review_note(
+            id,
+            user,
+            if approve { "approve" } else { "reject" },
+            comment.trim(),
         )?;
         tx.commit()?;
         Ok(state)
@@ -734,14 +685,8 @@ impl Session {
             s.merge_as(user, &revision, Some(&message), choices, true)
         })?;
         let tx = crate::Step::begin(&self.conn)?;
-        tx.execute(
-            "UPDATE vc_review SET state = 'merged' WHERE id = ?1",
-            params![id],
-        )?;
-        tx.execute(
-            "INSERT INTO vc_review_note (review, user, verdict, comment) VALUES (?1, ?2, 'merge', '')",
-            params![id, user],
-        )?;
+        tx.set_review_state(id, "merged")?;
+        tx.add_review_note(id, user, "merge", "")?;
         tx.commit()?;
         Ok(outcome)
     }
