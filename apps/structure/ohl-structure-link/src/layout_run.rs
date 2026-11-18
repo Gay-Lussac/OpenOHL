@@ -76,6 +76,10 @@ pub struct LayoutRecord {
     /// The joints that need a hand detail, with why (left by a run, or no
     /// longer fitting after an edit).
     pub hand: BTreeMap<String, String>,
+    /// Members turned by Orient angles ([`crate::orient_angles`]): the
+    /// roll each had before (as written) and as what (a leg or chord, a
+    /// plan member).
+    pub oriented: BTreeMap<String, (String, crate::OrientKind)>,
 }
 
 /// The settings a run is made with, as the record keeps them.
@@ -296,6 +300,13 @@ impl LayoutRecord {
                 r.hand.insert(row[0].clone(), row[1].clone());
             }
         }
+        for row in rows("oriented") {
+            if row.len() == 3
+                && let Some(k) = crate::OrientKind::parse(&row[2])
+            {
+                r.oriented.insert(row[0].clone(), (row[1].clone(), k));
+            }
+        }
         r
     }
 
@@ -306,6 +317,7 @@ impl LayoutRecord {
             && self.made.is_empty()
             && self.rolled.is_empty()
             && self.hand.is_empty()
+            && self.oriented.is_empty()
     }
 
     /// Written into `doc` (replacing the record there; none when empty).
@@ -441,6 +453,17 @@ impl LayoutRecord {
                         self.hand
                             .iter()
                             .map(|(j, w)| vec![j.clone(), w.clone()])
+                            .collect(),
+                    ),
+                );
+            }
+            if !self.oriented.is_empty() {
+                t.insert(
+                    "oriented",
+                    list(
+                        self.oriented
+                            .iter()
+                            .map(|(m, (r, k))| vec![m.clone(), r.clone(), k.as_str().to_owned()])
                             .collect(),
                     ),
                 );

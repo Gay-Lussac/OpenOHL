@@ -56,6 +56,9 @@ mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;
 mod member_view;
+mod orient;
+#[cfg(test)]
+mod orient_tests;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
@@ -104,6 +107,9 @@ pub use ohl_structures::connections::{
     BoltedLeg, ConnectionKind, CoverFace, CoverLeg, Face, WeldKind,
 };
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
+pub use orient::{
+    IN_LINE_DEG, OrientAsk, OrientKind, OrientRun, OrientedMember, PARALLEL_DEG, orient_angles,
+};
 pub use plate_checks::{
     PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, plate_plans, plate_plans_in,
     plate_usage, plate_usage_cases,

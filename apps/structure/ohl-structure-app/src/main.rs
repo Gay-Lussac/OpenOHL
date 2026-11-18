@@ -57,6 +57,7 @@ mod load_cases_tab;
 mod member_panel;
 mod menus;
 mod notices;
+mod orient_window;
 mod plate_outline_ui;
 mod plugins_ui;
 mod pole_panel;
@@ -108,6 +109,8 @@ mod menu_tests;
 mod move_point_tests;
 #[cfg(test)]
 mod navigation_tests;
+#[cfg(test)]
+mod orient_ui_tests;
 #[cfg(test)]
 mod placed_tests;
 #[cfg(test)]
