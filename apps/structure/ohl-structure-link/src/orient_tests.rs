@@ -209,7 +209,8 @@ fn a_square_body_has_its_legs_heel_out_with_their_flanges_in_its_faces() {
     }
     assert_heel_out_flanges_in_faces(&r.text, "L", axis, body_neighbours, 1.0);
     // The plan diagonals laid flat (one leg horizontal, the other down);
-    // the face diagonals and horizontals left to the layout.
+    // the face diagonals and horizontals laid in their faces (tuning on
+    // real towers, 2026-11-18).
     let plan: BTreeSet<&str> = r
         .turned
         .iter()
@@ -228,9 +229,12 @@ fn a_square_body_has_its_legs_heel_out_with_their_flanges_in_its_faces() {
     }
     // Marked automatic, a run again changes nothing.
     let rec = LayoutRecord::of(&StructureType::parse(std::path::Path::new("s"), &r.text).unwrap());
-    assert_eq!(rec.oriented.len(), 10, "{:?}", rec.oriented);
+    assert_eq!(rec.oriented.len(), 26, "{:?}", rec.oriented);
     assert_eq!(rec.oriented["L00"].1, OrientKind::Chord);
     assert_eq!(rec.oriented["P10"].1, OrientKind::Plan);
+    assert_eq!(rec.oriented["D00"].1, OrientKind::Face);
+    assert_eq!(rec.oriented["H10"].1, OrientKind::Face);
+    assert_in_their_faces(&r, &r.text, axis);
     let again = orient(&r.text, false);
     assert_eq!(again.text, r.text);
     assert!(again.turned.is_empty(), "{:?}", again.turned);
@@ -353,13 +357,13 @@ fn a_crossarm_has_its_chords_turned_into_its_faces() {
         [format!("C{a}{part}"), format!("C{b}{part}")]
     };
     assert_heel_out_flanges_in_faces(&r.text, "C", centre, neighbours, 1.0);
-    // The arm's face members are not plan members of the body; the
-    // horizontals of its bottom and top faces lie flat with them.
+    // The arm's face members are not plan members of the body: those of
+    // its steep sides lie in their faces; the horizontals of its bottom and
+    // top faces lie flat with them.
     for o in r.turned.iter().chain(&r.same) {
-        assert!(
-            !(o.member.starts_with("AS") || o.member.starts_with("TS") || o.member == "XS"),
-            "{o:?}"
-        );
+        if o.member.starts_with("AS") || o.member.starts_with("TS") || o.member == "XS" {
+            assert_eq!(o.kind, OrientKind::Face, "{o:?}");
+        }
     }
 }
 
@@ -430,11 +434,21 @@ nodes = ["C", "D"]
 section = "EA-61x7"
 "#;
     let r = orient(text, false);
-    assert!(r.turned.is_empty(), "{:?}", r.turned);
+    // The legs left; the frame's plane is a face all the same: H lies in it.
+    assert!(
+        r.turned.iter().all(|o| o.kind == OrientKind::Face),
+        "{:?}",
+        r.turned
+    );
     let left: Vec<&str> = r.left.iter().map(|x| x.0.as_str()).collect();
     assert_eq!(left, ["L1", "L2"]);
     assert!(r.left[0].1.contains("fewer than two"), "{:?}", r.left);
-    assert_eq!(r.text, text);
+    // Nothing else changed.
+    let t = StructureType::parse(std::path::Path::new("s"), &r.text).unwrap();
+    assert_eq!(
+        LayoutRecord::of(&t).oriented.keys().collect::<Vec<_>>(),
+        ["H"]
+    );
 }
 
 #[test]
@@ -509,4 +523,142 @@ fn a_portals_columns_each_have_their_own_faces() {
         }
     };
     assert_heel_out_flanges_in_faces(&r.text, "L", column, body_neighbours, 0.5);
+}
+
+/// Each face member (kind `face`) of `run` lies with one leg in a steep
+/// face of the tower through it — its other leg along the face's normal,
+/// pointing out of the tower (away from the axis through `centre`) — and
+/// the leg in the face points down from the heel (an inclined member).
+fn assert_in_their_faces(run: &OrientRun, text: &str, centre: impl Fn([f64; 3]) -> [f64; 3]) {
+    let all = axes(text);
+    let mut n = 0;
+    for o in run
+        .turned
+        .iter()
+        .chain(&run.same)
+        .filter(|o| o.kind == OrientKind::Face)
+    {
+        let (_, ax, a, b) = all.iter().find(|m| m.0 == o.member).unwrap();
+        let mid = [0, 1, 2].map(|k| (a[k] + b[k]) / 2.0);
+        let c = centre(mid);
+        let out = unit([mid[0] - c[0], mid[1] - c[1], 0.0]);
+        // The leg out of the face: the axis most nearly horizontal-outward.
+        let (normal, inface) = if dot(ax[1], out).abs() > dot(ax[2], out).abs() {
+            (ax[1], ax[2])
+        } else {
+            (ax[2], ax[1])
+        };
+        assert!(dot(normal, out) > 0.5, "{}: {normal:?} not out", o.member);
+        if ax[0][2].abs() > 0.1 {
+            assert!(
+                inface[2] <= 1e-9,
+                "{}: the leg in the face {inface:?} up",
+                o.member
+            );
+        }
+        n += 1;
+    }
+    assert!(n > 0);
+}
+
+/// A square body whose faces are braced by crossing diagonals, each in
+/// two members meeting at the crossing (so running on in line there).
+fn x_braced(levels: &[(f64, f64, f64)]) -> String {
+    let mut s = body(levels, &[]);
+    // The single diagonals out: each face's two crossing in its middle.
+    let mut keep = String::new();
+    for block in s.split("\n[[member]]").collect::<Vec<_>>() {
+        if block.starts_with("\nid = \"D") {
+            continue;
+        }
+        if !keep.is_empty() {
+            keep.push_str("\n[[member]]");
+        }
+        keep.push_str(block);
+    }
+    s = keep;
+    let corner = |i: usize, c: usize| {
+        let (z, hx, hy) = levels[i];
+        let (sx, sy) = [(1.0, 1.0), (-1.0, 1.0), (-1.0, -1.0), (1.0, -1.0)][c];
+        [sx * hx, sy * hy, z]
+    };
+    for i in 0..levels.len() - 1 {
+        for c in 0..4 {
+            let d = (c + 1) % 4;
+            let (a, b, e, f) = (
+                corner(i, c),
+                corner(i, d),
+                corner(i + 1, c),
+                corner(i + 1, d),
+            );
+            // Where A–F and B–E cross (a trapezoid's diagonals).
+            let t = {
+                let u = [0, 1, 2].map(|k| f[k] - a[k]);
+                let v = [0, 1, 2].map(|k| e[k] - b[k]);
+                let w = [0, 1, 2].map(|k| b[k] - a[k]);
+                let uv = cross(u, v);
+                dot(cross(w, v), uv) / dot(uv, uv)
+            };
+            let x = [0, 1, 2].map(|k| a[k] + (f[k] - a[k]) * t);
+            let _ = write!(
+                s,
+                "\n[[node]]\nid = \"X{i}{c}\"\npoint = [\"{} m\", \"{} m\", \"{} m\"]\n",
+                x[0], x[1], x[2]
+            );
+            for (id, from, to) in [
+                (format!("Da{i}{c}"), format!("J{i}{c}"), format!("X{i}{c}")),
+                (
+                    format!("Db{i}{c}"),
+                    format!("X{i}{c}"),
+                    format!("J{}{d}", i + 1),
+                ),
+                (format!("Ea{i}{c}"), format!("J{i}{d}"), format!("X{i}{c}")),
+                (
+                    format!("Eb{i}{c}"),
+                    format!("X{i}{c}"),
+                    format!("J{}{c}", i + 1),
+                ),
+            ] {
+                let _ = write!(
+                    s,
+                    "\n[[member]]\nid = \"{id}\"\nnodes = [\"{from}\", \"{to}\"]\nsection = \"EA-61x7\"\n\
+                     kind = \"frame\"\ndesign = {{ class = \"bracing\" }}\n"
+                );
+            }
+        }
+    }
+    s
+}
+
+/// Tuning on real towers (2026-11-18): a face's diagonals running on in
+/// line through their crossing are bracing of that face, not chords: they
+/// lie in it (one leg in the face, the other out of the tower), and the
+/// legs are turned as before.
+#[test]
+fn crossing_diagonals_running_on_lie_in_their_face_not_as_chords() {
+    let text = x_braced(&[(0.0, 3.0, 3.0), (5.0, 2.5, 2.5), (10.0, 2.0, 2.0)]);
+    let r = orient(&text, false);
+    for o in r.turned.iter().chain(&r.same) {
+        if o.member.starts_with('D') || o.member.starts_with('E') {
+            assert_eq!(o.kind, OrientKind::Face, "{o:?}");
+        }
+    }
+    let faces = r
+        .turned
+        .iter()
+        .chain(&r.same)
+        .filter(|o| {
+            o.kind == OrientKind::Face && (o.member.starts_with('D') || o.member.starts_with('E'))
+        })
+        .count();
+    assert_eq!(faces, 32, "{:?}", r.turned);
+    let legs = r
+        .turned
+        .iter()
+        .filter(|o| o.kind == OrientKind::Chord)
+        .count();
+    assert_eq!(legs, 8, "{:?}", r.left);
+    assert_heel_out_flanges_in_faces(&r.text, "L", axis, body_neighbours, 1.0);
+    assert_in_their_faces(&r, &r.text, axis);
+    assert_eq!(orient(&r.text, false).text, r.text);
 }

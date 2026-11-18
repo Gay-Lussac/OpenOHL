@@ -78,8 +78,9 @@ pub use export::{
     member_axes,
 };
 pub use joint_layout::{
-    BoltArea, EdgeRule, EndPlan, GAP_START, JointPlan, LayoutSettings, Onto, PULL_BACK_START,
-    PlatePlan, SHIFT_LIMIT_START, flat_turns, mm_text, plan_joint,
+    BoltArea, EdgeRule, EndPlan, GAP_START, Join, JoinKind, JointPlan, LayoutSettings, Onto,
+    PULL_BACK_START, PlatePlan, SHIFT_LIMIT_START, flat_turns, hosts_to_name, joins_of, mm_text,
+    plan_joint, plan_joint_except,
 };
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,

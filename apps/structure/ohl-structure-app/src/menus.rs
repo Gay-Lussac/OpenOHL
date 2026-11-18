@@ -692,8 +692,9 @@ impl StructureApp {
                     "Orient angles…",
                     None,
                     tower,
-                    "Turns the legs and chords heel out with their flanges in the tower's faces \
-                     and lays the plan and hip members flat, for a tower without orientation \
+                    "Turns the legs and chords heel out with their flanges in the tower's faces, \
+                     lays the face members in their faces and the plan and hip members flat, \
+                     for a tower without orientation \
                      data (an import, a tower drawn by hand); a preview first, Apply is one undo \
                      step",
                     "A tower with members first",

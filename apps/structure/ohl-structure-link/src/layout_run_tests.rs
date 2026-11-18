@@ -197,7 +197,13 @@ fn two_faces_at_a_corner_get_a_plate_each_welded_when_asked() {
 
 #[test]
 fn an_edit_that_no_longer_fits_keeps_the_edit_and_the_old_layout() {
-    let r = run(&k_brace(), &settings(), Some(&["N2"]), false);
+    // The legs a bolted splice (not joined as one part: nothing else to
+    // lay out at N2 than the diagonals).
+    let text = k_brace().replace(
+        "design = { class = \"leg\" }",
+        "design = { class = \"leg\", bolts = { diameter = \"16 mm\", count = 4 } }",
+    );
+    let r = run(&text, &settings(), Some(&["N2"]), false);
     // The longest pull-back made tiny in the record: the joint no longer
     // fits; the edit is kept, the joint's values as before, flagged.
     let edited = r
@@ -456,4 +462,352 @@ fn a_few_joints_in_detail_from_the_file_cut_down_are_as_from_the_whole() {
     let a = follow(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
     let b = crate::layout_run::follow_whole(&fast.text, &edited, &lib, &bolts, &[]).map(|f| f.text);
     assert_eq!(a, b);
+}
+
+/// `text` with member `m`'s roll set to `deg` degrees (its orientation
+/// kept: the roll turns it further).
+fn rolled(text: &str, m: &str, deg: f64) -> String {
+    let at = format!("id = \"{m}\"\nnodes = ");
+    let i = text.find(&at).unwrap();
+    let end = text[i..].find("design = ").unwrap() + i;
+    format!("{}roll = \"{deg} deg\"\n{}", &text[..end], &text[end..])
+}
+
+/// Tuning on real towers (2026-11-18): an X-brace's crossing diagonal
+/// bolting onto nothing named, whatever its roll — its leg bolted not the
+/// one lying on the diagonal running through, or on that one's inner face
+/// running towards its other leg — is laid out: the member running
+/// through named first (its leg lying on it bolted, a turn laying it
+/// flat), half a turn where its inner face does not fit.
+#[test]
+fn a_crossing_diagonal_is_laid_out_whatever_its_roll() {
+    let x = crate::joint_layout_tests::X;
+    for deg in [0.0, 45.0, 90.0, 180.0, 270.0] {
+        // The rolls automatic (as Orient angles sets them).
+        let text = format!(
+            "{}\n[[generator]]\nid = \"joint-layout\"\nkind = \"joint_layout\"\n\
+             oriented = [[\"X2a\", \"\", \"face\"], [\"X2b\", \"\", \"face\"]]\n",
+            rolled(&rolled(x, "X2a", deg), "X2b", deg)
+        );
+        let r = run(&text, &settings(), None, false);
+        let c = r.joints.iter().find(|j| j.joint == "C").unwrap();
+        assert!(c.written, "{deg}°: {:?} {:?}", c.hand, r.notes);
+        let ends: BTreeSet<&str> = c.plan.ends.iter().map(|e| e.member.as_str()).collect();
+        assert_eq!(ends, BTreeSet::from(["X2a", "X2b"]), "{deg}°: {:?}", c.plan);
+        assert!(c.hand.is_empty(), "{deg}°: {:?}", c.hand);
+        let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+        let j = d.joint("C").unwrap();
+        assert!(j.clashes.is_empty(), "{deg}°: {:?}", j.clashes);
+        // Onto the diagonal running through (or a plate on it), flat.
+        for a in j.arrivals.iter().filter(|a| a.member.starts_with("X2")) {
+            assert!(
+                a.onto
+                    .value
+                    .as_deref()
+                    .is_some_and(|o| o.starts_with("X1") || c.plates.iter().any(|p| p == o)),
+                "{deg}°: {a:?}"
+            );
+            assert!(a.flat.is_some_and(|f| f.off < 0.5), "{deg}°: {:?}", a.flat);
+        }
+        // A run again changes nothing.
+        assert_eq!(
+            run(&r.text, &settings(), None, false).text,
+            r.text,
+            "{deg}°"
+        );
+    }
+}
+
+/// A vertical post V (class leg), a horizontal running through the joint
+/// (H1, H2 one part) and a plan diagonal G meeting them there: G
+/// horizontal, in no flange plane of the post.
+const POST: &str = r#"id = "P"
+name = "p"
+kind = "lattice"
+
+[[node]]
+id = "B0"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "P"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "W"
+point = ["-3 m", "0 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "E"
+point = ["3 m", "0 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "G0"
+point = ["2 m", "2 m", "3 m"]
+support = "fixed"
+
+[[member]]
+id = "V"
+nodes = ["B0", "P"]
+section = "EA-61x7"
+design = { class = "leg" }
+
+[[member]]
+id = "H1"
+nodes = ["W", "P"]
+section = "EA-61x7"
+design = { class = "bracing" }
+
+[[member]]
+id = "H2"
+nodes = ["P", "E"]
+section = "EA-61x7"
+design = { class = "bracing" }
+
+[[member]]
+id = "G"
+nodes = ["P", "G0"]
+section = "EA-61x7"
+design = { class = "crossing" }
+
+[[connection]]
+member = "H1"
+joint = "P"
+kind = "continuous"
+onto = "H2"
+"#;
+
+/// Tuning on real towers (2026-11-18): a plan diagonal whose worked-out
+/// `onto` is a vertical post (no turn lays it flat there: its axis lies in
+/// neither flange's plane) bolts onto the horizontal running through the
+/// joint in whose flange's plane it lies.
+#[test]
+fn a_plan_diagonal_bolts_onto_the_horizontal_running_through() {
+    let d = joint_details(POST, &library(), &Default::default()).unwrap();
+    let p = d.joint("P").unwrap();
+    let g = p.arrivals.iter().find(|a| a.member == "G").unwrap();
+    assert_eq!(g.onto.value.as_deref(), Some("V"), "{g:?}");
+    let named = crate::joint_layout::hosts_to_name(p);
+    assert!(
+        named.iter().any(|(m, h)| m == "G" && h.starts_with('H')),
+        "{named:?}"
+    );
+    // In the run G is laid out onto the horizontal, or left with a reason
+    // on the horizontal's flange — never measured against the post's.
+    let r = run(POST, &settings(), Some(&["P"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "P").unwrap();
+    match o.plan.ends.iter().find(|e| e.member == "G") {
+        Some(ge) => {
+            let on = match &ge.onto {
+                crate::joint_layout::Onto::Member(h) => h.clone(),
+                crate::joint_layout::Onto::Plate(k) => o.plan.plates[*k].on.clone(),
+            };
+            assert!(on.starts_with('H'), "{ge:?}");
+        }
+        None => {
+            let why: Vec<&String> = o.hand.iter().filter(|h| h.starts_with("G:")).collect();
+            assert!(!why.is_empty(), "{:?}", o.hand);
+            for h in why {
+                assert!(h.contains("H1") || h.contains("H2"), "{h}");
+                assert!(!h.contains("axis runs"), "{h}");
+            }
+        }
+    }
+}
+
+/// Tuning on real towers (2026-11-18): bolts that do not all land on an
+/// inner face go onto a plate there (clear of the angle's other leg and
+/// root), and the joint fits.
+#[test]
+fn bolts_off_an_inner_face_go_onto_a_plate_clear_of_the_other_leg() {
+    let k = k_brace().replace(
+        "design = { class = \"bracing\" }",
+        "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 6 } }",
+    );
+    // Half a turn more: on the inner face of the leg's flange.
+    let text = rolled(&rolled(&k, "D1", 180.0), "D2", 180.0);
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    for m in ["D1", "D2"] {
+        let a = n2.arrivals.iter().find(|a| a.member == m).unwrap();
+        assert_eq!(a.sits.value, Some(crate::Face::Inside), "{m}: {a:?}");
+    }
+    let p = crate::joint_layout::plan_joint(n2, &settings(), &|_, _| None);
+    assert!(p.laid_out(), "{:?}", p.hand);
+    assert_eq!(p.plates.len(), 1, "{p:?}");
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written, "{:?} {:?}", o.hand, r.notes);
+    assert_eq!(o.plates.len(), 1, "{:?}", o.plan);
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    assert!(
+        d.joint("N2").unwrap().clashes.is_empty(),
+        "{:?}",
+        d.joint("N2").unwrap().clashes
+    );
+}
+
+/// Tuning on real towers (2026-11-18): a member whose laid-out steel would
+/// run into something leaves the rest of its joint laid out — it alone is
+/// left as it was, with the clash (R1 on a plate given by hand, its steel
+/// where D1 would go).
+#[test]
+fn one_members_clash_does_not_take_its_whole_joint_back() {
+    let text = format!(
+        "{}\n[[node]]\nid = \"N6\"\npoint = [\"2.5 m\", \"0 m\", \"0.13 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"R1\"\nnodes = [\"N6\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         orientation = \"y-z+\"\ndesign = {{ class = \"redundant\" }}\n\
+         \n[[plate]]\nid = \"GH\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+         \n[[connection]]\nmember = \"R1\"\njoint = \"N2\"\nonto = \"GH\"\ncut = \"0 mm\"\n",
+        k_brace()
+    );
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written, "{:?} {:?}", o.hand, r.notes);
+    assert!(o.plan.ends.iter().any(|e| e.member == "D2"), "{:?}", o.plan);
+    assert!(
+        o.plan.hand_members.iter().any(|m| m == "D1"),
+        "{:?}",
+        o.plan
+    );
+    assert!(
+        o.hand
+            .iter()
+            .any(|h| h.starts_with("D1: laid out, ") && h.contains("would run")),
+        "{:?}",
+        o.hand
+    );
+    // What was laid out runs into nothing.
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    for c in &j.clashes {
+        let m = [c.a.member(), c.b.member()];
+        assert!(!m.contains(&Some("D2")), "{c:?}");
+    }
+}
+
+/// Two chords in line through J (C1 below, C2 above, of `upper`'s
+/// section, `bolts` their design data) and a brace D to J.
+fn in_line(upper: &str, bolts: &str) -> String {
+    format!(
+        r#"id = "I"
+name = "i"
+kind = "lattice"
+
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "J"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "B"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "E"
+point = ["2.5 m", "0 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "C1"
+nodes = ["A", "J"]
+section = "EA-61x7"
+orientation = "x+y+"
+design = {{ class = "bracing"{bolts} }}
+
+[[member]]
+id = "C2"
+nodes = ["J", "B"]
+section = "{upper}"
+orientation = "x+y+"
+design = {{ class = "bracing"{bolts} }}
+
+[[member]]
+id = "D"
+nodes = ["E", "J"]
+section = "EA-61x7"
+orientation = "y-z+"
+design = {{ class = "bracing" }}
+"#
+    )
+}
+
+/// The example sections and a smaller invented angle that nests in the
+/// 61 mm one.
+fn library_with_small() -> crate::SectionLibrary {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../libraries/sections/example-sections.ohlsec");
+    let text = std::fs::read_to_string(path).unwrap();
+    crate::SectionLibrary::parse(&format!(
+        "{text}\n[[section]]\nid = \"EA-41x5\"\nname = \"Equal angle 41 × 5 (invented)\"\n\
+         shape = \"equal_angle\"\nh = \"41 mm\"\nt = \"5 mm\"\nr = \"5 mm\"\n"
+    ))
+    .unwrap()
+}
+
+fn run_with(text: &str, lib: &crate::SectionLibrary) -> crate::LayoutRun {
+    let bolts = Default::default();
+    let s = settings();
+    let ask = RunAsk {
+        library: lib,
+        bolts: &bolts,
+        settings: &s,
+        preset_fields: BTreeMap::new(),
+        joints: None,
+        replace_hand: false,
+    };
+    lay_out(text, &ask).unwrap()
+}
+
+/// The owner's step 1 (2026-11-18): the members in line through a joint
+/// joined first — one part when they are the same section, turned alike
+/// and bolt-free; the smaller nested in the bigger when it fits; a bolted
+/// splice left as it is (its bolts stay checked).
+#[test]
+fn members_in_line_are_joined_first_one_part_or_nested() {
+    let lib = library_with_small();
+    // The same, turned alike, no bolts: one part.
+    let r = run_with(&in_line("EA-61x7", ""), &lib);
+    let o = r.joints.iter().find(|j| j.joint == "J").unwrap();
+    assert!(o.written, "{:?}", o.hand);
+    assert_eq!(o.plan.joins.len(), 1, "{:?}", o.plan);
+    assert_eq!(o.plan.joins[0].how, crate::JoinKind::Continuous);
+    let d = joint_details(&r.text, &lib, &Default::default()).unwrap();
+    let j = d.joint("J").unwrap();
+    for m in ["C1", "C2"] {
+        let a = j.arrivals.iter().find(|a| a.member == m).unwrap();
+        assert!(a.continuous.is_some(), "{m}: {a:?}");
+    }
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    assert_eq!(run_with(&r.text, &lib).text, r.text);
+    // With bolts (a splice whose bolts are checked): not one part.
+    let r = run_with(
+        &in_line("EA-61x7", ", bolts = { diameter = \"16 mm\", count = 4 }"),
+        &lib,
+    );
+    let o = r.joints.iter().find(|j| j.joint == "J").unwrap();
+    assert!(o.plan.joins.is_empty(), "{:?}", o.plan);
+    // The smaller angle fits in the bigger: nested, bolted to it.
+    let r = run_with(&in_line("EA-41x5", ""), &lib);
+    let o = r.joints.iter().find(|j| j.joint == "J").unwrap();
+    assert!(o.written, "{:?}", o.hand);
+    assert_eq!(o.plan.joins.len(), 1, "{:?}", o.plan);
+    assert_eq!(o.plan.joins[0].how, crate::JoinKind::Nested);
+    assert_eq!(o.plan.joins[0].member, "C2");
+    let d = joint_details(&r.text, &lib, &Default::default()).unwrap();
+    let j = d.joint("J").unwrap();
+    let c2 = j.arrivals.iter().find(|a| a.member == "C2").unwrap();
+    assert_eq!(c2.sits.value, Some(crate::Face::Nested), "{c2:?}");
+    assert_eq!(c2.onto.value.as_deref(), Some("C1"));
+    assert!(!c2.misfit, "{:?}", c2.notes);
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    assert_eq!(run_with(&r.text, &lib).text, r.text);
 }

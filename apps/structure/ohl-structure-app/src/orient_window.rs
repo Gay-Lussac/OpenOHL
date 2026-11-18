@@ -193,8 +193,8 @@ impl StructureApp {
                 ohl_ui::tool_window::intro(
                     ui,
                     "Turns the tower's legs and chords heel out with their flanges in its faces, \
-                     and lays its plan and hip members flat — for a tower without orientation \
-                     data (an import, a tower drawn by hand).",
+                     lays the members of its faces in them and its plan and hip members flat — \
+                     for a tower without orientation data (an import, a tower drawn by hand).",
                     "Legs and chords: the members of class leg and the angles running on in line \
                      (within 10°) through a joint. Each is turned so that its heel points out of \
                      the tower and its two flanges lie in the two faces meeting at it — the faces \
@@ -202,8 +202,11 @@ impl StructureApp {
                      Where the faces do not meet at 90°, the middle of the angle's legs is put on \
                      the middle of the faces (each flange off its face by half the difference, \
                      said). Plan and hip members (horizontal angles in no steep face): one leg \
-                     flat, the other pointing down (assumed: no water lying in it). Bracing is \
-                     left to Lay out joints, which lays it flat where that helps. A roll given \
+                     flat, the other pointing down (assumed: no water lying in it). Face members \
+                     (the other angles lying in a steep face, between its legs or chords): one \
+                     leg in the face, the other out of the tower, the leg in the face down from \
+                     the heel where it can (assumed: no water lying in it). The rest is left to \
+                     Lay out joints, which lays it flat where that helps. A roll given \
                      by hand is kept unless replaced. Nothing is written before Apply (one undo \
                      step); what is set is marked automatic.",
                     ORIENT_ANCHOR,
@@ -296,17 +299,14 @@ impl StructureApp {
                     }
                 });
             }
-            let chords = p
-                .run
-                .turned
-                .iter()
-                .filter(|o| o.kind == OrientKind::Chord)
-                .count();
+            let count = |k: OrientKind| p.run.turned.iter().filter(|o| o.kind == k).count();
+            let chords = count(OrientKind::Chord);
             self.message = Some((
                 format!(
-                    "{n} member(s) turned ({chords} leg(s) and chord(s), {} plan member(s); one \
-                     undo step){}",
-                    n - chords,
+                    "{n} member(s) turned ({chords} leg(s) and chord(s), {} face member(s), {} \
+                     plan member(s); one undo step){}",
+                    count(OrientKind::Face),
+                    count(OrientKind::Plan),
                     if p.run.left.is_empty() {
                         String::new()
                     } else {
@@ -325,17 +325,15 @@ impl StructureApp {
 
 /// The preview's numbers and lists.
 fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
-    let chords = r
-        .turned
-        .iter()
-        .filter(|o| o.kind == OrientKind::Chord)
-        .count();
+    let count = |k: OrientKind| r.turned.iter().filter(|o| o.kind == k).count();
     ui.label(format!(
-        "{} member(s) turned: {chords} leg(s) and chord(s), {} plan or hip member(s); {} already \
-         so; {} roll(s) given by hand kept; {} leg(s) left. Worked out in {:.2} s \
-         (measured).",
+        "{} member(s) turned: {} leg(s) and chord(s), {} face member(s) (bracing in a face), {} \
+         plan or hip member(s); {} already so; {} roll(s) given by hand kept; {} leg(s) left. \
+         Worked out in {:.2} s (measured).",
         r.turned.len(),
-        r.turned.len() - chords,
+        count(OrientKind::Chord),
+        count(OrientKind::Face),
+        count(OrientKind::Plan),
         r.same.len(),
         r.kept.len(),
         r.left.len(),
@@ -375,6 +373,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
             match o.kind {
                 OrientKind::Chord => "leg/chord",
                 OrientKind::Plan => "plan member",
+                OrientKind::Face => "face member",
             },
             o.turn,
             if o.before.is_empty() { "none" } else { "" },
