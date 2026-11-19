@@ -61,6 +61,16 @@ pub const RECORD_KIND: &str = ohl_structure_edit::body::JOINT_LAYOUT_KIND;
 /// normal ([`crate::joints`]).
 pub const OWN_PLANE: &str = "own_plane";
 
+/// The record's mark of a bent plate's flat in its members' plane (`made`,
+/// with [`OWN_PLANE`]; J2b, 2026-11-19): its `[plate.bend]` the layout's
+/// (one changed by hand since is kept, the user's).
+pub const BENT: &str = "bend";
+
+/// The record's mark of a plate's own bolts onto the member it lies on that
+/// the layout gave (`made`; a bent plate's flat on the flange, J2b): the
+/// plate is then also listed among the provisional bolts as (plate, joint).
+pub const HOLD: &str = "leg_bolts";
+
 /// The record's mark of a splice the layout made (`made`, with `cover`
 /// and the covers' thickness as written; step 1c, 2026-11-19).
 pub const SPLICE: &str = "splice";
@@ -206,6 +216,7 @@ impl RecordSettings {
             welded: self.welded,
             // The structure file's, taken by the run.
             defaults: Default::default(),
+            bent_plates: true,
         }
     }
 
@@ -951,19 +962,36 @@ fn lay_out_once(
     };
     // The joints asked in detail with `turns` (their model: the code's edge
     // distances), each planned.
-    let planned_with = |turns: &BTreeMap<&String, f64>| -> Result<Planned, String> {
-        let mut d = planning.clone();
-        for (m, turn) in turns {
-            ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+    // (`s`: the settings planned with — the half turns' check without the
+    // bent plates, J2b.)
+    let planned_with =
+        |turns: &BTreeMap<&String, f64>, s: &LayoutSettings| -> Result<Planned, String> {
+            let mut d = planning.clone();
+            for (m, turn) in turns {
+                ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+            }
+            let (details, model) = crate::joints::joint_details_and_model(
+                &text_of(&d, &keep_targets),
+                ask.library,
+                ask.bolts,
+                Some(&targets),
+            )?;
+            let plans = plans_of(&details, model.as_ref(), &targets, s, &joins);
+            Ok((details, model, plans))
+        };
+    // The half turns are checked as before the bent plates (the owner's
+    // order: a member flat on the flange or a flat plate before a bent
+    // plate); their plans then made again with them.
+    let flat_only = LayoutSettings {
+        bent_plates: false,
+        ..settings.clone()
+    };
+    let with_bent = |p: Planned| -> Planned {
+        if !settings.bent_plates {
+            return p;
         }
-        let (details, model) = crate::joints::joint_details_and_model(
-            &text_of(&d, &keep_targets),
-            ask.library,
-            ask.bolts,
-            Some(&targets),
-        )?;
-        let plans = plans_of(&details, model.as_ref(), &targets, &settings, &joins);
-        Ok((details, model, plans))
+        let plans = plans_of(&p.0, p.1.as_ref(), &targets, &settings, &joins);
+        (p.0, p.1, plans)
     };
     // 2b. A half turn where an end lies on the inner face of what it bolts
     // onto and cannot be laid out there (it runs towards the angle's other
@@ -979,7 +1007,7 @@ fn lay_out_once(
     let mut first: Option<Planned> = None;
     {
         let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
-        let base = planned_with(&turns)?;
+        let base = planned_with(&turns, &flat_only)?;
         let mut flips: BTreeSet<String> = BTreeSet::new();
         for (_, p) in &base.2 {
             for h in &p.hand {
@@ -1027,7 +1055,7 @@ fn lay_out_once(
                 with.insert(m.clone(), half(x));
             }
             let turns: BTreeMap<&String, f64> = with.iter().map(|(m, x)| (m, *x)).collect();
-            let flipped = planned_with(&turns)?;
+            let flipped = planned_with(&turns, &flat_only)?;
             // Ends laid out (planned) of member `m`, and at its joints.
             let count = |plans: &[(String, JointPlan)], m: &str| -> (usize, usize) {
                 let joints = &members_here[m];
@@ -1053,11 +1081,11 @@ fn lay_out_once(
                 turned.insert(m.clone(), half(x));
             }
             if chosen == flips {
-                first = Some(flipped);
+                first = Some(with_bent(flipped));
             }
         }
         if chosen.is_empty() {
-            first = Some(base);
+            first = Some(with_bent(base));
         }
     }
     // 3.–4. Each joint planned with the turns and written; a turned member
@@ -1118,7 +1146,7 @@ fn lay_out_once(
             ),
             (false, true, Some(p)) => (&p.0, p.1.as_ref(), p.2.clone()),
             _ => {
-                fresh = planned_with(&turns)?;
+                fresh = planned_with(&turns, &settings)?;
                 (&fresh.0, fresh.1.as_ref(), fresh.2.clone())
             }
         };
@@ -2024,6 +2052,11 @@ struct OldPlate {
     weld: Option<ohl_structures::connections::TypeWeld>,
     /// It lay in its member's own plane (step 4).
     own: bool,
+    /// Its bend's inside radius given by hand since (a bent plate's flat,
+    /// J2b), m.
+    bend_radius: Option<f64>,
+    /// A bent plate's flat in its members' plane (J2b), not welded.
+    bent: bool,
 }
 
 /// The automatic values at `targets` taken out of `doc` (for planning);
@@ -2068,15 +2101,19 @@ fn old_plates(
             let mut members = onto(id);
             // Nothing bolted onto it (a flat plate with only plates in their
             // members' own planes welded to it, step 4): known by theirs.
+            // (A bent plate's flat on the flange, J2b: by those of the flat
+            // bent from it.)
             if members.is_empty() {
                 for q in t.plates.iter().filter(|q| &q.joint == j && &q.id != id) {
                     if q.welded_ids().contains(&id.as_str())
                         || p.welded_ids().contains(&q.id.as_str())
+                        || q.bend.as_ref().is_some_and(|b| &b.to == id)
                     {
                         members.extend(onto(&q.id));
                     }
                 }
             }
+            let bent = auto.contains(BENT);
             Some(OldPlate {
                 id: id.clone(),
                 joint: j.clone(),
@@ -2084,9 +2121,15 @@ fn old_plates(
                 own: auto.contains(OWN_PLANE),
                 thickness: (!auto.contains("thickness")).then(|| p.thickness.si()),
                 material: p.material.clone(),
-                weld: (auto.contains(OWN_PLANE) && !auto.contains("weld"))
+                weld: (auto.contains(OWN_PLANE) && !bent && !auto.contains("weld"))
                     .then(|| p.welds.first().cloned())
                     .flatten(),
+                bend_radius: p
+                    .bend
+                    .as_ref()
+                    .filter(|_| !bent && auto.contains(OWN_PLANE))
+                    .map(|b| b.inner_radius.si()),
+                bent: bent || p.bend.is_some(),
             })
         })
         .collect()
@@ -2110,6 +2153,9 @@ fn strip_joint(
         .map(|(id, _)| id.clone())
         .collect();
     for id in &made {
+        // (A plate's own bolts the layout gave: provisional as (plate,
+        // joint), J2b.)
+        rec.provisional.remove(&(id.clone(), j.to_owned()));
         if take_out_made(doc, rec, id) {
             w.taken.remove(id);
         }
@@ -2229,9 +2275,11 @@ fn write_plan(
                 mine.extend(q.members.iter().cloned());
             }
         }
+        let bent = pl.own.as_ref().is_some_and(|o| o.bend.is_some());
         let before = old.iter().find(|o| {
             o.joint == p.joint
                 && o.own == pl.own.is_some()
+                && (!o.own || o.bent == bent)
                 && o.members.iter().any(|m| mine.contains(m))
                 && !w.taken.contains(&o.id)
         });
@@ -2268,9 +2316,46 @@ fn write_plan(
             x.insert("welded_to", Item::Value(Value::Array(a)));
             auto.insert("welded_to".into());
         }
-        // A plate in its member's own plane (step 4): its outline, and its
-        // weld to the flat plate (both sides, the throat each side).
-        if let Some(o) = &pl.own {
+        // A bent plate's flat in its members' plane (J2b): bent from the
+        // flat on the flange — its angle, inside radius (one given by hand
+        // before kept) and bend line; no weld.
+        if let Some((o, b)) = pl
+            .own
+            .as_ref()
+            .and_then(|o| o.bend.as_ref().map(|b| (o, b)))
+        {
+            let mut bend = Table::new();
+            bend.insert("to", toml_edit::value(ids[o.welded_to].as_str()));
+            bend.insert(
+                "angle",
+                toml_edit::value(format!("{} deg", (b.angle * 100.0).round() / 100.0)),
+            );
+            let radius = before.and_then(|x| x.bend_radius);
+            bend.insert(
+                "inner_radius",
+                toml_edit::value(crate::mm_text(radius.unwrap_or(b.inner_radius))),
+            );
+            let mut line = Array::new();
+            for q in &b.line {
+                let mut a = Array::new();
+                for v in q {
+                    a.push(format!("{:.4} m", v));
+                }
+                line.push(Value::Array(a));
+            }
+            bend.insert("line", Item::Value(Value::Array(line)));
+            x.insert("bend", Item::Table(bend));
+            auto.extend(["outline".into(), OWN_PLANE.into()]);
+            if radius.is_none() {
+                auto.insert(BENT.into());
+            }
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_BEND_VERSION),
+            );
+        } else if let Some(o) = &pl.own {
+            // A plate in its member's own plane (step 4): its outline, and
+            // its weld to the flat plate (both sides, the throat each side).
             // Its weld: as given by hand on it before (its size, length,
             // kind kept), else the layout's.
             let hand = before.and_then(|b| b.weld.as_ref());
@@ -2299,6 +2384,16 @@ fn write_plan(
             x.insert("weld", Item::ArrayOfTables(welds));
             auto.extend(["outline".into(), OWN_PLANE.into()]);
         }
+        // A bent plate's flat on the flange (J2b): its own bolts onto the
+        // member it lies on (`[plate.leg_bolts]`, as
+        // `connection_edits::set_plate_leg_bolts` writes them).
+        if let Some(h) = &pl.hold {
+            x.insert("leg_bolts", Item::Table(hold_table(h)));
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_LEG_BOLTS_VERSION),
+            );
+        }
         if doc
             .get("plate")
             .and_then(Item::as_array_of_tables)
@@ -2312,6 +2407,19 @@ fn write_plan(
             .push(x);
         if let Some(o) = &pl.own {
             let _ = connection_edits::set_plate_outline(doc, &id, &o.outline);
+        }
+        // A bent plate's flat on the flange (J2b): its outline as laid out,
+        // and its own bolts onto that member (provisional).
+        if let Some(q) = &pl.outline
+            && connection_edits::set_plate_outline(doc, &id, q).is_ok()
+        {
+            auto.insert("outline".into());
+        }
+        if pl.hold.is_some() {
+            auto.insert(HOLD.into());
+        }
+        if pl.hold.as_ref().is_some_and(|h| h.provisional) {
+            rec.provisional.insert((id.clone(), p.joint.clone()));
         }
         rec.made.insert(id.clone(), (p.joint.clone(), auto));
         ids.push(id);
@@ -2381,6 +2489,32 @@ fn write_plan(
         }
     }
     ids
+}
+
+/// A plate's own bolts onto the member it lies on as the file writes them
+/// (`[plate.leg_bolts]`; J2b's bent plate's flat on the flange).
+fn hold_table(h: &crate::joint_layout::HoldPlan) -> Table {
+    let mut lb = Table::new();
+    lb.insert("member", toml_edit::value(h.member.as_str()));
+    if let Some(l) = h.leg {
+        lb.insert("leg", toml_edit::value(l));
+    }
+    let mut bt = toml_edit::InlineTable::new();
+    bt.insert("count", Value::from(h.points.len() as i64));
+    if let Some(x) = &h.bolt.bolt {
+        bt.insert("bolt", Value::from(x.as_str()));
+    }
+    bt.insert("diameter", connection_edits::mm(h.bolt.diameter));
+    lb.insert("bolts", Item::Value(Value::InlineTable(bt)));
+    let mut a = Array::new();
+    for p in &h.points {
+        let mut q = Array::new();
+        q.push(connection_edits::mm(p[0]));
+        q.push(connection_edits::mm(p[1]));
+        a.push(Value::Array(q));
+    }
+    lb.insert("bolt_points", Item::Value(Value::Array(a)));
+    lb
 }
 
 /// The joints an edit from `before` to `after` touches: a member changed
@@ -2600,6 +2734,11 @@ fn follow_parsed(
         }
         // A welded plate's weld changed (step 4): the user's now.
         if a.map(|p| &p.welds) != b.map(|p| &p.welds) && fields.remove("weld") {
+            changed_record = true;
+        }
+        // A bent plate's bend changed (J2b; its inside radius): the user's
+        // now.
+        if a.map(|p| &p.bend) != b.map(|p| &p.bend) && fields.remove(BENT) {
             changed_record = true;
         }
     }

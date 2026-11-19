@@ -151,7 +151,15 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
         });
         marks.push(Mark::Text {
             at: mid,
-            text: if p.assembly.len() > 1 {
+            text: if let Some(o) = p.bend.as_ref().map(|b| b.to.clone()).or_else(|| {
+                d.plates
+                    .iter()
+                    .find(|q| q.bend.as_ref().is_some_and(|b| b.to == p.id))
+                    .map(|q| q.id.clone())
+            }) {
+                // A bent plate's flat (J2b): the other flat named.
+                format!("{} · {:.0} mm · bent with {o}", p.id, p.thickness * 1000.0)
+            } else if p.assembly.len() > 1 {
                 // A plate of a welded plate said so on the drawing.
                 format!(
                     "{} · {:.0} mm · welded to {}",

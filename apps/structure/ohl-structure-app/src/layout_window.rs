@@ -140,6 +140,7 @@ impl LayoutWindow {
             welded: self.welded,
             // The structure file's default minimums, taken by the run.
             defaults: Default::default(),
+            bent_plates: true,
         }
     }
 

@@ -1937,6 +1937,29 @@ step, reasons left), and the work stops where it stops paying:
   clash, is said with what it runs into (keeping every member's place
   cost a quarter to a third of the ends); the window names the members
   left, those whose place is kept, and the ends laid out of all.
+- [x] J2b. **The bent plate** (the owner's example joint, approved
+  2026-11-19, before J3): an end on a flange's inner face leaving over
+  the heel (through the angle's other leg) onto a plate folded along the
+  member's line round the heel — one flat where the end lies, one on the
+  other leg's outer face bolted to it (two provisional bolts,
+  `[plate.leg_bolts]`), the ends of one plane sharing the flat; after the
+  half turn onto the outer face, before a hand detail; never forced, no
+  new clash, values given by hand kept. Built 2026-11-19, in active
+  development, not approved yet: `[plate.bend]` (structure file version
+  22: the two flats, the bend line, its angle, the inside radius — two
+  thicknesses to start with, the program's value), each flat checked as a
+  flat plate, the bend's own bending said NOT ON THE SAFE SIDE, weighed
+  from the developed area, in the 3D view, close-up, sheets and IFC; the
+  end's offset for the estimated eccentricities 0 (it lies where it lay).
+  On the 78 real towers (kept privately): joints laid out whole
+  44.1 % → 45.8 %, member ends laid out 62.8 % → 64.3 %, joints with a
+  hand detail 49.7 % → 47.9 %, the ends over the heel left 13 370 → 5 705
+  (most left now: the other leg too narrow for the holding bolts), a run
+  again identical, about 5 % more time; the estimated eccentricities'
+  upper bounds 24.3 % → 22.0 % of the ends. An inside radius of one
+  thickness changed almost nothing. Questions to the owner: bent before
+  welded for step 4's ends; the radius; a bend check in the plugins; the
+  holding bolts on narrow legs.
 - [ ] J3. **Each angle's turn chosen for the whole member**: a roll that
   lets both its ends lie flat, the leg bolted allowed to change between
   its ends where that is how towers are built.
@@ -1971,7 +1994,8 @@ step, reasons left), and the work stops where it stops paying:
   new element — proposed next: of the joints left for a hand detail after
   J1 and J2, 60 % have an end it would take (an end off its flange, its
   leg bolted facing away, or on an inner face running towards the other
-  leg), the only reason for 29 %.
+  leg), the only reason for 29 % — built for the ends over the heel (J2b
+  above); the ends off their flange stay with step 4's welded plate.
 Later: the bolts chosen by the code plugins and the layout run again with
 them.
 

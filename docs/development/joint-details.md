@@ -1080,8 +1080,46 @@ that order; "plan ideas to get the automatic layout working"):
   flange or faces away, or lies on an inner face running towards the
   other leg — what a bent plate would take —, and for 29 % it is the only
   reason; onto a leg alone 9 % (the only reason for 2 %: most such ends
-  bolt onto bracing — horizontals, plan and hip members). Not built (a new
-  model element): proposed as the next step.
+  bolt onto bracing — horizontals, plan and hip members). Approved
+  2026-11-19 (before J3), built the same day as J2b (below).
+- **J2b, the bent plate** (2026-11-19, in active development, not
+  approved yet; [theory](../theory/joint-layout.md#a-bent-plate-round-the-other-leg-j2b)):
+  an end on a flange's inner face leaving over the heel
+  (`strip_of`: `Strip::over`, `Over`; before, "runs towards the angle's
+  other leg") is placed by the search like any end, its cut keeping its
+  steel and bolts past the other leg's outer face, the plate and its bend
+  (`over_cut`, `over_steel`); after every plane is laid out, the ends of
+  one plane share one bent plate (`bent_over`): the flat in their plane
+  (an `OwnPlane` with `bend: Some(BendPlan { angle, inner_radius, line })`,
+  no weld) and the flat on the other leg (`PlatePlan::outline` given,
+  `PlatePlan::hold`, a `HoldPlan` — two provisional bolts onto the
+  member, written as `[plate.leg_bolts]`), or that leg's face plate (2b)
+  when its ends are all on one (`BentOver::into`: thicker, its `reach`
+  over the flat); refused where the leg leaves no room for the holding
+  bolts or an end lies directly on its face there. Inside radius
+  `BEND_RADIUS_RATIO` × t (2, the program's starting value). The run checks
+  its half turns with the bent plates off (`LayoutSettings::bent_plates`)
+  and plans again with them (the owner's order: flat first). Written:
+  `[plate.bend]` (structure file version 22), the record's `bend` and
+  `leg_bolts` marks, the holding bolts provisional as (plate, joint).
+  Joint details: `PlateDetail::bend`, the two flats one `assembly` (no
+  seam or weld), members seated square to a flat standing square to the
+  other (`PlateSeat::lift` falls back to the plate's normal), the bend's
+  bending said NOT ON THE SAFE SIDE; bill of materials from the developed
+  area (`quantities::bend_shortening`); IFC `BentWith`, `Bend`; close-up
+  in green, the sheets "bent with". Tests: `bent_plate_tests` (the plan,
+  the file, the details, no clash, a run again identical, the narrow leg
+  refused, without bent plates as before, the estimates, the weight by
+  hand), core `a_bent_plate_is_read_as_two_flats`, the app's window.
+- **On the 78 private real tower files** (J2b): joints laid out whole
+  44.1 % → 45.8 %, member ends laid out 62.8 % → 64.3 %, joints with a
+  hand detail 49.7 % → 47.9 %, clashes after 46.3 % → 44.4 % of before, a
+  run again identical on all 78, a whole tower about 5 % slower; bent
+  plates at about 6 % of the joints; the ends over the heel left fell to
+  about two fifths (most refused for want of room for the holding bolts
+  on 45–55 mm legs). Joints that do not fit with the joint checks 32.3 %
+  → 31.8 %; the estimated eccentricities' upper bounds 24.3 % → 22.0 % of
+  the ends.
 
 ## Detail levels
 

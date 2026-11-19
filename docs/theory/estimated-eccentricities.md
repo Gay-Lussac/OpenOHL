@@ -43,7 +43,7 @@ member at the joint, not in line with it) gets one value:
 |---|---|---|
 | **laid out** | the joint layout laid it out (its record lists the end) | the `shift` as written (none: 0) |
 | **given** | a `shift` typed at the end | as given |
-| **estimated** | the planner places it | the shift it plans (none: 0), kept even where a run would not write the joint (a clash after, the joint left whole); on a plate in its own plane (step 4) also the plan's offset out of the flange |
+| **estimated** | the planner places it | the shift it plans (none: 0), kept even where a run would not write the joint (a clash after, the joint left whole); on a plate in its own plane (step 4) also the plan's offset out of the flange; on a bent plate (J2b, 2026-11-19: an end over the heel, its flat folded round the other leg) the plan's offset, 0 — it lies where it lay on the flange's inner face ([bent plate](joint-layout.md#a-bent-plate-round-the-other-leg-j2b)) — so such an end, before an upper bound (the shift limit), is now estimated |
 | **upper bound** | no layout fits the end | the **shift limit** (the record's, 30 mm to start with) and, where a plate in its own plane would be needed (its bolted leg lies off the flange: the plate case), that plate's offset out of the flange at step 4's limit — the end's leg thickness |
 
 A shift typed anywhere else (an end the planner does not take) is taken

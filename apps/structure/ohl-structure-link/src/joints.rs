@@ -513,6 +513,25 @@ pub struct PlateDetail {
     /// on (`plate_leg_arrival`); none: not given, or not usable (said in
     /// `notes`).
     pub leg_bolts: Option<Box<Arrival>>,
+    /// Bent from another plate of the joint (`[plate.bend]`, J2b,
+    /// 2026-11-19): the two flats one part (its `assembly`, without a weld
+    /// between them); none: a flat plate, or the flat the other is bent
+    /// from.
+    pub bend: Option<BendDetail>,
+}
+
+/// A bent plate's bend, on the flat naming it (J2b, 2026-11-19).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BendDetail {
+    /// The flat it is bent from.
+    pub to: String,
+    /// The angle the plate turns through, degrees.
+    pub angle: f64,
+    /// Its inside radius, m.
+    pub inner_radius: f64,
+    /// Where the two flats' middle planes meet (structure axes, m; none:
+    /// not given).
+    pub line: Option<[[f64; 3]; 2]>,
 }
 
 /// How far a plate's edge keeps from one bolt onto it: along the member
@@ -934,6 +953,7 @@ pub(crate) fn joint_details_and_model(
             })
             .collect();
         weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
+        bend_plates(&mut plates, &t.bent_pairs(&n.id), &plates_here);
         // Steel in the same place (2026-11-18): each clash a problem of
         // the member ends in it, a note of the plates.
         let clashes = if level3 {
@@ -1459,14 +1479,17 @@ fn plate_seats(
         let q: Vec<[f64; 3]> = p.outline.iter().map(|x| x.map(|v| v.si())).collect();
         crate::welds::polygon_normal(&q).map(|n| (n, q[0]))
     };
-    // The plates welded to `p` (named either way).
+    // The plates welded to `p` (named either way), or the other flat of
+    // its bent plate (J2b).
     let partners = |p: &ohl_structures::connections::TypePlate| {
         plates
             .iter()
             .filter(|q| {
                 q.id != p.id
                     && (p.welded_ids().contains(&q.id.as_str())
-                        || q.welded_ids().contains(&p.id.as_str()))
+                        || q.welded_ids().contains(&p.id.as_str())
+                        || p.bend.as_ref().is_some_and(|b| b.to == q.id)
+                        || q.bend.as_ref().is_some_and(|b| b.to == p.id))
             })
             .copied()
             .collect::<Vec<_>>()
@@ -1637,6 +1660,60 @@ fn weld_plates(
                     plates[i].notes.push(note);
                 }
                 None => {}
+            }
+        }
+    }
+}
+
+/// The bent plates of a joint (J2b, 2026-11-19; `pairs`: the flat naming
+/// the bend and the flat it is bent from, [`StructureType::bent_pairs`]):
+/// the bend on the flat naming it, the two flats one part (their
+/// assemblies joined: one part in the clash check, the joints' own
+/// checks and the bill of materials; no weld between them), and what is
+/// not checked of the bend said on it.
+fn bend_plates(
+    plates: &mut [PlateDetail],
+    pairs: &[(String, String)],
+    given: &[&ohl_structures::connections::TypePlate],
+) {
+    for (id, to) in pairs {
+        let Some(b) = given
+            .iter()
+            .find(|p| &p.id == id)
+            .and_then(|p| p.bend.as_ref())
+        else {
+            continue;
+        };
+        let line =
+            (b.line.len() == 2).then(|| [b.line[0].map(|v| v.si()), b.line[1].map(|v| v.si())]);
+        let detail = BendDetail {
+            to: to.clone(),
+            angle: b.angle.si().to_degrees(),
+            inner_radius: b.inner_radius.si().max(0.0),
+            line,
+        };
+        let mut joined: Vec<String> = Vec::new();
+        for p in plates.iter().filter(|p| &p.id == id || &p.id == to) {
+            for q in &p.assembly {
+                if !joined.contains(q) {
+                    joined.push(q.clone());
+                }
+            }
+        }
+        for p in plates.iter_mut() {
+            if joined.contains(&p.id) {
+                p.assembly = joined.clone();
+            }
+            if &p.id == id {
+                p.notes.push(format!(
+                    "plate {id}: bent from {to} ({:.0}°, inside radius {:.0} mm), one part with \
+                     it; the bend's own bending under the members' force crossing it is not \
+                     checked — NOT ON THE SAFE SIDE where it governs (each flat is checked as a \
+                     flat plate, the bolts holding the part as the joint's)",
+                    detail.angle,
+                    detail.inner_radius * 1000.0
+                ));
+                p.bend = Some(detail.clone());
             }
         }
     }
@@ -2285,9 +2362,15 @@ fn place_bolts(
         let heel = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
         let base = add(add(joint, heel), shifted);
         let k = dot(s.normal, lift);
-        if k.abs() > 1e-6 {
-            seated = Some(scale(lift, dot(s.normal, sub(on, base)) / k));
-        }
+        // (Its plate square to the flat one, or nearly — a bent plate
+        // folded round the other leg, J2b: moved square to its own plate,
+        // so it stays where it lies in its plane.)
+        let (lift, k) = if k.abs() > 0.2 {
+            (lift, k)
+        } else {
+            (s.normal, 1.0)
+        };
+        seated = Some(scale(lift, dot(s.normal, sub(on, base)) / k));
     }
     // Seated on what it bolts onto, bolts or not (owner 2026-11-05: "draw
     // them at the right place in 3d"; before, an end without bolts was
@@ -2767,6 +2850,7 @@ fn plate(
             edges,
             notes,
             leg_bolts: None,
+            bend: None,
         };
     }
     // Nothing bolted onto it and no outline given: nothing to draw it
@@ -2789,6 +2873,7 @@ fn plate(
             edges,
             notes: vec![format!("{}: {NO_OUTLINE}", p.id)],
             leg_bolts: None,
+            bend: None,
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -2866,6 +2951,7 @@ fn plate(
         edges,
         notes,
         leg_bolts: None,
+        bend: None,
     }
 }
 

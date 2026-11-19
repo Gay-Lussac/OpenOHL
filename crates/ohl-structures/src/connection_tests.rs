@@ -547,3 +547,52 @@ fn a_plates_own_bolts_onto_the_leg_are_read() {
     let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n");
     assert!(parse(&plain).unwrap().plates[0].leg_bolts.is_none());
 }
+
+/// A bent plate (`[plate.bend]`, version 22, 2026-11-19): read with its
+/// angle, inside radius and line; the pair listed by `bent_pairs`, not one
+/// welded assembly; a bend from no plate of the joint, flats of other
+/// thicknesses and an angle out of range said, kept.
+#[test]
+fn a_bent_plate_is_read_as_two_flats() {
+    let text = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+         [plate.bend]\nto = \"G1\"\nangle = \"90 deg\"\ninner_radius = \"16 mm\"\n\
+         line = [[\"0 m\", \"0 m\", \"0 m\"], [\"0.1 m\", \"0 m\", \"0 m\"]]\n"
+    );
+    let t = parse(&text).unwrap();
+    let b = t.plates[1].bend.as_ref().unwrap();
+    assert_eq!(b.to, "G1");
+    assert!((b.angle.si().to_degrees() - 90.0).abs() < 1e-9);
+    assert!((b.inner_radius.si() - 0.016).abs() < 1e-12);
+    assert_eq!(b.line.len(), 2);
+    assert!(t.plates[0].bend.is_none());
+    assert_eq!(t.bent_pairs("N2"), vec![("G2".to_owned(), "G1".to_owned())]);
+    // Two flats, not welded: each its own assembly.
+    assert_eq!(t.welded_assemblies("N2").len(), 2);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let odd = text
+        .replace("to = \"G1\"", "to = \"G9\"")
+        .replace("angle = \"90 deg\"", "angle = \"190 deg\"");
+    let t = parse(&odd).unwrap();
+    assert!(t.bent_pairs("N2").is_empty());
+    let notes = t.connection_notes();
+    assert!(
+        notes.iter().any(|n| n.contains("no such plate")),
+        "{notes:?}"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("between 0 and 180")),
+        "{notes:?}"
+    );
+    let thick = text.replacen("thickness = \"8 mm\"", "thickness = \"10 mm\"", 1);
+    let notes = parse(&thick).unwrap().connection_notes();
+    assert!(
+        notes.iter().any(|n| n.contains("differ in thickness")),
+        "{notes:?}"
+    );
+}

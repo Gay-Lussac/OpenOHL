@@ -38,6 +38,8 @@
 //!   and load table as plain data for the exports
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
+#[cfg(test)]
+mod bent_plate_tests;
 mod clash;
 #[cfg(test)]
 mod clash_tests;
@@ -86,16 +88,16 @@ pub use export::{
 };
 pub use joint_groups::DOES_NOT_FIT;
 pub use joint_layout::{
-    BoltArea, EdgeRule, EndPlan, GAP_START, Join, JoinKind, JointPlan, LayoutSettings, NODE_LIMIT,
-    Onto, OwnPlane, PULL_BACK_START, PlatePlan, Reach, SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX,
-    flat_turns, hosts_to_name, joins_of, mm_text, plan_joint, plan_joint_except, plan_joint_with,
-    splice_unknown, weld_throat,
+    BEND_RADIUS_RATIO, BendPlan, BoltArea, EdgeRule, EndPlan, GAP_START, HoldPlan, Join, JoinKind,
+    JointPlan, LayoutSettings, NODE_LIMIT, Onto, OwnPlane, PULL_BACK_START, PlatePlan, Reach,
+    SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX, bend_radius, flat_turns, hosts_to_name, joins_of,
+    mm_text, plan_joint, plan_joint_except, plan_joint_with, splice_unknown, weld_throat,
 };
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
 };
 pub use joints::{
-    Angle, Arrival, BOLT_DRAWN, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
+    Angle, Arrival, BOLT_DRAWN, BendDetail, BoltPart, BoltSet, Completeness, CoverDetail, FLAT_OFF,
     JointDetail, JointDetails, NESTED_ANGLE_DEG, NO_OUTLINE, PartChain, PlateDetail, Problem,
     Profile, Similar, Source, SpliceDetail, Valued, bolt_faces, bolted_cover_leg, bolted_onto,
     joint_details, joint_details_at, part_chains, similar_joints,

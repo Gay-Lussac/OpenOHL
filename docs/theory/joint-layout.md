@@ -96,6 +96,7 @@ layout follows these steps; what is built and what is not:
 | 2b | Where not: **onto a plate** lying on that flange (in its plane) | yes (as before; every end of that flange's face onto the plate) |
 | 3 | The smaller classes (redundants) the same way, after the bracing | yes (as before: the order bracing, redundants) |
 | 4 | An end whose angle of arrival allows no flat fit on a flange or a plate in a flange's plane: a plate in its own plane, **welded** to a plate bolted to the bigger member ([below](#a-welded-plate-in-the-members-own-plane-step-4)) | yes (2026-11-19), where its member then lies at most a plate's thickness farther out than on a flat plate; else a hand detail, said |
+| J2b | An end flat on a flange's inner face but leaving over the heel (through the angle's other leg): a **bent plate** — a flat in its plane folded round the heel onto the other leg, bolted there ([below](#a-bent-plate-round-the-other-leg-j2b)) | yes (2026-11-19), after the half turn onto the outer face; else a hand detail, said |
 
 Only one pair is joined at a joint (its base), and none where a member
 already runs on through it: a pair crossing the base (an X-brace's other
@@ -454,6 +455,99 @@ their planes meet — a plate bent there, made of two plates welded.
   check tests the plate in its own plane against the flange too (it does
   not lie on it).
 
+## A bent plate round the other leg (J2b)
+
+(Owner, 2026-11-19: the example joint of a gusset plate folded along a
+line so that its two flats follow two planes, members bolted on it from
+both; approved the same day, before J3; built the same day, in active
+development.) An end lying on a flange's **inner face** that leaves the
+joint **over the heel** — towards the angle's other leg, through which it
+would run — fits neither on the flange nor on a flat plate in the
+flange's plane (that plate would have to pass through the other leg). It
+goes onto a **bent plate**: one flat **in the end's own plane** (where
+it lies, beyond the other leg's outer face), folded along the angle's
+line — the line of the member it bolts onto — round the heel onto the
+**other leg's outer face**, the second flat, bolted to that leg. Typical:
+a plan or hip member arriving from inside a tower at a face horizontal
+whose second leg points out of the tower.
+
+- **The order.** A flat fit first: the half turn that lays such an end on
+  the flange's outer face ([above](#turned-only-where-it-helps)) is
+  checked as before the bent plates (the run plans its half turns with
+  them off), then the bent plate, then a hand detail. The welded plate of
+  step 4 is for an end no roll lays flat; the bent plate here is for an
+  end flat on its plane but on the wrong side of the heel. A bent version
+  of step 4's plate is not built: with the same limit on its offset it
+  would lay out about the ends the welded plate does (its bend's room is
+  about the weld's) — a question to the owner (bent before welded, as
+  galvanised towers are rarely welded?).
+- **Where the end lies.** As it is drawn on the flange's inner face (its
+  gauge line through the work point): only pulled back. The plate takes
+  its leg's place — the flat in its plane lies where the flange would be,
+  beyond the other leg — so it lies **no farther out** than directly on
+  the flange (a flat plate would put it a plate's thickness farther):
+  nothing new for the analysis, the plate offset of the estimated
+  eccentricities 0. Its steel keeps beyond the other leg's outer face the
+  plate's thickness, the bend's inside radius and half the gap; its bolts
+  the plate's thickness, the radius and their edge distance in the plate
+  (the code's, else the default minimum) — **an assumption on the safe
+  side**: the plate runs on round the bend, no free edge there.
+- **The plate.** As thick as the thickest leg on it (as every plate the
+  layout makes); its **inside bend radius two thicknesses**, up to the
+  millimetre (`BEND_RADIUS_RATIO`) — **the program's starting value, not a
+  standard's**: the least radius a plate may be bent to cold is the
+  steel's (its grade, thickness and the bend's direction to its rolling),
+  to check by hand; a radius given on the bend is kept. The bend's angle
+  is the angle between the two legs (90° for an angle).
+- **The flat in the end's plane**: round its bolts with the end and edge
+  distances (along and across the member, as a plate is drawn), to the
+  bend line — where the two flats' middle planes meet. The ends of one
+  plane share it.
+- **The flat on the other leg**: from the bend line to that leg's toe, as
+  far along as the bend and **two bolts onto the leg** (`[plate.leg_bolts]`,
+  provisional: the end's bolt, the default spacing apart about the bend's
+  middle, in one gauge line): their head clear of the bend — the inside
+  radius and the nut's corner past the flange's thickness — and their nut
+  clear of the flange's other leg and root, the edge distance (the
+  code's, else the default minimum) from the leg's toe. Where the leg is
+  too narrow for that the end is left for a hand detail, said ("no room
+  for its own bolts on … other leg (55 mm wide; they need 36 mm from its
+  heel and 24 mm from its toe)"). **An assumption of the tool**: the
+  head's clearance from the bend is the program's rule, not a standard's.
+  The provisional bolts keep the tower at level 3, as every provisional
+  bolt.
+- **The other leg's outer face.** Where ends are laid out there on a flat
+  plate (step 2b), that plate is the bent plate's flat: as thick as the
+  thicker of the two, its outline reaching over the flat's place too,
+  bolted to the leg as above. Where an end is laid out there directly on
+  the leg (step 2a) and the flat would lie under it, or ends there are on
+  more than one plate, the end over the heel is left for a hand detail,
+  said. The clash check after writing tests the rest, both flats as
+  slabs to the bend line (a sharp corner: more steel than the bend has —
+  on the safe side for the fit).
+- **Its checks.** The two flats are two plates of the file, one part
+  (`[plate.bend]`, [data model](../development/data-model.md)): each is
+  checked as a flat plate with the members bolted onto it — their bolts,
+  bearing, tearing, the Whitmore section — through the plate checks as
+  they are; the flat on the leg is held by its own bolts onto the leg (the
+  joints' own checks: the holding bolts with the resultant of the
+  members' forces on the part and its moment, the leg's bearing under
+  them; their tension with prying where the code's plugin works it out,
+  [joint groups](joint-groups.md)). The member's force crosses the bend
+  square to the flat on the leg; the **bend's own bending** under it is
+  **not checked — NOT ON THE SAFE SIDE where it governs**, said on the
+  plate (Joint details) — a check of the codes' plate bending in the
+  plugins is a question to the owner. No weld.
+- **Its weight**: from the developed area — the two flats to the bend
+  line less, per metre of bend, (r + t/2)(2 tan(θ/2) − θ): the straight
+  lengths to that line against the arc, both at the middle of the
+  thickness (**an assumption**: of the usual lines that keep their length
+  the one giving the longest arc, the heavier count).
+- **Never forced**, deterministic, followed as every plate: the bend and
+  the flats' outlines are automatic values of the record (the flat in the
+  members' plane marked `own_plane` and `bend`, the joint details seating
+  its members on it square to it), a value given by hand on them kept.
+
 ## Splices (step 1c)
 
 Two angles in line through the joint (within 5°, their legs along each
@@ -603,3 +697,28 @@ running towards the other leg (29 %; 13 %); a built-up member (20 %;
 
 The window shows each member's usage before and after for the last run's
 cases and the time the layout took.
+
+## Measured (J2b, the bent plate, 2026-11-19)
+
+On the same 78 tower files and settings:
+
+| | J1 and J2 | with the bent plate |
+|---|---|---|
+| joints laid out whole | 44.1 % | 45.8 % |
+| member ends laid out (of those the layout places) | 62.8 % | 64.3 % |
+| joints with a hand detail | 49.7 % | 47.9 % |
+| clashes at the joints after (of before) | 46.3 % | 44.4 % |
+| a run again identical | 78 of 78 | 78 of 78 |
+| time of a whole tower (measured one after the other) | | about 5 % more |
+| joints that do not fit with the joint checks | 32.3 % | 31.8 % |
+| ends the estimated eccentricities bound from above | 24.3 % | 22.0 % |
+
+Bent plates were laid out at about 6 % of the joints. Of the ends over
+the heel, about two fifths are still left: most for want of room for the
+holding bolts on narrow legs (45–55 mm), some for a clash after writing
+(said with it) — never forced. An inside radius of one thickness instead
+of two changed almost nothing (on nine of the towers: 0.1 % more ends).
+The bolts across a narrow flange that do not fit (the does-not-fit
+investigation) are almost all on ends not laid out: a flat plate takes
+them wherever the layout lays the end out; they fall as more joints are
+laid out, not with the plate's kind.

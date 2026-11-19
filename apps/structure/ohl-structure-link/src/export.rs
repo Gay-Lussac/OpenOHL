@@ -319,6 +319,12 @@ pub struct ExportPlate {
     /// A splice's cover (2026-11-05): the splice's id, its face and leg in
     /// words ("outer, long leg"); none: a gusset plate.
     pub cover: Option<(String, String)>,
+    /// Bent from another plate of the joint (a bent plate's flat, J2b,
+    /// 2026-11-19): that flat, the bend's angle and inside radius.
+    pub bend: Option<crate::joints::BendDetail>,
+    /// The other flat of its bent plate (J2b; either way), not welded to
+    /// it; none: no bend.
+    pub bent_with: Option<String>,
 }
 
 fn add3(a: [f64; 3], b: [f64; 3], k: f64) -> [f64; 3] {
@@ -479,6 +485,13 @@ pub fn export_joints(
                 assembly: p.assembly.clone(),
                 welds: p.welds.clone(),
                 cover: None,
+                bend: p.bend.clone(),
+                bent_with: p.bend.as_ref().map(|b| b.to.clone()).or_else(|| {
+                    j.plates
+                        .iter()
+                        .find(|q| q.bend.as_ref().is_some_and(|b| b.to == p.id))
+                        .map(|q| q.id.clone())
+                }),
             });
         }
         // The splices' covers (2026-11-05), each as a plate on its face of
@@ -514,6 +527,8 @@ pub fn export_joints(
                     assembly: vec![id],
                     welds: Vec::new(),
                     cover: Some((sp.id.clone(), c.words())),
+                    bend: None,
+                    bent_with: None,
                 });
             }
         }
