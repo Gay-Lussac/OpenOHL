@@ -760,7 +760,7 @@ pub struct Model {
     /// edit.
     pub in_step: Option<crate::in_place::InStep>,
     /// Every edit makes the line again whole (tests, measurements:
-    /// [`Model::set_whole_line_edits`]).
+    /// `Model::set_whole_line_edits`).
     pub whole_line_edits: bool,
     /// Where the last edit's time went.
     pub last_edit: crate::edit::EditTimes,
