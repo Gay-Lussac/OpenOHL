@@ -396,7 +396,7 @@ impl Session {
     ) -> Result<(), SessionError> {
         let stored = self.conn.spatial_load(name)?;
         if stored != *entries {
-            let tx = crate::Step::begin(&self.conn)?;
+            let tx = crate::Step::begin(&*self.conn)?;
             tx.spatial_write_diff(name, &stored, entries)?;
             tx.commit()?;
         }
@@ -433,7 +433,7 @@ impl Session {
                     .expect("a free name");
             }
             let objects = objects_of_line(&line);
-            let tx = crate::Step::begin(&self.conn)?;
+            let tx = crate::Step::begin(&*self.conn)?;
             write_objects(&*tx, &new, &objects)?;
             tx.add_branch_noted(&new, &user, &note)?;
             tx.delete_legacy_snapshot(&name)?;
@@ -450,7 +450,7 @@ impl Session {
             if r.kind != RefKind::Branch {
                 continue;
             }
-            let Some(base) = line_base(&self.conn, &r.name)? else {
+            let Some(base) = line_base(&*self.conn, &r.name)? else {
                 continue;
             };
             if !bases.contains_key(&base) {
@@ -484,7 +484,7 @@ impl Session {
                 };
                 // Its line's objects only, as these branches always had
                 // (their revision's library files left out: tombstones).
-                let tx = crate::Step::begin(&self.conn)?;
+                let tx = crate::Step::begin(&*self.conn)?;
                 tx.set_line_base(&r.name, rev)?;
                 for (k, o) in base {
                     if k.0 == Kind::Library {
@@ -769,7 +769,7 @@ impl Session {
             (objects, Some((rev, base)))
         };
         let revision = base.as_ref().map(|(rev, _)| rev.clone());
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.add_line_branch(&name, revision.as_deref(), user, &format!("from {from}"))?;
         match &base {
             // Only what differs from the base: nothing, or a few library
@@ -833,7 +833,7 @@ impl Session {
             )));
         }
         let reviews = self.ref_deletion(name)?.reviews;
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.delete_line(name)?;
         for id in reviews {
             tx.set_review_state(id, "closed")?;
@@ -848,7 +848,7 @@ impl Session {
     pub fn rename_line(&mut self, user: &str, from: &str, to: &str) -> Result<(), SessionError> {
         self.may_manage_line(user, from)?;
         let to = self.check_ref_name(to)?;
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.rename_line(from, &to)?;
         tx.commit()?;
         if self.current == from {

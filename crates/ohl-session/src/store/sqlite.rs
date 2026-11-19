@@ -217,7 +217,7 @@ impl SqliteStore {
     /// library files of schema 3 and before made objects. On a read-only
     /// connection anything that writes fails with SQLite's "readonly
     /// database" error.
-    pub(crate) fn prepare(&self, path: &Path, writable: bool) -> Result<Grid, SessionError> {
+    fn prepare_file(&self, path: &Path, writable: bool) -> Result<Grid, SessionError> {
         let conn = &self.conn;
         // A newer project file is refused before anything in it changes.
         let has_meta = conn
@@ -469,7 +469,7 @@ impl SqliteStore {
 
     /// Marks the upgrades into routes, alignment points and structure
     /// groups done (meta rows replaced).
-    pub(crate) fn mark_object_upgrades_done(&self) -> Result<(), SessionError> {
+    fn mark_upgrades_done(&self) -> Result<(), SessionError> {
         self.conn.execute_batch(
             "INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('routes_alignments', '1');
              INSERT OR REPLACE INTO ols_meta (key, value) VALUES ('alignment_points', '1');
@@ -480,6 +480,14 @@ impl SqliteStore {
 }
 
 impl Store for SqliteStore {
+    fn prepare(&self, label: &Path, writable: bool) -> Result<Grid, SessionError> {
+        self.prepare_file(label, writable)
+    }
+
+    fn mark_object_upgrades_done(&self) -> Result<(), SessionError> {
+        self.mark_upgrades_done()
+    }
+
     fn savepoint(&self, name: &str) -> Result<(), SessionError> {
         self.conn.execute_batch(&format!("SAVEPOINT {name}"))?;
         Ok(())
@@ -1417,5 +1425,115 @@ impl Store for SqliteStore {
             )
             .unwrap_or_default();
         format!("{seq}|{clouds}")
+    }
+
+    fn meta_rows(&self) -> Result<Vec<(String, String)>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, value FROM ols_meta ORDER BY key")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    fn blob_hashes(&self) -> Result<Vec<String>, SessionError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT hash FROM vc_blob ORDER BY hash")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    fn put_entry_row(&self, e: &EntryRow) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT INTO oplog (seq, time, user, kind, command, inverse, objects, sections, undoes, undone_by, note, line)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![e.0, e.1, e.2, e.3, e.4, e.5, e.6, e.7, e.8, e.9, e.10, e.11],
+        )?;
+        Ok(())
+    }
+
+    fn put_ref_row(
+        &self,
+        r: &RefRow,
+        description: &str,
+        base: Option<&str>,
+    ) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO vc_ref (name, kind, revision, protected, user, time, note, description, base)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                r.name,
+                r.kind,
+                r.revision,
+                r.protected,
+                r.user,
+                r.time,
+                r.note,
+                description,
+                base
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn put_grant_row(&self, g: &GrantRow) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT INTO edit_grant (id, subject, kinds, objects, area, user, time, note)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                g.id, g.subject, g.kinds, g.objects, g.area, g.user, g.time, g.note
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn put_review_row(&self, r: &ReviewRow) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT INTO vc_review (id, branch, target, revision, author, time, note, reviewers, state)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                r.id,
+                r.branch,
+                r.target,
+                r.revision,
+                r.author,
+                r.time,
+                r.note,
+                r.reviewers,
+                r.state
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn put_review_note_row(&self, n: &ReviewNoteRow) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT INTO vc_review_note (review, user, time, verdict, comment) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![n.review, n.user, n.time, n.verdict, n.comment],
+        )?;
+        Ok(())
+    }
+
+    fn put_surface_row(&self, s: &SurfaceRow, data: &[u8]) -> Result<(), SessionError> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO surface (name, time, user, source, points, triangles, bounds, data)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                s.name,
+                s.time,
+                s.user,
+                s.source,
+                s.points,
+                s.triangles,
+                s.bounds,
+                data
+            ],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn sqlite(&self) -> Option<&Connection> {
+        Some(&self.conn)
     }
 }

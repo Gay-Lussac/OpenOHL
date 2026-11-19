@@ -1722,7 +1722,7 @@ impl Session {
             return Err(refused(format!("revision {} exists already", short(&id))));
         }
         let seq = self.last_seq()?;
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         for (h, t) in &blobs {
             Self::write_blob(&*tx, h, t)?;
         }
@@ -1947,7 +1947,7 @@ impl Session {
         if !confirm {
             return Err(refused(format!("{d} — repeat with confirmation to apply")));
         }
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.delete_ref(name)?;
         for id in &d.reviews {
             tx.set_review_state(*id, "closed")?;
@@ -2449,7 +2449,7 @@ impl Session {
         }
         // The blobs, the revisions and the line: all of it or nothing.
         self.unit(|s| {
-            let tx = crate::Step::begin(&s.conn)?;
+            let tx = crate::Step::begin(&*s.conn)?;
             for (h, text) in &bundle.blobs {
                 Self::write_blob(&*tx, h, text)?;
             }

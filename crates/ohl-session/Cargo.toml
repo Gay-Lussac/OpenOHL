@@ -24,6 +24,10 @@ toml.workspace = true
 toml_edit = "0.25"
 zstd = "0.14"
 
+[features]
+# The tests every store must pass (`store::suite`), for another store's
+# crate to run on its own store (ohl-store-pg's tests).
+store-suite = []
 
 [dev-dependencies]
 ohl-lidar.workspace = true

@@ -42,7 +42,6 @@ use ohl_line::validate::Scope;
 use ohl_line::{Line, SectionPoint};
 use serde_json::Value;
 
-use crate::store::Store;
 use crate::{Applied, Command, Kind, Object, Session, SessionError, refused, spatial};
 
 /// Commands changing more line objects than this (plus an eighth of the

@@ -512,6 +512,8 @@ fn old_project_files_are_migrated() {
     assert_eq!(s.export(), example());
     let schema: String = s
         .conn
+        .sqlite()
+        .unwrap()
         .query_row(
             "SELECT value FROM ols_meta WHERE key = 'session_schema'",
             [],

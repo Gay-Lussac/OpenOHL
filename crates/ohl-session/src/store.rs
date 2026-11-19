@@ -6,17 +6,21 @@
 //! needs to keep a project, in its own words. The session writes no SQL:
 //! every read and write of the project goes through [`Store`].
 //!
-//! One implementation today, [`sqlite::SqliteStore`] — the project file
+//! Two implementations: [`sqlite::SqliteStore`] — the project file
 //! (`.ohl`, ADR-0004), with the very statements the session used before,
-//! so a file written through it is the same, row for row. A PostgreSQL
-//! store for a country server comes later (its own crate, phase 4); the
-//! interface names nothing of SQLite but the file-level operations a
-//! project file has (a copy, a checkpoint).
+//! so a file written through it is the same, row for row — and the
+//! PostgreSQL store of a country server (crate `ohl-store-pg`, phase 4:
+//! one model of the network as a store). The interface names nothing of
+//! SQLite but the file-level operations a project file has (a copy, a
+//! checkpoint). [`copy`] copies a whole project from one store into
+//! another through it (a network's import and per-model export); the
+//! tests every store must pass are in `suite` (feature `store-suite`).
 //!
 //! Groups (the plan's §3.1):
 //!
 //! | Group | Methods |
 //! |---|---|
+//! | Opening | [`Store::prepare`], [`Store::mark_object_upgrades_done`] |
 //! | Units of work | [`Store::savepoint`], [`Store::release`], [`Store::roll_back_to`] (nested steps) |
 //! | Meta and settings | [`Store::meta`], [`Store::set_meta`], [`Store::delete_meta`] |
 //! | Users | [`Store::user_count`], [`Store::put_user`], [`Store::user_role`], [`Store::users`] |
@@ -26,6 +30,7 @@
 //! | Versions | blobs, revisions, refs |
 //! | Collaboration | grants, reviews and their notes |
 //! | Terrain, points | surfaces; point changes through the point-cloud store |
+//! | Whole copies | [`Store::meta_rows`], [`Store::blob_hashes`], `put_…_row` (rows as they are, ids and times kept) |
 //!
 //! Text columns holding JSON (a command, a grant's kinds, a revision's
 //! parents) pass as text: the session (de)serialises them, the store keeps
@@ -40,7 +45,10 @@ use crate::points::PointChange;
 use crate::spatial::Entry;
 use crate::{Kind, SessionError};
 
+pub mod copy;
 pub mod sqlite;
+#[cfg(any(test, feature = "store-suite"))]
+pub mod suite;
 
 /// A stored object row of a project line (`gone`: 0 an object, 1 a
 /// tombstone, 2 its base's object at a place of its own).
@@ -245,6 +253,21 @@ pub type LegacySnapshot = (String, String, String, String);
 /// today's file format; none commits by itself what a surrounding
 /// savepoint holds.
 pub trait Store: Send {
+    // --- Opening ----------------------------------------------------------
+
+    /// Makes and upgrades what the store needs to keep a project and
+    /// returns its chunk grid: a newer store refused before anything in
+    /// it changes; the tables made; older stores upgraded; the grid fixed
+    /// when the project is made; the schema number; the version store's
+    /// main branch and head. `label` names the store in messages (the
+    /// file's path); `writable`: false for a store opened to read only
+    /// (anything that would write fails with its "readonly database"
+    /// error).
+    fn prepare(&self, label: &Path, writable: bool) -> Result<Grid, SessionError>;
+    /// Marks the upgrades into routes, alignment points and structure
+    /// groups done (meta rows replaced).
+    fn mark_object_upgrades_done(&self) -> Result<(), SessionError>;
+
     // --- Units of work -------------------------------------------------
 
     /// Begins a step named `name` (nested in any step begun before).
@@ -513,6 +536,39 @@ pub trait Store: Send {
     /// The state of the point clouds: the last entry changing points and
     /// each cloud's name, count and creation time.
     fn points_state(&self) -> String;
+
+    // --- Whole copies ([`copy`]) --------------------------------------------
+
+    /// Every meta row, by key.
+    fn meta_rows(&self) -> Result<Vec<(String, String)>, SessionError>;
+    /// Every blob's hash, by hash.
+    fn blob_hashes(&self) -> Result<Vec<String>, SessionError>;
+    /// Keeps log entry `row` as it is (its seq, time and marks).
+    fn put_entry_row(&self, row: &EntryRow) -> Result<(), SessionError>;
+    /// Keeps branch or tag `row` as it is (replacing one of its name),
+    /// with a branch's description and base.
+    fn put_ref_row(
+        &self,
+        row: &RefRow,
+        description: &str,
+        base: Option<&str>,
+    ) -> Result<(), SessionError>;
+    /// Keeps grant `row` as it is (its id and time).
+    fn put_grant_row(&self, row: &GrantRow) -> Result<(), SessionError>;
+    /// Keeps review `row` as it is (its id, time and state).
+    fn put_review_row(&self, row: &ReviewRow) -> Result<(), SessionError>;
+    /// Keeps note `row` of a review as it is (after the notes kept
+    /// before).
+    fn put_review_note_row(&self, row: &ReviewNoteRow) -> Result<(), SessionError>;
+    /// Keeps surface `row` with its data as it is (its time).
+    fn put_surface_row(&self, row: &SurfaceRow, data: &[u8]) -> Result<(), SessionError>;
+
+    /// The project file's SQLite connection, for this crate's tests that
+    /// look into the file (`None` for any other store).
+    #[cfg(test)]
+    fn sqlite(&self) -> Option<&rusqlite::Connection> {
+        None
+    }
 }
 
 #[cfg(test)]

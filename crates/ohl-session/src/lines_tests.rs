@@ -536,7 +536,7 @@ fn new_lines_keep_only_their_differences() {
     let start = s.branch_revision("main").unwrap().unwrap();
     assert_eq!(s.branch_revision("phase 1").unwrap(), Some(start.clone()));
     assert_eq!(
-        crate::lines::line_base(&s.conn, "phase 1").unwrap(),
+        crate::lines::line_base(&*s.conn, "phase 1").unwrap(),
         Some(start.clone())
     );
     // The two library files: their places only (no JSON).
@@ -629,7 +629,7 @@ fn new_lines_keep_only_their_differences() {
     s.select_line("main").unwrap();
     s.import_bundle("cara", &bundle, Some("carried")).unwrap();
     assert_eq!(
-        crate::lines::line_base(&s.conn, "carried").unwrap(),
+        crate::lines::line_base(&*s.conn, "carried").unwrap(),
         Some(bundle.head.clone())
     );
     let s = reopens_alike(&path, s);
@@ -733,7 +733,7 @@ fn full_copy_lines_of_older_files_open_and_work() {
         before,
         "nothing rewritten"
     );
-    assert_eq!(crate::lines::line_base(&s.conn, "copy").unwrap(), None);
+    assert_eq!(crate::lines::line_base(&*s.conn, "copy").unwrap(), None);
     assert_eq!(
         s.others["copy"].objects[&(Kind::Structure, "T2".to_owned())].version,
         3,

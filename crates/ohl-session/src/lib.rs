@@ -57,9 +57,10 @@
 //! from the file, the basis for partial loading and streaming.
 //!
 //! The session writes no SQL: it keeps the project in a [`store::Store`]
-//! (ADR-0013) — today the project file, [`store::sqlite::SqliteStore`],
+//! (ADR-0013) — the project file, [`store::sqlite::SqliteStore`],
 //! which holds the tables above, their statements and the upgrades of
-//! older files.
+//! older files; or a model of a country server's database
+//! ([`Session::open_on`], crate `ohl-store-pg`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -384,7 +385,8 @@ impl Kind {
         }
     }
 
-    fn parse(s: &str) -> Result<Self, SessionError> {
+    /// The kind named `s` as in commands (refused: no such kind).
+    pub fn parse(s: &str) -> Result<Self, SessionError> {
         Ok(match s {
             "meta" => Self::Meta,
             "route" => Self::Route,
@@ -1064,7 +1066,7 @@ pub struct Session {
     /// The store the project is kept in ([`store`]; named `conn` as the
     /// SQLite connection it replaced, which this crate's tests still read
     /// it as).
-    conn: SqliteStore,
+    conn: Box<dyn Store>,
     objects: BTreeMap<(Kind, String), Object>,
     line: Line,
     grid: Grid,
@@ -1669,7 +1671,7 @@ impl Session {
     /// Opens a project file (created if missing; an empty project has no
     /// line until [`Session::import`]).
     pub fn open(path: &Path) -> Result<Self, SessionError> {
-        Self::open_store(SqliteStore::open(path)?, path, true)
+        Self::open_store(Box::new(SqliteStore::open(path)?), path, true)
     }
 
     /// Opens an existing project file to read it only (2026-11-15, owner:
@@ -1692,22 +1694,30 @@ impl Session {
                 path.display()
             )));
         }
-        match Self::open_store(SqliteStore::open_read_only(path)?, path, false) {
+        match Self::open_store(Box::new(SqliteStore::open_read_only(path)?), path, false) {
             Err(SessionError::Store(m)) if m.contains("readonly database") => {
                 // Something to write before it can be read (an upgrade):
                 // done on a copy in memory.
-                Self::open_store(SqliteStore::copy_in_memory(path)?, path, true)
+                Self::open_store(Box::new(SqliteStore::copy_in_memory(path)?), path, true)
             }
             other => other,
         }
     }
 
+    /// Opens the project kept in `store`, any [`Store`] (a model of a
+    /// country server's database, ADR-0013): as [`Session::open`] opens a
+    /// project file — what the store needs made ([`Store::prepare`]), its
+    /// objects read. `label` names it in messages.
+    pub fn open_on(store: Box<dyn Store>, label: &str) -> Result<Self, SessionError> {
+        Self::open_store(store, Path::new(label), true)
+    }
+
     /// Opens the project kept in `conn` (the file at `path`): its tables
-    /// made and upgraded ([`SqliteStore::prepare`]), its objects read.
+    /// made and upgraded ([`Store::prepare`]), its objects read.
     /// `writable`: false for a read-only store — anything that would
     /// write fails with the store's "readonly database" error
     /// ([`Session::open_read_only`]).
-    fn open_store(conn: SqliteStore, path: &Path, writable: bool) -> Result<Self, SessionError> {
+    fn open_store(conn: Box<dyn Store>, path: &Path, writable: bool) -> Result<Self, SessionError> {
         let grid = conn.prepare(path, writable)?;
         let mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>> = BTreeMap::new();
         // Tombstones of lines kept as differences ([`lines`]).
@@ -1755,7 +1765,7 @@ impl Session {
         let done = |key: &str| -> Result<bool, SessionError> { Ok(conn.meta(key)?.is_some()) };
         let before_routes = !done("routes_alignments")?;
         if before_routes || !done("alignment_points")? || !done("structure_groups")? {
-            let tx = Step::begin(&conn)?;
+            let tx = Step::begin(&*conn)?;
             for (name, objects) in &mut by_line {
                 let Some(new) = upgraded_objects(objects, before_routes)? else {
                     continue;
@@ -1836,6 +1846,13 @@ impl Session {
     /// The current line.
     pub fn line(&self) -> &Line {
         &self.line
+    }
+
+    /// The store the project is kept in, to read it (a network's import
+    /// reads the rows of a project file through it, ADR-0013). Changes
+    /// go through commands, never through the store.
+    pub fn store(&self) -> &dyn Store {
+        &*self.conn
     }
 
     /// Every command the whole way (`true`: the line made again from its
@@ -3725,7 +3742,7 @@ impl Session {
         old: &BTreeMap<(Kind, String), spatial::Entry>,
         new: &BTreeMap<(Kind, String), spatial::Entry>,
     ) -> Result<(i64, PointsChanged), SessionError> {
-        let tx = Step::begin(&self.conn)?;
+        let tx = Step::begin(&*self.conn)?;
         let mut point_inverses = Vec::new();
         let mut points_changed = Vec::new();
         for p in point_prims {

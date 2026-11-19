@@ -39,7 +39,6 @@ use ohl_line::Line;
 use ohl_line::index::{Item, LineIndex, Of, Target};
 
 use crate::in_place::{kind_of, of_kind};
-use crate::store::Store;
 use crate::{Command, Kind, Session, SessionError, refused};
 
 /// The `ols_meta` key holding a part's working set.
