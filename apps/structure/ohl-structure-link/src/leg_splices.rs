@@ -30,11 +30,13 @@
 //! ([`crate::InLine::splice_bolts`]): proposed one part by the owner's
 //! rule, listed with the splices.
 //!
-//! Not proposed, said why: a splice given at the joint naming either
-//! piece, a `kind`, `onto`, `face` or bolts given by hand at either end,
-//! not single angles (a built-up leg's splice: by hand), legs not along
-//! each other, the smaller angle nesting in the bigger (the layout bolts
-//! it nested, step 1b).
+//! Not proposed, said why (pieces of a leg; pieces of no leg are listed
+//! only where proposed): a splice given at the joint naming either piece,
+//! a `kind`, `onto`, `face` or bolts given by hand at either end, not
+//! single angles (a built-up leg's splice: by hand), in line within more
+//! than the nesting tolerance (a leg's knee), legs not along each other,
+//! the smaller angle nesting in the bigger (the layout bolts it nested,
+//! step 1b).
 
 use std::collections::BTreeSet;
 
@@ -190,6 +192,11 @@ fn at_joint(j: &JointDetail, t: &StructureType) -> Vec<LegSplice> {
             provisional: Vec::new(),
         };
         s.not = why_not(j, t, a, b, dev);
+        // (Pieces of no leg: listed only where proposed, as step 1c made
+        // them; the others are no splice place of a leg.)
+        if !legs && s.not.is_some() {
+            continue;
+        }
         if s.not.is_none() {
             let (ga, gb) = (
                 a.profile.as_ref().and_then(|p| p.angle).expect("checked"),
