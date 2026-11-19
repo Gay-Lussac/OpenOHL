@@ -368,9 +368,18 @@ fn bucket(j: &JointDetail, strict: bool) -> String {
 /// (the representative); the representatives are not listed. Strict: as
 /// the layout plans.
 pub fn kinds(d: &JointDetails, among: &BTreeSet<String>, strict: bool) -> BTreeMap<String, Like> {
+    kinds_in(d.joints.iter().filter(|j| among.contains(&j.id)), strict)
+}
+
+/// [`kinds`] of `joints` in the order given (the first of a kind its
+/// representative; L1 a: the layout's order, bottom up, then out).
+pub fn kinds_in<'a>(
+    joints: impl IntoIterator<Item = &'a JointDetail>,
+    strict: bool,
+) -> BTreeMap<String, Like> {
     let mut reps: BTreeMap<String, Vec<&JointDetail>> = BTreeMap::new();
     let mut out = BTreeMap::new();
-    for j in d.joints.iter().filter(|j| among.contains(&j.id)) {
+    for j in joints {
         if j.arrivals.is_empty() {
             continue;
         }

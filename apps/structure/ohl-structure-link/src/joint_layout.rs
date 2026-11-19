@@ -131,6 +131,26 @@ pub struct LayoutSettings {
     /// default. Off: every joint planned on its own (as before; for the
     /// comparison).
     pub once_per_kind: bool,
+    /// L1 (a), bottom up, then out (owner 2026-11-19; [`crate::joint_order`]):
+    /// the joints taken in that order where the order matters — the joint a
+    /// kind is planned at (J4), and a member that no one roll lays flat at
+    /// all its ends, none of them flat now, turned to lie flat at its end
+    /// first in the order. On by default (measured on the private real
+    /// towers: a little more laid out); off: as before (for the comparison).
+    pub bottom_up: bool,
+    /// L1 (b), slightly more plates (owner 2026-11-19): a face bolted
+    /// directly also tried on a plate where that lays out more of the
+    /// joint's ends, and an end bolted directly that would be left after
+    /// writing (its clash or misfit not cleared by pulling it back) tried on
+    /// a plate first; direct bolting wins a tie. On by default; off: as
+    /// before.
+    pub more_plates: bool,
+    /// L1 (d), what an end bolts onto chosen in the search (owner
+    /// 2026-11-19): for an end left for a hand detail, the other members it
+    /// could bolt onto tried too (today's rule first and the tie-break),
+    /// kept at a joint only where it lays out more there after the clash
+    /// rounds than today's plan does. On by default; off: as before.
+    pub onto_search: bool,
 }
 
 impl Default for LayoutSettings {
@@ -145,6 +165,9 @@ impl Default for LayoutSettings {
             defaults: Default::default(),
             bent_plates: true,
             once_per_kind: true,
+            bottom_up: true,
+            more_plates: true,
+            onto_search: true,
         }
     }
 }
@@ -1092,6 +1115,70 @@ pub(crate) fn plan_joint_budget(
     floors: &BTreeMap<String, (f64, String)>,
     limit: usize,
 ) -> JointPlan {
+    plan_joint_ctx(j, s, edge, except, floors, limit, &PlanCtx::default())
+}
+
+/// What a run tells the plan of one joint beyond the settings (L1, owner
+/// 2026-11-19).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct PlanCtx {
+    /// Members whose face goes onto a plate even where their bolts land on
+    /// the flange (L1 b: a clash after writing a plate may clear).
+    pub plated: BTreeSet<String>,
+    /// Planned as before L1 (b's faces tried on a plate off): the run's
+    /// guard found the joint laid out worse with it.
+    pub plain: bool,
+}
+
+/// How many faces bolted directly are tried on a plate per joint (L1 b,
+/// [`LayoutSettings::more_plates`]): the program's bound on the extra
+/// work, not a standard's.
+pub const PLATE_TRIES: usize = 4;
+
+/// [`plan_joint_budget`] with what the run tells it (`ctx`). L1 (b): where
+/// the plan leaves members for a hand detail, each face bolted directly
+/// (up to [`PLATE_TRIES`], in the order planned) also tried on a plate;
+/// one laying out more of the joint's ends is taken — direct bolting wins
+/// a tie (the plate's penalty).
+pub(crate) fn plan_joint_ctx(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+    limit: usize,
+    ctx: &PlanCtx,
+) -> JointPlan {
+    let (plan, direct) = plan_once(j, s, edge, except, floors, limit, ctx, &BTreeSet::new());
+    if !s.more_plates || ctx.plain || plan.hand_members.is_empty() {
+        return plan;
+    }
+    let mut best = plan;
+    for key in direct.into_iter().take(PLATE_TRIES) {
+        let force: BTreeSet<PlaneKey> = [key].into();
+        let (alt, _) = plan_once(j, s, edge, except, floors, limit, ctx, &force);
+        if alt.ends.len() > best.ends.len() {
+            best = alt;
+        }
+    }
+    best
+}
+
+/// One plan of joint `j` (see [`plan_joint_with`]), the faces of `force`
+/// onto a plate even where their bolts land on the flange; with the faces
+/// bolted directly, in the order planned.
+#[allow(clippy::too_many_arguments)]
+fn plan_once(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+    limit: usize,
+    ctx: &PlanCtx,
+    force: &BTreeSet<PlaneKey>,
+) -> (JointPlan, Vec<PlaneKey>) {
+    let mut direct_planes: Vec<PlaneKey> = Vec::new();
     let mut plan = JointPlan {
         joint: j.id.clone(),
         ..Default::default()
@@ -1275,7 +1362,7 @@ pub(crate) fn plan_joint_budget(
     let mut plate_of: BTreeMap<usize, usize> = BTreeMap::new();
     let mut bent_wait: BTreeMap<PlaneKey, Vec<Placed>> = BTreeMap::new();
     let mut budget = limit;
-    for ks in planes.values() {
+    for ((_, _, _, plane_key), ks) in &planes {
         let mut order = ks.clone();
         order.sort_by(|&a, &b| {
             strips[a]
@@ -1396,7 +1483,13 @@ pub(crate) fn plan_joint_budget(
                         .iter()
                         .all(|&s| s >= from + x.host_end - 1e-9))
         };
-        let direct = placed.iter().all(lands);
+        // (L1 b: a face forced onto a plate, or an end on it the run's
+        // clash rounds put onto one.)
+        let plated = force.contains(plane_key)
+            || placed
+                .iter()
+                .any(|p| ctx.plated.contains(&strips[p.k].member));
+        let direct = !plated && placed.iter().all(lands);
         // (Each end's landing as it is now, for the ends on a splice's
         // cover below.)
         let landed: BTreeSet<usize> = placed.iter().filter(|p| lands(p)).map(|p| p.k).collect();
@@ -1419,6 +1512,9 @@ pub(crate) fn plan_joint_budget(
             }
             placed_all.extend(on);
             placed = off;
+            if placed.is_empty() {
+                continue;
+            }
         }
         if !direct && placed.iter().any(|p| strips[p.k].through.is_some()) {
             // On a splice's outer cover (O44 J7): those whose bolts land on
@@ -1637,6 +1733,7 @@ pub(crate) fn plan_joint_budget(
             placed_all.extend(placed);
             continue;
         }
+        direct_planes.push(*plane_key);
         laid3.extend(solids_of(&strips, &placed, 0.0));
         for p in &placed {
             laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
@@ -1763,7 +1860,7 @@ pub(crate) fn plan_joint_budget(
             Some((m.clone(), host.member.clone()))
         })
         .collect();
-    plan
+    (plan, direct_planes)
 }
 
 /// The member ends of `j` the plan leaves as they are because the member
@@ -1900,6 +1997,68 @@ pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
             }
         })
         .collect()
+}
+
+/// The members end `a` at joint `j` could bolt onto (L1 d, owner
+/// 2026-11-19), in today's rule's order ([`through_of`]: those running
+/// through the joint first, then the one part, by class, the wider, the
+/// piece on `a`'s side, the id): the single angles at the joint not in
+/// line with it (20° to 160°), in a flange's plane of which its axis lies
+/// ([`FLAT_OFF`]), not bolting onto it or running on into it.
+pub(crate) fn onto_candidates(j: &JointDetail, a: &Arrival) -> Vec<String> {
+    let rank = |b: &Arrival| match b.class.as_deref() {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
+    let width = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64))
+    };
+    let runs = |b: &Arrival| {
+        b.continuous.is_some()
+            || j.arrivals
+                .iter()
+                .any(|c| c.member != b.member && angle_deg(b.direction, c.direction) > 160.0)
+    };
+    let mut out: Vec<&Arrival> = j
+        .arrivals
+        .iter()
+        .filter(|b| b.member != a.member)
+        .filter(|b| {
+            b.profile
+                .as_ref()
+                .is_some_and(|p| p.angle.is_some() && p.parts.is_empty())
+        })
+        .filter(|b| (20.0..=160.0).contains(&angle_deg(a.direction, b.direction)))
+        .filter(|b| {
+            b.onto.value.as_deref() != Some(a.member.as_str())
+                && b.continuous.as_deref() != Some(a.member.as_str())
+        })
+        .filter(|b| in_flange_plane(a, b))
+        .collect();
+    out.sort_by(|x, y| {
+        (
+            !runs(x),
+            x.continuous.is_none(),
+            rank(x),
+            width(x),
+            !same_side(a, x),
+            &x.member,
+        )
+            .cmp(&(
+                !runs(y),
+                y.continuous.is_none(),
+                rank(y),
+                width(y),
+                !same_side(a, y),
+                &y.member,
+            ))
+    });
+    out.into_iter().map(|b| b.member.clone()).collect()
 }
 
 /// An angle, or a built-up section of angles.
