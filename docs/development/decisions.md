@@ -8,6 +8,50 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (joint layout: the bent plate)
+
+**O44 J2b, the bent plate** (the owner's example joint of a gusset plate
+folded to follow two planes; approved the same day "before J3"; built
+the same day, in active development, not approved yet;
+[theory](../theory/joint-layout.md#a-bent-plate-round-the-other-leg-j2b),
+[user guide](../user-guide/joint-layout.md)):
+
+- **What it takes**: an end on a flange's inner face that leaves the joint
+  over the heel, through the angle's other leg — before, "runs towards the
+  angle's other leg", a hand detail. One flat where the end lies (its own
+  plane, beyond the other leg), folded along the member's line round the
+  heel onto the other leg's outer face, bolted there by two provisional
+  bolts (`[plate.leg_bolts]`, so that the flat is bolted to the flange as
+  asked); the ends of one plane share the flat. The end stays where it
+  lay (no farther out than directly on the flange), only pulled back.
+- **The order**: the half turn onto the outer face first (checked with
+  the bent plates off), then the bent plate, then a hand detail. Step 4's
+  welded plate keeps the ends no roll lays flat: a bent version of it is
+  not built (with the same offset limit it would lay out about the same
+  ends) — a question to the owner.
+- **The file**: `[plate.bend]` on the second flat (`to`, `angle`,
+  `inner_radius`, `line`), **structure file version 22** written only
+  when a plate is bent (21: the bolt grade's of the same day); the two
+  flats one part, never welded.
+- **Assumptions, said**: the inside bend radius two thicknesses (the
+  program's starting value, not a standard's; a radius given is kept); the
+  holding bolts' head clear of the bend (the program's rule); the end's
+  bolts their edge distance from the bend (on the safe side); the weight
+  from the developed area at the middle of the thickness (the heavier
+  count); the clash check's flats to the bend line (more steel than the
+  bend).
+- **Checks**: each flat as a flat plate through the plate checks as they
+  are; the holding bolts and the leg's bearing under them by the joints'
+  own checks; the bend's own bending **not checked, NOT ON THE SAFE SIDE
+  where it governs**, said on the plate (a code check in the plugins: a
+  question to the owner).
+- **Estimated eccentricities**: an end on a bent plate is estimated with
+  the plate's offset 0, no longer an upper bound.
+- **Measured** on the 78 private real tower files: joints laid out
+  whole 44.1 % → 45.8 %, member ends 62.8 % → 64.3 %, joints with a hand
+  detail 49.7 % → 47.9 %; the estimated eccentricities' upper bounds
+  24.3 % → 22.0 % of the ends ([theory](../theory/joint-layout.md#measured-j2b-the-bent-plate-2026-11-19)).
+
 ## 2026-11-19 (estimated eccentricities at level 3)
 
 **O45 A1–A3, the joints' eccentricities set automatically** (step 4 of
