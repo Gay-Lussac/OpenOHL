@@ -133,9 +133,27 @@ pub fn cut_down(doc: &DocumentMut, keep: &BTreeSet<String>) -> DocumentMut {
         };
         out.insert(k, kept);
     }
+    // The plates at the kept members' joints (the record's marks of them
+    // are kept).
+    let plates_kept: BTreeSet<String> = out
+        .get("plate")
+        .and_then(Item::as_array_of_tables)
+        .map(|a| {
+            a.iter()
+                .filter(|p| {
+                    p.get("joint")
+                        .and_then(Item::as_str)
+                        .is_some_and(|j| nodes.contains(j))
+                })
+                .filter_map(|p| p.get("id").and_then(Item::as_str).map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
     // The joint layout's record: its marks of the kept members' ends (the
-    // drawing reads them) and their provisional bolts; the rest (why joints
-    // need a hand detail, the plates made…) read by no joint's details.
+    // drawing reads them), their provisional bolts and the plates made at
+    // their joints (a plate in its member's own plane: its `own_plane`
+    // mark, 2026-11-19); the rest (why joints need a hand detail…) read by
+    // no joint's details.
     if let Some(a) = out
         .get_mut("generator")
         .and_then(Item::as_array_of_tables_mut)
@@ -144,8 +162,16 @@ pub fn cut_down(doc: &DocumentMut, keep: &BTreeSet<String>) -> DocumentMut {
             if g.get("kind").and_then(Item::as_str) != Some(crate::RECORD_KIND) {
                 continue;
             }
-            for key in ["hand", "joints", "made", "rolled", "oriented"] {
+            for key in ["hand", "joints", "rolled", "oriented"] {
                 g.remove(key);
+            }
+            if let Some(rows) = g.get_mut("made").and_then(Item::as_array_mut) {
+                rows.retain(|r| {
+                    r.as_array()
+                        .and_then(|r| r.get(0))
+                        .and_then(|m| m.as_str())
+                        .is_some_and(|m| plates_kept.contains(m))
+                });
             }
             for key in ["ends", "provisional"] {
                 if let Some(rows) = g.get_mut(key).and_then(Item::as_array_mut) {

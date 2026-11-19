@@ -497,13 +497,16 @@ presets = [["bracing", "2 x M16"]]    # a connection preset per member class
 joints = ["N2"]                       # laid out
 ends = [["D1", "N2", "cut", "gauge", "onto", "bolts", "gauge_lines"]]  # automatic fields
 rolled = [["D1", "0 deg"]]            # turned flat; the roll it had before
-made = [["G1", "N2", "thickness", "outline"]]   # plates made; their automatic fields
+made = [["G1", "N2", "thickness", "outline"],   # plates made; their automatic fields
+        ["G2", "N2", "outline", "own_plane", "thickness", "weld"],
+        ["S1", "N5", "cover 9 mm", "splice"]]   # a splice made (its covers' thickness)
 provisional = [["D1", "N2"]]          # bolts not chosen yet
 hand = [["N7", "R3 and D5 within 4°: no room on one plate …"]]
 oriented = [["L1", "", "chord"], ["P3", "90 deg", "plan"]]  # turned by Orient angles; the roll before
 ```
 
 - `gauge` is a mark, not a field: the end is drawn with its gauge line through the work point (its normal framing eccentricity, gauge to centroid, for the drawings and the clash check only; the analysis keeps the member's axis through the work point).
+- `own_plane` (2026-11-19) marks a plate made in its member's own plane, welded to a flat plate (its `[[plate.weld]]` with `size` and `length`, the `weld` field automatic): the joint details draw its member lying on it (moved along the flat plate's normal) and the clash check tests it against the leg. `splice` with `cover <thickness>` marks a `[[splice]]` the layout made (two angles of other sections in line, covers outer and inner on each leg bolted): a run again makes it again, unless its covers were changed by hand — then it is kept, the user's.
 - A value the user changes after the run becomes theirs: it leaves the list and is kept from then on.
 - `oriented` (2026-11-18): the members **Orient angles** turned — a leg or chord (`chord`: heel out, its flanges in the tower's faces), a plan or hip member (`plan`: one leg flat, the other down) or a member of a steep face (`face`: one leg in the face, the other out of the tower) — with the roll each had before. A run of Orient angles again replaces them; Lay out joints keeps a `chord`'s roll (the tower's shape) and may turn a `plan` or `face` member's where that helps.
 - `rolled`: Lay out joints turns a member only where at least one of its joints is laid out with the turn (and no end of it that was flat is spoilt); its roll goes back to the one listed when none of its joints is laid out with it any more.

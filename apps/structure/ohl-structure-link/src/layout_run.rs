@@ -46,7 +46,7 @@ use ohl_structures::{LibraryItem, StructureType};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
 
 use crate::joint_layout::{
-    BoltArea, Join, JoinKind, JointPlan, LayoutSettings, Onto, flat_turns, plan_joint,
+    BoltArea, Join, JoinKind, JointPlan, LayoutSettings, Onto, Reach, flat_turns, plan_joint,
 };
 use crate::joints::{JointDetails, joint_details_at};
 
@@ -54,6 +54,16 @@ use crate::joints::{JointDetails, joint_details_at};
 pub const RECORD_ID: &str = "joint-layout";
 /// The record's kind (`ohl_structure_edit::body::JOINT_LAYOUT_KIND`).
 pub const RECORD_KIND: &str = ohl_structure_edit::body::JOINT_LAYOUT_KIND;
+
+/// The record's mark of a plate made in its member's own plane, welded to
+/// a flat plate (`made`; the owner's step 4, 2026-11-19): the joint details
+/// seat its member on the plate's outline, lifted along the flat plate's
+/// normal ([`crate::joints`]).
+pub const OWN_PLANE: &str = "own_plane";
+
+/// The record's mark of a splice the layout made (`made`, with `cover`
+/// and the covers' thickness as written; step 1c, 2026-11-19).
+pub const SPLICE: &str = "splice";
 
 /// The fields of a member end the layout sets.
 pub const END_FIELDS: [&str; 8] = [
@@ -597,6 +607,18 @@ fn lay_out_read(
     (cut, count): (bool, bool),
     start: std::time::Instant,
 ) -> Result<LayoutRun, String> {
+    lay_out_once(t, record, doc0, ask, (cut, count), start)
+}
+
+/// [`lay_out_read`]'s work.
+fn lay_out_once(
+    t: &StructureType,
+    record: LayoutRecord,
+    doc0: DocumentMut,
+    ask: &RunAsk<'_>,
+    (cut, count): (bool, bool),
+    start: std::time::Instant,
+) -> Result<LayoutRun, String> {
     // The structure's default minimum bolt distances (third round,
     // 2026-11-18): for the ends' pitch and end distance not given and the
     // edge distance where no code gives one.
@@ -714,6 +736,7 @@ fn lay_out_read(
     let mut named = false;
     let mut conns = connection_edits::Connections::of(&planning);
     let mut joins: BTreeMap<String, Vec<Join>> = BTreeMap::new();
+    let mut taken = ids_in(&planning);
     for j in around_details
         .joints
         .iter()
@@ -729,7 +752,7 @@ fn lay_out_read(
             })
             .collect();
         for x in &js {
-            write_join(&mut planning, &mut conns, &j.id, x);
+            write_join(&mut planning, &mut conns, &j.id, x, &mut taken);
             named = true;
         }
         let joined: BTreeSet<&str> = js.iter().map(|x| x.member.as_str()).collect();
@@ -899,9 +922,12 @@ fn lay_out_read(
     // leg, or its bolts miss the flange): its outstanding leg to the other
     // side, so that it lies on the outer face (an X-brace's diagonals: one
     // on the outer faces of the legs, the other on their inner faces, back
-    // to back where they cross). Kept for a member only when more of its
-    // ends are planned laid out with it and its joints no worse; the rest
-    // as for any turn (tuning on real towers, 2026-11-18).
+    // to back where they cross). Also where an end no roll lays flat has
+    // its leg bolted facing away from the face its welded plate would lie
+    // on (step 4, 2026-11-19: its outstanding leg towards the flange).
+    // Kept for a member only when more of its ends are planned laid out
+    // with it and its joints no worse; the rest as for any turn (tuning on
+    // real towers, 2026-11-18).
     let mut first: Option<Planned> = None;
     {
         let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
@@ -913,7 +939,8 @@ fn lay_out_read(
                     continue;
                 };
                 let inner = why.contains("runs towards the angle's other leg")
-                    || why.contains("do not all land on the inner face");
+                    || why.contains("do not all land on the inner face")
+                    || why.contains("its outstanding leg points towards the flange");
                 if !inner
                     || held.contains(m)
                     || one_part.contains(m)
@@ -1212,10 +1239,53 @@ fn write_join(
     conns: &mut connection_edits::Connections,
     j: &str,
     x: &Join,
-) -> [&'static str; 2] {
+    taken: &mut std::collections::HashSet<String>,
+) -> (Vec<&'static str>, Option<String>) {
     let (f, v) = match x.how {
         JoinKind::Continuous => ("kind", "continuous"),
         JoinKind::Nested => ("face", "nested"),
+        JoinKind::Spliced => {
+            // Step 1c: a splice of covers, outer and inner on each leg
+            // bolted, both ends onto it (the first free id).
+            let id = (1u64..)
+                .map(|n| format!("S{n}"))
+                .find(|x| !taken.contains(x))
+                .expect("a free id");
+            taken.insert(id.clone());
+            let mut sp = Table::new();
+            sp.insert("id", toml_edit::value(id.as_str()));
+            sp.insert("joint", toml_edit::value(j));
+            let mut list = Array::new();
+            list.push(x.member.as_str());
+            list.push(x.onto.as_str());
+            sp.insert("members", toml_edit::value(list));
+            let mut covers = ArrayOfTables::new();
+            for leg in &x.covers {
+                for face in ohl_structures::connections::CoverFace::ALL {
+                    let mut c = Table::new();
+                    c.insert("face", toml_edit::value(face.as_str()));
+                    c.insert("leg", toml_edit::value(leg.as_str()));
+                    c.insert("thickness", toml_edit::value(crate::mm_text(x.thickness)));
+                    covers.push(c);
+                }
+            }
+            sp.insert("cover", Item::ArrayOfTables(covers));
+            if doc
+                .get("splice")
+                .and_then(Item::as_array_of_tables)
+                .is_none()
+            {
+                doc.insert("splice", Item::ArrayOfTables(ArrayOfTables::new()));
+            }
+            doc["splice"]
+                .as_array_of_tables_mut()
+                .expect("made above")
+                .push(sp);
+            for m in [&x.member, &x.onto] {
+                let _ = conns.set(doc, m, j, "onto", Some(&FieldValue::Word(id.clone())));
+            }
+            return (vec!["onto"], Some(id));
+        }
     };
     let _ = conns.set(doc, &x.member, j, f, Some(&FieldValue::Word(v.into())));
     let _ = conns.set(
@@ -1225,18 +1295,90 @@ fn write_join(
         "onto",
         Some(&FieldValue::Word(x.onto.clone())),
     );
-    [f, "onto"]
+    (vec![f, "onto"], None)
 }
 
-/// The code's edge distance of a member end's bolts in a part of a
-/// thickness, from `model` (none: no model, or no rule).
+/// The ids in use in `doc`: its plates', splices' and members'.
+fn ids_in(doc: &DocumentMut) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for key in ["plate", "splice", "member"] {
+        if let Some(a) = doc.get(key).and_then(Item::as_array_of_tables) {
+            out.extend(
+                a.iter()
+                    .filter_map(|x| x.get("id").and_then(Item::as_str).map(str::to_owned)),
+            );
+        }
+    }
+    out
+}
+
+/// What the layout made, `id` at a joint, taken out of `doc` and `rec`: a
+/// plate; a splice (step 1c) as it made it — one changed by hand since
+/// (its covers not those written) is kept, the user's, its members' ends
+/// onto it with it. Whether it was taken out.
+fn take_out_made(doc: &mut DocumentMut, rec: &mut LayoutRecord, id: &str) -> bool {
+    let Some((joint, fields)) = rec.made.remove(id) else {
+        return false;
+    };
+    if !fields.contains(SPLICE) {
+        connection_edits::remove_plate(doc, id);
+        return true;
+    }
+    let cover = fields
+        .iter()
+        .find_map(|f| f.strip_prefix("cover "))
+        .unwrap_or_default()
+        .to_owned();
+    let table = doc
+        .get("splice")
+        .and_then(Item::as_array_of_tables)
+        .and_then(|a| {
+            a.iter()
+                .find(|x| x.get("id").and_then(Item::as_str) == Some(id))
+        });
+    let intact = table.is_some_and(|x| {
+        x.get("cover")
+            .and_then(Item::as_array_of_tables)
+            .is_some_and(|c| {
+                c.iter().all(|c| {
+                    c.get("thickness").and_then(Item::as_str) == Some(cover.as_str())
+                        && c.iter()
+                            .all(|(k, _)| matches!(k, "face" | "leg" | "thickness"))
+                })
+            })
+    });
+    if intact {
+        connection_edits::remove_splice(doc, id);
+        return true;
+    }
+    // Changed by hand: kept, with its members' ends onto it.
+    let members: Vec<String> = table
+        .and_then(|x| x.get("members"))
+        .and_then(Item::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    for m in members {
+        if let Some(f) = rec.ends.get_mut(&(m, joint.clone())) {
+            f.remove("onto");
+        }
+    }
+    false
+}
+
+/// The code's edge and end distances of a member end's bolts in a part
+/// of a thickness, from `model` (none: no model, or no rule).
 fn edge_rule(
     model: Option<&ohl_structures_fe::model::Model>,
-) -> impl Fn(&crate::Arrival, f64) -> Option<f64> + '_ {
-    move |a: &crate::Arrival, thick: f64| -> Option<f64> {
+) -> impl Fn(&crate::Arrival, f64) -> Option<(f64, f64)> + '_ {
+    move |a: &crate::Arrival, thick: f64| -> Option<(f64, f64)> {
         let m = model?;
         let idx = m.members.iter().position(|x| x.id == a.member)?;
-        crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None))).map(|r| r.edge)
+        crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None)))
+            .map(|r| (r.edge, r.end))
     }
 }
 
@@ -1365,9 +1507,9 @@ fn write_rounds(
             .map(|(id, _)| id.clone())
             .collect();
         for id in &going {
-            connection_edits::remove_plate(&mut doc, id);
-            rec.made.remove(id);
-            w.taken.remove(id);
+            if take_out_made(&mut doc, &mut rec, id) {
+                w.taken.remove(id);
+            }
         }
         if !going.is_empty() {
             w.conns = connection_edits::Connections::of(&doc);
@@ -1403,7 +1545,7 @@ fn write_rounds(
         // The plates' outlines worked out round their bolts, cut at the
         // flange's heel by half the gap (clear of the other face's), written
         // (automatic); those of a joint planned as before as before.
-        let heels: Vec<((String, usize), String, HeelLine)> = outcomes
+        let heels: Vec<OutlinePass> = outcomes
             .iter()
             .filter(|o| o.written)
             .flat_map(|o| {
@@ -1411,22 +1553,21 @@ fn write_rounds(
                     .iter()
                     .zip(&o.plan.plates)
                     .enumerate()
-                    .filter_map(|(k, (id, p))| {
-                        p.heel.map(|h| ((o.joint.clone(), k), id.clone(), h))
-                    })
+                    .filter(|(_, (_, p))| p.heel.is_some() || p.reach.is_some())
+                    .map(|(k, (id, p))| ((o.joint.clone(), k), id.clone(), p.heel, p.reach.clone()))
                     .collect::<Vec<_>>()
             })
             .collect();
         let new: BTreeSet<String> = heels
             .iter()
-            .filter(|(key, _, _)| !outlines.contains_key(key))
-            .map(|(key, _, _)| key.0.clone())
+            .filter(|(key, _, _, _)| !outlines.contains_key(key))
+            .map(|(key, _, _, _)| key.0.clone())
             .collect();
         if !new.is_empty() {
             // The record first: the drawing reads its marks.
             rec.write(&mut doc);
             let mid = (r.at)(&doc, Some(&new))?;
-            for (key, id, (heel, across)) in &heels {
+            for (key, id, heel, reach) in &heels {
                 if outlines.contains_key(key) {
                     continue;
                 }
@@ -1438,14 +1579,29 @@ fn write_rounds(
                 else {
                     continue;
                 };
+                // Step 4: round the seams of the plates welded to it in
+                // their members' own planes too, on its side of each.
+                let mut outline = p.outline.clone();
+                if let Some(rc) = reach {
+                    let mut pts = outline.clone();
+                    pts.extend(rc.points.iter().copied());
+                    let along = sub3(rc.points[1], rc.points[0]);
+                    outline = crate::joints::face_hull(&pts, rc.points[0], rc.normal, along, 0.0);
+                    for (at, side) in &rc.keep_to {
+                        outline = clip3(&outline, |q| dot3(sub3(q, *at), *side) + 1e-9);
+                    }
+                }
                 let half = ask.settings.gap / 2.0;
-                let cut = clip3(&p.outline, |q| {
-                    (0..3).map(|k| (q[k] - heel[k]) * across[k]).sum::<f64>() - half
-                });
+                let cut = match heel {
+                    Some((heel, across)) => clip3(&outline, |q| {
+                        (0..3).map(|k| (q[k] - heel[k]) * across[k]).sum::<f64>() - half
+                    }),
+                    None => outline,
+                };
                 outlines.insert(key.clone(), cut);
             }
         }
-        for (key, id, _) in &heels {
+        for (key, id, _, _) in &heels {
             if let Some(cut) = outlines.get(key)
                 && cut.len() >= 3
                 && connection_edits::set_plate_outline(&mut doc, id, cut).is_ok()
@@ -1478,8 +1634,16 @@ fn write_rounds(
                 .iter()
                 .map(|e| e.member.as_str())
                 .chain(o.plan.joins.iter().map(|x| x.member.as_str()))
+                .chain(
+                    o.plan
+                        .joins
+                        .iter()
+                        .filter(|x| x.how == JoinKind::Spliced)
+                        .map(|x| x.onto.as_str()),
+                )
                 .collect();
-            // The members laid out a part is of (a plate: those on it).
+            // The members laid out a part is of (a plate: those on it; a
+            // cover of a splice it made: the two it joins).
             let ours = |x: &crate::ClashPart| -> Vec<String> {
                 match x {
                     crate::ClashPart::Plate(id) => o
@@ -1487,6 +1651,19 @@ fn write_rounds(
                         .iter()
                         .position(|p| p == id)
                         .map(|k| o.plan.plates[k].members.clone())
+                        .unwrap_or_default(),
+                    crate::ClashPart::Cover(id, _) => j
+                        .splices
+                        .iter()
+                        .find(|s| &s.id == id)
+                        .and_then(|s| {
+                            o.plan.joins.iter().find(|x| {
+                                x.how == JoinKind::Spliced
+                                    && s.members.contains(&x.member)
+                                    && s.members.contains(&x.onto)
+                            })
+                        })
+                        .map(|x| vec![x.member.clone(), x.onto.clone()])
                         .unwrap_or_default(),
                     other => other
                         .member()
@@ -1563,9 +1740,16 @@ fn write_rounds(
                     o.plan = p;
                 }
                 None => {
-                    o.hand = bad
-                        .into_iter()
-                        .map(|w| format!("laid out: {w}"))
+                    // A splice whose place is not known first (its legs
+                    // drawn lapped, as given: often what the rest runs
+                    // into).
+                    o.hand = o
+                        .plan
+                        .left
+                        .iter()
+                        .filter(|w| w.contains(crate::joint_layout::SPLICE_UNKNOWN))
+                        .cloned()
+                        .chain(bad.into_iter().map(|w| format!("laid out: {w}")))
                         .chain(o.plan.hand.iter().cloned())
                         .collect();
                     take_back.insert(o.joint.clone());
@@ -1584,7 +1768,7 @@ fn write_rounds(
     // earlier run's text had some of them): the same layout gives the same
     // text (a run again identical).
     let mut result = result;
-    for key in ["plate", "connection", "generator"] {
+    for key in ["splice", "plate", "connection", "generator"] {
         if let Some(mut item) = result.remove(key) {
             if let Some(a) = item.as_array_of_tables_mut() {
                 for t in a.iter_mut() {
@@ -1660,6 +1844,19 @@ fn put_roll(doc: &mut DocumentMut, m: &str, text: &str) {
 /// A flange's heel line: a point on it and across the flange (m, unit).
 type HeelLine = ([f64; 3], [f64; 3]);
 
+/// A plate whose outline the run works out after writing: (its joint and
+/// index in the plan), its id, the flange's heel line it is cut at, what
+/// it must also cover and keep to (step 4).
+type OutlinePass = ((String, usize), String, Option<HeelLine>, Option<Reach>);
+
+fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
 /// `poly` (planar, 3D) cut to where `f` ≥ 0 (`f` linear).
 fn clip3(poly: &[[f64; 3]], f: impl Fn([f64; 3]) -> f64) -> Vec<[f64; 3]> {
     let n = poly.len();
@@ -1695,6 +1892,11 @@ struct OldPlate {
     members: Vec<String>,
     thickness: Option<f64>,
     material: Option<String>,
+    /// Its weld to the flat plate given by hand since (a plate in its
+    /// member's own plane, step 4): its size, length and kind.
+    weld: Option<ohl_structures::connections::TypeWeld>,
+    /// It lay in its member's own plane (step 4).
+    own: bool,
 }
 
 /// The automatic values at `targets` taken out of `doc` (for planning);
@@ -1729,17 +1931,35 @@ fn old_plates(
         .filter(|(_, (j, _))| targets.contains(j))
         .filter_map(|(id, (j, auto))| {
             let p = t.plates.iter().find(|p| &p.id == id)?;
+            let onto = |id: &str| -> Vec<String> {
+                t.connections
+                    .iter()
+                    .filter(|c| &c.joint == j && c.onto.as_deref() == Some(id))
+                    .map(|c| c.member.clone())
+                    .collect()
+            };
+            let mut members = onto(id);
+            // Nothing bolted onto it (a flat plate with only plates in their
+            // members' own planes welded to it, step 4): known by theirs.
+            if members.is_empty() {
+                for q in t.plates.iter().filter(|q| &q.joint == j && &q.id != id) {
+                    if q.welded_ids().contains(&id.as_str())
+                        || p.welded_ids().contains(&q.id.as_str())
+                    {
+                        members.extend(onto(&q.id));
+                    }
+                }
+            }
             Some(OldPlate {
                 id: id.clone(),
                 joint: j.clone(),
-                members: t
-                    .connections
-                    .iter()
-                    .filter(|c| &c.joint == j && c.onto.as_deref() == Some(id.as_str()))
-                    .map(|c| c.member.clone())
-                    .collect(),
+                members,
+                own: auto.contains(OWN_PLANE),
                 thickness: (!auto.contains("thickness")).then(|| p.thickness.si()),
                 material: p.material.clone(),
+                weld: (auto.contains(OWN_PLANE) && !auto.contains("weld"))
+                    .then(|| p.welds.first().cloned())
+                    .flatten(),
             })
         })
         .collect()
@@ -1763,9 +1983,9 @@ fn strip_joint(
         .map(|(id, _)| id.clone())
         .collect();
     for id in &made {
-        connection_edits::remove_plate(doc, id);
-        rec.made.remove(id);
-        w.taken.remove(id);
+        if take_out_made(doc, rec, id) {
+            w.taken.remove(id);
+        }
     }
     // (Removing a plate tidies the connections: their places change.)
     if !made.is_empty() {
@@ -1822,15 +2042,7 @@ struct Writing {
 
 impl Writing {
     fn of(doc: &DocumentMut, t: &StructureType) -> Self {
-        let mut taken: std::collections::HashSet<String> = doc
-            .get("plate")
-            .and_then(Item::as_array_of_tables)
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.get("id").and_then(Item::as_str).map(str::to_owned))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let mut taken = ids_in(doc);
         taken.extend(t.members.iter().map(|m| m.id.clone()));
         Self {
             conns: connection_edits::Connections::of(doc),
@@ -1853,19 +2065,47 @@ fn write_plan(
 ) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     for x in &p.joins {
-        let fields = write_join(doc, &mut w.conns, &p.joint, x);
+        let (fields, splice) = write_join(doc, &mut w.conns, &p.joint, x, &mut w.taken);
         let e = rec
             .ends
             .entry((x.member.clone(), p.joint.clone()))
             .or_default();
         e.extend(fields.iter().map(|f| (*f).to_owned()));
+        if let Some(id) = splice {
+            rec.ends
+                .entry((x.onto.clone(), p.joint.clone()))
+                .or_default()
+                .insert("onto".into());
+            rec.made.insert(
+                id,
+                (
+                    p.joint.clone(),
+                    BTreeSet::from([
+                        SPLICE.to_owned(),
+                        format!("cover {}", crate::mm_text(x.thickness)),
+                    ]),
+                ),
+            );
+        }
     }
-    for pl in &p.plates {
+    for (k, pl) in p.plates.iter().enumerate() {
         // The plate made before for (some of) these members: its id and
-        // what was given on it by hand.
+        // what was given on it by hand (a flat plate with nothing bolted
+        // onto it, step 4: by the members of the plates welded to it).
+        let mut mine = pl.members.clone();
+        if mine.is_empty() {
+            for q in p
+                .plates
+                .iter()
+                .filter(|q| q.own.as_ref().is_some_and(|o| o.welded_to == k))
+            {
+                mine.extend(q.members.iter().cloned());
+            }
+        }
         let before = old.iter().find(|o| {
             o.joint == p.joint
-                && o.members.iter().any(|m| pl.members.contains(m))
+                && o.own == pl.own.is_some()
+                && o.members.iter().any(|m| mine.contains(m))
                 && !w.taken.contains(&o.id)
         });
         // Its id kept when something was given on it by hand; else the
@@ -1901,6 +2141,37 @@ fn write_plan(
             x.insert("welded_to", Item::Value(Value::Array(a)));
             auto.insert("welded_to".into());
         }
+        // A plate in its member's own plane (step 4): its outline, and its
+        // weld to the flat plate (both sides, the throat each side).
+        if let Some(o) = &pl.own {
+            // Its weld: as given by hand on it before (its size, length,
+            // kind kept), else the layout's.
+            let hand = before.and_then(|b| b.weld.as_ref());
+            let mut weld = Table::new();
+            weld.insert("to", toml_edit::value(ids[o.welded_to].as_str()));
+            match hand {
+                Some(h) => {
+                    if let Some(v) = h.size {
+                        weld.insert("size", toml_edit::value(crate::mm_text(v.si())));
+                    }
+                    if let Some(v) = h.length {
+                        weld.insert("length", toml_edit::value(crate::mm_text(v.si())));
+                    }
+                    if let Some(k) = h.kind {
+                        weld.insert("kind", toml_edit::value(k.as_str()));
+                    }
+                }
+                None => {
+                    weld.insert("size", toml_edit::value(crate::mm_text(o.weld_size)));
+                    weld.insert("length", toml_edit::value(crate::mm_text(o.weld_length)));
+                    auto.insert("weld".into());
+                }
+            }
+            let mut welds = ArrayOfTables::new();
+            welds.push(weld);
+            x.insert("weld", Item::ArrayOfTables(welds));
+            auto.extend(["outline".into(), OWN_PLANE.into()]);
+        }
         if doc
             .get("plate")
             .and_then(Item::as_array_of_tables)
@@ -1912,6 +2183,9 @@ fn write_plan(
             .as_array_of_tables_mut()
             .expect("made above")
             .push(x);
+        if let Some(o) = &pl.own {
+            let _ = connection_edits::set_plate_outline(doc, &id, &o.outline);
+        }
         rec.made.insert(id.clone(), (p.joint.clone(), auto));
         ids.push(id);
     }
@@ -2042,6 +2316,21 @@ pub fn touched(before: &StructureType, after: &StructureType) -> BTreeSet<String
     for k in q0.keys().chain(q1.keys()) {
         if q0.get(k) != q1.get(k) {
             for x in [q0.get(k), q1.get(k)].into_iter().flatten() {
+                out.insert(x.0.clone());
+            }
+        }
+    }
+    // A splice (its covers, step 1c): its joint.
+    let splices = |t: &StructureType| -> BTreeMap<String, (String, String)> {
+        t.splices
+            .iter()
+            .map(|s| (s.id.clone(), (s.joint.clone(), format!("{s:?}"))))
+            .collect()
+    };
+    let (s0, s1) = (splices(before), splices(after));
+    for k in s0.keys().chain(s1.keys()) {
+        if s0.get(k) != s1.get(k) {
+            for x in [s0.get(k), s1.get(k)].into_iter().flatten() {
                 out.insert(x.0.clone());
             }
         }
@@ -2180,6 +2469,10 @@ fn follow_parsed(
             t1.plates.iter().find(|p| &p.id == id),
         );
         if a.map(|p| &p.thickness) != b.map(|p| &p.thickness) && fields.remove("thickness") {
+            changed_record = true;
+        }
+        // A welded plate's weld changed (step 4): the user's now.
+        if a.map(|p| &p.welds) != b.map(|p| &p.welds) && fields.remove("weld") {
             changed_record = true;
         }
     }

@@ -650,13 +650,21 @@ pub(crate) fn joint_details_and_model(
     let mut notes = t.connection_notes();
     // The member ends the automatic layout drew with their gauge line
     // through the work point (2026-11-18, its record's `gauge` mark).
-    let on_gauge: std::collections::BTreeSet<(String, String)> =
-        crate::layout_run::LayoutRecord::of(&t)
-            .ends
-            .into_iter()
-            .filter(|(_, f)| f.contains("gauge"))
-            .map(|(k, _)| k)
-            .collect();
+    let record = crate::layout_run::LayoutRecord::of(&t);
+    let on_gauge: std::collections::BTreeSet<(String, String)> = record
+        .ends
+        .into_iter()
+        .filter(|(_, f)| f.contains("gauge"))
+        .map(|(k, _)| k)
+        .collect();
+    // The plates it made in their members' own planes (2026-11-19, its
+    // record's `own_plane` mark): their members seated on them.
+    let own_plane: std::collections::BTreeSet<String> = record
+        .made
+        .into_iter()
+        .filter(|(_, (_, f))| f.contains(crate::layout_run::OWN_PLANE))
+        .map(|(id, _)| id)
+        .collect();
     // Level 3: the model (design data, sections) and the members' axes and
     // profiles as the exports take them.
     let (model, export) =
@@ -797,7 +805,7 @@ pub(crate) fn joint_details_and_model(
             })
             .collect();
         let snapshot = arrivals.clone();
-        let seats = plate_seats(&t, &n.id, &plates_here, &snapshot, &areas);
+        let seats = plate_seats(&t, &n.id, &plates_here, &snapshot, &areas, &own_plane);
         // The members nested in another here (a lap joint, `face =
         // "nested"`): by the member they nest in.
         let nested = nested_here(&t, &n.id, &snapshot);
@@ -1382,6 +1390,12 @@ struct PlateSeat {
     normal: [f64; 3],
     leg: Option<String>,
     thickness: f64,
+    /// A plate in its member's own plane welded to a flat plate (the
+    /// layout's step 4, 2026-11-19): its members lie on its outline,
+    /// moved there along this (the flat plate's normal), so they stay
+    /// where they are across the flange. Its `leg` is then none (it does
+    /// not lie on one: the clash check tests it against the leg).
+    lift: Option<([f64; 3], [f64; 3])>,
 }
 
 /// The plates of a joint by id.
@@ -1396,21 +1410,69 @@ fn plate_seats(
     plates: &[&ohl_structures::connections::TypePlate],
     all: &[Arrival],
     areas: &BTreeMap<String, f64>,
+    own_plane: &std::collections::BTreeSet<String>,
 ) -> PlateSeats {
     let mut out = PlateSeats::new();
-    for p in plates {
-        let on: Vec<&Arrival> = t
-            .connections
+    let on_of = |p: &ohl_structures::connections::TypePlate| -> Vec<&Arrival> {
+        t.connections
             .iter()
             .filter(|c| c.joint == joint && c.onto.as_deref() == Some(p.id.as_str()))
             .filter_map(|c| all.iter().find(|a| a.member == c.member))
-            .collect();
+            .collect()
+    };
+    let outline_normal = |p: &ohl_structures::connections::TypePlate| {
+        let q: Vec<[f64; 3]> = p.outline.iter().map(|x| x.map(|v| v.si())).collect();
+        crate::welds::polygon_normal(&q).map(|n| (n, q[0]))
+    };
+    // The plates welded to `p` (named either way).
+    let partners = |p: &ohl_structures::connections::TypePlate| {
+        plates
+            .iter()
+            .filter(|q| {
+                q.id != p.id
+                    && (p.welded_ids().contains(&q.id.as_str())
+                        || q.welded_ids().contains(&p.id.as_str()))
+            })
+            .copied()
+            .collect::<Vec<_>>()
+    };
+    for p in plates {
+        let on = on_of(p);
         // No leg (a crossing of two diagonals, 2026-11-18): the member
-        // running through the joint across them.
-        let leg = on.first().and_then(|a| {
-            leg_of(a, all, areas)
-                .or_else(|| crate::joint_layout::through_of(all, a).map(|b| b.member.clone()))
-        });
+        // running through the joint across them. Nothing bolted onto it
+        // (a flat plate a plate in its member's own plane is welded to,
+        // 2026-11-19): the leg of the plates welded to it.
+        let leg_for = |on: &[&Arrival]| {
+            on.first().and_then(|a| {
+                leg_of(a, all, areas)
+                    .or_else(|| crate::joint_layout::through_of(all, a).map(|b| b.member.clone()))
+            })
+        };
+        let leg = if on.is_empty() {
+            partners(p).iter().find_map(|q| leg_for(&on_of(q)))
+        } else {
+            leg_for(&on)
+        };
+        // In its member's own plane (the layout's mark): on its outline,
+        // lifted along the flat plate's normal.
+        if own_plane.contains(&p.id)
+            && let Some((n, at)) = outline_normal(p)
+            && let Some((lift, _)) = partners(p)
+                .iter()
+                .filter(|q| !own_plane.contains(&q.id))
+                .find_map(|q| outline_normal(q))
+        {
+            out.insert(
+                p.id.clone(),
+                PlateSeat {
+                    normal: n,
+                    leg: None,
+                    thickness: p.thickness.si(),
+                    lift: Some((lift, at)),
+                },
+            );
+            continue;
+        }
         let leg_dir = leg
             .as_ref()
             .and_then(|l| all.iter().find(|a| &a.member == l))
@@ -1436,6 +1498,7 @@ fn plate_seats(
                 normal: scale(n, 1.0 / norm(n)),
                 leg,
                 thickness: p.thickness.si(),
+                lift: None,
             },
         );
     }
@@ -2175,6 +2238,22 @@ fn place_bolts(
         _ => {}
     }
     let shifted = scale(a.shift.1.unwrap_or([0.0; 3]), a.shift.0);
+    // Onto a plate in its own plane (the layout's step 4, 2026-11-19): its
+    // leg bolted on the plate's face (its heel there), moved along the
+    // flat plate's normal so it stays where it is across the flange.
+    if seated.is_none()
+        && let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o))
+        && let Some((lift, on)) = s.lift
+        && let Some(p) = a.profile.as_ref()
+        && let Some(g) = p.angle
+    {
+        let heel = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
+        let base = add(add(joint, heel), shifted);
+        let k = dot(s.normal, lift);
+        if k.abs() > 1e-6 {
+            seated = Some(scale(lift, dot(s.normal, sub(on, base)) / k));
+        }
+    }
     // Seated on what it bolts onto, bolts or not (owner 2026-11-05: "draw
     // them at the right place in 3d"; before, an end without bolts was
     // seated only on a face given), and shifted. Without bolts and in
@@ -2344,12 +2423,34 @@ pub(crate) struct HostFlange {
 /// [`HostFlange`] of `host` for `a` (none: `a` or `host` no angle, or
 /// their legs not near parallel).
 pub(crate) fn host_flange(a: &Arrival, host: &Arrival) -> Option<HostFlange> {
+    flange_of(a, host, false, false)
+}
+
+/// [`host_flange`], the flange in whose plane `a`'s axis lies (the one
+/// whose normal runs most nearly square to it) rather than the one its leg
+/// bolted lies most nearly flat on: for an end no roll lays flat, whose
+/// welded plate lies in its own plane (the owner's step 4, 2026-11-19).
+pub(crate) fn host_flange_along(a: &Arrival, host: &Arrival, other: bool) -> Option<HostFlange> {
+    flange_of(a, host, true, other)
+}
+
+fn flange_of(a: &Arrival, host: &Arrival, along: bool, other: bool) -> Option<HostFlange> {
     let p = a.profile.as_ref()?;
     p.angle?;
     let q = host.profile.as_ref()?;
     let (c, _) = facing(a, q, None, true)?;
     let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
-    let across = c.flange(nb);
+    let across = if along {
+        // The flange along y has its normal along z, and the other way
+        // (`other`: the other flange).
+        if (dot(a.direction, c.ez).abs() <= dot(a.direction, c.ey).abs()) != other {
+            c.ey
+        } else {
+            c.ez
+        }
+    } else {
+        c.flange(nb)
+    };
     let other = if dot(across, c.ey).abs() > 0.5 {
         c.ez
     } else {
