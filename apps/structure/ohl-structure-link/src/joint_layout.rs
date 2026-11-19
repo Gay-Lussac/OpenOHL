@@ -553,6 +553,19 @@ struct Strip {
     /// the angle's other leg): onto a bent plate folded round that other
     /// leg (J2b, 2026-11-19).
     over: Option<Over>,
+    /// What it bolts onto ends at the joint (not one part through it,
+    /// `continuous`): its steel there starts at its cut (J9 and D16,
+    /// 2026-11-19; pieces in line not confirmed one part end at the joint,
+    /// on the safe side, as in the joint checks).
+    host_ends: bool,
+    /// Where that steel starts as the joint is given (the cut given or
+    /// worked out; not known: the work point), m along it.
+    host_cut: f64,
+    /// Along what it bolts onto from the work point, per metre of the
+    /// plane's x.
+    host_along: f64,
+    /// The end distance a bolt of it keeps in that steel, m.
+    host_end: f64,
 }
 
 /// An end on a flange's inner face that leaves the joint over the heel —
@@ -1220,15 +1233,35 @@ pub(crate) fn plan_joint_budget(
     for (k, x) in strips.iter().enumerate() {
         by_plane.entry(x.plane).or_default().push(k);
     }
-    let mut planes: BTreeMap<(u8, String, PlaneKey), Vec<usize>> = BTreeMap::new();
+    // (A plane whose ends bolt onto a member whose own end is laid out
+    // here comes after that member's plane: its bolts then keep to that
+    // member's steel past its cut, below; J9 and D16, 2026-11-19.)
+    let depth = |k: usize| -> usize {
+        let mut d = 0;
+        let mut at = k;
+        while d < strips.len() {
+            match strips.iter().position(|y| y.member == strips[at].host) {
+                Some(h) => {
+                    d += 1;
+                    at = h;
+                }
+                None => break,
+            }
+        }
+        d
+    };
+    let mut planes: BTreeMap<(usize, u8, String, PlaneKey), Vec<usize>> = BTreeMap::new();
     for (key, ks) in by_plane {
         let first = ks
             .iter()
             .map(|&k| (strips[k].host_rank, strips[k].host.clone()))
             .min()
             .expect("a plane has ends");
-        planes.insert((first.0, first.1, key), ks);
+        let deep = ks.iter().map(|&k| depth(k)).max().unwrap_or(0);
+        planes.insert((deep, first.0, first.1, key), ks);
     }
+    // The cut of each member laid out so far (where its steel now starts).
+    let mut laid_cut: BTreeMap<String, f64> = BTreeMap::new();
     let mut placed_all: Vec<Placed> = Vec::new();
     let mut plate_of: BTreeMap<usize, usize> = BTreeMap::new();
     let mut bent_wait: BTreeMap<PlaneKey, Vec<Placed>> = BTreeMap::new();
@@ -1336,12 +1369,23 @@ pub(crate) fn plan_joint_budget(
         // needed add a plate"). The provisional bolts' plausibility rule:
         // every bolt of the group clear of the flange's other leg and root
         // by the nut, and the edge distance from its toe.
+        //
+        // J9 and D16 (2026-11-19): what it bolts onto ending at the joint
+        // (not one part through it), every bolt on that member's steel —
+        // past where it starts (its cut: as laid out here, else as given
+        // or worked out, else the work point) by the end distance; else
+        // onto a plate.
         let lands = |p: &Placed| {
             let x = &strips[p.k];
+            let from = laid_cut.get(&x.host).copied().unwrap_or(x.host_cut);
             x.tilted.is_none()
                 && bolt_ys(x, p)
                     .iter()
                     .all(|&y| y >= x.t + x.r + x.nut - 1e-9 && y <= x.width - x.edge + 1e-9)
+                && (!x.host_ends
+                    || bolt_along(x, p)
+                        .iter()
+                        .all(|&s| s >= from + x.host_end - 1e-9))
         };
         let direct = placed.iter().all(lands);
         if !direct
@@ -1358,6 +1402,9 @@ pub(crate) fn plan_joint_budget(
             // plate.)
             let (on, off): (Vec<Placed>, Vec<Placed>) = placed.iter().cloned().partition(lands);
             laid3.extend(solids_of(&strips, &on, 0.0));
+            for p in &on {
+                laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+            }
             placed_all.extend(on);
             placed = off;
         }
@@ -1546,10 +1593,16 @@ pub(crate) fn plan_joint_budget(
                 plan.plates.push(w);
             }
             laid3.extend(solids_of(&strips, &placed, thickness));
+            for p in &placed {
+                laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+            }
             placed_all.extend(placed);
             continue;
         }
         laid3.extend(solids_of(&strips, &placed, 0.0));
+        for p in &placed {
+            laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+        }
         placed_all.extend(placed);
     }
     // J2b: the bent plates of the ends leaving over the heel, the ends of
@@ -1752,7 +1805,8 @@ fn mutual_hosts(j: &JointDetail) -> BTreeMap<String, String> {
 /// The member `a` bolts onto when nothing says (no `onto`, none worked
 /// out): of the members running through the joint (in line with another
 /// of its members, or one part with it) and not in line with `a`, the one
-/// part first, then by class (leg, bracing, redundant), the wider, the id.
+/// part first, then by class (leg, bracing, redundant), the wider, the
+/// piece on `a`'s side (J9, 2026-11-19), the id.
 fn through_member<'a>(j: &'a JointDetail, a: &Arrival) -> Option<&'a Arrival> {
     through_of(&j.arrivals, a)
 }
@@ -1861,13 +1915,28 @@ fn host_in_plane<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arrival> {
         })
         .filter(|b| in_flange_plane(a, b))
         .min_by(|x, y| {
-            (x.continuous.is_none(), rank(x), width(x), &x.member).cmp(&(
-                y.continuous.is_none(),
-                rank(y),
-                width(y),
-                &y.member,
-            ))
+            (
+                x.continuous.is_none(),
+                rank(x),
+                width(x),
+                !same_side(a, x),
+                &x.member,
+            )
+                .cmp(&(
+                    y.continuous.is_none(),
+                    rank(y),
+                    width(y),
+                    !same_side(a, y),
+                    &y.member,
+                ))
         })
+}
+
+/// `b` leaves the joint on the side `a` does (of two pieces in line, the
+/// one whose steel lies under `a`'s bolts; J9, 2026-11-19: pieces not one
+/// part end at the joint).
+fn same_side(a: &Arrival, b: &Arrival) -> bool {
+    dot(a.direction, b.direction) > 0.05
 }
 
 /// The phrase that says where a splice is is not known
@@ -1923,8 +1992,9 @@ pub fn splice_unknown(j: &JointDetail) -> Option<String> {
         let (a, b) = if a.member <= b.member { (a, b) } else { (b, a) };
         format!(
             "{} and {}: in line, of one section, with bolts (a splice): {SPLICE_UNKNOWN} (their \
-             bolts may be their members' design data, at both ends) — drawn as given, lapped; \
-             give the splice here, or the two one part",
+             bolts may be their members' design data, at both ends) — drawn as given, lapped, \
+             each ending at the joint; give the splice here, or confirm the layout's proposal \
+             that the two are one part",
             a.member, b.member
         )
     })
@@ -2128,12 +2198,20 @@ pub(crate) fn through_of<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arri
                     .any(|c| c.member != b.member && angle_deg(b.direction, c.direction) > 160.0)
         })
         .min_by(|x, y| {
-            (x.continuous.is_none(), rank(x), width(x), &x.member).cmp(&(
-                y.continuous.is_none(),
-                rank(y),
-                width(y),
-                &y.member,
-            ))
+            (
+                x.continuous.is_none(),
+                rank(x),
+                width(x),
+                !same_side(a, x),
+                &x.member,
+            )
+                .cmp(&(
+                    y.continuous.is_none(),
+                    rank(y),
+                    width(y),
+                    !same_side(a, y),
+                    &y.member,
+                ))
         })
 }
 
@@ -2585,6 +2663,14 @@ fn strip_of(
         own_t: g.t,
         rank: (rank, -mm(leg_w), -mm(angle)),
         give,
+        host_ends: host.continuous.is_none(),
+        host_cut: if host.cut.known() {
+            host.cut.value.unwrap_or(0.0)
+        } else {
+            0.0
+        },
+        host_along: dot(x3, host.direction),
+        host_end: edge_end(f.t).1,
     })
 }
 
@@ -2943,6 +3029,26 @@ fn bolt_run(x: &Strip) -> f64 {
 }
 
 /// Each bolt's y (across the flange from its heel) with `p`.
+/// Where the bolts of `x` placed `p` lie along what it bolts onto, from
+/// the work point (m).
+fn bolt_along(x: &Strip, p: &Placed) -> Vec<f64> {
+    x.bolts
+        .iter()
+        .map(|(along, line)| {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+            (x.at(p.cut + along, l)[0] - x.w[0]) * x.host_along
+        })
+        .collect()
+}
+
+/// The cut of `x` placed `p`, along it (as its end is written).
+fn cut_of(x: &Strip, p: &Placed) -> f64 {
+    match &x.tilted {
+        Some(t) => cut3(t, p.cut),
+        None => p.cut,
+    }
+}
+
 fn bolt_ys(x: &Strip, p: &Placed) -> Vec<f64> {
     x.bolts
         .iter()

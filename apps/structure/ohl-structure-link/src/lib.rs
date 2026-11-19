@@ -51,6 +51,9 @@ pub mod eccentricities;
 #[cfg(test)]
 mod eccentricities_tests;
 mod export;
+pub mod in_line;
+#[cfg(test)]
+mod in_line_tests;
 mod joint_groups;
 #[cfg(test)]
 mod joint_groups_tests;
@@ -97,6 +100,7 @@ pub use export::{
     ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,
     member_axes,
 };
+pub use in_line::{InLine, in_line_pieces};
 pub use joint_groups::{DOES_NOT_FIT, DOES_NOT_FIT_ASSUMED};
 pub use joint_layout::{
     BEND_RADIUS_RATIO, BendPlan, BoltArea, EdgeRule, EndPlan, GAP_START, HoldPlan, Join, JoinKind,
