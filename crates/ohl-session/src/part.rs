@@ -23,10 +23,14 @@
 //!   must follow may be outside the part;
 //! - an object of the working set may be referred to by objects outside
 //!   it (another route's section through a tower of the working set):
-//!   the part's validation cannot see them. A change made in a part
-//!   counts once the session holding the whole line has applied and
-//!   validated it (the server, phase 5) — the part's own check is a
-//!   preview, said so where it is shown.
+//!   the part's validation cannot see them. They are recorded in the
+//!   part (`ols_meta` key `part_users`: by structure, each object's kind,
+//!   id, routes, the sets it uses and the clamps it hangs on; phase 8)
+//!   and the rules of shared towers ([`crate::shared`], rules 1–7) are
+//!   checked against them; their own validation (rule 8) is not. A
+//!   change made in a part counts once the session holding the whole
+//!   line has applied and validated it (the server, phase 5) — the
+//!   part's own check is a preview, said so where it is shown.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -130,6 +134,22 @@ impl Session {
             &serde_json::to_string(&listed).expect("serialises"),
         )?;
         part.part = Some(wanted.clone());
+        // The objects of the line using its structures that it does not
+        // hold (phase 8, [`crate::shared`]): the rules of shared towers
+        // are checked against them in the part.
+        let users: std::collections::BTreeMap<String, Vec<crate::shared::User>> = wanted
+            .iter()
+            .filter(|(k, _)| *k == Kind::Structure)
+            .map(|(_, id)| (id.clone(), self.users_outside(&index, id, &keep)))
+            .filter(|(_, u)| !u.is_empty())
+            .collect();
+        if !users.is_empty() {
+            part.conn.set_meta(
+                crate::shared::PART_USERS_KEY,
+                &serde_json::to_string(&users).expect("serialises"),
+            )?;
+            part.part_users = users;
+        }
         part.checkpoint()?;
         Ok(PartSummary {
             wanted: wanted.len(),

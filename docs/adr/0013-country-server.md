@@ -199,7 +199,13 @@ its local validation. Changes that only move the other line's wires are
 allowed; its results go stale and its owners are told (a review instead on
 a protected or built line). Parts used only by the other line need rights
 on it. The same rule makes a merge that would break a connection a
-conflict.
+conflict. Built 2026-11-18 for the session (phase 8, in active
+development): `ohl_session::shared` — the desktop's working set (the
+routes a user edits, View › Editable routes) and a part's recorded users
+stand for rights until phase 7; stale marks with notices in the project
+file; a protected project line stands for a built line, its review the
+existing one; a project without working sets unchanged (the
+[decision log](../development/decisions.md#2026-11-18-country-server-phase-8)).
 
 ### Rights and roles on (almost) every element and library
 

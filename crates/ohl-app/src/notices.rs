@@ -21,8 +21,21 @@ pub const TICK: Option<f64> = if cfg!(test) { None } else { Some(0.05) };
 ///   re-solved over 1 weather cases (4 others …) in 954ms" → "Section S1
 ///   changed and recalculated." (nothing solved again: "… changed.");
 /// - Save all: "saved: project file, …" → "Saved.";
-/// - solved in the background: "solved: a, b" → "Solved a, b.".
+/// - solved in the background: "solved: a, b" → "Solved a, b.";
+/// - an edit's report with a notice on a line of its own (a shared
+///   tower's change making other routes' results out of date): the short
+///   sentence, then the notice.
 pub fn plain(text: &str) -> Option<String> {
+    // A notice on a line of its own after an edit's report (routes outside
+    // the working set made out of date): kept, after the short sentence.
+    if let Some((head, notice)) = text.split_once('\n')
+        && let Some(short) = plain(head)
+    {
+        return Some(format!(
+            "{short} {}.",
+            capital(notice.trim_end_matches('.'))
+        ));
+    }
     if let Some((what, rest)) = text.split_once(" (log entry ")
         && let Some((_, detail)) = rest.split_once("): ")
     {
@@ -114,5 +127,16 @@ mod tests {
         assert_eq!(plain("saved: nothing — project file: busy"), None);
         assert_eq!(plain("solved: wind").as_deref(), Some("Solved wind."));
         assert_eq!(plain("display weather cases set"), None);
+        // A shared tower's notice kept.
+        assert_eq!(
+            plain(&format!(
+                "{nothing}\nshared towers: route b's results are out of date (T3 moved 0.80 m)"
+            ))
+            .as_deref(),
+            Some(
+                "Structure T3 moved. Shared towers: route b's results are out of date (T3 \
+                 moved 0.80 m)."
+            )
+        );
     }
 }

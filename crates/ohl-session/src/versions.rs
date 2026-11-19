@@ -2110,9 +2110,20 @@ impl Session {
             let ours_state = self.revision_state(&ours)?;
             let theirs_state = self.revision_state(&theirs)?;
             let (patch, kept) = keep_both(&base_state, &ours_state, &theirs_state, None, choices)?;
-            let (merged, mut conflicts) =
+            let (mut merged, mut conflicts) =
                 merge_states_with(&base_state, &ours_state, &theirs_state, &patch, choices);
             conflicts.extend(kept);
+            // A structure changed on one side breaking what the other put
+            // on it (phase 8, [`crate::shared`]).
+            crate::shared::connection_conflicts(
+                &base_state,
+                &ours_state,
+                &theirs_state,
+                &mut merged,
+                &mut conflicts,
+                choices,
+                self.shared_rules_in_use(),
+            );
             plan.merged = merged;
             plan.conflicts = conflicts;
         }
@@ -2227,11 +2238,17 @@ impl Session {
             .head_revision()?
             .ok_or_else(|| refused("no revision yet"))?;
         let working = self.working_state()?;
-        let (merged, conflicts) = merge_states(
-            &self.revision_state(&id)?,
+        let (base_state, theirs_state) = (self.revision_state(&id)?, self.revision_state(parent)?);
+        let (mut merged, mut conflicts) =
+            merge_states(&base_state, &working, &theirs_state, choices);
+        crate::shared::connection_conflicts(
+            &base_state,
             &working,
-            &self.revision_state(parent)?,
+            &theirs_state,
+            &mut merged,
+            &mut conflicts,
             choices,
+            self.shared_rules_in_use(),
         );
         let unresolved: Vec<String> = conflicts
             .iter()

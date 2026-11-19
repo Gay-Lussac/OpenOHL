@@ -831,6 +831,10 @@ pub struct Applied {
     /// Points of the project's point clouds changed (by cloud, as
     /// applied: an undo gives the changes back), [`Command::ChangePoints`].
     pub points: Vec<(String, Vec<points::PointChange>)>,
+    /// Routes outside the user's working set whose results the command
+    /// made out of date, in words ([`shared`]; none without a working
+    /// set).
+    pub notice: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1089,6 +1093,15 @@ pub struct Session {
     /// The working set, when the project file holds a part of a line
     /// ([`part`]).
     part: Option<BTreeSet<(Kind, String)>>,
+    /// The users' working sets: the routes each edits ([`shared`]; empty:
+    /// every route editable, as a project without them).
+    working_sets: BTreeMap<String, BTreeSet<String>>,
+    /// In a part: the objects of the whole line using its structures that
+    /// it does not hold ([`shared::PART_USERS_KEY`]).
+    part_users: BTreeMap<String, Vec<shared::User>>,
+    /// The stale marks of the command being applied, written with its log
+    /// entry ([`shared`]).
+    shared_pending: std::sync::Mutex<Option<BTreeMap<String, String>>>,
 }
 
 /// What a command of a unit of work replaced, to put back should the unit
@@ -1804,9 +1817,13 @@ impl Session {
             whole_only: false,
             sides: None,
             part: None,
+            working_sets: BTreeMap::new(),
+            part_users: BTreeMap::new(),
+            shared_pending: std::sync::Mutex::new(None),
         };
         session.load_lines(by_line, gone, placed)?;
         session.read_part()?;
+        session.read_shared()?;
         // The reference index of the line worked on, made now: the first
         // edit then costs what it touches too.
         session.line_index();
@@ -3415,10 +3432,49 @@ impl Session {
         if prims.iter().any(|c| !same(c)) {
             prims.retain(|c| !same(c));
         }
-        let note = (!notes.is_empty()).then(|| notes.join("; "));
         if prims.is_empty() {
             return Err(refused("empty command"));
         }
+        // Towers shared with routes outside the user's working set
+        // ([`shared`]; nothing without one).
+        let shared = if matches!(entry_kind, "do" | "undo" | "redo" | "rollback") {
+            self.check_shared(user, &prims)?
+        } else {
+            None
+        };
+        if let Some(n) = shared.as_ref().and_then(shared::Outcome::note) {
+            notes.push(n);
+        }
+        let note = (!notes.is_empty()).then(|| notes.join("; "));
+        *self.shared_pending.lock().expect("not poisoned") = shared
+            .as_ref()
+            .filter(|o| !o.notices.is_empty())
+            .map(|o| o.notices.clone());
+        let applied = self.apply_prims(user, prims, note, entry_kind, undoes, import, cascade);
+        self.shared_pending.lock().expect("not poisoned").take();
+        match (applied, shared) {
+            (Ok(mut a), shared) => {
+                a.notice = shared.as_ref().and_then(shared::Outcome::note);
+                Ok(a)
+            }
+            (Err(e), Some(o)) => Err(o.decorate(e)),
+            (Err(e), None) => Err(e),
+        }
+    }
+
+    /// [`Session::apply_as`] once the command is expanded into puts and
+    /// deletes (`prims`) and checked.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_prims(
+        &mut self,
+        user: &str,
+        prims: Vec<Command>,
+        note: Option<String>,
+        entry_kind: &str,
+        undoes: Option<i64>,
+        import: bool,
+        cascade: bool,
+    ) -> Result<Applied, SessionError> {
         // Points of the project's clouds: applied in the transaction below.
         let (point_prims, mut prims): (Vec<Command>, Vec<Command>) = prims
             .into_iter()
@@ -3644,6 +3700,7 @@ impl Session {
             objects: changed,
             sections,
             points: points_changed,
+            notice: None,
         })
     }
 
@@ -3729,6 +3786,12 @@ impl Session {
         })?;
         if let Some(u) = undoes {
             tx.mark_undone(u, seq)?;
+        }
+        // Routes outside the user's working set made out of date
+        // ([`shared`]).
+        let pending = self.shared_pending.lock().expect("not poisoned").take();
+        if let Some(notices) = pending {
+            Self::write_stale(&*tx, seq, user, &notices)?;
         }
         tx.spatial_write_diff(&self.current, old, new)?;
         tx.commit()?;
@@ -4006,6 +4069,9 @@ pub mod points;
 pub mod replace;
 pub mod reports;
 pub mod reproject;
+pub mod shared;
+#[cfg(test)]
+mod shared_tests;
 pub mod spatial;
 pub mod store;
 pub mod surfaces;

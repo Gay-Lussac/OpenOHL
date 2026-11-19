@@ -392,6 +392,13 @@ fn view_menu(
             r.refresh_views();
         }
     });
+    // Towers shared by several routes (phase 8): the routes this user
+    // edits, and the routes made out of date. Ticks keep it open.
+    if r.model.remote.is_none() && r.model.editing.is_ok() && r.model.line.routes.len() > 1 {
+        crate::menu::options_menu(ui, "Editable routes (working set)", |ui| {
+            working_set_menu(ui, r);
+        });
+    }
     item(ui, Command::DisplayCases, out);
     if ui
             .button("Cross-section… (C)")
@@ -1402,4 +1409,80 @@ pub(super) fn drawing_checks(r: &Ready) -> (Vec<ohl_clearance::Rule>, Vec<([f64;
         _ => Vec::new(),
     };
     (rules, markers)
+}
+
+/// View › Editable routes: the routes this user edits (a working set:
+/// towers shared with the others change only as long as those stay
+/// connected, and mark them out of date) and the routes out of date.
+fn working_set_menu(ui: &mut egui::Ui, r: &mut Ready) {
+    ui.label(
+        egui::RichText::new(
+            "A tower shared with a route you do not tick changes only as long as that \
+             route stays connected; its results are then marked out of date. Every route \
+             ticked or none: as without a working set",
+        )
+        .small()
+        .weak(),
+    );
+    let all: Vec<String> = r.model.line.routes.iter().map(|x| x.id.clone()).collect();
+    let current = r.model.working_set();
+    let mut every = current.is_none();
+    if ui
+        .checkbox(&mut every, "Every route (no working set)")
+        .changed()
+        && every
+        && let Err(e) = r.model.set_working_set(None)
+    {
+        r.status = Some((e.to_string(), true));
+    }
+    let mut chosen = current.clone().unwrap_or_default();
+    let mut changed = false;
+    for id in &all {
+        let mut on = current.as_ref().is_none_or(|w| w.contains(id));
+        if ui.checkbox(&mut on, id).changed() {
+            if current.is_none() {
+                chosen = all.iter().cloned().collect();
+            }
+            if on {
+                chosen.insert(id.clone());
+            } else {
+                chosen.remove(id);
+            }
+            changed = true;
+        }
+    }
+    if changed {
+        let set = (!chosen.is_empty()).then_some(chosen);
+        if let Err(e) = r.model.set_working_set(set) {
+            r.status = Some((e.to_string(), true));
+        }
+    }
+    let stale = r.model.stale_routes();
+    if !stale.is_empty() {
+        ui.separator();
+        ui.label(egui::RichText::new("Results out of date").strong());
+        for (route, s) in &stale {
+            let last = s.notices.last();
+            let text = match last {
+                Some(n) => format!(
+                    "Route {route}: {} change(s) since log entry {} — last: {} by {} (entry {})",
+                    s.count, s.since, n.what, n.user, n.seq
+                ),
+                None => format!("Route {route}: {} change(s)", s.count),
+            };
+            ui.label(
+                egui::RichText::new(text)
+                    .small()
+                    .color(ui.visuals().warn_fg_color),
+            );
+            if ui
+                .button(format!("Mark route {route} up to date"))
+                .on_hover_text("After checking it again: the mark and its notices go")
+                .clicked()
+                && let Err(e) = r.model.clear_stale(route)
+            {
+                r.status = Some((e.to_string(), true));
+            }
+        }
+    }
 }

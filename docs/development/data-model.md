@@ -3739,6 +3739,9 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 | `routes_alignments`, `alignment_points` | `1`: the one-off conversion to routes, alignments and alignment points is done |
 | `setting.<key>` | the applications' settings (below) |
 | `part` | a file holding a part of a line only (`Session::write_part`, 2026-11-18): the working set, JSON `[[kind, id], …]` ([below](#a-part-of-a-line-ols_meta-key-part-2026-11-18)) |
+| `part_users` | a part only (phase 8): the objects of the whole line using its structures that it does not hold, JSON `{structure: [User, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
+| `working_sets` | only while a user has one (phase 8): the routes each user edits, JSON `{user: [route, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
+| `stale_routes` | only while a route's results are out of date (phase 8): JSON `{route: Stale}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 
 #### The applications' settings (`setting.<key>`)
 
@@ -3857,6 +3860,37 @@ no object of the context and refuses deletions and renames (and what is
 made of them): what they take with them may be outside the part. A
 program that does not know the key opens the file as a project of its
 own.
+
+Since phase 8 a part also records, for each structure of its working set,
+the objects of the whole line using it that it does not hold (`ols_meta`
+`part_users`, below): the rules of shared towers are checked against
+them in the part (their own validation is not: the whole line's session
+has the last word).
+
+#### Towers shared by several routes (2026-11-18)
+
+Country server phase 8 (`ohl_session::shared`; [ADR-0013](../adr/0013-country-server.md),
+the [decision log](decisions.md#2026-11-18-country-server-phase-8)). No
+table, no object row and no log column changes; the keys are written
+only while they hold something — a project without working sets has
+none of them and is written exactly as before.
+
+| Key | Written by | Value |
+|---|---|---|
+| `working_sets` | `Session::set_working_set(user, Some(routes))` (deleted when the last one is taken back with `None`) | `{user: [route id, …]}` (`BTreeMap<String, BTreeSet<String>>`): the routes each user edits; a user not listed edits every route |
+| `stale_routes` | a command of a user with a working set that only moves another route (in the command's own step, after its log entry: `Session::write_stale`); `Session::clear_stale(user, route)` takes a route off (the key deleted with the last) | `{route id: Stale}`; `Stale {count, since, notices}`: `count` the notices since the route was last marked up to date, `since` the log entry of the first, `notices` the latest 20 (`NOTICES_KEPT`), oldest first, each `Notice {seq, user, what}` (`what`: "T12 moved 0.80 m", "T12 height changed +1.00 m, its strings or wire points changed", "alignment point P4 moved 0.50 m", "the line's settings or library files changed") |
+| `part_users` | `Session::write_part` (only when some structure of the working set has such users) | `{structure id: [User, …]}`; `User {kind, id, routes, sets, clamps, tied}`: a section, jumper or alignment point of the whole line using the structure, its routes, the structure's sets it ends on or passes through, the wire points (no set) holding its support clamps, `tied` for an alignment point tied to it (the empty fields left out) |
+
+The log entry of a command that marks routes out of date says so in its
+`note` ("shared towers: route Y's results are out of date (T12 moved
+0.80 m)"), joined with the note it had; `Applied::notice` gives the same
+words to the caller. A merge's connection conflicts
+(`shared::connection_conflicts`) are ordinary `Conflict`s with the key of
+the whole structure (`structure:T12`) — no new field.
+
+What a working set means for a command (the routes of objects, the rules
+1–8, what is allowed and marked stale, typed structures, protected
+project lines) is in the module's notes and the decision log.
 
 ### Project lines kept as differences (schema 6)
 

@@ -923,6 +923,17 @@ impl Session {
         let (patch, kept) = keep_both(&base, &ours, &theirs, Some(their_line), choices)?;
         let (mut merged, mut conflicts) = merge_states_with(&base, &ours, &theirs, &patch, choices);
         conflicts.extend(kept);
+        // A structure changed on one side breaking what the other put on
+        // it (phase 8, [`crate::shared`]).
+        crate::shared::connection_conflicts(
+            &base,
+            &ours,
+            &theirs,
+            &mut merged,
+            &mut conflicts,
+            choices,
+            self.shared_rules_in_use(),
+        );
         let settled = conflicts.iter().all(|c| c.chosen.is_some());
         let problem = if settled {
             crate::versions::settle_merged(&mut merged, &ours, &mut Vec::new())

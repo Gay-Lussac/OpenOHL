@@ -257,6 +257,210 @@ fn in_place_equals_the_whole_way_on_a_small_country() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Towers shared by several routes (phase 8) on a small synthetic
+/// country: the user works on every other route. Random commands, most of
+/// them at towers shared with a route outside the working set (moves,
+/// strings turned to strain, sets and strings removed, renames,
+/// deletions, stringing of the other routes' sections): a command
+/// accepted is accepted the same without a working set; after it, the
+/// sections of the routes outside the working set (all of whose towers
+/// stand on such routes only) are as they were and the line is valid.
+#[test]
+fn shared_towers_keep_the_other_routes_connected() {
+    use ohl_session::{Command, Kind, Session};
+    use std::collections::{BTreeMap, BTreeSet};
+    let dir = std::env::temp_dir().join(format!("ohl-synth-shared-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let c = country(&Settings {
+        pylons: 400,
+        seed: 5,
+        ..Settings::default()
+    })
+    .unwrap();
+    let (pa, pb) = (dir.join("ws.ohl"), dir.join("plain.ohl"));
+    project::write_project(&c, &pa, "synth").unwrap();
+    project::write_project(&c, &pb, "synth").unwrap();
+    let mut ws = Session::open(&pa).unwrap();
+    let mut plain = Session::open(&pb).unwrap();
+    let inside: BTreeSet<String> = ws
+        .line()
+        .routes
+        .iter()
+        .step_by(2)
+        .map(|r| r.id.clone())
+        .collect();
+    ws.set_working_set("synth", Some(inside.clone())).unwrap();
+    // The other routes' own sections: every tower of theirs on outside
+    // routes only (by the line's own routes of its structures).
+    let theirs = |s: &Session| -> BTreeMap<String, ohl_line::Section> {
+        let routes = s.line().structure_routes();
+        s.line()
+            .sections
+            .iter()
+            .filter(|x| {
+                x.points.iter().all(|p| {
+                    routes
+                        .get(&p.structure)
+                        .is_some_and(|r| !r.is_empty() && r.iter().all(|r| !inside.contains(r)))
+                })
+            })
+            .map(|x| (x.id.clone(), x.clone()))
+            .collect()
+    };
+    let shared: Vec<String> = {
+        let routes = ws.line().structure_routes();
+        routes
+            .iter()
+            .filter(|(_, r)| {
+                r.iter().any(|x| inside.contains(x)) && r.iter().any(|x| !inside.contains(x))
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    };
+    assert!(shared.len() > 5, "{} shared towers", shared.len());
+    let mut rng = Rng(std::env::var("OHL_SHARED_SEED")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0x5eed_0008));
+    let (mut accepted, mut refused, mut notices) = (0, 0, 0);
+    for step in 0..250 {
+        let line = ws.line();
+        let pick = shared[rng.int(0, shared.len() - 1)].clone();
+        let Some(t) = line.structure(&pick).cloned() else {
+            continue;
+        };
+        let sec = line.sections[rng.int(0, line.sections.len() - 1)].clone();
+        let command = match rng.int(0, 9) {
+            0..=2 => Command::MoveStructure {
+                id: t.id.clone(),
+                position: [
+                    t.position[0] + rng.range(-3.0, 3.0),
+                    t.position[1] + rng.range(-3.0, 3.0),
+                    t.position[2],
+                ],
+            },
+            3 if !t.strings.is_empty() => {
+                let mut x = t.clone();
+                let k = rng.int(0, x.strings.len() - 1);
+                x.strings[k].strain = !x.strings[k].strain;
+                Command::Put {
+                    kind: Kind::Structure,
+                    id: x.id.clone(),
+                    value: serde_json::to_value(&x).unwrap(),
+                    ord: None,
+                }
+            }
+            4 if !t.wires.is_empty() => Command::DeleteAttachment {
+                structure: t.id.clone(),
+                set: t.wires[rng.int(0, t.wires.len() - 1)].set.unwrap_or(1),
+                phase: None,
+                confirm: true,
+            },
+            5 => Command::Rename {
+                kind: Kind::Structure,
+                id: t.id.clone(),
+                new_id: format!("{}-r", t.id),
+            },
+            6 => Command::Delete {
+                kind: Kind::Structure,
+                id: t.id.clone(),
+                confirm: true,
+            },
+            7 => Command::SetStringing {
+                section: sec.id.clone(),
+                stringing: ohl_line::Stringing::Tension {
+                    horizontal_tension: rng.range(5000.0, 30000.0),
+                    temperature: 15.0,
+                    condition: Default::default(),
+                },
+            },
+            8 if !t.points.is_empty() => {
+                let mut x = t.clone();
+                let k = rng.int(0, x.points.len() - 1);
+                x.points[k].position[2] += rng.range(-0.5, 0.5);
+                Command::Put {
+                    kind: Kind::Structure,
+                    id: x.id.clone(),
+                    value: serde_json::to_value(&x).unwrap(),
+                    ord: None,
+                }
+            }
+            _ => Command::MoveStructure {
+                id: t.id.clone(),
+                position: t.position,
+            },
+        };
+        let at = format!("step {step}: {command:?}");
+        let before = theirs(&ws);
+        // Undo and redo too (a move taken back moves the other route
+        // again: allowed, stale again).
+        let undo = rng.int(0, 5);
+        let (a, at) = match undo {
+            0 => (ws.undo("synth"), format!("{at} (undo)")),
+            1 => (ws.redo("synth"), format!("{at} (redo)")),
+            _ => (ws.apply("synth", command.clone()), at),
+        };
+        match a {
+            Ok(a) => {
+                accepted += 1;
+                notices += usize::from(a.notice.is_some());
+                let p = match undo {
+                    0 => plain.undo("synth"),
+                    1 => plain.redo("synth"),
+                    _ => plain.apply("synth", command),
+                };
+                let p =
+                    p.unwrap_or_else(|e| panic!("{at}: not accepted without a working set: {e}"));
+                assert_eq!((&a.objects, &a.sections), (&p.objects, &p.sections), "{at}");
+                let line = ws.line();
+                for (id, s) in &before {
+                    assert_eq!(
+                        line.sections.iter().find(|x| x.id == *id),
+                        Some(s),
+                        "{at}: section {id} of an outside route"
+                    );
+                }
+                line.validate().unwrap_or_else(|e| panic!("{at}: {e}"));
+                assert!(ws.line() == plain.line(), "{at}: line");
+            }
+            Err(e) => {
+                // An undo or redo refused by the rules only where it
+                // would break the other route (never a mere move back).
+                if undo <= 1 {
+                    let t = e.to_string();
+                    assert!(!t.contains("§7.4"), "{at}: {t}");
+                }
+                refused += 1
+            }
+        }
+    }
+    assert!(
+        accepted > 20 && refused > 20 && notices > 10,
+        "{accepted} accepted, {refused} refused, {notices} with a notice"
+    );
+    assert!(!ws.stale_routes().unwrap().is_empty());
+    drop((ws, plain));
+    // Measured with a working set: moves of shared towers, each with a
+    // notice; the working set and the marks taken off again.
+    let b = project::measure_with(
+        &pb,
+        "synth",
+        3,
+        std::time::Duration::from_secs(60),
+        false,
+        project::Shared::WorkingSet,
+    )
+    .unwrap();
+    let run = b.working_set.unwrap();
+    assert_eq!(run.moves_with_notice, 3);
+    assert!(run.shared_towers > 5);
+    let s = Session::open(&pb).unwrap();
+    assert!(s.working_sets().is_empty() && s.stale_routes().unwrap().is_empty());
+    drop(s);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The owner's size; about 20 s (most of it the line's validation), run
 /// by hand: `cargo test -p ohl-synth --release -- --ignored`.
 #[test]
