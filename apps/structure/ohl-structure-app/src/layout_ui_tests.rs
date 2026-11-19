@@ -198,3 +198,34 @@ fn an_edit_near_a_laid_out_joint_is_followed_in_the_same_undo_step() {
     assert_eq!(h.state().file.as_ref().unwrap().text(), laid);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// J2 (2026-11-19): a joint not laid out whole names the members left —
+/// the rest laid out — and those whose place is kept free; a joint left
+/// whole says so.
+#[test]
+fn the_hand_list_names_the_members_left_and_the_place_kept() {
+    let plan = ohl_structure_link::JointPlan {
+        joint: "N2".into(),
+        hand_members: vec!["R1".into(), "R2".into()],
+        kept_free: vec!["R1".into()],
+        hand: vec!["R1: too short".into(), "R2: no room".into()],
+        ..Default::default()
+    };
+    let mut o = ohl_structure_link::JointOutcome {
+        joint: "N2".into(),
+        hand: plan.hand.clone(),
+        plan,
+        written: true,
+        turned: Vec::new(),
+        plates: Vec::new(),
+    };
+    assert_eq!(
+        crate::layout_window::hand_words(&o),
+        "N2: by hand R1 (its place kept free), R2, the rest laid out — R1: too short; R2: no room"
+    );
+    o.written = false;
+    assert_eq!(
+        crate::layout_window::hand_words(&o),
+        "N2: left whole — R1: too short; R2: no room"
+    );
+}

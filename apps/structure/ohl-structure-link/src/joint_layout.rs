@@ -48,6 +48,15 @@
 //! 5. **No fit**: the joint is listed as needing a hand detail, with why;
 //!    nothing of it is changed. Never forced.
 //!
+//! **Searched** (J1, 2026-11-19, [`plan_joint_with`]): the planes on the
+//! biggest members first, each plane's ends placed in every order that can
+//! matter (the owner's order first, backtracking where one does not fit),
+//! clear of the joint's fixed steel (what is not laid out) and of what the
+//! planes before laid out; the most ends, then the least eccentricity, then
+//! the owner's order win; at most [`NODE_LIMIT`] placings per joint. A
+//! member left for its own sake keeps its place as it is (J2,
+//! [`JointPlan::kept_free`]): the ends laid out keep clear of it.
+//!
 //! Bolts are not chosen here: an end's bolts are those given (or its
 //! member's design data); else the connection preset for its class; else
 //! the bolt picked once, two in one gauge line — those are *provisional*.
@@ -65,7 +74,7 @@
 //! the flat plate covers the seam and the flange and keeps to its side of
 //! the seam; the weld both sides, its throat [`weld_throat`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::joints::{
     Arrival, BOLT_DRAWN, FLAT_OFF, JointDetail, Source, host_flange, host_flange_along,
@@ -339,6 +348,12 @@ pub struct JointPlan {
     pub hand: Vec<String>,
     /// The members left for a hand detail.
     pub hand_members: Vec<String>,
+    /// Of those, the ones whose place is kept free (J2, 2026-11-19): left
+    /// for their own sake (no roll lays them flat, too short, built up…),
+    /// as they are, and every end laid out keeps clear of them. The others
+    /// (no room beside an end laid out, a clash) are said with what they
+    /// run into.
+    pub kept_free: Vec<String>,
     /// The ends left as they are and why ("L2: in line with L1").
     pub left: Vec<String>,
     /// Notes ("D3: 2 provisional bolts, the bolt picked").
@@ -422,6 +437,32 @@ struct Strip {
     /// are then where it is drawn with its gauge line through the work
     /// point (no move needed for that).
     tilted: Option<Tilted>,
+    /// Its plane in 3D, from the work point: the face it lies on (a point
+    /// on the heel line), out of the steel, along what it bolts onto,
+    /// across the flange; the heel (the plane's 2D origin).
+    face3: [f64; 3],
+    n3: [f64; 3],
+    x3: [f64; 3],
+    y3: [f64; 3],
+    heel3: [f64; 3],
+    /// Its heel's edge across it (before a move) and the outstanding leg's
+    /// width, m.
+    heel_lat: f64,
+    out_w: f64,
+    /// How high over the face what it carries reaches (its leg on a plate
+    /// and its bolts' heads), m: the slab in which fixed steel is in its
+    /// way.
+    slab: f64,
+    /// The fixed steel in its way (2026-11-19, J1/J2): the parts of the
+    /// joint not laid out in this plan that reach into its slab, each by
+    /// name as its footprint on the plane (2D, convex).
+    fixed: Vec<(String, Vec<[f64; 2]>)>,
+    /// The least cut a clash after asks (the run's rounds: pulled back
+    /// past what it ran into) and why.
+    floor: Option<(f64, String)>,
+    /// What it bolts onto: its class rank (the planes on the biggest
+    /// members first).
+    host_rank: u8,
 }
 
 /// A member end whose leg bolted lies off the flange (step 4), in 3D: from
@@ -504,6 +545,49 @@ pub fn plan_joint_except(
     s: &LayoutSettings,
     edge: EdgeRule<'_>,
     except: &BTreeMap<String, String>,
+) -> JointPlan {
+    plan_joint_with(j, s, edge, except, &BTreeMap::new())
+}
+
+/// The most placings the search of one joint tries (J1, 2026-11-19): a
+/// joint whose search stops there says so with the members it leaves. A
+/// starting value of the program's (measured on the private real towers:
+/// see the theory page), not a standard's.
+pub const NODE_LIMIT: usize = 400;
+
+/// [`plan_joint_except`] with the least cut of some members (`floors`:
+/// member → the cut, m, and why; the run's clash rounds: an end laid out
+/// whose steel, bolts or plate would run into something is pulled back
+/// past it before it is left for a hand detail).
+///
+/// Each plane is **searched** (J1, owner-approved 2026-11-19), not filled
+/// one member after the other: the ends are placed in every order that
+/// can matter (the owner's order first: class, the wider leg, the larger
+/// angle, the id), each concentric and pulled back, else with the least
+/// sideways shift, backtracking where one does not fit; the layout placing
+/// the most ends wins, then the least eccentricity (the shifts), then the
+/// first found — so the owner's order wins every tie. At most
+/// [`NODE_LIMIT`] placings per joint. What is left for a hand detail keeps
+/// its place (J2): every end laid out keeps clear of it as it is.
+pub fn plan_joint_with(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+) -> JointPlan {
+    plan_joint_budget(j, s, edge, except, floors, NODE_LIMIT)
+}
+
+/// [`plan_joint_with`] with at most `limit` placings (1: the owner's order
+/// filled one after the other, as before the search).
+pub(crate) fn plan_joint_budget(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+    limit: usize,
 ) -> JointPlan {
     let mut plan = JointPlan {
         joint: j.id.clone(),
@@ -610,13 +694,53 @@ pub fn plan_joint_except(
             }
         }
     }
-    // By plane, each in order.
-    let mut planes: BTreeMap<(i64, i64, i64, i64), Vec<usize>> = BTreeMap::new();
+    for x in strips.iter_mut() {
+        // (Off the flange: its cut measured on the flange's plane.)
+        let lu = x.tilted.as_ref().map_or(1.0, |t| t.lu);
+        x.floor = floors.get(&x.member).map(|(f, w)| (f * lu, w.clone()));
+    }
+    // The fixed steel (J1/J2, 2026-11-19): every part of the joint that is
+    // not laid out in this plan — the members in line, running on, not
+    // single angles, given by hand, and those left for a hand detail (their
+    // place kept free) — each piece as the clash check cuts it.
+    let pieces =
+        crate::clash::piece_corners(j.position, &j.arrivals, &j.plates, &j.splices, |_, _| true);
+    // (Left for their own sake: their place kept free, J2.)
+    plan.kept_free = plan
+        .hand_members
+        .iter()
+        .filter(|m| !except.contains_key(*m))
+        .cloned()
+        .collect();
+    let mut fixed: BTreeSet<String> = j
+        .arrivals
+        .iter()
+        .map(|a| a.member.clone())
+        .filter(|m| !strips.iter().any(|x| &x.member == m) && !except.contains_key(m))
+        .collect();
+    // The steel laid out in the planes before (3D corners, by member).
+    let mut laid3: Vec<Laid3> = Vec::new();
+    // By plane, the planes on the biggest members first (what bolts onto
+    // a member laid out on a leg keeps clear of it as laid out), each in
+    // the owner's order.
+    // (A plane is a flange's face, whatever member of a run through the
+    // joint its ends name: in line, they share it.)
+    let mut by_plane: BTreeMap<PlaneKey, Vec<usize>> = BTreeMap::new();
     for (k, x) in strips.iter().enumerate() {
-        planes.entry(x.plane).or_default().push(k);
+        by_plane.entry(x.plane).or_default().push(k);
+    }
+    let mut planes: BTreeMap<(u8, String, PlaneKey), Vec<usize>> = BTreeMap::new();
+    for (key, ks) in by_plane {
+        let first = ks
+            .iter()
+            .map(|&k| (strips[k].host_rank, strips[k].host.clone()))
+            .min()
+            .expect("a plane has ends");
+        planes.insert((first.0, first.1, key), ks);
     }
     let mut placed_all: Vec<Placed> = Vec::new();
     let mut plate_of: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut budget = limit;
     for ks in planes.values() {
         let mut order = ks.clone();
         order.sort_by(|&a, &b| {
@@ -625,12 +749,79 @@ pub fn plan_joint_except(
                 .cmp(&strips[b].rank)
                 .then(strips[a].member.cmp(&strips[b].member))
         });
-        let mut placed: Vec<Placed> = Vec::new();
         for &k in &order {
-            match place(&strips, k, &placed, s) {
-                Ok(p) => placed.push(p),
-                Err(e) => plan.by_hand(&strips[k].member, e),
+            let polys = fixed_in(&strips[k], j, &pieces, &fixed, &laid3);
+            strips[k].fixed = polys;
+        }
+        let found = search_plane(&strips, &order, s, &mut budget);
+        let mut placed = found.placed;
+        let mut left_here: Vec<usize> = Vec::new();
+        for (k, e) in found.failed {
+            let e = if found.stopped {
+                format!("{e} (the search stopped at its limit of {limit} tries)")
+            } else {
+                e
+            };
+            plan.by_hand(&strips[k].member, e);
+            // Left for its own sake (it fits nowhere even alone): its place
+            // kept free; left for want of room beside the others, or for a
+            // clash: said with them.
+            if strips[k].floor.is_none() && place(&strips, k, &[], s).is_err() {
+                plan.kept_free.push(strips[k].member.clone());
+                left_here.push(k);
             }
+        }
+        // J2: the place of a member left for a hand detail kept free —
+        // those laid out pulled back clear of it as it is, else left too.
+        loop {
+            let mut dropped: Option<(usize, String)> = None;
+            for p in placed.iter_mut() {
+                let x = &strips[p.k];
+                let mut need = f64::NEG_INFINITY;
+                let mut by = String::new();
+                for &h in &left_here {
+                    let hm = &strips[h].member;
+                    let one: BTreeSet<String> = [hm.clone()].into();
+                    for (_, poly) in fixed_in(x, j, &pieces, &one, &[]) {
+                        let c =
+                            poly_need(x, [x.lat[0] + p.moved, x.lat[1] + p.moved], &poly, s.gap);
+                        if c > need {
+                            need = c;
+                            by = hm.clone();
+                        }
+                    }
+                }
+                if need <= p.cut + 1e-9 {
+                    continue;
+                }
+                let limit = (s.pull_back * x.tilted.as_ref().map_or(1.0, |t| t.lu))
+                    .min(x.half - bolt_run(x));
+                if x.hand_cut.is_none() && need <= limit {
+                    p.cut = ceil_to(need, 0.001);
+                } else {
+                    dropped = Some((
+                        p.k,
+                        format!(
+                            "{}: it would run into {by}, left for a hand detail (its place kept \
+                             free: {:.0} mm pulled back, the longest {:.0} mm)",
+                            x.member,
+                            need.min(9.999) * 1000.0,
+                            limit * 1000.0
+                        ),
+                    ));
+                    break;
+                }
+            }
+            match dropped {
+                Some((k, why)) => {
+                    placed.retain(|p| p.k != k);
+                    plan.by_hand(&strips[k].member, why);
+                }
+                None => break,
+            }
+        }
+        for &k in &left_here {
+            fixed.insert(strips[k].member.clone());
         }
         if placed.is_empty() {
             continue;
@@ -662,6 +853,7 @@ pub fn plan_joint_except(
             // joints then clashed; every end of the plane goes onto the
             // plate.)
             let (on, off): (Vec<Placed>, Vec<Placed>) = placed.iter().cloned().partition(lands);
+            laid3.extend(solids_of(&strips, &on, 0.0));
             placed_all.extend(on);
             placed = off;
         }
@@ -844,9 +1036,11 @@ pub fn plan_joint_except(
                 plate_of.insert(*k, plan.plates.len());
                 plan.plates.push(w);
             }
+            laid3.extend(solids_of(&strips, &placed, thickness));
             placed_all.extend(placed);
             continue;
         }
+        laid3.extend(solids_of(&strips, &placed, 0.0));
         placed_all.extend(placed);
     }
     // In the joint's member order.
@@ -1355,7 +1549,14 @@ fn strip_of(
     };
     // The face it lies on: its normal out of the steel.
     let face_out = if inside { scale(f.out, -1.0) } else { f.out };
-    let x3 = host.direction;
+    // Along the member it bolts onto, one way for every member of a run
+    // through the joint (the ends on a leg in two members share a plane
+    // and its axes).
+    let x3 = {
+        let d = host.direction;
+        let first = d.iter().copied().find(|c| c.abs() > 1e-9).unwrap_or(1.0);
+        if first < 0.0 { scale(d, -1.0) } else { d }
+    };
     let y3 = f.across;
     let to2 = |q: [f64; 3]| -> [f64; 2] {
         let d = sub(q, f.heel);
@@ -1600,7 +1801,30 @@ fn strip_of(
             Some(t)
         }
     };
+    let other_w = if a.leg_y { g.h } else { g.b };
+    let host_t = f.t;
+    let rank_of = |c: Option<&str>| match c {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
     Ok(Strip {
+        face3: if inside {
+            add(f.heel, scale(f.out, -f.t))
+        } else {
+            f.heel
+        },
+        n3: face_out,
+        x3,
+        y3,
+        heel3: f.heel,
+        heel_lat: lat0,
+        out_w: other_w,
+        slab: g.t + g.t.max(host_t) + 0.7 * d,
+        fixed: Vec::new(),
+        floor: None,
+        host_rank: rank_of(host.class.as_deref()),
         tilted,
         inside,
         obstacles,
@@ -2087,7 +2311,32 @@ fn place(
                 by = Some(b.member.clone());
             }
         }
+        // The fixed steel in its plane (J1/J2): clear of it by the gap.
+        for (name, poly) in &x.fixed {
+            let c = poly_need(x, lat, poly, s.gap);
+            if c > need {
+                need = c;
+                by = Some(name.clone());
+            }
+        }
         (need.max(0.0), by)
+    };
+    // The least cut a clash asked for (the run's rounds): beyond the
+    // longest pull-back it is left with that clash.
+    if let Some((f, why)) = &x.floor
+        && x.hand_cut.is_none()
+        && *f > limit + 1e-9
+    {
+        return Err(format!("{}: {why}", x.member));
+    }
+    let floor = x.floor.as_ref().map_or(0.0, |f| f.0);
+    let cut_at = |moved: f64| -> (f64, Option<String>) {
+        let (need, by) = cut_at(moved);
+        if floor > need {
+            (floor, by)
+        } else {
+            (need, by)
+        }
     };
     if let Some(c) = x.hand_cut {
         let (need, by) = cut_at(concentric);
@@ -2155,6 +2404,403 @@ fn place(
             s.shift_limit * 1000.0
         ),
     })
+}
+
+/// A plane: its normal and offset (mm, rounded).
+type PlaneKey = (i64, i64, i64, i64);
+
+/// The best placing a search found: the ends placed, those left with why,
+/// how many placed and the eccentricity (tenths of a millimetre).
+type Best = (Vec<Placed>, Vec<(usize, String)>, usize, i64);
+
+/// What [`search_plane`] found for a plane: the ends placed, those that
+/// fit in no order with why, and whether it stopped at the limit.
+struct Found {
+    placed: Vec<Placed>,
+    failed: Vec<(usize, String)>,
+    stopped: bool,
+}
+
+/// The ends `order` of one plane (the owner's order) placed by a search
+/// with backtracking (J1, 2026-11-19): at each step every end not placed
+/// yet is tried (concentric and pulled back, else the least shift that
+/// fits, [`place`]); an end that fits nowhere now fits nowhere later (each
+/// end placed only adds what the others keep clear of), so it is left;
+/// each that fits is placed in turn, in the owner's order, and the rest
+/// searched again. The best: the most ends placed, then the least
+/// eccentricity (the moves off concentric, mm), then the first found — the
+/// first found is the owner's order filled one after the other, as before.
+/// Placings already reached in another order are not searched again.
+/// `budget`: the placings left for the joint, spent.
+fn search_plane(
+    strips: &[Strip],
+    order: &[usize],
+    s: &LayoutSettings,
+    budget: &mut usize,
+) -> Found {
+    struct Dfs<'a> {
+        strips: &'a [Strip],
+        order: &'a [usize],
+        s: &'a LayoutSettings,
+        budget: &'a mut usize,
+        stopped: bool,
+        seen: BTreeSet<Vec<(usize, i64, i64)>>,
+        // Placed, failed with why, (count, eccentricity in tenths of mm).
+        best: Option<Best>,
+    }
+    impl Dfs<'_> {
+        fn ecc(&self, placed: &[Placed]) -> i64 {
+            placed
+                .iter()
+                .map(|p| {
+                    let c = concentric_of(&self.strips[p.k]);
+                    ((p.moved - c).abs() * 1e4).round() as i64
+                })
+                .sum()
+        }
+        fn done(&self) -> bool {
+            self.best
+                .as_ref()
+                .is_some_and(|b| b.2 == self.order.len() && b.3 == 0)
+        }
+        fn go(&mut self, placed: &mut Vec<Placed>) {
+            if *self.budget == 0 {
+                self.stopped = true;
+                return;
+            }
+            *self.budget -= 1;
+            let mut key: Vec<(usize, i64, i64)> = placed
+                .iter()
+                .map(|p| {
+                    (
+                        p.k,
+                        (p.cut * 1e4).round() as i64,
+                        (p.moved * 1e4).round() as i64,
+                    )
+                })
+                .collect();
+            key.sort_unstable();
+            if !self.seen.insert(key) {
+                return;
+            }
+            let mut fits: Vec<Placed> = Vec::new();
+            let mut fails: Vec<(usize, String)> = Vec::new();
+            for &k in self.order {
+                if placed.iter().any(|p| p.k == k) {
+                    continue;
+                }
+                match place(self.strips, k, placed, self.s) {
+                    Ok(p) => fits.push(p),
+                    Err(e) => fails.push((k, e)),
+                }
+            }
+            if fits.is_empty() {
+                let (n, e) = (placed.len(), self.ecc(placed));
+                if self
+                    .best
+                    .as_ref()
+                    .is_none_or(|b| n > b.2 || (n == b.2 && e < b.3))
+                {
+                    self.best = Some((placed.clone(), fails, n, e));
+                }
+                return;
+            }
+            // No placing below can beat the best.
+            if let Some(b) = &self.best
+                && (placed.len() + fits.len() < b.2
+                    || (placed.len() + fits.len() == b.2 && b.3 == 0))
+            {
+                return;
+            }
+            for p in fits {
+                placed.push(p);
+                self.go(placed);
+                placed.pop();
+                if self.done() || self.stopped {
+                    return;
+                }
+            }
+        }
+    }
+    let mut d = Dfs {
+        strips,
+        order,
+        s,
+        budget,
+        stopped: false,
+        seen: BTreeSet::new(),
+        best: None,
+    };
+    d.go(&mut Vec::new());
+    let stopped = d.stopped;
+    match d.best {
+        Some((mut placed, failed, _, _)) => {
+            // In the owner's order (as the plates and the record list
+            // them).
+            placed.sort_by_key(|p| order.iter().position(|k| *k == p.k));
+            Found {
+                placed,
+                failed,
+                stopped,
+            }
+        }
+        // Not even the first placing (no budget left): each end tried
+        // alone, in order, as before the search.
+        None => {
+            let mut placed: Vec<Placed> = Vec::new();
+            let mut failed = Vec::new();
+            for &k in order {
+                match place(strips, k, &placed, s) {
+                    Ok(p) => placed.push(p),
+                    Err(e) => failed.push((k, e)),
+                }
+            }
+            Found {
+                placed,
+                failed,
+                stopped: true,
+            }
+        }
+    }
+}
+
+/// How far a part reaching above the face may lie under it and still
+/// only touch it, m (half the clash check's tolerance).
+const FACE_TOUCH: f64 = crate::clash::CLASH_TOLERANCE / 2.0;
+
+/// The footprint on `x`'s plane of a convex piece (its corners `pts`, 3D
+/// from the work point) where it lies in `x`'s slab (from the face to what
+/// `x` carries over it): convex, 2D in the plane's axes; none where it
+/// lies outside.
+fn footprint(x: &Strip, pts: &[[f64; 3]]) -> Option<Vec<[f64; 2]>> {
+    let h = |q: &[f64; 3]| dot(sub(*q, x.face3), x.n3);
+    let (lo, hi) = (FACE_TOUCH, x.slab);
+    let hs: Vec<f64> = pts.iter().map(h).collect();
+    if hs.iter().all(|v| *v < lo) || hs.iter().all(|v| *v > hi) {
+        return None;
+    }
+    // Its corners in the slab, and where the lines between two corners
+    // cross the slab's faces (inside the piece: its section's corners
+    // among them).
+    let mut inside: Vec<[f64; 3]> = Vec::new();
+    for (i, a) in pts.iter().enumerate() {
+        let ha = hs[i];
+        if (lo..=hi).contains(&ha) {
+            inside.push(*a);
+        }
+        for (k, b) in pts.iter().enumerate().skip(i + 1) {
+            let hb = hs[k];
+            for lim in [lo, hi] {
+                if (ha - lim) * (hb - lim) < 0.0 {
+                    let t = (lim - ha) / (hb - ha);
+                    inside.push(add(*a, scale(sub(*b, *a), t)));
+                }
+            }
+        }
+    }
+    let flat: Vec<[f64; 2]> = inside
+        .iter()
+        .map(|q| {
+            let d = sub(*q, x.heel3);
+            [dot(d, x.x3), dot(d, x.y3)]
+        })
+        .collect();
+    let poly = crate::joint_sheet::hull(flat);
+    (poly.len() >= 3).then_some(poly)
+}
+
+/// The least cut of `x` (its leg across `lat`) that keeps it `gap` clear
+/// of the fixed footprint `poly`: the farthest point along it of the
+/// footprint within its leg widened by the gap (and within half its
+/// length), and the gap; minus infinity where they never meet.
+fn poly_need(x: &Strip, lat: [f64; 2], poly: &[[f64; 2]], gap: f64) -> f64 {
+    let rel = |p: [f64; 2]| sub2(p, x.w);
+    let q = clip(poly, |p| dot2(rel(p), x.v) - (lat[0] - gap));
+    let q = clip(&q, |p| (lat[1] + gap) - dot2(rel(p), x.v));
+    let q = clip(&q, |p| x.half - dot2(rel(p), x.u));
+    if q.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    q.iter()
+        .map(|p| dot2(rel(*p), x.u))
+        .fold(f64::NEG_INFINITY, f64::max)
+        + gap
+}
+
+/// What laid out steel is (3D corners from the work point): a member's,
+/// or a bolt's head (whose member's steel it is not).
+type Laid3 = (String, bool, Vec<[f64; 3]>);
+
+/// The fixed steel in strip `x`'s way, each by name as its footprint on
+/// its plane: the pieces of the members of `fixed` (and their bolts), the
+/// plates and covers given by hand, and what the planes before laid out
+/// (`laid3`) — not what `x` bolts onto (and a member running on from it
+/// in line), nor what bolts onto `x`; a bolt's shank through those is not
+/// in the way (its head and nut are).
+fn fixed_in(
+    x: &Strip,
+    j: &JointDetail,
+    pieces: &[(crate::ClashPart, Vec<[f64; 3]>)],
+    fixed: &BTreeSet<String>,
+    laid3: &[Laid3],
+) -> Vec<(String, Vec<[f64; 2]>)> {
+    use crate::ClashPart;
+    use crate::clash::BoltPiece;
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    let me = find(&x.member);
+    let host = find(&x.host);
+    let in_line = |a: &Arrival, b: &Arrival| angle_deg(a.direction, b.direction) > 160.0;
+    let host_run = |m: &str| m == x.host || host.zip(find(m)).is_some_and(|(h, b)| in_line(h, b));
+    let onto_me = |m: &str| {
+        find(m).is_some_and(|b| {
+            b.onto.value.as_deref() == Some(x.member.as_str())
+                || b.other_onto.as_deref() == Some(x.member.as_str())
+                || b.continuous.as_deref() == Some(x.member.as_str())
+        }) || me.is_some_and(|a| a.continuous.as_deref() == Some(m))
+    };
+    let mut out = Vec::new();
+    for (part, pts) in pieces {
+        let name = match part {
+            ClashPart::Member(m) => {
+                if m == &x.member || !fixed.contains(m) || host_run(m) || onto_me(m) {
+                    continue;
+                }
+                m.clone()
+            }
+            ClashPart::Bolt {
+                member: m, piece, ..
+            } => {
+                if m == &x.member || !fixed.contains(m) {
+                    continue;
+                }
+                if *piece == BoltPiece::Shank && (host_run(m) || onto_me(m)) {
+                    continue;
+                }
+                part.words()
+            }
+            ClashPart::Plate(id) => {
+                if me.is_some_and(|a| a.onto.value.as_deref() == Some(id.as_str())) {
+                    continue;
+                }
+                part.words()
+            }
+            ClashPart::Cover(sid, _) => {
+                if j.splices.iter().any(|sp| {
+                    &sp.id == sid
+                        && (sp.members.contains(&x.member) || sp.bolted.contains(&x.member))
+                }) {
+                    continue;
+                }
+                part.words()
+            }
+        };
+        if let Some(p) = footprint(x, pts) {
+            out.push((name, p));
+        }
+    }
+    for (m, bolt, pts) in laid3 {
+        if m == &x.member || (!bolt && (host_run(m) || onto_me(m))) {
+            continue;
+        }
+        if let Some(p) = footprint(x, pts) {
+            out.push((m.clone(), p));
+        }
+    }
+    out
+}
+
+/// The steel of the ends `placed` (single angles flat on their flange) as
+/// laid out, `lift` over their face (on a plate that thick: the plate
+/// too), 3D corners from the work point: each leg's box from its cut to
+/// half its length (the outstanding leg as high as it is wide), each bolt's
+/// head a box round it — what the planes after keep clear of.
+fn solids_of(strips: &[Strip], placed: &[Placed], lift: f64) -> Vec<Laid3> {
+    let mut out: Vec<Laid3> = Vec::new();
+    let mut plate: Vec<[f64; 2]> = Vec::new();
+    let mut first: Option<&Strip> = None;
+    for p in placed {
+        let x = &strips[p.k];
+        if x.tilted.is_some() {
+            continue;
+        }
+        first.get_or_insert(x);
+        let off = dot(sub(x.face3, x.heel3), x.n3);
+        let to3 = |q: [f64; 2], h: f64| {
+            add(
+                add(add(x.heel3, scale(x.x3, q[0])), scale(x.y3, q[1])),
+                scale(x.n3, off + h),
+            )
+        };
+        let boxed = |s: [f64; 2], l: [f64; 2], h: [f64; 2]| -> Vec<[f64; 3]> {
+            let mut c = Vec::new();
+            for a in s {
+                for b in l {
+                    for z in h {
+                        c.push(to3(x.at(a, b), z));
+                    }
+                }
+            }
+            c
+        };
+        let lat = [x.lat[0] + p.moved, x.lat[1] + p.moved];
+        out.push((
+            x.member.clone(),
+            false,
+            boxed([p.cut, x.half], lat, [lift, lift + x.own_t]),
+        ));
+        // The outstanding leg, at the heel's edge.
+        let lh = x.heel_lat + p.moved;
+        let inward = if (lh - lat[0]).abs() <= (lh - lat[1]).abs() {
+            x.own_t
+        } else {
+            -x.own_t
+        };
+        out.push((
+            x.member.clone(),
+            false,
+            boxed(
+                [p.cut, x.half],
+                [lh.min(lh + inward), lh.max(lh + inward)],
+                [lift, lift + x.out_w],
+            ),
+        ));
+        for (along, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+            let a = p.cut + along;
+            let r = x.nut;
+            out.push((
+                x.member.clone(),
+                true,
+                boxed(
+                    [a - r, a + r],
+                    [l - r, l + r],
+                    [lift + x.own_t, lift + x.own_t + 0.7 * x.d],
+                ),
+            ));
+            if lift > 0.0 {
+                let e = x.edge + 1e-3;
+                for (da, dl) in [(-e, -e), (-e, e), (e, -e), (e, e)] {
+                    plate.push(x.at(a + da, l + dl));
+                }
+            }
+        }
+    }
+    if let Some(x) = first
+        && lift > 0.0
+    {
+        let off = dot(sub(x.face3, x.heel3), x.n3);
+        let mut c = Vec::new();
+        for q in crate::joint_sheet::hull(plate) {
+            for z in [0.0, lift] {
+                c.push(add(
+                    add(add(x.heel3, scale(x.x3, q[0])), scale(x.y3, q[1])),
+                    scale(x.n3, off + z),
+                ));
+            }
+        }
+        out.push((format!("a plate on {}", x.host), false, c));
+    }
+    out
 }
 
 /// The least cut of `x` (its leg across `lat`) that keeps it `gap` clear

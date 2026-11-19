@@ -437,3 +437,229 @@ fn bolts_off_the_flange_go_onto_a_plate_of_the_thickest_leg() {
         clashes(&w, "N2", &p)
     );
 }
+
+/// The K brace without D2, and a short redundant R1 at N2 `deg` degrees
+/// less steep than D1 (in its face), `len` long.
+pub(crate) fn yielding(deg: f64, len: f64) -> String {
+    let down = (3.0f64 / 2.5).atan().to_degrees() - deg;
+    let (c, s) = (down.to_radians().cos(), down.to_radians().sin());
+    format!(
+        "{}\n[[node]]\nid = \"N8\"\npoint = [\"{:.4} m\", \"0 m\", \"{:.4} m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"R1\"\nnodes = [\"N8\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         orientation = \"y-z+\"\ndesign = {{ class = \"redundant\" }}\n",
+        K.replace(
+            "[[member]]\nid = \"D2\"\nnodes = [\"N5\", \"N2\"]\nsection = \"EA-61x7\"\norientation = \"z-y-\"\ndesign = { class = \"bracing\" }\n",
+            "",
+        ),
+        len * c,
+        3.0 - len * s
+    )
+}
+
+/// `text`'s joint `id` planned with at most `limit` placings.
+fn plan_limited(text: &str, id: &str, limit: usize) -> JointPlan {
+    crate::joint_layout::plan_joint_budget(
+        &joint(text, id),
+        &settings(),
+        &|_, _| None,
+        &Default::default(),
+        &Default::default(),
+        limit,
+    )
+}
+
+fn cut_of(p: &JointPlan, m: &str) -> Option<f64> {
+    p.ends.iter().find(|e| e.member == m).and_then(|e| e.cut)
+}
+
+/// J1 (2026-11-19): the owner's order filled one member after the other
+/// leaves the short redundant R1 out (D1 placed first takes the room near
+/// the work point, R1 cannot be pulled back far enough within half its
+/// length less its bolts); the search places R1 first and pulls D1 back
+/// instead — both laid out, concentric, running into nothing.
+#[test]
+fn the_search_lays_out_what_one_after_the_other_leaves() {
+    let text = yielding(20.0, 0.4);
+    // One after the other (a single placing: the search's first path).
+    let greedy = plan_limited(&text, "N2", 1);
+    assert_eq!(greedy.hand_members, ["R1"], "{greedy:?}");
+    assert!(
+        greedy
+            .hand
+            .iter()
+            .any(|h| h.contains("the search stopped at its limit of 1 tries")),
+        "{:?}",
+        greedy.hand
+    );
+    // Searched: both, D1 (the bigger class) pulled back past R1.
+    let p = plan(&text, "N2");
+    assert!(p.hand.is_empty(), "{:?}", p.hand);
+    let (d1, r1) = (cut_of(&p, "D1").unwrap(), cut_of(&p, "R1").unwrap());
+    assert!(d1 > r1, "{p:?}");
+    assert!(d1 <= settings().pull_back + 1e-9, "{d1}");
+    for e in &p.ends {
+        assert!(e.off.abs() < 1e-9, "concentric: {e:?}");
+    }
+    let w = written(&text, &p);
+    assert!(
+        clashes(&w, "N2", &p).is_empty(),
+        "{:?}",
+        clashes(&w, "N2", &p)
+    );
+}
+
+/// J1: the search is deterministic (the same joint, the same plan; ties
+/// go to the owner's order), and a plan written and planned again is kept.
+#[test]
+fn the_search_gives_the_same_plan_and_keeps_a_plan_written() {
+    for (deg, len) in [(20.0, 0.4), (25.0, 0.5), (30.0, 0.6)] {
+        let text = yielding(deg, len);
+        let a = plan(&text, "N2");
+        let b = plan(&text, "N2");
+        assert_eq!(a, b);
+        let again = plan(&written(&text, &a), "N2");
+        assert!(again.hand.is_empty(), "{:?}", again.hand);
+        assert!(again.ends.iter().all(|e| e.cut.is_none()), "{again:?}");
+    }
+}
+
+/// J1: a value given by hand is kept — D1's cut given, the search lays
+/// R1 out round it and never changes it.
+#[test]
+fn the_search_keeps_a_cut_given_by_hand() {
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\ncut = \"250 mm\"\n",
+        yielding(20.0, 0.4)
+    );
+    let p = plan(&text, "N2");
+    assert!(p.hand.is_empty(), "{:?}", p.hand);
+    let d1 = p.ends.iter().find(|e| e.member == "D1").unwrap();
+    assert_eq!(d1.cut, None, "kept: {d1:?}");
+    assert!(cut_of(&p, "R1").unwrap() < 0.25, "{p:?}");
+}
+
+/// J2 (2026-11-19): a member left for a hand detail for its own sake (R1,
+/// too short for its bolts) keeps its place as it is: D1 is laid out
+/// pulled back clear of it, and nothing laid out runs into it.
+#[test]
+fn a_member_left_by_hand_keeps_its_place() {
+    let text = yielding(20.0, 0.15);
+    let p = plan(&text, "N2");
+    assert_eq!(p.hand_members, ["R1"], "{p:?}");
+    assert!(p.hand[0].contains("too short"), "{:?}", p.hand);
+    assert_eq!(p.kept_free, ["R1"]);
+    assert!(p.ends.iter().any(|e| e.member == "D1"), "{p:?}");
+    let w = written(&text, &p);
+    let j = joint(&w, "N2");
+    for c in &j.clashes {
+        let m = [c.a.member(), c.b.member()];
+        assert!(
+            !(m.contains(&Some("D1")) && m.contains(&Some("R1"))),
+            "{}",
+            c.words()
+        );
+    }
+    // Without its place kept (planned as before: D1 first, concentric) D1
+    // would run into R1 as it is.
+    let alone = K.replace(
+        "[[member]]\nid = \"D2\"\nnodes = [\"N5\", \"N2\"]\nsection = \"EA-61x7\"\norientation = \"z-y-\"\ndesign = { class = \"bracing\" }\n",
+        "",
+    );
+    let q = plan(&alone, "N2");
+    let free = cut_of(&q, "D1").unwrap();
+    assert!(cut_of(&p, "D1").unwrap() > free, "{p:?} {q:?}");
+}
+
+/// A main angle running on through a joint in the middle of a panel, two
+/// diagonals of its face bolted directly on its flange with two bolts each,
+/// their ends close together (direct flange connections, step 2a: an
+/// example joint the owner sent, 2026-11-19, rebuilt here).
+#[test]
+fn diagonals_bolt_directly_on_a_main_angle_running_through() {
+    // A main angle much wider than the diagonals (an invented section
+    // added to the example library for this joint).
+    let lib = crate::SectionLibrary::parse(&format!(
+        "{}\n[[section]]\nid = \"EA-160x15\"\nname = \"Equal angle 160 × 15 (invented)\"\n\
+         shape = \"equal_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"16 mm\"\n",
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap()
+    ))
+    .unwrap();
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+        K.replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"12 mm\", count = 2 } }",
+        )
+        .replace(
+            "section = \"EA-61x7\"\norientation = \"x+y+\"",
+            "section = \"EA-160x15\"\norientation = \"x+y+\"",
+        )
+    );
+    let at = |text: &str| {
+        joint_details(text, &lib, &Default::default())
+            .unwrap()
+            .joint("N2")
+            .unwrap()
+            .clone()
+    };
+    let p = plan_joint(&at(&text), &settings(), &|_, _| None);
+    assert!(p.hand.is_empty(), "{:?}", p.hand);
+    assert!(p.plates.is_empty(), "{p:?}");
+    let ends: Vec<&str> = p.ends.iter().map(|e| e.member.as_str()).collect();
+    assert_eq!(ends, ["D1", "D2"]);
+    for e in &p.ends {
+        assert!(
+            matches!(&e.onto, Onto::Member(m) if m.starts_with('L')),
+            "{e:?}"
+        );
+        assert!(e.off.abs() < 1e-9, "concentric: {e:?}");
+    }
+    let j = at(&written(&text, &p));
+    let laid = |x: &crate::ClashPart| x.member().is_some_and(|m| m.starts_with('D'));
+    let mine: Vec<String> = j
+        .clashes
+        .iter()
+        .filter(|c| laid(&c.a) || laid(&c.b))
+        .map(|c| c.words())
+        .collect();
+    assert!(mine.is_empty(), "{mine:?}");
+}
+
+/// The same joint with the diagonals' bolts too many for the main angle's
+/// flange: one gusset plate on the flange (as thick as the thickest leg on
+/// it), both diagonals bolted onto it (a mid-panel gusset plate, step 2b:
+/// the owner's third example, 2026-11-19, rebuilt here).
+#[test]
+fn a_gusset_plate_on_a_main_angle_in_the_middle_of_a_panel() {
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+        K.replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 4 } }",
+        )
+    );
+    let p = plan(&text, "N2");
+    assert!(p.hand.is_empty(), "{:?}", p.hand);
+    assert_eq!(p.plates.len(), 1, "{p:?}");
+    assert!((p.plates[0].thickness - 0.007).abs() < 1e-9);
+    assert!(p.ends.iter().all(|e| e.onto == Onto::Plate(0)), "{p:?}");
+    let w = written(&text, &p);
+    assert!(
+        clashes(&w, "N2", &p).is_empty(),
+        "{:?}",
+        clashes(&w, "N2", &p)
+    );
+    // Each diagonal naming its own member of the run (D1 onto L1, D2 onto
+    // L2): one face of one flange, so still one plate.
+    let named = format!(
+        "{text}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n\
+         \n[[connection]]\nmember = \"D2\"\njoint = \"N2\"\nonto = \"L2\"\n"
+    );
+    let q = plan(&named, "N2");
+    assert!(q.hand.is_empty(), "{:?}", q.hand);
+    assert_eq!(q.plates.len(), 1, "{q:?}");
+}

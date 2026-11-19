@@ -440,6 +440,47 @@ pub fn clashes(
     splices: &[SpliceDetail],
     tol: f64,
 ) -> Vec<Clash> {
+    let (p, bolt_of) = parts_of(at, arrivals, plates, splices);
+    clashes_of(&p, &bolt_of, arrivals, plates, splices, tol)
+}
+
+/// The convex pieces of the parts at a joint at `at` (m) that `keep`
+/// selects (the part, and for a bolt its head, shank or nut), each as its
+/// corners from the work point, m (the automatic joint layout's fixed
+/// steel, 2026-11-19: what a member end laid out keeps clear of).
+pub(crate) fn piece_corners(
+    at: [f64; 3],
+    arrivals: &[Arrival],
+    plates: &[PlateDetail],
+    splices: &[SpliceDetail],
+    keep: impl Fn(&ClashPart, Option<BoltPiece>) -> bool,
+) -> Vec<(ClashPart, Vec<[f64; 3]>)> {
+    let (p, _) = parts_of(at, arrivals, plates, splices);
+    p.pieces
+        .iter()
+        .filter(|x| keep(&p.parts[x.part], x.bolt))
+        .map(|x| {
+            let part = match (&p.parts[x.part], x.bolt) {
+                (ClashPart::Bolt { member, index, .. }, Some(piece)) => ClashPart::Bolt {
+                    member: member.clone(),
+                    index: *index,
+                    piece,
+                },
+                (other, _) => other.clone(),
+            };
+            (part, x.pts.iter().map(|q| sub(*q, at)).collect())
+        })
+        .collect()
+}
+
+/// The parts at a joint and their pieces; each bolt's part and whether it
+/// is of its end's other leg.
+fn parts_of(
+    at: [f64; 3],
+    arrivals: &[Arrival],
+    plates: &[PlateDetail],
+    splices: &[SpliceDetail],
+) -> (Parts, Vec<(usize, bool)>) {
     let mut p = Parts {
         parts: Vec::new(),
         pieces: Vec::new(),
@@ -513,6 +554,18 @@ pub fn clashes(
             }
         }
     }
+    (p, bolt_of)
+}
+
+/// [`clashes`] of the parts built.
+fn clashes_of(
+    p: &Parts,
+    bolt_of: &[(usize, bool)],
+    arrivals: &[Arrival],
+    plates: &[PlateDetail],
+    splices: &[SpliceDetail],
+    tol: f64,
+) -> Vec<Clash> {
     let arrival = |m: &str| arrivals.iter().find(|a| a.member == m);
     let in_line = |a: &Arrival, b: &Arrival| {
         let c = dot(a.direction, b.direction);

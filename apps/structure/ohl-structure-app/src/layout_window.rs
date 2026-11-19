@@ -807,10 +807,19 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
         .flat_map(|o| &o.plan.ends)
         .filter(|e| e.bolts.is_some())
         .count();
+    // Member ends laid out of those the layout places (J2: the ends that
+    // fit are kept in a joint that is not whole).
+    let ends: usize = p.run.laid_out().map(|o| o.plan.ends.len()).sum();
+    let all: usize = p
+        .run
+        .joints
+        .iter()
+        .map(|o| o.plan.ends.len() + o.plan.hand_members.len())
+        .sum();
     ui.label(format!(
-        "{laid} joint(s) laid out, {plates} plate(s); {hand} need a hand detail; clashes at these \
-         joints {} to {}; {provisional} end(s) with provisional bolts. Worked out in {:.2} s \
-         (measured).",
+        "{laid} joint(s) laid out, {plates} plate(s); {hand} need a hand detail; {ends} of {all} \
+         member end(s) laid out; clashes at these joints {} to {}; {provisional} end(s) with \
+         provisional bolts. Worked out in {:.2} s (measured).",
         p.run.clashes.0, p.run.clashes.1, p.run.seconds
     ));
     let shifted = p
@@ -868,12 +877,43 @@ fn layout_changes(ui: &mut egui::Ui, p: &Preview) {
                 .show(ui, |ui| {
                     for o in &hand {
                         ui.label(
-                            egui::RichText::new(format!("{}: {}", o.joint, o.hand.join("; ")))
-                                .color(ui.visuals().warn_fg_color),
+                            egui::RichText::new(hand_words(o)).color(ui.visuals().warn_fg_color),
                         );
                     }
                 });
         });
+}
+
+/// A joint left for a hand detail in words (J2, 2026-11-19): which members
+/// are left — the rest of the joint laid out — and whose place is kept free
+/// (every end laid out keeps clear of it), then why: "N2: by hand R1 (its
+/// place kept free), the rest laid out — R1: too short …"; a joint left
+/// whole: "N3: left whole — …".
+pub fn hand_words(o: &ohl_structure_link::JointOutcome) -> String {
+    let why = o.hand.join("; ");
+    if !o.written {
+        return format!("{}: left whole — {why}", o.joint);
+    }
+    let members: Vec<String> = o
+        .plan
+        .hand_members
+        .iter()
+        .map(|m| {
+            if o.plan.kept_free.contains(m) {
+                format!("{m} (its place kept free)")
+            } else {
+                m.clone()
+            }
+        })
+        .collect();
+    if members.is_empty() {
+        return format!("{}: {why}", o.joint);
+    }
+    format!(
+        "{}: by hand {}, the rest laid out — {why}",
+        o.joint,
+        members.join(", ")
+    )
 }
 
 /// One joint's changes in words: "N2: D1 steel stops at 34 mm, onto L2;

@@ -653,7 +653,8 @@ fn bolts_off_an_inner_face_go_onto_a_plate_clear_of_the_other_leg() {
 /// Tuning on real towers (2026-11-18): a member whose laid-out steel would
 /// run into something leaves the rest of its joint laid out — it alone is
 /// left as it was, with the clash (R1 on a plate given by hand, its steel
-/// where D1 would go).
+/// where D1 would go). Since J1 (2026-11-19) the plan itself sees R1's
+/// steel (fixed: not laid out) and leaves D1 with it.
 #[test]
 fn one_members_clash_does_not_take_its_whole_joint_back() {
     let text = format!(
@@ -676,7 +677,7 @@ fn one_members_clash_does_not_take_its_whole_joint_back() {
     assert!(
         o.hand
             .iter()
-            .any(|h| h.starts_with("D1: laid out, ") && h.contains("would run")),
+            .any(|h| h.starts_with("D1: ") && h.contains("R1")),
         "{:?}",
         o.hand
     );
@@ -1057,6 +1058,47 @@ fn other_sections_in_line_are_spliced_with_covers() {
         assert_eq!(
             t2.connection(m, "J").unwrap().onto.as_deref(),
             Some(t2.splices[0].id.as_str())
+        );
+    }
+}
+
+/// J1/J2 (2026-11-19) in a run: a member left for a hand detail for its
+/// own sake (R1, too short for its bolts) keeps its place — the rest of
+/// the joint is laid out and written, and nothing written runs into R1;
+/// a run again changes nothing.
+#[test]
+fn a_run_keeps_the_place_of_a_member_left_by_hand() {
+    let text = crate::joint_layout_tests::yielding(20.0, 0.15);
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written, "{:?} {:?}", o.hand, r.notes);
+    assert_eq!(o.plan.hand_members, ["R1"], "{:?}", o.plan);
+    assert_eq!(o.plan.kept_free, ["R1"]);
+    assert!(o.plan.ends.iter().any(|e| e.member == "D1"));
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    for c in &d.joint("N2").unwrap().clashes {
+        let m = [c.a.member(), c.b.member()];
+        assert!(!m.contains(&Some("D1")), "{}", c.words());
+    }
+    assert_eq!(run(&r.text, &settings(), Some(&["N2"]), false).text, r.text);
+}
+
+/// J1 in a run: the short redundant the owner's order filled one after
+/// the other would leave out is laid out (D1 pulled back past it), and the
+/// joint is laid out whole, running into nothing.
+#[test]
+fn a_run_lays_out_whole_what_one_after_the_other_leaves() {
+    let text = crate::joint_layout_tests::yielding(20.0, 0.4);
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written && o.hand.is_empty(), "{:?} {:?}", o.hand, r.notes);
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    for c in &d.joint("N2").unwrap().clashes {
+        let m = [c.a.member(), c.b.member()];
+        assert!(
+            !m.contains(&Some("D1")) && !m.contains(&Some("R1")),
+            "{}",
+            c.words()
         );
     }
 }
