@@ -45,18 +45,38 @@ themselves are not chosen here (that comes with the design codes).
    one undo step each; the preview is then worked out again. Until you
    confirm, each piece **ends at the joint** in the joint checks and in
    the layout (on the safe side): what bolts onto it keeps its bolts on
-   that piece's steel. Pieces of a leg with bolts are a leg splice (not
-   proposed: a command of their own, to come); a splice, a kind, what it
-   bolts onto or bolts given at the joint: not proposed, said why.
+   that piece's steel. Pieces of a leg with bolts are leg splice places
+   (next point); a splice, a kind, what it bolts onto or bolts given at
+   the joint: not proposed, said why.
 
    ![Lay out joints on an invented tower: a horizontal in two pieces H1 and H2 through joint M with a redundant on it, proposed one part (Confirm, Confirm all)](../images/structure-tools/tool-lay-out-joints-in-line.png)
+   **Leg splices** (2026-11-19, J7): where a leg's pieces meet in line,
+   the preview proposes the splice places by the owner's rule — **a
+   change of section is a splice** (covers outer and inner on each leg
+   bolted, as thick as the thicker piece's leg, the bolts the import
+   gives, else provisional ones: *Assumed: …* under each joint says what);
+   **the same section is one part** unless you mark a splice there (give
+   it in Joint details › + Splice: it is then not proposed one part).
+   *Confirm* per joint (under *Each leg joint*) or **Confirm all**, one
+   undo step each; never written silently — until you confirm, each piece
+   ends at the joint (on the safe side). Once a splice is confirmed, the
+   bracing at that joint bolting on a leg's outer face is laid out
+   **through the splice's outer cover** (seated on it, its bolts through
+   the cover, the leg and the inner cover; the cover checked for the
+   bracing's whole force) where its bolts land on the leg's flange clear
+   of the splice's own bolts; else it needs a hand detail (a plate over the
+   cover is not laid out). A piece of one section confirmed one part has
+   its bolts **not checked there — NOT ON THE SAFE SIDE where a splice of
+   one section is really there**: mark such splices first.
+
+   ![Lay out joints on an invented tower: a leg in two pieces of other sections C1 and C2 through joint J with a brace D, the splice proposed (Confirm, Confirm all) with what is assumed](../images/structure-tools/tool-lay-out-joints-leg-splices.png)
 7. **Apply**: one undo step. Escape or Cancel: nothing changes.
 
 **How the layout places a member end** ([theory](../theory/joint-layout.md)):
 
 | Step | What happens |
 |---|---|
-| Members in line first | the biggest pair of angles in line through the joint (its base): **one part** when they are the same section, turned alike and have no bolts there (a splice with bolts stays a bolted splice: its bolts stay checked); the smaller **nested** in the bigger when it fits inside; other sections that do not nest, both with their bolts, nothing else bolting onto them there: **spliced** — a splice of covers, outer and inner on each leg bolted, as thick as the thicker leg, both ends bolted onto it (2026-11-19; with bracing bolting onto them there: as given — its bolts would pass through a cover). One section in line with bolts: where the splice is is not known (their bolts may be the members' design data, at both ends) — left as given, each ending at the joint, said; confirm them one part (*Pieces in line*) where they are |
+| Members in line first | the biggest pair of angles in line through the joint (its base): **one part** when they are the same section, turned alike and have no bolts there (a splice with bolts stays a bolted splice: its bolts stay checked); the smaller **nested** in the bigger when it fits inside; other sections: not joined by the run — since 2026-11-19 (J7) a splice is **proposed** (*Leg splices*) and written only when you confirm it. One section in line with bolts: where the splice is is not known (their bolts may be the members' design data, at both ends) — left as given, each ending at the joint, said; confirm the leg splice places (*Leg splices*) or give the splice |
 | Who arrives | each member end bolting by one leg of an angle onto the flange of a member at the joint (the leg, a chord, a diagonal a redundant meets); members in line with it (a splice, one part) are left alone; an end bolting onto nothing gets the member running through the joint (of two pieces in line, the one on its side); **two ends that would bolt onto each other** (the pieces of a horizontal onto the redundant standing on them, the redundant onto them): the one running through, else the larger, stays what the other bolts onto, its own end left as it is, said — never both cut back onto each other; an end whose axis lies in neither flange's plane of the joint's leg (a plan diagonal at a vertical post) gets the member running through in whose flange's plane it lies (the horizontal), if there is one — named first, so that its leg lying on it is the one bolted |
 | Laid flat | a member lying more than 2° off what it bolts onto (the owner's value of 2026-11-19; 5° before) is turned (its roll) **only where that helps**, **one roll for the whole member** (J3, 2026-11-19): where all its ends agree within 2° (the middle of their turns: an end that was flat stays flat, at joints not laid out too) — any turn, the smallest that does it; an **equal-leg** angle may bolt its other leg at one end (a quarter turn more), as a member running from a horizontal flange to an upright one does —; **class by class**: the legs and chords are not turned to suit what bolts onto them, then the diagonals, the secondary bracing (horizontals, plan and hip members, and members without a class — said), the redundants last, each class turned with the ones before already in place; no end of it at a joint not laid out is laid out with its roll now, and at least one of its joints is laid out with the turn; otherwise its roll stays and the preview's notes say why. A roll the layout set is taken back when none of its joints is laid out with it any more. **Half a turn** where an end on a flange's inner face cannot be laid out there (it runs towards the angle's other leg): its outstanding leg to the other side, kept only when more of its ends are laid out and no joint of it loses one (an X-brace: one diagonal on the outer faces of the legs, the other on the inner faces, back to back where they cross). A roll given by hand is kept unless replaced; a leg's or chord's roll set by **Orient angles** is always kept |
 | Concentric first | its gauge line through the work point (drawn so; the analysis keeps the member's axis there, the code's slenderness curve takes the eccentricity gauge to centroid); its end pulled back until its steel clears the flange's heel (on the inner face: the angle's other leg and root), the ends placed before it and the joint's fixed steel (what is not laid out: members in line, built up, given by hand, left for a hand detail; their bolts) by the gap |
@@ -94,7 +114,7 @@ themselves are not chosen here (that comes with the design codes).
 - A **bent plate** (since 2026-11-19): a member lying on a flange's inner face that leaves the joint over the heel — through the angle's other leg — is laid out on a plate folded round that leg: one flat where the member lies, the other on the other leg's outer face, bolted to it by two **provisional** bolts (`[plate.leg_bolts]`). The member stays where it lay, only pulled back; the plate is as thick as the thickest leg on it, bent at an inside radius of **two thicknesses — the program's starting value, not a standard's: check it against your steel's bending rules** (change the bend's radius in the file; it is kept). Turning the member half a turn onto the outer face is tried first. Where the other leg is too narrow for the bolts holding the plate, or a member already bolts directly on that leg's face there, the joint says why and the member needs a hand detail. Each flat is checked as a plate; the bend's own bending is **not checked (NOT ON THE SAFE SIDE where it governs)**, said on the plate. In the bill of materials the bent flat is weighed from the developed area.
 
   ![Lay out joints on an invented joint: a plan member on the inner face of a horizontal's flange, leaving over the heel, laid out onto a bent plate round the horizontal's other leg (two plates, no clash after)](../images/structure-tools/tool-lay-out-joints-bent-plate.png)
-- **Leg splices**: where two legs of one section meet with their splice bolts, the joint says *where the splice is is not known* — give the splice there (+ Splice in Joint details), or the two legs one part, and lay it out again. Such legs are not proposed one part (a leg splice's place is a command of its own, to come).
+- **Leg splices**: where two legs of one section meet with their splice bolts, the joint says *where the splice is is not known* — confirm the leg splice places (*Leg splices*: one part by the owner's rule), or give the splice there (+ Splice in Joint details), and lay it out again. A splice you confirmed is yours: a run (also one replacing values given by hand) keeps it and its provisional bolts.
 - **Pieces in line confirmed one part** whose rolls were a little apart (Orient angles turns each piece to its face on its own: up to about a degree on real towers) get one roll, half-way between theirs (at most 2° apart — the owner's value of 2026-11-19, not a standard's); the proposal says so. Orient angles run again may turn them apart (the joint checks then say they are not one part, and each ends at the joint: on the safe side) — confirm them again.
 - **Undo** takes the whole run back in one step.
 

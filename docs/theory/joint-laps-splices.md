@@ -133,6 +133,17 @@ covers, 61 and 46 mm wide, 57 % and 43 %.
 A cover's steel is its material's; none given, the weakest of the
 members bolting onto the splice (assumed, said).
 
+**An end bolted through the outer cover** (O44 J7, 2026-11-19: bracing
+lapped on a spliced member's leg where the splice's outer cover lies;
+[joint layout](joint-layout.md#bracing-bolted-through-the-outer-cover)):
+the cover is checked as a plate for the end's **whole** force — *on the
+safe side*, the leg under it taking none of it there; the end's own
+checks are those of a lap (one shear plane, the bearing on its leg and on
+the member's leg, the cover's thickness not added: *on the safe side*).
+**NOT ON THE SAFE SIDE:** the cover is a packing between the end and the
+leg, and the bolt's bending across it is not checked (neither ASCE 10-97
+nor SIA 263 gives a rule for packings: searched, none found).
+
 ## Validation
 
 Unit tests in `crates/ohl-structures-fe/src/member_ends_tests.rs`, on
