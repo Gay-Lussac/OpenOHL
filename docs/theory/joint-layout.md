@@ -217,11 +217,112 @@ leg bolted, from where its steel stops outwards — and is pulled back
   end, of the region where the widened strips overlap (an exact
   intersection of half-strips, clipped as convex polygons);
 - the bolts already on that face that are not laid out (a leg's splice
-  bolts): each a disc of its head's corner radius and half the gap.
+  bolts): each a disc of its head's corner radius and half the gap;
+- (since 2026-11-19, J1) the **fixed steel** of the joint where it reaches
+  into the end's layer, by the gap: every part not laid out in this plan
+  (the members in line, running on, not single angles, given by hand, and
+  those left for a hand detail for their own sake — [below](#members-left-for-a-hand-detail-keep-their-place-j2)
+  —, their bolts' heads and nuts, the plates and covers given by hand) and
+  what the planes before laid out ([the search](#the-search-per-joint-j1)).
+  Each piece the clash check cuts the joint into is clipped to the end's
+  layer — from its face to two of its legs' (or the flange's, the
+  thicker) thicknesses and 0.7 bolt diameters above it (its leg on a
+  plate and its bolts' heads) — and seen from above as a convex polygon;
+  the least cut is the farthest point of it, along the end, within the
+  end's leg widened by the gap. Not what the end bolts onto (nor a member
+  running on from it in line), nor what bolts onto the end; a bolt's shank
+  through those is not in the way (its head and nut are). **An assumption
+  of the tool**: the layer's height is the program's, not a standard's;
+  steel above it is left to the clash check after writing, so nothing is
+  forced either way.
 
 The cut is rounded up to the millimetre. A cut beyond the **longest
 pull-back** (a setting) or beyond half the member less its bolts does not
 fit concentric.
+
+## The search per joint (J1)
+
+(Owner, 2026-11-19: "plan ideas to get the automatic layout working",
+approved with the recommendations; built the same day, in active
+development.) Before, the ends of a plane were placed one after the other
+in the owner's order, and one that did not fit was left — though the
+others pulled back could have made room for it. Now each joint is
+**searched**:
+
+1. **The planes on the biggest members first** (on a leg, then on the
+   bracing, then on the redundants; then by the member's id): what bolts
+   onto a member laid out on a leg keeps clear of that member as laid out —
+   its steel as a box from its cut to half its length, its outstanding leg
+   as high as it is wide, its bolts' heads, a plate under it as the hull of
+   its bolts with their edge distance. **An assumption, on the safe side for
+   the fit** (the boxes hold the angle and more); what the boxes miss is
+   caught by the clash check after writing.
+2. **In each plane, every order that can matter.** At each step every end
+   not placed yet is tried — concentric and pulled back, else the least
+   sideways shift that fits ([above](#moved-sideways-the-shift)) —; an end
+   that fits nowhere now fits nowhere later (each end placed only adds what
+   the others keep clear of), so it is left; each end that fits is placed
+   in turn, **in the owner's order** (class, the wider leg, the larger
+   angle, the id), and the rest searched again (backtracking). A placing
+   already reached in another order is not searched again.
+3. **The best**: the most ends placed; then the least eccentricity (the
+   moves off concentric, summed); then the first found. The first found
+   is the owner's order filled one after the other (as before the
+   search), so the owner's order wins every tie — the search only departs
+   from it where that lays out more or moves less. Typically a smaller
+   member placed first and a bigger one pulled back past it, where the
+   smaller one cannot be pulled back far enough within half its length
+   less its bolts.
+4. **Bounded**: at most **400 placings per joint** (`NODE_LIMIT`, the
+   program's starting value — measured on the private real towers: see
+   below —, not a standard's); a joint whose search stops there takes the
+   best found and says so with each end it leaves ("… (the search stopped
+   at its limit of 400 tries)").
+5. **Pulled back past a clash** (the 3D search): after writing, a member
+   whose laid-out steel, bolts or plate would run into anything is first
+   pulled back past it — its least cut the point of the clash along it,
+   the depth and the gap beyond its cut — and the joint planned again; up
+   to three times per end while rounds are left (six rounds per run, the
+   last two leaving such members as they were), then it is left as it was
+   with the clash, as before. A cut given by hand is never pulled back.
+
+Deterministic (the same joint and settings give the same plan: every
+order and tie fixed by the members' order and ids), no new clash (what is
+written runs into nothing but members left for a hand detail whose place
+is not kept free, below), values given by hand kept (a cut, a shift, a
+roll, what an end bolts onto: the search places round them). A longer cut
+changes no member force (the analysis runs on the members' axes); a
+shift, as before, is an eccentricity the analysis takes.
+
+## Members left for a hand detail keep their place (J2)
+
+(Owner-approved 2026-11-19.) A joint that is not laid out whole keeps the
+ends that fit; the members left are named with why ("N2: by hand R1 (its
+place kept free), the rest laid out — R1: too short for its bolts …").
+A member left **for its own sake** — it fits nowhere even alone: no roll
+lays it flat, on an inner face running towards the other leg, built up,
+too short for its bolts, its cut given by hand in the way — **keeps its
+place as it is**: every end laid out keeps clear of its steel and bolts as
+they are (in the plan, and in the clash check after writing, where a clash
+with it counts as any clash), so the joint then needs only that member by
+hand. **Not kept free** — said with what it runs into, as before:
+
+- a member left for want of room beside the ends laid out ("no room on one
+  plate", pulled back to clear one of them) or for a clash after writing:
+  it runs into them as it is, and its hand detail takes it out of their
+  way (it is the one that does not fit);
+- a plate laid out under a member left (its hand detail may bolt it onto
+  that very plate), and the members joined first (one part, nested,
+  spliced — the biggest profiles, the owner's step 1).
+
+**An assumption of the tool**: the place kept is the member as it is in
+the file, not where its hand detail will put it; a hand detail that moves
+it elsewhere may need the ends round it laid out again (Lay out joint…
+after the hand detail). Measured on two private real towers, keeping the
+place free costs 0.2 and 1.7 % of the ends laid out (against the members
+left kept clear of in the plan only); keeping the place of every member
+left free — also of those left for want of room, plates under them refused too — cost a quarter to a third of them
+(tried, left out).
 
 ## Moved sideways: the shift
 
@@ -397,12 +498,15 @@ are worked out again. Where a laid-out part would run into anything, the
 members of it — a member, its bolts, or the members on a plate — are left
 as they were, with the clash ("laid out, … would run 6 mm into each
 other"), and the rest of the joint is planned and checked again without
-them (since 2026-11-18; before, the whole joint was left). Of two parts
+them (since 2026-11-18; before, the whole joint was left) — since
+2026-11-19 (J1) after being pulled back past the clash up to three times
+first ([the search](#the-search-per-joint-j1), point 5). Of two parts
 laid out in one clash, the member is left before the members of a plate,
-then the redundant before the bracing, then the larger id. After four
+then the redundant before the bracing, then the larger id. After six
 such rounds a joint still clashing is left whole, as it was. Nothing is
 forced: what is written runs into nothing but the members left for a
-hand detail (whose clashes are said with them).
+hand detail whose place is not kept free (whose clashes are said with
+them; [J2](#members-left-for-a-hand-detail-keep-their-place-j2)).
 
 ## The clash check
 
@@ -452,6 +556,45 @@ None of them is a standard's value (the owner gave none, 2026-11-18):
 | Gap between steel | 10 mm | invented starting value |
 | Longest pull-back | 300 mm | measured on the 78 tower files of a private real line (579 to 3 030 members): with no limit, the concentric cut of the ends laid out is at most 136 mm for 95 % of the ends of every tower (100 mm for half of the towers), the largest 344 mm; 300 mm keeps the long plates to members at small angles |
 | Shift limit | 30 mm | measured on the same towers: with the pull-back at 300 mm, 37 of 18 289 ends laid out needed a shift, the largest 20 mm |
+
+Not settings, the program's starting values (J1, 2026-11-19), measured on
+the same towers:
+
+| Value | Start | Why |
+|---|---|---|
+| Placings searched per joint | 400 | never reached on the 78 tower files (the most ends of one plane there: a handful); 1 (no search) gave the same shares there, 2 000 the same layouts on the two towers tried |
+| Pulled back past a clash | 3 times per end, 6 rounds | 0 (4 rounds): 33.9 % of the joints laid out whole instead of 44.1 %, 53.9 % of the ends instead of 62.8 %; 2 (5 rounds): on two towers the same joints whole, about 1 % fewer ends, about 10 % quicker |
+
+## Measured (J1 and J2, 2026-11-19)
+
+On the 78 tower files of a private real line (Orient angles, then Lay
+out joints, values given by hand replaced; the same files and settings as
+the rounds before):
+
+| | before (2026-11-19) | J1 and J2 |
+|---|---|---|
+| joints laid out whole | 27.6 % | 44.1 % |
+| member ends laid out (of those the layout places) | 48.9 % | 62.8 % |
+| joints with a hand detail | 66.2 % | 49.7 % |
+| clashes at the joints after (of before) | 61.6 % | 46.3 % |
+| a run again identical | 78 of 78 | 78 of 78 |
+| time of a whole tower (2 190 to 3 030 members, measured one after the other) | 6–9 s | 10–15 s |
+
+Where it came from: the joint's fixed steel and what the planes before
+laid out seen in the plan, and the ends pulled back past a clash after
+writing. The search over the orders of a plane's ends changed nothing on
+these towers (its first path, the owner's order, was the best found at
+every joint; it lays out the synthetic joints of the tests that the
+owner's order filled one after the other leaves) — kept, as it costs
+nothing measurable there, but it **stops paying** on real towers: their
+planes hold few ends, and what is left is not a matter of order.
+
+What is left (joints with it; only it, of the joints with a hand detail):
+a member that no roll lays flat at both its ends, its welded plate not
+fitting (39 %; 13 %) — the turn of the whole member, J3, or a bent
+plate —; a clash after writing (39 %; 18 %); an end on an inner face
+running towards the other leg (29 %; 13 %); a built-up member (20 %;
+13 %); too short for its bolts (6 %; 3 %).
 
 The window shows each member's usage before and after for the last run's
 cases and the time the layout took.

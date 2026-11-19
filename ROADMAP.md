@@ -1873,14 +1873,32 @@ of the joints are laid out whole; most of the rest fail on a chain: the
 members are placed one after the other, and one that does not fit blocks
 the joint. Each step is measured on the same towers (share laid out per
 step, reasons left), and the work stops where it stops paying:
-- [ ] J1. **A search per joint** instead of one member after the other:
+- [x] J1. **A search per joint** instead of one member after the other:
   per end its choices (flange, outer or inner side, leg bolted, direct or
   on a plate, a few shift steps), searched with backtracking for no clash
   and the least eccentricity; deterministic, no new clash, values given
-  by hand kept.
-- [ ] J2. **The ends that fit are kept** in a joint that is not whole: the
+  by hand kept. Built 2026-11-19, in active development, not approved
+  yet: the planes on the biggest members first, each plane's ends in
+  every order that can matter (the owner's order first, at most 400
+  placings per joint), clear of the joint's fixed steel and of what the
+  planes before laid out; after writing, an end in a clash pulled back
+  past it (up to three times) before it is left. The flange, the side and
+  the leg bolted follow the member's roll (a choice for the whole member:
+  J3); direct or on a plate stays per plane (mixed was tried 2026-11-18
+  and lost joints). On the 78 real towers: joints laid out whole 27.6 % →
+  44.1 %, member ends laid out 48.9 % → 62.8 %, a whole tower 6–9 s →
+  10–15 s. The order search itself changed nothing there (stops paying;
+  kept for the joints where it does): the gains are the fixed steel seen
+  in the plan and the pull-back past a clash.
+- [x] J2. **The ends that fit are kept** in a joint that is not whole: the
   space of a member left for a hand detail reserved so nothing laid out
-  runs into it; the joint then needs only that member by hand.
+  runs into it; the joint then needs only that member by hand. Built
+  2026-11-19, in active development, not approved yet: a member left for
+  its own sake keeps its place as it is (about 1 % of the ends laid out on
+  two real towers); one left for want of room beside the others, or for a
+  clash, is said with what it runs into (keeping every member's place
+  cost a quarter to a third of the ends); the window names the members
+  left, those whose place is kept, and the ends laid out of all.
 - [ ] J3. **Each angle's turn chosen for the whole member**: a roll that
   lets both its ends lie flat, the leg bolted allowed to change between
   its ends where that is how towers are built.
@@ -1900,7 +1918,16 @@ step, reasons left), and the work stops where it stops paying:
   code's text allows it for a redundant, else a plate shared with the
   neighbouring member.
 - Asked (open): shop drawings of real towers, to tune to how the steel
-  is really detailed.
+  is really detailed; the owner is looking for example joints
+  (2026-11-19) and sent three that day: a bent gusset plate at a corner,
+  folded to follow the two faces, members bolted on both sides of it;
+  diagonals bolted directly on a main angle's flanges; gusset plates on a
+  leg where diagonals meet it in the middle of a panel. The last two are
+  steps 2a and 2b (invented versions in the tests); the bent plate is a
+  new element — proposed next: of the joints left for a hand detail after
+  J1 and J2, 60 % have an end it would take (an end off its flange, its
+  leg bolted facing away, or on an inner face running towards the other
+  leg), the only reason for 29 %.
 Later: the bolts chosen by the code plugins and the layout run again with
 them.
 
