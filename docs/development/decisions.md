@@ -30,13 +30,21 @@ built, in active development, not approved yet;
   members to where their steel stops, a weld without a size left out).
   The steel of a plate: the heaviest member on it; nothing on it, and
   every weld: SIA 261 Table 28's 78.5 kN/m³.
-- **The switch**: where every joint is defined and the file does not say
-  `counted_self_weight = false` (structure file version 19), OHL-Structure's
-  runs take the heavy count over the members' steel as the factor on every
-  member's self-weight (the members' own factors dropped); a case whose
-  self-weight factor is below 1 takes the light count (SIA 260 Table 1's
-  \( \gamma_{G,inf} \) applies to G as before). An extension with its own
-  members keeps the factor. The run says which, per structure.
+- **The switch, a conservative envelope** (coordinator, 2026-11-19,
+  pending the owner's answer to "should the heavy count be at least the
+  members × the factor"): the counting is not validated against real
+  tower weights and leaves out galvanising, fillers and fittings, so the
+  counted mass may only raise a load. Where every joint is defined,
+  OHL-Structure's runs take, where the weight loads the tower (a case's
+  self-weight factor ≥ 1), the larger of the heavy count and the members ×
+  the dead-load factor; where it holds the tower (< 1), the lesser of the
+  light count and the members × the factor. The run's note says which
+  governed ("… below the dead-load factor 1.3: factor kept (counting not
+  validated)"). `self_weight_from` (structure file version 19):
+  `"factor"` keeps the factor (said NOT ON THE SAFE SIDE where the count is
+  above it), `"counted"` takes the counted mass alone (opt-in, off by
+  default, marked NOT ON THE SAFE SIDE until validated). An extension with
+  its own members keeps the factor.
 - **Not counted, said NOT ON THE SAFE SIDE**: galvanising, fillers and
   packs (no record in the data), fittings, the washers of a bolt without a
   library mass, a worked-out plate outline (the least plate), the welds of

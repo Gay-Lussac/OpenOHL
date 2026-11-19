@@ -272,15 +272,52 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// default minimum bolt distances (`[default_bolt_minimums]`:
 /// [`crate::bolts::DefaultBoltMinimums`], [`DEFAULT_BOLT_MINIMUMS_VERSION`]);
 /// a file is written at 18 only when it gives them. Version 19
-/// (2026-11-19, joint details stage 4.6) adds `counted_self_weight =
-/// false` ([`StructureType::counted_self_weight`],
-/// [`COUNTED_SELF_WEIGHT_VERSION`]): the dead-load factor kept even where
-/// every joint is defined; a file is written at 19 only when it gives the
-/// key.
+/// (2026-11-19, joint details stage 4.6) adds `self_weight_from`
+/// ([`StructureType::self_weight_from`], [`SelfWeightFrom`],
+/// [`SELF_WEIGHT_FROM_VERSION`]): where a run's self-weight comes from
+/// once every joint is defined; a file is written at 19 only when it gives
+/// the key.
 pub const STRUCTURE_FILE_VERSION: u32 = 19;
 
-/// The structure file version of `counted_self_weight` (2026-11-19).
-pub const COUNTED_SELF_WEIGHT_VERSION: u32 = 19;
+/// The structure file version of `self_weight_from` (2026-11-19).
+pub const SELF_WEIGHT_FROM_VERSION: u32 = 19;
+
+/// Where a run's self-weight comes from once every joint of a tower is
+/// defined (`self_weight_from`, joint details stage 4.6, 2026-11-19).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SelfWeightFrom {
+    /// The default (the key left out): the conservative envelope until
+    /// the counting is validated — where the weight loads the tower the
+    /// larger of the counted mass and the members × the dead-load factor,
+    /// where it holds the tower the lesser.
+    #[default]
+    Envelope,
+    /// The members' steel × the dead-load factor, as before.
+    Factor,
+    /// The counted mass alone (opt-in; not on the safe side until the
+    /// counting is validated: galvanising, fillers and fittings are not in
+    /// it).
+    Counted,
+}
+
+impl SelfWeightFrom {
+    /// Every choice, in the order offered.
+    pub const ALL: [SelfWeightFrom; 3] = [
+        SelfWeightFrom::Envelope,
+        SelfWeightFrom::Factor,
+        SelfWeightFrom::Counted,
+    ];
+
+    /// Name in files.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SelfWeightFrom::Envelope => "envelope",
+            SelfWeightFrom::Factor => "factor",
+            SelfWeightFrom::Counted => "counted",
+        }
+    }
+}
 
 /// The structure file version of `[default_bolt_minimums]` (owner
 /// 2026-11-18, third round): the default minimum end, edge and spacing of
@@ -1345,14 +1382,12 @@ pub struct StructureType {
     /// [`crate::bolts::DefaultBoltMinimums::default`]).
     #[serde(default)]
     pub default_bolt_minimums: Option<crate::bolts::DefaultBoltMinimums>,
-    /// Version 19 (2026-11-19, joint details stage 4.6): where every joint
-    /// is defined, the run's self-weight is the structure's counted mass
-    /// (members, plates, covers, bolts, welds) instead of the members'
-    /// steel × the dead-load factor; `false` keeps the factor anyway. None
-    /// or true: the counted mass where every joint is defined
-    /// ([`Self::counts_self_weight`]).
+    /// Version 19 (2026-11-19, joint details stage 4.6): where a run's
+    /// self-weight comes from once every joint is defined (none: the
+    /// envelope of the counted mass and the members' steel × the dead-load
+    /// factor, [`SelfWeightFrom::Envelope`]).
     #[serde(default)]
-    pub counted_self_weight: Option<bool>,
+    pub self_weight_from: Option<SelfWeightFrom>,
 }
 
 /// An attachment of a placed structure, in global coordinates.

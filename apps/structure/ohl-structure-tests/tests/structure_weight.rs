@@ -292,37 +292,55 @@ fn reactions(text: &str) -> [f64; 2] {
     [z(0), z(1)]
 }
 
-/// Every joint defined: the dead load is the counted mass (heavy count
-/// × 1.35; the light count × 0.9 for the case holding the structure);
-/// one end without its connection, or `counted_self_weight = false`: the
-/// members' steel × 1.3, as before.
+/// The joint with the dead-load factor `f` instead of 1.3.
+fn with_factor(text: String, f: &str) -> String {
+    text.replace("dead_load_factor = 1.3", &format!("dead_load_factor = {f}"))
+}
+
+/// Every joint defined, the envelope (the default until the counting is
+/// validated): where the weight loads the tower (× 1.35) the larger of
+/// the heavy count and the members × the factor, where it holds it (× 0.9)
+/// the lesser of the light count and the members × the factor. With 1.3
+/// the heavy count is below the factor's: 1.3 kept for "dead"; with 1.05
+/// it is above: the count taken. The counted mass alone (opt-in) takes the
+/// counts; one end without its connection, or "factor": the members ×
+/// 1.3 in both cases, as before.
 #[test]
 fn self_weight_from_the_counted_mass() {
     let text = joint(FAR, "");
     let b = structure_quantities(&text, &sections(), &bolts()).unwrap();
+    let typed = b.members_mass * 1.3;
+    assert!(b.mass < typed, "{} {typed}", b.mass);
+    // The envelope at 1.3: the factor where the weight loads the tower.
     let [dead, uplift] = reactions(&text);
+    assert!(near(dead, typed * 1.35, 1e-6), "{dead} vs {}", typed * 1.35);
+    let held = b.light.min(typed);
+    assert!(near(uplift, held * 0.9, 1e-6), "{uplift} vs {}", held * 0.9);
+    // The envelope at 1.05: the heavy count is above the factor's.
+    let low = b.members_mass * 1.05;
+    assert!(b.mass > low, "{} {low}", b.mass);
+    let [dead, uplift] = reactions(&with_factor(joint(FAR, ""), "1.05"));
     assert!(
         near(dead, b.mass * 1.35, 1e-6),
         "{dead} vs {}",
         b.mass * 1.35
     );
-    assert!(
-        near(uplift, b.light * 0.9, 1e-6),
-        "{uplift} vs {}",
-        b.light * 0.9
-    );
-    let factor = b.members_mass * 1.3;
-    for kept in [joint("", ""), joint(FAR, "counted_self_weight = false")] {
+    let held = b.light.min(low);
+    assert!(near(uplift, held * 0.9, 1e-6), "{uplift} vs {}", held * 0.9);
+    // The counted mass alone (not on the safe side): the counts.
+    let [dead, uplift] = reactions(&joint(FAR, "self_weight_from = \"counted\""));
+    assert!(near(dead, b.mass * 1.35, 1e-6), "{dead}");
+    assert!(near(uplift, b.light * 0.9, 1e-6), "{uplift}");
+    // The factor, as before.
+    for kept in [joint("", ""), joint(FAR, "self_weight_from = \"factor\"")] {
         let [dead, uplift] = reactions(&kept);
-        assert!(near(dead, factor * 1.35, 1e-6), "{dead}");
-        assert!(near(uplift, factor * 0.9, 1e-6), "{uplift}");
+        assert!(near(dead, typed * 1.35, 1e-6), "{dead}");
+        assert!(near(uplift, typed * 0.9, 1e-6), "{uplift}");
     }
-    // Here the counted mass is lighter than the members × 1.3.
-    assert!(b.mass < factor);
 }
 
-/// What a run says: the counted mass and the light count, or the factor
-/// kept and why (per structure).
+/// What a run says: which value governed and why, or the factor kept and
+/// why (per structure).
 #[test]
 fn the_run_says_which() {
     let note = |text: &str| {
@@ -336,29 +354,46 @@ fn the_run_says_which() {
         .unwrap();
         ohl_structure_link::counted_self_weight(&t, text, &sections(), &bolts(), None, &m)
     };
-    let counted = note(&joint(FAR, ""));
-    assert!(counted.counted && counted.light_ratio < 1.0);
-    let words = counted.note.unwrap();
+    // 1.3: the factor kept where the weight loads the tower.
+    let kept13 = note(&joint(FAR, ""));
+    assert_eq!(kept13.factor, None);
+    let words = kept13.note.unwrap();
     assert!(
-        words.starts_with("self weight: the counted mass,"),
+        words.contains(
+            "below the dead-load factor 1.3 (1.300 ×): factor kept (counting not validated)"
+        ),
         "{words}"
     );
+    // 1.05: the counted mass taken.
+    let taken = note(&with_factor(joint(FAR, ""), "1.05"));
+    assert!(taken.counted && taken.factor.is_some());
+    let words = taken.note.unwrap();
     assert!(
-        words.contains("instead of the dead-load factor 1.3"),
+        words.contains("above the dead-load factor 1.05 (1.050 ×): counted mass taken"),
         "{words}"
     );
-    assert!(words.contains("take the light count"), "{words}");
+    // Alone: said not on the safe side.
+    let alone = note(&joint(FAR, "self_weight_from = \"counted\""))
+        .note
+        .unwrap();
+    assert!(
+        alone.contains("NOT ON THE SAFE SIDE until the counting is validated"),
+        "{alone}"
+    );
     let kept = note(&joint("", "")).note.unwrap();
     assert_eq!(
         kept,
         "self weight: the members' steel × the dead-load factor 1.3 (factor kept: 1 joint(s) \
          not defined)"
     );
-    let asked = note(&joint(FAR, "counted_self_weight = false"))
+    let asked = note(&joint(FAR, "self_weight_from = \"factor\""))
         .note
         .unwrap();
     assert!(
-        asked.ends_with("(factor kept: counted_self_weight = false)"),
+        asked.starts_with(
+            "self weight: the members' steel × the dead-load factor 1.3 \
+                           (self_weight_from = \"factor\""
+        ),
         "{asked}"
     );
 }

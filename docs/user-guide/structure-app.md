@@ -1385,15 +1385,24 @@ built from and says which self-weight a run takes. It counts again in the
 background whenever the file or the libraries change (a few tenths of a
 second on a real tower of 1 000 joints).
 
-![The Weight & quantities panel on an invented joint: the tick Self weight from the counted mass, the totals of members, plates and bolts with their light count, the counted mass against the members × the dead-load factor, the bill of materials and the notes, those not on the safe side in red](../images/structure-quantities.png)
+![The Weight & quantities panel on an invented joint: the Self weight choices (larger of counted and factor, dead-load factor only, counted mass only), the totals of members, plates and bolts with their light count, the counted mass against the members × the dead-load factor, the bill of materials and the notes, those not on the safe side in red](../images/structure-quantities.png)
 
-1. **Self weight from the counted mass** (ticked by default): where every
-   joint is defined, a run's self-weight is the counted mass instead of
-   the members' steel × the dead-load factor. Unticked, the factor is kept
-   anyway (`counted_self_weight = false` in the file, version 19; one
-   undo step). The line under it says what a run takes now: *Every joint
-   is defined: a run takes the counted mass*, or *A run keeps the
-   members' steel × the dead-load factor: N joint(s) not defined*.
+1. **Self weight** — where a run's self-weight comes from once every joint
+   is defined (one undo step; `self_weight_from` in the file, version 19):
+   - **Larger of counted and factor** (the default, until the counting is
+     validated): where the weight loads the tower, the larger of the
+     counted mass (heavy count) and the members' steel × the dead-load
+     factor; where it holds the tower (cases whose self-weight factor is
+     below 1), the lesser of the light count and the members × the factor.
+     The counted mass can only raise a load.
+   - **Dead-load factor only**: as before; a run says NOT ON THE SAFE SIDE
+     where the counted mass is above it.
+   - **Counted mass only**: the counted mass alone — NOT ON THE SAFE SIDE
+     until the counting is validated (galvanising, fillers and fittings
+     are not in it).
+
+   The line under it says what a run takes now; the run's notes say which
+   value governed.
 2. **The totals**: per kind (members, plates, covers, bolts, welds) the
    pieces, the mass and the **light count**, the whole, and the counted
    mass against the members × the dead-load factor (as a factor and in
@@ -1418,7 +1427,7 @@ self-weight: [Weight and quantities of a lattice tower](../theory/structure-weig
 
 | Field | What it does |
 |---|---|
-| Self weight from the counted mass | ticked (default): the counted mass where every joint is defined; unticked: the dead-load factor kept |
+| Self weight | Larger of counted and factor (default) · Dead-load factor only · Counted mass only (not on the safe side) |
 | Bill of materials (xlsx)… | asks where, writes the workbook (greyed until counted) |
 
 **Good to know**
@@ -1427,8 +1436,9 @@ self-weight: [Weight and quantities of a lattice tower](../theory/structure-weig
   deducted, a weld without a size at the largest throat SIA 263 allows,
   both sides): the weight that loads the tower. The **light count** takes
   them on the light side (holes deducted, members to where their steel
-  stops): a run takes it for the cases whose self-weight factor is below 1
-  (the weight holding the tower: uplift, overturning).
+  stops): for the cases whose self-weight factor is below 1 (the weight
+  holding the tower: uplift, overturning) a run takes the lesser of it and
+  the members × the factor.
 - Not counted (said): galvanising, fillers and packs, step bolts, ladders
   and other fittings not modelled as parts, the washers of a bolt without
   a library mass, the welds of a welded member end.

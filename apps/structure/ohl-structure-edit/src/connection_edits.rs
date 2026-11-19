@@ -193,19 +193,22 @@ fn tidy(doc: &mut DocumentMut) {
     }
 }
 
-/// Sets whether a run's self-weight is the counted mass where every joint
-/// is defined (joint details stage 4.6, 2026-11-19): counted (the
-/// default) removes `counted_self_weight`, the file as before; not
-/// (`counted_self_weight = false`, version 19) keeps the dead-load factor
-/// anyway.
-pub fn set_counted_self_weight(doc: &mut DocumentMut, counted: bool) {
-    if counted {
-        doc.remove("counted_self_weight");
+/// Sets where a run's self-weight comes from once every joint is defined
+/// (joint details stage 4.6, 2026-11-19): the envelope (the default)
+/// removes `self_weight_from`, the file as before; `factor` or `counted`
+/// write it (version 19).
+pub fn set_self_weight_from(
+    doc: &mut DocumentMut,
+    from: ohl_structures::structures::SelfWeightFrom,
+) {
+    use ohl_structures::structures::SelfWeightFrom;
+    if from == SelfWeightFrom::Envelope {
+        doc.remove("self_weight_from");
     } else {
-        doc["counted_self_weight"] = toml_edit::value(false);
+        doc["self_weight_from"] = toml_edit::value(from.as_str());
         raise_version(
             doc,
-            i64::from(ohl_structures::structures::COUNTED_SELF_WEIGHT_VERSION),
+            i64::from(ohl_structures::structures::SELF_WEIGHT_FROM_VERSION),
         );
     }
 }

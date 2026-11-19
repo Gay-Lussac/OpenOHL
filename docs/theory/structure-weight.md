@@ -106,27 +106,53 @@ both counts.
 
 ## The self-weight from the counted mass
 
-A run takes the **counted mass** as the tower's self-weight when
+The counted mass enters a run's self-weight only when
 
 1. every joint is defined: every member end (not a modelling member, not a
    cable) has its `[[connection]]` — the core's level 4 rule,
    `StructureType::ends_without_joint_details` — none is left for a hand
    detail, every bolted end has its bolts and every plate its outline;
-2. the file does not keep the factor (`counted_self_weight = false`,
-   structure file version 19; Design › Weight & quantities, the tick
-   *Self weight from the counted mass*);
-3. the tower's own members are solved as written: a separate model file
+2. the tower's own members are solved as written: a separate model file
    is not counted, and an extension with its own members keeps the factor
    (its joints are not counted).
 
-Then every member's self-weight is multiplied by \\( k = M_{heavy} /
-M_{members} \\) — the heavy count over the members' steel as the model
-weighs it — instead of the dead-load factor (the members' own factors are
-dropped: the counted parts replace what they stood for). The weight is
-spread over the members as the factor spread it; the total is the counted
-mass. Else the factor stays, and the run says why, per structure:
-"factor kept: N joint(s) not defined", "factor kept:
-counted_self_weight = false", "factor kept: extension …".
+Else the members' steel × the dead-load factor stays, and the run says
+why, per structure: "factor kept: N joint(s) not defined", "factor kept:
+extension …".
+
+**The conservative envelope (the default, until the owner validates the
+counting).** The counting is not validated against real tower weights and
+leaves out galvanising, fillers and packs and fittings. So the counted
+mass may only **raise** a load, never lower one (coordinator, 2026-11-19,
+pending the owner's answer):
+
+- where the weight loads the tower (a case's self-weight factor of 1 or
+  more): \( \max(M_{heavy},\ M_{members} \cdot f) \), with \( f \) the
+  dead-load factor (the members' own factors where given: their total);
+- where the weight holds the tower (a factor below 1): \( \min(M_{light},\
+  M_{members} \cdot f) \) — less holding weight than, or the same as,
+  before.
+
+Where the counted mass governs where the weight loads the tower, every
+member's self-weight is multiplied by \( k = M_{heavy} / M_{members} \)
+instead of the dead-load factor (the members' own factors dropped), spread
+over the members as the factor spread it; a case with a factor below 1
+then takes its factor × the lesser mass over the mass the model carries.
+The run's note says which value governed, for example: "counted mass
+1.155 × the members' steel, below the dead-load factor 1.3 (1.300 ×):
+factor kept (counting not validated); the cases whose self-weight factor
+is below 1 … take the light count …".
+
+**The other choices** (`self_weight_from`, structure file version 19;
+Design › Weight & quantities):
+
+- `"factor"` — the members' steel × the dead-load factor, as before; a run
+  says **NOT ON THE SAFE SIDE** where the counted heavy mass is above it;
+- `"counted"` — the counted mass alone (opt-in, off by default): the heavy
+  count where the weight loads the tower, the light count where it holds
+  it; marked **NOT ON THE SAFE SIDE** until the counting is validated (it
+  may lower the dead load below the members × the factor, and galvanising,
+  fillers and fittings are not in it).
 
 ### Where the weight holds the tower
 
@@ -143,24 +169,24 @@ favourable factor. No code plugin sets the structure's self-weight
 factor: a load case recipe does (its `self_weight`, typed after the
 code).
 
-The counted mass is the characteristic weight \\( G \\); a case's factor
-applies to it as it did to the members × the dead-load factor. **A case
-whose self-weight factor is below 1** (a favourable \\( \gamma_{G,inf} \\))
-takes the **light count**: its factor × \\( M_{light} / M_{heavy} \\). A
-case with a factor of 1 or more takes the heavy count — **NOT ON THE SAFE
-SIDE** where such a case's weight is favourable (LeV's single factor, a
-case typed with 1.0 for uplift) by the difference of the two counts, shown
-in the bill.
+The counted mass is the characteristic weight \( G \); a case's factor
+applies to it as it did to the members × the dead-load factor. A case
+whose self-weight factor is below 1 (a favourable \( \gamma_{G,inf} \))
+is taken as one where the weight holds the tower; a case with a factor of
+1 or more as one where it loads it — **NOT ON THE SAFE SIDE** for a case
+typed 1.0 where the weight is favourable (LeV's single factor, a case
+typed 1.0 for uplift): with the envelope it keeps at least the members ×
+the factor, as before this work.
 
-**Against today's results.** Where the counted mass is lighter than the
-members × the dead-load factor (the measured towers below: a counted
-factor of about 1.1 to 1.2 against the typed 1.15 to 2.4), a case where
-the weight holds the tower (uplift, overturning) gets less holding weight
-than before: its usage rises. The factor typed before was an estimate on
-the heavy side, so for those cases it was **not on the safe side** — the
-counted mass is nearer the real one. Where the weight loads the tower,
-the dead load falls by the same difference, minus what is not counted
-(galvanising, fittings: not on the safe side, said).
+**Against today's results.** With the envelope no load falls: where the
+weight loads the tower the dead load is today's or more; where it holds
+the tower the holding weight is today's or less (the light count is
+usually below the members × a typed factor of 1.15 to 2.4: those cases'
+usages rise — the typed factor was an estimate on the heavy side, so for
+them it was **not on the safe side**). With `"counted"` the dead load
+falls where the counted mass is lighter than the members × the factor
+(the measured towers below: about 1.1 to 1.2 against the typed 1.15 to
+2.4), said not on the safe side.
 
 **The line's checks** (OHL-Design, `ohl structures fe`) build the
 structure's model in the core, which has no joint details: they keep the

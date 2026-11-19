@@ -126,8 +126,8 @@ fn esc(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-/// The report's section "Weight and quantities" (HTML): which self-weight
-/// the run took, the totals per kind, the bill, the joints not defined and
+/// The report's section "Weight and quantities" (HTML): whether the counted
+/// mass entered the run (`counted`), the totals per kind, the bill, the joints not defined and
 /// the notes (those NOT ON THE SAFE SIDE marked).
 pub fn report_section(b: &StructureBom, counted: bool) -> String {
     let mut h = String::from("<h2>Weight and quantities</h2>\n");
@@ -136,16 +136,19 @@ pub fn report_section(b: &StructureBom, counted: bool) -> String {
         "<p>{}</p>",
         esc(&if counted {
             format!(
-                "The self-weight of this run is the counted mass: {:.0} kg ({}× the members' \
-                 steel); the cases whose self-weight factor is below 1 took the light count, \
-                 {:.0} kg.",
+                "The counted mass entered this run's self-weight where it governs: heavy count \
+                 {:.0} kg ({}× the members' steel), light count {:.0} kg. Which value governed \
+                 where the weight loads the tower and where it holds it is in the notes above \
+                 (the larger and the lesser of the counted mass and the members × the dead-load \
+                 factor, until the counting is validated).",
                 b.mass,
                 b.factor().map_or("—".into(), |f| format!("{f:.3} ")),
                 b.light
             )
         } else if b.every_joint_defined() {
             "Every joint is defined, but this run kept the dead-load factor (see the notes \
-             above)."
+             above: where the counted mass is lighter, the factor is kept until the counting \
+             is validated)."
                 .to_owned()
         } else {
             format!(

@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use ohl_bom::structure::{PartKind, StructureBom, row_item};
+use ohl_structures::structures::SelfWeightFrom;
 
 use crate::app::{StructureApp, error_label};
 
@@ -68,13 +69,34 @@ const INTRO_MORE: &str = "Members: each its cross-section × its length (the mod
      without a connection, or one left for a hand detail, is not defined: its parts are not \
      counted. The heavy count takes every doubt on the heavy side (for a weight that loads \
      the tower), the light count on the light side (for a weight that holds it: uplift, \
-     overturning). Where every joint is defined a run's self-weight is the counted mass \
-     instead of the members' steel × the dead-load factor, unless the tick below is off.";
-const COUNTED_TIP: &str = "On (the default): where every joint is defined, a run's self-weight \
-     is the counted mass (the heavy count; the light count for the cases whose self-weight \
-     factor is below 1) instead of the members' steel × the dead-load factor. Off: the factor \
-     is kept anyway (counted_self_weight = false in the file). Effect: the dead load changes \
-     by the counted mass over the members × the factor (shown below); no change in time.";
+     overturning). Where every joint is defined a run's self-weight takes the counted mass \
+     where it governs (the choice below).";
+
+/// The choices of `self_weight_from`: the label and its hover text.
+fn from_words(from: SelfWeightFrom) -> (&'static str, &'static str) {
+    match from {
+        SelfWeightFrom::Envelope => (
+            "Larger of counted and factor",
+            "The default, until the counting is validated: where every joint is defined, the \
+             larger of the counted mass (heavy count) and the members' steel × the dead-load \
+             factor where the weight loads the tower, the lesser of the light count and the \
+             members × the factor where it holds it (cases whose self-weight factor is below \
+             1). The counted mass can only raise a load. No change in time.",
+        ),
+        SelfWeightFrom::Factor => (
+            "Dead-load factor only",
+            "The members' steel × the dead-load factor, as before (self_weight_from = \
+             \"factor\"); a run says NOT ON THE SAFE SIDE where the counted mass is above it.",
+        ),
+        SelfWeightFrom::Counted => (
+            "Counted mass only",
+            "The counted mass alone (self_weight_from = \"counted\"): heavy count where the \
+             weight loads the tower, light count where it holds it. NOT ON THE SAFE SIDE until \
+             the counting is validated: galvanising, fillers and packs and fittings are not in \
+             it, and the dead load may fall below the members × the factor.",
+        ),
+    }
+}
 
 impl StructureApp {
     /// The Weight & quantities panel.
@@ -112,24 +134,28 @@ impl StructureApp {
             self.quantities.running = Some((Instant::now(), key, rx));
         }
         // The option, and what a run takes.
-        let mut on = t.counts_self_weight();
+        let from = t.self_weight_from();
         let undefined = ohl_structure_link::undefined_joints(&t);
         ui.horizontal_wrapped(|ui| {
-            if ui
-                .checkbox(&mut on, "Self weight from the counted mass")
-                .on_hover_text(COUNTED_TIP)
-                .changed()
+            ui.label("Self weight:");
+            let mut chosen = from;
+            for option in SelfWeightFrom::ALL {
+                let (label, tip) = from_words(option);
+                ui.radio_value(&mut chosen, option, label)
+                    .on_hover_text(tip);
+            }
+            if chosen != from
                 && let Some(f) = self.file.as_mut()
             {
-                let what = if on {
-                    "Self weight from the counted mass"
-                } else {
-                    "Keep the dead-load factor"
-                };
-                f.edit(what, |doc, _| {
-                    ohl_structure_edit::connection_edits::set_counted_self_weight(doc, on);
-                });
+                f.edit(
+                    &format!("Self weight: {}", from_words(chosen).0),
+                    |doc, _| {
+                        ohl_structure_edit::connection_edits::set_self_weight_from(doc, chosen);
+                    },
+                );
             }
+        });
+        ui.horizontal_wrapped(|ui| {
             // The count's thread asks for a frame when it is done.
             if self.quantities.running.is_some() {
                 ui.label(egui::RichText::new("counting…").weak());
@@ -152,16 +178,31 @@ impl StructureApp {
                 self.export_to(ohl_structure_export::Format::Quantities);
             }
         });
-        let run_takes = if !on {
-            "A run keeps the members' steel × the dead-load factor (the tick is off).".to_owned()
-        } else if undefined.is_empty() {
-            "Every joint is defined: a run takes the counted mass as the self-weight.".to_owned()
-        } else {
+        let run_takes = if !undefined.is_empty() {
             format!(
                 "A run keeps the members' steel × the dead-load factor: {} joint(s) not \
                  defined (listed below).",
                 undefined.len()
             )
+        } else {
+            match from {
+                SelfWeightFrom::Envelope => {
+                    "Every joint is defined: a run takes the larger of the counted mass and the \
+                     members × the dead-load factor where the weight loads the tower, the lesser \
+                     where it holds it (the run's notes say which governed)."
+                        .to_owned()
+                }
+                SelfWeightFrom::Factor => {
+                    "Every joint is defined, but a run keeps the members' steel × the dead-load \
+                     factor (Dead-load factor only)."
+                        .to_owned()
+                }
+                SelfWeightFrom::Counted => {
+                    "Every joint is defined: a run takes the counted mass alone — NOT ON THE \
+                     SAFE SIDE until the counting is validated."
+                        .to_owned()
+                }
+            }
         };
         ui.label(egui::RichText::new(run_takes).strong());
         let Some((counted_for, result, _)) = &self.quantities.counted else {

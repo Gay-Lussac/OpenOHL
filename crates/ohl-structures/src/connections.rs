@@ -722,10 +722,10 @@ impl StructureType {
         out
     }
 
-    /// Whether the self-weight may come from the counted mass where every
-    /// joint is defined (`counted_self_weight` not false; 2026-11-19).
-    pub fn counts_self_weight(&self) -> bool {
-        self.counted_self_weight != Some(false)
+    /// Where a run's self-weight comes from once every joint is defined
+    /// (`self_weight_from`, default the envelope; 2026-11-19).
+    pub fn self_weight_from(&self) -> crate::structures::SelfWeightFrom {
+        self.self_weight_from.unwrap_or_default()
     }
 
     /// Whether the calculation takes the joint details: asked for

@@ -5,8 +5,8 @@
 //! Design › Weight & quantities (joint details stage 4.6, 2026-11-19) on
 //! an invented joint whose every member end has its connection: counted
 //! in the background, the totals, the bill and the notes shown, what a
-//! run takes said; the tick keeps the dead-load factor (one undo step,
-//! a file with a version raised to 19). With `OHL_RENDER_PNG` set, an image of
+//! run takes said; "Dead-load factor only" keeps the factor (one undo
+//! step, a file with a version raised to 19). With `OHL_RENDER_PNG` set, an image of
 //! the window for the user guide.
 
 use std::path::{Path, PathBuf};
@@ -120,7 +120,7 @@ fn the_panel_counts_says_and_keeps_the_factor() {
     assert!(b.total(ohl_bom::structure::PartKind::Plate).is_some());
     assert!(shows(
         &h,
-        "Every joint is defined: a run takes the counted mass"
+        "Every joint is defined: a run takes the larger of the counted mass"
     ));
     assert!(shows(&h, "Bill of materials ("));
     assert!(shows(&h, "plate 10 mm"));
@@ -133,16 +133,16 @@ fn the_panel_counts_says_and_keeps_the_factor() {
             .save(Path::new(&dir).join("structure-quantities.png"))
             .unwrap();
     }
-    // The tick off: the factor kept, one undo step.
+    // Dead-load factor only: the factor kept, one undo step.
     let before = h.state().file.as_ref().unwrap().text();
-    h.get_by_label("Self weight from the counted mass").click();
+    h.get_by_label("Dead-load factor only").click();
     h.run();
     let text = h.state().file.as_ref().unwrap().text();
-    assert!(text.contains("counted_self_weight = false"), "{text}");
+    assert!(text.contains("self_weight_from = \"factor\""), "{text}");
     h.run();
     assert!(shows(
         &h,
-        "A run keeps the members' steel × the dead-load factor"
+        "Every joint is defined, but a run keeps the members"
     ));
     h.state_mut().undo();
     h.run();

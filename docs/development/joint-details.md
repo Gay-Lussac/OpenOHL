@@ -214,9 +214,11 @@ values were worked out from the joints and which assumed.
    throat or left out); the bill in Design › Weight & quantities, as CSV,
    XLSX and in the report; where every joint is defined (no end without a
    `[[connection]]`, none left for a hand detail, every bolted end with
-   bolts) a run's self-weight is the counted mass, the light count for
-   the cases whose self-weight factor is below 1; `counted_self_weight =
-   false` keeps the factor (version 19). On 73 real towers after the
+   bolts) a run's self-weight is, until the counting is validated, the
+   larger of the counted mass and the members × the factor where the
+   weight loads the tower and the lesser where it holds it;
+   `self_weight_from` (version 19) `"factor"` keeps the factor,
+   `"counted"` takes the count alone (not on the safe side). On 73 real towers after the
    layout none has every joint defined. Not counted, said: galvanising,
    fillers and packs (no record), fittings, washers of bolts without a
    library mass. [Theory](../theory/structure-weight.md).
@@ -923,7 +925,8 @@ yes"):
 - A level 3 tower **without** connection data keeps today's per-member
   flags and conservative assumptions, said per member.
 - The self-weight factor stays until every joint is defined (Stage 4.6;
-  built 2026-11-19: then the counted mass, [theory](../theory/structure-weight.md)).
+  built 2026-11-19: then the envelope of the counted mass and the factor
+  until the counting is validated, [theory](../theory/structure-weight.md)).
 
 ## Order and dependencies
 

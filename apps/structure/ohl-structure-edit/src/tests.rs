@@ -1758,27 +1758,33 @@ fn continuous_ends_splices_and_faces_are_edited() {
 /// connections) it is not applied, and the To do list for level 4 names
 /// the member ends without joint details — grouped by joint, kept short.
 #[test]
-fn the_counted_self_weight_option_is_one_key() {
+fn the_self_weight_option_is_one_key() {
+    use ohl_structures::structures::SelfWeightFrom;
     let mut f = example("type-02.ohls");
     let before = f.text();
-    assert!(f.structure().counts_self_weight());
-    f.edit("Keep the dead-load factor", |doc, _| {
-        crate::connection_edits::set_counted_self_weight(doc, false);
-    });
-    assert!(f.error().is_none(), "{:?}", f.error());
-    assert_eq!(f.structure().counted_self_weight, Some(false));
-    assert!(!f.structure().counts_self_weight());
+    assert_eq!(f.structure().self_weight_from(), SelfWeightFrom::Envelope);
+    for from in [SelfWeightFrom::Factor, SelfWeightFrom::Counted] {
+        f.edit("Self weight from", |doc, _| {
+            crate::connection_edits::set_self_weight_from(doc, from);
+        });
+        assert!(f.error().is_none(), "{:?}", f.error());
+        assert_eq!(f.structure().self_weight_from, Some(from));
+        assert!(
+            f.text()
+                .contains(&format!("self_weight_from = \"{}\"", from.as_str()))
+        );
+    }
     assert_eq!(
         f.doc()["version"].as_integer(),
         Some(i64::from(
-            ohl_structures::structures::COUNTED_SELF_WEIGHT_VERSION
+            ohl_structures::structures::SELF_WEIGHT_FROM_VERSION
         ))
     );
-    f.edit("Self weight from the counted mass", |doc, _| {
-        crate::connection_edits::set_counted_self_weight(doc, true);
+    f.edit("Self weight from", |doc, _| {
+        crate::connection_edits::set_self_weight_from(doc, SelfWeightFrom::Envelope);
     });
-    assert_eq!(f.structure().counted_self_weight, None);
-    assert!(!f.text().contains("counted_self_weight"));
+    assert_eq!(f.structure().self_weight_from, None);
+    assert!(!f.text().contains("self_weight_from"));
     assert_ne!(f.text(), before, "the version stays raised");
 }
 

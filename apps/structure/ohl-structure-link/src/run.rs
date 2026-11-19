@@ -240,9 +240,9 @@ pub struct StructureRun {
     pub pole: Option<Result<PoleInfo, String>>,
     /// The cases.
     pub cases: Vec<StructureCase>,
-    /// The self-weight was the structure's counted mass (every joint
-    /// defined, joint details stage 4.6) instead of the members' steel ×
-    /// the dead-load factor; which and why is in [`Self::notes`].
+    /// The structure's counted mass entered the self-weight (every joint
+    /// defined, joint details stage 4.6; where it governs the envelope, or
+    /// alone when asked for); which and why is in [`Self::notes`].
     pub counted_self_weight: bool,
     /// The structure's weight and quantities: counted by the run where
     /// every joint is defined; filled by a report where it has joint
@@ -892,11 +892,13 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                         input.extension,
                         &m,
                     );
-                    if let (true, Some(f)) = (sw.counted, sw.factor) {
+                    if let Some(f) = sw.factor {
                         crate::apply_counted(&mut m, f);
-                        light_ratio = sw.light_ratio;
-                        run.counted_self_weight = true;
                     }
+                    if sw.quantities.is_some() {
+                        light_ratio = sw.light_ratio;
+                    }
+                    run.counted_self_weight = sw.counted;
                     run.notes.extend(sw.note);
                     run.quantities = sw.quantities;
                 }
@@ -997,7 +999,7 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     // below 1 (the weight holding the structure: uplift, overturning) take
     // the light count (stage 4.6).
     let lighter: Vec<CaseToRun>;
-    let cases = if run.counted_self_weight && light_ratio < 1.0 {
+    let cases = if light_ratio < 1.0 {
         lighter = favourable_light(input.cases, light_ratio);
         &lighter[..]
     } else {

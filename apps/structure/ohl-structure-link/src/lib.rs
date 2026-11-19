@@ -1543,12 +1543,12 @@ pub fn analyse_cases(
             .map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
             .unwrap_or_default();
         let sw = counted_self_weight(structure, text, sections, &bolts, None, &model);
-        if let (true, Some(f)) = (sw.counted, sw.factor) {
+        if let Some(f) = sw.factor {
             apply_counted(&mut model, f);
-            if sw.light_ratio < 1.0 {
-                lighter = run::favourable_light(cases, sw.light_ratio);
-                cases = &lighter[..];
-            }
+        }
+        if sw.light_ratio < 1.0 {
+            lighter = run::favourable_light(cases, sw.light_ratio);
+            cases = &lighter[..];
         }
     }
     let solved = in_case_order(cases.len(), threads(cases.len()), |k| {

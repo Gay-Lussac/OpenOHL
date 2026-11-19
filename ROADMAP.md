@@ -1348,10 +1348,11 @@ Six stages, the questions per stage and per detail level:
   weighed, a heavy and a light count; the bill of materials in
   OHL-Structure (Design › Weight & quantities), as CSV
   (`bill_of_materials.csv`), XLSX and in the structure report; where
-  every joint is defined a run's self-weight is the counted mass instead
-  of the members × the dead-load factor (the light count for the cases
-  whose self-weight factor is below 1; `counted_self_weight = false`
-  keeps the factor, structure file version 19)
+  every joint is defined a run's self-weight is, until the counting is
+  validated, the larger of the counted mass and the members × the
+  dead-load factor where the weight loads the tower and the lesser where it
+  holds it (`self_weight_from`, structure file version 19: `"factor"`, or
+  `"counted"` alone, not on the safe side)
   ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structure-weight.md))
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view

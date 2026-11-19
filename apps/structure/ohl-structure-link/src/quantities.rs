@@ -24,6 +24,7 @@ use ohl_bom::structure::{
 use ohl_sections::SectionLibrary;
 use ohl_structures::bolts::BoltLibrary;
 use ohl_structures::connections::{BoltedLeg, ConnectionKind, CoverLeg, WeldKind};
+use ohl_structures::structures::SelfWeightFrom;
 use ohl_structures::{LibraryItem as _, StructureType};
 use ohl_structures_fe::Model;
 
@@ -562,14 +563,15 @@ fn first_names(v: &[String]) -> String {
 /// How a run takes the structure's self-weight.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SelfWeight {
-    /// The counted mass replaces the members' steel × the dead-load
-    /// factor.
+    /// The counted mass entered the run (where it governs, or alone when
+    /// asked for).
     pub counted: bool,
-    /// The factor on the members' steel the run takes (counted: the heavy
-    /// count over the members' steel).
+    /// The factor on every member's steel the run takes instead of the
+    /// model's dead-load factors (none: the model as it is).
     pub factor: Option<f64>,
-    /// Counted: the light count over the heavy count (the cases whose
-    /// self-weight factor is below 1 take it on their factor).
+    /// The factor on the self-weight factor of the cases whose factor is
+    /// below 1 (the weight holding the tower): their mass over the mass the
+    /// model then carries (1: as the others).
     pub light_ratio: f64,
     /// The weight and quantities (counted only).
     pub quantities: Option<StructureBom>,
@@ -578,14 +580,27 @@ pub struct SelfWeight {
 }
 
 /// The self-weight of a run of structure `t` (its file `text`) on its
-/// extension `extension`: the counted mass where every joint is defined
-/// (no end without a `[[connection]]`, none left for a hand detail, every
-/// bolted end with its bolts), the structure asks for it (not
-/// `counted_self_weight = false`) and the run stands on the structure as
-/// written (an extension with its own members keeps the factor: its joints
-/// are not counted); else the dead-load factor, said why. `model`: the
-/// run's model (its dead-load factor named in the note). Only a tower's
-/// own members (no separate model file) are counted; others get nothing.
+/// extension `extension`, its model `model`. Counted only where every
+/// joint is defined (no end without a `[[connection]]`, none left for a
+/// hand detail, every bolted end with its bolts) and the run stands on the
+/// structure as written (an extension with its own members keeps the
+/// factor: its joints are not counted); else the members' steel × the
+/// dead-load factor, said why. Then by `self_weight_from`
+/// ([`SelfWeightFrom`]):
+///
+/// - the envelope (the default, until the owner validates the counting):
+///   where the weight loads the tower (a case's self-weight factor of 1 or
+///   more) the larger of the heavy count and the members × the dead-load
+///   factor; where it holds the tower (below 1) the lesser of the light
+///   count and the members × the factor — the counted mass only ever
+///   raises a load;
+/// - the factor: as before (said NOT ON THE SAFE SIDE where the heavy count
+///   is above it);
+/// - the counted mass alone: heavy and light counts, said NOT ON THE SAFE
+///   SIDE until the counting is validated.
+///
+/// Only a tower's own members (no separate model file) are counted; others
+/// get nothing.
 pub fn counted_self_weight(
     t: &StructureType,
     text: &str,
@@ -598,15 +613,14 @@ pub fn counted_self_weight(
         return SelfWeight::default();
     }
     let kept = |why: String| SelfWeight {
+        light_ratio: 1.0,
         note: Some(format!(
             "self weight: the members' steel × {} (factor kept: {why})",
             factor_words(model)
         )),
         ..SelfWeight::default()
     };
-    if !t.counts_self_weight() {
-        return kept("counted_self_weight = false".into());
-    }
+    let from = t.self_weight_from();
     let undefined = undefined_joints(t);
     if !undefined.is_empty() {
         return kept(format!("{} joint(s) not defined", undefined.len()));
@@ -623,35 +637,87 @@ pub fn counted_self_weight(
     if !bom.every_joint_defined() {
         return kept(format!("{} joint(s) not defined", bom.undefined.len()));
     }
-    let Some(factor) = bom.factor() else {
+    let (Some(heavy), Some(light)) = (bom.factor(), bom.light_factor()) else {
         return kept("the members weigh nothing".into());
     };
-    let light_ratio = if bom.mass > 0.0 {
-        bom.light / bom.mass
+    let steel = model.steel_weight();
+    let typed = if steel > 0.0 {
+        model.weight() / steel
     } else {
         1.0
     };
-    let parts: Vec<String> = bom
-        .totals
-        .iter()
-        .map(|t| format!("{} {:.0} kg", t.kind.plural(), t.mass))
-        .collect();
-    let note = format!(
-        "self weight: the counted mass, {:.0} kg ({}) — {factor:.3} × the members' steel, \
-         instead of {}; the cases whose self-weight factor is below 1 (the weight holding \
-         the structure) take the light count, {:.0} kg ({:.3} ×). NOT ON THE SAFE SIDE where \
-         the weight loads it: galvanising, fillers and packs, fittings not counted (Weight & \
-         quantities)",
-        bom.mass,
-        parts.join(", "),
-        factor_words(model),
-        bom.light,
-        factor * light_ratio,
-    );
+    let words = factor_words(model);
+    let not_counted = "not counted: galvanising, fillers and packs, fittings (Weight & quantities)";
+    let (factor, held, counted, note) = match from {
+        SelfWeightFrom::Factor => {
+            let mut note = format!(
+                "self weight: the members' steel × {words} (self_weight_from = \"factor\"; the \
+                 counted mass is {heavy:.3} × the members' steel)"
+            );
+            if heavy > typed {
+                note.push_str(&format!(
+                    "; NOT ON THE SAFE SIDE: the counted mass, {:.0} kg, is above the factor's \
+                     ({typed:.3} ×)",
+                    bom.mass
+                ));
+            }
+            (None, typed, false, note)
+        }
+        SelfWeightFrom::Counted => (
+            Some(heavy),
+            light,
+            true,
+            format!(
+                "self weight: the counted mass alone (self_weight_from = \"counted\"), {:.0} kg \
+                 ({heavy:.3} × the members' steel), instead of {words} ({typed:.3} ×); the cases \
+                 whose self-weight factor is below 1 take the light count, {:.0} kg \
+                 ({light:.3} ×). NOT ON THE SAFE SIDE until the counting is validated \
+                 ({not_counted})",
+                bom.mass, bom.light
+            ),
+        ),
+        SelfWeightFrom::Envelope => {
+            let loads = if heavy > typed {
+                format!(
+                    "counted mass {heavy:.3} × the members' steel ({:.0} kg), above {words} \
+                     ({typed:.3} ×): counted mass taken where the weight loads the tower",
+                    bom.mass
+                )
+            } else {
+                format!(
+                    "counted mass {heavy:.3} × the members' steel, below {words} ({typed:.3} ×): \
+                     factor kept (counting not validated)"
+                )
+            };
+            let holds = if light < typed {
+                format!(
+                    "the cases whose self-weight factor is below 1 (the weight holding the \
+                     tower) take the light count, {:.0} kg ({light:.3} ×), below the factor's",
+                    bom.light
+                )
+            } else {
+                format!(
+                    "the cases whose self-weight factor is below 1 keep the factor's mass \
+                     ({typed:.3} ×), below the light count ({light:.3} ×)"
+                )
+            };
+            (
+                (heavy > typed).then_some(heavy),
+                light.min(typed),
+                heavy > typed || light < typed,
+                format!(
+                    "self weight: {loads}; {holds} — the larger where the weight loads the \
+                     tower, the lesser where it holds it, until the counting is validated; \
+                     {not_counted}"
+                ),
+            )
+        }
+    };
+    let carried = factor.unwrap_or(typed);
     SelfWeight {
-        counted: true,
-        factor: Some(factor),
-        light_ratio,
+        counted,
+        factor,
+        light_ratio: if carried > 0.0 { held / carried } else { 1.0 },
         quantities: Some(bom),
         note: Some(note),
     }
