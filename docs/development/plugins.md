@@ -1088,6 +1088,29 @@ further optional export carries them:
   as before. Both bundled plugins have it
   ([ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member),
   [SIA 263](../theory/sia263.md#flexural-buckling)).
+- `joint-check-groups` (2026-11-19, `code.wit`, additive: found by its
+  export name, its own records, world `joint-check-groups-export`; stage
+  4.5 of the joint details): `check-joint-groups(method, group-input) ->
+  result<list<group-result>, string>`. Per **group** (`holding`: a gusset
+  plate's bolts onto the leg holding it; `bearing`: every bolt onto one
+  member at a joint) its plies (`ply`: the plate or the member, its
+  thickness, steel, redundant, whether its edges are `known`), its
+  physical bolts (`group-bolt`: diameter, hole, the bolt's strength and
+  shear capacities, grade, the `planes` its force is taken on — 1 where
+  several parts' forces meet in it —, what it `carries`, where it lies)
+  and per case and bolt its `bolt-load`: the size of its force (the
+  vector sum OpenOHL worked out: the members' end forces of that case,
+  each member's force shared by its own bolts, a plate's resultant and
+  moment shared elastically) and per ply the distances from the bolt
+  along the direction it pushes the ply to the edge (`ends`; none: no
+  edge that way), square to it (`sides`) and to the next hole along it
+  (`ahead`). No code's rule is in the forces; the plugin applies its
+  code's bolt shear, bearing and distances to each bolt and gives back
+  per group its usage per case (the most loaded bolt's), the governing
+  check, notes and not-safe. The structure's parameter file is sent in
+  `group-input.parameters`. A plugin without it: every group NOT CHECKED,
+  NOT ON THE SAFE SIDE (`ohl_member_check::joints::check_joint_groups`).
+  Both bundled plugins have it ([theory](../theory/joint-groups.md)).
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

@@ -1289,7 +1289,7 @@ fn joint_details_show_the_plate_checks() {
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.run();
     h.run();
-    h.get_by_label("Plate checks (the last run)");
+    h.get_by_label("Joint checks (the last run)");
     h.get_by_label("D1's bolts");
     h.get_by_label("weld to G2");
     assert!(h.get_all_by_label_contains("ASCE 10-97").count() >= 1);

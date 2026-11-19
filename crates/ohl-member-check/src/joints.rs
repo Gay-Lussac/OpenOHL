@@ -30,6 +30,10 @@
 //!   folders), then in the user's plugin folder ([`installed`]).
 //! - The minimum distances are asked once per different bolt and part in
 //!   a session (kept: the bolt tools ask at every redraw).
+//! - **A joint's bolt groups** under the members' forces together
+//!   (2026-11-19, stage 4.5): one more call per structure through the
+//!   plugin's optional `joint-check-groups` export ([`check_joint_groups`]);
+//!   without it every group is [`not_checked_by`] the plugin.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -41,6 +45,7 @@ use ohl_plugins::bolt_distances_full as dist_full;
 use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
 use ohl_plugins::joint_check_full as full;
+pub use ohl_plugins::joint_check_groups as groups;
 use ohl_plugins::joint_check_moments as mom;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
@@ -225,6 +230,46 @@ pub fn check_joints_with(
         Err(e) => JointsChecked::NotChecked(format!("the joint check failed: {e}")),
     };
     (checked, sent)
+}
+
+/// What a plugin's check of a joint's bolt groups gave (2026-11-19, stage
+/// 4.5 of the joint details).
+#[derive(Debug, Clone)]
+pub enum GroupsChecked {
+    /// The plugin is not found, has no `joint-check-groups` export, or
+    /// failed: why, in words — every group is then [`not_checked_by`] it.
+    NotChecked(String),
+    /// Its results, by group number.
+    Results(Vec<groups::GroupResult>),
+}
+
+/// The joint bolt groups of `input` (its `parameters` replaced by the
+/// structure's parameter file for the plugin) checked by the plugin `p`
+/// names through its `joint-check-groups` export: one call with every
+/// group and load case. A plugin without the export: every group not
+/// checked, said — never another code's check.
+pub fn check_joint_groups(p: &PluginMethod, input: &groups::GroupInput) -> GroupsChecked {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return GroupsChecked::NotChecked(e),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return GroupsChecked::NotChecked(format!("the plugin host does not start: {e}"));
+        }
+    };
+    JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let mut input = input.clone();
+    input.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    match host.check_joint_groups(&dir, &p.method, &input) {
+        Ok(Some(r)) => GroupsChecked::Results(r),
+        Ok(None) => GroupsChecked::NotChecked(format!(
+            "the plugin {} has no check of a joint's bolt groups (no joint-check-groups export)",
+            p.plugin
+        )),
+        Err(e) => GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+    }
 }
 
 /// `input` as `joint-check-moments` takes it, with the plugin's

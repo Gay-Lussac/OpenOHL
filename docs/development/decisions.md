@@ -124,6 +124,65 @@ active development, not approved yet;
   mapping at import (phase 9); point clouds, backgrounds and terrain tiles
   in the database; a backup check before migrating, TLS to a database on
   another host (phase 13); the merge of twin towers (an admin's command).
+## 2026-11-19 (the joints' own checks: bolt groups and the leg's bearing)
+
+**The bolt groups under the members' forces together and the bearing of
+the member they bolt onto, a usage per joint** (queue C item 6 of the
+lattice towers' open items, stage 4.5 of the
+[joint details](joint-details.md); owner 2026-11-18: "Go ahead"; built,
+in active development, not approved yet;
+[theory](../theory/joint-groups.md)).
+
+- **Two groups per joint**, gathered by the core
+  (`ohl_structure_link::joint_groups`): a gusset plate's **bolts onto the
+  leg holding it** (the joint's leg bolted onto the plate, with the
+  members running on in line with it) carry the resultant of the other
+  members' forces on the plate with its moment about those bolts'
+  centroid; **the bolts onto a member** at the joint (its bearing) — the
+  lapped members' and the holding bolts' — each the vector sum of every
+  part it holds. Bolts of different parts within a quarter of a diameter
+  are one bolt, checked on one shear plane under the sum (on the safe
+  side).
+- **The forces**: each member's end force from the analysis in the same
+  case only (a frame's end shear with its axial force), at every joint it
+  bolts at; a member's own bolts share its force equally (ASCE 10-97
+  4.1: its gauge's offset from its axis not taken as a moment on them —
+  the member's slenderness takes it; SIA 263 6.2.4.6 gives no rule, said
+  not on the safe side in the theory); a frame's end moment and a plate's
+  resultant moment shared **elastically** (Kulak, Fisher & Struik, *Guide
+  to Design Criteria for Bolted and Riveted Joints*, 1987: the more
+  conservative of its two analyses); the plies' offsets through their
+  thickness left out of the levers, as in every lapped connection's
+  checks. One bolt with a moment adding 1 % or more: a pin, said NOT ON
+  THE SAFE SIDE; forces square to the plies: bolts in tension not
+  checked, said NOT ON THE SAFE SIDE (as the plate checks of 2026-11-18).
+- **The distances along each bolt's force**: to the ply's edge (a
+  plate's outline; an angle's toe and, where its steel stops at the
+  joint, its end), square to it, and to the next hole; where the steel
+  stops not given, the code's conservative case. Two pieces in line
+  through a joint of the same section, not said continuous and without a
+  splice there: taken as one angle running on (an assumption, said).
+- **The codes' rules in their plugins** (additive export
+  `joint-check-groups`, interface 0.3 unchanged): ASCE 10-97 bolt shear
+  4.3.2, bearing 4.4, end distance along the force 4.5.1 (not checked
+  where the end is not known: said NOT ON THE SAFE SIDE), spacing 4.5.2,
+  edge 4.5.3; SIA 263 Table 16 (73)–(75), bearing (76) with e₁ along the
+  bolt's force (the next hole: p₁ − d₀/2; the end not known: Table 17's
+  e₁ at most, on the safe side), Table 17's distances along and square to
+  the force (Figure 31). A plugin without the export: every group NOT
+  CHECKED.
+- **The joint's usage** is the largest of its plates', welds', bolt
+  groups' and bearing checks: Joint details ("Usage of the joint", the
+  list now "Joint checks"), the 3D view's joint dots and the report's
+  new *Joints — usage per joint* table.
+- **Not defined, said**: a plate the joint's leg does not bolt onto
+  ("NOT CHECKED, NOT ON THE SAFE SIDE: how plate … is held … is not
+  given"): a leg running on through a joint has no bolts there in the file
+  (`kind = "continuous"`), so a plate's own bolts onto it cannot be given
+  yet — a question to the owner; bolts not placed; a thickness not known.
+- No file format changed; `PlatePart` gains `Holding`, `Bearing`,
+  `NotChecked`.
+
 ## 2026-11-19 (buckling lengths from what braces a member)
 
 **Lattice members' buckling lengths are worked out from what braces

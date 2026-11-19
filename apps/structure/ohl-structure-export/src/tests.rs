@@ -977,9 +977,11 @@ fn the_structure_report_shows_the_plate_checks() {
     })
     .unwrap();
     for shown in [
-        "plates and welds</td>",
+        "joints: plates and welds, bolt groups</td>",
         "<h2>Plates and welds — largest usage over the cases</h2>",
         "D2&#39;s bolts",
+        // The usage per joint (2026-11-19).
+        "<h2>Joints — usage per joint, largest over the cases</h2>",
     ] {
         assert!(r.html.contains(shown), "{shown}");
     }

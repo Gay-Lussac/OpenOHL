@@ -30,6 +30,8 @@ Every assumption below is marked **on the safe side** (conservative) or
 
 ## What is checked, per case
 
+The bolts holding a plate onto the joint's leg and the bolts onto a member at a joint under the members' forces together (2026-11-19) are on the page [Joint bolt groups and the leg's bearing](joint-groups.md).
+
 For each gusset plate (`[[plate]]`) and each case solved:
 
 - **per member bolting onto the plate** (`onto` the plate): its bolts'

@@ -1220,6 +1220,181 @@ world joint-check-moments-export {
     export joint-check-moments;
 }
 
+/// The bolt groups of a joint under the members' forces together
+/// (optional export of any plugin beside `joint-check-moments`, found by
+/// its export name; 2026-11-19, stage 4.5 of the joint details: the
+/// checks of the joints themselves; added to interface version 0.3
+/// without changing anything else). Where several members bolt onto the
+/// same part at a joint, OpenOHL gathers each **physical bolt** with the
+/// force it carries in every load case — the vector sum of the shares of
+/// every member end and plate it holds, the same case's forces only — and
+/// sends, per bolt and case, that force's size and the distances from the
+/// bolt along it and square to it to each checked ply's edges. Two kinds
+/// of group:
+///
+/// - `holding`: a gusset plate's bolts onto the member holding it (the
+///   joint's leg bolted onto the plate): the resultant of the other
+///   members' forces on the plate with its moment about the holding bolts'
+///   centroid, shared out elastically by OpenOHL; the ply checked is the
+///   plate;
+/// - `bearing`: every bolt onto one member at the joint (the leg's
+///   bearing): the lapped members' shares and the holding bolts' forces on
+///   it, summed bolt by bolt; the ply checked is that member.
+///
+/// No code's rule is in the forces (the elastic sharing is mechanics, its
+/// source in the theory page); the plugin applies its code's bolt shear,
+/// bearing and end and edge distances to each bolt and gives back per
+/// group its usage per case (the most loaded bolt's), the governing check
+/// with its clause, notes and what is not on the safe side. A group the
+/// plugin returns nothing for, or every group of a plugin without this
+/// export, is reported by OpenOHL as NOT CHECKED, NOT ON THE SAFE SIDE —
+/// never by another code. SI units throughout.
+interface joint-check-groups {
+    /// A load case of the run.
+    record load-case {
+        /// Its name.
+        name: string,
+        /// Its strength factor (the plugin applies it to its usage).
+        strength: f64,
+    }
+
+    /// A ply the group's bolts bear on, checked here.
+    record ply {
+        /// What it is: the member's id, or the plate's.
+        part: string,
+        /// `member` (an angle's leg: its free edge rolled) or `plate`
+        /// (its edges sheared or cut).
+        kind: string,
+        /// Its thickness, m.
+        thickness: f64,
+        /// Its yield strength, Pa.
+        fy: option<f64>,
+        /// Its ultimate strength, Pa.
+        fu: option<f64>,
+        /// It is a redundant member (the code's smaller end distance).
+        redundant: bool,
+        /// Its edges' distances are known (false: not known, e.g. where
+        /// the member's steel stops is not given — the plugin takes its
+        /// code's conservative case, said).
+        known: bool,
+    }
+
+    /// One physical bolt of a group.
+    record group-bolt {
+        /// Its diameter, m.
+        diameter: f64,
+        /// Its hole, m (none: not given).
+        hole: option<f64>,
+        /// The bolt's ultimate strength, Pa.
+        bolt-ultimate: option<f64>,
+        /// One bolt's shear capacity per plane through the threads, N
+        /// (given: the library's or the member's).
+        shear-capacity: option<f64>,
+        /// The same through the shank, N.
+        shear-capacity-shank: option<f64>,
+        /// The threads are in the shear plane (none: not said).
+        threads-in-shear: option<bool>,
+        /// Its grade as the files name it ("" not given).
+        grade: string,
+        /// The shear planes its force is taken on (1 where the forces of
+        /// several parts meet in it: on the safe side).
+        planes: u32,
+        /// The member ends and plates whose forces it carries.
+        carries: list<string>,
+        /// Where it is in the group's plane from the group's centroid, m
+        /// (for the plugin's words).
+        at: tuple<f64, f64>,
+    }
+
+    /// One bolt in one load case.
+    record bolt-load {
+        /// The size of the force on it in the plies' plane, N.
+        force: f64,
+        /// Per ply (the order of `group.plies`): from the bolt along the
+        /// direction it pushes that ply to the ply's edge, m; none: no
+        /// edge that way (the part runs on).
+        ends: list<option<f64>>,
+        /// Per ply: from the bolt square to that direction to the nearer
+        /// edge, m; none: no edge either way.
+        sides: list<option<f64>>,
+        /// Per ply: from the bolt's centre to the centre of the next hole
+        /// in that ply along the same direction (a hole within a bolt
+        /// diameter of its line), m; none: no hole ahead.
+        ahead: list<option<f64>>,
+    }
+
+    /// One group to check.
+    record group {
+        /// Its number: the result names it.
+        id: u32,
+        /// The joint.
+        joint: string,
+        /// `holding` or `bearing` (above).
+        kind: string,
+        /// The plate (holding) or the member (bearing) whose bolts these
+        /// are.
+        part: string,
+        /// The plies checked (every bolt of the group bears on each).
+        plies: list<ply>,
+        /// Its bolts.
+        bolts: list<group-bolt>,
+        /// Per load case, per bolt (the order of `bolts`).
+        loads: list<list<bolt-load>>,
+        /// What OpenOHL says about this group's data and forces.
+        notes: list<string>,
+    }
+
+    /// Everything of one structure for one call.
+    record group-input {
+        /// The structure's name.
+        structure: string,
+        /// The plugin's parameter file of the structure (TOML; "" none).
+        parameters: string,
+        /// The load cases of the run.
+        cases: list<load-case>,
+        /// The groups.
+        groups: list<group>,
+    }
+
+    /// A group's usage in one load case.
+    record case-usage {
+        /// Its place in `group-input.cases`.
+        load-case: u32,
+        /// Share used by the most loaded bolt (1 = 100 %), the case's
+        /// strength factor applied.
+        usage: f64,
+        /// The check that gives it, with its clause and the bolt, in words.
+        check: string,
+    }
+
+    /// What the method gives for one group.
+    record group-result {
+        /// The group's number.
+        id: u32,
+        /// One per load case; a case left out is reported as not checked.
+        usages: list<case-usage>,
+        /// The governing check with its clause, in words.
+        governs: string,
+        /// Notes (assumptions, limits), in words.
+        notes: list<string>,
+        /// What is not on the safe side or not checked for this group
+        /// (none: nothing). OpenOHL shows it with the result.
+        not-safe: option<string>,
+    }
+
+    /// Checks the groups of `input` by method `method` (a name of the
+    /// plugin's `member-check` methods) with the parameters it carries:
+    /// one result per group it checks. The error says why there is no
+    /// result (a parameter file it cannot read, a method it does not have).
+    check-joint-groups: func(method: string, input: group-input) -> result<list<group-result>, string>;
+}
+
+/// The `joint-check-groups` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world joint-check-groups-export {
+    export joint-check-groups;
+}
+
 /// Minimum bolt distances by a design method (optional export of any
 /// plugin beside `member-check`, found by its export name;
 /// 2026-11-11): what OpenOHL's bolt tools place and check bolts by when
@@ -1879,7 +2054,8 @@ world member-check-bracing-export {
 /// tools' minimum distances by `bolt-distances` (and, with the bolts'
 /// data and its parameters, `bolt-distances-full`: third round), its
 /// members' buckling lengths from what braces them by
-/// `member-check-bracing` (2026-11-19).
+/// `member-check-bracing` (2026-11-19), its joints' bolt groups under the
+/// members' forces together by `joint-check-groups` (2026-11-19).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
@@ -1887,6 +2063,7 @@ world structure-code-plugin {
     export joint-check;
     export joint-check-full;
     export joint-check-moments;
+    export joint-check-groups;
     export bolt-distances;
     export bolt-distances-full;
 }

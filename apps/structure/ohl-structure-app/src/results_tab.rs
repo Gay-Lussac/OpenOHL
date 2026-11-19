@@ -253,8 +253,9 @@ impl ResultsTab {
                 3.0,
             );
         }
-        // The joints with plates: coloured by their plates' and welds'
-        // worst usage, as the members (2026-11-04).
+        // The joints: coloured by their joint checks' worst usage — plates
+        // and welds (2026-11-04), bolt groups and bearing (2026-11-19) —
+        // as the members.
         for (j, u) in ohl_structure_link::joint_plate_usage(&r.plates) {
             if let Some(k) = r.joints.iter().position(|x| x.id == j) {
                 s.point(at(k), usage_colour(Some(u), ""), 9.0);

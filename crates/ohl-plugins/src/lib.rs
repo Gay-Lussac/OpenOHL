@@ -274,6 +274,27 @@ pub mod joint_check_moments {
 /// plugin.
 pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
 
+mod joint_check_groups_bindings {
+    wasmtime::component::bindgen!({
+        world: "joint-check-groups-export",
+        path: "wit",
+    });
+}
+
+/// The records of the `joint-check-groups` interface (2026-11-19, stage
+/// 4.5 of the joint details): a joint's bolt groups under the members'
+/// forces together — each physical bolt's force per case and its
+/// distances to the plies' edges — and what a plugin gives per group.
+pub mod joint_check_groups {
+    pub use super::joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups::{
+        BoltLoad, CaseUsage, Group, GroupBolt, GroupInput, GroupResult, LoadCase, Ply,
+    };
+}
+
+/// Export name of the optional `joint-check-groups` interface of any
+/// plugin.
+pub const JOINT_CHECK_GROUPS_EXPORT: &str = "ohl:plugin/joint-check-groups@0.1.0";
+
 mod bolt_distances_bindings {
     wasmtime::component::bindgen!({
         world: "bolt-distances-export",
@@ -2493,6 +2514,45 @@ impl WasmHost {
         check_part_results(
             &name,
             input.parts.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint bolt groups of `input` checked by method `method` of the
+    /// plugin in `dir` through its `joint-check-groups` export (2026-11-19,
+    /// stage 4.5 of the joint details), every group and load case in this
+    /// one call. None: the plugin has no such export (the caller reports
+    /// every group as not checked, never as passing). Errors as
+    /// [`WasmHost::check_joints`]'s.
+    pub fn check_joint_groups(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_groups::GroupInput,
+    ) -> Result<Option<Vec<joint_check_groups::GroupResult>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_GROUPS_EXPORT)? else {
+            return Ok(None);
+        };
+        let export =
+            joint_check_groups_bindings::JointCheckGroupsExport::new(&mut p.store, &instance)
+                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .ohl_plugin_joint_check_groups()
+            .call_check_joint_groups(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-groups", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.groups.iter().map(|x| x.id),
             input.cases.len(),
             given.iter().map(|r| {
                 (

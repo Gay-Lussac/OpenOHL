@@ -271,7 +271,7 @@ pub fn report_html(input: &ReportInput) -> String {
             "<tr><td>{}</td><td class=\"n {}\">{}</td><td>{}</td><td>{}</td></tr>",
             match s.check {
                 "members" => "members (finite elements)",
-                "plates" => "plates and welds",
+                "plates" => "joints: plates and welds, bolt groups",
                 _ => "pole",
             },
             class(s.usage, &s.governs),
@@ -390,8 +390,12 @@ pub fn report_html(input: &ReportInput) -> String {
                  shear, the plate's sections and its end and edge distances; per weld: the \
                  resultant of the member forces on the plates it holds (on the safe side) \
                  against the weld's resistance. A plate in compression: plate buckling not \
-                 checked. The theory page on joint plates says every assumption.</p>\n",
+                 checked. Since 2026-11-19 also a plate's bolts onto the leg holding it and the \
+                 bolts onto a member at a joint (its bearing) under the members' forces \
+                 together. The theory pages on joint plates and joint bolt groups say every \
+                 assumption.</p>\n",
             );
+            joints_table(&mut h, &solved);
         }
 
         // Reactions.
@@ -500,6 +504,72 @@ pub fn report_html(input: &ReportInput) -> String {
         esc(input.software)
     );
     h
+}
+
+/// The usage per joint (2026-11-19, stage 4.5 of the joint details): the
+/// largest over the cases of its plates', welds', bolt groups' and bearing
+/// checks, with the part and the check that give it; the joints with a
+/// part not checked counted beside.
+fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
+    let mut best: std::collections::BTreeMap<&str, (f64, &str, String, &str)> =
+        std::collections::BTreeMap::new();
+    let mut bare: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for (case, r) in solved {
+        for p in &r.plates {
+            match p.usage {
+                Some(u) => {
+                    let e = best.entry(p.joint.as_str()).or_insert((
+                        u,
+                        case,
+                        p.what(),
+                        p.governs.as_str(),
+                    ));
+                    if ohl_structure_link::usage_order(u, e.0).is_gt() {
+                        *e = (u, case, p.what(), p.governs.as_str());
+                    }
+                }
+                None if std::ptr::eq(*r, solved[0].1) => {
+                    *bare.entry(p.joint.as_str()).or_insert(0) += 1;
+                }
+                None => {}
+            }
+        }
+    }
+    if best.is_empty() && bare.is_empty() {
+        return;
+    }
+    h.push_str(
+        "<h2>Joints — usage per joint, largest over the cases</h2>\n<table><tr><th>Joint</th>\
+         <th>Usage</th><th>Governing case</th><th>Part</th><th>What governs</th>\
+         <th>Parts not checked</th></tr>\n",
+    );
+    let mut joints: Vec<&str> = best.keys().chain(bare.keys()).copied().collect();
+    joints.sort();
+    joints.dedup();
+    for j in joints {
+        let n = bare.get(j).copied().unwrap_or(0);
+        let (u, case, part, governs) = match best.get(j) {
+            Some((u, c, p, g)) => (Some(*u), *c, p.as_str(), *g),
+            None => (None, "", "", ""),
+        };
+        let _ = writeln!(
+            h,
+            "<tr><td>{}</td><td class=\"n {}\">{}</td><td>{}</td><td>{}</td><td>{}</td>\
+             <td class=\"n\">{}</td></tr>",
+            esc(j),
+            class(u, governs),
+            pct(u),
+            esc(case),
+            esc(part),
+            esc(governs),
+            n
+        );
+    }
+    h.push_str(
+        "</table>\n<p class=\"note\">A joint's usage is the largest of its plates', welds', \
+         bolt groups' and bearing checks; a part not checked (its data not given, or no \
+         design code's check) is counted beside it and never taken as a pass.</p>\n",
+    );
 }
 
 /// Every member's result in every case solved, as CSV:

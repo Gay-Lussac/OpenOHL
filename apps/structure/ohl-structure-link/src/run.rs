@@ -312,13 +312,7 @@ impl StructureRun {
                 {
                     s.usage = Some(u);
                     s.case = c.name.clone();
-                    s.governs = format!(
-                        "joint {} plate {}, {} ({})",
-                        g.joint,
-                        g.plate,
-                        g.part.words(),
-                        g.governs
-                    );
+                    s.governs = format!("joint {}, {} ({})", g.joint, g.what(), g.governs);
                 }
             }
             out.push(s);
@@ -911,7 +905,7 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     // The plates' and welds' checks (2026-11-04): planned once, checked
     // per case with its member forces (a structure of its own members).
     let plans = match (&model, &t.model) {
-        (Some(_), None) if !t.plates.is_empty() => {
+        (Some(_), None) if !t.plates.is_empty() || crate::plate_checks::joint_checks_apply(t) => {
             let beside;
             let bolts = match (input.bolts, input.dir) {
                 (Some(b), _) => b,

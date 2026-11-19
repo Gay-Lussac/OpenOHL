@@ -1343,7 +1343,12 @@ Six stages, the questions per stage and per detail level:
   bolts' and plates' weight are not built; 2026-11-19: buckling lengths
   from what braces a member built, in active development, not approved
   yet — the core's runs and bracing points, each code plugin's rules
-  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member)))*
+  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member));
+  2026-11-19: the bolt groups under the members' forces together, the
+  leg's bearing and a usage per joint built, in active development, not
+  approved yet — a plate's bolts onto the leg holding it, every bolt onto
+  a member at a joint, each code plugin's bolt rules
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)))*
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)

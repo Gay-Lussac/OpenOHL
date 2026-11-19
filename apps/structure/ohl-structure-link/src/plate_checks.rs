@@ -58,6 +58,14 @@ pub enum PlatePart {
     Member(String),
     /// The weld to another plate.
     Weld(String),
+    /// The plate's bolts onto the member(s) holding it, in words
+    /// (2026-11-19, stage 4.5: `crate::joint_groups`).
+    Holding(String),
+    /// Every bolt onto the member at the joint: its bearing (2026-11-19);
+    /// the row's `plate` is the member.
+    Bearing,
+    /// Something at the joint not checked, in words (2026-11-19).
+    NotChecked(String),
 }
 
 impl PlatePart {
@@ -66,6 +74,9 @@ impl PlatePart {
         match self {
             PlatePart::Member(m) => format!("{m}'s bolts"),
             PlatePart::Weld(o) => format!("weld to {o}"),
+            PlatePart::Holding(h) => format!("its bolts onto {h}"),
+            PlatePart::Bearing => "the bolts onto it (its bearing)".to_owned(),
+            PlatePart::NotChecked(_) => "not checked".to_owned(),
         }
     }
 }
@@ -90,6 +101,19 @@ pub struct PlateUsage {
     pub checks: Vec<(String, f64)>,
     /// What was assumed or not checked.
     pub notes: Vec<String>,
+}
+
+impl PlateUsage {
+    /// The part with its plate or member, in words: "plate G1, D1's
+    /// bolts", "plate G1, its bolts onto L1", "the bolts onto L1 (its
+    /// bearing)".
+    pub fn what(&self) -> String {
+        match &self.part {
+            PlatePart::Bearing => format!("the bolts onto {} (its bearing)", self.plate),
+            PlatePart::NotChecked(_) => format!("{}, not checked", self.plate),
+            p => format!("plate {}, {}", self.plate, p.words()),
+        }
+    }
 }
 
 /// A part's check as planned (the force comes per case).
@@ -229,14 +253,17 @@ pub struct PlatePlans {
     /// The structure's name (for the plugin).
     structure: String,
     parts: Vec<Planned>,
+    /// The joints' bolt groups and the members' bearing at the joints
+    /// (2026-11-19, stage 4.5: `crate::joint_groups`).
+    pub(crate) groups: crate::joint_groups::GroupPlans,
     /// What applies to every case.
     pub notes: Vec<String>,
 }
 
 impl PlatePlans {
-    /// No plate to check.
+    /// No plate and no joint bolt group to check.
     pub fn is_empty(&self) -> bool {
-        self.parts.is_empty()
+        self.parts.is_empty() && self.groups.is_empty()
     }
 }
 
@@ -279,7 +306,9 @@ pub fn plate_plans_in(
 ) -> Result<PlatePlans, String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
-    if t.plates.is_empty() && t.splices.is_empty() {
+    // The joints' own checks (2026-11-19): a tower's, at level 3 or more.
+    let groups = joint_checks_apply(&t);
+    if t.plates.is_empty() && t.splices.is_empty() && !groups {
         return Ok(PlatePlans::default());
     }
     let details = crate::joint_details(text, library, bolts)?;
@@ -296,6 +325,17 @@ pub fn plate_plans_in(
     };
     if out.method == CapacityMethod::Simple {
         out.notes.push(plates::SIMPLE_NOT_CHECKED.into());
+    }
+    if groups {
+        if out.method == CapacityMethod::Simple {
+            out.notes.push(
+                "simple check: the joints' bolt groups and the members' bearing at the joints \
+                 not checked (not a design code)"
+                    .into(),
+            );
+        } else {
+            out.groups = crate::joint_groups::group_plans(&details, &model, library);
+        }
     }
     for j in &details.joints {
         cover_plans(j, &model, library, &mut out.parts);
@@ -439,6 +479,16 @@ pub fn plate_plans_in(
         }
     }
     Ok(out)
+}
+
+/// The joints' own checks apply to structure `t` (2026-11-19, stage 4.5):
+/// a tower (lattice or portal) at level 3 or more with members.
+pub(crate) fn joint_checks_apply(t: &StructureType) -> bool {
+    use ohl_structures::structures::StructureKind;
+    matches!(t.kind, StructureKind::Lattice | StructureKind::Portal)
+        && t.detail().is_design()
+        && !t.members.is_empty()
+        && t.model.is_none()
 }
 
 /// The checks of a splice's covers at joint `j`: per member end bolting
@@ -616,6 +666,16 @@ fn material_steel(
         ),
     };
     (PlateSteel { thickness, fy, fu }, Some(note))
+}
+
+/// [`plate_steel`] for the joints' bolt groups (2026-11-19).
+pub(crate) fn plate_steel_of(
+    p: &PlateDetail,
+    j: &JointDetail,
+    model: &Model,
+    library: &SectionLibrary,
+) -> (PlateSteel, Option<String>) {
+    plate_steel(p, j, model, library)
 }
 
 /// A plate's thickness and steel: its material's, else (assumed) the
@@ -823,7 +883,7 @@ pub fn plate_usage(
     axial: &BTreeMap<String, f64>,
     strength: f64,
 ) -> Vec<PlateUsage> {
-    plans
+    let mut rows: Vec<PlateUsage> = plans
         .parts
         .iter()
         .map(|x| {
@@ -890,7 +950,24 @@ pub fn plate_usage(
                 notes: x.notes.iter().chain(&checked.notes).cloned().collect(),
             }
         })
-        .collect()
+        .collect();
+    // The joints' bolt groups (2026-11-19): a design code's, its plugin
+    // not run here — not checked, said.
+    if !plans.groups.is_empty() {
+        rows.extend(
+            crate::joint_groups::group_rows(
+                &plans.groups,
+                &plans.structure,
+                None,
+                None,
+                &[("", strength, axial)],
+                &[],
+            )
+            .into_iter()
+            .flatten(),
+        );
+    }
+    rows
 }
 
 /// One load case for [`plate_usage_cases`]: its name, its strength
@@ -1034,11 +1111,18 @@ pub fn plate_usage_cases_with(
         )
     };
     let not_checked = by_plugin::not_checked_by(p);
+    // The joints' bolt groups (2026-11-19): one more call with every
+    // group and case.
+    let mut groups = if plans.groups.is_empty() {
+        vec![Vec::new(); cases.len()]
+    } else {
+        crate::joint_groups::group_rows(&plans.groups, &plans.structure, Some(p), None, cases, ends)
+    };
     cases
         .iter()
         .enumerate()
         .map(|(n, c)| {
-            plans
+            let mut rows: Vec<PlateUsage> = plans
                 .parts
                 .iter()
                 .enumerate()
@@ -1111,7 +1195,9 @@ pub fn plate_usage_cases_with(
                     }
                     row
                 })
-                .collect()
+                .collect();
+            rows.append(&mut groups[n]);
+            rows
         })
         .collect()
 }
@@ -1200,7 +1286,8 @@ fn weld_loads_with(
     out
 }
 
-/// The worst plate usage per joint of a case's plate checks.
+/// The worst usage per joint of a case's joint checks: its plates', welds',
+/// bolt groups' and bearing (2026-11-19) — the joint's usage.
 pub fn joint_plate_usage(plates: &[PlateUsage]) -> BTreeMap<String, f64> {
     let mut out: BTreeMap<String, f64> = BTreeMap::new();
     for p in plates {
@@ -1216,7 +1303,7 @@ pub fn joint_plate_usage(plates: &[PlateUsage]) -> BTreeMap<String, f64> {
 
 /// From `origin` (in plate `outline`'s plane) along `dir` (in its plane)
 /// to the outline, m; none when `origin` lies outside it.
-fn ray_to_outline(outline: &[[f64; 3]], origin: [f64; 3], dir: [f64; 3]) -> Option<f64> {
+pub(crate) fn ray_to_outline(outline: &[[f64; 3]], origin: [f64; 3], dir: [f64; 3]) -> Option<f64> {
     let n = crate::welds::polygon_normal(outline)?;
     let u0 = sub(outline[1], outline[0]);
     let u = scale(u0, 1.0 / norm(u0).max(1e-12));

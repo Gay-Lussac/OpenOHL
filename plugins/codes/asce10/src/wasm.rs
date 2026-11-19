@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::bracing::{Bracing, Piece, Point, Restraint};
 use crate::lengths::{self, Lengths};
-use crate::{asce10, check, joints, memo, params};
+use crate::{asce10, check, groups, joints, memo, params};
 
 wit_bindgen::generate!({
     path: "../../../crates/ohl-plugins/wit",
@@ -1020,6 +1020,92 @@ impl exports::ohl::plugin::bolt_distances_full::Guest for Asce10 {
                 },
             }),
         )
+    }
+}
+
+use exports::ohl::plugin::joint_check_groups as jgr;
+
+/// A `joint-check-groups` group as [`groups::Group`] takes it.
+fn group_of(g: &jgr::Group) -> groups::Group {
+    groups::Group {
+        plies: g
+            .plies
+            .iter()
+            .map(|p| groups::Ply {
+                part: p.part.clone(),
+                member: p.kind == "member",
+                thickness: p.thickness,
+                fy: p.fy,
+                fu: p.fu,
+                redundant: p.redundant,
+                known: p.known,
+            })
+            .collect(),
+        bolts: g
+            .bolts
+            .iter()
+            .map(|b| groups::Bolt {
+                diameter: b.diameter,
+                hole: b.hole,
+                ultimate: b.bolt_ultimate,
+                shear_capacity: b.shear_capacity,
+                shank: b.shear_capacity_shank,
+                threads_in: b.threads_in_shear,
+                planes: b.planes,
+                carries: b.carries.clone(),
+                at: [b.at.0, b.at.1],
+            })
+            .collect(),
+        loads: g
+            .loads
+            .iter()
+            .map(|c| {
+                c.iter()
+                    .map(|l| groups::Load {
+                        force: l.force,
+                        ends: l.ends.clone(),
+                        sides: l.sides.clone(),
+                        ahead: l.ahead.clone(),
+                    })
+                    .collect()
+            })
+            .collect(),
+    }
+}
+
+impl jgr::Guest for Asce10 {
+    fn check_joint_groups(
+        method: String,
+        input: jgr::GroupInput,
+    ) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        let strengths: Vec<f64> = input.cases.iter().map(|c| c.strength).collect();
+        Ok(input
+            .groups
+            .iter()
+            .map(|g| {
+                let r = groups::check_group(&group_of(g), &strengths);
+                jgr::GroupResult {
+                    id: g.id,
+                    usages: r
+                        .usages
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(n, u)| {
+                            u.map(|(usage, check)| jgr::CaseUsage {
+                                load_case: n as u32,
+                                usage,
+                                check,
+                            })
+                        })
+                        .collect(),
+                    governs: r.governs,
+                    notes: r.notes,
+                    not_safe: (!r.not_safe.is_empty()).then(|| r.not_safe.join("; ")),
+                }
+            })
+            .collect())
     }
 }
 

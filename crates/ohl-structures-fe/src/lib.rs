@@ -29,6 +29,7 @@
 //! formulation and its references.
 
 pub mod asce48;
+pub mod bolt_groups;
 pub mod bolt_rules;
 pub mod bracing;
 pub mod capacity;
