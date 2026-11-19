@@ -37,6 +37,12 @@ pub struct QuantitiesTab {
 }
 
 impl QuantitiesTab {
+    /// A count is going on (its answer not taken yet).
+    #[cfg(test)]
+    pub(crate) fn counting(&self) -> bool {
+        self.running.is_some()
+    }
+
     /// Takes a finished count.
     fn poll(&mut self) {
         if let Some((started, key, rx)) = &self.running {

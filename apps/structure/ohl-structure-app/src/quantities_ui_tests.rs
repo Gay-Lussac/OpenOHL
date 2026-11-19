@@ -15,7 +15,7 @@ use egui_kittest::kittest::Queryable;
 
 use crate::app::StructureApp;
 use crate::layout::Panel;
-use crate::tests::{harness, menu};
+use crate::tests::{harness_steps, menu};
 
 /// A leg spliced at N2 and a member bolted onto a gusset plate, every end
 /// with its connection (the example libraries beside it).
@@ -87,13 +87,32 @@ fn joint_file() -> PathBuf {
     path
 }
 
-/// Runs frames until the count is in (at most 30 s).
+/// Steps frames until no background thread of the panel or the view is
+/// working (its answer taken, two frames in a row — a thread starts in the
+/// frame after an edit), then runs to rest: the threads each ask for a
+/// frame when done, which under load arrived in the middle of a `run` and
+/// ran it past its frames (O46: the test's flakiness). At most 30 s.
+fn settle(h: &mut egui_kittest::Harness<'static, StructureApp>) {
+    let start = std::time::Instant::now();
+    let mut idle = 0;
+    while idle < 2 {
+        h.step();
+        let busy = h.state().quantities.counting() || h.state().solids.working();
+        idle = if busy { 0 } else { idle + 1 };
+        assert!(start.elapsed().as_secs() < 30, "still working after 30 s");
+        if busy {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+    h.run();
+}
+
+/// Settles until the count is in (at most 30 s).
 fn counted(h: &mut egui_kittest::Harness<'static, StructureApp>) {
     let start = std::time::Instant::now();
     loop {
-        h.run();
+        settle(h);
         if h.state().quantities.counted.is_some() {
-            h.run();
             return;
         }
         assert!(start.elapsed().as_secs() < 30, "not counted");
@@ -108,7 +127,9 @@ fn shows(h: &egui_kittest::Harness<'_, StructureApp>, words: &str) -> bool {
 #[test]
 fn the_panel_counts_says_and_keeps_the_factor() {
     let path = joint_file();
-    let mut h = harness(&path);
+    // (The menu's own runs may see the count's thread ask for a frame: a
+    // few more frames allowed than the default four.)
+    let mut h = harness_steps(&path, 16);
     menu(&mut h, "Design", "Weight & quantities");
     assert!(h.state().is_open(Panel::Quantities));
     counted(&mut h);
@@ -136,15 +157,14 @@ fn the_panel_counts_says_and_keeps_the_factor() {
     // Dead-load factor only: the factor kept, one undo step.
     let before = h.state().file.as_ref().unwrap().text();
     h.get_by_label("Dead-load factor only").click();
-    h.run();
+    settle(&mut h);
     let text = h.state().file.as_ref().unwrap().text();
     assert!(text.contains("self_weight_from = \"factor\""), "{text}");
-    h.run();
     assert!(shows(
         &h,
         "Every joint is defined, but a run keeps the members"
     ));
     h.state_mut().undo();
-    h.run();
+    settle(&mut h);
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
 }

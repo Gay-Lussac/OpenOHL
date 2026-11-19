@@ -51,6 +51,14 @@ pub struct Solids {
     pub generation: u64,
 }
 
+impl Solids {
+    /// A thread is working solids out (its answer not taken yet).
+    #[cfg(test)]
+    pub(crate) fn working(&self) -> bool {
+        self.pending.is_some()
+    }
+}
+
 impl StructureApp {
     /// The members' solids for the 3D view (none when Display options ›
     /// Profiles as placed is off, or no file is open): the current ones,
