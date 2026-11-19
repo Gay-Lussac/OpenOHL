@@ -3967,9 +3967,16 @@ today's format (schema 6, no table or column added) holding a part of
 the model, written by `Session::write_replica` from the server's rows:
 
 - its objects **as the server holds them** — the JSON text and the place
-  (`ord`) of each — as one import entry (`Command::Put` with the server's
+  (`ord`) of each — written as one import (`Command::Put` with the server's
   `ord`), so its order is the server's and an object taken later keeps
-  its place: the working set (`ols_meta` `part`, as above), its context
+  its place; since 2026-11-19 (the owner's decision on phase 6) the
+  import's **log entry has an empty command and inverse**
+  (`ohl_session::EMPTY_COMMAND`, `{"op":"batch","commands":[]}`, as the
+  network's import writes it): each object is stored once, in its object
+  row, not again in the log (an import cannot be undone, so nothing reads
+  its command back; the entry still lists the objects it wrote with their
+  versions). A replica written before keeps its full command and reads as
+  before. The objects: the working set (`ols_meta` `part`, as above), its context
   (what it refers to, all the way; the routes it is on with their
   alignments and points; what those refer to), the model's settings
   (`meta` objects) and its library files;

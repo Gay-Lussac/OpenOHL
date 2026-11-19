@@ -816,9 +816,11 @@ impl Session {
     }
 
     /// Writes `replica` into a new project file at `path` (refused when it
-    /// exists): its rows as one import by `user` (the replica's admin), the
-    /// working set and its structures' users noted, and `meta` (the
-    /// network's keys) beside them.
+    /// exists): its rows as one import by `user` (the replica's admin) —
+    /// logged with an empty command ([`crate::EMPTY_COMMAND`], 2026-11-19:
+    /// the objects once, in their rows) —, the working set and its
+    /// structures' users noted, and `meta` (the network's keys) beside
+    /// them.
     pub fn write_replica(
         replica: Replica,
         path: &Path,
@@ -847,6 +849,11 @@ impl Session {
         if part.users()?.is_empty() {
             part.set_user(user, user, Role::Admin)?;
         }
+        // Logged with an empty command (2026-11-19, the owner's decision on
+        // phase 6): each object is in the object rows once, not again in
+        // the import's log entry — as the network's import writes it.
+        part.lean_import
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         part.apply_as(
             user,
             Command::Batch { commands },

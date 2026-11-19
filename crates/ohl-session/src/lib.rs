@@ -1115,7 +1115,18 @@ pub struct Session {
     /// The number the next log entry takes, when given
     /// ([`Session::set_next_seq`]).
     next_seq: std::sync::Mutex<Option<i64>>,
+    /// The next import is logged with an empty command and inverse
+    /// ([`EMPTY_COMMAND`]; a working set's replica, 2026-11-19): its
+    /// objects are in the object rows only, not again in the log.
+    lean_import: std::sync::atomic::AtomicBool,
 }
+
+/// The command (and inverse) of an import logged without its objects: an
+/// empty batch, as the network's import writes it (`ohl_store_pg`) and,
+/// since 2026-11-19, a working set's replica
+/// ([`Session::write_replica`]). An import cannot be undone, so nothing
+/// reads its command back; the objects are the object rows.
+pub const EMPTY_COMMAND: &str = r#"{"op":"batch","commands":[]}"#;
 
 /// What a command of a unit of work replaced, to put back should the unit
 /// fail: the line's whole state (a command applied the whole way), or the
@@ -1842,6 +1853,7 @@ impl Session {
             part_users: BTreeMap::new(),
             shared_pending: std::sync::Mutex::new(None),
             next_seq: std::sync::Mutex::new(None),
+            lean_import: std::sync::atomic::AtomicBool::new(false),
         };
         session.load_lines(by_line, gone, placed)?;
         session.read_part()?;
@@ -3792,6 +3804,19 @@ impl Session {
         }
         let applied = Command::Batch { commands: prims };
         let inverse = Command::Batch { commands: inverse };
+        // An import logged lean (a working set's replica): its objects are
+        // the rows written above, not again in the log entry.
+        let lean = entry_kind == "import"
+            && self
+                .lean_import
+                .swap(false, std::sync::atomic::Ordering::SeqCst);
+        let text = |c: &Command| {
+            if lean {
+                EMPTY_COMMAND.to_owned()
+            } else {
+                serde_json::to_string(c).expect("serialises")
+            }
+        };
         // Versions after the change, to detect later edits by others.
         let after: Vec<(Kind, String, i64)> = changed
             .iter()
@@ -3806,8 +3831,8 @@ impl Session {
         let seq = tx.append_entry(&store::NewEntry {
             user,
             kind: entry_kind,
-            command: serde_json::to_string(&applied).expect("serialises"),
-            inverse: serde_json::to_string(&inverse).expect("serialises"),
+            command: text(&applied),
+            inverse: text(&inverse),
             objects: serde_json::to_string(&after).expect("serialises"),
             sections: serde_json::to_string(&sections).expect("serialises"),
             undoes,
