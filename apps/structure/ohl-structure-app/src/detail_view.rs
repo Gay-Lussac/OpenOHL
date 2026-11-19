@@ -563,7 +563,26 @@ fn plate_box(
         ui.horizontal_wrapped(|ui| {
             ui.label("welded to");
             acts.extend(crate::joint_tools::welded_to_menu(ui, j, p));
-            if p.assembly.len() > 1 {
+            let bent = p.bend.is_some()
+                || j.plates
+                    .iter()
+                    .any(|q| q.bend.as_ref().is_some_and(|b| b.to == p.id));
+            if p.assembly.len() > 1 && bent {
+                // A bent plate (J2b, 2026-11-19): its two flats one part.
+                ui.label(format!("one bent plate: {}", p.assembly.join(" + ")))
+                    .on_hover_text(
+                        "One plate folded along a line: its two flats are two plates of the \
+                         joint, each checked as a flat plate; not welded",
+                    );
+                if let Some(b) = &p.bend {
+                    ui.label(format!(
+                        "bent from {} by {:.0}°, inside radius {:.0} mm",
+                        b.to,
+                        b.angle,
+                        b.inner_radius * 1000.0
+                    ));
+                }
+            } else if p.assembly.len() > 1 {
                 ui.label(format!("one welded plate: {}", p.assembly.join(" + ")))
                     .on_hover_text(
                         "Several plates welded together so that every member bolting at the \

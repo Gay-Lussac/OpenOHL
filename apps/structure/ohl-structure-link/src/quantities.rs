@@ -39,6 +39,18 @@ fn mm(x: f64) -> String {
     }
 }
 
+/// How much shorter a plate `t` thick bent through `angle` degrees at an
+/// inside radius `r` is developed than its two flats taken to the line
+/// where their middle planes meet, per metre of bend, m: the two straight
+/// lengths to that line less the arc, both at the middle of the thickness
+/// (`(r + t/2)(2 tan(a/2) − a)`; J2b, 2026-11-19). The middle of the
+/// thickness is taken as the line that keeps its length — of the usual
+/// assumptions the longest arc, so the heavier count.
+pub fn bend_shortening(r: f64, t: f64, angle: f64) -> f64 {
+    let a = angle.clamp(0.0, 179.0).to_radians();
+    (r.max(0.0) + t / 2.0) * (2.0 * (a / 2.0).tan() - a)
+}
+
 /// The joints whose member ends are not all defined, with why: an end
 /// without a `[[connection]]` (the members named), a joint the automatic
 /// layout left for a hand detail. Cheap (no joint details worked out).
@@ -357,6 +369,27 @@ pub(crate) fn quantities_of(
                 add_undefined(&j.id, format!("plate {}: no outline", p.id));
                 continue;
             }
+            // A bent plate (J2b): its two flats' outlines meet at the bend
+            // line (their middle planes); the developed area is less by the
+            // bend's straight lengths there against its arc, both at the
+            // middle of the thickness (the flats taken to the bend line
+            // would weigh a little more).
+            let (area, bent_from) = match &p.bend {
+                Some(b) => {
+                    let len = b.line.map_or(0.0, |l| {
+                        ((l[1][0] - l[0][0]).powi(2)
+                            + (l[1][1] - l[0][1]).powi(2)
+                            + (l[1][2] - l[0][2]).powi(2))
+                        .sqrt()
+                    });
+                    (
+                        (area - len * bend_shortening(b.inner_radius, p.thickness, b.angle))
+                            .max(0.0),
+                        format!(", bent from {} (developed)", b.to),
+                    )
+                }
+                None => (area, String::new()),
+            };
             if !p.outline_given {
                 tally.outlines_worked_out += 1;
             }
@@ -368,7 +401,7 @@ pub(crate) fn quantities_of(
                 .map_or(String::new(), |m| format!(" {m}"));
             parts.push(Part {
                 kind: PartKind::Plate,
-                item: format!("plate {} mm{material}", mm(p.thickness)),
+                item: format!("plate {} mm{material}{bent_from}", mm(p.thickness)),
                 id: p.id.clone(),
                 joint: Some(j.id.clone()),
                 count: 1,

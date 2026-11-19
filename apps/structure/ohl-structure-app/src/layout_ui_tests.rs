@@ -229,3 +229,127 @@ fn the_hand_list_names_the_members_left_and_the_place_kept() {
         "N2: left whole — R1: too short; R2: no room"
     );
 }
+
+/// An invented tower for the bent plate (J2b, 2026-11-19): a horizontal
+/// H1–H2 running through N2, one leg pointing +y, the other down, and a
+/// plan member P1 arriving from −y on the inner face of its horizontal
+/// leg, over the heel.
+const BENT: &str = r#"format = "ohl-structure"
+version = 18
+id = "bent-example"
+name = "Bent plate example"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["3 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["6 m", "0 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["3 m", "-2 m", "3 m"]
+support = "fixed"
+
+[[member]]
+id = "H1"
+nodes = ["N1", "N2"]
+section = "EA-100x10"
+orientation = "y+z-"
+design = { class = "bracing" }
+
+[[member]]
+id = "H2"
+nodes = ["N2", "N3"]
+section = "EA-100x10"
+orientation = "y+z-"
+design = { class = "bracing" }
+
+[[member]]
+id = "P1"
+nodes = ["N4", "N2"]
+section = "EA-61x7"
+orientation = "x+z-"
+design = { class = "redundant" }
+
+[[connection]]
+member = "P1"
+joint = "N2"
+face = "inside"
+"#;
+
+/// J2b (2026-11-19): the window lays P1 out onto a bent plate round H's
+/// other leg; its picture for the user guide.
+#[test]
+fn an_end_over_the_heel_is_laid_out_on_a_bent_plate_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-bent");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    let lib = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("Sections/example-sections.ohlsec"),
+        format!(
+            "{lib}\n[[section]]\nid = \"EA-100x10\"\nname = \"Equal angle 100 × 10 \
+             (invented)\"\nshape = \"equal_angle\"\nh = \"100 mm\"\nt = \"10 mm\"\nr = \"12 mm\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("bent.ohls");
+    std::fs::write(&tower, BENT).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n2 = p.run.joints.iter().find(|o| o.joint == "N2").unwrap();
+        assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+        assert!(
+            n2.plan
+                .plates
+                .iter()
+                .any(|q| q.own.as_ref().is_some_and(|o| o.bend.is_some())),
+            "{:?}",
+            n2.plan
+        );
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(
+            &mut h,
+            "Lay out joints",
+            "lay-out-joints-bent-plate",
+        );
+    }
+    h.get_all_by_label_contains("Apply (")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    let f = h.state().file.as_ref().unwrap();
+    assert_eq!(f.structure().bent_pairs("N2").len(), 1);
+}

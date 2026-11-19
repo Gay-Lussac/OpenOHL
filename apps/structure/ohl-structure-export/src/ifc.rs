@@ -1283,10 +1283,26 @@ fn plate(
         .assembly
         .iter()
         .map(String::as_str)
-        .filter(|x| *x != p.id)
+        .filter(|x| *x != p.id && p.bent_with.as_deref() != Some(*x))
         .collect();
     if !others.is_empty() {
         values.push(("WeldedTo", label(&others.join(", "))));
+    }
+    // A bent plate's flat (J2b, 2026-11-19): the other flat of it, and on
+    // the flat naming the bend its angle and inside radius.
+    if let Some(o) = &p.bent_with {
+        values.push(("BentWith", label(o)));
+    }
+    if let Some(b) = &p.bend {
+        values.push((
+            "Bend",
+            label(&format!(
+                "from {}, {:.1} deg, inside radius {:.0} mm",
+                b.to,
+                b.angle,
+                b.inner_radius * 1000.0
+            )),
+        ));
     }
     // Its welds with their size and length (2026-11-04): "G2: fillet a 6
     // mm, 220 mm".

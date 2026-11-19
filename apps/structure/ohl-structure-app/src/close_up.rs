@@ -257,7 +257,14 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         }
         let poly: Vec<[f64; 3]> = pl.outline.iter().map(|q| rel(*q)).collect();
         // A plate on its own blue; welded with others (an assembly) amber.
-        let base = if pl.assembly.len() > 1 {
+        // A bent plate's flats (J2b) green.
+        let bent = pl.bend.is_some()
+            || j.plates
+                .iter()
+                .any(|q| q.bend.as_ref().is_some_and(|b| b.to == pl.id));
+        let base = if bent {
+            [80, 165, 120, 255]
+        } else if pl.assembly.len() > 1 {
             [200, 135, 75, 255]
         } else {
             [70, 140, 210, 255]

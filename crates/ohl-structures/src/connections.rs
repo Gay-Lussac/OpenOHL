@@ -82,6 +82,19 @@
 //! leg = "long"            #   leg at the joint (running on through it:
 //! bolts = { count = 2, diameter = "16 mm", grade = "8.8" }   # either
 //! bolt_points = [["-40 mm", "35 mm"], ["40 mm", "35 mm"]]    # piece)
+//!
+//! [[plate]]
+//! id = "G3"
+//! joint = "N7"
+//! thickness = "8 mm"
+//! outline = [["0 m", "0 m", "10 m"], …]   # its flat in its members' plane
+//!
+//! [plate.bend]            # bent from another plate of the joint
+//! to = "G1"               #   (2026-11-19, version 22): G1 and G3 are the
+//! angle = "90 deg"        #   two flats of one bent plate; the angle it
+//! inner_radius = "16 mm"  #   turns through, its inside bend radius and
+//! line = [["0 m", "0 m", "10 m"], ["0.1 m", "0 m", "10 m"]]   # the bend
+//! #   line (where the two flats' middle planes meet, local axes)
 //! ```
 //!
 //! A plate's **own bolts onto the leg** (`[plate.leg_bolts]`, 2026-11-19,
@@ -89,6 +102,14 @@
 //! it — a leg running on through the joint (`kind = "continuous"`): each
 //! bolt along the member from the joint's work point (negative: past the
 //! joint, on the piece running on) and across its flange from the heel.
+//!
+//! A **bent plate** (`[plate.bend]`, 2026-11-19, the automatic joint
+//! layout's step J2b, [`TypeBend`]) is one plate folded along a line: its
+//! two flats are two plates of the joint, the second naming the first with
+//! the bend's angle, inside radius and line. The two are one part (its
+//! weight from the developed area; never welded, never one assembly of
+//! welded plates): each flat is checked as a flat plate with the members
+//! bolted onto it ([`StructureType::bent_pairs`]).
 //!
 //! A **welded plate** is several plates welded together so that every
 //! member bolting onto the joint reaches one of them (owner 2026-11-04).
@@ -114,7 +135,7 @@
 //!
 //! [Joint details of towers]: https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md
 
-use ohl_core::units::Length;
+use ohl_core::units::{Angle, Length};
 use serde::Deserialize;
 
 use crate::structures::StructureType;
@@ -573,6 +594,32 @@ pub struct PlateLegBolts {
     pub bolt_points: Vec<[Length; 2]>,
 }
 
+/// The structure file version of a bent plate (`[plate.bend]`,
+/// 2026-11-19, the automatic joint layout's J2b): a file is written at 22
+/// only when a plate gives one. (21 is the bolt grade's, of the same day.)
+pub const PLATE_BEND_VERSION: u32 = 22;
+
+/// A plate bent from another plate of its joint (`[plate.bend]`,
+/// 2026-11-19, structure file version 22): the two are the two flats of
+/// one bent plate, folded along `line`. Read as one part (its weight from
+/// the developed area); each flat checked as a flat plate with the members
+/// bolted onto it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeBend {
+    /// The other flat (a plate of the same joint).
+    pub to: String,
+    /// The angle the plate turns through at the bend (0 < angle < 180°;
+    /// 0 would be flat).
+    pub angle: Angle,
+    /// The inside bend radius.
+    pub inner_radius: Length,
+    /// The bend line: two points where the two flats' middle planes meet,
+    /// local axes (none: worked out from the two outlines).
+    #[serde(default)]
+    pub line: Vec<[Length; 3]>,
+}
+
 /// A gusset plate at a joint (`[[plate]]`); a joint may have several.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -610,6 +657,10 @@ pub struct TypePlate {
     /// onto it, as before).
     #[serde(default)]
     pub leg_bolts: Option<PlateLegBolts>,
+    /// Bent from another plate of the joint: the two are one bent plate
+    /// (`[plate.bend]`, 2026-11-19, version 22; none: a flat plate).
+    #[serde(default)]
+    pub bend: Option<TypeBend>,
 }
 
 impl TypePlate {
@@ -839,6 +890,28 @@ impl StructureType {
         })
     }
 
+    /// The bent plates at `joint` (2026-11-19): each plate bent from
+    /// another of the joint (`[plate.bend]`) with that other — (the flat
+    /// naming the bend, the flat it is bent from) — in the file's order;
+    /// a bend naming no plate of the joint, itself, or an angle outside
+    /// 0–180° left out (said by [`StructureType::connection_notes`]).
+    pub fn bent_pairs(&self, joint: &str) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        for p in self.plates.iter().filter(|p| p.joint == joint) {
+            let Some(b) = &p.bend else { continue };
+            let ok = self
+                .plates
+                .iter()
+                .any(|q| q.id == b.to && q.joint == joint && q.id != p.id);
+            let deg = b.angle.si().to_degrees();
+            if ok && deg > 0.0 && deg < 180.0 && !out.iter().any(|(x, y)| x == &b.to && y == &p.id)
+            {
+                out.push((p.id.clone(), b.to.clone()));
+            }
+        }
+        out
+    }
+
     /// The welded assemblies at `joint`: the plates joined by `welded_to`
     /// (either way, directly or through others; only plates of that joint),
     /// and the joint's plates of the 2026-11-03 `kind = "welded"` together;
@@ -1030,6 +1103,54 @@ impl StructureType {
                     out.push(format!(
                         "plate {}: welded to {o}: no plate of joint {} (kept, not used)",
                         p.id, p.joint
+                    ));
+                }
+            }
+            if let Some(b) = &p.bend {
+                match self.plates.iter().find(|q| q.id == b.to) {
+                    None => out.push(format!(
+                        "plate {}: bent from {}: no such plate (kept, not used)",
+                        p.id, b.to
+                    )),
+                    Some(q) if q.joint != p.joint || q.id == p.id => out.push(format!(
+                        "plate {}: bent from {}: not another plate of joint {} (kept, not used)",
+                        p.id, b.to, p.joint
+                    )),
+                    Some(q) => {
+                        if (q.thickness.si() - p.thickness.si()).abs() > 1e-6 {
+                            out.push(format!(
+                                "plate {}: bent from {}, but the two flats differ in thickness \
+                                 (each checked as it is; one bent plate has one thickness)",
+                                p.id, b.to
+                            ));
+                        }
+                        if q.bend.as_ref().is_some_and(|c| c.to == p.id) && p.id < q.id {
+                            out.push(format!(
+                                "plates {} and {}: each bent from the other (one bend taken)",
+                                p.id, q.id
+                            ));
+                        }
+                    }
+                }
+                let deg = b.angle.si().to_degrees();
+                if !(deg > 0.0 && deg < 180.0) {
+                    out.push(format!(
+                        "plate {}: bend angle {deg:.1}°: between 0 and 180° only (kept, not used)",
+                        p.id
+                    ));
+                }
+                if b.inner_radius.si() < 0.0 {
+                    out.push(format!(
+                        "plate {}: a negative inside bend radius (taken as 0)",
+                        p.id
+                    ));
+                }
+                if !b.line.is_empty() && b.line.len() != 2 {
+                    out.push(format!(
+                        "plate {}: the bend line takes two points ({} given; worked out from the \
+                         flats instead)",
+                        p.id,
+                        b.line.len()
                     ));
                 }
             }

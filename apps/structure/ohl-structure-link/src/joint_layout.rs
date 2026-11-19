@@ -122,6 +122,10 @@ pub struct LayoutSettings {
     /// flange where no code gives one — "default minimum, assumed, not a
     /// code's".
     pub defaults: ohl_structures::bolts::DefaultBoltMinimums,
+    /// Bent plates laid out (J2b, 2026-11-19; [`BendPlan`]): on by
+    /// default. Off: as before them — the run plans its half turns so, the
+    /// owner's order being the flat plate first.
+    pub bent_plates: bool,
 }
 
 impl Default for LayoutSettings {
@@ -134,8 +138,23 @@ impl Default for LayoutSettings {
             bolt: None,
             welded: false,
             defaults: Default::default(),
+            bent_plates: true,
         }
     }
+}
+
+/// The inside bend radius of a bent plate the layout makes, in the plate's
+/// thicknesses (J2b, 2026-11-19): **the program's starting value, not a
+/// standard's** — the least radius a plate may be bent to cold depends on
+/// its steel, thickness and the bend's direction to its rolling, which the
+/// steel's own rules give (to check by hand; a value given on a bend is
+/// kept).
+pub const BEND_RADIUS_RATIO: f64 = 2.0;
+
+/// The inside bend radius of a bent plate `t` thick the layout makes, m:
+/// [`BEND_RADIUS_RATIO`] thicknesses, up to the millimetre.
+pub fn bend_radius(t: f64) -> f64 {
+    ceil_to(BEND_RADIUS_RATIO * t, 0.001)
 }
 
 /// The bolts the layout gives an end that has none (provisional).
@@ -252,6 +271,46 @@ pub struct PlatePlan {
     /// A flat plate with plates in their members' own planes welded to
     /// it: what its outline must also cover and keep to.
     pub reach: Option<Reach>,
+    /// Its outline as laid out (structure axes, m; a bent plate's flat on
+    /// the flange, J2b); none: worked out round its bolts after writing.
+    pub outline: Option<Vec<[f64; 3]>>,
+    /// Its own bolts onto the member it lies on (a bent plate's flat on the
+    /// flange, J2b: `[plate.leg_bolts]`); none: held by its members' bolts.
+    pub hold: Option<HoldPlan>,
+}
+
+/// A plate's own bolts onto the member whose flange it lies on (J2b,
+/// 2026-11-19: a bent plate's flat on that flange, so that the flat is
+/// bolted to it as the owner asked; written as `[plate.leg_bolts]`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct HoldPlan {
+    /// The member.
+    pub member: String,
+    /// Its leg the plate lies on: `long` or `short` (none: an equal-leg
+    /// angle, worked out from the plate's face).
+    pub leg: Option<&'static str>,
+    /// The bolts (provisional when `provisional`).
+    pub bolt: BoltArea,
+    /// Provisional: the layout's (the bolt picked or a preset's), until the
+    /// codes choose them.
+    pub provisional: bool,
+    /// Each bolt along the member from the work point and across its flange
+    /// from the heel, m.
+    pub points: Vec<[f64; 2]>,
+}
+
+/// A bent plate's bend (J2b, 2026-11-19): the plate in its members' own
+/// plane ([`OwnPlane`] with a bend) is one plate with the flat on the
+/// flange, folded along `line`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BendPlan {
+    /// The angle the plate turns through, degrees.
+    pub angle: f64,
+    /// Its inside radius, m ([`bend_radius`]).
+    pub inner_radius: f64,
+    /// Where the two flats' middle planes meet (structure axes, m): two
+    /// points, over the flat in the members' plane.
+    pub line: [[f64; 3]; 2],
 }
 
 /// What a flat plate's outline must cover and keep to where plates in
@@ -273,10 +332,12 @@ pub struct Reach {
 /// then add a welded plate that is also bolted to the other profiles with
 /// the other part of the plate"): its member's leg bolted onto it, its
 /// edge welded to the flat plate on the flange along the line where the
-/// two planes meet — a plate bent there, made of two plates welded.
+/// two planes meet — a plate bent there, made of two plates welded. Or
+/// (J2b, 2026-11-19, `bend`) the flat of a bent plate, folded from the flat
+/// on the flange: no weld.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OwnPlane {
-    /// The flat plate it is welded to ([`JointPlan::plates`]).
+    /// The flat plate it is welded to, or bent from ([`JointPlan::plates`]).
     pub welded_to: usize,
     /// Its outline (structure axes, m), in the face its member lies on.
     pub outline: Vec<[f64; 3]>,
@@ -293,6 +354,9 @@ pub struct OwnPlane {
     pub weld_size: f64,
     /// The weld's length, both sides together, m.
     pub weld_length: f64,
+    /// Bent from the flat plate (J2b), not welded to it (its weld's size and
+    /// length then 0).
+    pub bend: Option<BendPlan>,
 }
 
 /// Two members in line through the joint joined (the owner's step 1,
@@ -475,6 +539,401 @@ struct Strip {
     /// What it bolts onto: its class rank (the planes on the biggest
     /// members first).
     host_rank: u8,
+    /// On the flange's inner face leaving the joint over the heel (towards
+    /// the angle's other leg): onto a bent plate folded round that other
+    /// leg (J2b, 2026-11-19).
+    over: Option<Over>,
+}
+
+/// An end on a flange's inner face that leaves the joint over the heel —
+/// towards the angle's other leg, where it cannot lie on the flange — laid
+/// out onto a **bent plate** (J2b, owner-approved 2026-11-19): its flat in
+/// the end's own plane (the flange's inner face, beyond the other leg's
+/// outer face), folded along the angle's line onto the other leg's outer
+/// face and bolted there. The end stays where it is drawn (its gauge line
+/// through the work point), only pulled back: the bend's inside radius and
+/// the plate past the other leg's outer face, by half the gap for its
+/// steel and by its edge distance for its bolts.
+#[derive(Debug, Clone)]
+struct Over {
+    /// The plate's thickness taken while placing (its own leg's; the plate
+    /// laid out takes the thickest leg on it, checked again then), m.
+    tp: f64,
+    /// The edge and end distances its bolts keep in a plate that thick, m.
+    keep: (f64, f64),
+    /// The other leg's width from the heel, m.
+    other_w: f64,
+    /// The other leg's outer face as a plane (as a strip there keys it).
+    plane_b: PlaneKey,
+    /// Across the other leg from the heel to its toe (structure axes).
+    down: [f64; 3],
+    /// The angle's leg the plate lies on (`long`, `short`; none: equal).
+    leg: Option<&'static str>,
+    /// Along the member it bolts onto from the work point, per metre of
+    /// the plane's x.
+    along_host: f64,
+}
+
+/// How far beyond the other leg's outer face (m) the steel of an end
+/// leaving over the heel keeps for a bent plate `tp` thick (J2b): the
+/// plate, its inside radius and half the gap.
+fn over_steel(tp: f64, gap: f64) -> f64 {
+    tp + bend_radius(tp) + gap / 2.0
+}
+
+/// The least cut (from the work point, on the plane) that takes end `x`,
+/// moved `moved` across, past the bent plate's flat on the other leg
+/// (J2b): its leg's edges `steel` beyond the other leg's outer face, its
+/// bolts `bolts`; and what asks it.
+fn over_cut(x: &Strip, moved: f64, steel: f64, bolts: f64) -> (f64, &'static str) {
+    let u1 = -x.u[1];
+    if u1 <= 1e-6 {
+        return (f64::INFINITY, "the other leg");
+    }
+    let mut need = f64::NEG_INFINITY;
+    let mut by = "the other leg";
+    for l in [x.lat[0] + moved, x.lat[1] + moved] {
+        let c = (x.at(0.0, l)[1] + steel) / u1;
+        if c > need {
+            need = c;
+            by = "the bend of its plate";
+        }
+    }
+    for (along, line) in &x.bolts {
+        let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+        let c = (x.at(*along, l)[1] + bolts) / u1;
+        if c > need {
+            need = c;
+            by = "the bend of its plate (its bolts' edge distance)";
+        }
+    }
+    (need, by)
+}
+
+/// A bent plate laid out for the ends of one plane leaving over the heel
+/// (J2b): its flat on the other leg (bolted there), its flat in their
+/// plane (bent from the first; [`OwnPlane::welded_to`] set by the caller),
+/// the ends placed on it and those left with why.
+struct BentOver {
+    flat: PlatePlan,
+    /// The flat plate of the other leg's outer face (2b) the bent plate's
+    /// flat there is (its thickness, reach and own bolts then added to it);
+    /// none: `flat` is a plate of its own.
+    into: Option<usize>,
+    bent: PlatePlan,
+    placed: Vec<Placed>,
+    left: Vec<(usize, String)>,
+}
+
+/// The bent plate for the ends `group` of one plane leaving over the heel
+/// (J2b, 2026-11-19), the ends `laid` out on the joint's other planes kept
+/// clear of; Err: every end left, each with why.
+///
+/// In the plane's axes (x along what they bolt onto, y across its flange
+/// from the heel; the other leg's outer face is y = 0): the plate as thick
+/// as the thickest leg on it, its inside bend radius [`bend_radius`]; each
+/// end pulled back further where that plate asks (its steel beyond the
+/// bend's inside radius by half the gap, its bolts by their edge
+/// distance). The flat in their plane: round their bolts (the end and
+/// edge distances, along and across each end), to the bend line (the two
+/// flats' middle planes). The flat on the other leg: from the bend line to
+/// that leg's toe, as far along as the bend and two bolts onto the leg
+/// (provisional: the end's bolt, one gauge line where their nut's corner
+/// clears the flange and its root, and their head the bend — the plate
+/// runs on there, no free edge —, the edge distance from the leg's toe, the
+/// default spacing apart). Refused where those bolts find no room, or the flat
+/// would lie under an end laid out on that leg's outer face.
+fn bent_over(
+    strips: &[Strip],
+    group: &[Placed],
+    j: &JointDetail,
+    s: &LayoutSettings,
+    laid: &[Placed],
+    plate_of: &BTreeMap<usize, usize>,
+    plates: &[PlatePlan],
+) -> Result<BentOver, Vec<(usize, String)>> {
+    let first = &strips[group[0].k];
+    let o = first.over.as_ref().expect("an end over the heel");
+    let why = |k: usize, e: &str| {
+        format!(
+            "{}: on the inner face of {}'s flange it runs towards the angle's other leg; a bent \
+             plate round that leg does not fit: {e}",
+            strips[k].member, strips[k].host
+        )
+    };
+    let all = |e: &str, left: Vec<(usize, String)>, placed: &[Placed]| {
+        let mut out = left;
+        out.extend(placed.iter().map(|p| (p.k, why(p.k, e))));
+        out
+    };
+    // The ends laid out on the other leg's outer face: all on one flat
+    // plate there (2b) — the bent plate's flat on that leg is that plate,
+    // as thick as the thicker of the two —, else kept clear of.
+    let on_face: Vec<&Placed> = laid
+        .iter()
+        .filter(|q| strips[q.k].plane == o.plane_b)
+        .collect();
+    let into = match on_face.first().and_then(|q| plate_of.get(&q.k)) {
+        Some(&i)
+            if on_face.iter().all(|q| plate_of.get(&q.k) == Some(&i))
+                && plates[i].own.is_none()
+                && plates[i].hold.is_none() =>
+        {
+            Some(i)
+        }
+        _ => None,
+    };
+    if into.is_none()
+        && let Some(q) = on_face.iter().find(|q| plate_of.contains_key(&q.k))
+    {
+        let e = format!(
+            "its flat on {}'s other leg would lie on the plate {} is laid out on there",
+            first.host, strips[q.k].member
+        );
+        return Err(group.iter().map(|p| (p.k, why(p.k, &e))).collect());
+    }
+    let tp = group
+        .iter()
+        .map(|p| strips[p.k].own_t)
+        .fold(into.map_or(0.0, |i| plates[i].thickness), f64::max);
+    let r = bend_radius(tp);
+    let mut placed: Vec<Placed> = Vec::new();
+    let mut left: Vec<(usize, String)> = Vec::new();
+    for p in group {
+        let x = &strips[p.k];
+        let keep = x.over.as_ref().map_or(o.keep, |v| v.keep);
+        let (need, _) = over_cut(x, p.moved, over_steel(tp, s.gap), tp + r + keep.0);
+        let need = ceil_to(need, 0.001);
+        if need <= p.cut + 1e-9 {
+            placed.push(p.clone());
+            continue;
+        }
+        let limit = s.pull_back.min(x.half - bolt_run(x));
+        if x.hand_cut.is_some() {
+            left.push((p.k, why(p.k, "its cut given by hand leaves it on the bend")));
+        } else if need > limit + 1e-9 {
+            left.push((
+                p.k,
+                why(
+                    p.k,
+                    &format!(
+                        "it would be pulled back {:.0} mm to pass the bend of a {:.0} mm plate (the \
+                         longest {:.0} mm)",
+                        need.min(9.999) * 1000.0,
+                        tp * 1000.0,
+                        limit * 1000.0
+                    ),
+                ),
+            ));
+        } else {
+            placed.push(Placed {
+                k: p.k,
+                cut: need,
+                moved: p.moved,
+            });
+        }
+    }
+    if placed.is_empty() {
+        return Err(left);
+    }
+    // The flat in their plane: round their bolts, to the bend line.
+    let yb = -tp / 2.0;
+    let mut pts: Vec<[f64; 2]> = Vec::new();
+    for p in &placed {
+        let x = &strips[p.k];
+        let (edge, end) = x.over.as_ref().map_or(o.keep, |v| v.keep);
+        for (along, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+            let c = x.at(p.cut + along, l);
+            for k in 0..8 {
+                let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
+                let (da, dl) = (end * RING_GROW * a.cos(), edge * RING_GROW * a.sin());
+                pts.push([
+                    c[0] + x.u[0] * da + x.v[0] * dl,
+                    c[1] + x.u[1] * da + x.v[1] * dl,
+                ]);
+            }
+        }
+    }
+    if pts.is_empty() {
+        return Err(all("no bolts to lay its plate round", left, &placed));
+    }
+    let lo = pts.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min);
+    let hi = pts.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max);
+    pts.push([lo, yb]);
+    pts.push([hi, yb]);
+    let poly2 = clip(&crate::joint_sheet::hull(pts), |q| yb - q[1]);
+    // The flat on the other leg, and its own bolts onto that leg.
+    let (t_a, root) = (first.t, first.r);
+    let s_top = t_a - tp / 2.0;
+    let x0 = &strips[placed[0].k];
+    let (d, nut) = (x0.d, x0.nut);
+    let edge_b = x0.edge.max(o.keep.0);
+    let [end_min, spacing_min, _] = s.defaults.of(d);
+    // Towards the bend the plate runs on (no free edge there): its head
+    // flat on the flat past the bend, and its nut past the flange's other
+    // leg and root; towards the toe the edge distance (the leg's free
+    // edge).
+    let gauge = t_a + r.max(root) + nut;
+    if gauge > o.other_w - edge_b + 1e-9 {
+        return Err(all(
+            &format!(
+                "no room for its own bolts on {}'s other leg ({:.0} mm wide; they need {:.0} mm \
+                 from its heel and {:.0} mm from its toe)",
+                first.host,
+                o.other_w * 1000.0,
+                gauge * 1000.0,
+                edge_b * 1000.0
+            ),
+            left,
+            &placed,
+        ));
+    }
+    let xc = (lo + hi) / 2.0;
+    let bx = [xc - spacing_min / 2.0, xc + spacing_min / 2.0];
+    let flo = lo.min(bx[0] - end_min);
+    let fhi = hi.max(bx[1] + end_min);
+    // 3D from the work point: the plane's heel, along, across, down the
+    // other leg (into the angle).
+    let (heel, x3, y3, down) = (first.heel3, first.x3, first.y3, o.down);
+    let on_b = |x: f64, sd: f64| add(add(heel, scale(x3, x)), scale(down, sd));
+    // Clear of the ends laid out on that leg's outer face (by half the
+    // gap): their leg from their cut to half their length.
+    let h = s.gap / 2.0;
+    for q in on_face.iter().filter(|_| into.is_none()) {
+        let b = &strips[q.k];
+        let lat = [b.lat[0] + q.moved, b.lat[1] + q.moved];
+        let leg: Vec<[f64; 2]> = [
+            b.at(q.cut, lat[0]),
+            b.at(b.half, lat[0]),
+            b.at(b.half, lat[1]),
+            b.at(q.cut, lat[1]),
+        ]
+        .iter()
+        .map(|p2| {
+            let p3 = add(add(b.heel3, scale(b.x3, p2[0])), scale(b.y3, p2[1]));
+            let d3 = sub(p3, heel);
+            [dot(d3, x3), dot(d3, down)]
+        })
+        .collect();
+        let c = clip(&leg, |p| p[0] - (flo - h));
+        let c = clip(&c, |p| (fhi + h) - p[0]);
+        let c = clip(&c, |p| p[1] - (s_top - h));
+        let c = clip(&c, |p| (o.other_w + h) - p[1]);
+        if c.len() >= 3 {
+            return Err(all(
+                &format!(
+                    "its flat on {}'s other leg would lie under {}, laid out on that leg's face",
+                    first.host, b.member
+                ),
+                left,
+                &placed,
+            ));
+        }
+    }
+    let abs = |q: [f64; 3]| add(q, j.position);
+    let mut flat_outline: Vec<[f64; 3]> = [
+        (flo, s_top),
+        (fhi, s_top),
+        (fhi, o.other_w),
+        (flo, o.other_w),
+    ]
+    .iter()
+    .map(|(x, sd)| abs(on_b(*x, *sd)))
+    .collect();
+    // Its face on the leg, through its thickness away from it: the
+    // outline's normal out of the leg's outer face.
+    if crate::welds::polygon_normal(&flat_outline).is_some_and(|n| dot(n, y3) > 0.0) {
+        flat_outline.reverse();
+    }
+    let face2 = scale(down, t_a);
+    let bent_outline: Vec<[f64; 3]> = poly2
+        .iter()
+        .map(|q| abs(add(add(add(heel, scale(x3, q[0])), scale(y3, q[1])), face2)))
+        .collect();
+    let line_at = |x: f64| {
+        abs(add(
+            add(add(heel, scale(x3, x)), scale(y3, yb)),
+            scale(down, s_top),
+        ))
+    };
+    let angle = 180.0 - angle_deg(down, scale(y3, -1.0));
+    let bolt = match &x0.give {
+        Some(b) => BoltArea {
+            count: 2,
+            lines: 1,
+            gauges: Vec::new(),
+            pitch: None,
+            end: None,
+            ..b.clone()
+        },
+        None => s
+            .bolt
+            .clone()
+            .filter(|b| (b.diameter - d).abs() < 1e-9)
+            .unwrap_or_else(|| BoltArea::picked(None, d, None)),
+    };
+    let wp_x = first.w[0];
+    let hold = HoldPlan {
+        member: first.host.clone(),
+        leg: o.leg,
+        bolt: BoltArea {
+            from: format!("{} bolt(s) of {:.0} mm", 2, d * 1000.0),
+            ..bolt
+        },
+        provisional: true,
+        points: bx
+            .iter()
+            .map(|x| {
+                [
+                    round_to((x - wp_x) * o.along_host, 1e-4),
+                    round_to(gauge, 1e-4),
+                ]
+            })
+            .collect(),
+    };
+    let flat = PlatePlan {
+        members: Vec::new(),
+        thickness: tp,
+        on: first.host.clone(),
+        heel: None,
+        own: None,
+        reach: None,
+        outline: Some(flat_outline),
+        hold: Some(hold),
+    };
+    let bent = PlatePlan {
+        members: placed.iter().map(|p| strips[p.k].member.clone()).collect(),
+        thickness: tp,
+        on: first.host.clone(),
+        heel: None,
+        own: Some(OwnPlane {
+            welded_to: 0,
+            outline: bent_outline,
+            off: angle,
+            lift: 0.0,
+            // Where it lies flat on the flange's inner face, not farther
+            // out (a flat plate there would put it a plate farther).
+            out_more: 0.0,
+            weld_size: 0.0,
+            weld_length: 0.0,
+            bend: Some(BendPlan {
+                angle: round_to(angle, 0.01),
+                inner_radius: r,
+                line: [line_at(lo), line_at(hi)],
+            }),
+        }),
+        reach: None,
+        outline: None,
+        hold: None,
+    };
+    Ok(BentOver {
+        flat,
+        into,
+        bent,
+        placed,
+        left,
+    })
 }
 
 /// A member end whose leg bolted lies off the flange (step 4), in 3D: from
@@ -752,6 +1211,7 @@ pub(crate) fn plan_joint_budget(
     }
     let mut placed_all: Vec<Placed> = Vec::new();
     let mut plate_of: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut bent_wait: BTreeMap<PlaneKey, Vec<Placed>> = BTreeMap::new();
     let mut budget = limit;
     for ks in planes.values() {
         let mut order = ks.clone();
@@ -835,6 +1295,18 @@ pub(crate) fn plan_joint_budget(
         for &k in &left_here {
             fixed.insert(strips[k].member.clone());
         }
+        // J2b: the ends leaving over the heel go onto a bent plate, made
+        // once every plane is laid out (its flat on the other leg keeps
+        // clear of what that leg's face holds).
+        let (overs, rest): (Vec<Placed>, Vec<Placed>) =
+            placed.into_iter().partition(|p| strips[p.k].over.is_some());
+        if let Some(p) = overs.first() {
+            bent_wait
+                .entry(strips[p.k].plane)
+                .or_default()
+                .extend(overs);
+        }
+        let mut placed = rest;
         if placed.is_empty() {
             continue;
         }
@@ -1003,6 +1475,8 @@ pub(crate) fn plan_joint_budget(
                     .then_some((heel, first.across)),
                 own: None,
                 reach: None,
+                outline: None,
+                hold: None,
             };
             let mut own_plates: Vec<PlatePlan> = Vec::new();
             for (k, _) in &owns {
@@ -1034,8 +1508,11 @@ pub(crate) fn plan_joint_budget(
                         out_more: geo.out_more,
                         weld_size: weld_throat(thickness),
                         weld_length: round_to(2.0 * seam, 1e-4),
+                        bend: None,
                     }),
                     reach: None,
+                    outline: None,
+                    hold: None,
                 });
             }
             plan.plates.push(flat);
@@ -1054,6 +1531,65 @@ pub(crate) fn plan_joint_budget(
         }
         laid3.extend(solids_of(&strips, &placed, 0.0));
         placed_all.extend(placed);
+    }
+    // J2b: the bent plates of the ends leaving over the heel, the ends of
+    // one plane sharing its flat.
+    for (_, group) in bent_wait {
+        match bent_over(&strips, &group, j, s, &placed_all, &plate_of, &plan.plates) {
+            Ok(b) => {
+                if let Some(h) = &b.flat.hold {
+                    plan.notes.push(format!(
+                        "{}: {} provisional bolt(s) holding a bent plate's flat, {}",
+                        h.member, h.bolt.count, h.bolt.from
+                    ));
+                }
+                let flat = match b.into {
+                    // The other leg's face plate is the flat: it reaches
+                    // over the bent plate's flat there too (on its face
+                    // away from the leg), as thick, bolted to the leg.
+                    Some(i) => {
+                        let f = &mut plan.plates[i];
+                        f.thickness = f.thickness.max(b.flat.thickness);
+                        f.hold = b.flat.hold;
+                        let pts = b.flat.outline.unwrap_or_default();
+                        let n = crate::welds::polygon_normal(&pts).unwrap_or([0.0; 3]);
+                        let away: Vec<[f64; 3]> = pts
+                            .iter()
+                            .map(|q| add(*q, scale(n, b.flat.thickness)))
+                            .collect();
+                        let rc = f.reach.get_or_insert_with(|| Reach {
+                            points: Vec::new(),
+                            normal: scale(n, -1.0),
+                            keep_to: Vec::new(),
+                        });
+                        rc.points.extend(away);
+                        i
+                    }
+                    None => {
+                        plan.plates.push(b.flat);
+                        plan.plates.len() - 1
+                    }
+                };
+                let mut bent = b.bent;
+                if let Some(o) = bent.own.as_mut() {
+                    o.welded_to = flat;
+                }
+                let index = plan.plates.len();
+                plan.plates.push(bent);
+                for p in b.placed {
+                    plate_of.insert(p.k, index);
+                    placed_all.push(p);
+                }
+                for (k, why) in b.left {
+                    plan.by_hand(&strips[k].member, why);
+                }
+            }
+            Err(left) => {
+                for (k, why) in left {
+                    plan.by_hand(&strips[k].member, why);
+                }
+            }
+        }
     }
     // In the joint's member order.
     placed_all.sort_by_key(|p| p.k);
@@ -1621,8 +2157,15 @@ fn strip_of(
     let u = [u[0] / lu, u[1] / lu];
     let v = [-u[1], u[0]];
     // On the inner face, leaving the joint towards the heel: it would run
-    // across the angle's other leg.
-    if inside && u[1] < -1e-6 {
+    // across the angle's other leg — onto a bent plate round that leg
+    // (J2b), a single angle's, the end itself flat on the face.
+    let leaves_over = inside && u[1] < -1e-6;
+    let host_angle = host
+        .profile
+        .as_ref()
+        .and_then(|q| q.angle.map(|g| (q.axes, g)))
+        .filter(|_| host.profile.as_ref().is_some_and(|q| q.parts.is_empty()));
+    if leaves_over && (!s.bent_plates || tilt.is_some() || host_angle.is_none()) {
         return Err(format!(
             "on the inner face of {}'s flange it runs towards the angle's other leg (turn it, \
              or lay it out by hand)",
@@ -1837,6 +2380,41 @@ fn strip_of(
             Some(t)
         }
     };
+    // Over the heel onto a bent plate (J2b): the other leg's outer face.
+    let over = match host_angle.filter(|_| leaves_over) {
+        None => None,
+        Some((axes, hg)) => {
+            let down = scale(f.out, -1.0);
+            let other = if dot(down, axes[1]).abs() > 0.5 {
+                hg.b
+            } else {
+                hg.h
+            };
+            let mine = if dot(f.across, axes[1]).abs() > 0.5 {
+                hg.b
+            } else {
+                hg.h
+            };
+            let leg = if (hg.b - hg.h).abs() < 1e-9 {
+                None
+            } else if other > mine {
+                Some("long")
+            } else {
+                Some("short")
+            };
+            let nb = scale(f.across, -1.0);
+            let ob = dot(add(j.position, f.heel), nb);
+            Some(Over {
+                tp: g.t,
+                keep: edge_end(g.t),
+                other_w: other,
+                plane_b: (mm(nb[0]), mm(nb[1]), mm(nb[2]), mm(ob)),
+                down,
+                leg,
+                along_host: dot(x3, host.direction),
+            })
+        }
+    };
     let other_w = if a.leg_y { g.h } else { g.b };
     let host_t = f.t;
     let rank_of = |c: Option<&str>| match c {
@@ -1861,6 +2439,7 @@ fn strip_of(
         fixed: Vec::new(),
         floor: None,
         host_rank: rank_of(host.class.as_deref()),
+        over,
         tilted,
         inside,
         obstacles,
@@ -2306,7 +2885,18 @@ fn place(
         // host there — the clash check sees the rest).
         let mut need = f64::NEG_INFINITY;
         let mut by: Option<String> = None;
+        // Over the heel onto a bent plate (J2b): past the other leg's
+        // outer face, the plate and its bend.
+        if let Some(o) = &x.over {
+            let r = bend_radius(o.tp);
+            let (c, w) = over_cut(x, moved, over_steel(o.tp, s.gap), o.tp + r + o.keep.0);
+            need = c;
+            by = Some(w.to_owned());
+        }
         for l in lat {
+            if x.over.is_some() {
+                break;
+            }
             // Inside: clear of the angle's other leg and its root too.
             let floor = if x.inside {
                 x.t + x.r + s.gap / 2.0

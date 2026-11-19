@@ -280,8 +280,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// own bolts onto the joint's leg (`[plate.leg_bolts]`:
 /// [`crate::connections::PlateLegBolts`],
 /// [`crate::connections::PLATE_LEG_BOLTS_VERSION`]); a file is written at
-/// 20 only when a plate gives them.
-pub const STRUCTURE_FILE_VERSION: u32 = 20;
+/// 20 only when a plate gives them. Version 22 (2026-11-19, the automatic
+/// joint layout's bent plate, J2b) adds a plate bent from another
+/// (`[plate.bend]`: [`crate::connections::TypeBend`],
+/// [`crate::connections::PLATE_BEND_VERSION`]); a file is written at 22
+/// only when a plate is bent. (21: the bolt grade's, of the same day.)
+pub const STRUCTURE_FILE_VERSION: u32 = 22;
 
 /// The structure file version of `self_weight_from` (2026-11-19).
 pub const SELF_WEIGHT_FROM_VERSION: u32 = 19;
