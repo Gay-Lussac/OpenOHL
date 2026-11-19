@@ -22,6 +22,8 @@ ohl-structure-edit.workspace = true
 ohl-structure-loads.workspace = true
 ohl-structure-link.workspace = true
 ohl-structure-export.workspace = true
+# The weight and quantities panel (joint details stage 4.6).
+ohl-bom.workspace = true
 ohl-render.workspace = true
 ohl-ui.workspace = true
 # Plugins (Plugins › Plugin manager, design codes): a core crate, the

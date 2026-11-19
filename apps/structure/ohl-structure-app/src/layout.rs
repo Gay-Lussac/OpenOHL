@@ -140,11 +140,15 @@ pub enum Panel {
     /// A tower's member in detail: its two ends, its capacities live
     /// ([`crate::member_panel`]).
     MemberDetails,
+    /// A tower's weight and quantities, its bill of materials and the
+    /// self-weight a run takes ([`crate::quantities_panel`]; joint details
+    /// stage 4.6).
+    Quantities,
 }
 
 impl Panel {
     /// Every panel, in the order of the View menu.
-    pub const ALL: [Panel; 24] = [
+    pub const ALL: [Panel; 25] = [
         Panel::Level,
         Panel::View3d,
         Panel::JointView,
@@ -165,6 +169,7 @@ impl Panel {
         Panel::PoleDesign,
         Panel::JointDetails,
         Panel::MemberDetails,
+        Panel::Quantities,
         Panel::LoadRecipes,
         Panel::LoadTable,
         Panel::Results,
@@ -198,6 +203,7 @@ impl Panel {
             Panel::JointDetails => "Joint details",
             Panel::JointView => "Detail view",
             Panel::MemberDetails => "Member details",
+            Panel::Quantities => "Weight & quantities",
         }
     }
 
@@ -259,6 +265,10 @@ impl Panel {
                  is held, the leg bolted, the bolts; a close-up and a face view"
             }
             Panel::InTheLine => "The line's values at the placed structure, per point and case",
+            Panel::Quantities => {
+                "A tower's members, plates, covers, bolts and welds counted and weighed (the bill \
+                 of materials), and whether a run's self-weight is the counted mass"
+            }
             Panel::Libraries => {
                 "The libraries the structure reads (cross-sections, insulator assemblies, poles, models, \
                  recipes, templates), where from, and what it names that none has"
@@ -287,7 +297,8 @@ impl Panel {
             | Panel::SectionsMaterials
             | Panel::PoleDesign
             | Panel::JointDetails
-            | Panel::MemberDetails => Area::Design,
+            | Panel::MemberDetails
+            | Panel::Quantities => Area::Design,
             Panel::LoadRecipes | Panel::LoadTable | Panel::InTheLine => Area::LoadCases,
             Panel::Results => Area::Results,
         })
@@ -316,7 +327,7 @@ impl Panel {
             {
                 Err("A pole's: this structure is a tower (Geometry › Structure kind)")
             }
-            Panel::JointDetails | Panel::MemberDetails if t.kind == K::Pole => {
+            Panel::JointDetails | Panel::MemberDetails | Panel::Quantities if t.kind == K::Pole => {
                 Err("A tower's: this structure is a pole (Geometry › Structure kind)")
             }
             _ => Ok(()),

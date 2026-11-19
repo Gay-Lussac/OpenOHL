@@ -304,6 +304,9 @@ pub fn tables(s: &ExportStructure) -> Vec<(&'static str, String)> {
     if !s.parts.is_empty() {
         out.push(("parts.csv", parts(s)));
     }
+    if let Some(q) = &s.quantities {
+        out.push(("bill_of_materials.csv", q.csv()));
+    }
     out
 }
 

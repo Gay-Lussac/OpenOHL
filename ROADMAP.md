@@ -1167,7 +1167,8 @@ approved yet), with the open points and limitations below.
 (SIA 263:2013 and ASCE 10-97 bundled plugins, 2026-11-18); the pole codes
 follow when a pole export exists. Open besides: O19's buckling lengths from what
 braces a member, end releases and bolt slip, the joints' own checks
-beyond the plates and covers, weight and quantities, and the validation;
+beyond the plates and covers, and the validation (weight and quantities
+built 2026-11-19);
 O20's B3 to B5; O21 (equipment); the hotbar's drawing and the check
 footer into the shared UI crate (Part C).
 
@@ -1339,11 +1340,23 @@ Six stages, the questions per stage and per detail level:
   *(status 2026-11-07: of the joints' own checks, the plates', covers'
   and fillet welds' are built (above); the bolt group under the members'
   forces together, a gusset plate's buckling and the rest are not;
-  buckling lengths from the bracing, end releases, bolt slip and the
-  bolts' and plates' weight are not built; 2026-11-19: buckling lengths
+  end releases and bolt slip are not built; 2026-11-19: buckling lengths
   from what braces a member built, in active development, not approved
   yet — the core's runs and bracing points, each code plugin's rules
-  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member)))*
+  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member));
+  the weight and quantities are built, below)*
+- [x] Stage 4.6, weight and quantities (2026-11-19, built, in active
+  development (not approved yet)): a tower's members, gusset plates,
+  splice covers, bolts and welds counted from the connection records and
+  weighed, a heavy and a light count; the bill of materials in
+  OHL-Structure (Design › Weight & quantities), as CSV
+  (`bill_of_materials.csv`), XLSX and in the structure report; where
+  every joint is defined a run's self-weight is, until the counting is
+  validated, the larger of the counted mass and the members × the
+  dead-load factor where the weight loads the tower and the lesser where it
+  holds it (`self_weight_from`, structure file version 19: `"factor"`, or
+  `"counted"` alone, not on the safe side)
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structure-weight.md))
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)

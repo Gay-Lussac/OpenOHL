@@ -193,6 +193,26 @@ fn tidy(doc: &mut DocumentMut) {
     }
 }
 
+/// Sets where a run's self-weight comes from once every joint is defined
+/// (joint details stage 4.6, 2026-11-19): the envelope (the default)
+/// removes `self_weight_from`, the file as before; `factor` or `counted`
+/// write it (version 19).
+pub fn set_self_weight_from(
+    doc: &mut DocumentMut,
+    from: ohl_structures::structures::SelfWeightFrom,
+) {
+    use ohl_structures::structures::SelfWeightFrom;
+    if from == SelfWeightFrom::Envelope {
+        doc.remove("self_weight_from");
+    } else {
+        doc["self_weight_from"] = toml_edit::value(from.as_str());
+        raise_version(
+            doc,
+            i64::from(ohl_structures::structures::SELF_WEIGHT_FROM_VERSION),
+        );
+    }
+}
+
 /// Gives (`Some`) or clears (`None`) `field` of `member`'s end at `joint`:
 /// a connection made when missing, dropped when nothing is left in it.
 pub fn set_connection_field(

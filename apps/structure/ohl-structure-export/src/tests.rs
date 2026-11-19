@@ -869,7 +869,8 @@ fn exports_are_deterministic() {
 fn write_files() {
     let dir = std::env::temp_dir().join(format!("ohl-structure-export-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    let s = shapes();
+    let mut s = shapes();
+    add_quantities(&mut s, SHAPES, &example_library(), &example_bolts());
     for f in Format::ALL {
         let out = match f.extension() {
             Some(e) => dir.join(format!("{}.{e}", f.as_str())),
@@ -1494,8 +1495,13 @@ fn no_connections_no_change() {
     let s = structure(TOWER, &library, &example_bolts(), None).unwrap();
     assert!(s.bolts.is_empty() && s.joint_plates.is_empty() && s.body_offsets.is_empty());
     let (table, recipes) = own_load_table(TOWER, &library).unwrap();
-    let before =
+    let mut before =
         ohl_structure_link::export_structure(TOWER, &library, Some(&table), &recipes).unwrap();
+    // Its weight and quantities: the members alone (stage 4.6).
+    let q = s.quantities.as_ref().unwrap();
+    assert_eq!(q.totals.len(), 1);
+    assert_eq!(q.mass, q.members_mass);
+    before.quantities = s.quantities.clone();
     assert_eq!(s, before);
     for schema in [Schema::Ifc4, Schema::Ifc2x3] {
         let o = IfcOptions {
@@ -1616,4 +1622,40 @@ fn the_report_says_when_joint_details_are_not_applied() {
         "the note"
     );
     assert!(!report_of(&text, None).html.contains("joint details"));
+}
+
+/// The bill of materials (stage 4.6) among the CSV tables, as a workbook
+/// and as the report's section; the totals the bill's.
+#[test]
+fn bill_of_materials_in_csv_xlsx_and_report() {
+    let mut s = shapes();
+    add_quantities(&mut s, SHAPES, &example_library(), &example_bolts());
+    let q = s.quantities.clone().unwrap();
+    let tables = csv::tables(&s);
+    let bom = tables
+        .iter()
+        .find(|t| t.0 == "bill_of_materials.csv")
+        .unwrap();
+    assert!(
+        bom.1
+            .starts_with("kind,item,count,quantity,unit,mass_kg,light_kg")
+    );
+    assert_eq!(bom.1, q.csv());
+    let sheets = xlsx::read(&quantities::workbook(&q).unwrap()).unwrap();
+    assert_eq!(
+        sheets.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        ["Bill of materials", "Parts", "Not defined", "Notes"]
+    );
+    let bill = &sheets[0];
+    let last = bill.rows.len() - 1;
+    assert_eq!(bill.get(last, "kind"), Some(&Cell::Text("total".into())));
+    let Some(Cell::Number(total)) = bill.get(last, "mass_kg") else {
+        panic!("no total");
+    };
+    assert!((total - q.mass).abs() < 1e-9);
+    assert_eq!(sheets[1].rows.len() - 1, q.parts.len());
+    let html = quantities::report_section(&q, false);
+    assert!(html.contains("<h2>Weight and quantities</h2>"));
+    assert!(html.contains("Not every joint is defined"));
+    assert!(html.contains("class=\"notsafe\""));
 }

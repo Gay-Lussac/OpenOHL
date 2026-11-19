@@ -240,6 +240,14 @@ pub struct StructureRun {
     pub pole: Option<Result<PoleInfo, String>>,
     /// The cases.
     pub cases: Vec<StructureCase>,
+    /// The structure's counted mass entered the self-weight (every joint
+    /// defined, joint details stage 4.6; where it governs the envelope, or
+    /// alone when asked for); which and why is in [`Self::notes`].
+    pub counted_self_weight: bool,
+    /// The structure's weight and quantities: counted by the run where
+    /// every joint is defined; filled by a report where it has joint
+    /// details (none: not counted).
+    pub quantities: Option<ohl_bom::structure::StructureBom>,
 }
 
 impl StructureRun {
@@ -429,6 +437,32 @@ fn model_on(input: &RunInput) -> (Result<Model, String>, Vec<String>) {
     // A plugin's member check: found now, or the run refused.
     let model = model.and_then(|m| crate::plugin_check::find(m, input.dir));
     (model, notes)
+}
+
+/// The bolt libraries of `input`: its own, else those beside its folder.
+fn bolts_of<'a>(input: &RunInput<'a>) -> std::borrow::Cow<'a, BoltLibrary> {
+    match (input.bolts, input.dir) {
+        (Some(b), _) => std::borrow::Cow::Borrowed(b),
+        (None, Some(dir)) => std::borrow::Cow::Owned(BoltLibrary::beside(dir).0),
+        (None, None) => std::borrow::Cow::Owned(BoltLibrary::default()),
+    }
+}
+
+/// `cases` with the self-weight factor of those below 1 (the weight
+/// favourable) × `light_ratio` (the light count over the heavy count,
+/// stage 4.6).
+pub(crate) fn favourable_light(cases: &[CaseToRun], light_ratio: f64) -> Vec<CaseToRun> {
+    cases
+        .iter()
+        .map(|c| CaseToRun {
+            self_weight: if c.self_weight < 1.0 {
+                c.self_weight * light_ratio
+            } else {
+                c.self_weight
+            },
+            ..c.clone()
+        })
+        .collect()
 }
 
 /// The sections `model` uses, with their members' count and length.
@@ -839,13 +873,35 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     };
     let dir = input.dir.unwrap_or(Path::new("."));
     let pole = ohl_structures_fe::pole::structure_pole(t, dir, input.sections);
+    let mut light_ratio = 1.0;
     let model = if has_model(t) {
         let (m, notes) = model_on(input);
         run.notes.extend(notes);
         match m {
-            Ok(m) => {
+            Ok(mut m) => {
                 // Which form the member ends were taken in (2026-11-11).
                 run.notes.extend(m.joint_use.note());
+                // The self-weight: the counted mass where every joint is
+                // defined, else the dead-load factor (stage 4.6).
+                if t.model.is_none() {
+                    let sw = crate::counted_self_weight(
+                        t,
+                        input.text,
+                        input.sections,
+                        &bolts_of(input),
+                        input.extension,
+                        &m,
+                    );
+                    if let Some(f) = sw.factor {
+                        crate::apply_counted(&mut m, f);
+                    }
+                    if sw.quantities.is_some() {
+                        light_ratio = sw.light_ratio;
+                    }
+                    run.counted_self_weight = sw.counted;
+                    run.notes.extend(sw.note);
+                    run.quantities = sw.quantities;
+                }
                 Some(m)
             }
             // A pole with members not designed: the pole check alone.
@@ -939,7 +995,16 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     };
     // The cases on the cores, in their order (2026-10-26: each case on
     // its own, the same results whichever thread solves it).
-    let cases = input.cases;
+    // With the counted self-weight, the cases whose self-weight factor is
+    // below 1 (the weight holding the structure: uplift, overturning) take
+    // the light count (stage 4.6).
+    let lighter: Vec<CaseToRun>;
+    let cases = if light_ratio < 1.0 {
+        lighter = favourable_light(input.cases, light_ratio);
+        &lighter[..]
+    } else {
+        input.cases
+    };
     let solved = crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {
         let c = &cases[k];
         let fe = model.as_ref().map(|m| {

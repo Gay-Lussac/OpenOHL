@@ -38,7 +38,8 @@ program with SAF **1.0.5**) [S1].
 | **IFC4**, members only, `ViewDefinition [ReferenceView_V1.2]` | BIM viewers, coordination | the members with profile solids, materials; bolts and gusset plates |
 | **IFC2x3** (TC1), `ViewDefinition [CoordinationView_V2.0]` | **steel-detailing programs** that convert IFC2x3 only (IFC object conversion into native parts) | the members with parametric profiles and materials, in a site, building and storey (the analysis model of IFC2x3 is not written); bolts and gusset plates |
 | **SAF** 2.2.0 (xlsx) | analysis programs that read SAF | materials, cross-sections, nodes, members, supports, load group, load cases, point and line loads |
-| **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv`; with connections or plates in the file (version 9) `connections.csv` and `plates.csv`, the values as the file gives them; with splices `splices.csv` (one row per cover) and with continuous members `parts.csv` (one row per piece of steel; 2026-11-05) |
+| **CSV** tables | anything else | `materials.csv`, `sections.csv`, `nodes.csv`, `supports.csv`, `members.csv`, `load_cases.csv`, `loads.csv`; with connections or plates in the file (version 9) `connections.csv` and `plates.csv`, the values as the file gives them; with splices `splices.csv` (one row per cover) and with continuous members `parts.csv` (one row per piece of steel; 2026-11-05); the bill of materials `bill_of_materials.csv` (2026-11-19) |
+| **Bill of materials** (xlsx, format `quantities`) | quantity take-off, costing, ordering | the weight and quantities (joint details stage 4.6): sheets "Bill of materials" (per kind and item: count, quantity, heavy and light mass, automatic, estimated; totals), "Parts" (every part), "Not defined" (the joints left out, with why), "Notes" ([theory](../theory/structure-weight.md)) |
 
 All are written from plain data (`ohl_structure_link::ExportStructure`,
 made by `ohl_structure_link::export_structure` from the structure file,
@@ -194,6 +195,10 @@ One table per file, a header row with the unit in the column name (`_m`,
 `check` (1 or 0) after `kind`, and carries the local
 y and z axes (`y_x … z_z`), `loads.csv` the place (`node`,
 `member_point` with its position 0–1, `member_uniform` per metre).
+`bill_of_materials.csv` (2026-11-19, `StructureBom::csv`):
+`kind,item,count,quantity,unit,mass_kg,light_kg,automatic,estimated`, one
+row per kind and item, then `total <kind>`, `total`, the joints not
+defined (`undefined`, item `<joint>: <why>`) and the notes (`note`).
 
 ### Tension-only members that bend and members not checked
 

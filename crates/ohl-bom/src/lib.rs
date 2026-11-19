@@ -24,8 +24,13 @@
 //! [`CostEstimate::new`] prices it with a cost file ([`cost::CostData`]);
 //! items without a price are listed. Both are plain data (serde), written
 //! as a text table ([`CostEstimate::text`]) or CSV ([`CostEstimate::csv`]).
+//!
+//! [`structure`] weighs one lattice structure from its members and its
+//! joint details (plates, covers, bolts, welds) and makes its bill of
+//! materials (joint details stage 4.6).
 
 pub mod cost;
+pub mod structure;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;

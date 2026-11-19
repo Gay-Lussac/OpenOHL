@@ -722,6 +722,12 @@ impl StructureType {
         out
     }
 
+    /// Where a run's self-weight comes from once every joint is defined
+    /// (`self_weight_from`, default the envelope; 2026-11-19).
+    pub fn self_weight_from(&self) -> crate::structures::SelfWeightFrom {
+        self.self_weight_from.unwrap_or_default()
+    }
+
     /// Whether the calculation takes the joint details: asked for
     /// (`joint_details = true`) on a level 4 structure. Asked for below
     /// level 4 it is not applied ([`Self::joint_details_not_applied`]).

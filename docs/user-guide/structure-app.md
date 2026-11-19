@@ -1377,6 +1377,76 @@ layout follows later edits. The window, its settings and what it does:
 [Lay out joints](joint-layout.md); how it works: the
 [theory](../theory/joint-layout.md).
 
+## Weight & quantities
+
+(2026-11-19; built, in active development.) **Design › Weight &
+quantities** (a panel, towers only) counts and weighs what the tower is
+built from and says which self-weight a run takes. It counts again in the
+background whenever the file or the libraries change (a few tenths of a
+second on a real tower of 1 000 joints).
+
+![The Weight & quantities panel on an invented joint: the Self weight choices (larger of counted and factor, dead-load factor only, counted mass only), the totals of members, plates and bolts with their light count, the counted mass against the members × the dead-load factor, the bill of materials and the notes, those not on the safe side in red](../images/structure-quantities.png)
+
+1. **Self weight** — where a run's self-weight comes from once every joint
+   is defined (one undo step; `self_weight_from` in the file, version 19):
+   - **Larger of counted and factor** (the default, until the counting is
+     validated): where the weight loads the tower, the larger of the
+     counted mass (heavy count) and the members' steel × the dead-load
+     factor; where it holds the tower (cases whose self-weight factor is
+     below 1), the lesser of the light count and the members × the factor.
+     The counted mass can only raise a load.
+   - **Dead-load factor only**: as before; a run says NOT ON THE SAFE SIDE
+     where the counted mass is above it.
+   - **Counted mass only**: the counted mass alone — NOT ON THE SAFE SIDE
+     until the counting is validated (galvanising, fillers and fittings
+     are not in it).
+
+   The line under it says what a run takes now; the run's notes say which
+   value governed.
+2. **The totals**: per kind (members, plates, covers, bolts, welds) the
+   pieces, the mass and the **light count**, the whole, and the counted
+   mass against the members × the dead-load factor (as a factor and in
+   per cent).
+3. **Bill of materials**: one line per kind and item — a member's
+   cross-section, `plate 10 mm S355`, `cover 8 mm`, a bolt by its library
+   id or `M16 8.8` and its grip, `fillet a 6 mm` — with the count, the
+   length, area or pieces, and the mass; *automatic* where the automatic
+   joint layout laid the parts out, *estimated* where a mass is estimated
+   (a bolt without a mass in its library, a weld without a size, a plate
+   outline worked out round its bolts).
+4. **Joints not defined**: each with why (members without a connection,
+   left for a hand detail, a bolted end without bolts, a plate without an
+   outline) — their parts are not counted.
+5. **Notes**: how each part was weighed and what was not counted; what is
+   **NOT ON THE SAFE SIDE** in red.
+6. **Bill of materials (xlsx)…** writes the bill, every part, the joints
+   not defined and the notes as a workbook (also File › Export).
+
+What is counted, from which records, both counts and the switch of the
+self-weight: [Weight and quantities of a lattice tower](../theory/structure-weight.md).
+
+| Field | What it does |
+|---|---|
+| Self weight | Larger of counted and factor (default) · Dead-load factor only · Counted mass only (not on the safe side) |
+| Bill of materials (xlsx)… | asks where, writes the workbook (greyed until counted) |
+
+**Good to know**
+
+- The **heavy count** takes each doubt on the heavy side (holes not
+  deducted, a weld without a size at the largest throat SIA 263 allows,
+  both sides): the weight that loads the tower. The **light count** takes
+  them on the light side (holes deducted, members to where their steel
+  stops): for the cases whose self-weight factor is below 1 (the weight
+  holding the tower: uplift, overturning) a run takes the lesser of it and
+  the members × the factor.
+- Not counted (said): galvanising, fillers and packs, step bolts, ladders
+  and other fittings not modelled as parts, the washers of a bolt without
+  a library mass, the welds of a welded member end.
+- A run says in its notes which self-weight it took and why; the
+  structure report has a section *Weight and quantities*.
+- The line's checks in OHL-Design keep the dead-load factor (the core has
+  no joint details).
+
 ## Load cases
 
 The **Load case editor** (Loads menu) edits the structure's
@@ -1840,7 +1910,8 @@ members with cross-sections, a supported joint.
 | **IFC4 — members with their profiles** | `.ifc` | BIM viewers, coordination |
 | **IFC2x3 — members for steel-detailing programs** | `.ifc` | steel-detailing programs that take a reference model in IFC2x3 only |
 | **SAF (xlsx) — analysis model with load cases (analysis programs)** | `.xlsx` | analysis programs reading the Structural Analysis Format |
-| **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads`; with joint details `connections` and `plates` |
+| **CSV tables** | a folder | anything else: `materials`, `sections`, `nodes`, `supports`, `members`, `load_cases`, `loads`; with joint details `connections` and `plates`; the bill of materials `bill_of_materials` ([Weight & quantities](#weight--quantities)) |
+| **Bill of materials (xlsx)** | `.xlsx` | the weight and quantities: the bill, every part, the joints not defined, the notes ([Weight & quantities](#weight--quantities)) |
 
 Pre-alpha, in active development: the exports are checked with free tools (IfcOpenShell's IFC validation, a reader of the SAF workbook; [Structure exports › Checks with free tools](../development/structure-exports.md#checks-with-free-tools)), but no exported file has been imported into another program yet. Sample files to try in other programs are in `examples/exports/`.
 

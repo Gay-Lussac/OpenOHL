@@ -216,6 +216,8 @@ pub struct StructureApp {
     pub joints: crate::joint_panel::JointPanel,
     /// Its tools' windows and the presets ([`crate::joint_tools`]).
     pub joint_tools: crate::joint_tools::JointTools,
+    /// The Weight & quantities panel ([`crate::quantities_panel`]).
+    pub quantities: crate::quantities_panel::QuantitiesTab,
     /// The Lay out joints window ([`crate::layout_window`]).
     pub layout_window: Option<crate::layout_window::LayoutWindow>,
     /// The Orient angles window ([`crate::orient_window`]).
@@ -305,6 +307,7 @@ impl StructureApp {
             inventory: false,
             joints: Default::default(),
             joint_tools: Default::default(),
+            quantities: Default::default(),
             layout_window: None,
             orient_window: None,
             follow_stamp: None,
@@ -1286,6 +1289,7 @@ impl StructureApp {
                 self.joint_view_ui(ui);
             }
             Panel::MemberDetails => self.member_panel_ui(ui),
+            Panel::Quantities => self.quantities_ui(ui),
             _ => self.sheet_panel(ui, panel),
         }
     }

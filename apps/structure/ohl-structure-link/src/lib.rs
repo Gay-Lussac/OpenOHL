@@ -67,6 +67,7 @@ mod reduce;
 /// The member check by a plugin: the core crate `ohl-member-check`
 /// (shared with `ohl structures fe` and the line's structure check).
 pub use ohl_member_check as plugin_check;
+mod quantities;
 mod run;
 mod volumes;
 mod welds;
@@ -119,6 +120,9 @@ pub use plate_checks::{
     plate_plans_in, plate_usage, plate_usage_cases, plate_usage_cases_with,
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
+pub use quantities::{
+    SelfWeight, apply_counted, counted_self_weight, structure_quantities, undefined_joints,
+};
 pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,
@@ -1530,7 +1534,24 @@ pub fn analyse_cases(
     cases: &[CaseToRun],
     budget: &Budget,
 ) -> Result<Vec<CaseRun>, String> {
-    let model = model_of(structure, text, dir, sections)?;
+    let mut model = model_of(structure, text, dir, sections)?;
+    // The counted self-weight where every joint is defined (stage 4.6;
+    // [`analyse_structure`] says which in its notes).
+    let lighter: Vec<CaseToRun>;
+    let mut cases = cases;
+    if structure.model.is_none() {
+        let bolts = dir
+            .map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
+            .unwrap_or_default();
+        let sw = counted_self_weight(structure, text, sections, &bolts, None, &model);
+        if let Some(f) = sw.factor {
+            apply_counted(&mut model, f);
+        }
+        if sw.light_ratio < 1.0 {
+            lighter = run::favourable_light(cases, sw.light_ratio);
+            cases = &lighter[..];
+        }
+    }
     let solved = in_case_order(cases.len(), threads(cases.len()), |k| {
         analyse_one(&model, table, &cases[k], &Default::default(), budget)
     });

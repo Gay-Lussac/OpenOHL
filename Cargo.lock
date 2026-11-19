@@ -4469,6 +4469,7 @@ dependencies = [
  "env_logger",
  "image",
  "log",
+ "ohl-bom",
  "ohl-core",
  "ohl-plugins",
  "ohl-render",
@@ -4502,6 +4503,7 @@ name = "ohl-structure-export"
 version = "0.0.2"
 dependencies = [
  "clap",
+ "ohl-bom",
  "ohl-core",
  "ohl-sections",
  "ohl-structure-link",
@@ -4516,6 +4518,7 @@ dependencies = [
 name = "ohl-structure-link"
 version = "0.0.2"
 dependencies = [
+ "ohl-bom",
  "ohl-cables",
  "ohl-clearance",
  "ohl-core",
@@ -4548,6 +4551,7 @@ dependencies = [
 name = "ohl-structure-tests"
 version = "0.0.2"
 dependencies = [
+ "ohl-bom",
  "ohl-cables",
  "ohl-core",
  "ohl-line",

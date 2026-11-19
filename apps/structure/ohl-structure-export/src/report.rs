@@ -180,6 +180,13 @@ pub fn report_html(input: &ReportInput) -> String {
         }
         h.push_str("</table>\n");
     }
+    // Weight and quantities (joint details stage 4.6).
+    if let Some(q) = &run.quantities {
+        h.push_str(&crate::quantities::report_section(
+            q,
+            run.counted_self_weight,
+        ));
+    }
     match &run.pole {
         Some(Ok(p)) => {
             let _ = writeln!(
@@ -537,6 +544,36 @@ pub fn today() -> String {
     crate::ifc::iso_time(secs)[..10].to_owned()
 }
 
+/// Counts the weight and quantities of a tower with joint details into
+/// `run` when the run did not (it counts them only where every joint is
+/// defined), for the report's section; the bolt libraries beside `dir`.
+/// What cannot be counted is left out, said in the run's notes.
+pub fn with_quantities(
+    run: &mut ohl_structure_link::StructureRun,
+    structure: &StructureType,
+    text: &str,
+    sections: &ohl_sections::SectionLibrary,
+    dir: Option<&std::path::Path>,
+) {
+    if run.quantities.is_some()
+        || structure.model.is_some()
+        || (structure.connections.is_empty()
+            && structure.plates.is_empty()
+            && structure.splices.is_empty())
+    {
+        return;
+    }
+    let bolts = dir
+        .map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
+        .unwrap_or_default();
+    match ohl_structure_link::structure_quantities(text, sections, &bolts) {
+        Ok(q) => run.quantities = Some(q),
+        Err(e) => run
+            .notes
+            .push(format!("weight and quantities not counted: {e}")),
+    }
+}
+
 /// What [`from_text`] reports on.
 pub struct FromText<'a> {
     /// The structure file's text.
@@ -594,7 +631,7 @@ pub fn from_text(input: &FromText) -> Result<Report, String> {
     let budget = ohl_core::budget::Budget::new()
         .max_iterations(200)
         .time_limit(std::time::Duration::from_secs(30));
-    let run = ohl_structure_link::analyse_structure(
+    let mut run = ohl_structure_link::analyse_structure(
         &ohl_structure_link::RunInput {
             structure: &structure,
             text: input.text,
@@ -609,6 +646,7 @@ pub fn from_text(input: &FromText) -> Result<Report, String> {
         },
         &budget,
     )?;
+    with_quantities(&mut run, &structure, input.text, input.sections, input.dir);
     let html = report_html(&ReportInput {
         structure: &structure,
         file: input.file,

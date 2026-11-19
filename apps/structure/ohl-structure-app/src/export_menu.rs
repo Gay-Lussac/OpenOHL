@@ -4,7 +4,7 @@
 
 //! File › Export: the structure as IFC (IFC4 with the analysis model, IFC4
 //! members, IFC2x3 for steel-detailing programs), SAF (analysis programs)
-//! or CSV tables
+//! or CSV tables, or the bill of materials (xlsx)
 //! (`ohl-structure-export`). By default with the window's section library
 //! and its load table (the Load table panel: a placed structure's line
 //! values and the values typed) and the window's bolt libraries (`Bolts/`
@@ -151,7 +151,7 @@ impl StructureApp {
     }
 
     /// Asks where, then exports in `format`.
-    fn export_to(&mut self, format: Format) {
+    pub(crate) fn export_to(&mut self, format: Format) {
         let stem = self
             .file
             .as_ref()
@@ -163,6 +163,7 @@ impl StructureApp {
                 let suffix = match format {
                     Format::Ifc2x3 => "-ifc2x3",
                     Format::IfcMembers => "-members",
+                    Format::Quantities => "-quantities",
                     _ => "",
                 };
                 rfd::FileDialog::new()
@@ -214,6 +215,7 @@ impl StructureApp {
                     &recipes,
                 )?;
                 ohl_structure_link::export_joints(&mut s, &f.text(), &library, &bolts)?;
+                ohl_structure_export::add_quantities(&mut s, &f.text(), &library, &bolts);
                 s
             }
         };
