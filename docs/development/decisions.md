@@ -87,6 +87,42 @@ loses it with its process as before. Tested: a second writer connects at
 once after the first is dropped (also in the middle of a step), not while
 a store still uses the first's connection.
 
+## 2026-11-19 (joint layout: a search per joint, the place of a member left kept)
+
+**O44 J1 and J2** (owner, 2026-11-19: "plan ideas to get the automatic
+layout working", approved with the recommendations, in the order J1–J8;
+built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-search-per-joint-j1),
+[user guide](../user-guide/joint-layout.md)):
+
+- **J1, a search per joint**: each plane's ends placed in every order
+  that can matter, the owner's order first (so it wins every tie), the
+  most ends then the least eccentricity winning, at most 400 placings per
+  joint (said where reached); each end clear of the joint's fixed steel
+  (what is not laid out: the clash check's pieces, seen from above in the
+  end's layer) and of what the planes on bigger members laid out (boxes
+  holding the angle, its bolts' heads and a plate: on the safe side for
+  the fit); after writing, an end in a clash pulled back past it up to
+  three times before it is left as it was (six clash rounds instead of
+  four). Deterministic; values given by hand kept; a run again identical.
+  The flange, the side and the leg bolted follow the member's roll (J3);
+  direct or on a plate stays per plane.
+- **J2**: a member left for its own sake keeps its place as it is (the
+  ends laid out keep clear of it, in the plan and in the clash check);
+  one left for want of room or for a clash, a plate under a member left
+  and the members joined first are said with it, as before — keeping the
+  place of every member left cost a quarter to a third of the ends laid
+  out on two real towers (measured, left out). An assumption of the
+  tool: the place kept is the member as it is, not where its hand detail
+  will put it (said in the theory).
+- **Measured** on the 78 private real towers: whole joints 27.6 % → 44.1 %,
+  ends laid out 48.9 % → 62.8 %, a whole tower 1.5 to 1.9 times as long
+  (10–15 s). The order search alone changed nothing there: said, kept.
+- **The owner's example joints** (2026-11-19): direct flange connections
+  and mid-panel gusset plates are invented test joints now; the bent
+  plate at a corner is not built (a new element) and proposed next.
+- No format change.
+
 ## 2026-11-19 (O42 and O46: edits in OHL-Design in place; the tests' PostgreSQL)
 
 **OHL-Design's line is kept in step with the session in place** (owner,

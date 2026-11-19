@@ -1011,6 +1011,64 @@ splices; "report only"):
   sections has bracing on it); 6 026 joints say where their leg splice
   is is not known.
 
+Seventh round (2026-11-19, ROADMAP O44 J1 and J2, owner-approved in
+that order; "plan ideas to get the automatic layout working"):
+
+- **J1, a search per joint** (`joint_layout::plan_joint_with`,
+  `search_plane`, `NODE_LIMIT` = 400 placings per joint, said with the
+  ends left where reached): the planes on the biggest members first
+  (`Strip::host_rank`); each plane's ends placed in every order that can
+  matter, the owner's order first, backtracking (an end that fits nowhere
+  now fits nowhere later; placings reached in another order not searched
+  again); the most ends, then the least eccentricity, then the first
+  found. Each end keeps clear of the joint's **fixed steel**
+  (`clash::piece_corners`: the clash check's convex pieces of the parts
+  not laid out, `fixed_in`, clipped to the end's layer and seen from above,
+  `footprint`, `poly_need`) and of what the planes before laid out
+  (`solids_of`: boxes of the legs, outstanding legs, bolt heads and plates,
+  conservative). After writing, an end in a clash is first **pulled back
+  past it** (`write_rounds`: its least cut from the clash's place, depth
+  and the gap, `Strip::floor`; `PULLS` = 3 per end, `CLASH_ROUNDS` 4 → 6)
+  before it is left as it was.
+- **J2, the ends that fit kept and the place of a member left kept free**
+  (`JointPlan::kept_free`): a member left for its own sake (it fits
+  nowhere even alone) is fixed steel for the plan, and in the clash check a
+  clash of an end laid out with it counts; one left for want of room or
+  for a clash, a plate under a member left and the members joined first
+  are said with it, as before. The window's hand list names the members
+  left, the rest laid out, those kept free (`layout_window::hand_words`),
+  and the summary the member ends laid out of all.
+- **Fixed on the way**: the ends of one flange's face naming two members
+  of a run through the joint (a leg in two members, one end onto each)
+  were measured in two mirrored frames (the plane's x along each member
+  named): their clearances were wrong. The plane's axes now run one way
+  for every member of the run, so such ends share one plane and one
+  plate.
+- No format change: the record is the same (the reasons in `hand`).
+- Tests: the owner's order filled one after the other leaves a short
+  redundant, the search lays both out (D1 pulled back past it); a single
+  placing says the limit; the same plan twice and a plan written kept; a
+  cut given by hand kept; a member too short for its bolts keeps its
+  place (plan and run); two invented versions of example joints the owner
+  sent (diagonals bolted directly on a main angle's flange in the middle
+  of a panel, two bolts each; a gusset plate on it there).
+- **On the 78 private real tower files**: joints laid out whole 27.6 % →
+  44.1 %, member ends laid out 48.9 % → 62.8 %, joints with a hand
+  detail 66.2 % → 49.7 %, clashes at the joints after 61.6 % → 46.3 % of
+  before, a run again identical on all 78; a whole tower of 2 190 to
+  3 030 members 6–9 s → 10–15 s (one after the other). The order search
+  itself changed nothing there (stops paying: kept for joints where it
+  does); the gains are the fixed steel seen in the plan and the pull-back
+  past a clash. What is left: [theory](../theory/joint-layout.md#measured-j1-and-j2-2026-11-19).
+- **A bent plate** (the owner's example of 2026-11-19, a plate folded to
+  follow two faces at a corner, members on both sides): of the joints
+  still with a hand detail, 60 % have an end whose leg bolted lies off its
+  flange or faces away, or lies on an inner face running towards the
+  other leg — what a bent plate would take —, and for 29 % it is the only
+  reason; onto a leg alone 9 % (the only reason for 2 %: most such ends
+  bolt onto bracing — horizontals, plan and hip members). Not built (a new
+  model element): proposed as the next step.
+
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

@@ -1087,10 +1087,13 @@ fn lay_out_once(
             .collect();
         // A joint planned again with members left for a hand detail (the
         // clash check's rounds).
-        let replan = |joint: &str, except: &BTreeMap<String, String>| -> Option<JointPlan> {
+        let replan = |joint: &str,
+                      except: &BTreeMap<String, String>,
+                      floors: &BTreeMap<String, (f64, String)>|
+         -> Option<JointPlan> {
             let j = details.joint(joint)?;
             let edge = edge_rule(model);
-            let mut p = crate::joint_layout::plan_joint_except(j, &settings, &edge, except);
+            let mut p = crate::joint_layout::plan_joint_with(j, &settings, &edge, except, floors);
             p.joins = joins
                 .get(joint)
                 .into_iter()
@@ -1388,7 +1391,8 @@ type DetailsOf<'a> =
 
 /// A joint planned again with the members given left for a hand detail,
 /// each with why.
-type Replan<'a> = dyn Fn(&str, &BTreeMap<String, String>) -> Option<JointPlan> + 'a;
+type Replan<'a> = dyn Fn(&str, &BTreeMap<String, String>, &BTreeMap<String, (f64, String)>) -> Option<JointPlan>
+    + 'a;
 
 /// What [`write_rounds`] writes with.
 struct Rounds<'a> {
@@ -1414,7 +1418,11 @@ struct Rounds<'a> {
 
 /// How many times a joint is planned again without the members whose
 /// laid-out parts would clash, before it is taken back whole.
-const CLASH_ROUNDS: usize = 4;
+const CLASH_ROUNDS: usize = 6;
+
+/// How many times an end laid out is pulled back past what it would run
+/// into before it is left as it was (J1, 2026-11-19).
+const PULLS: usize = 3;
 
 /// The plans of `outcomes` written into the file as it was, with the rolls
 /// (those turned before at the joints asked back, this run's turns on
@@ -1441,6 +1449,11 @@ fn write_rounds(
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     // The members left at each joint for a clash, with why.
     let mut except: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    // The least cuts the clashes asked for at each joint (J1: an end
+    // pulled back past what it ran into before it is left), and how many
+    // times each end was so pulled back.
+    let mut floors: BTreeMap<String, BTreeMap<String, (f64, String)>> = BTreeMap::new();
+    let mut pulls: BTreeMap<(String, String), usize> = BTreeMap::new();
     // The plates' outlines cut at the heel, by joint and plate (kept while
     // the joint's plan stays).
     let mut outlines: BTreeMap<(String, usize), Vec<[f64; 3]>> = BTreeMap::new();
@@ -1461,6 +1474,7 @@ fn write_rounds(
             o.hand = c.hand.clone();
         }
         except.insert(o.joint.clone(), c.except.clone());
+        floors.insert(o.joint.clone(), c.floors.clone());
         for (k, x) in &c.outlines {
             outlines.insert((o.joint.clone(), *k), x.clone());
         }
@@ -1673,7 +1687,8 @@ fn write_rounds(
                 }
             };
             // A member left for a hand detail is as it was: its clashes
-            // are said with it, they do not take the rest back.
+            // are said with it, they do not take the rest back — unless
+            // its place is kept free (J2, below).
             let left = |x: &crate::ClashPart| {
                 x.member()
                     .is_some_and(|m| o.plan.hand_members.iter().any(|h| h == m))
@@ -1691,9 +1706,26 @@ fn write_rounds(
             };
             let mut bad: Vec<String> = Vec::new();
             let mut out: BTreeMap<String, String> = BTreeMap::new();
+            let mut pull: BTreeMap<String, (f64, String)> = BTreeMap::new();
             for c in &j.clashes {
                 let (a, b) = (ours(&c.a), ours(&c.b));
-                if (a.is_empty() && b.is_empty()) || left(&c.a) || left(&c.b) {
+                // J2 (2026-11-19): a member left for a hand detail keeps
+                // its place: what is laid out may not run into it either.
+                // (An end laid out, its steel or bolts: a plate may lie
+                // under the member left — its hand detail may bolt it
+                // there —, and the members joined first keep theirs.)
+                let kept = |x: &crate::ClashPart| {
+                    x.member()
+                        .is_some_and(|m| o.plan.kept_free.iter().any(|h| h == m))
+                };
+                let end = |x: &crate::ClashPart| {
+                    x.member()
+                        .is_some_and(|m| o.plan.ends.iter().any(|e| e.member == m))
+                };
+                if (a.is_empty() && b.is_empty())
+                    || (left(&c.a) && !(end(&c.b) && kept(&c.a)))
+                    || (left(&c.b) && !(end(&c.a) && kept(&c.b)))
+                {
                     continue;
                 }
                 let words = format!(
@@ -1712,26 +1744,59 @@ fn write_rounds(
                         x.iter().max().cloned().unwrap_or_default(),
                     )
                 };
-                let side = if a.is_empty() {
-                    b
-                } else if b.is_empty() || worse(&a) >= worse(&b) {
-                    a
-                } else {
-                    b
-                };
+                let pick_a = !a.is_empty() && (b.is_empty() || worse(&a) >= worse(&b));
+                let side = if pick_a { a } else { b };
+                let why = format!("laid out, {words} (left as it was)");
+                // J1: first pulled back past what it ran into (a few times,
+                // while rounds are left), then left as it was.
                 for m in side {
-                    out.entry(m)
-                        .or_insert_with(|| format!("laid out, {words} (left as it was)"));
+                    let cut = o
+                        .plan
+                        .ends
+                        .iter()
+                        .find(|e| e.member == m)
+                        .and_then(|e| e.cut);
+                    let dir = j
+                        .arrivals
+                        .iter()
+                        .find(|x| x.member == m)
+                        .map(|x| x.direction);
+                    let n = pulls
+                        .get(&(o.joint.clone(), m.clone()))
+                        .copied()
+                        .unwrap_or(0);
+                    match (cut, dir) {
+                        (Some(cut), Some(d)) if n < PULLS && round + 2 < CLASH_ROUNDS => {
+                            let along = dot3(sub3(c.at, j.position), d);
+                            let f = (cut.max(along) + c.depth + ask.settings.gap).max(cut + 0.001);
+                            let f = (f * 1000.0 - 1e-9).ceil() / 1000.0;
+                            let e = pull.entry(m).or_insert((f, why.clone()));
+                            if f > e.0 {
+                                *e = (f, why.clone());
+                            }
+                        }
+                        _ => {
+                            out.entry(m).or_insert_with(|| why.clone());
+                        }
+                    }
                 }
                 bad.push(words);
             }
             if bad.is_empty() {
                 continue;
             }
+            for m in out.keys() {
+                pull.remove(m);
+            }
+            let fl = floors.entry(o.joint.clone()).or_default();
+            for (m, f) in pull {
+                *pulls.entry((o.joint.clone(), m.clone())).or_default() += 1;
+                fl.insert(m, f);
+            }
             let ex = except.entry(o.joint.clone()).or_default();
             ex.extend(out);
             let again = (round + 1 < CLASH_ROUNDS)
-                .then(|| (r.replan)(&o.joint, ex))
+                .then(|| (r.replan)(&o.joint, ex, fl))
                 .flatten()
                 .filter(JointPlan::laid_out);
             match again {
@@ -1792,6 +1857,7 @@ fn write_rounds(
                 hand: o.hand.clone(),
                 taken_back: take_back.contains(&o.joint),
                 except: except.get(&o.joint).cloned().unwrap_or_default(),
+                floors: floors.get(&o.joint).cloned().unwrap_or_default(),
                 outlines: outlines
                     .iter()
                     .filter(|((j, _), _)| j == &o.joint)
@@ -1817,6 +1883,8 @@ struct Checked {
     taken_back: bool,
     /// The members left for a clash, with why.
     except: BTreeMap<String, String>,
+    /// The least cuts its clashes asked for, with why.
+    floors: BTreeMap<String, (f64, String)>,
     /// Its plates' outlines cut at the heel, by plate.
     outlines: Vec<(usize, Vec<[f64; 3]>)>,
     /// Its clashes after.
