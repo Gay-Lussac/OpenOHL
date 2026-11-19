@@ -318,3 +318,73 @@ fn a_tension_only_member_with_an_offset_end() {
         assert!((top_moment(&a) - top_moment(&b)).abs() < 1e-6 * P * SHIFT);
     }
 }
+
+/// An offset whose sign is not known (2026-11-19, the owner's decision on
+/// O45 A1) at a frame joint, by hand: T (a truss) pulled by P = 10 kN, its
+/// end at N2 — where the frame C meets it — with a free offset of e = 20 mm
+/// across it (−z) and a second part of 10 mm out of its face (+y), each of
+/// unknown sign. Never in the solve: the solution is the one without
+/// offsets (C's top moment 0, nothing carried by the frame). Its own
+/// check takes the moments whole and sign-free: T's local axes x = +x,
+/// y = (0, 0, 1), z = (0, −1, 0); at N2 the joint is pulled towards N3,
+/// F = (P, 0, 0). The 20 mm part: r × F = (0, −e P, 0) → about local z
+/// e P = 200 N m; the 10 mm part: (0, 0, −e₂ P) → about local y 100 N m —
+/// each axis its own part's size (the parts square to each other). Taken
+/// with a known part of the same end (where only bars meet) the sizes add
+/// about each axis (the worst of the unknown signs).
+#[test]
+fn an_offset_of_unknown_sign_is_only_in_the_members_check_also_at_a_frame_joint() {
+    let mut m = tower("truss", "support = [\"y\", \"z\"]", None, false);
+    m.members[1].free_offsets[0] = vec![[0.0, 0.0, -SHIFT], [0.0, 0.010, 0.0]];
+    let k = m.members[1].section;
+    m.sections[k].yield_strength = Some(355e6);
+    m.sections[k].moment_y = Some(2e3);
+    m.sections[k].moment_z = Some(2e3);
+    assert!(m.has_offsets());
+    let ends = m.eccentric_ends(1);
+    assert_eq!(ends.len(), 1);
+    assert!(ends[0].carried, "a frame meets N2");
+    assert_eq!(ends[0].offset, [0.0; 3]);
+    assert!((ends[0].free_e() - (SHIFT.powi(2) + 0.01f64.powi(2)).sqrt()).abs() < 1e-15);
+    let s = run(&m, [P, 0.0, 0.0], false);
+    // Not in the solve: as without any offset.
+    let mut plain = m.clone();
+    plain.members[1].free_offsets = Default::default();
+    let s0 = run(&plain, [P, 0.0, 0.0], false);
+    assert!(top_moment(&s) < 1e-9, "{}", top_moment(&s));
+    for (a, b) in s.members.iter().zip(&s0.members) {
+        assert_eq!(a.end_forces, b.end_forces);
+    }
+    // In its own check: about y 100 N m, about z 200 N m (exactly: the
+    // chord runs between the joints, no tilt).
+    let add = crate::offsets::uncarried_moments(&m, 1, P).unwrap();
+    assert!((add[0] - 0.010 * P).abs() < 1e-9, "{add:?}");
+    assert!((add[1] - SHIFT * P).abs() < 1e-9, "{add:?}");
+    assert!(crate::offsets::eccentric_bending(&m, 1));
+    let u = member_usage(&m, &s, 1.0);
+    let want = P / (1000e-6 * 355e6) + 0.010 * P / 2e3 + SHIFT * P / 2e3;
+    assert!((u[1].usage.unwrap() - want).abs() < 1e-12, "{:?}", u[1]);
+    assert!(
+        u[1].governs.contains("its sign not known") && u[1].governs.contains("sign-free"),
+        "{}",
+        u[1].governs
+    );
+    let note = eccentricity_note(&m, &s).unwrap();
+    assert!(
+        note.contains("1 end(s) whose offset's sign is not known"),
+        "{note}"
+    );
+    // Sign-free: the same parts the other way give the same moments.
+    let mut minus = m.clone();
+    minus.members[1].free_offsets[0] = vec![[0.0, 0.0, SHIFT], [0.0, -0.010, 0.0]];
+    assert_eq!(crate::offsets::uncarried_moments(&minus, 1, P), Some(add));
+    // A part of known sign beside one of unknown sign about the same axis
+    // (only bars meet N3): the sizes added.
+    let mut both = m.clone();
+    both.members[1].free_offsets[0] = Vec::new();
+    both.members[1].offsets[1] = [0.0, 0.0, -SHIFT];
+    both.members[1].free_offsets[1] = vec![[0.0, 0.0, 0.5 * SHIFT]];
+    let add = crate::offsets::uncarried_moments(&both, 1, P).unwrap();
+    let mz = P * SHIFT * 3.0 / (9.0 + SHIFT * SHIFT).sqrt();
+    assert!((add[1] - 1.5 * mz).abs() < 1e-6, "{add:?}");
+}

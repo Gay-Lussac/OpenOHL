@@ -675,10 +675,12 @@ impl StructureApp {
                         use ohl_structure_link::eccentricities::Source;
                         ui.label(
                             egui::RichText::new(format!(
-                                "last run: {} end(s) with an offset, upper bound at {}; \
-                                 estimated in {:.1} s, the cases solved {}\u{00d7} in {:.1} s",
+                                "last run: {} end(s) with an offset, upper bound at {}, {} \
+                                 of unknown sign in their own checks; estimated in {:.1} s, the \
+                                 cases solved {}\u{00d7} in {:.1} s",
                                 u.offsets,
                                 u.estimates.count(Source::UpperBound),
+                                u.sign_free,
                                 u.estimates.seconds,
                                 u.solves,
                                 u.solve_seconds

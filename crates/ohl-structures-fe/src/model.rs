@@ -574,6 +574,14 @@ pub struct Member {
     /// — an eccentricity the solve takes as a rigid link to the joint
     /// ([`crate::solve()`], [`Model::eccentric_ends`]).
     pub offsets: [[f64; 3]; 2],
+    /// End offsets whose **sign is not known** (2026-11-19, the owner's
+    /// decision on O45 A1: an estimated eccentricity's upper bound, a
+    /// plate's side), per end, structure axes, m; each part with its own
+    /// unknown sign. Never in the solve: taken only in the member's own
+    /// check, the moment N·e whole and sign-free — as an offset where only
+    /// bars meet a joint, at frame joints too
+    /// ([`crate::offsets::uncarried_moments`]). Empty: none (the default).
+    pub free_offsets: [Vec<[f64; 3]>; 2],
 }
 
 impl Member {
@@ -598,6 +606,7 @@ impl Member {
             check: true,
             design: crate::design::MemberDesign::default(),
             offsets: [[0.0; 3]; 2],
+            free_offsets: Default::default(),
         }
     }
 
@@ -1272,6 +1281,7 @@ impl Model {
                 bending: m.bending,
                 check: m.check,
                 offsets: [[0.0; 3]; 2],
+                free_offsets: Default::default(),
             });
         }
         for (k, partner) in partners {
@@ -1615,6 +1625,7 @@ impl Model {
                 return Err(format!("member {}: zero length", m.id));
             }
             if m.offsets.iter().flatten().any(|x| !x.is_finite())
+                || m.free_offsets.iter().flatten().flatten().any(|x| !x.is_finite())
                 || norm(sub(self.end_point(m, 1), self.end_point(m, 0))) <= 1e-9
             {
                 return Err(format!(

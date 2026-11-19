@@ -15,7 +15,7 @@ use ohl_structures::{LibraryItem, StructureType};
 use ohl_structures_fe::Model;
 
 use crate::eccentricities::{
-    EstimateAsk, Estimates, Source, estimate, offsets, option_on, set_option,
+    EstimateAsk, Estimates, Source, apply, estimate, offsets, option_on, set_option,
 };
 use crate::joint_layout::{BoltArea, LayoutSettings};
 use crate::joint_layout_tests::K;
@@ -195,23 +195,33 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
     );
     assert!(d1.either_sign());
     assert!(e.plate_bounds() >= 1);
-    // In the model: both ways, its size the shift and the plate's offset
-    // together, across the member.
+    // In the model (2026-11-19): two parts of unknown sign — the shift and
+    // the plate's offset, square to each other, across the member — never
+    // in the solve, only in its own check.
     let text = d1_spoiled(30.0);
     let m = Model::from_structure_type_with(&text, &library()).unwrap();
-    let (plus, _) = offsets(&m, &e, 1.0);
-    let (minus, _) = offsets(&m, &e, -1.0);
+    let (list, _) = offsets(&m, &e);
     let k = m.members.iter().position(|x| x.id == "D1").unwrap();
-    let p = plus.iter().find(|o| o.member == k).unwrap();
-    let q = minus.iter().find(|o| o.member == k).unwrap();
+    let p = list.iter().find(|o| o.member == k).unwrap();
     let size = |r: [f64; 3]| r.iter().map(|x| x * x).sum::<f64>().sqrt();
+    assert_eq!(p.offset, [0.0; 3], "nothing of known sign: {p:?}");
+    assert_eq!(p.free.len(), 2, "{p:?}");
+    assert!((size(p.free[0]) - 0.030).abs() < 1e-9, "{p:?}");
+    assert!((size(p.free[1]) - 0.007).abs() < 1e-9, "{p:?}");
     let expect = (0.030f64.powi(2) + 0.007f64.powi(2)).sqrt();
-    assert!((size(p.offset) - expect).abs() < 1e-9, "{p:?}");
-    assert!((0..3).all(|c| (p.offset[c] + q.offset[c]).abs() < 1e-12));
+    assert!((p.e() - expect).abs() < 1e-9, "{p:?}");
+    let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|c| a[c] * b[c]).sum::<f64>();
+    assert!(dot(p.free[0], p.free[1]).abs() < 1e-12, "square to each other");
     let a = m.nodes[m.members[k].i].point;
     let b = m.nodes[m.members[k].j].point;
-    let along: f64 = (0..3).map(|c| (b[c] - a[c]) * p.offset[c]).sum();
-    assert!(along.abs() < 1e-9, "across the member");
+    let d: [f64; 3] = std::array::from_fn(|c| b[c] - a[c]);
+    for r in &p.free {
+        assert!(dot(d, *r).abs() < 1e-9, "across the member");
+    }
+    let mut with = m.clone();
+    apply(&mut with, &list);
+    assert_eq!(with.members[k].offsets, m.members[k].offsets, "not in the solve");
+    assert!(with.has_offsets());
 }
 
 /// A shift in the file goes into the model as the level 4 analysis takes
@@ -236,8 +246,9 @@ fn a_shift_in_the_file_is_offset_as_level_4_takes_it() {
             .unwrap();
     let k = level4.members.iter().position(|x| x.id == "D1").unwrap();
     let end = usize::from(level4.nodes[level4.members[k].j].id == "N2");
-    let (plus, _) = offsets(&simple, &e, 1.0);
+    let (plus, _) = offsets(&simple, &e);
     let o = plus.iter().find(|o| o.member == k && o.end == end).unwrap();
+    assert!(o.free.is_empty(), "its sign known: in the solve");
     for c in 0..3 {
         assert!(
             (o.offset[c] - level4.members[k].offsets[end][c]).abs() < 1e-12,

@@ -1,7 +1,9 @@
 # Estimated eccentricities
 
 *Built 2026-11-19, in active development, not approved yet* (roadmap
-O45, steps A1–A3; owner's decisions of 2026-11-19). How the option
+O45, steps A1–A3; owner's decisions of 2026-11-19; an offset of unknown
+sign in its member's own check only, the owner's decision of the same day,
+built the same day). How the option
 **Estimated eccentricities** (OHL-Structure: Results; [user
 guide](../user-guide/structure-analysis.md)) gives a level 3 lattice tower
 the sideways shifts of its member ends that the [joint
@@ -79,26 +81,45 @@ offset, exactly as a connection's `shift` at level 4:
   offset, n out of the face (u × the member's direction). An end with no
   direction to measure in (nothing at the joint, or in line) is left out:
   **NOT ON THE SAFE SIDE**, said with the ends.
-- In the solve the end is tied rigidly to the joint; where a frame meets
-  the joint the frames carry the moment, where only bars meet it the
-  member's own check takes the whole moment N·e, uniform along it (on the
-  safe side for it, [as at level 4](structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+- An offset whose sign is known (laid out, given, estimated: s · u) is
+  the member's rigid end offset: in the solve the end is tied rigidly to
+  the joint; where a frame meets the joint the frames carry the moment,
+  where only bars meet it the member's own check takes the whole moment
+  N·e, uniform along it (on the safe side for it, [as at level
+  4](structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
 
-**The signs not known.** An upper bound's sign is not known (a hand
-detail may move the end either way), nor is the side of a plate's offset
-(the estimates do not place the plate). The cases are therefore solved
-**three times** — without the estimates, with them (the upper bounds and
-plates' offsets one way), with the upper bounds and plates' offsets the
-other way — and each member, plate and weld takes its **largest usage**
-of the solves (its forces and what governs from that solve, said in what
-governs). With every sign known (no upper bound, no plate's offset) two
-solves.
+**The signs not known** (the owner's decision of 2026-11-19). An upper
+bound's sign is not known (a hand detail may move the end either way),
+nor is the side of a plate's offset (the estimates do not place the
+plate). Such an offset — an upper bound's shift s · u, a plate's offset
+p · n, each a part of its own — is **taken only in its member's own
+check**: never in the solve, at a joint a frame meets as where only bars
+meet it, the moment N·e **whole and sign-free** — about each of the
+member's axes the sizes of its parts' moments added (the worst of their
+signs), uniform along it, with the sign that adds to the moment the solve
+gave ([offsets of unknown sign](structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+The cases are solved **twice** — without the estimates and with them —
+and each member, plate and weld takes its **larger usage** of the two
+(its forces and what governs from that solve, said in what governs).
+Before (the first build of the same day) they were solved a third time
+with the upper bounds the other way, and two such ends at one frame
+joint were left with their signs not mixed — said not on the safe side;
+on some real towers the solve with an upper bound at a frame joint did
+not settle (below).
 
 *Conservative assumptions:*
 
 - *the solve without the estimates is in the envelope* — an estimate may
   not be built as planned (the joint detailed otherwise, concentric): a
   member never gets less than without the option (on the safe side);
+- *an offset of unknown sign in its member's own check, whole and
+  sign-free* — the member holds the whole moment N·e of its end whatever
+  the sign, its parts' moments added by size about each axis; nothing of
+  it goes to the frames at the joint, which are relieved of nothing (a
+  statically admissible state, the joint in balance with the member
+  holding it all: on the safe side for the member, and by the lower-bound
+  theorem for the structure, its members being ductile); uniform along
+  the member, the most onerous shape for its buckling;
 - *the upper bound is the shift limit* (and the plate case's offset at
   step 4's limit): the most the layout itself allows; the owner's bound
   of 2026-11-19. **A hand detail that shifts an end farther is not
@@ -109,14 +130,12 @@ solves.
 
 **NOT ON THE SAFE SIDE (said where it applies):**
 
-- *two or more ends whose sign is not known at one joint where a frame
-  meets it*: their moments are shared by the frames in the solve, and the
-  envelope takes their signs all one way and all the other, not mixed —
-  a mix may be worse for the frames. The results name such joints
-  ("NOT ON THE SAFE SIDE: at N joint(s) where a frame meets two or more
-  ends whose offset's sign is not known …"). Exact: every mix of signs (2ⁿ
-  solves), or the moments of those ends taken by the members alone as at
-  a joint of bars (a change of the core's solve: asked, not built).
+- *the end shears N·e / L* such an end moment needs at the member's two
+  joints are not put into the solve (of the order of e / L of its force,
+  for the members around; as for every moment taken in a member's own
+  check, [level 4](structures-fe.md#eccentric-member-ends-rigid-end-offsets));
+- *a cable's end* with an offset of unknown sign: a cable cannot bend, its
+  moment left out (said);
 - *an extension's own members* (a leg extension's piece): the layout plans
   the body's joints only; their ends stay at the work points, as without
   the option — said.
@@ -134,13 +153,15 @@ connections' own shifts) and on a model file; said.
 
 The run's notes say how many ends have an offset and from where — *laid
 out*, *given*, *estimated from its plan*, **upper bound at N end(s)** —,
-the shift limit, how many upper bounds carry a plate's offset, the solves
-and the time the estimates took. Each case's note on eccentric member
-ends reads *(the estimated eccentricities)*. A member with an end of them
-has its eccentric words followed by the sources, e.g. `[estimated at N2;
-upper bound at N7]`; where a solve other than the one with the estimates
-governs, what governs ends with *(without the estimated eccentricities)*
-or *(with the upper bounds the other way)*.
+the shift limit, how many upper bounds carry a plate's offset, the solves,
+how many ends have an offset of unknown sign (in their members' own
+checks) and the time the estimates took. Each case's note on eccentric
+member ends reads *(the estimated eccentricities)*. A member with an end
+of them has its eccentric words followed by the sources, e.g.
+`[estimated at N2; upper bound at N7]`, an offset of unknown sign as *N7 e
+30 mm, its sign not known, … in its own check, whole and sign-free*;
+where the solve without the estimates governs, what governs ends with
+*(without the estimated eccentricities)*.
 
 ## An example
 
@@ -153,21 +174,30 @@ room on their plate: *upper bound*, 30 mm.
 
 | | legs as trusses | legs as frames |
 |---|---|---|
-| R1's offset | 30 mm, only bars at N2: in R1's own check (0.08 kN m, uniform) | 30 mm, carried by the legs' frames (0.07 kN m) |
-| R1's usage, off → on | 16.3 % → 20.0 % | 16.3 % → 16.3 % (the solve without the estimates governs) |
-| D1's usage, off → on | 16.5 % → 16.5 % | 16.5 % → 18.1 % (the upper bound the other way governs) |
-| the legs | unchanged | their moments rise; a single angle checked for its axial force only says what the bending would add, **not on the safe side** (as for any frame moment: [single angles' end moments](structures-fe.md)) |
+| R1's offset | 30 mm, its sign not known: in R1's own check (0.08 kN m, uniform, sign-free) | the same: in R1's own check, not in the legs' frames |
+| R1's usage, off → on | 16.3 % → 20.0 % | 16.3 % → 20.0 % |
+| D1's usage, off → on | 16.5 % → 16.5 % | 16.5 % → 16.5 % |
+| the legs | unchanged | unchanged (nothing of R1's bound in the solve) |
+
+Before the owner's decision of 2026-11-19 (three solves, the bound in the
+solve where a frame meets N2): with the legs as frames R1 16.3 % → 16.3 %
+(the legs' frames carrying its moment), D1 16.5 % → 18.1 % (the bound the
+other way governing) and the legs' moments rising — the moment shared by
+the frames, the signs not mixed.
 
 The notes: *1 member end with an offset of 3 the layout's planner takes —
 0 laid out, 0 given, 2 estimated from its plan, upper bound at 1 end (the
-30 mm shift limit); … the largest of 3 solves*.
+30 mm shift limit); … the larger of 2 solves (without them, with them); at
+1 end(s) the offset's sign is not known …: never in the solve, its moment
+N·e taken whole and sign-free in the member's own check, at frame joints
+too*.
 
 ## Time
 
 The estimates cost the layout's planning without its clash rounds — on
 a lattice tower of a couple of thousand members a few seconds, about a
-third of a whole *Lay out joints* — and the cases are solved two or three
-times (a case of such a tower takes a fraction of a second). OHL-Structure
+third of a whole *Lay out joints* — and the cases are solved twice (a case
+of such a tower takes a fraction of a second). OHL-Structure
 shows both, measured, after each run beside the option.
 
 ## Measured on real towers (A3, 2026-11-19)

@@ -2617,7 +2617,16 @@ without a direction left out and said in `EndDesign::notes`).
 `node`, `offset`, `e`, `carried` = a frame member meets the joint),
 `Model::has_offsets`. The solver ties each offset end rigidly to its
 joint where the joint has rotations (`offsets::rigid`, the element
-between its offset ends), else leaves it out. Said by
+between its offset ends), else leaves it out. Since 2026-11-19 (the
+owner's decision on O45 A1) `Member::free_offsets` (`[Vec<[f64; 3]>; 2]`,
+m, structure axes, per end; empty by default, never written to a file,
+set by the estimated eccentricities only): offsets whose **sign is not
+known**, each part its own — never in the solve, only in the member's own
+check (`offsets::uncarried_moments`: about each local axis the sizes of
+the parts' moments added, with a part of known sign left out of the solve
+where only bars meet; `offsets::free_moment`), at frame joints too;
+`EccentricEnd::free` and `free_e()`; `Model::validate` refuses one not
+finite. Said by
 `offsets::eccentricity_words` (in what governs after `check::SHIFTED`,
 `[shifted: …]`; `capacity_note` counts them), `eccentricity_note`
 (per case: the ends, those left out with their moment; the CLI, the
@@ -3202,7 +3211,9 @@ shift_limit, seconds }`, each `EstimatedEnd` member, joint, `source`
 signed; an upper bound's size), `towards` (the member its shift is
 measured towards; none: the joint's leg), `plate` (a plate's offset out of
 the face, m), `why` (an upper bound's) —, `offsets` (ends with an offset
-in the model), `solves` (2 or 3), `solve_seconds`). Plain data in memory;
+in the model), `sign_free` (ends with an offset of unknown sign, in their
+members' own checks; 2026-11-19), `solves` (2; 2 or 3 before the owner's
+decision of 2026-11-19 on A1), `solve_seconds`). Plain data in memory;
 nothing new in any file format.
 
 **Estimated eccentricities** (2026-11-19, O45 A1–A2;
@@ -3213,12 +3224,15 @@ nothing new in any file format.
 and reads each joint's `JointPlan` (`ends`; the members left,
 `hand_members`, with the new `off_flange: Vec<(member, leg thickness)>` —
 a plate in its own plane would be needed — and `hand_hosts: Vec<(member,
-host)>` — what it would bolt onto); `offsets(model, &estimates, sign)` →
-`Vec<EndOffset { member, end, offset, source }>` and notes, `apply` sets
-them as `Member::offsets`; `envelope(with, without, other, &estimates)`
-keeps each member's and plate's largest usage of the solves;
-`mixed_sign_joints` names the frame joints with two or more ends of
-unknown sign; `option_on` / `set_option` read and write the option in the
+host)>` — what it would bolt onto); `offsets(model, &estimates)` →
+`Vec<EndOffset { member, end, offset, free, source }>` (`offset` of known
+sign; `free` the parts of unknown sign — an upper bound's shift, a plate's
+offset — since 2026-11-19, the owner's decision on A1; `e()`) and notes,
+`apply` sets them as `Member::offsets` and `Member::free_offsets`;
+`envelope(with, without, &estimates)` keeps each member's and plate's
+larger usage of the two solves (before: a third solve with the upper
+bounds the other way, and `mixed_sign_joints`, both removed);
+`option_on` / `set_option` read and write the option in the
 layout's record (`estimated_eccentricities = true`, below);
 `presets_beside(dir)` reads `Connections/connection-presets.ohlcp`.
 Nothing of the estimates is written into any file.
