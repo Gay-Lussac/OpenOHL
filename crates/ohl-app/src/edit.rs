@@ -24,6 +24,16 @@ use crate::model::Model;
 /// at once after an edit ([`Model::sync`]).
 const KEEP_LIVE: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// An edit's report with the routes outside the working set it made out of
+/// date, on a line of its own ([`crate::notices::plain`] keeps it in the
+/// short sentence).
+fn with_notice(report: String, notice: Option<String>) -> String {
+    match notice {
+        Some(n) => format!("{report}\n{n}"),
+        None => report,
+    }
+}
+
 /// Why an edit was not made.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EditError {
@@ -207,7 +217,50 @@ impl Model {
         let viewer = ohl_session::annotations::only(&command);
         let (session, user) = self.session_as(viewer)?;
         let applied = session.apply(&user, command)?;
+        let notice = applied.notice.clone();
         self.sync(what, applied, started)
+            .map(|m| with_notice(m, notice))
+    }
+
+    /// The routes the user edits (towers shared by several routes, phase
+    /// 8; none: every route, as a project without a working set).
+    pub fn working_set(&self) -> Option<std::collections::BTreeSet<String>> {
+        let e = self.editing.as_ref().ok()?;
+        e.session.working_set(&e.user).cloned()
+    }
+
+    /// Gives the user the working set `routes` (none: every route).
+    pub fn set_working_set(
+        &mut self,
+        routes: Option<std::collections::BTreeSet<String>>,
+    ) -> Result<(), EditError> {
+        let e = self
+            .editing
+            .as_mut()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?;
+        let user = e.user.clone();
+        e.session.set_working_set(&user, routes)?;
+        Ok(())
+    }
+
+    /// The routes whose results are out of date (a change of a tower they
+    /// share made by a user without them in the working set), and why.
+    pub fn stale_routes(&self) -> std::collections::BTreeMap<String, ohl_session::shared::Stale> {
+        self.editing
+            .as_ref()
+            .ok()
+            .and_then(|e| e.session.stale_routes().ok())
+            .unwrap_or_default()
+    }
+
+    /// Marks route `route`'s results up to date.
+    pub fn clear_stale(&mut self, route: &str) -> Result<(), EditError> {
+        let e = self
+            .editing
+            .as_ref()
+            .map_err(|why| EditError::ReadOnly(why.clone()))?;
+        e.session.clear_stale(&e.user, route)?;
+        Ok(())
     }
 
     /// The session edited and the user editing it — for `viewer` work
@@ -244,7 +297,9 @@ impl Model {
         let (session, user) = self.session_as(true)?;
         let applied = session.undo(&user);
         let applied = applied.map_err(|e| self.viewer_refusal(e))?;
+        let notice = applied.notice.clone();
         self.sync("undo", applied, started)
+            .map(|m| with_notice(m, notice))
     }
 
     /// Redoes the user's last undo.
@@ -256,7 +311,9 @@ impl Model {
         let (session, user) = self.session_as(true)?;
         let applied = session.redo(&user);
         let applied = applied.map_err(|e| self.viewer_refusal(e))?;
+        let notice = applied.notice.clone();
         self.sync("redo", applied, started)
+            .map(|m| with_notice(m, notice))
     }
 
     /// The sections through structure `id`.

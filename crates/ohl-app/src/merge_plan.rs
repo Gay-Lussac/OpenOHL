@@ -685,10 +685,21 @@ fn merge_elsewhere(
             let theirs_state = s.revision_state(theirs).map_err(text)?;
             let (patch, kept) =
                 keep_both(&base_state, &before, &theirs_state, None, choices).map_err(text)?;
-            let (merged, conflicts) =
+            let (mut merged, conflicts) =
                 merge_states_with(&base_state, &before, &theirs_state, &patch, choices);
             raw.conflicts = conflicts;
             raw.conflicts.extend(kept);
+            // A tower changed on one side breaking what the other put on
+            // it, as the session's merge finds it (phase 8).
+            ohl_session::shared::connection_conflicts(
+                &base_state,
+                &before,
+                &theirs_state,
+                &mut merged,
+                &mut raw.conflicts,
+                choices,
+                s.shared_rules_in_use(),
+            );
             merged
         }
     };
@@ -738,11 +749,20 @@ fn revert(s: &Session, revision: &str, choices: &Choices) -> Result<Raw, String>
         ));
     };
     let working = s.working_state().map_err(text)?;
-    let (merged, conflicts) = merge_states(
-        &s.revision_state(&id).map_err(text)?,
+    let (base_state, theirs_state) = (
+        s.revision_state(&id).map_err(text)?,
+        s.revision_state(parent).map_err(text)?,
+    );
+    let (mut merged, mut conflicts) = merge_states(&base_state, &working, &theirs_state, choices);
+    // As the session's revert finds them (phase 8).
+    ohl_session::shared::connection_conflicts(
+        &base_state,
         &working,
-        &s.revision_state(parent).map_err(text)?,
+        &theirs_state,
+        &mut merged,
+        &mut conflicts,
         choices,
+        s.shared_rules_in_use(),
     );
     let settled = conflicts.iter().all(|c| c.chosen.is_some());
     let nothing = settled && merged == working;

@@ -656,6 +656,7 @@ impl TablePage {
         };
         let mut asks = Asks::default();
         route_note(ui, kind, model);
+        stale_note(ui, kind, model);
         self.toolbar_ui(ui, &cx, &mut asks, &rows);
         self.confirm_ui(ui, &mut asks);
         weather_cases_note(ui, kind, model);
@@ -1529,6 +1530,28 @@ fn columns_of(kind: TableKind, plugin_columns: &[PluginColumn]) -> Vec<PageColum
             (Cow::Owned(title), width, Yes, Cow::Owned(help))
         }))
         .collect()
+}
+
+/// Routes whose results are out of date (a tower they share changed by a
+/// user working without them: phase 8), said on the routes' table.
+fn stale_note(ui: &mut egui::Ui, kind: TableKind, model: &Model) {
+    if kind != TableKind::Routes {
+        return;
+    }
+    for (route, s) in model.stale_routes() {
+        let last = s.notices.last().map_or(String::new(), |n| {
+            format!(" — last: {} by {} (log entry {})", n.what, n.user, n.seq)
+        });
+        ui.label(
+            egui::RichText::new(format!(
+                "Route {route}: results out of date, {} change(s){last} (View › Editable \
+                 routes marks it up to date)",
+                s.count
+            ))
+            .small()
+            .color(ui.visuals().warn_fg_color),
+        );
+    }
 }
 
 /// The route worked on: its rows only (owner, 2026-11-01), said.
