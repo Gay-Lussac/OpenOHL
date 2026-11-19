@@ -15,11 +15,18 @@
 //! joint checks and in the layout (their steel from their cut; on the safe
 //! side).
 //!
+//! Pieces of a **leg** with bolts (their own or their member's: the
+//! import's splice bolts, at both ends of every leg member) are proposed
+//! one part too, as **leg splice places** (O44 J7, the owner's rule of
+//! 2026-11-19: "a change of section is a splice; the same section is one
+//! part unless marked"), flagged [`InLine::splice_bolts`] and listed with
+//! the leg splices ([`crate::leg_splices::leg_splices`]), not with these:
+//! confirmed, their bolts are not checked at this joint — **not on the
+//! safe side** where a splice of one section is really there (to mark by
+//! hand, a splice given here).
+//!
 //! Not proposed, and said why:
 //!
-//! - pieces of a **leg** with bolts (their own or their member's): a leg
-//!   splice — the splice places are J7's (a command of their own proposing
-//!   them, the user confirming), not this one's;
 //! - a **splice given** at the joint naming either piece, a connection's
 //!   `kind` given at either end, either end given by hand to bolt onto
 //!   something else, or bolts given at either end: the joint is detailed
@@ -46,8 +53,8 @@ use crate::layout_run::LayoutRecord;
 
 /// How far apart the rolls of two pieces in line may be and still be
 /// proposed one part, degrees: the flatness the joint details allow a leg
-/// bolted ([`crate::FLAT_OFF`]) — **the program's value, not a
-/// standard's**; confirming writes both the roll half-way between.
+/// bolted ([`crate::FLAT_OFF`], 2° — the owner's value of 2026-11-19, not a
+/// standard's); confirming writes both the roll half-way between.
 pub const ROLL_TOLERANCE_DEG: f64 = crate::joints::FLAT_OFF;
 
 /// Two pieces in line through a joint: proposed one part, or not and why.
@@ -64,6 +71,11 @@ pub struct InLine {
     /// Their rolls apart (within [`ROLL_TOLERANCE_DEG`]): the one roll
     /// confirming writes to both, radians; none: alike already.
     pub roll: Option<f64>,
+    /// Pieces of a leg with bolts (O44 J7): a leg splice place, proposed
+    /// one part by the owner's rule (the same section is one part unless
+    /// marked) and listed with the leg splices, not with the pieces in
+    /// line.
+    pub splice_bolts: bool,
 }
 
 impl InLine {
@@ -153,6 +165,7 @@ pub fn in_line_pieces(t: &StructureType, joints: Option<&BTreeSet<String>>) -> V
                     onto: b.id.clone(),
                     roll: roll.filter(|_| not.is_none()),
                     not,
+                    splice_bolts: leg_with_bolts(t, &n.id, &a.id, &b.id),
                 });
             }
         }
@@ -239,6 +252,13 @@ fn why_not(t: &StructureType, record: &LayoutRecord, j: &str, a: &str, b: &str) 
             ));
         }
     }
+    None
+}
+
+/// Pieces `a` and `b` at joint `j` are of a leg (either) with bolts (either:
+/// their members' design data, or given at the end): a leg splice place
+/// (O44 J7).
+fn leg_with_bolts(t: &StructureType, j: &str, a: &str, b: &str) -> bool {
     let member = |id: &str| t.members.iter().find(|m| m.id == id);
     let design = |id: &str, key: &str| -> Option<toml::Value> {
         member(id)?.design.as_ref()?.get(key).cloned()
@@ -254,15 +274,7 @@ fn why_not(t: &StructureType, record: &LayoutRecord, j: &str, a: &str, b: &str) 
                 .and_then(|c| c.bolts.as_ref())
                 .is_some_and(|b| b.count > 0)
     };
-    if (leg(a) || leg(b)) && (bolted(a) || bolted(b)) {
-        return Some(
-            "pieces of a leg with bolts: a leg splice — where the splices are is proposed by \
-             a command of its own (J7, to come), not here; until then each piece ends at the \
-             joint (on the safe side)"
-                .into(),
-        );
-    }
-    None
+    (leg(a) || leg(b)) && (bolted(a) || bolted(b))
 }
 
 /// The pieces `list` proposed (those with no reason against) written one

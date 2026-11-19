@@ -349,6 +349,7 @@ impl StructureApp {
         let mut cancel = false;
         let mut usage_asked = false;
         let mut in_line: Option<Vec<ohl_structure_link::InLine>> = None;
+        let mut leg_places: Option<LegPlaces> = None;
         let groups: Vec<String> = self
             .file
             .as_ref()
@@ -587,6 +588,7 @@ impl StructureApp {
                     Some(p) => {
                         layout_summary(ui, p);
                         in_line = layout_in_line(ui, p);
+                        leg_places = layout_leg_splices(ui, p);
                         layout_changes(ui, p);
                         layout_close_ups(ui, &mut w.shown, &mut w.views, p, dark);
                         usage_asked =
@@ -639,6 +641,45 @@ impl StructureApp {
                         not.join("; ")
                     ),
                     true,
+                ),
+                Err(e) => (e, true),
+            });
+        }
+        // J7 (the owner's decisions of 2026-11-19): the leg splice places
+        // confirmed — the same section one part, a change of section
+        // spliced — one undo step; the preview worked out again.
+        if let Some((one, splices)) = leg_places {
+            // (Provisional bolts where a piece has none: the preset for the
+            // class `leg`, else the bolt picked.)
+            let bolts = self.bolt_library();
+            let presets = self.preset_list();
+            let s = w.settings(&bolts.0);
+            let (areas, _) = ohl_structure_link::presets_by_class(&w.presets, &presets, &bolts.0);
+            let bolt = areas.get("leg").cloned().or(s.bolt);
+            let asked = one.len() + splices.len();
+            let r = self.file.as_mut().map(|f| {
+                f.edit(&format!("Leg splice places ({asked})"), |doc, t| {
+                    ohl_structure_link::leg_splices::confirm_places(
+                        doc,
+                        t,
+                        &one,
+                        &splices,
+                        bolt.as_ref(),
+                    )
+                })
+            });
+            self.message = r.map(|r| match r {
+                Ok((n, m, not)) => (
+                    format!(
+                        "{m} leg splice(s) written, {n} pair(s) of leg pieces one part (one undo \
+                         step){}",
+                        if not.is_empty() {
+                            String::new()
+                        } else {
+                            format!("; not: {}", not.join("; "))
+                        }
+                    ),
+                    !not.is_empty(),
                 ),
                 Err(e) => (e, true),
             });
@@ -887,7 +928,7 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
 
 /// The help of the pieces in line (O44 J9).
 pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \
-     turned alike within 5°), with nothing given there of how they are joined: the layout proposes \
+     turned alike within 2°), with nothing given there of how they are joined: the layout proposes \
      them one part (continuous) for you to confirm. Until confirmed each piece ends at the joint \
      in the joint checks and in the layout, its steel from its cut (on the safe side) — never a \
      silent default. Confirming writes both ends one part in one undo step (rolls a little \
@@ -898,13 +939,17 @@ pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a join
 /// each joint's with a button, and *Confirm all*; those not proposed with
 /// why. The pieces to confirm when a button was pressed.
 fn layout_in_line(ui: &mut egui::Ui, p: &Preview) -> Option<Vec<ohl_structure_link::InLine>> {
-    let list = &p.run.in_line;
+    // (The pieces of a leg with bolts are leg splice places: J7's list.)
+    let list: Vec<&ohl_structure_link::InLine> =
+        p.run.in_line.iter().filter(|x| !x.splice_bolts).collect();
     if list.is_empty() {
         return None;
     }
     let mut out = None;
-    let yes: Vec<&ohl_structure_link::InLine> = list.iter().filter(|x| x.proposed()).collect();
-    let no: Vec<&ohl_structure_link::InLine> = list.iter().filter(|x| !x.proposed()).collect();
+    let yes: Vec<&ohl_structure_link::InLine> =
+        list.iter().copied().filter(|x| x.proposed()).collect();
+    let no: Vec<&ohl_structure_link::InLine> =
+        list.iter().copied().filter(|x| !x.proposed()).collect();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         ui.strong(format!(
@@ -973,6 +1018,141 @@ fn layout_in_line(ui: &mut egui::Ui, p: &Preview) -> Option<Vec<ohl_structure_li
                 }
             });
     });
+    out
+}
+
+/// The leg splice places to confirm: the pieces of one section one part,
+/// the splices.
+type LegPlaces = (
+    Vec<ohl_structure_link::InLine>,
+    Vec<ohl_structure_link::LegSplice>,
+);
+
+/// The help of the leg splice places (O44 J7).
+pub const LEG_SPLICES_HELP: &str = "Where a leg's pieces meet in line (the owner's rule of \
+     2026-11-19): a change of section is a splice — proposed with covers outer and inner on each \
+     leg bolted, as thick as the thicker piece's leg (the program's starting value, checked as \
+     plates), the import's bolts, else provisional ones; the same section is one part unless \
+     marked — proposed one part (its pieces' bolts then not checked there: not on the safe side \
+     if a splice of one section is really there; mark it by giving the splice by hand). Never \
+     written silently: until confirmed each piece ends at the joint in the joint checks and in \
+     the layout (on the safe side). Confirmed, bracing at the joint may bolt through the \
+     splice's outer cover. One undo step; the preview is then worked out again.";
+
+/// The leg splice places of a preview (O44 J7): the splices and the pieces
+/// of one section proposed, each joint's with a button, and *Confirm all*;
+/// those not proposed with why. What to confirm when a button was pressed.
+fn layout_leg_splices(ui: &mut egui::Ui, p: &Preview) -> Option<LegPlaces> {
+    let one: Vec<&ohl_structure_link::InLine> = p
+        .run
+        .in_line
+        .iter()
+        .filter(|x| x.splice_bolts && x.proposed())
+        .collect();
+    let yes: Vec<&ohl_structure_link::LegSplice> =
+        p.run.splices.iter().filter(|s| s.proposed()).collect();
+    let no: Vec<&ohl_structure_link::LegSplice> =
+        p.run.splices.iter().filter(|s| !s.proposed()).collect();
+    if one.is_empty() && p.run.splices.is_empty() {
+        return None;
+    }
+    let mut out = None;
+    let all = one.len() + yes.len();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.strong(format!(
+            "Leg splices: {} proposed spliced, {} one part",
+            yes.len(),
+            one.len()
+        ))
+        .on_hover_text(LEG_SPLICES_HELP);
+        ohl_ui::tool_window::question(ui, LEG_SPLICES_HELP);
+        if all > 0
+            && ui
+                .button(format!("Confirm all ({all})"))
+                .on_hover_text(
+                    "Writes every proposed leg splice and every leg's pieces of one section one \
+                     part, one undo step",
+                )
+                .clicked()
+        {
+            out = Some((
+                one.iter().map(|x| (*x).clone()).collect(),
+                yes.iter().map(|x| (*x).clone()).collect(),
+            ));
+        }
+    });
+    egui::CollapsingHeader::new(format!("Each leg joint ({all} proposed, {} not)", no.len()))
+        .id_salt("layout-leg-splices")
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("layout-leg-splices-list")
+                .max_height(160.0)
+                .show(ui, |ui| {
+                    let mut joints: Vec<&str> = Vec::new();
+                    for j in yes
+                        .iter()
+                        .map(|s| s.joint.as_str())
+                        .chain(one.iter().map(|x| x.joint.as_str()))
+                    {
+                        if !joints.contains(&j) {
+                            joints.push(j);
+                        }
+                    }
+                    for j in joints {
+                        let s_here: Vec<&ohl_structure_link::LegSplice> =
+                            yes.iter().copied().filter(|s| s.joint == j).collect();
+                        let o_here: Vec<&ohl_structure_link::InLine> =
+                            one.iter().copied().filter(|x| x.joint == j).collect();
+                        ui.horizontal(|ui| {
+                            if ui
+                                .small_button("Confirm")
+                                .on_hover_text("This joint's leg splice place (one undo step)")
+                                .clicked()
+                            {
+                                out = Some((
+                                    o_here.iter().map(|x| (*x).clone()).collect(),
+                                    s_here.iter().map(|x| (*x).clone()).collect(),
+                                ));
+                            }
+                            let mut words: Vec<String> = s_here
+                                .iter()
+                                .map(|s| format!("{} and {} spliced?", s.member, s.onto))
+                                .collect();
+                            words.extend(o_here.iter().map(|x| match x.also() {
+                                Some(a) => format!(
+                                    "{} and {} one part? (the same section; {a})",
+                                    x.member, x.onto
+                                ),
+                                None => format!(
+                                    "{} and {} one part? (the same section)",
+                                    x.member, x.onto
+                                ),
+                            }));
+                            ui.label(format!("{j}: {}", words.join("; ")));
+                        });
+                        // What is assumed, wrapped below the row.
+                        for s in &s_here {
+                            ui.label(
+                                egui::RichText::new(format!("Assumed: {}", s.assumed()))
+                                    .small()
+                                    .weak(),
+                            );
+                        }
+                    }
+                    for s in &no {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{}: not proposed — {}",
+                                s.words(),
+                                s.not.as_deref().unwrap_or_default()
+                            ))
+                            .small()
+                            .weak(),
+                        );
+                    }
+                });
+        });
     out
 }
 

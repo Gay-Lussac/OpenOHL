@@ -362,6 +362,7 @@ impl LayoutRecord {
             && self.rolled.is_empty()
             && self.hand.is_empty()
             && self.oriented.is_empty()
+            && self.provisional.is_empty()
     }
 
     /// Written into `doc` (replacing the record there; none when empty).
@@ -570,6 +571,13 @@ pub struct LayoutRun {
     /// the run: until confirmed each piece ends at the joint (on the safe
     /// side).
     pub in_line: Vec<crate::InLine>,
+    /// The leg splices proposed at the joints asked (O44 J7): pieces in
+    /// line of other sections, both of a leg, proposed spliced for the
+    /// user to confirm ([`crate::leg_splices::confirm`]), or not and why
+    /// (the same section: [`crate::InLine::splice_bolts`] among
+    /// `in_line`). Never written by the run: until confirmed each piece
+    /// ends at the joint (on the safe side).
+    pub splices: Vec<crate::LegSplice>,
 }
 
 impl LayoutRun {
@@ -797,6 +805,9 @@ fn lay_out_once(
         ask.bolts,
         Some(&around),
     )?;
+    // J7: the leg splices proposed (said, never written by the run), from
+    // the joints as planned (the layout's own values taken out).
+    let splices = crate::leg_splices::leg_splices(&around_details, t, Some(&targets));
     // The ends bolting onto nothing named, at the joints asked: the member
     // running through the joint named in the planning copy (as the layout
     // writes it), so that their leg bolted and the turn laying it flat are
@@ -1322,6 +1333,7 @@ fn lay_out_once(
                 notes,
                 seconds: start.elapsed().as_secs_f64(),
                 in_line: in_line.clone(),
+                splices: splices.clone(),
             });
         }
         let mut done = None;
@@ -1398,6 +1410,7 @@ fn lay_out_once(
             notes,
             seconds: start.elapsed().as_secs_f64(),
             in_line: in_line.clone(),
+            splices: splices.clone(),
         });
     }
 }
@@ -1480,43 +1493,15 @@ fn write_join(
         JoinKind::Spliced => {
             // Step 1c: a splice of covers, outer and inner on each leg
             // bolted, both ends onto it (the first free id).
-            let id = (1u64..)
-                .map(|n| format!("S{n}"))
-                .find(|x| !taken.contains(x))
-                .expect("a free id");
-            taken.insert(id.clone());
-            let mut sp = Table::new();
-            sp.insert("id", toml_edit::value(id.as_str()));
-            sp.insert("joint", toml_edit::value(j));
-            let mut list = Array::new();
-            list.push(x.member.as_str());
-            list.push(x.onto.as_str());
-            sp.insert("members", toml_edit::value(list));
-            let mut covers = ArrayOfTables::new();
-            for leg in &x.covers {
-                for face in ohl_structures::connections::CoverFace::ALL {
-                    let mut c = Table::new();
-                    c.insert("face", toml_edit::value(face.as_str()));
-                    c.insert("leg", toml_edit::value(leg.as_str()));
-                    c.insert("thickness", toml_edit::value(crate::mm_text(x.thickness)));
-                    covers.push(c);
-                }
-            }
-            sp.insert("cover", Item::ArrayOfTables(covers));
-            if doc
-                .get("splice")
-                .and_then(Item::as_array_of_tables)
-                .is_none()
-            {
-                doc.insert("splice", Item::ArrayOfTables(ArrayOfTables::new()));
-            }
-            doc["splice"]
-                .as_array_of_tables_mut()
-                .expect("made above")
-                .push(sp);
-            for m in [&x.member, &x.onto] {
-                let _ = conns.set(doc, m, j, "onto", Some(&FieldValue::Word(id.clone())));
-            }
+            let id = write_splice(
+                doc,
+                conns,
+                j,
+                [&x.member, &x.onto],
+                &x.covers,
+                x.thickness,
+                taken,
+            );
             return (vec!["onto"], Some(id));
         }
     };
@@ -1529,6 +1514,94 @@ fn write_join(
         Some(&FieldValue::Word(x.onto.clone())),
     );
     (vec![f, "onto"], None)
+}
+
+/// A `[[splice]]` at joint `j` joining `members` written into `doc`: its
+/// covers outer and inner on each of `legs`, `thickness` thick, both ends
+/// `onto` it; its id the first free `S1`, `S2`… of `taken` (taken then).
+/// Step 1c's, and the leg splices confirmed (O44 J7,
+/// [`crate::leg_splices::confirm`]).
+pub(crate) fn write_splice(
+    doc: &mut DocumentMut,
+    conns: &mut connection_edits::Connections,
+    j: &str,
+    members: [&str; 2],
+    legs: &[ohl_structures::connections::CoverLeg],
+    thickness: f64,
+    taken: &mut std::collections::HashSet<String>,
+) -> String {
+    let id = (1u64..)
+        .map(|n| format!("S{n}"))
+        .find(|x| !taken.contains(x))
+        .expect("a free id");
+    taken.insert(id.clone());
+    let mut sp = Table::new();
+    sp.insert("id", toml_edit::value(id.as_str()));
+    sp.insert("joint", toml_edit::value(j));
+    let mut list = Array::new();
+    for m in members {
+        list.push(m);
+    }
+    sp.insert("members", toml_edit::value(list));
+    let mut covers = ArrayOfTables::new();
+    for leg in legs {
+        for face in ohl_structures::connections::CoverFace::ALL {
+            let mut c = Table::new();
+            c.insert("face", toml_edit::value(face.as_str()));
+            c.insert("leg", toml_edit::value(leg.as_str()));
+            c.insert("thickness", toml_edit::value(crate::mm_text(thickness)));
+            covers.push(c);
+        }
+    }
+    sp.insert("cover", Item::ArrayOfTables(covers));
+    if doc
+        .get("splice")
+        .and_then(Item::as_array_of_tables)
+        .is_none()
+    {
+        doc.insert("splice", Item::ArrayOfTables(ArrayOfTables::new()));
+    }
+    doc["splice"]
+        .as_array_of_tables_mut()
+        .expect("made above")
+        .push(sp);
+    for m in members {
+        let _ = conns.set(doc, m, j, "onto", Some(&FieldValue::Word(id.clone())));
+    }
+    id
+}
+
+/// Provisional bolts `b` written at member `m`'s end at joint `j` (the
+/// bolts' count and bolt or diameter, its gauge lines), as the layout
+/// writes an end's that has none.
+pub(crate) fn write_bolts(
+    doc: &mut DocumentMut,
+    conns: &mut connection_edits::Connections,
+    m: &str,
+    j: &str,
+    b: &BoltArea,
+) {
+    let _ = conns.set(
+        doc,
+        m,
+        j,
+        "bolts",
+        Some(&FieldValue::Bolts {
+            count: b.count,
+            bolt: b.bolt.clone(),
+            diameter: b.bolt.is_none().then_some(b.diameter),
+            hole: None,
+            grade: None,
+        }),
+    );
+    let _ = conns.set(doc, m, j, "gauge_lines", Some(&FieldValue::Count(b.lines)));
+}
+
+/// The ids in use in `doc` and `t`: its plates', splices' and members'.
+pub(crate) fn ids_of(doc: &DocumentMut, t: &StructureType) -> std::collections::HashSet<String> {
+    let mut out = ids_in(doc);
+    out.extend(t.members.iter().map(|m| m.id.clone()));
+    out
 }
 
 /// The ids in use in `doc`: its plates', splices' and members'.
@@ -2384,12 +2457,18 @@ fn strip_joint(
         let key = (c.member.clone(), c.joint.clone());
         let auto = rec.ends.remove(&key).unwrap_or_default();
         let mut go: BTreeSet<&str> = auto.iter().map(String::as_str).collect();
+        // Onto a splice not the layout's (given by hand, or a leg splice the
+        // user confirmed, O44 J7).
+        let confirmed = c.onto.as_deref().is_some_and(|o| {
+            !made.iter().any(|m| m == o) && t.splices.iter().any(|s| s.id == o && s.joint == j)
+        });
         if replace_hand {
             go.extend(["cut", "shift"]);
             // `onto` given by hand: a member or a plate of the joint —
             // not that of pieces given one part through the joint (J9: what
-            // the steel is, the user's, not a layout value).
-            if !(crate::in_line::one_part(c.kind) && !auto.contains("kind")) {
+            // the steel is, the user's, not a layout value), nor a splice's
+            // (J7, the same).
+            if !(crate::in_line::one_part(c.kind) && !auto.contains("kind")) && !confirmed {
                 go.insert("onto");
             }
         }
@@ -2405,7 +2484,12 @@ fn strip_joint(
             }
             let _ = w.conns.set(doc, &c.member, j, f, None);
         }
-        rec.provisional.remove(&key);
+        // (The provisional bolts of an end onto a splice the user confirmed,
+        // O44 J7: written with it, not the layout's values — kept, and
+        // still provisional.)
+        if !(confirmed && !auto.contains("bolts")) {
+            rec.provisional.remove(&key);
+        }
     }
     // A connection left with nothing in it goes now (as the edit crate's
     // own edits do: where the ones written again then stand in the file

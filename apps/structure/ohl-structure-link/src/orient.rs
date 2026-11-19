@@ -25,10 +25,11 @@
 //!   (each flange off its face by half the difference, said). A built-up
 //!   leg of two angles in a star or four in a cross is turned the same way
 //!   (its legs along the faces); two angles back to back are left.
-//! - **Plan and hip members** — horizontal angles (within [`FLAT_OFF`])
-//!   lying in no steep face of the tower: one leg flat (horizontal) and the
-//!   other pointing down (assumed: no water lying in it — a choice of this
-//!   command, not a standard's), the flat leg towards the tower's middle.
+//! - **Plan and hip members** — horizontal angles (within
+//!   [`HORIZONTAL_OFF`]) lying in no steep face of the tower: one leg
+//!   flat (horizontal) and the other pointing down (assumed: no water
+//!   lying in it — a choice of this command, not a standard's), the flat
+//!   leg towards the tower's middle.
 //! - **Bracing** is left: the layout lays it flat on what it bolts onto
 //!   ([`crate::lay_out`], turned only where that helps).
 //!
@@ -46,7 +47,7 @@ use ohl_sections::{SectionLibrary, Shape};
 use ohl_structures::{LibraryItem, StructureType};
 use toml_edit::DocumentMut;
 
-use crate::joints::FLAT_OFF;
+use crate::joints::HORIZONTAL_OFF;
 use crate::layout_run::LayoutRecord;
 
 /// Two members running on in line through a joint: within this angle of
@@ -354,8 +355,8 @@ pub fn orient_angles(
         .collect();
     // The lines of legs and chords next to each other: joined by a member
     // (a face's bracing, a plan member) from a joint of one to a joint of
-    // the other, lying in one plane with both (within [`FLAT_OFF`]). Only
-    // those make a member's faces: a portal's other column, a far
+    // the other, lying in one plane with both (within [`HORIZONTAL_OFF`]).
+    // Only those make a member's faces: a portal's other column, a far
     // crossarm's chords, an arm's chord joined to a leg by the arm's
     // bracing are not its neighbours however parallel.
     let mut lines_at: BTreeMap<&str, Vec<(usize, usize)>> = BTreeMap::new();
@@ -375,7 +376,7 @@ pub fn orient_angles(
         .iter()
         .map(|n| (n.id.as_str(), n.point.map(|v| v.si())))
         .collect();
-    let flat = FLAT_OFF.to_radians().sin();
+    let flat = HORIZONTAL_OFF.to_radians().sin();
     let mut next_to: BTreeSet<(usize, usize)> = BTreeSet::new();
     for m in &t.members {
         let (Some(a), Some(b)) = (
@@ -613,7 +614,7 @@ pub fn orient_angles(
         if target.contains_key(&k) || l.class_leg || !l.angle || !l.turnable {
             continue;
         }
-        if l.x[2].abs() <= FLAT_OFF.to_radians().sin() {
+        if l.x[2].abs() <= HORIZONTAL_OFF.to_radians().sin() {
             let len = norm(sub(l.b, l.a));
             let tol = IN_FACE + 0.005 * len;
             let on_steep = steep.iter().any(|f| {

@@ -59,7 +59,8 @@ from here. The owner's order of 2026-11-19:
    default; the owner's answers of 2026-11-19 under O45, an offset of
    unknown sign in its member's own check built the same day).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout);
-   J3–J4 built 2026-11-19, in active development, not approved yet).
+   J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
+   not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
    phase 6 built 2026-11-19, in active development, not approved yet —
    the owner's questions under O17).
@@ -2032,16 +2033,57 @@ step, reasons left), and the work stops where it stops paying:
   > keep? (2) Legs are never turned to suit bracing (816 leg ends on the
   > real towers now kept off what they bolt onto, said): keep, or allow it
   > where Orient angles left a leg? (3) J4 saves no time but makes the
-  > joints of a kind identical: keep it on by default? (4) The 5° a leg
-  > may lie off and still bolt flat is the tool's: your shop's value?
+  > joints of a kind identical: keep it on by default? (4) ~~The 5° a leg
+  > may lie off and still bolt flat is the tool's: your shop's value?~~
+  > **Answered 2026-11-19: 2°** (owner: "2° for both", with J9's roll
+  > tolerance; `FLAT_OFF`, built the same day; which members count as
+  > horizontal keeps its 5°, `HORIZONTAL_OFF`).
 - [ ] J5. **Larger shifts once the analysis takes them** (after
   [O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)):
   the shift limit and the welded plate's offset limit growing with the
   member's size, the moment checked instead of the end refused.
 - [ ] J6. **Built-up members**: each angle of a back-to-back or star
   member a surface to bolt onto.
-- [ ] J7. **Leg splices** as decided above, then the bracing bolted
-  through the splice cover; **a weld's sides**.
+- [x] J7a. **Leg splices** as decided above, then the bracing bolted
+  through the splice cover. **Built 2026-11-19, in active development,
+  not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#leg-splices-proposed-j7),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-joint-layout-leg-splices-proposed-bracing-through-the-outer-cover)):
+  Lay out joints' preview proposes the leg splice places — two leg
+  pieces of other sections spliced (covers outer and inner on each leg
+  bolted, the thicker piece's leg thick, the import's bolts, else
+  provisional ones), two of one section with bolts one part (the owner's
+  rule; their bolts then not checked there: NOT ON THE SAFE SIDE where a
+  splice of one section is really there) —, *Confirm* per joint and
+  *Confirm all*, one undo step each, never written silently (step 1c's
+  silent splices gone); confirmed, bracing lapped on a spliced leg's outer
+  face where an outer cover lies bolts through it (seated on the cover,
+  its grip the covers and the leg, the cover checked for its whole force;
+  directly only, else a hand detail). On the 78 real towers (kept
+  privately; J9's proposals confirmed, 2°): every leg place confirmed,
+  joints laid out whole 39.1 % → 41.5 %, ends 53.1 % → 55.3 %, misfits as
+  given 525 → 475; 503 splices, 10 572 pairs one part; 1 336 bracing ends
+  through a cover, 1 242 left (the splice's own bolts in the way — the
+  main limit now); a run again identical 78/78, no time change. The 2°
+  flatness alone (main at 5° against 2°): joints whole 41.9 % → 39.1 %,
+  ends 56.1 % → 53.2 %, misfits as given 605 → 525.
+  > **Owner:** (1) The same section one part by your rule: 10 572 pairs,
+  > their import bolts not checked there — a splice of one section in a
+  > long run would be missed (NOT ON THE SAFE SIDE). Recommended: keep,
+  > and give the shop's longest piece so that a run of one section longer
+  > than it is said. (2) 1 242 bracing ends at a confirmed splice are left
+  > because the splice's own bolts are in their way: recommended next,
+  > the bracing's bolts taken as some of the splice's (one bolt through
+  > the brace, the cover and the leg), then a plate over the cover. (3)
+  > The covers as thick as the thicker leg (the program's value): keep
+  > until the codes size them? Recommended: yes. (4) 554 pairs where the
+  > smaller leg angle nests in the bigger are not proposed (the layout
+  > nests only the biggest pair of a joint): propose them nested for you
+  > to confirm? Recommended: yes. (5) Inner covers stop plates on a leg's
+  > inner face (about 450 clashes): keep both covers (two shear planes)?
+  > Recommended: keep until the shop drawings say otherwise.
+- [ ] J7b. **A weld's sides** (decided above: a `sides` field and its
+  check). Not started.
 - [ ] J8. **Short members**: the class's smaller bolt, one bolt where the
   code's text allows it for a redundant, else a plate shared with the
   neighbouring member.
@@ -2065,10 +2107,13 @@ step, reasons left), and the work stops where it stops paying:
   46.1 % → 41.9 %; nothing confirmed 36.2 % whole, 839 as given; the guard
   alone 42.1 %; a run again identical 78/78; no time change. The leg
   splices (J7) are now the main limit.
-  > **Owner:** (1) the 5° roll tolerance for proposing pieces one part
-  > (the mean roll written; seen 0.1°–1.1°): keep? (2) Not confirmed, the
-  > layout treats the pieces as ending at the joint (fewer joints whole,
-  > almost no misfit of its own): keep? (3) J7 next?
+  > **Owner:** (1) ~~the 5° roll tolerance for proposing pieces one part
+  > (the mean roll written; seen 0.1°–1.1°): keep?~~ **Answered 2026-11-19:
+  > 2°** ("2° for both", with the flatness of J3's question 4; built the
+  > same day); (2) ~~Not confirmed, the layout treats the pieces as ending
+  > at the joint (fewer joints whole, almost no misfit of its own):
+  > keep?~~ **Answered 2026-11-19: stays as it is**; (3) ~~J7 next?~~
+  > J7a built 2026-11-19 (above).
 - Asked (open): shop drawings of real towers, to tune to how the steel
   is really detailed; the owner is looking for example joints
   (2026-11-19) and sent three that day: a bent gusset plate at a corner,

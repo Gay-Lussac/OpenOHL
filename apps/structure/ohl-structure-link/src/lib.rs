@@ -70,6 +70,9 @@ mod joints_tests;
 mod layout_run;
 #[cfg(test)]
 mod layout_run_tests;
+pub mod leg_splices;
+#[cfg(test)]
+mod leg_splices_tests;
 mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;
@@ -122,6 +125,7 @@ pub use layout_run::{
     RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
     plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };
+pub use leg_splices::{LegSplice, leg_splices};
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
     outline_at, plate_solids, prism_faces, prism_faces_capped, section_at, steel_start,

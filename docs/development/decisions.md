@@ -8,6 +8,84 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (joint layout: leg splices proposed, bracing through the outer cover)
+
+**O44 J7a with the owner's decisions of 2026-11-19** ("a change of
+section is a splice; the same section is one part unless marked; a
+command proposes the splice places and the user confirms"; "bracing
+bolted through the outer splice cover: yes, after the splice places";
+built the same day, in active development, not approved yet;
+[theory](../theory/joint-layout.md#leg-splices-proposed-j7),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)):
+
+- **Leg splices proposed**: two pieces of a leg of other sections in line
+  through a joint — a `[[splice]]` with covers outer and inner on each leg
+  bolted, as thick as the thicker piece's leg (the program's starting
+  value, checked as plates), the import's bolts, else provisional ones;
+  two pieces of one section with bolts — one part (J9's proposal, flagged
+  `splice_bolts`, listed with the leg splices). Lay out joints' preview:
+  *Confirm*, *Confirm all*, one undo step each. **Never written
+  silently**: step 1c no longer makes splices itself; until confirmed
+  each piece ends at the joint (on the safe side). Not proposed, said why:
+  given by hand, built up, knees, turned apart, nesting.
+- **Confirmed one part, the same section's bolts are not checked there:
+  NOT ON THE SAFE SIDE** where a splice of one section is really there —
+  the owner's rule; such a splice is marked by giving it by hand.
+- **Bracing through the outer cover**: an end lapped on a spliced piece's
+  leg where an outer cover lies is seated on the cover, its bolts through
+  the cover, the leg and the inner covers; the cover drawn round its
+  bolts and checked for its **whole** force (on the safe side); the end's
+  own checks as a lap (the cover not counted: on the safe side). **NOT ON
+  THE SAFE SIDE**: the cover as a packing (the bolt's bending across it,
+  no rule found in ASCE 10-97 or SIA 263) and the end's extra offset out
+  of the leg (not analysed, as for a plate). The layout lays such ends
+  directly only (else a hand detail; a plate over a cover is not laid
+  out).
+- A run keeps a splice it did not make, its ends' `onto` (also when
+  replacing values given by hand) and their provisional bolts listed. No
+  format change.
+
+Measured on the 78 private real towers (the theory page; 2°, J9's
+proposals confirmed): every leg place confirmed, joints laid out whole
+39.1 % → 41.5 %, ends 53.1 % → 55.3 %, misfits as given 525 → 475; 503
+splices and 10 572 pairs one part; 1 336 bracing ends through a cover,
+1 242 left (the splice's own bolts in the way); a run again identical 78
+of 78. The owner's questions are in the roadmap (O44 J7a).
+
+## 2026-11-19 (owner: 2° for both — a leg's flatness and the roll tolerance of pieces in line)
+
+**The owner's answers to O44 J3 question 4 and J9 questions 1 and 2**
+(owner 2026-11-19: "2° for both"; built the same day, in active
+development, not approved yet):
+
+- **How far a leg bolted may lie off the face it bolts onto and still
+  bolt flat: 2°** (5° before). `ohl_structure_link::FLAT_OFF`, read by
+  Joint details' "turn it" note, the layout (laid flat or onto a plate in
+  its own plane, step 4; the ends' axes along a flange's face; the bent
+  plate's and the welded plate's limits), the whole member's roll (J3:
+  its ends' turns within 2° of each other, each end then within 1° of
+  flat) and Orient angles' window. The value is the owner's, not a
+  standard's: a leg bolted within it is drawn and checked as flat (the
+  bolts pulling it flat) — an assumption, nearer the safe side than 5°.
+- **The roll tolerance of pieces in line proposed one part (J9): 2°**
+  (5° before) — the same constant (`in_line::ROLL_TOLERANCE_DEG` is
+  `FLAT_OFF`).
+- **Not changed:** which members count as horizontal (Orient angles' plan
+  and hip members and its lines in one plane, the secondary bracing of
+  the owner's order of the classes) keeps its 5°, now a constant of its
+  own (`HORIZONTAL_OFF`): it is not how flat a leg bolts, and changing it
+  would move members between classes. The nesting tolerance (5°,
+  `NESTED_ANGLE_DEG`) and the core's 1° for one part are unchanged.
+- **J9 question 2 answered: stays as it is** — pieces in line not
+  confirmed one part each end at the joint, in the checks and in the
+  layout (on the safe side).
+
+No format change. Measured with O44 J7a (78 private real towers, J9's
+proposals confirmed): joints laid out whole 41.9 % → 39.1 %, member ends
+56.1 % → 53.2 %, joints that do not fit 28.8 % → 29.6 % (as given 605 →
+525), pieces in line proposed one part 46 819 → 46 355.
+
 ## 2026-11-19 (joint layout: pieces in line proposed one part, the mutual-host guard)
 
 **O44 J9 with the owner's decisions D15 and D16** (below; built the same

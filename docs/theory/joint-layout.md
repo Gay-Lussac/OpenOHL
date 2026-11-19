@@ -48,7 +48,7 @@ turns them as a lattice tower is built, from the tower's shape alone:
   member), no angle lies in both: the bisector of the angle's legs is
   put on the bisector of the faces, each flange |θ − 90°| / 2 off its
   face (said per member). For a square or rectangular body this is a
-  fraction of a degree; for a triangular crossarm 15° — more than the 5°
+  fraction of a degree; for a triangular crossarm 15° — more than the 2°
   a member is laid flat within, so the bracing there needs a bent plate
   or a hand detail. Faces meeting at less than 45° or more than 135°
   (each flange more than 22.5° off) are taken as no corner: the member
@@ -134,7 +134,7 @@ not bolted and left with "its axis runs out of the face"):
   one part (J9, 2026-11-19) — the piece on the end's side (whose steel
   lies under its bolts: such pieces each end at the joint), the id.
 - **The joint's leg, but in neither of its flanges' planes** (a plan
-  diagonal meeting a vertical post; within 5°): a single angle running
+  diagonal meeting a vertical post; within 2°): a single angle running
   through the joint in a flange's plane of which the end's axis lies (the
   horizontal running through), chosen in the same order. The end then
   bolts flat onto that member, as built; none: the joint's leg kept (and
@@ -162,11 +162,12 @@ and nothing is left for it.
 ## Turned only where it helps
 
 (Owner, 2026-11-18: "only turn where it helps".) A member lying off what
-it bolts onto (more than 5°) is turned by the layout only when
+it bolts onto (more than 2°, `FLAT_OFF`; 5° until the owner's decision of
+2026-11-19) is turned by the layout only when
 
 1. one roll lays it flat at all its ends — those at joints not laid out
    in this run too (**one roll for the whole member**, J3 below): the
-   turns that make each end flat lie within 5° of each other (a turn and
+   turns that make each end flat lie within 2° of each other (a turn and
    a half turn more lay a leg flat alike; an equal-leg angle's other leg a
    quarter turn more); the middle of them is taken, so a turn never spoils
    an end that was flat;
@@ -215,13 +216,15 @@ needs together**:
   centroid), so nothing in the checks changes with it. An unequal angle's
   leg bolted is its design data (the long or short leg in its check):
   never changed by a quarter turn.
-- **Within 5° of each other.** A turn of every end, those lying within
-  5° of each other (each end then within 2.5° of flat after the middle of
-  them is taken; `FLAT_OFF` — **an assumption of the tool**, not a
-  standard's: a leg bolted within 5° of its face is drawn and checked as
-  flat on it, the bolts pulling it flat), as before J3. **Tried and left
-  out** (measured on the private real towers, 2026-11-19): taking a turn
-  that leaves every end within the whole 5° of flat — the ends' turns up
+- **Within 2° of each other.** A turn of every end, those lying within
+  2° of each other (each end then within 1° of flat after the middle of
+  them is taken; `FLAT_OFF` — **the owner's value** (2026-11-19: "2° for
+  both"; 5° before), not a standard's: a leg bolted within 2° of its face
+  is drawn and checked as flat on it, the bolts pulling it flat — **an
+  assumption**, the smaller the nearer the safe side), as before J3.
+  **Tried and left out** (measured on the private real towers,
+  2026-11-19, at the 5° of then): taking a turn that leaves every end
+  within the whole 5° of flat — the ends' turns up
   to 10° apart, an end out of its face's plane counted with it — laid out
   slightly *fewer* member ends (on ten of the towers 16 319 against
   16 336): the ends then lie up to 5° off and run into more after
@@ -481,7 +484,7 @@ bolt within the end distance of a cut is not counted as on the steel.
 (Owner, 2026-11-18: "finaly if the angle at which the profile is coming
 really doesn't allow for it then add a weleded plate that is also bolted
 to the other profiles with the other part of the plate to fix it"; built
-2026-11-19.) An end whose leg bolted lies more than 5° off the flange it
+2026-11-19.) An end whose leg bolted lies more than 2° off the flange it
 bolts onto and that no roll lays flat at both its ends (a hip or plan
 member flat on a horizontal at one end and arriving off the leg's flange
 at the other, a crossarm's face member at the chord) is laid out on two
@@ -499,7 +502,7 @@ their planes meet — a plate bent there, made of two plates welded.
   lie at most 75° off it (`TILT_MAX`, the program's starting value: the
   plate would stand nearly square to the flat one), and it must leave the
   joint away from the heel on an inner face (the angle's other leg) and
-  not run down towards the flange more than 5°.
+  not run down towards the flange more than 2° (`FLAT_OFF`).
 - **On the flange's plane.** Its strip is laid out with the others (its
   cut, a shift) as its section's and its plate's footprint on the
   flange's plane, its lengths along it as they lie on that plane; its
@@ -706,6 +709,13 @@ value (the owner's decision of 2026-11-19: no shop value given).
 
 ## Splices (step 1c)
 
+*Since O44 J7 (2026-11-19) the layout no longer makes these splices
+itself: never written silently, they are proposed with the leg splices
+([below](#leg-splices-proposed-j7)) — both pieces of no leg, with bolts,
+nothing else on them, as here — and written when the user confirms.*
+A splice an older run made is taken out by a run again (as here) and
+proposed again. What follows is the rule as it was:
+
 Two angles in line through the joint (within 5°, their legs along each
 other within 5°: the nesting tolerance), of **other sections** that do
 not nest, **both with their bolts** — where the section changes, a splice
@@ -746,7 +756,7 @@ proposes them).
 not approved yet.) Two pieces of one member line through a joint —
 **the same section**, in line within 1° (the core's angle for one part,
 `CONTINUOUS_ANGLE_DEG`), the same reference and orientation, their rolls
-within 5° — with **nothing given there** of how they are joined are
+within 2° — with **nothing given there** of how they are joined are
 **proposed one part** (`kind = "continuous"`) in the layout's preview,
 for the user to confirm per joint or all at once (*Confirm all*), in one
 undo step. It is **never a silent default**: a run only says them; until
@@ -756,17 +766,18 @@ safe side*: a splice, if there is one, keeps its bolts checked; one part,
 the pieces' bolts there are not a splice (their members' design bolts
 stay at their other ends).
 
+**Pieces of a leg with bolts** (their own or their members' design data)
+are leg splice places since J7 (2026-11-19): proposed one part by the
+owner's rule and listed with the leg splices
+([below](#leg-splices-proposed-j7)).
+
 Not proposed, and said why:
 
-- **pieces of a leg with bolts** (their own or their members' design
-  data): a leg splice — where the splices are is proposed by a command of
-  its own (J7, to come), the user confirming; until then each piece ends
-  at the joint;
 - a **splice given** at the joint naming either piece, a connection's
   `kind` given at either end, an end given by hand to bolt onto something
   else, or bolts given at an end: the joint is detailed as something
   else;
-- other sections, references or orientations, or rolls more than 5°
+- other sections, references or orientations, or rolls more than 2°
   apart.
 
 **Rolls a little apart.** Orient angles turns each piece to its face on
@@ -774,9 +785,9 @@ its own, so pieces of one member often differ by a fraction of a degree
 (on the private real towers up to about a degree). The core reads two
 pieces one part only with the same roll; confirming writes every piece of
 a chain confirmed together the roll half-way between theirs (the mean of
-their rolls) — each turns by at most half the 5°. The 5° is the flatness
-the joint details allow a leg bolted (`FLAT_OFF`): **the program's value,
-not a standard's**. Such a roll is then the user's (no longer the
+their rolls) — each turns by at most half the 2°. The 2° is the flatness
+the joint details allow a leg bolted (`FLAT_OFF`): **the owner's value**
+(2026-11-19: "2° for both"; 5° before), not a standard's. Such a roll is then the user's (no longer the
 layout's: a later run does not turn it back), and the layout never turns
 pieces one part.
 
@@ -798,6 +809,103 @@ joint and its cut is known — the joint checks' own rule. An end that
 would not fit so is left as it was too, said ("laid out, its bolt …
 would not lie within its flange … (left as it was)"), and the joint is
 planned again without it, as for a clash.
+
+## Leg splices proposed (J7)
+
+(The owner's decisions of 2026-11-19 — "a change of section is a splice;
+the same section is one part unless marked; a command proposes the
+splice places and the user confirms"; "bracing bolted through the outer
+splice cover: yes, after the splice places" —; built the same day, in
+active development, not approved yet. The code:
+`ohl_structure_link::leg_splices`.) The import gives a leg's splice bolts
+as its members' design data: at **both** ends of every leg member, so
+where the splices are is not in the data (on the private real towers
+every leg piece but a few has them). The layout's preview proposes the
+**splice places** of the legs; **nothing is written silently** — *Confirm*
+per joint or *Confirm all*, one undo step each. Until confirmed each piece
+**ends at the joint**, in the joint checks and in the layout (as for J9's
+pieces in line): *on the safe side*.
+
+- **A change of section: a splice.** Two pieces of a leg (both of class
+  `leg`) in line through a joint (within 5°, their legs along each other
+  within 5° — the nesting tolerance, `NESTED_ANGLE_DEG`, an assumption of
+  the tool) of **other sections** (another section id: a change of
+  thickness, size or steel) are proposed spliced: a `[[splice]]` at the
+  joint, its **covers outer and inner on each leg bolted** (both legs where
+  an end bolts by both; the model's flat covers), both ends bolted onto
+  it. *Assumed, said in the proposal:*
+  - the covers **as thick as the thicker piece's leg** — the program's
+    starting value, not a standard's; the covers are then checked as
+    plates for their share ([laps and splices](joint-laps-splices.md#covers)),
+    which says when that is too thin;
+  - the **bolts the import gives** (the pieces' design data); a piece
+    without any gets **provisional** bolts (the preset for the class
+    `leg`, else the bolt picked — two in one line), listed so: the tower
+    stays level 3 until the codes choose them.
+- **The same section: one part.** Pieces of one section of a leg with
+  bolts are proposed one part — J9's pieces in line (the core's 1°, their
+  rolls within 2°), flagged a leg splice place and listed here.
+  Confirmed, their bolts are **not checked at that joint** (they are
+  checked where the pieces are spliced): **NOT ON THE SAFE SIDE** where a
+  splice of one section is really there (a leg longer than a stock
+  length) — the owner's rule; to mark such a splice, give it by hand at
+  the joint (it is then not proposed one part).
+- **Not proposed**, said why: a splice given at the joint naming either
+  piece; a `kind`, `onto`, `face` or bolts given by hand at either end;
+  not two single angles (a built-up leg's splice: by hand); in line
+  within more than 5° (a leg's knee); legs not along each other; the
+  smaller angle nesting in the bigger (the layout bolts it nested, step
+  1b).
+- Two pieces of **no leg** of other sections, both with bolts and nothing
+  else bolting onto them there (step 1c's rule), are proposed the same way.
+
+**Confirmed**, a splice is the user's: a run (also one replacing values
+given by hand) keeps it and its pieces' `onto`, and keeps their
+provisional bolts listed as provisional; it is not proposed again.
+
+### Bracing bolted through the outer cover
+
+Once a splice is confirmed, a member end at the joint lapped on the
+**outer face** of a spliced piece's leg where the splice has an **outer
+cover** bolts **through the cover** (`Arrival::through`):
+
+- it is **seated on the cover** — moved out of the leg by the cover's
+  thickness; its bolts pass through the cover, the piece's leg and the
+  inner covers on that leg: their **grip** is its own leg, then the outer
+  cover, the leg and the inner cover (the inner cover counted wherever it
+  lies under the bolt or not — *on the safe side for the bolt's length*;
+  for the drawings and the bolt list only);
+- the **outer cover is drawn round its bolts too** (the code's edge and
+  end distances in the cover) and **checked as a plate for the end's whole
+  force** — its bolts' bearing, block shear, section and distances
+  (`plate_checks`): *on the safe side* — the leg under the cover takes
+  none of it there;
+- the **end's own checks are unchanged**: one shear plane (lapped), the
+  bearing on its own leg and on the leg it bolts onto (the cover's
+  thickness not added: *on the safe side*);
+- **NOT ON THE SAFE SIDE**: (1) the cover is a **packing** between the end
+  and the leg: the bolt's bending across it is not checked — neither
+  ASCE 10-97 nor SIA 263 gives a reduction for packings (searched, none
+  found), other codes do for thick ones; (2) the end lies the cover's
+  thickness **farther out of the leg**: that offset is not in the analysis
+  (as for an end on a gusset plate: O45 D) nor in the member's check
+  beyond the codes' rules for an angle bolted by one leg.
+
+In the layout such an end's plane is the cover's face: the cover is no
+obstacle to it, the splice's own bolts (their nuts on the cover) are — the
+end is pulled back clear of them, as of any fixed steel. It is bolted
+**directly only**: where its bolts do not land on the leg's flange (the
+flange's rules, and J9's cut-back rule: every bolt on the piece's steel
+past its cut by the end distance), it is **left for a hand detail**, said
+("… a plate over the cover is not laid out") — a gusset plate over a
+cover is not laid out automatically. An end on the leg's inner face is
+not taken through an inner cover (the cover is fixed steel to it, as
+before). The clash check takes an end through a cover as lying on it,
+its bolts' shanks through it.
+
+**Not confirmed**: no cover, the pieces end at the joint, the ends onto
+them laid out as by J9 (onto a plate where their bolts do not land on
+the piece's steel past its cut, else a hand detail) — *on the safe side*.
 
 ## No fit: a hand detail
 
@@ -1061,3 +1169,44 @@ not now were physically impossible (members cut back onto each other,
 bolts beyond the steel). The leg splices (J7) are now the main limit
 ("ends laid out" is not comparable across the columns: pieces one part
 run on, nothing to lay out). No change in time measurable.
+
+## Measured (J7a and the 2° flatness, 2026-11-19)
+
+On the same 78 tower files and settings (kept privately), J9's proposals
+confirmed in every column, with the joint checks' "does not fit" (one
+case):
+
+| | before, at 5° | before, at 2° | J7a, leg places not confirmed | J7a, every leg place confirmed (an upper bound) |
+|---|---|---|---|---|
+| joints laid out whole | 41.9 % | 39.1 % | 39.1 % | 41.5 % |
+| joints with a hand detail | 50.2 % | 53.0 % | 53.0 % | 50.6 % |
+| member ends laid out (of those the layout places) | 56.1 % | 53.2 % | 53.1 % | 55.3 % |
+| joints that do not fit | 28.8 % | 29.6 % | 29.6 % | 29.8 % |
+| … of them as given (the rest as assumed — not detailed) | 605 | 525 | 525 | 475 |
+| pieces in line proposed one part (J9) | 46 819 | 46 355 | 46 355 | 46 355 |
+| leg pieces of one section proposed one part | — | — | 10 572 | 10 572 |
+| leg splices proposed / not | — | — | 503 / 1 349 | 503 written |
+| member ends bolted through an outer cover | — | — | — | 1 336 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+**The 2° flatness alone** (the owner's decision of 2026-11-19, the second
+column against the first) lays out fewer joints whole (−2.8 points) and
+fewer ends (−2.9 points): ends lying 2° to 5° off their flange now go to
+step 4's welded plate or a hand detail (as said, "its bolted leg lies …°
+off the flange"); fewer joints misfit as given (605 → 525), and 464
+pieces in line fewer are proposed one part.
+
+**The leg splice places** (the last two columns): confirmed, joints laid
+out whole 39.1 % → 41.5 %, ends 53.1 % → 55.3 %, joints misfitting as
+given 525 → 475. Not proposed: 624 pairs not of two single angles
+(built-up legs), 554 where the smaller angle nests in the bigger, 104
+legs meeting at more than 5° (knees), 67 turned apart. Every leg piece at
+a change of section had its bolts from the import (no provisional bolts
+needed). Of the bracing ends at the splices confirmed, 1 336 bolt through
+the outer cover; 1 242 are left for a hand detail because their bolts do
+not land on the leg's flange clear of the splice's own bolts (their nuts
+on the cover) — the main limit now; plates on a leg's inner face run into
+the inner covers (about 450 such clashes said). Joints that do not fit
+rise a little (15 793 → 15 847, mostly as assumed): fewer joints are
+checked as written (the confirmed pieces run on) and the covers bring
+plates of their own to check. No change in time.

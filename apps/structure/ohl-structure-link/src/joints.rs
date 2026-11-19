@@ -303,6 +303,14 @@ pub struct Arrival {
     /// (`kind = "continuous"`, [`StructureType::continuous_with`]): no cut,
     /// no shift, no bolts at this end.
     pub continuous: Option<String>,
+    /// Bolted through the outer cover of a splice onto a member it joins
+    /// (O44 J7, 2026-11-19): the splice and the leg of that member the
+    /// cover lies on. The end is seated on the cover (moved out by its
+    /// thickness), its bolts clamp the cover, the member's leg and the
+    /// inner covers on that leg, and the cover is drawn round its bolts
+    /// too and checked for its force (`through_cover`). None: lapped
+    /// directly, or not onto a spliced member.
+    pub through: Option<(String, CoverLeg)>,
     /// It does not fit as given (a nested angle too large, its legs not
     /// along the other's, bolts nearer an edge than the code allows on
     /// either part, its outstanding leg through the leg it bolts onto):
@@ -813,6 +821,7 @@ pub(crate) fn joint_details_and_model(
                 flat: None,
                 sits: Valued::none(),
                 continuous: t.continuous_with(&m.id, &n.id).map(str::to_owned),
+                through: None,
                 misfit: false,
                 notes: Vec::new(),
                 problems: Vec::new(),
@@ -867,6 +876,18 @@ pub(crate) fn joint_details_and_model(
                 let gauge = on_gauge.contains(&(a.member.clone(), n.id.clone()));
                 place_bolts(a, at, c, &snapshot, &seats, host, gauge);
                 a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
+                // O44 J7: onto a spliced member's leg where the splice's
+                // outer cover lies: seated on the cover, its bolts through
+                // it, the member's leg and the inner covers.
+                if let Some(c) = through_cover(a, &snapshot, &t.splices, &n.id) {
+                    let lift = scale(a.bolt_axis, c.outer);
+                    a.offset = add(a.offset, lift);
+                    for q in a.bolt_points.iter_mut().chain(a.other_points.iter_mut()) {
+                        *q = add(*q, lift);
+                    }
+                    a.grip = [a.grip[0], c.outer + c.leg_t + c.inner];
+                    a.through = Some((c.splice, c.leg));
+                }
                 a.other_grip = match a
                     .other_onto
                     .as_ref()
@@ -1564,8 +1585,19 @@ fn plate_seats(
 }
 
 /// How far off a leg bolted may lie from the face it bolts onto before
-/// Joint details says so, degrees.
-pub const FLAT_OFF: f64 = 5.0;
+/// Joint details says so, degrees — and still bolt flat, in the layout,
+/// in a member's whole roll (J3) and in the roll tolerance of pieces in
+/// line proposed one part (J9). The owner's value (2026-11-19: "2° for
+/// both"; 5° before), not a standard's.
+pub const FLAT_OFF: f64 = 2.0;
+
+/// How far off the horizontal a member may run and still be taken as
+/// lying horizontal (Orient angles' plan and hip members and its lines
+/// in one plane, the secondary bracing of the owner's order), degrees:
+/// the program's value, not a standard's. Kept at 5°, apart from
+/// [`FLAT_OFF`]: the owner's 2° (2026-11-19) is how flat a leg bolts, not
+/// which members count as horizontal (unchanged, said in the decision).
+pub const HORIZONTAL_OFF: f64 = 5.0;
 
 /// How `a`'s leg bolted lies against what it bolts onto: a plate's face
 /// (its seat's normal) or the flange of the member it bolts onto that it
@@ -3124,6 +3156,11 @@ fn splice(
         .iter()
         .filter(|a| a.onto.value.as_deref() == Some(s.id.as_str()))
         .collect();
+    // (O44 J7: the ends bolted through its outer covers.)
+    let through: Vec<&Arrival> = arrivals
+        .iter()
+        .filter(|a| a.through.as_ref().is_some_and(|(id, _)| *id == s.id))
+        .collect();
     let mut notes = Vec::new();
     if s.covers.is_empty() {
         notes.push(format!("splice {}: no covers", s.id));
@@ -3139,7 +3176,7 @@ fn splice(
     let covers = s
         .covers
         .iter()
-        .map(|c| cover(s, c, joint, &onto, rules))
+        .map(|c| cover(s, c, joint, &onto, &through, rules))
         .collect();
     SpliceDetail {
         id: s.id.clone(),
@@ -3156,6 +3193,7 @@ fn cover(
     c: &ohl_structures::connections::TypeCover,
     joint: [f64; 3],
     onto: &[&Arrival],
+    through: &[&Arrival],
     rules: &dyn Fn(
         &Arrival,
         &ohl_structures::connections::TypeCover,
@@ -3270,6 +3308,23 @@ fn cover(
                     k.across * 1000.0
                 ));
             }
+        }
+    }
+    // An outer cover: round the bolts of the ends bolted through it too
+    // (O44 J7), each keeping the code's distances in the cover.
+    if c.face == CoverFace::Outer {
+        for a in through.iter().filter(|a| {
+            a.through
+                .as_ref()
+                .is_some_and(|(_, l)| c.leg.is_none_or(|x| x == *l))
+        }) {
+            let (k, words) = keep(a, &|x| rules(x, c));
+            let axes = keep_axes(a);
+            for q in &a.bolt_points {
+                pts.extend(keep_ring(*q, axes, k));
+            }
+            edges.push(words);
+            keeps.push((a, k));
         }
     }
     let given: Vec<[f64; 3]> = c.outline.iter().map(|q| q.map(|v| v.si())).collect();
@@ -3802,6 +3857,68 @@ pub fn similar_joints(d: &JointDetails, id: &str) -> Vec<Similar> {
         }
     }
     out
+}
+
+/// A splice's covers an end bolts through ([`through_cover`]).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Through {
+    /// The splice.
+    pub splice: String,
+    /// The leg of the member it bolts onto that the covers lie on.
+    pub leg: CoverLeg,
+    /// The outer covers' thickness on that leg, m.
+    pub outer: f64,
+    /// The inner covers' thickness on that leg, m.
+    pub inner: f64,
+    /// That member's leg's thickness, m.
+    pub leg_t: f64,
+}
+
+/// The splice whose outer cover end `a` (bolted onto a member, lapped on
+/// its outer face) bolts through at joint `joint` (O44 J7, 2026-11-19: the
+/// owner's "bracing bolted through the outer splice cover"): a splice of
+/// the joint joining the member `a` bolts onto, with an outer cover on the
+/// leg of it `a` lies on. None: `a` is one of the splice's members (or
+/// onto it), one part through the joint, on an inner face, onto a plate,
+/// or the member is no single angle or has no outer cover there.
+pub(crate) fn through_cover(
+    a: &Arrival,
+    all: &[Arrival],
+    splices: &[TypeSplice],
+    joint: &str,
+) -> Option<Through> {
+    if a.continuous.is_some() || a.sits.value != Some(Face::Outside) {
+        return None;
+    }
+    let o = a.onto.value.as_deref()?;
+    let host = all.iter().find(|b| b.member == o)?;
+    let q = host.profile.as_ref()?;
+    let g = q.angle?;
+    let s = splices.iter().find(|s| {
+        s.joint == joint && s.members.iter().any(|m| m == o) && !s.members.contains(&a.member)
+    })?;
+    let f = host_flange(a, host)?;
+    let y = dot(f.across, q.axes[1]).abs() > 0.5;
+    let leg = if y == (g.b >= g.h) {
+        CoverLeg::Long
+    } else {
+        CoverLeg::Short
+    };
+    let on = |face: CoverFace| -> f64 {
+        s.covers
+            .iter()
+            .filter(|c| c.face == face && c.leg.is_none_or(|l| l == leg))
+            .map(|c| c.thickness.si())
+            .sum()
+    };
+    let outer = on(CoverFace::Outer);
+    (outer > 0.0).then(|| Through {
+        splice: s.id.clone(),
+        leg,
+        outer,
+        inner: on(CoverFace::Inner),
+        leg_t: g.t,
+    })
 }
 
 /// What the bolts of `a` clamp: its leg's thickness and what it bolts

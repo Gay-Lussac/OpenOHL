@@ -354,7 +354,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
                 "Where the faces do not meet at 90°, each flange lies off its face by half the \
                  difference: up to {worst:.1}° here{}",
                 if worst > ohl_structure_link::FLAT_OFF {
-                    " — more than the 5° a member is laid flat within: bracing there needs a \
+                    " — more than the 2° a member is laid flat within: bracing there needs a \
                      bent plate or a hand detail"
                 } else {
                     ""

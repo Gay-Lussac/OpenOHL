@@ -346,7 +346,7 @@ How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#j
 - **A member's roll** ("a correction angle for the members to rotate
   them on their axis as one face need to come in contact with the
   plates"): Roll, ±90°, 180°, Lay flat in Member details, the Detail view
-  and the Inspector; a member whose leg bolted lies more than 5° off what
+  and the Inspector; a member whose leg bolted lies more than 2° off what
   it bolts onto is named in Joint details, **Turn it flat**. The roll
   turns the member's axes for the analysis too.
 - **Gauge lines from the holes** in one section of the member's design
@@ -771,7 +771,7 @@ thickest leg, the same plan twice.
 **Stage 3 — plates and the run on a file** (`layout_run.rs`). `lay_out`:
 the record's values taken out at the joints asked (and the members' rolls
 back to what they were), members turned flat where their ends agree
-within 5° (the middle of their turns), each joint planned, written into
+within 2° (the middle of their turns), each joint planned, written into
 the file as it was (`cut`, `shift` beyond concentric, `onto`, provisional
 `bolts`/`gauge_lines` or a preset's fields), plates made (thickness the
 thickest leg bolted on it, a hand thickness kept with its plate's id —
@@ -1124,7 +1124,8 @@ that order; "plan ideas to get the automatic layout working"):
   development, not approved yet; with the owner's order of the classes of
   the same day; [theory](../theory/joint-layout.md#one-roll-for-the-whole-member-j3)):
   `whole_roll::whole_roll(&[EndTurn { turn, either_leg }], FLAT_OFF) ->
-  Option<(turn, RollWay)>` — the same legs within 5° first (as before),
+  Option<(turn, RollWay)>` — the same legs within `FLAT_OFF` (2° since the owner's decision of
+  2026-11-19, 5° before) first (as before),
   else an equal-leg angle's leg bolted changing between its ends (its
   turns a quarter turn apart, `layout_run::either_leg`: a single
   equal-leg angle not bolted by both legs), the smallest such turn; none:
@@ -1139,8 +1140,8 @@ that order; "plan ideas to get the automatic layout working"):
   (`OrientRun::by_layout`, its window's list). The relaxed planner
   (`plan_relaxed`, O45) takes the same. No format change. Tests:
   `whole_roll_tests`, `layout_run_tests::one_roll_for_the_whole_member_lets_both_its_ends_lie_flat`,
-  `no_roll_for_both_ends_leaves_the_member_as_it_was`. Tried and left out:
-  a turn leaving every end within the whole 5° of flat (measured: slightly
+  `no_roll_for_both_ends_leaves_the_member_as_it_was`. Tried and left out (at the 5° of
+  then): a turn leaving every end within the whole 5° of flat (measured: slightly
   fewer ends).
 - **J4, laid out once per kind** (2026-11-19, in active development, not
   approved yet; [theory](../theory/joint-layout.md#laid-out-once-applied-to-the-joints-like-it-j4)):
@@ -1212,6 +1213,59 @@ that order; "plan ideas to get the automatic layout working"):
   redundant on the pieces before and after),
   `joint_layout_tests::members_bolting_onto_each_other_are_never_both_laid_out`,
   the app's `layout_ui_tests::pieces_in_line_are_proposed_and_confirmed_in_one_undo_step`.
+- **J7 part a, leg splices proposed, bracing through the outer cover**
+  (2026-11-19, the owner's decisions of the same day; in active
+  development, not approved yet;
+  [theory](../theory/joint-layout.md#leg-splices-proposed-j7)):
+  `leg_splices::leg_splices(details, t, joints) -> Vec<LegSplice { joint,
+  member, onto, not, covers, thickness, provisional }>` (from the joints in
+  detail as the run plans them: two pieces of a leg in line within
+  `NESTED_ANGLE_DEG` of other sections — or of no leg, both bolted, nothing
+  else on them: step 1c's rule —, their legs along each other; covers outer
+  and inner on each leg bolted, the thicker piece's leg thick; the pieces
+  without bolts given provisional ones; `not`: a splice given, `kind`,
+  `onto`, `face` or bolts given by hand, not single angles, in line within
+  more than 5°, legs not along each other, nesting; pieces spliced together
+  already not listed), `LegSplice::assumed()` (the words of what is
+  assumed), `leg_splices::confirm(doc, t, list, bolt)` (each a `[[splice]]`
+  — `layout_run::write_splice`, shared with step 1c —, both ends `onto`
+  it, provisional bolts `layout_run::write_bolts` listed in the record's
+  `provisional`; the layout's own values at those ends taken out),
+  `confirm_places(doc, t, one_part, splices, bolt)` (one edit: the same
+  section's pieces one part by `in_line::confirm`, then the splices),
+  `confirm_text`. `InLine::splice_bolts`: pieces of a leg with bolts are
+  now proposed one part (the owner's rule), flagged, and listed with the
+  splices; J9's list leaves them out. A run says them
+  (`LayoutRun::splices`) and never writes them; `joins_of` makes no splice
+  any more (step 1c's branch gone, `JoinKind::Spliced` kept for the writing
+  and the clash rounds of a splice an older run made). `strip_joint` keeps
+  an end's `onto` naming a splice the layout did not make (also when
+  replacing values given by hand) and its provisional bolts listed;
+  `LayoutRecord::is_empty` counts `provisional`. Through the cover:
+  `joints::through_cover` (`Through { splice, leg, outer, inner, leg_t }`:
+  an end lapped on the outer face of a spliced piece's leg with an outer
+  cover there), `Arrival::through` (the splice and the leg): the end and
+  its bolts moved out by the outer cover's thickness, the grip its own leg,
+  then the outer cover, the leg and the inner covers; the outer cover's outline round its
+  bolts too (`cover(.., through, ..)`); `clash`: such an end lies on the
+  splice's covers, its bolts' shanks through them; `plate_checks::cover_plans`:
+  the outer cover planned for the end's whole force (`share` 1, said). The
+  planner: `Strip::through` (`outer_cover`), the strip's face and plane
+  key moved out by the cover, the cover not fixed steel to it
+  (`fixed_in`), such a plane bolted directly only — the ends whose bolts do
+  not land left for a hand detail ("… a plate over the cover is not laid
+  out"). No format change. The window: `layout_window::layout_leg_splices`
+  (*Leg splices*, *Confirm*, *Confirm all*, *Assumed: …*, one
+  `StructureFile::edit` "Leg splice places (n)"; provisional bolts: the
+  preset for `leg`, else the bolt picked). Tests: `leg_splices_tests` (a
+  change of section proposed and never written by a run, confirmed, kept
+  by a run replacing values given by hand, two shear planes, a run again
+  identical; the brace through the outer cover — seated, its grip, no
+  clash, the cover checked for its whole force; provisional bolts listed
+  and kept; the same section with bolts proposed one part; reasons said),
+  `in_line_tests` (legs with bolts flagged), the app's
+  `layout_ui_tests::leg_splices_are_proposed_and_confirmed_in_one_undo_step`
+  (its picture `tool-lay-out-joints-leg-splices.png`).
 
 ## Detail levels
 
