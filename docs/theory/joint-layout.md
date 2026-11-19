@@ -845,3 +845,42 @@ The bolts across a narrow flange that do not fit (the does-not-fit
 investigation) are almost all on ends not laid out: a flat plate takes
 them wherever the layout lays the end out; they fall as more joints are
 laid out, not with the plate's kind.
+
+## Measured (J3 and J4, 2026-11-19)
+
+On the same 78 tower files and settings (the files now with their bolt
+grade, version 21; the J2b column measured again on them, the same
+numbers):
+
+| | J2b | J3 (the owner's order of the classes) | J3 and J4 |
+|---|---|---|---|
+| joints laid out whole | 45.8 % | 45.8 % | 45.9 % |
+| member ends laid out (of those the layout places) | 64.3 % | 64.2 % | 64.3 % |
+| joints with a hand detail | 47.9 % | 47.9 % | 47.9 % |
+| clashes at the joints after (of before) | 44.4 % | 44.5 % | 44.4 % |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 |
+| joints that took a plan of a joint like them | — | — | 30 % |
+| ends the estimated eccentricities bound from above | 22.0 % | | 22.0 % |
+| joints that do not fit with the joint checks | 31.9 % | | 31.8 % |
+| time of a whole tower (five towers, one after the other) | | about 5 % more | as J3 (±2 %) |
+
+**J3 stops paying here**: whatever the roll, most members left off their
+flange need turns at their two ends more than 5° apart (5° to 20° for
+seven in ten of them) — the faces they bolt onto are turned against each
+other about the member, which no roll removes (step 4's welded plate with
+a larger offset, J5, or a bent version of it). A quarter turn changing
+the leg bolted served 8 members on the 78 towers; the class by class
+order and the legs never turned to suit bracing (816 leg ends now kept
+off what they bolt onto, said) changed the shares by less than 0.1 %. J1's search in the
+owner's order of the classes against the biggest member first within the
+bracing (as before): the same joints whole within 7 of 64 760, 0.06 %
+fewer ends — the owner's order kept. Taking a turn leaving every end
+within the whole 5° of flat (tried) laid out fewer ends.
+
+**J4** lays out a third of the joints with the plan of a joint like them
+(the tower's symmetry: on the square bodies most joints have three or
+seven others), a few more of them whole than planned on their own (34
+joints, the ties of the search now broken alike), and makes the joints of
+one kind identical. **It saves no time measurably**: planning is about 1
+to 1.5 % of a run (the joint details worked out in each round and the clash
+checks take the rest, and each copy must be checked in its own place).
