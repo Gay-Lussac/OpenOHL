@@ -1202,15 +1202,16 @@ fn h_flat(text: &str, j: &str) -> crate::welds::Flat {
 }
 
 /// J3 (2026-11-19): one roll for the whole member. The strut's flange at
-/// N7 turned 4° about H: H flat at N2 lies 4° off at N7; the middle turn
-/// leaves each end 2° off: H is turned once, both its joints laid out
+/// N7 turned 1.6° about H: H flat at N2 lies 1.6° off at N7; the middle
+/// turn leaves each end 0.8° off (within the owner's 2° flatness of
+/// 2026-11-19): H is turned once, both its joints laid out
 /// with it (its leg bolted upright at N2, the other at N7 — an equal-leg
 /// angle's leg bolted changing between its ends); a run again changes
 /// nothing, and the relaxed planner (the estimated eccentricities, O45)
 /// plans with the same turn.
 #[test]
 fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
-    let text = plan_strut("EA-61x7", 1.5 * 4f64.to_radians().tan());
+    let text = plan_strut("EA-61x7", 1.5 * 1.6f64.to_radians().tan());
     let (n2, n7) = (h_flat(&text, "N2"), h_flat(&text, "N7"));
     assert!(n2.off > 5.0 && n7.off > 5.0, "{n2:?} {n7:?}");
     let r = run(&text, &settings(), Some(&["N2", "N7"]), true);
@@ -1222,7 +1223,7 @@ fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
     );
     for j in ["N2", "N7"] {
         let f = h_flat(&r.text, j);
-        assert!((f.off - 2.0).abs() < 0.1, "{j}: {f:?}");
+        assert!((f.off - 0.8).abs() < 0.1, "{j}: {f:?}");
         let o = r.joints.iter().find(|o| o.joint == j).unwrap();
         assert!(
             o.written && o.plan.ends.iter().any(|e| e.member == "H"),
@@ -1275,8 +1276,10 @@ fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
 }
 
 /// J3, never forced: the strut's flange turned 8° about H — no roll lays
-/// both ends flat (their turns more than 5° apart; the middle would leave
-/// each 4° off: tried, it laid out fewer ends on real towers). H is not
+/// both ends flat (their turns more than the 2° flatness apart; the middle
+/// would leave each 4° off: a turn leaving each end within the whole
+/// flatness was tried at the 5° of then, it laid out fewer ends on real
+/// towers). H is not
 /// turned, said with both ends' turns, and its end at N7 is not laid out
 /// flat on the flange (a welded plate in its own plane or a hand detail,
 /// with the reason).

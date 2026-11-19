@@ -8,6 +8,37 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (owner: 2° for both — a leg's flatness and the roll tolerance of pieces in line)
+
+**The owner's answers to O44 J3 question 4 and J9 questions 1 and 2**
+(owner 2026-11-19: "2° for both"; built the same day, in active
+development, not approved yet):
+
+- **How far a leg bolted may lie off the face it bolts onto and still
+  bolt flat: 2°** (5° before). `ohl_structure_link::FLAT_OFF`, read by
+  Joint details' "turn it" note, the layout (laid flat or onto a plate in
+  its own plane, step 4; the ends' axes along a flange's face; the bent
+  plate's and the welded plate's limits), the whole member's roll (J3:
+  its ends' turns within 2° of each other, each end then within 1° of
+  flat) and Orient angles' window. The value is the owner's, not a
+  standard's: a leg bolted within it is drawn and checked as flat (the
+  bolts pulling it flat) — an assumption, nearer the safe side than 5°.
+- **The roll tolerance of pieces in line proposed one part (J9): 2°**
+  (5° before) — the same constant (`in_line::ROLL_TOLERANCE_DEG` is
+  `FLAT_OFF`).
+- **Not changed:** which members count as horizontal (Orient angles' plan
+  and hip members and its lines in one plane, the secondary bracing of
+  the owner's order of the classes) keeps its 5°, now a constant of its
+  own (`HORIZONTAL_OFF`): it is not how flat a leg bolts, and changing it
+  would move members between classes. The nesting tolerance (5°,
+  `NESTED_ANGLE_DEG`) and the core's 1° for one part are unchanged.
+- **J9 question 2 answered: stays as it is** — pieces in line not
+  confirmed one part each end at the joint, in the checks and in the
+  layout (on the safe side).
+
+No format change. Measured with O44 J7a (the theory page's J7a section:
+main at 5° against main at 2°).
+
 ## 2026-11-19 (joint layout: pieces in line proposed one part, the mutual-host guard)
 
 **O44 J9 with the owner's decisions D15 and D16** (below; built the same

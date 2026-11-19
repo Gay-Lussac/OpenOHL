@@ -887,7 +887,7 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
 
 /// The help of the pieces in line (O44 J9).
 pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \
-     turned alike within 5°), with nothing given there of how they are joined: the layout proposes \
+     turned alike within 2°), with nothing given there of how they are joined: the layout proposes \
      them one part (continuous) for you to confirm. Until confirmed each piece ends at the joint \
      in the joint checks and in the layout, its steel from its cut (on the safe side) — never a \
      silent default. Confirming writes both ends one part in one undo step (rolls a little \

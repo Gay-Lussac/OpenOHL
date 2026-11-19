@@ -346,7 +346,7 @@ How it works: [OHL-Structure › Joint details](../user-guide/structure-app.md#j
 - **A member's roll** ("a correction angle for the members to rotate
   them on their axis as one face need to come in contact with the
   plates"): Roll, ±90°, 180°, Lay flat in Member details, the Detail view
-  and the Inspector; a member whose leg bolted lies more than 5° off what
+  and the Inspector; a member whose leg bolted lies more than 2° off what
   it bolts onto is named in Joint details, **Turn it flat**. The roll
   turns the member's axes for the analysis too.
 - **Gauge lines from the holes** in one section of the member's design
@@ -771,7 +771,7 @@ thickest leg, the same plan twice.
 **Stage 3 — plates and the run on a file** (`layout_run.rs`). `lay_out`:
 the record's values taken out at the joints asked (and the members' rolls
 back to what they were), members turned flat where their ends agree
-within 5° (the middle of their turns), each joint planned, written into
+within 2° (the middle of their turns), each joint planned, written into
 the file as it was (`cut`, `shift` beyond concentric, `onto`, provisional
 `bolts`/`gauge_lines` or a preset's fields), plates made (thickness the
 thickest leg bolted on it, a hand thickness kept with its plate's id —
@@ -1124,7 +1124,8 @@ that order; "plan ideas to get the automatic layout working"):
   development, not approved yet; with the owner's order of the classes of
   the same day; [theory](../theory/joint-layout.md#one-roll-for-the-whole-member-j3)):
   `whole_roll::whole_roll(&[EndTurn { turn, either_leg }], FLAT_OFF) ->
-  Option<(turn, RollWay)>` — the same legs within 5° first (as before),
+  Option<(turn, RollWay)>` — the same legs within `FLAT_OFF` (2° since the owner's decision of
+  2026-11-19, 5° before) first (as before),
   else an equal-leg angle's leg bolted changing between its ends (its
   turns a quarter turn apart, `layout_run::either_leg`: a single
   equal-leg angle not bolted by both legs), the smallest such turn; none:
@@ -1139,8 +1140,8 @@ that order; "plan ideas to get the automatic layout working"):
   (`OrientRun::by_layout`, its window's list). The relaxed planner
   (`plan_relaxed`, O45) takes the same. No format change. Tests:
   `whole_roll_tests`, `layout_run_tests::one_roll_for_the_whole_member_lets_both_its_ends_lie_flat`,
-  `no_roll_for_both_ends_leaves_the_member_as_it_was`. Tried and left out:
-  a turn leaving every end within the whole 5° of flat (measured: slightly
+  `no_roll_for_both_ends_leaves_the_member_as_it_was`. Tried and left out (at the 5° of
+  then): a turn leaving every end within the whole 5° of flat (measured: slightly
   fewer ends).
 - **J4, laid out once per kind** (2026-11-19, in active development, not
   approved yet; [theory](../theory/joint-layout.md#laid-out-once-applied-to-the-joints-like-it-j4)):

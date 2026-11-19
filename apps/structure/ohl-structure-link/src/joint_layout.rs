@@ -2249,8 +2249,8 @@ pub enum ClassRank {
     /// horizontal.
     Diagonal = 1,
     /// The secondary bracing: horizontals, plan and hip members (bracing
-    /// lying horizontal within [`FLAT_OFF`]), and members of no known
-    /// class (said).
+    /// lying horizontal within [`crate::joints::HORIZONTAL_OFF`]), and
+    /// members of no known class (said).
     Secondary = 2,
     /// The redundant members (class `redundant`), last.
     Redundant = 3,
@@ -2258,12 +2258,15 @@ pub enum ClassRank {
 
 /// A member's place in the owner's order of the classes from its `class`
 /// and its direction (unit): bracing lying horizontal (within
-/// [`FLAT_OFF`]) is secondary, the rest of it a diagonal.
+/// [`crate::joints::HORIZONTAL_OFF`]) is secondary, the rest of it a
+/// diagonal.
 pub fn class_rank(class: Option<&str>, direction: [f64; 3]) -> ClassRank {
     match class {
         Some("leg") => ClassRank::Leg,
         Some("redundant") => ClassRank::Redundant,
-        Some("bracing") | Some("crossing") if direction[2].abs() > FLAT_OFF.to_radians().sin() => {
+        Some("bracing") | Some("crossing")
+            if direction[2].abs() > crate::joints::HORIZONTAL_OFF.to_radians().sin() =>
+        {
             ClassRank::Diagonal
         }
         _ => ClassRank::Secondary,

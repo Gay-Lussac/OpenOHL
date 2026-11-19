@@ -1564,8 +1564,19 @@ fn plate_seats(
 }
 
 /// How far off a leg bolted may lie from the face it bolts onto before
-/// Joint details says so, degrees.
-pub const FLAT_OFF: f64 = 5.0;
+/// Joint details says so, degrees — and still bolt flat, in the layout,
+/// in a member's whole roll (J3) and in the roll tolerance of pieces in
+/// line proposed one part (J9). The owner's value (2026-11-19: "2° for
+/// both"; 5° before), not a standard's.
+pub const FLAT_OFF: f64 = 2.0;
+
+/// How far off the horizontal a member may run and still be taken as
+/// lying horizontal (Orient angles' plan and hip members and its lines
+/// in one plane, the secondary bracing of the owner's order), degrees:
+/// the program's value, not a standard's. Kept at 5°, apart from
+/// [`FLAT_OFF`]: the owner's 2° (2026-11-19) is how flat a leg bolts, not
+/// which members count as horizontal (unchanged, said in the decision).
+pub const HORIZONTAL_OFF: f64 = 5.0;
 
 /// How `a`'s leg bolted lies against what it bolts onto: a plate's face
 /// (its seat's normal) or the flange of the member it bolts onto that it

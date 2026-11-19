@@ -46,8 +46,8 @@ use crate::layout_run::LayoutRecord;
 
 /// How far apart the rolls of two pieces in line may be and still be
 /// proposed one part, degrees: the flatness the joint details allow a leg
-/// bolted ([`crate::FLAT_OFF`]) — **the program's value, not a
-/// standard's**; confirming writes both the roll half-way between.
+/// bolted ([`crate::FLAT_OFF`], 2° — the owner's value of 2026-11-19, not a
+/// standard's); confirming writes both the roll half-way between.
 pub const ROLL_TOLERANCE_DEG: f64 = crate::joints::FLAT_OFF;
 
 /// Two pieces in line through a joint: proposed one part, or not and why.

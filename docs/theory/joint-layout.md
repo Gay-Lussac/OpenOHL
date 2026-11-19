@@ -48,7 +48,7 @@ turns them as a lattice tower is built, from the tower's shape alone:
   member), no angle lies in both: the bisector of the angle's legs is
   put on the bisector of the faces, each flange |θ − 90°| / 2 off its
   face (said per member). For a square or rectangular body this is a
-  fraction of a degree; for a triangular crossarm 15° — more than the 5°
+  fraction of a degree; for a triangular crossarm 15° — more than the 2°
   a member is laid flat within, so the bracing there needs a bent plate
   or a hand detail. Faces meeting at less than 45° or more than 135°
   (each flange more than 22.5° off) are taken as no corner: the member
@@ -134,7 +134,7 @@ not bolted and left with "its axis runs out of the face"):
   one part (J9, 2026-11-19) — the piece on the end's side (whose steel
   lies under its bolts: such pieces each end at the joint), the id.
 - **The joint's leg, but in neither of its flanges' planes** (a plan
-  diagonal meeting a vertical post; within 5°): a single angle running
+  diagonal meeting a vertical post; within 2°): a single angle running
   through the joint in a flange's plane of which the end's axis lies (the
   horizontal running through), chosen in the same order. The end then
   bolts flat onto that member, as built; none: the joint's leg kept (and
@@ -162,11 +162,12 @@ and nothing is left for it.
 ## Turned only where it helps
 
 (Owner, 2026-11-18: "only turn where it helps".) A member lying off what
-it bolts onto (more than 5°) is turned by the layout only when
+it bolts onto (more than 2°, `FLAT_OFF`; 5° until the owner's decision of
+2026-11-19) is turned by the layout only when
 
 1. one roll lays it flat at all its ends — those at joints not laid out
    in this run too (**one roll for the whole member**, J3 below): the
-   turns that make each end flat lie within 5° of each other (a turn and
+   turns that make each end flat lie within 2° of each other (a turn and
    a half turn more lay a leg flat alike; an equal-leg angle's other leg a
    quarter turn more); the middle of them is taken, so a turn never spoils
    an end that was flat;
@@ -215,13 +216,15 @@ needs together**:
   centroid), so nothing in the checks changes with it. An unequal angle's
   leg bolted is its design data (the long or short leg in its check):
   never changed by a quarter turn.
-- **Within 5° of each other.** A turn of every end, those lying within
-  5° of each other (each end then within 2.5° of flat after the middle of
-  them is taken; `FLAT_OFF` — **an assumption of the tool**, not a
-  standard's: a leg bolted within 5° of its face is drawn and checked as
-  flat on it, the bolts pulling it flat), as before J3. **Tried and left
-  out** (measured on the private real towers, 2026-11-19): taking a turn
-  that leaves every end within the whole 5° of flat — the ends' turns up
+- **Within 2° of each other.** A turn of every end, those lying within
+  2° of each other (each end then within 1° of flat after the middle of
+  them is taken; `FLAT_OFF` — **the owner's value** (2026-11-19: "2° for
+  both"; 5° before), not a standard's: a leg bolted within 2° of its face
+  is drawn and checked as flat on it, the bolts pulling it flat — **an
+  assumption**, the smaller the nearer the safe side), as before J3.
+  **Tried and left out** (measured on the private real towers,
+  2026-11-19, at the 5° of then): taking a turn that leaves every end
+  within the whole 5° of flat — the ends' turns up
   to 10° apart, an end out of its face's plane counted with it — laid out
   slightly *fewer* member ends (on ten of the towers 16 319 against
   16 336): the ends then lie up to 5° off and run into more after
@@ -481,7 +484,7 @@ bolt within the end distance of a cut is not counted as on the steel.
 (Owner, 2026-11-18: "finaly if the angle at which the profile is coming
 really doesn't allow for it then add a weleded plate that is also bolted
 to the other profiles with the other part of the plate to fix it"; built
-2026-11-19.) An end whose leg bolted lies more than 5° off the flange it
+2026-11-19.) An end whose leg bolted lies more than 2° off the flange it
 bolts onto and that no roll lays flat at both its ends (a hip or plan
 member flat on a horizontal at one end and arriving off the leg's flange
 at the other, a crossarm's face member at the chord) is laid out on two
@@ -499,7 +502,7 @@ their planes meet — a plate bent there, made of two plates welded.
   lie at most 75° off it (`TILT_MAX`, the program's starting value: the
   plate would stand nearly square to the flat one), and it must leave the
   joint away from the heel on an inner face (the angle's other leg) and
-  not run down towards the flange more than 5°.
+  not run down towards the flange more than 2° (`FLAT_OFF`).
 - **On the flange's plane.** Its strip is laid out with the others (its
   cut, a shift) as its section's and its plate's footprint on the
   flange's plane, its lengths along it as they lie on that plane; its
@@ -746,7 +749,7 @@ proposes them).
 not approved yet.) Two pieces of one member line through a joint —
 **the same section**, in line within 1° (the core's angle for one part,
 `CONTINUOUS_ANGLE_DEG`), the same reference and orientation, their rolls
-within 5° — with **nothing given there** of how they are joined are
+within 2° — with **nothing given there** of how they are joined are
 **proposed one part** (`kind = "continuous"`) in the layout's preview,
 for the user to confirm per joint or all at once (*Confirm all*), in one
 undo step. It is **never a silent default**: a run only says them; until
@@ -766,7 +769,7 @@ Not proposed, and said why:
   `kind` given at either end, an end given by hand to bolt onto something
   else, or bolts given at an end: the joint is detailed as something
   else;
-- other sections, references or orientations, or rolls more than 5°
+- other sections, references or orientations, or rolls more than 2°
   apart.
 
 **Rolls a little apart.** Orient angles turns each piece to its face on
@@ -774,9 +777,9 @@ its own, so pieces of one member often differ by a fraction of a degree
 (on the private real towers up to about a degree). The core reads two
 pieces one part only with the same roll; confirming writes every piece of
 a chain confirmed together the roll half-way between theirs (the mean of
-their rolls) — each turns by at most half the 5°. The 5° is the flatness
-the joint details allow a leg bolted (`FLAT_OFF`): **the program's value,
-not a standard's**. Such a roll is then the user's (no longer the
+their rolls) — each turns by at most half the 2°. The 2° is the flatness
+the joint details allow a leg bolted (`FLAT_OFF`): **the owner's value**
+(2026-11-19: "2° for both"; 5° before), not a standard's. Such a roll is then the user's (no longer the
 layout's: a later run does not turn it back), and the layout never turns
 pieces one part.
 

@@ -2032,8 +2032,11 @@ step, reasons left), and the work stops where it stops paying:
   > keep? (2) Legs are never turned to suit bracing (816 leg ends on the
   > real towers now kept off what they bolt onto, said): keep, or allow it
   > where Orient angles left a leg? (3) J4 saves no time but makes the
-  > joints of a kind identical: keep it on by default? (4) The 5° a leg
-  > may lie off and still bolt flat is the tool's: your shop's value?
+  > joints of a kind identical: keep it on by default? (4) ~~The 5° a leg
+  > may lie off and still bolt flat is the tool's: your shop's value?~~
+  > **Answered 2026-11-19: 2°** (owner: "2° for both", with J9's roll
+  > tolerance; `FLAT_OFF`, built the same day; which members count as
+  > horizontal keeps its 5°, `HORIZONTAL_OFF`).
 - [ ] J5. **Larger shifts once the analysis takes them** (after
   [O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)):
   the shift limit and the welded plate's offset limit growing with the
@@ -2065,10 +2068,12 @@ step, reasons left), and the work stops where it stops paying:
   46.1 % → 41.9 %; nothing confirmed 36.2 % whole, 839 as given; the guard
   alone 42.1 %; a run again identical 78/78; no time change. The leg
   splices (J7) are now the main limit.
-  > **Owner:** (1) the 5° roll tolerance for proposing pieces one part
-  > (the mean roll written; seen 0.1°–1.1°): keep? (2) Not confirmed, the
-  > layout treats the pieces as ending at the joint (fewer joints whole,
-  > almost no misfit of its own): keep? (3) J7 next?
+  > **Owner:** (1) ~~the 5° roll tolerance for proposing pieces one part
+  > (the mean roll written; seen 0.1°–1.1°): keep?~~ **Answered 2026-11-19:
+  > 2°** ("2° for both", with the flatness of J3's question 4; built the
+  > same day); (2) ~~Not confirmed, the layout treats the pieces as ending
+  > at the joint (fewer joints whole, almost no misfit of its own):
+  > keep?~~ **Answered 2026-11-19: stays as it is**; (3) J7 next?
 - Asked (open): shop drawings of real towers, to tune to how the steel
   is really detailed; the owner is looking for example joints
   (2026-11-19) and sent three that day: a bent gusset plate at a corner,
