@@ -753,6 +753,54 @@ viewers' memory: 56 MB each for three); a desktop joining it copies the
 whole model in 2.3 s; a move p95 9.8 ms; an area query p95 11 µs in the
 tile index, 0.77 ms in PostgreSQL.
 
+## Synthetic country: phase 6, working sets and context (2026-11-19)
+
+Working sets on the network's server ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-19-country-server-phase-6),
+[user guide](../user-guide/working-set.md)): the 147 line models of the
+12 000-pylon country (seed 1; made in 122 s, imported in 86 s into a
+throwaway cluster), measured by
+
+```bash
+ohl network bench-working-set --user admin --moves 40 --work DIR
+```
+
+on the first line (one route of 145 structures, 740 sections, 657
+jumpers). `ohl network serve` as a process of its own, the idle solve off
+for the first part; `bench-fast`, Apple M-series, 10 cores, PostgreSQL 17
+on 127.0.0.1, the machine shared with another agent's builds (load 10–30).
+
+| Measure | Measured |
+|---|---|
+| A working set shown (the server's extent, round trip; 10 each) | the whole route p50 14 ms, p95 21 ms; a third of it by stations (51 structures, 260 sections) p50 20 ms, p95 28 ms; an area of 1 km² (8 structures) p50 4 ms |
+| A route's structures by station | 0.8 ms |
+| A partial replica loaded (the server writes it, the client receives it) | the third: 0.08 s, 1.8 MB, opened in 0.02 s (75 structures, 280 sections in the file, 565 objects in the working set); the whole route: 0.14 s, 3.5 MB, opened in 0.03 s; the whole line followed (phase 5's copy, for comparison): 0.18 s, 2.6 MB |
+| On the authority: the extent and the replica's rows taken | p50 9.5 ms, p95 16 ms |
+| An editor's move inside the working set, until its rows are taken in the replica | p50 18 ms, p95 24 ms (1–2 rows each); the move applied on the server p50 14 ms, p95 21 ms (phase 5 without a working set: p50 5.5 ms) — the working set worked out again after each change touching it: p50 10.5 ms |
+| A replica joining again after 20 moves (join, what it holds, the rows taken) | 0.35 s, 25 rows |
+| The whole route added to the third | 89 ms, 944 rows |
+| Context tiles around the working set (5 × 5) | made 0.32 s; from the cache 36 ms |
+| Memory of the server | idle 1 252 MB; with the working set's client 1 310 MB |
+| **The idle solve** (the server started again with it on) | all 26 543 tiles made once in 60 s (56 s of the packagers' time, one tile at a time), 50 936 section shapes kept (78 MB), 5 670 packages kept (67 MB, half the packages' bound); the server's memory 1 252 → 1 442 MB |
+
+Notes:
+
+- The replica of the whole route is larger than the whole line's copy
+  (3.5 MB against 2.6 MB): its import entry's command holds every object
+  again (the network's import keeps an empty one). Left as it is (a
+  change of how the session writes an import: a question for the owner).
+- The extent worked out again after each change touching a working set
+  reads the routes of every object of the model (about 10 ms for a line
+  of 145 structures); several working sets on one model add up, and on
+  the country as one model it would be the size of the country: a
+  routes' index is the next step (on the roadmap). The phase 5 targets
+  hold (a move p95 21 ms < 50 ms).
+- A first run, before the working set's context held what its sections'
+  solves read: the third's replica 1.7 MB, its rows 5.5 ms per change.
+- No package is ever made from a copy of a model's whole line any more:
+  each tile's part of the line (`Session::drawing_part`) gives each
+  section the sub-line the whole line gives (tested, bit for bit).
+
 ## OHL-Design: an edit taken in place (O42, 2026-11-19)
 
 Owner, 2026-11-19: "per element modified instead of validating the whole
@@ -994,6 +1042,19 @@ cluster checked by its data directory). With the new scheme the same 144
 runs: 0 failures, in 90 s instead of 126 s; a test killed mid-run leaves
 its cluster, which the next test of any program stops and deletes
 (tried).
+
+**Phase 6's tests** (2026-11-19, each alone with `cargo test`, its
+program's cluster made and stopped included, the machine shared):
+`ohl-session` `working_set_tests` 0.01 s and 0.10 s (300 random commands
+fed to a replica as rows); `ohl-store-pg` `schema_and_the_writers_lock`
+2.5 s with its working sets and a schema-2 database brought forward
+(two databases more); `ohl-server` `a_working_set_is_a_partial_replica`
+4.8 s, `the_idle_solve_makes_every_tile_once` 3.6 s (a country of 120
+pylons, every tile), `packager::a_tiles_part_gives_the_whole_lines_sub_lines`
+0.8 s, `a_working_sets_sections_solve_as_on_the_whole_line` 1.1 s (the
+whole line's solves with its lookups: 4.4 s searched); `ohl-app`
+`network::a_replica_takes_the_servers_rows_in_place` 0.7 s. The other
+server tests run with the idle solve off (their timings unchanged).
 
 ## Time budgets and exit clauses
 
