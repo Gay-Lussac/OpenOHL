@@ -244,7 +244,7 @@ fn position(t: &TestNet) -> Position {
     }
 }
 
-fn moved(id: &str, p: [f64; 3]) -> Op {
+pub(crate) fn moved(id: &str, p: [f64; 3]) -> Op {
     Op::Do {
         command: Command::MoveStructure {
             id: id.into(),
@@ -303,7 +303,7 @@ fn same_as_server(c: &C, t: &TestNet, code: &str, n: usize) {
 }
 
 /// A structure of model `code` and where it stands.
-fn structure_of(t: &TestNet, code: &str, k: usize) -> (String, [f64; 3]) {
+pub(crate) fn structure_of(t: &TestNet, code: &str, k: usize) -> (String, [f64; 3]) {
     let net = Network::connect(&t.url).unwrap();
     let s = Session::open_on(Box::new(net.store(code).unwrap()), code).unwrap();
     let st = &s.line().structures[k % s.line().structures.len()];
@@ -311,7 +311,7 @@ fn structure_of(t: &TestNet, code: &str, k: usize) -> (String, [f64; 3]) {
 }
 
 /// The tiles (level 2, 1 024 m) around a point: `r` on every side.
-fn tiles_around(p: [f64; 3], r: i64) -> Vec<TileKey> {
+pub(crate) fn tiles_around(p: [f64; 3], r: i64) -> Vec<TileKey> {
     let g = ohl_core::grid::Grid::default();
     let t = g.tile_at(2, [p[0], p[1]]);
     let mut out = Vec::new();
@@ -465,6 +465,53 @@ fn a_network_serves_by_interest() {
     assert!(c.first.is_some() && c.seq == Some(c.at.seq));
     let touched: BTreeSet<TileKey> = c.tiles.iter().copied().collect();
     assert!(!touched.is_empty());
+    // Kept with the command: the structure's routes and references, the
+    // log entry's models and tiles, the change in the stream.
+    {
+        let net = Network::connect(&t.url).unwrap();
+        let (routes, refs) = net.kept_interest(&b, "structure", &sb).unwrap();
+        let routes = routes.expect("routes counted");
+        assert!(!routes.is_empty() && routes.iter().all(|r| c.routes.contains(r)));
+        let s = Session::open_on(Box::new(net.store(&b).unwrap()), &b).unwrap();
+        let st = s.line().structure(&sb).unwrap().clone();
+        assert_eq!(
+            refs.len(),
+            st.routes.len(),
+            "a structure refers to its own routes only"
+        );
+        let (lines, tiles) = net.entry_interest(&b, c.at.seq).unwrap();
+        assert_eq!(lines, vec![b.clone()]);
+        let keys: BTreeSet<i64> = c
+            .tiles
+            .iter()
+            .filter_map(|k| ohl_store_pg::stream::tile_key(&k.tile()))
+            .collect();
+        assert_eq!(tiles.into_iter().collect::<BTreeSet<_>>(), keys);
+        let rows: Vec<_> = net
+            .stream_after(c.at.seq - 1, i32::MAX, &[b.clone()], &[], &[], 10)
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.seq == c.at.seq)
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].op, serde_json::to_string(&c.op).unwrap());
+        // A section through it refers to it and its wire points.
+        let section = s
+            .line()
+            .sections
+            .iter()
+            .find(|x| x.points.iter().any(|p| p.structure == sb))
+            .unwrap();
+        let (_, refs) = net.kept_interest(&b, "section", &section.id).unwrap();
+        assert!(
+            refs.iter()
+                .any(|(k, id, set)| k == "structure" && id == &sb && *set == 0)
+        );
+        assert!(
+            refs.iter()
+                .any(|(k, id, set)| k == "structure" && id == &sb && *set > 0)
+        );
+    }
     // Read again: only the tiles that changed come, at the change's revision.
     let before = v.tiles.clone();
     v.joined

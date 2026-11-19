@@ -1081,6 +1081,9 @@ impl Gate {
 pub(crate) struct Pace {
     presence: Bucket,
     locks: Bucket,
+    /// A network's interest and catch-up requests (each may make the
+    /// server build tiles or read its stream).
+    interest: Bucket,
 }
 
 impl Pace {
@@ -1090,6 +1093,8 @@ impl Pace {
             // times a second at most.
             presence: Bucket::new(10.0, 20.0),
             locks: Bucket::new(20.0, 64.0),
+            // The web client asks for its tiles at most every 250 ms.
+            interest: Bucket::new(4.0, 8.0),
         }
     }
 }
@@ -1695,6 +1700,11 @@ pub(crate) async fn dispatch(
 ) -> Result<Option<ServerMsg>, String> {
     Ok(match msg {
         ClientMsg::Hello { .. } | ClientMsg::Join { .. } => return Err("hello twice".into()),
+        ClientMsg::Interest { .. } | ClientMsg::Catch { .. } if !pace.interest.take() => {
+            Some(ServerMsg::Notice {
+                text: "too many interest or catch-up requests: slow down".into(),
+            })
+        }
         ClientMsg::Interest { routes, tiles } => {
             let (tx, rx) = oneshot::channel();
             jobs.send(Job::Interest {

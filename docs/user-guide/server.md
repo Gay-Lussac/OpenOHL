@@ -84,6 +84,38 @@ shows:
 
 **Security.** The page and the WebSocket are served over **HTTPS with the server's self-signed certificate**, so the browser warns the first time ("not private", "not trusted"). Before accepting it, compare the certificate's SHA-256 fingerprint (the browser shows it in the certificate details) with the one `ohl serve` prints, or with the last part of the `ohl://` invitation: if they differ, do not continue. The access code travels in the link's `#` part, which browsers do not send to the server or other sites, but it is in the browser history: hand links out like invitations. The listener serves only the client's own four files and the WebSocket; messages have the same size limits as the application's, and a browser silent for 30 s is disconnected. On a network you do not trust, prefer the application (its certificate is checked against the invitation automatically).
 
+## A network's server (in active development)
+
+A country server keeps every line of a network in a PostgreSQL database
+([ADR-0013](../adr/0013-country-server.md); setting one up:
+[the country server's database](../development/postgresql.md)). Its
+server is started on the database instead of a project file:
+
+    ohl network serve --database "host=… dbname=network" --web 8443 --invite alice
+
+(the same options as `ohl serve`, and `--readers`, `--packagers`,
+`--packages-mb`, `--shapes-mb`, `--heartbeat-ms`). One server per
+database: a second one is refused. It reads every line once (the
+12 000-pylon synthetic country: about 15 s) and writes each edit to the
+database before it tells anyone.
+
+- **Browsers** joining it get no copy of a line: they see the network
+  **by tiles** around their view — the structures (a stick each), the
+  wires solved at 15 °C without wind (each section alone: a drawing, not
+  a result), the alignments and the routes' names — and read a tile again
+  when someone's edit touched it. Moving around asks for the tiles
+  around the new view (at most 96 at once). The header says "network of
+  N lines (tiles)". Still a viewer.
+- **OHL-Design** cannot join a network's server yet: picking a working
+  set and seeing the rest as context is the next step (phase 6). Until
+  then it joins servers of a project file as before; a network's server
+  refuses it with that message.
+- Clients of **protocol 2** (OpenOHL before 2026-11-19) are refused by
+  every server, with a message to update.
+- Users and roles are each line's own (as in its project file); the
+  general invitation lets newcomers in as viewers. Rights by role on
+  (almost) every element come later (phase 7).
+
 ## Roles
 
 Each user of a project has one role; admins give them (People). The
@@ -124,6 +156,6 @@ Somebody holding an invitation must not be able to stop the others (security rev
 - Edits wait for the server's answer (milliseconds on a network; at most 15 s) before they show. Edits are not shown before the server confirms them.
 - Joining copies the whole project. Only the chunks a user views will be sent, later.
 - The application speaks QUIC only (UDP). Browsers use the web client's WebSocket (TCP); the application cannot use it yet, for networks that block UDP.
-- The web client: a viewer of the main line; one weather case, no terrain, point clouds or backgrounds.
+- The web client: a viewer of the main line (of the tiles around the view, on a network's server); one weather case, no terrain, point clouds or backgrounds.
 - A user's name and the access code are the only identity. Sign-in through an organisation (OIDC / SSO) is to come.
 - If the connection drops, the project turns read-only. Join again to continue.

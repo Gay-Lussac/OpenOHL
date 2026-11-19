@@ -391,6 +391,76 @@ impl Network {
         Ok(unknown)
     }
 
+    /// The elements of every model's main branch whose bounds touch the
+    /// area (x0, y0, x1, y1): the spatial index's GiST query.
+    pub fn objects_in_area(&self, area: [f64; 4]) -> Result<i64, NetError> {
+        Ok(lock(&self.conn)
+            .query_one(
+                "SELECT count(*) FROM spatial
+                 WHERE branch = 'main' AND geom && ST_MakeEnvelope($1, $2, $3, $4)",
+                &[&area[0], &area[1], &area[2], &area[3]],
+            )?
+            .get(0))
+    }
+
+    /// The centres of `n` structures of the models' main branches, a
+    /// sample the same every time (measurements).
+    pub fn sample_structures(&self, n: i64) -> Result<Vec<[f64; 2]>, NetError> {
+        Ok(lock(&self.conn)
+            .query(
+                "SELECT (x0 + x1) / 2, (y0 + y1) / 2 FROM spatial
+                 WHERE branch = 'main' AND kind = 'structure'
+                 ORDER BY md5(line_id || '/' || id) LIMIT $1",
+                &[&n],
+            )?
+            .into_iter()
+            .map(|r| [r.get(0), r.get(1)])
+            .collect())
+    }
+
+    /// What is kept of element `kind`/`id` of model `line`'s main branch
+    /// for the interest: its routes (`None`: not counted), its references
+    /// (to kind, to id, set number).
+    pub fn kept_interest(
+        &self,
+        line: &str,
+        kind: &str,
+        id: &str,
+    ) -> Result<(Option<Vec<String>>, Vec<(String, String, i32)>), NetError> {
+        let mut c = lock(&self.conn);
+        let routes = c
+            .query_opt(
+                "SELECT routes FROM object
+                 WHERE line_id = $1 AND branch = 'main' AND kind = $2 AND id = $3",
+                &[&line, &kind, &id],
+            )?
+            .and_then(|r| r.get::<_, Option<Vec<String>>>(0));
+        let refs = c
+            .query(
+                "SELECT to_kind, to_id, set_no FROM object_ref
+                 WHERE line_id = $1 AND branch = 'main' AND from_kind = $2 AND from_id = $3
+                 ORDER BY to_kind, to_id, set_no",
+                &[&line, &kind, &id],
+            )?
+            .into_iter()
+            .map(|r| (r.get(0), r.get(1), r.get(2)))
+            .collect();
+        Ok((routes, refs))
+    }
+
+    /// The models and tiles log entry `seq` of model `line` touched.
+    pub fn entry_interest(
+        &self,
+        line: &str,
+        seq: i64,
+    ) -> Result<(Vec<String>, Vec<i64>), NetError> {
+        let r = lock(&self.conn).query_one(
+            "SELECT lines, tiles FROM oplog WHERE line_id = $1 AND seq = $2",
+            &[&line, &seq],
+        )?;
+        Ok((r.get(0), r.get(1)))
+    }
+
     /// Opens a snapshot on this connection: every read until
     /// [`Network::end_snapshot`] sees the database as it is now (a
     /// `REPEATABLE READ`, read-only transaction; its snapshot taken at

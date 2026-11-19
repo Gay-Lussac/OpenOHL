@@ -345,3 +345,160 @@ fn scripts_parse_when_node_is_installed() {
         }
     }
 }
+
+/// On a network's server a browser gets what the network holds, asks for
+/// the tiles around its view and draws their packages; a change touching
+/// them comes, and the tile read again shows it; edits refused (a
+/// viewer); protocol 2 refused with the reason.
+#[cfg(feature = "network")]
+#[test]
+fn web_viewers_read_tiles_of_a_network() {
+    use crate::network_tests as n;
+    let Some(t) = n::test_network("web", 300) else {
+        return;
+    };
+    let server = Server::start_network(
+        Options {
+            web: Some("127.0.0.1:0".parse().unwrap()),
+            ..n::local("abcd2345")
+        },
+        n::net_options(&t.url),
+    )
+    .unwrap();
+    let addr = server.web_addr.unwrap();
+    let fp = server.invitation.fingerprint;
+    let general = server.keys().code(None);
+    let code = t.codes[0].clone();
+    let (id, p) = n::structure_of(&t, &code, 2);
+    let tiles = n::tiles_around(p, 1);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let mut w = rt.block_on(async {
+        let mut old = ws(addr, fp).await;
+        let hello = ClientMsg::Hello {
+            protocol: 2,
+            user: "wendy".into(),
+            code: general.clone(),
+        };
+        send(&mut old, &hello).await;
+        let m = next(&mut old).await.unwrap();
+        assert!(
+            matches!(&m, ServerMsg::Refused { reason } if reason.contains("protocol 2")),
+            "{m:?}"
+        );
+        let (mut w, m) = join(addr, fp, "wendy", &general).await;
+        assert!(
+            matches!(
+                m,
+                ServerMsg::Welcome {
+                    role: Role::Viewer,
+                    size: 0,
+                    ..
+                }
+            ),
+            "{m:?}"
+        );
+        let info = until(&mut w, |m| matches!(m, ServerMsg::Network(_))).await;
+        let ServerMsg::Network(info) = info else {
+            unreachable!()
+        };
+        assert_eq!(info.models.len(), t.codes.len());
+        let held: Vec<crate::HeldTile> = tiles
+            .iter()
+            .map(|k| crate::HeldTile {
+                tile: *k,
+                rev: None,
+            })
+            .collect();
+        send(
+            &mut w,
+            &ClientMsg::Interest {
+                routes: Vec::new(),
+                tiles: held,
+            },
+        )
+        .await;
+        let mut got = std::collections::BTreeMap::new();
+        while got.len() < tiles.len() {
+            if let ServerMsg::Tile(pkg) = until(&mut w, |m| matches!(m, ServerMsg::Tile(_))).await {
+                got.insert(pkg.tile, pkg);
+            }
+        }
+        assert!(
+            got.values()
+                .flat_map(|p| p.structures.iter())
+                .any(|s| s.id == id && s.position == p),
+            "the structure in its tile"
+        );
+        // A viewer's edit refused.
+        send(
+            &mut w,
+            &ClientMsg::RequestOn {
+                id: 9,
+                model: code.clone(),
+                op: n::moved(&id, p),
+                line: "main".into(),
+            },
+        )
+        .await;
+        let m = until(&mut w, |m| matches!(m, ServerMsg::Response { id: 9, .. })).await;
+        assert!(
+            matches!(&m, ServerMsg::Response { result: Err(e), .. } if e == super::VIEW_ONLY),
+            "{m:?}"
+        );
+        w
+    });
+    // Bob moves the structure (QUIC): the browser is told, reads it again.
+    let bob = crate::client::join_network(
+        &server.invitation_for("bob"),
+        "bob",
+        &crate::client::NetJoin::default(),
+        &mut |_| {},
+    )
+    .unwrap();
+    bob.link
+        .send(ClientMsg::RequestOn {
+            id: 1,
+            model: code.clone(),
+            op: n::moved(&id, [p[0], p[1] + 2.0, p[2]]),
+            line: "main".into(),
+        })
+        .unwrap();
+    rt.block_on(async {
+        let m = until(&mut w, |m| matches!(m, ServerMsg::Change(_))).await;
+        let ServerMsg::Change(c) = m else {
+            unreachable!()
+        };
+        let again: Vec<crate::HeldTile> = c
+            .tiles
+            .iter()
+            .filter(|k| tiles.contains(k))
+            .map(|k| crate::HeldTile {
+                tile: *k,
+                rev: None,
+            })
+            .collect();
+        assert!(!again.is_empty());
+        let n = again.len();
+        send(
+            &mut w,
+            &ClientMsg::Interest {
+                routes: Vec::new(),
+                tiles: again,
+            },
+        )
+        .await;
+        let mut moved = false;
+        for _ in 0..n {
+            if let ServerMsg::Tile(pkg) = until(&mut w, |m| matches!(m, ServerMsg::Tile(_))).await {
+                assert_eq!(pkg.rev, c.at);
+                moved |= pkg
+                    .structures
+                    .iter()
+                    .any(|s| s.id == id && s.position[1] == p[1] + 2.0);
+            }
+        }
+        assert!(moved, "the tile read again shows the move");
+    });
+    drop(bob);
+    server.stop();
+}

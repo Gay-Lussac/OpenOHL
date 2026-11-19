@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! `ohl network …`: a country server's database (ADR-0013, phase 4) —
+//! `ohl network …`: a country server's database (ADR-0013, phases 4–5) —
 //! project files imported, one model exported, the models listed, the
-//! PostgreSQL store measured.
+//! PostgreSQL store measured; the server on the network hosted and
+//! measured (`serve`, `bench`).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -100,6 +101,106 @@ pub enum NetworkCommand {
         #[arg(long)]
         export: Option<PathBuf>,
     },
+    /// Host the network for several users (pre-alpha, protocol 3): every
+    /// line read once, each edit written to the database, clients served
+    /// by interest (a desktop follows a line, a browser views tiles).
+    /// Prints the invitations; runs until stopped. One server per
+    /// database (a second is refused).
+    Serve {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Address and port to listen on (UDP: QUIC).
+        #[arg(long, default_value = "0.0.0.0:4433")]
+        bind: std::net::SocketAddr,
+        /// Host name or address in the invitation (default: this
+        /// computer's address on the local network).
+        #[arg(long)]
+        advertise: Option<String>,
+        /// Secret of the general invitation (default: a random one).
+        #[arg(long)]
+        code: Option<String>,
+        /// File keeping the key of the personal invitations (made when
+        /// missing, readable by its owner only; default: a random key for
+        /// this run).
+        #[arg(long, value_name = "FILE")]
+        keys: Option<PathBuf>,
+        /// Role of users the network does not know: viewer, designer, or
+        /// none (refused).
+        #[arg(long, default_value = "viewer")]
+        newcomers: String,
+        /// Print the personal invitation of this user (repeatable).
+        #[arg(long)]
+        invite: Vec<String>,
+        /// Also serve the web client on this TCP port (0: any free one).
+        #[arg(long, value_name = "PORT")]
+        web: Option<u16>,
+        /// Stop after this many seconds (default: run until stopped).
+        #[arg(long)]
+        seconds: Option<u64>,
+        /// Reader connections at most (copies of lines for desktops).
+        #[arg(long, default_value_t = 4)]
+        readers: usize,
+        /// Threads making tile packages.
+        #[arg(long, default_value_t = 2)]
+        packagers: usize,
+        /// Threads solving one package's sections side by side.
+        #[arg(long, default_value_t = 4)]
+        solve_threads: usize,
+        /// Tile packages kept in memory, MB.
+        #[arg(long, default_value_t = 128)]
+        packages_mb: usize,
+        /// Solved section shapes kept in memory, MB.
+        #[arg(long, default_value_t = 256)]
+        shapes_mb: usize,
+        /// A heartbeat this often, ms.
+        #[arg(long, default_value_t = 2000)]
+        heartbeat_ms: u64,
+        /// Write the server's counters and timings (JSON) to this file
+        /// every half second (measurements).
+        #[arg(long, value_name = "FILE")]
+        stats: Option<PathBuf>,
+        /// Connections at once (more wait for a free one).
+        #[arg(long, default_value_t = ohl_server::server::MAX_QUIC)]
+        max_connections: usize,
+        /// Connections of one address not joined yet.
+        #[arg(long, default_value_t = ohl_server::server::MAX_PENDING)]
+        max_per_address: usize,
+    },
+    /// Measure the server on the network (the plan's targets): start,
+    /// memory idle and per client, join to first view, tile packages made
+    /// and from the cache, a move applied and broadcast, area queries.
+    /// Runs `ohl network serve` as a process of its own, then the server
+    /// in this one for what is timed inside it; prints JSON. Edits the
+    /// network (structures moved back and forth).
+    Bench {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// A user allowed to edit the line moved.
+        #[arg(long)]
+        user: String,
+        /// The line whose structures are moved (default: the first).
+        #[arg(long)]
+        line: Option<String>,
+        /// Viewers at once (half on one view, half each on its own).
+        #[arg(long, default_value_t = 20)]
+        viewers: usize,
+        /// A view: tiles across and down.
+        #[arg(long, default_value_t = 4)]
+        view_w: i64,
+        #[arg(long, default_value_t = 3)]
+        view_h: i64,
+        /// Moves timed.
+        #[arg(long, default_value_t = 50)]
+        moves: usize,
+        /// Area queries timed.
+        #[arg(long, default_value_t = 200)]
+        areas: usize,
+        /// Folder for the bench's files (the line's copy, the keys).
+        #[arg(long)]
+        work: PathBuf,
+    },
 }
 
 fn database(given: Option<String>) -> Result<String, String> {
@@ -110,6 +211,92 @@ fn database(given: Option<String>) -> Result<String, String> {
 
 pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
+        NetworkCommand::Serve {
+            database: db,
+            bind,
+            advertise,
+            code,
+            keys,
+            newcomers,
+            invite,
+            web,
+            seconds,
+            readers,
+            packagers,
+            solve_threads,
+            packages_mb,
+            shapes_mb,
+            heartbeat_ms,
+            stats,
+            max_connections,
+            max_per_address,
+        } => {
+            let newcomers = match newcomers.as_str() {
+                "none" => None,
+                r => Some(ohl_session::Role::parse(r).map_err(|e| e.to_string())?),
+            };
+            let started = Instant::now();
+            let server = ohl_server::server::Server::start_network(
+                ohl_server::server::Options {
+                    bind,
+                    advertise,
+                    code,
+                    keys,
+                    newcomers,
+                    web: web.map(|port| std::net::SocketAddr::new(bind.ip(), port)),
+                    max_connections,
+                    max_per_address,
+                },
+                ohl_server::network::NetOptions {
+                    database: database(db)?,
+                    readers,
+                    packagers,
+                    solve_threads,
+                    packages_mb,
+                    shapes_mb,
+                    heartbeat: Duration::from_millis(heartbeat_ms.max(10)),
+                    ..Default::default()
+                },
+            )?;
+            println!("network read in {:.2} s", started.elapsed().as_secs_f64());
+            crate::host("the network", server, &invite, seconds, |server| {
+                if let Some(path) = &stats
+                    && let Ok(json) = server.probe(ohl_server::network::Probe::Stats)
+                {
+                    let tmp = path.with_extension("tmp");
+                    if std::fs::write(&tmp, json).is_ok() {
+                        let _ = std::fs::rename(&tmp, path);
+                    }
+                }
+            })
+        }
+        NetworkCommand::Bench {
+            database: db,
+            user,
+            line,
+            viewers,
+            view_w,
+            view_h,
+            moves,
+            areas,
+            work,
+        } => {
+            let report = crate::network_bench::bench(&crate::network_bench::Bench {
+                database: database(db)?,
+                user,
+                line,
+                viewers,
+                view: (view_w.max(1), view_h.max(1)),
+                moves,
+                areas,
+                work,
+            })?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::Import {
             files,
             line,

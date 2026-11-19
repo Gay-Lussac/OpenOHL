@@ -81,6 +81,8 @@ pub struct NetOptions {
     pub readers: usize,
     /// Threads making tile packages.
     pub packagers: usize,
+    /// Threads solving one package's sections side by side.
+    pub solve_threads: usize,
     /// Tile packages kept, MB.
     pub packages_mb: usize,
     /// Solved section shapes kept, MB.
@@ -104,11 +106,12 @@ impl Default for NetOptions {
             database: String::new(),
             readers: 4,
             packagers: 2,
+            solve_threads: 4,
             packages_mb: 128,
             shapes_mb: 256,
-            resolved_models: 64,
+            resolved_models: 256,
             heartbeat: Duration::from_secs(2),
-            max_tiles: 1024,
+            max_tiles: 256,
             catch_up_max: 10_000,
             large_tiles: 256,
         }
@@ -1382,6 +1385,7 @@ impl NetHost {
             bounds,
             parts,
             case: self.case.clone(),
+            threads: self.options.solve_threads,
         })
     }
 

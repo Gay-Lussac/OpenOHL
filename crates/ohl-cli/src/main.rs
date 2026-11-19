@@ -22,6 +22,7 @@ mod internal_run;
 mod io_run;
 mod lightning_run;
 mod links_run;
+mod network_bench;
 mod network_run;
 mod project;
 mod reference_run;
@@ -1468,7 +1469,26 @@ fn serve(
             max_per_address,
         },
     )?;
-    println!("hosting {} on {}", project.display(), server.local_addr);
+    host(
+        &project.display().to_string(),
+        server,
+        invite,
+        seconds,
+        |_| {},
+    )
+}
+
+/// Prints how to join a server running (`what` it hosts), who joins and
+/// leaves; stops after `seconds` (default: when stopped). `tick` runs
+/// every half second.
+pub(crate) fn host(
+    what: &str,
+    server: ohl_server::server::Server,
+    invite: &[String],
+    seconds: Option<u64>,
+    mut tick: impl FnMut(&ohl_server::server::Server),
+) -> Result<(), String> {
+    println!("hosting {what} on {}", server.local_addr);
     println!("invitation (newcomers): {}", server.invitation);
     for user in invite {
         println!("invitation for {user}: {}", server.invitation_for(user));
@@ -1500,6 +1520,7 @@ fn serve(
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(500));
+        tick(&server);
         let now: Vec<String> = server
             .peers()
             .iter()

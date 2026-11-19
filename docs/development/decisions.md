@@ -8,6 +8,144 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (country server, phase 5)
+
+**The server on the network's database: every model in memory, each
+command one transaction with what its clients' interest needs, the
+operation stream by interest with heartbeats and catch-up, tile packages
+of the context, protocol 3** (owner, 2026-11-18: go ahead with the server
+plan, report only; built, in active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md), the
+[data model](data-model.md#the-servers-messages-protocol-3),
+[running it and its tests](postgresql.md)).
+
+- **`ohl network serve`** (`ohl_server::network`, the feature `network`
+  of `ohl-server`: the command line enables it, the desktop application
+  does not, so it carries no PostgreSQL client): the authority takes the
+  network's writer's lock (a second server on the database is refused),
+  opens a session on every model (each model's line read once, changed in
+  place by each command), and keeps a **tile index** at the package level
+  (structures, sections, alignments and alignment points by tile, each
+  tile with its revision). The server of a project file is unchanged:
+  the same code paths (both authorities now share the users, locks and
+  broadcasts, `server::Common`), every earlier server test passing
+  unchanged.
+- **Each command is one transaction**: the session's rows (its steps
+  nested in the unit), then the routes and references of each element of
+  the main branch it changed (`object.routes`, `object_ref`), the models
+  and tiles its log entries touched (`oplog.lines`, `oplog.tiles`), and
+  the change in `stream` at its **position** — committed before it is
+  broadcast. A command the session applied but whose rows cannot be kept
+  is rolled back and its model read again from the database (said in the
+  log and to its sender). **Positions** (decided here): (`seq`, `step`),
+  the network's last log entry and, for changes making no log entry (a
+  library put, a role, a commit), steps after it — so every change has a
+  place, even those the log does not keep, and catch-up can replay them;
+  kept in the database, they survive a restart.
+- **Schema 2** of the network: `object.routes` (NULL until counted: a
+  database imported before is counted when the server first starts),
+  `oplog.lines`, `oplog.tiles`, the `stream` table; the import writes the
+  routes and references of every element and the tiles of its entry
+  (147 line projects: 88.5 s instead of 74.9 s, 369 MB instead of
+  208 MB — the reference rows and the GIN indexes).
+- **Tile keys** (decided here): one `bigint` per tile (level + 128 in the
+  top 8 bits, column and row in 28 bits each); the package level a
+  network setting (`net_meta` `tile_level`, 2 by default: 1 024 m — a
+  view of a few kilometres takes a dozen tiles; a level-0 tile of 256 m
+  would take hundreds).
+- **The stream by interest** (plan §5.4): a client follows whole models,
+  routes and tiles; each change is encoded once and broadcast; each
+  connection passes on what touches its client (`stream::View`). What is
+  for one client alone — a tile package, a catch-up, a change of its
+  interest — goes on its own queue marked with the broadcast it follows
+  (`stream::Feed` merges both in the authority's order): a tile taken at
+  its revision is followed by exactly the changes after it, none missed,
+  none twice. A **heartbeat** (every 2 s by default) carries the stream's
+  position and the last change sent to that client: a client whose last
+  is older missed something. **Catch-up** from a position (`catch`, or
+  `since` when joining again) reads `stream` (10 000 changes at most,
+  else "read again"). A change touching more tiles than a setting (256)
+  reaches the clients that only view tiles as `tiles_changed` ("read
+  again"). Interest and catch-up requests are paced (4 a second, 8 at
+  once), a client views 256 tiles at most, its own queue holds 1 024
+  messages (a client further behind is let go and catches up when it
+  joins again).
+- **Protocol 3**; the messages of 2 unchanged (a file server speaks 3
+  with them alone). A client of protocol 2 is refused with "this program
+  speaks protocol 2, the server protocol 3: update OpenOHL to join"; a
+  desktop's hello to a network's server with what it can do instead
+  (joining a network with a working set is phase 6). New messages in the
+  data model.
+- **A desktop following a model** (`client::join_network` with a model;
+  the command line and the tests — OHL-Design's working sets are phase
+  6): its copy written by a **reader** (a pool of read-only connections)
+  at a snapshot taken between two commands, so the authority goes on
+  while it is written; then the model's changes, replayed with the
+  server's log numbers (`Session::set_next_seq`: a network numbers the
+  entries of all its models in one sequence, a replica of one model sees
+  gaps; the project file's statement is unchanged when no number is
+  given — the desktop never gives one).
+- **Tile packages** (plan §5.2): made by packager threads (2) from a copy
+  of each model's line at the model's revision (copied once per revision;
+  the database is not read for them): per structure its id, position,
+  orientation, type, height and a stick (its drawing, else a mast and
+  arms, and its strings); per section its wires solved in the **context
+  case** (`net_meta` `context_temperature`, 15 °C, still air) — **each
+  section solved alone** (`solve_one`: no jumper loads, no coupled
+  assemblies, no flexibility; a drawing, never a result — said in the
+  package's case and the web client's notes), on
+  **the part of its line it reads** (its structures, the sections and
+  jumpers at them, its spacers, the alignments within 500 m, the line's
+  settings: the same shape as on the whole line, bit for bit — tested on
+  every section of the example lines and every eleventh of a synthetic
+  country of 300 pylons — so a solve costs the same in a model of the
+  whole country), its sections solved side by side (4 threads); the alignments' segments crossing the tile (so a
+  point moved changes the tiles of its segments only); the routes'
+  names. **Caches**, each bounded (settings): packages per (tile,
+  revision, rights class — 0 until phase 7, the key ready), 128 MB;
+  solved shapes, 256 MB, keyed like the solve memo's (a 128-bit
+  fingerprint of everything the solve reads: the section, the part of
+  the line it is solved on, the line's settings — every field but its
+  elements, listed so that a new field must be —, the wire type and the
+  weather case); resolved structures per model and library revision
+  (`ResolveCache`), the libraries read once.
+- **The web client by tile** (plan §5.5): on a network's server it gets
+  the network's routes and bounds, asks for the tiles around its view (96
+  at most, the nearest first, again when the view moves), draws their
+  packages with the scene's drawing code, and reads a tile again when a
+  change (or a heartbeat showing a gap) touched it. Still a viewer.
+- **Proved** (a throwaway cluster per test, a small synthetic country):
+  the property — 24 random edits and undos, every client receives exactly
+  the changes of the stream touching its interest, in order; a desktop's
+  replica equal to the server's export of its model row by row, log
+  numbers included, after edits, a gap and a catch-up; a lost change
+  shown by the heartbeat and brought by a catch-up; a desktop gone while
+  four changes were made gets exactly those, in order, then the live
+  stream; what each command keeps in the database; tiles read again at
+  the change's revision, only those touched; one writer per database;
+  protocol 2 refused (QUIC, web, a file server); roles and soft locks as
+  on a file server; a browser reading tiles.
+- **Measured** on the 12 000-pylon synthetic country (147 line models,
+  [performance](performance.md#synthetic-country-phase-5-the-server-on-the-database-2026-11-19)):
+  the server starts in 2.5 s and holds 1.25 GB idle; a connection costs
+  0.08 MB (a viewer on a view of its own 6.2 MB, the shared caches); an
+  area query 8 µs in the tile index (0.41 ms in PostGIS) at p95; a tile
+  from the cache 7 µs in the server; a tile made p50 10 ms, p95 96 ms
+  (each section on its sub-line; on its whole line p95 was 253 ms); a
+  move applied and broadcast p95 10.8 ms; a view of 12 new tiles p50
+  0.10 s, at most 0.52 s. The country as one model: start 1.9 s, a tile
+  p95 68 ms, a move p95 9.8 ms. The machine was shared with two other
+  builds (load 12–19).
+- **Not yet**: OHL-Design on a network (working set, context tiles,
+  partial replica: phase 6); rights (phase 7: until then every user who
+  may join sees everything, edits by each model's own roles); point
+  clouds, backgrounds and terrain tiles are not in PostgreSQL yet and not
+  served (a model's surfaces are, whole, not served by tile); the
+  context's wires are drawings (each section alone); a model as large as
+  the country works, but the first tile asked after an edit copies its
+  whole line (about a second for the 12 000-pylon country) — one model
+  per line (as the import of per-route files does) keeps that small.
+
 ## 2026-11-19 (country server, phase 4)
 
 **The PostgreSQL store: a model of the network opened as a project; the

@@ -29,7 +29,13 @@
 //! jumpers' loads, the coupled solve of sections sharing an assembly and
 //! the structures' flexibility are left out (the checks and OHL-Design
 //! take them); a span is thinned to [`crate::web::SCENE_SPAN_POINTS`]
-//! points at millimetres.
+//! points at millimetres. Each section is solved on **the part of its
+//! line it reads** ([`sub_line`]: its structures, the sections and
+//! jumpers at them, its spacers, the alignments near it, the line's
+//! settings), so a solve costs the same in a line of a hundred structures
+//! as in a model of the whole country — the same shape as on the whole
+//! line, bit for bit (tested on the example lines and a synthetic
+//! country).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Write as _};
@@ -173,6 +179,8 @@ pub(crate) struct BuildJob {
     pub(crate) bounds: Bounds,
     pub(crate) parts: Vec<Part>,
     pub(crate) case: Arc<ohl_weather::WeatherCase>,
+    /// Threads solving its sections side by side.
+    pub(crate) threads: usize,
 }
 
 /// A tile made.
@@ -209,6 +217,10 @@ struct Resolved {
     at_structure: HashMap<String, Vec<usize>>,
     /// Section → its spacers.
     spacers: HashMap<String, Vec<usize>>,
+    /// Structure → the jumpers ending or held at it.
+    jumpers: HashMap<String, Vec<usize>>,
+    /// Each alignment's plan bounds (its points), by place.
+    alignment_bounds: Vec<Option<Bounds>>,
     /// The line's settings (everything but its elements).
     settings: Key,
     notes: Vec<String>,
@@ -422,12 +434,55 @@ pub(crate) fn build(job: &BuildJob, caches: &Caches, work: &std::path::Path) -> 
                     .push(context_structure(&part.model, &line.structures[k]));
             }
         }
-        for id in &part.sections {
-            let Some(&k) = r.sections.get(id) else {
-                continue;
-            };
-            let section = &line.sections[k];
-            let (spans, error, was_cached) = shape(part, &r, &libs, section, &job.case, caches);
+        // The sections' shapes, solved side by side (each alone).
+        let sections: Vec<&ohl_line::Section> = part
+            .sections
+            .iter()
+            .filter_map(|id| r.sections.get(id).map(|&k| &line.sections[k]))
+            .collect();
+        let threads = job.threads.clamp(1, sections.len().max(1));
+        let shapes: Vec<(Vec<SceneSpan>, Option<String>, bool)> = if threads == 1 {
+            sections
+                .iter()
+                .map(|s| shape(part, &r, &libs, s, &job.case, caches))
+                .collect()
+        } else {
+            let mut out: Vec<Option<(Vec<SceneSpan>, Option<String>, bool)>> =
+                vec![None; sections.len()];
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..threads)
+                    .map(|t| {
+                        let (sections, r, libs, case) = (&sections, &r, &libs, &job.case);
+                        scope.spawn(move || {
+                            sections
+                                .iter()
+                                .enumerate()
+                                .skip(t)
+                                .step_by(threads)
+                                .map(|(i, s)| (i, shape(part, r, libs, s, case, caches)))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                for h in handles {
+                    for (i, x) in h.join().unwrap_or_default() {
+                        out[i] = Some(x);
+                    }
+                }
+            });
+            out.into_iter()
+                .map(|x| {
+                    x.unwrap_or_else(|| {
+                        (
+                            Vec::new(),
+                            Some("not solved (an internal error of the server)".into()),
+                            false,
+                        )
+                    })
+                })
+                .collect()
+        };
+        for (section, (spans, error, was_cached)) in sections.into_iter().zip(shapes) {
             if was_cached {
                 cached += 1;
             } else {
@@ -520,10 +575,17 @@ fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
                 }
             }
         }
-        None => match ohl_cables::Library::load(&shipped_library("cables")) {
-            Ok(l) => cables = l,
-            Err(e) => notes.push(format!("wire library: {e}")),
-        },
+        // The shipped library, read once for every model.
+        None => {
+            static SHIPPED: std::sync::OnceLock<Result<ohl_cables::Library, String>> =
+                std::sync::OnceLock::new();
+            match SHIPPED.get_or_init(|| {
+                ohl_cables::Library::load(&shipped_library("cables")).map_err(|e| e.to_string())
+            }) {
+                Ok(l) => cables = l.clone(),
+                Err(e) => notes.push(format!("wire library: {e}")),
+            }
+        }
     }
     let typed = part
         .line
@@ -651,6 +713,17 @@ fn resolved_of(part: &Part, libs: &Libs, caches: &Caches) -> Arc<Resolved> {
         }
         None => part.line.clone(),
     };
+    let r = Arc::new(indexed(line, notes));
+    caches
+        .resolved
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .put(k, r.clone(), 0);
+    r
+}
+
+/// A line resolved, with its lookups.
+fn indexed(line: Arc<Line>, notes: Vec<String>) -> Resolved {
     let index = |ids: &mut dyn Iterator<Item = String>| -> HashMap<String, usize> {
         let mut m = HashMap::new();
         for (k, id) in ids.enumerate() {
@@ -672,7 +745,18 @@ fn resolved_of(part: &Part, libs: &Libs, caches: &Caches) -> Arc<Resolved> {
         spacers.entry(s.a.section.clone()).or_default().push(k);
         spacers.entry(s.b.section.clone()).or_default().push(k);
     }
-    let r = Arc::new(Resolved {
+    let jumpers = jumpers_by_structure(&line);
+    let points: HashMap<&str, [f64; 3]> = line
+        .alignment_points
+        .iter()
+        .map(|p| (p.id.as_str(), p.position))
+        .collect();
+    let alignment_bounds = line
+        .alignments
+        .iter()
+        .map(|a| Bounds::of_points(a.points.iter().filter_map(|p| points.get(p.as_str()))))
+        .collect();
+    Resolved {
         structures: index(&mut line.structures.iter().map(|x| x.id.clone())),
         sections: index(&mut line.sections.iter().map(|x| x.id.clone())),
         alignments: index(&mut line.alignments.iter().map(|x| x.id.clone())),
@@ -680,16 +764,12 @@ fn resolved_of(part: &Part, libs: &Libs, caches: &Caches) -> Arc<Resolved> {
         routes: index(&mut line.routes.iter().map(|x| x.id.clone())),
         at_structure,
         spacers,
+        jumpers,
+        alignment_bounds,
         settings: settings_key(&line),
         notes,
         line,
-    });
-    caches
-        .resolved
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .put(k, r.clone(), 0);
-    r
+    }
 }
 
 /// A section's spans in the context case: from the cache when nothing it
@@ -702,52 +782,21 @@ fn shape(
     case: &ohl_weather::WeatherCase,
     caches: &Caches,
 ) -> (Vec<SceneSpan>, Option<String>, bool) {
-    let line = &*r.line;
-    let mut structures: Vec<&Structure> = Vec::new();
-    let mut others: Vec<usize> = Vec::new();
-    for p in &section.points {
-        if let Some(&k) = r.structures.get(&p.structure)
-            && !structures.iter().any(|s| s.id == p.structure)
-        {
-            structures.push(&line.structures[k]);
-        }
-        if let Some(v) = r.at_structure.get(&p.structure) {
-            others.extend(v.iter().copied());
-        }
-    }
-    others.sort_unstable();
-    others.dedup();
-    let ends: Vec<(&str, &Vec<ohl_line::SectionPoint>)> = others
-        .iter()
-        .map(|&k| (line.sections[k].id.as_str(), &line.sections[k].points))
-        .collect();
-    let spacers: Vec<&ohl_line::Spacer> = r
-        .spacers
-        .get(&section.id)
-        .into_iter()
-        .flatten()
-        .map(|&k| &line.spacers[k])
-        .collect();
-    let mid = match (section.points.first(), section.points.last()) {
-        (Some(a), Some(b)) => match (line.wire_point(a), line.wire_point(b)) {
-            (Some(a), Some(b)) => Some([
-                0.5 * (a.position[0] + b.position[0]),
-                0.5 * (a.position[1] + b.position[1]),
-            ]),
-            _ => None,
-        },
-        _ => None,
-    };
-    let direction = mid.and_then(|m| line.direction_at(m));
+    // What the solve reads, and nothing else: its key.
+    let sub = sub_line(r, section);
     let cable = libs.cables.get(&section.cable);
     let k = key(&[
         &part.model,
-        section,
-        &structures,
-        &ends,
-        &spacers,
-        &direction,
         &r.settings,
+        &sub.routes,
+        &sub.alignments,
+        &sub.alignment_points,
+        &sub.structures,
+        &sub.sections,
+        &sub.jumpers,
+        &sub.spacers,
+        &sub.alignment,
+        section,
         &cable,
         case,
     ]);
@@ -759,7 +808,7 @@ fn shape(
     {
         return (s.0.clone(), s.1.clone(), true);
     }
-    let (spans, error) = match ohl_line::solve::solve_one(line, section, &libs.cables, case) {
+    let (spans, error) = match ohl_line::solve::solve_one(&sub, section, &libs.cables, case) {
         Ok(shape) => (
             shape
                 .spans
@@ -790,6 +839,203 @@ fn shape(
         .unwrap_or_else(|e| e.into_inner())
         .put(k, kept.clone(), bytes);
     (kept.0.clone(), kept.1.clone(), false)
+}
+
+/// The jumpers of `line` by the structures they end or are held at.
+fn jumpers_by_structure(line: &Line) -> HashMap<String, Vec<usize>> {
+    let mut out: HashMap<String, Vec<usize>> = HashMap::new();
+    for (k, j) in line.jumpers.iter().enumerate() {
+        let mut at: Vec<String> = Vec::new();
+        for end in [&j.from, &j.to] {
+            at.extend(line.end_structures(end));
+        }
+        for c in j.supports() {
+            at.push(c.structure_id(j).to_owned());
+        }
+        at.sort();
+        at.dedup();
+        for s in at {
+            out.entry(s).or_default().push(k);
+        }
+    }
+    out
+}
+
+/// How far around a section the alignments are kept in its sub-line, m:
+/// the line's direction at the section is read from the nearest one (its
+/// own, under its structures), and a span point placed by station from
+/// its route.
+const NEAR_ALIGNMENTS: f64 = 500.0;
+
+/// The line with none of its elements: its settings only. (Every field is
+/// named: a new one must be thought about here.)
+fn empty_like(line: &Line) -> Line {
+    let Line {
+        format,
+        version,
+        name,
+        crs,
+        height_datum,
+        alignment: _,
+        routes: _,
+        alignments: _,
+        alignment_points: _,
+        structures: _,
+        sections: _,
+        jumpers: _,
+        spacers: _,
+        systems,
+        circuits,
+        display,
+        creep_stretch,
+        bimetallic,
+        solver,
+        defaults,
+        circuit_starts,
+        structure_loads,
+        structure_groups,
+        electrical,
+        reference,
+        feet_state,
+        condition_cases,
+    } = line;
+    Line {
+        format: format.clone(),
+        version: *version,
+        name: name.clone(),
+        crs: crs.clone(),
+        height_datum: height_datum.clone(),
+        alignment: Vec::new(),
+        routes: Vec::new(),
+        alignments: Vec::new(),
+        alignment_points: Vec::new(),
+        structures: Vec::new(),
+        sections: Vec::new(),
+        jumpers: Vec::new(),
+        spacers: Vec::new(),
+        systems: systems.clone(),
+        circuits: circuits.clone(),
+        display: display.clone(),
+        creep_stretch: creep_stretch.clone(),
+        bimetallic: bimetallic.clone(),
+        solver: solver.clone(),
+        defaults: defaults.clone(),
+        circuit_starts: circuit_starts.clone(),
+        structure_loads: structure_loads.clone(),
+        structure_groups: structure_groups.clone(),
+        electrical: electrical.clone(),
+        reference: reference.clone(),
+        feet_state: feet_state.clone(),
+        condition_cases: condition_cases.clone(),
+    }
+}
+
+/// The part of `r`'s line that solving `section` alone reads: the line's
+/// settings; the section's structures; every section and jumper at them
+/// (the dead ends and clamps are told by them); the section's spacers and
+/// the sections they join; the alignments within [`NEAR_ALIGNMENTS`] of
+/// it, with their points and routes. Each kept in the line's order.
+fn sub_line(r: &Resolved, section: &ohl_line::Section) -> Line {
+    let line = &*r.line;
+    let mut out = empty_like(line);
+    let mut structures: Vec<usize> = section
+        .points
+        .iter()
+        .filter_map(|p| r.structures.get(&p.structure).copied())
+        .collect();
+    structures.sort_unstable();
+    structures.dedup();
+    let mut sections: Vec<usize> = Vec::new();
+    let mut jumpers: Vec<usize> = Vec::new();
+    for &k in &structures {
+        let id = &line.structures[k].id;
+        sections.extend(r.at_structure.get(id).into_iter().flatten().copied());
+        jumpers.extend(r.jumpers.get(id).into_iter().flatten().copied());
+    }
+    let mut spacers: Vec<usize> = r
+        .spacers
+        .get(&section.id)
+        .into_iter()
+        .flatten()
+        .copied()
+        .collect();
+    for &k in &spacers {
+        let s = &line.spacers[k];
+        for id in [&s.a.section, &s.b.section] {
+            if let Some(&k) = r.sections.get(id) {
+                sections.push(k);
+            }
+        }
+    }
+    if let Some(&k) = r.sections.get(&section.id) {
+        sections.push(k);
+    }
+    for v in [&mut sections, &mut jumpers, &mut spacers] {
+        v.sort_unstable();
+        v.dedup();
+    }
+    // The structures of every section kept (their points must be there).
+    let mut more: Vec<usize> = sections
+        .iter()
+        .flat_map(|&k| line.sections[k].points.iter())
+        .filter_map(|p| r.structures.get(&p.structure).copied())
+        .collect();
+    more.extend(structures);
+    more.sort_unstable();
+    more.dedup();
+    let structures = more;
+    // The alignments near it.
+    let near = Bounds::of_points(structures.iter().map(|&k| &line.structures[k].position))
+        .map(|b| b.grown(NEAR_ALIGNMENTS));
+    let alignments: Vec<usize> = match near {
+        Some(near) => r
+            .alignment_bounds
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.is_some_and(|b| b.intersects(&near)))
+            .map(|(k, _)| k)
+            .collect(),
+        None => Vec::new(),
+    };
+    let mut points: Vec<usize> = Vec::new();
+    let mut routes: Vec<usize> = Vec::new();
+    for &k in &alignments {
+        let a = &line.alignments[k];
+        points.extend(a.points.iter().filter_map(|p| r.points.get(p).copied()));
+        if let Some(&k) = r.routes.get(&a.route) {
+            routes.push(k);
+        }
+    }
+    for &k in &structures {
+        routes.extend(
+            line.structures[k]
+                .routes
+                .iter()
+                .filter_map(|id| r.routes.get(id).copied()),
+        );
+    }
+    for v in [&mut points, &mut routes] {
+        v.sort_unstable();
+        v.dedup();
+    }
+    out.routes = routes.iter().map(|&k| line.routes[k].clone()).collect();
+    out.alignments = alignments
+        .iter()
+        .map(|&k| line.alignments[k].clone())
+        .collect();
+    out.alignment_points = points
+        .iter()
+        .map(|&k| line.alignment_points[k].clone())
+        .collect();
+    out.structures = structures
+        .iter()
+        .map(|&k| line.structures[k].clone())
+        .collect();
+    out.sections = sections.iter().map(|&k| line.sections[k].clone()).collect();
+    out.jumpers = jumpers.iter().map(|&k| line.jumpers[k].clone()).collect();
+    out.spacers = spacers.iter().map(|&k| line.spacers[k].clone()).collect();
+    out.alignment = line.alignment.clone();
+    out
 }
 
 /// A structure as the context draws it: a stick — its drawing when its
@@ -833,5 +1079,69 @@ pub(crate) fn context_structure(model: &str, s: &Structure) -> ContextStructure 
         type_name: s.structure_type.clone(),
         height: ((top - base[2]) * 100.0).round() / 100.0,
         stick,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every section solved on its sub-line gives the shape it gets on its
+    /// whole line, bit for bit (the `Debug` text of the results compared):
+    /// the example lines (the typed one resolved with its libraries, the
+    /// crossing line) and a synthetic country of 300 pylons as one line of
+    /// several routes with shared towers.
+    #[test]
+    fn a_section_solves_on_its_sub_line_as_on_its_whole_line() {
+        use ohl_core::files::shipped_library;
+        let ex =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let cables = ohl_cables::Library::load(&shipped_library("cables")).unwrap();
+        let case = ohl_weather::WeatherCase::still(
+            "15 °C, no wind",
+            ohl_core::units::Temperature::from_celsius(15.0),
+        );
+        let mut lines: Vec<(String, Line, usize)> = Vec::new();
+        for name in ["synthetic-line.ohl.json", "crossing-line.ohl.json"] {
+            lines.push((name.into(), Line::load(&ex.join(name)).unwrap(), 1));
+        }
+        let typed = Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap();
+        let structures =
+            ohl_structures::StructureLibrary::load_dir(&ex.join("Structures")).unwrap();
+        let insulators =
+            ohl_structures::InsulatorLibrary::load_dir(&ex.join("Insulators")).unwrap();
+        lines.push((
+            "typed".into(),
+            typed.resolve(&structures, &insulators).unwrap(),
+            1,
+        ));
+        let country = ohl_synth::country(&ohl_synth::Settings {
+            pylons: 300,
+            ..Default::default()
+        })
+        .unwrap();
+        lines.push(("country".into(), country.line, 11));
+        let mut compared = 0;
+        for (name, line, every) in lines {
+            let r = indexed(Arc::new(line), Vec::new());
+            let line = &*r.line;
+            for (k, section) in line.sections.iter().enumerate() {
+                if k % every != 0 {
+                    continue;
+                }
+                let whole = ohl_line::solve::solve_one(line, section, &cables, &case);
+                let sub = sub_line(&r, section);
+                assert!(sub.structures.len() < line.structures.len() || line.structures.len() < 12);
+                let alone = ohl_line::solve::solve_one(&sub, section, &cables, &case);
+                assert_eq!(
+                    format!("{whole:?}"),
+                    format!("{alone:?}"),
+                    "{name}: section {}",
+                    section.id
+                );
+                compared += 1;
+            }
+        }
+        assert!(compared > 100, "{compared}");
     }
 }
