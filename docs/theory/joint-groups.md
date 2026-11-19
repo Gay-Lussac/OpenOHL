@@ -125,8 +125,10 @@ the holding bolts' axis. By the plate's equilibrium the holding bolts carry
   ([below](#the-distances-along-a-bolts-force)). Its own force does not
   pass through the plate when it runs on; where it ends at the plate its
   force is the others' resultant (equilibrium), the same. The joint
-  layout proposing `continuous` for the user to confirm is on the roadmap
-  (O19, stage 4.5). Where each piece of a leg spliced on
+  layout proposes `continuous` for the user to confirm (O44 J9, built
+  2026-11-19 — [joint layout](joint-layout.md#pieces-in-line-one-part-confirmed-j9));
+  until confirmed, it lays out what bolts onto such a piece on that
+  piece's own steel too. Where each piece of a leg spliced on
   the plate carries its own force through its own bolts, that is the
   plate check of each piece (its own force, ASCE 10-97 4.1) — not added
   here.

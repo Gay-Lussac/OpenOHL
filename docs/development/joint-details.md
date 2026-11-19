@@ -1173,6 +1173,45 @@ that order; "plan ideas to get the automatic layout working"):
   applied turned, a hand detail, only where asked, applied again the
   same), the app's `apply_ui_tests` (the preview, one undo step, an
   unticked joint left, Escape).
+- **J9, pieces in line proposed one part, and the mutual-host guard**
+  (2026-11-19, the owner's decisions D15 and D16; in active development,
+  not approved yet; [theory](../theory/joint-layout.md#pieces-in-line-one-part-confirmed-j9)):
+  `in_line::in_line_pieces(t, joints) -> Vec<InLine { joint, member,
+  onto, not, roll }>` (from the file alone: pieces of one section in line
+  within `CONTINUOUS_ANGLE_DEG`, the same reference and orientation,
+  rolls within `ROLL_TOLERANCE_DEG` = `FLAT_OFF`; `not`: why not proposed —
+  legs with bolts (J7), a splice, `kind`, `onto` or bolts given by hand at
+  either end, the layout record's automatic fields not counting;
+  `roll`: the one roll confirming writes when theirs differ),
+  `in_line::confirm(doc, t, list) -> (written, not)` (the proposed pairs:
+  a chain's rolls set to the mean of its pieces' — `record.rolled` dropped
+  for them —, the layout's automatic values at those ends taken out,
+  `connection_edits::set_continuous`), `confirm_text`. A run says them
+  (`LayoutRun::in_line`, the joints asked) and never writes them; the
+  window lists them (`layout_window::layout_in_line`: *Confirm*, *Confirm
+  all*, one `StructureFile::edit` each). A run replacing values given by
+  hand keeps `onto` of a connection given `continuous`
+  (`in_line::one_part`). The planner: `joint_layout::mutual_hosts` (of
+  two ends whose hosts are each other, or one the other's piece in line,
+  the one running through, else the larger, stays host; its end goes to
+  `JointPlan::left` with why); `through_of` and `host_in_plane` rank the
+  piece on the end's side first among equals (`same_side`); a strip's
+  `host_ends`, `host_cut`, `host_along`, `host_end` and the planes ordered
+  by the depth of their hosts' own ends (`laid_cut`): `lands` asks every
+  bolt on the host's steel past its cut by the end distance where the
+  host ends at the joint (`bolt_along`, `cut_of`). The run's clash rounds
+  (`write_rounds`): an end laid directly onto a member is checked against
+  that member as written (`misfit_on`: the joint checks' flange and
+  beyond-the-end rules) and left as it was where it misfits, the joint
+  planned again. No format change (`kind = "continuous"`, `onto` and a
+  member's `roll` as before). Tests: `in_line_tests` (proposed and never
+  written by a run, confirmed and kept by a run replacing values given by
+  hand, a run again identical; legs with bolts, a splice, bolts given,
+  turned apart not proposed; rolls a little apart one roll; the layout
+  before and after confirming, the piece on the end's side named; the
+  redundant on the pieces before and after),
+  `joint_layout_tests::members_bolting_onto_each_other_are_never_both_laid_out`,
+  the app's `layout_ui_tests::pieces_in_line_are_proposed_and_confirmed_in_one_undo_step`.
 
 ## Detail levels
 

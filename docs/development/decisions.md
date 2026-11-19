@@ -8,6 +8,47 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (joint layout: pieces in line proposed one part, the mutual-host guard)
+
+**O44 J9 with the owner's decisions D15 and D16** (below; built the same
+day, in active development, not approved yet;
+[theory](../theory/joint-layout.md#pieces-in-line-one-part-confirmed-j9),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)):
+
+- **Pieces in line proposed one part (D15).** Pieces of one section in
+  line through a joint (the core's 1°), the same reference and
+  orientation, rolls within 5°, nothing given there of how they are
+  joined: proposed `continuous` in Lay out joints' preview; *Confirm* per
+  joint or *Confirm all*, one undo step each. Never a silent default:
+  until confirmed each piece ends at the joint, in the checks and the
+  layout (on the safe side). Not proposed, said why: pieces of a leg with
+  bolts (J7's splices), a splice, `kind`, `onto` or bolts given at the
+  joint. **Rolls a little apart** (Orient angles turns each piece on its
+  own; 0.1° to 1.1° on real towers): confirming writes each chain of
+  pieces the mean of their rolls — 5° is the program's tolerance (the
+  flatness `FLAT_OFF`), not a standard's.
+- **The mutual-host guard (D16).** Of two ends a plan would lay onto each
+  other (or onto a piece in line with the other), the one running
+  through, else the larger, stays host; the other's own end is left, said.
+- **Ends on a member ending at the joint** (the owner's instruction with
+  D16): bolted directly only with every bolt on that member's steel past
+  its cut by the end distance, else onto a plate, else a hand detail; of
+  two pieces in line, the one on the end's side is named. *Conservative*
+  (pieces not confirmed taken to end there).
+- **The clash round's "left as it was"**: after writing, an end laid
+  directly onto a member as written (laid out, or left as it was — then
+  without the `onto` its planning named) whose bolts would misfit by the
+  joint checks' rule is left too and the joint planned again.
+- A run replacing values given by hand keeps a `continuous` end's `onto`.
+  No format change.
+
+Measured on the 78 private real towers (the theory page): with every
+proposal confirmed, joints that do not fit 31.8 % → 28.8 % (as given
+6 764 → 605), joints laid out whole 46.1 % → 41.9 %; nothing confirmed
+36.2 % whole, 839 as given; the guard alone 42.1 % whole, a quarter of the
+ends lost; a run again identical 78 of 78.
+
 ## 2026-11-19 (owner: 22 recommendations approved)
 
 **The owner's answers of 2026-11-19 to the open questions of O45, O19
