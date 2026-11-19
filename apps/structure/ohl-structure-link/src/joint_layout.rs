@@ -1079,14 +1079,21 @@ pub(crate) fn plan_joint_budget(
     }
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
     let mut strips: Vec<Strip> = Vec::new();
+    let mutual = mutual_hosts(j);
+    for (m, why) in &mutual {
+        if !except.contains_key(m) {
+            plan.left.push(format!("{m}: {why}"));
+        }
+    }
     // The members not laid out here: those in line with what they bolt
-    // onto, running on, no angle, onto a splice (their bolts are kept
-    // clear of).
+    // onto, running on, no angle, onto a splice, the host of a pair
+    // bolting onto each other (their bolts are kept clear of).
     let others: Vec<&str> =
         j.arrivals
             .iter()
             .filter(|a| {
                 a.continuous.is_some()
+                    || mutual.contains_key(&a.member)
                     || a.profile.as_ref().is_none_or(|p| p.angle.is_none())
                     || a.onto.value.as_deref().and_then(find).is_some_and(|h| {
                         !(20.0..=160.0).contains(&angle_deg(a.direction, h.direction))
@@ -1102,6 +1109,9 @@ pub(crate) fn plan_joint_budget(
     for a in &j.arrivals {
         if let Some(why) = except.get(&a.member) {
             plan.by_hand(&a.member, format!("{}: {why}", a.member));
+            continue;
+        }
+        if mutual.contains_key(&a.member) {
             continue;
         }
         let host: Result<&Arrival, String> = (|| {
@@ -1663,6 +1673,80 @@ pub(crate) fn plan_joint_budget(
         })
         .collect();
     plan
+}
+
+/// The member ends of `j` the plan leaves as they are because the member
+/// they would bolt onto bolts back onto them, or onto a piece in line with
+/// them (the does-not-fit investigation, 2026-11-19): laid out both, each
+/// would be cut back onto the other (or onto a plate on it) and the bolts
+/// of one would lie beyond the other's steel — physically impossible. Of
+/// such a pair the member running through the joint (in line with another
+/// of its members), else the one [`through_member`] ranks first (class,
+/// the wider), stays the host: its own end is left as it is, with why.
+fn mutual_hosts(j: &JointDetail) -> BTreeMap<String, String> {
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    // What `a` would be laid onto (the plan's own choice below), if it is
+    // an end the plan lays out at all.
+    let host_of = |a: &Arrival| -> Option<&Arrival> {
+        if a.continuous.is_some() || a.profile.as_ref().is_none_or(|p| p.angle.is_none()) {
+            return None;
+        }
+        let h = match a.onto.value.as_deref() {
+            Some(o) => find(o)?,
+            None => through_member(j, a)?,
+        };
+        (20.0..=160.0)
+            .contains(&angle_deg(a.direction, h.direction))
+            .then_some(h)
+    };
+    let in_line_with = |a: &Arrival| {
+        j.arrivals
+            .iter()
+            .find(|c| c.member != a.member && angle_deg(a.direction, c.direction) > 160.0)
+    };
+    let through = |a: &Arrival| a.continuous.is_some() || in_line_with(a).is_some();
+    let rank = |b: &Arrival| {
+        let class = match b.class.as_deref() {
+            Some("leg") => 0,
+            Some("bracing") | Some("crossing") => 1,
+            Some("redundant") => 2,
+            _ => 3,
+        };
+        let width = b
+            .profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64));
+        (!through(b), class, width, b.member.clone())
+    };
+    let mut out = BTreeMap::new();
+    for a in &j.arrivals {
+        let Some(h) = host_of(a) else { continue };
+        let Some(back) = host_of(h) else { continue };
+        let onto_a = back.member == a.member;
+        let onto_run = !onto_a && angle_deg(a.direction, back.direction) > 160.0;
+        if !(onto_a || onto_run) || rank(a) > rank(h) {
+            continue;
+        }
+        let onto = if onto_a {
+            "it".to_owned()
+        } else {
+            format!("{} (in line with it)", back.member)
+        };
+        let runs = in_line_with(a)
+            .map(|c| format!(" (it runs through the joint in line with {})", c.member))
+            .unwrap_or_default();
+        out.insert(
+            a.member.clone(),
+            format!(
+                "it would bolt onto {h} and {h} onto {onto}: each cut back onto the other, the \
+                 bolts of one beyond the other's steel — it stays what {h} bolts onto, its own end \
+                 left as it is{runs}",
+                h = h.member
+            ),
+        );
+    }
+    out
 }
 
 /// The member `a` bolts onto when nothing says (no `onto`, none worked

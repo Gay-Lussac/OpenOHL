@@ -663,3 +663,86 @@ fn a_gusset_plate_on_a_main_angle_in_the_middle_of_a_panel() {
     assert!(q.hand.is_empty(), "{:?}", q.hand);
     assert_eq!(q.plates.len(), 1, "{q:?}");
 }
+
+/// A horizontal in two pieces of one section in line through a mid-panel
+/// joint, a redundant standing on it: each piece of the horizontal works
+/// out onto the redundant (the only member not in line with it), and the
+/// redundant onto the horizontal running through.
+pub(crate) const SPLIT: &str = r#"id = "S"
+name = "s"
+kind = "lattice"
+
+[[node]]
+id = "A"
+point = ["-2 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "M"
+point = ["0 m", "0 m", "0 m"]
+
+[[node]]
+id = "B"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "T"
+point = ["0 m", "0 m", "1.5 m"]
+support = "fixed"
+
+[[member]]
+id = "H1"
+nodes = ["A", "M"]
+section = "EA-61x7"
+orientation = "z+y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "H2"
+nodes = ["M", "B"]
+section = "EA-61x7"
+orientation = "z+y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "V"
+nodes = ["M", "T"]
+section = "EA-61x7"
+orientation = "y-x+"
+design = { class = "redundant" }
+"#;
+
+/// Two members bolting onto each other (the does-not-fit investigation,
+/// 2026-11-19: on real towers the pieces of a horizontal were cut back
+/// onto a plate on the redundant that was itself laid onto them, its bolts
+/// beyond their steel): never both laid out. The horizontal running
+/// through stays the host, its pieces' ends left as they are, said; the
+/// redundant is laid onto it; no end is laid onto a member whose own end
+/// the plan lays out.
+#[test]
+fn members_bolting_onto_each_other_are_never_both_laid_out() {
+    let j = joint(SPLIT, "M");
+    let p = plan_joint(&j, &settings(), &|_, _| None);
+    eprintln!("{j:#?}\n{p:#?}");
+    let ends: Vec<&str> = p.ends.iter().map(|e| e.member.as_str()).collect();
+    assert_eq!(ends, ["V"], "{p:?}");
+    for m in ["H1", "H2"] {
+        assert!(
+            p.left
+                .iter()
+                .any(|l| l.starts_with(&format!("{m}: it would bolt onto V"))),
+            "{:?}",
+            p.left
+        );
+    }
+    for e in &p.ends {
+        let host = match &e.onto {
+            Onto::Member(m) => m.clone(),
+            Onto::Plate(k) => p.plates[*k].on.clone(),
+        };
+        assert!(!ends.contains(&host.as_str()), "{e:?} onto an end laid out");
+    }
+    // The same plan again.
+    assert_eq!(plan_joint(&j, &settings(), &|_, _| None), p);
+}
