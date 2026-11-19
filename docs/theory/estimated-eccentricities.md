@@ -214,3 +214,19 @@ turn, and an angle's small torsional stiffness does not stop it; the case
 then fails, said). The level 4 offsets of the joints laid out there are
 those the estimates take for them (every one compared). **Off by default**
 until the owner decides (open questions in the roadmap, O45).
+
+## Measured, an offset of unknown sign in its member's own check (2026-11-19)
+
+The same 78 tower files and the same one vertical case, before (three
+solves, the bounds in the solve where a frame meets the joint) and after
+(two solves, sign-free in the member's own check; kept privately): the
+towers whose case solves with the option **64 → 72 of 73** (the one left
+fails without the option too); the mixed-sign note gone (it was on every
+tower with bounds); the members whose usage rises with the option 86 % →
+27 % — before, a bound at a frame joint went into the solve and moved the
+forces of the whole tower (the joint turning on angle frames), now only the
+member whose end it is takes its moment, in its own check; the towers'
+largest usage with the option, median 0.84 → 0.58; the direct solves with
+the estimates about a third of the time (one instead of two). Turning the
+option on by default waits for a measure with wind cases (the owner's
+decision of 2026-11-19).
