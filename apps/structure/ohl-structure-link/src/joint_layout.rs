@@ -396,7 +396,10 @@ pub enum JoinKind {
     Nested,
     /// Two angles of different sections that do not nest, each bolted
     /// onto a splice of covers on both faces of its legs (`[[splice]]`;
-    /// the owner's step 1c, 2026-11-19).
+    /// the owner's step 1c, 2026-11-19). **No longer made by
+    /// [`joins_of`]** since O44 J7 (2026-11-19: never written silently —
+    /// proposed by [`crate::leg_splices`], written when confirmed); a run
+    /// still takes out such a splice an older run made.
     Spliced,
 }
 
@@ -566,6 +569,12 @@ struct Strip {
     host_along: f64,
     /// The end distance a bolt of it keeps in that steel, m.
     host_end: f64,
+    /// On the outer face of a spliced member's flange where the splice's
+    /// outer cover lies (O44 J7, 2026-11-19): the splice. The strip lies
+    /// on the cover (its face moved out by the cover's thickness), its
+    /// bolts through it; directly only — a plate over the cover is not
+    /// laid out (by hand).
+    through: Option<String>,
 }
 
 /// An end on a flange's inner face that leaves the joint over the heel —
@@ -1388,6 +1397,9 @@ pub(crate) fn plan_joint_budget(
                         .all(|&s| s >= from + x.host_end - 1e-9))
         };
         let direct = placed.iter().all(lands);
+        // (Each end's landing as it is now, for the ends on a splice's
+        // cover below.)
+        let landed: BTreeSet<usize> = placed.iter().filter(|p| lands(p)).map(|p| p.k).collect();
         if !direct
             && find(&strips[placed[0].k].host)
                 .and_then(|h| h.profile.as_ref())
@@ -1407,6 +1419,32 @@ pub(crate) fn plan_joint_budget(
             }
             placed_all.extend(on);
             placed = off;
+        }
+        if !direct && placed.iter().any(|p| strips[p.k].through.is_some()) {
+            // On a splice's outer cover (O44 J7): those whose bolts land on
+            // the flange bolted through the cover; the others left — a
+            // plate over the cover is not laid out.
+            let (on, off): (Vec<Placed>, Vec<Placed>) =
+                placed.iter().cloned().partition(|p| landed.contains(&p.k));
+            laid3.extend(solids_of(&strips, &on, 0.0));
+            for p in &on {
+                laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+            }
+            placed_all.extend(on);
+            for p in &off {
+                let x = &strips[p.k];
+                plan.by_hand(
+                    &x.member,
+                    format!(
+                        "{}: its bolts do not all land on {}'s flange through splice {}'s outer \
+                         cover, and a plate over the cover is not laid out (lay it out by hand)",
+                        x.member,
+                        x.host,
+                        x.through.as_deref().unwrap_or("?")
+                    ),
+                );
+            }
+            continue;
         }
         if !direct {
             // A plate on a built-up member is drawn through the work point
@@ -1993,8 +2031,8 @@ pub fn splice_unknown(j: &JointDetail) -> Option<String> {
         format!(
             "{} and {}: in line, of one section, with bolts (a splice): {SPLICE_UNKNOWN} (their \
              bolts may be their members' design data, at both ends) — drawn as given, lapped, \
-             each ending at the joint; give the splice here, or confirm the layout's proposal \
-             that the two are one part",
+             each ending at the joint; confirm the layout's leg splice places (one part here, \
+             the same section), or give the splice here",
             a.member, b.member
         )
     })
@@ -2013,8 +2051,9 @@ pub fn splice_unknown(j: &JointDetail) -> Option<String> {
 ///   angle's legs fit inside the bigger's (each at most the bigger's leg
 ///   less its thickness and root radius) — their legs along each other
 ///   within the nesting tolerance, else not;
-/// - else not joined (a splice of other sections: covers or a plate, by
-///   hand).
+/// - else not joined (a splice of other sections: proposed by
+///   [`crate::leg_splices`] for the user to confirm, O44 J7; else covers
+///   or a plate by hand).
 ///
 /// Only ends with nothing given of how they are joined (`kind`, `face`,
 /// `onto`, bolts given at the end), as the run takes them out first.
@@ -2023,7 +2062,8 @@ pub fn splice_unknown(j: &JointDetail) -> Option<String> {
 /// 2026-11-19): not joined — the bolts of a member's design data are at
 /// both its ends, so where the splice is (here, or the legs one part
 /// through this joint and spliced elsewhere) is not known; said
-/// ([`splice_unknown`]), drawn as before.
+/// ([`splice_unknown`]), drawn as before — the leg splice places proposed
+/// (O44 J7) settle it when confirmed.
 pub fn joins_of(j: &JointDetail) -> Vec<Join> {
     let free = |a: &Arrival| {
         a.continuous.is_none()
@@ -2068,7 +2108,7 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
     pairs.truncate(1);
     let mut used: Vec<usize> = Vec::new();
     let mut out = Vec::new();
-    for (dev, x, y) in pairs {
+    for (_, x, y) in pairs {
         if used.contains(&x) || used.contains(&y) {
             continue;
         }
@@ -2080,22 +2120,6 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
         let (ga, gb) = (pa.angle.expect("an angle"), pb.angle.expect("an angle"));
         let bolted = |z: &Arrival| z.bolts.value.as_ref().is_some_and(|v| v.count > 0);
         let alike = |u: [f64; 3], v: [f64; 3]| dot(u, v) > 0.9998;
-        // No other end at the joint bolting onto them (or onto nothing
-        // named, which would be named one of them): a splice's covers lie
-        // where such an end would (its bolts through a cover: by hand;
-        // measured on the private real towers, 2026-11-19: every such
-        // splice of a leg had bracing on it).
-        let alone = |a: &Arrival, b: &Arrival| {
-            j.arrivals.iter().all(|z| {
-                z.member == a.member
-                    || z.member == b.member
-                    || z.modelling
-                    || z.onto
-                        .value
-                        .as_deref()
-                        .is_some_and(|o| o != a.member && o != b.member)
-            })
-        };
         let how = if pa.section_id == pb.section_id
             && alike(pa.axes[1], pb.axes[1])
             && alike(pa.axes[2], pb.axes[2])
@@ -2110,23 +2134,14 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
                 let c = crate::joints::NESTED_ANGLE_DEG.to_radians().cos();
                 dot(p.axes[1], q.axes[1]) >= c && dot(p.axes[2], q.axes[2]) >= c
             };
+            // (Step 1c, other sections in line spliced with covers, is no
+            // longer made here: since O44 J7 (2026-11-19) a splice is
+            // proposed and written only when the user confirms it —
+            // [`crate::leg_splices`].)
             if fits(ga, gb) && along(pa, pb) {
                 Some((x, y, JoinKind::Nested))
             } else if fits(gb, ga) && along(pa, pb) {
                 Some((y, x, JoinKind::Nested))
-            } else if pa.section_id != pb.section_id
-                && along(pa, pb)
-                && dev <= crate::joints::NESTED_ANGLE_DEG
-                && bolted(a)
-                && bolted(b)
-                && alone(a, b)
-            {
-                // Step 1c: other sections in line, both with their bolts
-                // (a splice where the section changes), nothing else
-                // bolting onto them here: covers on both faces of the legs
-                // bolted (the bolts' shear planes as the covers give them,
-                // a given count still winning).
-                Some((x, y, JoinKind::Spliced))
             } else {
                 None
             }
@@ -2621,11 +2636,20 @@ fn strip_of(
     };
     let other_w = if a.leg_y { g.h } else { g.b };
     let host_t = f.t;
+    // O44 J7: on a spliced member's outer face where the splice's outer
+    // cover lies — on the cover.
+    let through = if inside || tilt.is_some() {
+        None
+    } else {
+        outer_cover(j, a, host, &f)
+    };
+    let lift = through.as_ref().map_or(0.0, |c| c.1);
+    let off = off + lift;
     Ok(Strip {
         face3: if inside {
             add(f.heel, scale(f.out, -f.t))
         } else {
-            f.heel
+            add(f.heel, scale(f.out, lift))
         },
         n3: face_out,
         x3,
@@ -2674,7 +2698,40 @@ fn strip_of(
         },
         host_along: dot(x3, host.direction),
         host_end: edge_end(f.t).1,
+        through: through.map(|c| c.0),
     })
+}
+
+/// The splice of joint `j` whose outer cover lies on the flange `f` of
+/// `host` that `a` bolts onto (`host` one of the splice's members, `a`
+/// not), with the outer covers' thickness there, m (O44 J7; as
+/// [`crate::joints::through_cover`] finds it once written).
+fn outer_cover(
+    j: &JointDetail,
+    a: &Arrival,
+    host: &Arrival,
+    f: &crate::joints::HostFlange,
+) -> Option<(String, f64)> {
+    use ohl_structures::connections::{CoverFace, CoverLeg};
+    let q = host.profile.as_ref()?;
+    let g = q.angle?;
+    let s = j
+        .splices
+        .iter()
+        .find(|s| s.members.contains(&host.member) && !s.members.contains(&a.member))?;
+    let y = dot(f.across, q.axes[1]).abs() > 0.5;
+    let leg = if y == (g.b >= g.h) {
+        CoverLeg::Long
+    } else {
+        CoverLeg::Short
+    };
+    let outer: f64 = s
+        .covers
+        .iter()
+        .filter(|c| c.face == CoverFace::Outer && c.leg.is_none_or(|l| l == leg))
+        .map(|c| c.thickness)
+        .sum();
+    (outer > 0.0).then(|| (s.id.clone(), outer))
 }
 
 /// How far strip `x` is moved across for its gauge line to run through
@@ -3537,10 +3594,12 @@ fn fixed_in(
                 part.words()
             }
             ClashPart::Cover(sid, _) => {
-                if j.splices.iter().any(|sp| {
-                    &sp.id == sid
-                        && (sp.members.contains(&x.member) || sp.bolted.contains(&x.member))
-                }) {
+                if x.through.as_ref() == Some(sid)
+                    || j.splices.iter().any(|sp| {
+                        &sp.id == sid
+                            && (sp.members.contains(&x.member) || sp.bolted.contains(&x.member))
+                    })
+                {
                     continue;
                 }
                 part.words()

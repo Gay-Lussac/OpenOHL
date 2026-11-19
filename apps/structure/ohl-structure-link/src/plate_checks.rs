@@ -588,6 +588,66 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                 });
             }
         }
+        // O44 J7: an end bolted through an outer cover onto a member the
+        // splice joins — the cover checked for the end's whole force (its
+        // bolts' bearing, block shear, section, distances; on the safe
+        // side: the member's leg under it takes none of it here).
+        for a in j
+            .arrivals
+            .iter()
+            .filter(|a| !a.modelling && a.through.as_ref().is_some_and(|(id, _)| *id == sp.id))
+        {
+            let leg = a.through.as_ref().map(|(_, l)| *l);
+            for c in sp.covers.iter().filter(|c| {
+                c.face == ohl_structures::connections::CoverFace::Outer
+                    && (c.leg.is_none() || c.leg == leg)
+            }) {
+                let name = format!("{} ({})", sp.id, c.words());
+                let (steel, steel_note) = material_steel(
+                    c.material.as_deref(),
+                    c.thickness,
+                    j,
+                    &sp.id,
+                    &name,
+                    model,
+                    library,
+                );
+                let mut notes: Vec<String> = steel_note.into_iter().collect();
+                notes.push(format!(
+                    "{name}: {} bolted through it onto {} — the cover checked for the whole \
+                     force of {} (on the safe side)",
+                    a.member,
+                    a.onto.value.as_deref().unwrap_or("?"),
+                    a.member
+                ));
+                let Some(group) = bolt_group(a, &name, &c.outline, j, model, steel, &mut notes)
+                else {
+                    out.push(Planned {
+                        joint: j.id.clone(),
+                        plate: name,
+                        plan: Plan::Unplaced {
+                            member: a.member.clone(),
+                        },
+                        notes,
+                    });
+                    continue;
+                };
+                let free = free_length(a, &sp.id, j, &group);
+                out.push(Planned {
+                    joint: j.id.clone(),
+                    plate: name,
+                    plan: Plan::Bolted {
+                        member: a.member.clone(),
+                        group,
+                        steel,
+                        share: 1.0,
+                        free,
+                        at: BoltPlace::of(a, j),
+                    },
+                    notes,
+                });
+            }
+        }
     }
 }
 

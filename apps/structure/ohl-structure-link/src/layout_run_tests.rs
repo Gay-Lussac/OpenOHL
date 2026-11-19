@@ -692,7 +692,7 @@ fn one_members_clash_does_not_take_its_whole_joint_back() {
 
 /// Two chords in line through J (C1 below, C2 above, of `upper`'s
 /// section, `bolts` their design data) and a brace D to J.
-fn in_line(upper: &str, bolts: &str) -> String {
+pub(crate) fn in_line(upper: &str, bolts: &str) -> String {
     format!(
         r#"id = "I"
 name = "i"
@@ -966,100 +966,6 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         .find(|p| !p.welds.is_empty())
         .expect("the welded plate");
     assert_eq!(w2.welds[0].size.map(|v| v.si()), Some(0.005), "{w2:?}");
-}
-
-/// The owner's step 1c (2026-11-19): two angles in line of other sections
-/// that do not nest, both with their bolts (a splice where the section
-/// changes, nothing else bolting onto them there), each bolted onto a
-/// splice of covers on both faces of its leg (two shear planes); nothing
-/// clashes, a run again is the same, and a cover changed by hand is kept.
-/// With a brace bolting onto them at the joint (its bolts would pass
-/// through a cover): no splice, as before.
-#[test]
-fn other_sections_in_line_are_spliced_with_covers() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../libraries/sections/example-sections.ohlsec");
-    let lib = crate::SectionLibrary::parse(&format!(
-        "{}\n[[section]]\nid = \"EA-61x9\"\nname = \"Equal angle 61 × 9 (invented)\"\n\
-         shape = \"equal_angle\"\nh = \"61 mm\"\nt = \"9 mm\"\nr = \"7 mm\"\n",
-        std::fs::read_to_string(path).unwrap()
-    ))
-    .unwrap();
-    let braced = in_line("EA-61x9", ", bolts = { diameter = \"16 mm\", count = 4 }");
-    let r = run_with(&braced, &lib);
-    let o = r.joints.iter().find(|j| j.joint == "J").unwrap();
-    assert!(o.plan.joins.is_empty(), "{:?}", o.plan);
-    let text = braced.replace(
-        "[[member]]\nid = \"D\"\nnodes = [\"E\", \"J\"]\nsection = \"EA-61x7\"\n\
-         orientation = \"y-z+\"\ndesign = { class = \"bracing\" }\n",
-        "",
-    );
-    assert_ne!(text, braced);
-    let r = run_with(&text, &lib);
-    let o = r.joints.iter().find(|j| j.joint == "J").unwrap();
-    assert!(o.written, "{:?}", o.hand);
-    assert_eq!(o.plan.joins.len(), 1, "{:?}", o.plan);
-    let x = &o.plan.joins[0];
-    assert_eq!(x.how, crate::JoinKind::Spliced);
-    assert!((x.thickness - 0.009).abs() < 1e-9, "{x:?}");
-    let t = parse(&r.text);
-    assert_eq!(t.splices.len(), 1, "{:?}", t.splices);
-    let sp = &t.splices[0];
-    assert_eq!(sp.joint, "J");
-    assert_eq!(sp.covers.len(), 2 * x.covers.len());
-    for m in ["C1", "C2"] {
-        assert_eq!(
-            t.connection(m, "J").unwrap().onto.as_deref(),
-            Some(sp.id.as_str())
-        );
-    }
-    assert!(
-        LayoutRecord::of(&t).made[&sp.id]
-            .1
-            .contains(crate::layout_run::SPLICE)
-    );
-    let d = joint_details(&r.text, &lib, &Default::default()).unwrap();
-    let j = d.joint("J").unwrap();
-    assert_eq!(j.splices.len(), 1);
-    for m in ["C1", "C2"] {
-        let a = j.arrivals.iter().find(|a| a.member == m).unwrap();
-        assert_eq!(a.planes.0.value, Some(2), "{m}: {:?}", a.planes);
-    }
-    // What was laid out runs into nothing but a member left as it was
-    // (here D, whose bolts would need to pass through the cover: said).
-    let left = |p: &crate::ClashPart| {
-        p.member()
-            .is_some_and(|m| o.plan.hand_members.iter().any(|h| h == m))
-    };
-    assert!(
-        j.clashes.iter().all(|c| left(&c.a) || left(&c.b)),
-        "{:?} {:?}",
-        j.clashes,
-        o.hand
-    );
-    assert_eq!(run_with(&r.text, &lib).text, r.text);
-    // A cover made thicker by hand: kept on a run again, the user's.
-    let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
-    let face = sp.covers[0].face;
-    let leg = sp.covers[0].leg;
-    ohl_structure_edit::connection_edits::set_cover(&mut doc, &sp.id, face, leg, Some(0.012))
-        .unwrap();
-    let edited = doc.to_string();
-    let again = run_with(&edited, &lib);
-    let t2 = parse(&again.text);
-    assert_eq!(t2.splices.len(), 1, "{:?}", t2.splices);
-    assert!(
-        t2.splices[0]
-            .covers
-            .iter()
-            .any(|c| (c.thickness.si() - 0.012).abs() < 1e-9)
-    );
-    for m in ["C1", "C2"] {
-        assert_eq!(
-            t2.connection(m, "J").unwrap().onto.as_deref(),
-            Some(t2.splices[0].id.as_str())
-        );
-    }
 }
 
 /// J1/J2 (2026-11-19) in a run: a member left for a hand detail for its

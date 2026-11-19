@@ -624,8 +624,10 @@ fn clashes_of(
                     return Together::No;
                 };
                 let sp = splices.iter().find(|q| &q.id == s);
+                // (O44 J7: an end bolted through its outer cover lies on it.)
                 if e.onto.value.as_deref() == Some(s.as_str())
                     || sp.is_some_and(|q| q.members.contains(m) || q.bolted.contains(m))
+                    || e.through.as_ref().is_some_and(|(id, _)| id == s)
                 {
                     Together::Yes
                 } else {
@@ -700,6 +702,12 @@ fn clashes_of(
                         Together::Yes
                     }
                     Cover(s, _) if Some(s.as_str()) == onto => Together::ShankOnly,
+                    // Through the outer cover (O44 J7): its shank through it.
+                    Cover(s, _)
+                        if !other_leg && e.through.as_ref().is_some_and(|(id, _)| id == s) =>
+                    {
+                        Together::ShankOnly
+                    }
                     _ => Together::No,
                 }
             }

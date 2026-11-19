@@ -77,13 +77,14 @@ fn pieces_in_line_of_one_section_are_proposed_and_never_written_by_a_run() {
 }
 
 #[test]
-fn legs_with_bolts_splices_given_and_pieces_turned_apart_are_not_proposed() {
-    // Pieces of a leg with bolts: a leg splice (J7's).
+fn splices_given_and_pieces_turned_apart_are_not_proposed_legs_with_bolts_flagged() {
+    // Pieces of a leg with bolts: a leg splice place (J7's), proposed one
+    // part by the owner's rule and flagged so.
     let legs = SPLIT.replace("class = \"bracing\"", "class = \"leg\"");
     let list = in_line_pieces(&parse(&legs), None);
     assert_eq!(list.len(), 1);
-    let why = list[0].not.as_deref().expect("not proposed");
-    assert!(why.contains("J7"), "{why}");
+    assert!(list[0].proposed() && list[0].splice_bolts, "{list:?}");
+    assert!(!in_line_pieces(&parse(SPLIT), None)[0].splice_bolts);
     // A splice given at the joint.
     let spliced = format!(
         "{SPLIT}\n[[splice]]\nid = \"S1\"\njoint = \"M\"\nmembers = [\"H1\", \"H2\"]\n\n\
@@ -118,10 +119,10 @@ fn legs_with_bolts_splices_given_and_pieces_turned_apart_are_not_proposed() {
     );
     // Confirming those writes nothing.
     assert_eq!(
-        confirm_text(&legs, &in_line_pieces(&parse(&legs), None)).unwrap(),
+        confirm_text(&turned, &in_line_pieces(&parse(&turned), None)).unwrap(),
         {
-            let mut d: toml_edit::DocumentMut = legs.parse().unwrap();
-            crate::in_line::confirm(&mut d, &parse(&legs), &[]).unwrap();
+            let mut d: toml_edit::DocumentMut = turned.parse().unwrap();
+            crate::in_line::confirm(&mut d, &parse(&turned), &[]).unwrap();
             d.to_string()
         }
     );
