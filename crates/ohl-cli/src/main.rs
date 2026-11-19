@@ -22,6 +22,7 @@ mod internal_run;
 mod io_run;
 mod lightning_run;
 mod links_run;
+mod network_run;
 mod project;
 mod reference_run;
 mod safety_run;
@@ -245,6 +246,13 @@ enum Command {
     Synth {
         #[command(subcommand)]
         command: synth_run::SynthCommand,
+    },
+    /// A country server's database (PostgreSQL with PostGIS, pre-alpha):
+    /// project files imported into the network, one model exported as a
+    /// project file, the models listed, the store measured.
+    Network {
+        #[command(subcommand)]
+        command: network_run::NetworkCommand,
     },
     /// Host a project for several users (server mode, pre-alpha): prints the
     /// invitation to give them; runs until stopped (Ctrl+C: every edit is
@@ -1366,6 +1374,13 @@ fn main() -> ExitCode {
         })),
         Some(Command::Pointcloud { command }) => pointcloud(command),
         Some(Command::Crs { command }) => match crs(command) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Some(Command::Network { command }) => match network_run::run(command) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("error: {error}");

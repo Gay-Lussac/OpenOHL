@@ -22,7 +22,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::store::Store;
 use crate::{Command, Kind, Session, SessionError, refused};
 
 /// File format id of an exported report.

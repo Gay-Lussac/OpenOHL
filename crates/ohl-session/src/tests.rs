@@ -805,7 +805,11 @@ fn spatial_index_follows_every_command() {
     drop(s);
     let s = Session::open(&path).unwrap();
     areas(&s);
-    s.conn.execute("DELETE FROM spatial_index", []).unwrap();
+    s.conn
+        .sqlite()
+        .unwrap()
+        .execute("DELETE FROM spatial_index", [])
+        .unwrap();
     drop(s);
     let s = Session::open(&path).unwrap();
     assert!(!s.objects_in(&near_t6).unwrap().is_empty());
@@ -2049,6 +2053,8 @@ fn old_case_sets_become_groups_when_the_project_opens() {
     assert_eq!(s.line().structure_groups.len(), 2);
     // An older project: the upgrade not done yet.
     s.conn
+        .sqlite()
+        .unwrap()
         .execute("DELETE FROM ols_meta WHERE key = 'structure_groups'", [])
         .unwrap();
     drop(s);
@@ -2369,4 +2375,18 @@ fn blocks_and_a_riser_are_commands() {
     assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::Sheaves);
     s.redo("ben").unwrap();
     assert_eq!(s.line().solver.blocks, ohl_line::InTheBlocks::EqualH);
+}
+
+/// The tests every store must pass ([`store::suite`]) on project files.
+#[test]
+fn store_suite_on_project_files() {
+    let dir = std::env::temp_dir().join(format!("ohl-session-{}-suite", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    let open = |name: &str| -> Box<dyn Store> {
+        Box::new(SqliteStore::open(&dir.join(format!("{name}.ohl"))).unwrap())
+    };
+    let failed = store::suite::run_all(&open);
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(failed.is_empty(), "{failed:#?}");
 }

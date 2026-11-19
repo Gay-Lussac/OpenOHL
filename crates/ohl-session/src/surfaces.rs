@@ -6,7 +6,6 @@
 //! each a mesh (points and triangles) stored compressed. Like libraries,
 //! they are part of the project, not of the line: not logged, not undone.
 
-use crate::store::Store;
 use crate::{Role, Session, SessionError, refused};
 
 /// What is known of a stored surface without reading it.

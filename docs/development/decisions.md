@@ -8,6 +8,123 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (country server, phase 4)
+
+**The PostgreSQL store: a model of the network opened as a project; the
+same store tests on both stores; project files imported into the
+network, one model exported as a project file** (owner, 2026-11-18: "yes
+install PostgreSQL and PostGIS", go ahead with the server plan; built, in
+active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md), the
+[data model](data-model.md#server-database-postgresql),
+[running it and its tests](postgresql.md)).
+
+- **`ohl-store-pg`** (new crate; the `postgres` client, MIT OR
+  Apache-2.0; PostgreSQL 17 with PostGIS 3, run as programs of their own):
+  `Network` (a connection: the schema made or brought forward, the
+  models, the audit), `PgStore` (one model as the session's store),
+  `import`, `export`.
+- **One model is one store**: the session opens a model as it opens a
+  project file (`Session::open_on`); every table it uses has the model's
+  code (`line_id`) in its key. The store keeps the file's meaning: steps
+  as savepoints in one transaction (a savepoint outside one begins it), a
+  new log entry the next `seq` of the network (the one writer: no gaps, as
+  SQLite's rowid), grant and review ids the next of their model, times
+  as the file writes them, revisions "newest first" in the order kept.
+  Point clouds are refused there for now (they stay in the files).
+- **The session**: holds its store as `Box<dyn Store>`; the interface
+  gained `prepare` (make the store's tables, as the project file did when
+  opened) and the rows of a whole copy (`meta_rows`, `blob_hashes`,
+  `put_…_row`: rows kept with their ids and times; `store::copy::copy_all`
+  copies a whole project between any two stores); `Session::store` reads
+  it (the import); `Kind::parse` is public. **The project file is
+  unchanged**: the same statements; the session's 128 tests, and files
+  written by the build before and after through the example lines (edits,
+  undo/redo, renames, a refusal, a setting, a library file, commits, a
+  branch, a review merged, a tag, a grant, rollbacks, a deletion, a
+  surface, a bundle out and in, a part) and an 800-pylon synthetic country
+  edited: the same `sqlite3 .dump`, times masked.
+- **The store suite** (`ohl_session::store::suite`, feature
+  `store-suite`): 12 tests of every group of the interface (meta, users,
+  objects with tombstones and places and their JSON kept as written,
+  nested steps with a failed statement rolled back, the log, the spatial
+  index, versions, project lines, grants and reviews, surfaces, whole
+  copies, a session) run on project files (`ohl-session`) and on
+  PostgreSQL (`ohl-store-pg`, a throwaway cluster); one session's
+  transcript (import, edits, undo, redo, commit, branch, tag, opened
+  again) the same on both. Without PostgreSQL's binaries the PostgreSQL
+  tests say so and pass (the CI has none); `OHL_REQUIRE_PG_TESTS=1` makes
+  that a failure.
+- **Schema** (network schema 1): every table of the draft — network,
+  users and groups, roles (the shipped six with their permissions),
+  assignments, models, objects, reference index, log, spatial index with
+  a PostGIS geometry (GiST) beside the tile key, working sets, versions,
+  grants, reviews, country libraries, surfaces and their tiles, stale
+  marks, notices, the audit (append only: a trigger refuses changes).
+  Tables of later phases are made and stay empty. **Decided beside the
+  draft**: the objects' JSON stays **text** (as the session wrote it; a
+  `jsonb` column would reorder keys and rewrite numbers, so an export would
+  not be the rows imported — queries use `json::jsonb`); `seq` unique per
+  model (a copied model keeps its numbers; new entries numbered across the
+  network); blobs once for the network with each model's use noted
+  (`vc_blob_use`); the spatial bounds as four numbers (exact) beside the
+  geometry; `object.routes` and `oplog.lines`/`tiles` come with phase 5,
+  when the session keeps them current with every write (written only at
+  import they would be wrong after the first edit).
+- **Migrations**: numbered, forward only, run when a program connects, in
+  one transaction under a lock; a newer database refused. (Refused without
+  a recent backup: phase 13.)
+- **One writer**: `Network::connect_writer` takes a PostgreSQL advisory
+  lock for its connection; a second writer is refused; readers (an export)
+  read at one snapshot.
+- **Ids unique in the network**: a unique index on the main branch's
+  elements (routes, alignments, alignment points, structures, sections,
+  jumpers, spacers) of every model; a command making another model's id
+  is refused in words ("ids are unique in the network").
+- **`ohl network import FILE… --user U`** (plan §3.5): each file a new
+  model (code: `--line` or the file's name), read into memory and never
+  changed (nothing made beside it); one coordinate system and one grid for
+  the network (the first import sets them; another refused with the hint
+  to reproject); ids another model has renamed `CODE-id` (`CODE-id-2` …)
+  by the session's own rename (everything referring follows); the main
+  project line's current state — objects as they are, spatial index, meta
+  rows, users (also as network users with the matching shipped role on
+  the model), edit grants, surfaces — as one transaction with **one** log
+  entry, then a revision "imported from FILE"; **twin towers** (another
+  model's structure within 0.5 m in plan, of the same type — an estimate
+  for the owner) listed, never merged; the file's history, other project
+  lines, tags, point clouds and backgrounds left in it and listed; the
+  report as text, HTML and JSON (`--report DIR`); in the audit. A part of
+  a line, a file without a line, a code taken: refused, nothing left
+  behind.
+- **`ohl network export --line CODE OUT.ohl --user U`**: every row of the
+  model through the store interface into a new project file (today's
+  format), read back as the desktop reads it; `network.name`,
+  `network.line`, `network.revision`, `network.library_pins`,
+  `network.exported` added to `ols_meta`; in the audit.
+- **Round trip**: a project imported and exported back has the same
+  object, spatial index, meta (but `network.*`), user, grant and surface
+  rows (sorted dumps compared) — the example line (a test), one synthetic
+  line and the 12 000-pylon country (108 785 objects); imported again
+  under another code, every id renamed and, mapped back, the same line.
+- **Synthetic country**: `ohl synth country --per-line` also writes each
+  route as a project of its own (`lines/CODE.ohl`; a tower shared by two
+  routes in both files under one id: the import's clashes and twins);
+  `ohl synth`'s measure works on any opened session
+  (`project::measure_session`), so `ohl network measure` times the same
+  moves through PostgreSQL.
+- **Measured** (12 000 pylons, seed 1;
+  [performance](performance.md#synthetic-country-phase-4-the-postgresql-store-2026-11-19)):
+  147 line projects imported in 75 s (2 657 ids renamed, 3 584 twin pairs
+  listed), 208 MB; the country as one model: import 31 s (7 s without the
+  revision), 194 MB, open 1.9 s, a move median 4 ms, an undo or redo 2 ms
+  (the file: 2 and 1 ms), export 9.8 s.
+- **Open**: the server on the database (phase 5: authority, caches, the
+  interest stream, the columns above); rights evaluated (phase 7); library
+  mapping at import (phase 9); point clouds, backgrounds and terrain tiles
+  in the database; a backup check before migrating, TLS to a database on
+  another host (phase 13); the merge of twin towers (an admin's command).
+
 ## 2026-11-18 (put the project's strings in a library)
 
 **A one-off command for existing projects: every string written inline
@@ -585,7 +702,7 @@ store all the models and models element then each model could be exported
 individually in the OHL format from the server"; in active development,
 not approved yet; [ADR-0013](../adr/0013-country-server.md), amendments
 to ADR-0004, 0005, 0008 and 0010, the draft
-[server database](data-model.md#server-database-postgresql--draft)).
+[server database](data-model.md#server-database-postgresql)).
 
 - **Two modes, one session**: the desktop keeps the single-file `.ohl`
   (schema 6, unchanged — files written before and after the store

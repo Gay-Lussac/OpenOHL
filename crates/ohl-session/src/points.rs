@@ -162,7 +162,6 @@ impl crate::Session {
     /// An undo is a change here too (**conservative**: the points may be
     /// as before).
     pub fn points_state(&self) -> String {
-        use crate::store::Store;
         self.conn.points_state()
     }
 }

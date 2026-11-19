@@ -35,6 +35,32 @@ pub fn write_project(country: &Country, path: &Path, user: &str) -> Result<f64, 
     Ok(secs(t))
 }
 
+/// Writes each route of `country` as a project file of its own,
+/// `DIR/CODE.ohl` ([`crate::route_lines`]; refused when one exists), as
+/// one import by `user` each; returns the codes, files and seconds.
+pub fn write_line_projects(
+    country: &Country,
+    dir: &Path,
+    user: &str,
+) -> Result<Vec<(String, std::path::PathBuf, f64)>, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut out = Vec::new();
+    for (code, line) in crate::route_lines(country)? {
+        let path = dir.join(format!("{code}.ohl"));
+        if path.exists() {
+            return Err(format!("{}: exists already", path.display()));
+        }
+        let t = Instant::now();
+        let mut session = Session::open(&path).map_err(|e| e.to_string())?;
+        session
+            .import(&line, user)
+            .map_err(|e| format!("{code}: import: {e}"))?;
+        session.checkpoint().map_err(|e| e.to_string())?;
+        out.push((code, path, secs(t)));
+    }
+    Ok(out)
+}
+
 /// One LiDAR sample tile as stored.
 #[derive(Debug, Clone, Serialize)]
 pub struct TileStat {
@@ -258,12 +284,31 @@ pub fn measure_with(
     whole: bool,
     shared: Shared,
 ) -> Result<Baseline, String> {
-    let working_set = shared == Shared::WorkingSet;
     let file_bytes = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
     let t = Instant::now();
-    let mut session = Session::open(path).map_err(|e| e.to_string())?;
-    session.set_whole_only(whole);
+    let session = Session::open(path).map_err(|e| e.to_string())?;
     let open_s = secs(t);
+    measure_session(
+        session, file_bytes, open_s, user, edits, limit, whole, shared,
+    )
+}
+
+/// [`measure_with`] on a session opened already (on any store: a model of
+/// a country server's database, ADR-0013 phase 4), `open_s` the seconds
+/// it took to open and `file_bytes` the size of what it was opened from.
+#[allow(clippy::too_many_arguments)]
+pub fn measure_session(
+    mut session: Session,
+    file_bytes: u64,
+    open_s: f64,
+    user: &str,
+    edits: usize,
+    limit: Duration,
+    whole: bool,
+    shared: Shared,
+) -> Result<Baseline, String> {
+    let working_set = shared == Shared::WorkingSet;
+    session.set_whole_only(whole);
     let rss_after_open_mb = rss_mb();
     let t = Instant::now();
     session.line().validate().map_err(|e| e.to_string())?;

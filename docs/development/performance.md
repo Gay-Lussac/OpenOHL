@@ -659,6 +659,44 @@ the country (median 2 ms, the phase 3 measure, run again: 2 ms). Without
 a working set nothing is checked: the session returns at the first
 lookup.
 
+## Synthetic country: phase 4, the PostgreSQL store (2026-11-19)
+
+The country server's database ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-19-country-server-phase-4),
+[running it](postgresql.md)): the session on one model kept in
+PostgreSQL 17 with PostGIS 3.7, a throwaway cluster on the same machine
+(127.0.0.1, default durable settings), the import of project files and
+the export of one model.
+
+```bash
+ohl synth country --out DIR --per-line --lidar-density 0   # DIR/lines/L001.ohl … one file per route
+ohl network import DIR/lines/*.ohl --user synth --report REPORTS
+ohl network import DIR/country.ohl --line CH --user synth  # the whole country as one model
+ohl network measure --line CH --user synth --edits 50 --export OUT.ohl
+```
+
+Seed 1, 12 000 pylons, `bench-fast`, Apple M-series, 10 cores, one run
+each, the machine shared with two other builds (load 5–20):
+
+| Measure | 147 line projects (one per route, 113 194 objects) | The whole country as one model (108 785 objects) |
+|---|---|---|
+| Import | 74.9 s in all (per file median 0.47 s, at most 1.3 s; of it the revisions 28.7 s) | 30.8 s (the revision "imported from FILE" 24.3 s; without it 7.2 s) |
+| Ids renamed (another line had them) / twin towers listed | 2 657 (2 123 structures, 534 alignment points) / 3 584 pairs (2 123 structures) | 0 / 0 |
+| Database | 208 MB (objects 66, spatial index 44, revision blobs 54 + 23 MB) | 194 MB (without the revision 123 MB); the project file 159 MB |
+| Open (a session on the model) | the largest line (160 structures): 0.07 s | 1.9 s (the project file: 1.9 s) |
+| Move a structure by 1 m | median 5 ms, 95 % ≤ 11 ms | median 4 ms, 95 % ≤ 9 ms, at most 22 ms (the file: 2 ms) |
+| Undo / redo | median 8 / 8 ms | median 2 / 2 ms, 95 % ≤ 8 / 7 ms (the file: 1 / < 1 ms) |
+| Memory after opening | 31 MB | 1 180 MB (the file: 1 059 MB) |
+| Export of the model as a project file | 0.29 s | 9.8 s (with its revision); 3.0 s without |
+
+An edit through PostgreSQL costs its few statements' round trips (a
+transaction, the objects and index rows it changes, the log entry): a few
+milliseconds more than the file, whatever the network's size. Opening
+reads every row of the model once, as from the file. The import's
+revision writes every object as a blob, one statement each (≈ 0.2 ms an
+object); the rows themselves go in batches of 2 000. The empty database
+with PostGIS is 8 MB.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

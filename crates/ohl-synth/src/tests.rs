@@ -474,3 +474,30 @@ fn owner_size() {
         "1c14a252dda1b8d1e397fb5675a3600ff7a792d7d4af4a128b1de3a02b053d7a"
     );
 }
+
+/// Each route as a line of its own (the network's import): every section,
+/// jumper and alignment in exactly one line, every pylon in at least one,
+/// the towers shared by two routes in both (under the same id).
+#[test]
+fn route_lines_split_the_country() {
+    let c = small(1);
+    let lines = route_lines(&c).unwrap();
+    assert_eq!(lines.len(), c.summary.routes);
+    let sections: usize = lines.iter().map(|(_, l)| l.sections.len()).sum();
+    assert_eq!(sections, c.line.sections.len());
+    let jumpers: usize = lines.iter().map(|(_, l)| l.jumpers.len()).sum();
+    assert_eq!(jumpers, c.line.jumpers.len());
+    let alignments: usize = lines.iter().map(|(_, l)| l.alignments.len()).sum();
+    assert_eq!(alignments, c.line.alignments.len());
+    let mut seen: std::collections::BTreeMap<&str, usize> = Default::default();
+    for (code, l) in &lines {
+        assert_eq!(l.routes.len(), 1);
+        assert_eq!(&l.routes[0].id, code);
+        for s in &l.structures {
+            *seen.entry(s.id.as_str()).or_default() += 1;
+        }
+    }
+    assert_eq!(seen.len(), c.summary.pylons);
+    let twice = seen.values().filter(|n| **n > 1).count();
+    assert_eq!(twice, c.summary.shared_pylons);
+}

@@ -90,6 +90,7 @@ Every core module is a Rust crate under `crates/` (workspace members, with `apps
 | `ohl-crs` | Coordinate systems (EPSG, proj4), transformations of points and lines; pure Rust |
 | `ohl-io` | Import/export: format traits and registry, built-in formats (CSV, KML/KMZ, OHL XML, LandXML, GeoJSON, Shapefile, GeoPackage, IFC4, XLSX), structures along a route, formats and projects from WebAssembly plugins |
 | `ohl-session` | Project file (`.ohl`, SQLite), validated commands, operation log, per-user undo/redo, admin rollback, roles, live incremental solving; version control (revisions, branches, merge — ADR-0010), edit grants and reviews; spatial index |
+| `ohl-store-pg` | A country server's database (in active development, ADR-0013): the session's store on PostgreSQL with PostGIS (one model of the network as a store), the network's schema and migrations, the writer's lock, import of project files (ids renamed, twin towers listed) and export of one model as a project file |
 | `ohl-server` | Server mode (pre-alpha, in active development): a project hosted over QUIC, edits applied in one order and broadcast, clients' replicas, presence, soft locks, invitations; the web client (HTTPS + WebSocket) |
 | `ohl-render` | wgpu renderer: lines, points, surfaces in an offscreen texture; orbit camera; chunks with levels of detail, frustum culling and streaming; headless images |
 | `ohl-plugins` | Plugin manifests (`ohl-plugin.toml`), compatibility checks, the sandboxed WebAssembly component host (WIT worlds for formats, projects, terrain, design codes) |
@@ -177,6 +178,6 @@ WebAssembly plugins implement a WIT world of `crates/ohl-plugins/wit/`: `io-plug
 - **Networking**: QUIC (`quinn`, TLS via `rustls`) for the application; HTTPS + WebSocket (`tokio-tungstenite`) for the web client.
 - **Geospatial**: pure Rust, no native GIS library: `proj4rs` with EPSG definitions, `las`/`laz` for point clouds (COPC read and written), formats written from their public specifications.
 - **Scripting**: Python via PyO3 (`ohl-py`), WASM runtime (`wasmtime`) for plugins.
-- **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks.
+- **Storage**: SQLite (`rusqlite`) for the project file, `zstd` compression of point and surface blocks; for a country server, PostgreSQL with PostGIS (separate programs) through the `postgres` client (MIT OR Apache-2.0), behind the same store interface (ADR-0013).
 - **Quality**: cargo test, clippy, criterion benchmarks; validation cases (`ohl validate`, 236 cases in `benchmarks/`); pytest for bindings. The checks run locally before each push; the CI workflow is started by hand only (lint, tests, validation cases, docs; macOS, Windows and the benchmarks in a full run).
 - **Docs**: mdBook (this book: user guide, theory manual, design) and `cargo doc` (API).

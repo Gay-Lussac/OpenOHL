@@ -52,6 +52,11 @@ pub enum SynthCommand {
         /// Time limit for the LiDAR samples, s.
         #[arg(long, default_value_t = 600)]
         seconds: u64,
+        /// Also write each route as a project file of its own,
+        /// DIR/lines/CODE.ohl (a design line per project, for `ohl network
+        /// import`; towers shared by two routes are in both files).
+        #[arg(long)]
+        per_line: bool,
     },
     /// Measure the session on a project file: open time, memory, whole
     /// validation, edit, undo and redo latency (structures moved by 1 m,
@@ -99,6 +104,7 @@ pub fn run(command: SynthCommand) -> Result<(), String> {
             json,
             user,
             seconds,
+            per_line,
         } => {
             let settings = Settings {
                 pylons,
@@ -137,6 +143,17 @@ pub fn run(command: SynthCommand) -> Result<(), String> {
             let path = out.join("country.ohl");
             let import_s = project::write_project(&country, &path, &user)?;
             println!("project written in {import_s:.2} s: {}", path.display());
+            if per_line {
+                let dir = out.join("lines");
+                let t = Instant::now();
+                let written = project::write_line_projects(&country, &dir, &user)?;
+                println!(
+                    "{} line projects written in {:.2} s: {}",
+                    written.len(),
+                    t.elapsed().as_secs_f64(),
+                    dir.display()
+                );
+            }
             let (tiles, estimate) = if lidar_density > 0.0 {
                 let tiles = project::add_lidar(
                     &country,

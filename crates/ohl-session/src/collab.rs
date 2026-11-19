@@ -39,7 +39,6 @@ use ohl_core::grid::Bounds;
 use serde::{Deserialize, Serialize};
 
 use crate::spatial::Entry;
-use crate::store::Store;
 use crate::versions::{Choices, MergeOutcome};
 use crate::{Kind, Role, Session, SessionError, refused};
 
@@ -603,7 +602,7 @@ impl Session {
         } else {
             ReviewState::Rejected
         };
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.set_review_state(id, state.as_str())?;
         tx.add_review_note(
             id,
@@ -682,7 +681,7 @@ impl Session {
         let outcome = self.with_line(&target, |s| {
             s.merge_as(user, &revision, Some(&message), choices, true)
         })?;
-        let tx = crate::Step::begin(&self.conn)?;
+        let tx = crate::Step::begin(&*self.conn)?;
         tx.set_review_state(id, "merged")?;
         tx.add_review_note(id, user, "merge", "")?;
         tx.commit()?;
