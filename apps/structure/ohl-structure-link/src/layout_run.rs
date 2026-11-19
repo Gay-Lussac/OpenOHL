@@ -45,7 +45,9 @@ use ohl_structures::connections::{TypeConnection, TypePlate};
 use ohl_structures::{LibraryItem, StructureType};
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table, Value};
 
-use crate::joint_layout::{BoltArea, JointPlan, LayoutSettings, Onto, flat_turns, plan_joint};
+use crate::joint_layout::{
+    BoltArea, Join, JoinKind, JointPlan, LayoutSettings, Onto, flat_turns, plan_joint,
+};
 use crate::joints::{JointDetails, joint_details_at};
 
 /// The record's id and kind.
@@ -54,7 +56,16 @@ pub const RECORD_ID: &str = "joint-layout";
 pub const RECORD_KIND: &str = ohl_structure_edit::body::JOINT_LAYOUT_KIND;
 
 /// The fields of a member end the layout sets.
-pub const END_FIELDS: [&str; 6] = ["cut", "shift", "onto", "bolts", "gauge_lines", "preset"];
+pub const END_FIELDS: [&str; 8] = [
+    "cut",
+    "shift",
+    "onto",
+    "bolts",
+    "gauge_lines",
+    "preset",
+    "kind",
+    "face",
+];
 
 /// What the layout set in a file, and its settings.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -636,16 +647,26 @@ fn lay_out_read(
         None => doc0.clone(),
     };
     let hand_plates = strip(&mut planning, t, &record, &targets, ask.replace_hand);
-    let at = |doc: &DocumentMut| {
+
+    // (A few of them: from the file cut down to what those read.)
+    let at = |doc: &DocumentMut, only: Option<&BTreeSet<String>>| {
+        let some;
+        let keep = match only {
+            Some(o) => {
+                some = keep_for(o);
+                &some
+            }
+            None => &keep_targets,
+        };
         joint_details_at(
-            &text_of(doc, &keep_targets),
+            &text_of(doc, keep),
             ask.library,
             ask.bolts,
-            Some(&targets),
+            Some(only.unwrap_or(&targets)),
         )
     };
     let clashes_before = if count {
-        count_clashes(&at(&doc0)?, &targets)
+        count_clashes(&at(&doc0, None)?, &targets)
     } else {
         0
     };
@@ -676,13 +697,76 @@ fn lay_out_read(
     for (m, r) in &restored {
         put_roll(&mut planning, m, r);
     }
+
     // (Its model gives the code's edge distances when no member turns.)
-    let (around_details, around_model) = crate::joints::joint_details_and_model(
+    let (mut around_details, mut around_model) = crate::joints::joint_details_and_model(
         &text_of(&planning, &keep_around),
         ask.library,
         ask.bolts,
         Some(&around),
     )?;
+    // The ends bolting onto nothing named, at the joints asked: the member
+    // running through the joint named in the planning copy (as the layout
+    // writes it), so that their leg bolted and the turn laying it flat are
+    // those on that member; then the joints in detail again.
+    // First (the owner's step 1) the members in line through each joint
+    // joined: one part, or the smaller nested in the bigger.
+    let mut named = false;
+    let mut conns = connection_edits::Connections::of(&planning);
+    let mut joins: BTreeMap<String, Vec<Join>> = BTreeMap::new();
+    for j in around_details
+        .joints
+        .iter()
+        .filter(|j| targets.contains(&j.id))
+    {
+        // One part only where the file then reads them so (in line within
+        // 1°, the same section, roll and reference: the core's rule).
+        let js: Vec<Join> = crate::joint_layout::joins_of(j)
+            .into_iter()
+            .filter(|x| {
+                x.how != JoinKind::Continuous
+                    || t.continuous_problem(&x.member, &x.onto, &j.id).is_none()
+            })
+            .collect();
+        for x in &js {
+            write_join(&mut planning, &mut conns, &j.id, x);
+            named = true;
+        }
+        let joined: BTreeSet<&str> = js.iter().map(|x| x.member.as_str()).collect();
+        for (m, host) in crate::joint_layout::hosts_to_name(j) {
+            let in_line = js.iter().any(|x| x.member == m || x.onto == m);
+            if in_line || joined.contains(m.as_str()) {
+                continue;
+            }
+            let _ = conns.set(
+                &mut planning,
+                &m,
+                &j.id,
+                "onto",
+                Some(&FieldValue::Word(host)),
+            );
+            named = true;
+        }
+        if !js.is_empty() {
+            joins.insert(j.id.clone(), js);
+        }
+    }
+    // The members joined as one part are not turned (their rolls stay
+    // alike).
+    let one_part: BTreeSet<String> = joins
+        .values()
+        .flatten()
+        .filter(|x| x.how == JoinKind::Continuous)
+        .flat_map(|x| [x.member.clone(), x.onto.clone()])
+        .collect();
+    if named {
+        (around_details, around_model) = crate::joints::joint_details_and_model(
+            &text_of(&planning, &keep_around),
+            ask.library,
+            ask.bolts,
+            Some(&around),
+        )?;
+    }
     // 2. The members lying off what they bolt onto: a turn that lays them
     // flat where every end agrees within the flatness allowed (those at
     // joints not asked too: a turn never spoils an end that was flat); a
@@ -697,7 +781,7 @@ fn lay_out_read(
         .filter(|j| targets.contains(&j.id))
     {
         for (m, turn) in flat_turns(j) {
-            if held.contains(&m) {
+            if held.contains(&m) || one_part.contains(&m) {
                 continue;
             }
             if record
@@ -794,11 +878,140 @@ fn lay_out_read(
             .try_into::<ohl_core::units::Angle>()
             .map_or(0.0, |a| a.radians())
     };
+    // The joints asked in detail with `turns` (their model: the code's edge
+    // distances), each planned.
+    let planned_with = |turns: &BTreeMap<&String, f64>| -> Result<Planned, String> {
+        let mut d = planning.clone();
+        for (m, turn) in turns {
+            ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+        }
+        let (details, model) = crate::joints::joint_details_and_model(
+            &text_of(&d, &keep_targets),
+            ask.library,
+            ask.bolts,
+            Some(&targets),
+        )?;
+        let plans = plans_of(&details, model.as_ref(), &targets, &settings, &joins);
+        Ok((details, model, plans))
+    };
+    // 2b. A half turn where an end lies on the inner face of what it bolts
+    // onto and cannot be laid out there (it runs towards the angle's other
+    // leg, or its bolts miss the flange): its outstanding leg to the other
+    // side, so that it lies on the outer face (an X-brace's diagonals: one
+    // on the outer faces of the legs, the other on their inner faces, back
+    // to back where they cross). Kept for a member only when more of its
+    // ends are planned laid out with it and its joints no worse; the rest
+    // as for any turn (tuning on real towers, 2026-11-18).
+    let mut first: Option<Planned> = None;
+    {
+        let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
+        let base = planned_with(&turns)?;
+        let mut flips: BTreeSet<String> = BTreeSet::new();
+        for (_, p) in &base.2 {
+            for h in &p.hand {
+                let Some((m, why)) = h.split_once(": ") else {
+                    continue;
+                };
+                let inner = why.contains("runs towards the angle's other leg")
+                    || why.contains("do not all land on the inner face");
+                if !inner
+                    || held.contains(m)
+                    || one_part.contains(m)
+                    || !members_here.contains_key(m)
+                {
+                    continue;
+                }
+                if record
+                    .oriented
+                    .get(m)
+                    .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+                {
+                    continue;
+                }
+                let automatic = record.rolled.contains_key(m) || record.oriented.contains_key(m);
+                let by_hand = member(m).is_some_and(|x| x.roll.is_some()) && !automatic;
+                if (by_hand && !ask.replace_hand) || laid_elsewhere(m).is_some() {
+                    continue;
+                }
+                flips.insert(m.to_owned());
+            }
+        }
+        let mut chosen: BTreeSet<String> = BTreeSet::new();
+        if !flips.is_empty() {
+            // Half a turn more, as written: degrees to a hundredth.
+            let half = |x: f64| {
+                let mut d = x.to_degrees() + 180.0;
+                if d > 180.0 {
+                    d -= 360.0;
+                }
+                ((d * 100.0).round() / 100.0).to_radians()
+            };
+            let mut with = turned.clone();
+            for m in &flips {
+                let x = with.get(m).copied().unwrap_or(0.0);
+                with.insert(m.clone(), half(x));
+            }
+            let turns: BTreeMap<&String, f64> = with.iter().map(|(m, x)| (m, *x)).collect();
+            let flipped = planned_with(&turns)?;
+            // Ends laid out (planned) of member `m`, and at its joints.
+            let count = |plans: &[(String, JointPlan)], m: &str| -> (usize, usize) {
+                let joints = &members_here[m];
+                plans.iter().filter(|(j, _)| joints.contains(j)).fold(
+                    (0, 0),
+                    |(own, all), (_, p)| {
+                        (
+                            own + usize::from(p.ends.iter().any(|e| e.member == m)),
+                            all + p.ends.len(),
+                        )
+                    },
+                )
+            };
+            for m in &flips {
+                let (own0, all0) = count(&base.2, m);
+                let (own1, all1) = count(&flipped.2, m);
+                if own1 > own0 && all1 >= all0 {
+                    chosen.insert(m.clone());
+                }
+            }
+            for m in &chosen {
+                let x = turned.get(m).copied().unwrap_or(0.0);
+                turned.insert(m.clone(), half(x));
+            }
+            if chosen == flips {
+                first = Some(flipped);
+            }
+        }
+        if chosen.is_empty() {
+            first = Some(base);
+        }
+    }
     // 3.–4. Each joint planned with the turns and written; a turned member
     // none of whose joints is laid out with the turn is not turned (its
     // roll as before), and the joints planned again without it — until
     // every turn left helps.
+    let class_rank = |m: &str| -> u8 {
+        match member(m)
+            .and_then(|x| x.design.as_ref())
+            .and_then(|d| d.get("class"))
+            .and_then(toml::Value::as_str)
+        {
+            Some("leg") => 0,
+            Some("bracing") | Some("crossing") => 1,
+            Some("redundant") => 2,
+            _ => 3,
+        }
+    };
     let mut refused: BTreeSet<String> = BTreeSet::new();
+    // The joints as the last pass's clash check left them, and those the
+    // turns refused since then touch (checked again).
+    let mut memo: BTreeMap<String, Checked> = BTreeMap::new();
+    let mut touched: BTreeSet<String> = BTreeSet::new();
+    let mut joint_members: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (m, nodes) in &members_here {
+        for n in nodes.iter() {
+            joint_members.entry(n.as_str()).or_default().push(m);
+        }
+    }
     loop {
         let turns: BTreeMap<&String, f64> = turned
             .iter()
@@ -813,53 +1026,63 @@ fn lay_out_read(
                 }
             }
         }
-        // The planning file with the turns (itself when none).
-        let turned_doc;
-        let plan_doc = if turns.is_empty() {
-            &planning
-        } else {
-            let mut d = planning.clone();
-            for (m, turn) in &turns {
-                ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+        // The joints asked in detail with the turns, each planned (those
+        // of the half turns' check when the turns are the same).
+        let fresh;
+        let (details, model, plans) = match (turns.is_empty(), refused.is_empty(), &first) {
+            (true, _, _) => (
+                &around_details,
+                around_model.as_ref(),
+                plans_of(
+                    &around_details,
+                    around_model.as_ref(),
+                    &targets,
+                    &settings,
+                    &joins,
+                ),
+            ),
+            (false, true, Some(p)) => (&p.0, p.1.as_ref(), p.2.clone()),
+            _ => {
+                fresh = planned_with(&turns)?;
+                (&fresh.0, fresh.1.as_ref(), fresh.2.clone())
             }
-            turned_doc = d;
-            &turned_doc
         };
-        // The joints asked in detail with the turns, and their model (the
-        // code's edge distances).
-        let turned_details;
-        let (details, model) = if turns.is_empty() {
-            (&around_details, around_model.as_ref())
-        } else {
-            turned_details = crate::joints::joint_details_and_model(
-                &text_of(plan_doc, &keep_targets),
-                ask.library,
-                ask.bolts,
-                Some(&targets),
-            )?;
-            (&turned_details.0, turned_details.1.as_ref())
-        };
-        let edge = |a: &crate::Arrival, thick: f64| -> Option<f64> {
-            let m = model?;
-            let idx = m.members.iter().position(|x| x.id == a.member)?;
-            crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None))).map(|r| r.edge)
-        };
-        let mut outcomes: Vec<JointOutcome> = details
-            .joints
-            .iter()
-            .filter(|j| targets.contains(&j.id))
-            .map(|j| {
-                let plan = plan_joint(j, &settings, &edge);
-                JointOutcome {
-                    joint: j.id.clone(),
-                    hand: plan.hand.clone(),
-                    written: false,
-                    turned: turned_at.get(&j.id).cloned().unwrap_or_default(),
-                    plates: Vec::new(),
-                    plan,
-                }
+        let mut outcomes: Vec<JointOutcome> = plans
+            .into_iter()
+            .map(|(j, plan)| JointOutcome {
+                hand: plan.hand.clone(),
+                written: false,
+                turned: turned_at.get(&j).cloned().unwrap_or_default(),
+                plates: Vec::new(),
+                joint: j,
+                plan,
             })
             .collect();
+        // A joint planned again with members left for a hand detail (the
+        // clash check's rounds).
+        let replan = |joint: &str, except: &BTreeMap<String, String>| -> Option<JointPlan> {
+            let j = details.joint(joint)?;
+            let edge = edge_rule(model);
+            let mut p = crate::joint_layout::plan_joint_except(j, &settings, &edge, except);
+            p.joins = joins
+                .get(joint)
+                .into_iter()
+                .flatten()
+                .filter(|x| !except.contains_key(&x.member) && !except.contains_key(&x.onto))
+                .cloned()
+                .collect();
+            for x in joins.get(joint).into_iter().flatten() {
+                for m in [&x.member, &x.onto] {
+                    if let Some(why) = except.get(m)
+                        && !p.hand_members.contains(m)
+                    {
+                        p.hand_members.push(m.clone());
+                        p.hand.push(format!("{m}: {why}"));
+                    }
+                }
+            }
+            Some(p)
+        };
         // A turn that helps no joint is not made: the member among the
         // ends laid out at none of its joints — as planned first (nothing
         // written yet), then as written (a joint taken back by the clash
@@ -891,9 +1114,14 @@ fn lay_out_read(
                     roll_text: &roll_text,
                     hand_plates: &hand_plates,
                     at: &at,
+                    replan: &replan,
+                    class_rank: &class_rank,
                 },
                 &mut outcomes,
+                &mut memo,
+                &targets.difference(&touched).cloned().collect(),
             )?;
+            touched.clear();
             useless = unhelpful(&outcomes, true);
             done = Some(written);
         }
@@ -909,6 +1137,21 @@ fn lay_out_read(
                      hand detail); its roll as before",
                     at_joints.join(" and ")
                 ));
+                // Its joints and those of the members meeting there (their
+                // ends' conditions read each other's).
+                for j in members_here[m.as_str()].iter() {
+                    for k in joint_members.get(j.as_str()).into_iter().flatten() {
+                        touched.extend(
+                            members_here[*k]
+                                .iter()
+                                .filter(|x| targets.contains(*x))
+                                .cloned(),
+                        );
+                    }
+                    if targets.contains(j) {
+                        touched.insert(j.clone());
+                    }
+                }
                 refused.insert(m);
             }
             continue;
@@ -933,6 +1176,78 @@ fn lay_out_read(
     }
 }
 
+/// The joints asked in detail, their model and each one's plan.
+type Planned = (
+    JointDetails,
+    Option<ohl_structures_fe::model::Model>,
+    Vec<(String, JointPlan)>,
+);
+
+/// The plan of each joint of `details` among `targets` (in its order), the
+/// code's edge distances from `model`.
+fn plans_of(
+    details: &JointDetails,
+    model: Option<&ohl_structures_fe::model::Model>,
+    targets: &BTreeSet<String>,
+    settings: &LayoutSettings,
+    joins: &BTreeMap<String, Vec<Join>>,
+) -> Vec<(String, JointPlan)> {
+    let edge = edge_rule(model);
+    details
+        .joints
+        .iter()
+        .filter(|j| targets.contains(&j.id))
+        .map(|j| {
+            let mut p = plan_joint(j, settings, &edge);
+            p.joins = joins.get(&j.id).cloned().unwrap_or_default();
+            (j.id.clone(), p)
+        })
+        .collect()
+}
+
+/// Join `x` at joint `j` written into `doc` (its end's `kind` and `onto`,
+/// or `face` and `onto`); the fields written.
+fn write_join(
+    doc: &mut DocumentMut,
+    conns: &mut connection_edits::Connections,
+    j: &str,
+    x: &Join,
+) -> [&'static str; 2] {
+    let (f, v) = match x.how {
+        JoinKind::Continuous => ("kind", "continuous"),
+        JoinKind::Nested => ("face", "nested"),
+    };
+    let _ = conns.set(doc, &x.member, j, f, Some(&FieldValue::Word(v.into())));
+    let _ = conns.set(
+        doc,
+        &x.member,
+        j,
+        "onto",
+        Some(&FieldValue::Word(x.onto.clone())),
+    );
+    [f, "onto"]
+}
+
+/// The code's edge distance of a member end's bolts in a part of a
+/// thickness, from `model` (none: no model, or no rule).
+fn edge_rule(
+    model: Option<&ohl_structures_fe::model::Model>,
+) -> impl Fn(&crate::Arrival, f64) -> Option<f64> + '_ {
+    move |a: &crate::Arrival, thick: f64| -> Option<f64> {
+        let m = model?;
+        let idx = m.members.iter().position(|x| x.id == a.member)?;
+        crate::member_view::rules_in(m, idx, a.end, None, Some((thick, None))).map(|r| r.edge)
+    }
+}
+
+/// The joints of a file in detail (those given, else all asked).
+type DetailsOf<'a> =
+    dyn Fn(&DocumentMut, Option<&BTreeSet<String>>) -> Result<JointDetails, String> + 'a;
+
+/// A joint planned again with the members given left for a hand detail,
+/// each with why.
+type Replan<'a> = dyn Fn(&str, &BTreeMap<String, String>) -> Option<JointPlan> + 'a;
+
 /// What [`write_rounds`] writes with.
 struct Rounds<'a> {
     doc0: &'a DocumentMut,
@@ -947,21 +1262,78 @@ struct Rounds<'a> {
     roll_of: &'a dyn Fn(&str) -> f64,
     roll_text: &'a dyn Fn(&str) -> String,
     hand_plates: &'a [OldPlate],
-    /// The joints asked in detail.
-    at: &'a dyn Fn(&DocumentMut) -> Result<JointDetails, String>,
+    /// The joints asked in detail (those given, else all asked).
+    at: &'a DetailsOf<'a>,
+    /// A joint planned again with members left for a hand detail.
+    replan: &'a Replan<'a>,
+    /// A member's class rank (leg, bracing, redundant, other).
+    class_rank: &'a dyn Fn(&str) -> u8,
 }
+
+/// How many times a joint is planned again without the members whose
+/// laid-out parts would clash, before it is taken back whole.
+const CLASH_ROUNDS: usize = 4;
 
 /// The plans of `outcomes` written into the file as it was, with the rolls
 /// (those turned before at the joints asked back, this run's turns on
 /// them); then the clash check: a joint whose laid-out parts run into
-/// anything taken back (a second round). The file after and the clashes
-/// at the joints asked after.
-fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String, usize), String> {
+/// anything is planned again without the members in those clashes (left
+/// as they were, with the clash; tuning on real towers, 2026-11-18: one
+/// member's clash no longer takes the whole joint back), up to
+/// [`CLASH_ROUNDS`] times, then taken back whole. The file after and the
+/// clashes at the joints asked after.
+///
+/// `memo`: each joint as an earlier pass of the run left it; a joint of
+/// `reuse` planned as then (its members' rolls the same) is taken as then,
+/// not checked again (the same joint gives the same check). Updated.
+fn write_rounds(
+    r: &Rounds<'_>,
+    outcomes: &mut [JointOutcome],
+    memo: &mut BTreeMap<String, Checked>,
+    reuse: &BTreeSet<String>,
+) -> Result<(String, usize), String> {
     let ask = r.ask;
     let mut take_back: BTreeSet<String> = BTreeSet::new();
-    let mut result = DocumentMut::new();
-    let mut after_count = 0;
-    for _round in 0..2 {
+    // Each joint's clashes after (the joints asked), and the joints to
+    // check in the next round (none: all of them).
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    // The members left at each joint for a clash, with why.
+    let mut except: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    // The plates' outlines cut at the heel, by joint and plate (kept while
+    // the joint's plan stays).
+    let mut outlines: BTreeMap<(String, usize), Vec<[f64; 3]>> = BTreeMap::new();
+    // The plans as planned, and the joints taken as an earlier pass left
+    // them.
+    let planned: Vec<JointPlan> = outcomes.iter().map(|o| o.plan.clone()).collect();
+    let mut known: BTreeSet<String> = BTreeSet::new();
+    for o in outcomes.iter_mut() {
+        let Some(c) = memo
+            .get(&o.joint)
+            .filter(|c| reuse.contains(&o.joint) && c.planned == o.plan)
+        else {
+            continue;
+        };
+        o.plan = c.plan.clone();
+        if c.taken_back {
+            take_back.insert(o.joint.clone());
+            o.hand = c.hand.clone();
+        }
+        except.insert(o.joint.clone(), c.except.clone());
+        for (k, x) in &c.outlines {
+            outlines.insert((o.joint.clone(), *k), x.clone());
+        }
+        counts.insert(o.joint.clone(), c.clashes);
+        known.insert(o.joint.clone());
+    }
+    let mut check: Option<BTreeSet<String>> = (!known.is_empty()).then(|| {
+        r.targets
+            .iter()
+            .filter(|j| !known.contains(*j))
+            .cloned()
+            .collect()
+    });
+    let mut round = 0;
+    let result = loop {
         let mut doc = r.doc0.clone();
         let mut rec = r.record.clone();
         rec.settings = Some(RecordSettings::of(ask.settings));
@@ -975,6 +1347,31 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
             ohl_structure_edit::edits::set_member_roll(&mut doc, m, (r.roll_of)(m) + turn);
             rec.rolled.insert((*m).clone(), (r.roll_text)(m));
         }
+        let mut w = Writing::of(&doc, r.t);
+        // First the plates the layout made at the joints written or cleared
+        // now taken out, so their ids are free (the ids a run gives do not
+        // hang on a run before's: a run again identical); then each such
+        // joint's old automatic values out and its plan written.
+        let going: Vec<String> = rec
+            .made
+            .iter()
+            .filter(|(_, (j, _))| {
+                outcomes.iter().any(|o| {
+                    &o.joint == j
+                        && ((o.plan.laid_out() && !take_back.contains(&o.joint))
+                            || (o.plan.ends.is_empty() && o.plan.hand.is_empty()))
+                })
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &going {
+            connection_edits::remove_plate(&mut doc, id);
+            rec.made.remove(id);
+            w.taken.remove(id);
+        }
+        if !going.is_empty() {
+            w.conns = connection_edits::Connections::of(&doc);
+        }
         for o in outcomes.iter_mut() {
             o.written = false;
             o.plates.clear();
@@ -984,7 +1381,7 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
             if !o.plan.laid_out() || take_back.contains(&o.joint) {
                 if o.plan.ends.is_empty() && o.plan.hand.is_empty() {
                     // Nothing to lay out: the old automatic values go.
-                    strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand);
+                    strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand, &mut w);
                     rec.joints.remove(&o.joint);
                     rec.hand.remove(&o.joint);
                 } else if !o.hand.is_empty() {
@@ -992,8 +1389,8 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
                 }
                 continue;
             }
-            strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand);
-            o.plates = write_plan(&mut doc, r.t, &mut rec, &o.plan, ask, r.hand_plates);
+            strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand, &mut w);
+            o.plates = write_plan(&mut doc, r.t, &mut rec, &o.plan, ask, r.hand_plates, &mut w);
             o.written = true;
             rec.joints.insert(o.joint.clone());
             if o.plan.hand.is_empty() {
@@ -1002,25 +1399,37 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
                 rec.hand.insert(o.joint.clone(), o.plan.hand.join("; "));
             }
         }
+        w.conns.tidy(&mut doc);
         // The plates' outlines worked out round their bolts, cut at the
         // flange's heel by half the gap (clear of the other face's), written
-        // (automatic).
-        let heels: Vec<(String, HeelLine)> = outcomes
+        // (automatic); those of a joint planned as before as before.
+        let heels: Vec<((String, usize), String, HeelLine)> = outcomes
             .iter()
             .filter(|o| o.written)
             .flat_map(|o| {
                 o.plates
                     .iter()
                     .zip(&o.plan.plates)
-                    .filter_map(|(id, p)| p.heel.map(|h| (id.clone(), h)))
+                    .enumerate()
+                    .filter_map(|(k, (id, p))| {
+                        p.heel.map(|h| ((o.joint.clone(), k), id.clone(), h))
+                    })
                     .collect::<Vec<_>>()
             })
             .collect();
-        if !heels.is_empty() {
+        let new: BTreeSet<String> = heels
+            .iter()
+            .filter(|(key, _, _)| !outlines.contains_key(key))
+            .map(|(key, _, _)| key.0.clone())
+            .collect();
+        if !new.is_empty() {
             // The record first: the drawing reads its marks.
             rec.write(&mut doc);
-            let mid = (r.at)(&doc)?;
-            for (id, (heel, across)) in &heels {
+            let mid = (r.at)(&doc, Some(&new))?;
+            for (key, id, (heel, across)) in &heels {
+                if outlines.contains_key(key) {
+                    continue;
+                }
                 let Some(p) = mid
                     .joints
                     .iter()
@@ -1033,25 +1442,58 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
                 let cut = clip3(&p.outline, |q| {
                     (0..3).map(|k| (q[k] - heel[k]) * across[k]).sum::<f64>() - half
                 });
-                if cut.len() >= 3
-                    && connection_edits::set_plate_outline(&mut doc, id, &cut).is_ok()
-                    && let Some(m) = rec.made.get_mut(id)
-                {
-                    m.1.insert("outline".into());
-                }
+                outlines.insert(key.clone(), cut);
+            }
+        }
+        for (key, id, _) in &heels {
+            if let Some(cut) = outlines.get(key)
+                && cut.len() >= 3
+                && connection_edits::set_plate_outline(&mut doc, id, cut).is_ok()
+                && let Some(m) = rec.made.get_mut(id)
+            {
+                m.1.insert("outline".into());
             }
         }
         rec.write(&mut doc);
-        let after = (r.at)(&doc)?;
-        let mut again = false;
+        if check.as_ref().is_some_and(BTreeSet::is_empty) {
+            break doc;
+        }
+        let after = (r.at)(&doc, check.as_ref())?;
+        for j in &after.joints {
+            if r.targets.contains(&j.id) {
+                counts.insert(j.id.clone(), j.clashes.len());
+            }
+        }
+        let mut next: BTreeSet<String> = BTreeSet::new();
         for o in outcomes.iter_mut().filter(|o| o.written) {
+            if check.as_ref().is_some_and(|c| !c.contains(&o.joint)) {
+                continue;
+            }
             let Some(j) = after.joint(&o.joint) else {
                 continue;
             };
-            let laid: BTreeSet<&str> = o.plan.ends.iter().map(|e| e.member.as_str()).collect();
-            let ours = |x: &crate::ClashPart| match x {
-                crate::ClashPart::Plate(id) => o.plates.contains(id),
-                other => other.member().is_some_and(|m| laid.contains(m)),
+            let laid: BTreeSet<&str> = o
+                .plan
+                .ends
+                .iter()
+                .map(|e| e.member.as_str())
+                .chain(o.plan.joins.iter().map(|x| x.member.as_str()))
+                .collect();
+            // The members laid out a part is of (a plate: those on it).
+            let ours = |x: &crate::ClashPart| -> Vec<String> {
+                match x {
+                    crate::ClashPart::Plate(id) => o
+                        .plates
+                        .iter()
+                        .position(|p| p == id)
+                        .map(|k| o.plan.plates[k].members.clone())
+                        .unwrap_or_default(),
+                    other => other
+                        .member()
+                        .filter(|m| laid.contains(m))
+                        .map(|m| vec![m.to_owned()])
+                        .unwrap_or_default(),
+                }
             };
             // A member left for a hand detail is as it was: its clashes
             // are said with it, they do not take the rest back.
@@ -1059,49 +1501,142 @@ fn write_rounds(r: &Rounds<'_>, outcomes: &mut [JointOutcome]) -> Result<(String
                 x.member()
                     .is_some_and(|m| o.plan.hand_members.iter().any(|h| h == m))
             };
-            let bad: Vec<String> = j
-                .clashes
-                .iter()
-                .filter(|c| (ours(&c.a) || ours(&c.b)) && !left(&c.a) && !left(&c.b))
-                .map(|c| {
-                    // A plate it would make named by where it lies (its id
-                    // is not kept: the joint is left as it was).
-                    let name = |x: &crate::ClashPart| match x {
-                        crate::ClashPart::Plate(id) => o
-                            .plates
-                            .iter()
-                            .position(|p| p == id)
-                            .map(|k| format!("a plate on {}", o.plan.plates[k].on))
-                            .unwrap_or_else(|| x.words()),
-                        other => other.words(),
-                    };
-                    format!(
-                        "{} and {} would run {:.0} mm into each other",
-                        name(&c.a),
-                        name(&c.b),
-                        (c.depth * 1000.0).max(1.0)
+            // A plate it would make named by where it lies (its id is not
+            // kept when the joint is left as it was).
+            let name = |x: &crate::ClashPart| match x {
+                crate::ClashPart::Plate(id) => o
+                    .plates
+                    .iter()
+                    .position(|p| p == id)
+                    .map(|k| format!("a plate on {}", o.plan.plates[k].on))
+                    .unwrap_or_else(|| x.words()),
+                other => other.words(),
+            };
+            let mut bad: Vec<String> = Vec::new();
+            let mut out: BTreeMap<String, String> = BTreeMap::new();
+            for c in &j.clashes {
+                let (a, b) = (ours(&c.a), ours(&c.b));
+                if (a.is_empty() && b.is_empty()) || left(&c.a) || left(&c.b) {
+                    continue;
+                }
+                let words = format!(
+                    "{} and {} would run {:.0} mm into each other",
+                    name(&c.a),
+                    name(&c.b),
+                    (c.depth * 1000.0).max(1.0)
+                );
+                // Left: the side laid out; of two, a member before a
+                // plate's members, then the later class (redundants before
+                // bracing), then the larger id.
+                let worse = |x: &[String]| {
+                    (
+                        x.len() == 1,
+                        x.iter().map(|m| (r.class_rank)(m)).max().unwrap_or(0),
+                        x.iter().max().cloned().unwrap_or_default(),
                     )
-                })
-                .collect();
-            if !bad.is_empty() {
-                o.hand = bad
-                    .into_iter()
-                    .map(|w| format!("laid out: {w}"))
-                    .chain(o.plan.hand.iter().cloned())
-                    .collect();
-                take_back.insert(o.joint.clone());
-                again = true;
+                };
+                let side = if a.is_empty() {
+                    b
+                } else if b.is_empty() || worse(&a) >= worse(&b) {
+                    a
+                } else {
+                    b
+                };
+                for m in side {
+                    out.entry(m)
+                        .or_insert_with(|| format!("laid out, {words} (left as it was)"));
+                }
+                bad.push(words);
             }
+            if bad.is_empty() {
+                continue;
+            }
+            let ex = except.entry(o.joint.clone()).or_default();
+            ex.extend(out);
+            let again = (round + 1 < CLASH_ROUNDS)
+                .then(|| (r.replan)(&o.joint, ex))
+                .flatten()
+                .filter(JointPlan::laid_out);
+            match again {
+                Some(p) => {
+                    outlines.retain(|(j, _), _| j != &o.joint);
+                    o.plan = p;
+                }
+                None => {
+                    o.hand = bad
+                        .into_iter()
+                        .map(|w| format!("laid out: {w}"))
+                        .chain(o.plan.hand.iter().cloned())
+                        .collect();
+                    take_back.insert(o.joint.clone());
+                }
+            }
+            next.insert(o.joint.clone());
         }
-        after_count = count_clashes(&after, r.targets);
-        result = doc;
-        if !again {
-            break;
+        if next.is_empty() {
+            break doc;
+        }
+        round += 1;
+        check = Some(next);
+    };
+    // The plates, connections and generators written at the end of the
+    // file, in that order and each in its list's order (not where an
+    // earlier run's text had some of them): the same layout gives the same
+    // text (a run again identical).
+    let mut result = result;
+    for key in ["plate", "connection", "generator"] {
+        if let Some(mut item) = result.remove(key) {
+            if let Some(a) = item.as_array_of_tables_mut() {
+                for t in a.iter_mut() {
+                    t.set_position(None);
+                }
+            }
+            result.insert(key, item);
         }
     }
-    // Still clashing after the second round: those taken back are left as
-    // they were (the second round wrote none of them).
+    let after_count = r
+        .targets
+        .iter()
+        .map(|j| counts.get(j).copied().unwrap_or(0))
+        .sum();
+    for (o, p) in outcomes.iter().zip(planned) {
+        memo.insert(
+            o.joint.clone(),
+            Checked {
+                planned: p,
+                plan: o.plan.clone(),
+                hand: o.hand.clone(),
+                taken_back: take_back.contains(&o.joint),
+                except: except.get(&o.joint).cloned().unwrap_or_default(),
+                outlines: outlines
+                    .iter()
+                    .filter(|((j, _), _)| j == &o.joint)
+                    .map(|((_, k), x)| (*k, x.clone()))
+                    .collect(),
+                clashes: counts.get(&o.joint).copied().unwrap_or(0),
+            },
+        );
+    }
     Ok((result.to_string(), after_count))
+}
+
+/// A joint as the clash check of a run's pass left it ([`write_rounds`]).
+#[derive(Debug, Clone)]
+struct Checked {
+    /// Its plan as planned.
+    planned: JointPlan,
+    /// Its plan as written (members left for a clash).
+    plan: JointPlan,
+    /// Why it needs a hand detail.
+    hand: Vec<String>,
+    /// Taken back whole.
+    taken_back: bool,
+    /// The members left for a clash, with why.
+    except: BTreeMap<String, String>,
+    /// Its plates' outlines cut at the heel, by plate.
+    outlines: Vec<(usize, Vec<[f64; 3]>)>,
+    /// Its clashes after.
+    clashes: usize,
 }
 
 /// Member `m`'s roll written as `text` (empty: none), exactly.
@@ -1173,9 +1708,11 @@ fn strip(
 ) -> Vec<OldPlate> {
     let mut rec = record.clone();
     let old: Vec<OldPlate> = old_plates(t, record, targets);
+    let mut w = Writing::of(doc, t);
     for j in targets {
-        strip_joint(doc, t, &mut rec, j, replace_hand);
+        strip_joint(doc, t, &mut rec, j, replace_hand, &mut w);
     }
+    w.conns.tidy(doc);
     // The record without them (its marks, `gauge`, read by the drawing).
     rec.write(doc);
     old
@@ -1216,6 +1753,7 @@ fn strip_joint(
     rec: &mut LayoutRecord,
     j: &str,
     replace_hand: bool,
+    w: &mut Writing,
 ) {
     // The plates it made.
     let made: Vec<String> = rec
@@ -1227,6 +1765,11 @@ fn strip_joint(
     for id in &made {
         connection_edits::remove_plate(doc, id);
         rec.made.remove(id);
+        w.taken.remove(id);
+    }
+    // (Removing a plate tidies the connections: their places change.)
+    if !made.is_empty() {
+        w.conns = connection_edits::Connections::of(doc);
     }
     for c in t.connections.iter().filter(|c| c.joint == j) {
         let key = (c.member.clone(), c.joint.clone());
@@ -1243,18 +1786,62 @@ fn strip_joint(
             }
             if f == "preset" {
                 for k in connection_edits::CARRIED {
-                    let _ = connection_edits::set_connection_field(doc, &c.member, j, k, None);
+                    let _ = w.conns.set(doc, &c.member, j, k, None);
                 }
                 continue;
             }
-            let _ = connection_edits::set_connection_field(doc, &c.member, j, f, None);
+            let _ = w.conns.set(doc, &c.member, j, f, None);
         }
         rec.provisional.remove(&key);
+    }
+    // A connection left with nothing in it goes now (as the edit crate's
+    // own edits do: where the ones written again then stand in the file
+    // does not hang on a run before; a run again identical).
+    let empty = doc
+        .get("connection")
+        .and_then(Item::as_array_of_tables)
+        .is_some_and(|a| {
+            a.iter().any(|t| {
+                t.get("joint").and_then(Item::as_str) == Some(j)
+                    && t.iter().all(|(k, _)| k == "member" || k == "joint")
+            })
+        });
+    if empty {
+        w.conns.tidy(doc);
+    }
+}
+
+/// A file being written: its connections by member and joint, and the ids
+/// in use (its plates and members), for many edits in a row (the edit
+/// crate's own look each up in the whole file: on a tower of 2 500
+/// members most of a run's time).
+struct Writing {
+    conns: connection_edits::Connections,
+    taken: std::collections::HashSet<String>,
+}
+
+impl Writing {
+    fn of(doc: &DocumentMut, t: &StructureType) -> Self {
+        let mut taken: std::collections::HashSet<String> = doc
+            .get("plate")
+            .and_then(Item::as_array_of_tables)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.get("id").and_then(Item::as_str).map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default();
+        taken.extend(t.members.iter().map(|m| m.id.clone()));
+        Self {
+            conns: connection_edits::Connections::of(doc),
+            taken,
+        }
     }
 }
 
 /// Writes plan `p` into `doc` (its old values taken out already): each
 /// end's values, the plates; recorded in `rec`. The plates' ids.
+#[allow(clippy::too_many_arguments)]
 fn write_plan(
     doc: &mut DocumentMut,
     t: &StructureType,
@@ -1262,32 +1849,35 @@ fn write_plan(
     p: &JointPlan,
     ask: &RunAsk<'_>,
     old: &[OldPlate],
+    w: &mut Writing,
 ) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
-    // Ids in use: the plates of the file now and the members.
-    let mut taken: Vec<String> = doc
-        .get("plate")
-        .and_then(Item::as_array_of_tables)
-        .map(|a| {
-            a.iter()
-                .filter_map(|x| x.get("id").and_then(Item::as_str).map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
-    taken.extend(t.members.iter().map(|m| m.id.clone()));
+    for x in &p.joins {
+        let fields = write_join(doc, &mut w.conns, &p.joint, x);
+        let e = rec
+            .ends
+            .entry((x.member.clone(), p.joint.clone()))
+            .or_default();
+        e.extend(fields.iter().map(|f| (*f).to_owned()));
+    }
     for pl in &p.plates {
         // The plate made before for (some of) these members: its id and
         // what was given on it by hand.
         let before = old.iter().find(|o| {
             o.joint == p.joint
                 && o.members.iter().any(|m| pl.members.contains(m))
-                && !taken.contains(&o.id)
+                && !w.taken.contains(&o.id)
         });
-        let id = match before {
+        // Its id kept when something was given on it by hand; else the
+        // first free id after G0 (as `edits::next_id`).
+        let id = match before.filter(|o| o.thickness.is_some() || o.material.is_some()) {
             Some(o) => o.id.clone(),
-            None => ohl_structure_edit::edits::next_id(taken.iter().map(String::as_str), "G0"),
+            None => (1u64..)
+                .map(|n| format!("G{n}"))
+                .find(|x| !w.taken.contains(x))
+                .expect("a free id"),
         };
-        taken.push(id.clone());
+        w.taken.insert(id.clone());
         let thickness = before
             .and_then(|o| o.thickness)
             .unwrap_or(pl.thickness)
@@ -1332,10 +1922,10 @@ fn write_plan(
             Onto::Member(m) => m.clone(),
             Onto::Plate(k) => ids[*k].clone(),
         };
-        let set = |doc: &mut DocumentMut, f: &str, v: FieldValue| {
-            let _ = connection_edits::set_connection_field(doc, &e.member, &p.joint, f, Some(&v));
+        let set = |w: &mut Writing, doc: &mut DocumentMut, f: &str, v: FieldValue| {
+            let _ = w.conns.set(doc, &e.member, &p.joint, f, Some(&v));
         };
-        set(doc, "onto", FieldValue::Word(onto));
+        set(w, doc, "onto", FieldValue::Word(onto));
         fields.insert("onto".into());
         // Drawn with its gauge line through the work point (the record's
         // mark only: no field of the file).
@@ -1343,16 +1933,15 @@ fn write_plan(
             fields.insert("gauge".into());
         }
         if let Some(c) = e.cut {
-            set(doc, "cut", FieldValue::Length(c));
+            set(w, doc, "cut", FieldValue::Length(c));
             fields.insert("cut".into());
         }
         if let Some(s) = e.shift {
             if s.abs() >= 5e-5 {
-                set(doc, "shift", FieldValue::SignedLength(s));
+                set(w, doc, "shift", FieldValue::SignedLength(s));
                 fields.insert("shift".into());
             } else {
-                let _ =
-                    connection_edits::set_connection_field(doc, &e.member, &p.joint, "shift", None);
+                let _ = w.conns.set(doc, &e.member, &p.joint, "shift", None);
             }
         }
         if let Some(b) = &e.bolts {
@@ -1371,6 +1960,7 @@ fn write_plan(
                 }
                 _ => {
                     set(
+                        w,
                         doc,
                         "bolts",
                         FieldValue::Bolts {
@@ -1381,7 +1971,7 @@ fn write_plan(
                             grade: None,
                         },
                     );
-                    set(doc, "gauge_lines", FieldValue::Count(b.lines));
+                    set(w, doc, "gauge_lines", FieldValue::Count(b.lines));
                     fields.insert("bolts".into());
                     fields.insert("gauge_lines".into());
                 }

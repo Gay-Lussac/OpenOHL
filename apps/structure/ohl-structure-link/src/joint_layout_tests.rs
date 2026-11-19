@@ -210,7 +210,7 @@ fn the_same_joint_gives_the_same_plan_and_a_plan_written_is_kept() {
 
 /// An X brace: two diagonals crossing at C, X1 one part through it, X2
 /// in two members bolted onto it.
-const X: &str = r#"id = "X"
+pub(crate) const X: &str = r#"id = "X"
 name = "x"
 kind = "lattice"
 
@@ -402,11 +402,12 @@ fn a_built_up_leg_is_met_on_the_angle_facing_the_member_never_forced() {
             "design = { class = \"bracing\", bolts = { diameter = \"12 mm\", count = 1 } }",
         );
     // On the inner face of the facing angle (as turned): clear of its other
-    // leg, the bolt does not land on the flange; not laid out, said.
+    // leg, the bolt does not land on the flange, and a plate on a built-up
+    // member is not laid out automatically; not laid out, said.
     let p = plan(&text, "N2");
     assert!(!p.laid_out());
     assert!(
-        p.hand.iter().all(|h| h.contains("inner face")),
+        p.hand.iter().all(|h| h.contains("is built up")),
         "{:?}",
         p.hand
     );

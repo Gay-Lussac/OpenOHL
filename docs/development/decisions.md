@@ -151,6 +151,58 @@ attachement point)"; built, in active development, not approved yet;
   millimetre there (a translated one exactly: the point is put on the
   millimetre). No computed result and no file format changes.
 
+## 2026-11-18 (joint layout tuned on real towers)
+
+**The automatic joint layout tuned on two real towers** (owner,
+2026-11-18: "for the automatic joint layout it doesn't work too much on
+real structures … can you please tune it based on 1 or 2 pylons"; built,
+in active development, not approved yet; [theory](../theory/joint-layout.md),
+[user guide](../user-guide/joint-layout.md)):
+
+- **Orient angles lays face members in their faces** (new record kind
+  `face`): bracing, horizontals and redundants of a steep face, one leg
+  in the face, the other out of the tower (the bracing on the outer face
+  of the legs' flanges), the leg in the face down from the heel where it
+  can — an assumption of the tool (no water lying in it), as for plan
+  members. An angle running on in line through a joint that lies in a
+  face of the legs is no chord any more (a face's diagonal running on
+  through its crossing).
+- **The layout names what an end bolts onto first**: the member running
+  through the joint for an end bolting onto nothing named; for an end
+  whose worked-out leg has no flange in whose plane it lies, a member
+  running through the joint that has one (a plan diagonal onto the
+  horizontal, not the vertical post). Its restraint is then worked out
+  from what it is laid out onto (the code's stiffness rule, as for any
+  end bolted onto a member).
+- **Half a turn** for a member whose end cannot be laid out on an inner
+  face, kept only where it lays out more of its ends and spoils none.
+- **Plates on an inner face** are laid out (clear of the angle's other
+  leg and root).
+- **A clash leaves the members in it, not the whole joint**: those
+  members as they were, with the clash, the rest of the joint laid out
+  and checked again (up to four rounds).
+- **The owner's order of steps** (same day: "pull everything back then
+  line up the biggest profiles and join them …"; then "i might have been
+  too confident in the method with 90% but i'm confident those few rules
+  can help"): step 1 built — the biggest pair in line joined as one part
+  (same section, turned alike, no bolts at either end: a splice with
+  bolts stays a bolted splice, so no bolt check is dropped) or the
+  smaller nested in the bigger; steps 2–3 as before (direct where the
+  bolts land, else a plate on that flange); on a built-up member the ends
+  whose bolts land are bolted to it. Not built: a splice plate for other
+  sections in line (1c) and the welded plate for an end no roll lays flat
+  (4) — they stay hand details, counted in the results.
+- **Faster writing** (`connection_edits::Connections`: the connections by
+  member and joint for many edits; the layout's plate ids from a set).
+  A run writes the plates, the connections and its record at the end of
+  the file (plates, connections, generators, each in its list's order), a
+  made plate takes the first free id unless something was given on it by
+  hand: the same layout gives the same text (a run again identical on
+  the real towers).
+- **Settings unchanged** (gap 10 mm, longest pull-back 300 mm, shift
+  limit 30 mm, flatness 5°, corners 45°–135°): none was what blocked the
+  two towers.
+
 ## 2026-11-18 (country server, phase 3)
 
 **An edit costs what it touches: commands applied in place, a reference

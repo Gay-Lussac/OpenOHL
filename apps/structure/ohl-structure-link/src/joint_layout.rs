@@ -9,6 +9,15 @@
 //! same joint and settings give the same plan, so a run again over what a
 //! run wrote changes nothing.
 //!
+//! The order is the owner's (2026-11-18): everything pulled back (the run
+//! takes its values out first), the biggest profiles in line joined first
+//! ([`joins_of`]: one part, or the smaller nested in the bigger), then the
+//! other members by class and size, each bolted directly onto a flange of
+//! the bigger where its bolts land, else onto a plate on that flange; an
+//! end no roll lays flat (a welded plate in its own plane) is left for a
+//! hand detail. The run names what an end bolts onto first
+//! ([`hosts_to_name`]).
+//!
 //! For each member end bolting by one angle leg onto the flange of a
 //! member at the joint (the leg, a chord, a diagonal a redundant meets),
 //! not in line with it:
@@ -211,11 +220,40 @@ pub struct PlatePlan {
     pub heel: Option<([f64; 3], [f64; 3])>,
 }
 
+/// Two members in line through the joint joined (the owner's step 1,
+/// 2026-11-18: "line up the biggest profiles and join them either
+/// continuously if they are the same and aligned or with bolts together if
+/// they can fit within each other").
+#[derive(Debug, Clone, PartialEq)]
+pub struct Join {
+    /// The member whose end is written.
+    pub member: String,
+    /// The member it runs on into, or is nested in.
+    pub onto: String,
+    /// How.
+    pub how: JoinKind,
+}
+
+/// How two members in line are joined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinKind {
+    /// One part through the joint (`kind = "continuous"`): the same
+    /// section and roll, and no bolts at either end (so no connection's
+    /// check is left out).
+    Continuous,
+    /// The smaller angle nested in the bigger one, bolted to it
+    /// (`face = "nested"`).
+    Nested,
+}
+
 /// The layout of one joint.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct JointPlan {
     /// The joint.
     pub joint: String,
+    /// The members in line joined first (step 1; the run's, see
+    /// [`joins_of`]).
+    pub joins: Vec<Join>,
     /// What each member end laid out gets (in the joint's member order).
     pub ends: Vec<EndPlan>,
     /// The plates to make.
@@ -235,7 +273,7 @@ pub struct JointPlan {
 impl JointPlan {
     /// Something laid out (some members may be left for a hand detail).
     pub fn laid_out(&self) -> bool {
-        !self.ends.is_empty()
+        !self.ends.is_empty() || !self.joins.is_empty()
     }
 
     /// Member `m` left for a hand detail, why.
@@ -328,6 +366,21 @@ struct Placed {
 /// the caller (so that a run again gives the same), those given by hand
 /// in (kept).
 pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> JointPlan {
+    plan_joint_except(j, s, edge, &BTreeMap::new())
+}
+
+/// [`plan_joint`] with the members of `except` left for a hand detail,
+/// each with its reason (a run's clash check: a member whose laid-out
+/// steel, bolts or plate would run into something is left as it was and
+/// the rest of the joint planned again without it; tuning on real towers,
+/// 2026-11-18). Their bolts are kept clear of, as those of any member not
+/// laid out.
+pub fn plan_joint_except(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+) -> JointPlan {
     let mut plan = JointPlan {
         joint: j.id.clone(),
         ..Default::default()
@@ -345,10 +398,15 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
                     || a.onto.value.as_deref().and_then(find).is_some_and(|h| {
                         !(20.0..=160.0).contains(&angle_deg(a.direction, h.direction))
                     })
+                    || except.contains_key(&a.member)
             })
             .map(|a| a.member.as_str())
             .collect();
     for a in &j.arrivals {
+        if let Some(why) = except.get(&a.member) {
+            plan.by_hand(&a.member, format!("{}: {why}", a.member));
+            continue;
+        }
         let host: Result<&Arrival, String> = (|| {
             let p = a.profile.as_ref();
             if p.is_none_or(|p| p.angle.is_none()) {
@@ -433,27 +491,34 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
         if placed.is_empty() {
             continue;
         }
-        // Onto the flange, or every end of the plane onto one plate.
-        let direct = placed.iter().all(|p| {
+        // Onto the flange directly where an end's bolts land on it (the
+        // owner's step 2a: "on a surface of the bigger ones with bolts at
+        // first"); else onto a plate on that flange (2b: "if too many are
+        // needed add a plate"). The provisional bolts' plausibility rule:
+        // every bolt of the group clear of the flange's other leg and root
+        // by the nut, and the edge distance from its toe.
+        let lands = |p: &Placed| {
             let x = &strips[p.k];
             bolt_ys(x, p)
                 .iter()
                 .all(|&y| y >= x.t + x.r + x.nut - 1e-9 && y <= x.width - x.edge + 1e-9)
-        });
-        if !direct && placed.iter().any(|p| strips[p.k].inside) {
-            for p in &placed {
-                let m = strips[p.k].member.clone();
-                let host = strips[p.k].host.clone();
-                plan.by_hand(
-                    &m,
-                    format!(
-                        "{m}: its bolts do not all land on the inner face of {host}'s flange it \
-                         lies on, and a plate there is not laid out automatically (turn it to \
-                         the outer face, or lay it out by hand)"
-                    ),
-                );
-            }
-            continue;
+        };
+        let direct = placed.iter().all(lands);
+        if !direct
+            && find(&strips[placed[0].k].host)
+                .and_then(|h| h.profile.as_ref())
+                .is_some_and(|q| !q.parts.is_empty())
+        {
+            // On a built-up member (no plate laid out there, below) those
+            // landing on its flange are bolted to it all the same, the
+            // others left. (A plate for some ends of a flange and the
+            // others directly on it, the plate on the other side of the
+            // work point, was tried on two real towers, 2026-11-18: more
+            // joints then clashed; every end of the plane goes onto the
+            // plate.)
+            let (on, off): (Vec<Placed>, Vec<Placed>) = placed.iter().cloned().partition(lands);
+            placed_all.extend(on);
+            placed = off;
         }
         if !direct {
             // A plate on a built-up member is drawn through the work point
@@ -506,6 +571,13 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
             let index = plan.plates.len();
             let members: Vec<String> = placed.iter().map(|p| strips[p.k].member.clone()).collect();
             let first = &strips[placed[0].k];
+            // On an inner face the plate keeps clear of the angle's other
+            // leg and its root (its heel line that far across).
+            let heel = if first.inside {
+                add(first.heel, scale(first.across, first.t + first.r))
+            } else {
+                first.heel
+            };
             plan.plates.push(PlatePlan {
                 members,
                 thickness: placed.iter().map(|p| strips[p.k].own_t).fold(0.0, f64::max),
@@ -513,7 +585,7 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
                 heel: placed
                     .iter()
                     .all(|p| strips[p.k].u[1] > 1e-6)
-                    .then_some((first.heel, first.across)),
+                    .then_some((heel, first.across)),
             });
             for p in &placed {
                 plate_of.insert(p.k, index);
@@ -570,6 +642,234 @@ pub fn plan_joint(j: &JointDetail, s: &LayoutSettings, edge: EdgeRule<'_>) -> Jo
 /// part first, then by class (leg, bracing, redundant), the wider, the id.
 fn through_member<'a>(j: &'a JointDetail, a: &Arrival) -> Option<&'a Arrival> {
     through_of(&j.arrivals, a)
+}
+
+/// The member ends of `j` the run names a member to bolt onto (in its
+/// planning copy only, as the layout writes `onto`), each with that member,
+/// in the joint's member order:
+///
+/// - an end bolting onto nothing named (no `onto` given or worked out):
+///   the member running through the joint (`through_member`), so that
+///   the end's leg bolted is the one lying on it and a turn that lays it
+///   flat is found (tuning on real towers, 2026-11-18: such ends were left
+///   with "its axis runs out of the face", measured against the leg that
+///   is not bolted);
+/// - an end whose `onto` is only worked out (the joint's leg) and whose
+///   axis lies in neither flange's plane of that member (no turn lays it
+///   flat there: a plan diagonal at a vertical post): a member running
+///   through the joint in a flange's plane of which its axis lies (the
+///   horizontal running through), if there is one (`host_in_plane`).
+pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    j.arrivals
+        .iter()
+        .filter(|a| {
+            a.continuous.is_none()
+                && a.profile.as_ref().is_some_and(|p| p.angle.is_some())
+                && (a.onto.value.is_none() || a.onto.source == Source::WorkedOut)
+        })
+        .filter_map(|a| {
+            let h0 = match a.onto.value.as_deref() {
+                None => through_member(j, a),
+                Some(o) => find(o),
+            };
+            let fits = |h: &Arrival| {
+                angled(h) && (20.0..=160.0).contains(&angle_deg(a.direction, h.direction))
+            };
+            let h0 = h0.filter(|h| fits(h));
+            if let Some(h) = h0.filter(|h| in_flange_plane(a, h)) {
+                return a
+                    .onto
+                    .value
+                    .is_none()
+                    .then(|| (a.member.clone(), h.member.clone()));
+            }
+            match host_in_plane(&j.arrivals, a) {
+                Some(h) if h0.is_none_or(|x| x.member != h.member) => {
+                    Some((a.member.clone(), h.member.clone()))
+                }
+                _ => match (a.onto.value.is_none(), h0) {
+                    (true, Some(h)) => Some((a.member.clone(), h.member.clone())),
+                    _ => None,
+                },
+            }
+        })
+        .collect()
+}
+
+/// An angle, or a built-up section of angles.
+fn angled(h: &Arrival) -> bool {
+    h.profile
+        .as_ref()
+        .is_some_and(|p| p.angle.is_some() || !p.parts.is_empty())
+}
+
+/// `a`'s axis lies in the plane of a flange of `h` (a single angle; within
+/// [`FLAT_OFF`]): a turn of `a` can lay it flat on that flange. A built-up
+/// `h`: taken as yes (its angles' flanges, as the layout finds them).
+fn in_flange_plane(a: &Arrival, h: &Arrival) -> bool {
+    let Some(p) = h.profile.as_ref() else {
+        return false;
+    };
+    if p.angle.is_none() {
+        return !p.parts.is_empty();
+    }
+    let s = FLAT_OFF.to_radians().sin();
+    dot(a.direction, p.axes[1]).abs() < s || dot(a.direction, p.axes[2]).abs() < s
+}
+
+/// Of the single angles running through the joint (in line with another
+/// of its members, or one part with it) and not in line with `a`, one in a
+/// flange's plane of which `a`'s axis lies; the one part first, then by
+/// class (leg, bracing, redundant), the wider, the id (as
+/// [`through_of`]).
+fn host_in_plane<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arrival> {
+    let rank = |b: &Arrival| match b.class.as_deref() {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
+    let width = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64))
+    };
+    all.iter()
+        .filter(|b| b.member != a.member)
+        .filter(|b| b.profile.as_ref().is_some_and(|p| p.angle.is_some()))
+        .filter(|b| (20.0..=160.0).contains(&angle_deg(a.direction, b.direction)))
+        .filter(|b| {
+            b.continuous.is_some()
+                || all
+                    .iter()
+                    .any(|c| c.member != b.member && angle_deg(b.direction, c.direction) > 160.0)
+        })
+        .filter(|b| in_flange_plane(a, b))
+        .min_by(|x, y| {
+            (x.continuous.is_none(), rank(x), width(x), &x.member).cmp(&(
+                y.continuous.is_none(),
+                rank(y),
+                width(y),
+                &y.member,
+            ))
+        })
+}
+
+/// The owner's step 1 at joint `j` (2026-11-18): of the single angles
+/// running in line through it (within 20°), the biggest pair (the joint's
+/// base: the larger legs, then the nearest in line, then by id; none where
+/// a member runs on through the joint already) joined —
+///
+/// - **continuous** (one part) when they have the same section and lie
+///   turned alike (their axes within about 1°), and neither end has bolts
+///   (given or its member's: a splice whose bolts would then go unchecked
+///   is left a bolted splice — on the safe side);
+/// - **nested** (the smaller in the bigger, bolted to it) when the smaller
+///   angle's legs fit inside the bigger's (each at most the bigger's leg
+///   less its thickness and root radius) — their legs along each other
+///   within the nesting tolerance, else not;
+/// - else not joined (a splice of other sections: covers or a plate, by
+///   hand).
+///
+/// Only ends with nothing given of how they are joined (`kind`, `face`,
+/// `onto`, bolts given at the end), as the run takes them out first.
+pub fn joins_of(j: &JointDetail) -> Vec<Join> {
+    let free = |a: &Arrival| {
+        a.continuous.is_none()
+            && a.onto.source != Source::Given
+            && a.sits.source != Source::Given
+            && a.kind.source != Source::Given
+            && a.bolts.source != Source::Given
+            && !a.modelling
+    };
+    let angle = |a: &Arrival| a.profile.as_ref().and_then(|p| p.angle);
+    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
+    for x in 0..j.arrivals.len() {
+        for y in x + 1..j.arrivals.len() {
+            let (a, b) = (&j.arrivals[x], &j.arrivals[y]);
+            if angle(a).is_none() || angle(b).is_none() || !free(a) || !free(b) {
+                continue;
+            }
+            let dev = 180.0 - angle_deg(a.direction, b.direction);
+            if dev <= 20.0 {
+                pairs.push((dev, x, y));
+            }
+        }
+    }
+    pairs.sort_by(|p, q| {
+        p.0.total_cmp(&q.0).then_with(|| {
+            (&j.arrivals[p.1].member, &j.arrivals[p.2].member)
+                .cmp(&(&j.arrivals[q.1].member, &j.arrivals[q.2].member))
+        })
+    });
+    // Only the biggest pair (the joint's base: its legs or chords; the
+    // larger legs, then the nearest in line, then by id), and none where a
+    // member already runs on through the joint: a pair crossing the base
+    // bolts onto it (step 2), it is not one part across it.
+    if j.arrivals.iter().any(|a| a.continuous.is_some()) {
+        return Vec::new();
+    }
+    let size = |k: usize| {
+        let g = angle(&j.arrivals[k]).expect("an angle");
+        -((g.b + g.h) * 1e6).round() as i64
+    };
+    pairs.sort_by_key(|p| size(p.1).min(size(p.2)));
+    pairs.truncate(1);
+    let mut used: Vec<usize> = Vec::new();
+    let mut out = Vec::new();
+    for (_, x, y) in pairs {
+        if used.contains(&x) || used.contains(&y) {
+            continue;
+        }
+        let (a, b) = (&j.arrivals[x], &j.arrivals[y]);
+        let (pa, pb) = (
+            a.profile.as_ref().expect("an angle"),
+            b.profile.as_ref().expect("an angle"),
+        );
+        let (ga, gb) = (pa.angle.expect("an angle"), pb.angle.expect("an angle"));
+        let bolted = |z: &Arrival| z.bolts.value.as_ref().is_some_and(|v| v.count > 0);
+        let alike = |u: [f64; 3], v: [f64; 3]| dot(u, v) > 0.9998;
+        let how = if pa.section_id == pb.section_id
+            && alike(pa.axes[1], pb.axes[1])
+            && alike(pa.axes[2], pb.axes[2])
+        {
+            (!bolted(a) && !bolted(b)).then_some((x, y, JoinKind::Continuous))
+        } else {
+            let fits = |s: crate::joints::Angle, g: crate::joints::Angle| {
+                s.b <= g.b - g.t - g.r + 1e-9 && s.h <= g.h - g.t - g.r + 1e-9
+            };
+            // Legs along each other (within the nesting tolerance).
+            let along = |p: &crate::joints::Profile, q: &crate::joints::Profile| {
+                let c = crate::joints::NESTED_ANGLE_DEG.to_radians().cos();
+                dot(p.axes[1], q.axes[1]) >= c && dot(p.axes[2], q.axes[2]) >= c
+            };
+            if fits(ga, gb) && along(pa, pb) {
+                Some((x, y, JoinKind::Nested))
+            } else if fits(gb, ga) && along(pa, pb) {
+                Some((y, x, JoinKind::Nested))
+            } else {
+                None
+            }
+        };
+        if let Some((m, o, how)) = how {
+            used.extend([x, y]);
+            // Continuous: the end of the smaller id says it.
+            let (m, o) =
+                if how == JoinKind::Continuous && j.arrivals[o].member < j.arrivals[m].member {
+                    (o, m)
+                } else {
+                    (m, o)
+                };
+            out.push(Join {
+                member: j.arrivals[m].member.clone(),
+                onto: j.arrivals[o].member.clone(),
+                how,
+            });
+        }
+    }
+    out
 }
 
 /// [`through_member`] among the member ends `all` of a joint (also where a

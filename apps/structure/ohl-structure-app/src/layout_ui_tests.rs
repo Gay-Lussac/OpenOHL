@@ -166,6 +166,9 @@ fn an_edit_near_a_laid_out_joint_is_followed_in_the_same_undo_step() {
     h.state_mut()
         .open_layout_window(crate::layout_window::Scope::Joint("N2".into()));
     wait_preview(&mut h);
+    // A few frames more: Apply is enabled once the preview is the
+    // window's (its key and the file's revision).
+    h.run_steps(4);
     h.get_all_by_label_contains("Apply (")
         .next()
         .unwrap()

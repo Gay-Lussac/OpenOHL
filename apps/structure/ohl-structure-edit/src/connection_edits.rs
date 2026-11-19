@@ -220,6 +220,96 @@ pub fn set_connection_field(
     Ok(())
 }
 
+/// A file's connections by member and joint, for many edits in a row (the
+/// automatic joint layout writes thousands: [`set_connection_field`]
+/// looks each one up in the whole list and tidies the list after each
+/// value cleared). [`Connections::set`] as [`set_connection_field`], but a
+/// connection left with nothing in it stays (in its place) until
+/// [`Connections::tidy`]. Only valid while the file's connections are
+/// edited through it (an edit that tidies them, as [`remove_plate`], needs
+/// it made again).
+#[derive(Debug, Clone, Default)]
+pub struct Connections {
+    at: std::collections::HashMap<(String, String), usize>,
+}
+
+impl Connections {
+    /// The connections of `doc`.
+    pub fn of(doc: &DocumentMut) -> Self {
+        let mut at = std::collections::HashMap::new();
+        if let Some(a) = doc.get("connection").and_then(Item::as_array_of_tables) {
+            for (k, t) in a.iter().enumerate() {
+                if let (Some(m), Some(j)) = (
+                    t.get("member").and_then(Item::as_str),
+                    t.get("joint").and_then(Item::as_str),
+                ) {
+                    at.entry((m.to_owned(), j.to_owned())).or_insert(k);
+                }
+            }
+        }
+        Self { at }
+    }
+
+    /// Gives (`Some`) or clears (`None`) `field` of `member`'s end at
+    /// `joint` (a connection made when missing).
+    pub fn set(
+        &mut self,
+        doc: &mut DocumentMut,
+        member: &str,
+        joint: &str,
+        field: &str,
+        value: Option<&FieldValue>,
+    ) -> Result<(), String> {
+        if !FIELDS.contains(&field) {
+            return Err(format!("no connection field {field}"));
+        }
+        let key = (member.to_owned(), joint.to_owned());
+        match value {
+            Some(v) => {
+                let k = match self.at.get(&key) {
+                    Some(k) => *k,
+                    None => {
+                        let mut t = Table::new();
+                        t.insert("member", toml_edit::value(member));
+                        t.insert("joint", toml_edit::value(joint));
+                        let a = array(doc, "connection");
+                        a.push(t);
+                        let k = a.len() - 1;
+                        self.at.insert(key, k);
+                        k
+                    }
+                };
+                raise_version(doc, i64::from(CONNECTIONS_VERSION));
+                if let Some(t) = doc
+                    .get_mut("connection")
+                    .and_then(Item::as_array_of_tables_mut)
+                    .and_then(|a| a.get_mut(k))
+                {
+                    t.insert(field, Item::Value(v.value()));
+                }
+            }
+            None => {
+                if let Some(t) = self.at.get(&key).and_then(|k| {
+                    doc.get_mut("connection")
+                        .and_then(Item::as_array_of_tables_mut)
+                        .and_then(|a| a.get_mut(*k))
+                }) {
+                    t.remove(field);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The connections left with nothing in them dropped (and the list
+    /// when empty), as [`set_connection_field`] does after each; the index
+    /// read again.
+    pub fn tidy(&mut self, doc: &mut DocumentMut) {
+        tidy(doc);
+        *self = Self::of(doc);
+    }
+}
+
 /// Clears `member`'s end at `joint`: back to the member's design data and
 /// what is worked out.
 pub fn clear_connection(doc: &mut DocumentMut, member: &str, joint: &str) {

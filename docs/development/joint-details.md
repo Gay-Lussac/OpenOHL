@@ -705,8 +705,8 @@ back to what they were), members turned flat where their ends agree
 within 5° (the middle of their turns), each joint planned, written into
 the file as it was (`cut`, `shift` beyond concentric, `onto`, provisional
 `bolts`/`gauge_lines` or a preset's fields), plates made (thickness the
-thickest leg bolted on it, a hand thickness kept, ids kept for a run
-again; outline round the bolts written cut at the flange's heel by half
+thickest leg bolted on it, a hand thickness kept with its plate's id —
+since the fifth round other ids the first free —; outline round the bolts written cut at the flange's heel by half
 the gap; welded together as a choice), the record written; then the
 joint details and the clash check again, a joint whose laid-out parts
 would clash taken back. `follow`: an edit's touched joints (`touched`:
@@ -825,6 +825,75 @@ turn where it helps"):
   bracing in its face (Orient angles for bracing: one flange in the face
   its line lies in), then plates on an inner face; then bent plates and
   built-up legs; members on both sides of one plate by hand.
+
+Fifth round (2026-11-18, owner: "for the automatic joint layout it
+doesn't work too much on real structures … can you please tune it based
+on 1 or 2 pylons"), tuned on two private real towers (a dead-end and a
+suspension tower of 2 522 and 2 488 members) and checked on all 78:
+
+- **Orient angles: face members** (`OrientKind::Face`, the record's
+  `face`): every other single angle lying in a steep face between its
+  legs or chords (`FaceOf::holds`: its ends within `IN_FACE` = 20 mm and
+  5 mm per metre of its plane, its middle between the face's two lines)
+  laid with one leg in the face, the other out of the tower, the leg in
+  the face down from the heel where it can (assumed, as for plan
+  members); and an angle running on in line that lies in a face of the
+  legs is no chord (a face's diagonal running on through its crossing:
+  on one real tower 260 of 670 "chords" were such diagonals, turned to a
+  corner 18° off their face).
+- **The member an end bolts onto named first** (`hosts_to_name`, in the
+  run's planning copy): an end bolting onto nothing named gets the member
+  running through the joint, so its leg bolted and its flat turn are
+  those on that member (every "axis runs out of the face" end on the two
+  towers was such an end, measured against the leg not bolted); an end
+  whose worked-out `onto` (the joint's leg) has no flange in whose plane
+  its axis lies gets a member running through the joint that has one
+  (`host_in_plane`: a plan diagonal at a vertical post onto the
+  horizontal). Choosing the in-line leg segment an end runs along was
+  tried and left out: the ends of one face then fell on two hosts and
+  clashed with each other.
+- **Half a turn** (`layout_run`, before the turns are planned): a member
+  with an end on an inner face that cannot be laid out there gets half a
+  turn more, kept when more of its ends are planned laid out and its
+  joints lose none; then the usual "turned only where it helps".
+- **Plates on an inner face** (`plan_joint`): as on the outer one, the
+  plate's heel line at the angle's thickness and root from the heel.
+- **A run again identical** with the clash rounds: the plates the layout
+  made at the joints written are taken out before any is written (their
+  ids free: a plate's id is the first free one, kept only where something
+  was given on it by hand), a connection emptied by a run goes at once,
+  and the plates, connections and the record are written at the end of
+  the file in that order (`Table::set_position(None)`): the same layout
+  gives the same text, whatever an earlier run's text was.
+- **The owner's step 1** (`joins_of`, `Join`, `JoinKind`; the run names
+  them in its planning copy before anything else, writes them with the
+  joint, records `kind`/`face` and `onto` as automatic): the biggest pair
+  in line joined as one part (the core's `continuous_problem` none, no
+  bolts at either end) or nested; one pair per joint, none where a member
+  runs on through already. Those joined are not turned. On a built-up
+  member the ends landing on its flange are bolted to it.
+- **The clash check leaves members, not joints** (`write_rounds`,
+  `plan_joint_except`): the laid-out members in a clash (a member before
+  a plate's members, a redundant before bracing, then the larger id) are
+  left as they were with the clash, the joint planned and checked again
+  without them, up to `CLASH_ROUNDS` = 4 rounds, then left whole. Later
+  rounds check only the joints planned again; a pass of the "turned only
+  where it helps" loop takes the joints its refused turns do not touch as
+  the last pass left them (`Checked`), and plate outlines are kept per
+  joint while its plan stays.
+
+On the two towers (Orient angles, then Lay out joints, values given by
+hand replaced): joints laid out whole 71 → 225 (of 942) and 22 → 355 (of
+1 006), joints written 306 → 579 and 243 → 708, member ends laid out
+410 → 1 460 and 334 → 1 722; on all 78 tower files of the line (64 760
+joints) laid out whole 1 414 → 17 829, written 15 122 → 43 608, a run
+again identical. The settings are unchanged: none was too strict for
+these towers once the members lay as built. Left by hand, with their
+reasons (joints with each): a laid-out part that would clash (members
+left, or the joint left whole), a member no roll lays flat at both ends
+(a bent or welded plate, the owner's step 4, not built), an end running
+towards the other leg on an inner face that half a turn does not help,
+a built-up member's plate, members too short for their bolts.
 
 ## Detail levels
 
