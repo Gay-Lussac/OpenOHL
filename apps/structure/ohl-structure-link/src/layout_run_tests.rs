@@ -864,7 +864,7 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         .ends
         .iter()
         .find(|e| e.member == "D1")
-        .unwrap_or_else(|| panic!("D1 not laid out: {:?}", o.plan));
+        .unwrap_or_else(|| panic!("D1 not laid out: {:?} {:?}", o.plan, r.notes));
     let crate::Onto::Plate(k) = e.onto else {
         panic!("{e:?}")
     };
@@ -1101,4 +1101,206 @@ fn a_run_lays_out_whole_what_one_after_the_other_leaves() {
             c.words()
         );
     }
+}
+
+/// A plan strut H: at the column's joint N2 on the column's upright
+/// flange, at N7 on a strut S1–S2 running through, on its flange facing
+/// up — S sloping `slope` m over 1.5 m (its flange turned about H by as
+/// much). An equal-leg angle (`section`), rolled 12° by hand (off at both
+/// ends): its leg bolted upright at N2, the other leg at N7 (the engine
+/// takes the leg lying flattest).
+fn plan_strut(section: &str, slope: f64) -> String {
+    format!(
+        r#"id = "P"
+name = "plan strut"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "NA"
+point = ["-1.5 m", "2.5 m", "{za} m"]
+support = "fixed"
+
+[[node]]
+id = "N7"
+point = ["0 m", "2.5 m", "3 m"]
+
+[[node]]
+id = "NB"
+point = ["1.5 m", "2.5 m", "{zb} m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+orientation = "x+y+"
+design = {{ class = "leg" }}
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+orientation = "x+y+"
+design = {{ class = "leg" }}
+
+[[member]]
+id = "S1"
+nodes = ["NA", "N7"]
+section = "EA-61x7"
+orientation = "z-y+"
+design = {{ class = "bracing" }}
+
+[[member]]
+id = "S2"
+nodes = ["N7", "NB"]
+section = "EA-61x7"
+orientation = "z-y+"
+design = {{ class = "bracing" }}
+
+[[member]]
+id = "H"
+nodes = ["N2", "N7"]
+section = "{section}"
+design = {{ class = "bracing" }}
+roll = "12 deg"
+"#,
+        za = 3.0 + slope,
+        zb = 3.0 - slope
+    )
+}
+
+/// H's turn and how far off it lies at joint `j` of `text` (at N7 onto
+/// S1, as the run names it where nothing is named).
+fn h_flat(text: &str, j: &str) -> crate::welds::Flat {
+    let named = if parse(text).connection("H", "N7").is_some() {
+        text.to_owned()
+    } else {
+        format!("{text}\n[[connection]]\nmember = \"H\"\njoint = \"N7\"\nonto = \"S1\"\n")
+    };
+    let d = joint_details(&named, &library(), &Default::default()).unwrap();
+    d.joint(j)
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "H")
+        .and_then(|a| a.flat)
+        .unwrap()
+}
+
+/// J3 (2026-11-19): one roll for the whole member. The strut's flange at
+/// N7 turned 4° about H: H flat at N2 lies 4° off at N7; the middle turn
+/// leaves each end 2° off: H is turned once, both its joints laid out
+/// with it (its leg bolted upright at N2, the other at N7 — an equal-leg
+/// angle's leg bolted changing between its ends); a run again changes
+/// nothing, and the relaxed planner (the estimated eccentricities, O45)
+/// plans with the same turn.
+#[test]
+fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
+    let text = plan_strut("EA-61x7", 1.5 * 4f64.to_radians().tan());
+    let (n2, n7) = (h_flat(&text, "N2"), h_flat(&text, "N7"));
+    assert!(n2.off > 5.0 && n7.off > 5.0, "{n2:?} {n7:?}");
+    let r = run(&text, &settings(), Some(&["N2", "N7"]), true);
+    assert!(roll_of(&r.text, "H").is_some(), "{:?}", r.notes);
+    assert!(
+        !r.notes.iter().any(|n| n.starts_with("H: lies off")),
+        "{:?}",
+        r.notes
+    );
+    for j in ["N2", "N7"] {
+        let f = h_flat(&r.text, j);
+        assert!((f.off - 2.0).abs() < 0.1, "{j}: {f:?}");
+        let o = r.joints.iter().find(|o| o.joint == j).unwrap();
+        assert!(
+            o.written && o.plan.ends.iter().any(|e| e.member == "H"),
+            "{j}: {:?} {:?}",
+            o.plan,
+            r.notes
+        );
+        assert!(o.turned.iter().any(|m| m == "H"), "{j}: {:?}", o.turned);
+    }
+    // Its leg bolted changes between its ends (an equal-leg angle).
+    let after = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let leg = |j: &str| {
+        after
+            .joint(j)
+            .unwrap()
+            .arrivals
+            .iter()
+            .find(|a| a.member == "H")
+            .unwrap()
+            .leg_y
+    };
+    assert_ne!(leg("N2"), leg("N7"));
+    assert_eq!(
+        run(&r.text, &settings(), Some(&["N2", "N7"]), true).text,
+        r.text
+    );
+    let lib = library();
+    let bolts = Default::default();
+    let s = settings();
+    let relaxed = crate::layout_run::plan_relaxed(
+        &text,
+        &RunAsk {
+            library: &lib,
+            bolts: &bolts,
+            settings: &s,
+            preset_fields: BTreeMap::new(),
+            joints: Some(["N2", "N7"].iter().map(|x| (*x).to_owned()).collect()),
+            replace_hand: true,
+        },
+    )
+    .unwrap();
+    for j in ["N2", "N7"] {
+        let o = relaxed.joints.iter().find(|o| o.joint == j).unwrap();
+        assert!(
+            o.plan.ends.iter().any(|e| e.member == "H") && o.turned.iter().any(|m| m == "H"),
+            "{j}: {:?}",
+            o.plan
+        );
+    }
+}
+
+/// J3, never forced: the strut's flange turned 8° about H — no roll lays
+/// both ends flat (their turns more than 5° apart; the middle would leave
+/// each 4° off: tried, it laid out fewer ends on real towers). H is not
+/// turned, said with both ends' turns, and its end at N7 is not laid out
+/// flat on the flange (a welded plate in its own plane or a hand detail,
+/// with the reason).
+#[test]
+fn no_roll_for_both_ends_leaves_the_member_as_it_was() {
+    let text = plan_strut("EA-61x7", 1.5 * 8f64.to_radians().tan());
+    let r = run(&text, &settings(), Some(&["N2", "N7"]), true);
+    assert!(
+        roll_of(&r.text, "H").and_then(|v| v.as_str().map(str::to_owned)) == Some("12 deg".into()),
+        "{:?}",
+        r.notes
+    );
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("H: lies off") && n.contains("by different turns")),
+        "{:?}",
+        r.notes
+    );
+    let o = r.joints.iter().find(|o| o.joint == "N7").unwrap();
+    let on_flange = o
+        .plan
+        .ends
+        .iter()
+        .any(|e| e.member == "H" && e.onto == crate::joint_layout::Onto::Member("S1".into()));
+    assert!(!on_flange, "{:?}", o.plan);
 }

@@ -141,6 +141,7 @@ impl LayoutWindow {
             // The structure file's default minimums, taken by the run.
             defaults: Default::default(),
             bent_plates: true,
+            once_per_kind: true,
         }
     }
 
@@ -817,11 +818,17 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
         .iter()
         .map(|o| o.plan.ends.len() + o.plan.hand_members.len())
         .sum();
+    // J4: the joints laid out as a joint like them (their plan mapped).
+    let like = p.run.laid_out().filter(|o| o.plan.like.is_some()).count();
     ui.label(format!(
         "{laid} joint(s) laid out, {plates} plate(s); {hand} need a hand detail; {ends} of {all} \
          member end(s) laid out; clashes at these joints {} to {}; {provisional} end(s) with \
          provisional bolts. Worked out in {:.2} s (measured).",
         p.run.clashes.0, p.run.clashes.1, p.run.seconds
+    ))
+    .on_hover_text(format!(
+        "{like} of the joints laid out took the plan of a joint like them (the tower's symmetry, \
+         a repeated panel: planned once per kind, checked for clashes in their own place)"
     ));
     let shifted = p
         .run

@@ -38,6 +38,9 @@
 //!   and load table as plain data for the exports
 //!   (`ohl-structure-export`: IFC, SAF, CSV).
 
+pub mod apply_detail;
+#[cfg(test)]
+mod apply_detail_tests;
 #[cfg(test)]
 mod bent_plate_tests;
 mod clash;
@@ -50,6 +53,9 @@ mod export;
 mod joint_groups;
 #[cfg(test)]
 mod joint_groups_tests;
+pub mod joint_kinds;
+#[cfg(test)]
+mod joint_kinds_tests;
 mod joint_layout;
 #[cfg(test)]
 mod joint_layout_tests;
@@ -79,7 +85,11 @@ mod quantities;
 mod run;
 mod volumes;
 mod welds;
+pub mod whole_roll;
+#[cfg(test)]
+mod whole_roll_tests;
 
+pub use apply_detail::{Applied, ApplyRun, apply_detail};
 pub use clash::{BoltPiece, CLASH_TOLERANCE, Clash, ClashPart, clashes};
 pub use export::{
     ExportBolt, ExportKind, ExportLoad, ExportLoadCase, ExportMaterial, ExportMember, ExportNode,

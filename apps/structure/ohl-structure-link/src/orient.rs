@@ -152,6 +152,12 @@ pub struct OrientRun {
     /// Legs (class `leg`) not turned, with why (an angle running on that
     /// is no corner of the tower's section is bracing: not listed).
     pub left: Vec<(String, String)>,
+    /// Plan and face members whose roll the joint layout chose for the
+    /// whole member (J3: a roll laying its ends flat, the layout's record
+    /// `rolled`), kept: the layout and this command agree (a run of either
+    /// after the other changes nothing); as what this command would turn
+    /// them.
+    pub by_layout: Vec<OrientedMember>,
     /// How long it took, s.
     pub seconds: f64,
 }
@@ -713,6 +719,19 @@ pub fn orient_angles(
         if by_hand && !ask.replace_hand {
             if o.turn.abs() >= 0.005 {
                 run.kept.push(o);
+            } else {
+                run.same.push(o);
+            }
+            continue;
+        }
+        // A plan or face member the joint layout turned so that its ends
+        // lie flat (one roll for the whole member, J3): its roll kept — the
+        // layout's choice starts from this command's and departs from it
+        // only where the ends need it (a leg's or chord's roll the layout
+        // never turns).
+        if kind != OrientKind::Chord && rec.rolled.contains_key(&l.id) {
+            if o.turn.abs() >= 0.005 {
+                run.by_layout.push(o);
             } else {
                 run.same.push(o);
             }
