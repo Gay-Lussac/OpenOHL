@@ -7,7 +7,7 @@
 //! tool window (the tool-window pattern) that copies the joint's detail —
 //! its member ends' connections and its plates, laid out or detailed by
 //! hand — mirrored or turned onto the joints of its kind
-//! ([`ohl_structure_link::apply_detail`]). A preview worked out on a copy
+//! ([`ohl_structure_link::apply_detail()`]). A preview worked out on a copy
 //! (on a thread of its own) lists each joint like it with how (mirrored,
 //! turned, moved), what it changes there, and those left with why; the
 //! joints ticked are the ones changed. **Apply** writes it as one undo step.

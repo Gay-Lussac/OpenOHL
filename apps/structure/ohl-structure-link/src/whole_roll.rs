@@ -42,7 +42,7 @@
 //! out slightly fewer member ends, not more.
 //!
 //! Pure functions of the ends' turns: deterministic (the same ends give
-//! the same turn), the planner's [`crate::layout_run`] run and its relaxed
+//! the same turn), the planner's `layout_run` run and its relaxed
 //! form for the estimated eccentricities (O45) take the same.
 
 use std::f64::consts::{FRAC_PI_2, PI};

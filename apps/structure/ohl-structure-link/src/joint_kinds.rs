@@ -26,10 +26,10 @@
 //! a kind its representative, the maps tried in a fixed order.
 //!
 //! What uses it: the layout run plans one joint of each kind and applies
-//! that plan, mapped, to the others ([`crate::layout_run`]; each copy then
+//! that plan, mapped, to the others (`layout_run`; each copy then
 //! checked for clashes in its own place, a copy that fails planned on its
 //! own); **Apply this joint's detail to similar joints**
-//! ([`apply_detail`]) copies a joint's connections and plates, mapped, to
+//! ([`crate::apply_detail()`]) copies a joint's connections and plates, mapped, to
 //! the joints of its kind — a hand detail too.
 
 use std::collections::{BTreeMap, BTreeSet};
