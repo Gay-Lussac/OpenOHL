@@ -167,10 +167,22 @@ fn the_route_views_of_a_country_are_those_worked_out_before() {
     }
 }
 
-/// [`solves_as_the_searches`] on a small synthetic country in still air.
+/// [`solves_as_the_searches`] on a small synthetic country in still air;
+/// and a case solved section by section over the cores (a whole solve
+/// through the case's update) equals the full solve.
 #[test]
 fn the_lookups_solve_a_country_in_still_air_as_the_searches() {
-    solves_as_the_searches("country", &small_country(), &weather(0));
+    let line = small_country();
+    let case = weather(0);
+    solves_as_the_searches("country", &line, &case);
+    let lib = cables();
+    let solved = SolvedLine::solve(&line, &lib, &case);
+    let full: Vec<_> = ohl_line::solve::solve_line(&line, &lib, &case)
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    assert!(full.len() > 64);
+    assert!(format!("{:?}", solved.shapes(&line)) == format!("{full:?}"));
 }
 
 /// [`solves_as_the_searches`] on a small synthetic country in wind.

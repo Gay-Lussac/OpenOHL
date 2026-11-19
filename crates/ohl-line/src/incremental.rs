@@ -396,24 +396,29 @@ fn solve_one(
     library: &ohl_cables::Library,
     case: &WeatherCase,
     section: &Section,
-    jumpers: &crate::solve::JumperLoadMap,
+    coupling: &crate::solve::Coupling,
     against: bool,
 ) -> Result<SectionShape, LineError> {
     let cable = crate::solve::cable_of(library, section)?;
-    // The jumpers hanging on its clamps, with their own cables.
-    let coupling = crate::solve::Coupling {
-        jumpers: Some(jumpers.clone()),
-        ..Default::default()
-    };
     crate::solve::solve_section_coupled_side(
         line,
         section,
         cable,
         case,
         &default_fe_budget(),
-        &coupling,
+        coupling,
         against,
     )
+}
+
+/// The coupling each section is solved with alone: the jumpers hanging on
+/// its clamps with their own cables (`weights`). Made once per update, not
+/// once per section (O42: a copy of every jumper's load per section).
+fn alone(weights: &crate::solve::JumperLoadMap) -> crate::solve::Coupling {
+    crate::solve::Coupling {
+        jumpers: Some(weights.clone()),
+        ..Default::default()
+    }
 }
 
 /// Whether each section solved runs against the line (the wind's side,
@@ -579,22 +584,25 @@ impl SolvedLine {
             })
             .collect();
         let against = Against::new(line, to_solve.iter().filter(|b| **b).count());
-        for (section, solve) in line.sections.iter().zip(to_solve) {
-            if solve {
-                let result = solve_one(
-                    line,
-                    library,
-                    &self.case,
-                    section,
-                    &weights,
-                    against.of(section),
-                );
-                self.sections.insert(section.id.clone(), result);
-                resolved.insert(&section.id);
-                update.solved += 1;
-            } else {
-                update.kept += 1;
-            }
+        let coupling = alone(&weights);
+        // Over the cores (each section alone is independent of the others,
+        // as a full solve solves them).
+        let todo: Vec<(&Section, bool)> = line
+            .sections
+            .iter()
+            .zip(to_solve)
+            .filter(|(_, solve)| *solve)
+            .map(|(section, _)| (section, against.of(section)))
+            .collect();
+        let case = &self.case;
+        let solved = in_parallel(&todo, |&(section, side)| {
+            solve_one(line, library, case, section, &coupling, side)
+        });
+        update.kept = line.sections.len() - todo.len();
+        for (&(section, _), result) in todo.iter().zip(solved) {
+            self.sections.insert(section.id.clone(), result);
+            resolved.insert(&section.id);
+            update.solved += 1;
         }
         // Sections sharing an assembly with one solved again: solved
         // together, from each solved alone (as a full solve starts, so the
@@ -615,7 +623,7 @@ impl SolvedLine {
                         library,
                         &self.case,
                         section,
-                        &weights,
+                        &coupling,
                         against.of(section),
                     );
                     self.sections.insert(section.id.clone(), r);
@@ -665,7 +673,7 @@ impl SolvedLine {
                         library,
                         &self.case,
                         section,
-                        &weights,
+                        &coupling,
                         against.of(section),
                     );
                     self.sections.insert(section.id.clone(), r);
