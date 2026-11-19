@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–5, 2026-11-19); not approved yet.*
+*In active development (ADR-0013, phases 4–5, 2026-11-19; the tests' scheme O46, 2026-11-19); not approved yet.*
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -25,10 +25,49 @@ project files are not touched by any of this.
 cargo test -p ohl-store-pg -- --test-threads=4
 ```
 
-Each test makes a throwaway cluster in the temporary directory, starts it
-on a free port of 127.0.0.1 only (no Unix socket, no fsync: it is thrown
-away), and stops and deletes it at the end — also when the test fails.
-About 5 s for the three tests:
+**One throwaway cluster per test program, a database per test**
+(`ohl_store_pg::testing::Cluster`, `crates/ohl-store-pg/src/testing.rs`;
+O46, 2026-11-19; in active development, not approved yet). The first test
+of a program makes the cluster in the temporary directory
+(`ohl-pg-tests/KEY/`, the key from the program's path and PostgreSQL's
+binaries) and starts it on a free port of 127.0.0.1 only (no Unix socket,
+no fsync: it is thrown away); the program's other tests join it; each
+test works in databases of its own (named with its process and test, e.g.
+`t4711_0_lock_net`), dropped at its end, and a folder of files of its own.
+The last test out stops the cluster and deletes it — also when a test
+fails.
+
+Why this scheme: nextest runs every test in a process of its own, so the
+cluster is shared between processes, by locks on files that the operating
+system lets go with the process (`flock`), never by a process that has to
+stay alive:
+
+- `KEY.lock`, the key's lock, held while a test joins, makes, leaves or
+  stops the cluster (at most 180 s waited for, else a failure);
+- `KEY/users.lock`, on which every test using the cluster holds a shared
+  lock. A test leaving takes the key's lock, lets its own go and tries the
+  exclusive one: got, no test uses the cluster — stopped and deleted. A
+  test killed (a timeout) lets its lock go with its process: the next test
+  of any program finds the cluster unused and stops and deletes it.
+- **Its port**: asked of the system, then the cluster started on it; a
+  start refused because another program took the port meanwhile is made
+  again on another port (up to 20), and every cluster started or joined is
+  checked to be this one — its `data_directory` is this folder — before
+  any test uses it.
+
+Isolation stays as before: a database per test (PostGIS, the schema, the
+writer's lock and the advisory locks are a database's own), its own
+files; nothing a test makes is seen by another. The writer's lock goes
+with its connection only once PostgreSQL's process for it has ended, a
+moment after the client closed it: a test dropping a writer and
+connecting another at once waits for that (`Cluster::wait_for_locks_gone`,
+at most 10 s). This was the flake of 2026-11-19 (`schema_and_the_writers_lock`
+refused its second writer while two check runs ran side by side): 1 run in
+144 failed with six programs' tests started together eight times (the
+three tests each in a process of its own, as nextest runs them); with the
+scheme above, 0 in 144, and the same runs took 90 s instead of 126 s.
+
+About 4 s for the three tests:
 
 - `store_suite_on_postgresql` — the **store suite**
   (`ohl_session::store::suite`, feature `store-suite`), the same tests the
@@ -58,9 +97,10 @@ cargo test -p ohl-server --features network -- --test-threads=2
 
 The feature `network` (the command line enables it; the desktop
 application does not) builds the server on the database; its tests make
-a throwaway cluster each (`ohl_store_pg::testing::Cluster`, feature
-`testing`, the same rules as above) with a small synthetic country
-imported line by line, about 6 s each:
+the server's test program's cluster (`ohl_store_pg::testing::Cluster`,
+feature `testing`, the same scheme as above), each test a database of
+its own with a small synthetic country imported line by line, 2 to 6 s
+each:
 
 - `a_network_serves_by_interest` — one writer per database; protocol 2
   and a desktop's hello refused with the reason; a desktop following a

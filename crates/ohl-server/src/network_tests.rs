@@ -64,6 +64,9 @@ pub(crate) fn test_network(name: &str, pylons: usize) -> Option<TestNet> {
         codes.push(code);
     }
     drop(net);
+    // The import's writer's lock gone with its connection before a
+    // server takes it (a moment after the drop: waited for).
+    cluster.wait_for_locks_gone("net");
     Some(TestNet {
         _cluster: cluster,
         url,

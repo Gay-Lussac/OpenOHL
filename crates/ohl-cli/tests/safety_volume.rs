@@ -26,9 +26,12 @@ fn safety_volumes_are_written_as_dxf_ifc_and_kmz() {
         .arg(ex.join("weather-cases.ohlwc"))
         .args(["--cases", "high wind", "--wind", "arc"])
         .args(["--distance", "{ by_voltage = [[0, 2], [220, 4]] }"])
+        // A coarser mesh than the default (the same steps, fewer
+        // triangles: O46, 2026-11-19, 11 s → about 4 s; nothing asserted
+        // here depends on the mesh's fineness).
         .args([
             "--tolerance",
-            "0.2",
+            "0.5",
             "--per",
             "circuit",
             "--crs",
