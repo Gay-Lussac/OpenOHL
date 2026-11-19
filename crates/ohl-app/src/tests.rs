@@ -26,6 +26,7 @@ mod display_codes;
 mod edit_window;
 mod edit_window_cases;
 mod field_setup;
+mod in_place_line;
 mod kept;
 mod lidar;
 mod load_case_defaults;

@@ -62,6 +62,7 @@ mod help;
 mod ice_shedding;
 mod icons;
 mod import_into;
+mod in_place;
 mod internal_clearances;
 mod job;
 mod kept;

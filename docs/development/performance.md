@@ -753,6 +753,125 @@ viewers' memory: 56 MB each for three); a desktop joining it copies the
 whole model in 2.3 s; a move p95 9.8 ms; an area query p95 11 µs in the
 tile index, 0.77 ms in PostgreSQL.
 
+## OHL-Design: an edit taken in place (O42, 2026-11-19)
+
+Owner, 2026-11-19: "per element modified instead of validating the whole
+thing" ([decision log](decisions.md#2026-11-19-o42-and-o46-edits-in-ohl-design-in-place-the-tests-postgresql);
+built, in active development, not approved yet). After a command the
+session applied in place, OHL-Design takes only the objects it changed
+into its own line (structure types resolved per structure, validated
+locally) instead of copying the session's line, resolving every
+structure and validating the whole line again.
+
+```bash
+# the examples (as projects) and a project of your own (a copy), each
+# edit split: session, copy, resolve and validation, weather cases and
+# reference check, solve of the case shown, the views' first frame
+OHL_BENCH_FILE=copy.ohl cargo test --profile bench-fast -p ohl-app edit_split_benchmark -- --ignored --nocapture
+# the line's upkeep alone, without the solve (the whole country)
+OHL_BENCH_FILE=copy.ohl cargo test --profile bench-fast -p ohl-app line_upkeep_benchmark -- --ignored --nocapture
+```
+
+Structures moved by 1 m, each with its undo and redo (medians, ms;
+`bench-fast`, Apple M-series, 10 cores, the machine shared with other
+agents' builds; one case shown; synthetic countries of seed 1 as one
+project each, `ohl synth country --pylons N`):
+
+| Project | way | session | copy | resolve, validate | weather, reference | solve (the case shown) | edit | first frame after it, plan / 3D |
+|---|---|---|---|---|---|---|---|---|
+| example (7 structures) | whole | 0.3 | 0.0 | 0.0 | 0.0 | 4.4 | 4.8 | 0 / 0 |
+| | in place | 0.3 | 0.0 | 0.0 | 0.0 | 4.3 | 4.6 | 0 / 0 |
+| example with structure types | whole | 0.3 | 0.0 | 0.1 | 0.0 | 4.4 | 5.0 | 1 / 1 |
+| | in place | 0.3 | 0.0 | 0.0 | 0.0 | 4.3 | 4.8 | 1 / 1 |
+| country, 500 pylons (2 003 sections) | whole | 1.4 | 1.4 | 17.7 | 0.0 | 547 | 576 | 57 / 54 |
+| | in place | 1.2 | 0.0 | 0.1 | 0.0 | 472 | 495 | 57 / 54 |
+| country, 2 000 pylons (7 733 sections) | whole | 1.2 | 5.3 | 74.6 | 0.0 | 3 044 | 3 126 | — |
+| | in place | 1.5 | 0.0 | 0.2 | 0.0 | 3 011 | 3 095 | — |
+
+The line's upkeep alone on the whole country (12 000 pylons, 50 936
+sections, 43 041 jumpers; `line_upkeep_benchmark`, 150 edits: 50 moves,
+their undos and redos; resolved with the project's empty structure
+library, as the app does):
+
+| Measure | median | 95 % | at most |
+|---|---|---|---|
+| The session (apply, undo, redo) | 1.8 ms | 4.6 ms | 6.6 ms |
+| The line made again whole (copied, every structure resolved, validated whole) | 587 ms | 593 ms | 604 ms |
+| **The line taken in place** | **0.85 ms** | **1.05 ms** | **1.25 ms** |
+
+The reference index the desktop keeps with its line is made once (135 ms
+on the country) and kept up to date with each edit; memory peak of the
+run 4.9 GB (the session, the line, the index and the copies the whole
+way made).
+
+**What is left: the solve.** The line is now a millisecond; the case
+shown solved again is not. A case's update reads the whole line for
+every jumper it solves again (the line's route views for its wind side,
+the jumper's section searched in the line, its wind factor): on the
+2 000-pylon country about 3 s an edit, on the whole country more (not
+measured: the app's first solve of it, at opening, took 21 minutes on
+2 000 pylons, so hours on 12 000). Before this work each section solved
+also made the route views again: that is fixed (the routes made once per
+update, the same answer); the jumpers' share is left (roadmap O42). The
+server does not have it: it solves each section on the part of the line
+it reads (its sub-line, the same shape bit for bit).
+
+**The views** (item 3) were measured: the first frame after an edit
+takes about a millisecond on the examples, 57 ms (the plan) and 54 ms
+(the 3D view) on the 500-pylon country, the same either way — they draw
+again for the new line version, and grow with the line. Left as they are
+for now: there the solve costs ten times more (roadmap O42).
+
+## The tests of the server, the store, the session and the command line (O46, 2026-11-19)
+
+Owner, 2026-11-19: "the server seems to have very long tests can they be
+optimised?" Every test of `ohl-server`, `ohl-store-pg`, `ohl-session` and
+`ohl-cli` timed before and after (239 tests; nextest, each test in a
+process of its own, 10 at a time; the `test` profile; two runs each,
+the means; Apple M-series, 10 cores, the machine shared with other
+agents' builds at a load of 3 to 10, so a few tenths of a second either
+way are noise):
+
+```bash
+OHL_REQUIRE_PG_TESTS=1 cargo nextest run -p ohl-server -p ohl-store-pg -p ohl-session -p ohl-cli --status-level all
+```
+
+| Test | before, s | after, s | what changed |
+|---|---|---|---|
+| `ohl-cli` `safety_volumes_are_written_as_dxf_ifc_and_kmz` | 11.5 | 5.6 | the mesh at 0.5 m instead of 0.2 m (the same steps, files and assertions; 19.7 s in a full check run before) |
+| `ohl-server` `a_network_serves_by_interest` | 8.0 | 6.0 | the program's cluster shared |
+| `ohl-store-pg` `store_suite_on_postgresql` | 5.5 | 4.2 | the program's cluster shared |
+| `ohl-server` `web_viewers_read_tiles_of_a_network` | 4.4 | 2.3 | the program's cluster shared |
+| `ohl-server` `a_network_keeps_roles_and_locks` | 3.0 | 2.5 | the program's cluster shared |
+| `ohl-store-pg` `import_and_export_round_trip` | 2.1 | 1.5 | the program's cluster shared |
+| `ohl-store-pg` `schema_and_the_writers_lock` | 1.7 | 1.3 | the program's cluster shared; waits for the writer's lock to go (the flake) |
+| `ohl-server` `a_section_solves_on_its_sub_line_as_on_its_whole_line` | 8.6 | 5.9 | nothing (the machine's load) |
+| the whole run (wall) | 14.5 | 12.6 | |
+| every test summed: `ohl-cli` / `ohl-server` / `ohl-session` / `ohl-store-pg` | 69.5 / 26.7 / 8.2 / 9.3 | 67.9 / 19.5 / 6.4 / 6.9 | |
+
+No test removed or weakened. A PostgreSQL cluster made and started costs
+about 0.6 s (`initdb` 0.5 s, the start 0.14 s) and its stop 0.12 s: a
+test program's tests now pay it once ([the scheme](postgresql.md#the-tests)).
+The slowest left are the sub-line test (each section of a 300-pylon
+country solved on the whole line: the solve's whole-line lookups, see
+[O42](#ohl-design-an-edit-taken-in-place-o42-2026-11-19)) and the network
+test (a synthetic country imported, 24 random edits followed by every
+client).
+
+**The flake** (`schema_and_the_writers_lock` failing while other check
+runs ran): reproduced with the old code — the three tests of the store,
+each in a process of its own as nextest runs them, from six copies of
+the test program at once (six "runs"), eight times: 1 failure in 144, a
+writer refused right after the first writer was dropped. A connection's
+advisory lock goes when PostgreSQL's process for it has ended, a moment
+after the client closed it — the test connected the second writer
+before. The tests now wait for the lock to go (at most 10 s); the ports
+are made safe as well (another port when one is taken meanwhile, every
+cluster checked by its data directory). With the new scheme the same 144
+runs: 0 failures, in 90 s instead of 126 s; a test killed mid-run leaves
+its cluster, which the next test of any program stops and deletes
+(tried).
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

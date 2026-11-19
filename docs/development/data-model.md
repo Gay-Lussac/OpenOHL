@@ -3886,6 +3886,15 @@ Nothing of this is stored: the file is the same as before.
   is put back from its journal (the objects, the line's objects and the
   index entries as they were); a command the whole way keeps the state it
   replaced, as before.
+- `Applied::whole` (2026-11-19, O42) says which way a command went. The
+  desktop keeps its own line (structure types resolved) in step the same
+  way (`ohl-app`'s `in_place`): after a command applied in place it takes
+  only the objects changed from the session's line (a structure resolved
+  alone: `ohl_line::library::resolve_structure`), with its own reference
+  index, validated locally; a command the whole way, a settings or
+  library change, or a line replaced meanwhile makes the desktop's line
+  again whole, as before (said in the edit's report). Nothing stored
+  changes.
 
 #### A part of a line (`ols_meta` key `part`, 2026-11-18)
 

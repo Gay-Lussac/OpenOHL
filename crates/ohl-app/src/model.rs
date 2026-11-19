@@ -755,6 +755,15 @@ pub struct Model {
     /// [`Model::preview_move`]): nothing solved in the background from that
     /// line meanwhile.
     pub previewing: bool,
+    /// The line kept in step with the session (O42: an edit taken in
+    /// place, [`crate::in_place`]); none: made again whole at the next
+    /// edit.
+    pub in_step: Option<crate::in_place::InStep>,
+    /// Every edit makes the line again whole (tests, measurements:
+    /// `Model::set_whole_line_edits`).
+    pub whole_line_edits: bool,
+    /// Where the last edit's time went.
+    pub last_edit: crate::edit::EditTimes,
     /// The structures coloured by usage in the plan and 3D views
     /// (Checks › Structure loads › Usage, Colour structures by usage); empty:
     /// not coloured.
@@ -2288,6 +2297,7 @@ impl Model {
         self.line_version += 1;
         self.cases = cases.into_iter().map(Solved::pending).collect();
         self.line = line;
+        self.now_in_step(false);
         Ok(())
     }
 
@@ -2549,6 +2559,7 @@ impl Model {
         self.bodies = drawn_bodies(types.as_ref(), &self.sections_folder());
         self.types = types;
         self.resolve_cache = Default::default();
+        self.now_in_step(false);
         let failed: usize = self.cases.iter().map(|c| c.failed.len()).sum();
         for name in others {
             if let Err(e) = self.show_line(&name) {
@@ -3095,6 +3106,9 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         catch_up_armed: None,
         catch_up_after: (!cfg!(test)).then_some(SETTLE),
         previewing: false,
+        in_step: None,
+        whole_line_edits: false,
+        last_edit: Default::default(),
         usage_marks: Default::default(),
         usage_out_of_date: false,
         reference_drawn: None,
@@ -3117,6 +3131,8 @@ pub fn load(mut sources: Sources, progress: &dyn Fn(String)) -> Result<Model, St
         line_version: 0,
         project_version: 0,
     };
+    // The line is the session's resolved: in step (O42).
+    model.now_in_step(false);
     // The project lines this user showed (those that still exist).
     for name in shown_lines {
         if model

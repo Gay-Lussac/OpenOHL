@@ -44,10 +44,7 @@ fn store_suite_on_postgresql() {
         let mut nets = nets.borrow_mut();
         let net = nets.entry(name.to_owned()).or_insert_with(|| {
             let db = name.replace('-', "_");
-            let mut c =
-                postgres::Client::connect(&cluster.url("postgres"), postgres::NoTls).unwrap();
-            c.batch_execute(&format!("CREATE DATABASE {db} TEMPLATE template_ohl"))
-                .unwrap();
+            cluster.create_db_from(&db, Some("template_ohl"));
             let net = Network::connect_writer(&cluster.url(&db)).unwrap();
             net.create_line(name, name, "").unwrap();
             net
@@ -91,7 +88,10 @@ fn schema_and_the_writers_lock() {
     let reader = Network::connect(&url).unwrap();
     assert!(!reader.is_writer());
     assert!(reader.create_line("A", "a", "").is_err());
+    // The lock goes with the connection (once its server process has
+    // ended: waited for, at most 10 s).
     drop(first);
+    cluster.wait_for_locks_gone("net");
     let again = Network::connect_writer(&url).unwrap();
     // Migrations run once.
     assert_eq!(again.schema().unwrap(), ohl_store_pg::schema::SCHEMA);

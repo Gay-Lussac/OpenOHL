@@ -64,6 +64,30 @@ impl From<SessionError> for EditError {
     }
 }
 
+/// Where an edit's time went (O42; the last edit's in
+/// [`Model::last_edit`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EditTimes {
+    /// The session applying the command (logged, validated locally).
+    pub session: std::time::Duration,
+    /// The session's line copied (the whole way only).
+    pub copy: std::time::Duration,
+    /// The structures resolved and the line validated: every structure
+    /// and the whole line the whole way; in place the objects changed,
+    /// taken into the line, and what refers to them.
+    pub resolve: std::time::Duration,
+    /// The weather cases set and the reference state checked.
+    pub reference: std::time::Duration,
+    /// The cases shown solved again.
+    pub solve: std::time::Duration,
+    /// The whole edit (the views after it not counted).
+    pub total: std::time::Duration,
+    /// Line objects taken in place.
+    pub objects: usize,
+    /// Why the line was made again whole (none: in place).
+    pub whole: Option<String>,
+}
+
 impl Model {
     /// Whether the model can be edited.
     pub fn can_edit(&self) -> Result<(), String> {
@@ -76,20 +100,27 @@ impl Model {
         self.editing.is_ok() || self.viewer_session.is_some() || self.remote.is_some()
     }
 
-    /// The session's line, structure types resolved.
-    fn session_line(&self) -> Result<Line, EditError> {
+    /// The session's line, structure types resolved (the whole way: the
+    /// line copied, every structure resolved, validated whole); the time
+    /// of each part into `times`.
+    fn session_line(&self, times: &mut EditTimes) -> Result<Line, EditError> {
         // A read-only replica follows the server too.
+        let t = Instant::now();
         let line = match (&self.editing, &self.viewer_session) {
             (Ok(e), _) => e.session.export(),
             (Err(_), Some(s)) => s.export(),
             (Err(why), None) => return Err(EditError::ReadOnly(why.clone())),
         };
+        times.copy += t.elapsed();
+        let t = Instant::now();
         let mut line = match &self.types {
             Some((s, i)) => line
                 .resolve_with(s, i, Some(&self.resolve_cache))
                 .map_err(|e| EditError::Refused(e.to_string()))?,
             None => line,
         };
+        times.resolve += t.elapsed();
+        let t = Instant::now();
         // The creep-stretch weather cases, for sections after creep or load.
         let cases: Vec<_> = self.cases.iter().map(|c| c.case.clone()).collect();
         line.set_weather_cases(&cases);
@@ -97,7 +128,129 @@ impl Model {
         // libraries and cases now (plan of 2026-11-15, phase 5b): used
         // only when current.
         crate::structure_reference::check(self, &mut line);
+        times.reference += t.elapsed();
         Ok(line)
+    }
+
+    /// [`Model::session_line`]'s weather cases and reference check on the
+    /// model's own line (taken in place): the same calls.
+    fn weather_and_reference(&mut self) {
+        let cases: Vec<_> = self.cases.iter().map(|c| c.case.clone()).collect();
+        self.line.set_weather_cases(&cases);
+        if self.line.reference.is_none() && !self.line.has_foot_movements() {
+            // (What the check does then: nothing.)
+            return;
+        }
+        let folder = self.sections_folder();
+        crate::structure_reference::check_with(
+            &mut self.line,
+            &self.library,
+            self.types.as_ref().map(|(t, _)| t),
+            &folder,
+            &cases,
+        );
+    }
+
+    /// The line kept in step with the session after `applied` (O42): the
+    /// objects it changed taken in place when it can be (see
+    /// [`crate::in_place`]), else the line made again whole (why: the
+    /// first of the result). The line is as it was on an error.
+    fn take_applied(
+        &mut self,
+        applied: &Applied,
+        times: &mut EditTimes,
+    ) -> Result<Option<String>, EditError> {
+        let current = self.session().map(|s| s.current_line().to_owned());
+        let current = current.as_ref();
+        let why: Option<String> = if self.whole_line_edits {
+            Some("every edit made whole (set)".into())
+        } else if let Some(w) = crate::in_place::whole_reason(applied) {
+            Some(w.into())
+        } else {
+            match (&self.in_step, current) {
+                (Some(s), Some(c)) if s.version == self.line_version && &s.line == c => None,
+                _ => Some("the line was made again since".into()),
+            }
+        };
+        if why.is_none() {
+            let t = Instant::now();
+            let mut step = self.in_step.take().expect("in step");
+            let stored = match (&self.editing, &self.viewer_session) {
+                (Ok(e), _) => e.session.line(),
+                (Err(_), Some(s)) => s.line(),
+                (Err(why), None) => return Err(EditError::ReadOnly(why.clone())),
+            };
+            let (types, cache) = (self.types.as_ref(), &self.resolve_cache);
+            let resolve = |s: &ohl_line::Structure| match types {
+                Some((t, i)) => ohl_line::library::resolve_structure(s, t, i, Some(cache)),
+                None => Ok(s.clone()),
+            };
+            let result = crate::in_place::update(
+                &mut self.line,
+                &mut step,
+                stored,
+                applied,
+                &resolve,
+                types.is_some(),
+            );
+            times.resolve += t.elapsed();
+            match result {
+                Ok(u) => {
+                    times.objects = u.objects;
+                    // Structures gone: forgotten.
+                    for (k, id) in &applied.objects {
+                        if *k == ohl_session::Kind::Structure && stored.structure(id).is_none() {
+                            self.resolve_cache.forget(id);
+                        }
+                    }
+                    let t = Instant::now();
+                    // The stored reference state, checked again (never the
+                    // state a check before left: an undo may make it
+                    // current again).
+                    self.line.reference = stored.reference.clone();
+                    self.line.feet_state = Default::default();
+                    self.weather_and_reference();
+                    times.reference += t.elapsed();
+                    self.in_step = Some(step);
+                    return Ok(None);
+                }
+                Err(crate::in_place::NotInPlace::Invalid(e)) => {
+                    // As the whole way: refused, the line as it was; made
+                    // again whole next time.
+                    return Err(EditError::Refused(e.to_string()));
+                }
+                Err(crate::in_place::NotInPlace::Order(of)) => {
+                    let why = format!("{} out of the session's order", of.field());
+                    let line = self.session_line(times)?;
+                    self.line = line;
+                    return Ok(Some(why));
+                }
+            }
+        }
+        let line = self.session_line(times)?;
+        self.line = line;
+        Ok(why)
+    }
+
+    /// The line in step with the session at the line version now (made
+    /// again whole, or taken in place: `kept_index`, its index kept).
+    pub(crate) fn now_in_step(&mut self, kept_index: bool) {
+        let index = self
+            .in_step
+            .take()
+            .and_then(|s| s.index)
+            .filter(|_| kept_index);
+        self.in_step = self.session().map(|s| crate::in_place::InStep {
+            index,
+            ..crate::in_place::InStep::at(self.line_version, s.current_line())
+        });
+    }
+
+    /// Every edit makes the line again whole (`true`; tests and
+    /// measurements) or takes what it changed in place (the default).
+    #[cfg(test)]
+    pub fn set_whole_line_edits(&mut self, whole: bool) {
+        self.whole_line_edits = whole;
     }
 
     /// Brings the model up to the session after `applied`: re-solves its
@@ -108,6 +261,10 @@ impl Model {
         applied: Applied,
         started: Instant,
     ) -> Result<String, EditError> {
+        let mut times = EditTimes {
+            session: started.elapsed(),
+            ..EditTimes::default()
+        };
         // A drag let go (or anything done): background solves again.
         self.previewing = false;
         // (Library files changed come as library objects: read again
@@ -124,26 +281,48 @@ impl Model {
             .iter()
             .any(|(k, _)| *k == ohl_session::Kind::Library)
         {
+            self.in_step = None;
             return self
                 .refresh_project_libraries()
                 .map(|m| format!("{what} (log entry {}): {m}", applied.seq))
                 .map_err(EditError::Refused);
         }
-        let line = self.session_line()?;
+        // What the line was (what decides what is solved again below).
+        let creep_stretch = self.line.creep_stretch.clone();
+        let bimetallic = self.line.bimetallic;
+        let solver = self.line.solver;
+        let condition_cases = self.line.condition_cases.clone();
+        let reference_before = self.line.reference_in_use().cloned();
+        // The line in step with the session: in place, else whole. Out of
+        // step after an error (made whole next time, as before).
+        let whole = match self.take_applied(&applied, &mut times) {
+            Ok(w) => w,
+            Err(e) => {
+                self.in_step = None;
+                return Err(e);
+            }
+        };
+        if cfg!(test) && whole.is_none() {
+            // In place equals the whole way (every test's edit).
+            let again = self.session_line(&mut EditTimes::default())?;
+            assert!(
+                again == self.line,
+                "{what}: the line kept in place differs from the line made again: {}",
+                crate::in_place::first_difference(&self.line, &again)
+            );
+        }
         // Other creep-stretch weather cases (Line › Criteria › Creep-Stretch, or
         // its undo): every section after creep or load changes.
-        let all: Vec<String>;
         // The bimetallic conductor model too; and the reference state in
         // use (another one, or none any more): every section.
-        let reference_changed = line.reference_in_use() != self.line.reference_in_use();
-        let dirty = if line.creep_stretch != self.line.creep_stretch
-            || line.bimetallic != self.line.bimetallic
+        let reference_changed = self.line.reference_in_use() != reference_before.as_ref();
+        let dirty: Vec<String> = if self.line.creep_stretch != creep_stretch
+            || self.line.bimetallic != bimetallic
             || reference_changed
         {
-            all = line.sections.iter().map(|s| s.id.clone()).collect();
-            &all
+            self.line.sections.iter().map(|s| s.id.clone()).collect()
         } else {
-            &applied.sections
+            applied.sections.clone()
         };
         // Whether a solution may change: sections, structures, jumpers,
         // spacers or the routes (the wind's side) changed, or the solver's
@@ -163,18 +342,19 @@ impl Model {
                         | Kind::AlignmentPoint
                 )
             })
-            || line.solver != self.line.solver
-            || line.condition_cases != self.line.condition_cases
+            || self.line.solver != solver
+            || self.line.condition_cases != condition_cases
             || reference_changed;
         // The cases the views asked for lately, shown or picked: at once;
         // the others not solved any more, solved again from the new line
         // when wanted (in the background, or by a check).
+        let t = Instant::now();
         let live = self.live_cases();
         let (mut solved, mut deferred) = (0, 0);
         if solving {
             for (k, c) in self.cases.iter_mut().enumerate() {
                 if live.contains(&k) {
-                    solved += c.update(&line, &self.library, dirty);
+                    solved += c.update(&self.line, &self.library, &dirty);
                 } else if c.ready {
                     *c = crate::model::Solved::pending(c.case.clone());
                     deferred += 1;
@@ -184,11 +364,19 @@ impl Model {
             // (owner, 2026-11-18).
             self.edited_at = Some(Instant::now());
         }
-        self.line = line;
+        times.solve = t.elapsed();
         self.line_version += 1;
+        self.now_in_step(whole.is_none());
+        times.total = started.elapsed();
+        let how = match &whole {
+            None => String::new(),
+            Some(why) => format!("; the line made again whole: {why}"),
+        };
+        times.whole = whole;
+        self.last_edit = times;
         Ok(format!(
             "{what} (log entry {}): {} sections touched, {solved} re-solved over {} weather cases \
-             ({deferred} others to solve again when wanted) in {:.0?}",
+             ({deferred} others to solve again when wanted) in {:.0?}{how}",
             applied.seq,
             applied.sections.len(),
             self.cases.len() - deferred,
@@ -347,6 +535,14 @@ impl Model {
         // The reference state no longer matches the line until let go
         // (checked again then).
         self.line.reference_stale("a structure being moved");
+        // Still in step but for this structure (taken from the session at
+        // the next edit or when cancelled).
+        if let Some(s) = &mut self.in_step
+            && s.version == self.line_version
+        {
+            s.previewed.insert(id.to_owned());
+            s.version += 1;
+        }
         self.line_version += 1;
         self.previewing = true;
         let dirty = self.sections_through(id);
@@ -358,12 +554,23 @@ impl Model {
     /// Ends a preview without a command: back to the session's line.
     pub fn cancel_preview(&mut self, case: usize, id: &str) {
         self.previewing = false;
-        let Ok(line) = self.session_line() else {
+        let dirty = self.sections_through(id);
+        // The structure previewed taken from the session again (in place;
+        // whole when out of step).
+        let nothing = Applied {
+            seq: 0,
+            objects: Vec::new(),
+            sections: Vec::new(),
+            points: Vec::new(),
+            notice: None,
+            whole: false,
+        };
+        let Ok(whole) = self.take_applied(&nothing, &mut EditTimes::default()) else {
+            self.in_step = None;
             return;
         };
-        let dirty = self.sections_through(id);
-        self.line = line;
         self.line_version += 1;
+        self.now_in_step(whole.is_none());
         if let Some(c) = self.cases.get_mut(case) {
             c.update(&self.line, &self.library, &dirty);
         }

@@ -837,6 +837,14 @@ pub struct Applied {
     /// made out of date, in words ([`shared`]; none without a working
     /// set).
     pub notice: Option<String>,
+    /// The command went the whole way (the line made again from every
+    /// object: the import, a settings change, objects of older forms):
+    /// the line may differ from before in more than [`Applied::objects`]
+    /// (objects of older forms read into others), so a copy of the line
+    /// kept beside the session (the desktop's, O42) is made again whole.
+    /// False: applied in place, only those objects and the line's circuit
+    /// starts changed.
+    pub whole: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3722,6 +3730,7 @@ impl Session {
             sections,
             points: points_changed,
             notice: None,
+            whole: true,
         })
     }
 

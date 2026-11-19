@@ -4416,8 +4416,13 @@ pub(crate) fn sections_against_the_line_reference(
         .collect()
 }
 
-/// [`against_the_line`] on the routes `views`.
-fn against_in(line: &Line, section: &Section, views: &[crate::route::AlignmentView]) -> bool {
+/// [`against_the_line`] on the routes `views` ([`Line::alignment_views`]
+/// made once for many sections).
+pub(crate) fn against_in(
+    line: &Line,
+    section: &Section,
+    views: &[crate::route::AlignmentView],
+) -> bool {
     let ends = (section.points.first(), section.points.last());
     let (Some(a), Some(b)) = ends else {
         return false;

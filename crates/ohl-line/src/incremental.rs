@@ -394,21 +394,57 @@ fn solve_one(
     line: &Line,
     library: &ohl_cables::Library,
     case: &WeatherCase,
-    id: &str,
+    section: &Section,
     jumpers: &crate::solve::JumperLoadMap,
+    against: bool,
 ) -> Result<SectionShape, LineError> {
-    let section = line
-        .sections
-        .iter()
-        .find(|s| s.id == id)
-        .ok_or_else(|| LineError::Invalid(format!("no section {id}")))?;
     let cable = crate::solve::cable_of(library, section)?;
     // The jumpers hanging on its clamps, with their own cables.
     let coupling = crate::solve::Coupling {
         jumpers: Some(jumpers.clone()),
         ..Default::default()
     };
-    crate::solve::solve_section_coupled(line, section, cable, case, &default_fe_budget(), &coupling)
+    crate::solve::solve_section_coupled_side(
+        line,
+        section,
+        cable,
+        case,
+        &default_fe_budget(),
+        &coupling,
+        against,
+    )
+}
+
+/// Whether each section solved runs against the line (the wind's side,
+/// [`crate::solve::solve_section_coupled`]), the line's routes worked out
+/// once per update — not once per section (O42, 2026-11-19: a whole
+/// solve of a synthetic country of 12 000 pylons took hours in the
+/// routes alone). Many sections: all at once through the routes' grid
+/// ([`crate::solve::sections_against_the_line`]); a few: each against the
+/// routes made once. The same answer as asking each section on its own.
+struct Against<'a> {
+    line: &'a Line,
+    all: Option<std::collections::BTreeMap<String, bool>>,
+    views: std::cell::OnceCell<Vec<crate::route::AlignmentView>>,
+}
+
+impl<'a> Against<'a> {
+    /// For `line`, about `n` sections to solve.
+    fn new(line: &'a Line, n: usize) -> Self {
+        Self {
+            line,
+            all: (n > 64).then(|| crate::solve::sections_against_the_line(line)),
+            views: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn of(&self, section: &Section) -> bool {
+        if let Some(b) = self.all.as_ref().and_then(|m| m.get(&section.id)) {
+            return *b;
+        }
+        let views = self.views.get_or_init(|| self.line.alignment_views());
+        crate::solve::against_in(self.line, section, views)
+    }
 }
 
 impl SolvedLine {
@@ -511,12 +547,26 @@ impl SolvedLine {
             })
             .map(|s| s.id.as_str())
             .collect();
-        for section in &line.sections {
-            if dirty_set.contains(section.id.as_str())
-                || !self.sections.contains_key(&section.id)
-                || reweighed.contains(section.id.as_str())
-            {
-                let result = solve_one(line, library, &self.case, &section.id, &weights);
+        let to_solve: Vec<bool> = line
+            .sections
+            .iter()
+            .map(|section| {
+                dirty_set.contains(section.id.as_str())
+                    || !self.sections.contains_key(&section.id)
+                    || reweighed.contains(section.id.as_str())
+            })
+            .collect();
+        let against = Against::new(line, to_solve.iter().filter(|b| **b).count());
+        for (section, solve) in line.sections.iter().zip(to_solve) {
+            if solve {
+                let result = solve_one(
+                    line,
+                    library,
+                    &self.case,
+                    section,
+                    &weights,
+                    against.of(section),
+                );
                 self.sections.insert(section.id.clone(), result);
                 resolved.insert(&section.id);
                 update.solved += 1;
@@ -536,10 +586,17 @@ impl SolvedLine {
                 continue;
             }
             for &k in group {
-                let id = &line.sections[k].id;
-                if !resolved.contains(id.as_str()) {
-                    let r = solve_one(line, library, &self.case, id, &weights);
-                    self.sections.insert(id.clone(), r);
+                let section = &line.sections[k];
+                if !resolved.contains(section.id.as_str()) {
+                    let r = solve_one(
+                        line,
+                        library,
+                        &self.case,
+                        section,
+                        &weights,
+                        against.of(section),
+                    );
+                    self.sections.insert(section.id.clone(), r);
                 }
             }
             let mut results: Vec<Result<SectionShape, LineError>> = line
@@ -579,10 +636,17 @@ impl SolvedLine {
                 continue;
             }
             for &k in &group {
-                let id = &line.sections[k].id;
-                if !resolved.contains(id.as_str()) && !in_coupled.contains(&k) {
-                    let r = solve_one(line, library, &self.case, id, &weights);
-                    self.sections.insert(id.clone(), r);
+                let section = &line.sections[k];
+                if !resolved.contains(section.id.as_str()) && !in_coupled.contains(&k) {
+                    let r = solve_one(
+                        line,
+                        library,
+                        &self.case,
+                        section,
+                        &weights,
+                        against.of(section),
+                    );
+                    self.sections.insert(section.id.clone(), r);
                 }
             }
             let mut results: Vec<Result<SectionShape, LineError>> = line

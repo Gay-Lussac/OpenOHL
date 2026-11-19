@@ -184,7 +184,8 @@ fn in_place_equals_the_whole_way_on_a_small_country() {
         b.set_whole_only(true);
         let mut rng = Rng(k.wrapping_mul(0x2545_F491_4F6C_DD1D) ^ 77);
         let answer = |r: Result<ohl_session::Applied, ohl_session::SessionError>| match r {
-            Ok(v) => format!("ok {v:?}"),
+            // (Which way a command went is what differs.)
+            Ok(v) => format!("ok {:?}", ohl_session::Applied { whole: false, ..v }),
             Err(e) => format!("err {e:?}"),
         };
         for step in 0..120 {

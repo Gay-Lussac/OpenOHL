@@ -100,6 +100,7 @@ fn merge(applied: Vec<Applied>) -> Option<Applied> {
     let mut first = it.next()?;
     for a in it {
         first.seq = a.seq;
+        first.whole |= a.whole;
         first.objects.extend(a.objects);
         first.points.extend(a.points);
         for s in a.sections {
