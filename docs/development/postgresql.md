@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–5, 2026-11-19; the tests' scheme O46, 2026-11-19); not approved yet.*
+*In active development (ADR-0013, phases 4–6, 2026-11-19; the tests' scheme O46, 2026-11-19); not approved yet.*
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -84,7 +84,9 @@ About 4 s for the three tests:
   the same transcript.
 - `schema_and_the_writers_lock` — migrations once, a newer schema refused,
   one writer (a second refused), readers, the append-only audit, line
-  codes.
+  codes; saved working sets (schema 3: replaced by name, per owner,
+  stations kept exactly, refusals) and a database of schema 2 brought
+  forward (its working set of routes reads as those routes picked whole).
 - `import_and_export_round_trip` — a project imported (one log entry,
   the history left in the file), exported back (the same object, index,
   meta, user and grant rows), edited through the network (the export
@@ -121,6 +123,22 @@ each:
   in order, and its replica equals the server's line again.
 - `a_network_keeps_roles_and_locks` — edits by each line's roles, a line
   the network has not refused, soft locks as on a file server.
+- `a_working_set_is_a_partial_replica` (in `working_set_tests`, phase 6,
+  about 3.5 s) — a route's structures; a part of it shown, snapped out to
+  whole tension sections, a whole route, an unknown route refused; saved,
+  listed, deleted; a desktop joining with the part gets its replica (the
+  server's rows, its working set noted); another user's moves: rows for
+  what it holds, none for the rest of the route or another line; its own
+  edit's rows before its answer; 16 random moves and undos, then the
+  replica equal to the model's extent object by object; a working set on
+  another line refused, the whole route added (rows came, none went); the
+  desktop gone while three moves were made, joining again with what it
+  holds: only what differs comes.
+- `the_idle_solve_makes_every_tile_once` (phase 6, about 2.6 s) — after a
+  start every tile holding objects made once and kept, served from the
+  cache to a viewer, nothing sent to a client that did not ask; a move
+  makes the tiles it touched again. The other tests run with the idle
+  solve off.
 - `web_viewers_read_tiles_of_a_network` (in `web::tests`) — a browser:
   protocol 2 refused, the network's info, its tiles, an edit refused
   (a viewer), a QUIC user's move arriving and the tile read again.
@@ -135,7 +153,10 @@ ohl network serve --bind 127.0.0.1:4433 --web 8443 --invite admin
 
 It prints the invitations and the web link (open it, accept the
 self-signed certificate after comparing its fingerprint, look around).
-`ohl network bench --user admin --work DIR` measures it (it starts
+`ohl network bench --user admin --work DIR` measures it (phase 5's
+targets, the idle solve off; `ohl network bench-working-set --user admin
+--work DIR` phase 6's: working sets shown and loaded, rows, joining
+again, a route added, context tiles, then the idle solve) (it starts
 `ohl network serve` as a process of its own, then the server in its own
 process; the machine's other work shows in the numbers; it moves
 structures back and forth, so use a database made for it):
@@ -182,7 +203,8 @@ on the command line.
 Rights are kept (roles, assignments) but not evaluated (phase 7); point
 clouds, backgrounds and tiled terrain stay in the project files (the
 import report lists them) and the server does not serve them yet; a
-model's surfaces are in the database whole, not served by tile yet; the
-desktop's working set and partial replica are phase 6; refusing a
-migration without a recent backup, TLS to a database on another host and
-the deployment files are phase 13.
+model's surfaces are in the database whole, not served by tile yet; a
+working set is on one model (routes of another line are their own working
+set); checks on a working set pull no neighbours in yet (phase 10);
+refusing a migration without a recent backup, TLS to a database on
+another host and the deployment files are phase 13.

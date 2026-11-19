@@ -32,6 +32,9 @@ pub struct PlanView {
     pub vegetation: crate::vegetation::Overlay,
     /// The lines on the ground beside the line (none: not shown).
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
+    /// On a network: the context around the working set (phase 6), under
+    /// the line.
+    pub context: Option<crate::context_tiles::Shared>,
     /// What Checks › Safety volumes built (their outlines).
     pub safety_volume: crate::safety_volume::Overlay,
     /// The magnetic field's isolines from above.
@@ -621,6 +624,12 @@ impl PlanView {
             scale,
         );
         drop(backgrounds);
+        // The network's context, under the line (a drawing).
+        if visible.contains(&crate::scene::Layer::Context)
+            && let Some(d) = &self.context
+        {
+            d.paint_plan(painter, rect, &to_screen);
+        }
         // The lines on the ground beside the line, under the line.
         if visible.contains(&crate::scene::Layer::GroundLines) {
             crate::ground_lines::paint_plan(

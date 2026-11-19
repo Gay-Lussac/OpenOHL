@@ -29,6 +29,9 @@ pub enum Layer {
     /// Saved project lines shown for comparison (Versions menu), each in its
     /// colour.
     OtherLines,
+    /// On a network (phase 6): the context around the working set, grey —
+    /// the network's tiles, read-only, a drawing ([`crate::context_tiles`]).
+    Context,
     /// Clearance violations: wire to target, red
     /// ([`View3d::marks`](crate::view3d::View3d::marks)).
     Clearances,
@@ -76,7 +79,7 @@ pub enum Layer {
 
 impl Layer {
     /// All layers.
-    pub const ALL: [Layer; 23] = [
+    pub const ALL: [Layer; 24] = [
         Layer::Ground,
         Layer::Surfaces,
         Layer::Points,
@@ -86,6 +89,7 @@ impl Layer {
         Layer::Wires,
         Layer::OtherCases,
         Layer::OtherLines,
+        Layer::Context,
         Layer::Clearances,
         Layer::Draft,
         Layer::Selection,
@@ -113,6 +117,7 @@ impl Layer {
             Layer::Wires => "Wires (selected case)",
             Layer::OtherCases => "Wires (other cases)",
             Layer::OtherLines => "Other project lines",
+            Layer::Context => "Context (network, a drawing)",
             Layer::Clearances => "Clearance violations",
             Layer::Draft => "Wire being strung",
             Layer::Selection => "Selection",
@@ -153,6 +158,7 @@ pub const LAYER_GROUPS: [(&str, &[Layer]); 4] = [
             Layer::Wires,
             Layer::OtherCases,
             Layer::OtherLines,
+            Layer::Context,
             Layer::Draft,
             Layer::Selection,
         ],
@@ -1787,6 +1793,7 @@ pub fn layer(model: &Model, layer: Layer, case: usize, selection: &Selection) ->
         // Drawn from the clearance report ([`marks`]); orthophotos in plan
         // only.
         Layer::Clearances
+        | Layer::Context
         | Layer::Draft
         | Layer::Orthophotos
         | Layer::GrowIn

@@ -728,6 +728,8 @@ pub struct App {
     pub host_window: Option<crate::remote::HostWindow>,
     /// File › Join a server.
     pub join_window: Option<crate::remote::JoinWindow>,
+    /// File › Join a network (a working set, phase 6).
+    pub join_network_window: Option<crate::network_window::JoinNetworkWindow>,
     /// File › New project from another program.
     pub import_project: Option<crate::files::ImportProjectWindow>,
     /// What the reader said of the project it created.
@@ -806,6 +808,7 @@ impl App {
             hosted_file: None,
             host_window: None,
             join_window: None,
+            join_network_window: None,
             import_project: None,
             import_notes: None,
             hosting_join: None,
@@ -991,6 +994,11 @@ impl App {
                     user: crate::files::user(),
                     ..Default::default()
                 });
+            }
+            FileAction::JoinNetwork => {
+                self.join_network_window = Some(crate::network_window::JoinNetworkWindow::new(
+                    crate::files::user(),
+                ));
             }
             FileAction::Host => self.host_window = Some(Default::default()),
             FileAction::ImportProject => {
@@ -1235,6 +1243,18 @@ impl App {
                 self.joined(file, remote, ctx);
             }
         }
+        if let Some(w) = &mut self.join_network_window {
+            let mut open = true;
+            let done = w.ui(ctx, &mut open, &self.joined_dir.clone());
+            if !open {
+                self.join_network_window = None;
+            }
+            if let Some((file, remote)) = done {
+                self.join_network_window = None;
+                self.stop_hosting();
+                self.joined(file, remote, ctx);
+            }
+        }
         if let Some(rx) = &self.hosting_join {
             let mut done = None;
             while let Ok(e) = rx.try_recv() {
@@ -1296,6 +1316,7 @@ impl App {
             hosted_file: None,
             host_window: None,
             join_window: None,
+            join_network_window: None,
             import_project: None,
             import_notes: None,
             hosting_join: None,
@@ -2059,6 +2080,95 @@ impl Ready {
             .filter(|_| self.visible.contains(&Layer::GroundLines));
     }
 
+    /// On a network (phase 6), every frame: the context's tiles around
+    /// `camera` (else the working set's first structure) asked for when
+    /// the view moved to other tiles or a change touched them; the
+    /// drawing made again when tiles came.
+    fn context_frame(&mut self, camera: Option<[f64; 3]>) {
+        // Joined again (Working set › Join again): the new connection, then
+        // what the replica holds (only what differs comes back).
+        let rejoined = self
+            .model
+            .remote
+            .as_mut()
+            .and_then(|r| r.network.as_mut())
+            .and_then(|n| n.rejoin.as_ref()?.try_recv().ok());
+        if let Some(result) = rejoined {
+            let hold = self.model.session().map(ohl_server::client::hold);
+            if let Some(r) = self.model.remote.as_mut() {
+                if let Some(n) = r.network.as_mut() {
+                    n.rejoin = None;
+                    n.context.reset_asked();
+                }
+                match result {
+                    Ok(j) => {
+                        r.link = j.link;
+                        r.role = j.role;
+                        r.peers = j.peers;
+                        r.locks = j.locks;
+                        r.closed = None;
+                        if let Some(h) = hold
+                            && let Err(e) = r.link.send(h)
+                        {
+                            r.closed = Some(e);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(n) = r.network.as_mut() {
+                            n.note = Some((format!("joining again: {e}"), true));
+                        }
+                    }
+                }
+            }
+        }
+        let line = &self.model.line;
+        let Some(r) = self.model.remote.as_mut() else {
+            return;
+        };
+        let Some(n) = r.network.as_mut() else {
+            return;
+        };
+        let Some(info) = &n.info else {
+            return;
+        };
+        let at = camera.or_else(|| line.structures.first().map(|s| s.position));
+        if let Some(at) = at {
+            let want = crate::context_tiles::ContextTiles::around(
+                [at[0], at[1]],
+                info.grid_size,
+                info.tile_level,
+            );
+            if let Some(tiles) = n.context.interest(want)
+                && r.closed.is_none()
+                && let Err(e) = r.link.send(ohl_server::ClientMsg::Interest {
+                    routes: Vec::new(),
+                    tiles,
+                })
+            {
+                r.closed = Some(e);
+            }
+        }
+        if n.context.revision != n.drawn {
+            n.drawn = n.context.revision;
+            let model = n.model.clone();
+            // What the replica holds is drawn as the line, not again as
+            // context.
+            let own = |m: &str, kind: &str, id: &str| {
+                m == model
+                    && match kind {
+                        "structure" => line.structure(id).is_some(),
+                        "section" => line.sections.iter().any(|s| s.id == id),
+                        "route" => line.routes.iter().any(|r| r.id == id),
+                        _ => false,
+                    }
+            };
+            let drawn = std::sync::Arc::new(n.context.drawn(&own));
+            self.view3d.context = Some(drawn.clone());
+            self.plan.context = Some(drawn);
+            self.view3d.dirty.insert(Layer::Context);
+        }
+    }
+
     /// Server mode, every frame: what others did, what this user shows
     /// them, the locks of what they edit.
     pub fn remote_frame(&mut self) {
@@ -2087,6 +2197,7 @@ impl Ready {
             selection: self.selection.describe(),
             camera: self.view3d.camera.as_ref().map(|c| c.target),
         };
+        self.context_frame(presence.camera);
         self.model.show_presence(presence);
         if let Some(r) = &self.model.remote {
             let peers: Vec<(String, [f64; 3])> = r

@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–5 and 8 built — this record is not approved yet)
+  2026-11-18; phases 0–6 and 8 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -223,6 +223,29 @@ viewer. The desktop application joins file servers as before (protocol
 3, its messages unchanged); joining a network with a working set is
 phase 6. Measured on the 12 000-pylon synthetic country:
 [performance](../development/performance.md#synthetic-country-phase-5-the-server-on-the-database-2026-11-19).
+
+Built 2026-11-19 (phase 6, in active development; the
+[decision log](../development/decisions.md#2026-11-19-country-server-phase-6)):
+OHL-Design joins a network with a working set (File › Join a network):
+picked as whole routes (a list or the map), a station range, two
+structures or an area drawn on the map, shown as the server snaps it
+(every section with a span in a pick whole, with its structures), saved
+by name (only the picks, schema 3). Its replica is a project file of
+today's format holding the working set and, read-only, what solving each
+of its sections alone reads (the other sections and jumpers on its
+structures, its spacers' sections, the alignments within 500 m), what it
+refers to and its routes' alignments — its sections solve as on the whole
+line (tested, bit for bit); it is written from the server's rows (their
+JSON and places) and fed by **rows**, not operations (an operation may
+touch objects a part does not hold): after each change that may touch it
+the authority works the extent out again and sends what changed, came
+and went; a replica joining again sends a hash of each object it holds
+and gets what differs. A working set is on one model. Context tiles
+around the camera (5 × 5 at level 2, a cache of 64 MB) are drawn grey,
+a drawing. The packager reads each tile's part of the model instead of a
+copy of the whole line, and the context case is solved ahead while the
+server is idle. Measured:
+[performance](../development/performance.md#synthetic-country-phase-6-working-sets-and-context-2026-11-19).
 
 ### Computations on the working set and what touches it
 

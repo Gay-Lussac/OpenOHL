@@ -3809,6 +3809,7 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 | `part_users` | a part only (phase 8): the objects of the whole line using its structures that it does not hold, JSON `{structure: [User, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `working_sets` | only while a user has one (phase 8): the routes each user edits, JSON `{user: [route, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `stale_routes` | only while a route's results are out of date (phase 8): JSON `{route: Stale}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
+| `network.name`, `network.line`, `network.position`, `network.working_set` | a working set's replica only (phase 6, 2026-11-19): the network's name, the model, the stream's position it holds (JSON `{seq, step}`, moved by each rows taken), its picks (JSON `WorkingSetSpec`) ([below](#a-working-sets-replica-phase-6-2026-11-19)) |
 
 #### The applications' settings (`setting.<key>`)
 
@@ -3942,6 +3943,38 @@ the objects of the whole line using it that it does not hold (`ols_meta`
 `part_users`, below): the rules of shared towers are checked against
 them in the part (their own validation is not: the whole line's session
 has the last word).
+
+#### A working set's replica (phase 6, 2026-11-19)
+
+A desktop joining a network with a working set
+(`ohl_session::working_set`, [ADR-0013](../adr/0013-country-server.md);
+built, in active development, not approved yet) gets a project file of
+today's format (schema 6, no table or column added) holding a part of
+the model, written by `Session::write_replica` from the server's rows:
+
+- its objects **as the server holds them** — the JSON text and the place
+  (`ord`) of each — as one import entry (`Command::Put` with the server's
+  `ord`), so its order is the server's and an object taken later keeps
+  its place: the working set (`ols_meta` `part`, as above), its context
+  (what it refers to, all the way; the routes it is on with their
+  alignments and points; what those refer to), the model's settings
+  (`meta` objects) and its library files;
+- `part_users` (as above), and the network's keys: `network.name`,
+  `network.line` (the model's code), `network.position` (the stream's
+  position it holds, JSON `{seq, step}`), `network.working_set` (JSON
+  `{name?, model, picks: [Pick, …]}`; `Pick` is `{"pick": "route",
+  route}`, `{"pick": "stations", route, alignment?, from, to}`,
+  `{"pick": "structures", route, from, to}` or `{"pick": "area",
+  polygon: [[x, y], …]}`).
+
+It is fed by rows (`Rows {puts: [Row {kind, id, ord, value}], deletes:
+[[kind, id]], wanted?, users?}`), taken by `Session::take_rows` as one
+log entry of kind `network` in the replica, without cascade (the server
+validated them on the whole model); `wanted` and `users` rewrite `part`
+and `part_users`. A replica joining again says what it holds with a hash
+of each object's JSON (`object_hash`: 64-bit FNV-1a of the text serde
+writes) and gets only what differs. A program that does not know these
+keys opens the file as a part of a line.
 
 #### Towers shared by several routes (2026-11-18)
 
@@ -4387,11 +4420,12 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 and 5** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 2 (schema 1: phase 4's tables; schema 2: what the server
+network schema 3 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
-`oplog.lines`, `oplog.tiles`, `stream`). A country server keeps every model and model element of
+`oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
+sets — `working_set.line_id`, `working_set.picks`). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4516,7 +4550,13 @@ spatial        (line_id text REFERENCES line, branch text, kind text, id text,
                 PRIMARY KEY (line_id, branch, kind, id))
                -- INDEX on (line_id, branch, level, tx, ty); GiST on geom
 working_set    (owner text, name text, routes jsonb NOT NULL, time timestamptz NOT NULL,
-                PRIMARY KEY (owner, name))                   -- phase 6
+                line_id text REFERENCES line,                -- schema 3: the model
+                picks text NOT NULL DEFAULT '[]',            -- schema 3: the picks (JSON as
+                                                             -- text, [Pick, …]); routes: those
+                                                             -- of its extent when saved
+                PRIMARY KEY (owner, name))                   -- phase 6; a row of schema 2
+                                                             -- (no picks) reads as its routes
+                                                             -- picked whole
 stream         (seq bigint, step integer NOT NULL,           -- schema 2: the position
                 line_id text REFERENCES line,                -- the model acted on
                 branch text NOT NULL, user_name text NOT NULL,
@@ -4671,9 +4711,14 @@ alone (a network's messages sent to it get a notice).
 
 | Message | Fields | Meaning |
 |---|---|---|
-| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held` | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed |
+| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows` |
 | client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
 | client `catch` | `since` | every change of its interest after `since` |
+| client `pick` | `id`, `model`, `picks` | phase 6: the working set of `picks` worked out and snapped, answered with `extent` of the same id (nothing kept) |
+| client `set_working_set` | `spec` (`name`?, `model`, `picks`) | phase 6: a replica follows this working set from now on (on the same model): answered with `rows` (what came, what went) |
+| client `hold` | `objects` (`[kind, id, hash]`) | phase 6: a replica joining again (`join` with `working_set` and `held`) says what it holds: answered with `rows` (only what differs) |
+| client `save_working_set`, `delete_working_set`, `working_sets` | `spec` / `name` / — | phase 6: the user's saved working sets (answered with `working_sets`) |
+| client `route_detail` | `model`, `route` | phase 6: a route's structures with their stations (answered with `route_detail`) |
 | client `request_on` | `id`, `model`, `op`, `line` | an edit of a model (`request` acts on the model the client follows) |
 | server `network` | `name`, `crs`, `grid_size`, `tile_level`, `context_case`, `at`, `heartbeat_ms`, `bounds`, `models` (`code`, `name`, `structures`), `routes` (`id`, `model`, `name`, `bounds`) | what the network holds, after the welcome |
 | server `change` | `model`, `user`, `op`, `line`, `seq`, `first`, `at`, `tiles`, `routes` | an operation applied, to the clients whose interest it touches; a replica replays it numbering its log entries from `first` (`ohl_server::client::replay_change`) |
@@ -4681,6 +4726,10 @@ alone (a network's messages sent to it get a notice).
 | server `tiles_changed` | `tiles`, `at`, `reason` | a change too large to follow (more tiles than a setting, or a merge): read these tiles again |
 | server `heartbeat` | `at`, `last` | the stream's position and the last change sent to this client: a client that has not received `last` missed something |
 | server `catch_up` | `from`, `to`, `changes`, `incomplete` | the changes asked for, in order; `incomplete`: more than a catch-up carries (10 000 by default) — read again |
+| server `extent` | `id`, `model`, `result` (`Ok`: `routes` (`route`, `whole`, `alignment`, `from`, `to`, `first`, `last`, `structures`, `outline`), `structures`, `sections`, `jumpers`, `spacers`, `context`, `bounds`, `notes`; `Err`: why) | phase 6: a working set as the server snapped it |
+| server `rows` | `model`, `at`, `user`?, `what`?, `rows` (`puts`, `deletes`, `wanted`?, `users`?), `spec`? | phase 6: rows a working set's replica takes (after a change touching it — on its own queue before the change's broadcast, so before the answer to its own edit —, a working set changed, a replica joining again) |
+| server `working_sets` | `sets` (`spec`, `routes`, `time`) | phase 6: the user's saved working sets |
+| server `route_detail` | `model`, `result` (`Ok`: `route`, `name`, `alignments` (`id`, `name`, `length`), `structures` (`id`, `station`, `position`)) | phase 6: a route's structures in station order |
 
 ## What a plugin sees
 

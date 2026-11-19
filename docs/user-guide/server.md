@@ -106,10 +106,16 @@ database before it tells anyone.
   when someone's edit touched it. Moving around asks for the tiles
   around the new view (at most 96 at once). The header says "network of
   N lines (tiles)". Still a viewer.
-- **OHL-Design** cannot join a network's server yet: picking a working
-  set and seeing the rest as context is the next step (phase 6). Until
-  then it joins servers of a project file as before; a network's server
-  refuses it with that message.
+- **OHL-Design** joins a network with a **working set** (File › Join a
+  network…, phase 6, 2026-11-19): whole routes, a part of a route or an
+  area, snapped out to whole tension sections, kept on your computer as a
+  project file and fed by the server; the rest around the camera drawn as
+  read-only context — see [Working sets on a network](working-set.md).
+  File › Join a server… still joins servers of a project file; a
+  network's server refuses it, saying to join with a working set.
+- The server solves the context's wires ahead while it is idle (every
+  tile once after a start, then the tiles edits touched, one at a time;
+  `--no-idle-solve` turns it off).
 - Clients of **protocol 2** (OpenOHL before 2026-11-19) are refused by
   every server, with a message to update.
 - Users and roles are each line's own (as in its project file); the

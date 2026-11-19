@@ -244,6 +244,36 @@ pub(crate) struct JoinOptions {
     pub(crate) routes: Vec<String>,
     /// Network: the tiles it views.
     pub(crate) tiles: Vec<crate::HeldTile>,
+    /// Network, phase 6: the working set it follows as a partial replica.
+    pub(crate) working_set: Option<ohl_session::working_set::WorkingSetSpec>,
+}
+
+/// Network, phase 6: what a client asks about working sets.
+#[derive(Debug, Clone)]
+#[cfg_attr(not(feature = "network"), allow(dead_code))]
+pub(crate) enum NetAsk {
+    Pick {
+        id: u64,
+        model: String,
+        picks: Vec<ohl_session::working_set::Pick>,
+    },
+    Set {
+        spec: ohl_session::working_set::WorkingSetSpec,
+    },
+    Hold {
+        objects: Vec<(ohl_session::Kind, String, u64)>,
+    },
+    Save {
+        spec: ohl_session::working_set::WorkingSetSpec,
+    },
+    Delete {
+        name: String,
+    },
+    List,
+    RouteDetail {
+        model: String,
+        route: String,
+    },
 }
 
 #[cfg_attr(not(feature = "network"), allow(dead_code))]
@@ -301,6 +331,14 @@ pub(crate) enum Job {
     Catch {
         client: u64,
         since: crate::Position,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Network, phase 6: a question about working sets (answered on the
+    /// client's own queue).
+    Net {
+        client: u64,
+        user: String,
+        ask: NetAsk,
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// Network: a tile package built by a packager.
@@ -883,7 +921,7 @@ impl Host for Authority {
             Job::Scene { have, reply } => {
                 let _ = reply.send(self.guarded("the scene", |a| a.scene(have)));
             }
-            Job::Interest { reply, .. } | Job::Catch { reply, .. } => {
+            Job::Interest { reply, .. } | Job::Catch { reply, .. } | Job::Net { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
             #[cfg(feature = "network")]
@@ -1511,17 +1549,19 @@ async fn connection(
             routes,
             tiles,
             held,
+            working_set,
         }) => (
             protocol,
             user,
             code,
             JoinOptions {
-                copy: model.is_some() && !held,
+                copy: (model.is_some() || working_set.is_some()) && !held,
                 web: false,
                 model,
                 since,
                 routes,
                 tiles,
+                working_set,
             },
         ),
         _ => return Err("no hello".into()),
@@ -1738,6 +1778,38 @@ pub(crate) async fn dispatch(
             op,
             line,
         } => request(jobs, client, user, id, op, line, Some(model)).await?,
+        ClientMsg::Pick { .. }
+        | ClientMsg::SetWorkingSet { .. }
+        | ClientMsg::Hold { .. }
+        | ClientMsg::SaveWorkingSet { .. }
+        | ClientMsg::DeleteWorkingSet { .. }
+        | ClientMsg::WorkingSets
+        | ClientMsg::RouteDetail { .. }
+            if !pace.interest.take() =>
+        {
+            Some(ServerMsg::Notice {
+                text: "too many working set requests: slow down".into(),
+            })
+        }
+        ClientMsg::Pick { id, model, picks } => {
+            net_ask(jobs, client, user, NetAsk::Pick { id, model, picks }).await?
+        }
+        ClientMsg::SetWorkingSet { spec } => {
+            net_ask(jobs, client, user, NetAsk::Set { spec }).await?
+        }
+        ClientMsg::Hold { objects } => {
+            net_ask(jobs, client, user, NetAsk::Hold { objects }).await?
+        }
+        ClientMsg::SaveWorkingSet { spec } => {
+            net_ask(jobs, client, user, NetAsk::Save { spec }).await?
+        }
+        ClientMsg::DeleteWorkingSet { name } => {
+            net_ask(jobs, client, user, NetAsk::Delete { name }).await?
+        }
+        ClientMsg::WorkingSets => net_ask(jobs, client, user, NetAsk::List).await?,
+        ClientMsg::RouteDetail { model, route } => {
+            net_ask(jobs, client, user, NetAsk::RouteDetail { model, route }).await?
+        }
         ClientMsg::Request { id, op, line } => {
             request(jobs, client, user, id, op, line, None).await?
         }
@@ -1774,6 +1846,29 @@ pub(crate) async fn dispatch(
             None
         }
     })
+}
+
+/// A question about working sets to the authority (its answer comes on
+/// the client's own queue); the refusal to tell the client, if refused.
+async fn net_ask(
+    jobs: &std_mpsc::Sender<Job>,
+    client: u64,
+    user: &str,
+    ask: NetAsk,
+) -> Result<Option<ServerMsg>, String> {
+    let (tx, rx) = oneshot::channel();
+    jobs.send(Job::Net {
+        client,
+        user: user.to_owned(),
+        ask,
+        reply: tx,
+    })
+    .map_err(|_| "server stopped")?;
+    Ok(rx
+        .await
+        .map_err(|_| "server stopped")?
+        .err()
+        .map(|text| ServerMsg::Notice { text }))
 }
 
 /// An edit to the authority; the refusal to tell the client, if refused.

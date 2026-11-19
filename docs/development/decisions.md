@@ -104,6 +104,131 @@ the same day, in active development, not approved yet;
   detail 49.7 % → 47.9 %; the estimated eccentricities' upper bounds
   24.3 % → 22.0 % of the ends ([theory](../theory/joint-layout.md#measured-j2b-the-bent-plate-2026-11-19)).
 
+## 2026-11-19 (country server, phase 6)
+
+**OHL-Design on a network: working sets picked and snapped, a partial
+replica fed by rows, context tiles around the camera; the idle solve of
+the context case; no whole-line copy in the packager** (the owner's order
+of 2026-11-19, item 6; built, in active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md),
+[user guide](../user-guide/working-set.md),
+[data model](data-model.md#a-working-sets-replica-phase-6-2026-11-19),
+[running it and its tests](postgresql.md),
+[measured](performance.md#synthetic-country-phase-6-working-sets-and-context-2026-11-19)).
+
+- **Picking** (owner, 2026-11-16): whole routes (a list or the map), a
+  station range along a route's first alignment, from one structure to
+  another, or an area drawn on the map (a polygon). **Snapped out to
+  whole tension sections**: every section with a span in a pick (or its
+  structure in the area, or a span crossing it) comes whole, with the
+  structures it hangs on, the jumpers on them or tapped on its spans, its
+  spacers and the alignment points tied to its structures; a whole route
+  takes every object of the route. Shown before it is confirmed (the
+  server's extent: counts, the stations really covered, an outline on
+  the map, notes); saved by name.
+- **Decided here (conservative)**: other sections on the working set's
+  structures with no span in a pick (circuits straining elsewhere) are
+  **not in the working set** — taken again and again, they grew a third
+  of a route to the whole route on the synthetic country (720 sections
+  added) — but **come as context**, read-only: the replica holds what
+  solving each of its sections alone reads (the other sections and
+  jumpers on its structures, its spacers' sections, the alignments within
+  500 m: the tile packager's sub-line), so its sections solve as on the
+  whole line (tested, bit for bit) and each of its structures carries all
+  its wires. A part of a route also brings its routes' alignments and
+  their points (the stations need them), and so the structures tied to
+  them, as context.
+- **Decided here (conservative)**: **a working set is on one model**
+  (line): the desktop holds one project; a route of another line is
+  refused, saying to open that line's own working set.
+- **Saved working sets** keep the picks only (network schema 3:
+  `working_set.line_id`, `working_set.picks`, JSON as text); the extent is
+  worked out again when one is opened, on the model as it is then. A row
+  of schema 2 (routes, no picks) reads as its routes picked whole.
+- **The replica** is a project file of today's format (no table or
+  column added): the server's rows as it holds them (the JSON text and
+  the place of each), the working set (`part`) and its structures' users
+  outside it (`part_users`) as phase 3 and 8 wrote them, and the
+  network's keys (`network.name`, `network.line`, `network.position`,
+  `network.working_set`). The authority takes the rows between two
+  commands (the extent's objects only) and a thread writes the file.
+- **Fed by rows, not operations**: an operation may touch objects a part
+  does not hold (its validation needs the whole line), so after each
+  change that may touch a working set — its routes, an object its replica
+  holds, or any change when it picked an area — the authority works the
+  extent out again and sends what changed in it, came into it and left
+  it, on the client's own queue before the change's broadcast (the rows
+  of a user's own edit arrive before its answer). A change that does not
+  say which objects it changed (a library file saved or removed, a merge,
+  a line rolled back) sends the rows that differ from what the replica
+  holds (the server keeps a hash of each object it sent). The replica takes them
+  as one entry of kind `network`, without cascade (the server validated
+  them on the whole model).
+- **Joining again** sends what the replica holds, each object with a
+  hash of its JSON (64-bit FNV-1a), and gets only what differs — whatever
+  happened meanwhile, with or without a log entry. **Decided here**: a
+  64-bit hash (a collision would leave one object unsent: about n²/2⁶⁵
+  for n objects); a question for the owner below.
+- **Edits** of a working set go to the server on its model (the whole
+  model validates them, shared towers' rules included); the part's own
+  refusals (no change of the context, no deletion in a part) apply to a
+  part edited alone, not to the rows.
+- **Context tiles** around the 3D view's target: 5 × 5 tiles of level 2
+  (about 5 km across), a cache of 64 MB (least recently used first, never
+  a tile in view), asked again when a change touched them; drawn grey in
+  3D and the plan on a layer of their own ("Context (network, a
+  drawing)"), the replica's own objects not drawn again; labelled a
+  drawing in the context case — never a result, never in a table, never
+  used by a check (2026-11-19). "Add this route" lists the routes of the
+  same line, those in view marked.
+- **The idle solve** (2026-11-19: the context case solved ahead when the
+  server is idle, low priority, memory bounded): while no client's job
+  came for 0.5 s and no tile a client asked for is being made, the next
+  tile not kept at its revision is made — one at a time, so a client's
+  tile waits for one at most; every tile once after a start, then the
+  tiles changes touched. Its packages are kept only while the packages
+  take less than half their bound (it never pushes out what clients asked
+  for); it stops when the shapes reach nine tenths of theirs.
+  `--no-idle-solve` turns it off. Measured: all 26 543 tiles of the
+  synthetic country in 60 s, 78 MB of shapes, the server 1 252 →
+  1 442 MB.
+- **No whole-line copy in the packager**: the authority gives each tile
+  the part of each model's line it reads (`Session::drawing_part`: the
+  tile's objects and each of its sections' sub-line), the packager
+  resolves only that; each section's sub-line is the whole line's, bit
+  for bit (tested on the example lines and a 300-pylon country by tile).
+  The part files of phase 3 no longer clone the whole line either
+  (`Line::settings_only`).
+- **Protocol 3**, messages added (additive; nothing of protocol 3 with
+  working sets was released): `pick`/`extent`, `set_working_set`,
+  `hold`, `save_working_set`/`delete_working_set`/`working_sets`,
+  `route_detail`, `rows`; `join` gains `working_set`. Working-set
+  requests share the interest pace (4 a second, 8 at once).
+- **Not yet**: checks on a working set run on what it holds and pull no
+  neighbours in (other lines' wires within a clearance's reach, the field
+  distance: phase 10) — said in the Working set window and the user
+  guide; rights (phase 7); the extent worked out again per change costs
+  the size of the model (10 ms for a line of 145 structures; on the
+  country as one model, the country) — an index of objects by route
+  next; the replica's import entry holds every object twice (see the
+  questions).
+
+> **Owner:** (to answer, 2026-11-19; the recommendation after the arrow)
+> 1. Other sections on a working set's structures with no span in it:
+> context, read-only (as built), or members of the working set (a part
+> of a route then grows, on the synthetic country to the whole route)?
+> → context. 2. A working set on one line only, or across lines (several
+> replicas side by side in OHL-Design)? → one line until branches over
+> working sets (phase 11). 3. Joining again by a 64-bit hash of each
+> object, or SHA-256 (a little slower, no practical collision)? →
+> SHA-256 if you want certainty; the 64-bit one is kept until you say.
+> 4. Protocol 3 with messages added, or protocol 4? → 3 (nothing
+> released). 5. The context's reach: 5 × 5 tiles (about 5 km) and a cache
+> of 64 MB? → as built, a setting later. 6. A replica's import entry
+> holds every object again (3.5 MB for a route whose line's copy is
+> 2.6 MB): write it with an empty command, as the network's import does
+> (a change of how the session writes an import)? → yes.
+
 ## 2026-11-19 (estimated eccentricities at level 3)
 
 **O45 A1–A3, the joints' eccentricities set automatically** (step 4 of

@@ -22,6 +22,10 @@
 
 use std::collections::BTreeSet;
 
+use ohl_core::grid::Bounds;
+use ohl_line::index::Of;
+use ohl_line::{JumperEnd, Line, Tap};
+
 use ohl_line::index::Target;
 
 use crate::in_place::{kind_of, of_kind};
@@ -91,4 +95,213 @@ impl Session {
         out.dedup();
         out
     }
+
+    /// The part of the line worked on that drawing a tile reads (country
+    /// server, phase 6: the tile packager's input instead of a copy of the
+    /// whole line): the line's settings and, in the line's order,
+    ///
+    /// - `structures` and `alignments` (with their points and routes);
+    /// - for each of `sections`, what solving it alone reads (the
+    ///   packager's sub-line): its structures; every section and jumper at
+    ///   them (a jumper tapped on a span of a section there too, with what
+    ///   its taps lead to); its spacers and the sections they join; the
+    ///   structures of every section kept; the alignments whose points'
+    ///   bounds come within `near` of those structures, with their points
+    ///   and routes; the structures' own routes.
+    ///
+    /// Taken from the session's line by its reference index: it costs what
+    /// the tile holds, not the size of the line. A section's sub-line made
+    /// from it is the one made from the whole line (tested in the
+    /// packager, bit for bit).
+    pub fn drawing_part(
+        &mut self,
+        structures: &[String],
+        sections: &[String],
+        alignments: &[String],
+        near: f64,
+    ) -> Line {
+        self.line_index();
+        let index = self.index.as_ref().expect("made above");
+        let line = &self.line;
+        let keep = solve_reads(line, index, structures, sections, alignments, near);
+        let mut out = line.settings_only();
+        out.alignment = line.alignment.clone();
+        let places = |of: Of| -> Vec<usize> {
+            let mut v: Vec<usize> = keep
+                .iter()
+                .filter(|(k, _)| *k == of)
+                .filter_map(|(_, id)| index.position(of, id))
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        out.routes = places(Of::Route)
+            .into_iter()
+            .map(|k| line.routes[k].clone())
+            .collect();
+        out.alignments = places(Of::Alignment)
+            .into_iter()
+            .map(|k| line.alignments[k].clone())
+            .collect();
+        out.alignment_points = places(Of::AlignmentPoint)
+            .into_iter()
+            .map(|k| line.alignment_points[k].clone())
+            .collect();
+        out.structures = places(Of::Structure)
+            .into_iter()
+            .map(|k| line.structures[k].clone())
+            .collect();
+        out.sections = places(Of::Section)
+            .into_iter()
+            .map(|k| line.sections[k].clone())
+            .collect();
+        out.jumpers = places(Of::Jumper)
+            .into_iter()
+            .map(|k| line.jumpers[k].clone())
+            .collect();
+        out.spacers = places(Of::Spacer)
+            .into_iter()
+            .map(|k| line.spacers[k].clone())
+            .collect();
+        out
+    }
+
+    /// Whether a structure of the line worked on has a type (its drawing
+    /// then needs the structure libraries).
+    pub fn any_typed(&self) -> bool {
+        self.line
+            .structures
+            .iter()
+            .any(|s| s.structure_type.is_some())
+    }
+}
+
+/// How far around a section the alignments are read when it is solved
+/// alone, m: the line's direction at the section is read from the nearest
+/// one, and a span point placed by station from its route (the tile
+/// packager's sub-line, a working set's context).
+pub const SOLVE_NEAR: f64 = 500.0;
+
+/// What solving each of `sections` alone reads in `line` (and
+/// `structures`, `alignments` with their points and routes): its
+/// structures; every section and jumper at them (a jumper tapped on a span
+/// of a section there too, with what its taps lead to); its spacers and
+/// the sections they join; the structures of every section kept; the
+/// alignments whose points' bounds come within `near` of those
+/// structures, with their points and routes; the structures' own routes.
+pub(crate) fn solve_reads(
+    line: &Line,
+    index: &ohl_line::index::LineIndex,
+    structures: &[String],
+    sections: &[String],
+    alignments: &[String],
+    near: f64,
+) -> BTreeSet<(Of, String)> {
+    let mut keep: BTreeSet<(Of, String)> = BTreeSet::new();
+    for id in structures {
+        keep.insert((Of::Structure, id.clone()));
+    }
+    let mut aligned: BTreeSet<String> = alignments.iter().cloned().collect();
+    // The alignments' bounds, by place (their points found in the line).
+    let bounds: Vec<Option<Bounds>> = line
+        .alignments
+        .iter()
+        .map(|a| {
+            Bounds::of_points(
+                a.points
+                    .iter()
+                    .filter_map(|p| index.alignment_point(line, p).map(|p| &p.position)),
+            )
+        })
+        .collect();
+    for id in sections {
+        let Some(s) = index.section(line, id) else {
+            continue;
+        };
+        let mut secs: BTreeSet<String> = [id.clone()].into();
+        let mut at: BTreeSet<String> = BTreeSet::new();
+        for p in &s.points {
+            at.insert(p.structure.clone());
+        }
+        let mut jumpers: BTreeSet<String> = BTreeSet::new();
+        for t in &at {
+            secs.extend(index.referrers_of(Of::Structure, t, Of::Section).cloned());
+            jumpers.extend(index.referrers_of(Of::Structure, t, Of::Jumper).cloned());
+        }
+        for x in &secs {
+            jumpers.extend(index.referrers_of(Of::Section, x, Of::Jumper).cloned());
+        }
+        for x in index.referrers_of(Of::Section, id, Of::Spacer) {
+            keep.insert((Of::Spacer, x.clone()));
+            if let Some(k) = index.position(Of::Spacer, x) {
+                let sp = &line.spacers[k];
+                secs.insert(sp.a.section.clone());
+                secs.insert(sp.b.section.clone());
+            }
+        }
+        // Jumpers with what their taps lead to (sections, jumpers).
+        let mut todo: Vec<String> = jumpers.iter().cloned().collect();
+        while let Some(j) = todo.pop() {
+            let Some(jp) = index.jumper(line, &j) else {
+                continue;
+            };
+            keep.insert((Of::Jumper, j.clone()));
+            for end in [&jp.from, &jp.to] {
+                match end {
+                    JumperEnd::Tap { tap: Tap::Span(r) } => {
+                        keep.insert((Of::Section, r.section.clone()));
+                    }
+                    JumperEnd::Tap {
+                        tap: Tap::Jumper { jumper, .. },
+                    } => {
+                        if !keep.contains(&(Of::Jumper, jumper.clone())) {
+                            todo.push(jumper.clone());
+                        }
+                    }
+                    JumperEnd::Wire(_) => {}
+                }
+            }
+        }
+        for x in &secs {
+            keep.insert((Of::Section, x.clone()));
+            if let Some(sx) = index.section(line, x) {
+                for p in &sx.points {
+                    at.insert(p.structure.clone());
+                }
+            }
+        }
+        let near_box = Bounds::of_points(
+            at.iter()
+                .filter_map(|t| index.structure(line, t).map(|s| &s.position)),
+        )
+        .map(|b| b.grown(near));
+        for t in at {
+            if let Some(st) = index.structure(line, &t) {
+                for r in &st.routes {
+                    keep.insert((Of::Route, r.clone()));
+                }
+            }
+            keep.insert((Of::Structure, t));
+        }
+        if let Some(near_box) = near_box {
+            for (k, b) in bounds.iter().enumerate() {
+                if b.is_some_and(|b| b.intersects(&near_box)) {
+                    aligned.insert(line.alignments[k].id.clone());
+                }
+            }
+        }
+    }
+    for a in &aligned {
+        let Some(k) = index.position(Of::Alignment, a) else {
+            continue;
+        };
+        let al = &line.alignments[k];
+        keep.insert((Of::Alignment, a.clone()));
+        keep.insert((Of::Route, al.route.clone()));
+        for p in &al.points {
+            keep.insert((Of::AlignmentPoint, p.clone()));
+        }
+    }
+    keep
 }
