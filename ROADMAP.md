@@ -57,7 +57,8 @@ from here. The owner's order of 2026-11-19:
 4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically);
    built 2026-11-19, in active development, not approved yet — off by
    default, the owner's questions under O45).
-5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
+5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout);
+   J3–J4 built 2026-11-19, in active development, not approved yet).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server)).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
@@ -2571,6 +2572,14 @@ net); the server's sub-line test 5.9 s → 0.7 s with O42's lookups.
    without testing less.
 4. Every test of the server, the store, the session and the command line
    timed before and after (performance.md). No test removed or weakened.
+5. (2026-11-19, with O44 J3–J4) OHL-Structure's quantities panel test
+   (`quantities_ui_tests::the_panel_counts_says_and_keeps_the_factor`)
+   failed now and then under load with "max_steps exceeded": the panel's
+   and the 3D view's background threads each ask for a frame when done,
+   which arrived in the middle of a run of frames. It now waits for them
+   (their answers taken, two frames in a row) before running to rest,
+   with a few more frames allowed for the menu's own run; what it checks
+   unchanged. Built, in active development, not approved yet.
 
 ### O47. Version management, left from the work plan of 2026-11-10
 - Merge plans made in the engine: the app rebuilds the plans for a

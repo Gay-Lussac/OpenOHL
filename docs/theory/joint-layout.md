@@ -148,9 +148,11 @@ it is laid out onto, as detailed.
 it bolts onto (more than 5°) is turned by the layout only when
 
 1. one roll lays it flat at all its ends — those at joints not laid out
-   in this run too: the turns that make each end flat lie within 5° of
-   each other (a turn and a half turn more lay a leg flat alike); the
-   middle of them is taken, so a turn never spoils an end that was flat;
+   in this run too (**one roll for the whole member**, J3 below): the
+   turns that make each end flat lie within 5° of each other (a turn and
+   a half turn more lay a leg flat alike; an equal-leg angle's other leg a
+   quarter turn more); the middle of them is taken, so a turn never spoils
+   an end that was flat;
 2. no end of it at a joint not laid out in this run is laid out with its
    roll now (that joint would change unasked);
 3. at least one of its joints is laid out **with** the turn (the member
@@ -172,6 +174,74 @@ the joints the run did not lay out). A roll the layout set before is
 taken back — the member's roll as it was — when none of its joints is
 laid out with it any more (both its joints left for a hand detail). A
 roll set by Orient angles on a leg or chord is kept (the tower's shape).
+
+### One roll for the whole member (J3)
+
+(Owner, 2026-11-19: "each angle's turn chosen for the whole member", then
+the same day "you can do 90 degrees turn or more if necessary also start
+with aligning the main legs then diagonals and finally secondary braces
+with redundant members being last"; built the same day, in active
+development, not approved yet. The code: `ohl_structure_link::whole_roll`,
+`layout_run`.) An angle's roll is one value for the member: its two ends
+cannot be laid flat each on its own. The turn is chosen from **both ends'
+needs together**:
+
+- **Each end's turns.** At each end, the turn that lays its leg bolted
+  flat on the flange it bolts onto, and that turn and a half turn more
+  (the same leg on the flange, its outstanding leg the other way). For an
+  **equal-leg angle** whose leg bolted is not given as both legs, a
+  quarter turn more as well: its *other* leg then lies on the flange — so
+  **the leg bolted may change between its ends**, as it does on towers
+  where a member runs from a horizontal flange to an upright one (a hip
+  or plan member, a crossarm's bracing). Both legs of an equal-leg angle
+  are alike for its check (one leg bolted, the eccentricity gauge to
+  centroid), so nothing in the checks changes with it. An unequal angle's
+  leg bolted is its design data (the long or short leg in its check):
+  never changed by a quarter turn.
+- **Within 5° of each other.** A turn of every end, those lying within
+  5° of each other (each end then within 2.5° of flat after the middle of
+  them is taken; `FLAT_OFF` — **an assumption of the tool**, not a
+  standard's: a leg bolted within 5° of its face is drawn and checked as
+  flat on it, the bolts pulling it flat), as before J3. **Tried and left
+  out** (measured on the private real towers, 2026-11-19): taking a turn
+  that leaves every end within the whole 5° of flat — the ends' turns up
+  to 10° apart, an end out of its face's plane counted with it — laid out
+  slightly *fewer* member ends (on ten of the towers 16 319 against
+  16 336): the ends then lie up to 5° off and run into more after
+  writing, and most members whose ends need turns 5° to 10° apart have an
+  end whose axis runs out of the flange's plane besides.
+- **Any turn, the smallest that does it** (owner: "90 degrees turn or more
+  if necessary"): the same legs at both ends first (so a member laid flat
+  that way before keeps its turn), the leg changing only where that alone
+  serves both ends; of several such turns the smallest. Else **not
+  turned** — never forced — and said with both ends' turns ("… by
+  different turns (one roll for the whole member: the turn would spoil
+  the other end, whichever leg is bolted): not turned"); its ends left
+  off their flange go to step 4's welded plate or a hand detail, as
+  before.
+- **Class by class** (the owner's order): the **legs and chords** are not
+  turned to suit what bolts onto them — their roll is the tower's shape
+  (Orient angles: heel out, flanges in the faces); then the
+  **diagonals** (bracing, class `bracing` or `crossing`, not lying
+  horizontal); then the **secondary bracing** — horizontals, plan and hip
+  members (bracing lying horizontal within 5°, or a plan member as Orient
+  angles turned it) and the members of **no known class** (said: "no
+  class given: turned with the secondary bracing"); the **redundants**
+  last. Each class's turns are found with the classes before it turned
+  (the joints worked out again in detail between classes), so a
+  horizontal's turn fits the diagonals as they will be. The same order
+  ranks a plane's ends in the search (below) and the planes, and which of
+  two members in one clash is left first (the later class).
+- **Kept as before**: a roll given by hand (unless *Replace values given
+  by hand*), a member joined as one part, a member laid out elsewhere
+  with its roll now; the turn made only where it helps (rule 3 above).
+- **Orient angles agrees**: it keeps a plan or face member's roll the
+  layout chose for both its ends (the record's `rolled`; listed in its
+  window, *Rolls the joint layout chose for both ends kept*), and the
+  layout starts from Orient angles' roll and departs from it only where
+  the ends need it — a run of either after the other changes nothing.
+  The **estimated eccentricities** (O45) plan with the same choice (the
+  layout's planner run relaxed).
 
 ## Concentric first
 
@@ -213,8 +283,9 @@ leg bolted, from where its steel stops outwards — and is pulled back
 - the flange's heel (the corner of the angle it lies on; on an inner
   face, also the angle's other leg and root, by half the gap);
 - the strips of the ends placed before it, each widened by half the gap
-  (bracing before redundants, then the wider leg, the larger angle to what
-  it bolts onto, the id): the least cut is the farthest point, along this
+  (in the owner's order of the classes — diagonals, secondary bracing,
+  redundants, [J3](#one-roll-for-the-whole-member-j3) —, then the wider
+  leg, the larger angle to what it bolts onto, the id): the least cut is the farthest point, along this
   end, of the region where the widened strips overlap (an exact
   intersection of half-strips, clipped as convex polygons);
 - the bolts already on that face that are not laid out (a leg's splice
@@ -250,8 +321,9 @@ in the owner's order, and one that did not fit was left — though the
 others pulled back could have made room for it. Now each joint is
 **searched**:
 
-1. **The planes on the biggest members first** (on a leg, then on the
-   bracing, then on the redundants; then by the member's id): what bolts
+1. **The planes on the biggest members first** (on a leg, then on a
+   diagonal, on the secondary bracing, on a redundant — the owner's order
+   of the classes, 2026-11-19; then by the member's id): what bolts
    onto a member laid out on a leg keeps clear of that member as laid out —
    its steel as a box from its cut to half its length, its outstanding leg
    as high as it is wide, its bolts' heads, a plate under it as the hull of
@@ -263,8 +335,8 @@ others pulled back could have made room for it. Now each joint is
    sideways shift that fits ([above](#moved-sideways-the-shift)) —; an end
    that fits nowhere now fits nowhere later (each end placed only adds what
    the others keep clear of), so it is left; each end that fits is placed
-   in turn, **in the owner's order** (class, the wider leg, the larger
-   angle, the id), and the rest searched again (backtracking). A placing
+   in turn, **in the owner's order** (the class — diagonals, secondary
+   bracing, redundants —, the wider leg, the larger angle, the id), and the rest searched again (backtracking). A placing
    already reached in another order is not searched again.
 3. **The best**: the most ends placed; then the least eccentricity (the
    moves off concentric, summed); then the first found. The first found
@@ -601,11 +673,62 @@ them (since 2026-11-18; before, the whole joint was left) — since
 2026-11-19 (J1) after being pulled back past the clash up to three times
 first ([the search](#the-search-per-joint-j1), point 5). Of two parts
 laid out in one clash, the member is left before the members of a plate,
-then the redundant before the bracing, then the larger id. After six
+then the later class in the owner's order before the earlier (a
+redundant before the secondary bracing before a diagonal), then the
+larger id. After six
 such rounds a joint still clashing is left whole, as it was. Nothing is
 forced: what is written runs into nothing but the members left for a
 hand detail whose place is not kept free (whose clashes are said with
 them; [J2](#members-left-for-a-hand-detail-keep-their-place-j2)).
+
+## Laid out once, applied to the joints like it (J4)
+
+(Owner, 2026-11-19: "lay out once, apply to the joints like it"; built the
+same day, in active development, not approved yet. The code:
+`ohl_structure_link::joint_kinds`, `apply_detail`.) A lattice tower
+repeats its joints: its symmetry (mirror planes, quarter turns about its
+axis) and its repeated panels.
+
+- **Joints of one kind.** Two joints are of one kind when one of the
+  eight rigid maps keeping the vertical — the identity, the quarter, half
+  and three-quarter turns about the vertical, the mirrors in the two
+  vertical planes of the axes and in the two diagonal ones —, with the
+  move from one joint to the other, carries every member end of the one
+  onto a member end of the other: the same **direction** (within 0.002 as
+  the length of the difference of the unit vectors, about a tenth of a
+  degree), the same **length** (within 2 mm), the same **cross-section
+  turned alike** (its outline where it is, within 2 mm — so the rolls
+  match), the same **class**. For the layout's run, also what the planner
+  reads of each end: its bolts, its leg bolted, what it bolts onto (the
+  matched member), where it sits, running on as one part, a cut or shift
+  given, its bolts where they are; and no plate or splice at either joint.
+  **The tolerances are the tool's, not a standard's** (a drawing's
+  rounding). A tower's axis is taken vertical; the maps are about each
+  joint's own work point, so the tower's centre need not be known.
+  Deterministic: the joints in the file's order, the first of a kind its
+  representative, the maps tried in a fixed order.
+- **In a run.** One joint of each kind is planned; the others take its
+  plan, mapped: the members said as theirs, the plates' outlines, heel
+  lines, seams and bend lines moved, mirrored or turned there; the lengths
+  as they are (a cut, a shift towards what the end bolts onto, a gauge's
+  distance, a bolt along and across a leg: the same on a mirrored or turned
+  joint). Every joint is then written and **checked for clashes in its own
+  place**, as before; where a copy runs into anything its members are
+  pulled back and the joint **planned on its own** (the clash rounds, as
+  for any joint) — never forced. **An assumption of the tool**: the code's
+  edge distances are taken alike for ends of one section, class and bolts
+  (they are worked out per member from its code rules; the same rules
+  give the same distances).
+- **The command** *Apply this joint's detail to similar joints*
+  ([user guide](../user-guide/joint-layout.md#apply-this-joints-detail-to-similar-joints))
+  copies a joint's detail as it is in the file — laid out or detailed by
+  hand — onto the joints of its kind (matched by their members only): its
+  connections and plates replace theirs, mapped as above, the layout's
+  record following (automatic stays automatic, given by hand stays the
+  user's, a hand detail's words said with that joint's members). Each copy
+  is checked for clashes in its own place: a joint where the copy runs
+  into more than the source does is left as it was, said; a splice is not
+  copied (by hand). One undo step.
 
 ## The clash check
 

@@ -8,6 +8,58 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (joint layout: one roll per member, laid out once per kind)
+
+**O44 J3 and J4** (owner 2026-11-19, step 5 of the order; built the same
+day, in active development, not approved yet;
+[theory](../theory/joint-layout.md#one-roll-for-the-whole-member-j3),
+[user guide](../user-guide/joint-layout.md)):
+
+- **The owner's order of the classes** (owner 2026-11-19: "You can do 90
+  degrees turn or more if necessary also start with aligning the main
+  legs then diagonals and finally secondary braces with redundant members
+  being last"): the layout turns the members class by class — the legs
+  and chords are never turned to suit what bolts onto them (their roll is
+  the tower's shape, Orient angles), then the diagonals, then the
+  secondary bracing (horizontals, plan and hip members; a member of no
+  class with them, said), the redundants last — each class's turns found
+  with the classes before already turned. Any turn where it is needed,
+  the smallest that lays the member's ends flat; a roll given by hand
+  kept unless *Replace values given by hand*. The same order ranks the
+  ends of a plane and the planes in J1's search (before: by class leg,
+  bracing, redundant, then the bigger member — the diagonals and the
+  horizontals, both `bracing`, by size): the owner's order used, both
+  measured (below).
+- **One roll for the whole member** (J3): the turn chosen from both ends'
+  needs together; an equal-leg angle's leg bolted may change between its
+  ends (a quarter turn more lays its other leg flat — as a member running
+  from a horizontal flange to an upright one is built; the two legs are
+  alike for its check); an unequal angle's never. Never forced: where no
+  roll serves both ends, not turned and said. **Tried and left out**: a
+  turn leaving every end within the whole 5° flatness allowed (the ends'
+  turns up to 10° apart instead of 5°) laid out slightly fewer ends.
+- **Orient angles and the layout agree**: Orient angles keeps a plan or
+  face member's roll the layout chose for both its ends; the layout starts
+  from Orient angles' roll. The estimated eccentricities (O45) plan with
+  the same choice.
+- **Laid out once per kind** (J4): joints alike by the tower's symmetry
+  (the eight rigid maps keeping the vertical) or a repeated panel —
+  matched geometrically with the tool's tolerance (a tenth of a degree, 2
+  mm) on the members, sections, rolls, classes and what the planner reads
+  (bolts, what they bolt onto) — are planned once, the plan mapped onto
+  the others, each checked for clashes in its own place and planned on
+  its own where it fails there. No format change.
+- **Apply this joint's detail to similar joints** (J4): a command in Joint
+  details (a tool window: a preview of the joints it changes, one undo
+  step) copies a joint's connections and plates — laid out or detailed by
+  hand — mirrored or turned onto the joints of its kind, the layout's
+  record following; a copy that would run into more than the source in its
+  place is left, said; a splice is not copied.
+- **The quantities panel's test** (O46): it waits for the panel's and the
+  view's background threads before stepping (they ask for a frame when
+  done, which under load ran a step past its frames: "max_steps
+  exceeded"); what it checks unchanged.
+
 ## 2026-11-19 (joint layout: the bent plate)
 
 **O44 J2b, the bent plate** (the owner's example joint of a gusset plate

@@ -960,6 +960,12 @@ out. Each change is one undo step.
   **stops**, its **shift** (+ towards what it bolts onto, so the same on
   a mirror joint) and its rolled edge — before, those fell back to
   worked out on the copies.
+- **Apply this joint's detail to similar joints…** (2026-11-19): the
+  joints like it by the tower's symmetry and repeated panels (matched by
+  where their members are, turned alike), its connections **and plates**
+  — outlines and bend lines placed there — copied mirrored or turned, a
+  preview of which joints it changes first, one undo step
+  ([Apply this joint's detail to similar joints](joint-layout.md#apply-this-joints-detail-to-similar-joints)).
 - **+ Plate** (2026-11-03): a gusset plate at the joint, on the joint's
   leg (10 mm to start: type its thickness); a joint may have several.
   The plates table gives each one's **Welded to** (a menu with a box per
