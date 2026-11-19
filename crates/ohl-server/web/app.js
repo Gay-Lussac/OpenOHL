@@ -179,6 +179,7 @@
       }
       state.role = null;
       state.network = null;
+      state.heightSet = false;
       state.tiles.clear();
       state.dirty.clear();
     };
@@ -428,6 +429,12 @@
     state.sceneTimer = setTimeout(() => {
       state.sceneTimer = 0;
       state.scene = sceneOfTiles();
+      // The camera at the height of the first structures seen.
+      const first = state.scene.line.structures[0];
+      if (first && !state.heightSet) {
+        state.cam.target[2] = first.position[2] - state.origin[2];
+        state.heightSet = true;
+      }
       prepare(false);
       showNotes();
       showSelection();

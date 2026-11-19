@@ -516,6 +516,83 @@ impl Feed {
 mod tests {
     use super::*;
 
+    /// A client's view passes on what touches its interest: its model
+    /// whole, its routes, its tiles; a large change as "read again" (only
+    /// its own tiles) to a client viewing tiles only; everything to a file
+    /// server's client; a heartbeat with the last change passed on.
+    #[test]
+    fn views_filter_by_interest() {
+        let p = |seq| Position { seq, step: 0 };
+        let text = Utf8Bytes::from("{}");
+        let touch = |model: &str, tiles: Vec<TileKey>, routes: &[&str], at, large| {
+            To::Touching(Arc::new(Touch {
+                model: model.into(),
+                tiles,
+                routes: routes.iter().map(|r| (*r).to_owned()).collect(),
+                at,
+                large,
+            }))
+        };
+        let (t1, t2, t3) = (TileKey(2, 1, 1), TileKey(2, 1, 2), TileKey(2, 9, 9));
+        let mut viewer = View::default();
+        viewer.apply(Update::AddTiles(vec![t1, t2]));
+        let mut desktop = View::default();
+        desktop.apply(Update::Models(["A".to_owned()].into()));
+        let mut worker = View::default();
+        worker.apply(Update::Routes(["R7".to_owned()].into()));
+        let mut file = View::everything();
+        // A change of model B in tile t1 on route R7.
+        let c = touch("B", vec![t1, t3], &["R7"], p(5), false);
+        assert!(matches!(
+            viewer.broadcast(&c, &text),
+            Some(Deliver::Shared(_))
+        ));
+        assert!(desktop.broadcast(&c, &text).is_none());
+        assert!(matches!(
+            worker.broadcast(&c, &text),
+            Some(Deliver::Shared(_))
+        ));
+        assert!(matches!(
+            file.broadcast(&c, &text),
+            Some(Deliver::Shared(_))
+        ));
+        // A large change of model A in tiles t2 and t3.
+        let big = touch("A", vec![t2, t3], &[], p(6), true);
+        match viewer.broadcast(&big, &text) {
+            Some(Deliver::Own(m)) => match *m {
+                ServerMsg::TilesChanged { tiles, at, .. } => {
+                    assert_eq!((tiles, at), (vec![t2], p(6)));
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            desktop.broadcast(&big, &text),
+            Some(Deliver::Shared(_))
+        ));
+        assert!(worker.broadcast(&big, &text).is_none());
+        // Tiles left: nothing more of them; the heartbeat tells the last.
+        viewer.apply(Update::RemoveTiles(vec![t1, t2]));
+        assert!(viewer.broadcast(&c, &text).is_none());
+        match viewer.broadcast(&To::Heartbeat(p(9)), &text) {
+            Some(Deliver::Own(m)) => {
+                assert_eq!(
+                    *m,
+                    ServerMsg::Heartbeat {
+                        at: p(9),
+                        last: Some(p(6))
+                    }
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(file.broadcast(&To::Heartbeat(p(9)), &text).is_none());
+        // A catch-up seen.
+        desktop.apply(Update::Seen(p(8)));
+        assert_eq!(desktop.last, Some(p(8)));
+    }
+
     #[test]
     fn heartbeats_tell_gaps() {
         let p = |seq, step| Position { seq, step };
