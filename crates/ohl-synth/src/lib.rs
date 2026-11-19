@@ -755,6 +755,79 @@ fn build(
     Ok(country)
 }
 
+/// Each route of `country` as a line of its own (a project per design
+/// line, as a utility keeps them before a network imports them, ADR-0013
+/// phase 4), by route code: its route and alignment, the alignment
+/// points, sections (of its code), electrical systems and jumpers (at its
+/// sections' ends), and every structure these use. A tower shared with
+/// another route comes whole into both lines, under the same id — the
+/// same tower modelled in two projects, as the network's import finds
+/// them (an id clash, renamed; a twin tower, listed). Each line is
+/// validated.
+pub fn route_lines(country: &Country) -> Result<Vec<(String, Line)>, String> {
+    use std::collections::BTreeSet;
+    let all = serde_json::to_value(&country.line).map_err(|e| e.to_string())?;
+    let list = |key: &str| -> Vec<Value> { all[key].as_array().cloned().unwrap_or_default() };
+    let text = |v: &Value, key: &str| v[key].as_str().unwrap_or_default().to_owned();
+    let point = |p: &Value| (text(p, "structure"), p["set"].as_u64().unwrap_or(0));
+    let mut out = Vec::new();
+    for route in list("routes") {
+        let code = text(&route, "id");
+        let prefix = format!("{code}-");
+        let alignments: Vec<Value> = list("alignments")
+            .into_iter()
+            .filter(|a| text(a, "route") == code)
+            .collect();
+        let point_ids: BTreeSet<String> = alignments
+            .iter()
+            .flat_map(|a| a["points"].as_array().cloned().unwrap_or_default())
+            .filter_map(|p| p.as_str().map(str::to_owned))
+            .collect();
+        let alignment_points: Vec<Value> = list("alignment_points")
+            .into_iter()
+            .filter(|p| point_ids.contains(&text(p, "id")))
+            .collect();
+        let sections: Vec<Value> = list("sections")
+            .into_iter()
+            .filter(|s| text(s, "id").starts_with(&prefix))
+            .collect();
+        let ends: BTreeSet<(String, u64)> = sections
+            .iter()
+            .flat_map(|s| s["points"].as_array().cloned().unwrap_or_default())
+            .map(|p| point(&p))
+            .collect();
+        let jumpers: Vec<Value> = list("jumpers")
+            .into_iter()
+            .filter(|j| ends.contains(&point(&j["from"])))
+            .collect();
+        let mut used: BTreeSet<String> = ends.iter().map(|(s, _)| s.clone()).collect();
+        used.extend(alignment_points.iter().map(|p| text(p, "structure")));
+        let structures: Vec<Value> = list("structures")
+            .into_iter()
+            .filter(|s| used.contains(&text(s, "id")))
+            .collect();
+        let systems: Vec<Value> = list("systems")
+            .into_iter()
+            .filter(|s| text(s, "id").starts_with(&prefix))
+            .collect();
+        let mut line = all.clone();
+        line["name"] = Value::String(text(&route, "name"));
+        line["routes"] = Value::Array(vec![route.clone()]);
+        line["alignments"] = Value::Array(alignments);
+        line["alignment_points"] = Value::Array(alignment_points);
+        line["structures"] = Value::Array(structures);
+        line["sections"] = Value::Array(sections);
+        line["jumpers"] = Value::Array(jumpers);
+        line["systems"] = Value::Array(systems);
+        let line: Line =
+            serde_json::from_value(line).map_err(|e| format!("line {code} not read: {e}"))?;
+        line.validate()
+            .map_err(|e| format!("line {code} not valid: {e}"))?;
+        out.push((code, line));
+    }
+    Ok(out)
+}
+
 /// LiDAR sample: synthetic points of the level-0 tile with lower-left
 /// corner `corner`, `density` points per m² (ground, and vegetation where
 /// the forest noise says so). Deterministic for the seed and the tile.

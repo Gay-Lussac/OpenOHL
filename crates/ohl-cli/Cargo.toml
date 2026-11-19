@@ -44,6 +44,7 @@ ohl-io.workspace = true
 ohl-bom.workspace = true
 ohl-spotting.workspace = true
 ohl-synth.workspace = true
+ohl-store-pg.workspace = true
 serde_json.workspace = true
 nalgebra.workspace = true
 serde.workspace = true

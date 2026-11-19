@@ -1,0 +1,28 @@
+[package]
+name = "ohl-store-pg"
+description = "OpenOHL country server's database: the session's store on PostgreSQL with PostGIS (one model of the network as a store), the network's schema and migrations, the writer's lock, import of project files and export of one model as a project file"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-line.workspace = true
+ohl-session.workspace = true
+# The synchronous PostgreSQL client (MIT OR Apache-2.0): the authority is
+# one thread (ADR-0013).
+postgres = "0.19"
+# Reading what an imported project file keeps beside the session's tables
+# (point clouds, backgrounds), to list it in the report.
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ohl-session = { workspace = true, features = ["store-suite"] }
+
+[lints]
+workspace = true
