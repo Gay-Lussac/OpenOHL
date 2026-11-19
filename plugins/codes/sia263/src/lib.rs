@@ -34,6 +34,7 @@
 //! Build with `cargo build --release --target wasm32-wasip2`; its own
 //! tests with `cargo test` (natively).
 
+pub mod bends;
 pub mod bracing;
 pub mod check;
 pub mod groups;

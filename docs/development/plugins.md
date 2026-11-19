@@ -1155,6 +1155,31 @@ further optional export carries them:
   among the plies whose bending is not known — said not worked out, NOT ON
   THE SAFE SIDE, as before. Both bundled plugins have it
   ([theory](../theory/joint-groups.md#a-gusset-plates-own-prying-and-bending)).
+- `joint-check-bends` (2026-11-19, the owner's decision of that day: a
+  check of a bent plate's bend in the plugins; `code.wit`, additive: found
+  by its export name, its records using `joint-check-groups`' `load-case`
+  and `group-result`; the host binds it in the world
+  `joint-check-groups-prying-export`, looked up on its own):
+  `check-bends(method, bend-input) -> result<list<group-result>, string>`.
+  Per bend (`bend`: id, joint, the two flats, the plate's thickness, f_y,
+  f_u, the bend's length — the section's width —, its inside radius, the
+  angle it turns through, whether either flat has a weld) and per case
+  (`bend-load`) what OpenOHL works out on the section along the bend line,
+  no code's rule in it: `axial` across the bend (tension positive),
+  `shear` along it, `moment` about the bend line (each member's force
+  across the bend times its line's distance out of the flat's middle
+  plane, by size, plus the force across the bend turned by the bend's
+  angle times the lever to the farthest bolt holding the other flat on the
+  leg — on the safe side) and `moment-in-plane` about the section's middle
+  ([theory](../theory/joint-layout.md#the-bend-in-bending-2026-11-19)).
+  The plugin applies its code (ASCE 10-97 3.13-1 with the gross elastic
+  section and von Mises' criterion for the shear; SIA 263 4.3.5.4 (6) with
+  the elastic stresses and 5.7.1.2 Table 14's radius) and gives a usage
+  per case. Called by `ohl_structure_link` (`bends::bend_rows`, through
+  `ohl_member_check::joints::check_bends`, one call with every bend and
+  case); a plugin without it: the bend's row reads "NOT CHECKED by <plugin>,
+  NOT ON THE SAFE SIDE: the bend's own bending — … has no check of a bent
+  plate's bend", as before. Both bundled plugins have it.
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

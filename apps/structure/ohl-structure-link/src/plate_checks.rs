@@ -66,6 +66,9 @@ pub enum PlatePart {
     Bearing,
     /// Something at the joint not checked, in words (2026-11-19).
     NotChecked(String),
+    /// A bent plate's bend in bending (2026-11-19, the owner's decision of
+    /// that day: `crate::bends`); the row's `plate` is the two flats.
+    Bend,
 }
 
 impl PlatePart {
@@ -77,6 +80,7 @@ impl PlatePart {
             PlatePart::Holding(h) => format!("its bolts onto {h}"),
             PlatePart::Bearing => "the bolts onto it (its bearing)".to_owned(),
             PlatePart::NotChecked(_) => "not checked".to_owned(),
+            PlatePart::Bend => "its bend".to_owned(),
         }
     }
 }
@@ -266,6 +270,9 @@ pub struct PlatePlans {
     /// The joints' bolt groups and the members' bearing at the joints
     /// (2026-11-19, stage 4.5: `crate::joint_groups`).
     pub(crate) groups: crate::joint_groups::GroupPlans,
+    /// The bent plates' bends (2026-11-19, the owner's decision of that
+    /// day: `crate::bends`).
+    pub(crate) bends: Vec<crate::bends::BendPlan>,
     /// What applies to every case.
     pub notes: Vec<String>,
 }
@@ -273,7 +280,7 @@ pub struct PlatePlans {
 impl PlatePlans {
     /// No plate and no joint bolt group to check.
     pub fn is_empty(&self) -> bool {
-        self.parts.is_empty() && self.groups.is_empty()
+        self.parts.is_empty() && self.groups.is_empty() && self.bends.is_empty()
     }
 }
 
@@ -347,6 +354,8 @@ pub fn plate_plans_in(
             out.groups = crate::joint_groups::group_plans(&details, &model, library, bolts);
         }
     }
+    // The bent plates' bends (2026-11-19): checked by the code's plugin.
+    out.bends = crate::bends::bend_plans(&details, &model, library);
     for j in &details.joints {
         cover_plans(j, &model, library, &mut out.parts);
         for p in &j.plates {
@@ -963,6 +972,18 @@ pub fn plate_usage(
             }
         })
         .collect();
+    // The bent plates' bends (2026-11-19): not a design code's plugin
+    // here — not checked, said.
+    rows.extend(
+        crate::bends::bend_rows(
+            &plans.bends,
+            &plans.structure,
+            None,
+            &[("", strength, axial)],
+        )
+        .into_iter()
+        .flatten(),
+    );
     // The joints' bolt groups (2026-11-19): a design code's, its plugin
     // not run here — not checked, said.
     if !plans.groups.is_empty() {
@@ -1130,6 +1151,9 @@ pub fn plate_usage_cases_with(
     } else {
         crate::joint_groups::group_rows(&plans.groups, &plans.structure, Some(p), None, cases, ends)
     };
+    // The bent plates' bends (2026-11-19): one more call with every bend
+    // and case.
+    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases);
     cases
         .iter()
         .enumerate()
@@ -1211,6 +1235,7 @@ pub fn plate_usage_cases_with(
                 })
                 .collect();
             rows.append(&mut groups[n]);
+            rows.append(&mut bends[n]);
             rows
         })
         .collect()

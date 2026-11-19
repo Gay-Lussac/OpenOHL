@@ -41,6 +41,7 @@
 pub mod apply_detail;
 #[cfg(test)]
 mod apply_detail_tests;
+mod bends;
 #[cfg(test)]
 mod bent_plate_tests;
 mod clash;

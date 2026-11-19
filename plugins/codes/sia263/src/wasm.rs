@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use crate::bracing::{Bracing, Piece, Point, Restraint};
 use crate::lengths::{self, Lengths};
-use crate::{check, groups, joints, memo, params, shared, sia263};
+use crate::{bends, check, groups, joints, memo, params, shared, sia263};
 
 wit_bindgen::generate!({
     path: "../../../crates/ohl-plugins/wit",
@@ -1212,6 +1212,60 @@ fn result_of(id: u32, r: groups::GroupResult) -> jgr::GroupResult {
         governs: r.governs,
         notes: r.notes,
         not_safe: (!r.not_safe.is_empty()).then(|| r.not_safe.join("; ")),
+    }
+}
+
+use exports::ohl::plugin::joint_check_bends as jbe;
+
+impl jbe::Guest for Sia263 {
+    fn check_bends(method: String, input: jbe::BendInput) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::set(params::parse(&input.parameters)?);
+        let strengths: Vec<f64> = input.cases.iter().map(|c| c.strength).collect();
+        Ok(input
+            .bends
+            .iter()
+            .map(|b| {
+                let r = bends::check_bend(
+                    &bends::Bend {
+                        part: b.part.clone(),
+                        thickness: b.thickness,
+                        fy: b.fy,
+                        width: b.width,
+                        inner_radius: b.inner_radius,
+                        welded: b.welded,
+                    },
+                    &b.loads
+                        .iter()
+                        .map(|l| bends::BendLoad {
+                            axial: l.axial,
+                            shear: l.shear,
+                            moment: l.moment,
+                            moment_in_plane: l.moment_in_plane,
+                        })
+                        .collect::<Vec<_>>(),
+                    &strengths,
+                );
+                jgr::GroupResult {
+                    id: b.id,
+                    usages: r
+                        .usages
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(n, u)| {
+                            u.map(|(usage, check)| jgr::CaseUsage {
+                                load_case: n as u32,
+                                usage,
+                                check,
+                            })
+                        })
+                        .collect(),
+                    governs: r.governs,
+                    notes: r.notes,
+                    not_safe: (!r.not_safe.is_empty()).then(|| r.not_safe.join("; ")),
+                }
+            })
+            .collect())
     }
 }
 

@@ -1537,7 +1537,91 @@ world joint-check-groups-prying-export {
     export joint-check-groups;
     export joint-check-groups-tension;
     export joint-check-groups-prying;
+    /// A bent plate's bend (2026-11-19): it takes `joint-check-groups`'
+    /// records too; looked up on its own as the others.
+    export joint-check-bends;
 }
+
+/// A bent plate's bend in bending (optional export of any plugin, found by
+/// its export name; 2026-11-19, the owner's decision of that day: a check
+/// of the bend of a plate folded along a line — the joint layout's bent
+/// plate — in the code plugins; added to interface version 0.3 without
+/// changing anything else). OpenOHL works out, per bend and load case, the
+/// forces on the plate's section along its bend line (its width the bend's
+/// length, its depth the plate's thickness) from the members' forces on the
+/// flat in their plane — no code's rule in them, conservative: the force
+/// across the bend, the shear along it, the moment about it (each member's
+/// force across the bend times its line's distance out of the flat's middle
+/// plane, by size, plus the force across the bend turned by the bend's
+/// angle times the lever to the farthest bolt holding the other flat on the
+/// leg) and the moment in the plate's plane about the section's middle.
+/// The plugin applies its code's rules to that section. A plugin without
+/// this export: OpenOHL says the bend's own bending is not checked, NOT ON
+/// THE SAFE SIDE, as before. SI units throughout.
+interface joint-check-bends {
+    use joint-check-groups.{load-case, group-result};
+
+    /// What acts on a bend's section in one load case (sizes and signs as
+    /// said).
+    record bend-load {
+        /// Across the bend in the flat's plane, N (tension positive).
+        axial: f64,
+        /// Along the bend line in the plate's plane, N (size).
+        shear: f64,
+        /// About the bend line, bending the plate across its thickness,
+        /// N m (size).
+        moment: f64,
+        /// In the plate's plane about the section's middle, N m (size).
+        moment-in-plane: f64,
+    }
+
+    /// One bend.
+    record bend {
+        /// Its number: the result names it.
+        id: u32,
+        /// The joint.
+        joint: string,
+        /// The bent plate's two flats, in words ("P1/P2").
+        part: string,
+        /// The plate's thickness, m.
+        thickness: f64,
+        /// Its yield strength, Pa (none: not known).
+        fy: option<f64>,
+        /// Its ultimate strength, Pa (none: not known).
+        fu: option<f64>,
+        /// The bend's length along its line: the section's width, m.
+        width: f64,
+        /// Its inside radius, m.
+        inner-radius: f64,
+        /// The angle the plate turns through at it, rad.
+        angle: f64,
+        /// A weld on either flat (where, not known: it may be within the
+        /// bend's zone).
+        welded: bool,
+        /// Per load case (the order of `bend-input.cases`).
+        loads: list<bend-load>,
+        /// What OpenOHL says about this bend's data and forces.
+        notes: list<string>,
+    }
+
+    /// Everything of one structure for one call.
+    record bend-input {
+        /// The structure's name.
+        structure: string,
+        /// The plugin's parameter file of the structure (TOML; "" none).
+        parameters: string,
+        /// The load cases of the run.
+        cases: list<load-case>,
+        /// The bends.
+        bends: list<bend>,
+    }
+
+    /// Checks the bends of `input` by method `method` (a name of the
+    /// plugin's `member-check` methods): one result per bend (its id), a
+    /// usage per load case with the check and clause that give it.
+    check-bends: func(method: string, input: bend-input) -> result<list<group-result>, string>;
+}
+
 
 /// Minimum bolt distances by a design method (optional export of any
 /// plugin beside `member-check`, found by its export name;
@@ -2202,7 +2286,7 @@ world member-check-bracing-export {
 /// members' forces together by `joint-check-groups` (2026-11-19) and their
 /// bolts in tension, with prying, by `joint-check-groups-tension`
 /// (2026-11-19), the plates' prying too by `joint-check-groups-prying`
-/// (2026-11-19).
+/// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
@@ -2213,6 +2297,7 @@ world structure-code-plugin {
     export joint-check-groups;
     export joint-check-groups-tension;
     export joint-check-groups-prying;
+    export joint-check-bends;
     export bolt-distances;
     export bolt-distances-full;
 }
