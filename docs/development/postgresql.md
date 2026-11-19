@@ -57,11 +57,15 @@ stay alive:
 
 Isolation stays as before: a database per test (PostGIS, the schema, the
 writer's lock and the advisory locks are a database's own), its own
-files; nothing a test makes is seen by another. The writer's lock goes
-with its connection only once PostgreSQL's process for it has ended, a
-moment after the client closed it: a test dropping a writer and
-connecting another at once waits for that (`Cluster::wait_for_locks_gone`,
-at most 10 s). This was the flake of 2026-11-19 (`schema_and_the_writers_lock`
+files; nothing a test makes is seen by another. A connection's lock
+left to go with it goes only once PostgreSQL's process for it has ended,
+a moment after the client closed it; since 2026-11-19 (owner) a writer
+releases its lock explicitly (`pg_advisory_unlock`) when its connection's
+last user — the network or one of its models' stores — is dropped, so a
+writer connecting at once (a server restarted) is not refused
+(`schema_and_the_writers_lock` tries it without waiting). The tests that
+hand a network from an import to a server still wait for the locks to go
+(`Cluster::wait_for_locks_gone`, at most 10 s) as a safety net. This was the flake of 2026-11-19 (`schema_and_the_writers_lock`
 refused its second writer while two check runs ran side by side): 1 run in
 144 failed with six programs' tests started together eight times (the
 three tests each in a process of its own, as nextest runs them); with the

@@ -88,10 +88,30 @@ fn schema_and_the_writers_lock() {
     let reader = Network::connect(&url).unwrap();
     assert!(!reader.is_writer());
     assert!(reader.create_line("A", "a", "").is_err());
-    // The lock goes with the connection (once its server process has
-    // ended: waited for, at most 10 s).
+    // The lock stays while a model's store still uses the writer's
+    // connection, and is released explicitly when its last user goes: a
+    // writer connecting right after (a server restarted) is not refused,
+    // without waiting for PostgreSQL's process of the old connection to
+    // end. Tried several times in a row.
+    first.create_line("W", "w", "").unwrap();
+    let store = first.store("W").unwrap();
     drop(first);
-    cluster.wait_for_locks_gone("net");
+    assert!(Network::connect_writer(&url).is_err());
+    drop(store);
+    for _ in 0..5 {
+        let w = Network::connect_writer(&url).unwrap();
+        assert!(w.is_writer());
+        drop(w);
+    }
+    // A writer dropped in the middle of a step (a transaction open) lets
+    // its lock go as well.
+    let mid = Network::connect_writer(&url).unwrap();
+    {
+        let s = mid.store("W").unwrap();
+        s.savepoint("half").unwrap();
+        drop(mid);
+        drop(s);
+    }
     let again = Network::connect_writer(&url).unwrap();
     // Migrations run once.
     assert_eq!(again.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
