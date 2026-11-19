@@ -20,7 +20,8 @@
 //!   [`IN_LINE_DEG`] off the run's line — holds it along that member's
 //!   direction square to the run (its axial stiffness; a tension-only
 //!   member only where it passes through, a crossing); a support fixed in
-//!   all three translations holds it in every direction. A member's
+//!   all three translations holds it in every direction, one fixed in some
+//!   along each of those axes (springs not counted). A member's
 //!   **crossing partner** (`crossing`) that crosses the run away from a
 //!   joint gives a point where it crosses (the two lines within
 //!   [`CROSSING_GAP`] of the shorter member's length), held along the
@@ -45,11 +46,11 @@ pub const IN_LINE_DEG: f64 = crate::check::STRAIGHT_THROUGH_DEG;
 /// lines come within this share of the shorter member's length.
 pub const CROSSING_GAP: f64 = 0.05;
 
-/// One member holding a bracing point.
+/// One member (or a support's fixed direction) holding a bracing point.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Restraint {
-    /// The member (index).
-    pub member: usize,
+    /// The member (index; none: a support fixed along `direction`).
+    pub member: Option<usize>,
     /// Along it from the point, square to the run, structure axes (unit).
     pub direction: [f64; 3],
     /// It passes through the point (a crossing: its pieces on both sides
@@ -272,17 +273,35 @@ pub fn bracing(model: &Model) -> Bracing {
                 }
                 if let Some(dir) = square_to(d, axis) {
                     restraints.push(Restraint {
-                        member: o,
+                        member: Some(o),
                         direction: dir,
                         through,
                     });
                 }
             }
+            // A support: every way when fixed in all three translations,
+            // else along each fixed axis more than IN_LINE_DEG off the run.
             let f = model.nodes[node].fixed;
+            let support = f[0] && f[1] && f[2];
+            if !support {
+                for (i, _) in f.iter().take(3).enumerate().filter(|(_, x)| **x) {
+                    let mut e = [0.0; 3];
+                    e[i] = 1.0;
+                    if dot(e, axis).abs() < off_line
+                        && let Some(dir) = square_to(e, axis)
+                    {
+                        restraints.push(Restraint {
+                            member: None,
+                            direction: dir,
+                            through: false,
+                        });
+                    }
+                }
+            }
             run.points.push(Point {
                 at: at_,
                 joint: Some(node),
-                support: f[0] && f[1] && f[2],
+                support,
                 restraints,
             });
         }
@@ -357,7 +376,7 @@ fn add_crossing(model: &Model, out: &mut Bracing, a: usize, b: usize) {
     if run
         .points
         .iter()
-        .any(|p| (p.at - along).abs() < 1e-3 && p.restraints.iter().any(|x| x.member == b))
+        .any(|p| (p.at - along).abs() < 1e-3 && p.restraints.iter().any(|x| x.member == Some(b)))
     {
         return;
     }
@@ -366,7 +385,7 @@ fn add_crossing(model: &Model, out: &mut Bracing, a: usize, b: usize) {
         joint: None,
         support: false,
         restraints: vec![Restraint {
-            member: b,
+            member: Some(b),
             direction: dir,
             through: true,
         }],

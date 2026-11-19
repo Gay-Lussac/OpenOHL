@@ -136,7 +136,7 @@ fn a_crossing_pair_without_a_joint() {
     assert_eq!(mid.joint, None);
     assert_eq!(mid.restraints.len(), 1);
     let r = &mid.restraints[0];
-    assert_eq!(r.member, 1);
+    assert_eq!(r.member, Some(1));
     assert!(r.through);
     // Square to D1 in the plane: along ±(1, 0, -1)/√2.
     assert!((r.direction[0].abs() - 0.5f64.sqrt()).abs() < 1e-9);
@@ -174,18 +174,44 @@ fn a_crossing_at_a_joint_and_tension_only_members() {
     let mid = &run.points[1];
     assert_eq!(mid.joint, Some(4));
     // The other diagonal's halves, through; the tension-only H not.
-    let by: Vec<(usize, bool)> = mid
+    let by: Vec<(Option<usize>, bool)> = mid
         .restraints
         .iter()
         .map(|r| (r.member, r.through))
         .collect();
-    assert_eq!(by, vec![(index(&m, "D2a"), true), (index(&m, "D2b"), true)]);
+    assert_eq!(
+        by,
+        vec![
+            (Some(index(&m, "D2a")), true),
+            (Some(index(&m, "D2b")), true)
+        ]
+    );
     // The other diagonal tension-only: still holding (passing through).
     let t = model(&nodes, &members("kind = \"tension\""));
     let bt = bracing(&t);
     let (run, _) = bt.of(index(&t, "D1a")).unwrap();
     assert_eq!(run.points[1].restraints.len(), 2);
     assert!(run.points[1].restraints.iter().all(|r| r.through));
+}
+
+/// A support fixed along some axes only holds the joint along each of
+/// them square to the run (none along the run itself).
+#[test]
+fn a_support_fixed_along_some_axes() {
+    let mut t = HEAD.to_owned();
+    t.push_str(
+        "[[node]]\nid = \"a\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\nsupport = \"pinned\"\n\
+         [[node]]\nid = \"b\"\npoint = [\"1.5 m\", \"0 m\", \"0 m\"]\nsupport = [\"x\", \"y\"]\n\
+         [[member]]\nid = \"m\"\nnodes = [\"a\", \"b\"]\nsection = \"s\"\n",
+    );
+    let m = Model::parse(&t).unwrap();
+    let b = bracing(&m);
+    let (run, _) = b.of(0).unwrap();
+    let end = &run.points[1];
+    assert!(!end.support);
+    assert_eq!(end.restraints.len(), 1);
+    assert_eq!(end.restraints[0].member, None);
+    assert!((end.restraints[0].direction[1].abs() - 1.0).abs() < 1e-12);
 }
 
 /// A member not design-checked and a cable hold nothing; a member nearly

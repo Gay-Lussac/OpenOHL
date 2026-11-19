@@ -101,8 +101,12 @@ built, in active development, not approved yet.* A member giving none of
 axis **worked out from what braces it** — its result says "from the
 bracing", its notes the three lengths and between which joints; one
 giving them keeps them ("buckling lengths given"); where OpenOHL sends no
-bracing for it, ratios 1 ("assumed: no bracing found"). (`k = 1` is the
-default and cannot be told from one not written: it counts as not given.)
+bracing for it, ratios 1 ("assumed: no bracing found"). Where the bracing
+gives the member its own length between its joints about every axis — the
+lengths the default took — the check, its numbers and its words are those
+before (`[assumed: length ratios 1, …]`); its notes say the lengths were
+worked out. (`k = 1` is the default and cannot be told from one not
+written: it counts as not given.)
 
 **What OpenOHL sends** (`crates/ohl-structures-fe/src/bracing.rs`, no
 code's rule): the member's **run** — the members continuing it in line
@@ -114,7 +118,8 @@ with every other member ending or passing there (design-checked, not a
 cable, more than 10° off the run's line; a tension-only member only
 passing through) and the direction it holds the joint in (its own,
 square to the run, in the member's local y and z: its axial stiffness);
-a support fixed in all three translations holds a joint every way; a
+a support fixed in all three translations holds a joint every way, one
+fixed along some axes along each of them (springs not counted); a
 `crossing` partner crossing the run away from a joint (the two lines
 within 5 % of the shorter length) gives a point there, held along it.
 

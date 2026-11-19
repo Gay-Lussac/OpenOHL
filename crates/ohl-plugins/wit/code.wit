@@ -1805,9 +1805,11 @@ world member-check-full-export {
 interface member-check-bracing {
     use member-check-full.{full-input, full-output};
 
-    /// A member holding a bracing point.
+    /// A member holding a bracing point, or a support fixed along one
+    /// axis.
     record restraint {
-        /// Its id (a member of `full-input.members`, design-checked).
+        /// Its id (a member of `full-input.members`, design-checked; ""
+        /// a support fixed along `direction`).
         member: string,
         /// Its direction from the point square to the run, in the braced
         /// member's local y and z (a unit vector).

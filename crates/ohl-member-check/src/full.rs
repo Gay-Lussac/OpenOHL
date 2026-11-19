@@ -324,7 +324,7 @@ pub(crate) fn bracing(model: &Model) -> Vec<bwit::MemberBracing> {
                             .map(|r| {
                                 let d = ohl_structures_fe::bracing::local(model, k, r.direction);
                                 bwit::Restraint {
-                                    member: id(r.member),
+                                    member: r.member.map_or(String::new(), id),
                                     direction: (d[0], d[1]),
                                     through: r.through,
                                 }

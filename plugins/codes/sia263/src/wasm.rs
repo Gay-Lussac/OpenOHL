@@ -489,17 +489,23 @@ pub fn check_all(
             let plain = lengths.as_ref().and_then(|l| l.worked(&m, None, 1.0));
             let (c, _) = sia263::capacity_worked(&m, partner, plain.as_ref());
             let mut notes = Vec::new();
-            match (&lengths, &plain) {
-                (_, Some(x)) => notes.push(format!(
+            let all = lengths.as_ref().and_then(|l| l.all(&m, None, 1.0));
+            match (&lengths, &plain, &all) {
+                (_, Some(x), _) => notes.push(format!(
                     "buckling lengths worked out from the bracing: {}",
                     x.words(angle(&m))
                 )),
-                (Some(_), None) if lengths::given(&m) => {
+                (_, None, Some(x)) => notes.push(format!(
+                    "buckling lengths worked out from the bracing: its own length between its \
+                     joints about every axis, as before ({})",
+                    x.words(angle(&m))
+                )),
+                (Some(_), None, None) if lengths::given(&m) => {
                     notes.push("buckling lengths given (not worked out from the bracing)".into())
                 }
-                (Some(_), None) => notes
+                (Some(_), None, None) => notes
                     .push("buckling lengths assumed: no bracing found (buckling lengths L)".into()),
-                (None, None) => {}
+                (None, _, _) => {}
             }
             notes.extend(c.compression_assumed.iter().cloned());
             for a in &c.tension_assumed {

@@ -113,6 +113,15 @@ pub struct Worked {
 }
 
 impl Worked {
+    /// Every axis over the member's own length between its two joints:
+    /// the check is the one before (the lengths the default took), its
+    /// words unchanged (what the notes say changes nothing then).
+    pub fn own(&self, length: f64) -> bool {
+        self.axes
+            .iter()
+            .all(|a| a.factor == 1.0 && a.ends.is_none() && !a.span.free && a.span.length == length)
+    }
+
     /// The lengths in words: "y 2.40 m, N1–N3; z …; v …".
     pub fn words(&self) -> String {
         ["y", "z", "v"]
@@ -176,7 +185,10 @@ pub fn worked(m: &Member, b: &Bracing, cx: &Context) -> Worked {
             let inside = !b.is_end(p.at);
             let mut dirs = Vec::new();
             for r in &p.restraints {
-                if inside && cx.adequate.is_some_and(|a| !a.contains(&r.member)) {
+                if inside
+                    && !r.member.is_empty()
+                    && cx.adequate.is_some_and(|a| !a.contains(&r.member))
+                {
                     let w = format!("{} at {}", r.member, point_name(p));
                     if !dropped.contains(&w) {
                         dropped.push(w);
@@ -439,8 +451,16 @@ impl<'a> Lengths<'a> {
 
     /// Member `m`'s lengths from its bracing in a load case whose axial
     /// forces are `axial` (none: no load case); none: it gives its own
-    /// ([`given`]) or has no bracing.
+    /// ([`given`]), has no bracing, or the bracing gives its own length
+    /// about every axis ([`Worked::own`]: the check as before).
     pub fn worked(&self, m: &Member, axial: Option<&HashMap<String, f64>>) -> Option<Worked> {
+        self.all(m, axial).filter(|w| !w.own(m.length))
+    }
+
+    /// The same, also where the bracing gives the member's own length
+    /// about every axis ([`Worked::own`]; [`Lengths::worked`] then gives
+    /// none: the check as before).
+    pub fn all(&self, m: &Member, axial: Option<&HashMap<String, f64>>) -> Option<Worked> {
         if given(m) {
             return None;
         }

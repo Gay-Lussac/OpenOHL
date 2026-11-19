@@ -32,7 +32,13 @@ active development, not approved yet;
 - **Given lengths win.** A member's `k` (other than 1), `lk` or
   `length_ratios` are taken as before; each result says "from the
   bracing", "given" or "assumed: no bracing found". `k = 1` counts as not
-  given (the default; it cannot be told from one not written).
+  given (the default; it cannot be told from one not written). Where the
+  bracing gives a member its own length between its joints about every
+  axis (the lengths the default took), the check and its words are those
+  before, the notes saying the lengths were worked out: the shipped
+  examples and the typed example line give the same results to the bit
+  and the same words. A support fixed along some axes holds the joint
+  along each of them.
 - **ASCE 10-97**: L between the points holding each axis (3.6, C3.7.4);
   a single angle's v held at any point (Figure 3.2 (a), Appendix B's
   Examples 5 and 7), its geometric axes and every other section's axes

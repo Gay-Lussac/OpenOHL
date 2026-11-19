@@ -73,6 +73,15 @@ pub struct Worked {
 }
 
 impl Worked {
+    /// Every axis over the member's own length between its two joints:
+    /// the check is the one before (the lengths the default took), its
+    /// words unchanged (what the notes say changes nothing then).
+    pub fn own(&self, length: f64) -> bool {
+        [&self.y, &self.z, &self.v, &self.u].iter().all(|s| {
+            matches!(&s.ends, [End::Own(a), End::Own(b)] if a != b) && !s.free && s.length == length
+        })
+    }
+
     /// The lengths in words, the angle's u and v or the y, z and v.
     pub fn words(&self, angle: bool) -> String {
         let list: Vec<(&str, &Span)> = if angle {
@@ -130,6 +139,7 @@ pub fn worked(m: &Member, b: &Bracing, cx: &Context) -> Worked {
             for r in &p.restraints {
                 if inside
                     && needed > 0.0
+                    && !r.member.is_empty()
                     && let Some(res) = cx.resistance
                     && res.get(&r.member).is_none_or(|x| cx.strength * x < needed)
                 {
@@ -269,8 +279,21 @@ impl<'a> Lengths<'a> {
 
     /// Member `m`'s lengths from its bracing in a load case whose axial
     /// forces are `axial` and strength factor `strength` (none: no load
-    /// case); none: it gives its own ([`given`]) or has no bracing.
+    /// case); none: it gives its own ([`given`]), has no bracing, or the
+    /// bracing gives its own length about every axis ([`Worked::own`]: the
+    /// check as before).
     pub fn worked(
+        &self,
+        m: &Member,
+        axial: Option<&HashMap<String, f64>>,
+        strength: f64,
+    ) -> Option<Worked> {
+        self.all(m, axial, strength).filter(|w| !w.own(m.length))
+    }
+
+    /// The same, also where the bracing gives the member's own length
+    /// about every axis.
+    pub fn all(
         &self,
         m: &Member,
         axial: Option<&HashMap<String, f64>>,
