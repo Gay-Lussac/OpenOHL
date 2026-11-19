@@ -590,3 +590,45 @@ fn every_client_receives_the_same_broadcast() {
     drop(server);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Protocol 3 (2026-11-19): a client of protocol 2 (the alpha) is refused
+/// with the reason, and a file server refuses a network's messages.
+#[test]
+fn alpha_clients_are_refused() {
+    let dir = temp("alpha");
+    let path = project(&dir);
+    let server = Server::start(&path, local("abcd2345")).unwrap();
+    let refused = crate::client::join_with(
+        &server.invitation,
+        "dave",
+        ClientMsg::Hello {
+            protocol: 2,
+            user: "dave".into(),
+            code: server.invitation.code.clone(),
+        },
+        Some(dir.join("old.ohl")),
+        &mut |_| {},
+    )
+    .err()
+    .unwrap();
+    assert!(
+        refused.contains("protocol 2") && refused.contains("update OpenOHL"),
+        "{refused}"
+    );
+    let mut alice = Client::join(&server.invitation_for("alice"), "alice", &dir).unwrap();
+    alice
+        .joined
+        .link
+        .send(ClientMsg::Catch {
+            since: crate::Position::default(),
+        })
+        .unwrap();
+    let got = alice.pump(|m| matches!(m, ServerMsg::Notice { .. }));
+    assert!(
+        matches!(got.last(), Some(ServerMsg::Notice { text }) if text == crate::server::FILE_MODE),
+        "{got:?}"
+    );
+    drop(alice);
+    server.stop();
+    let _ = std::fs::remove_dir_all(&dir);
+}

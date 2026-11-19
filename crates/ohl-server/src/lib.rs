@@ -36,10 +36,31 @@
 //! the same messages. A web client keeps no replica: instead of the
 //! project file it receives a [`Scene`] (the line and its wires solved on
 //! the server) whenever the line changes.
+//!
+//! **A server on a network** (feature `network`, ADR-0013 phase 5:
+//! [`network`]) hosts every model of a country server's database instead
+//! of one project file: it holds each model's line in memory, writes each
+//! command to PostgreSQL, and serves its clients **by interest**
+//! ([`stream`]): a client follows whole models (a replica of one), routes
+//! or tiles of the network's grid, receives [`Change`]s touching them, tile
+//! packages of the context ([`TilePackage`]) and a heartbeat, and catches
+//! up after a disconnect from its [`Position`]. **Protocol 3**: clients of
+//! protocol 2 (the alpha) are refused with a message saying so; a file
+//! server speaks it too, its messages unchanged.
 
 pub mod client;
+#[cfg(feature = "network")]
+pub mod network;
+#[cfg(feature = "network")]
+pub(crate) mod packager;
 pub mod server;
+pub mod stream;
 pub mod web;
+
+pub use stream::{
+    Change, ContextLabel, ContextRoute, ContextStructure, ContextWire, HeldTile, ModelInfo,
+    NetworkInfo, Position, RouteInfo, TileKey, TilePackage,
+};
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -49,8 +70,25 @@ use ohl_session::versions::Choices;
 use ohl_session::{Applied, Command, Kind, Role, Session, SessionError};
 use serde::{Deserialize, Serialize};
 
-/// Version of the protocol; client and server must agree.
-pub const PROTOCOL: u32 = 2;
+/// Version of the protocol; client and server must agree. 3 since
+/// 2026-11-19 (a server on a network: the stream by interest, tiles,
+/// heartbeats, catch-up; the messages of 2 unchanged).
+pub const PROTOCOL: u32 = 3;
+
+/// The refusal of a client speaking another protocol.
+pub fn protocol_refusal(protocol: u32) -> String {
+    if protocol < PROTOCOL {
+        format!(
+            "this program speaks protocol {protocol}, the server protocol {PROTOCOL}: update \
+             OpenOHL to join (programs of protocol {protocol} cannot join this server)"
+        )
+    } else {
+        format!(
+            "this program speaks protocol {protocol}, the server protocol {PROTOCOL}: the \
+             server must be updated to let it join"
+        )
+    }
+}
 
 /// ALPN of the protocol (its name of before 2026-10-18, kept: an older
 /// client and a newer server still agree on it).
@@ -617,6 +655,63 @@ pub enum ClientMsg {
         /// [`lock_target`].
         target: String,
     },
+    /// First message of a client of a network's server (protocol 3; the
+    /// hello joins as before): what it follows. Answered as the hello is;
+    /// with a model, its copy follows the welcome as a project file does.
+    Join {
+        /// [`PROTOCOL`].
+        protocol: u32,
+        /// User name.
+        user: String,
+        /// The access code of the invitation.
+        code: String,
+        /// The model to follow whole (its copy is sent, then its changes).
+        #[serde(default)]
+        model: Option<String>,
+        /// Changes after this position first (a catch-up after a
+        /// disconnect).
+        #[serde(default)]
+        since: Option<Position>,
+        /// The routes of its working set.
+        #[serde(default)]
+        routes: Vec<String>,
+        /// The tiles it views (with the revision it holds).
+        #[serde(default)]
+        tiles: Vec<HeldTile>,
+        /// It holds the model's copy already (it catches up from
+        /// `since`): no copy is sent.
+        #[serde(default)]
+        held: bool,
+    },
+    /// The routes and tiles a client of a network follows from now on (in
+    /// place of the last ones): tiles new to it come as packages at their
+    /// revision (unless it holds that one), then their changes.
+    Interest {
+        /// The routes of its working set.
+        #[serde(default)]
+        routes: Vec<String>,
+        /// The tiles it views.
+        #[serde(default)]
+        tiles: Vec<HeldTile>,
+    },
+    /// Every change of a client's interest after `since` (in a
+    /// [`ServerMsg::CatchUp`]).
+    Catch {
+        /// What it has.
+        since: Position,
+    },
+    /// An edit of a model of a network (answered as a request is).
+    RequestOn {
+        /// Chosen by the client.
+        id: u64,
+        /// The model.
+        model: String,
+        /// The edit.
+        op: Op,
+        /// The model's project line it acts on.
+        #[serde(default = "main_line")]
+        line: String,
+    },
 }
 
 /// Server → client.
@@ -682,6 +777,45 @@ pub enum ServerMsg {
     /// Web clients only: what to draw, sent after the welcome and again
     /// when the line changed.
     Scene(Box<Scene>),
+    /// A network's server: what it holds (after the welcome).
+    Network(Box<NetworkInfo>),
+    /// A network's server: a change touching the client's interest.
+    Change(Box<Change>),
+    /// A network's server: a tile of the context at its revision.
+    Tile(Box<TilePackage>),
+    /// A network's server: these tiles of the client changed too much to
+    /// follow: read them again.
+    TilesChanged {
+        /// The tiles.
+        tiles: Vec<TileKey>,
+        /// Their new revision.
+        at: Position,
+        /// Why.
+        reason: String,
+    },
+    /// A network's server: where the stream is (`at`) and the last change
+    /// sent to this client (`last`): a client that has not received `last`
+    /// missed something and catches up.
+    Heartbeat {
+        /// The server's position.
+        at: Position,
+        /// The position of the last change sent to this client.
+        #[serde(default)]
+        last: Option<Position>,
+    },
+    /// A network's server: the changes of the client's interest after
+    /// `from`, in order, up to `to` (the stream's position then).
+    CatchUp {
+        /// Asked from.
+        from: Position,
+        /// Up to.
+        to: Position,
+        /// The changes.
+        changes: Vec<Change>,
+        /// More than a catch-up carries: read the model or tiles again.
+        #[serde(default)]
+        incomplete: bool,
+    },
 }
 
 /// The line as a web client draws it: solved on the server.
@@ -1176,6 +1310,8 @@ pub fn random_code(n: usize) -> String {
         .collect()
 }
 
+#[cfg(all(test, feature = "network"))]
+mod network_tests;
 #[cfg(test)]
 mod points_tests;
 #[cfg(test)]

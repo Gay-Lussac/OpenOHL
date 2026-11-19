@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–4 and 8 built — this record is not approved yet)
+  2026-11-18; phases 0–5 and 8 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -135,6 +135,18 @@ the session can keep them current. The tables and their columns: the
 - Only one authority per database: it takes a PostgreSQL advisory lock at
   start; a second server process refuses to start as writer.
 
+Built 2026-11-19 (phase 5, in active development): `ohl network serve`
+(`ohl_server::network`, feature `network`) opens a session on every model
+of the database as its one writer; each command is one transaction — the
+session's rows, then each changed element's routes and references, the
+models and tiles its log entries touched, and the change itself in the
+`stream` table at its **position** (`seq`, `step`: changes making no log
+entry count steps after the last entry) — committed before it is
+broadcast; a command that cannot be kept after the session applied it is
+rolled back and its model read again. A joining desktop's copy of its
+model is written by a reader connection at a snapshot taken between two
+commands (the authority goes on meanwhile).
+
 ### Server memory
 
 The line model of the network (with its spatial and reference indexes) is
@@ -185,6 +197,32 @@ changed in place equals the line rebuilt from every object. Built
 - The operation stream is filtered by interest (each operation names its
   lines and tiles; a heartbeat carries the current `seq`), protocol
   version 3; alpha clients are refused with a message.
+
+Built 2026-11-19 (phase 5, in active development): a client follows
+whole models (a desktop's replica of one), routes and tiles; every change
+is encoded once and broadcast, and each connection passes on only what
+touches its client's interest; what is for one client alone (a tile
+package, a catch-up, a change of its interest) goes on that client's own
+queue marked with its place among the broadcasts, so a tile taken at its
+revision is followed by exactly the changes after it. A heartbeat carries
+the stream's position and the last change sent to that client (a gap
+shows); a client catches up from its position (`stream`, in the
+database, so also after a restart); a change touching more tiles than a
+setting reaches the clients that only view them as "read again". Tile
+packages (level 2, 1 024 m, by default) are made by packager threads from
+a copy of each model's line taken at the model's revision: per structure
+its id, position, orientation, type, height and a stick; per section its
+wires in the context case (each section solved alone, on the part of its
+line it reads — the same shape as on the whole line, bit for bit, tested:
+a drawing); the alignments' segments in the tile; the routes' names. Kept, each bounded
+(settings): packages per (tile, revision, rights class — 0 until phase
+7), solved section shapes (keyed like the solve memo's, by everything
+the solve reads), resolved structures (per model and library revision).
+The web client reads tile packages on a network's server and stays a
+viewer. The desktop application joins file servers as before (protocol
+3, its messages unchanged); joining a network with a working set is
+phase 6. Measured on the 12 000-pylon synthetic country:
+[performance](../development/performance.md#synthetic-country-phase-5-the-server-on-the-database-2026-11-19).
 
 ### Computations on the working set and what touches it
 

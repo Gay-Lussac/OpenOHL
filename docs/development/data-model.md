@@ -4350,9 +4350,11 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phase 4** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 and 5** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 1. A country server keeps every model and model element of
+network schema 2 (schema 1: phase 4's tables; schema 2: what the server
+on the network keeps for its clients' interest — `object.routes`,
+`oplog.lines`, `oplog.tiles`, `stream`). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4380,15 +4382,16 @@ kept; times given as the project file writes them,
 | — | `net_schema` | one row per migration done |
 | `session_user` | `line_user` (per model); `net_user`, `net_group`, `net_member` | the users of the network (from the sign-in later, OIDC subject), groups |
 | — | `role`, `role_permission`, `assignment` | rights and roles on (almost) every element and library; kept, evaluated from phase 7 |
-| `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network |
-| `oplog` | `oplog` | + `line_id`; `seq` numbered across the network |
+| `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network; + `routes` (schema 2) |
+| `oplog` | `oplog` | + `line_id`; `seq` numbered across the network; + `lines`, `tiles` (schema 2) |
+| — | `stream` | every change the server applied and broadcast, logged or not, at its position (schema 2) |
 | `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree) |
 | `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
 | `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | (later: trees split by line, kind and tile bucket; library reviews) |
 | `edit_grant` | `edit_grant`, + `line_id` | kept for the session until phase 7 makes them assignments |
 | `surface` (one blob per TIN) | `surface` (+ `line_id`); `surface_tile` | whole TINs as in the file; tiles per grid tile later |
 | `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
-| — | `line`, `working_set`, `object_ref` | the models; saved working sets and the reference index (filled from phases 5–6) |
+| — | `line`, `working_set`, `object_ref` | the models; saved working sets (phase 6) and the reference index (written by the import and by every command of the server, phase 5) |
 | — | `lib_file`, `lib_entry`, `lib_release`, `lib_use`, `lib_request` | country libraries (phase 9) |
 | — | `stale`, `notice`, `audit` | results out of date and notices (later); the audit of imports, exports and admin actions |
 
@@ -4446,18 +4449,27 @@ object         (line_id text REFERENCES line, branch text, kind text, id text,
                 ord bigint NOT NULL, version bigint NOT NULL,
                 json text NOT NULL,                          -- as the session wrote it
                 gone smallint NOT NULL DEFAULT 0,            -- as in model_object
-                PRIMARY KEY (line_id, branch, kind, id))
+                routes text[],                               -- schema 2: the routes it is on
+                                                             -- (main branch, line elements;
+                                                             -- NULL: not counted yet)
+                PRIMARY KEY (line_id, branch, kind, id))     -- GIN on routes
                -- UNIQUE (kind, id) WHERE branch = 'main' AND gone = 0 AND kind IN
                --   (route, alignment, alignment_point, structure, section, jumper, spacer):
                --   ids unique in the network
 object_ref     (line_id, branch, from_kind, from_id, to_kind, to_id, set_no,
-                PRIMARY KEY (all))                           -- the reference index (phase 5)
+                PRIMARY KEY (all))                           -- the reference index (phase 5):
+               -- what each element of the main branch refers to; set_no 0: the
+               -- object itself, n + 1: its wire point set n (a section's points,
+               -- a jumper's ends); INDEX on (branch, to_kind, to_id)
 oplog          (line_id text REFERENCES line, seq bigint, time timestamptz NOT NULL,
                 user_name text NOT NULL, kind text NOT NULL,
                 command text NOT NULL, inverse text NOT NULL, objects text NOT NULL,
                 sections text NOT NULL, undoes bigint, undone_by bigint, note text,
                 branch text NOT NULL,
-                PRIMARY KEY (line_id, seq))                  -- INDEX on seq
+                lines text[] NOT NULL DEFAULT '{}',          -- schema 2: the models it touched
+                tiles bigint[] NOT NULL DEFAULT '{}',        -- schema 2: the package tiles it
+                                                             -- touched (tile keys, below)
+                PRIMARY KEY (line_id, seq))                  -- INDEX on seq; GIN on tiles
                -- seq: the next of the network for a new entry (the one writer: no gaps);
                -- kept as it is when a model is copied
 spatial        (line_id text REFERENCES line, branch text, kind text, id text,
@@ -4468,6 +4480,17 @@ spatial        (line_id text REFERENCES line, branch text, kind text, id text,
                -- INDEX on (line_id, branch, level, tx, ty); GiST on geom
 working_set    (owner text, name text, routes jsonb NOT NULL, time timestamptz NOT NULL,
                 PRIMARY KEY (owner, name))                   -- phase 6
+stream         (seq bigint, step integer NOT NULL,           -- schema 2: the position
+                line_id text REFERENCES line,                -- the model acted on
+                branch text NOT NULL, user_name text NOT NULL,
+                op text NOT NULL,                            -- the server's operation (protocol
+                                                             -- 3, JSON) as clients replay it
+                first_seq bigint, log_seq bigint,            -- the log entries it made (none: none)
+                tiles bigint[] NOT NULL DEFAULT '{}',        -- the package tiles it touched
+                routes text[] NOT NULL DEFAULT '{}',         -- the routes it touched
+                time timestamptz NOT NULL,
+                PRIMARY KEY (seq, step))                     -- INDEX on (line_id, seq, step);
+                                                             -- GIN on tiles and on routes
 
 -- Versions
 vc_blob        (hash text PRIMARY KEY, data bytea NOT NULL)  -- once for the network
@@ -4546,13 +4569,33 @@ Notes:
   a clash `CODE-id` (`CODE-id-2`, …) with everything that refers to it; a
   command making another model's id is refused ("ids are unique in the
   network").
-- **Columns of the draft left for the phase that keeps them up to date**:
-  `object.routes` (the routes using an object) and `oplog.lines` /
-  `oplog.tiles` (what an entry touched, for the interest stream) come
-  with the server on the database (phase 5), when the session hands them
-  to the store with every write — written only at import they would go
-  stale with the first edit; `vc_ref.routes` with branches over working
-  sets (phase 11).
+- **What the server keeps for its clients' interest** (schema 2, phase
+  5; `ohl_store_pg::stream`): with every command, in the same
+  transaction as the session's rows, the routes and references of each
+  element of the main branch it changed (`object.routes` counted as the
+  rules of shared towers count them, `ohl_session::Session::object_routes`;
+  `object_ref` from the reference index), the models and package tiles
+  its log entries touched (`oplog.lines`, `oplog.tiles`), and the change
+  itself in `stream`. The import writes the routes and references of
+  every element and the tiles of its entry; a database imported before
+  schema 2 gets them when the server first starts on it (rows with
+  `routes` NULL). Branches other than `main`: their objects' routes and
+  references are not kept (with branches over working sets, phase 11,
+  as `vc_ref.routes`).
+- **Positions**: a change's place in the stream is (`seq`, `step`): `seq`
+  the network's last log entry when it was made (its own last entry if
+  it made entries), `step` 0 for a change that made log entries, 1, 2, …
+  for the changes after the same entry that made none (a library put,
+  a user's role, a commit). With one writer, positions only grow, and
+  they survive a restart (kept in `stream`). A **tile's revision** is the
+  position of the last change touching it, never older than its models'
+  last log entries (a change made without the server, an import).
+- **Tile keys** (`oplog.tiles`, `stream.tiles`): one `bigint` per tile —
+  the level + 128 in the top 8 bits, the column and the row in 28 bits
+  each (two's complement); the tiles of the server's packages, level
+  `net_meta` `tile_level` (2 by default: 1 024 m with the 256 m grid).
+  `net_meta` also keeps `context_temperature` (°C, default 15): the
+  weather case of the context's wires (still air).
 - **Rights**: a user's permissions on an object are the union of their
   own and their groups' assignments whose scope covers it; *see* is
   needed for every other permission; a `deny` row overrides grants on its
@@ -4577,6 +4620,30 @@ Notes:
   offline working set (exported to come back as a bundle, phase 12) will
   also have `network.read_only` (JSON, the kinds and ids of the
   neighbours kept read-only; the session refuses edits to them).
+
+### The server's messages (protocol 3)
+
+**Built 2026-11-19 for phase 5** (ADR-0013 and the
+[ADR-0005 amendment](../adr/0005-collaboration-session-model.md), in
+active development): `ohl_server::ClientMsg` / `ServerMsg`, JSON, one per
+length-prefixed QUIC message or WebSocket text message (`"type"`:
+snake case). **Protocol 3** since 2026-11-19: a client of another
+protocol is refused with a message saying which side to update. The
+messages of protocol 2 are unchanged; a file server speaks 3 with them
+alone (a network's messages sent to it get a notice).
+
+| Message | Fields | Meaning |
+|---|---|---|
+| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held` | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed |
+| client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
+| client `catch` | `since` | every change of its interest after `since` |
+| client `request_on` | `id`, `model`, `op`, `line` | an edit of a model (`request` acts on the model the client follows) |
+| server `network` | `name`, `crs`, `grid_size`, `tile_level`, `context_case`, `at`, `heartbeat_ms`, `bounds`, `models` (`code`, `name`, `structures`), `routes` (`id`, `model`, `name`, `bounds`) | what the network holds, after the welcome |
+| server `change` | `model`, `user`, `op`, `line`, `seq`, `first`, `at`, `tiles`, `routes` | an operation applied, to the clients whose interest it touches; a replica replays it numbering its log entries from `first` (`ohl_server::client::replay_change`) |
+| server `tile` | `tile`, `rev`, `bounds`, `case`, `structures` (`model`, `id`, `position`, `orientation_deg`, `type_name`, `height`, `stick`: segments), `wires` (`model`, `section`, `color`, `spans`: points, sag, max. tension; `error`), `routes` (`model`, `route`, `alignment`, `points`: its segments in the tile), `labels`, `notes` | a tile of the context at its revision |
+| server `tiles_changed` | `tiles`, `at`, `reason` | a change too large to follow (more tiles than a setting, or a merge): read these tiles again |
+| server `heartbeat` | `at`, `last` | the stream's position and the last change sent to this client: a client that has not received `last` missed something |
+| server `catch_up` | `from`, `to`, `changes`, `incomplete` | the changes asked for, in order; `incomplete`: more than a catch-up carries (10 000 by default) — read again |
 
 ## What a plugin sees
 

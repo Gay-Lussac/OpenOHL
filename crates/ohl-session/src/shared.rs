@@ -1071,6 +1071,32 @@ impl Session {
         Ok(())
     }
 
+    /// The routes of line objects of the line worked on, as the rules
+    /// above count them (see the module's notes): for a country server
+    /// keeping each object's routes with every write (ADR-0013, phase 5).
+    /// Objects that are not line objects, and objects not in the line:
+    /// none.
+    pub(crate) fn routes_of_objects(
+        &mut self,
+        objects: &[(Kind, String)],
+    ) -> Vec<BTreeSet<String>> {
+        self.line_index();
+        let index = self.index.as_ref().expect("made above");
+        let ctx = Ctx {
+            line: &self.line,
+            index,
+            routes: None,
+            part: None,
+            recorded: &BTreeMap::new(),
+            geo: RefCell::new(None),
+            of_structure: RefCell::new(HashMap::new()),
+        };
+        objects
+            .iter()
+            .map(|(kind, id)| ctx.routes_now(*kind, id))
+            .collect()
+    }
+
     /// The objects of the line using structure `id` that `keep` does not
     /// hold (for a part: [`PART_USERS_KEY`]).
     pub(crate) fn users_outside(

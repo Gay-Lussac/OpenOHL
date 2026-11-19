@@ -254,7 +254,18 @@ impl Model {
                 others.push(text);
                 None
             }
-            ServerMsg::Welcome { .. } | ServerMsg::Refused { .. } | ServerMsg::Scene(_) => None,
+            // A file server's desktop client: the scene is the web
+            // client's; a network's messages (protocol 3) do not come to
+            // it (OHL-Design joins a network with working sets, phase 6).
+            ServerMsg::Welcome { .. }
+            | ServerMsg::Refused { .. }
+            | ServerMsg::Scene(_)
+            | ServerMsg::Network(_)
+            | ServerMsg::Change(_)
+            | ServerMsg::Tile(_)
+            | ServerMsg::TilesChanged { .. }
+            | ServerMsg::Heartbeat { .. }
+            | ServerMsg::CatchUp { .. } => None,
         }
     }
 

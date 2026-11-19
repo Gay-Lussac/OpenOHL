@@ -1104,6 +1104,9 @@ pub struct Session {
     /// The stale marks of the command being applied, written with its log
     /// entry ([`shared`]).
     shared_pending: std::sync::Mutex<Option<BTreeMap<String, String>>>,
+    /// The number the next log entry takes, when given
+    /// ([`Session::set_next_seq`]).
+    next_seq: std::sync::Mutex<Option<i64>>,
 }
 
 /// What a command of a unit of work replaced, to put back should the unit
@@ -1830,6 +1833,7 @@ impl Session {
             working_sets: BTreeMap::new(),
             part_users: BTreeMap::new(),
             shared_pending: std::sync::Mutex::new(None),
+            next_seq: std::sync::Mutex::new(None),
         };
         session.load_lines(by_line, gone, placed)?;
         session.read_part()?;
@@ -3800,6 +3804,7 @@ impl Session {
             undoes,
             note,
             line: &self.current,
+            seq: self.next_seq.lock().expect("not poisoned").take(),
         })?;
         if let Some(u) = undoes {
             tx.mark_undone(u, seq)?;
@@ -4075,6 +4080,7 @@ pub mod impact;
 pub(crate) mod in_place;
 #[cfg(test)]
 mod in_place_tests;
+pub mod interest;
 pub mod library_merge;
 pub mod lines;
 pub mod live;

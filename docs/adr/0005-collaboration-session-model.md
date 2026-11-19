@@ -55,3 +55,17 @@ yet):
   and for everything the server sends. A desktop project keeps today's
   three roles and edit grants.
 - **OIDC/SSO** sign-in becomes needed on a country server.
+
+## Note (2026-11-19): protocol 3
+
+The server on a country server's database (ADR-0013 phase 5,
+`ohl network serve`) speaks **protocol 3**: a client follows models,
+routes and tiles; it receives the changes touching them (`change`), tile
+packages of the context (`tile`), "read again" for changes too large to
+follow (`tiles_changed`), a `heartbeat` with the stream's position and the
+last change sent to it, and catches up from its position (`catch`,
+`catch_up`); a desktop following a model replays its changes taking the
+server's log numbers. A file server speaks protocol 3 too, its messages
+unchanged (`hello`, `applied`, `scene`, …). A client of protocol 2 (the
+alpha) is refused with a message saying to update OpenOHL. The messages:
+[data model](../development/data-model.md#the-servers-messages-protocol-3).

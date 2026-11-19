@@ -611,7 +611,8 @@ impl Store for PgStore {
             .one(
                 "INSERT INTO oplog (line_id, seq, user_name, kind, command, inverse, objects,
                      sections, undoes, note, branch)
-                 SELECT $1, COALESCE(MAX(seq), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+                 SELECT $1, COALESCE($11, COALESCE(MAX(seq), 0) + 1), $2, $3, $4, $5, $6, $7,
+                     $8, $9, $10
                  FROM oplog
                  RETURNING seq",
                 &[
@@ -625,6 +626,7 @@ impl Store for PgStore {
                     &e.undoes,
                     &e.note,
                     &e.line,
+                    &e.seq,
                 ],
             )?
             .get(0))

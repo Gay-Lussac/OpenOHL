@@ -5,6 +5,12 @@
 //! The client: joins a server with an invitation, receives the project
 //! file, then exchanges messages through a [`Link`] (a thread runs the
 //! connection; the application polls).
+//!
+//! A network's server ([`crate::network`]) is joined with [`join_network`]:
+//! with a model, its copy comes as a project file does and its changes are
+//! replayed with [`replay_change`] (the replica takes the network's log
+//! numbers); without one, nothing comes but what the client asks for
+//! (tiles, routes).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -16,8 +22,8 @@ use ohl_session::{Applied, Role, Session};
 use tokio::sync::mpsc;
 
 use crate::{
-    ALPN, ClientMsg, Invitation, Op, PROTOCOL, Peer, ServerMsg, execute, fingerprint, read_msg,
-    write_msg,
+    ALPN, Change, ClientMsg, HeldTile, Invitation, Op, PROTOCOL, Peer, Position, ServerMsg,
+    execute, fingerprint, read_msg, write_msg,
 };
 
 /// What the connection gives the application.
@@ -119,6 +125,77 @@ pub fn replay(
     Ok(applied)
 }
 
+/// Applies a network's change to the replica of its model: its log
+/// entries take the server's numbers ([`Session::set_next_seq`]), and the
+/// replica's last entry must then be the server's (else it is out of
+/// sync: join again).
+pub fn replay_change(session: &mut Session, change: &Change) -> Result<Option<Applied>, String> {
+    session.set_next_seq(change.first);
+    let applied = execute(session, &change.user, &change.line, &change.op);
+    session.set_next_seq(None);
+    let applied = applied.map_err(|e| format!("replica: {e}"))?;
+    let mine = applied.as_ref().map(|a| a.seq);
+    if mine != change.seq {
+        return Err(format!(
+            "replica out of sync (log entry {mine:?}, server {:?}): join again",
+            change.seq
+        ));
+    }
+    if change.first.is_some() {
+        let last = session.last_seq().map_err(|e| e.to_string())?;
+        if last != change.at.seq {
+            return Err(format!(
+                "replica out of sync (last log entry {last}, server {}): join again",
+                change.at.seq
+            ));
+        }
+    }
+    Ok(applied)
+}
+
+/// How to join a network's server.
+#[derive(Debug, Clone, Default)]
+pub struct NetJoin {
+    /// The model to follow whole: its copy is written to `file`.
+    pub model: Option<String>,
+    /// Where the model's copy goes (needed with a model).
+    pub file: Option<std::path::PathBuf>,
+    /// The changes after this position first (after a disconnect).
+    pub since: Option<Position>,
+    /// The routes of the working set.
+    pub routes: Vec<String>,
+    /// The tiles viewed.
+    pub tiles: Vec<HeldTile>,
+    /// The model's copy is held already (a replica catching up from
+    /// `since`): none is sent.
+    pub held: bool,
+}
+
+/// Joins the network's server of `invitation` as `user` (protocol 3's
+/// join); blocks until joined (as [`join`]). With a model, its copy is
+/// written to `how.file` first.
+pub fn join_network(
+    invitation: &Invitation,
+    user: &str,
+    how: &NetJoin,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<Joined, String> {
+    if how.model.is_some() && !how.held && how.file.is_none() {
+        return Err("a file for the model's copy".into());
+    }
+    let hello = ClientMsg::Join {
+        protocol: PROTOCOL,
+        user: user.to_owned(),
+        code: invitation.code.clone(),
+        model: how.model.clone(),
+        since: how.since,
+        routes: how.routes.clone(),
+        tiles: how.tiles.clone(),
+        held: how.held,
+    };
+    join_with(invitation, user, hello, how.file.clone(), progress)
+}
+
 /// Trusts the server whose certificate has the invitation's fingerprint.
 #[derive(Debug)]
 struct Pinned {
@@ -216,12 +293,25 @@ pub fn join(
     file: &Path,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<Joined, String> {
+    let hello = ClientMsg::Hello {
+        protocol: PROTOCOL,
+        user: user.to_owned(),
+        code: invitation.code.clone(),
+    };
+    join_with(invitation, user, hello, Some(file.to_owned()), progress)
+}
+
+pub(crate) fn join_with(
+    invitation: &Invitation,
+    user: &str,
+    hello: ClientMsg,
+    file: Option<std::path::PathBuf>,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<Joined, String> {
     let (hs_tx, hs_rx) = std_mpsc::channel::<Handshake>();
     let (out, out_rx) = mpsc::unbounded_channel::<ClientMsg>();
     let (in_tx, inbox) = std_mpsc::channel::<Incoming>();
     let invitation = invitation.clone();
-    let user_owned = user.to_owned();
-    let file = file.to_owned();
     let address = invitation.address.clone();
     std::thread::Builder::new()
         .name("ohl-client".into())
@@ -236,7 +326,7 @@ pub fn join(
                     return;
                 }
             };
-            rt.block_on(run(invitation, user_owned, file, hs_tx, out_rx, in_tx));
+            rt.block_on(run(invitation, hello, file, hs_tx, out_rx, in_tx));
         })
         .map_err(|e| e.to_string())?;
     loop {
@@ -261,13 +351,13 @@ pub fn join(
 
 async fn run(
     invitation: Invitation,
-    user: String,
-    file: std::path::PathBuf,
+    hello: ClientMsg,
+    file: Option<std::path::PathBuf>,
     hs: std_mpsc::Sender<Handshake>,
     mut out_rx: mpsc::UnboundedReceiver<ClientMsg>,
     inbox: std_mpsc::Sender<Incoming>,
 ) {
-    let connected = connect(&invitation, &user, &file, &hs).await;
+    let connected = connect(&invitation, &hello, file.as_deref(), &hs).await;
     let (endpoint, conn, mut send, mut recv, joined) = match connected {
         Ok(c) => c,
         Err(e) => {
@@ -319,8 +409,8 @@ type Connected = (
 
 async fn connect(
     invitation: &Invitation,
-    user: &str,
-    file: &Path,
+    hello: &ClientMsg,
+    file: Option<&Path>,
     hs: &std_mpsc::Sender<Handshake>,
 ) -> Result<Connected, String> {
     let addr = tokio::net::lookup_host(&invitation.address)
@@ -345,15 +435,7 @@ async fn connect(
     .map_err(|_| format!("{}: no answer in 20 s", invitation.address))?
     .map_err(|e| format!("{}: {e}", invitation.address))?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    write_msg(
-        &mut send,
-        &ClientMsg::Hello {
-            protocol: PROTOCOL,
-            user: user.to_owned(),
-            code: invitation.code.clone(),
-        },
-    )
-    .await?;
+    write_msg(&mut send, hello).await?;
     let welcome = tokio::time::timeout(Duration::from_secs(60), read_msg::<ServerMsg>(&mut recv))
         .await
         .map_err(|_| "no welcome in 60 s".to_owned())??;
@@ -370,7 +452,13 @@ async fn connect(
         Some(other) => return Err(format!("unexpected {other:?}")),
         None => return Err("the server closed the connection".into()),
     };
-    receive_file(&conn, file, size, hs).await?;
+    // A network's client following no model gets no file.
+    match file {
+        Some(file) if size > 0 || matches!(hello, ClientMsg::Hello { .. }) => {
+            receive_file(&conn, file, size, hs).await?;
+        }
+        _ => {}
+    }
     // The link is filled in by `join`.
     let (dummy_out, _) = mpsc::unbounded_channel();
     let (_, dummy_in) = std_mpsc::channel();

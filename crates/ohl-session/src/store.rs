@@ -91,6 +91,10 @@ pub struct NewEntry<'a> {
     pub note: Option<String>,
     /// Project line.
     pub line: &'a str,
+    /// Its number, when given (a replica of one model of a country
+    /// server takes the server's numbers, [`crate::Session::set_next_seq`]);
+    /// `None`: the next of the store, as always.
+    pub seq: Option<i64>,
 }
 
 /// A stored log entry: seq, time, user, kind, command, inverse, objects,

@@ -20,6 +20,12 @@
 //! default exit clauses of the finite-element solve (per section), made
 //! once per change for every web client (cached by revision; one at a
 //! time), at most every [`SCENE_DELAY`] while edits keep coming.
+//!
+//! On a network's server ([`crate::network`]) a web client gets no scene:
+//! after the welcome it receives what the network holds
+//! ([`crate::ServerMsg::Network`]) and asks for the tiles around its view
+//! ([`crate::ClientMsg::Interest`]); it draws their packages and reads a
+//! tile again when a change touched it — a viewer of any size.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -30,13 +36,14 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Semaphore, broadcast, oneshot};
+use tokio::sync::{Semaphore, oneshot};
 use tokio::time::Instant;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::protocol::{Role as WsRole, WebSocketConfig};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
-use crate::server::{Event, Gate, Job, Pace, Pending, SceneSource, dispatch, log};
+use crate::server::{Gate, Job, JoinOptions, Pace, Pending, SceneSource, deliver, dispatch, log};
+use crate::stream::{Deliver, Feed, FeedEnd, Item};
 use crate::{
     ClientMsg, MAX_HELLO, MAX_MESSAGE, Op, PROTOCOL, Scene, SceneSpan, SceneWire, ServerMsg,
 };
@@ -453,21 +460,52 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
         Some(Err(e)) => return Err(e.to_string()),
         None => return Ok(()),
     };
-    let ClientMsg::Hello {
-        protocol,
-        user,
-        code,
-    } = hello
-    else {
-        return Err("no hello".into());
+    let (protocol, user, code, options) = match hello {
+        ClientMsg::Hello {
+            protocol,
+            user,
+            code,
+        } => (protocol, user, code, JoinOptions::default()),
+        // A viewer: no model's copy, its routes and tiles.
+        ClientMsg::Join {
+            protocol,
+            user,
+            code,
+            since,
+            routes,
+            tiles,
+            ..
+        } => (
+            protocol,
+            user,
+            code,
+            JoinOptions {
+                since,
+                routes,
+                tiles,
+                ..JoinOptions::default()
+            },
+        ),
+        _ => return Err("no hello".into()),
     };
     if protocol != PROTOCOL {
-        let reason = format!("protocol {protocol}; this server speaks {PROTOCOL}");
-        refuse(&mut ws, reason).await;
+        refuse(&mut ws, crate::protocol_refusal(protocol)).await;
         return Ok(());
     }
-    let joined =
-        crate::server::join(&entry.gate, entry.ip, &jobs, user.clone(), code, false).await?;
+    let options = JoinOptions {
+        web: true,
+        ..options
+    };
+    let joined = crate::server::join(
+        &entry.gate,
+        entry.ip,
+        &jobs,
+        client,
+        user.clone(),
+        code,
+        options,
+    )
+    .await?;
     drop(entry.pending);
     let joined = match joined {
         Ok(j) => j,
@@ -485,7 +523,10 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
     )
     .await;
     let result = joined_session(ws, client, &user, joined, &jobs, &scenes).await;
-    let _ = jobs.send(Job::Leave { user: user.clone() });
+    let _ = jobs.send(Job::Leave {
+        client,
+        user: user.clone(),
+    });
     log(&format!("{user} left (web)"));
     result
 }
@@ -499,10 +540,13 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
     scenes: &Scenes,
 ) -> Result<(), String> {
     send(&mut ws, &joined.welcome).await?;
-    let mut events = joined.events;
+    // A network's server sends no scene: the client reads tiles.
+    let network = joined.own.is_some();
+    let mut feed = Feed::new(joined.events, joined.own, joined.index);
+    let mut view = joined.view;
     let mut sent: Option<u64> = None;
     // When to send a new scene (now: the first one).
-    let mut refresh = Some(Instant::now());
+    let mut refresh = (!network).then(Instant::now);
     let mut ping = tokio::time::interval(PING);
     let mut heard = Instant::now();
     let mut pace = Pace::new();
@@ -517,32 +561,33 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                     sent = Some(revision);
                 }
             }
-            event = events.recv() => match event {
-                Ok(Event { answers, msg, text }) => {
-                    let answer = match (&*msg, answers) {
-                        (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
-                            Some(ServerMsg::Response { id, result: Ok(op.describe()) })
-                        }
-                        _ => None,
-                    };
-                    if let ServerMsg::Applied { op, line, .. } = &*msg
+            item = feed.next() => match item {
+                Ok(item) => {
+                    if let Item::Event(ev) = &item
+                        && let ServerMsg::Applied { op, line, .. } = &*ev.msg
+                        && !network
                         && changes_scene(op, line)
                         && refresh.is_none()
                     {
                         refresh = Some(Instant::now() + SCENE_DELAY);
                     }
-                    send_encoded(&mut ws, text?).await?;
+                    let (d, answer) = deliver(&mut view, client, item);
+                    match d {
+                        Some(Deliver::Shared(text)) => send_encoded(&mut ws, text).await?,
+                        Some(Deliver::Own(m)) => send(&mut ws, &m).await?,
+                        None => {}
+                    }
                     if let Some(a) = answer {
                         send(&mut ws, &a).await?;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {
+                Err(FeedEnd::Lagged) => {
                     let text = "too far behind the server: join again".to_owned();
                     let _ = send(&mut ws, &ServerMsg::Notice { text }).await;
                     let _ = ws.close(None).await;
                     return Err("client too far behind".into());
                 }
-                Err(broadcast::error::RecvError::Closed) => return Ok(()),
+                Err(FeedEnd::Closed) => return Ok(()),
             },
             incoming = ws.next() => {
                 heard = Instant::now();
@@ -554,10 +599,12 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                             .map_err(|e| format!("bad message: {e}"))?;
                         // The web client only views: no edits, no locks.
                         let answer = match msg {
-                            ClientMsg::Request { id, .. } => Some(ServerMsg::Response {
-                                id,
-                                result: Err(VIEW_ONLY.into()),
-                            }),
+                            ClientMsg::Request { id, .. } | ClientMsg::RequestOn { id, .. } => {
+                                Some(ServerMsg::Response {
+                                    id,
+                                    result: Err(VIEW_ONLY.into()),
+                                })
+                            }
                             ClientMsg::Lock { .. } => Some(ServerMsg::Notice {
                                 text: VIEW_ONLY.into(),
                             }),
@@ -643,7 +690,7 @@ pub const VIEW_ONLY: &str = "the web client only views the project (a viewer): e
 pub const SCENE_SPAN_POINTS: usize = 24;
 
 /// About `n` points of `points`, evenly, its ends kept.
-fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
+pub(crate) fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
     if points.len() <= n || n < 2 {
         return points.to_vec();
     }
@@ -653,13 +700,13 @@ fn thin(points: &[[f64; 3]], n: usize) -> Vec<[f64; 3]> {
         .collect()
 }
 
-fn mm(p: &[f64; 3]) -> [f64; 3] {
+pub(crate) fn mm(p: &[f64; 3]) -> [f64; 3] {
     p.map(|x| (x * 1000.0).round() / 1000.0)
 }
 
 /// The project's files of a library kind, written to a folder of `work`
 /// to be loaded (`None`: the project has none).
-fn library_dir(
+pub(crate) fn library_dir(
     files: Option<&Vec<(String, String)>>,
     work: &Path,
     kind: &str,

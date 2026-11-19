@@ -9,10 +9,17 @@
 // arrive. It does not edit: G goes to a structure, the mouse and the keys
 // move around, a click shows an object's properties. What is drawn is
 // thinned with the distance (detail), so long lines stay fluid.
+//
+// On a network's server (protocol 3) it gets no scene: it asks for the
+// tiles around its view — light packages of the context, each at its
+// revision — and draws them; a change touching a tile it holds makes it
+// read that tile again. A viewer of any size.
 "use strict";
 
 (() => {
-  const PROTOCOL = 2;
+  const PROTOCOL = 3;
+  // Tiles viewed at most at once (the nearest the view's middle).
+  const MAX_TILES = 96;
   const PALETTE = ["#d0703a", "#4a9be0", "#58b368", "#c9b03c", "#b06ad0", "#40b5b0"];
   const BACKGROUND = { r: 0.106, g: 0.118, b: 0.133, a: 1 };
   const STRUCTURE = "#a7b0b9";
@@ -60,6 +67,14 @@
     presenceTimer: 0,
     show: Object.assign({}, SHOW_DEFAULT),
     detail: "medium",
+    // A network's server: what it holds, the tiles held (key → package),
+    // the tiles to read again, the last change's position.
+    network: null,
+    tiles: new Map(),
+    dirty: new Set(),
+    tileTimer: 0,
+    sceneTimer: 0,
+    last: null,
   };
 
   // ---- small helpers ------------------------------------------------
@@ -163,6 +178,10 @@
         setStatus("not connected");
       }
       state.role = null;
+      state.network = null;
+      state.heightSet = false;
+      state.tiles.clear();
+      state.dirty.clear();
     };
   }
 
@@ -205,6 +224,36 @@
         draw();
         break;
       }
+      case "network":
+        startNetwork(msg);
+        break;
+      case "tile":
+        state.tiles.set(msg.tile.join("/"), msg);
+        state.dirty.delete(msg.tile.join("/"));
+        sceneSoon();
+        break;
+      case "change": {
+        noteLast(msg.at);
+        const where = msg.line && msg.line !== "main" ? `, line ${msg.line}` : "";
+        const li = el("li", `${msg.at.seq}${msg.at.step ? "." + msg.at.step : ""} ${msg.user}: ${describe(msg.op)} (${msg.model}${where})`);
+        const log = $("log");
+        log.insertBefore(li, log.firstChild);
+        while (log.children.length > MAX_LOG) log.removeChild(log.lastChild);
+        readAgain(msg.tiles || []);
+        break;
+      }
+      case "tiles_changed":
+        noteLast(msg.at);
+        readAgain(msg.tiles || []);
+        break;
+      case "heartbeat":
+        // A change missed: the tiles are read again (a viewer keeps no
+        // replica to catch up).
+        if (msg.last && (!state.last || before(state.last, msg.last))) {
+          noteLast(msg.last);
+          readAgain([...state.tiles.keys()].map((k) => k.split("/").map(Number)));
+        }
+        break;
       case "applied": {
         const where = msg.line && msg.line !== "main" ? ` (line ${msg.line})` : "";
         const seq = msg.seq === null || msg.seq === undefined ? "–" : "#" + msg.seq;
@@ -229,6 +278,169 @@
       default:
         break;
     }
+  }
+
+  // ---- a network's tiles --------------------------------------------
+
+  function before(a, b) {
+    return a.seq < b.seq || (a.seq === b.seq && a.step < b.step);
+  }
+
+  function noteLast(at) {
+    if (at && (!state.last || before(state.last, at))) state.last = at;
+  }
+
+  function startNetwork(info) {
+    const first = !state.network;
+    state.network = info;
+    $("mode").textContent = `— viewer, network of ${info.models.length} lines (tiles)`;
+    if (first) {
+      const b = info.bounds || [0, 0, 1, 1];
+      state.origin = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2, 0];
+      state.scene = sceneOfTiles();
+      prepare(true);
+      // Start at the first route with an alignment.
+      const r = info.routes.find((x) => x.bounds);
+      if (r) {
+        const c = local([(r.bounds[0] + r.bounds[2]) / 2, (r.bounds[1] + r.bounds[3]) / 2, 0]);
+        state.cam.target = [c[0], c[1], 0];
+        state.cam.dist = 1500;
+        state.plan.c = [c[0], c[1], 0];
+        state.plan.s = 0.25;
+      }
+      setStatus(`joined as ${state.user} — network at log entry ${info.at.seq}`);
+      showNotes();
+    }
+    askTiles();
+    draw();
+  }
+
+  // The area viewed (network coordinates): x0, y0, x1, y1.
+  function viewArea() {
+    const o = state.origin;
+    if (state.view === "plan" && state.plan) {
+      const hw = (overlay.clientWidth || 800) / (2 * state.plan.s);
+      const hh = (overlay.clientHeight || 600) / (2 * state.plan.s);
+      const c = state.plan.c;
+      return [c[0] - hw + o[0], c[1] - hh + o[1], c[0] + hw + o[0], c[1] + hh + o[1]];
+    }
+    const r = Math.max(300, Math.min(8000, state.cam.dist * 1.5));
+    const c = state.cam.target;
+    return [c[0] - r + o[0], c[1] - r + o[1], c[0] + r + o[0], c[1] + r + o[1]];
+  }
+
+  // The tiles of the view, the nearest its middle first, at most MAX_TILES.
+  function wantedTiles() {
+    const n = state.network;
+    const size = n.grid_size * Math.pow(2, n.tile_level);
+    const a = viewArea();
+    const x0 = Math.floor(a[0] / size), x1 = Math.floor(a[2] / size);
+    const y0 = Math.floor(a[1] / size), y1 = Math.floor(a[3] / size);
+    const cx = (a[0] + a[2]) / 2 / size, cy = (a[1] + a[3]) / 2 / size;
+    const out = [];
+    for (let x = x0; x <= x1 && out.length < 4 * MAX_TILES; x++) {
+      for (let y = y0; y <= y1 && out.length < 4 * MAX_TILES; y++) out.push([n.tile_level, x, y]);
+    }
+    out.sort((p, q) => Math.hypot(p[1] + 0.5 - cx, p[2] + 0.5 - cy) - Math.hypot(q[1] + 0.5 - cx, q[2] + 0.5 - cy));
+    return out.slice(0, MAX_TILES);
+  }
+
+  // Asks for the view's tiles (those held unchanged with their revision);
+  // the others are dropped.
+  function askTiles() {
+    if (!state.network || !state.ws) return;
+    const wanted = wantedTiles();
+    const keys = new Set(wanted.map((t) => t.join("/")));
+    let dropped = false;
+    for (const k of [...state.tiles.keys()]) {
+      if (!keys.has(k)) {
+        state.tiles.delete(k);
+        state.dirty.delete(k);
+        dropped = true;
+      }
+    }
+    const tiles = wanted.map((t) => {
+      const k = t.join("/");
+      const p = state.tiles.get(k);
+      return { tile: t, rev: p && !state.dirty.has(k) ? p.rev : null };
+    });
+    send({ type: "interest", routes: [], tiles });
+    if (dropped) sceneSoon();
+  }
+
+  function scheduleTiles() {
+    if (state.tileTimer || !state.network) return;
+    state.tileTimer = setTimeout(() => {
+      state.tileTimer = 0;
+      askTiles();
+    }, 250);
+  }
+
+  function readAgain(tiles) {
+    if (!state.network) return;
+    for (const t of tiles) {
+      const k = t.join("/");
+      if (state.tiles.has(k)) state.dirty.add(k);
+    }
+    if (state.dirty.size) scheduleTiles();
+  }
+
+  // The tiles held as a scene (structures, wires, alignments), each once.
+  function sceneOfTiles() {
+    const line = { structures: [], sections: [], alignments: [], alignment_points: [], display: {} };
+    const wires = [];
+    const notes = new Set();
+    const seenS = new Set(), seenW = new Set();
+    for (const [key, p] of state.tiles) {
+      for (const n of p.notes || []) notes.add(n);
+      for (const s of p.structures) {
+        if (seenS.has(s.id)) continue;
+        seenS.add(s.id);
+        line.structures.push({
+          id: s.id, position: s.position, orientation_deg: s.orientation_deg,
+          type: s.type_name, members: s.stick, model: s.model,
+        });
+      }
+      for (const w of p.wires) {
+        const k = w.model + "/" + w.section;
+        if (seenW.has(k)) continue;
+        seenW.add(k);
+        line.sections.push({ id: w.section, color: w.color, model: w.model });
+        wires.push({ section: w.section, spans: w.spans, error: w.error });
+      }
+      p.routes.forEach((r, i) => {
+        const ids = r.points.map((pt, j) => {
+          const id = `${key}:${i}:${j}`;
+          line.alignment_points.push({ id, position: pt });
+          return id;
+        });
+        line.alignments.push({ id: `${key}:${i}`, route: r.route, points: ids });
+      });
+    }
+    const case_ = state.network ? state.network.context_case : "";
+    return {
+      seq: state.network ? state.network.at.seq : 0, line, wires, case: case_,
+      notes: [`The network's tiles around the view (${state.tiles.size}); each section solved alone in ${case_}: a drawing, not a result.`, ...notes],
+    };
+  }
+
+  function sceneSoon() {
+    if (state.sceneTimer) return;
+    state.sceneTimer = setTimeout(() => {
+      state.sceneTimer = 0;
+      state.scene = sceneOfTiles();
+      // The camera at the height of the first structures seen.
+      const first = state.scene.line.structures[0];
+      if (first && !state.heightSet) {
+        state.cam.target[2] = first.position[2] - state.origin[2];
+        state.heightSet = true;
+      }
+      prepare(false);
+      showNotes();
+      showSelection();
+      fillGoto();
+      draw();
+    }, 60);
   }
 
   // ---- geometry -----------------------------------------------------
@@ -624,6 +836,7 @@
 
   let frame = 0;
   function draw() {
+    scheduleTiles();
     if (frame) return;
     frame = requestAnimationFrame(() => {
       frame = 0;
@@ -889,7 +1102,8 @@
     const ul = $("notes");
     ul.replaceChildren();
     const scene = state.scene;
-    ul.appendChild(el("li", `The main line; wires solved on the server, ${scene.case}.`));
+    if (!scene) return;
+    if (!state.network) ul.appendChild(el("li", `The main line; wires solved on the server, ${scene.case}.`));
     for (const n of scene.notes) ul.appendChild(el("li", n));
     for (const w of scene.wires) {
       if (w.error) ul.appendChild(el("li", `section ${w.section}: ${w.error}`, "error"));

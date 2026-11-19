@@ -258,6 +258,7 @@ fn entry<'a>(user: &'a str, kind: &'a str, line: &'a str, n: u32) -> NewEntry<'a
         undoes: None,
         note: None,
         line,
+        seq: None,
     }
 }
 

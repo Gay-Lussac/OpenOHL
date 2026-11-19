@@ -793,6 +793,25 @@ impl Store for SqliteStore {
     }
 
     fn append_entry(&self, e: &NewEntry<'_>) -> Result<i64, SessionError> {
+        if let Some(seq) = e.seq {
+            // A replica of a network's model: the server's number.
+            self.conn.execute(
+                "INSERT INTO oplog (seq, user, kind, command, inverse, objects, sections, undoes, note, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    seq,
+                    e.user,
+                    e.kind,
+                    e.command,
+                    e.inverse,
+                    e.objects,
+                    e.sections,
+                    e.undoes,
+                    e.note,
+                    e.line
+                ],
+            )?;
+            return Ok(seq);
+        }
         self.conn.execute(
             "INSERT INTO oplog (user, kind, command, inverse, objects, sections, undoes, note, line) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![

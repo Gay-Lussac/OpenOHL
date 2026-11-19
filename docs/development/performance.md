@@ -697,6 +697,62 @@ revision writes every object as a blob, one statement each (≈ 0.2 ms an
 object); the rows themselves go in batches of 2 000. The empty database
 with PostGIS is 8 MB.
 
+## Synthetic country: phase 5, the server on the database (2026-11-19)
+
+The server on the network's database ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-19-country-server-phase-5),
+[running it](postgresql.md#running-the-server-on-the-database-locally)):
+`ohl network serve` on the 147 line models of the 12 000-pylon country
+(seed 1, imported as in phase 4: 88.5 s with each element's routes and
+references, 353 MB), measured by `ohl network bench` against the plan's
+targets (§4):
+
+```bash
+ohl network bench --user synth --viewers 20 --moves 100 --areas 200 --work DIR
+```
+
+The server runs as a process of its own (its memory is its own); 20
+viewers (QUIC) each on a view of 4 × 3 tiles of 1 024 m — 10 each on a
+view of its own, 10 on one view —, a desktop joining a line (its copy)
+and moving structures back and forth, another client following that
+line; then the server in the bench's process for the area queries.
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on the same
+machine (127.0.0.1), the machine shared with two other agents' builds
+(load 12–19 during the run):
+
+| Measure (target) | Measured |
+|---|---|
+| Server start: every line read, the tile index made (< 60 s) | 2.5 s — 147 models, 113 194 objects; 26 543 tiles, 68 242 objects placed in them; 14 123 structures (the 12 000 pylons, the shared ones in two lines) |
+| Memory idle (< 2 GB) | 1 254 MB |
+| Memory per client (< 50 MB) | 0.08 MB per connection on a view already made; 6.2 MB per viewer on a view of its own (its 12 packages and solved shapes kept in the shared caches) |
+| Area query, one view's tiles (< 20 ms at p95) | the authority's tile index: p50 3 µs, p95 8 µs (12 tiles, ≈ 300 objects); PostgreSQL's spatial index (GiST): p50 0.23 ms, p95 0.41 ms |
+| Tile package from the cache (< 5 ms) | in the server p50 0.5 µs, p95 7 µs; asked and received by a client p50 2.5 ms, p95 8.6 ms |
+| Tile package made (< 100 ms) | in the server p50 10 ms, p95 96 ms, at most 158 ms; by a client p50 23 ms, p95 116 ms |
+| A move applied and broadcast (< 50 ms at p95) | in the server p50 5.5 ms, p95 10.3 ms; answered p95 10.8 ms; at another client following the line p95 10.8 ms |
+| Join to first drawn view (< 5 s) | a view of 12 tiles none made: p50 0.10 s, at most 0.52 s; made already: p50 19 ms; a desktop joining a line with its copy: 0.27 s |
+
+A package is made from a copy of each model's line at its revision; its
+sections are solved each alone in the context case, four side by side,
+each on **the part of its line it reads** (its sub-line: the same shape
+as on the whole line, bit for bit, tested). Before the sub-lines (each
+section solved on its whole line) a package took p50 40 ms, p95 253 ms
+in the same bench; one section after another at load 60–150, p95 1.1 s.
+A section solved once is taken from the cache until something it reads
+changes. The run's packages and shapes: 150 packages (7.2 MB), 2 190
+shapes (3.4 MB). An edit through the server costs what it cost through
+the store (phase 4: median 5 ms) plus its routes, references and stream
+row in the same transaction (< 1 ms).
+
+**The whole country as one model** (CH: 12 000 structures, 50 936
+sections in one model; imported without its revision in 16.9 s,
+276 MB): start 1.9 s, idle 1 218 MB; a package made p50 21 ms, p95 68 ms
+(each section on its sub-line: before them a view of 12 tiles took
+minutes); the first package asked after an edit copies the model's whole
+line (about a second and some 0.2 GB with its index, counted in the
+viewers' memory: 56 MB each for three); a desktop joining it copies the
+whole model in 2.3 s; a move p95 9.8 ms; an area query p95 11 µs in the
+tile index, 0.77 ms in PostgreSQL.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:
