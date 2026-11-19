@@ -8,6 +8,78 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (owner decisions on the open questions)
+
+**Every plan on the roadmap; the owner's answers to the plans' open
+questions** (owner, 2026-11-19: "put all different plans we did in the
+roadmap and then remove the .md and work from there", and "Okay go ahead"
+on the recommendations below). The plans kept privately until now are
+carried into the [roadmap](https://github.com/Gay-Lussac/OpenOHL/blob/main/ROADMAP.md),
+with the order of the work (*Next, in order*). Nothing below is built by
+this entry; each item says where it is on the roadmap.
+
+- **Country server, phase 4** (O17): one model is one store, branches per
+  model until phase 11; the objects' JSON stays text, not jsonb; twin
+  towers listed within 0.5 m with the same type, their height and
+  orientation differences shown, never used to hide a pair, the admin
+  deciding; the import's "imported from FILE" revision by default, with
+  `--no-revision`; renamed ids nested accepted, never the same code twice;
+  `tools/check.sh` requires the PostgreSQL tests on the owner's machine
+  (`OHL_REQUIRE_PG_TESTS=1`; the CI stays manual and skips them); `ohl
+  network init --name`.
+- **Country server, phase 5** (O17): the context case solved ahead when
+  the server is idle, in phase 6 (low priority, memory bounded); catch-up
+  positions for changes without a log entry kept; tiles of level 2
+  (1 024 m) and a context case of 15 °C still air as a network setting,
+  the context wires labelled a drawing — never a result, never used by a
+  check; one model per line stays the recommendation, the packager's
+  whole-line copy removed with phase 6 and the app's in-place edits;
+  default deny — only users an admin added join a network, even as
+  viewers.
+- **Joint layout, step 4** (O44): a change of section is a leg splice, the
+  same section one part unless marked, a command proposing the splice
+  places for the user to confirm; the welded plate's extra offset into the
+  analysis through the automatic eccentricities (out-of-plane offsets);
+  a weld's `sides` (fillet count) with its check; bracing bolted through
+  the outer splice cover, after the splice places; an end whose bolted leg
+  faces away: the other leg of an equal-leg angle bolted where it lies in
+  the face, then a bent plate later, else a hand detail.
+- **Buckling lengths** (O19, stage 4.3): SIA 263's strict reading stays
+  the default, ASCE 10-97's practice only as an option marked "not in SIA
+  263's text"; ASCE's "panel" as the stretch between one face's bracing
+  points; a run's end where every other member there lies in one line or
+  plane held only in that plane; the 20 % crossing rule kept for given
+  lengths too.
+- **Weight and the bill of materials** (O19, stage 4.6): a typed allowance
+  per structure for galvanising and fittings (no default number; the note
+  stays until one is given); the typed factor the floor until the
+  counting is validated (built); provisional bolts block the switch to the
+  counted mass; a record for fillers and packs, with the layout's filler
+  plates; OHL-Design keeps the typed factor until validated; a per-case
+  "weight favourable" mark in the load-case recipe.
+- **Automatic eccentricities** (O45): "estimated eccentricities" an option
+  at level 3, off until measured on the 78 real towers, then on by
+  default; where no layout fits an upper bound (the 30 mm shift limit, or
+  the plate case's offset where a plate would be needed), said "upper
+  bound"; the bolts from the class presets first, from the forces next if
+  too rough; the out-of-plane seat offsets measured once as an option.
+- **Joint checks** (O19, stage 4.5): a gusset plate's own bolts onto the
+  leg in the file format; a joint that does not fit reads "does not fit",
+  coloured as failing and counted apart, not an infinite usage; in-line
+  pieces not marked continuous end at the joint (conservative), the layout
+  proposing "continuous" for the user to confirm; the bolts in tension
+  checked next, with prying; the elastic method stays.
+- **Newly asked work**: OHL-Design's line updated in place from the
+  session's applied changes instead of a whole copy, resolve and
+  reference check per edit (O42); one PostgreSQL cluster per test binary,
+  the slow command-line safety-volume test made cheaper, the PostgreSQL
+  tests' port race fixed (O46).
+- **The order of the work**: the app's in-place edits and the tests'
+  speed; the joint checks' follow-ups and the bolts in tension; automatic
+  eccentricities A1–A3; leg splices and a weld's sides; the country
+  server's phase 6, then 7 and on; end releases and bolt slip, then the
+  validation of the lattice towers.
+
 ## 2026-11-19 (lattice towers: weight and quantities)
 
 **A tower's parts counted and weighed; the self-weight from the counted
