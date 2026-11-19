@@ -41,6 +41,9 @@ pub mod export;
 pub mod import;
 pub mod schema;
 mod store;
+pub mod stream;
+#[cfg(feature = "testing")]
+pub mod testing;
 
 pub use store::PgStore;
 

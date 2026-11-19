@@ -19,7 +19,7 @@ doc = false
 ohl-core.workspace = true
 ohl-validation.workspace = true
 ohl-plugins.workspace = true
-ohl-server.workspace = true
+ohl-server = { workspace = true, features = ["network"] }
 ohl-loads.workspace = true
 ohl-cables.workspace = true
 ohl-sagtension.workspace = true

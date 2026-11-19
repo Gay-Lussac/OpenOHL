@@ -13,16 +13,17 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 1;
+pub const SCHEMA: i32 = 2;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
 
 /// The migrations, oldest first: (schema reached, what it does, SQL).
-pub const MIGRATIONS: &[(i32, &str, &str)] = &[(
-    1,
-    "the network's tables (phase 4)",
-    r#"
+pub const MIGRATIONS: &[(i32, &str, &str)] = &[
+    (
+        1,
+        "the network's tables (phase 4)",
+        r#"
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 CREATE FUNCTION ohl_time(t timestamptz) RETURNS text LANGUAGE sql IMMUTABLE STRICT AS
@@ -249,4 +250,32 @@ CREATE FUNCTION audit_append_only() RETURNS trigger LANGUAGE plpgsql AS
 CREATE TRIGGER audit_append_only BEFORE UPDATE OR DELETE OR TRUNCATE ON audit
   FOR EACH STATEMENT EXECUTE FUNCTION audit_append_only();
 "#,
-)];
+    ),
+    (
+        2,
+        "what the server keeps for its clients' interest (phase 5)",
+        r#"
+-- The routes each element is on (NULL: not counted yet, e.g. imported
+-- before schema 2; the server counts them when it starts).
+ALTER TABLE object ADD COLUMN routes text[];
+CREATE INDEX object_routes ON object USING gin (routes);
+-- The models and the package tiles an entry touched.
+ALTER TABLE oplog ADD COLUMN lines text[] NOT NULL DEFAULT '{}';
+ALTER TABLE oplog ADD COLUMN tiles bigint[] NOT NULL DEFAULT '{}';
+CREATE INDEX oplog_tiles ON oplog USING gin (tiles);
+-- Every change the server applied and broadcast, at its position
+-- (seq, step), with the operation as the clients replay it.
+CREATE TABLE stream (
+  seq bigint NOT NULL, step integer NOT NULL CHECK (step >= 0),
+  line_id text NOT NULL REFERENCES line ON DELETE CASCADE,
+  branch text NOT NULL, user_name text NOT NULL,
+  op text NOT NULL, first_seq bigint, log_seq bigint,
+  tiles bigint[] NOT NULL DEFAULT '{}', routes text[] NOT NULL DEFAULT '{}',
+  time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (seq, step));
+CREATE INDEX stream_line ON stream (line_id, seq, step);
+CREATE INDEX stream_tiles ON stream USING gin (tiles);
+CREATE INDEX stream_routes ON stream USING gin (routes);
+"#,
+    ),
+];

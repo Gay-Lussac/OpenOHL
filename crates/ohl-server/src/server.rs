@@ -34,6 +34,7 @@ use ohl_session::{Role, Session};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
+use crate::stream::{Deliver, Feed, FeedEnd, Item, Own, To, View};
 use crate::{
     ALPN, Bucket, ClientMsg, Invitation, Keys, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg,
     execute, fingerprint, lock_target, random_code, read_msg, read_msg_max, write_encoded,
@@ -133,29 +134,40 @@ pub struct Server {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 
-/// One broadcast: a message for everyone, with the request it answers
+/// One broadcast: a message for everyone (or, on a network, for the
+/// clients whose interest it touches: [`To`]), with the request it answers
 /// (client, request id) when it is an edit. Encoded once
 /// ([`Event::new`]): every client is sent the same bytes (QUIC and web
 /// clients alike: the message's JSON), and the message itself is shared,
-/// not copied per client.
+/// not copied per client. `index`: its place among the broadcasts
+/// (given when sent).
 #[derive(Debug, Clone)]
 pub(crate) struct Event {
+    pub(crate) index: u64,
     pub(crate) answers: Option<(u64, u64)>,
     pub(crate) msg: Arc<ServerMsg>,
     /// The message's JSON (or why it could not be written).
     pub(crate) text: Result<Utf8Bytes, String>,
+    pub(crate) to: To,
 }
 
 impl Event {
-    /// The broadcast of `msg`, encoded.
+    /// The broadcast of `msg` to everyone, encoded.
     pub(crate) fn new(answers: Option<(u64, u64)>, msg: ServerMsg) -> Self {
+        Self::to(answers, msg, To::All)
+    }
+
+    /// The broadcast of `msg` to `to`, encoded.
+    pub(crate) fn to(answers: Option<(u64, u64)>, msg: ServerMsg, to: To) -> Self {
         let text = serde_json::to_string(&msg)
             .map(Utf8Bytes::from)
             .map_err(|e| e.to_string());
         Self {
+            index: 0,
             answers,
             msg: Arc::new(msg),
             text,
+            to,
         }
     }
 }
@@ -170,9 +182,9 @@ enum Out {
 /// A copy of the project file for joining clients, removed when the last
 /// one holding it is done.
 pub(crate) struct Snapshot {
-    path: PathBuf,
-    size: u64,
-    live: Arc<AtomicUsize>,
+    pub(crate) path: PathBuf,
+    pub(crate) size: u64,
+    pub(crate) live: Arc<AtomicUsize>,
 }
 
 impl Drop for Snapshot {
@@ -182,11 +194,26 @@ impl Drop for Snapshot {
     }
 }
 
+/// A joining client's copy of the project (or of a network's model): made
+/// already, or being made (on a network, by a reader at a snapshot).
+#[cfg_attr(not(feature = "network"), allow(dead_code))]
+pub(crate) enum CopyWait {
+    Ready(Arc<Snapshot>),
+    Making(oneshot::Receiver<Result<Arc<Snapshot>, String>>),
+}
+
 pub(crate) struct Joined {
     pub(crate) events: broadcast::Receiver<Event>,
-    /// The project file's copy (none for web clients).
-    copy: Option<Arc<Snapshot>>,
+    /// Network mode: what is for this client alone.
+    pub(crate) own: Option<mpsc::Receiver<Own>>,
+    /// The broadcasts sent before it joined.
+    pub(crate) index: u64,
+    /// The project file's copy (none for web clients and network clients
+    /// that hold no model).
+    pub(crate) copy: Option<CopyWait>,
     pub(crate) welcome: ServerMsg,
+    /// What it receives of the broadcasts.
+    pub(crate) view: View,
 }
 
 /// What a web client's scene is made from: the line and the libraries
@@ -199,12 +226,33 @@ pub(crate) struct SceneSource {
     pub(crate) libraries: BTreeMap<String, Vec<(String, String)>>,
 }
 
+/// How a client joins beyond its name and code (protocol 3's join; the
+/// hello of protocol 2 gives the defaults).
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(not(feature = "network"), allow(dead_code))]
+pub(crate) struct JoinOptions {
+    /// Send a copy of the project file (QUIC clients; on a network, of
+    /// `model`).
+    pub(crate) copy: bool,
+    /// A web client (a viewer).
+    pub(crate) web: bool,
+    /// Network: the model it follows whole.
+    pub(crate) model: Option<String>,
+    /// Network: the changes after this position first (a catch-up).
+    pub(crate) since: Option<crate::Position>,
+    /// Network: its working set's routes.
+    pub(crate) routes: Vec<String>,
+    /// Network: the tiles it views.
+    pub(crate) tiles: Vec<crate::HeldTile>,
+}
+
+#[cfg_attr(not(feature = "network"), allow(dead_code))]
 pub(crate) enum Job {
     Join {
+        client: u64,
         user: String,
         code: String,
-        /// Send a copy of the project file (QUIC clients).
-        copy: bool,
+        options: JoinOptions,
         reply: oneshot::Sender<Result<Joined, String>>,
     },
     Request {
@@ -213,6 +261,8 @@ pub(crate) enum Job {
         id: u64,
         op: Op,
         line: String,
+        /// Network: the model (default: the one the client follows).
+        model: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Presence {
@@ -229,6 +279,7 @@ pub(crate) enum Job {
         target: String,
     },
     Leave {
+        client: u64,
         user: String,
     },
     Peers {
@@ -239,6 +290,28 @@ pub(crate) enum Job {
         have: Option<u64>,
         reply: oneshot::Sender<Result<Option<SceneSource>, String>>,
     },
+    /// Network: a client's interest declared again.
+    Interest {
+        client: u64,
+        routes: Vec<String>,
+        tiles: Vec<crate::HeldTile>,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Network: a client catches up from a position.
+    Catch {
+        client: u64,
+        since: crate::Position,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Network: a tile package built by a packager.
+    #[cfg(feature = "network")]
+    Built(Box<crate::packager::Built>),
+    /// Network: a measurement of the authority's own work (the bench).
+    #[cfg(feature = "network")]
+    Probe {
+        what: crate::network::Probe,
+        reply: std_mpsc::Sender<Result<String, String>>,
+    },
     /// A job that fails inside the authority (tests).
     #[cfg(test)]
     Panic {
@@ -247,47 +320,62 @@ pub(crate) enum Job {
     Stop,
 }
 
-/// The authority: the session, who is connected, the soft locks.
-struct Authority {
-    session: Session,
-    /// The project file (read again after a job failed inside).
-    path: PathBuf,
-    keys: Keys,
-    newcomers: Option<Role>,
+/// What both authorities keep: who is connected, the soft locks, the
+/// broadcasts, the keys.
+pub(crate) struct Common {
+    pub(crate) keys: Keys,
+    pub(crate) newcomers: Option<Role>,
     /// Users the general invitation added in this run.
-    added: usize,
-    events: broadcast::Sender<Event>,
-    peers: BTreeMap<String, Peer>,
-    locks: BTreeMap<String, String>,
-    copies: PathBuf,
-    /// Changes of the project file in this run (requests, users added):
-    /// the copy for joining clients is made again after one.
-    state: u64,
-    /// The last copy made, and the state it is of.
-    snapshot: Option<(u64, Arc<Snapshot>)>,
-    /// Copies existing.
-    live: Arc<AtomicUsize>,
-    /// Edits of the line or its libraries since the server started.
-    revision: u64,
+    pub(crate) added: usize,
+    pub(crate) events: broadcast::Sender<Event>,
+    /// Broadcasts sent.
+    pub(crate) sent: u64,
+    pub(crate) peers: BTreeMap<String, Peer>,
+    pub(crate) locks: BTreeMap<String, String>,
     /// The users' list last broadcast, and when it is due again (a
     /// presence changed since).
-    peers_sent: Instant,
-    peers_due: Option<Instant>,
+    pub(crate) peers_sent: Instant,
+    pub(crate) peers_due: Option<Instant>,
 }
 
-impl Authority {
-    fn broadcast(&self, msg: ServerMsg) {
-        let _ = self.events.send(Event::new(None, msg));
+impl Common {
+    pub(crate) fn new(
+        keys: Keys,
+        newcomers: Option<Role>,
+        events: broadcast::Sender<Event>,
+    ) -> Self {
+        Self {
+            keys,
+            newcomers,
+            added: 0,
+            events,
+            sent: 0,
+            peers: BTreeMap::new(),
+            locks: BTreeMap::new(),
+            peers_sent: Instant::now(),
+            peers_due: None,
+        }
     }
 
-    fn peers_msg(&self) -> ServerMsg {
+    /// Sends a broadcast (its place given here).
+    pub(crate) fn send(&mut self, mut event: Event) {
+        self.sent += 1;
+        event.index = self.sent;
+        let _ = self.events.send(event);
+    }
+
+    pub(crate) fn broadcast(&mut self, msg: ServerMsg) {
+        self.send(Event::new(None, msg));
+    }
+
+    pub(crate) fn peers_msg(&self) -> ServerMsg {
         ServerMsg::Peers {
             peers: self.peers.values().cloned().collect(),
         }
     }
 
     /// The users' list, to everyone at once.
-    fn broadcast_peers(&mut self) {
+    pub(crate) fn broadcast_peers(&mut self) {
         self.broadcast(self.peers_msg());
         self.peers_sent = Instant::now();
         self.peers_due = None;
@@ -304,6 +392,226 @@ impl Authority {
         }
     }
 
+    /// The access code checked: `Ok(personal)` (else the general
+    /// invitation's); refused when it is neither, or the user is here.
+    pub(crate) fn check_code(&self, user: &str, code: &str) -> Result<bool, String> {
+        crate::check_name(user)?;
+        let personal = crate::same_code(code, &self.keys.code(Some(user)));
+        let general = crate::same_code(code, &self.keys.code(None));
+        if !personal && !general {
+            return Err(WRONG_CODE.into());
+        }
+        if self.peers.contains_key(user) {
+            return Err(format!("{user} is connected already"));
+        }
+        Ok(personal)
+    }
+
+    /// A user joined: listed, the list broadcast.
+    pub(crate) fn joined(&mut self, user: &str, role: Role) {
+        self.peers.insert(
+            user.to_owned(),
+            Peer {
+                user: user.to_owned(),
+                role,
+                presence: Presence::default(),
+            },
+        );
+        self.broadcast_peers();
+    }
+
+    /// The soft locks others hold on `targets` (`None`: the whole line)
+    /// of project line `line`: the first refused.
+    pub(crate) fn locked(
+        &self,
+        user: &str,
+        line: &str,
+        targets: Option<Vec<(ohl_session::Kind, String)>>,
+    ) -> Result<(), String> {
+        let held: Vec<(&String, &String)> = self
+            .locks
+            .iter()
+            .filter(|(_, u)| u.as_str() != user)
+            .collect();
+        if held.is_empty() {
+            return Ok(());
+        }
+        match targets {
+            None => {
+                let (t, u) = held[0];
+                Err(format!("{t} is being edited by {u}"))
+            }
+            Some(targets) => {
+                for (kind, oid) in targets {
+                    let t = lock_target(line, kind, &oid);
+                    if let Some(u) = self.locks.get(&t).filter(|u| u.as_str() != user) {
+                        return Err(format!("{t} is being edited by {u}"));
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub(crate) fn lock(&mut self, user: &str, target: String) -> Result<(), String> {
+        if self.peers.get(user).is_none_or(|p| p.role < Role::Designer) {
+            return Err(format!("{user} may not edit, so holds no lock"));
+        }
+        if target.len() > crate::MAX_LABEL {
+            return Err("lock target too long".into());
+        }
+        match self.locks.get(&target) {
+            Some(u) if u != user => Err(format!("{target} is being edited by {u}")),
+            Some(_) => Ok(()),
+            None if self.locks.values().filter(|u| *u == user).count() >= MAX_LOCKS => {
+                Err(format!("{user} holds {MAX_LOCKS} locks already"))
+            }
+            None => {
+                self.locks.insert(target, user.to_owned());
+                self.broadcast(ServerMsg::Locks {
+                    locks: self.locks.clone(),
+                });
+                Ok(())
+            }
+        }
+    }
+
+    pub(crate) fn unlock(&mut self, user: &str, target: &str) {
+        if self.locks.get(target).is_some_and(|u| u == user) {
+            self.locks.remove(target);
+            self.broadcast(ServerMsg::Locks {
+                locks: self.locks.clone(),
+            });
+        }
+    }
+
+    pub(crate) fn leave(&mut self, user: &str) {
+        let before = self.locks.len();
+        self.locks.retain(|_, u| u != user);
+        if self.locks.len() != before {
+            self.broadcast(ServerMsg::Locks {
+                locks: self.locks.clone(),
+            });
+        }
+        if self.peers.remove(user).is_some() {
+            self.broadcast_peers();
+        }
+    }
+
+    /// A presence message (cut to [`crate::MAX_LABEL`]).
+    pub(crate) fn presence(&mut self, user: &str, mut presence: Presence) {
+        if presence.selection.len() > crate::MAX_LABEL {
+            let mut end = crate::MAX_LABEL;
+            while !presence.selection.is_char_boundary(end) {
+                end -= 1;
+            }
+            presence.selection.truncate(end);
+        }
+        if let Some(p) = self.peers.get_mut(user)
+            && p.presence != presence
+        {
+            p.presence = presence;
+            self.presence_changed();
+        }
+    }
+
+    /// The jobs both authorities answer alike; the others are given back.
+    pub(crate) fn handle(&mut self, job: Job) -> Option<Job> {
+        match job {
+            Job::Presence { user, presence } => self.presence(&user, presence),
+            Job::Lock {
+                user,
+                target,
+                reply,
+            } => {
+                let _ = reply.send(self.lock(&user, target));
+            }
+            Job::Unlock { user, target } => self.unlock(&user, &target),
+            Job::Peers { reply } => {
+                let _ = reply.send(self.peers.values().cloned().collect());
+            }
+            job => return Some(job),
+        }
+        None
+    }
+}
+
+/// An authority: the one thread applying every request in one order.
+pub(crate) trait Host {
+    fn common(&mut self) -> &mut Common;
+    /// A job (the common ones are answered before).
+    fn handle(&mut self, job: Job);
+    /// When it wants [`Host::tick`] next.
+    fn due(&self) -> Option<Instant> {
+        None
+    }
+    /// Its own timed work (heartbeats).
+    fn tick(&mut self) {}
+    /// It stops.
+    fn stop(&mut self);
+}
+
+/// Runs an authority until stopped.
+pub(crate) fn run<H: Host>(mut host: H, jobs: std_mpsc::Receiver<Job>) {
+    loop {
+        let due = [host.common().peers_due, host.due()]
+            .into_iter()
+            .flatten()
+            .min();
+        let job = match due {
+            Some(due) => match jobs.recv_timeout(due.saturating_duration_since(Instant::now())) {
+                Ok(job) => Some(job),
+                Err(std_mpsc::RecvTimeoutError::Timeout) => None,
+                Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
+            },
+            None => match jobs.recv() {
+                Ok(job) => Some(job),
+                Err(_) => break,
+            },
+        };
+        match job {
+            Some(Job::Stop) => break,
+            Some(job) => {
+                if let Some(job) = host.common().handle(job) {
+                    host.handle(job);
+                }
+            }
+            None => {}
+        }
+        if host
+            .common()
+            .peers_due
+            .is_some_and(|due| Instant::now() >= due)
+        {
+            host.common().broadcast_peers();
+        }
+        if host.due().is_some_and(|due| Instant::now() >= due) {
+            host.tick();
+        }
+    }
+    host.stop();
+}
+
+/// The authority of a project file: the session, who is connected, the
+/// soft locks.
+struct Authority {
+    common: Common,
+    session: Session,
+    /// The project file (read again after a job failed inside).
+    path: PathBuf,
+    copies: PathBuf,
+    /// Changes of the project file in this run (requests, users added):
+    /// the copy for joining clients is made again after one.
+    state: u64,
+    /// The last copy made, and the state it is of.
+    snapshot: Option<(u64, Arc<Snapshot>)>,
+    /// Copies existing.
+    live: Arc<AtomicUsize>,
+    /// Edits of the line or its libraries since the server started.
+    revision: u64,
+}
+
+impl Authority {
     /// The copy of the project for a joining client: the last one, when
     /// nothing changed since.
     fn snapshot(&mut self) -> Result<Arc<Snapshot>, String> {
@@ -349,15 +657,7 @@ impl Authority {
     }
 
     fn join(&mut self, user: &str, code: &str, copy: bool) -> Result<Joined, String> {
-        crate::check_name(user)?;
-        let personal = crate::same_code(code, &self.keys.code(Some(user)));
-        let general = crate::same_code(code, &self.keys.code(None));
-        if !personal && !general {
-            return Err(WRONG_CODE.into());
-        }
-        if self.peers.contains_key(user) {
-            return Err(format!("{user} is connected already"));
-        }
+        let personal = self.common.check_code(user, code)?;
         let role = match self.session.role(user).map_err(|e| e.to_string())? {
             Some(_) if !personal => {
                 return Err(format!(
@@ -368,9 +668,10 @@ impl Authority {
             Some(r) => r,
             None => {
                 let role = self
+                    .common
                     .newcomers
                     .ok_or_else(|| format!("{user} is not a user of this project"))?;
-                if self.added >= MAX_NEWCOMERS {
+                if self.common.added >= MAX_NEWCOMERS {
                     return Err(format!(
                         "{MAX_NEWCOMERS} newcomers joined since the server started: ask the \
                          host for a personal invitation"
@@ -391,8 +692,8 @@ impl Authority {
                 let line = self.session.current_line().to_owned();
                 self.state += 1;
                 execute(&mut self.session, &admin, &line, &op).map_err(|e| e.to_string())?;
-                self.added += 1;
-                self.broadcast(ServerMsg::Applied {
+                self.common.added += 1;
+                self.common.broadcast(ServerMsg::Applied {
                     user: admin,
                     op,
                     line,
@@ -402,35 +703,31 @@ impl Authority {
             }
         };
         // Subscribed before the copy: nothing applied after it is missed.
-        let events = self.events.subscribe();
+        let events = self.common.events.subscribe();
+        let index = self.common.sent;
         let (copy, size) = if copy {
             let s = self.snapshot()?;
             let size = s.size;
-            (Some(s), size)
+            (Some(CopyWait::Ready(s)), size)
         } else {
             (None, 0)
         };
         let seq = self.session.last_seq().map_err(|e| e.to_string())?;
-        self.peers.insert(
-            user.to_owned(),
-            Peer {
-                user: user.to_owned(),
-                role,
-                presence: Presence::default(),
-            },
-        );
-        self.broadcast_peers();
+        self.common.joined(user, role);
         Ok(Joined {
             events,
+            own: None,
+            index,
             copy,
             welcome: ServerMsg::Welcome {
                 project: self.session.line().name.clone(),
                 role,
                 seq,
                 size,
-                peers: self.peers.values().cloned().collect(),
-                locks: self.locks.clone(),
+                peers: self.common.peers.values().cloned().collect(),
+                locks: self.common.locks.clone(),
             },
+            view: View::everything(),
         })
     }
 
@@ -442,16 +739,7 @@ impl Authority {
         op: &Op,
         line: &str,
     ) -> Result<Option<Vec<(ohl_session::Kind, String)>>, String> {
-        let entry = match op {
-            Op::Undo => self.session.undo_entry(user, line),
-            Op::Redo => self.session.redo_entry(user, line),
-            _ => return Ok(op.targets()),
-        }
-        .map_err(|e| e.to_string())?;
-        Ok(Some(match entry {
-            Some(seq) => self.session.entry_objects(seq).map_err(|e| e.to_string())?,
-            None => Vec::new(),
-        }))
+        targets(&self.session, user, op, line)
     }
 
     fn request(
@@ -463,27 +751,10 @@ impl Authority {
         line: String,
     ) -> Result<(), String> {
         // Soft locks: others' objects are refused (admins pass).
-        let held: Vec<(&String, &String)> = self
-            .locks
-            .iter()
-            .filter(|(_, u)| u.as_str() != user)
-            .collect();
         let admin = self.session.role(user).map_err(|e| e.to_string())? == Some(Role::Admin);
-        if !held.is_empty() && !admin {
-            match self.targets(user, &op, &line)? {
-                None => {
-                    let (t, u) = held[0];
-                    return Err(format!("{t} is being edited by {u}"));
-                }
-                Some(targets) => {
-                    for (kind, oid) in targets {
-                        let t = lock_target(&line, kind, &oid);
-                        if let Some(u) = self.locks.get(&t).filter(|u| u.as_str() != user) {
-                            return Err(format!("{t} is being edited by {u}"));
-                        }
-                    }
-                }
-            }
+        if !admin && self.common.locks.values().any(|u| u != user) {
+            let targets = self.targets(user, &op, &line)?;
+            self.common.locked(user, &line, targets)?;
         }
         // Whatever happens, the copy for joining clients is made again.
         self.state += 1;
@@ -502,7 +773,7 @@ impl Authority {
             self.revision += 1;
         }
         let role_changed = matches!(&op, Op::SetUser { .. });
-        let _ = self.events.send(Event::new(
+        self.common.send(Event::new(
             Some((client, id)),
             ServerMsg::Applied {
                 user: user.to_owned(),
@@ -512,57 +783,12 @@ impl Authority {
             },
         ));
         if let (true, Op::SetUser { name, role }) = (role_changed, &op)
-            && let Some(p) = self.peers.get_mut(name)
+            && let Some(p) = self.common.peers.get_mut(name)
         {
             p.role = *role;
-            self.broadcast_peers();
+            self.common.broadcast_peers();
         }
         Ok(())
-    }
-
-    fn lock(&mut self, user: &str, target: String) -> Result<(), String> {
-        if self.peers.get(user).is_none_or(|p| p.role < Role::Designer) {
-            return Err(format!("{user} may not edit, so holds no lock"));
-        }
-        if target.len() > crate::MAX_LABEL {
-            return Err("lock target too long".into());
-        }
-        match self.locks.get(&target) {
-            Some(u) if u != user => Err(format!("{target} is being edited by {u}")),
-            Some(_) => Ok(()),
-            None if self.locks.values().filter(|u| *u == user).count() >= MAX_LOCKS => {
-                Err(format!("{user} holds {MAX_LOCKS} locks already"))
-            }
-            None => {
-                self.locks.insert(target, user.to_owned());
-                self.broadcast(ServerMsg::Locks {
-                    locks: self.locks.clone(),
-                });
-                Ok(())
-            }
-        }
-    }
-
-    fn unlock(&mut self, user: &str, target: &str) {
-        if self.locks.get(target).is_some_and(|u| u == user) {
-            self.locks.remove(target);
-            self.broadcast(ServerMsg::Locks {
-                locks: self.locks.clone(),
-            });
-        }
-    }
-
-    fn leave(&mut self, user: &str) {
-        let before = self.locks.len();
-        self.locks.retain(|_, u| u != user);
-        if self.locks.len() != before {
-            self.broadcast(ServerMsg::Locks {
-                locks: self.locks.clone(),
-            });
-        }
-        if self.peers.remove(user).is_some() {
-            self.broadcast_peers();
-        }
     }
 
     fn scene(&self, have: Option<u64>) -> Result<Option<SceneSource>, String> {
@@ -623,16 +849,23 @@ impl Authority {
             Err(e) => log(&format!("reading the project again: {e}")),
         }
     }
+}
+
+impl Host for Authority {
+    fn common(&mut self) -> &mut Common {
+        &mut self.common
+    }
 
     fn handle(&mut self, job: Job) {
         match job {
             Job::Join {
                 user,
                 code,
-                copy,
+                options,
                 reply,
+                ..
             } => {
-                let _ = reply.send(self.guarded("joining", |a| a.join(&user, &code, copy)));
+                let _ = reply.send(self.guarded("joining", |a| a.join(&user, &code, options.copy)));
             }
             Job::Request {
                 client,
@@ -641,39 +874,23 @@ impl Authority {
                 op,
                 line,
                 reply,
+                ..
             } => {
                 let what = op.describe();
                 let _ = reply.send(self.guarded(&what, |a| a.request(client, &user, id, op, line)));
             }
-            Job::Presence { user, mut presence } => {
-                if presence.selection.len() > crate::MAX_LABEL {
-                    let mut end = crate::MAX_LABEL;
-                    while !presence.selection.is_char_boundary(end) {
-                        end -= 1;
-                    }
-                    presence.selection.truncate(end);
-                }
-                if let Some(p) = self.peers.get_mut(&user)
-                    && p.presence != presence
-                {
-                    p.presence = presence;
-                    self.presence_changed();
-                }
-            }
-            Job::Lock {
-                user,
-                target,
-                reply,
-            } => {
-                let _ = reply.send(self.lock(&user, target));
-            }
-            Job::Unlock { user, target } => self.unlock(&user, &target),
-            Job::Leave { user } => self.leave(&user),
-            Job::Peers { reply } => {
-                let _ = reply.send(self.peers.values().cloned().collect());
-            }
+            Job::Leave { user, .. } => self.common.leave(&user),
             Job::Scene { have, reply } => {
                 let _ = reply.send(self.guarded("the scene", |a| a.scene(have)));
+            }
+            Job::Interest { reply, .. } | Job::Catch { reply, .. } => {
+                let _ = reply.send(Err(FILE_MODE.into()));
+            }
+            #[cfg(feature = "network")]
+            Job::Built(_) => {}
+            #[cfg(feature = "network")]
+            Job::Probe { reply, .. } => {
+                let _ = reply.send(Err(FILE_MODE.into()));
             }
             #[cfg(test)]
             Job::Panic { reply } => {
@@ -681,37 +898,44 @@ impl Authority {
                     panic!("a job failing inside the authority")
                 }));
             }
-            Job::Stop => {}
+            Job::Presence { .. }
+            | Job::Lock { .. }
+            | Job::Unlock { .. }
+            | Job::Peers { .. }
+            | Job::Stop => {}
         }
     }
 
-    fn run(mut self, jobs: std_mpsc::Receiver<Job>) {
-        loop {
-            let job = match self.peers_due {
-                Some(due) => match jobs.recv_timeout(due.saturating_duration_since(Instant::now()))
-                {
-                    Ok(job) => Some(job),
-                    Err(std_mpsc::RecvTimeoutError::Timeout) => None,
-                    Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
-                },
-                None => match jobs.recv() {
-                    Ok(job) => Some(job),
-                    Err(_) => break,
-                },
-            };
-            match job {
-                Some(Job::Stop) => break,
-                Some(job) => self.handle(job),
-                None => {}
-            }
-            if self.peers_due.is_some_and(|due| Instant::now() >= due) {
-                self.broadcast_peers();
-            }
-        }
+    fn stop(&mut self) {
         self.snapshot = None;
         let _ = self.session.checkpoint();
         let _ = std::fs::remove_dir_all(&self.copies);
     }
+}
+
+/// Why a network's message is refused by a server of a project file.
+pub(crate) const FILE_MODE: &str =
+    "this server hosts a project file: interest, tiles and catch-up are for a network's server";
+
+/// The objects `op` of `user` on project line `line` changes (for the
+/// soft locks); an undo or redo those of the log entry it reverses
+/// (`None`: the whole line).
+pub(crate) fn targets(
+    session: &Session,
+    user: &str,
+    op: &Op,
+    line: &str,
+) -> Result<Option<Vec<(ohl_session::Kind, String)>>, String> {
+    let entry = match op {
+        Op::Undo => session.undo_entry(user, line),
+        Op::Redo => session.redo_entry(user, line),
+        _ => return Ok(op.targets()),
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(Some(match entry {
+        Some(seq) => session.entry_objects(seq).map_err(|e| e.to_string())?,
+        None => Vec::new(),
+    }))
 }
 
 /// The refusal of a wrong access code (the address then waits).
@@ -875,18 +1099,20 @@ pub(crate) async fn join(
     gate: &Gate,
     ip: IpAddr,
     jobs: &std_mpsc::Sender<Job>,
+    client: u64,
     user: String,
     code: String,
-    copy: bool,
+    options: JoinOptions,
 ) -> Result<Result<Joined, String>, String> {
     if let Err(e) = gate.may_join(ip) {
         return Ok(Err(e));
     }
     let (tx, rx) = oneshot::channel();
     jobs.send(Job::Join {
+        client,
         user,
         code,
-        copy,
+        options,
         reply: tx,
     })
     .map_err(|_| "server stopped")?;
@@ -933,14 +1159,32 @@ pub(crate) fn transport() -> quinn::TransportConfig {
     t
 }
 
+/// What a server is known by: its certificate, its keys, its address.
+pub(crate) struct Identity {
+    pub(crate) config: quinn::ServerConfig,
+    pub(crate) acceptor: Option<tokio_rustls::TlsAcceptor>,
+    pub(crate) keys: Keys,
+    pub(crate) code: String,
+    pub(crate) host: String,
+    pub(crate) fingerprint: [u8; 32],
+}
+
+/// An authority running, about to listen.
+pub(crate) struct Listening {
+    pub(crate) config: quinn::ServerConfig,
+    pub(crate) acceptor: Option<tokio_rustls::TlsAcceptor>,
+    pub(crate) keys: Keys,
+    pub(crate) code: String,
+    pub(crate) host: String,
+    pub(crate) fingerprint: [u8; 32],
+    pub(crate) jobs: std_mpsc::Sender<Job>,
+    pub(crate) authority_thread: std::thread::JoinHandle<()>,
+}
+
 impl Server {
-    /// Hosts the project `path` (opened here: the server is then its only
-    /// writer). Returns once it listens.
-    pub fn start(path: &Path, options: Options) -> Result<Server, String> {
-        let session = Session::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if !session.has_line() {
-            return Err(format!("{}: no line in the project", path.display()));
-        }
+    /// The certificate, keys and address of a server started with
+    /// `options`.
+    pub(crate) fn identity(options: &Options) -> Result<Identity, String> {
         let host = options.advertise.clone().unwrap_or_else(|| {
             if options.bind.ip().is_unspecified() {
                 local_ip()
@@ -973,30 +1217,75 @@ impl Server {
         };
         let keys = Keys::new(&secret, personal);
         let code = keys.code(None);
+        Ok(Identity {
+            config,
+            acceptor,
+            keys,
+            code,
+            host,
+            fingerprint: fp,
+        })
+    }
+
+    /// Hosts the project `path` (opened here: the server is then its only
+    /// writer). Returns once it listens.
+    pub fn start(path: &Path, options: Options) -> Result<Server, String> {
+        let session = Session::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if !session.has_line() {
+            return Err(format!("{}: no line in the project", path.display()));
+        }
+        let Identity {
+            config,
+            acceptor,
+            keys,
+            code,
+            host,
+            fingerprint: fp,
+        } = Self::identity(&options)?;
         let copies = crate::private_temp_dir("ohl-server")?;
         let (events, _) = broadcast::channel(4096);
         let (jobs, job_rx) = std_mpsc::channel();
         let authority = Authority {
+            common: Common::new(keys.clone(), options.newcomers, events),
             session,
             path: path.to_path_buf(),
-            keys: keys.clone(),
-            newcomers: options.newcomers,
-            added: 0,
-            events: events.clone(),
-            peers: BTreeMap::new(),
-            locks: BTreeMap::new(),
             copies,
             state: 0,
             snapshot: None,
             live: Arc::new(AtomicUsize::new(0)),
             revision: 0,
-            peers_sent: Instant::now(),
-            peers_due: None,
         };
         let authority_thread = std::thread::Builder::new()
             .name("ohl-authority".into())
-            .spawn(move || authority.run(job_rx))
+            .spawn(move || run(authority, job_rx))
             .map_err(|e| e.to_string())?;
+        Self::listen(
+            options,
+            Listening {
+                config,
+                acceptor,
+                keys,
+                code,
+                host,
+                fingerprint: fp,
+                jobs,
+                authority_thread,
+            },
+        )
+    }
+
+    /// Listens for clients of the authority already running (both modes).
+    pub(crate) fn listen(options: Options, l: Listening) -> Result<Server, String> {
+        let Listening {
+            config,
+            acceptor,
+            keys,
+            code,
+            host,
+            fingerprint: fp,
+            jobs,
+            authority_thread,
+        } = l;
         let (stop, stop_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = std_mpsc::channel();
         let net_jobs = jobs.clone();
@@ -1194,23 +1483,53 @@ async fn connection(
         tokio::time::timeout(Duration::from_secs(10), read_msg_max(&mut recv, MAX_HELLO))
             .await
             .map_err(|_| "no hello in 10 s".to_owned())??;
-    let (user, code) = match hello {
+    let (protocol, user, code, options) = match hello {
         Some(ClientMsg::Hello {
             protocol,
             user,
             code,
-        }) => {
-            if protocol != PROTOCOL {
-                let reason = format!("protocol {protocol}; this server speaks {PROTOCOL}");
-                write_msg(&mut send, &ServerMsg::Refused { reason }).await?;
-                let _ = send.finish();
-                return Ok(());
-            }
-            (user, code)
-        }
+        }) => (
+            protocol,
+            user,
+            code,
+            JoinOptions {
+                copy: true,
+                ..JoinOptions::default()
+            },
+        ),
+        Some(ClientMsg::Join {
+            protocol,
+            user,
+            code,
+            model,
+            since,
+            routes,
+            tiles,
+            held,
+        }) => (
+            protocol,
+            user,
+            code,
+            JoinOptions {
+                copy: model.is_some() && !held,
+                web: false,
+                model,
+                since,
+                routes,
+                tiles,
+            },
+        ),
         _ => return Err("no hello".into()),
     };
-    let joined = join(&gate, ip, &jobs, user.clone(), code, true).await?;
+    if protocol != PROTOCOL {
+        let reason = crate::protocol_refusal(protocol);
+        write_msg(&mut send, &ServerMsg::Refused { reason }).await?;
+        let _ = send.finish();
+        // Let the refusal arrive before the connection goes.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        return Ok(());
+    }
+    let joined = join(&gate, ip, &jobs, client, user.clone(), code, options).await?;
     drop(pending);
     let joined = match joined {
         Ok(j) => j,
@@ -1224,7 +1543,10 @@ async fn connection(
     };
     log(&format!("{user} joined from {}", conn.remote_address()));
     let result = serve(&conn, &mut send, &mut recv, client, &user, joined, &jobs).await;
-    let _ = jobs.send(Job::Leave { user: user.clone() });
+    let _ = jobs.send(Job::Leave {
+        client,
+        user: user.clone(),
+    });
     log(&format!("{user} left"));
     result
 }
@@ -1239,42 +1561,68 @@ async fn serve(
     joined: Joined,
     jobs: &std_mpsc::Sender<Job>,
 ) -> Result<(), String> {
+    let Joined {
+        events,
+        own,
+        index,
+        copy,
+        mut welcome,
+        view,
+    } = joined;
     // The copy, on its own stream; removed whatever happens.
-    let copy = joined.copy.ok_or("no copy of the project")?;
-    // A client that does not take it in good time is dropped (it holds
-    // a copy of the project meanwhile).
-    let deadline = Duration::from_secs(60 + copy.size / (256 << 10));
-    let sent = match write_msg(send, &joined.welcome).await {
-        Ok(()) => tokio::time::timeout(deadline, send_file(conn, &copy.path))
-            .await
-            .unwrap_or_else(|_| Err(format!("project not taken in {} s", deadline.as_secs()))),
-        Err(e) => Err(e),
+    let copy = match copy {
+        Some(CopyWait::Ready(c)) => Some(c),
+        Some(CopyWait::Making(rx)) => Some(
+            rx.await
+                .map_err(|_| "server stopped".to_owned())
+                .and_then(|r| r)
+                .map_err(|e| format!("the copy of the model: {e}"))?,
+        ),
+        None => None,
     };
-    drop(copy);
-    sent?;
+    if let (Some(c), ServerMsg::Welcome { size, .. }) = (&copy, &mut welcome) {
+        *size = c.size;
+    }
+    match copy {
+        Some(copy) => {
+            // A client that does not take it in good time is dropped (it
+            // holds a copy of the project meanwhile).
+            let deadline = Duration::from_secs(60 + copy.size / (256 << 10));
+            let sent = match write_msg(send, &welcome).await {
+                Ok(()) => tokio::time::timeout(deadline, send_file(conn, &copy.path))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(format!("project not taken in {} s", deadline.as_secs()))
+                    }),
+                Err(e) => Err(e),
+            };
+            drop(copy);
+            sent?;
+        }
+        None => write_msg(send, &welcome).await?,
+    }
     // One writer: broadcasts (with the answers to this client's requests
     // right after their edits) and this client's notices.
     // Bounded: a client that stops reading holds the forwarder, which then
     // lags behind the broadcasts and drops the client.
     let (out, mut out_rx) = mpsc::channel::<Out>(OUT_QUEUE);
-    let mut events = joined.events;
+    let mut feed = Feed::new(events, own, index);
+    let mut view = view;
     let forward = {
         let out = out.clone();
         let conn = conn.clone();
         tokio::spawn(async move {
             loop {
-                match events.recv().await {
-                    Ok(Event { answers, msg, text }) => {
-                        let answer = match (&*msg, answers) {
-                            (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
-                                Some(ServerMsg::Response {
-                                    id,
-                                    result: Ok(op.describe()),
-                                })
-                            }
-                            _ => None,
-                        };
-                        if out.send(Out::Shared(text)).await.is_err() {
+                match feed.next().await {
+                    Ok(item) => {
+                        let (deliver, answer) = deliver(&mut view, client, item);
+                        let deliver = deliver.map(|d| match d {
+                            Deliver::Shared(text) => Out::Shared(Ok(text)),
+                            Deliver::Own(m) => Out::Own(*m),
+                        });
+                        if let Some(d) = deliver
+                            && out.send(d).await.is_err()
+                        {
                             break;
                         }
                         if let Some(a) = answer
@@ -1283,7 +1631,7 @@ async fn serve(
                             break;
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                    Err(FeedEnd::Lagged) => {
                         let _ = out.try_send(Out::Own(ServerMsg::Notice {
                             text: "too far behind the server: join again".into(),
                         }));
@@ -1292,7 +1640,7 @@ async fn serve(
                         conn.close(0u32.into(), b"too far behind");
                         break;
                     }
-                    Err(broadcast::error::RecvError::Closed) => break,
+                    Err(FeedEnd::Closed) => break,
                 }
             }
         })
@@ -1346,22 +1694,42 @@ pub(crate) async fn dispatch(
     pace: &mut Pace,
 ) -> Result<Option<ServerMsg>, String> {
     Ok(match msg {
-        ClientMsg::Hello { .. } => return Err("hello twice".into()),
-        ClientMsg::Request { id, op, line } => {
+        ClientMsg::Hello { .. } | ClientMsg::Join { .. } => return Err("hello twice".into()),
+        ClientMsg::Interest { routes, tiles } => {
             let (tx, rx) = oneshot::channel();
-            jobs.send(Job::Request {
+            jobs.send(Job::Interest {
                 client,
-                user: user.to_owned(),
-                id,
-                op,
-                line,
+                routes,
+                tiles,
                 reply: tx,
             })
             .map_err(|_| "server stopped")?;
             rx.await
                 .map_err(|_| "server stopped")?
                 .err()
-                .map(|e| ServerMsg::Response { id, result: Err(e) })
+                .map(|text| ServerMsg::Notice { text })
+        }
+        ClientMsg::Catch { since } => {
+            let (tx, rx) = oneshot::channel();
+            jobs.send(Job::Catch {
+                client,
+                since,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+            rx.await
+                .map_err(|_| "server stopped")?
+                .err()
+                .map(|text| ServerMsg::Notice { text })
+        }
+        ClientMsg::RequestOn {
+            id,
+            model,
+            op,
+            line,
+        } => request(jobs, client, user, id, op, line, Some(model)).await?,
+        ClientMsg::Request { id, op, line } => {
+            request(jobs, client, user, id, op, line, None).await?
         }
         // More than the applications send: dropped.
         ClientMsg::Presence(_) if !pace.presence.take() => None,
@@ -1396,6 +1764,76 @@ pub(crate) async fn dispatch(
             None
         }
     })
+}
+
+/// An edit to the authority; the refusal to tell the client, if refused.
+async fn request(
+    jobs: &std_mpsc::Sender<Job>,
+    client: u64,
+    user: &str,
+    id: u64,
+    op: Op,
+    line: String,
+    model: Option<String>,
+) -> Result<Option<ServerMsg>, String> {
+    let (tx, rx) = oneshot::channel();
+    jobs.send(Job::Request {
+        client,
+        user: user.to_owned(),
+        id,
+        op,
+        line,
+        model,
+        reply: tx,
+    })
+    .map_err(|_| "server stopped")?;
+    Ok(rx
+        .await
+        .map_err(|_| "server stopped")?
+        .err()
+        .map(|e| ServerMsg::Response { id, result: Err(e) }))
+}
+
+/// What of a feed's item goes to client `client` (its view `view`), and
+/// the answer to its own edit right after it (QUIC and web alike).
+pub(crate) fn deliver(
+    view: &mut View,
+    client: u64,
+    item: Item,
+) -> (Option<Deliver>, Option<ServerMsg>) {
+    match item {
+        Item::Own(own) => (view.own(own), None),
+        Item::Event(Event {
+            answers,
+            msg,
+            text,
+            to,
+            ..
+        }) => {
+            let answer = match (&*msg, answers) {
+                (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
+                    Some(ServerMsg::Response {
+                        id,
+                        result: Ok(op.describe()),
+                    })
+                }
+                (ServerMsg::Change(change), Some((c, id))) if c == client => {
+                    Some(ServerMsg::Response {
+                        id,
+                        result: Ok(change.op.describe()),
+                    })
+                }
+                _ => None,
+            };
+            let deliver = match text {
+                Ok(text) => view.broadcast(&to, &text),
+                Err(e) => Some(Deliver::Own(Box::new(ServerMsg::Notice {
+                    text: format!("a message the server could not write: {e}"),
+                }))),
+            };
+            (deliver, answer)
+        }
+    }
 }
 
 /// Sends a file on a new one-way stream (1 MiB pieces).

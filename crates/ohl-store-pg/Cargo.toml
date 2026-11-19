@@ -21,6 +21,10 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 serde.workspace = true
 serde_json.workspace = true
 
+[features]
+# A throwaway PostgreSQL cluster for other crates' tests (`testing`).
+testing = []
+
 [dev-dependencies]
 ohl-session = { workspace = true, features = ["store-suite"] }
 

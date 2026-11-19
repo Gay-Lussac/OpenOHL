@@ -353,6 +353,9 @@ pub fn import(
                 .map_err(|e| refused(format!("renaming {} {}: {e}", r.kind, r.from)))?;
         }
     }
+    // What each element is on and refers to (schema 2), for the server's
+    // clients.
+    let interest = crate::stream::interest_of_line(&mut session);
     let source = session.store();
     let rows: Vec<_> = source
         .object_rows()?
@@ -407,6 +410,19 @@ pub fn import(
         .map(|r| (r.to.as_str(), r.from.as_str()))
         .collect();
 
+    // The package tiles of the model, for the server's clients.
+    let level = net.tile_level()?;
+    let grid_of_net = session.grid().to_owned();
+    let mut tiles: BTreeSet<i64> = BTreeSet::new();
+    for e in spatial.values() {
+        for t in crate::stream::tiles_of(&grid_of_net, &e.bounds, level) {
+            if let Some(k) = crate::stream::tile_key(&t) {
+                tiles.insert(k);
+            }
+        }
+    }
+    let tiles: Vec<i64> = tiles.into_iter().collect();
+
     // 4. Into the network, as one transaction.
     let store = PgStore::new(net.shared(), code);
     store.savepoint("ohl_import")?;
@@ -433,6 +449,7 @@ pub fn import(
         store.prepare(Path::new(code), true)?;
         write_objects(net, code, &rows)?;
         write_spatial(net, code, &spatial)?;
+        crate::stream::write_interest(net, code, main, &interest)?;
         let mut users = users.clone();
         if !users.iter().any(|(n, _)| n == &options.user) {
             users.push((options.user.clone(), Role::Admin));
@@ -480,7 +497,7 @@ pub fn import(
                 format!(", {} ids renamed", renamed.len())
             }
         );
-        store.append_entry(&ohl_session::store::NewEntry {
+        let entry = store.append_entry(&ohl_session::store::NewEntry {
             user: &options.user,
             kind: "import",
             command: r#"{"op":"batch","commands":[]}"#.into(),
@@ -490,7 +507,9 @@ pub fn import(
             undoes: None,
             note: Some(note),
             line: main,
+            seq: None,
         })?;
+        net.set_entry_interest(code, entry, entry, &[code.to_owned()], &tiles)?;
         // The planner's statistics of the tables just grown: without them
         // the first imports into a young network join the spatial index
         // without its GiST index (minutes instead of milliseconds).
