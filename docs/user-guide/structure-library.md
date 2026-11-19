@@ -74,10 +74,11 @@ points = [["-4 m", "-4 m", "0 m"], ["0 m", "0 m", "52 m"], ["4 m", "4 m", "0 m"]
 | `wind` | no | Wind on the structure, in height bands ([below](#wind-on-the-structure)). |
 | `load_case` | no | The structure's own load cases ([below](#load-cases-of-the-structure)). |
 | `template` | no | The structure template it was built from, its role and values ([Structure templates](#structure-templates-ohlpt)). |
-| `node`, `member` | no | The structure's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it). |
+| `node`, `member` | no | The structure's joints and members (levels 2 and 3, below); a member may have a `group`, and both a `made_by` (the generator that wrote it); a member may name a `bolt_grade` (version 21, below). |
 | `generator`, `symmetry` | no | Version 3: the body generators with their inputs, and the mirror symmetry kept while editing ([Body generators](#body-generators-groups-and-symmetry)). |
 | `section`, `material`, `analysis`, `load` | no | A full design's cross-sections, materials, analysis options (version 14: `tension_compression`; version 16: the optional checks `redundant_force`, `climbing_load`) and own loads — see [Structure analysis](structure-analysis.md). |
 | `default_bolt_minimums` | no | Version 18 (2026-11-18): the default minimum bolt distances in bolt diameters — `end`, `edge` (1.5 when not given) and `spacing` (3) — that OHL-Structure's bolt tools, the plate outlines and the joint layout keep where no design code gives minimums (the simple check, a plugin without them). A default minimum, assumed, not a code's; never in place of a code's own. OHL-Structure: Design › Analysis, *default bolt minimums [d]*. |
+| `bolt_grade` | no | Version 21 (2026-11-19, the owner's decision of that day): the bolt grades the members' bolts take — `[[bolt_grade]]` with `grade` ("8.8", unique), `ultimate` (f_ub), `yield?` (f_yb, no higher), `source?` (where the values come from) and `set_by?` (`"command"` when OHL-Structure's [Design › Bolt grade…](bolt-grade.md) wrote it) — named by a member's `bolt_grade = "8.8"` (a name the file does not give is refused). The member's bolts — its ends', its design data's and a gusset plate's own bolts onto it — take its ultimate strength and name over their library's or design data's; a capacity given for another grade is dropped (the grade's worked out by the code, said). Written only when a member has one. |
 | `model` | no | A separate structure model (`.ohlfe`, path relative to this file) for the finite-element check, instead of the members here. |
 | `pole` | no | The pole: `pole = "id"` (a `.ohlp` file in the same folder, by its id or its file name) or, version 3, a `[pole]` table in the file with its outline and design ([Poles](#poles)) — checked by the pole check, see [Structure analysis](structure-analysis.md). |
 
@@ -376,7 +377,9 @@ active development, not approved yet). The bolts the connections name,
 kept like the cross-sections: `Bolts/` beside the structure files,
 imported and exported in OHL-Structure (File › Import and Export). None of a
 standard's values is built in; `libraries/bolts/example-bolts.ohlb`
-holds invented ones. A project keeps its bolt libraries (library kind
+holds invented ones. (The bolt grade command offers SIA 263:2013 Table 2's
+strength classes, written into the structure file when set:
+[Bolt grade](bolt-grade.md).) A project keeps its bolt libraries (library kind
 `bolts`): copied in from `Bolts/` in its structure folder when it opens,
 written to `Bolts/` beside the working copies of the structure types
 (where OHL-Structure and the line's structure checks read them),
@@ -397,7 +400,7 @@ ultimate = "800 MPa"       # optional: tensile strength
 yield = "640 MPa"          # optional
 shear_capacity = "60 kN"   # optional: per shear plane, threads in it
 shear_capacity_shank = "75 kN"  # optional: threads out of the plane
-tension_capacity = "90 kN" # optional
+tension_capacity = "90 kN" # optional: its ultimate tensile load, F_u × A_s
 head_across_flats = "24 mm"     # optional: the drawings
 head_height = "10 mm"      # optional
 nut_height = "13 mm"       # optional
@@ -405,6 +408,11 @@ grip = "20 mm"             # optional: what it clamps, as sold
 mass_kg = 0.12             # optional: with its nut and washer
 description = ""           # optional
 ```
+
+`tension_capacity` is the bolt's **ultimate tensile load**: its ultimate
+tensile strength × its stress area, F_u × A_s (owner 2026-11-19) — not a
+design value: ASCE 10-97 4.3.3 takes 0.6 of it, SIA 263 (77) 0.9 of it
+over γ_M2.
 
 Refused: an id empty or given twice, a diameter not above 0, a hole
 smaller than the bolt, a size or mass not above 0, an unknown field. A

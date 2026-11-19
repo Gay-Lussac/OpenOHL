@@ -1474,6 +1474,71 @@ world joint-check-groups-tension-export {
     export joint-check-groups-tension;
 }
 
+/// The bolts of a joint's groups in tension with the prying of the plates
+/// they pull too (optional export of any plugin beside
+/// `joint-check-groups-tension`, found by its export name; 2026-11-19, the
+/// owner's decision of that day: a gusset plate's own prying and bending
+/// under bolts in tension by the same T-stub model as an angle's flange;
+/// added to interface version 0.3 without changing anything else). The
+/// same call as `check-joint-groups-tension`, each bolt with the plates it
+/// bends besides the flanges: a plate is a flange **without a web** — the
+/// pull reaches it through the bolts of the members on it, which hold it
+/// against no turning — so the model's moment at the web is taken as none
+/// and the whole moment of the pull is at the bolt line (Struik and de
+/// Back's Eq. 17.8 with no moment at the web): the prying Q = T b'/a' (B =
+/// T (1 + b'/a'), the largest the model gives) and the plate's bending T b'
+/// <= delta w t^2 f_y / 4 (delta = 1 - d0/w), with a' = a + d/2, b' = b -
+/// d/2, a <= 1.25 b as for a flange. A plugin without this export is called
+/// by `check-joint-groups-tension`, and OpenOHL says the plates' prying is
+/// not worked out (NOT ON THE SAFE SIDE). SI units throughout.
+interface joint-check-groups-prying {
+    use joint-check-groups.{group-input, group-result};
+    use joint-check-groups-tension.{tee};
+
+    /// One bolt of a group (the order of `group.bolts`).
+    record bolt-prying {
+        /// The bolt's tension capacity as its library gives it (its
+        /// ultimate tensile load, F_u A_s), N (none: not given).
+        tension-capacity: option<f64>,
+        /// The flanges with a web it bends as it pulls (as
+        /// `bolt-tension.tees`).
+        tees: list<tee>,
+        /// The plates it bends as it pulls: flanges without a web (`edge`
+        /// from the bolt to the plate's edge where it bears on the part
+        /// under it, away from where the pull comes in: `a`; `web` from
+        /// the bolt to the farthest bolt of a member pulling it: `b`;
+        /// `width` its length along the bolts' line the bolt takes: `w`).
+        plates: list<tee>,
+        /// The plies it pulls whose bending is not known, in words: their
+        /// prying not worked out.
+        unknown: list<string>,
+    }
+
+    /// The tensions of one group of `group-input.groups`.
+    record group-prying {
+        /// The group's number.
+        id: u32,
+        /// Its bolts (the order of `group.bolts`).
+        bolts: list<bolt-prying>,
+        /// Per load case, per bolt: the tension pulling it, N (0: none).
+        loads: list<list<f64>>,
+    }
+
+    /// Checks the groups of `input` by method `method` as
+    /// `check-joint-groups-tension` does, the plates each bolt bends
+    /// with their prying and bending too.
+    check-joint-groups-prying: func(method: string, input: group-input, tension: list<group-prying>) -> result<list<group-result>, string>;
+}
+
+/// The `joint-check-groups-prying` export with the exports whose records
+/// it takes: how the host finds them in any plugin (not a world to build
+/// plugins for).
+world joint-check-groups-prying-export {
+    export joint-check-groups;
+    export joint-check-groups-tension;
+    export joint-check-groups-prying;
+}
+
 /// Minimum bolt distances by a design method (optional export of any
 /// plugin beside `member-check`, found by its export name;
 /// 2026-11-11): what OpenOHL's bolt tools place and check bolts by when
@@ -2136,6 +2201,7 @@ world member-check-bracing-export {
 /// `member-check-bracing` (2026-11-19), its joints' bolt groups under the
 /// members' forces together by `joint-check-groups` (2026-11-19) and their
 /// bolts in tension, with prying, by `joint-check-groups-tension`
+/// (2026-11-19), the plates' prying too by `joint-check-groups-prying`
 /// (2026-11-19).
 world structure-code-plugin {
     include member-check-plugin;
@@ -2146,6 +2212,7 @@ world structure-code-plugin {
     export joint-check-moments;
     export joint-check-groups;
     export joint-check-groups-tension;
+    export joint-check-groups-prying;
     export bolt-distances;
     export bolt-distances-full;
 }

@@ -280,12 +280,20 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// own bolts onto the joint's leg (`[plate.leg_bolts]`:
 /// [`crate::connections::PlateLegBolts`],
 /// [`crate::connections::PLATE_LEG_BOLTS_VERSION`]); a file is written at
-/// 20 only when a plate gives them. Version 22 (2026-11-19, the automatic
-/// joint layout's bent plate, J2b) adds a plate bent from another
-/// (`[plate.bend]`: [`crate::connections::TypeBend`],
+/// 20 only when a plate gives them. Version 21 (2026-11-19, the owner's
+/// decision of that day) adds the bolt grades set on members' bolts
+/// (`[[bolt_grade]]`: [`crate::bolts::BoltGrade`], and a member's
+/// `bolt_grade`: [`TypeMember::bolt_grade`], [`BOLT_GRADE_VERSION`]); a
+/// file is written at 21 only when a member names one. Version 22
+/// (2026-11-19, the automatic joint layout's bent plate, J2b) adds a plate
+/// bent from another (`[plate.bend]`: [`crate::connections::TypeBend`],
 /// [`crate::connections::PLATE_BEND_VERSION`]); a file is written at 22
-/// only when a plate is bent. (21: the bolt grade's, of the same day.)
+/// only when a plate is bent.
 pub const STRUCTURE_FILE_VERSION: u32 = 22;
+
+/// The structure file version of the bolt grades (`[[bolt_grade]]`, a
+/// member's `bolt_grade`; owner 2026-11-19).
+pub const BOLT_GRADE_VERSION: u32 = 21;
 
 /// The structure file version of `self_weight_from` (2026-11-19).
 pub const SELF_WEIGHT_FROM_VERSION: u32 = 19;
@@ -817,6 +825,12 @@ pub struct TypeMember {
     /// generator replaces it; none: made by hand.
     #[serde(default)]
     pub made_by: Option<String>,
+    /// Version 21 (owner 2026-11-19): the grade its bolts take — a
+    /// `[[bolt_grade]]` of the file ([`StructureType::bolt_grades`]), set
+    /// by OHL-Structure's Design › Bolt grade… (none: its bolts' own
+    /// strengths, if any).
+    #[serde(default)]
+    pub bolt_grade: Option<String>,
 }
 
 /// A string of a structure type (version 2): from its top (a point, or a
@@ -1396,6 +1410,10 @@ pub struct StructureType {
     /// factor, [`SelfWeightFrom::Envelope`]).
     #[serde(default)]
     pub self_weight_from: Option<SelfWeightFrom>,
+    /// Version 21 (owner 2026-11-19): the bolt grades its members' bolts
+    /// take (`[[bolt_grade]]`; a member names one by `bolt_grade`).
+    #[serde(default, rename = "bolt_grade")]
+    pub bolt_grades: Vec<crate::bolts::BoltGrade>,
 }
 
 /// An attachment of a placed structure, in global coordinates.
@@ -2698,8 +2716,35 @@ impl StructureType {
             if m.nodes[0] == m.nodes[1] {
                 return bad("both ends at the same joint".into());
             }
+            if let Some(g) = &m.bolt_grade
+                && self.bolt_grade(g).is_none()
+            {
+                return bad(format!(
+                    "bolt_grade \"{g}\" is no [[bolt_grade]] of the file"
+                ));
+            }
+        }
+        let mut grades = std::collections::BTreeSet::new();
+        for g in &self.bolt_grades {
+            g.validate()?;
+            if !grades.insert(g.grade.trim()) {
+                return Err(format!("bolt_grade {}: given twice", g.grade));
+            }
         }
         Ok(())
+    }
+
+    /// The `[[bolt_grade]]` named `grade`.
+    pub fn bolt_grade(&self, grade: &str) -> Option<&crate::bolts::BoltGrade> {
+        self.bolt_grades
+            .iter()
+            .find(|g| g.grade.trim() == grade.trim())
+    }
+
+    /// The bolt grade member `id`'s bolts take (none: not set).
+    pub fn member_bolt_grade(&self, id: &str) -> Option<&crate::bolts::BoltGrade> {
+        let m = self.members.iter().find(|m| m.id == id)?;
+        self.bolt_grade(m.bolt_grade.as_deref()?)
     }
 
     /// The level of the feet in local z ([`StructureType::foot`], default

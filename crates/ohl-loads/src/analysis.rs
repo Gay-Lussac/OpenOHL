@@ -468,6 +468,12 @@ impl Analyses {
                 notes.push(n);
             }
         }
+        for n in &model.bolt_grade_notes {
+            let n = format!("model: {n}");
+            if !notes.contains(&n) {
+                notes.push(n);
+            }
+        }
         let mut nodal = Vec::new();
         // The loads along members put on their joints as halves (ice,
         // snow, member wind): for the bending between joints.

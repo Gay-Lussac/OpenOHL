@@ -596,7 +596,7 @@ pub struct PlateLegBolts {
 
 /// The structure file version of a bent plate (`[plate.bend]`,
 /// 2026-11-19, the automatic joint layout's J2b): a file is written at 22
-/// only when a plate gives one. (21 is the bolt grade's, of the same day.)
+/// only when a plate gives one (21 is the bolt grade's).
 pub const PLATE_BEND_VERSION: u32 = 22;
 
 /// A plate bent from another plate of its joint (`[plate.bend]`,

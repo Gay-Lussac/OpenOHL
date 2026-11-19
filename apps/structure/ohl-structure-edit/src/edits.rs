@@ -1590,6 +1590,135 @@ pub fn set_redundant_force(doc: &mut DocumentMut, typed: &str) -> Result<(), Str
     set_analysis_field(doc, "redundant_force", &v.to_string())
 }
 
+/// What [`set_bolt_grade`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GradeSet {
+    /// Members whose `bolt_grade` changed.
+    pub changed: usize,
+    /// Members that had it already.
+    pub unchanged: usize,
+    /// Ids given that are no member of the file.
+    pub missing: usize,
+}
+
+/// The bolt grade of the bolts of `members` (the owner's decision of
+/// 2026-11-19: "add a command to set it"; OHL-Structure's Design › Bolt
+/// grade…): `Some(grade)` writes it as a `[[bolt_grade]]` (one of the same
+/// name replaced) and `bolt_grade = "<grade>"` on each member, raising the
+/// file to version 21
+/// ([`ohl_structures::structures::BOLT_GRADE_VERSION`]); `None` takes the
+/// members' `bolt_grade` away. A `[[bolt_grade]]` no member names any more
+/// is removed (the version kept). One edit of the file: the caller makes
+/// it one undo step. Err: a grade that is not valid (nothing written).
+pub fn set_bolt_grade(
+    doc: &mut DocumentMut,
+    members: &[String],
+    grade: Option<&ohl_structures::bolts::BoltGrade>,
+) -> Result<GradeSet, String> {
+    if let Some(g) = grade {
+        g.validate()?;
+    }
+    let wanted: std::collections::BTreeSet<&str> = members.iter().map(String::as_str).collect();
+    let mut out = GradeSet::default();
+    let mut found = std::collections::BTreeSet::new();
+    if let Some(list) = doc.get_mut("member").and_then(Item::as_array_of_tables_mut) {
+        for t in list.iter_mut() {
+            let Some(id) = t.get("id").and_then(Item::as_str).map(str::to_owned) else {
+                continue;
+            };
+            if !wanted.contains(id.as_str()) {
+                continue;
+            }
+            found.insert(id);
+            let now = t
+                .get("bolt_grade")
+                .and_then(Item::as_str)
+                .map(str::to_owned);
+            let to = grade.map(|g| g.grade.trim().to_owned());
+            if now == to {
+                out.unchanged += 1;
+                continue;
+            }
+            out.changed += 1;
+            match &to {
+                Some(g) => {
+                    t.insert("bolt_grade", toml_edit::value(g.as_str()));
+                }
+                None => {
+                    t.remove("bolt_grade");
+                }
+            }
+        }
+    }
+    out.missing = wanted.len() - found.len();
+    if let Some(g) = grade {
+        let mut rec = Table::new();
+        rec.insert("grade", toml_edit::value(g.grade.trim()));
+        let mpa = |s: ohl_core::units::Stress| format!("{} MPa", round3(s.si() / 1e6));
+        rec.insert("ultimate", toml_edit::value(mpa(g.ultimate)));
+        if let Some(y) = g.yield_strength {
+            rec.insert("yield", toml_edit::value(mpa(y)));
+        }
+        if let Some(s) = &g.source {
+            rec.insert("source", toml_edit::value(s.as_str()));
+        }
+        if let Some(s) = &g.set_by {
+            rec.insert("set_by", toml_edit::value(s.as_str()));
+        }
+        if doc
+            .get("bolt_grade")
+            .and_then(Item::as_array_of_tables)
+            .is_none()
+        {
+            doc.insert("bolt_grade", Item::ArrayOfTables(ArrayOfTables::new()));
+        }
+        let list = doc
+            .get_mut("bolt_grade")
+            .and_then(Item::as_array_of_tables_mut)
+            .ok_or("bolt_grade is not a list of tables")?;
+        let same = list.iter().position(|t| {
+            t.get("grade").and_then(Item::as_str).map(str::trim) == Some(g.grade.trim())
+        });
+        match same.and_then(|k| list.get_mut(k)) {
+            Some(t) => *t = rec,
+            None => list.push(rec),
+        }
+    }
+    // The grades no member names any more go.
+    let named: std::collections::BTreeSet<String> = doc
+        .get("member")
+        .and_then(Item::as_array_of_tables)
+        .map(|l| {
+            l.iter()
+                .filter_map(|t| t.get("bolt_grade").and_then(Item::as_str))
+                .map(|s| s.trim().to_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(list) = doc
+        .get_mut("bolt_grade")
+        .and_then(Item::as_array_of_tables_mut)
+    {
+        list.retain(|t| {
+            t.get("grade")
+                .and_then(Item::as_str)
+                .is_some_and(|g| named.contains(g.trim()))
+        });
+        if list.is_empty() {
+            doc.remove("bolt_grade");
+        }
+    }
+    // Version 21 only when a member names a grade (a structure without
+    // members is left as it was).
+    if !named.is_empty() {
+        raise_version(
+            doc,
+            i64::from(ohl_structures::structures::BOLT_GRADE_VERSION),
+        );
+    }
+    Ok(out)
+}
+
 /// One of the structure's default minimum bolt distances
 /// (`[default_bolt_minimums]` `end`, `edge` or `spacing`, in bolt
 /// diameters; owner 2026-11-18, third round), as typed: a number above 0

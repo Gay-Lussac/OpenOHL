@@ -33,6 +33,7 @@
 
 mod app;
 mod body_tab;
+mod bolt_grade_window;
 mod case_editor;
 mod close_up;
 mod context_menu;
@@ -88,6 +89,8 @@ use eframe::egui;
 
 #[cfg(test)]
 mod body_ui_tests;
+#[cfg(test)]
+mod bolt_grade_ui_tests;
 #[cfg(test)]
 mod case_editor_tests;
 #[cfg(test)]

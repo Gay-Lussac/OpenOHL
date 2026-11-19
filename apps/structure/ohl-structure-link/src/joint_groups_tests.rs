@@ -314,8 +314,9 @@ fn overlapping_holes_do_not_fit() {
 /// D1 pulled out of the plate's plane (its end force square to the plies,
 /// from the analysis): the plate's holding bolts in tension checked by the
 /// plugin — with a small force in the plane, the tension, the prying or
-/// the leg's flange's bending governs, never said "not checked"; the
-/// plate's own bending (not worked out) said not on the safe side.
+/// the leg's flange's or the plate's bending governs, never said "not
+/// checked"; the plate's own prying and bending worked out (2026-11-19, a
+/// flange without a web), no longer said not worked out.
 #[test]
 fn bolts_pulled_out_of_the_plane_are_checked_in_tension() {
     for (code, capacity) in [
@@ -345,11 +346,80 @@ fn bolts_pulled_out_of_the_plane_are_checked_in_tension() {
         );
         assert!(
             !hold.governs.contains("bolts in tension not checked")
-                && hold.governs.contains("the prying of plate G1"),
+                && !hold.governs.contains("the prying of plate G1"),
             "{}",
             hold.governs
         );
+        // The plate's bending governs here: b′ 42 mm from the holding bolt
+        // to D1's farther bolt, less half the bolt.
+        assert!(
+            hold.governs.contains("bending of plate G1") && hold.governs.contains("b′ 42 mm"),
+            "{code}: {}",
+            hold.governs
+        );
     }
+}
+
+/// The bolt grade set by command (owner 2026-11-19): a library bolt
+/// without strengths (as a tower program's export gives them) leaves the
+/// plate's holding bolts' tension not checked, said NOT ON THE SAFE SIDE;
+/// SIA 263:2013 Table 2's 8.8 set on the members' bolts gives them its
+/// f_ub — the tension checked — and the group says the grade, set by
+/// command, and where its values come from.
+#[test]
+fn a_grade_set_by_command_checks_the_bolts_in_tension() {
+    if !built("asce10") {
+        return;
+    }
+    let bare = ohl_structures::bolts::BoltLibrary::parse(
+        "format = \"ohl-bolts\"\nversion = 1\n\n[[bolt]]\nid = \"B16\"\n\
+         diameter = \"16 mm\"\nhole = \"17.5 mm\"\n",
+    )
+    .unwrap();
+    let base = held("B16").replace(", grade = \"8.8\"", "");
+    let mut graded = base.clone();
+    for m in ["L1", "L2", "D1"] {
+        graded = graded.replacen(
+            &format!("id = \"{m}\"\n"),
+            &format!("id = \"{m}\"\nbolt_grade = \"8.8\"\n"),
+            1,
+        );
+    }
+    graded.push_str(
+        "\n[[bolt_grade]]\ngrade = \"8.8\"\nultimate = \"800 MPa\"\nyield = \"640 MPa\"\n\
+         source = \"SIA 263:2013, 3.4.2, Table 2\"\nset_by = \"command\"\n",
+    );
+    let hold = |text: &str| {
+        let plans = plate_plans(text, &library(), &bare).unwrap();
+        let mut ends = crate::EndForces::new();
+        ends.insert("D1".into(), [[0.0; 6], [0.8e3, 30e3, 0.6e3, 0.0, 0.0, 0.0]]);
+        let forces = axial(1e3);
+        crate::plate_usage_cases_with(&plans, &[("one", 1.0, &forces)], &[&ends])
+            .remove(0)
+            .into_iter()
+            .find(|x| matches!(&x.part, PlatePart::Holding(_)))
+            .unwrap()
+    };
+    let before = hold(&base);
+    assert!(
+        before.governs.contains("bolt tension not checked"),
+        "{}",
+        before.governs
+    );
+    let after = hold(&graded);
+    assert!(
+        !after.governs.contains("bolt tension not checked"),
+        "{}",
+        after.governs
+    );
+    assert!(
+        after.notes.iter().any(|n| n.contains(
+            "bolt grade 8.8 set by command: f_ub 800 MPa, f_yb 640 MPa (SIA 263:2013, 3.4.2, \
+             Table 2)"
+        )),
+        "{:?}",
+        after.notes
+    );
 }
 
 /// A bolt library with one bolt giving a tension capacity (invented).

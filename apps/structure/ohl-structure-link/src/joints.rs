@@ -1119,7 +1119,13 @@ fn condition(
                             .hole
                             .map(|h| h.si())
                             .or(lib.and_then(|l| l.hole.map(|h| h.si()))),
-                        grade: b.grade.clone().or(lib.and_then(|l| l.grade.clone())),
+                        // A grade set on the member's bolts (owner
+                        // 2026-11-19) over the typed and the library's.
+                        grade: design
+                            .and_then(|d| d.bolt_grade.as_ref())
+                            .map(|g| g.grade.trim().to_owned())
+                            .or_else(|| b.grade.clone())
+                            .or(lib.and_then(|l| l.grade.clone())),
                         bolt: b.bolt.clone(),
                         drawn: lib.map_or([None; 3], |l| l.drawn()),
                     },
@@ -1320,7 +1326,10 @@ fn member_bolts(design: Option<&MemberDesign>) -> Valued<BoltSet> {
                 count: b.count,
                 diameter: b.diameter,
                 hole: b.hole,
-                grade: None,
+                // A grade set on the member's bolts (owner 2026-11-19).
+                grade: design
+                    .and_then(|d| d.bolt_grade.as_ref())
+                    .map(|g| g.grade.trim().to_owned()),
                 bolt: None,
                 drawn: [None; 3],
             },

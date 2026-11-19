@@ -55,7 +55,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use ohl_sections::SectionLibrary;
-use ohl_structures::bolts::BoltLibrary;
+use ohl_structures::bolts::{BoltGrade, BoltLibrary};
 use ohl_structures_fe::bolt_groups::{self as bg, Plane, PlaneLoad, V2, V3};
 use ohl_structures_fe::model::Model;
 
@@ -113,8 +113,14 @@ struct Bolt {
     flange: Option<(f64, f64, V3)>,
     /// The flanges it bends as it pulls.
     tees: Vec<Tee>,
+    /// The plates it bends as it pulls: flanges without a web (2026-11-19,
+    /// [`plate_tee`]).
+    plates: Vec<Tee>,
     /// The plies it pulls whose bending is not known, in words.
     unknown: Vec<String>,
+    /// The bolt grades set on the members it carries, in words ("bolt
+    /// grade 8.8 set by command: …"; owner 2026-11-19).
+    grades: Vec<String>,
 }
 
 /// A ply's edges.
@@ -246,8 +252,25 @@ fn ends_note(run: &[String], unsaid: &[String], j: &str) -> Option<String> {
     })
 }
 
+/// Whether library bolt `l`'s strengths agree with the grade `g` set on
+/// its member's bolts (none set: they do): its ultimate strength and grade
+/// not given or the same.
+fn grade_agrees(l: &ohl_structures::bolts::BoltType, g: Option<&BoltGrade>) -> bool {
+    let Some(g) = g else {
+        return true;
+    };
+    let fu = g.ultimate.si();
+    l.ultimate.is_none_or(|u| (u.si() - fu).abs() <= 1e-6 * fu)
+        && l.grade
+            .as_deref()
+            .is_none_or(|x| x.trim() == g.grade.trim())
+}
+
 /// The bolt data of member end `a` (its bolt set over the member's), with
-/// its library's tension capacity.
+/// its library's tension capacity (its ultimate tensile load; dropped
+/// where a grade set on the member's bolts differs from the library's) and
+/// the grade set on the member's bolts over the bolts' own (owner
+/// 2026-11-19).
 fn bolt_of(a: &Arrival, model: &Model, at: V3, bolts: &BoltLibrary) -> Option<Bolt> {
     let set = a.bolts.value.as_ref()?;
     let idx = model.members.iter().position(|m| m.id == a.member);
@@ -258,24 +281,48 @@ fn bolt_of(a: &Arrival, model: &Model, at: V3, bolts: &BoltLibrary) -> Option<Bo
             ohl_structures_fe::member_ends::end_bolts(&m.design, e, &mut Vec::new())
         })
         .map_or((None, None, None), |(b, s, t)| (Some(b), s, t));
-    let tension = set
-        .bolt
-        .as_deref()
-        .and_then(|id| bolts.get(id))
-        .and_then(|b| b.tension_capacity)
-        .map(|f| f.si());
+    let set_grade = idx.and_then(|k| model.members[k].design.bolt_grade.as_ref());
+    // The end's own bolts when they are this library bolt (their capacity
+    // already dropped for another grade), else the library's.
+    let own = idx
+        .and_then(|k| model.members[k].design.ends.get(a.end))
+        .and_then(Option::as_ref)
+        .filter(|e| e.bolt.is_some() && e.bolt == set.bolt)
+        .and_then(|e| e.bolts.as_ref());
+    let tension = match own {
+        Some(e) => e.tension_capacity,
+        None => set
+            .bolt
+            .as_deref()
+            .and_then(|id| bolts.get(id))
+            .filter(|l| grade_agrees(l, set_grade))
+            .and_then(|b| b.tension_capacity)
+            .map(|f| f.si()),
+    };
     Some(Bolt {
         at,
         diameter: set.diameter,
         hole: set.hole.or(merged.and_then(|b| b.hole)),
-        ultimate: merged.and_then(|b| b.ultimate),
+        // The grade set on the member's bolts, else the end's, else its
+        // library bolt's (a plate's own bolts onto a leg running on: the
+        // leg's end has none of its own there).
+        ultimate: set_grade
+            .map(|g| g.ultimate.si())
+            .or(merged.and_then(|b| b.ultimate))
+            .or_else(|| {
+                set.bolt
+                    .as_deref()
+                    .and_then(|id| bolts.get(id))
+                    .and_then(|l| l.ultimate)
+                    .map(|u| u.si())
+            }),
         shear: merged.and_then(|b| b.shear_capacity),
         shank,
         threads_in: threads,
         tension,
-        grade: set
-            .grade
-            .clone()
+        grade: set_grade
+            .map(|g| g.grade.trim().to_owned())
+            .or_else(|| set.grade.clone())
             .or_else(|| merged.and_then(|b| b.grade).map(|g| g.name()))
             .unwrap_or_default(),
         planes: a.planes.0.value.unwrap_or(1).max(1),
@@ -286,8 +333,20 @@ fn bolt_of(a: &Arrival, model: &Model, at: V3, bolts: &BoltLibrary) -> Option<Bo
         )],
         flange: None,
         tees: Vec::new(),
+        plates: Vec::new(),
         unknown: Vec::new(),
+        grades: set_grade.map(BoltGrade::words).into_iter().collect(),
     })
+}
+
+/// The bolt grades set on the members `bolts` carry, once each, for a
+/// group's notes.
+fn grade_notes(bolts: &[Bolt]) -> Vec<String> {
+    let mut v = Vec::new();
+    for w in bolts.iter().flat_map(|b| b.grades.iter()) {
+        push_once(&mut v, format!("bolts: {w}"));
+    }
+    v
 }
 
 /// Adds bolt `b` to `bolts` (one hole with a bolt already there: what it
@@ -327,8 +386,14 @@ fn add_bolt(bolts: &mut Vec<Bolt>, b: Bolt, notes: &mut Vec<String>) -> usize {
         for t in b.tees {
             put_tee(&mut x.tees, t);
         }
+        for t in b.plates {
+            put_tee(&mut x.plates, t);
+        }
         for w in b.unknown {
             push_once(&mut x.unknown, w);
+        }
+        for w in b.grades {
+            push_once(&mut x.grades, w);
         }
         return k;
     }
@@ -441,6 +506,101 @@ fn flange_tee(
         fy,
         edge,
         web,
+        width: side(1.0) + side(-1.0),
+    })
+}
+
+/// The plate `part` a holding bolt at `at` bends as it pulls (2026-11-19,
+/// the owner's decision of that day: the same T-stub model as an angle's
+/// flange; theory page): a flange **without a web** — the pull reaches it
+/// through the bolts of the members on it (`pulls`), which hold it against
+/// no turning. Thickness `t`, yield strength `fy`; `n` the plate's normal,
+/// `line` the holding bolts' line (the leg's), `others` the holding bolts,
+/// `flange` the leg's flange under the bolt (its gauge from the heel, its
+/// width, across it from heel to toe), `outline` the plate's, `d` the
+/// bolt's diameter.
+///
+/// - `web` (b): in the plate's plane, square to the holding bolts' line,
+///   from the bolt to the **farthest** bolt of a member on the plate (on the
+///   safe side: the prying and the plate's bending grow with it);
+/// - `edge` (a): from the bolt the other way to where the plate stops
+///   bearing on the leg — its outline or the leg's flange's toe or heel,
+///   the nearer;
+/// - `width` (w): along the line, to the middle between it and the next
+///   holding bolt on its line each way, at most to the outline and to b −
+///   d/2 each way (as a flange's).
+///
+/// None: not known — no member's bolt on the plate placed, the bolt off the
+/// outline, no outline.
+#[allow(clippy::too_many_arguments)]
+fn plate_tee(
+    part: &str,
+    t: f64,
+    fy: Option<f64>,
+    at: V3,
+    n: V3,
+    line: V3,
+    pulls: &[V3],
+    others: &[V3],
+    flange: Option<(f64, f64, V3)>,
+    outline: &[V3],
+    d: f64,
+) -> Option<Tee> {
+    if outline.len() < 3 {
+        return None;
+    }
+    let nn = scale(n, 1.0 / norm(n).max(1e-12));
+    let flat = |v: V3| sub(v, scale(nn, dot(v, nn)));
+    let u0 = flat(line);
+    let u = scale(u0, 1.0 / norm(u0).max(1e-12));
+    if norm(u0) < 1e-9 {
+        return None;
+    }
+    let across = |p: V3| {
+        let r = flat(sub(p, at));
+        sub(r, scale(u, dot(r, u)))
+    };
+    let (b, dir) = pulls
+        .iter()
+        .map(|p| across(*p))
+        .map(|c| (norm(c), c))
+        .max_by(|x, y| x.0.total_cmp(&y.0))?;
+    if b < 1e-4 {
+        return None;
+    }
+    let e = scale(dir, 1.0 / b);
+    let away = scale(e, -1.0);
+    let mut a = crate::plate_checks::ray_to_outline(outline, at, away)?;
+    if let Some((g, w, toe)) = flange {
+        let s = dot(away, toe);
+        if s > 1e-6 {
+            a = a.min((w - g).max(0.0) / s);
+        } else if s < -1e-6 {
+            a = a.min(g.max(0.0) / -s);
+        }
+    }
+    let cap = (b - d / 2.0).max(0.0);
+    let side = |sign: f64| -> f64 {
+        let dir = scale(u, sign);
+        let mut w = cap;
+        if let Some(x) = crate::plate_checks::ray_to_outline(outline, at, dir) {
+            w = w.min(x);
+        }
+        for o in others {
+            let r = flat(sub(*o, at));
+            let x = dot(r, dir);
+            if x > 1e-4 && norm(sub(r, scale(u, dot(r, u)))) <= d / 2.0 {
+                w = w.min(x / 2.0);
+            }
+        }
+        w
+    };
+    Some(Tee {
+        part: part.to_owned(),
+        thickness: t,
+        fy,
+        edge: a.max(0.0),
+        web: b,
         width: side(1.0) + side(-1.0),
     })
 }
@@ -653,6 +813,19 @@ fn holding_groups(
                 let mut misfits = Vec::new();
                 let outline = pd.outline.clone();
                 let mut bolts: Vec<Bolt> = Vec::new();
+                let (steel, steel_note) =
+                    crate::plate_checks::plate_steel_of(pd, j, model, library);
+                // The bolts of the members pulling the plate (2026-11-19:
+                // the plate's own prying).
+                let pulls: Vec<V3> = on
+                    .iter()
+                    .filter(|(_, a)| !run.contains(&a.member))
+                    .flat_map(|(_, a)| a.bolt_points.iter().copied())
+                    .collect();
+                let holding: Vec<V3> = holders
+                    .iter()
+                    .flat_map(|a| a.bolt_points.iter().copied())
+                    .collect();
                 for a in &holders {
                     // The holder's own flange: its tee for each bolt (the
                     // leg ending at the plate: its steel stops at its cut).
@@ -673,7 +846,30 @@ fn holding_groups(
                                 a.member
                             )),
                         }
-                        b.unknown.push(format!("plate {q}"));
+                        // The plate's own prying (2026-11-19): a flange
+                        // without a web, where its geometry is known.
+                        let flange = a.profile.as_ref().and_then(|p| {
+                            let g = p.angle?;
+                            let w = if a.leg_y { g.b } else { g.h };
+                            let c = if a.leg_y { p.axes[1] } else { p.axes[2] };
+                            Some((a.bolt_flat.get(i)?[1], w, toward_toe(c, a)))
+                        });
+                        match plate_tee(
+                            q,
+                            steel.thickness,
+                            steel.fy,
+                            *at,
+                            a.bolt_axis,
+                            a.direction,
+                            &pulls,
+                            &holding,
+                            flange,
+                            &outline,
+                            b.diameter,
+                        ) {
+                            Some(t) => b.plates.push(t),
+                            None => b.unknown.push(format!("plate {q}")),
+                        }
                         if outline.len() >= 3
                             && crate::plate_checks::ray_to_outline(&outline, *at, a.direction)
                                 .is_none()
@@ -728,8 +924,6 @@ fn holding_groups(
                         }
                     })
                     .collect();
-                let (steel, steel_note) =
-                    crate::plate_checks::plate_steel_of(pd, j, model, library);
                 notes.extend(steel_note);
                 let holes: Vec<V3> = onto_plate(j, q)
                     .iter()
@@ -781,6 +975,7 @@ fn holding_groups(
                         "plate {q} has no outline: its edges' distances not known"
                     ));
                 }
+                notes.extend(grade_notes(&bolts));
                 out.groups.push(GroupPlan {
                     joint: j.id.clone(),
                     holding: true,
@@ -1146,6 +1341,7 @@ fn bearing_groups(
                 continue;
             };
             let holes = bolts.iter().map(|b| b.at).collect();
+            notes.extend(grade_notes(&bolts));
             out.groups.push(GroupPlan {
                 joint: j.id.clone(),
                 holding: false,
@@ -1489,6 +1685,7 @@ pub(crate) fn group_rows(
 ) -> Vec<Vec<PlateUsage>> {
     use ohl_member_check::joints as by_plugin;
     use ohl_member_check::joints::groups as w;
+    use ohl_member_check::joints::prying as wp;
     use ohl_member_check::joints::tension as wt;
     let per_case: Vec<Vec<CaseForces>> = cases
         .iter()
@@ -1637,30 +1834,28 @@ pub(crate) fn group_rows(
             .collect(),
     };
     // The bolts in tension: the groups with a pull in a case.
-    let tension: Vec<wt::GroupTension> = fits
+    let tee = |t: &Tee| wt::Tee {
+        part: t.part.clone(),
+        thickness: t.thickness,
+        fy: t.fy,
+        edge: t.edge,
+        web: t.web,
+        width: t.width,
+    };
+    let tension: Vec<wp::GroupPrying> = fits
         .iter()
         .filter(|&&k| (0..cases.len()).any(|n| per_case[n][k].tension.iter().any(|t| *t > 1e-6)))
         .map(|&k| {
             let g = &plans.groups[k];
-            wt::GroupTension {
+            wp::GroupPrying {
                 id: k as u32,
                 bolts: g
                     .bolts
                     .iter()
-                    .map(|b| wt::BoltTension {
+                    .map(|b| wp::BoltPrying {
                         tension_capacity: b.tension,
-                        tees: b
-                            .tees
-                            .iter()
-                            .map(|t| wt::Tee {
-                                part: t.part.clone(),
-                                thickness: t.thickness,
-                                fy: t.fy,
-                                edge: t.edge,
-                                web: t.web,
-                                width: t.width,
-                            })
-                            .collect(),
+                        tees: b.tees.iter().map(tee).collect(),
+                        plates: b.plates.iter().map(tee).collect(),
                         unknown: b.unknown.clone(),
                     })
                     .collect(),
@@ -1673,7 +1868,11 @@ pub(crate) fn group_rows(
     let (checked, tension_checked) = if fits.is_empty() {
         (by_plugin::GroupsChecked::Results(Vec::new()), true)
     } else {
-        by_plugin::check_joint_groups_tension(p, &input, &tension)
+        // With the plates' prying when the plugin has it (2026-11-19),
+        // else said not worked out by the plugin (each plate named among
+        // the plies whose bending is not known).
+        let (c, level) = by_plugin::check_joint_groups_prying(p, &input, &tension);
+        (c, level != by_plugin::TensionChecked::No)
     };
     let not_checked = by_plugin::not_checked_by(p);
     (0..cases.len())
@@ -1827,7 +2026,9 @@ mod tests {
             carries: carries.iter().map(|s| (*s).to_owned()).collect(),
             flange: None,
             tees: Vec::new(),
+            plates: Vec::new(),
             unknown: Vec::new(),
+            grades: Vec::new(),
         }
     }
 
@@ -2043,6 +2244,63 @@ mod tests {
                 .as_deref()
                 .is_some_and(|w| w.contains("bolts in tension"))
         );
+    }
+
+    /// The plate a holding bolt bends, a flange without a web (2026-11-19;
+    /// invented, by hand): a plate in z = 0 from (−100, −50) to (100, 150)
+    /// mm, the holding bolts (16 mm) at x = ∓40 mm on the leg's line (along
+    /// x), the leg's flange 60 mm wide under them, the bolts 30 mm from its
+    /// heel, its toe towards −y; the members' bolts on the plate at (0, 60)
+    /// and (20, 90) mm. For the bolt at −40: b = 90 mm (the farthest, square
+    /// to the line); a the other way (−y): the outline 50 mm, the flange's
+    /// toe 30 mm — 30 mm; w: towards +x the next holding bolt 80 mm away
+    /// (40 mm), towards −x the outline 60 mm (b − d/2 = 82 mm more) — 100
+    /// mm. No member's bolt placed, or no outline: not known.
+    #[test]
+    fn a_plate_bent_by_a_holding_bolt() {
+        let outline = [
+            [-0.1, -0.05, 0.0],
+            [0.1, -0.05, 0.0],
+            [0.1, 0.15, 0.0],
+            [-0.1, 0.15, 0.0],
+        ];
+        let holding = [[-0.04, 0.0, 0.0], [0.04, 0.0, 0.0]];
+        let pulls = [[0.0, 0.06, 0.0], [0.02, 0.09, 0.0]];
+        let flange = Some((0.03, 0.06, [0.0, -1.0, 0.0]));
+        let t = super::plate_tee(
+            "G1",
+            0.01,
+            Some(355e6),
+            holding[0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            &pulls,
+            &holding,
+            flange,
+            &outline,
+            0.016,
+        )
+        .unwrap();
+        assert!((t.web - 0.09).abs() < 1e-12, "{t:?}");
+        assert!((t.edge - 0.03).abs() < 1e-12, "{t:?}");
+        assert!((t.width - 0.10).abs() < 1e-12, "{t:?}");
+        let call = |pulls: &[V3], outline: &[V3]| {
+            super::plate_tee(
+                "G1",
+                0.01,
+                None,
+                holding[0],
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                pulls,
+                &holding,
+                flange,
+                outline,
+                0.016,
+            )
+        };
+        assert!(call(&[], &outline).is_none());
+        assert!(call(&pulls, &[]).is_none());
     }
 
     /// The flange a bolt bends (invented, by hand): a 60 mm leg 6 mm

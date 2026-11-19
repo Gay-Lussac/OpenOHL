@@ -1044,7 +1044,16 @@ out. Each change is one undo step.
     together by the code, and each flange's bending. What governs names
     it ("bolt tension: pull … kN, prying … kN …", "bolt shear and tension
     together …", "bending of L1 under the bolt's pull …"). A gusset
-    plate's own prying is not worked out: said NOT ON THE SAFE SIDE.
+    plate's own prying and bending are worked out too (the owner's
+    decision of 2026-11-19: the plate a flange without a web, "bending of
+    plate G1 under the bolt's pull …"); only where its outline or the
+    members' bolts on it are not known is it said NOT ON THE SAFE SIDE.
+  - **Bolts without strengths** (an import's bolts often have only a
+    diameter and a shear capacity): their tension is not checked, said
+    NOT ON THE SAFE SIDE. **Design › Bolt grade…** gives the bolts of the
+    members picked, a group's or the whole tower a grade (SIA 263:2013
+    Table 2's strengths, recorded as set by command): [Bolt
+    grade](bolt-grade.md).
   - **A joint that does not fit** as given (a bolt's hole not within the
     flange it bolts onto, a holding bolt outside the plate, holes in one
     part overlapping, a bolt beyond a member's end) reads **does not fit**

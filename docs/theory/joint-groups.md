@@ -8,7 +8,8 @@ ASCE 10-97 in `plugins/codes/asce10/src/groups.rs`, SIA 263:2013 in
 `plugins/codes/sia263/src/groups.rs` — reached through the plugin
 interface `joint-check-groups` (2026-11-19; one call with every group and
 case) and, with the bolts in tension, `joint-check-groups-tension`
-(2026-11-19), run with every case of OHL-Structure's analysis (Results › Run)
+(2026-11-19) or, with the gusset plates' own prying too,
+`joint-check-groups-prying` (2026-11-19), run with every case of OHL-Structure's analysis (Results › Run)
 and shown with the plate checks in Joint details, the 3D view's joint
 colours and the structure report. Stage 4.5 of the
 [joint details](../development/joint-details.md) ("checks of the joints
@@ -230,12 +231,71 @@ safe side**: the yield lines round a lone bolt reach further).
 Then each code's rules (below): the bolt's tension under \\( T + Q \\) and its
 shear and tension together.
 
+### A gusset plate's own prying and bending
+
+Since 2026-11-19 (the owner's decision of that day: "modelled with the
+same T-stub method already used for angle flanges"; before, said NOT ON
+THE SAFE SIDE). A plate's holding bolts pulled out of its plane bend the
+plate too. The plate is taken as the T-stub's flange **without a web**:
+the pull reaches it through the bolts of the members bolted onto it,
+which, in a line, hold it against no turning — so the model's moment at
+the web is taken as **none** and the whole moment of the pull is carried
+at the bolt line (Kulak et al. Eq. 17.8 with no moment at the web; their
+Eq. 17.11 with \\( \delta\alpha/(1+\delta\alpha) \\) at its largest, 1):
+
+\\[ Q = T\,\frac{b'}{a'},\qquad B = T\Big(1 + \frac{b'}{a'}\Big),\qquad
+T\,b' \le \delta\,\frac{w\,t^2 f_y}{4},\quad \delta = 1 - \frac{d_0}{w} \\]
+
+with \\( a' = a + d/2 \\), \\( b' = b - d/2 \\), \\( a \le 1.25\,b \\) as for a
+flange — twice the prying of a flange with α = δ = 1, and the bending
+checked at the bolt line on the net section alone: **on the safe side**
+(a member's bolts that do restrain the plate would share the moment). Its
+dimensions, per holding bolt (`ohl_structure_link::joint_groups::plate_tee`):
+
+- **b**, in the plate's plane square to the holding bolts' line (the
+  leg's): from the bolt to the **farthest** bolt of a member on the plate —
+  **on the safe side**: the prying and the plate's bending grow with it;
+- **a**, from the bolt the other way to where the plate stops bearing on
+  the leg under it: the plate's outline or the leg's flange's toe or heel
+  (past them nothing is under the plate to pry against), the nearer —
+  **on the safe side**;
+- **w**, along the line: to the middle between it and the next holding
+  bolt on its line each way, at most to the outline and to \\( b' \\) each
+  way (a lone bolt's spread taken no further, **on the safe side**, as for
+  a flange).
+
+The bolt's prying is the largest of its flanges' and plates' (the least
+stiff part governs, the guide 17.6.1); each plate's bending is a check of
+its own ("bending of plate G1 under the bolt's pull …"). Where the
+plate's geometry is not known — no outline, no member's bolt on it placed,
+the bolt off the outline — its prying is said not worked out, NOT ON THE
+SAFE SIDE, as before; so it is with a code plugin without the
+`joint-check-groups-prying` export.
+
+### Bolt strengths: a grade set by command
+
+A bolt's tension needs its ultimate strength F_u (or its library's
+`tension_capacity`, **its ultimate tensile load F_u A_s** — owner
+2026-11-19; not a design value). Bolts imported from a tower program's
+export often have neither: their tension is then not checked, said NOT ON
+THE SAFE SIDE. Since 2026-11-19 (the owner's decision: "add a command to
+set it") OHL-Structure's Design › Bolt grade… gives the bolts of chosen
+members a grade, its strengths from **SIA 263:2013, 3.4.2, Table 2** (the
+strength classes of SN EN 20898-2; 8.8: f_yb 640, f_ub 800 N/mm²), written
+into the structure file with its source and "set by command"
+([user guide](../user-guide/bolt-grade.md)). The grade's f_ub and name
+then go over the bolt's library or design data; a capacity given for
+another grade is dropped (the grade's worked out by the code, said); each
+group's notes say the grade, who set it and where its values come from.
+**No grade is taken by itself.**
+
 **Not covered, said NOT ON THE SAFE SIDE** in the group's result:
 
-- a ply whose bending is not known — **a plate** (a gusset plate has no
-  web near the bolts: its prying is not worked out), a member that is not
-  an angle, a flange with bolts on more than two gauge lines (the outer
-  lines are not effective in tension without stiffening, the guide 17.6.1)
+- a ply whose bending is not known — a member that is not an angle, a
+  flange with bolts on more than two gauge lines (the outer lines are not
+  effective in tension without stiffening, the guide 17.6.1), a gusset
+  plate whose outline or members' bolts are not known (since 2026-11-19 a
+  plate is otherwise worked out, [above](#a-gusset-plates-own-prying-and-bending))
   — "the prying of … not worked out", where the pull is 1 % or more of the
   bolt's shear;
 - a bolt within half a diameter of the web (\\( b' \le 0 \\)): the local
@@ -305,6 +365,7 @@ angle) — each code then takes its conservative case (below), said.
 | bolt tension (2026-11-19) | the pull with its prying ≤ F_t A_s, F_t = 0.6 F_u (case (b): the ASTM proof-load stress of case (a) is not in the data); A_s taken as 0.6 of the gross area; a library's tension capacity (its F_u A_s): 0.6 of it | 4.3.3 |
 | shear and tension together | (f_t/F_t)² + (f_v/F_v)² ≤ 1 (Eq. 4.3-2, F_t(v) = F_t [1 − (f_v/F_v)²]^½, squared), its square root as the usage | 4.3.4, Eq. 4.3-2 |
 | the flange's bending under the pull | T b′ ≤ (1 + δ) w t² F_y / 4 (the prying model's mechanism; no rule in the standard) | — |
+| a gusset plate's bending under the pull (2026-11-19) | T b′ ≤ δ w t² F_y / 4 (a flange without a web: the moment at the bolt line; no rule in the standard) | — |
 
 - 4.5.1 measures the end distance "from the center of a hole to the end,
   whether this end is perpendicular or inclined to the line of force":
@@ -340,6 +401,7 @@ parameter file for the plugin may change it).
 | bolt tension (2026-11-19) | the pull with its prying ≤ \\( F_{t,Rd} = 0.9 f_{ub} A_s/\gamma_{M2} \\), \\( A_s \\) taken as 0.6 of the gross area; a library's tension capacity (its \\( f_{ub} A_s \\)): 0.9 of it over \\( \gamma_{M2} \\) | Table 16, (77); 6.2.2.4 (prying) |
 | shear and tension together | \\( (F_{v,Ed}/F_{v,Rd})^2 + (F_{t,Ed}/F_{t,Rd})^2 \le 1 \\), its square root as the usage | 6.2.2.6, (78) |
 | the flange's bending under the pull | \\( T b' \le (1+\delta) w t^2 f_y/(4\gamma_{M1}) \\) (the prying model's mechanism; SIA 263 gives no rule) | — |
+| a gusset plate's bending under the pull (2026-11-19) | \\( T b' \le \delta w t^2 f_y/(4\gamma_{M1}) \\) (a flange without a web: the moment at the bolt line; SIA 263 gives no rule) | — |
 
 - Figure 31 names the distances by the force's direction and says
   \\( e_2 \\) and \\( p_2 \\) apply also oblique to it ("Les désignations
@@ -383,7 +445,9 @@ on the safe side); the plies' offsets through their thickness left out of
 the levers; the joint's own loads not routed through its plates; the
 holding bolts of a welded plate's several plates each taken carrying the
 whole (on the safe side); a plate's prying and bending under bolts in
-tension not worked out (not on the safe side, said); the moments shared by
+tension worked out since 2026-11-19 as a flange without a web (on the safe
+side; said not worked out only where its geometry is not known); the
+moments shared by
 the elastic method (on the safe side; owner 2026-11-19: the elastic method
 stays, the instantaneous centre not used).
 
@@ -418,6 +482,20 @@ Unit tests on invented data, worked by hand:
   0.453) 148.6 N m against T b′ = 320 N m, 215 %; with 30 kN of shear
   (59.84 kN) Eq. 4.3-2's root 0.653. `plugins/codes/sia263/src/groups.rs`
   `a_bolt_in_tension_with_prying`: the same by (77), 69.49 kN, and (78).
+- `plugins/codes/asce10/src/groups.rs` `a_plates_prying_without_a_web`
+  (2026-11-19): the M16 pulled by 20 kN through a 10 mm plate (S355), a =
+  40, b = 60 mm, w 50 mm: a′ = 48, b′ = 52 mm, Q = 20 × 52 / 48 = 21.67 kN
+  (twice a flange's), 41.67 kN against 57.91 kN, 72.0 %; δ = 1 − 17.5/50 =
+  0.65, δ w t² F_y / 4 = 288.4 N m against T b′ = 1040 N m, 360.6 %.
+  `plugins/codes/sia263/src/groups.rs` `a_plates_prying_without_a_web`:
+  the same by (77) and with γ_M1, d₀ 18 mm.
+- `apps/structure/ohl-structure-link/src/joint_groups.rs`
+  `a_plate_bent_by_a_holding_bolt` (2026-11-19): a plate in z = 0 from
+  (−100, −50) to (100, 150) mm, holding bolts at x = ∓40 mm on the leg's
+  line, the leg's flange 60 mm wide (the bolts 30 mm from its heel, its toe
+  towards −y), the members' bolts at (0, 60) and (20, 90) mm: b = 90 mm
+  (the farthest), a = 30 mm (the toe nearer than the outline's 50 mm), w =
+  40 + 60 = 100 mm.
 - `plugins/codes/asce10/src/groups.rs` `a_shared_bolt_on_the_leg`: 60 kN
   on an M16 8.8 in an 8 mm leg: shear 59.84 kN (one plane), bearing
   97.92 kN, end distance 20.8 mm needed; `plugins/codes/sia263/src/groups.rs`
@@ -432,4 +510,9 @@ Unit tests on invented data, worked by hand:
   gives its holding bolts and the leg's bearing under them; a plate on a
   leg running on held by its own bolts onto it (`[plate.leg_bolts]`) the
   same; overlapping holes "does not fit", without a usage; a diagonal
-  pulled out of the plate's plane checked in tension by both codes.
+  pulled out of the plate's plane checked in tension by both codes, the
+  plate's own bending governing (b′ 42 mm), its prying no longer said not
+  worked out; bolts of a library bolt without strengths not checked in
+  tension (said), checked once SIA 263 Table 2's 8.8 is set on the
+  members' bolts by command, the group's notes saying so
+  (`a_grade_set_by_command_checks_the_bolts_in_tension`).
