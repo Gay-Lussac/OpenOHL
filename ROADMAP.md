@@ -56,7 +56,8 @@ from here. The owner's order of 2026-11-19:
    layout's "continuous" proposal is [O44](#o44-automatic-joint-layout) J9).
 4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically);
    built 2026-11-19, in active development, not approved yet — off by
-   default, the owner's questions under O45).
+   default; the owner's answers of 2026-11-19 under O45, an offset of
+   unknown sign in its member's own check built the same day).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout);
    J3–J4 built 2026-11-19, in active development, not approved yet).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
@@ -1682,6 +1683,22 @@ Six stages, the questions per stage and per detail level:
   (typed in the file until then), and those bolts drawn in the 3D view,
   the close-up and the IFC export (counted in the bill of materials
   already).
+  Decided 2026-11-19 (owner: "Okay go with recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-owner-22-recommendations-approved)):
+  a gusset plate's prying lever stays measured to the farthest bolt (B6);
+  no "web" credit for members bolted across a plate unless a source is
+  cited (B7); bolt grade 8.8 in the current line's bolt library (B8, done
+  in the private data, with its rebuild step); the NOT ON THE SAFE SIDE flag
+  for a moment about the line of a plate's holding bolts stays (B9); **a
+  "does not fit" only on placements assumed** (not given by the user, not
+  laid out by the layout) reads "does not fit as assumed — not detailed",
+  still failing, counted apart in the run's summary, the report and the
+  3D view (orange) — built the same day, in active development, not
+  approved yet (D14); J9 proposes "continuous" for same-section pieces in
+  line, the user confirms (a "confirm all" button), never a silent
+  default (D15); the mutual-host guard with J9, not before (D16). On the
+  78 real towers (kept privately), one case: as imported 23 128 of 33 544
+  joints do not fit, 22 993 only as assumed; with the layout 17 821 of
+  55 970, 11 057 as assumed — not detailed, 6 764 as given.
 - [x] Stage 4.6, weight and quantities (2026-11-19, built, in active
   development (not approved yet)): a tower's members, gusset plates,
   splice covers, bolts and welds counted from the connection records and
@@ -1960,9 +1977,17 @@ step, reasons left), and the work stops where it stops paying:
   (most left now: the other leg too narrow for the holding bolts), a run
   again identical, about 5 % more time; the estimated eccentricities'
   upper bounds 24.3 % → 22.0 % of the ends. An inside radius of one
-  thickness changed almost nothing. Questions to the owner: bent before
-  welded for step 4's ends; the radius; a bend check in the plugins; the
-  holding bolts on narrow legs.
+  thickness changed almost nothing. Decided 2026-11-19 (owner: "Okay go
+  with recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-owner-22-recommendations-approved)): no bent plate for tilted ends,
+  J5 takes them (C10); the inside radius stays two thicknesses, no shop
+  value given (C11); **a bending check at the bend in both code plugins**
+  (C12) — built the same day, in active development, not approved yet:
+  the additive plugin interface `joint-check-bends`, ASCE 10-97 3.13-1 with
+  the gross elastic section and von Mises' criterion for the shear (no rule
+  in the standard: on the safe side), SIA 263 4.3.5.4 (6) with elastic
+  stresses and Table 14's radius; a plugin without it: not checked, NOT ON
+  THE SAFE SIDE as before; on 45–55 mm legs without room for the holding
+  bolts the hand detail stays until J8 (C13).
 - [x] J3. **Each angle's turn chosen for the whole member**: a roll that
   lets both its ends lie flat, the leg bolted allowed to change between
   its ends where that is how towers are built. Owner 2026-11-19: "You can
@@ -2024,7 +2049,10 @@ step, reasons left), and the work stops where it stops paying:
   `continuous` where two pieces of a leg run on in line through a joint
   without a splice, for the user to confirm; until then such pieces each
   end at the joint in the checks (on the safe side). After J1–J2 are
-  merged.
+  merged. Decided 2026-11-19 (D15, D16): proposed for same-section pieces
+  in line, the user confirms (with a "confirm all" button) — never a
+  silent default; the mutual-host guard (two ends bolting onto each
+  other) built together with J9, not before.
 - Asked (open): shop drawings of real towers, to tune to how the steel
   is really detailed; the owner is looking for example joints
   (2026-11-19) and sent three that day: a bent gusset plate at a corner,
@@ -2078,20 +2106,25 @@ no shift data); the welded plate's extra offset (not analysed).
   solve with the upper bounds does not settle (the case fails, said); the
   level 4 offsets of laid-out joints equal the estimates' for them.
   **Proposed: stays off by default** until the questions below.
-  > **Owner:** (1) An offset of unknown sign (an upper bound, a plate's
-  > side) taken **only in its member's own check** — the moment N·e whole,
-  > as where only bars meet a joint — also at frame joints: a core change
-  > in the finite-element crate (statically admissible, two solves
-  > instead of three, no mixed-sign gap, no unsettled solve from it). Go?
-  > (2) The upper bound: the 30 mm shift limit (+ the plate case) as
-  > decided, or the largest shift the layout plans on the tower, or one
-  > growing with the member (J5)? (3) Until (1): accept the failed cases,
-  > or leave out the upper bound at an end that is the only brace of a
-  > member running through? (4) The line (OHL-Design, `ohl loads`) and
-  > `ohl structures fe` do not read the option (the estimates are the
-  > structure application's): the core to read stored estimates (a core
-  > change), or app-only? (5) On by default after (1) and J3 / the bent
-  > plate, measured again with wind cases?
+  Decided 2026-11-19 (owner: "Okay go with recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-owner-22-recommendations-approved)):
+  (1) **an offset of unknown sign taken only in its member's own check**
+  — built the same day, in active development, not approved yet: the core's
+  `Member::free_offsets`, never in the solve, the moment N·e whole and
+  sign-free at frame joints too (on the safe side for the member,
+  statically admissible for the others); two solves instead of three; the
+  mixed-sign note gone. On the 78 real towers (kept privately), one
+  vertical case: towers solving with the option 64 → 72 of 73 (the one
+  left fails without it too), the members whose usage rises 86 % → 27 %,
+  the towers' largest usage with it median 0.84 → 0.58; (2) the upper
+  bound stays the 30 mm shift limit plus the plate's offset, until J5;
+  (3) towers that failed to solve were accepted until (1) — reported as
+  failed (none left but one that fails without the option); (4) the
+  estimates stay in OHL-Structure only, the core's line calculation does
+  not read them; (5) on by default only after (1), J3 and the bent plate
+  (all three built now), measured again with wind cases — **to do**: that
+  measure (the comparison set has one vertical case).
+- [ ] A5: measured again with wind cases, then on by default (the owner's
+  decision of 2026-11-19).
 - [ ] B (M): the bolts worked out from the forces through the code
   plugins, iterated (two or three rounds), if the presets prove too rough.
 - [ ] D (M): the out-of-plane seat offsets as rigid end offsets in the FE
@@ -2525,20 +2558,16 @@ or three, L four or more. The phases, in order:
   per object; protocol 3 with messages added. Left: checks on a working
   set pull no neighbours in (phase 10); the extent worked out per change
   costs the model's size (an index by route next; matters for a country
-  as one model); a replica's import entry holds every object again
-  (3.5 MB for a route whose line's copy is 2.6 MB).
-  > **Owner:** (to answer, 2026-11-19; the recommendation after the
-  > arrow) 1. Other sections on a working set's structures with no span
-  > in it: context (as built) or members (a part then grows, on the
-  > synthetic country to the whole route)? → context. 2. One line per
-  > working set, or across lines (several replicas side by side)? → one
-  > line until phase 11. 3. Joining again by a 64-bit hash per object, or
-  > SHA-256? → SHA-256 if certainty matters; the 64-bit one meanwhile.
-  > 4. Protocol 3 with messages added, or 4? → 3 (nothing released).
-  > 5. The context's reach (5 × 5 tiles, about 5 km; 64 MB)? → as built,
-  > a setting later. 6. A replica's import entry with an empty command, as
-  > the network's import writes it (a change of how the session writes an
-  > import)? → yes.
+  as one model).
+  Decided 2026-11-19 (owner: "Okay go with recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-owner-22-recommendations-approved)):
+  other sections on a working set's structures are read-only context
+  (E17); one line per working set until phase 11 (E18); the 64-bit FNV
+  hash for joining again, for now (E19); protocol 3 (E20); 5 × 5 context
+  tiles and a 64 MB cache, a setting later (E21); **a replica's import
+  entry written with an empty command**, as the network's import (E22) —
+  built the same day, in active development, not approved yet: the whole
+  route's replica on the synthetic country 3.48 → 1.98 MB (the line's own
+  copy 2.6 MB).
 - [ ] 7 Rights and roles (M): roles as named permission sets (shipped:
   viewer, designer, checker, library maintainer, line admin, network
   admin; permissions see, edit, create, delete, review, export, lock,
