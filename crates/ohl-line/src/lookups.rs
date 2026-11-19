@@ -21,10 +21,10 @@
 //! the lookups are found by the line's address only while it is.
 //!
 //! The lookups are kept per thread, as [`crate::jumper::with_threads`]
-//! keeps the threads: a solve's worker threads take their caller's
-//! ([`crate::jumper::in_parallel`]). Each piece is made when first asked
-//! for. Another line (a copy, a part of it) has none: it is searched as
-//! before.
+//! keeps the threads: a solve's worker threads (its sections and jumpers
+//! solved side by side) take their caller's. Each piece is made when
+//! first asked for. Another line (a copy, a part of it) has none: it is
+//! searched as before.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
