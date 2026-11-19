@@ -41,6 +41,9 @@
 mod clash;
 #[cfg(test)]
 mod clash_tests;
+pub mod eccentricities;
+#[cfg(test)]
+mod eccentricities_tests;
 mod export;
 mod joint_groups;
 #[cfg(test)]
@@ -99,8 +102,8 @@ pub use joints::{
 };
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole, preset_area,
-    presets_by_class, provisional_bolts, touched,
+    RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
+    plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

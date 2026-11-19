@@ -358,6 +358,18 @@ pub struct JointPlan {
     pub left: Vec<String>,
     /// Notes ("D3: 2 provisional bolts, the bolt picked").
     pub notes: Vec<String>,
+    /// Of the members left for a hand detail, those whose bolted leg lies
+    /// off the flange they bolt onto (no roll lays it flat): a plate in
+    /// their own plane would be needed (the owner's step 4), with the most
+    /// that plate may move the member's axis farther out of the flange
+    /// (step 4's limit: its leg's thickness, m) — the plate case of the
+    /// estimated eccentricities' upper bound (O45 A1,
+    /// [`crate::eccentricities`]).
+    pub off_flange: Vec<(String, f64)>,
+    /// Of the members left for a hand detail, what each would bolt onto
+    /// (the member named, else the one running through the joint): the
+    /// direction of the estimated eccentricities' upper bound (O45 A1).
+    pub hand_hosts: Vec<(String, String)>,
 }
 
 impl JointPlan {
@@ -1080,6 +1092,30 @@ pub(crate) fn plan_joint_budget(
             bolts: x.give.clone(),
         });
     }
+    // The members left whose bolted leg lies off its flange (the plate
+    // case of the estimated eccentricities, O45 A1).
+    plan.off_flange = plan
+        .hand_members
+        .iter()
+        .filter_map(|m| {
+            let a = find(m.as_str())?;
+            a.flat.filter(|f| f.off > FLAT_OFF)?;
+            let t = a.profile.as_ref()?.angle.as_ref()?.t;
+            Some((m.clone(), t))
+        })
+        .collect();
+    plan.hand_hosts = plan
+        .hand_members
+        .iter()
+        .filter_map(|m| {
+            let a = find(m.as_str())?;
+            let host = match a.onto.value.as_deref() {
+                Some(o) => find(o)?,
+                None => through_member(j, a)?,
+            };
+            Some((m.clone(), host.member.clone()))
+        })
+        .collect();
     plan
 }
 
