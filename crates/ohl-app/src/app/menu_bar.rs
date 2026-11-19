@@ -12,6 +12,15 @@ use crate::menu::Command;
 /// export, the bill of materials.
 pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate::menu::Command>) {
     use crate::menu::Command;
+    if let Some(n) = r.model.remote.as_mut().and_then(|x| x.network.as_mut())
+        && ui
+            .button("Working set…")
+            .on_hover_text("On a network: what you work on, a route added, saved by name")
+            .clicked()
+    {
+        n.window = true;
+        ui.close();
+    }
     if Command::Save.menu_item(ui) {
         out.push(Command::Save);
         ui.close();

@@ -853,7 +853,7 @@ fn jumpers_by_structure(line: &Line) -> HashMap<String, Vec<usize>> {
 /// the line's direction at the section is read from the nearest one (its
 /// own, under its structures), and a span point placed by station from
 /// its route.
-pub(crate) const NEAR_ALIGNMENTS: f64 = 500.0;
+pub(crate) const NEAR_ALIGNMENTS: f64 = ohl_session::interest::SOLVE_NEAR;
 
 /// The part of `r`'s line that solving `section` alone reads: the line's
 /// settings; the section's structures; every section and jumper at them
@@ -1188,5 +1188,88 @@ mod tests {
             }
         }
         assert!(compared > 200, "{compared}");
+    }
+
+    /// A working set's replica (phase 6) holds what solving each of its
+    /// sections reads: each solves in it as on the whole line, bit for
+    /// bit (a synthetic country of 300 pylons as one line, a third of a
+    /// route by stations and an area).
+    #[test]
+    fn a_working_sets_sections_solve_as_on_the_whole_line() {
+        use ohl_core::files::shipped_library;
+        use ohl_session::working_set::Pick;
+        let cables = ohl_cables::Library::load(&shipped_library("cables")).unwrap();
+        let case = ohl_weather::WeatherCase::still(
+            "15 °C, no wind",
+            ohl_core::units::Temperature::from_celsius(15.0),
+        );
+        let country = ohl_synth::country(&ohl_synth::Settings {
+            pylons: 300,
+            ..Default::default()
+        })
+        .unwrap();
+        let dir = std::env::temp_dir().join(format!("ohl-ws-solve-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut s = ohl_session::Session::open(&dir.join("whole.ohl")).unwrap();
+        s.import(&country.line, "ana").unwrap();
+        let route = s.line().routes[0].id.clone();
+        let d = s.route_detail(&route).unwrap();
+        let n = d.structures.len();
+        let st = |k: usize| d.structures[k].station.unwrap();
+        let mid = d.structures[n / 2].position;
+        let mut compared = 0;
+        for (k, picks) in [
+            vec![Pick::Stations {
+                route: route.clone(),
+                alignment: None,
+                from: st(n / 3),
+                to: st(n / 2),
+            }],
+            vec![Pick::Area {
+                polygon: vec![
+                    [mid[0] - 300.0, mid[1] - 300.0],
+                    [mid[0] + 300.0, mid[1] - 300.0],
+                    [mid[0] + 300.0, mid[1] + 300.0],
+                    [mid[0] - 300.0, mid[1] + 300.0],
+                ],
+            }],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let e = s.pick_extent(&picks).unwrap();
+            let path = dir.join(format!("replica-{k}.ohl"));
+            s.write_working_set(&e, &path, "ana", &[]).unwrap();
+            let r = ohl_session::Session::open(&path).unwrap();
+            assert!(r.line().structures.len() < s.line().structures.len());
+            let ours: Vec<&ohl_line::Section> = s
+                .line()
+                .sections
+                .iter()
+                .filter(|x| {
+                    e.wanted
+                        .contains(&(ohl_session::Kind::Section, x.id.clone()))
+                })
+                .collect();
+            // The whole line's lookups made once (O42: the same results as
+            // searched, bit for bit); the replica's searched.
+            let whole: Vec<String> = ohl_line::lookups::indexed(s.line(), Some(&cables), || {
+                ours.iter()
+                    .map(|sec| {
+                        format!(
+                            "{:?}",
+                            ohl_line::solve::solve_one(s.line(), sec, &cables, &case)
+                        )
+                    })
+                    .collect()
+            });
+            for (sec, whole) in ours.iter().zip(whole) {
+                let part = ohl_line::solve::solve_one(r.line(), sec, &cables, &case);
+                assert_eq!(whole, format!("{part:?}"), "section {}", sec.id);
+                compared += 1;
+            }
+        }
+        assert!(compared > 10, "{compared}");
     }
 }

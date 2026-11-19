@@ -18,17 +18,21 @@
 //! - a part (a station range, two structures, an area) takes **every
 //!   section with a span in it, whole** — a section is solved whole — and
 //!   the structures they hang on. Other sections on those structures with
-//!   no span in it (circuits straining elsewhere) are not taken (they
-//!   would grow a part to the whole route: measured on the synthetic
-//!   country) and said in the notes; the context tiles draw them;
+//!   no span in it (circuits straining elsewhere) are not in it (taking
+//!   them, again and again, grew a third of a route to the whole route on
+//!   the synthetic country): they come as context, said in the notes;
 //! - with them the jumpers at its structures or tapped on its sections,
 //!   the spacers on its sections and the alignment points tied to its
 //!   structures; a whole route takes every object of the route;
-//! - the **context** (in the replica, read-only): what the working set
-//!   refers to, all the way (another route's section ending at a jumper,
-//!   a structure's routes), the routes it is on with their alignments and
-//!   points (the stations need them: a point tied to a structure brings
-//!   that structure too), the line's settings and library files.
+//! - the **context** (in the replica, read-only): what solving each of
+//!   its sections alone reads (every section and jumper on its
+//!   structures, its spacers' sections, the alignments within 500 m: so
+//!   its sections solve as on the whole line, and each of its structures
+//!   carries all its wires); what the working set refers to, all the way
+//!   (another route's section ending at a jumper, a structure's routes);
+//!   the routes it is on with their alignments and points (the stations
+//!   need them: a point tied to a structure brings that structure too);
+//!   the line's settings and library files.
 //!
 //! **The replica** is written by [`Session::write_working_set`]: the rows
 //! of the extent as the server holds them (their JSON and their places,
@@ -595,7 +599,7 @@ impl Session {
         if !beside.is_empty() && whole.len() < routes.len() {
             notes.push(format!(
                 "{} other section(s) hang on the working set's structures with no span in it \
-                 (circuits straining elsewhere): not in it, drawn as context",
+                 (circuits straining elsewhere): they come as context, read-only",
                 beside.len()
             ));
         }
@@ -627,12 +631,25 @@ impl Session {
                     .join(", ")
             )));
         }
-        // The context: what it refers to, all the way; the routes with
-        // their alignments and points; then what those refer to.
+        // The context: what solving each section of the working set alone
+        // reads (the other sections and jumpers on its structures, its
+        // spacers' sections, the alignments near it: its results are the
+        // whole line's, and a structure of the working set carries all its
+        // wires); what it refers to, all the way; the routes with their
+        // alignments and points; then what those refer to.
         let mut queue: Vec<(Of, String)> = wanted
             .iter()
             .filter_map(|(k, id)| of_kind(*k).map(|of| (of, id.clone())))
             .collect();
+        let ours: Vec<String> = sections.iter().cloned().collect();
+        queue.extend(crate::interest::solve_reads(
+            line,
+            index,
+            &[],
+            &ours,
+            &[],
+            crate::interest::SOLVE_NEAR,
+        ));
         for r in &routes {
             queue.push((Of::Route, r.clone()));
             for a in line.alignments.iter().filter(|a| a.route == *r) {

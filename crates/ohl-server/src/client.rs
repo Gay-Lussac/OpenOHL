@@ -77,6 +77,26 @@ impl Link {
         Ok(self.next)
     }
 
+    /// Sends a request on model `model` of a network (phase 6: a partial
+    /// replica's edits); returns its id.
+    pub fn request_on(&mut self, model: &str, op: Op) -> Result<u64, String> {
+        self.next += 1;
+        self.send(ClientMsg::RequestOn {
+            id: self.next,
+            model: model.to_owned(),
+            op,
+            line: self.line.clone(),
+        })?;
+        Ok(self.next)
+    }
+
+    /// A new id for a question to the server (a pick shown, a route's
+    /// structures).
+    pub fn next_id(&mut self) -> u64 {
+        self.next += 1;
+        self.next
+    }
+
     /// Sends a message.
     pub fn send(&self, msg: ClientMsg) -> Result<(), String> {
         self.out

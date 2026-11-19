@@ -52,9 +52,13 @@ fn rows_into(
     replica: &mut Session,
     limit: Duration,
 ) -> Result<(usize, usize), String> {
-    let got = pump(j, limit, |m| matches!(m, ServerMsg::Rows(_)))?;
-    let Some(ServerMsg::Rows(r)) = got.last() else {
-        return Err("no rows".into());
+    let got = pump(j, limit, |m| {
+        matches!(m, ServerMsg::Rows(_) | ServerMsg::Notice { .. })
+    })?;
+    let r = match got.last() {
+        Some(ServerMsg::Rows(r)) => r,
+        Some(ServerMsg::Notice { text }) => return Err(format!("refused: {text}")),
+        _ => return Err("no rows".into()),
     };
     take_rows(replica, FOLLOWER, r)?;
     Ok((r.rows.puts.len(), r.rows.deletes.len()))
@@ -196,6 +200,8 @@ pub fn bench(w: &WsBench) -> Result<Value, String> {
         let mut times = Vec::new();
         let mut last = Value::Null;
         for _ in 0..10 {
+            // The server paces working-set requests (4 a second).
+            std::thread::sleep(Duration::from_millis(300));
             id += 1;
             let want = id;
             let t = Instant::now();
@@ -204,11 +210,13 @@ pub fn bench(w: &WsBench) -> Result<Value, String> {
                 model: model.clone(),
                 picks: picks.to_vec(),
             })?;
-            let got = pump(
-                &mut desk,
-                Duration::from_secs(60),
-                |m| matches!(m, ServerMsg::Extent { id, .. } if *id == want),
-            )?;
+            let got = pump(&mut desk, Duration::from_secs(60), |m| {
+                matches!(m, ServerMsg::Extent { id, .. } if *id == want)
+                    || matches!(m, ServerMsg::Notice { .. })
+            })?;
+            if let Some(ServerMsg::Notice { text }) = got.last() {
+                return Err(format!("pick refused: {text}"));
+            }
             times.push(ms(t));
             if let Some(ServerMsg::Extent { result, .. }) = got.last() {
                 last = match result {
@@ -357,10 +365,12 @@ pub fn bench(w: &WsBench) -> Result<Value, String> {
         },
         &mut |_| {},
     )?;
+    std::thread::sleep(Duration::from_millis(300));
     d.link.send(hold(&r))?;
     let (again_puts, again_deletes) = rows_into(&mut d, &mut r, Duration::from_secs(60))?;
     let again_ms = ms(t);
     // The whole route added.
+    std::thread::sleep(Duration::from_millis(300));
     let t = Instant::now();
     let mut bigger = spec.clone();
     bigger.picks.extend(whole.iter().cloned());

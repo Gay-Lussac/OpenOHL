@@ -28,6 +28,8 @@ pub enum FileAction {
     Quit,
     /// The Join a server window.
     Join,
+    /// The Join a network window (a working set, phase 6).
+    JoinNetwork,
     /// The Host this project window.
     Host,
     /// Leave the server (stop hosting).
@@ -196,6 +198,17 @@ pub fn file_menu(
             *action = Some(FileAction::Join);
             ui.close();
         }
+        if ui
+            .button("Join a network…")
+            .on_hover_text(
+                "Work on a working set of a country server's network: routes, a part of a \
+                 route or an area, with the rest around it as context",
+            )
+            .clicked()
+        {
+            *action = Some(FileAction::JoinNetwork);
+            ui.close();
+        }
         if let Some(path) = open {
             ui.separator();
             extra(ui);
@@ -308,6 +321,9 @@ pub fn start_page(ui: &mut egui::Ui, recent: &Recent, action: &mut Option<FileAc
         }
         if ui.button("Join a server…").clicked() {
             *action = Some(FileAction::Join);
+        }
+        if ui.button("Join a network…").clicked() {
+            *action = Some(FileAction::JoinNetwork);
         }
         if !recent.0.is_empty() {
             ui.add_space(20.0);

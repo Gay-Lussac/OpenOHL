@@ -817,6 +817,11 @@ pub(super) fn tool_windows(
     bimetallic_window(ctx, r);
     solver_window(ctx, r);
     circuit_join_window(ctx, r);
+    if let Some(remote) = r.model.remote.as_mut()
+        && let Some(note) = crate::network_window::working_set_window(ctx, remote)
+    {
+        r.status = Some(note);
+    }
     defaults_window(ctx, r);
     crs_windows(ctx, r);
     if let Some(changed) = r.backgrounds.show(ctx, &r.model) {
