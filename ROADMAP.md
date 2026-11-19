@@ -1101,13 +1101,26 @@ the app's line is taken in place after a command the session applied in
 place (on the whole synthetic country 0.85 ms instead of 587 ms an edit),
 made whole only for a settings or library change, the session's whole
 way or a line replaced meanwhile (said in the edit's report), proved on
-random command sequences. **Left: the solve** — a case's update after an
-edit still reads the whole line for every jumper it solves again (the
-route views, the jumper's section searched): about 3 s an edit on a
-2 000-pylon country, 21 minutes to open it; the server's sub-line way
-(each section on the part of the line it reads) would remove it. Item 3
-(views) measured, left: the first frame after an edit 57 ms on a
-500-pylon country (the solve there about 0.5 s). The session already applies a command in place and validates
+random command sequences. **The solve after an edit built 2026-11-19, in
+active development, not approved yet** (owner, 2026-11-19: the solver's
+internals may change, the results bit for bit the same;
+[performance](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#the-solve-after-an-edit-o42-2026-11-19),
+[decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-o42-the-solve-after-an-edit-the-writers-lock-released)):
+a solve's lookups worked out once instead of searched through the whole
+line for every section and jumper (`ohl_line::lookups`), the route views
+and the nearest route segment found by place, the sections of an update
+solved over the cores — on the 2 000-pylon synthetic country the case's
+solve after an edit in OHL-Design 0.35 s instead of 3.0 s, opening it
+33 s instead of 21.5 minutes; the whole country (12 000 pylons) opened
+in 3.6 minutes (before: not finished), an edit's solve 1.4 s; proved
+against the searches on the examples and a synthetic country. Left:
+still once per update over the whole line — the route views, the
+jumpers' estimated loads, the lookups, each jumper's inputs compared,
+the solved shapes copied — about 0.1 s on 2 000 pylons, more than half the
+1.4 s on 12 000: to follow the edit as well (the route views kept and
+changed only where a structure or an alignment changed).
+Item 3 (views) stays as it is (owner, 2026-11-19): the first frame after
+an edit 57 ms on a 500-pylon country. The session already applies a command in place and validates
 only what it touches and what refers to it (the country server's phase 3:
 a move on the 12 000-pylon synthetic country in about 2 ms). After every
 command the app then rebuilds its own line whole — a clone of the line,
@@ -2425,7 +2438,11 @@ active development, not approved yet**
 the flake was the writer's lock still held a moment after its connection
 closed (1 run in 144 side by side), now waited for; ports made safe; one
 cluster per test program, a database per test; the safety-volume test
-11.5 s → 5.6 s; nothing removed or weakened.
+11.5 s → 5.6 s (its 0.5 m mesh accepted by the owner, 2026-11-19);
+nothing removed or weakened. Owner, 2026-11-19: the writer's lock is
+released explicitly when its connection's last user goes (a server
+started again at once is not refused; built, the wait kept as a safety
+net); the server's sub-line test 5.9 s → 0.7 s with O42's lookups.
 1. First, the flake: `schema_and_the_writers_lock` failed when other runs
    of the check ran at the same time — the PostgreSQL tests
    (`crates/ohl-store-pg/tests/common/mod.rs`) pick a free port by

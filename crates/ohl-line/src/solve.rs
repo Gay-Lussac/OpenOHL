@@ -3472,11 +3472,13 @@ fn solve_fe(
     support::move_points(&mut loaded, section, line, coupling);
     // The jumpers hanging on its clamps, in the weather case (as the
     // line's calculation options say).
-    let jumpers = match &coupling.jumpers {
-        Some(j) => std::borrow::Cow::Borrowed(j),
-        None => std::borrow::Cow::Owned(crate::jumper::end_loads(line, case, |id| {
-            (id == section.cable).then_some(jumper_cable)
-        })),
+    let estimated;
+    let jumpers: &JumperLoadMap = match &coupling.jumpers {
+        Some(j) => j,
+        None => {
+            estimated = crate::jumper::end_loads_on(line, case, &section.cable, jumper_cable);
+            &estimated
+        }
     };
     let bundle = f64::from(section.bundle.max(1));
     // A clamp fixed to the structure (a wire point without strings, a
@@ -4409,7 +4411,7 @@ impl SegmentGrid {
 pub(crate) fn sections_against_the_line_reference(
     line: &Line,
 ) -> std::collections::BTreeMap<String, bool> {
-    let views = line.alignment_views();
+    let views = line.alignment_views_searched();
     line.sections
         .iter()
         .map(|s| (s.id.clone(), against_in(line, s, &views)))
@@ -4502,7 +4504,20 @@ fn solve_line_based(
     budget: &Budget,
     base: &Coupling,
 ) -> Vec<Result<SectionShape, LineError>> {
-    let estimate = crate::jumper::end_loads(line, case, |id| library.get(id));
+    crate::lookups::indexed(line, Some(library), || {
+        solve_line_indexed(line, library, case, budget, base)
+    })
+}
+
+/// [`solve_line_based`] with the line's lookups open ([`crate::lookups`]).
+fn solve_line_indexed(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    budget: &Budget,
+    base: &Coupling,
+) -> Vec<Result<SectionShape, LineError>> {
+    let estimate = crate::jumper::end_loads_of(line, case, library);
     let mut results = coupled::solve_sections_based(line, library, case, budget, &estimate, base);
     if needs_pull(line) || may_be_taut(line, &results) {
         coupled::jumper_pull_based(
@@ -4511,7 +4526,7 @@ fn solve_line_based(
             case,
             budget,
             &estimate,
-            estimate.clone(),
+            (*estimate).clone(),
             &mut results,
             None,
             base,

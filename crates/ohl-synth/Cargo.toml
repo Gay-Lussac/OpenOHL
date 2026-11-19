@@ -21,3 +21,8 @@ sha2 = "0.10"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ohl-cables.workspace = true
+ohl-structures.workspace = true
+ohl-weather.workspace = true

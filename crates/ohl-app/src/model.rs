@@ -457,7 +457,13 @@ impl Solved {
         s
     }
 
+    /// The solutions taken from the case's solved line (the line's lookups
+    /// open: the bundles look up each jumper's section, O42).
     fn refresh(&mut self, line: &Line) {
+        ohl_line::lookups::indexed(line, None, || self.refresh_indexed(line));
+    }
+
+    fn refresh_indexed(&mut self, line: &Line) {
         self.serial = next_serial();
         // The shapes as they were: kept for the sections that stop solving.
         let mut before = std::mem::take(&mut self.last_solved);
@@ -501,12 +507,16 @@ impl Solved {
         if !self.ready {
             return 0;
         }
-        let u = self.live.update(line, library, dirty);
-        self.refresh(line);
-        if let Some(m) = &mut self.mirror {
-            m.update(line, library, dirty);
-        }
-        u.solved
+        // The line's lookups made once for the case, its solutions taken
+        // and its mirror (O42).
+        ohl_line::lookups::indexed(line, Some(library), || {
+            let u = self.live.update(line, library, dirty);
+            self.refresh(line);
+            if let Some(m) = &mut self.mirror {
+                m.update(line, library, dirty);
+            }
+            u.solved
+        })
     }
 }
 

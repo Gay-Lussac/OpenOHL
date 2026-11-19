@@ -624,7 +624,7 @@ impl AlignmentView {
 
 /// A place on a route: its index, the distance along it, its unit
 /// direction there.
-type OnRoute = (usize, f64, [f64; 2]);
+pub(crate) type OnRoute = (usize, f64, [f64; 2]);
 
 impl Line {
     /// Alignment point `id`.
@@ -764,8 +764,8 @@ impl Line {
     /// first alignment both stand on; none when no alignment has both.
     pub fn span_stations(&self, a: &str, b: &str) -> Option<(f64, f64)> {
         let (pa, pb) = (self.structure(a)?.position, self.structure(b)?.position);
-        self.alignment_views()
-            .into_iter()
+        self.views()
+            .iter()
             .find(|v| v.structures.iter().any(|s| s == a) && v.structures.iter().any(|s| s == b))
             .map(|v| {
                 let pis = positions(&v.alignment);
@@ -881,7 +881,162 @@ impl Line {
 
     /// Every alignment with the structures on it, in the line's order.
     pub fn alignment_views(&self) -> Vec<AlignmentView> {
+        match crate::lookups::with(self, |l| l.views(self)) {
+            Some(v) => (*v).clone(),
+            None => self.alignment_views_searched(),
+        }
+    }
+
+    /// [`Self::alignment_views`] shared: worked out once while a solve's
+    /// lookups are open ([`crate::lookups`]), else now.
+    pub(crate) fn views(&self) -> std::sync::Arc<Vec<AlignmentView>> {
+        crate::lookups::with(self, |l| l.views(self))
+            .unwrap_or_else(|| std::sync::Arc::new(self.alignment_views_searched()))
+    }
+
+    /// [`Self::alignment_views`] worked out from the line: each structure
+    /// put on its alignments ([`Self::near_alignments`]) once, the spans
+    /// and structures near an alignment found through their places (O42,
+    /// 2026-11-19: before, every structure and span was tried against
+    /// every alignment — 2.6 s on a synthetic country of 12 000 pylons).
+    /// The same views as [`Self::alignment_views_reference`].
+    pub(crate) fn alignment_views_searched(&self) -> Vec<AlignmentView> {
         let near = self.near_alignments();
+        let index = self.point_index();
+        let first = self.first_structures();
+        let spans = Spans::of(self);
+        // The structures on each alignment, in the line's order.
+        let mut on_each: Vec<Vec<&crate::Structure>> = vec![Vec::new(); self.alignments.len()];
+        for s in &self.structures {
+            let Some(ks) = near.get(&s.id) else {
+                continue;
+            };
+            for (n, &k) in ks.iter().enumerate() {
+                if !ks[..n].contains(&k)
+                    && let Some(v) = on_each.get_mut(k)
+                {
+                    v.push(s);
+                }
+            }
+        }
+        self.alignments
+            .iter()
+            .zip(on_each)
+            .map(|(a, on_it)| {
+                let points = Self::points_of_in(a, &index);
+                let pts = positions(&points);
+                let mut on: Vec<(f64, String)> = on_it
+                    .into_iter()
+                    .map(|s| (project_or_point(&pts, s.position), s.id.clone()))
+                    .collect();
+                on.sort_by(|x, y| x.0.total_cmp(&y.0));
+                // Away: neither tied to one of its points nor beside it
+                // (on it only because it gives the route itself).
+                let mut away: Vec<String> = on
+                    .iter()
+                    .filter(|(_, id)| {
+                        !points.iter().any(|p| p.structure.as_deref() == Some(id))
+                            && first
+                                .get(id.as_str())
+                                .is_some_and(|s| beside(&pts, s.position) > NEAR_ALIGNMENT)
+                    })
+                    .map(|x| x.1.clone())
+                    .collect();
+                let under = Self::under_spans_in(&first, &spans, &points, &on, &away);
+                away.extend(under);
+                AlignmentView {
+                    id: a.id.clone(),
+                    name: a.name.clone(),
+                    route: a.route.clone(),
+                    alignment: points,
+                    structures: on.into_iter().map(|x| x.1).collect(),
+                    away,
+                }
+            })
+            .collect()
+    }
+
+    /// The structures by id (the first of an id, as [`Line::structure`]
+    /// finds it).
+    fn first_structures(&self) -> std::collections::HashMap<&str, &crate::Structure> {
+        let mut out = std::collections::HashMap::with_capacity(self.structures.len());
+        for s in &self.structures {
+            out.entry(s.id.as_str()).or_insert(s);
+        }
+        out
+    }
+
+    /// [`Self::under_spans_reference`] with the structures by id (`first`,
+    /// [`Self::first_structures`]) and the line's spans by structure
+    /// (`spans`): only the spans of the run looked at, in the line's
+    /// order. The same structures.
+    fn under_spans_in(
+        first: &std::collections::HashMap<&str, &crate::Structure>,
+        spans: &Spans<'_>,
+        points: &[AlignmentPoint],
+        on: &[(f64, String)],
+        away: &[String],
+    ) -> Vec<String> {
+        let pts = positions(points);
+        let run: std::collections::HashMap<&str, f64> = on
+            .iter()
+            .filter(|(_, id)| !away.contains(id))
+            .map(|(st, id)| (id.as_str(), *st))
+            .collect();
+        let candidates: Vec<(f64, &str)> = on
+            .iter()
+            .filter(|(_, id)| {
+                !away.contains(id) && !points.iter().any(|p| p.structure.as_deref() == Some(id))
+            })
+            .map(|(st, id)| (*st, id.as_str()))
+            .collect();
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+        let along = |a: &str, b: &str| {
+            let (Some(pa), Some(pb)) = (first.get(a), first.get(b)) else {
+                return false;
+            };
+            chord_along(&pts, pa.position, pb.position)
+        };
+        // (A span with both ends in the run is one of a run's structure.)
+        // Each with the stations it spans, and whether it runs along the
+        // alignment worked out once when first asked (a question of the
+        // span alone: the same answers in any order).
+        let spans: Vec<(&str, &str, f64, f64)> = spans
+            .at(run.keys().copied())
+            .into_iter()
+            .map(|k| spans.all[k])
+            .filter(|(a, b)| a != b && run.contains_key(a) && run.contains_key(b))
+            .map(|(a, b)| {
+                let (sa, sb) = (run[a], run[b]);
+                (a, b, sa.min(sb), sa.max(sb))
+            })
+            .collect();
+        let runs_along: Vec<std::cell::OnceCell<bool>> =
+            vec![std::cell::OnceCell::new(); spans.len()];
+        let along_of = |k: usize| *runs_along[k].get_or_init(|| along(spans[k].0, spans[k].1));
+        candidates
+            .into_iter()
+            .filter(|&(st, x)| {
+                let over = spans.iter().enumerate().any(|(k, &(a, b, lo, hi))| {
+                    a != x && b != x && lo < st && st < hi && along_of(k)
+                });
+                over && !spans
+                    .iter()
+                    .enumerate()
+                    .any(|(k, &(a, b, ..))| (a == x || b == x) && along_of(k))
+            })
+            .map(|(_, x)| x.to_owned())
+            .collect()
+    }
+
+    /// The route views as they were worked out before 2026-11-19 (every
+    /// structure and span tried against every alignment): the tests'
+    /// reference for [`Self::alignment_views`].
+    #[doc(hidden)]
+    pub fn alignment_views_reference(&self) -> Vec<AlignmentView> {
+        let near = self.near_alignments_reference();
         let index = self.point_index();
         self.alignments
             .iter()
@@ -908,7 +1063,7 @@ impl Line {
                     })
                     .map(|x| x.1.clone())
                     .collect();
-                let under = self.under_spans(&points, &on, &away);
+                let under = self.under_spans_reference(&points, &on, &away);
                 away.extend(under);
                 AlignmentView {
                     id: a.id.clone(),
@@ -929,7 +1084,7 @@ impl Line {
     /// either side) and none of their own spans runs along it, such as
     /// another line's tower under a span. `away` (those away already) are
     /// left out of the run.
-    fn under_spans(
+    fn under_spans_reference(
         &self,
         points: &[AlignmentPoint],
         on: &[(f64, String)],
@@ -990,7 +1145,162 @@ impl Line {
     /// a structure on it (a suspension tower on the straight; another
     /// line's towers beside or under it are not, their spans not running
     /// along it from the line's).
+    ///
+    /// Each structure tried only against the alignments tied to it, of its
+    /// routes or with a free point near it, and each alignment's chain only
+    /// with the structures and spans near it (O42, 2026-11-19): the same
+    /// answer as [`Self::near_alignments_reference`] (every structure and
+    /// span against every alignment).
     fn near_alignments(&self) -> std::collections::BTreeMap<String, Vec<usize>> {
+        let mut out = std::collections::BTreeMap::new();
+        let tied: std::collections::BTreeMap<&str, &str> = self
+            .alignment_points
+            .iter()
+            .filter_map(|p| Some((p.id.as_str(), p.structure.as_deref()?)))
+            .collect();
+        let index = self.point_index();
+        let lines: Vec<Vec<Point>> = self
+            .alignments
+            .iter()
+            .map(|a| positions(&Self::points_of_in(a, &index)))
+            .collect();
+        // Each alignment's points no structure is tied to, and where they
+        // are.
+        let free_points: Vec<Vec<Point>> = self
+            .alignments
+            .iter()
+            .map(|a| {
+                Self::points_of_in(a, &index)
+                    .iter()
+                    .filter(|p| p.structure.is_none())
+                    .map(|p| p.position)
+                    .collect()
+            })
+            .collect();
+        let free_cells = Cells::of(
+            free_points
+                .iter()
+                .enumerate()
+                .flat_map(|(k, ps)| ps.iter().map(move |p| (k, *p))),
+        );
+        // The alignments with a point tied to each structure, and those of
+        // each route (each in the line's order).
+        let mut tied_at: std::collections::HashMap<&str, Vec<usize>> = Default::default();
+        for (k, a) in self.alignments.iter().enumerate() {
+            let on: std::collections::HashSet<&str> = a
+                .points
+                .iter()
+                .filter_map(|p| tied.get(p.as_str()).copied())
+                .collect();
+            for id in on {
+                tied_at.entry(id).or_default().push(k);
+            }
+        }
+        let mut of_route: std::collections::HashMap<&str, Vec<usize>> = Default::default();
+        for (k, a) in self.alignments.iter().enumerate() {
+            of_route.entry(a.route.as_str()).or_default().push(k);
+        }
+        for s in &self.structures {
+            let mut ks: Vec<usize> = tied_at.get(s.id.as_str()).cloned().unwrap_or_default();
+            if !s.routes.is_empty() {
+                for r in &s.routes {
+                    let nearest = of_route
+                        .get(r.as_str())
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                        .min_by(|&a, &b| {
+                            distance_to(&lines[a], s.position)
+                                .total_cmp(&distance_to(&lines[b], s.position))
+                        });
+                    if let Some(k) = nearest
+                        && !ks.contains(&k)
+                    {
+                        ks.push(k);
+                    }
+                }
+            } else {
+                let p = s.position;
+                let reach = NEAR_ALIGNMENT + 1.0;
+                let mut near =
+                    free_cells.within([p[0] - reach, p[1] - reach], [p[0] + reach, p[1] + reach]);
+                near.sort_unstable();
+                near.dedup();
+                for k in near {
+                    if !ks.contains(&k)
+                        && free_points[k]
+                            .iter()
+                            .any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) <= NEAR_ALIGNMENT)
+                    {
+                        ks.push(k);
+                    }
+                }
+            }
+            if !ks.is_empty() {
+                out.insert(s.id.clone(), ks);
+            }
+        }
+        // Between the points: reached along the alignment by a span from a
+        // structure on it, again until none is added (a run of towers on
+        // the straight). Only the structures near the alignment, and the
+        // spans at them, can be reached.
+        let spans = Spans::of(self);
+        let at: std::collections::HashMap<&str, &crate::Structure> =
+            self.structures.iter().map(|s| (s.id.as_str(), s)).collect();
+        let places = Cells::of(
+            self.structures
+                .iter()
+                .enumerate()
+                .map(|(k, s)| (k, s.position)),
+        );
+        for (k, l) in lines.iter().enumerate() {
+            let near: std::collections::HashSet<&str> = places
+                .near_line(l, NEAR_ALIGNMENT + 1.0)
+                .into_iter()
+                .map(|n| &self.structures[n])
+                .filter(|s| {
+                    s.routes.is_empty()
+                        && !out.get(&s.id).is_some_and(|ks| ks.contains(&k))
+                        && beside(l, s.position) <= NEAR_ALIGNMENT
+                })
+                .map(|s| s.id.as_str())
+                .collect();
+            if near.is_empty() {
+                continue;
+            }
+            let reached: Vec<(&str, &str)> = spans
+                .at(near.iter().copied())
+                .into_iter()
+                .map(|n| spans.all[n])
+                .filter(|(a, b)| a != b)
+                .collect();
+            let mut added = true;
+            while added {
+                added = false;
+                for &(a, b) in &reached {
+                    for (on, x) in [(a, b), (b, a)] {
+                        if near.contains(x)
+                            && !out.get(x).is_some_and(|ks| ks.contains(&k))
+                            && out.get(on).is_some_and(|ks| ks.contains(&k))
+                            && let (Some(pa), Some(pb)) = (at.get(on), at.get(x))
+                            && chord_along(l, pa.position, pb.position)
+                        {
+                            out.entry(x.to_owned()).or_default().push(k);
+                            added = true;
+                        }
+                    }
+                }
+            }
+        }
+        for ks in out.values_mut() {
+            ks.sort_unstable();
+        }
+        out
+    }
+
+    /// [`Self::near_alignments`] as it was worked out before 2026-11-19:
+    /// the tests' reference.
+    fn near_alignments_reference(&self) -> std::collections::BTreeMap<String, Vec<usize>> {
         let mut out = std::collections::BTreeMap::new();
         let tied: std::collections::BTreeMap<&str, &str> = self
             .alignment_points
@@ -1449,7 +1759,7 @@ impl Line {
     /// route (within [`AT_VERTEX`] of it along the route) the **bisector**
     /// of its two segments ([`direction_at`]) — a structure standing there.
     pub fn bisected_direction_at(&self, at: [f64; 2]) -> Option<[f64; 2]> {
-        self.bisected_direction_at_in(&self.alignment_views(), at)
+        self.bisected_direction_at_in(&self.views(), at)
     }
 
     /// [`Self::bisected_direction_at`] on the routes `views`.
@@ -1479,15 +1789,27 @@ impl Line {
     /// The nearest segment of the routes' centrelines: route index,
     /// distance along it, unit direction.
     fn nearest_on_routes(&self, at: [f64; 2]) -> Option<OnRoute> {
-        self.nearest_on(&self.alignment_views(), at)
+        self.nearest_on(&self.views(), at)
     }
 
-    /// [`Self::nearest_on_routes`] on the routes `views`.
+    /// [`Self::nearest_on_routes`] on the routes `views`: found through the
+    /// routes' segments by place when `views` are those of a solve's
+    /// lookups ([`crate::lookups`], [`RouteGrid`]: the same answer), else
+    /// searched.
     fn nearest_on(&self, views: &[AlignmentView], at: [f64; 2]) -> Option<OnRoute> {
+        if let Some(Some(found)) = crate::lookups::with(self, |l| l.nearest_on(views, at)) {
+            return found;
+        }
+        Self::nearest_on_searched(views, at)
+    }
+
+    /// [`Self::nearest_on`] searched through every segment.
+    pub(crate) fn nearest_on_searched(views: &[AlignmentView], at: [f64; 2]) -> Option<OnRoute> {
         let mut best: Option<(f64, OnRoute)> = None;
         for (k, r) in views.iter().enumerate() {
             let mut run = 0.0;
-            for w in r.centreline(self).windows(2) {
+            // (Its centreline: [`AlignmentView::centreline`].)
+            for w in positions(&r.alignment).windows(2) {
                 let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
                 let len2 = dx * dx + dy * dy;
                 if len2 <= 0.0 {
@@ -1537,6 +1859,300 @@ impl Line {
             out.push(p);
         }
         out
+    }
+}
+
+/// The line's spans (a section's two structures following each other),
+/// in the line's order, and those at each structure: for the route views'
+/// searches near an alignment.
+struct Spans<'a> {
+    /// Every span (both structures), in the line's order.
+    all: Vec<(&'a str, &'a str)>,
+    /// The spans at each structure (positions in `all`).
+    by_structure: std::collections::HashMap<&'a str, Vec<usize>>,
+}
+
+impl<'a> Spans<'a> {
+    fn of(line: &'a Line) -> Self {
+        let all: Vec<(&str, &str)> = line
+            .sections
+            .iter()
+            .flat_map(|s| s.points.windows(2))
+            .map(|w| (w[0].structure.as_str(), w[1].structure.as_str()))
+            .collect();
+        let mut by_structure: std::collections::HashMap<&str, Vec<usize>> = Default::default();
+        for (k, (a, b)) in all.iter().enumerate() {
+            by_structure.entry(a).or_default().push(k);
+            if b != a {
+                by_structure.entry(b).or_default().push(k);
+            }
+        }
+        Self { all, by_structure }
+    }
+
+    /// The spans at any of the structures `ids` (positions in
+    /// [`Self::all`], in the line's order, each once).
+    fn at<'b>(&self, ids: impl Iterator<Item = &'b str>) -> Vec<usize> {
+        let mut out: Vec<usize> = ids
+            .filter_map(|id| self.by_structure.get(id))
+            .flatten()
+            .copied()
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+/// Places (plan) in square cells: what lies within a distance of a place
+/// or of a line is in the cells around it (the route views' searches near
+/// an alignment; each candidate then tested as before).
+struct Cells {
+    cells: std::collections::HashMap<(i64, i64), Vec<usize>>,
+    /// Every item (for a search the cells cannot answer: a place not a
+    /// finite number).
+    every: Vec<usize>,
+}
+
+impl Cells {
+    /// Cell size, m.
+    const SIZE: f64 = 100.0;
+
+    /// Of items (their number, their place).
+    fn of(items: impl Iterator<Item = (usize, Point)>) -> Self {
+        let mut cells: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
+        let mut every = Vec::new();
+        for (k, p) in items {
+            cells.entry(Self::cell(p[0], p[1])).or_default().push(k);
+            every.push(k);
+        }
+        Self { cells, every }
+    }
+
+    fn cell(x: f64, y: f64) -> (i64, i64) {
+        // (Not a finite number: some cell; such a place is found through
+        // `every` only when asked for one.)
+        (
+            (x / Self::SIZE).floor() as i64,
+            (y / Self::SIZE).floor() as i64,
+        )
+    }
+
+    /// The items in the cells overlapping the box `lo`–`hi` (some more
+    /// than once); every item when the box is not finite.
+    fn within(&self, lo: [f64; 2], hi: [f64; 2]) -> Vec<usize> {
+        if !(lo.iter().chain(&hi).all(|v| v.is_finite())) {
+            return self.every.clone();
+        }
+        let (a, b) = (Self::cell(lo[0], lo[1]), Self::cell(hi[0], hi[1]));
+        let count =
+            (i128::from(b.0) - i128::from(a.0) + 1) * (i128::from(b.1) - i128::from(a.1) + 1);
+        if count > self.cells.len() as i128 {
+            // A box larger than the places: the cells holding some looked at.
+            return self
+                .cells
+                .iter()
+                .filter(|(c, _)| (a.0..=b.0).contains(&c.0) && (a.1..=b.1).contains(&c.1))
+                .flat_map(|(_, v)| v.iter().copied())
+                .collect();
+        }
+        let mut out = Vec::new();
+        for i in a.0..=b.0 {
+            for j in a.1..=b.1 {
+                if let Some(v) = self.cells.get(&(i, j)) {
+                    out.extend_from_slice(v);
+                }
+            }
+        }
+        out
+    }
+
+    /// The items within `reach` of the line through `points` (plan; one
+    /// point: of it) or near it, in their order, each once; every item
+    /// when a point is not a finite number.
+    fn near_line(&self, points: &[Point], reach: f64) -> Vec<usize> {
+        let mut out = Vec::new();
+        if points
+            .iter()
+            .any(|p| !(p[0].is_finite() && p[1].is_finite()))
+        {
+            out = self.every.clone();
+        } else if let [p] = points {
+            out = self.within([p[0] - reach, p[1] - reach], [p[0] + reach, p[1] + reach]);
+        } else {
+            for w in points.windows(2) {
+                let lo = [w[0][0].min(w[1][0]) - reach, w[0][1].min(w[1][1]) - reach];
+                let hi = [w[0][0].max(w[1][0]) + reach, w[0][1].max(w[1][1]) + reach];
+                out.extend(self.within(lo, hi));
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+/// The routes' segments by place (O42, 2026-11-19): the nearest segment
+/// to a point ([`Line::nearest_on`]) found by looking at the cells around
+/// it, ring after ring, instead of at every segment of every route — the
+/// same segment (the nearest; of equally near ones the first in the
+/// routes' order) and the same numbers, each computed as the search
+/// computes it.
+#[derive(Debug)]
+pub(crate) struct RouteGrid {
+    /// Every segment with a length, in the routes' order.
+    segments: Vec<Segment>,
+    cells: std::collections::HashMap<(i64, i64), Vec<usize>>,
+    /// The cells holding segments: lowest and highest.
+    lo: (i64, i64),
+    hi: (i64, i64),
+    /// A point of the routes is not a finite number: searched instead.
+    searched: bool,
+}
+
+/// A segment of a route's centreline.
+#[derive(Debug, Clone, Copy)]
+struct Segment {
+    /// The route (its place in the views).
+    k: usize,
+    a: [f64; 2],
+    dx: f64,
+    dy: f64,
+    len2: f64,
+    len: f64,
+    /// The route's length before it.
+    run: f64,
+}
+
+impl RouteGrid {
+    /// Cell size, m.
+    const SIZE: f64 = 200.0;
+
+    pub(crate) fn of(views: &[AlignmentView]) -> Self {
+        let mut grid = Self {
+            segments: Vec::new(),
+            cells: Default::default(),
+            lo: (i64::MAX, i64::MAX),
+            hi: (i64::MIN, i64::MIN),
+            searched: false,
+        };
+        for (k, r) in views.iter().enumerate() {
+            let points = positions(&r.alignment);
+            if points
+                .iter()
+                .any(|p| !(p[0].is_finite() && p[1].is_finite()))
+            {
+                grid.searched = true;
+                return grid;
+            }
+            let mut run = 0.0;
+            for w in points.windows(2) {
+                // (As the search works them out.)
+                let (dx, dy) = (w[1][0] - w[0][0], w[1][1] - w[0][1]);
+                let len2 = dx * dx + dy * dy;
+                if len2 <= 0.0 {
+                    continue;
+                }
+                let len = len2.sqrt();
+                grid.segments.push(Segment {
+                    k,
+                    a: [w[0][0], w[0][1]],
+                    dx,
+                    dy,
+                    len2,
+                    len,
+                    run,
+                });
+                run += len;
+            }
+        }
+        for (n, s) in grid.segments.iter().enumerate() {
+            // The cells it passes through: those of points along it at
+            // most half a cell apart, and their neighbours.
+            let steps = (s.len / (Self::SIZE / 2.0)).ceil().max(1.0) as usize;
+            let mut seen: std::collections::HashSet<(i64, i64)> = Default::default();
+            for i in 0..=steps {
+                let f = i as f64 / steps as f64;
+                let c = Self::cell(s.a[0] + f * s.dx, s.a[1] + f * s.dy);
+                for di in -1..=1 {
+                    for dj in -1..=1 {
+                        seen.insert((c.0 + di, c.1 + dj));
+                    }
+                }
+            }
+            for c in seen {
+                grid.cells.entry(c).or_default().push(n);
+                grid.lo = (grid.lo.0.min(c.0), grid.lo.1.min(c.1));
+                grid.hi = (grid.hi.0.max(c.0), grid.hi.1.max(c.1));
+            }
+        }
+        grid
+    }
+
+    fn cell(x: f64, y: f64) -> (i64, i64) {
+        (
+            (x / Self::SIZE).floor() as i64,
+            (y / Self::SIZE).floor() as i64,
+        )
+    }
+
+    /// The nearest segment to `at`, as [`Line::nearest_on_searched`] finds
+    /// it; none when it cannot tell (not finite numbers): search then.
+    pub(crate) fn nearest(&self, at: [f64; 2]) -> Option<Option<OnRoute>> {
+        if self.searched || !(at[0].is_finite() && at[1].is_finite()) {
+            return None;
+        }
+        if self.segments.is_empty() {
+            return Some(None);
+        }
+        let c = Self::cell(at[0], at[1]);
+        // Beyond this many rings every cell holding segments was seen.
+        let rings = [
+            (c.0 - self.lo.0).abs(),
+            (self.hi.0 - c.0).abs(),
+            (c.1 - self.lo.1).abs(),
+            (self.hi.1 - c.1).abs(),
+        ]
+        .into_iter()
+        .max()
+        .unwrap_or(0);
+        let mut best: Option<(f64, usize)> = None;
+        let look = |n: usize, best: &mut Option<(f64, usize)>| {
+            let s = &self.segments[n];
+            let t = (((at[0] - s.a[0]) * s.dx + (at[1] - s.a[1]) * s.dy) / s.len2).clamp(0.0, 1.0);
+            let dist = (at[0] - s.a[0] - t * s.dx).hypot(at[1] - s.a[1] - t * s.dy);
+            // The nearest; of equally near ones the first in the routes'
+            // order (as the search keeps the first).
+            if best.is_none_or(|(d, m)| dist < d || (dist == d && n < m)) {
+                *best = Some((dist, n));
+            }
+        };
+        for r in 0..=rings {
+            for i in (c.0 - r)..=(c.0 + r) {
+                for j in (c.1 - r)..=(c.1 + r) {
+                    if (i - c.0).abs() != r && (j - c.1).abs() != r {
+                        continue;
+                    }
+                    for &n in self.cells.get(&(i, j)).into_iter().flatten() {
+                        look(n, &mut best);
+                    }
+                }
+            }
+            // A segment not seen yet lies outside the rings looked at: at
+            // least `r` cells away (a metre kept for rounding).
+            if let Some((d, _)) = best
+                && d < r as f64 * Self::SIZE - 1.0
+            {
+                break;
+            }
+        }
+        let (d, n) = best?;
+        if !d.is_finite() {
+            return None;
+        }
+        let s = &self.segments[n];
+        let t = (((at[0] - s.a[0]) * s.dx + (at[1] - s.a[1]) * s.dy) / s.len2).clamp(0.0, 1.0);
+        Some(Some((s.k, s.run + t * s.len, [s.dx / s.len, s.dy / s.len])))
     }
 }
 
@@ -1604,6 +2220,88 @@ fn beside(line: &[Point], p: Point) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The route views worked out through the structures' and spans'
+    /// places equal those of every structure and span tried against every
+    /// alignment (as before 2026-11-19), on the example lines, with their
+    /// structures moved beside and off their alignments (towers beside,
+    /// under and away from the line).
+    #[test]
+    fn the_route_views_are_those_worked_out_before() {
+        let ex =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        for name in [
+            "synthetic-line.ohl.json",
+            "synthetic-line-typed.ohl.json",
+            "crossing-line.ohl.json",
+        ] {
+            let base = Line::load(&ex.join(name)).unwrap();
+            for (k, off) in [(0, 0.0), (1, 3.0), (2, 4.9), (3, 5.1), (1, 20.0), (4, -7.0)] {
+                let mut line = base.clone();
+                let n = line.structures.len();
+                if off != 0.0 {
+                    let s = &mut line.structures[k % n];
+                    *s = s.moved_to([s.position[0] + off, s.position[1] - off, s.position[2]]);
+                }
+                assert_eq!(
+                    line.near_alignments(),
+                    line.near_alignments_reference(),
+                    "{name} {k} {off}"
+                );
+                assert_eq!(
+                    line.alignment_views_searched(),
+                    line.alignment_views_reference(),
+                    "{name} {k} {off}"
+                );
+            }
+        }
+    }
+
+    /// The nearest route segment found through the routes' grid is the one
+    /// the search finds, with the same numbers bit for bit: points near and
+    /// far, on the routes' points (equally near segments: the first), on a
+    /// route given twice, beside segments longer than a cell.
+    #[test]
+    fn the_route_grid_finds_the_nearest_segment_as_the_search() {
+        let ex = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/synthetic-line/synthetic-line.ohl.json");
+        let line = Line::load(&ex).unwrap();
+        let mut views = line.alignment_views();
+        // A route given twice (every segment as near as its twin), one
+        // stretched long.
+        let mut twin = views[0].clone();
+        views.push(twin.clone());
+        for p in &mut twin.alignment {
+            p.position[0] *= 7.0;
+        }
+        views.push(twin);
+        let grid = RouteGrid::of(&views);
+        let mut at: Vec<[f64; 2]> = views
+            .iter()
+            .flat_map(|v| v.alignment.iter().map(|p| [p.position[0], p.position[1]]))
+            .collect();
+        let mut seed = 12345_u64;
+        let mut next = || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let (x0, y0) = (at[0][0], at[0][1]);
+        for _ in 0..3000 {
+            let r = [10.0, 300.0, 5_000.0, 80_000.0][(next() * 4.0) as usize % 4];
+            at.push([x0 + (next() - 0.5) * r, y0 + (next() - 0.5) * r]);
+        }
+        for p in at {
+            assert_eq!(
+                format!("{:?}", grid.nearest(p)),
+                format!("{:?}", Some(Line::nearest_on_searched(&views, p))),
+                "{p:?}"
+            );
+        }
+        assert_eq!(grid.nearest([f64::NAN, 0.0]), None, "searched instead");
+        assert_eq!(RouteGrid::of(&[]).nearest([0.0, 0.0]), Some(None));
+    }
 
     #[test]
     fn point_at_inverts_project() {

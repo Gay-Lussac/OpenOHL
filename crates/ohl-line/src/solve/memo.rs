@@ -465,6 +465,7 @@ pub fn forget_solves() {
     if let Ok(mut m) = LIVE.lock() {
         *m = None;
     }
+    crate::jumper::forget_lengths();
 }
 
 trait Forget {

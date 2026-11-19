@@ -86,13 +86,19 @@ fn sag_length(props: CableProperties, a: Point, b: Point, sag: f64) -> Option<f6
     let budget = Budget::new().max_iterations(200);
     let l = length_for_sag(props, v(a), v(b), sag, &budget).ok();
     if let Ok(mut m) = lengths.lock() {
-        if m.len() >= MAX_CUTS {
+        if m.len() >= MAX_SAG_LENGTHS {
             m.clear();
         }
         m.insert(key, l);
     }
     l
 }
+
+/// Still-air lengths kept at most (then forgotten all at once): more than
+/// a whole country's jumpers (43 041 on the synthetic one of 12 000
+/// pylons; O42, 2026-11-19: 20 000 made every case's update work them all
+/// out again there), about 100 bytes each.
+const MAX_SAG_LENGTHS: usize = 200_000;
 
 /// The estimated load each jumper hangs on its ends in weather case
 /// `case` (the whole bundle's, N, as a force vector), by section point:
@@ -116,7 +122,7 @@ pub fn end_loads<'a>(
         return out;
     }
     // The routes, once for every jumper (their direction).
-    let views = line.alignment_views();
+    let views = line.views();
     // Jumpers hanging on other jumpers first (their loads go on those).
     let order: Vec<usize> = match line.jumper_order() {
         Ok(levels) => levels.into_iter().rev().flatten().collect(),
@@ -241,6 +247,32 @@ pub fn end_loads<'a>(
         }
     }
     out
+}
+
+/// [`end_loads`] with the wire library `library`: worked out once per
+/// weather case while a solve's lookups are open ([`crate::lookups`]).
+pub(crate) fn end_loads_of(
+    line: &Line,
+    case: &WeatherCase,
+    library: &ohl_cables::Library,
+) -> std::sync::Arc<crate::solve::JumperLoadMap> {
+    crate::lookups::with(line, |l| l.end_loads(line, case, library))
+        .flatten()
+        .unwrap_or_else(|| std::sync::Arc::new(end_loads(line, case, |id| library.get(id))))
+}
+
+/// [`end_loads`] of the jumpers on wire type `id` alone (its data
+/// `cable`): worked out once per weather case and wire while a solve's
+/// lookups are open ([`crate::lookups`]).
+pub(crate) fn end_loads_on(
+    line: &Line,
+    case: &WeatherCase,
+    id: &str,
+    cable: &Cable,
+) -> std::sync::Arc<crate::solve::JumperLoadMap> {
+    crate::lookups::with(line, |l| l.end_loads_on(line, case, id, cable)).unwrap_or_else(|| {
+        std::sync::Arc::new(end_loads(line, case, |x| (x == id).then_some(cable)))
+    })
 }
 
 /// The pull of `jumper`'s helping strings hanging from sections' clamps
@@ -437,9 +469,11 @@ fn tap_position(
 ) -> Result<Vector3<f64>, String> {
     match tap {
         crate::Tap::Span(r) => {
-            let shape = shapes
-                .iter()
-                .find(|s| s.section == r.section)
+            let first = crate::lookups::shapes_with(shapes, |ids| {
+                ids.of(shapes, &r.section).first().map(|&k| &shapes[k])
+            });
+            let shape = first
+                .unwrap_or_else(|| shapes.iter().find(|s| s.section == r.section))
                 .ok_or_else(|| {
                     format!("section {} is not solved in this weather case", r.section)
                 })?;
@@ -699,13 +733,8 @@ fn end_position(
     shapes: &[SectionShape],
     point: &SectionPoint,
 ) -> Result<Vector3<f64>, LineError> {
-    for shape in shapes {
-        let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
-            continue;
-        };
-        if let Some(k) = section.points.iter().position(|q| q == point)
-            && let Some(clamp) = shape.clamps.get(k)
-        {
+    for (at, k) in shapes_at(line, shapes, point) {
+        if let Some(clamp) = shapes[at].clamps.get(k) {
             return Ok(v(*clamp));
         }
     }
@@ -786,6 +815,40 @@ fn string_axis(line: &Line, point: &SectionPoint, clamp: Vector3<f64>) -> Option
     (d.norm() > 1e-9).then(|| d.normalize())
 }
 
+/// The shapes of `shapes` whose section — the first of its id in the line,
+/// as a search finds it — holds `point`, in their order: each shape's
+/// place in `shapes` and the point's place in its section. Looked up when
+/// the line's lookups and the shapes are open ([`crate::lookups`]), else
+/// searched; the same answer.
+fn shapes_at(line: &Line, shapes: &[SectionShape], point: &SectionPoint) -> Vec<(usize, usize)> {
+    let place = |section: &crate::Section| section.points.iter().position(|q| q == point);
+    let looked = crate::lookups::shapes_with(shapes, |ids| {
+        let mut out: Vec<(usize, usize)> = Vec::new();
+        for section in line.sections_at_point(point) {
+            // Only a section that is the first of its id is a shape's.
+            if !line
+                .section_by_id(&section.id)
+                .is_some_and(|first| std::ptr::eq(first, section))
+            {
+                continue;
+            }
+            let Some(k) = place(section) else {
+                continue;
+            };
+            out.extend(ids.of(shapes, &section.id).iter().map(|&at| (at, k)));
+        }
+        out.sort_unstable();
+        out
+    });
+    looked.unwrap_or_else(|| {
+        shapes
+            .iter()
+            .enumerate()
+            .filter_map(|(at, shape)| Some((at, place(line.section_by_id(&shape.section)?)?)))
+            .collect()
+    })
+}
+
 /// The conductor's axis at a section's end clamp, out of the section (the
 /// span's tangent at the clamp, continued).
 fn conductor_axis(
@@ -793,13 +856,8 @@ fn conductor_axis(
     shapes: &[SectionShape],
     point: &SectionPoint,
 ) -> Option<Vector3<f64>> {
-    for shape in shapes {
-        let Some(section) = line.sections.iter().find(|s| s.id == shape.section) else {
-            continue;
-        };
-        let Some(k) = section.points.iter().position(|q| q == point) else {
-            continue;
-        };
+    if let Some(&(at, k)) = shapes_at(line, shapes, point).first() {
+        let shape = &shapes[at];
         let n = shape.spans.len();
         let d = if k == 0 {
             let p = &shape.spans.first()?.points;
@@ -1975,11 +2033,11 @@ pub fn solve_jumper_in(
     // solve leaves no clamp (the attachment's data point would be a wrong,
     // plausible-looking end).
     for end in jumper.points() {
-        if let Some(s) = line
-            .sections
-            .iter()
-            .find(|s| s.points.contains(end) && !shapes.iter().any(|x| x.section == s.id))
-        {
+        let solved = |id: &str| {
+            crate::lookups::shapes_with(shapes, |ids| !ids.of(shapes, id).is_empty())
+                .unwrap_or_else(|| shapes.iter().any(|x| x.section == id))
+        };
+        if let Some(s) = line.sections_at_point(end).find(|s| !solved(&s.id)) {
             return Err(invalid(format!(
                 "section {} at its end at {} is not solved in this weather case",
                 s.id, end.structure
@@ -2553,8 +2611,10 @@ pub fn solve_jumpers(
     case: &WeatherCase,
     shapes: &[SectionShape],
 ) -> Vec<Result<JumperShape, LineError>> {
-    let loads = end_loads(line, case, |id| library.get(id));
-    solve_jumpers_with(line, library, case, shapes, &loads)
+    crate::lookups::indexed(line, Some(library), || {
+        let loads = end_loads_of(line, case, library);
+        solve_jumpers_with(line, library, case, shapes, &loads)
+    })
 }
 
 /// [`solve_jumpers`] with the loads `loads` of the jumpers hanging on
@@ -2591,13 +2651,32 @@ pub fn solve_jumpers_on(
     shapes: &[SectionShape],
     path: WindPath,
 ) -> Vec<Result<JumperShape, LineError>> {
-    let loads = end_loads(line, case, |id| library.get(id));
-    solve_jumpers_memo(line, library, case, shapes, &loads, None, path)
+    crate::lookups::indexed(line, Some(library), || {
+        let loads = end_loads_of(line, case, library);
+        solve_jumpers_memo(line, library, case, shapes, &loads, None, path)
+    })
 }
 
 /// [`solve_jumpers_with`], each jumper's solution kept in `memo` (when
 /// given) and taken from it while nothing it depends on changed.
 pub(crate) fn solve_jumpers_memo(
+    line: &Line,
+    library: &ohl_cables::Library,
+    case: &WeatherCase,
+    shapes: &[SectionShape],
+    loads: &crate::solve::JumperLoadMap,
+    memo: Option<&crate::incremental::JumperMemo>,
+    path: WindPath,
+) -> Vec<Result<JumperShape, LineError>> {
+    crate::lookups::indexed(line, Some(library), || {
+        crate::lookups::shapes_indexed(shapes, || {
+            solve_jumpers_indexed(line, library, case, shapes, loads, memo, path)
+        })
+    })
+}
+
+/// [`solve_jumpers_memo`] with the line's lookups open ([`crate::lookups`]).
+fn solve_jumpers_indexed(
     line: &Line,
     library: &ohl_cables::Library,
     case: &WeatherCase,
@@ -2966,18 +3045,24 @@ fn on_threads<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync, threads
     let next = std::sync::atomic::AtomicUsize::new(0);
     let done: std::sync::Mutex<Vec<(usize, R)>> =
         std::sync::Mutex::new(Vec::with_capacity(items.len()));
+    // The caller's lookups, taken by each thread (crate::lookups).
+    let looks = crate::lookups::open();
+    let (next, done_ref, f) = (&next, &done, &f);
     std::thread::scope(|scope| {
         for _ in 0..threads {
-            scope.spawn(|| {
-                with_threads(1, || {
-                    loop {
-                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(item) = items.get(k) else {
-                            return;
-                        };
-                        let r = f(item);
-                        done.lock().expect("not poisoned").push((k, r));
-                    }
+            let looks = looks.clone();
+            scope.spawn(move || {
+                crate::lookups::within(looks, || {
+                    with_threads(1, || {
+                        loop {
+                            let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(item) = items.get(k) else {
+                                return;
+                            };
+                            let r = f(item);
+                            done_ref.lock().expect("not poisoned").push((k, r));
+                        }
+                    });
                 });
             });
         }
@@ -3061,6 +3146,21 @@ static CUTS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Stri
 /// Lengths kept at most (then forgotten all at once).
 const MAX_CUTS: usize = 20_000;
 
+/// Forgets the jumpers' cut lengths and still-air sag lengths kept
+/// between solves ([`crate::solve::forget_solves`]: a solve from scratch).
+pub(crate) fn forget_lengths() {
+    if let Some(kept) = CUTS.get()
+        && let Ok(mut m) = kept.lock()
+    {
+        m.clear();
+    }
+    if let Some(kept) = SAG_LENGTHS.get()
+        && let Ok(mut m) = kept.lock()
+    {
+        m.clear();
+    }
+}
+
 /// Everything a jumper's cut depends on: the jumper; the sections at its
 /// ends, the structures they and the jumper hang on (without their stick
 /// drawing, for views only) and the cables (they are solved in its design
@@ -3068,12 +3168,8 @@ const MAX_CUTS: usize = 20_000;
 /// angle, the insulators' stiffness), solver settings, creep-stretch and
 /// bimetallic settings and creep cases. Equal keys, equal cuts.
 fn design_key(line: &Line, library: &ohl_cables::Library, jumper: &Jumper) -> String {
-    let ends = |p: &SectionPoint| jumper.is_at(p);
-    let sections: Vec<&crate::Section> = line
-        .sections
-        .iter()
-        .filter(|s| s.points.iter().any(ends))
-        .collect();
+    let ends: Vec<&SectionPoint> = jumper.points().collect();
+    let sections: Vec<&crate::Section> = line.sections_at_points(&ends);
     let mut ids: std::collections::BTreeSet<&str> = sections
         .iter()
         .flat_map(|s| s.points.iter().map(|p| p.structure.as_str()))
@@ -3083,10 +3179,10 @@ fn design_key(line: &Line, library: &ohl_cables::Library, jumper: &Jumper) -> St
     for c in &supports {
         ids.insert(c.structure_id(jumper));
     }
+    let ids: Vec<&str> = ids.into_iter().collect();
     let structures: Vec<crate::Structure> = line
-        .structures
-        .iter()
-        .filter(|s| ids.contains(s.id.as_str()))
+        .structures_of_ids(&ids)
+        .into_iter()
         .map(|s| crate::Structure {
             members: Vec::new(),
             ..s.clone()
@@ -3150,9 +3246,9 @@ fn design_shapes(
         "jumper design",
         ohl_core::units::Temperature::from_celsius(jumper.temperature),
     );
-    line.sections
-        .iter()
-        .filter(|s| s.points.iter().any(|p| jumper.is_at(p)))
+    let ends: Vec<&SectionPoint> = jumper.points().collect();
+    line.sections_at_points(&ends)
+        .into_iter()
         .map(|s| crate::solve::solve_one(line, s, library, &case))
         .collect()
 }

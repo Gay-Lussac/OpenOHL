@@ -4599,11 +4599,14 @@ dependencies = [
 name = "ohl-synth"
 version = "0.0.2"
 dependencies = [
+ "ohl-cables",
  "ohl-core",
  "ohl-lidar",
  "ohl-line",
  "ohl-pointcloud",
  "ohl-session",
+ "ohl-structures",
+ "ohl-weather",
  "rusqlite",
  "serde",
  "serde_json",

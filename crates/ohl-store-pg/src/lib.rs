@@ -103,6 +103,29 @@ pub(crate) struct Conn {
     pub(crate) client: Client,
     pub(crate) steps: Vec<String>,
     prepared: std::collections::HashMap<&'static str, Statement>,
+    /// Holds the writer's advisory lock ([`WRITER_LOCK`]).
+    writer: bool,
+}
+
+impl Drop for Conn {
+    /// The writer's lock released explicitly when the connection's last
+    /// user (the network or one of its models' stores) goes: PostgreSQL
+    /// would let it go only once its process for the connection has
+    /// ended, a moment after the client closed it, so a writer started
+    /// again at once (a server restarted) could be refused. An open
+    /// transaction is rolled back first (as closing would); errors are
+    /// ignored (a connection already broken loses its lock anyway).
+    fn drop(&mut self) {
+        if !self.writer || self.client.is_closed() {
+            return;
+        }
+        if !self.steps.is_empty() {
+            let _ = self.client.batch_execute("ROLLBACK");
+        }
+        let _ = self
+            .client
+            .execute("SELECT pg_advisory_unlock($1)", &[&WRITER_LOCK]);
+    }
 }
 
 impl Conn {
@@ -198,6 +221,7 @@ impl Network {
                 client,
                 steps: Vec::new(),
                 prepared: std::collections::HashMap::new(),
+                writer: false,
             })),
             writer: false,
         };
@@ -207,8 +231,10 @@ impl Network {
 
     /// Connects as the network's one writer (the authority, an import):
     /// [`Network::connect`], then the writer's advisory lock — refused
-    /// while another connection holds it. The lock goes with the
-    /// connection.
+    /// while another connection holds it. The lock is released when the
+    /// connection's last user is dropped (explicitly, so that a writer
+    /// connecting right after is not refused), or goes with the
+    /// connection when it breaks.
     pub fn connect_writer(url: &str) -> Result<Self, NetError> {
         let mut net = Self::connect(url)?;
         let got: bool = lock(&net.conn)
@@ -222,6 +248,7 @@ impl Network {
             ));
         }
         net.writer = true;
+        lock(&net.conn).writer = true;
         Ok(net)
     }
 

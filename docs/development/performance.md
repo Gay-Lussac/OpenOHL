@@ -804,23 +804,144 @@ on the country) and kept up to date with each edit; memory peak of the
 run 4.9 GB (the session, the line, the index and the copies the whole
 way made).
 
-**What is left: the solve.** The line is now a millisecond; the case
-shown solved again is not. A case's update reads the whole line for
-every jumper it solves again (the line's route views for its wind side,
-the jumper's section searched in the line, its wind factor): on the
-2 000-pylon country about 3 s an edit, on the whole country more (not
-measured: the app's first solve of it, at opening, took 21 minutes on
-2 000 pylons, so hours on 12 000). Before this work each section solved
-also made the route views again: that is fixed (the routes made once per
-update, the same answer); the jumpers' share is left (roadmap O42). The
-server does not have it: it solves each section on the part of the line
-it reads (its sub-line, the same shape bit for bit).
+**The solve** was what was left: the line is a millisecond, the case
+shown solved again was not (a case's update read the whole line for
+every jumper it solved again: about 3 s an edit on the 2 000-pylon
+country, 21 minutes to open it). Built the same day: [the solve after an
+edit](#the-solve-after-an-edit-o42-2026-11-19).
 
 **The views** (item 3) were measured: the first frame after an edit
 takes about a millisecond on the examples, 57 ms (the plan) and 54 ms
 (the 3D view) on the 500-pylon country, the same either way — they draw
 again for the new line version, and grow with the line. Left as they are
-for now: there the solve costs ten times more (roadmap O42).
+(owner, 2026-11-19).
+
+## The solve after an edit (O42, 2026-11-19)
+
+Owner, 2026-11-19: the solver's internals may change so that a case's
+update reads only what each section and jumper needs; the results stay
+the same bit for bit ([decision log](decisions.md#2026-11-19-o42-the-solve-after-an-edit-the-writers-lock-released);
+built, in active development, not approved yet).
+
+```bash
+# a case of the synthetic country solved whole (as the desktop opens a
+# project), then updated after structures moved by 1 m, their undos and
+# redos (the sections to solve again as the desktop finds them)
+OHL_BENCH_PYLONS=2000 cargo test --profile bench-fast -p ohl-synth solve_update_benchmark -- --ignored --nocapture
+# what an update still works out over the whole line
+OHL_BENCH_PYLONS=12000 cargo test --profile bench-fast -p ohl-synth update_parts_benchmark -- --ignored --nocapture
+```
+
+Where the time went, measured first (sampled; 500-pylon country, case
+"everyday"): opening it, 83 % in the jumpers, and of that four fifths in
+whole-line lookups made for each jumper — the line's route views made
+again for every section solved in a jumper's design case (49 %), every
+jumper's estimated load worked out again for each such section (36 %),
+the spans under the routes (33 %), the jumper's section searched (10 %)
+(shares overlap: they nest); an edit, the same lookups for the 18 to 30
+jumpers solved again. On 2 000 pylons a jumper's ends were found by
+searching every solved shape against every section (34 % of opening).
+
+What changed, each giving the same answers as before:
+
+1. **A solve's lookups** (`ohl_line::lookups`): while a case is updated
+   or solved whole (`SolvedLine`, `solve_line`, `solve_jumpers`), the
+   structures, sections and jumpers by id, the sections at a wire point
+   or through a structure, the route views and the jumpers' estimated
+   loads per weather case are worked out once, and the line's own methods
+   answer from them (the first object of an id and the line's order, as
+   the searches give them). The solved shapes are looked up by section
+   while the jumpers are solved between them.
+2. **The route views by place**: each structure tried only against the
+   alignments tied to it, of its routes or with a free point near it;
+   each alignment's run on the straight followed through the structures
+   and spans near it (100 m cells). **The nearest route segment** (the
+   line's direction at a jumper, a section's wind side) through the
+   routes' segments in 200 m cells, ring by ring, while a solve's lookups
+   are open.
+3. **The jumpers' still-air lengths** kept up to 200 000 (20 000 made
+   every update of the whole country work its 43 041 out again).
+4. **A case's update** solves its sections over the cores, as a full
+   solve does, with the jumpers' loads given once (before: copied for
+   each section, quadratic in the line's size).
+5. **The structures under a route's spans** found with each span's
+   stations kept, and whether a span runs along the alignment worked out
+   once per span.
+6. **OHL-Design** takes a case's solutions (shapes, results, the
+   bundles: each jumper's section) and updates its mirror with the line's
+   lookups open, made once for the three.
+
+The solver alone (`solve_update_benchmark`): synthetic country of seed
+1, case "everyday" (still air, 10 °C); `bench-fast`, Apple M-series,
+10 cores, the machine shared with other agents' builds (load 3 to 10);
+an edit: the median of every update (moves, undos, redos):
+
+| Country | sections | jumpers | opened (the case solved whole), before → after | an edit's solve, before → after (most) |
+|---|---|---|---|---|
+| 500 pylons | 2 003 | 1 677 | 40.8 s → 8.3 s | 482 ms → 138 ms (668 ms) |
+| 2 000 pylons | 7 733 | 6 471 | 21.5 min (the desktop) → 32 s | 3.0 s (the desktop) → 263 ms (780 ms) |
+| 12 000 pylons | 50 936 | 43 041 | not finished (hours) → 3.6 min | not measured → 1.38 s (2.06 s) |
+
+The desktop (`edit_split_benchmark`, the country as one project,
+structures moved by 1 m with their undos and redos, the line taken in
+place, one case shown; medians, ms; before: the table above):
+
+| Project | session | copy | resolve, validate | weather, reference | solve (the case shown), before → after | edit, before → after | opened, before → after |
+|---|---|---|---|---|---|---|---|
+| country, 500 pylons | 1.5 | 0.0 | 0.1 | 0.0 | 472 → 150 | 495 → 173 | 40.7 s → 8.8 s |
+| country, 2 000 pylons | 1.2 | 0.0 | 0.2 | 0.0 | 3 011 → 347 | 3 095 → 432 | 21.5 min → 33 s |
+
+The steps along the way on 2 000 pylons (the solver alone, opened and
+an edit): the lookups alone (1.) 142 s and 1.24 s; with the shapes by
+section 51 s and 0.35 s; with the route views by place (2., 3.) 46 s and
+0.28 s; with the sections over the cores (4.) 32 s and 0.26 s. Opening is
+now nearly all the solves themselves (sampled: three quarters of it in
+the jumpers' rods, the cut lengths of jumpers given by their sag); so is
+much of an edit (the jumpers solved again: their cut lengths again when a
+section at their ends moved).
+
+What an update still works out over the whole line, however few
+sections it solves again (`update_parts_benchmark`, medians of 3):
+
+| Part | 2 000 pylons, before → after | 12 000 pylons, before → after |
+|---|---|---|
+| The route views (an edit may move a structure against an alignment) | 120 ms → 34 ms | 2 555 ms → 230 ms |
+| The jumpers' estimated loads (views included) | 154 ms → 54 ms | 6 154 ms → 389 ms |
+
+and, each smaller (sampled on the whole country): the lookups
+themselves, each jumper's inputs compared with those it was solved from,
+the sections sharing assemblies found, the solved shapes listed for the
+jumpers and copied for the jumpers' pull check. They are worked out once
+per update now, no longer once per section or jumper; making them follow
+the edit too (the route views kept and changed where a structure or an
+alignment changed) is left (roadmap O42).
+
+**Not taken: the server's sub-line way** (each section solved on the
+part of the line it reads, `ohl-server`'s packager). Its sub-line holds
+the alignments within 500 m and one ring of sections, so the route views
+made on it can differ from the whole line's (which structures follow
+each other along a run, a structure far from every alignment): right for
+the server's context drawing, not provably the same for results. The
+lookups give the same answers by construction.
+
+**Proof** (every result's `Debug` text, so every number bit for bit):
+the solves with the lookups equal the solves with every lookup searched
+as before (`ohl_line::lookups::searched`) — a whole solve, updates after
+two structures moved and moved back, `solve_line` and `solve_jumpers`, the
+jumpers' cut lengths cut again each way — on the three example lines in
+still air and in wind and on a 20-pylon synthetic country (more than 64
+sections: the wind sides through the routes' grid)
+in both (`ohl-synth` `the_lookups_solve_*`); a whole solve through the
+update equals the full solve on that country; every answer of the line's
+methods with and without the lookups, ids given twice and local winds
+among them (`ohl-line` `the_lookups_answer_as_the_searches`); the route
+views equal the old way's (`Line::alignment_views_reference`) on the
+examples with towers moved beside and off their alignments and on two
+400-pylon countries (short and long sections, structures not giving
+their routes); the nearest segment through the cells equals the search
+on 3 000 points near and far, on routes given twice. The server's
+sub-line test takes the lookups for its whole-line reference: 5.3 s →
+0.7 s.
 
 ## The tests of the server, the store, the session and the command line (O46, 2026-11-19)
 
@@ -844,19 +965,19 @@ OHL_REQUIRE_PG_TESTS=1 cargo nextest run -p ohl-server -p ohl-store-pg -p ohl-se
 | `ohl-server` `web_viewers_read_tiles_of_a_network` | 4.4 | 2.3 | the program's cluster shared |
 | `ohl-server` `a_network_keeps_roles_and_locks` | 3.0 | 2.5 | the program's cluster shared |
 | `ohl-store-pg` `import_and_export_round_trip` | 2.1 | 1.5 | the program's cluster shared |
-| `ohl-store-pg` `schema_and_the_writers_lock` | 1.7 | 1.3 | the program's cluster shared; waits for the writer's lock to go (the flake) |
-| `ohl-server` `a_section_solves_on_its_sub_line_as_on_its_whole_line` | 8.6 | 5.9 | nothing (the machine's load) |
+| `ohl-store-pg` `schema_and_the_writers_lock` | 1.7 | 1.3 | the program's cluster shared; waits for the writer's lock to go (the flake; since the same day the lock is released explicitly and the test connects the next writer at once) |
+| `ohl-server` `a_section_solves_on_its_sub_line_as_on_its_whole_line` | 8.6 | 5.9 | nothing (the machine's load); 0.7 s with O42's lookups for its whole-line reference |
 | the whole run (wall) | 14.5 | 12.6 | |
 | every test summed: `ohl-cli` / `ohl-server` / `ohl-session` / `ohl-store-pg` | 69.5 / 26.7 / 8.2 / 9.3 | 67.9 / 19.5 / 6.4 / 6.9 | |
 
 No test removed or weakened. A PostgreSQL cluster made and started costs
 about 0.6 s (`initdb` 0.5 s, the start 0.14 s) and its stop 0.12 s: a
 test program's tests now pay it once ([the scheme](postgresql.md#the-tests)).
-The slowest left are the sub-line test (each section of a 300-pylon
-country solved on the whole line: the solve's whole-line lookups, see
-[O42](#ohl-design-an-edit-taken-in-place-o42-2026-11-19)) and the network
-test (a synthetic country imported, 24 random edits followed by every
-client).
+The slowest left were the sub-line test (each section of a 300-pylon
+country solved on the whole line: the solve's whole-line lookups; 0.7 s
+since [O42's lookups](#the-solve-after-an-edit-o42-2026-11-19)) and the
+network test (a synthetic country imported, 24 random edits followed by
+every client).
 
 **The flake** (`schema_and_the_writers_lock` failing while other check
 runs ran): reproduced with the old code — the three tests of the store,
@@ -865,7 +986,9 @@ the test program at once (six "runs"), eight times: 1 failure in 144, a
 writer refused right after the first writer was dropped. A connection's
 advisory lock goes when PostgreSQL's process for it has ended, a moment
 after the client closed it — the test connected the second writer
-before. The tests now wait for the lock to go (at most 10 s); the ports
+before. The tests now wait for the lock to go (at most 10 s; since the
+same day a writer also releases it explicitly when dropped, the wait kept
+as a safety net); the ports
 are made safe as well (another port when one is taken meanwhile, every
 cluster checked by its data directory). With the new scheme the same 144
 runs: 0 failures, in 90 s instead of 126 s; a test killed mid-run leaves
