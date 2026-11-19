@@ -451,6 +451,11 @@ fn a_plugins_joint_check_and_minimum_distances_are_used() {
     assert!(fy > 200e6 && fy < 500e6, "{fy}");
     assert!((weld(1).usage.unwrap() - 2.0 * w.usage.unwrap()).abs() < 1e-12);
     for row in rows.iter().flatten() {
+        // What the core says is not defined at the joint (2026-11-19: how
+        // the plate is held to the leg) has no plugin's words.
+        if matches!(row.part, PlatePart::NotChecked(_)) {
+            continue;
+        }
         assert!(
             !row.governs.contains("ASCE") && row.checks.iter().all(|c| !c.0.contains("ASCE")),
             "{row:?}"
@@ -523,6 +528,11 @@ fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {
     assert!(rows[0].len() >= 3, "{rows:?}");
     for row in &rows[0] {
         assert!(row.usage.is_none() && row.checks.is_empty(), "{row:?}");
+        // How the plate is held to the leg: not given, said by the core
+        // (2026-11-19), whatever the plugin.
+        if matches!(row.part, PlatePart::NotChecked(_)) {
+            continue;
+        }
         assert!(
             row.governs.starts_with(
                 "NOT CHECKED by member-check-only, NOT ON THE SAFE SIDE: the plugin \

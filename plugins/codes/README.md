@@ -38,7 +38,8 @@ bolt-distance checks of lattice structures by ASCE 10-97 (the default)
 and by SIA 263:2013 (`structure-code-plugin` world: `member-check`,
 `member-check-full`, `member-check-bracing` (buckling lengths from what
 braces each member, 2026-11-19), `joint-check`, `joint-check-full`,
-`joint-check-moments`,
+`joint-check-moments`, `joint-check-groups` (a joint's bolt groups under the
+members' forces together, 2026-11-19),
 `bolt-distances`, `bolt-distances-full`), moved out of the core on 2026-11-18 (SIA 263 first,
 then ASCE 10-97, each with the same numbers bit for bit) and **shipped
 with OpenOHL** — found before the user's plugins, an error at start when

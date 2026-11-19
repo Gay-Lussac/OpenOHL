@@ -487,17 +487,39 @@ impl StructureApp {
             .get(self.results.shown)
             .map_or("", |c| c.name.as_str());
         ui.add_space(6.0);
-        ui.strong("Plate checks (the last run)");
+        ui.strong("Joint checks (the last run)");
         let colour = |u: Option<f64>| {
             let [r, g, b, _] = crate::results_tab::usage_colour(u, "");
             egui::Color32::from_rgb(r, g, b)
         };
         let pct = |u: Option<f64>| u.map_or("—".to_owned(), |u| format!("{:.0} %", u * 100.0));
+        // The joint's usage (2026-11-19, stage 4.5): the largest of its
+        // plates', welds', bolt groups' and bearing checks over the cases.
+        let mut joint_best: Option<(f64, &str, String)> = None;
+        for (case, r) in &solved {
+            for &k in &here {
+                if let Some(x) = r.plates.get(k)
+                    && let Some(u) = x.usage
+                    && joint_best
+                        .as_ref()
+                        .is_none_or(|b| ohl_structure_link::usage_order(u, b.0).is_gt())
+                {
+                    joint_best = Some((u, case, x.what()));
+                }
+            }
+        }
+        if let Some((u, case, what)) = &joint_best {
+            ui.horizontal(|ui| {
+                ui.label("Usage of the joint:");
+                ui.colored_label(colour(Some(*u)), pct(Some(*u)));
+                ui.label(format!("in case {case}, {what}"));
+            });
+        }
         egui::Grid::new("joint-plate-checks")
             .striped(true)
             .show(ui, |ui| {
                 for h in [
-                    "Plate",
+                    "Plate / member",
                     "Part",
                     &format!("Case {shown_name}"),
                     "Largest",

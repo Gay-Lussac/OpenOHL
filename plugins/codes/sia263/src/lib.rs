@@ -21,6 +21,9 @@
 //!   details the check would not be SIA 263's.
 //! - `joint-check`: a member's bolts in a gusset plate or cover, a weld
 //!   between two plates ([`joints`]).
+//! - `joint-check-groups` (2026-11-19): a joint's bolt groups under the
+//!   members' forces together, each bolt by Table 16 and Table 17
+//!   ([`groups`]).
 //! - `bolt-distances` (and `bolt-distances-full`): SIA 263 Table 17 by
 //!   bolt size; without an analysis the force per bolt shown with them is
 //!   the bolt's own design shear resistance by Table 16 over γ_M2
@@ -33,6 +36,7 @@
 
 pub mod bracing;
 pub mod check;
+pub mod groups;
 pub mod joints;
 pub mod lengths;
 pub mod memo;

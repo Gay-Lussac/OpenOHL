@@ -25,6 +25,8 @@
 //! - `joint-check` (and `joint-check-full`, `joint-check-moments`): a
 //!   member's bolts in a gusset plate or cover; a weld between two plates
 //!   is not checked (ASCE 10-97 gives no weld resistance) ([`joints`]).
+//! - `joint-check-groups` (2026-11-19): a joint's bolt groups under the
+//!   members' forces together, each bolt by 4.3.2, 4.4, 4.5 ([`groups`]).
 //! - `bolt-distances` (and `bolt-distances-full`): ASCE 10-97 4.5 with the
 //!   bolt's force; without an analysis the bolt's own design shear
 //!   capacity (4.3.2, [`asce10::bolt_shear`]; third round, 2026-11-18).
@@ -39,6 +41,7 @@
 pub mod asce10;
 pub mod bracing;
 pub mod check;
+pub mod groups;
 pub mod joints;
 pub mod lengths;
 pub mod memo;

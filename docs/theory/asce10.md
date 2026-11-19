@@ -575,6 +575,8 @@ said in what governs (`[assumed: …]`):
 
 ## Plates and welds
 
+Since 2026-11-19 the joint's bolt groups too — a plate's bolts onto the leg holding it and every bolt onto a member at a joint under the members' forces together — each bolt by 4.3.2, 4.4, 4.5.1 (along its force), 4.5.2 and 4.5.3 ([Joint bolt groups and the leg's bearing](joint-groups.md)).
+
 The gusset plates are checked per case with the analysis'
 member forces ([Gusset plates and their welds](joint-plates.md)): per
 member bolting onto a plate its bearing on the plate (4.4), the plate's

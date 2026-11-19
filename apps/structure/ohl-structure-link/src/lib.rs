@@ -42,6 +42,9 @@ mod clash;
 #[cfg(test)]
 mod clash_tests;
 mod export;
+mod joint_groups;
+#[cfg(test)]
+mod joint_groups_tests;
 mod joint_layout;
 #[cfg(test)]
 mod joint_layout_tests;

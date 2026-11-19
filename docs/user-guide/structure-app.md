@@ -1020,6 +1020,23 @@ out. Each change is one undo step.
   the bolts: bolts in tension not checked, said). Every assumption is on
   the theory page
   [Gusset plates and their welds](../theory/joint-plates.md).
+- **Joint checks** (2026-11-19, in active development, not approved
+  yet): the same list (now **Joint checks (the last run)**) also has the
+  checks of the joint itself, for a tower at level 3 or more checked by a
+  design code: **a plate's bolts onto the leg holding it** (the leg bolted
+  onto the plate carrying the other members' forces on it together, with
+  their moment about its bolts) and **the bolts onto a member** at the
+  joint — its bearing under every bolt through it, the forces of every
+  member and plate on one bolt added (*Plate / member* shows the plate or
+  the member, *Part* "its bolts onto L1" or "the bolts onto it (its
+  bearing)"). What governs names the most loaded bolt, what it carries,
+  its force and the check with its clause. **Usage of the joint** above
+  the table is the largest of all its checks over the cases; the 3D view
+  colours each joint by it and the structure report lists it per joint
+  (*Joints — usage per joint*). A plate the joint's leg does not bolt
+  onto reads NOT CHECKED, NOT ON THE SAFE SIDE (how it is held is not
+  given). How the forces are gathered and each code's rules:
+  [Joint bolt groups and the leg's bearing](../theory/joint-groups.md).
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`
   per name with the fields of a connection but `onto` and `bolt_points`),

@@ -18,6 +18,7 @@ is rewritten). Theory: `docs/theory/sia263.md`.
 | `member-check-full` | every checked member in one call, with everything the core's check read |
 | `member-check-bracing` | the same with what braces each member: buckling lengths between the joints held in the direction of buckling (5.4.1.3, read strictly), lateral supports of at least 1 % (4.2.3.7), where the member gives none (2026-11-19; `src/lengths.rs`, `src/bracing.rs` — the same file as `asce10`'s) |
 | `joint-check`, `joint-check-full`, `joint-check-moments` | a member's bolts in a gusset plate or cover; a weld between two plates (with the parameter file: `joint-check-full`; with the moments of a weld's force and a frame member's end shear and moments: `joint-check-moments`) |
+| `joint-check-groups` | a joint's bolt groups under the members' forces together (2026-11-19): each bolt's shear (Table 16, (73)–(75)), bearing (76) with e₁ along its force, Table 17's distances along and square to it |
 | `bolt-distances`, `bolt-distances-full` | Table 17 by bolt size; the force per bolt shown with them without an analysis its own design shear resistance by Table 16 (73)/(74) over γ_M2 (third round, 2026-11-18; Table 17 takes no force) |
 
 ## Parameters

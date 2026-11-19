@@ -1344,7 +1344,12 @@ Six stages, the questions per stage and per detail level:
   from what braces a member built, in active development, not approved
   yet — the core's runs and bracing points, each code plugin's rules
   ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member));
-  the weight and quantities are built, below)*
+  the weight and quantities are built, below;
+  2026-11-19: the bolt groups under the members' forces together, the
+  leg's bearing and a usage per joint built, in active development, not
+  approved yet — a plate's bolts onto the leg holding it, every bolt onto
+  a member at a joint, each code plugin's bolt rules
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)))*
 - [x] Stage 4.6, weight and quantities (2026-11-19, built, in active
   development (not approved yet)): a tower's members, gusset plates,
   splice covers, bolts and welds counted from the connection records and

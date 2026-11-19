@@ -218,6 +218,25 @@ values were worked out from the joints and which assumed.
    ASCE 10-97's connection rules in the core; SIA 263 / EN 1993-1-8
    through the code-check interface of O4. Usage per joint, coloured in
    the 3D view.
+   **Built 2026-11-19** (the bolt groups and the leg's bearing; in active
+   development, not approved yet; the gusset plates since 2026-11-04):
+   per joint of a tower at level 3 or more, **a plate's bolts onto the leg
+   holding it** carry the resultant of the other members' forces on the
+   plate with its moment about them, shared elastically (Kulak, Fisher &
+   Struik), and **the bolts onto a member** — the lapped members' and the
+   holding bolts' — each the vector sum of every part it holds, the same
+   case only (`ohl_structure_link::joint_groups`,
+   `ohl_structures_fe::bolt_groups`); each bolt checked by the code's
+   plugin (`joint-check-groups`: bolt shear, bearing on the plate or the
+   member, the distances along and square to its force — ASCE 10-97 4.3.2,
+   4.4, 4.5; SIA 263 Table 16 (73)–(76), Table 17). **The joint's usage**
+   is the largest of its plates', welds', bolt groups' and bearing checks:
+   in Joint details, the 3D view's joint colours and the report's
+   *Joints* table. Not defined → said, never skipped: a plate the joint's
+   leg does not bolt onto ("how it is held is not given" — a leg running
+   on has no bolts at the joint in the file: an open question), bolts not
+   placed, a thickness not known
+   ([theory](../theory/joint-groups.md)).
 6. **Weight and quantities.** The bolts and plates counted and weighed:
    - the weight replaces the `dead_load_factor` estimate (1.1–1.4 today)
      where every joint is defined;

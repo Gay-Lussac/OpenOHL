@@ -74,6 +74,8 @@ on the safe side**, the member's result marked so. Exact: that leg's end
 distance from the joint's geometry. A member without connection data
 is checked as before (its own leg only).
 
+The leg's bearing under **every** bolt through it at the joint — the lapped members' forces summed bolt by bolt, a shared bolt with the sum, the distances along each bolt's force — is the joint's own check since 2026-11-19 ([Joint bolt groups and the leg's bearing](joint-groups.md)).
+
 ## Continuous members
 
 Two members are one part through a joint when `kind = "continuous"` is
