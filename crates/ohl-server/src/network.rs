@@ -49,7 +49,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ohl_core::grid::{Bounds, Grid};
-use ohl_line::Line;
+use ohl_session::shared::User;
+use ohl_session::working_set::{Extent, WORKING_SET_KEY, WorkingSetSpec};
 use ohl_session::{Kind, Role, Session};
 use ohl_store_pg::Network;
 use ohl_store_pg::stream::{StreamRow, interest_of, interest_of_line, tile_key, tiles_of};
@@ -59,12 +60,12 @@ use tokio_tungstenite::tungstenite::Utf8Bytes;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, MAX_NEWCOMERS,
-    Options, Server, Snapshot, log, run,
+    NetAsk, Options, Server, Snapshot, log, run,
 };
 use crate::stream::{OWN_QUEUE, Own, To, Touch, Update, View};
 use crate::{
-    Change, HeldTile, ModelInfo, NetworkInfo, Op, Position, RouteInfo, ServerMsg, TileKey, execute,
-    random_code,
+    Change, HeldTile, ModelInfo, NetworkInfo, Op, Position, RouteInfo, RowsMsg, SavedSet,
+    ServerMsg, TileKey, execute, random_code,
 };
 
 /// Broadcasts kept for slow readers (a client further behind is dropped
@@ -217,24 +218,10 @@ struct Model {
     rev: u64,
     /// Changes of its library files in this run.
     libs_rev: u64,
-    snapshot: Option<(u64, Arc<Line>)>,
     libs: Option<(u64, Arc<LibFiles>)>,
 }
 
 impl Model {
-    /// Its main branch's line at its revision (copied once per revision,
-    /// for the packagers).
-    fn line(&mut self) -> Arc<Line> {
-        match &self.snapshot {
-            Some((rev, l)) if *rev == self.rev => l.clone(),
-            _ => {
-                let l = Arc::new(self.session.line().clone());
-                self.snapshot = Some((self.rev, l.clone()));
-                l
-            }
-        }
-    }
-
     /// Its library files a package needs, at its library revision.
     fn libs(&mut self) -> Arc<LibFiles> {
         match &self.libs {
@@ -274,6 +261,57 @@ struct NetClient {
     tiles: BTreeSet<TileKey>,
     /// Tiles asked for, their packages being made.
     waiting: BTreeSet<TileKey>,
+    /// Phase 6: the working set it holds as a partial replica.
+    ws: Option<Ws>,
+}
+
+/// A client's working set as its replica holds it (phase 6): the extent
+/// last sent, worked out again after each change that may touch it.
+struct Ws {
+    spec: WorkingSetSpec,
+    extent: Extent,
+    users: BTreeMap<String, Vec<User>>,
+    /// The routes picked and those of its extent: a change touching none
+    /// of them (nor an object it holds) cannot change it — unless it
+    /// picked an area.
+    routes: BTreeSet<String>,
+    area: bool,
+}
+
+impl Ws {
+    fn new(spec: WorkingSetSpec, extent: Extent, users: BTreeMap<String, Vec<User>>) -> Self {
+        let mut ws = Ws {
+            spec,
+            extent,
+            users,
+            routes: BTreeSet::new(),
+            area: false,
+        };
+        ws.note_routes();
+        ws
+    }
+
+    fn note_routes(&mut self) {
+        use ohl_session::working_set::Pick;
+        self.routes = self
+            .extent
+            .summary
+            .routes
+            .iter()
+            .map(|r| r.route.clone())
+            .collect();
+        self.area = false;
+        for p in &self.spec.picks {
+            match p {
+                Pick::Route { route }
+                | Pick::Stations { route, .. }
+                | Pick::Structures { route, .. } => {
+                    self.routes.insert(route.clone());
+                }
+                Pick::Area { .. } => self.area = true,
+            }
+        }
+    }
 }
 
 /// A tile being made, and who waits for it.
@@ -289,6 +327,10 @@ struct Stats {
     applied_ms: Vec<f64>,
     built_ms: Vec<f64>,
     served_from_cache_us: Vec<f64>,
+    /// Phase 6: a replica's extent and rows taken on the authority, ms.
+    replica_ms: Vec<f64>,
+    /// Phase 6: the working sets fed after a change, ms (per change).
+    rows_ms: Vec<f64>,
     solved: usize,
     shapes_cached: usize,
     start_s: f64,
@@ -452,7 +494,6 @@ impl NetHost {
                     session,
                     rev: 0,
                     libs_rev: 0,
-                    snapshot: None,
                     libs: None,
                 },
             );
@@ -725,15 +766,18 @@ impl NetHost {
         o: JoinOptions,
     ) -> Result<Joined, String> {
         let personal = self.common.check_code(user, code)?;
-        if o.copy && !o.web && o.model.is_none() {
+        if o.copy && !o.web && o.model.is_none() && o.working_set.is_none() {
             return Err(format!(
-                "this server holds a network of {} lines: OHL-Design joins a network with a \
-                 working set, not built yet (phase 6); the command line and the web client \
-                 join it",
+                "this server holds a network of {} lines: join it with a working set (File › \
+                 Join a network in OHL-Design), or follow one line whole (the command line)",
                 self.models.len()
             ));
         }
-        let role = match &o.model {
+        if o.model.is_some() && o.working_set.is_some() {
+            return Err("follow one line whole or a working set, not both".into());
+        }
+        let ws_model = o.working_set.as_ref().map(|w| w.model.clone());
+        let role = match o.model.as_ref().or(ws_model.as_ref()) {
             Some(m) => self.role_in_model(user, m, personal)?,
             None => {
                 let mut known: Option<Role> = None;
@@ -757,6 +801,27 @@ impl NetHost {
                 }
             }
         };
+        // A working set: worked out (refused when its picks do not hold).
+        let ws = match &o.working_set {
+            Some(spec) => {
+                let started = Instant::now();
+                let m = self
+                    .models
+                    .get_mut(&spec.model)
+                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                let extent = m
+                    .session
+                    .pick_extent(&spec.picks)
+                    .map_err(|e| e.to_string())?;
+                let users = m.session.extent_users(&extent);
+                keep(
+                    &mut self.stats.replica_ms,
+                    started.elapsed().as_secs_f64() * 1e3,
+                );
+                Some(Ws::new(spec.clone(), extent, users))
+            }
+            None => None,
+        };
         let events = self.common.events.subscribe();
         let index = self.common.sent;
         let (own_tx, own_rx) = mpsc::channel(OWN_QUEUE);
@@ -769,6 +834,7 @@ impl NetHost {
                 routes: BTreeSet::new(),
                 tiles: BTreeSet::new(),
                 waiting: BTreeSet::new(),
+                ws: None,
             },
         );
         // In the stream's order: what it follows, what the network holds,
@@ -778,16 +844,22 @@ impl NetHost {
         }
         let info = self.info();
         self.push(client, None, None, Some(ServerMsg::Network(Box::new(info))));
-        let (copy, seq) = match &o.model {
-            Some(m) if o.copy && !o.web => {
+        let (copy, seq) = match (&o.model, &ws) {
+            (Some(m), _) if o.copy && !o.web => {
                 let seq = self.models[m]
                     .session
                     .last_seq()
                     .map_err(|e| e.to_string())?;
                 (Some(self.copy_of(m)?), seq)
             }
+            (None, Some(ws)) if o.copy && !o.web => {
+                (Some(self.replica_copy(user, ws)?), self.position.seq)
+            }
             _ => (None, self.position.seq),
         };
+        if let Some(c) = self.clients.get_mut(&client) {
+            c.ws = ws;
+        }
         if let Some(since) = o.since {
             self.catch_up(client, since, false)?;
         }
@@ -914,6 +986,304 @@ impl NetHost {
         Ok(CopyWait::Making(rx))
     }
 
+    /// A partial replica of working set `ws` for joining user `user`: its
+    /// rows taken now (between two commands; the extent's objects only),
+    /// written into a project file by a thread of its own.
+    fn replica_copy(&mut self, user: &str, ws: &Ws) -> Result<CopyWait, String> {
+        if self.live.load(Ordering::SeqCst) >= MAX_COPIES {
+            return Err(format!(
+                "the server is sending lines to {MAX_COPIES} others: join again in a minute"
+            ));
+        }
+        let started = Instant::now();
+        let code = ws.spec.model.clone();
+        let m = self
+            .models
+            .get_mut(&code)
+            .ok_or_else(|| format!("the network has no line {code}"))?;
+        let replica = m.session.replica_of(&ws.extent);
+        keep(
+            &mut self.stats.replica_ms,
+            started.elapsed().as_secs_f64() * 1e3,
+        );
+        let meta = vec![
+            ("network.name".to_owned(), self.name.clone()),
+            ("network.line".to_owned(), code.clone()),
+            (
+                "network.position".to_owned(),
+                serde_json::to_string(&self.position).map_err(|e| e.to_string())?,
+            ),
+            (
+                WORKING_SET_KEY.to_owned(),
+                serde_json::to_string(&ws.spec).map_err(|e| e.to_string())?,
+            ),
+        ];
+        self.live.fetch_add(1, Ordering::SeqCst);
+        let path = self.copies.join(format!(
+            "{code}-ws-{}-{}.ohl",
+            self.position,
+            random_code(8)
+        ));
+        let (tx, rx) = oneshot::channel();
+        let (live, user) = (self.live.clone(), user.to_owned());
+        std::thread::Builder::new()
+            .name("ohl-replica".into())
+            .spawn(move || {
+                let made = Session::write_replica(replica, &path, &user, &meta)
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| {
+                        std::fs::metadata(&path)
+                            .map(|m| m.len())
+                            .map_err(|e| e.to_string())
+                    });
+                let snapshot = made.map(|size| {
+                    Arc::new(Snapshot {
+                        path: path.clone(),
+                        size,
+                        live: live.clone(),
+                    })
+                });
+                if snapshot.is_err() {
+                    let _ = std::fs::remove_file(&path);
+                    live.fetch_sub(1, Ordering::SeqCst);
+                }
+                let _ = tx.send(snapshot);
+            })
+            .map_err(|e| {
+                self.live.fetch_sub(1, Ordering::SeqCst);
+                e.to_string()
+            })?;
+        Ok(CopyWait::Making(rx))
+    }
+
+    /// The working sets on model `code` after a change of `user` (`what`)
+    /// at `at` that changed `changed` (`all`: anything of the model may
+    /// have changed) and touched `routes`: each worked out again where the
+    /// change may touch it, and its client given the rows that change —
+    /// on its own queue before the change's broadcast, so a client waiting
+    /// for its answer has them first.
+    #[allow(clippy::too_many_arguments)]
+    fn feed_working_sets(
+        &mut self,
+        code: &str,
+        user: &str,
+        what: &str,
+        at: Position,
+        changed: &BTreeSet<(Kind, String)>,
+        all: bool,
+        routes: &[String],
+    ) {
+        let started = Instant::now();
+        let ids: Vec<u64> = self
+            .clients
+            .iter()
+            .filter(|(_, c)| c.ws.as_ref().is_some_and(|w| w.spec.model == code))
+            .map(|(id, _)| *id)
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+        let mut out = Vec::new();
+        for id in ids {
+            let Some(ws) = self.clients.get_mut(&id).and_then(|c| c.ws.as_mut()) else {
+                continue;
+            };
+            let touches = all
+                || ws.area
+                || routes.iter().any(|r| ws.routes.contains(r))
+                || changed.iter().any(|k| ws.extent.keep.contains(k));
+            if !touches {
+                continue;
+            }
+            let Some(m) = self.models.get_mut(code) else {
+                continue;
+            };
+            let new = m.session.extent_of(&ws.spec.picks);
+            let every: BTreeSet<(Kind, String)>;
+            let changed = if all {
+                every = new.keep.union(&ws.extent.keep).cloned().collect();
+                &every
+            } else {
+                changed
+            };
+            let rows = m.session.rows_for(&ws.extent, &ws.users, &new, changed);
+            if let Some(u) = &rows.users {
+                ws.users = u.clone();
+            }
+            ws.extent = new;
+            ws.note_routes();
+            if !rows.is_empty() {
+                out.push((id, rows));
+            }
+        }
+        for (id, rows) in out {
+            self.push(
+                id,
+                Some(Update::Seen(at)),
+                None,
+                Some(ServerMsg::Rows(Box::new(RowsMsg {
+                    model: code.to_owned(),
+                    at,
+                    user: Some(user.to_owned()),
+                    what: Some(what.to_owned()),
+                    rows,
+                    spec: None,
+                }))),
+            );
+        }
+        keep(
+            &mut self.stats.rows_ms,
+            started.elapsed().as_secs_f64() * 1e3,
+        );
+    }
+
+    /// A question of client `client` about working sets (phase 6); its
+    /// answer on the client's own queue.
+    fn net_ask(&mut self, client: u64, user: &str, ask: NetAsk) -> Result<(), String> {
+        let msg = match ask {
+            NetAsk::Pick { id, model, picks } => {
+                let result = match self.models.get_mut(&model) {
+                    Some(m) => m
+                        .session
+                        .pick_extent(&picks)
+                        .map(|e| e.summary)
+                        .map_err(|e| e.to_string()),
+                    None => Err(format!("the network has no line {model}")),
+                };
+                ServerMsg::Extent { id, model, result }
+            }
+            NetAsk::RouteDetail { model, route } => {
+                let result = match self.models.get_mut(&model) {
+                    Some(m) => m.session.route_detail(&route).map_err(|e| e.to_string()),
+                    None => Err(format!("the network has no line {model}")),
+                };
+                ServerMsg::RouteDetail { model, result }
+            }
+            NetAsk::Set { spec } => {
+                let started = Instant::now();
+                let c = self.clients.get_mut(&client).ok_or("not joined")?;
+                let ws =
+                    c.ws.as_mut()
+                        .ok_or("join with a working set first: this connection holds none")?;
+                if spec.model != ws.spec.model {
+                    return Err(format!(
+                        "a working set is on one line: this one is on {}; open {} on its own",
+                        ws.spec.model, spec.model
+                    ));
+                }
+                let m = self
+                    .models
+                    .get_mut(&spec.model)
+                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                let new = m
+                    .session
+                    .pick_extent(&spec.picks)
+                    .map_err(|e| e.to_string())?;
+                let rows = m
+                    .session
+                    .rows_for(&ws.extent, &ws.users, &new, &BTreeSet::new());
+                if let Some(u) = &rows.users {
+                    ws.users = u.clone();
+                }
+                ws.extent = new;
+                ws.spec = spec.clone();
+                ws.note_routes();
+                keep(
+                    &mut self.stats.replica_ms,
+                    started.elapsed().as_secs_f64() * 1e3,
+                );
+                ServerMsg::Rows(Box::new(RowsMsg {
+                    model: spec.model.clone(),
+                    at: self.position,
+                    user: None,
+                    what: Some(format!(
+                        "the working set: {}",
+                        spec.picks
+                            .iter()
+                            .map(|p| p.describe())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                    rows,
+                    spec: Some(spec),
+                }))
+            }
+            NetAsk::Hold { objects } => {
+                let started = Instant::now();
+                let c = self.clients.get_mut(&client).ok_or("not joined")?;
+                let ws =
+                    c.ws.as_mut()
+                        .ok_or("join with a working set first: this connection holds none")?;
+                let held: BTreeMap<(Kind, String), u64> =
+                    objects.into_iter().map(|(k, id, h)| ((k, id), h)).collect();
+                let m = self
+                    .models
+                    .get_mut(&ws.spec.model)
+                    .ok_or_else(|| format!("the network has no line {}", ws.spec.model))?;
+                let rows = m.session.rows_against(&held, &ws.extent);
+                keep(
+                    &mut self.stats.replica_ms,
+                    started.elapsed().as_secs_f64() * 1e3,
+                );
+                ServerMsg::Rows(Box::new(RowsMsg {
+                    model: ws.spec.model.clone(),
+                    at: self.position,
+                    user: None,
+                    what: None,
+                    rows,
+                    spec: Some(ws.spec.clone()),
+                }))
+            }
+            NetAsk::Save { spec } => {
+                let m = self
+                    .models
+                    .get_mut(&spec.model)
+                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                let extent = m
+                    .session
+                    .pick_extent(&spec.picks)
+                    .map_err(|e| e.to_string())?;
+                let routes: Vec<String> = extent
+                    .summary
+                    .routes
+                    .iter()
+                    .map(|r| r.route.clone())
+                    .collect();
+                self.net
+                    .save_working_set(user, &spec, &routes)
+                    .map_err(|e| e.to_string())?;
+                self.saved_sets(user)?
+            }
+            NetAsk::Delete { name } => {
+                self.net
+                    .delete_working_set(user, &name)
+                    .map_err(|e| e.to_string())?;
+                self.saved_sets(user)?
+            }
+            NetAsk::List => self.saved_sets(user)?,
+        };
+        let at = self.position;
+        let seen = matches!(msg, ServerMsg::Rows(_)).then_some(Update::Seen(at));
+        self.push(client, seen, None, Some(msg));
+        Ok(())
+    }
+
+    fn saved_sets(&self, user: &str) -> Result<ServerMsg, String> {
+        Ok(ServerMsg::WorkingSets {
+            sets: self
+                .net
+                .working_sets(user)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|w| SavedSet {
+                    spec: w.spec,
+                    routes: w.routes,
+                    time: w.time,
+                })
+                .collect(),
+        })
+    }
+
     fn request(
         &mut self,
         client: u64,
@@ -980,6 +1350,26 @@ impl NetHost {
             }
         };
         self.position = change.at;
+        // The partial replicas of this model: their rows first.
+        let main = ohl_session::versions::MAIN;
+        if line == main
+            && let Some(a) = &applied
+        {
+            let changed: BTreeSet<(Kind, String)> = a.objects.iter().cloned().collect();
+            let all = a.whole
+                || matches!(
+                    op,
+                    Op::BringIn { .. }
+                        | Op::Merge { .. }
+                        | Op::Revert { .. }
+                        | Op::MergeReview { .. }
+                        | Op::RollBackLine { .. }
+                        | Op::RenameLine { .. }
+                        | Op::DeleteLine { .. }
+                );
+            let what = op.describe();
+            self.feed_working_sets(code, user, &what, change.at, &changed, all, &change.routes);
+        }
         if let Op::SetSetting { key, value } = &op {
             log(&format!(
                 "{user} {} setting {key} on {code}/{line}",
@@ -1360,10 +1750,18 @@ impl NetHost {
             let Some(m) = self.models.get_mut(&*model) else {
                 continue;
             };
+            // The part of its line the tile reads (never a copy of the whole
+            // line).
+            let line = Arc::new(m.session.drawing_part(
+                &structures,
+                &sections,
+                &alignments,
+                crate::packager::NEAR_ALIGNMENTS,
+            ));
             parts.push(Part {
                 model: model.to_string(),
-                rev: m.rev,
-                line: m.line(),
+                line,
+                typed: m.session.any_typed(),
                 libs_rev: m.libs_rev,
                 libs: m.libs(),
                 structures,
@@ -1555,6 +1953,8 @@ impl NetHost {
                     "applied_ms": self.stats.applied_ms,
                     "built_ms": self.stats.built_ms,
                     "served_from_cache_us": self.stats.served_from_cache_us,
+                    "replica_ms": self.stats.replica_ms,
+                    "rows_ms": self.stats.rows_ms,
                 })
                 .to_string())
             }
@@ -1666,6 +2066,15 @@ impl Host for NetHost {
             } => {
                 let _ =
                     reply.send(self.guarded("the catch-up", |h| h.catch_up(client, since, false)));
+            }
+            Job::Net {
+                client,
+                user,
+                ask,
+                reply,
+            } => {
+                let _ =
+                    reply.send(self.guarded("the working set", |h| h.net_ask(client, &user, ask)));
             }
             Job::Built(b) => self.built(*b),
             Job::Probe { what, reply } => {

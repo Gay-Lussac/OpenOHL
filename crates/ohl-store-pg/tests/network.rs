@@ -136,6 +136,87 @@ fn schema_and_the_writers_lock() {
     assert!(again.create_line("", "x", "").is_err());
     again.create_line("L-1.a", "x", "").unwrap();
     assert!(again.create_line("L-1.a", "x", "").is_err());
+    // Working sets saved by name (schema 3): replaced by name, per owner,
+    // refused without a name, a known model or picks.
+    use ohl_session::working_set::{Pick, WorkingSetSpec};
+    let spec = WorkingSetSpec {
+        name: "north part".into(),
+        model: "L-1.a".into(),
+        picks: vec![
+            Pick::Route { route: "r1".into() },
+            Pick::Stations {
+                route: "r2".into(),
+                alignment: None,
+                from: 120.25,
+                to: 980.5,
+            },
+        ],
+    };
+    // The audit's test above left the network refused for newer schemas:
+    // a fresh database for the rest.
+    cluster.create_db("ws");
+    let ws = Network::connect_writer(&cluster.url("ws")).unwrap();
+    ws.create_line("L-1.a", "x", "").unwrap();
+    ws.save_working_set("ana", &spec, &["r1".into(), "r2".into()])
+        .unwrap();
+    let mut other = spec.clone();
+    other.picks.pop();
+    ws.save_working_set("ana", &other, &["r1".into()]).unwrap();
+    ws.save_working_set("ben", &spec, &[]).unwrap();
+    let saved = ws.working_sets("ana").unwrap();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].spec, other, "replaced by name");
+    assert_eq!(saved[0].routes, ["r1"]);
+    assert_eq!(
+        ws.working_sets("ben").unwrap()[0].spec,
+        spec,
+        "stations kept exactly"
+    );
+    for bad in [
+        WorkingSetSpec {
+            name: " ".into(),
+            ..spec.clone()
+        },
+        WorkingSetSpec {
+            model: "nowhere".into(),
+            ..spec.clone()
+        },
+        WorkingSetSpec {
+            picks: Vec::new(),
+            ..spec.clone()
+        },
+    ] {
+        assert!(ws.save_working_set("ana", &bad, &[]).is_err(), "{bad:?}");
+    }
+    assert!(ws.delete_working_set("ana", "north part").unwrap());
+    assert!(!ws.delete_working_set("ana", "north part").unwrap());
+    assert!(ws.working_sets("ana").unwrap().is_empty());
+    // A database of schema 2 with a working set of routes only is brought
+    // forward: it reads as those routes picked whole.
+    cluster.create_db("old");
+    let mut c = postgres::Client::connect(&cluster.url("old"), postgres::NoTls).unwrap();
+    c.batch_execute(
+        "CREATE TABLE net_schema (version integer PRIMARY KEY,
+             time timestamptz NOT NULL DEFAULT clock_timestamp(), note text NOT NULL)",
+    )
+    .unwrap();
+    for (version, note, sql) in &ohl_store_pg::schema::MIGRATIONS[..2] {
+        c.batch_execute(sql).unwrap();
+        c.execute(
+            "INSERT INTO net_schema (version, note) VALUES ($1, $2)",
+            &[version, note],
+        )
+        .unwrap();
+    }
+    c.batch_execute(
+        "INSERT INTO working_set (owner, name, routes) VALUES ('ana', 'old', '[\"r1\"]')",
+    )
+    .unwrap();
+    let old = Network::connect(&cluster.url("old")).unwrap();
+    assert_eq!(old.schema().unwrap(), 3);
+    let saved = old.working_sets("ana").unwrap();
+    assert_eq!(saved[0].spec.picks, [Pick::Route { route: "r1".into() }]);
+    assert_eq!(saved[0].spec.model, "");
 }
 
 /// The project file used by the round trip: the example line with a

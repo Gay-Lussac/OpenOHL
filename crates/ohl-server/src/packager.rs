@@ -6,8 +6,11 @@
 //! the light, read-only context of a tile — per structure its id,
 //! position, orientation, type, height and a simplified stick; per section
 //! its wires solved in the context case; the alignments as polylines; the
-//! routes' names — from a copy of each model's line taken when the tile
-//! was asked for (the authority goes on meanwhile).
+//! routes' names — from **the part of each model's line the tile reads**,
+//! taken by the authority when the tile is asked for
+//! ([`ohl_session::Session::drawing_part`]: the tile's objects and what
+//! solving each of its sections alone reads; never a copy of the whole
+//! line, phase 6), so the authority goes on meanwhile.
 //!
 //! Kept between packages, each bounded (the server's settings):
 //!
@@ -20,9 +23,9 @@
 //!   else keeps it, and any change of what it reads is another key;
 //! - **resolved structures**: per model and library revision, the
 //!   libraries read once and the structures merged with their types kept
-//!   (`ohl_line::library::ResolveCache`, the application's idea), the
-//!   resolved line of the model's revision (least recently used models
-//!   first beyond a count).
+//!   (`ohl_line::library::ResolveCache`, the application's idea; least
+//!   recently used models first beyond a count); a tile's part is resolved
+//!   from it (what it holds only).
 //!
 //! The context's wires are a **drawing**, not a result: each section is
 //! solved alone in the context case (`ohl_line::solve::solve_one`) — the
@@ -162,9 +165,12 @@ pub(crate) struct LibFiles {
 /// One model's part of a tile.
 pub(crate) struct Part {
     pub(crate) model: String,
-    /// The model's revision (of its main branch) and its line then.
-    pub(crate) rev: u64,
+    /// The part of the model's line the tile reads, at the model's
+    /// revision ([`ohl_session::Session::drawing_part`]).
     pub(crate) line: Arc<Line>,
+    /// A structure of the model has a type (the structure libraries are
+    /// read).
+    pub(crate) typed: bool,
     pub(crate) libs_rev: u64,
     pub(crate) libs: Arc<LibFiles>,
     pub(crate) structures: Vec<String>,
@@ -235,8 +241,7 @@ type Solved = (Vec<SceneSpan>, Option<String>, bool);
 /// What the packagers keep between packages.
 pub(crate) struct Caches {
     pub(crate) shapes: Mutex<Lru<Key, Shape>>,
-    libs: Mutex<Lru<(String, u64), Arc<Libs>>>,
-    resolved: Mutex<Lru<(String, u64, u64), Arc<Resolved>>>,
+    libs: Mutex<Lru<(String, u64, bool), Arc<Libs>>>,
 }
 
 impl Caches {
@@ -244,7 +249,6 @@ impl Caches {
         Self {
             shapes: Mutex::new(Lru::new(shapes_mb << 20, usize::MAX)),
             libs: Mutex::new(Lru::new(usize::MAX, models)),
-            resolved: Mutex::new(Lru::new(usize::MAX, models)),
         }
     }
 
@@ -260,10 +264,6 @@ impl Caches {
             .unwrap_or_else(|e| e.into_inner())
             .clear();
         self.libs.lock().unwrap_or_else(|e| e.into_inner()).clear();
-        self.resolved
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
     }
 }
 
@@ -423,7 +423,7 @@ pub(crate) fn build(job: &BuildJob, caches: &Caches, work: &std::path::Path) -> 
     let (mut solved, mut cached) = (0, 0);
     for part in &job.parts {
         let libs = libs_of(part, caches, work);
-        let r = resolved_of(part, &libs, caches);
+        let r = resolved_of(part, &libs);
         for n in libs.notes.iter().chain(&r.notes) {
             let n = format!("{}: {n}", part.model);
             if !pkg.notes.contains(&n) {
@@ -556,7 +556,7 @@ pub(crate) fn build(job: &BuildJob, caches: &Caches, work: &std::path::Path) -> 
 
 /// The model's libraries at its library revision (read once).
 fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
-    let k = (part.model.clone(), part.libs_rev);
+    let k = (part.model.clone(), part.libs_rev, part.typed);
     if let Some(l) = caches
         .libs
         .lock()
@@ -589,12 +589,7 @@ fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
             }
         }
     }
-    let typed = part
-        .line
-        .structures
-        .iter()
-        .any(|s| s.structure_type.is_some());
-    let types = if typed {
+    let types = if part.typed {
         let read = (|| -> Result<_, String> {
             let dir = |kind: &str| -> Result<PathBuf, String> {
                 Ok(
@@ -688,17 +683,9 @@ fn settings_key(line: &Line) -> Key {
     ])
 }
 
-/// The model's line resolved at its revision (once per revision).
-fn resolved_of(part: &Part, libs: &Libs, caches: &Caches) -> Arc<Resolved> {
-    let k = (part.model.clone(), part.rev, part.libs_rev);
-    if let Some(r) = caches
-        .resolved
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&k)
-    {
-        return r;
-    }
+/// The tile's part of a model's line resolved (its structures merged with
+/// their types, kept per model and library revision in `libs.cache`).
+fn resolved_of(part: &Part, libs: &Libs) -> Resolved {
     let mut notes = Vec::new();
     let line: Arc<Line> = match &libs.types {
         Some((structures, insulators)) => {
@@ -715,13 +702,7 @@ fn resolved_of(part: &Part, libs: &Libs, caches: &Caches) -> Arc<Resolved> {
         }
         None => part.line.clone(),
     };
-    let r = Arc::new(indexed(line, notes));
-    caches
-        .resolved
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .put(k, r.clone(), 0);
-    r
+    indexed(line, notes)
 }
 
 /// A line resolved, with its lookups.
@@ -867,70 +848,7 @@ fn jumpers_by_structure(line: &Line) -> HashMap<String, Vec<usize>> {
 /// the line's direction at the section is read from the nearest one (its
 /// own, under its structures), and a span point placed by station from
 /// its route.
-const NEAR_ALIGNMENTS: f64 = 500.0;
-
-/// The line with none of its elements: its settings only. (Every field is
-/// named: a new one must be thought about here.)
-fn empty_like(line: &Line) -> Line {
-    let Line {
-        format,
-        version,
-        name,
-        crs,
-        height_datum,
-        alignment: _,
-        routes: _,
-        alignments: _,
-        alignment_points: _,
-        structures: _,
-        sections: _,
-        jumpers: _,
-        spacers: _,
-        systems,
-        circuits,
-        display,
-        creep_stretch,
-        bimetallic,
-        solver,
-        defaults,
-        circuit_starts,
-        structure_loads,
-        structure_groups,
-        electrical,
-        reference,
-        feet_state,
-        condition_cases,
-    } = line;
-    Line {
-        format: format.clone(),
-        version: *version,
-        name: name.clone(),
-        crs: crs.clone(),
-        height_datum: height_datum.clone(),
-        alignment: Vec::new(),
-        routes: Vec::new(),
-        alignments: Vec::new(),
-        alignment_points: Vec::new(),
-        structures: Vec::new(),
-        sections: Vec::new(),
-        jumpers: Vec::new(),
-        spacers: Vec::new(),
-        systems: systems.clone(),
-        circuits: circuits.clone(),
-        display: display.clone(),
-        creep_stretch: creep_stretch.clone(),
-        bimetallic: *bimetallic,
-        solver: *solver,
-        defaults: *defaults,
-        circuit_starts: circuit_starts.clone(),
-        structure_loads: structure_loads.clone(),
-        structure_groups: structure_groups.clone(),
-        electrical: *electrical,
-        reference: reference.clone(),
-        feet_state: feet_state.clone(),
-        condition_cases: condition_cases.clone(),
-    }
-}
+pub(crate) const NEAR_ALIGNMENTS: f64 = 500.0;
 
 /// The part of `r`'s line that solving `section` alone reads: the line's
 /// settings; the section's structures; every section and jumper at them
@@ -939,7 +857,7 @@ fn empty_like(line: &Line) -> Line {
 /// it, with their points and routes. Each kept in the line's order.
 fn sub_line(r: &Resolved, section: &ohl_line::Section) -> Line {
     let line = &*r.line;
-    let mut out = empty_like(line);
+    let mut out = line.settings_only();
     let mut structures: Vec<usize> = section
         .points
         .iter()
@@ -1152,5 +1070,118 @@ mod tests {
             });
         }
         assert!(compared > 100, "{compared}");
+    }
+
+    /// A tile's part of a line ([`ohl_session::Session::drawing_part`],
+    /// phase 6: what the packager gets instead of a copy of the whole line)
+    /// gives each of its sections the sub-line the whole line gives, bit
+    /// for bit, resolved as the whole line is: the example lines (the
+    /// typed one with its libraries) and a synthetic country of 300 pylons
+    /// as one line, by tile of 1 024 m (every third tile).
+    #[test]
+    fn a_tiles_part_gives_the_whole_lines_sub_lines() {
+        // A tile's structures, sections and alignments.
+        type Ids = (Vec<String>, Vec<String>, Vec<String>);
+        let ex =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+        let structures =
+            ohl_structures::StructureLibrary::load_dir(&ex.join("Structures")).unwrap();
+        let insulators =
+            ohl_structures::InsulatorLibrary::load_dir(&ex.join("Insulators")).unwrap();
+        let types = (structures, insulators);
+        let mut lines: Vec<(String, Line, bool, usize)> = Vec::new();
+        for name in ["synthetic-line.ohl.json", "crossing-line.ohl.json"] {
+            lines.push((name.into(), Line::load(&ex.join(name)).unwrap(), false, 1));
+        }
+        lines.push((
+            "typed".into(),
+            Line::load(&ex.join("synthetic-line-typed.ohl.json")).unwrap(),
+            true,
+            1,
+        ));
+        let country = ohl_synth::country(&ohl_synth::Settings {
+            pylons: 300,
+            ..Default::default()
+        })
+        .unwrap();
+        lines.push(("country".into(), country.line, false, 3));
+        let dir = std::env::temp_dir().join(format!("ohl-tile-part-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let grid = ohl_core::grid::Grid::default();
+        let mut compared = 0;
+        for (n, (name, line, typed, every)) in lines.into_iter().enumerate() {
+            let mut s = ohl_session::Session::open(&dir.join(format!("{n}.ohl"))).unwrap();
+            s.import(&line, "ana").unwrap();
+            let line = s.line().clone();
+            let resolve = |l: &Line| -> Line {
+                if typed {
+                    l.resolve_with(&types.0, &types.1, None).unwrap()
+                } else {
+                    l.clone()
+                }
+            };
+            let whole = indexed(Arc::new(resolve(&line)), Vec::new());
+            // The line's objects by tile, as the server's tile index keeps
+            // them (by their bounds).
+            let mut by_tile: BTreeMap<(i64, i64), Ids> = BTreeMap::new();
+            let mut put = |b: Option<Bounds>, f: &mut dyn FnMut(&mut Ids)| {
+                let Some(b) = b else { return };
+                let (t0, t1) = (grid.tile_at(2, b.min), grid.tile_at(2, b.max));
+                for x in t0.x..=t1.x {
+                    for y in t0.y..=t1.y {
+                        f(by_tile.entry((x, y)).or_default());
+                    }
+                }
+            };
+            for st in &line.structures {
+                put(Bounds::of_points([&st.position]), &mut |e| {
+                    e.0.push(st.id.clone())
+                });
+            }
+            for sec in &line.sections {
+                let b = Bounds::of_points(
+                    sec.points
+                        .iter()
+                        .filter_map(|p| line.structure(&p.structure).map(|s| &s.position)),
+                );
+                put(b, &mut |e| e.1.push(sec.id.clone()));
+            }
+            for a in &line.alignments {
+                let b = Bounds::of_points(
+                    a.points
+                        .iter()
+                        .filter_map(|p| line.alignment_point(p).map(|p| &p.position)),
+                );
+                put(b, &mut |e| e.2.push(a.id.clone()));
+            }
+            for (k, (_, (sts, secs, als))) in by_tile.iter().enumerate() {
+                if k % every != 0 {
+                    continue;
+                }
+                let part = s.drawing_part(sts, secs, als, NEAR_ALIGNMENTS);
+                assert!(
+                    part.structures.len() <= line.structures.len(),
+                    "{name}: a part"
+                );
+                let r = indexed(Arc::new(resolve(&part)), Vec::new());
+                for id in secs {
+                    let sec = &whole.line.sections[whole.sections[id]];
+                    assert_eq!(
+                        format!("{:?}", sub_line(&whole, sec)),
+                        format!("{:?}", sub_line(&r, sec)),
+                        "{name}: section {id}"
+                    );
+                    compared += 1;
+                }
+                for id in sts {
+                    assert!(r.structures.contains_key(id), "{name}: structure {id}");
+                }
+                for id in als {
+                    assert!(r.alignments.contains_key(id), "{name}: alignment {id}");
+                }
+            }
+        }
+        assert!(compared > 200, "{compared}");
     }
 }

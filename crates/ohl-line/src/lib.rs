@@ -3874,6 +3874,72 @@ impl Line {
         }
     }
 
+    /// The line with none of its elements (routes, alignments, alignment
+    /// points, structures, sections, jumpers, spacers, the old alignment):
+    /// its settings only, copied — never its elements, so a part of a line
+    /// costs what it holds (country server, phase 6). Every field is named:
+    /// a new one must be thought about here.
+    pub fn settings_only(&self) -> Line {
+        let Line {
+            format,
+            version,
+            name,
+            crs,
+            height_datum,
+            alignment: _,
+            routes: _,
+            alignments: _,
+            alignment_points: _,
+            structures: _,
+            sections: _,
+            jumpers: _,
+            spacers: _,
+            systems,
+            circuits,
+            display,
+            creep_stretch,
+            bimetallic,
+            solver,
+            defaults,
+            circuit_starts,
+            structure_loads,
+            structure_groups,
+            electrical,
+            reference,
+            feet_state,
+            condition_cases,
+        } = self;
+        Line {
+            format: format.clone(),
+            version: *version,
+            name: name.clone(),
+            crs: crs.clone(),
+            height_datum: height_datum.clone(),
+            alignment: Vec::new(),
+            routes: Vec::new(),
+            alignments: Vec::new(),
+            alignment_points: Vec::new(),
+            structures: Vec::new(),
+            sections: Vec::new(),
+            jumpers: Vec::new(),
+            spacers: Vec::new(),
+            systems: systems.clone(),
+            circuits: circuits.clone(),
+            display: display.clone(),
+            creep_stretch: creep_stretch.clone(),
+            bimetallic: *bimetallic,
+            solver: *solver,
+            defaults: *defaults,
+            circuit_starts: circuit_starts.clone(),
+            structure_loads: structure_loads.clone(),
+            structure_groups: structure_groups.clone(),
+            electrical: *electrical,
+            reference: reference.clone(),
+            feet_state: feet_state.clone(),
+            condition_cases: condition_cases.clone(),
+        }
+    }
+
     /// Drops the circuit starts that are no section's point, and those
     /// given twice (files written before the starts followed deletions);
     /// nothing physical depends on them.

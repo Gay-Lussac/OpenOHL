@@ -67,6 +67,7 @@ use std::fmt;
 
 use ohl_session::collab::Grant;
 use ohl_session::versions::Choices;
+use ohl_session::working_set::{ExtentSummary, Pick, RouteDetail, Rows, WorkingSetSpec};
 use ohl_session::{Applied, Command, Kind, Role, Session, SessionError};
 use serde::{Deserialize, Serialize};
 
@@ -682,6 +683,12 @@ pub enum ClientMsg {
         /// `since`): no copy is sent.
         #[serde(default)]
         held: bool,
+        /// Phase 6: the working set it follows as a partial replica (in
+        /// place of `model`): its replica is sent as a project file (unless
+        /// `held`: then it says what it holds with [`ClientMsg::Hold`]),
+        /// then the rows that change ([`ServerMsg::Rows`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        working_set: Option<WorkingSetSpec>,
     },
     /// The routes and tiles a client of a network follows from now on (in
     /// place of the last ones): tiles new to it come as packages at their
@@ -712,6 +719,87 @@ pub enum ClientMsg {
         #[serde(default = "main_line")]
         line: String,
     },
+    /// Phase 6: works out the working set of `picks` on `model`, snapped
+    /// out to whole tension sections, to show it before it is confirmed
+    /// (answered with [`ServerMsg::Extent`] of the same id; nothing kept).
+    Pick {
+        /// Chosen by the client.
+        id: u64,
+        /// The model (line).
+        model: String,
+        /// What was picked.
+        picks: Vec<Pick>,
+    },
+    /// Phase 6: a client holding a replica follows working set `spec` from
+    /// now on (a route added, a part taken away): answered with the rows
+    /// that come and go ([`ServerMsg::Rows`]). On the same model.
+    SetWorkingSet {
+        /// The working set.
+        spec: WorkingSetSpec,
+    },
+    /// Phase 6: a replica joining again (a join with `working_set` and
+    /// `held`): what it holds, each object with its hash
+    /// ([`ohl_session::working_set::object_hash`]); answered with the rows
+    /// that differ.
+    Hold {
+        /// Kind, id, hash.
+        objects: Vec<(Kind, String, u64)>,
+    },
+    /// Phase 6: saves working set `spec` under its name for this user
+    /// (answered with [`ServerMsg::WorkingSets`]).
+    SaveWorkingSet {
+        /// The working set, named.
+        spec: WorkingSetSpec,
+    },
+    /// Phase 6: deletes this user's working set `name` (answered with
+    /// [`ServerMsg::WorkingSets`]).
+    DeleteWorkingSet {
+        /// Its name.
+        name: String,
+    },
+    /// Phase 6: this user's saved working sets
+    /// ([`ServerMsg::WorkingSets`]).
+    WorkingSets,
+    /// Phase 6: a route's structures with their stations, to pick a part
+    /// of it ([`ServerMsg::RouteDetail`]).
+    RouteDetail {
+        /// The model.
+        model: String,
+        /// The route.
+        route: String,
+    },
+}
+
+/// Rows a partial replica takes to follow its model (phase 6).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RowsMsg {
+    /// The model.
+    pub model: String,
+    /// The stream's position the replica holds once they are taken.
+    pub at: Position,
+    /// Who made the change (none: the working set changed, or a replica
+    /// joining again).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// The change in words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub what: Option<String>,
+    /// The rows.
+    pub rows: Rows,
+    /// The working set followed from now on, when it changed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec: Option<WorkingSetSpec>,
+}
+
+/// A working set saved (phase 6).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedSet {
+    /// Its name, model and picks.
+    pub spec: WorkingSetSpec,
+    /// The routes its extent was on when saved.
+    pub routes: Vec<String>,
+    /// When it was saved.
+    pub time: String,
 }
 
 /// Server → client.
@@ -815,6 +903,31 @@ pub enum ServerMsg {
         /// More than a catch-up carries: read the model or tiles again.
         #[serde(default)]
         incomplete: bool,
+    },
+    /// Phase 6: the working set picked, snapped (or why not), for
+    /// [`ClientMsg::Pick`] of the same id.
+    Extent {
+        /// The pick's id.
+        id: u64,
+        /// The model.
+        model: String,
+        /// The working set in numbers, or why not.
+        result: Result<ExtentSummary, String>,
+    },
+    /// Phase 6: rows a partial replica takes (after a change of its model,
+    /// a change of its working set, or when it joined again).
+    Rows(Box<RowsMsg>),
+    /// Phase 6: the user's saved working sets.
+    WorkingSets {
+        /// By name.
+        sets: Vec<SavedSet>,
+    },
+    /// Phase 6: a route's structures with their stations.
+    RouteDetail {
+        /// The model.
+        model: String,
+        /// The route, or why not.
+        result: Result<RouteDetail, String>,
     },
 }
 
@@ -1318,3 +1431,5 @@ mod points_tests;
 mod security_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(all(test, feature = "network"))]
+mod working_set_tests;
