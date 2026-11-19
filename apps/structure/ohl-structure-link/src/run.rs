@@ -875,6 +875,9 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             Ok(mut m) => {
                 // Which form the member ends were taken in (2026-11-11).
                 run.notes.extend(m.joint_use.note());
+                // The bolt grades set on members' bolts (version 21):
+                // which, set by whom, from where (owner 2026-11-19).
+                run.notes.extend(m.bolt_grade_notes.iter().cloned());
                 // The self-weight: the counted mass where every joint is
                 // defined, else the dead-load factor (stage 4.6).
                 if t.model.is_none() {

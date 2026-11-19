@@ -524,6 +524,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = model.joint_use.note() {
             println!("  {note}");
         }
+        for note in &model.bolt_grade_notes {
+            println!("  {note}");
+        }
         match &plugin {
             None => println!(
                 "  {}",

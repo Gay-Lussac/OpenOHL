@@ -222,6 +222,8 @@ pub struct StructureApp {
     pub layout_window: Option<crate::layout_window::LayoutWindow>,
     /// The Orient angles window ([`crate::orient_window`]).
     pub orient_window: Option<crate::orient_window::OrientWindow>,
+    /// The Bolt grade window ([`crate::bolt_grade_window`]).
+    pub bolt_grade_window: Option<crate::bolt_grade_window::BoltGradeWindow>,
     /// The libraries' stamp the layout's follow of edits was set with.
     pub follow_stamp: Option<u64>,
     /// The joints coloured by how complete their details are (View › Display options ›
@@ -310,6 +312,7 @@ impl StructureApp {
             quantities: Default::default(),
             layout_window: None,
             orient_window: None,
+            bolt_grade_window: None,
             follow_stamp: None,
             joint_colors: false,
             clash_colors: false,
@@ -598,10 +601,12 @@ impl StructureApp {
             || self.joint_tools.continuous.is_some()
             || self.layout_window.is_some()
             || self.orient_window.is_some()
+            || self.bolt_grade_window.is_some()
             || self.inventory;
         self.confirm = None;
         self.layout_window = None;
         self.orient_window = None;
+        self.bolt_grade_window = None;
         self.joints.ask_open = None;
         self.joint_tools.offer = None;
         self.joint_tools.continuous = None;
@@ -1200,6 +1205,7 @@ impl eframe::App for StructureApp {
         self.continuous_window(&ctx);
         self.layout_window(&ctx);
         self.orient_window(&ctx);
+        self.bolt_grade_window(&ctx);
         self.status_bar(ui);
         self.notices.observe(&self.message, ctx.input(|i| i.time));
         // Above the 3D view's hotbar: a notice never covers a tool (the

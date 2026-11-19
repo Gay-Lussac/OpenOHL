@@ -640,6 +640,62 @@ fn the_default_bolt_minimums_are_edited() {
     assert_eq!(read(&doc).default_bolt_minimums, None);
 }
 
+/// The bolt grade command's edit (owner 2026-11-19): SIA 263 Table 2's 8.8
+/// on two members writes its `[[bolt_grade]]` with its source and the
+/// members' `bolt_grade`, raises the file to version 21 and reads back; set
+/// again it changes nothing; another grade on one member adds its record;
+/// taken away, the records no member names go (the version kept).
+#[test]
+fn a_bolt_grade_is_set_on_members() {
+    let mut doc: DocumentMut = format!("format = \"ohl-structure\"\nversion = 8\n{PYLON}")
+        .parse()
+        .unwrap();
+    let g88 = ohl_structures::bolts::StandardGrade::sia263("8.8")
+        .unwrap()
+        .record();
+    // No member of the file named: nothing written, the version kept.
+    let r = set_bolt_grade(&mut doc, &["M9".to_owned()], Some(&g88)).unwrap();
+    assert_eq!((r.changed, r.missing), (0, 1));
+    let text = doc.to_string();
+    assert!(
+        !text.contains("bolt_grade") && text.contains("version = 8"),
+        "{text}"
+    );
+    let both = ["M1".to_owned(), "M2".to_owned(), "M9".to_owned()];
+    let r = set_bolt_grade(&mut doc, &both, Some(&g88)).unwrap();
+    assert_eq!((r.changed, r.unchanged, r.missing), (2, 0, 1));
+    let text = doc.to_string();
+    assert!(text.contains("version = 21"), "{text}");
+    assert!(text.contains("ultimate = \"800 MPa\""), "{text}");
+    assert!(
+        text.contains("source = \"SIA 263:2013, 3.4.2, Table 2\""),
+        "{text}"
+    );
+    let t = read(&doc);
+    assert_eq!(t.member_bolt_grade("M2"), Some(&g88));
+    let again = set_bolt_grade(&mut doc, &both, Some(&g88)).unwrap();
+    assert_eq!((again.changed, again.unchanged), (0, 2));
+    let g109 = ohl_structures::bolts::StandardGrade::sia263("10.9")
+        .unwrap()
+        .record();
+    set_bolt_grade(&mut doc, &["M1".to_owned()], Some(&g109)).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.bolt_grades.len(), 2);
+    assert_eq!(t.member_bolt_grade("M1").unwrap().grade, "10.9");
+    set_bolt_grade(&mut doc, &["M2".to_owned()], None).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.bolt_grades.len(), 1, "8.8 named by no member: gone");
+    assert_eq!(t.member_bolt_grade("M2"), None);
+    set_bolt_grade(&mut doc, &["M1".to_owned()], None).unwrap();
+    let text = doc.to_string();
+    assert!(!text.contains("bolt_grade"), "{text}");
+    assert!(text.contains("version = 21"), "{text}");
+    let mut bad = g88.clone();
+    bad.ultimate = ohl_core::units::Stress::from_si(0.0);
+    assert!(set_bolt_grade(&mut doc, &both, Some(&bad)).is_err());
+    assert!(!doc.to_string().contains("bolt_grade"));
+}
+
 /// A member's analysis fields typed (one member, or every member of a
 /// group), read back by the structure; empty removes them.
 #[test]

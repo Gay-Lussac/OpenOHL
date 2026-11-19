@@ -209,6 +209,11 @@ pub struct MemberDesign {
     /// member's first joint, at its second; none: the member's data at
     /// that end, as before.
     pub ends: [Option<EndDesign>; 2],
+    /// The bolt grade set on its bolts (a structure file's `[[member]]
+    /// bolt_grade`, version 21, owner 2026-11-19;
+    /// [`crate::member_ends::apply_bolt_grades`]): its ultimate strength
+    /// and name put on the member's and its ends' bolts.
+    pub bolt_grade: Option<ohl_structures::bolts::BoltGrade>,
 }
 
 /// What a member end bolts onto.
@@ -259,6 +264,10 @@ pub struct EndBolts {
     pub threads_in_shear: Option<bool>,
     /// Their grade (the library's).
     pub grade: Option<Grade>,
+    /// The bolt's ultimate tensile load F_u × A_s, N (the library's
+    /// `tension_capacity`; owner 2026-11-19) — dropped where a grade set on
+    /// the member's bolts differs from the library's.
+    pub tension_capacity: Option<f64>,
 }
 
 /// One member end's connection, SI units: only what it gives (all
@@ -432,6 +441,7 @@ impl DesignFile {
                 end_distance: positive("end_distance", self.end_distance.map(Length::si))?,
                 spacing: positive("spacing", self.spacing.map(Length::si))?,
                 ends: [None, None],
+                bolt_grade: None,
             },
             self.crossing.clone(),
         ))

@@ -132,6 +132,9 @@ pub struct BoltTension {
     pub capacity: Option<f64>,
     /// The flanges it bends.
     pub tees: Vec<Tee>,
+    /// The plates it bends (2026-11-19): flanges without a web — the
+    /// whole moment of the pull at the bolt line ([`plate_prying`]).
+    pub plates: Vec<Tee>,
     /// The plies it pulls whose bending is not known, in words.
     pub unknown: Vec<String>,
 }
@@ -218,6 +221,78 @@ pub fn prying(
     (q, by, checks, not_safe)
 }
 
+/// The prying force on a bolt (diameter `d`, hole `d0`) pulled by `t`
+/// through plates `plates` (2026-11-19, the owner's decision of that day:
+/// a gusset plate's own prying and bending by the same T-stub model as an
+/// angle's flange): a plate is a flange **without a web** — the pull
+/// reaches it through the bolts of the members on it, which hold it
+/// against no turning — so the model's moment at the web is taken as none
+/// and the whole moment of the pull is at the bolt line (Kulak, Fisher &
+/// Struik's Eq. 17.8 with no moment at the web; their Eq. 17.11 with
+/// δα/(1 + δα) at its largest, 1): Q = T b′/a′, twice a flange's with α = δ = 1
+/// (on the safe side), with the same a′ = a + d/2, b′ = b − d/2, a ≤ 1.25
+/// b. Its bending: the moment at the bolt line on the net section, T b′ ≤
+/// δ w t² f_y / 4 γ_M1 (δ = 1 − d₀/w). Returns as [`prying`].
+pub fn plate_prying(
+    t: f64,
+    d: f64,
+    d0: f64,
+    plates: &[Tee],
+) -> (f64, Option<String>, Vec<PlateCheck>, Vec<String>) {
+    let mut q = 0.0;
+    let mut by = None;
+    let mut checks = Vec::new();
+    let mut not_safe = Vec::new();
+    for x in plates {
+        let a = x.edge.min(1.25 * x.web.max(0.0));
+        let a1 = a + d / 2.0;
+        let b1 = x.web - d / 2.0;
+        if b1 <= 0.0 {
+            not_safe.push(format!(
+                "the bolt within half a diameter of where the pull reaches plate {}: the local \
+                 prying of its head (Kulak et al. Fig. 17.19) not covered",
+                x.part
+            ));
+            continue;
+        }
+        let qi = t * b1 / a1;
+        if qi > q {
+            q = qi;
+            by = Some(format!(
+                "plate {} (no web: Q = T b′/a′): a′ {:.0} mm, b′ {:.0} mm",
+                x.part,
+                mm(a1),
+                mm(b1)
+            ));
+        }
+        let Some(fy) = x.fy else {
+            not_safe.push(format!(
+                "the bending of plate {} under the bolt's pull not checked (no yield strength)",
+                x.part
+            ));
+            continue;
+        };
+        let delta = (1.0 - d0 / x.width.max(1e-9)).max(0.0);
+        checks.push(PlateCheck {
+            what: format!(
+                "bending of plate {} under the bolt's pull {:.1} kN (T-stub of Struik and de \
+                 Back without a web, Kulak et al. Eq. 17.8 with no moment at the web: T b′ ≤ δ w \
+                 t² f_y / (4 γ_M1 {}); b′ {:.0} mm, w {:.0} mm, δ {:.2})",
+                x.part,
+                t / 1000.0,
+                gamma_m1(),
+                mm(b1),
+                mm(x.width),
+                delta
+            ),
+            demand: t * b1,
+            resistance: delta * x.width * x.thickness.powi(2) * fy / 4.0 / gamma_m1(),
+            distance: false,
+        });
+    }
+    (q, by, checks, not_safe)
+}
+
 /// The tension checks of bolt `b` pulled by `t` (N) with its shear force
 /// `v` (N) by SIA 263: the prying force from its flanges ([`prying`];
 /// 6.2.2.4), its tension (Table 16, (77)) and its shear and tension
@@ -229,9 +304,14 @@ pub fn tension_checks(b: &Bolt, bt: &BoltTension, t: f64, v: f64) -> Checked {
         .hole
         .or_else(|| sia263::standard_hole(d))
         .unwrap_or(d + 0.003);
-    let (q, by, flanges, said) = prying(t, d, d0, &bt.tees);
+    let (qf, byf, flanges, said) = prying(t, d, d0, &bt.tees);
     out.checks.extend(flanges);
     out.not_safe.extend(said);
+    // The plates' prying (2026-11-19): the largest of all governs.
+    let (qp, byp, plates, said) = plate_prying(t, d, d0, &bt.plates);
+    out.checks.extend(plates);
+    out.not_safe.extend(said);
+    let (q, by) = if qp > qf { (qp, byp) } else { (qf, byf) };
     for u in &bt.unknown {
         out.not_safe.push(format!(
             "the prying of {u} under the bolt's pull not worked out (its bending not known)"
@@ -652,6 +732,40 @@ mod tests {
         assert!((shear.resistance - 0.6 * 800e6 * 0.6 * area / 1.25).abs() < 1e-6);
     }
 
+    /// A plate's prying without a web (2026-11-19; invented, by hand, as the
+    /// ASCE 10-97 plugin's test): an M16 8.8 pulled by 20 kN through a 10 mm
+    /// plate (S355), a = 40, b = 60 mm, w 50 mm: a′ = 48, b′ = 52 mm, Q = 20
+    /// × 52 / 48 = 21.667 kN, B = 41.667 kN against (77)'s 69.49 kN. The
+    /// plate with d₀ 18 mm (Table 17): δ = 1 − 18/50 = 0.64, δ w t² f_y /
+    /// (4 γ_M1) against T b′ = 1040 N m.
+    #[test]
+    fn a_plates_prying_without_a_web() {
+        let bt = BoltTension {
+            capacity: None,
+            tees: Vec::new(),
+            plates: vec![Tee {
+                part: "G1".into(),
+                thickness: 0.010,
+                fy: Some(355e6),
+                edge: 0.040,
+                web: 0.060,
+                width: 0.050,
+            }],
+            unknown: Vec::new(),
+        };
+        let c = tension_checks(&m16(), &bt, 20e3, 0.0);
+        let find = |w: &str| c.checks.iter().find(|x| x.what.starts_with(w)).unwrap();
+        let q = 20e3 * 0.052 / 0.048;
+        let area = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+        let rt = 0.9 * 800e6 * 0.6 * area / 1.25;
+        let pull = find("bolt tension");
+        assert!((pull.demand - (20e3 + q)).abs() < 1e-6 && (pull.resistance - rt).abs() < 1e-6);
+        let bend = find("bending of plate G1");
+        let r = 0.64 * 0.050 * 0.010f64.powi(2) * 355e6 / 4.0 / gamma_m1();
+        assert!((bend.resistance - r).abs() < 1e-9 && (bend.demand - 1040.0).abs() < 1e-9);
+        assert!(c.not_safe.is_empty(), "{:?}", c.not_safe);
+    }
+
     /// A bolt pulled through an angle's flange (invented, by hand; as the
     /// ASCE 10-97 plugin's test): an M16 8.8 pulled by 20 kN through a 60 ×
     /// 6 mm leg (S355), a = 30, b = 24 mm, w 32 mm: Q = 20 × 16 / (2 × 38)
@@ -671,6 +785,7 @@ mod tests {
                 web: 0.024,
                 width: 0.032,
             }],
+            plates: Vec::new(),
             unknown: Vec::new(),
         };
         let c = tension_checks(&m16(), &bt, 20e3, 30e3);

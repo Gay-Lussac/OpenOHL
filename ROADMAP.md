@@ -1659,8 +1659,19 @@ Six stages, the questions per stage and per detail level:
   assumed or not checked, said: a member's own gauge eccentricity in its
   plane as a moment on its bolts, the plies' offsets in the levers, the
   joint's own loads through its plates, the holding bolts of a welded
-  plate's several plates, a plate's own prying and bending under bolts in
-  tension. To build: **the joint layout proposing "continuous"** for
+  plate's several plates (a plate's own prying and bending under bolts in
+  tension: built since). Decided 2026-11-19 and built the same day (built, in active
+  development, not approved yet): a **bolt grade set by command**
+  (OHL-Structure's Design › Bolt grade…: the members picked, a group's or
+  the whole tower; SIA 263:2013 Table 2's strengths, recorded in the
+  structure file as set by command with their source, structure file
+  version 21; no default grade — a bolt without strengths stays said not
+  on the safe side; [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/bolt-grade.md));
+  a bolt library's `tension_capacity` defined as the bolt's ultimate
+  tensile load F_u × A_s; **a gusset plate's own prying and bending** by
+  the same T-stub model, the plate a flange without a web (the additive
+  plugin interface `joint-check-groups-prying`), no longer said not
+  worked out. To build: **the joint layout proposing "continuous"** for
   in-line pieces, for the user to confirm (after the layout's J1–J2 work
   is merged, O44 J9); a window for a plate's own bolts onto the leg
   (typed in the file until then), and those bolts drawn in the 3D view,

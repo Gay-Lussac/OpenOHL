@@ -460,10 +460,23 @@ impl StructureApp {
                             "Shear per plane, threads out",
                             x.shear_capacity_shank.map(|f| kn(f.si())),
                         );
-                        row("Tension", x.tension_capacity.map(|f| kn(f.si())));
                         row("Grip", x.grip.map(|g| mm(g.si())));
                         row("Mass", x.mass_kg.map(|m| format!("{m:.3} kg")));
                         row("Description", x.description.clone());
+                        // What the library's tension capacity is (owner
+                        // 2026-11-19), said beside it.
+                        if let Some(f) = x.tension_capacity {
+                            ohl_ui::tool_window::label(
+                                ui,
+                                "Tension capacity",
+                                "The bolt's ultimate tensile load: its ultimate tensile strength \
+                                 × its stress area, F_u × A_s (owner 2026-11-19) — not a design \
+                                 value: ASCE 10-97 4.3.3 takes 0.6 of it, SIA 263 (77) 0.9 of it \
+                                 over γ_M2.",
+                            );
+                            ui.label(format!("{} (F_u × A_s)", kn(f.si())));
+                            ui.end_row();
+                        }
                     });
             } else if let Some(id) = &b.bolt {
                 crate::app::error_label(ui, format!("bolt {id}: in no bolt library"));

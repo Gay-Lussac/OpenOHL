@@ -36,7 +36,9 @@
 //!   without it every group is [`not_checked_by`] the plugin. With the
 //!   bolts' tensions (prying), through its optional
 //!   `joint-check-groups-tension` export instead when it has it
-//!   ([`check_joint_groups_tension`]).
+//!   ([`check_joint_groups_tension`]); with the plates' prying too, through
+//!   its optional `joint-check-groups-prying` export when it has it
+//!   (2026-11-19, [`check_joint_groups_prying`]).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -49,6 +51,7 @@ use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
 use ohl_plugins::joint_check_full as full;
 pub use ohl_plugins::joint_check_groups as groups;
+pub use ohl_plugins::joint_check_groups_prying as prying;
 pub use ohl_plugins::joint_check_groups_tension as tension;
 use ohl_plugins::joint_check_moments as mom;
 use ohl_structures::connections::WeldKind;
@@ -324,6 +327,98 @@ pub fn check_joint_groups_tension(
             GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
             false,
         ),
+    }
+}
+
+/// How far a plugin checked the bolts in tension
+/// ([`check_joint_groups_prying`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TensionChecked {
+    /// Not at all: no `joint-check-groups-tension` export (the caller says
+    /// the bolts in tension are not checked).
+    No,
+    /// With the flanges' prying, not the plates' (no
+    /// `joint-check-groups-prying` export: the caller says the plates'
+    /// prying is not worked out).
+    Flanges,
+    /// With the flanges' and the plates' prying.
+    Plates,
+}
+
+/// `g` without its plates: each plate a bolt bends named among the plies
+/// whose bending is not known ("plate G1"), for a plugin without the
+/// `joint-check-groups-prying` export.
+pub fn without_plates(g: &prying::GroupPrying) -> tension::GroupTension {
+    tension::GroupTension {
+        id: g.id,
+        bolts: g
+            .bolts
+            .iter()
+            .map(|b| tension::BoltTension {
+                tension_capacity: b.tension_capacity,
+                tees: b.tees.clone(),
+                unknown: b
+                    .unknown
+                    .iter()
+                    .cloned()
+                    .chain(b.plates.iter().map(|x| format!("plate {}", x.part)))
+                    .collect(),
+            })
+            .collect(),
+        loads: g.loads.clone(),
+    }
+}
+
+/// The joint bolt groups of `input` with their bolts in tension and the
+/// plates they bend (`prying`) checked by the plugin `p` names (2026-11-19,
+/// the owner's decision of that day): through its
+/// `joint-check-groups-prying` export when it has it, else as
+/// [`check_joint_groups_tension`] with each plate among the plies whose
+/// bending is not known ([`without_plates`]); one call counted either way.
+pub fn check_joint_groups_prying(
+    p: &PluginMethod,
+    input: &groups::GroupInput,
+    prying: &[prying::GroupPrying],
+) -> (GroupsChecked, TensionChecked) {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return (GroupsChecked::NotChecked(e), TensionChecked::No),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return (
+                GroupsChecked::NotChecked(format!("the plugin host does not start: {e}")),
+                TensionChecked::No,
+            );
+        }
+    };
+    let mut with = input.clone();
+    with.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    match host.check_joint_groups_prying(&dir, &p.method, &with, prying) {
+        Ok(Some(r)) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (GroupsChecked::Results(r), TensionChecked::Plates)
+        }
+        Ok(None) => {
+            let tension: Vec<tension::GroupTension> = prying.iter().map(without_plates).collect();
+            let (c, t) = check_joint_groups_tension(p, input, &tension);
+            (
+                c,
+                if t {
+                    TensionChecked::Flanges
+                } else {
+                    TensionChecked::No
+                },
+            )
+        }
+        Err(e) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (
+                GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+                TensionChecked::No,
+            )
+        }
     }
 }
 
