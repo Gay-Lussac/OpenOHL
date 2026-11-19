@@ -268,6 +268,35 @@ attachement point)"; built, in active development, not approved yet;
   millimetre there (a translated one exactly: the point is put on the
   millimetre). No computed result and no file format changes.
 
+## 2026-11-19 (joint layout: welded plates, splices)
+
+**The owner's steps 4 and 1c** (owner 2026-11-18, the method; brief of
+2026-11-19, "report only"; built, in active development, not approved
+yet; [theory](../theory/joint-layout.md), [user guide](../user-guide/joint-layout.md)):
+
+- **A welded plate** for an end no roll lays flat: a plate in its own
+  plane welded to the flat plate of its face (two plates of the file,
+  the weld's throat and length written — the layout's choice of a weld
+  from both sides, 0.4 × the plates' thickness each side, at least 3 mm —
+  so the existing weld check is made; the checks unchanged). Laid out only
+  where the member's axis lies at most one plate thickness farther out of
+  the flange than on a flat plate: the analysis keeps every axis through
+  the work point, so a larger joint eccentricity would be left out
+  silently — **on the safe side**: a hand detail, said. Whether to allow
+  more (and take it into the analysis) is a question to the owner.
+- **A splice of covers** for two angles in line of other sections that do
+  not nest, both with bolts, nothing else bolting onto them at the joint
+  (step 1c); the bolts' shear planes from the covers, a count given still
+  winning. With bracing on them there the splice is not made (its bolts
+  would pass through a cover: by hand) — measured, it cost joints laid out
+  before.
+- **Leg splices of one section** stay as they were drawn, said: where the
+  splice is is not known from the data (the members' design bolts at both
+  ends) — never a splice bolt check dropped.
+- **No new setting**; two starting values of the program's, not a
+  standard's: at most 75° off for a plate in its own plane, and the flat
+  plate reaching the flange over half a square of its width.
+
 ## 2026-11-18 (joint layout tuned on real towers)
 
 **The automatic joint layout tuned on two real towers** (owner,

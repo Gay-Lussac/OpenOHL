@@ -11,12 +11,16 @@
 //!
 //! The order is the owner's (2026-11-18): everything pulled back (the run
 //! takes its values out first), the biggest profiles in line joined first
-//! ([`joins_of`]: one part, or the smaller nested in the bigger), then the
-//! other members by class and size, each bolted directly onto a flange of
-//! the bigger where its bolts land, else onto a plate on that flange; an
-//! end no roll lays flat (a welded plate in its own plane) is left for a
-//! hand detail. The run names what an end bolts onto first
-//! ([`hosts_to_name`]).
+//! ([`joins_of`]: one part, the smaller nested in the bigger, or — other
+//! sections that do not nest, step 1c, 2026-11-19 — a splice of covers),
+//! then the other members by class and size, each bolted directly onto a
+//! flange of the bigger where its bolts land, else onto a plate on that
+//! flange; an end no roll lays flat onto a plate in its own plane welded
+//! to that flat plate (step 4, 2026-11-19: [`OwnPlane`]), where that puts
+//! it at most a plate's thickness farther out of the flange than a flat
+//! plate would, else a hand detail. The run names what an end bolts onto
+//! first ([`hosts_to_name`]); a pair of one section in line with bolts is
+//! a splice whose place is not known, said ([`splice_unknown`]).
 //!
 //! For each member end bolting by one angle leg onto the flange of a
 //! member at the joint (the leg, a chord, a diagonal a redundant meets),
@@ -48,10 +52,24 @@
 //! member's design data); else the connection preset for its class; else
 //! the bolt picked once, two in one gauge line — those are *provisional*.
 //! Members on both sides of one plate are never laid out automatically.
+//!
+//! **Step 4, a welded plate** (owner 2026-11-18: "if the angle at which the
+//! profile is coming really doesn't allow for it then add a weleded plate
+//! that is also bolted to the other profiles with the other part of the
+//! plate"): an end whose leg bolted lies more than [`FLAT_OFF`] off the
+//! flange is laid out on the flange in whose plane its axis lies (else the
+//! other; its inner face when it comes from the flange's other side) as
+//! its footprint on that plane; its plate lies in its own plane from its
+//! bolts down to the line where that plane meets the flat plate's face
+//! (the seam), the member lifted along the flange's normal to lie on it;
+//! the flat plate covers the seam and the flange and keeps to its side of
+//! the seam; the weld both sides, its throat [`weld_throat`].
 
 use std::collections::BTreeMap;
 
-use crate::joints::{Arrival, BOLT_DRAWN, FLAT_OFF, JointDetail, Source, host_flange};
+use crate::joints::{
+    Arrival, BOLT_DRAWN, FLAT_OFF, JointDetail, Source, host_flange, host_flange_along,
+};
 use ohl_structures::connections::Face;
 
 /// The gap between the steel of members that do not bolt to each other,
@@ -162,11 +180,11 @@ impl BoltArea {
     }
 }
 
-/// What a member end's leg needs of the flange it bolts onto: the code's
-/// minimum edge distance of a bolt in a part of thickness `t` (m), where no
-/// code gives one the structure's default minimum; none (no bolts of known
-/// diameter): the end's own edge distance, else the default minimum.
-pub type EdgeRule<'a> = &'a dyn Fn(&Arrival, f64) -> Option<f64>;
+/// What a member end's bolts need of a part of thickness `t` (m) they pass
+/// through: the code's minimum edge and end distances (edge, end), where no
+/// code gives them the structure's default minimums; none (no bolts of
+/// known diameter): the end's own, else the default minimums.
+pub type EdgeRule<'a> = &'a dyn Fn(&Arrival, f64) -> Option<(f64, f64)>;
 
 /// Where a member end is to bolt.
 #[derive(Debug, Clone, PartialEq)]
@@ -218,6 +236,54 @@ pub struct PlatePlan {
     /// by half the gap, clear of the other face's plates and members. None:
     /// a member on it leaves the joint over the heel (a crossing), not cut.
     pub heel: Option<([f64; 3], [f64; 3])>,
+    /// A plate in its member's own plane, welded to a flat plate of this
+    /// plan (the owner's step 4, 2026-11-19); none: a flat plate on the
+    /// flange (step 2b).
+    pub own: Option<OwnPlane>,
+    /// A flat plate with plates in their members' own planes welded to
+    /// it: what its outline must also cover and keep to.
+    pub reach: Option<Reach>,
+}
+
+/// What a flat plate's outline must cover and keep to where plates in
+/// their members' own planes are welded to it (step 4).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reach {
+    /// Points it must cover (structure axes, m, on its face away from the
+    /// flange): the seams and the flange under them.
+    pub points: Vec<[f64; 3]>,
+    /// Its normal from that face into the flange (unit).
+    pub normal: [f64; 3],
+    /// The side of each seam it keeps to: a point on the seam and, in its
+    /// plane, square to the seam towards the plate (unit).
+    pub keep_to: Vec<([f64; 3], [f64; 3])>,
+}
+
+/// A plate in its member's own plane (the owner's step 4, 2026-11-19: "if
+/// the angle at which the profile is coming really doesn't allow for it
+/// then add a welded plate that is also bolted to the other profiles with
+/// the other part of the plate"): its member's leg bolted onto it, its
+/// edge welded to the flat plate on the flange along the line where the
+/// two planes meet — a plate bent there, made of two plates welded.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnPlane {
+    /// The flat plate it is welded to ([`JointPlan::plates`]).
+    pub welded_to: usize,
+    /// Its outline (structure axes, m), in the face its member lies on.
+    pub outline: Vec<[f64; 3]>,
+    /// How far its member's leg bolted lies off the flange, degrees.
+    pub off: f64,
+    /// The member lifted off the flange along the flange's normal to lie
+    /// on it (drawing only), m.
+    pub lift: f64,
+    /// How much farther out of the flange its axis lies at its bolts than
+    /// on a flat plate of the same thickness, m.
+    pub out_more: f64,
+    /// The weld's throat, each side, m: welded from both sides along the
+    /// seam (partly penetrated, checked as fillet welds: SIA 263 6.3.3.5).
+    pub weld_size: f64,
+    /// The weld's length, both sides together, m.
+    pub weld_length: f64,
 }
 
 /// Two members in line through the joint joined (the owner's step 1,
@@ -228,10 +294,15 @@ pub struct PlatePlan {
 pub struct Join {
     /// The member whose end is written.
     pub member: String,
-    /// The member it runs on into, or is nested in.
+    /// The member it runs on into, or is nested in (spliced: the other).
     pub onto: String,
     /// How.
     pub how: JoinKind,
+    /// Spliced: the angles' legs its covers lie on (outer and inner on
+    /// each) and their thickness, m (the thicker member's leg); else none.
+    pub covers: Vec<ohl_structures::connections::CoverLeg>,
+    /// Spliced: the covers' thickness, m.
+    pub thickness: f64,
 }
 
 /// How two members in line are joined.
@@ -244,6 +315,10 @@ pub enum JoinKind {
     /// The smaller angle nested in the bigger one, bolted to it
     /// (`face = "nested"`).
     Nested,
+    /// Two angles of different sections that do not nest, each bolted
+    /// onto a splice of covers on both faces of its legs (`[[splice]]`;
+    /// the owner's step 1c, 2026-11-19).
+    Spliced,
 }
 
 /// The layout of one joint.
@@ -342,6 +417,55 @@ struct Strip {
     rank: (u8, i64, i64),
     /// Provisional bolts to give it.
     give: Option<BoltArea>,
+    /// No roll lays it flat here: onto a plate in its own plane, welded
+    /// to the flat plate on the flange (step 4). Its `lat` and `gauges`
+    /// are then where it is drawn with its gauge line through the work
+    /// point (no move needed for that).
+    tilted: Option<Tilted>,
+}
+
+/// A member end whose leg bolted lies off the flange (step 4), in 3D: from
+/// the work point, m, unit vectors.
+#[derive(Debug, Clone)]
+struct Tilted {
+    /// How far off, degrees.
+    off: f64,
+    /// Along it from the joint.
+    dir: [f64; 3],
+    /// Its bolts along it from where its steel stops (m, in 3D) and their
+    /// gauge lines.
+    bolts: Vec<(f64, usize)>,
+    /// Lengths along it on the flange's plane per metre along it.
+    lu: f64,
+    /// Half its length, m.
+    half: f64,
+    /// Its leg bolted's normal, towards its own side.
+    nb: [f64; 3],
+    /// Along its leg bolted from the heel to the toe.
+    across: [f64; 3],
+    /// Its heel drawn with its gauge line through the work point.
+    heel: [f64; 3],
+    /// Its axis there (at the joint).
+    axis: [f64; 3],
+    /// Its leg bolted's width, m.
+    width: f64,
+    /// Its gauges from the heel along `across`, m.
+    gauges: Vec<f64>,
+    /// Its sideways shift's direction (the data's, per metre moved along
+    /// the plane's `v`: `Strip::shift_per`).
+    shift_dir: [f64; 3],
+    /// Its shift written per metre moved along the plane's `v`.
+    shift_per: f64,
+    /// The edge and end distances its bolts keep in a plate of its leg's
+    /// thickness, m.
+    keep: (f64, f64),
+    /// Along the member it bolts onto (the flange's plane's x).
+    x3: [f64; 3],
+    /// Out of the flange's face it lies on (its inner one: into the
+    /// angle).
+    out: [f64; 3],
+    /// That face's heel line at the joint, from the work point.
+    face: [f64; 3],
 }
 
 impl Strip {
@@ -385,10 +509,14 @@ pub fn plan_joint_except(
         joint: j.id.clone(),
         ..Default::default()
     };
+    if let Some(w) = splice_unknown(j) {
+        plan.left.push(w);
+    }
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
     let mut strips: Vec<Strip> = Vec::new();
     // The members not laid out here: those in line with what they bolt
-    // onto, running on, no angle (their bolts are kept clear of).
+    // onto, running on, no angle, onto a splice (their bolts are kept
+    // clear of).
     let others: Vec<&str> =
         j.arrivals
             .iter()
@@ -398,6 +526,10 @@ pub fn plan_joint_except(
                     || a.onto.value.as_deref().and_then(find).is_some_and(|h| {
                         !(20.0..=160.0).contains(&angle_deg(a.direction, h.direction))
                     })
+                    || a.onto
+                        .value
+                        .as_deref()
+                        .is_some_and(|o| j.splices.iter().any(|s| s.id == o))
                     || except.contains_key(&a.member)
             })
             .map(|a| a.member.as_str())
@@ -449,21 +581,33 @@ pub fn plan_joint_except(
             }
         };
         // Laid flat first (Turn it flat): one lying off its face is the
-        // caller's to turn; still off, a hand detail.
-        if a.flat.is_some_and(|f| f.off > FLAT_OFF) {
-            let why = format!(
-                "{}: its bolted leg lies {:.0}° off the flange of {} it bolts onto and no turn \
-                 lays it flat at both its ends (a bent plate or a hand detail)",
-                a.member,
-                a.flat.map_or(0.0, |f| f.off),
-                host.member
-            );
-            plan.by_hand(&a.member, why);
-            continue;
-        }
-        match strip_of(j, a, host, s, edge, &others) {
+        // caller's to turn; still off, onto a plate in its own plane
+        // welded to a flat plate on the flange (the owner's step 4), else
+        // a hand detail.
+        let off = a.flat.filter(|f| f.off > FLAT_OFF).map(|f| f.off);
+        // Off: on the flange in whose plane its axis lies most nearly, else
+        // on the other.
+        let strip = strip_of(j, a, host, s, edge, &others, off, false).or_else(|e| {
+            if off.is_some() {
+                strip_of(j, a, host, s, edge, &others, off, true).map_err(|_| e)
+            } else {
+                Err(e)
+            }
+        });
+        match strip {
             Ok(x) => strips.push(x),
-            Err(e) => plan.by_hand(&a.member, format!("{}: {e}", a.member)),
+            Err(e) => {
+                let why = match off {
+                    Some(deg) => format!(
+                        "{}: its bolted leg lies {deg:.0}° off the flange of {} it bolts onto and \
+                         no turn lays it flat at both its ends; a welded plate in its own plane \
+                         does not fit: {e}",
+                        a.member, host.member
+                    ),
+                    None => format!("{}: {e}", a.member),
+                };
+                plan.by_hand(&a.member, why);
+            }
         }
     }
     // By plane, each in order.
@@ -499,9 +643,10 @@ pub fn plan_joint_except(
         // by the nut, and the edge distance from its toe.
         let lands = |p: &Placed| {
             let x = &strips[p.k];
-            bolt_ys(x, p)
-                .iter()
-                .all(|&y| y >= x.t + x.r + x.nut - 1e-9 && y <= x.width - x.edge + 1e-9)
+            x.tilted.is_none()
+                && bolt_ys(x, p)
+                    .iter()
+                    .all(|&y| y >= x.t + x.r + x.nut - 1e-9 && y <= x.width - x.edge + 1e-9)
         };
         let direct = placed.iter().all(lands);
         if !direct
@@ -545,9 +690,22 @@ pub fn plan_joint_except(
             let mut kept: Vec<Placed> = Vec::new();
             for mut p in placed {
                 let x = &strips[p.k];
-                let need = past_toe(x, &p, s.gap);
+                let mut need = past_toe(x, &p, s.gap);
+                // Step 4: its plate in its own plane past the flange's toe
+                // by half the gap too (under it nothing but air: its nuts
+                // and its edge low near the seam).
+                if let Some(t) = &x.tilted {
+                    match toe_clear(x, t, &p, need.max(p.cut), j.position, s.gap) {
+                        Ok(c) => need = need.max(c),
+                        Err(e) => {
+                            plan.by_hand(&x.member, tilted_why(x, t, &e));
+                            continue;
+                        }
+                    }
+                }
                 if need > p.cut + 1e-9 {
-                    let limit = s.pull_back.min(x.half - bolt_run(x));
+                    let limit = (s.pull_back * x.tilted.as_ref().map_or(1.0, |t| t.lu))
+                        .min(x.half - bolt_run(x));
                     if need > limit + 1e-9 {
                         let why = format!(
                             "{}: on a plate its bolts need it pulled back {:.0} mm to pass the \
@@ -557,6 +715,10 @@ pub fn plan_joint_except(
                             x.host,
                             limit * 1000.0
                         );
+                        let why = match &x.tilted {
+                            Some(t) => tilted_why(x, t, &why[x.member.len() + 2..]),
+                            None => why,
+                        };
                         plan.by_hand(&x.member, why);
                         continue;
                     }
@@ -564,12 +726,61 @@ pub fn plan_joint_except(
                 }
                 kept.push(p);
             }
+            // Step 4: each end off the flange onto a plate in its own
+            // plane, welded to the flat plate along the line their planes
+            // share; kept where that plate reaches the flange and every
+            // other end's bolts on it, in order.
+            let tf = |kept: &[Placed]| kept.iter().map(|p| strips[p.k].own_t).fold(0.0, f64::max);
+            let mut owns: Vec<(usize, OwnGeo)> = Vec::new();
+            let flat_ends: Vec<Placed> = kept
+                .iter()
+                .filter(|p| strips[p.k].tilted.is_none())
+                .cloned()
+                .collect();
+            let mut dropped: Vec<usize> = Vec::new();
+            for p in kept.iter().filter(|p| strips[p.k].tilted.is_some()) {
+                let x = &strips[p.k];
+                let t = x.tilted.as_ref().expect("tilted");
+                let geo =
+                    match own_geometry(t, cut3(t, p.cut), p.moved, t.face, t.out, tf(&kept), s.gap)
+                    {
+                        Ok(g) => g,
+                        Err(e) => {
+                            plan.by_hand(&x.member, tilted_why(x, t, &e));
+                            dropped.push(p.k);
+                            continue;
+                        }
+                    };
+                // Its axis at most a plate's thickness farther out of the
+                // flange than on a flat plate (its line of action off the
+                // work point about as a filler would put it; more is not
+                // in the analysis: a hand detail).
+                if geo.out_more > x.own_t + 1e-9 {
+                    let e = farther_out(geo.out_more, x.own_t);
+                    plan.by_hand(&x.member, tilted_why(x, t, &e));
+                    dropped.push(p.k);
+                    continue;
+                }
+                match own_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap) {
+                    Ok(()) => owns.push((p.k, geo)),
+                    Err(e) => {
+                        plan.by_hand(&x.member, tilted_why(x, t, &e));
+                        dropped.push(p.k);
+                    }
+                }
+            }
+            kept.retain(|p| !dropped.contains(&p.k));
             let placed = kept;
             if placed.is_empty() {
                 continue;
             }
+            let thickness = tf(&placed);
             let index = plan.plates.len();
-            let members: Vec<String> = placed.iter().map(|p| strips[p.k].member.clone()).collect();
+            let members: Vec<String> = placed
+                .iter()
+                .filter(|p| strips[p.k].tilted.is_none())
+                .map(|p| strips[p.k].member.clone())
+                .collect();
             let first = &strips[placed[0].k];
             // On an inner face the plate keeps clear of the angle's other
             // leg and its root (its heel line that far across).
@@ -578,17 +789,60 @@ pub fn plan_joint_except(
             } else {
                 first.heel
             };
-            plan.plates.push(PlatePlan {
+            let mut flat = PlatePlan {
                 members,
-                thickness: placed.iter().map(|p| strips[p.k].own_t).fold(0.0, f64::max),
+                thickness,
                 on: first.host.clone(),
                 heel: placed
                     .iter()
                     .all(|p| strips[p.k].u[1] > 1e-6)
                     .then_some((heel, first.across)),
-            });
+                own: None,
+                reach: None,
+            };
+            let mut own_plates: Vec<PlatePlan> = Vec::new();
+            for (k, _) in &owns {
+                let x = &strips[*k];
+                let t = x.tilted.as_ref().expect("tilted");
+                let p = placed.iter().find(|p| p.k == *k).expect("kept");
+                // Its final place with the flat plate's thickness.
+                let geo = own_geometry(t, cut3(t, p.cut), p.moved, t.face, t.out, thickness, s.gap)
+                    .expect("laid out before");
+                let abs = |q: [f64; 3]| add(q, j.position);
+                let r = flat.reach.get_or_insert_with(|| Reach {
+                    points: Vec::new(),
+                    normal: scale(t.out, -1.0),
+                    keep_to: Vec::new(),
+                });
+                r.points.extend(own_reach(x, &geo, thickness, j.position));
+                r.keep_to.push((abs(geo.seam_at), geo.side));
+                let seam = norm(sub(geo.seam[1], geo.seam[0]));
+                own_plates.push(PlatePlan {
+                    members: vec![x.member.clone()],
+                    thickness,
+                    on: x.host.clone(),
+                    heel: None,
+                    own: Some(OwnPlane {
+                        welded_to: index,
+                        outline: geo.outline.iter().map(|q| abs(*q)).collect(),
+                        off: t.off,
+                        lift: geo.lift,
+                        out_more: geo.out_more,
+                        weld_size: weld_throat(thickness),
+                        weld_length: round_to(2.0 * seam, 1e-4),
+                    }),
+                    reach: None,
+                });
+            }
+            plan.plates.push(flat);
             for p in &placed {
-                plate_of.insert(p.k, index);
+                if strips[p.k].tilted.is_none() {
+                    plate_of.insert(p.k, index);
+                }
+            }
+            for ((k, _), w) in owns.iter().zip(own_plates) {
+                plate_of.insert(*k, plan.plates.len());
+                plan.plates.push(w);
             }
             placed_all.extend(placed);
             continue;
@@ -602,11 +856,7 @@ pub fn plan_joint_except(
         // Concentric: the gauge line through the work point, drawn so (the
         // `gauge` mark), no shift; a move beyond it is the shift.
         let on_gauge = !x.hand_shift && x.shift_per.is_some();
-        let concentric = if on_gauge {
-            -x.gauges.first().copied().unwrap_or(0.0)
-        } else {
-            0.0
-        };
+        let concentric = concentric_of(x);
         let shift = if x.hand_shift {
             None
         } else {
@@ -622,7 +872,10 @@ pub fn plan_joint_except(
         }
         plan.ends.push(EndPlan {
             member: x.member.clone(),
-            cut: x.hand_cut.is_none().then_some(p.cut),
+            cut: x.hand_cut.is_none().then_some(match &x.tilted {
+                Some(t) => cut3(t, p.cut),
+                None => p.cut,
+            }),
             shift,
             off,
             on_gauge,
@@ -757,6 +1010,66 @@ fn host_in_plane<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arrival> {
         })
 }
 
+/// The phrase that says where a splice is is not known
+/// ([`splice_unknown`]).
+pub const SPLICE_UNKNOWN: &str = "where the splice is is not known";
+
+/// The biggest pair of angles in line through joint `j` (as
+/// [`joins_of`] takes it) when they have one section, are turned alike and
+/// have bolts — a splice whose place is not known (their bolts their
+/// members' design data, at both ends: spliced here, or one part through
+/// the joint and spliced elsewhere) — in words; none otherwise (2026-11-19:
+/// the leg splices of the private real towers, drawn lapped, their bolts
+/// in the bracing's way).
+pub fn splice_unknown(j: &JointDetail) -> Option<String> {
+    let free = |a: &Arrival| {
+        a.continuous.is_none()
+            && a.onto.source != Source::Given
+            && a.sits.source != Source::Given
+            && a.kind.source != Source::Given
+            && a.bolts.source != Source::Given
+            && !a.modelling
+    };
+    let angle = |a: &Arrival| a.profile.as_ref().and_then(|p| p.angle);
+    if j.arrivals.iter().any(|a| a.continuous.is_some()) {
+        return None;
+    }
+    let mut best: Option<(i64, f64, &Arrival, &Arrival)> = None;
+    for x in 0..j.arrivals.len() {
+        for y in x + 1..j.arrivals.len() {
+            let (a, b) = (&j.arrivals[x], &j.arrivals[y]);
+            let (Some(ga), Some(gb)) = (angle(a), angle(b)) else {
+                continue;
+            };
+            let dev = 180.0 - angle_deg(a.direction, b.direction);
+            if dev > 20.0 || !free(a) || !free(b) {
+                continue;
+            }
+            let size = ((ga.b + ga.h).min(gb.b + gb.h) * 1e6).round() as i64;
+            if best.is_none_or(|(s, d, _, _)| size > s || (size == s && dev < d)) {
+                best = Some((size, dev, a, b));
+            }
+        }
+    }
+    let (_, _, a, b) = best?;
+    let (pa, pb) = (a.profile.as_ref()?, b.profile.as_ref()?);
+    let alike = |u: [f64; 3], v: [f64; 3]| dot(u, v) > 0.9998;
+    let bolted = |z: &Arrival| z.bolts.value.as_ref().is_some_and(|v| v.count > 0);
+    (pa.section_id == pb.section_id
+        && alike(pa.axes[1], pb.axes[1])
+        && alike(pa.axes[2], pb.axes[2])
+        && (bolted(a) || bolted(b)))
+    .then(|| {
+        let (a, b) = if a.member <= b.member { (a, b) } else { (b, a) };
+        format!(
+            "{} and {}: in line, of one section, with bolts (a splice): {SPLICE_UNKNOWN} (their \
+             bolts may be their members' design data, at both ends) — drawn as given, lapped; \
+             give the splice here, or the two one part",
+            a.member, b.member
+        )
+    })
+}
+
 /// The owner's step 1 at joint `j` (2026-11-18): of the single angles
 /// running in line through it (within 20°), the biggest pair (the joint's
 /// base: the larger legs, then the nearest in line, then by id; none where
@@ -775,6 +1088,12 @@ fn host_in_plane<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arrival> {
 ///
 /// Only ends with nothing given of how they are joined (`kind`, `face`,
 /// `onto`, bolts given at the end), as the run takes them out first.
+///
+/// Two angles of one section in line, turned alike, with bolts (a splice,
+/// 2026-11-19): not joined — the bolts of a member's design data are at
+/// both its ends, so where the splice is (here, or the legs one part
+/// through this joint and spliced elsewhere) is not known; said
+/// ([`splice_unknown`]), drawn as before.
 pub fn joins_of(j: &JointDetail) -> Vec<Join> {
     let free = |a: &Arrival| {
         a.continuous.is_none()
@@ -819,7 +1138,7 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
     pairs.truncate(1);
     let mut used: Vec<usize> = Vec::new();
     let mut out = Vec::new();
-    for (_, x, y) in pairs {
+    for (dev, x, y) in pairs {
         if used.contains(&x) || used.contains(&y) {
             continue;
         }
@@ -831,6 +1150,22 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
         let (ga, gb) = (pa.angle.expect("an angle"), pb.angle.expect("an angle"));
         let bolted = |z: &Arrival| z.bolts.value.as_ref().is_some_and(|v| v.count > 0);
         let alike = |u: [f64; 3], v: [f64; 3]| dot(u, v) > 0.9998;
+        // No other end at the joint bolting onto them (or onto nothing
+        // named, which would be named one of them): a splice's covers lie
+        // where such an end would (its bolts through a cover: by hand;
+        // measured on the private real towers, 2026-11-19: every such
+        // splice of a leg had bracing on it).
+        let alone = |a: &Arrival, b: &Arrival| {
+            j.arrivals.iter().all(|z| {
+                z.member == a.member
+                    || z.member == b.member
+                    || z.modelling
+                    || z.onto
+                        .value
+                        .as_deref()
+                        .is_some_and(|o| o != a.member && o != b.member)
+            })
+        };
         let how = if pa.section_id == pb.section_id
             && alike(pa.axes[1], pb.axes[1])
             && alike(pa.axes[2], pb.axes[2])
@@ -849,6 +1184,19 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
                 Some((x, y, JoinKind::Nested))
             } else if fits(gb, ga) && along(pa, pb) {
                 Some((y, x, JoinKind::Nested))
+            } else if pa.section_id != pb.section_id
+                && along(pa, pb)
+                && dev <= crate::joints::NESTED_ANGLE_DEG
+                && bolted(a)
+                && bolted(b)
+                && alone(a, b)
+            {
+                // Step 1c: other sections in line, both with their bolts
+                // (a splice where the section changes), nothing else
+                // bolting onto them here: covers on both faces of the legs
+                // bolted (the bolts' shear planes as the covers give them,
+                // a given count still winning).
+                Some((x, y, JoinKind::Spliced))
             } else {
                 None
             }
@@ -862,10 +1210,33 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
                 } else {
                     (m, o)
                 };
+            let (covers, thickness) = if how == JoinKind::Spliced {
+                use ohl_structures::connections::CoverLeg;
+                let mut legs: Vec<CoverLeg> = Vec::new();
+                for z in [&j.arrivals[m], &j.arrivals[o]] {
+                    let both = z.leg.value == Some(ohl_structures::connections::BoltedLeg::Both);
+                    let of = if both {
+                        vec![CoverLeg::Long, CoverLeg::Short]
+                    } else {
+                        crate::joints::bolted_cover_leg(z).into_iter().collect()
+                    };
+                    for l in of {
+                        if !legs.contains(&l) {
+                            legs.push(l);
+                        }
+                    }
+                }
+                legs.sort_by_key(|l| l.as_str());
+                (legs, ga.t.max(gb.t))
+            } else {
+                (Vec::new(), 0.0)
+            };
             out.push(Join {
                 member: j.arrivals[m].member.clone(),
                 onto: j.arrivals[o].member.clone(),
                 how,
+                covers,
+                thickness,
             });
         }
     }
@@ -952,6 +1323,7 @@ fn ceil_to(v: f64, step: f64) -> f64 {
 }
 
 /// The strip of member end `a` on `host`'s flange.
+#[allow(clippy::too_many_arguments)]
 fn strip_of(
     j: &JointDetail,
     a: &Arrival,
@@ -959,11 +1331,30 @@ fn strip_of(
     s: &LayoutSettings,
     edge: EdgeRule<'_>,
     others: &[&str],
+    tilt: Option<f64>,
+    other: bool,
 ) -> Result<Strip, String> {
-    let inside = a.sits.value == Some(Face::Inside);
     let p = a.profile.as_ref().expect("checked");
     let g = p.angle.expect("checked");
-    let f = host_flange(a, host).ok_or("no flange to lie on")?;
+    // Off the flange (step 4): the flange in whose plane its axis lies
+    // (else the other).
+    let f = match tilt {
+        Some(_) => host_flange_along(a, host, other),
+        None => host_flange(a, host),
+    }
+    .ok_or("no flange to lie on")?;
+    // On the flange's inner face: as it sits; off the flange (step 4),
+    // when it comes from the flange's other side (its axis behind the outer
+    // face, or along it with its leg bolted facing away from it).
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let behind = dot(a.direction, f.out);
+    let sin_flat = FLAT_OFF.to_radians().sin();
+    let inside = match tilt {
+        None => a.sits.value == Some(Face::Inside),
+        Some(_) => behind < -sin_flat || (behind <= sin_flat && dot(nb, f.out) < 0.0),
+    };
+    // The face it lies on: its normal out of the steel.
+    let face_out = if inside { scale(f.out, -1.0) } else { f.out };
     let x3 = host.direction;
     let y3 = f.across;
     let to2 = |q: [f64; 3]| -> [f64; 2] {
@@ -973,14 +1364,23 @@ fn strip_of(
     let dir2 = |q: [f64; 3]| -> [f64; 2] { [dot(q, x3), dot(q, y3)] };
     let u = dir2(a.direction);
     let lu = (u[0] * u[0] + u[1] * u[1]).sqrt();
-    // Its axis along the flange's face (within the flatness allowed).
-    if lu < FLAT_OFF.to_radians().cos() {
+    // Its axis along the flange's face (within the flatness allowed); off
+    // the flange (step 4) up to the most a plate in its own plane takes,
+    // leaving the flange's face outwards.
+    let axis_ok = match tilt {
+        None => lu >= FLAT_OFF.to_radians().cos(),
+        Some(_) => lu >= TILT_MAX.to_radians().cos(),
+    };
+    if !axis_ok {
         return Err(format!(
             "its axis runs {:.0}° out of the face of {}'s flange it bolts onto",
             lu.clamp(-1.0, 1.0).acos().to_degrees(),
             host.member
         ));
     }
+    // Lengths along it measured on the flange's plane (an end off it,
+    // step 4: its axis may leave the plane; 1 for the others, as before).
+    let scale2 = if tilt.is_some() { lu } else { 1.0 };
     let u = [u[0] / lu, u[1] / lu];
     let v = [-u[1], u[0]];
     // On the inner face, leaving the joint towards the heel: it would run
@@ -1058,9 +1458,11 @@ fn strip_of(
         .collect();
     let flats = area.flats.unwrap_or(BOLT_DRAWN[0] * d);
     let nut = flats / 3f64.sqrt();
-    let edge = edge(a, f.t)
-        .or(a.edge_distance.value.filter(|_| a.edge_distance.known()))
-        .unwrap_or(edge_min);
+    let own_edge = a.edge_distance.value.filter(|_| a.edge_distance.known());
+    let edge_end = |t: f64| -> (f64, f64) {
+        edge(a, t).unwrap_or((own_edge.unwrap_or(edge_min), end.max(end_min)))
+    };
+    let edge = edge_end(f.t).0;
     // The data's shift: along `shift.1`, per metre along `v`.
     // (Towards the member it is to bolt onto, as the drawing measures it
     // once `onto` names it: `ohl_structures::connections::shift_direction`.)
@@ -1100,7 +1502,106 @@ fn strip_of(
             obstacles.push((to2(sub(q, j.position)), r));
         }
     }
+    let hand_shift = a.shift.0 != 0.0;
+    let mut lat = lat;
+    let gauges3 = gauges;
+    let mut gauges: Vec<f64> = gauges3.iter().map(|gg| lat0 + sv * gg).collect();
+    let tilted = match tilt {
+        None => None,
+        Some(deg) => {
+            if u[1].abs() <= 1e-6 {
+                return Err(format!("it runs along {}'s flange", host.member));
+            }
+            let nbo = dot(nb, face_out);
+            if nbo < TILT_MAX.to_radians().cos() {
+                return Err(if nbo <= 0.0 {
+                    "its outstanding leg points towards the flange (it would stand on the plate)"
+                        .to_owned()
+                } else {
+                    format!(
+                        "more than {TILT_MAX:.0}° off (the plate would stand nearly square to \
+                         the flange)"
+                    )
+                });
+            }
+            if hand_shift {
+                return Err("its shift is given by hand".to_owned());
+            }
+            let shift_dir =
+                ohl_structures::connections::shift_direction(a.direction, host.direction)
+                    .filter(|_| shift_per.is_some())
+                    .ok_or("no direction to shift it in")?;
+            // Drawn with its gauge line through the work point (the
+            // record's `gauge` mark): its heel there, as `joints` draws it.
+            let heel_across = if a.leg_y { g.heel[0] } else { g.heel[1] };
+            let g0 = gauges3.first().copied().unwrap_or(leg_w / 2.0);
+            let base = scale(across3, -(heel_across + g0));
+            let heel = add(
+                base,
+                add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+            );
+            if a.cut.source == Source::Given {
+                return Err("its cut is given by hand".to_owned());
+            }
+            let t = Tilted {
+                off: deg,
+                dir: a.direction,
+                bolts: bolts.clone(),
+                lu: scale2,
+                half: a.length / 2.0,
+                nb,
+                across: across3,
+                heel,
+                axis: base,
+                width: leg_w,
+                gauges: gauges3.clone(),
+                shift_dir,
+                shift_per: shift_per.unwrap_or(1.0),
+                keep: edge_end(g.t),
+                x3,
+                out: face_out,
+                face: if inside {
+                    add(f.heel, scale(f.out, -f.t))
+                } else {
+                    f.heel
+                },
+            };
+            // Its footprint on the flange's plane: its section where it is
+            // drawn and its plate's (to the seam), across the plane's `v`.
+            let v3 = add(scale(x3, v[0]), scale(y3, v[1]));
+            let l = |q: [f64; 3]| dot(q, v3);
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for pt in &p.outline {
+                let x = l(add(
+                    base,
+                    add(scale(p.axes[1], pt[0]), scale(p.axes[2], pt[1])),
+                ));
+                lo = lo.min(x);
+                hi = hi.max(x);
+            }
+            let geo = own_geometry(&t, 0.0, 0.0, t.face, t.out, g.t, s.gap)?;
+            // At most a plate's thickness (its own leg's) farther out of
+            // the flange than on a flat plate: else a hand detail at once
+            // (its face's other ends then laid out as before).
+            if geo.out_more > g.t + 1e-9 {
+                return Err(farther_out(geo.out_more, g.t));
+            }
+            for c in &geo.outline {
+                lo = lo.min(l(*c));
+                hi = hi.max(l(*c));
+            }
+            lat = [lo, hi];
+            gauges = t
+                .gauges
+                .iter()
+                .map(|gg| l(add(heel, scale(across3, *gg))))
+                .collect();
+            Some(t)
+        }
+    };
     Ok(Strip {
+        tilted,
         inside,
         obstacles,
         heel: add(j.position, f.heel),
@@ -1112,13 +1613,13 @@ fn strip_of(
         u,
         v,
         lat,
-        gauges: gauges.iter().map(|gg| lat0 + sv * gg).collect(),
+        gauges,
         shift_per,
         shift_now: a.shift.0,
         hand_cut: (a.cut.source == Source::Given).then(|| a.cut.value.unwrap_or(0.0)),
-        hand_shift: a.shift.0 != 0.0,
-        half: a.length / 2.0,
-        bolts,
+        hand_shift,
+        half: a.length / 2.0 * scale2,
+        bolts: bolts.iter().map(|(x, l)| (x * scale2, *l)).collect(),
         d,
         nut,
         width: f.width,
@@ -1129,6 +1630,355 @@ fn strip_of(
         rank: (rank, -mm(leg_w), -mm(angle)),
         give,
     })
+}
+
+/// How far strip `x` is moved across for its gauge line to run through
+/// the work point (a shift given by hand, or no direction: not moved; an
+/// end off the flange: its strip is drawn so already).
+fn concentric_of(x: &Strip) -> f64 {
+    if x.hand_shift || x.shift_per.is_none() || x.tilted.is_some() {
+        0.0
+    } else {
+        -x.gauges.first().copied().unwrap_or(0.0)
+    }
+}
+
+/// The most a member's leg bolted may lie off the flange for a plate in
+/// its own plane, degrees (the owner's step 4, 2026-11-19): beyond it the
+/// plate would stand nearly square to the flat one and the member high
+/// over the flange. A starting value of the program's, not a standard's.
+pub const TILT_MAX: f64 = 75.0;
+
+/// A plate in a member's own plane where it is (from the work point, m).
+#[derive(Debug, Clone)]
+struct OwnGeo {
+    /// The member lifted along the flange's normal to lie on it, m.
+    lift: f64,
+    /// How much farther out of the flange its axis lies at its bolts than
+    /// on a flat plate of the same thickness (its line of action off the
+    /// work point beyond a usual gusset's), m.
+    out_more: f64,
+    /// Its outline, on the face its member lies on.
+    outline: Vec<[f64; 3]>,
+    /// The seam's ends (on the flat plate's face).
+    seam: [[f64; 3]; 2],
+    /// A point of the seam.
+    seam_at: [f64; 3],
+    /// In the flat plate's plane, square to the seam, towards the flat
+    /// plate (away from the member).
+    side: [f64; 3],
+}
+
+/// The cut of end `t` along it (m, up to the millimetre) from its cut on
+/// the flange's plane `c`.
+fn cut3(t: &Tilted, c: f64) -> f64 {
+    ceil_to(c / t.lu, 0.001)
+}
+
+/// How much a polygon drawn round an ellipse is grown so it never cuts
+/// into it (eight corners: 1 / cos 22.5°).
+const RING_GROW: f64 = 1.0824;
+
+/// The plate in end `t`'s own plane (step 4) with its steel stopping
+/// `cut` from the work point along it, moved `moved` across the plane's `v`
+/// (its shift), the flat plate `tf` thick on the flange whose heel is at
+/// `heel` (from the work point) and whose outer face looks along `out`.
+///
+/// The member is lifted along `out` (its place across the flange as laid
+/// out) the least that keeps its leg bolted, from where its steel stops
+/// to past its bolts, `gap` (the weld's room) on the plate's side of the
+/// line where its plane meets the flat plate's face — the seam — and its
+/// bolts the edge distance from it. The plate: round its bolts with the
+/// end and edge distances (along and across it), down to the seam.
+fn own_geometry(
+    t: &Tilted,
+    cut: f64,
+    moved: f64,
+    heel: [f64; 3],
+    out: [f64; 3],
+    tf: f64,
+    gap: f64,
+) -> Result<OwnGeo, String> {
+    if t.bolts.is_empty() {
+        return Err("no bolts to lay its plate round".to_owned());
+    }
+    let h = add(t.heel, scale(t.shift_dir, moved * t.shift_per));
+    let pts: Vec<[f64; 3]> = t
+        .bolts
+        .iter()
+        .map(|(along, line)| {
+            let g = t.gauges.get(*line).copied().unwrap_or(t.width / 2.0);
+            add(h, add(scale(t.dir, cut + along), scale(t.across, g)))
+        })
+        .collect();
+    let (keep_edge, keep_end) = t.keep;
+    // The flat plate's face.
+    let q0 = add(heel, scale(out, tf));
+    // The seam's direction, and up the plate from it.
+    let d = unit(cross(t.nb, out)).ok_or("its leg lies parallel to the flange")?;
+    let d = if dot(d, t.dir) < 0.0 {
+        scale(d, -1.0)
+    } else {
+        d
+    };
+    let q = unit(cross(t.nb, d)).ok_or("its leg lies parallel to the flange")?;
+    let q = if dot(q, out) < 0.0 { scale(q, -1.0) } else { q };
+    let qo = dot(q, out);
+    if qo < FLAT_OFF.to_radians().sin() / 2.0 {
+        return Err("its leg lies parallel to the flange".to_owned());
+    }
+    if dot(q, t.dir) < -FLAT_OFF.to_radians().sin() {
+        return Err("it runs down towards the flange away from the joint".to_owned());
+    }
+    // What keeps clear of the seam, each by how much along the plate:
+    // its leg's two edges where its steel stops and past its bolts (the
+    // gap), its bolts (the edge distance).
+    let along = t.bolts.iter().map(|b| b.0).fold(0.0, f64::max) + keep_end;
+    let mut keeps: Vec<([f64; 3], f64)> = Vec::new();
+    for s in [cut, cut + along, t.half.max(cut + along)] {
+        for w in [0.0, t.width] {
+            keeps.push((add(h, add(scale(t.dir, s), scale(t.across, w))), gap));
+        }
+    }
+    for b in &pts {
+        keeps.push((*b, keep_edge * RING_GROW));
+    }
+    let lift = keeps
+        .iter()
+        .map(|(p, r)| dot(out, sub(q0, *p)) + r * qo)
+        .fold(f64::NEG_INFINITY, f64::max);
+    // Its axis at its bolts' middle out of the flange's face, against the
+    // same member on a flat plate: its leg's face on the plate, its
+    // centroid that far from it.
+    let mid = t.bolts.iter().map(|b| b.0).sum::<f64>() / t.bolts.len() as f64 + cut;
+    let shifted = sub(h, t.heel);
+    let axis_at = add(
+        add(add(t.axis, shifted), scale(out, lift)),
+        scale(t.dir, mid),
+    );
+    let centroid = -dot(sub(t.heel, t.axis), t.nb);
+    let out_more = dot(out, sub(axis_at, heel)) - (tf + centroid);
+    // A point of the seam: from its heel where its steel stops, lifted,
+    // down the plate to the flat plate's face.
+    let p0 = add(add(h, scale(t.dir, cut)), scale(out, lift));
+    let lp = sub(p0, scale(q, dot(out, sub(p0, q0)) / qo));
+    // Its outline round its bolts (as `joints` draws a plate: the end
+    // distance along the member, the edge distance across), to the seam.
+    let across = unit(cross(t.nb, t.dir)).ok_or("no direction across it")?;
+    let mut flat: Vec<[f64; 2]> = Vec::new();
+    for b in &pts {
+        let b = add(*b, scale(out, lift));
+        for k in 0..8 {
+            let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
+            let x = add(
+                b,
+                add(
+                    scale(t.dir, keep_end * RING_GROW * a.cos()),
+                    scale(across, keep_edge * RING_GROW * a.sin()),
+                ),
+            );
+            let r = sub(x, lp);
+            flat.push([dot(r, d), dot(r, q)]);
+        }
+    }
+    let lo = flat.iter().map(|x| x[0]).fold(f64::INFINITY, f64::min);
+    let hi = flat.iter().map(|x| x[0]).fold(f64::NEG_INFINITY, f64::max);
+    flat.push([lo, 0.0]);
+    flat.push([hi, 0.0]);
+    let poly = clip(&crate::joint_sheet::hull(flat), |x| x[1]);
+    let to3 = |x: &[f64; 2]| add(lp, add(scale(d, x[0]), scale(q, x[1])));
+    // Towards the flat plate, square to the seam on its face.
+    let side = unit(sub(scale(out, qo), q)).ok_or("no side")?;
+    Ok(OwnGeo {
+        lift,
+        out_more,
+        outline: poly.iter().map(to3).collect(),
+        seam: [to3(&[lo, 0.0]), to3(&[hi, 0.0])],
+        seam_at: lp,
+        side,
+    })
+}
+
+/// The cut (from `cut` on, m) that takes the plate in end `x`'s own plane
+/// past the flange's toe by half the gap (step 4: under it, near the seam,
+/// it is as low as the flat plate).
+fn toe_clear(
+    x: &Strip,
+    t: &Tilted,
+    p: &Placed,
+    cut: f64,
+    wp: [f64; 3],
+    gap: f64,
+) -> Result<f64, String> {
+    let heel = t.face;
+    let _ = wp;
+    // Across the flange per metre of cut on the flange's plane: past the
+    // toe for an end leaving towards it, past the heel for one leaving
+    // over it (outside the angle).
+    let rate = dot(t.dir, x.across) / t.lu;
+    if rate.abs() <= 1e-6 {
+        return Err("it runs along the flange".to_owned());
+    }
+    let mut c = cut;
+    for _ in 0..4 {
+        let geo = own_geometry(t, c / t.lu, p.moved, heel, t.out, x.own_t, gap)?;
+        let ys = geo.outline.iter().map(|q| dot(sub(*q, heel), x.across));
+        let need = if rate > 0.0 {
+            x.width + gap / 2.0 - ys.fold(f64::INFINITY, f64::min)
+        } else {
+            ys.fold(f64::NEG_INFINITY, f64::max) + gap / 2.0
+        };
+        if need <= 1e-9 {
+            break;
+        }
+        c += need / rate.abs() + 1e-6;
+    }
+    Ok(ceil_to(c, 0.001))
+}
+
+/// The points the flat plate under the plate in end `x`'s own plane must
+/// cover (structure axes): the seam's ends and the flange from the work
+/// point along the member it bolts onto as far as the seam reaches, heel
+/// to toe, on the flat plate's face.
+fn own_reach(x: &Strip, geo: &OwnGeo, tf: f64, wp: [f64; 3]) -> Vec<[f64; 3]> {
+    let t = x.tilted.as_ref().expect("tilted");
+    let heel = t.face;
+    let mut out = vec![add(geo.seam[0], wp), add(geo.seam[1], wp)];
+    for c in [[0.0; 3], geo.seam[0], geo.seam[1]] {
+        let along = dot(sub(c, heel), t.x3);
+        let h = add(add(heel, scale(t.x3, along)), scale(t.out, tf));
+        out.push(add(h, wp));
+        out.push(add(add(h, scale(x.across, x.width)), wp));
+    }
+    out
+}
+
+/// Whether the plate in end `x`'s own plane, as `geo`, can be welded to
+/// the flat plate of its face: the flat plate keeps to its side of the
+/// seam with the bolts of the ends on it (`flat`) and the seams of the
+/// plates kept before (`owns`), and reaches the flange over at least half a
+/// square of its width (room for its own bolts to it; a starting value of
+/// the program's, not a standard's).
+fn own_fits(
+    strips: &[Strip],
+    x: &Strip,
+    geo: &OwnGeo,
+    flat: &[Placed],
+    owns: &[(usize, OwnGeo)],
+    wp: [f64; 3],
+    gap: f64,
+) -> Result<(), String> {
+    let t = x.tilted.as_ref().expect("tilted");
+    let heel = sub(x.heel, wp);
+    let to2 = |q: [f64; 3]| [dot(sub(q, heel), t.x3), dot(sub(q, heel), x.across)];
+    let dir2 = |q: [f64; 3]| {
+        let v = [dot(q, t.x3), dot(q, x.across)];
+        let l = (v[0] * v[0] + v[1] * v[1]).sqrt().max(1e-12);
+        [v[0] / l, v[1] / l]
+    };
+    let side = |g: &OwnGeo, q: [f64; 2]| dot2(sub2(q, to2(g.seam_at)), dir2(g.side));
+    for p in flat {
+        let b = &strips[p.k];
+        for (along, line) in &b.bolts {
+            let l = b.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+            let q = b.at(p.cut + along, l);
+            let d = side(geo, q);
+            if d < b.edge - 1e-9 {
+                return Err(format!(
+                    "its seam would pass {:.0} mm from {}'s bolts on the flat plate (they keep \
+                     {:.0} mm)",
+                    d.max(0.0) * 1000.0,
+                    b.member,
+                    b.edge * 1000.0
+                ));
+            }
+        }
+    }
+    for (k, g) in owns {
+        let ends = |h: &OwnGeo| [to2(h.seam[0]), to2(h.seam[1])];
+        if ends(g).iter().any(|q| side(geo, *q) < -1e-3)
+            || ends(geo).iter().any(|q| side(g, *q) < -1e-3)
+        {
+            return Err(format!(
+                "its seam would cut the flat plate under {}'s welded plate",
+                strips[*k].member
+            ));
+        }
+    }
+    // The flat plate's reach on the flange (its own reach and the others'),
+    // each seam's side kept, heel (by half the gap) to toe.
+    let mut pts: Vec<[f64; 2]> = own_reach(x, geo, 0.0, wp)
+        .into_iter()
+        .map(|q| to2(sub(q, wp)))
+        .collect();
+    let mut cuts: Vec<&OwnGeo> = vec![geo];
+    for (k, g) in owns {
+        pts.extend(
+            own_reach(&strips[*k], g, 0.0, wp)
+                .into_iter()
+                .map(|q| to2(sub(q, wp))),
+        );
+        cuts.push(g);
+    }
+    let mut poly = crate::joint_sheet::hull(pts);
+    for g in cuts {
+        let (at, n) = (to2(g.seam_at), dir2(g.side));
+        poly = clip(&poly, |q| dot2(sub2(q, at), n) + 1e-9);
+    }
+    // On an inner face clear of the angle's other leg and root.
+    let floor = if x.inside { x.t + x.r } else { 0.0 } + gap / 2.0;
+    let poly = clip(&poly, |q| q[1] - floor);
+    let poly = clip(&poly, |q| x.width - q[1]);
+    let area = poly
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let b = poly[(i + 1) % poly.len()];
+            a[0] * b[1] - a[1] * b[0]
+        })
+        .sum::<f64>()
+        .abs()
+        / 2.0;
+    if area < x.width * x.width / 2.0 {
+        return Err(format!(
+            "the flat plate it is welded to would reach only {:.0} cm² of {}'s flange (half a \
+             square of its width, {:.0} cm², at least)",
+            area * 1e4,
+            x.host,
+            x.width * x.width / 2.0 * 1e4
+        ));
+    }
+    Ok(())
+}
+
+/// Why a plate in a member's own plane is not laid out: its axis `more`
+/// farther out of the flange than on a flat plate, more than a plate of
+/// thickness `t` (its leg's), m.
+fn farther_out(more: f64, t: f64) -> String {
+    format!(
+        "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more than a \
+         plate's {:.0} mm: its line of action that far off the work point is not in the analysis)",
+        more * 1000.0,
+        t * 1000.0
+    )
+}
+
+/// Why end `x` off the flange is left for a hand detail.
+fn tilted_why(x: &Strip, t: &Tilted, e: &str) -> String {
+    format!(
+        "{}: its bolted leg lies {:.0}° off the flange of {} it bolts onto and no turn lays it \
+         flat at both its ends; a welded plate in its own plane does not fit: {e}",
+        x.member, t.off, x.host
+    )
+}
+
+/// The throat of the weld of a plate in its member's own plane to the
+/// flat plate, each side, m: welded from both sides, partly penetrated,
+/// four tenths of the plates' thickness each (whole millimetres, at least
+/// 3 mm) — the layout's choice, not a standard's; checked as fillet welds
+/// (SIA 263 6.3.3.5).
+pub fn weld_throat(t: f64) -> f64 {
+    ((0.4 * t * 1000.0 + 1e-6).floor() / 1000.0).max(0.003)
 }
 
 /// The length its bolts take along it from where its steel stops, m.
@@ -1178,7 +2028,7 @@ fn place(
     s: &LayoutSettings,
 ) -> Result<Placed, String> {
     let x = &strips[k];
-    let limit = s.pull_back.min(x.half - bolt_run(x));
+    let limit = (s.pull_back * x.tilted.as_ref().map_or(1.0, |t| t.lu)).min(x.half - bolt_run(x));
     if limit <= 0.0 {
         return Err(format!(
             "{}: too short for its bolts ({:.0} mm to half its length)",
@@ -1187,11 +2037,7 @@ fn place(
         ));
     }
     // Concentric: its first gauge line through the work point.
-    let concentric = if x.hand_shift || x.shift_per.is_none() {
-        0.0
-    } else {
-        -x.gauges.first().copied().unwrap_or(0.0)
-    };
+    let concentric = concentric_of(x);
     let cut_at = |moved: f64| -> (f64, Option<String>) {
         let lat = [x.lat[0] + moved, x.lat[1] + moved];
         // Its leg on the flange's side of the heel (a member leaving the
@@ -1385,4 +2231,22 @@ fn scale(a: [f64; 3], k: f64) -> [f64; 3] {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn norm(a: [f64; 3]) -> f64 {
+    dot(a, a).sqrt()
+}
+
+/// `a` made a unit vector (none: about zero).
+fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
+    let l = norm(a);
+    (l > 1e-9).then(|| scale(a, 1.0 / l))
 }

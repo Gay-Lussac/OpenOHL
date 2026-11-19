@@ -895,6 +895,67 @@ left, or the joint left whole), a member no roll lays flat at both ends
 towards the other leg on an inner face that half a turn does not help,
 a built-up member's plate, members too short for their bolts.
 
+Sixth round (2026-11-19, the owner's steps 4 and 1c and the leg
+splices; "report only"):
+
+- **Step 4, a welded plate** (`joint_layout::OwnPlane`, `own_geometry`):
+  an end no roll lays flat goes onto a plate in its own plane welded to
+  the flat plate of its face on the flange (the face's other ends bolted
+  onto the flat plate), on the outer face or — coming from inside a
+  leg's corner — the inner face; the weld written from both sides with
+  its throat (0.4 × the plates' thickness, whole millimetres, at least
+  3 mm: the layout's choice) and length so the existing weld check is
+  made (SIA 263 6.3.3.5: a partly penetrated weld as a fillet weld). The
+  record's `made` marks the plate `own_plane`: the joint details seat its
+  member on its outline, lifted along the flat plate's normal
+  (`PlateSeat::lift`; the plate's `leg` none, so the clash check tests it
+  against the leg); a plate with no member welded to others takes their
+  leg. **Limited on the safe side**: only where the member's axis then lies
+  at most one plate thickness farther out of the flange than on a flat
+  plate (its line of action off the work point is not in the analysis);
+  measured on two private real towers the extra offset of the ends
+  planned is 4–38 mm (median 15–17 mm), so most stay hand details with
+  that reason — a question to the owner. A weld's size changed by hand is
+  kept (`OldPlate::weld`, the follow dropping `weld` from the automatic
+  fields). Members whose leg bolted faces away from the face get half a
+  turn tried, as for an inner face.
+- **Step 1c, splices** (`JoinKind::Spliced`): two angles in line of other
+  sections that do not nest, both with bolts, nothing else bolting onto
+  them at the joint (tried first with bracing on them: on the private
+  towers every such cover then ran into the bracing and joints laid out
+  whole before were lost — 17 848 → 17 755 on the 78 — so not there) — a
+  `[[splice]]` the layout writes, covers outer and inner on each leg bolted (as thick as the
+  thicker leg), both ends onto it; recorded in `made` (`splice`, `cover
+  <t>`), made again by a run unless its covers were changed by hand (then
+  kept). A cover counts as a part of the two members it joins in the
+  clash rounds; the members onto a splice are kept clear of (their bolts)
+  by the other ends.
+- **Leg splices of one section** (`splice_unknown`, `SPLICE_UNKNOWN`):
+  the bolts are the members' design data, at both ends of every leg
+  member, so where the splice is is not known; drawn as before (lapped)
+  and said, first among the joint's reasons when it is left whole.
+- `EdgeRule` gives the code's edge **and end** distances (the welded
+  plate's outline). The file cut down for a follow keeps the record's
+  `made` rows of the plates it keeps (the seat reads `own_plane`): the
+  follow compared byte for byte with the whole-file follow on five real
+  towers, a welded plate's flat plate made thicker and its weld changed
+  among the edits — identical (28 of 28). A flat plate with nothing
+  bolted onto it keeps a thickness given by hand (it is known by its
+  welded plates' members). A following edit on the real tower of 3 030
+  members: 0.28–0.34 s, the same as before this round (load 12–18); at a
+  welded joint 0.56–0.59 s.
+- **On the 78 real tower files** (Orient angles, then Lay out joints,
+  values given by hand replaced): laid out whole 17 848 → 17 880, written
+  43 576 → 43 751, with a hand detail 42 890 → 42 858, clashes at the
+  joints after 647 433 → 644 810, a run again identical on all 78; step 4
+  on 371 joints (410 ends). Of the 26 967 ends still off the flange: 7 864
+  their leg bolted facing away (half a turn did not help), 7 635 the
+  welded plate would put them farther out than a plate's thickness, 7 256
+  on an inner face running towards the angle's other leg, 3 779 running
+  down towards the flange; step 1c none (every leg splice of other
+  sections has bracing on it); 6 026 joints say where their leg splice
+  is is not known.
+
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

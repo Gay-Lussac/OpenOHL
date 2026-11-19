@@ -91,11 +91,11 @@ layout follows these steps; what is built and what is not:
 | 0 | Every end pulled back: the values a run set taken out first, each end planned from its joint as it is without them | yes (as before) |
 | 1a | The biggest pair of angles in line through the joint (the larger legs first): **one part** (`kind = "continuous"`) when they have the same section and are turned alike (the core's rule: in line within 1°, the same roll and reference) and **neither end has bolts** — a splice whose bolts would then go unchecked is left a bolted splice (on the safe side) | yes |
 | 1b | The smaller **nested** in the bigger (`face = "nested"`, bolted to it) when its legs fit inside (each at most the bigger's leg less its thickness and root radius) and lie along the bigger's within 5° | yes |
-| 1c | Other sections in line: a splice plate or covers | no: left as it is (a splice by hand) |
+| 1c | Other sections in line that do not nest, both with their bolts (a splice where the section changes), nothing else bolting onto them at the joint: each end bolted onto a **splice of covers**, outer and inner on each leg bolted ([below](#splices-step-1c)) | yes (2026-11-19); with an end bolting onto them there: as before (its bolts would pass through a cover: by hand) |
 | 2a | The next members, by class and size, **bolted directly on a flange** of the bigger member where their bolts land on it | yes (as before) |
 | 2b | Where not: **onto a plate** lying on that flange (in its plane) | yes (as before; every end of that flange's face onto the plate) |
 | 3 | The smaller classes (redundants) the same way, after the bracing | yes (as before: the order bracing, redundants) |
-| 4 | An end whose angle of arrival allows no flat fit on a flange or a plate in a flange's plane: a plate in its own plane, **welded** to a plate bolted to the bigger member | no: left for a hand detail ("no turn lays it flat at both its ends") |
+| 4 | An end whose angle of arrival allows no flat fit on a flange or a plate in a flange's plane: a plate in its own plane, **welded** to a plate bolted to the bigger member ([below](#a-welded-plate-in-the-members-own-plane-step-4)) | yes (2026-11-19), where its member then lies at most a plate's thickness farther out than on a flat plate; else a hand detail, said |
 
 Only one pair is joined at a joint (its base), and none where a member
 already runs on through it: a pair crossing the base (an X-brace's other
@@ -266,13 +266,132 @@ clash check sees it like any part. On a built-up leg no plate is laid
 out (it is drawn through the work point, where its checks take it): a
 hand detail.
 
+## A welded plate in the member's own plane (step 4)
+
+(Owner, 2026-11-18: "finaly if the angle at which the profile is coming
+really doesn't allow for it then add a weleded plate that is also bolted
+to the other profiles with the other part of the plate to fix it"; built
+2026-11-19.) An end whose leg bolted lies more than 5° off the flange it
+bolts onto and that no roll lays flat at both its ends (a hip or plan
+member flat on a horizontal at one end and arriving off the leg's flange
+at the other, a crossarm's face member at the chord) is laid out on two
+plates welded into one: a plate **in its own plane** (its leg bolted lies
+on it, its bolts through it) and the **flat plate** of its face on the
+flange (as step 2b's, the face's other ends bolted onto it), joined where
+their planes meet — a plate bent there, made of two plates welded.
+
+- **Which face.** The flange in whose plane its axis lies most nearly
+  (else the other one); on the flange's outer face, or on its **inner
+  face** when it comes from the flange's other side (its axis behind the
+  outer face — hip and plan members inside a leg's corner) or lies along
+  it with its leg bolted facing away. Its leg bolted must face that face
+  (else half a turn is tried, as for an inner face; else a hand detail),
+  lie at most 75° off it (`TILT_MAX`, the program's starting value: the
+  plate would stand nearly square to the flat one), and it must leave the
+  joint away from the heel on an inner face (the angle's other leg) and
+  not run down towards the flange more than 5°.
+- **On the flange's plane.** Its strip is laid out with the others (its
+  cut, a shift) as its section's and its plate's footprint on the
+  flange's plane, its lengths along it as they lie on that plane; its
+  bolts past the flange's toe (or heel) by the nut and the gap as on a
+  plate, and its plate past it by half the gap (under it, near the seam,
+  the plate lies as low as the flat one).
+- **The seam.** The member is moved along the flange's normal (so it
+  stays where it was laid out across the flange; the drawing's seat,
+  `PlateSeat::lift`) the least that keeps its leg bolted, from where its
+  steel stops to past its bolts and to half its length, the gap (the
+  weld's room) above the line where its plane meets the flat plate's
+  face, and its bolts the edge distance (the code's in a plate of its
+  leg's thickness, else the default minimum) from that line. Its plate:
+  round its bolts with the end and edge distances (along and across the
+  member, as a plate is drawn), down to the seam. The flat plate: round
+  its own ends' bolts and the flange from the work point as far along as
+  the seams reach, heel to toe, kept to its side of each seam and cut at
+  the heel by half the gap; it must reach the flange over at least half a
+  square of the flange's width (room for its own bolts to it — the
+  program's starting value, not a standard's) and keep every bolt of its
+  ends the edge distance from each seam.
+- **The weld.** Both plates as thick as the thickest leg on them; welded
+  from both sides along the seam, each side a throat of four tenths of
+  that thickness in whole millimetres, at least 3 mm (`weld_throat`: a
+  partly penetrated weld from both sides, **the layout's choice, not a
+  standard's**), its length both sides together (`[[plate.weld]]` with
+  `size` and `length`, automatic in the record). SIA 263 6.3.3.5 takes a
+  partly penetrated weld as a fillet weld: the weld check of
+  [plates](joint-plates.md) applies as it is (its force, its moments about
+  the seam). The members of each side lie in their plate's plane, so the
+  moment about the seam's own line is nil for one welded plate on each
+  side; where two plates in their own planes are welded to one flat
+  plate, the moment of the other's member about a seam is not nil and the
+  check says it **NOT ON THE SAFE SIDE** as for any weld bent about its
+  seam (6.3.6.5: the data say the weld's length on both sides together,
+  not that it is two fillets — a field and a check change, not made:
+  a question to the owner). ASCE 10-97 has no weld rule: not checked,
+  said.
+- **Its line of action.** The member lies on its plate, so farther out of
+  the flange than on a flat plate: by the gap's and its leg's rise over
+  the tilt. The analysis keeps every member's axis through the work point
+  (as for any gusset: its thickness and the leg's seat are drawn, not
+  analysed). **Assumption, on the safe side by a limit:** a welded plate
+  is laid out only where it puts the member's axis, at its bolts, at most
+  **one plate thickness** farther out of the flange than a flat plate of
+  the same thickness would (about what a filler plate adds); farther, the
+  end is left for a hand detail with why ("its axis would lie 25 mm
+  farther out of the flange than on a flat plate … not in the analysis").
+  The joint eccentricity of a gusset (its thickness, the leg's seat) is
+  not in the analysis anywhere — usual for lattice towers, **not a
+  standard's rule**; the limit keeps a welded plate within it.
+- **Never forced**, deterministic and followed as every plate: the
+  plates' outlines and the weld are automatic values of the record (the
+  plate in its own plane marked `own_plane`, so the joint details seat
+  its member on it), a value given by hand on them is kept, and the clash
+  check tests the plate in its own plane against the flange too (it does
+  not lie on it).
+
+## Splices (step 1c)
+
+Two angles in line through the joint (within 5°, their legs along each
+other within 5°: the nesting tolerance), of **other sections** that do
+not nest, **both with their bolts** — where the section changes, a splice
+must be — and with **no other end bolting onto them there** (nor onto
+nothing named, which would be named one of them) are joined first: a `[[splice]]` at the joint, its covers on
+both faces (outer and inner) of each leg bolted (both legs where the
+ends bolt by both), as thick as the thicker member's leg, both ends
+bolted onto it (`onto` the splice). Its bolts then pass through the
+member's leg and two covers: two shear planes worked out from the plies
+(a count given still wins, said where it differs), the covers checked
+as plates for their share of the force by area — the checks of
+[laps and splices](joint-laps-splices.md), unchanged. The members are
+drawn on their work lines, butt at the joint (not lapped). A splice the
+layout made is automatic (the record's `made`, `splice` and its covers'
+thickness): a run again makes it again; one whose covers were changed by
+hand is kept, the user's. Where an end bolts onto them at the joint —
+on the private real towers every leg splice of other sections has its
+bracing there (measured 2026-11-19: tried, every such splice's cover ran
+into the bracing and left it, and joints laid out whole before were
+lost) — no splice is made: the bracing's bolts would pass through a
+cover, a detail by hand; the members stay as given.
+
+**Not known where:** two angles in line of **one section**, turned alike,
+with bolts (a leg's splice bolts are its members' design data, at both
+ends of every leg member): spliced here, or one part through the joint
+and spliced elsewhere — the data do not say. They are left as given
+(drawn lapped, as before) and the joint says so ("… where the splice is
+is not known …"), first among its reasons when the rest of it is left
+too; giving the splice (or the two one part) lets the layout lay the
+rest out. Never a splice bolt check dropped: one part is made only where
+neither end has bolts (step 1a).
+
 ## No fit: a hand detail
 
 An end that does not fit is **left exactly as it was** and listed with the
 reason (two members within a few degrees: no room on one plate; an end
 running towards the angle's other leg on an inner face; bolts that cannot
 pass the flange within the longest pull-back; a member that no single
-roll lays flat at both its ends); the rest of the joint is laid out.
+roll lays flat at both its ends whose welded plate does not fit, with
+why); the rest of the joint is laid out. A splice the layout made counts
+as a part of the two members it joins: a cover running into anything
+leaves them as they were.
 After writing, the joint details and the [clash check](#the-clash-check)
 are worked out again. Where a laid-out part would run into anything, the
 members of it — a member, its bolts, or the members on a plate — are left
