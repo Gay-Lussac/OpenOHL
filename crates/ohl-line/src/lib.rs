@@ -46,6 +46,7 @@ pub mod library;
 mod link_tests;
 pub mod links;
 pub mod local;
+pub mod lookups;
 pub mod objects;
 pub mod post;
 pub mod reference;
@@ -3521,7 +3522,7 @@ impl Line {
     /// `depth` 16 jumpers deep).
     fn end_section(&self, end: &JumperEnd, depth: usize) -> Option<&Section> {
         match end {
-            JumperEnd::Wire(point) => self.sections.iter().find(|s| s.points.contains(point)),
+            JumperEnd::Wire(point) => self.first_section_at(point),
             JumperEnd::Tap { tap } => self.tap_section(tap, depth),
         }
     }
@@ -3530,9 +3531,9 @@ impl Line {
     /// is on (through that jumper's ends, at most 16 jumpers deep).
     pub fn tap_section(&self, tap: &Tap, depth: usize) -> Option<&Section> {
         match tap {
-            Tap::Span(r) => self.sections.iter().find(|s| s.id == r.section),
+            Tap::Span(r) => self.section_by_id(&r.section),
             Tap::Jumper { jumper, .. } if depth < 16 => {
-                let host = self.jumpers.iter().find(|j| &j.id == jumper)?;
+                let host = self.jumper_by_id(jumper)?;
                 self.end_section(&host.from, depth + 1)
                     .or_else(|| self.end_section(&host.to, depth + 1))
             }
@@ -3547,7 +3548,10 @@ impl Line {
     /// the strings holding them), on the safe side.
     pub fn wind_factor_at_structure(&self, structure: &str) -> f64 {
         let mut f: Option<f64> = None;
-        for s in self.sections.iter().filter(|s| s.has_local_wind()) {
+        for s in self
+            .sections_through(structure)
+            .filter(|s| s.has_local_wind())
+        {
             for (k, p) in s.points.iter().enumerate() {
                 if p.structure == structure {
                     let x = s.wind_factor_at_point(k);
@@ -3557,10 +3561,8 @@ impl Line {
         }
         // Next to a section without local winds too: at least 1 there.
         let plain = self
-            .sections
-            .iter()
-            .filter(|s| !s.has_local_wind())
-            .any(|s| s.points.iter().any(|p| p.structure == structure));
+            .sections_through(structure)
+            .any(|s| !s.has_local_wind());
         match f {
             Some(x) if plain => x.max(1.0),
             Some(x) => x,
@@ -3571,7 +3573,9 @@ impl Line {
     /// The local wind factor of jumper `jumper`: the largest at the
     /// structures of its ends ([`Line::wind_factor_at_structure`]).
     pub fn jumper_wind_factor(&self, jumper: &Jumper) -> f64 {
-        if !self.sections.iter().any(Section::has_local_wind) {
+        let local = lookups::with(self, |l| l.local_wind(self))
+            .unwrap_or_else(|| self.sections.iter().any(Section::has_local_wind));
+        if !local {
             return 1.0;
         }
         let mut structures = self.end_structures(&jumper.from);
@@ -3589,9 +3593,7 @@ impl Line {
         match end.as_tap() {
             None => end.structure().map(str::to_owned).into_iter().collect(),
             Some(Tap::Span(r)) => self
-                .sections
-                .iter()
-                .find(|s| s.id == r.section)
+                .section_by_id(&r.section)
                 .and_then(|s| {
                     let p = s.span_points.iter().find(|p| p.label == r.point)?;
                     Some(
@@ -4016,7 +4018,112 @@ impl Line {
 
     /// Structure by id.
     pub fn structure(&self, id: &str) -> Option<&Structure> {
+        if let Some(k) = lookups::with(self, |l| l.ids(self).structures(id).first().copied()) {
+            return k.map(|k| &self.structures[k]);
+        }
         self.structures.iter().find(|s| s.id == id)
+    }
+
+    /// The first section of id `id` (as a search through the sections
+    /// finds it; looked up while a solve's lookups are open,
+    /// [`lookups`]).
+    pub fn section_by_id(&self, id: &str) -> Option<&Section> {
+        if let Some(k) = lookups::with(self, |l| l.ids(self).sections(id).first().copied()) {
+            return k.map(|k| &self.sections[k]);
+        }
+        self.sections.iter().find(|s| s.id == id)
+    }
+
+    /// The first jumper of id `id` (as a search through the jumpers finds
+    /// it; looked up while a solve's lookups are open, [`lookups`]).
+    pub fn jumper_by_id(&self, id: &str) -> Option<&Jumper> {
+        if let Some(k) = lookups::with(self, |l| l.ids(self).jumpers(id).first().copied()) {
+            return k.map(|k| &self.jumpers[k]);
+        }
+        self.jumpers.iter().find(|j| j.id == id)
+    }
+
+    /// The first section holding wire point `point` (looked up while a
+    /// solve's lookups are open, [`lookups`]).
+    pub fn first_section_at(&self, point: &SectionPoint) -> Option<&Section> {
+        if let Some(k) = lookups::with(self, |l| l.ids(self).at_point(point).first().copied()) {
+            return k.map(|k| &self.sections[k]);
+        }
+        self.sections.iter().find(|s| s.points.contains(point))
+    }
+
+    /// The sections holding wire point `point`, in the line's order
+    /// (looked up while a solve's lookups are open, [`lookups`]).
+    pub fn sections_at_point<'a>(
+        &'a self,
+        point: &'a SectionPoint,
+    ) -> Box<dyn Iterator<Item = &'a Section> + 'a> {
+        match lookups::with(self, |l| l.ids(self).at_point(point).to_vec()) {
+            Some(ks) => Box::new(ks.into_iter().map(|k| &self.sections[k])),
+            None => Box::new(self.sections.iter().filter(|s| s.points.contains(point))),
+        }
+    }
+
+    /// Every section holding one of `points`, in the line's order (looked
+    /// up while a solve's lookups are open, [`lookups`]).
+    pub fn sections_at_points<'a>(&'a self, points: &[&SectionPoint]) -> Vec<&'a Section> {
+        let looked = lookups::with(self, |l| {
+            let ids = l.ids(self);
+            let mut ks: Vec<usize> = points
+                .iter()
+                .flat_map(|p| ids.at_point(p).iter().copied())
+                .collect();
+            ks.sort_unstable();
+            ks.dedup();
+            ks
+        });
+        match looked {
+            Some(ks) => ks.into_iter().map(|k| &self.sections[k]).collect(),
+            None => self
+                .sections
+                .iter()
+                .filter(|s| s.points.iter().any(|p| points.contains(&p)))
+                .collect(),
+        }
+    }
+
+    /// Every structure whose id is one of `ids`, in the line's order
+    /// (looked up while a solve's lookups are open, [`lookups`]).
+    pub fn structures_of_ids<'a>(&'a self, ids: &[&str]) -> Vec<&'a Structure> {
+        let looked = lookups::with(self, |l| {
+            let index = l.ids(self);
+            let mut ks: Vec<usize> = ids
+                .iter()
+                .flat_map(|id| index.structures(id).iter().copied())
+                .collect();
+            ks.sort_unstable();
+            ks.dedup();
+            ks
+        });
+        match looked {
+            Some(ks) => ks.into_iter().map(|k| &self.structures[k]).collect(),
+            None => self
+                .structures
+                .iter()
+                .filter(|s| ids.contains(&s.id.as_str()))
+                .collect(),
+        }
+    }
+
+    /// The sections through structure `id` (a point at it), in the line's
+    /// order (looked up while a solve's lookups are open, [`lookups`]).
+    pub fn sections_through<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> Box<dyn Iterator<Item = &'a Section> + 'a> {
+        match lookups::with(self, |l| l.ids(self).through(id).to_vec()) {
+            Some(ks) => Box::new(ks.into_iter().map(|k| &self.sections[k])),
+            None => Box::new(
+                self.sections
+                    .iter()
+                    .filter(move |s| s.points.iter().any(|p| p.structure == id)),
+            ),
+        }
     }
 
     /// The load cases `structure` takes, resolved through the structure

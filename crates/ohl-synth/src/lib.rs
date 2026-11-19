@@ -865,4 +865,6 @@ pub fn lidar_tile(seed: u64, corner: [f64; 2], density: f64) -> Vec<ohl_lidar::L
 pub mod project;
 
 #[cfg(test)]
+mod solve_tests;
+#[cfg(test)]
 mod tests;

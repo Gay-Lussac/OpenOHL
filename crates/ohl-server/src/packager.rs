@@ -1127,22 +1127,29 @@ mod tests {
         for (name, line, every) in lines {
             let r = indexed(Arc::new(line), Vec::new());
             let line = &*r.line;
-            for (k, section) in line.sections.iter().enumerate() {
-                if k % every != 0 {
-                    continue;
+            // The whole line's lookups made once for its sections (O42:
+            // the same results as searched, bit for bit; each sub-line is
+            // searched).
+            ohl_line::lookups::indexed(line, Some(&cables), || {
+                for (k, section) in line.sections.iter().enumerate() {
+                    if k % every != 0 {
+                        continue;
+                    }
+                    let whole = ohl_line::solve::solve_one(line, section, &cables, &case);
+                    let sub = sub_line(&r, section);
+                    assert!(
+                        sub.structures.len() < line.structures.len() || line.structures.len() < 12
+                    );
+                    let alone = ohl_line::solve::solve_one(&sub, section, &cables, &case);
+                    assert_eq!(
+                        format!("{whole:?}"),
+                        format!("{alone:?}"),
+                        "{name}: section {}",
+                        section.id
+                    );
+                    compared += 1;
                 }
-                let whole = ohl_line::solve::solve_one(line, section, &cables, &case);
-                let sub = sub_line(&r, section);
-                assert!(sub.structures.len() < line.structures.len() || line.structures.len() < 12);
-                let alone = ohl_line::solve::solve_one(&sub, section, &cables, &case);
-                assert_eq!(
-                    format!("{whole:?}"),
-                    format!("{alone:?}"),
-                    "{name}: section {}",
-                    section.id
-                );
-                compared += 1;
-            }
+            });
         }
         assert!(compared > 100, "{compared}");
     }

@@ -764,8 +764,8 @@ impl Line {
     /// first alignment both stand on; none when no alignment has both.
     pub fn span_stations(&self, a: &str, b: &str) -> Option<(f64, f64)> {
         let (pa, pb) = (self.structure(a)?.position, self.structure(b)?.position);
-        self.alignment_views()
-            .into_iter()
+        self.views()
+            .iter()
             .find(|v| v.structures.iter().any(|s| s == a) && v.structures.iter().any(|s| s == b))
             .map(|v| {
                 let pis = positions(&v.alignment);
@@ -881,6 +881,21 @@ impl Line {
 
     /// Every alignment with the structures on it, in the line's order.
     pub fn alignment_views(&self) -> Vec<AlignmentView> {
+        match crate::lookups::with(self, |l| l.views(self)) {
+            Some(v) => (*v).clone(),
+            None => self.alignment_views_searched(),
+        }
+    }
+
+    /// [`Self::alignment_views`] shared: worked out once while a solve's
+    /// lookups are open ([`crate::lookups`]), else now.
+    pub(crate) fn views(&self) -> std::sync::Arc<Vec<AlignmentView>> {
+        crate::lookups::with(self, |l| l.views(self))
+            .unwrap_or_else(|| std::sync::Arc::new(self.alignment_views_searched()))
+    }
+
+    /// [`Self::alignment_views`] worked out from the line.
+    pub(crate) fn alignment_views_searched(&self) -> Vec<AlignmentView> {
         let near = self.near_alignments();
         let index = self.point_index();
         self.alignments
@@ -1449,7 +1464,7 @@ impl Line {
     /// route (within [`AT_VERTEX`] of it along the route) the **bisector**
     /// of its two segments ([`direction_at`]) — a structure standing there.
     pub fn bisected_direction_at(&self, at: [f64; 2]) -> Option<[f64; 2]> {
-        self.bisected_direction_at_in(&self.alignment_views(), at)
+        self.bisected_direction_at_in(&self.views(), at)
     }
 
     /// [`Self::bisected_direction_at`] on the routes `views`.
@@ -1479,7 +1494,7 @@ impl Line {
     /// The nearest segment of the routes' centrelines: route index,
     /// distance along it, unit direction.
     fn nearest_on_routes(&self, at: [f64; 2]) -> Option<OnRoute> {
-        self.nearest_on(&self.alignment_views(), at)
+        self.nearest_on(&self.views(), at)
     }
 
     /// [`Self::nearest_on_routes`] on the routes `views`.
