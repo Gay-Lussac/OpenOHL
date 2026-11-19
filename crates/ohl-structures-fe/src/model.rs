@@ -1625,7 +1625,11 @@ impl Model {
                 return Err(format!("member {}: zero length", m.id));
             }
             if m.offsets.iter().flatten().any(|x| !x.is_finite())
-                || m.free_offsets.iter().flatten().flatten().any(|x| !x.is_finite())
+                || m.free_offsets
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .any(|x| !x.is_finite())
                 || norm(sub(self.end_point(m, 1), self.end_point(m, 0))) <= 1e-9
             {
                 return Err(format!(

@@ -304,7 +304,10 @@ fn a_replica_follows_by_rows() {
     assert_eq!(log[0].kind, "import");
     assert!(!log[0].objects.is_empty());
     let entry = r.conn.entry(log[0].seq).unwrap().unwrap();
-    assert_eq!((entry.4.as_str(), entry.5.as_str()), (crate::EMPTY_COMMAND, crate::EMPTY_COMMAND));
+    assert_eq!(
+        (entry.4.as_str(), entry.5.as_str()),
+        (crate::EMPTY_COMMAND, crate::EMPTY_COMMAND)
+    );
     assert!(r.undo("ana").is_err(), "an import cannot be undone");
     // The next command of the replica is logged in full.
     assert!(!r.lean_import.load(std::sync::atomic::Ordering::SeqCst));

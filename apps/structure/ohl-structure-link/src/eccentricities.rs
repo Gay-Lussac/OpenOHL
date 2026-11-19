@@ -475,8 +475,7 @@ impl EndOffset {
     /// Its eccentricity, m: the known offset and the parts of unknown sign
     /// square to each other.
     pub fn e(&self) -> f64 {
-        (norm(self.offset).powi(2) + self.free.iter().map(|r| norm(*r).powi(2)).sum::<f64>())
-            .sqrt()
+        (norm(self.offset).powi(2) + self.free.iter().map(|r| norm(*r).powi(2)).sum::<f64>()).sqrt()
     }
 }
 

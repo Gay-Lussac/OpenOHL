@@ -150,7 +150,11 @@ impl EccentricEnd {
     /// length of their parts taken square to each other (their sizes'
     /// root sum of squares).
     pub fn free_e(&self) -> f64 {
-        self.free.iter().map(|r| norm(*r).powi(2)).sum::<f64>().sqrt()
+        self.free
+            .iter()
+            .map(|r| norm(*r).powi(2))
+            .sum::<f64>()
+            .sqrt()
     }
 }
 
@@ -468,10 +472,7 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
                 free.push(words);
             }
         }
-        for e in list
-            .iter()
-            .filter(|e| !e.carried && e.offset != [0.0; 3])
-        {
+        for e in list.iter().filter(|e| !e.carried && e.offset != [0.0; 3]) {
             let words = format!(
                 "{} at {} {:.2} kN m",
                 model.members[idx].id,

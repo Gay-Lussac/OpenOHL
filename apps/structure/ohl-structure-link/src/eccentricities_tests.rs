@@ -211,7 +211,10 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
     let expect = (0.030f64.powi(2) + 0.007f64.powi(2)).sqrt();
     assert!((p.e() - expect).abs() < 1e-9, "{p:?}");
     let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|c| a[c] * b[c]).sum::<f64>();
-    assert!(dot(p.free[0], p.free[1]).abs() < 1e-12, "square to each other");
+    assert!(
+        dot(p.free[0], p.free[1]).abs() < 1e-12,
+        "square to each other"
+    );
     let a = m.nodes[m.members[k].i].point;
     let b = m.nodes[m.members[k].j].point;
     let d: [f64; 3] = std::array::from_fn(|c| b[c] - a[c]);
@@ -220,7 +223,10 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
     }
     let mut with = m.clone();
     apply(&mut with, &list);
-    assert_eq!(with.members[k].offsets, m.members[k].offsets, "not in the solve");
+    assert_eq!(
+        with.members[k].offsets, m.members[k].offsets,
+        "not in the solve"
+    );
     assert!(with.has_offsets());
 }
 

@@ -224,11 +224,7 @@ fn on_every_member_takes_at_least_its_usage_without_and_the_results_say_so() {
             list.iter().find(|x| x.0 == id).unwrap().1.unwrap()
         };
         assert!(u(&b, "R1") > u(&a, "R1") + 1e-6, "{legs}: {b:?} vs {a:?}");
-        assert!(
-            r1.governs.contains("sign-free"),
-            "{legs}: {}",
-            r1.governs
-        );
+        assert!(r1.governs.contains("sign-free"), "{legs}: {}", r1.governs);
         // Nothing of R1's bound in the solve: the other members as without
         // the option (the planned shifts here are all 0).
         for id in ["L1", "L2", "D1", "D2"] {
