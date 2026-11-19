@@ -1120,6 +1120,59 @@ that order; "plan ideas to get the automatic layout working"):
   on 45–55 mm legs). Joints that do not fit with the joint checks 32.3 %
   → 31.8 %; the estimated eccentricities' upper bounds 24.3 % → 22.0 % of
   the ends.
+- **J3, one roll for the whole member** (2026-11-19, in active
+  development, not approved yet; with the owner's order of the classes of
+  the same day; [theory](../theory/joint-layout.md#one-roll-for-the-whole-member-j3)):
+  `whole_roll::whole_roll(&[EndTurn { turn, either_leg }], FLAT_OFF) ->
+  Option<(turn, RollWay)>` — the same legs within 5° first (as before),
+  else an equal-leg angle's leg bolted changing between its ends (its
+  turns a quarter turn apart, `layout_run::either_leg`: a single
+  equal-leg angle not bolted by both legs), the smallest such turn; none:
+  not turned, said. `lay_out_once` finds the turns **class by class**
+  (`joint_layout::ClassRank`, `class_rank(class, direction)`: legs and
+  chords never turned to suit bracing, then diagonals, secondary bracing —
+  horizontal bracing, a `plan` member of Orient angles, no class (said) —,
+  redundants), the joints in detail again with each class's turns before
+  the next; the same rank orders a plane's ends and the planes in the
+  search (`Strip::rank`, `host_rank`) and the members left first in a
+  clash. Orient angles keeps a plan or face member's roll the layout chose
+  (`OrientRun::by_layout`, its window's list). The relaxed planner
+  (`plan_relaxed`, O45) takes the same. No format change. Tests:
+  `whole_roll_tests`, `layout_run_tests::one_roll_for_the_whole_member_lets_both_its_ends_lie_flat`,
+  `no_roll_for_both_ends_leaves_the_member_as_it_was`. Tried and left out:
+  a turn leaving every end within the whole 5° of flat (measured: slightly
+  fewer ends).
+- **J4, laid out once per kind** (2026-11-19, in active development, not
+  approved yet; [theory](../theory/joint-layout.md#laid-out-once-applied-to-the-joints-like-it-j4)):
+  `joint_kinds::kinds(details, among, strict) -> BTreeMap<joint, Like>`
+  (each joint like an earlier one with the match against the first of
+  its kind: the rigid map of the eight keeping the vertical, `Map`, the
+  member pairs; `like(a, b, strict)`, `like_joint(details, id)`;
+  tolerances `DIR_TOL`, `LEN_TOL`), `map_plan(plan, like)` (the plan's
+  members, points and directions mapped, lengths kept, words said with
+  the joint's members: `Like::words`; `JointPlan::like` names the joint
+  planned). `layout_run::plans_of` plans one joint per kind and maps it
+  onto the others (`LayoutSettings::once_per_kind`, on by default; off:
+  every joint on its own, for the comparison); each joint written and
+  checked for clashes as before, the clash rounds planning a failing copy
+  on its own. `apply_detail::apply_detail(text, sections, bolts, joint,
+  only) -> ApplyRun { text, applied: Vec<Applied { joint, how, ends,
+  plates }>, left, seconds }`: the command *Apply this joint's detail to
+  similar joints* (OHL-Structure, the joint's bar in Joint details,
+  `apply_window`): the source's connections and plates copied onto the
+  joints of its kind (loose match: members only) — `onto`, `other_onto`,
+  plates' `outline`, `[plate.bend]` `to`/`line`, `welded_to`, welds' `to`,
+  `[plate.leg_bolts]` `member` mapped —, the target's own plates and
+  connections there replaced (their plate ids reused: applied again, the
+  same file), the record's `ends`, `made`, `provisional`, `joints` and
+  `hand` following; a copy running into more than the source in its own
+  place left (said), a joint with a splice left. No format change. Tests:
+  `joint_kinds_tests` (a body's corners of one kind, another section not
+  alike, a mapped plan as the joint's own, a run once per kind as every
+  joint on its own, the words), `apply_detail_tests` (a laid-out joint
+  applied turned, a hand detail, only where asked, applied again the
+  same), the app's `apply_ui_tests` (the preview, one undo step, an
+  unticked joint left, Escape).
 
 ## Detail levels
 

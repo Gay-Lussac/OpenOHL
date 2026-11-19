@@ -32,6 +32,7 @@
 //! program.
 
 mod app;
+mod apply_window;
 mod body_tab;
 mod bolt_grade_window;
 mod case_editor;
@@ -87,6 +88,8 @@ pub const STORAGE_ID: &str = "OLS Structure"; // storage id: kept
 use clap::Parser;
 use eframe::egui;
 
+#[cfg(test)]
+mod apply_ui_tests;
 #[cfg(test)]
 mod body_ui_tests;
 #[cfg(test)]

@@ -65,6 +65,8 @@ pub enum Act {
     ToMembers(String, String, bool),
     /// The joint's details to the joints like it.
     ToSimilar(String),
+    /// The Apply this joint's detail to similar joints window opened (J4).
+    OpenApply(String),
     /// The save-as-preset form opened for a member end.
     OpenPreset(String, String),
     /// A preset applied to a member end.
@@ -690,6 +692,10 @@ impl StructureApp {
                     ),
                     false,
                 ))
+            }
+            Act::OpenApply(joint) => {
+                self.apply_window = Some(crate::apply_window::ApplyWindow::new(&joint));
+                None
             }
             Act::OpenPreset(member, joint) => {
                 self.joint_tools.preset = Some((member, joint, String::new()));
@@ -2060,6 +2066,18 @@ pub fn joint_bar(
             .on_disabled_hover_text("No joint with the same members");
         if r.clicked() {
             acts.push(Act::ToSimilar(j.id.clone()));
+        }
+        if ui
+            .button("Apply this joint's detail to similar joints…")
+            .on_hover_text(
+                "Its connections and plates, mirrored or turned, onto the joints like it by the \
+                 tower's symmetry and repeated panels (members, sections, rolls and classes \
+                 alike): a preview of which joints it changes first, then one undo step; a hand \
+                 detail too",
+            )
+            .clicked()
+        {
+            acts.push(Act::OpenApply(j.id.clone()));
         }
         if ui
             .button("+ Plate")

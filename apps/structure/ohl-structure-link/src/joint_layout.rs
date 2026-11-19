@@ -126,6 +126,11 @@ pub struct LayoutSettings {
     /// default. Off: as before them — the run plans its half turns so, the
     /// owner's order being the flat plate first.
     pub bent_plates: bool,
+    /// One joint of each kind planned and its plan applied, mapped, to the
+    /// joints like it (J4, 2026-11-19; [`crate::joint_kinds`]): on by
+    /// default. Off: every joint planned on its own (as before; for the
+    /// comparison).
+    pub once_per_kind: bool,
 }
 
 impl Default for LayoutSettings {
@@ -139,6 +144,7 @@ impl Default for LayoutSettings {
             welded: false,
             defaults: Default::default(),
             bent_plates: true,
+            once_per_kind: true,
         }
     }
 }
@@ -434,6 +440,10 @@ pub struct JointPlan {
     /// (the member named, else the one running through the joint): the
     /// direction of the estimated eccentricities' upper bound (O45 A1).
     pub hand_hosts: Vec<(String, String)>,
+    /// Laid out once for its kind (J4, 2026-11-19): the joint whose plan
+    /// this is, mapped here ([`crate::joint_kinds`]); none: planned on its
+    /// own.
+    pub like: Option<String>,
 }
 
 impl JointPlan {
@@ -2065,6 +2075,39 @@ pub fn flat_turns(j: &JointDetail) -> Vec<(String, f64)> {
     out
 }
 
+/// The classes of members in the owner's order (2026-11-19: "start with
+/// aligning the main legs then diagonals and finally secondary braces with
+/// redundant members being last"): the order the layout turns them in and
+/// lays out a plane's ends and the planes in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ClassRank {
+    /// The main legs (class `leg`; the chords as Orient angles turns them).
+    Leg = 0,
+    /// The diagonals: bracing (class `bracing` or `crossing`) not lying
+    /// horizontal.
+    Diagonal = 1,
+    /// The secondary bracing: horizontals, plan and hip members (bracing
+    /// lying horizontal within [`FLAT_OFF`]), and members of no known
+    /// class (said).
+    Secondary = 2,
+    /// The redundant members (class `redundant`), last.
+    Redundant = 3,
+}
+
+/// A member's place in the owner's order of the classes from its `class`
+/// and its direction (unit): bracing lying horizontal (within
+/// [`FLAT_OFF`]) is secondary, the rest of it a diagonal.
+pub fn class_rank(class: Option<&str>, direction: [f64; 3]) -> ClassRank {
+    match class {
+        Some("leg") => ClassRank::Leg,
+        Some("redundant") => ClassRank::Redundant,
+        Some("bracing") | Some("crossing") if direction[2].abs() > FLAT_OFF.to_radians().sin() => {
+            ClassRank::Diagonal
+        }
+        _ => ClassRank::Secondary,
+    }
+}
+
 /// A length as the files write it: millimetres to a tenth (`"30 mm"`,
 /// `"12.5 mm"`; as `ohl_structure_edit::connection_edits::mm`).
 pub fn mm_text(v: f64) -> String {
@@ -2254,12 +2297,8 @@ fn strip_of(
     let n = f.out;
     let off = dot(add(j.position, f.heel), n) - if inside { f.t } else { 0.0 };
     let mm = |x: f64| (x * 1000.0).round() as i64;
-    let rank = match a.class.as_deref() {
-        Some("leg") => 0,
-        Some("bracing") | Some("crossing") => 1,
-        Some("redundant") => 2,
-        _ => 3,
-    };
+    // The owner's order of the classes (2026-11-19).
+    let rank = class_rank(a.class.as_deref(), a.direction) as u8;
     let angle = a.angle.as_ref().map_or(0.0, |x| x.1.min(180.0 - x.1));
     // The bolts of the joint's members not laid out here lying on this face
     // (within a thickness or two of it, through it): kept clear of.
@@ -2417,12 +2456,6 @@ fn strip_of(
     };
     let other_w = if a.leg_y { g.h } else { g.b };
     let host_t = f.t;
-    let rank_of = |c: Option<&str>| match c {
-        Some("leg") => 0,
-        Some("bracing") | Some("crossing") => 1,
-        Some("redundant") => 2,
-        _ => 3,
-    };
     Ok(Strip {
         face3: if inside {
             add(f.heel, scale(f.out, -f.t))
@@ -2438,7 +2471,7 @@ fn strip_of(
         slab: g.t + g.t.max(host_t) + 0.7 * d,
         fixed: Vec::new(),
         floor: None,
-        host_rank: rank_of(host.class.as_deref()),
+        host_rank: class_rank(host.class.as_deref(), host.direction) as u8,
         over,
         tilted,
         inside,

@@ -27,12 +27,21 @@ pub(crate) fn copy_of(name: &str, tag: &str) -> PathBuf {
 }
 
 pub(crate) fn harness(path: &Path) -> Harness<'static, StructureApp> {
+    harness_steps(path, 4)
+}
+
+/// [`harness`] whose `run` allows `max_steps` frames to settle (the
+/// default: 4) — for a panel whose background threads each ask for a
+/// frame when done; the test waits for them before it steps.
+pub(crate) fn harness_steps(path: &Path, max_steps: u64) -> Harness<'static, StructureApp> {
     let gpu = ohl_render::headless_device().is_ok();
     assert!(
         gpu || ohl_core::env::var_os("OHL_REQUIRE_GPU_TESTS").is_none(),
         "no GPU"
     );
-    let mut builder = Harness::builder().with_size(egui::vec2(1300.0, 900.0));
+    let mut builder = Harness::builder()
+        .with_size(egui::vec2(1300.0, 900.0))
+        .with_max_steps(max_steps);
     if gpu {
         builder = builder.wgpu();
     }

@@ -328,14 +328,16 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
     let count = |k: OrientKind| r.turned.iter().filter(|o| o.kind == k).count();
     ui.label(format!(
         "{} member(s) turned: {} leg(s) and chord(s), {} face member(s) (bracing in a face), {} \
-         plan or hip member(s); {} already so; {} roll(s) given by hand kept; {} leg(s) left. \
-         Worked out in {:.2} s (measured).",
+         plan or hip member(s); {} already so; {} roll(s) given by hand kept; {} roll(s) the \
+         joint layout chose for both ends kept; {} leg(s) left. Worked out in {:.2} s \
+         (measured).",
         r.turned.len(),
         count(OrientKind::Chord),
         count(OrientKind::Face),
         count(OrientKind::Plan),
         r.same.len(),
         r.kept.len(),
+        r.by_layout.len(),
         r.left.len(),
         r.seconds
     ));
@@ -411,6 +413,31 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
                         }
                     });
             });
+    }
+    if !r.by_layout.is_empty() {
+        egui::CollapsingHeader::new(format!(
+            "Rolls the joint layout chose for both ends kept ({})",
+            r.by_layout.len()
+        ))
+        .id_salt("orient-by-layout")
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("orient-by-layout-list")
+                .max_height(120.0)
+                .show(ui, |ui| {
+                    for o in &r.by_layout {
+                        ui.label(format!(
+                            "{} (from the shape alone: {:+.1}°)",
+                            o.member, o.turn
+                        ));
+                    }
+                });
+        })
+        .header_response
+        .on_hover_text(
+            "Lay out joints turned these so that both their ends lie flat (one roll for the \
+             whole member); Orient angles keeps that, so the two agree",
+        );
     }
     egui::CollapsingHeader::new(format!("Legs left ({})", r.left.len()))
         .id_salt("orient-left")

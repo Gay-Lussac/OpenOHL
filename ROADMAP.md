@@ -57,7 +57,8 @@ from here. The owner's order of 2026-11-19:
 4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically);
    built 2026-11-19, in active development, not approved yet — off by
    default, the owner's questions under O45).
-5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
+5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout);
+   J3–J4 built 2026-11-19, in active development, not approved yet).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
    phase 6 built 2026-11-19, in active development, not approved yet —
    the owner's questions under O17).
@@ -1962,13 +1963,51 @@ step, reasons left), and the work stops where it stops paying:
   thickness changed almost nothing. Questions to the owner: bent before
   welded for step 4's ends; the radius; a bend check in the plugins; the
   holding bolts on narrow legs.
-- [ ] J3. **Each angle's turn chosen for the whole member**: a roll that
+- [x] J3. **Each angle's turn chosen for the whole member**: a roll that
   lets both its ends lie flat, the leg bolted allowed to change between
-  its ends where that is how towers are built.
-- [ ] J4. **Lay out once, apply to the joints like it**: the joints
+  its ends where that is how towers are built. Owner 2026-11-19: "You can
+  do 90 degrees turn or more if necessary also start with aligning the
+  main legs then diagonals and finally secondary braces with redundant
+  members being last". Built 2026-11-19, in active development, not
+  approved yet (`whole_roll`): the turn from both ends' needs together,
+  any turn, the smallest; an equal-leg angle's leg bolted changing between
+  its ends where a quarter turn more serves both (never an unequal
+  angle's); never forced, said; class by class — legs and chords never
+  turned to suit bracing, then diagonals, secondary bracing (no class:
+  with them, said), redundants, each with the classes before turned; the
+  same order in J1's search (the owner's order used; the biggest member
+  first within the bracing measured too: 0.06 % more ends, the same
+  joints whole within 7); Orient angles keeps a roll the layout chose for
+  both ends; O45's planner the same. On the 78 real towers (kept
+  privately): joints laid out whole 45.8 % → 45.8 %, member ends 64.3 % →
+  64.2 %, a run again identical 78/78, a whole tower about 5 % slower —
+  **stops paying**: the members left
+  off their flange need turns at their ends 5°–20° apart (seven in ten),
+  their faces turned against each other about the member; no roll removes
+  that (J5, a bent welded plate). A turn leaving every end within the
+  whole 5° of flat was tried: fewer ends.
+- [x] J4. **Lay out once, apply to the joints like it**: the joints
   grouped by kind (the tower's symmetry and repeated panels), one
   solution per kind applied, mirrored, to the others; a command *Apply
-  this joint's detail to similar joints* for hand details too.
+  this joint's detail to similar joints* for hand details too. Built
+  2026-11-19, in active development, not approved yet (`joint_kinds`,
+  `apply_detail`): the eight rigid maps keeping the vertical, matched
+  geometrically (a tenth of a degree, 2 mm — the tool's tolerance) on
+  members, sections, rolls, classes and what the planner reads; each copy
+  checked for clashes in its own place, planned on its own where it fails;
+  the command a tool window from the joint's bar (a preview of the joints
+  it changes, one undo step), its copies checked in place too. On the 78
+  real towers: 30 % of the joints laid out with the plan of a joint like
+  them, joints laid out whole 45.8 % → 45.9 %, ends 64.3 %, a run again
+  identical 78/78; **no time saved** (planning is 1–1.5 % of a run: the
+  joint details and clash checks per round take the rest).
+  > **Owner:** (1) J1's search in your order of the classes costs 0.06 %
+  > of the ends against the biggest member first within the bracing:
+  > keep? (2) Legs are never turned to suit bracing (816 leg ends on the
+  > real towers now kept off what they bolt onto, said): keep, or allow it
+  > where Orient angles left a leg? (3) J4 saves no time but makes the
+  > joints of a kind identical: keep it on by default? (4) The 5° a leg
+  > may lie off and still bolt flat is the tool's: your shop's value?
 - [ ] J5. **Larger shifts once the analysis takes them** (after
   [O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)):
   the shift limit and the welded plate's offset limit growing with the
@@ -2607,6 +2646,14 @@ net); the server's sub-line test 5.9 s → 0.7 s with O42's lookups.
    without testing less.
 4. Every test of the server, the store, the session and the command line
    timed before and after (performance.md). No test removed or weakened.
+5. (2026-11-19, with O44 J3–J4) OHL-Structure's quantities panel test
+   (`quantities_ui_tests::the_panel_counts_says_and_keeps_the_factor`)
+   failed now and then under load with "max_steps exceeded": the panel's
+   and the 3D view's background threads each ask for a frame when done,
+   which arrived in the middle of a run of frames. It now waits for them
+   (their answers taken, two frames in a row) before running to rest,
+   with a few more frames allowed for the menu's own run; what it checks
+   unchanged. Built, in active development, not approved yet.
 
 ### O47. Version management, left from the work plan of 2026-11-10
 - Merge plans made in the engine: the app rebuilds the plans for a

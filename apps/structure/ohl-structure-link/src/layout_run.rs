@@ -49,6 +49,7 @@ use crate::joint_layout::{
     BoltArea, Join, JoinKind, JointPlan, LayoutSettings, Onto, Reach, flat_turns, plan_joint,
 };
 use crate::joints::{JointDetails, joint_details_at};
+use crate::whole_roll::{EndTurn, RollWay, whole_roll};
 
 /// The record's id and kind.
 pub const RECORD_ID: &str = "joint-layout";
@@ -217,6 +218,7 @@ impl RecordSettings {
             // The structure file's, taken by the run.
             defaults: Default::default(),
             bent_plates: true,
+            once_per_kind: true,
         }
     }
 
@@ -850,95 +852,19 @@ fn lay_out_once(
         )?;
     }
     // 2. The members lying off what they bolt onto: a turn that lays them
-    // flat where every end agrees within the flatness allowed (those at
-    // joints not asked too: a turn never spoils an end that was flat); a
-    // roll given by hand kept unless replaced, a leg's or chord's turned
-    // to the tower's faces (Orient angles) always.
+    // flat — one roll for the whole member, every end within the flatness
+    // allowed (those at joints not asked too: a turn never spoils an end
+    // that was flat; J3, [`crate::whole_roll`]); a roll given by hand kept
+    // unless replaced, a leg's or chord's turned to the tower's faces
+    // (Orient angles) always. Class by class (owner, 2026-11-19: "start
+    // with aligning the main legs then diagonals and finally secondary
+    // braces with redundant members being last"): the legs and chords are
+    // not turned to suit what bolts onto them; then the diagonals, the
+    // secondary bracing (horizontals, plan and hip members, and the members
+    // of no known class), the redundants — each class's turns found with
+    // the classes before it turned.
     let mut notes = Vec::new();
     let member = |m: &str| t.members.iter().find(|x| x.id == m);
-    let mut asked: BTreeMap<String, Vec<(String, f64)>> = BTreeMap::new();
-    for j in around_details
-        .joints
-        .iter()
-        .filter(|j| targets.contains(&j.id))
-    {
-        for (m, turn) in flat_turns(j) {
-            if held.contains(&m) || one_part.contains(&m) {
-                continue;
-            }
-            if record
-                .oriented
-                .get(&m)
-                .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
-            {
-                notes.push(format!(
-                    "{m}: lies off what it bolts onto at {}; a leg or chord turned to the tower's \
-                     faces (Orient angles): kept",
-                    j.id
-                ));
-                continue;
-            }
-            let automatic = record.rolled.contains_key(&m) || record.oriented.contains_key(&m);
-            let by_hand = member(&m).is_some_and(|x| x.roll.is_some()) && !automatic;
-            if by_hand && !ask.replace_hand {
-                notes.push(format!(
-                    "{m}: lies off what it bolts onto at {}, its roll given by hand kept",
-                    j.id
-                ));
-                continue;
-            }
-            asked.entry(m).or_default().push((j.id.clone(), turn));
-        }
-    }
-    let mut turned: BTreeMap<String, f64> = BTreeMap::new();
-    for (m, ends) in asked.iter_mut() {
-        // Its turns at all its ends (those flat already too: the turn
-        // keeps them flat), each within a quarter turn of the first (a
-        // turn and a half turn more lay a leg flat alike).
-        for j in &around_details.joints {
-            if ends.iter().any(|(x, _)| x == &j.id) {
-                continue;
-            }
-            if let Some(f) = j
-                .arrivals
-                .iter()
-                .find(|a| &a.member == m)
-                .and_then(|a| a.flat)
-            {
-                ends.push((j.id.clone(), f.turn));
-            }
-        }
-        let first = ends[0].1;
-        for e in ends.iter_mut() {
-            e.1 -= std::f64::consts::PI * ((e.1 - first) / std::f64::consts::PI).round();
-        }
-        // Within the flatness allowed of each other: the middle of them (each
-        // end then within half their spread of flat), to a hundredth of a
-        // degree as written.
-        let lo = ends.iter().map(|e| e.1).fold(f64::INFINITY, f64::min);
-        let hi = ends.iter().map(|e| e.1).fold(f64::NEG_INFINITY, f64::max);
-        let mid = (((lo + hi) / 2.0).to_degrees() * 100.0).round() / 100.0;
-        if (hi - lo).to_degrees() > crate::FLAT_OFF {
-            notes.push(format!(
-                "{m}: lies off what it bolts onto at {}, by different turns (one roll for \
-                 both ends; the turn would spoil the other): not turned",
-                ends.iter()
-                    .map(|(j, x)| format!("{j} ({:.1}°)", x.to_degrees()))
-                    .collect::<Vec<_>>()
-                    .join(" and ")
-            ));
-            continue;
-        }
-        if mid.abs() >= 0.005
-            && let Some(j) = laid_elsewhere(m)
-        {
-            notes.push(format!(
-                "{m}: not turned: its end at {j} is laid out (not asked) with its roll now"
-            ));
-            continue;
-        }
-        turned.insert(m.clone(), mid.to_radians());
-    }
     // A member's roll before this run (as written; radians).
     let roll_text = |m: &str| -> String {
         restored.get(m).cloned().unwrap_or_else(|| {
@@ -960,6 +886,186 @@ fn lay_out_once(
             .try_into::<ohl_core::units::Angle>()
             .map_or(0.0, |a| a.radians())
     };
+    // Each member's class in the owner's order (its class and how it
+    // lies; a plan or hip member turned by Orient angles with the
+    // secondary bracing).
+    let class_of = |m: &str| -> u8 {
+        if record
+            .oriented
+            .get(m)
+            .is_some_and(|(_, k)| *k == crate::OrientKind::Plan)
+        {
+            return crate::joint_layout::ClassRank::Secondary as u8;
+        }
+        let class = member(m)
+            .and_then(|x| x.design.as_ref())
+            .and_then(|d| d.get("class"))
+            .and_then(toml::Value::as_str);
+        let dir = around_details
+            .joints
+            .iter()
+            .find_map(|j| j.arrivals.iter().find(|a| a.member == m))
+            .map_or([0.0, 0.0, 1.0], |a| a.direction);
+        crate::joint_layout::class_rank(class, dir) as u8
+    };
+    let mut turned: BTreeMap<String, f64> = BTreeMap::new();
+    let mut unknown_class: BTreeSet<String> = BTreeSet::new();
+    let mut stage_details: Option<JointDetails> = None;
+    let mut changed = false;
+    for stage in [
+        crate::joint_layout::ClassRank::Diagonal,
+        crate::joint_layout::ClassRank::Secondary,
+        crate::joint_layout::ClassRank::Redundant,
+    ] {
+        let stage = stage as u8;
+        // The joints in detail with the classes before turned (none
+        // turned yet: as they are).
+        if changed {
+            changed = false;
+            let mut d = planning.clone();
+            for (m, turn) in &turned {
+                ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+            }
+            stage_details = Some(
+                crate::joints::joint_details_and_model(
+                    &text_of(&d, &keep_around),
+                    ask.library,
+                    ask.bolts,
+                    Some(&around),
+                )?
+                .0,
+            );
+        }
+        let details = stage_details.as_ref().unwrap_or(&around_details);
+        let mut asked: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for j in details.joints.iter().filter(|j| targets.contains(&j.id)) {
+            for (m, _) in flat_turns(j) {
+                if held.contains(&m)
+                    || one_part.contains(&m)
+                    || turned.contains_key(&m)
+                    || asked.get(&m).is_some_and(|x| x.contains(&j.id))
+                {
+                    continue;
+                }
+                let class = class_of(&m);
+                if class != stage && class != crate::joint_layout::ClassRank::Leg as u8 {
+                    continue;
+                }
+                if class == crate::joint_layout::ClassRank::Leg as u8 {
+                    // Once, with the first class.
+                    if stage == crate::joint_layout::ClassRank::Diagonal as u8 {
+                        notes.push(format!(
+                            "{m}: lies off what it bolts onto at {}; a leg or chord (turned to \
+                             the tower's faces by Orient angles, not to suit what bolts onto \
+                             it): kept",
+                            j.id
+                        ));
+                    }
+                    continue;
+                }
+                if record
+                    .oriented
+                    .get(&m)
+                    .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+                {
+                    notes.push(format!(
+                        "{m}: lies off what it bolts onto at {}; a leg or chord turned to the \
+                         tower's faces (Orient angles): kept",
+                        j.id
+                    ));
+                    continue;
+                }
+                let automatic = record.rolled.contains_key(&m) || record.oriented.contains_key(&m);
+                let by_hand = member(&m).is_some_and(|x| x.roll.is_some()) && !automatic;
+                if by_hand && !ask.replace_hand {
+                    notes.push(format!(
+                        "{m}: lies off what it bolts onto at {}, its roll given by hand kept",
+                        j.id
+                    ));
+                    continue;
+                }
+                if member(&m)
+                    .and_then(|x| x.design.as_ref())
+                    .and_then(|d| d.get("class"))
+                    .is_none()
+                {
+                    unknown_class.insert(m.clone());
+                }
+                asked.entry(m).or_default().push(j.id.clone());
+            }
+        }
+        for (m, ends) in &asked {
+            // Its turns at all its ends (those flat already too: the turn
+            // keeps them flat), the end asked first; one roll for the whole
+            // member: every end within the flatness allowed, the same legs
+            // bolted first, else (an equal-leg angle) its leg bolted
+            // changing between its ends; any turn, the smallest that does.
+            let end_turn = |j: &str| -> Option<EndTurn> {
+                let a = details.joint(j)?.arrivals.iter().find(|a| &a.member == m)?;
+                let f = a.flat?;
+                Some(EndTurn {
+                    turn: f.turn,
+                    either_leg: either_leg(a),
+                })
+            };
+            let mut all: Vec<(String, EndTurn)> = Vec::new();
+            for j in ends.iter().chain(details.joints.iter().map(|j| &j.id)) {
+                if all.iter().any(|(x, _)| x == j) {
+                    continue;
+                }
+                if let Some(e) = end_turn(j) {
+                    all.push((j.clone(), e));
+                }
+            }
+            if all.is_empty() {
+                continue;
+            }
+            let turns: Vec<EndTurn> = all.iter().map(|(_, e)| *e).collect();
+            let Some((mid, way)) = whole_roll(&turns, crate::FLAT_OFF) else {
+                notes.push(format!(
+                    "{m}: lies off what it bolts onto at {}, by different turns (one roll for \
+                     the whole member: the turn would spoil the other end{}): not turned",
+                    all.iter()
+                        .map(|(j, x)| format!("{j} ({:.1}°)", x.turn.to_degrees()))
+                        .collect::<Vec<_>>()
+                        .join(" and "),
+                    if turns.iter().any(|e| e.either_leg) {
+                        ", whichever leg is bolted"
+                    } else {
+                        ""
+                    }
+                ));
+                continue;
+            };
+            let mid = mid.to_degrees();
+            if way == RollWay::LegChanges {
+                notes.push(format!(
+                    "{m}: one roll for the whole member lays both its ends flat with its leg \
+                     bolted changing between them (an equal-leg angle; {})",
+                    all.iter()
+                        .map(|(j, x)| format!("{j} {:.1}°", x.turn.to_degrees()))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if mid.abs() >= 0.005
+                && let Some(j) = laid_elsewhere(m)
+            {
+                notes.push(format!(
+                    "{m}: not turned: its end at {j} is laid out (not asked) with its roll now"
+                ));
+                continue;
+            }
+            turned.insert(m.clone(), mid.to_radians());
+            changed = true;
+        }
+    }
+    for m in &unknown_class {
+        notes.push(format!(
+            "{m}: no class given: turned with the secondary bracing (after the diagonals, \
+             before the redundants)"
+        ));
+    }
     // The joints asked in detail with `turns` (their model: the code's edge
     // distances), each planned.
     // (`s`: the settings planned with — the half turns' check without the
@@ -1028,6 +1134,7 @@ fn lay_out_once(
                     .oriented
                     .get(m)
                     .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+                    || class_of(m) == crate::joint_layout::ClassRank::Leg as u8
                 {
                     continue;
                 }
@@ -1092,18 +1199,9 @@ fn lay_out_once(
     // none of whose joints is laid out with the turn is not turned (its
     // roll as before), and the joints planned again without it — until
     // every turn left helps.
-    let class_rank = |m: &str| -> u8 {
-        match member(m)
-            .and_then(|x| x.design.as_ref())
-            .and_then(|d| d.get("class"))
-            .and_then(toml::Value::as_str)
-        {
-            Some("leg") => 0,
-            Some("bracing") | Some("crossing") => 1,
-            Some("redundant") => 2,
-            _ => 3,
-        }
-    };
+    // (The owner's order of the classes: of two members in one clash the
+    // later class left first.)
+    let class_rank = |m: &str| -> u8 { class_of(m) };
     let mut refused: BTreeSet<String> = BTreeSet::new();
     // The joints as the last pass's clash check left them, and those the
     // turns refused since then touch (checked again).
@@ -1293,6 +1391,19 @@ fn lay_out_once(
     }
 }
 
+/// Either leg of `a` may be its leg bolted (J3, [`crate::whole_roll`]): a
+/// single equal-leg angle whose leg bolted is not given as both (an
+/// equal-leg angle's long and short leg are alike). An unequal angle's leg
+/// bolted is its design data: never changed.
+fn either_leg(a: &crate::Arrival) -> bool {
+    a.other_onto.is_none()
+        && a.leg.value != Some(ohl_structures::connections::BoltedLeg::Both)
+        && a.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .is_some_and(|g| (g.b - g.h).abs() <= 1e-9)
+}
+
 /// The joints asked in detail, their model and each one's plan.
 type Planned = (
     JointDetails,
@@ -1310,12 +1421,33 @@ fn plans_of(
     joins: &BTreeMap<String, Vec<Join>>,
 ) -> Vec<(String, JointPlan)> {
     let edge = edge_rule(model);
+    // Laid out once per kind (J4, [`crate::joint_kinds`]): a joint like
+    // one planned before it (the tower's symmetry, a repeated panel; as
+    // the planner reads them) takes that plan, mapped — checked after
+    // writing in its own place like every joint, planned on its own where
+    // it fails there.
+    let kinds = if settings.once_per_kind {
+        crate::joint_kinds::kinds(details, targets, true)
+    } else {
+        BTreeMap::new()
+    };
+    let mut planned: BTreeMap<String, JointPlan> = BTreeMap::new();
     details
         .joints
         .iter()
         .filter(|j| targets.contains(&j.id))
         .map(|j| {
-            let mut p = plan_joint(j, settings, &edge);
+            let mut p = match kinds
+                .get(&j.id)
+                .and_then(|l| planned.get(&l.of).map(|p| (l, p)))
+            {
+                Some((l, rep)) => crate::joint_kinds::map_plan(rep, l),
+                None => {
+                    let p = plan_joint(j, settings, &edge);
+                    planned.insert(j.id.clone(), p.clone());
+                    p
+                }
+            };
             p.joins = joins.get(&j.id).cloned().unwrap_or_default();
             (j.id.clone(), p)
         })
