@@ -8,6 +8,85 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (O42: the solve after an edit; the writer's lock released)
+
+**Owner decisions of 2026-11-19**, on the questions the in-place work
+left:
+
+- The solver's internals in `ohl-line` may change so that a case's
+  update reads only what each section and jumper needs; the results stay
+  **the same bit for bit** (quality before speed: speed work never
+  coarsens a computed result). The change of 03d27083 (the line's routes
+  worked out once per update) is kept.
+- `ohl-store-pg`: a writer's advisory lock is released explicitly when
+  its connection's last user goes, so that a server started again at once
+  is not refused; the tests' wait for the locks to go
+  (`Cluster::wait_for_locks_gone`) is kept as a safety net.
+- The safety-volume test's mesh of 0.5 m is accepted. The views (O42
+  item 3) stay as they are.
+
+**A solve's lookups** (roadmap O42; built, in active development, not
+approved yet; [performance](performance.md#the-solve-after-an-edit-o42-2026-11-19)):
+
+- **What a solve looked up again and again in the whole line** — for
+  every section and jumper it solved: a structure, section or jumper
+  searched by id, the sections at a wire point or through a structure,
+  the line's route views made again, every jumper's estimated load worked
+  out again (for each section solved in a jumper's design case), each
+  solved shape searched against every section — is now **worked out once
+  while the solve runs** (`ohl_line::lookups`). A case's update, a whole
+  solve, `solve_line` and `solve_jumpers` open them; the line's own
+  methods (`Line::structure`, `jumper_section`, `wind_factor_at_structure`,
+  `alignment_views`, the nearest route segment, …) answer from them: the
+  first object of an id and the line's order as a search gives them, the
+  same values computed by the same code. They are kept per thread (as the
+  solve's thread count already is), handed to the solve's worker threads,
+  and only for the line borrowed for the solve (by its address while it
+  is borrowed: it cannot change meanwhile); a copy or a part of a line is
+  searched as before.
+- **Chosen over the server's sub-line way** (each section solved on the
+  part of the line it reads): the sub-line holds only the alignments
+  within 500 m and the structures of one ring of sections, so the route
+  views it makes can differ from the whole line's (a run's structures
+  following each other, a structure far from every alignment); right for
+  the server's drawing, not provably the same for results. The lookups
+  give the same answers by construction.
+- **The route views** themselves are worked out through the places of
+  the structures and spans (each structure tried only against the
+  alignments tied to it, of its routes or with a free point near it;
+  each alignment's run on the straight followed only through the
+  structures and spans near it), and the **nearest route segment** to a
+  point through the routes' segments in cells, ring by ring, while a
+  solve's lookups are open — of equally near segments the first, as the
+  search keeps it. The jumpers' still-air lengths are kept up to 200 000
+  (20 000 made every update on a country work them all out again).
+- **A case's update solves its sections over the cores**, as a full solve
+  does (each section alone is independent of the others), with the
+  jumpers' loads on the clamps given once per update (before: copied for
+  each section solved, quadratic in the line's size).
+- **Proof**: the solves with the lookups equal the solves with every
+  lookup searched (`lookups::searched`) — a whole solve, updates after
+  structures moved and moved back, the full solves — on the example
+  lines and a synthetic country, in still air and in wind, the jumpers'
+  cut lengths cut again each way; every answer of the line's methods
+  compared (ids given twice, local winds); the route views compared with
+  the old way (`Line::alignment_views_reference`) on the examples (towers
+  moved beside and off) and on synthetic countries; the grid's nearest
+  segment with the search on 3 000 points. The existing tests unchanged.
+- **Still worked out over the whole line once per update** (each a small
+  part of an edit, said in performance.md): the route views (an edit may
+  move a structure against an alignment), the jumpers' estimated loads,
+  the lookups themselves, each jumper's inputs compared, the solved
+  shapes listed for the jumpers.
+
+**The writer's lock** (roadmap O46): `ohl_store_pg` releases the
+network's writer lock (`pg_advisory_unlock`) when the writer's
+connection's last user — the network or one of its models' stores — is
+dropped, after rolling back an open step; a connection already broken
+loses it with its process as before. Tested: a second writer connects at
+once after the first is dropped (also in the middle of a step), not while
+a store still uses the first's connection.
+
 ## 2026-11-19 (O42 and O46: edits in OHL-Design in place; the tests' PostgreSQL)
 
 **OHL-Design's line is kept in step with the session in place** (owner,
