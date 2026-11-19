@@ -30,7 +30,7 @@
 //!   normal.
 //!
 //! The rows are the joint checks' (`PlatePart::Bend`): a usage per case
-//! with the plugin's check and clause, or "NOT CHECKED by <plugin>, NOT ON
+//! with the plugin's check and clause, or "NOT CHECKED by (the plugin), NOT ON
 //! THE SAFE SIDE: …" without a usage.
 
 use ohl_sections::SectionLibrary;
