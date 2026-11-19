@@ -8,6 +8,149 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (put the project's strings in a library)
+
+**A one-off command for existing projects: every string written inline
+gets an entry of the project's insulator library** (owner, 2026-11-18:
+"yes do the one-off command for existing projects"; built, in active
+development, not approved yet;
+[user guide](../user-guide/structure-library.md#put-the-projects-strings-in-a-library)).
+
+- **Line › Structures › Put the project's strings in a library…**: the
+  structures' own strings and the strings of the project's structure
+  type files without an `insulator`.
+- **Grouped exactly**: kind, length, weight, wind area, axial stiffness
+  (the line's default where a string gives none), rated load, the three
+  swing limits, and whether it is a leg of a V — compared as stored, to
+  the last bit; an entry of the project's library with exactly those
+  values is reused; new ones are labelled by kind, length, weight and
+  rating, unique, renamable in the preview.
+- **Left inline, with the reason**: no weight (an entry would give it
+  one), a post insulator (made in the library, with its ratings), own
+  volumes, a type string without a length.
+- **Apply**: the new `.ohli` files, the structures and the type files
+  changed as one command of the session (one undo). Each string keeps
+  its values and names its entry: the results are unchanged (tested: the
+  typed example solved in every weather case before and after, equal).
+  The Edit window's **Make a library entry from this string** is the same
+  function for one string (`string_entries`).
+- **Not changed**: the automatic labelling an edit of a structure does
+  (strings of the same values to the millimetre, since 2026-10-21) stays
+  as it was; this command and the Edit window's button bypass it so
+  their entries hold the values exactly. Nothing new is stored (the
+  `insulator` field exists).
+
+## 2026-11-18 (an edit re-solves the weather cases shown; the others later)
+
+**An edit re-solves at once only the weather cases shown; the others are
+worked out later** (owner, 2026-11-18: "when something is edited in that
+window it recomputes all weather cases where it could only recompute the
+displayed one which would be quicker"; built, in active development, not
+approved yet; [user guide](../user-guide/desktop-app.md)).
+
+- **Where all were solved**: a command already re-solved only the cases
+  shown (the others marked not solved), but a **library read again** — a
+  structure type or an insulator entry saved, and the first Apply of an
+  Edit window, which takes the structure's strings into the insulator
+  library — solved every case solved before, fully, in the window's
+  frame. It now solves the cases shown (the same set as a command:
+  `Model::live_cases`), the others marked not solved.
+- **The others catch up**: when shown or asked for (a check, a table, an
+  export solves its case first: `Model::ensure_solved`), or in the
+  background 2 s after the last edit (`Model::catch_up`), a few at a time;
+  nothing shows or uses an old solution (a case not solved has none).
+- **Precision unchanged**: the same solve, only later; a case caught up
+  equals a full solve of the line (tested).
+
+## 2026-11-18 (a placed structure's Edit window: strings from the library, set by two angles)
+
+**The Edit window of a structure without a type chooses which string
+hangs there, not its parameters; a click in its view shows the object's
+row; its wire points are set by their string's two angles** (owner,
+2026-11-18: "this window should allow the change of string but not of
+the strings parameter like weight, strength shape and so on"; "when we
+click on something on the small window … the table on the left [should]
+be switched to the right one and show the point data … also the wire
+point table is unnecessary and it would be better to have the up/down
+angle of the string and the compass angle to set it"; built, in active
+development, not approved yet;
+[user guide](../user-guide/desktop-app.md#the-edit-window-of-a-structure-without-a-type)).
+
+- **Strings**: the library entry is chosen (`insulator`); length, kind,
+  weight, wind area, compression and limits are read-only, "from library
+  entry X". A value kept on the structure that differs from its entry is
+  a warning; nothing is changed. A string without an entry: its values
+  read-only, "not from a library entry: choose one, or make one from it",
+  and **Make a library entry from this string** (one command; the entry
+  holds its values exactly, the string keeps its own and names it, the
+  results unchanged). The tools row has no string length or presets
+  there; **+ String from the library…** adds one.
+- **Angles** (conventions to confirm): **from vertical** 0° hanging, 90°
+  level, 180° straight up; **compass** in the structure's axes, 0° ahead
+  along the line, clockwise seen from above; the **true bearing** beside
+  it, read-only (compass − the structure's orientation, from north,
+  clockwise). Typed, the string turns about its attachment point as a
+  drag does (length and attachment point kept, what hangs below along).
+  A V's angles are shown, not typed (said). Shown to 4 decimals; a
+  value typed is applied only when it differs from the one shown.
+- **No Wire points table** in that window (the structure types' screen
+  keeps it); the counterweight is typed in the first string's row.
+- **A click in the view** on a point, wire point or string switches to
+  its table, picks and scrolls to its row and focuses its first value; a
+  row chosen picks its object. Typing an attachment point's position
+  follows the drag's rule (what hangs from it moves along) — on the
+  structure types' screen too.
+- **Positions kept exactly** in that window's document (12 decimals
+  where not on a millimetre; before, every Apply put the points and wire
+  points of the structure on the millimetre of its axes).
+- **The window follows the line** after an Apply, an undo or a redo
+  (before, after an undo it kept showing the change undone, and a later
+  Apply put it back); Apply asks for the views to be drawn again at once.
+
+## 2026-11-18 (dragging keeps the strings' lengths)
+
+**A dragged wire point turns its string about its attachment point; a
+dragged attachment point takes its strings along** (owner, 2026-11-18:
+"moving the attachement point should move the whole string (translation)
+and moving the wire point should only influence the angel of the string
+(same length and same attachement point -> rotation centered on the
+attachement point)"; built, in active development, not approved yet;
+[user guide](../user-guide/desktop-app.md#what-a-drag-does-to-the-strings)).
+
+- **Where**: the structure screen's drags (`type_workspace`), so also a
+  placed structure's **Edit** window (`placed_editor`, the structure
+  screen on a structure without a type — the owner's report), and the
+  line's 3D view handles (`handles`): one rule, `ohl-app`
+  `string_drag::drag`, on the points, wire points and strings in any
+  axes.
+- **Before**: the structure screen wrote a dragged wire point where the
+  pointer was (its strings' lengths changed: a placed structure's
+  document gives every wire point its position) and moved a dragged
+  attachment point alone (its strings' wire points stayed, so their
+  lengths changed); the 3D view's handles moved I-strings along but left a
+  V's wire point where it was (a length changed) and moved a dragged wire
+  point freely.
+- **Wire point dragged**: on the sphere of its string's length about its
+  top (nearest the pointer, not snapped); a V on the circle both legs
+  reach; three strings or more from tops not in one line: refused, said.
+  The readout gives the string's length and its angle from the vertical,
+  across and along the line.
+- **Attachment point dragged**: everything hanging from it moves by the
+  same displacement. A V whose other leg hangs from a point not dragged
+  turns about that point (every length kept; the wire point nearest to
+  where the dragged leg takes it); refused where the legs cannot meet.
+- **What hangs below** a wire point that moves (a chain): moved by the
+  same displacement (its strings keep their lengths and directions).
+- **No drag changes a length** (owner, 2026-11-18: "in this window from
+  the edit button the length of the string should not be editable as
+  it's only in the string library"): no key frees it; another length is
+  another library entry, chosen for the string.
+- **Precision**: the line's 3D view and a placed structure's Edit window
+  keep a length to 1e-9 m; a structure type's file writes positions to
+  the millimetre, so a turned wire point keeps its string's length to the
+  millimetre there (a translated one exactly: the point is put on the
+  millimetre). No computed result and no file format changes.
+
 ## 2026-11-18 (country server, phase 3)
 
 **An edit costs what it touches: commands applied in place, a reference

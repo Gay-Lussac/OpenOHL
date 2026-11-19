@@ -93,6 +93,7 @@ mod offline_copy;
 mod perf;
 mod phase_distance;
 mod placed_editor;
+mod placed_strings;
 mod placement;
 mod plan;
 mod plans_window;
@@ -126,6 +127,9 @@ mod staking;
 mod starter;
 mod string_builder;
 mod string_checks;
+mod string_drag;
+mod string_entries;
+mod string_library_window;
 mod structure_app;
 mod structure_desk;
 mod structure_groups;
@@ -185,6 +189,8 @@ mod revision_tests;
 mod rule_editor_tests;
 #[cfg(test)]
 mod safety_volume_tests;
+#[cfg(test)]
+mod string_drag_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

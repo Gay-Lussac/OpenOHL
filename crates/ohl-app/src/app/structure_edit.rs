@@ -357,6 +357,54 @@ impl Ready {
         }
     }
 
+    /// **Put the project's strings in a library…**: its preview window
+    /// (or why not, in the status bar).
+    pub fn open_string_library(&mut self) {
+        match crate::string_entries::plan(&self.model) {
+            Ok(plan) => {
+                self.string_library =
+                    Some(crate::string_library_window::Window { plan, error: None });
+            }
+            Err(e) => self.status = Some((e, true)),
+        }
+    }
+
+    /// The preview window of **Put the project's strings in a library…**:
+    /// Apply makes it one command (the strings named exactly as shown:
+    /// not taken into the library again by the edit's own labelling);
+    /// refused, the window stays with the reason.
+    pub(crate) fn string_library_frame(&mut self, ctx: &egui::Context) {
+        use crate::string_library_window::{Asked, show};
+        let Some(mut w) = self.string_library.take() else {
+            return;
+        };
+        match show(ctx, &mut w) {
+            Some(Asked::Cancel) => {
+                self.status = Some(("strings left as they were".into(), false));
+                return;
+            }
+            Some(Asked::Apply) => match crate::string_entries::command(&self.model, &w.plan) {
+                Ok((what, command)) => {
+                    self.cataloguing = true;
+                    let done = self.perform(crate::edit::Action::Command {
+                        what: what.clone(),
+                        command,
+                    });
+                    self.cataloguing = false;
+                    if done {
+                        self.status = Some((what, false));
+                        ctx.request_repaint();
+                        return;
+                    }
+                    w.error = self.status.as_ref().map(|s| s.0.clone());
+                }
+                Err(e) => w.error = Some(e),
+            },
+            None => {}
+        }
+        self.string_library = Some(w);
+    }
+
     /// Opens structure `id` (one without a type) in the pylon editor.
     pub fn edit_structure(&mut self, id: &str) {
         if self
@@ -392,6 +440,8 @@ impl Ready {
         };
         let empty = ohl_structures::InsulatorLibrary::default();
         let insulators = self.model.types.as_ref().map_or(&empty, |(_, i)| i);
+        // The structure as the line has it now (after an Apply, an undo…).
+        p.follow(&self.model.line, self.model.line_version);
         // The line is only read while the page is shown; the line as
         // stored is copied only for the action that changes the model
         // while reading it (2026-11-10: both were copied on every frame).
@@ -405,6 +455,10 @@ impl Ready {
                         if self.perform(crate::edit::Action::Command { what, command }) {
                             p.applied();
                             p.message = Some(("applied".into(), false));
+                            // The views drawn before this page in this
+                            // frame show the line as it was: drawn again
+                            // now, not at the next movement of the mouse.
+                            ui.ctx().request_repaint();
                         }
                     }
                     Err(e) => p.message = Some((e, true)),
@@ -428,8 +482,36 @@ impl Ready {
             }
             None => {}
         }
-        if let Some(req) = request {
-            self.workspace_request(req);
+        match request {
+            // A library entry from a string of the structure: one command
+            // (the window shows the line as it is: nothing of its own).
+            Some(crate::type_workspace::Request::MakeStringEntry(label)) => {
+                let made = if p.dirty() {
+                    Err("apply or revert this window's changes first".to_owned())
+                } else {
+                    crate::string_entries::plan_one(&self.model, &p.id, &label)
+                        .and_then(|plan| crate::string_entries::command(&self.model, &plan))
+                };
+                match made {
+                    Ok((what, command)) => {
+                        // Exactly this entry: the other strings are not
+                        // taken into the library with it.
+                        self.cataloguing = true;
+                        let done = self.perform(crate::edit::Action::Command {
+                            what: what.clone(),
+                            command,
+                        });
+                        self.cataloguing = false;
+                        if done {
+                            p.message = Some((what, false));
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                    Err(e) => p.message = Some((e, true)),
+                }
+            }
+            Some(req) => self.workspace_request(req),
+            None => {}
         }
         self.placed = Some(p);
     }
@@ -444,6 +526,8 @@ impl Ready {
             // Taken by the page (the file as saved) or the structure
             // without a type (a file first).
             Request::EditInStructureApp => {}
+            // Taken by the Edit window of a placed structure.
+            Request::MakeStringEntry(_) => {}
             Request::OpenInsulators => {
                 self.open_page = Some((Tab::Library(LibraryKind::Insulators), None));
             }

@@ -82,6 +82,10 @@ pub enum Request {
     /// Open the structure in the structure application (its body, the
     /// design: what this screen does not edit).
     EditInStructureApp,
+    /// Make a library entry from string `0` (no entry yet) and point the
+    /// string at it: the Edit window of a placed structure
+    /// ([`crate::placed_strings`]), one command.
+    MakeStringEntry(String),
 }
 
 /// A drag moving a joint or a (wire) point.
@@ -92,6 +96,10 @@ struct Move {
     on: [f64; 3],
     /// The plane's normal.
     normal: [f64; 3],
+    /// The points, wire points and strings when it started: each frame
+    /// puts them from there by the strings' rule ([`crate::string_drag`]),
+    /// so the lengths do not wander with the rounding of the file.
+    start: crate::string_drag::Net,
 }
 
 /// State of the workspace.
@@ -153,6 +161,15 @@ pub struct Workspace {
     /// A link waiting for its answer: the point is not on the joint (owner
     /// 2026-11-16: "also in OHL design" — asked as everywhere else).
     pub link_ask: Option<LinkAsk>,
+    /// A placed structure's **Edit** window (owner, 2026-11-18): the
+    /// structure's orientation (its true bearings); its strings' parameters
+    /// come from their library entries (read-only), there is no Wire
+    /// points table, a string is set by its two angles
+    /// ([`crate::placed_strings`]) and positions are written exactly.
+    pub library_strings: Option<f64>,
+    /// A row to show (a click in the view): its table, scrolled to, its
+    /// first value focused.
+    pub focus: Option<(Sheet, String)>,
 }
 
 /// A link on the structure screen waiting for its answer (the Link tool,
@@ -202,6 +219,8 @@ impl Default for Workspace {
             last: None,
             held_before: false,
             link_ask: None,
+            library_strings: None,
+            focus: None,
         }
     }
 }
@@ -514,15 +533,20 @@ impl Workspace {
                     _ => None,
                 })
                 .collect();
-            ui.label("string");
-            crate::style::field(
-                ui,
-                egui::DragValue::new(&mut self.string_length)
-                    .range(0.05..=50.0)
-                    .speed(0.05)
-                    .max_decimals(3)
-                    .suffix(" m"),
-            );
+            // The Edit window's strings come from the library (its Strings
+            // table), not of a length typed here.
+            let typed = self.library_strings.is_none();
+            if typed {
+                ui.label("string");
+                crate::style::field(
+                    ui,
+                    egui::DragValue::new(&mut self.string_length)
+                        .range(0.05..=50.0)
+                        .speed(0.05)
+                        .max_decimals(3)
+                        .suffix(" m"),
+                );
+            }
             for (name, n, help) in [
                 (
                     "One string",
@@ -534,7 +558,10 @@ impl Workspace {
                     2,
                     "Two strings from the two points picked to one wire point below their middle",
                 ),
-            ] {
+            ]
+            .into_iter()
+            .filter(|_| typed)
+            {
                 if ui
                     .add_enabled(tops.len() == n, egui::Button::new(name))
                     .on_hover_text(help)
@@ -815,8 +842,33 @@ impl Workspace {
                         self.selected.push(h);
                     }
                 }
-                Some(h) => self.selected = vec![h],
-                None if !shift => self.selected.clear(),
+                Some(h) => {
+                    self.show_row(&h, t);
+                    self.selected = vec![h];
+                }
+                None if !shift => {
+                    // A string under the pointer: its row, its wire point
+                    // picked.
+                    let here = local(pos);
+                    let near = g
+                        .strings
+                        .iter()
+                        .filter_map(|(l, a, b)| {
+                            let (qa, qb) = (project(*a)?, project(*b)?);
+                            Some((segment_distance(here, qa, qb), l))
+                        })
+                        .filter(|(d, _)| *d <= 8.0)
+                        .min_by(|a, b| a.0.total_cmp(&b.0))
+                        .map(|(_, l)| l.clone());
+                    match near.and_then(|l| t.strings.iter().find(|x| x.label == l)) {
+                        Some(x) => {
+                            self.sheet = Sheet::Strings;
+                            self.focus = Some((Sheet::Strings, x.label.clone()));
+                            self.selected = vec![Handle::Wire(x.wire.clone())];
+                        }
+                        None => self.selected.clear(),
+                    }
+                }
                 None => {}
             }
             self.dirty = true;
@@ -843,6 +895,7 @@ impl Workspace {
                 handle: h,
                 on: at,
                 normal: n.map(|v| v / len),
+                start: crate::string_drag::Net::of_type(t, g),
             });
         }
         if let Some(m) = self.drag.clone() {
@@ -854,47 +907,57 @@ impl Workspace {
                 if dn.abs() > 1e-9 {
                     let s: f64 = (0..3).map(|k| (m.on[k] - a[k]) * m.normal[k]).sum::<f64>() / dn;
                     let mut at = [0, 1, 2].map(|k| a[k] + s * d[k]);
-                    if self.grid > 0.0 {
+                    // The strings' rule: lengths kept (a wire point held
+                    // by strings turns about their tops, not snapped).
+                    let turning = matches!(&m.handle, Handle::Wire(w)
+                        if m.start.strings.iter().any(|x| &x.wire == w));
+                    if self.grid > 0.0 && !turning {
                         at = at.map(|v| (v / self.grid).round() * self.grid);
                     }
                     // Onto an attach joint near the pointer (a point:
                     // linked there); another joint: snapped to.
                     let here = local(pos);
                     let mut onto: Option<String> = None;
-                    if let Some((id, p, _)) = linkable.iter().find(|j| {
-                        Handle::Joint(j.0.clone()) != m.handle
-                            && j.2
-                            && project(j.1)
-                                .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
-                    }) {
+                    if !turning
+                        && let Some((id, p, _)) = linkable.iter().find(|j| {
+                            Handle::Joint(j.0.clone()) != m.handle
+                                && j.2
+                                && project(j.1)
+                                    .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
+                        })
+                    {
                         at = *p;
                         onto = Some(id.clone());
-                    } else if let Some((_, p, _)) = g.joints.iter().find(|j| {
-                        Handle::Joint(j.0.clone()) != m.handle
-                            && project(j.1)
-                                .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
-                    }) {
+                    } else if !turning
+                        && let Some((_, p, _)) = g.joints.iter().find(|j| {
+                            Handle::Joint(j.0.clone()) != m.handle
+                                && project(j.1)
+                                    .is_some_and(|q| (q[0] - here[0]).hypot(q[1] - here[1]) < 8.0)
+                        })
+                    {
                         at = *p;
                     }
-                    if position(g, &m.handle) != Some(at) {
-                        match drag_point(doc, t, &m.handle, at, onto.as_deref()) {
-                            Ok(()) => {
-                                changed = true;
-                                self.message = Some((
-                                    format!(
-                                        "{} at {:.3}, {:.3}, {:.3} m",
-                                        m.handle.describe(),
-                                        at[0],
-                                        at[1],
-                                        at[2]
-                                    ),
-                                    false,
-                                ));
-                            }
-                            Err(e) => {
-                                self.message = Some((e, true));
-                                self.drag = None;
-                            }
+                    match drag_strings(
+                        doc,
+                        t,
+                        g,
+                        &m.start,
+                        &m.handle,
+                        at,
+                        onto.as_deref(),
+                        self.library_strings.is_some(),
+                    ) {
+                        Ok(Some(words)) => {
+                            changed = true;
+                            self.message = Some((words, false));
+                        }
+                        Ok(None) => {}
+                        // Cannot move there (lengths kept): said, the drag
+                        // goes on.
+                        Err((e, false)) => self.message = Some((e, true)),
+                        Err((e, true)) => {
+                            self.message = Some((e, true));
+                            self.drag = None;
                         }
                     }
                 }
@@ -1085,7 +1148,8 @@ impl Workspace {
             rect.left_bottom() + egui::vec2(8.0, -8.0),
             egui::Align2::LEFT_BOTTOM,
             "x right of the line (red), y ahead (green), z up (blue) — drag: turn, right-drag: pan, \
-             wheel: zoom; drag a point or wire point to move it; Shift + click: pick another",
+             wheel: zoom; drag a point or wire point to move it (the strings keep their lengths); \
+             Shift + click: pick another",
             egui::FontId::proportional(11.0),
             egui::Color32::GRAY,
         );
@@ -1124,9 +1188,15 @@ impl Workspace {
                     "Where a wire is strung: a set number on a wire point; suspension or strain from its string",
                 ),
             ] {
+                if s == Sheet::Wires && self.library_strings.is_some() {
+                    continue;
+                }
                 ui.selectable_value(&mut self.sheet, s, name).on_hover_text(tip);
             }
         });
+        if self.sheet == Sheet::Wires && self.library_strings.is_some() {
+            self.sheet = Sheet::Strings;
+        }
         let coord = |ui: &mut egui::Ui, v: &mut f64| {
             crate::style::field(
                 ui,
@@ -1142,7 +1212,7 @@ impl Workspace {
             .auto_shrink(false)
             .show(ui, |ui| match self.sheet {
                 Sheet::Points => {
-                    changed |= self.points_sheet(ui, doc, t);
+                    changed |= self.points_sheet(ui, doc, t, g);
                 }
                 Sheet::Wires => {
                     egui::Grid::new("type-wires").striped(true).show(ui, |ui| {
@@ -1161,9 +1231,14 @@ impl Workspace {
                         ui.end_row();
                         for w in &t.wires {
                             let h = Handle::Wire(w.label.clone());
-                            if ui.selectable_label(self.selected.contains(&h), &w.label).clicked() {
+                            let r = ui.selectable_label(self.selected.contains(&h), &w.label);
+                            if r.clicked() {
                                 self.selected = vec![h.clone()];
                                 self.dirty = true;
+                            }
+                            if self.focus.as_ref() == Some(&(Sheet::Wires, w.label.clone())) {
+                                r.scroll_to_me(Some(egui::Align::Center));
+                                self.focus = None;
                             }
                             let held: Vec<&str> = t
                                 .strings
@@ -1218,12 +1293,52 @@ impl Workspace {
                 Sheet::Sets => {
                     changed |= self.sets_sheet(ui, doc, t);
                 }
-                Sheet::Strings => {
-                    changed |= self.strings_sheet(ui, doc, t, g, insulators);
-                }
+                Sheet::Strings => match self.library_strings {
+                    Some(orientation) => {
+                        changed |= self.library_strings_sheet(ui, doc, t, g, insulators, orientation);
+                    }
+                    None => changed |= self.strings_sheet(ui, doc, t, g, insulators),
+                },
             });
         changed
     }
+}
+
+impl Workspace {
+    /// The row of `h` (picked in the view) shown: its table, scrolled to,
+    /// its first value focused — a wire point in the Edit window by its
+    /// string's row (it has no table there).
+    fn show_row(&mut self, h: &Handle, t: &StructureType) {
+        match h {
+            Handle::Point(l) => {
+                self.sheet = Sheet::Points;
+                self.focus = Some((Sheet::Points, l.clone()));
+            }
+            Handle::Wire(w) if self.library_strings.is_some() => {
+                if let Some(x) = t.strings.iter().find(|x| &x.wire == w) {
+                    self.sheet = Sheet::Strings;
+                    self.focus = Some((Sheet::Strings, x.label.clone()));
+                }
+            }
+            Handle::Wire(w) => {
+                self.sheet = Sheet::Wires;
+                self.focus = Some((Sheet::Wires, w.clone()));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The distance from `p` to the segment from `a` to `b` (screen pixels).
+fn segment_distance(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    let s = if len2 > 0.0 {
+        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    (p[0] - a[0] - s * dx).hypot(p[1] - a[1] - s * dy)
 }
 
 /// Text on a dark box, kept inside the painter's area.
@@ -1434,6 +1549,83 @@ fn drag_point(
     }
 }
 
+/// A point or wire point of type `t` (drawn as `g`) dragged to `at`
+/// (local axes; released `onto` an attach joint) by the strings' rule
+/// ([`crate::string_drag`]), from `start` (the
+/// points, wire points and strings when the drag started): the dragged
+/// one put by [`drag_point`], the wire points that move with it written
+/// where they go — those the file places by their strings follow them
+/// by themselves. With what it did in words; `None`: nothing to change.
+/// An error, with whether the drag ends (else it cannot move there, the
+/// drag going on).
+#[allow(clippy::too_many_arguments)]
+fn drag_strings(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    g: &Geometry,
+    start: &crate::string_drag::Net,
+    h: &Handle,
+    at: [f64; 3],
+    onto: Option<&str>,
+    exact: bool,
+) -> Result<Option<String>, (String, bool)> {
+    use crate::string_drag as sd;
+    // Lengths kept, a wire point turns (its place is not on the file's
+    // millimetre); anything else is put on the millimetre, so what moves
+    // along moves by exactly as much.
+    let mm = |p: [f64; 3]| p.map(|v| (v * 1000.0).round() / 1000.0);
+    let to = match h {
+        Handle::Wire(_) => at,
+        _ if onto.is_some() => at,
+        _ => mm(at),
+    };
+    let moved = sd::drag(start, h, to).map_err(|e| (e, false))?;
+    let mut writes: Vec<(Handle, [f64; 3])> = vec![(h.clone(), moved.at)];
+    for (w, p) in &moved.wires {
+        let wire = Handle::Wire(w.clone());
+        if &wire != h && t.wires.iter().any(|x| &x.label == w && x.point.is_some()) {
+            writes.push((wire, *p));
+        }
+    }
+    let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 5e-4);
+    if writes
+        .iter()
+        .all(|(x, p)| position(g, x).is_some_and(|q| same(q, *p)))
+    {
+        return Ok(None);
+    }
+    // The Edit window writes wire points exactly (a turned one is on no
+    // millimetre).
+    let put = |doc: &mut DocumentMut, x: &Handle, p: [f64; 3]| match x {
+        Handle::Wire(w) if exact => crate::placed_strings::put_wire(doc, w, p),
+        _ => edit::move_to(doc, t, x, p),
+    };
+    match h {
+        Handle::Wire(_) if exact => put(doc, h, moved.at),
+        _ => drag_point(doc, t, h, moved.at, onto),
+    }
+    .map_err(|e| (e, true))?;
+    for (x, p) in &writes[1..] {
+        put(doc, x, *p).map_err(|e| (e, true))?;
+    }
+    let a = moved.at;
+    let mut words = format!(
+        "{} at {:.3}, {:.3}, {:.3} m",
+        h.describe(),
+        a[0],
+        a[1],
+        a[2]
+    );
+    if let Handle::Wire(w) = h {
+        let strings = sd::strings_words(start, w, a, |p| p);
+        if !strings.is_empty() {
+            words.push_str(&format!(" — lengths kept: {strings}"));
+        }
+    }
+    words.push_str(&moved.describe());
+    Ok(Some(words))
+}
+
 impl Workspace {
     /// The Attachment points sheet: each point's label, where it is
     /// (typed: a point on a joint stays on it, its offset follows), its
@@ -1446,7 +1638,9 @@ impl Workspace {
         ui: &mut egui::Ui,
         doc: &mut DocumentMut,
         t: &StructureType,
+        g: &Geometry,
     ) -> bool {
+        let focus = self.focus.take_if(|f| f.0 == Sheet::Points);
         let mut changed = false;
         let joints = t.joints();
         // Only attach joints take a link (a joint's kind is set in
@@ -1460,7 +1654,6 @@ impl Workspace {
                     .max_decimals(3)
                     .suffix(" m"),
             )
-            .changed()
         };
         let mut unlink: Option<String> = None;
         egui::Grid::new("type-points").striped(true).show(ui, |ui| {
@@ -1488,6 +1681,10 @@ impl Workspace {
                     self.selected = vec![h.clone()];
                     self.dirty = true;
                 }
+                let focused = focus.as_ref().is_some_and(|f| f.1 == p.label);
+                if focused {
+                    r.scroll_to_me(Some(egui::Align::Center));
+                }
                 r.context_menu(|ui| {
                     if ui.button("Link to a joint… (Link tool)").clicked() {
                         self.link = Some(Some(p.label.clone()));
@@ -1502,14 +1699,29 @@ impl Workspace {
                 let mut at = p.position().map(|v| v.si());
                 let free = p.node.is_none();
                 let mut moved = false;
-                for v in &mut at {
-                    moved |= coord(ui, v);
+                for (k, v) in at.iter_mut().enumerate() {
+                    let was = *v;
+                    let r = coord(ui, v);
+                    if k == 0 && focused {
+                        r.request_focus();
+                    }
+                    // A value typed (not the one shown, to the millimetre,
+                    // read back as the field is left: the point would move
+                    // by its rounding).
+                    moved |= r.changed() && (*v - was).abs() >= 5e-4;
                 }
-                // On a joint: the link stays, the offset follows.
+                // As a drag (owner, 2026-11-18): what hangs from it moves
+                // along; on a joint, the link stays, the offset follows.
                 if moved {
-                    match edit::move_to(doc, t, &h, at) {
-                        Ok(()) => changed = true,
-                        Err(e) => self.message = Some((e, true)),
+                    let start = crate::string_drag::Net::of_type(t, g);
+                    let exact = self.library_strings.is_some();
+                    match drag_strings(doc, t, g, &start, &h, at, None, exact) {
+                        Ok(Some(words)) => {
+                            changed = true;
+                            self.message = Some((words, false));
+                        }
+                        Ok(None) => {}
+                        Err((e, _)) => self.message = Some((e, true)),
                     }
                 }
                 // Its joint, chosen among those it may be linked to: linked
@@ -1538,7 +1750,7 @@ impl Workspace {
                     if free {
                         ui.label("—").on_hover_text("Its own joint: no offset");
                     } else {
-                        shifted |= coord(ui, v);
+                        shifted |= coord(ui, v).changed();
                     }
                 }
                 if shifted {

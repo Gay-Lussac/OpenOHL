@@ -483,6 +483,8 @@ pub struct Ready {
     pub open_page: Option<(Tab, Option<String>)>,
     /// A structure without a type in the pylon editor.
     pub placed: Option<crate::placed_editor::PlacedEditor>,
+    /// Put the project's strings in a library…: its preview window.
+    pub string_library: Option<crate::string_library_window::Window>,
     /// Structure files open in the structure application (Edit), watched.
     pub structure_apps: crate::structure_app::StructureApps,
     /// A menu was open last frame.
@@ -644,6 +646,7 @@ impl Ready {
             jumper_via: Vec::new(),
             open_page: None,
             placed: None,
+            string_library: None,
             structure_apps: Default::default(),
             ground_lines: Default::default(),
             coord_dialog: None,
@@ -2015,6 +2018,8 @@ impl Ready {
             self.view3d.dirty.insert(crate::scene::Layer::OtherLines);
         }
         self.model.want(need, ctx);
+        // The cases an edit left to solve, once the edits have settled.
+        self.model.catch_up(ctx);
         let done = self.model.poll_solving();
         if std::mem::take(&mut self.model.mirrors_changed) {
             self.refresh_views();

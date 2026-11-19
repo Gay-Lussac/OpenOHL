@@ -21,19 +21,25 @@
 //!   directions it may move; **Alt** held: no snapping. Its coordinates
 //!   in the structure's axes (and how far it moved) are written beside it.
 //!   **Esc** cancels the drag.
+//! - **What the strings do** ([`crate::string_drag`], the one rule of
+//!   every drag, owner 2026-11-18): a **wire point** dragged turns its
+//!   string about its top — the string keeps its length and its top, the
+//!   wire point goes where the string reaches nearest the pointer (a V:
+//!   round the circle both legs reach; three strings or more: refused,
+//!   said); no snapping then, and the readout gives the string's length
+//!   and angles from the vertical (across and along the line). A
+//!   **point** dragged takes everything hanging from it along by the
+//!   same displacement (the strings keep their length and direction); a
+//!   V whose other leg hangs from a point not dragged turns about that
+//!   point, both lengths kept (refused where they cannot meet). What
+//!   hangs below a wire point that moves moves along with it. No drag
+//!   changes a length: a string's length is its library entry's.
 //! - Released, **one command** (one undo): a point takes its new place
-//!   (as typed in the Attachment points table) and takes along, by the
-//!   same displacement, the wire points whose strings all hang from it
-//!   (and what hangs below them), given by their length and direction or
-//!   by their own position alike: their strings keep their length and
-//!   direction ([`moving_with`]). A wire point also held by a string from
-//!   another point (a V) stays: its strings from the point change length,
-//!   and the status bar says so. A wire point moves with what hangs below
-//!   it (as typed in its string's window: the strings holding it change
-//!   length). A point or wire point that comes from the structure's type
-//!   becomes the structure's own, over its type's (as a string window
-//!   does), and the status bar says so. The line is solved again as after
-//!   any edit.
+//!   (as typed in the Attachment points table), the wire points moving
+//!   with it theirs. A point, wire point or string that comes from the
+//!   structure's type becomes the structure's own, over its type's (as a
+//!   string window does), and the status bar says so. The line is solved
+//!   again as after any edit.
 //! - An attachment point of a typed structure is linked to a joint of its
 //!   type (2026-10-21): dragged, its **offset** from that joint changes
 //!   (the link stays: a rigid link, drawn on its layer); **released on
@@ -149,6 +155,10 @@ pub struct Drag {
     /// The handle it snapped onto (a joint: the point is relinked there
     /// when released).
     pub onto: Option<Handle>,
+    /// What its strings do, in words (the readout).
+    pub note: Option<String>,
+    /// Why it cannot move there (said when released; nothing moves).
+    pub refused: Option<String>,
 }
 
 /// What a drag ended with (taken by the application).
@@ -198,12 +208,13 @@ impl Handles {
 
     /// The readout of the drag: the handle, where it is in the
     /// structure's axes, how far it moved, what it is held to and what
-    /// it snapped onto.
+    /// it snapped onto; below, what its strings do (or why it cannot
+    /// move).
     pub fn readout(&self) -> Option<String> {
         let d = self.drag.as_ref()?;
         let delta = [0, 1, 2].map(|k| d.at[k] - d.from[k]);
         Some(format!(
-            "{} of {}: x {:.3}  y {:.3}  z {:.3} m  (moved {:+.3}, {:+.3}, {:+.3}) — {}{}",
+            "{} of {}: x {:.3}  y {:.3}  z {:.3} m  (moved {:+.3}, {:+.3}, {:+.3}) — {}{}{}",
             d.handle.describe(),
             d.structure,
             d.at[0],
@@ -215,8 +226,62 @@ impl Handles {
             d.constraint.describe(),
             d.snapped
                 .as_ref()
-                .map_or(String::new(), |s| format!(", on {s}"))
+                .map_or(String::new(), |s| format!(", on {s}")),
+            d.refused
+                .as_ref()
+                .or(d.note.as_ref())
+                .map_or(String::new(), |n| format!("\n{n}"))
         ))
+    }
+}
+
+/// The drag `d` of structure `s` (as resolved), the pointer putting it at
+/// `at` (its axes, snapped): where it goes by the strings' rule
+/// ([`crate::string_drag`]) — a wire point with its lengths kept where its
+/// strings reach (not snapped) — with what its strings do in words, or
+/// why it cannot move (it then stays where it was).
+pub fn hold(s: &Structure, d: &mut Drag, at: [f64; 3]) {
+    use crate::string_drag as sd;
+    let net = sd::Net::of_structure(s);
+    let global = |p| to_global(s.position, s.orientation_deg, p);
+    let local = |p| to_local(s.position, s.orientation_deg, p);
+    d.at = at;
+    d.refused = None;
+    d.note = None;
+    match &d.handle {
+        Handle::Wire(w) => {
+            if net.strings.iter().any(|x| &x.wire == w) {
+                // Not snapped: where its strings reach.
+                d.snapped = None;
+                d.onto = None;
+            }
+            match sd::drag(&net, &d.handle, global(at)) {
+                Ok(m) => {
+                    d.at = local(m.at);
+                    let words = sd::strings_words(&net, w, m.at, local);
+                    if !words.is_empty() {
+                        d.note = Some(format!("lengths kept: {words}"));
+                    }
+                }
+                Err(e) => {
+                    d.at = d.from;
+                    d.refused = Some(e);
+                }
+            }
+        }
+        Handle::Point(_) => match sd::drag(&net, &d.handle, global(at)) {
+            Ok(m) => {
+                let words = m.describe();
+                if let Some(w) = words.strip_prefix("; ") {
+                    d.note = Some(w.replace("; ", "\n"));
+                }
+            }
+            Err(e) => {
+                d.at = d.from;
+                d.refused = Some(e);
+            }
+        },
+        _ => {}
     }
 }
 
@@ -359,8 +424,9 @@ pub fn snap(
 }
 
 /// The command a drag makes: `handle` of structure `id` to `at` (its
-/// axes), with what it does in words. A point or wire point from the
-/// structure's type becomes the structure's own (the words say so).
+/// axes), the lengths kept, with what it does in words. A point or wire
+/// point from the structure's type becomes the structure's own (the
+/// words say so).
 #[cfg(test)]
 pub fn command(
     model: &Model,
@@ -371,7 +437,8 @@ pub fn command(
     command_onto(model, id, handle, at, None)
 }
 
-/// The command of a drag released on `onto` (snapped onto it): an
+/// The command of a drag released at `at` on `onto` (snapped onto it),
+/// the strings following by their rule ([`crate::string_drag`]): an
 /// attachment point of a typed structure released on a joint its type
 /// lets it be linked to is relinked there (no offset); otherwise a linked
 /// point keeps its joint, its offset the distance from it.
@@ -402,8 +469,6 @@ pub fn command_onto(
     }
     let mut global = to_global(resolved.position, resolved.orientation_deg, at);
     let mut own: Vec<String> = Vec::new();
-    // What the strings hanging from a dragged point did, in words.
-    let mut notes = String::new();
     // Its link: (joint, offset), the joint released on, in words.
     let mut link_words = String::new();
     match handle {
@@ -462,76 +527,11 @@ pub fn command_onto(
                 }
                 None => return Err(format!("{id} has no point {label}")),
             }
-            let from = r.position;
-            let shift = [0, 1, 2].map(|k| global[k] - from[k]);
-            let local_from = to_local(resolved.position, resolved.orientation_deg, from);
-            let local_to = to_local(resolved.position, resolved.orientation_deg, global);
-            let shift_local = [0, 1, 2].map(|k| local_to[k] - local_from[k]);
-            notes = follow(
-                model,
-                id,
-                resolved,
-                &mut s,
-                label,
-                shift,
-                shift_local,
-                &mut own,
-            )?
-            .describe();
         }
         Handle::Wire(label) => {
-            let from = resolved
+            resolved
                 .wire(label)
-                .ok_or_else(|| format!("{id} has no wire point {label}"))?
-                .position;
-            // Its string window: the wire point placed there, what hangs
-            // below along; put as the window puts it.
-            let mut form = StringForm::of_wire(model, id, label)
                 .ok_or_else(|| format!("{id} has no wire point {label}"))?;
-            let before: Vec<(String, [f64; 3])> =
-                form.wires.iter().map(|w| (w.label.clone(), w.at)).collect();
-            form.place_wire(label, at);
-            // The points are not touched (only the strings and wire
-            // points of the window).
-            form.points.clear();
-            let wires_before: Vec<String> = s.wires.iter().map(|w| w.label.clone()).collect();
-            let strings_before: Vec<String> = s.strings.iter().map(|x| x.label.clone()).collect();
-            for w in &form.wires {
-                if !wires_before.contains(&w.label) && s.structure_type.is_some() {
-                    own.push(format!("wire point {}", w.label));
-                }
-            }
-            for x in &form.strings {
-                if !strings_before.contains(&x.label) && s.structure_type.is_some() {
-                    own.push(format!("string {}", x.label));
-                }
-            }
-            form.apply_to(&mut s, Some(resolved));
-            // Exact positions: the dragged wire point where it was put,
-            // those below moved by as much, the others as they were (not
-            // turned into the structure's axes and back).
-            let shift = [0, 1, 2].map(|k| global[k] - from[k]);
-            for w in s.wires.iter_mut() {
-                let Some((_, was)) = before.iter().find(|b| b.0 == w.label) else {
-                    continue;
-                };
-                let Some(r) = resolved.wire(&w.label) else {
-                    continue;
-                };
-                let now = form.wires.iter().find(|x| x.label == w.label).map(|x| x.at);
-                w.position = if &w.label == label {
-                    global
-                } else if now.is_some_and(|n| n != *was) {
-                    [0, 1, 2].map(|k| r.position[k] + shift[k])
-                } else {
-                    r.position
-                };
-            }
-            // In the order they were in (new ones last).
-            let rank =
-                |list: &[String], l: &str| list.iter().position(|x| x == l).unwrap_or(usize::MAX);
-            s.wires.sort_by_key(|w| rank(&wires_before, &w.label));
-            s.strings.sort_by_key(|x| rank(&strings_before, &x.label));
         }
         Handle::Joint(j) => {
             return Err(format!(
@@ -540,6 +540,15 @@ pub fn command_onto(
         }
         Handle::Member(m) => return Err(format!("member {m}: move its joints")),
     }
+    // The strings' rule: where the wire points go.
+    let net = crate::string_drag::Net::of_structure(resolved);
+    let moved = crate::string_drag::drag(&net, handle, global)?;
+    if let Handle::Wire(_) = handle {
+        global = moved.at;
+    }
+    put_wires(
+        model, id, resolved, &mut s, handle, global, &moved, &mut own,
+    )?;
     let at = to_local(resolved.position, resolved.orientation_deg, global);
     let mut what = format!(
         "moved {} of {id} to x {:.3}, y {:.3}, z {:.3} m (in its axes){link_words}",
@@ -554,7 +563,7 @@ pub fn command_onto(
             own.join(", ")
         ));
     }
-    what.push_str(&notes);
+    what.push_str(&moved.describe());
     Ok((
         what,
         Command::Put {
@@ -566,125 +575,38 @@ pub fn command_onto(
     ))
 }
 
-/// The wire points that move with point `label` of `resolved` (the
-/// structure as resolved): those whose strings all hang from it, or from
-/// wire points moving with it (what hangs below them), in its order.
-pub fn moving_with(resolved: &Structure, label: &str) -> Vec<String> {
-    let mut moved: Vec<String> = Vec::new();
-    loop {
-        let next = resolved.wires.iter().find(|w| {
-            !moved.contains(&w.label) && {
-                let mut on = resolved.strings_to(&w.label).peekable();
-                on.peek().is_some() && on.all(|x| x.top == label || moved.contains(&x.top))
-            }
-        });
-        match next {
-            Some(w) => moved.push(w.label.clone()),
-            None => break,
-        }
-    }
-    resolved
-        .wires
-        .iter()
-        .filter(|w| moved.contains(&w.label))
-        .map(|w| w.label.clone())
-        .collect()
-}
-
-/// What happened to the wire points hanging from a dragged point.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Hanging {
-    /// The wire points moved along.
-    pub moved: Vec<String>,
-    /// The wire points also held from elsewhere (a V): not moved.
-    pub stays: Vec<String>,
-    /// The strings changing length (from what moved to what did not).
-    pub longer: Vec<String>,
-}
-
-impl Hanging {
-    /// In words, for the status bar (empty: nothing hangs from it).
-    pub fn describe(&self) -> String {
-        let s = |n: usize| if n > 1 { "s" } else { "" };
-        let mut out = String::new();
-        if !self.moved.is_empty() {
-            out.push_str(&format!(
-                "; wire point{} {} moved along (their strings keep their length and direction)",
-                s(self.moved.len()),
-                self.moved.join(", ")
-            ));
-        }
-        if !self.stays.is_empty() {
-            out.push_str(&format!(
-                "; wire point{} {} also held by a string from elsewhere: not moved, \
-                 string{} {} change{} length",
-                s(self.stays.len()),
-                self.stays.join(", "),
-                s(self.longer.len()),
-                self.longer.join(", "),
-                if self.longer.len() > 1 { "" } else { "s" },
-            ));
-        }
-        out
-    }
-}
-
-/// Point `label` of structure `id` moved by `shift` (project axes;
-/// `shift_local` in the structure's): `s` (as stored, the point already
-/// moved) takes the wire points hanging from it along — given by their
-/// length and direction or by their own position alike, their strings
-/// keeping their length and direction — put as their string windows put
-/// them (those of the type becoming the structure's own, named in
-/// `own`). A wire point also held by a string from elsewhere (a V) stays
-/// where it is: its strings from what moved change length.
+/// `s` (as stored, a dragged point already put) takes the wire points of
+/// `moved` where they go — put as their string windows put them (those of
+/// the type becoming the structure's own, named in `own`), with the
+/// at their exact places: those
+/// moving where `moved` puts them, the others as they were (not turned
+/// into the structure's axes and back). A string whose ends moved alike
+/// keeps its length and direction as given; the others take theirs from
+/// where their ends are.
 #[allow(clippy::too_many_arguments)]
-fn follow(
+fn put_wires(
     model: &Model,
     id: &str,
     resolved: &Structure,
     s: &mut Structure,
-    label: &str,
-    shift: [f64; 3],
-    shift_local: [f64; 3],
+    handle: &Handle,
+    at: [f64; 3],
+    moved: &crate::string_drag::Moved,
     own: &mut Vec<String>,
-) -> Result<Hanging, String> {
-    let moved = moving_with(resolved, label);
-    let moves = |l: &str| l == label || moved.iter().any(|m| m == l);
-    let longer: Vec<String> = resolved
-        .strings
-        .iter()
-        .filter(|x| moves(&x.top) && !moves(&x.wire))
-        .map(|x| x.label.clone())
-        .collect();
-    let mut stays: Vec<String> = Vec::new();
-    for x in resolved
-        .strings
-        .iter()
-        .filter(|x| longer.contains(&x.label))
-    {
-        if !stays.contains(&x.wire) {
-            stays.push(x.wire.clone());
-        }
-    }
+) -> Result<(), String> {
+    // The wire points whose string windows are put: those moving.
+    let ends: Vec<String> = moved.wires.iter().map(|w| w.0.clone()).collect();
     let wires_before: Vec<String> = s.wires.iter().map(|w| w.label.clone()).collect();
     let strings_before: Vec<String> = s.strings.iter().map(|x| x.label.clone()).collect();
-    // Each string window holding a wire point that moves, put as that
-    // window puts it: the moving wire points shifted, the others where
-    // they are.
     let mut put_wires: Vec<String> = Vec::new();
     let mut put_strings: Vec<String> = Vec::new();
-    for w in &moved {
+    for w in &ends {
         if put_wires.contains(w) {
             continue;
         }
         let mut form = StringForm::of_wire(model, id, w)
             .ok_or_else(|| format!("{id} has no wire point {w}"))?;
-        for row in form.wires.iter_mut() {
-            if moved.contains(&row.label) {
-                row.at = [0, 1, 2].map(|k| row.at[k] + shift_local[k]);
-            }
-        }
-        // The points are not touched (the dragged one is put already).
+        // The points are not touched (a dragged one is put already).
         form.points.clear();
         if s.structure_type.is_some() {
             for r in &form.wires {
@@ -702,39 +624,49 @@ fn follow(
         put_strings.extend(form.strings.iter().map(|x| x.label.clone()));
         form.apply_to(s, Some(resolved));
     }
-    // Exact positions: those moving shifted, the others as they were
-    // (not turned into the structure's axes and back).
     for w in s.wires.iter_mut().filter(|w| put_wires.contains(&w.label)) {
         if let Some(r) = resolved.wire(&w.label) {
-            w.position = if moved.contains(&w.label) {
-                [0, 1, 2].map(|k| r.position[k] + shift[k])
-            } else {
-                r.position
-            };
+            w.position = moved.wire(&w.label).unwrap_or(r.position);
         }
     }
+    // Where each node is, before and after.
+    let dragged = match handle {
+        Handle::Point(l) | Handle::Wire(l) => Some(l.as_str()),
+        _ => None,
+    };
+    let shift = |l: &str| -> [f64; 3] {
+        let Some(was) = resolved.node(l).map(|n| n.position()) else {
+            return [0.0; 3];
+        };
+        let now = if dragged == Some(l) {
+            at
+        } else {
+            moved.wire(l).unwrap_or(was)
+        };
+        [0, 1, 2].map(|k| now[k] - was[k])
+    };
     for x in s.strings.iter_mut() {
-        if longer.contains(&x.label) {
-            // Its length and direction taken from where its ends are now.
-            x.length = 0.0;
-            x.angle_deg = 0.0;
-            x.direction_deg = 0.0;
-        } else if put_strings.contains(&x.label)
-            && let Some(r) = resolved.string(&x.label)
-        {
+        let Some(r) = resolved.string(&x.label) else {
+            continue;
+        };
+        let (a, b) = (shift(&r.top), shift(&r.wire));
+        let alike = (0..3).all(|k| (a[k] - b[k]).abs() < 1e-12);
+        if alike && put_strings.contains(&x.label) {
             // Both ends moved alike (or neither): as it was.
             x.length = r.length;
             x.angle_deg = r.angle_deg;
             x.direction_deg = r.direction_deg;
+        } else if !alike {
+            // Turned: its length and direction
+            // taken from where its ends are now.
+            x.length = 0.0;
+            x.angle_deg = 0.0;
+            x.direction_deg = 0.0;
         }
     }
     // In the order they were in (new ones last).
     let rank = |list: &[String], l: &str| list.iter().position(|x| x == l).unwrap_or(usize::MAX);
     s.wires.sort_by_key(|w| rank(&wires_before, &w.label));
     s.strings.sort_by_key(|x| rank(&strings_before, &x.label));
-    Ok(Hanging {
-        moved,
-        stays,
-        longer,
-    })
+    Ok(())
 }

@@ -26,7 +26,7 @@ fn gpu() -> bool {
     gpu
 }
 
-fn harness(model: crate::model::Model) -> Harness<'static, App> {
+pub(crate) fn harness(model: crate::model::Model) -> Harness<'static, App> {
     let mut h = Harness::builder()
         .with_size(egui::vec2(1500.0, 950.0))
         .wgpu()
@@ -45,7 +45,7 @@ fn harness(model: crate::model::Model) -> Harness<'static, App> {
 
 /// The page of the structure screen moved to the right (with
 /// Properties), the 3D view looking at `p` from close by.
-fn screen_aside(h: &mut Harness<'_, App>, page: Tab, p: [f64; 3]) {
+pub(crate) fn screen_aside(h: &mut Harness<'_, App>, page: Tab, p: [f64; 3]) {
     crate::app::move_page(h.state_mut().dock(), page, Place::Right);
     h.run();
     let r = h.state_mut().ready().unwrap();
@@ -56,7 +56,7 @@ fn screen_aside(h: &mut Harness<'_, App>, page: Tab, p: [f64; 3]) {
 }
 
 /// Where `p` is on the screen (the 3D view as last drawn).
-fn on_screen(h: &mut Harness<'_, App>, p: [f64; 3]) -> egui::Pos2 {
+pub(crate) fn on_screen(h: &mut Harness<'_, App>, p: [f64; 3]) -> egui::Pos2 {
     let r = h.state_mut().ready().unwrap();
     let rect = r.view3d.rect.unwrap();
     let cam = r.view3d.camera.unwrap();
@@ -392,11 +392,17 @@ fn wire_points_override_their_strings_and_the_body_is_not_dragged() {
     assert_eq!(put.wires.len(), 1);
     assert_eq!(put.strings.len(), 1);
     assert_eq!(put.wires[0].set, Some(1));
+    // Turned about A1 towards the pointer (S1 keeps its length, owner
+    // 2026-11-18; before, it went to the pointer, S1 longer).
     let got = to_local(put.position, put.orientation_deg, put.wires[0].position);
-    assert!(
-        (0..3).all(|k| (got[k] - to[k]).abs() < 1e-9),
-        "{got:?} {to:?}"
+    let a1 = to_local(
+        s.position,
+        s.orientation_deg,
+        s.point("A1").unwrap().position,
     );
+    let dist = |a: [f64; 3], b: [f64; 3]| crate::string_drag::distance(a, b);
+    assert!((dist(a1, got) - dist(a1, w)).abs() < 1e-9, "{got:?} {to:?}");
+    assert!(got[0] > w[0] + 0.4, "{got:?} {w:?}");
     // T2 (type-02, level 3): its points sit on joints; joints are the body.
     let spots = crate::handles::spots(&m, "T2");
     let joint = spots
@@ -515,70 +521,6 @@ fn an_i_strings_positioned_wire_point_follows_its_point() {
             before.wire(w).unwrap().position
         );
     }
-    m.undo().unwrap();
-    assert_eq!(
-        m.stored_line().unwrap().structure("T3"),
-        Some(&stored_before)
-    );
-    assert_eq!(m.line.structure("T3"), Some(&before));
-}
-
-/// A V does not follow: W2 of T3 hung also from a point A3 beside A2 (a
-/// V); A2 dragged 0.5 m up, W2 stays where it is, S2 (from A2) changes
-/// length and S2b (from A3) does not, and the status says so; one undo
-/// gives the structure back exactly.
-#[test]
-fn a_v_wire_point_stays_and_its_string_changes_length() {
-    let mut m = crate::tests::synthetic_project_with("handles-v", |line| {
-        let s = line.structures.iter_mut().find(|s| s.id == "T3").unwrap();
-        let a2 = s.point("A2").unwrap().position;
-        s.points.push(ohl_line::StructurePoint {
-            label: "A3".into(),
-            position: [a2[0] + 1.0, a2[1] + 0.5, a2[2]],
-            description: String::new(),
-            ..Default::default()
-        });
-        s.strings.push(ohl_line::InsulatorString {
-            label: "S2b".into(),
-            top: "A3".into(),
-            wire: "W2".into(),
-            ..Default::default()
-        });
-    });
-    let stored_before = m.stored_line().unwrap().structure("T3").unwrap().clone();
-    let before = m.line.structure("T3").unwrap().clone();
-    assert_eq!(before.strings_to("W2").count(), 2);
-    assert_eq!(
-        crate::handles::moving_with(&before, "A2"),
-        Vec::<String>::new()
-    );
-    assert_eq!(crate::handles::moving_with(&before, "A1"), ["W1"]);
-    let local = |p| to_local(before.position, before.orientation_deg, p);
-    let a2 = local(before.point("A2").unwrap().position);
-    let to = [a2[0], a2[1], a2[2] + 0.5];
-    let (what, command) =
-        crate::handles::command(&m, "T3", &Handle::Point("A2".into()), to).unwrap();
-    assert!(
-        what.contains(
-            "wire point W2 also held by a string from elsewhere: not moved, \
-             string S2 changes length"
-        ),
-        "{what}"
-    );
-    assert!(!what.contains("moved along"), "{what}");
-    m.apply(&what, command).unwrap();
-    let after = m.line.structure("T3").unwrap();
-    let w2 = before.wire("W2").unwrap().position;
-    assert!(near(after.wire("W2").unwrap().position, w2));
-    let length = |s: &ohl_line::Structure, l: &str| s.string(l).unwrap().length;
-    let top = after.point("A2").unwrap().position;
-    let d = (0..3).map(|k| (w2[k] - top[k]).powi(2)).sum::<f64>().sqrt();
-    assert!((length(after, "S2") - d).abs() < 1e-9);
-    assert!(
-        (length(after, "S2") - length(&before, "S2")).abs() > 0.05,
-        "S2 (nearly level: 5.025 m to 5.099 m)"
-    );
-    assert!((length(after, "S2b") - length(&before, "S2b")).abs() < 1e-9);
     m.undo().unwrap();
     assert_eq!(
         m.stored_line().unwrap().structure("T3"),

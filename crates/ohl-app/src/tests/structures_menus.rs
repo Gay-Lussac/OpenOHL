@@ -410,15 +410,18 @@ fn a_structure_without_a_type_is_edited_in_the_pylon_editor() {
     harness.run();
     harness.run();
     harness.get_by_label("its own points, wire points and strings, in its axes");
-    // The four tables: attachment points, insulators (top, kind,
-    // assembly, length, angles…), wire points, set points.
+    // The tables: attachment points, strings (top, library entry, kind,
+    // length, the two angles…: owner 2026-11-18, no Wire points table),
+    // set points.
     harness.get_by_label("Strings").click();
     harness.run();
     harness.get_by_label("hangs from");
-    harness.get_by_label("angle");
+    harness.get_by_label("library entry");
+    harness.get_by_label("from vertical");
+    harness.get_by_label("compass");
     harness.get_by_label("kind");
-    harness.get_by_label("+ New string");
-    for sheet in ["Attachment points", "Wire points", "Sets"] {
+    harness.get_by_label(crate::placed_strings::NEW_STRING);
+    for sheet in ["Attachment points", "Sets"] {
         // (The sheet's tab: the first of that name.)
         harness.query_all_by_label(sheet).next().unwrap().click();
         harness.run();

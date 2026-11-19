@@ -774,6 +774,7 @@ pub(super) fn tool_windows(
     crate::replace::window(ctx, r, rs);
     link_windows::link_windows(ctx, r);
     editor_window(ctx, r, rs);
+    r.string_library_frame(ctx);
     crate::lidar_edit::frame(ctx, r);
     display_window(ctx, r);
     angles_window(ctx, r);
