@@ -36,6 +36,19 @@
 //!   cannot bend: its moment stays left out, said NOT ON THE SAFE SIDE.
 //!   Said per member and per case ([`EccentricEnd::carried`],
 //!   [`eccentricity_note`]).
+//! - **An offset whose sign is not known** ([`crate::Member::free_offsets`];
+//!   2026-11-19, the owner's decision on O45 A1: an estimated
+//!   eccentricity's upper bound, a plate's side) is never in the solve, at
+//!   a frame joint either: the member's own check takes its moment N·e
+//!   whole, uniform along it, as where only bars meet a joint, and
+//!   **sign-free** — about each of the member's axes the sizes of the
+//!   moments of its parts added (the worst of their signs), with the sign
+//!   that adds to the moment the solve gave. On the safe side for the
+//!   member (it holds the whole moment); statically admissible for the
+//!   others (the joint in balance with the member holding it all: nothing
+//!   relieved, nothing added to them). Two solves instead of one per sign,
+//!   no mix of signs left uncovered, and no joint turned by an offset of
+//!   unknown sign in the solve.
 //! - The rigid link's own second-order terms (the force turning with the
 //!   link as the joint rotates) are left out of P-Delta: the member's
 //!   chord is taken between its offset ends.
@@ -126,6 +139,23 @@ pub struct EccentricEnd {
     /// A frame member meets the joint: the offset is in the solve, its
     /// moment carried; false: left out, only bars meet the joint.
     pub carried: bool,
+    /// Its offsets whose sign is not known ([`crate::Member::free_offsets`]):
+    /// never in the solve, their moment in its own check, sign-free
+    /// (2026-11-19).
+    pub free: Vec<[f64; 3]>,
+}
+
+impl EccentricEnd {
+    /// The eccentricity of its offsets whose sign is not known, m: the
+    /// length of their parts taken square to each other (their sizes'
+    /// root sum of squares).
+    pub fn free_e(&self) -> f64 {
+        self.free
+            .iter()
+            .map(|r| norm(*r).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    }
 }
 
 impl Model {
@@ -134,7 +164,7 @@ impl Model {
     pub fn eccentric_ends(&self, idx: usize) -> Vec<EccentricEnd> {
         let m = &self.members[idx];
         (0..2)
-            .filter(|&end| m.offsets[end] != [0.0; 3])
+            .filter(|&end| m.offsets[end] != [0.0; 3] || free_of(m, end).next().is_some())
             .map(|end| {
                 let node = if end == 0 { m.i } else { m.j };
                 EccentricEnd {
@@ -143,14 +173,39 @@ impl Model {
                     offset: m.offsets[end],
                     e: norm(m.offsets[end]),
                     carried: self.frame_at(node),
+                    free: free_of(m, end).collect(),
                 }
             })
             .collect()
     }
 
-    /// Whether any member has an eccentric end.
+    /// Whether any member has an eccentric end (an offset of either kind).
     pub fn has_offsets(&self) -> bool {
-        self.members.iter().any(|m| m.offsets != [[0.0; 3]; 2])
+        self.members
+            .iter()
+            .any(|m| m.offsets != [[0.0; 3]; 2] || (0..2).any(|e| free_of(m, e).next().is_some()))
+    }
+}
+
+/// Member `m`'s offsets of unknown sign at end `end` that are not zero.
+fn free_of(m: &crate::Member, end: usize) -> impl Iterator<Item = [f64; 3]> + '_ {
+    m.free_offsets[end]
+        .iter()
+        .copied()
+        .filter(|r| *r != [0.0; 3])
+}
+
+impl EccentricEnd {
+    /// The offsets its member's own check takes (not in the solve): the
+    /// offset where only bars meet the joint, and every offset of unknown
+    /// sign.
+    fn uncarried_parts(&self) -> Vec<[f64; 3]> {
+        let mut out: Vec<[f64; 3]> = Vec::new();
+        if !self.carried && self.offset != [0.0; 3] {
+            out.push(self.offset);
+        }
+        out.extend(self.free.iter().copied());
+        out
     }
 }
 
@@ -158,39 +213,68 @@ impl Model {
 /// F the force on the joint along the member's chord between its offset
 /// ends.
 pub fn end_moment(model: &Model, idx: usize, end: &EccentricEnd, n: f64) -> [f64; 3] {
+    offset_moment(model, idx, end.end, end.offset, n)
+}
+
+/// The moment of offset `r` at end `end` of member `idx` under axial force
+/// `n` (N), N·m: r × F as [`end_moment`].
+fn offset_moment(model: &Model, idx: usize, end: usize, r: [f64; 3], n: f64) -> [f64; 3] {
     let m = &model.members[idx];
     let d = crate::model::sub(model.end_point(m, 1), model.end_point(m, 0));
     let l = norm(d);
     // On the first joint the member pulls towards its second (tension).
-    let sign = if end.end == 0 { 1.0 } else { -1.0 };
+    let sign = if end == 0 { 1.0 } else { -1.0 };
     let f = d.map(|c| sign * n * c / l);
-    cross(end.offset, f)
+    cross(r, f)
 }
 
-/// The moments of member `idx`'s eccentric ends its solve could not
-/// carry (only bars meet the joint, [`EccentricEnd::carried`] false;
-/// 2026-11-18), about its local y and z, N·m (sizes): per end r × F under
-/// its axial force `n`, each axis the larger of its two ends'. None: no
-/// such end, or the member is a cable (it cannot bend).
+/// The size of the moment of the offsets of unknown sign of `end`
+/// (member `idx`, axial force `n`), N·m: their parts' moments taken square
+/// to each other (the parts lie square to each other: a shift across the
+/// member and a plate's offset out of its face).
+pub fn free_moment(model: &Model, idx: usize, end: &EccentricEnd, n: f64) -> f64 {
+    end.free
+        .iter()
+        .map(|r| norm(offset_moment(model, idx, end.end, *r, n)).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
+/// The moments of member `idx`'s eccentric ends its solve did not carry
+/// — an offset where only bars meet the joint ([`EccentricEnd::carried`]
+/// false; 2026-11-18) and every offset whose sign is not known
+/// ([`EccentricEnd::free`]; 2026-11-19, at frame joints too) — about its
+/// local y and z, N·m (sizes): per end r × F under its axial force `n`,
+/// about each axis the sizes of its parts' moments added (the worst of the
+/// unknown signs: sign-free), each axis the larger of its two ends'. None:
+/// no such end, or the member is a cable (it cannot bend).
 pub fn uncarried_moments(model: &Model, idx: usize, n: f64) -> Option<[f64; 2]> {
     let m = &model.members[idx];
     if m.kind == crate::MemberKind::Cable {
         return None;
     }
-    let ends: Vec<EccentricEnd> = model
+    let ends: Vec<Vec<[f64; 3]>> = model
         .eccentric_ends(idx)
-        .into_iter()
-        .filter(|e| !e.carried)
+        .iter()
+        .map(|e| {
+            e.uncarried_parts()
+                .into_iter()
+                .map(|r| offset_moment(model, idx, e.end, r, n))
+                .collect::<Vec<_>>()
+        })
+        .filter(|v| !v.is_empty())
         .collect();
     if ends.is_empty() {
         return None;
     }
     let [_, y, z] = member_axes(model, idx);
     let mut out = [0.0f64; 2];
-    for e in &ends {
-        let mo = end_moment(model, idx, e, n);
-        let my = (mo[0] * y[0] + mo[1] * y[1] + mo[2] * y[2]).abs();
-        let mz = (mo[0] * z[0] + mo[1] * z[1] + mo[2] * z[2]).abs();
+    for parts in &ends {
+        let (mut my, mut mz) = (0.0f64, 0.0f64);
+        for mo in parts {
+            my += (mo[0] * y[0] + mo[1] * y[1] + mo[2] * y[2]).abs();
+            mz += (mo[0] * z[0] + mo[1] * z[1] + mo[2] * z[2]).abs();
+        }
         out[0] = out[0].max(my);
         out[1] = out[1].max(mz);
     }
@@ -275,7 +359,10 @@ pub fn with_eccentric_moments(
 /// takes its bending with its axial force, even a truss's.
 pub fn eccentric_bending(model: &Model, idx: usize) -> bool {
     model.members[idx].kind != crate::MemberKind::Cable
-        && model.eccentric_ends(idx).iter().any(|e| !e.carried)
+        && model
+            .eccentric_ends(idx)
+            .iter()
+            .any(|e| !e.uncarried_parts().is_empty())
 }
 
 /// The eccentric ends of member `idx` in words, under its axial force `n`
@@ -289,41 +376,64 @@ pub fn eccentricity_words(model: &Model, idx: usize, n: f64) -> Option<String> {
         return None;
     }
     let m = &model.members[idx];
-    let s = &model.sections[m.section];
-    let axial_check =
-        !m.is_frame() || (crate::check::axial_member(m, s) && !model.analysis.single_angle_moments);
     let parts: Vec<String> = ends
         .iter()
-        .map(|e| {
+        .flat_map(|e| {
             let joint = model.node_name(e.node);
-            let size = norm(end_moment(model, idx, e, n)) / 1000.0;
-            let head = format!("{joint} e {:.0} mm", e.e * 1e3);
-            if !e.carried && m.kind == crate::MemberKind::Cable {
-                format!(
-                    "{head}, {size:.2} kN m LEFT OUT (only bars meet {joint}: the force through \
-                     the work point; a cable cannot bend — NOT ON THE SAFE SIDE)"
-                )
-            } else if !e.carried {
-                format!(
-                    "{head}, {size:.2} kN m in its own check, uniform along it (only bars meet \
-                     {joint}: the force through the work point in the solve, the member takes \
-                     the moment whole)"
-                )
-            } else if m.is_frame() {
-                if axial_check {
+            let free = (!e.free.is_empty()).then(|| {
+                let size = free_moment(model, idx, e, n) / 1000.0;
+                let head = format!("{joint} e {:.0} mm, its sign not known", e.free_e() * 1e3);
+                if m.kind == crate::MemberKind::Cable {
                     format!(
-                        "{head}, {size:.2} kN m in its end moments and the joint's frames (its \
-                         check axial only)"
+                        "{head}, {size:.2} kN m LEFT OUT (a cable cannot bend — NOT ON THE SAFE \
+                         SIDE)"
                     )
                 } else {
-                    format!("{head}, {size:.2} kN m in its end moments and the joint's frames")
+                    format!(
+                        "{head}, {size:.2} kN m in its own check, whole and sign-free, uniform \
+                         along it (never in the solve)"
+                    )
                 }
-            } else {
-                format!("{head}, {size:.2} kN m to the joint's frame members")
-            }
+            });
+            let signed = (e.offset != [0.0; 3]).then(|| signed_words(model, idx, e, n));
+            signed.into_iter().chain(free)
         })
         .collect();
     Some(parts.join("; "))
+}
+
+/// The words of end `e`'s offset of known sign (member `idx`, axial force
+/// `n`): where its moment went.
+fn signed_words(model: &Model, idx: usize, e: &EccentricEnd, n: f64) -> String {
+    let m = &model.members[idx];
+    let s = &model.sections[m.section];
+    let axial_check =
+        !m.is_frame() || (crate::check::axial_member(m, s) && !model.analysis.single_angle_moments);
+    let joint = model.node_name(e.node);
+    let size = norm(end_moment(model, idx, e, n)) / 1000.0;
+    let head = format!("{joint} e {:.0} mm", e.e * 1e3);
+    if !e.carried && m.kind == crate::MemberKind::Cable {
+        format!(
+            "{head}, {size:.2} kN m LEFT OUT (only bars meet {joint}: the force through the work \
+             point; a cable cannot bend — NOT ON THE SAFE SIDE)"
+        )
+    } else if !e.carried {
+        format!(
+            "{head}, {size:.2} kN m in its own check, uniform along it (only bars meet {joint}: \
+             the force through the work point in the solve, the member takes the moment whole)"
+        )
+    } else if m.is_frame() {
+        if axial_check {
+            format!(
+                "{head}, {size:.2} kN m in its end moments and the joint's frames (its check axial \
+                 only)"
+            )
+        } else {
+            format!("{head}, {size:.2} kN m in its end moments and the joint's frames")
+        }
+    } else {
+        format!("{head}, {size:.2} kN m to the joint's frame members")
+    }
 }
 
 /// The eccentric member ends of a solution in words (none: the model has
@@ -338,6 +448,8 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
     let mut members = 0;
     let mut own = Vec::new();
     let mut left_out = Vec::new();
+    let mut free = Vec::new();
+    let mut free_left = Vec::new();
     for idx in 0..model.members.len() {
         let list = model.eccentric_ends(idx);
         if list.is_empty() {
@@ -347,7 +459,20 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
         ends += list.len();
         let n = solution.members.get(idx).map_or(0.0, |f| f.axial);
         let cable = model.members[idx].kind == crate::MemberKind::Cable;
-        for e in list.iter().filter(|e| !e.carried) {
+        for e in list.iter().filter(|e| !e.free.is_empty()) {
+            let words = format!(
+                "{} at {} {:.2} kN m",
+                model.members[idx].id,
+                model.node_name(e.node),
+                free_moment(model, idx, e, n) / 1000.0
+            );
+            if cable {
+                free_left.push(words);
+            } else {
+                free.push(words);
+            }
+        }
+        for e in list.iter().filter(|e| !e.carried && e.offset != [0.0; 3]) {
             let words = format!(
                 "{} at {} {:.2} kN m",
                 model.members[idx].id,
@@ -388,6 +513,24 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
              NOT ON THE SAFE SIDE — make it a frame joint): {}",
             left_out.len(),
             list(&left_out)
+        ));
+    }
+    if !free.is_empty() {
+        text.push_str(&format!(
+            "; at {} end(s) whose offset's sign is not known the solve leaves it out (at frame \
+             joints too) and the member's own check takes the moment whole and sign-free, \
+             uniform along it (on the safe side for it; the joint's other members relieved of \
+             nothing): {}",
+            free.len(),
+            list(&free)
+        ));
+    }
+    if !free_left.is_empty() {
+        text.push_str(&format!(
+            "; LEFT OUT at {} cable end(s) whose offset's sign is not known (a cable cannot \
+             bend; NOT ON THE SAFE SIDE): {}",
+            free_left.len(),
+            list(&free_left)
         ));
     }
     Some(text)

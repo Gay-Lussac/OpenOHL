@@ -8,6 +8,116 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (owner: 22 recommendations approved)
+
+**The owner's answers of 2026-11-19 to the open questions of O45, O19
+stage 4.5, O44 J2b and O17 phase 6** (owner: "Okay go with
+recommendations"; the numbers are this entry's own). Five needed code and
+were built the same day, in active development, not approved yet (A1,
+B8, C12, D14, E22); the rest are recorded in the roadmap under their items.
+
+**Estimated eccentricities** (O45; [theory](../theory/estimated-eccentricities.md)):
+
+- **A1, built: an offset of unknown sign only in its member's own check.**
+  An end offset whose sign is not known — an upper bound, a plate's offset
+  out of its face — is never in the solve: the member's own check takes
+  its moment N·e whole and sign-free (about each local axis the sizes of
+  its parts' moments added, uniform along it), at frame joints as where
+  only bars meet. A change of the core's finite-element crate, approved by
+  the owner: `Member::free_offsets` ([data model](data-model.md),
+  [theory](../theory/structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+  *Conservative*: the member holds the whole moment whatever the sign; the
+  joint's other members are relieved of nothing (statically admissible).
+  Two solves (without, with) instead of three; the mixed-sign NOT ON THE
+  SAFE SIDE note is gone ([safe side](safe-side.md)). No plugin interface
+  changed (the moments reach the plugins in the members' end forces, as
+  before). Measured on the 78 private real towers, one vertical case:
+  towers solving with the option 64 → 72 of 73 (the one left fails
+  without the option too), members whose usage rises 86 % → 27 %, the
+  towers' largest usage with it median 0.84 → 0.58, the direct solves
+  with the estimates a third of the time.
+- A2: the upper bound stays the 30 mm shift limit plus the plate's
+  offset, until J5.
+- A3: towers that fail to solve with the option on are accepted until A1
+  — reported as failed (since A1 none but one that fails without it).
+- A4: the estimates stay in OHL-Structure only; the core's line
+  calculation does not read them.
+- A5: the option on by default only after A1, J3 and the bent plate (all
+  built now), measured again with wind cases (to do).
+
+**Bolts** (O19 stage 4.5; [joint groups](../theory/joint-groups.md)):
+
+- B6: a gusset plate's prying lever stays measured to the farthest bolt.
+- B7: no "web" credit for members bolted across a plate, unless a source
+  is cited.
+- **B8, done in the private data**: bolt grade 8.8 (f_ub 800, f_yb 640
+  N/mm², SIA 263:2013 3.4.2 Table 2, the bolt grade command's values) in
+  the current line's bolt library — its own `grade`, `ultimate` and
+  `yield` fields — with a step in the private rebuild script; nothing in
+  the repository.
+- B9: the NOT ON THE SAFE SIDE flag for a moment about the line of a
+  plate's holding bolts stays.
+
+**The bent plate** (O44 J2b; [joint layout](../theory/joint-layout.md#the-bend-in-bending-2026-11-19)):
+
+- C10: no bent plate for tilted ends; J5 handles them.
+- C11: the inside bend radius stays two plate thicknesses (no shop value
+  given).
+- **C12, built: a bending check at the bend in both code plugins** —
+  the additive plugin interface `joint-check-bends` (interface 0.3
+  unchanged; [plugins](plugins.md)). OpenOHL works out what acts on the
+  section along the bend line (the force across it, the shear along it,
+  the moment about it and in the plate's plane — each member's force
+  across the bend at its line's distance out of the flat, by size, plus
+  the force across the bend held at the farthest bolt of the flat on the
+  leg, taken at the bend: on the safe side); ASCE 10-97 checks it by Eq.
+  3.13-1 with the gross elastic section (3.10.1, 3.14.1–3.14.3) and the
+  shear by von Mises' criterion (no rule in the standard: on the safe
+  side), SIA 263 by 4.3.5.4 formula (6) with elastic stresses (5.2.1,
+  5.2.6: no plastic resistance relied on in a cold-bent zone) and the
+  radius against 5.7.1.2 Table 14 (where a weld is on the bent plate).
+  A plugin without the export: not checked, NOT ON THE SAFE SIDE, as
+  before. Not on the safe side, said: a frame member's end moments and
+  shear at its bolts are not added at the bend.
+- C13: on 45–55 mm legs without room for the holding bolts the hand
+  detail stays until J8.
+
+**"Does not fit"** (O19 stage 4.5, O44):
+
+- **D14, built: "does not fit as assumed — not detailed".** A joint check
+  that does not fit only where the placements were assumed — not given by
+  the user, not laid out by the joint layout (no `onto`, gauges, pitch,
+  end distance or `cut` given at the end or in the member's design data) —
+  reads "DOES NOT FIT as assumed — not detailed": still failing, never a
+  usage or a pass, counted apart in the run's summary, the report's joints
+  table (its own row word and count) and the 3D view (orange; as given:
+  red) ([theory](../theory/joint-groups.md#a-joint-that-does-not-fit)).
+  Measured on the 78 private real towers (one case): as imported 23 128
+  of 33 544 joints do not fit, 22 993 of them only as assumed, 135 as
+  given; after Orient angles and Lay out joints 17 821 of 55 970, 11 057
+  as assumed — not detailed, 6 764 as given (mostly the layout's own:
+  pieces in line it cuts back, mutual hosts — D15, D16).
+- D15: J9 proposes "continuous" for same-section pieces in line through a
+  joint; the user confirms, with a "confirm all" button — never a silent
+  default.
+- D16: the mutual-host guard (two ends bolting onto each other) is built
+  together with J9, not before.
+
+**Country server phase 6** (O17; [phase 6](#2026-11-19-country-server-phase-6)):
+
+- E17: other sections on a working set's structures are read-only context.
+- E18: one line per working set until phase 11.
+- E19: the 64-bit FNV hash for joining again, for now.
+- E20: protocol 3.
+- E21: 5 × 5 context tiles and a 64 MB cache, with a setting later.
+- **E22, built: a replica's import entry with an empty command**, as the
+  network's import writes it (`ohl_session::EMPTY_COMMAND`): each object
+  stored once, in its row; old replicas read as before; no table, column
+  or key added ([data model](data-model.md#a-working-sets-replica-phase-6-2026-11-19)).
+  On the synthetic country's first line: the whole route's replica
+  3.48 → 1.98 MB, a third of it 1.79 → 1.03 MB
+  ([performance](performance.md#synthetic-country-phase-6-working-sets-and-context-2026-11-19)).
+
 ## 2026-11-19 (joint layout: one roll per member, laid out once per kind)
 
 **O44 J3 and J4** (owner 2026-11-19, step 5 of the order; built the same
@@ -229,6 +339,9 @@ of 2026-11-19, item 6; built, in active development, not approved yet;
 > 2.6 MB): write it with an empty command, as the network's import does
 > (a change of how the session writes an import)? → yes.
 
+Answered the same day — every recommendation, the empty import command
+built: [the owner's answers](#2026-11-19-owner-22-recommendations-approved).
+
 ## 2026-11-19 (estimated eccentricities at level 3)
 
 **O45 A1–A3, the joints' eccentricities set automatically** (step 4 of
@@ -272,7 +385,8 @@ active development, not approved yet;
   on an offset taken in its member's own check only for the ends of
   unknown sign (a core change, asked, not built), and after J3 / the bent
   plate bring the upper bounds down; the questions are in the roadmap
-  (O45).
+  (O45). Answered the same day, the offset of unknown sign in its member's
+  own check built: [the owner's answers](#2026-11-19-owner-22-recommendations-approved).
 - Format: the record's key `estimated_eccentricities` (additive, written
   only when on); `JointPlan` gains `off_flange` and `hand_hosts`;
   `StructureRun::estimates` ([data model](data-model.md)).

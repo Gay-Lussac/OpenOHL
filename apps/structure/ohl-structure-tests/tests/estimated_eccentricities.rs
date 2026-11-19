@@ -8,7 +8,9 @@
 //! sections): off, the members as before; on, the joint layout's planner
 //! estimates the ends' shifts and the results say "estimated" and "upper
 //! bound at N ends"; every member's usage at least that without them (the
-//! largest of the solves), the same every run; at level 4 with the joint
+//! larger of the two solves), the same every run; an upper bound's offset
+//! (its sign not known) only in its member's own check, at a frame joint
+//! too (2026-11-19, the owner's decision on A1); at level 4 with the joint
 //! details taken, not used, said.
 
 use std::path::Path;
@@ -178,7 +180,15 @@ fn on_every_member_takes_at_least_its_usage_without_and_the_results_say_so() {
         assert!(e.count(Source::Estimated) >= 2, "{e:?}");
         let r1 = e.ends.iter().find(|x| x.member == "R1").unwrap();
         assert_eq!(r1.source, Source::UpperBound);
-        assert_eq!(used.solves, 3);
+        // Two solves (2026-11-19): R1's upper bound of unknown sign in its
+        // own check, never in the solve.
+        assert_eq!(used.solves, 2);
+        assert!(used.sign_free >= 1, "{used:?}");
+        assert!(
+            !on.notes.iter().any(|n| n.contains("their signs are taken")),
+            "no mixed-sign gap: {:?}",
+            on.notes
+        );
         let note = on
             .notes
             .iter()
@@ -199,7 +209,8 @@ fn on_every_member_takes_at_least_its_usage_without_and_the_results_say_so() {
             let (u0, u1) = (u0.unwrap(), u1.unwrap());
             assert!(u1 >= u0 - 1e-12, "{legs} {id}: {u1} < {u0}");
         }
-        // R1's own end at N2 bounded: said in its words, its usage up.
+        // R1's own end at N2 bounded: said in its words, its usage up — in
+        // its own check whether the legs are frames or not (sign-free).
         let fe = on.cases[0].fe.as_ref().unwrap().as_ref().unwrap();
         let r1 = fe.members.iter().find(|m| m.id == "R1").unwrap();
         assert!(
@@ -209,6 +220,16 @@ fn on_every_member_takes_at_least_its_usage_without_and_the_results_say_so() {
             "{:?}",
             r1.eccentric
         );
+        let u = |list: &[(String, Option<f64>)], id: &str| {
+            list.iter().find(|x| x.0 == id).unwrap().1.unwrap()
+        };
+        assert!(u(&b, "R1") > u(&a, "R1") + 1e-6, "{legs}: {b:?} vs {a:?}");
+        assert!(r1.governs.contains("sign-free"), "{legs}: {}", r1.governs);
+        // Nothing of R1's bound in the solve: the other members as without
+        // the option (the planned shifts here are all 0).
+        for id in ["L1", "L2", "D1", "D2"] {
+            assert!((u(&b, id) - u(&a, id)).abs() < 1e-12, "{legs} {id}");
+        }
         // The same every run.
         assert_eq!(usages(&run(&text)), b);
     }

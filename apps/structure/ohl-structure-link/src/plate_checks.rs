@@ -66,6 +66,9 @@ pub enum PlatePart {
     Bearing,
     /// Something at the joint not checked, in words (2026-11-19).
     NotChecked(String),
+    /// A bent plate's bend in bending (2026-11-19, the owner's decision of
+    /// that day: `crate::bends`); the row's `plate` is the two flats.
+    Bend,
 }
 
 impl PlatePart {
@@ -77,6 +80,7 @@ impl PlatePart {
             PlatePart::Holding(h) => format!("its bolts onto {h}"),
             PlatePart::Bearing => "the bolts onto it (its bearing)".to_owned(),
             PlatePart::NotChecked(_) => "not checked".to_owned(),
+            PlatePart::Bend => "its bend".to_owned(),
         }
     }
 }
@@ -105,6 +109,12 @@ pub struct PlateUsage {
     /// or plate it bolts onto, holes in one ply overlapping), why in
     /// words: no usage, failing, counted apart (none: it fits).
     pub does_not_fit: Option<String>,
+    /// It does not fit only where the placements were assumed — not given
+    /// by the user, not laid out by the joint layout: "does not fit as
+    /// assumed — not detailed" (D14, the owner's decision of 2026-11-19),
+    /// still failing, never a usage, counted apart from those that do not
+    /// fit as given.
+    pub misfit_assumed: bool,
 }
 
 impl PlateUsage {
@@ -260,6 +270,9 @@ pub struct PlatePlans {
     /// The joints' bolt groups and the members' bearing at the joints
     /// (2026-11-19, stage 4.5: `crate::joint_groups`).
     pub(crate) groups: crate::joint_groups::GroupPlans,
+    /// The bent plates' bends (2026-11-19, the owner's decision of that
+    /// day: `crate::bends`).
+    pub(crate) bends: Vec<crate::bends::BendPlan>,
     /// What applies to every case.
     pub notes: Vec<String>,
 }
@@ -267,7 +280,7 @@ pub struct PlatePlans {
 impl PlatePlans {
     /// No plate and no joint bolt group to check.
     pub fn is_empty(&self) -> bool {
-        self.parts.is_empty() && self.groups.is_empty()
+        self.parts.is_empty() && self.groups.is_empty() && self.bends.is_empty()
     }
 }
 
@@ -341,6 +354,8 @@ pub fn plate_plans_in(
             out.groups = crate::joint_groups::group_plans(&details, &model, library, bolts);
         }
     }
+    // The bent plates' bends (2026-11-19): checked by the code's plugin.
+    out.bends = crate::bends::bend_plans(&details, &model, library);
     for j in &details.joints {
         cover_plans(j, &model, library, &mut out.parts);
         for p in &j.plates {
@@ -953,9 +968,22 @@ pub fn plate_usage(
                     .collect(),
                 notes: x.notes.iter().chain(&checked.notes).cloned().collect(),
                 does_not_fit: None,
+                misfit_assumed: false,
             }
         })
         .collect();
+    // The bent plates' bends (2026-11-19): not a design code's plugin
+    // here — not checked, said.
+    rows.extend(
+        crate::bends::bend_rows(
+            &plans.bends,
+            &plans.structure,
+            None,
+            &[("", strength, axial)],
+        )
+        .into_iter()
+        .flatten(),
+    );
     // The joints' bolt groups (2026-11-19): a design code's, its plugin
     // not run here — not checked, said.
     if !plans.groups.is_empty() {
@@ -1123,6 +1151,9 @@ pub fn plate_usage_cases_with(
     } else {
         crate::joint_groups::group_rows(&plans.groups, &plans.structure, Some(p), None, cases, ends)
     };
+    // The bent plates' bends (2026-11-19): one more call with every bend
+    // and case.
+    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases);
     cases
         .iter()
         .enumerate()
@@ -1150,6 +1181,7 @@ pub fn plate_usage_cases_with(
                         checks: Vec::new(),
                         notes: x.notes.clone(),
                         does_not_fit: None,
+                        misfit_assumed: false,
                     };
                     if matches!(x.plan, Plan::NoSeam { .. } | Plan::Unplaced { .. }) {
                         // Nothing to send: not checked, as the core says it.
@@ -1203,6 +1235,7 @@ pub fn plate_usage_cases_with(
                 })
                 .collect();
             rows.append(&mut groups[n]);
+            rows.append(&mut bends[n]);
             rows
         })
         .collect()
@@ -1296,16 +1329,42 @@ fn weld_loads_with(
 /// (2026-11-19): each with why, its parts' words joined — failing,
 /// counted apart from the usages, never an infinite usage.
 pub fn joints_not_fitting(plates: &[PlateUsage]) -> BTreeMap<String, String> {
-    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    joints_not_fitting_with(plates)
+        .into_iter()
+        .map(|(j, n)| (j, n.words))
+        .collect()
+}
+
+/// A joint that does not fit ([`joints_not_fitting_with`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NotFitting {
+    /// Why, its parts' words joined.
+    pub words: String,
+    /// Only where the placements were assumed (every part of it that does
+    /// not fit: [`PlateUsage::misfit_assumed`]): "does not fit as assumed
+    /// — not detailed" (D14, 2026-11-19), counted apart.
+    pub assumed: bool,
+}
+
+/// The joints of a case's joint checks that do not fit, each with why and
+/// whether only where its placements were assumed (D14, the owner's
+/// decision of 2026-11-19: "does not fit as assumed — not detailed",
+/// still failing, counted apart).
+pub fn joints_not_fitting_with(plates: &[PlateUsage]) -> BTreeMap<String, NotFitting> {
+    let mut out: BTreeMap<String, NotFitting> = BTreeMap::new();
     for p in plates {
         if let Some(w) = &p.does_not_fit {
-            let e = out.entry(p.joint.clone()).or_default();
+            let e = out.entry(p.joint.clone()).or_insert_with(|| NotFitting {
+                words: String::new(),
+                assumed: true,
+            });
+            e.assumed &= p.misfit_assumed;
             let words = format!("{}: {w}", p.what());
-            if !e.contains(&words) {
-                if !e.is_empty() {
-                    e.push_str("; ");
+            if !e.words.contains(&words) {
+                if !e.words.is_empty() {
+                    e.words.push_str("; ");
                 }
-                e.push_str(&words);
+                e.words.push_str(&words);
             }
         }
     }

@@ -39,6 +39,7 @@
 //! tests with `cargo test` (natively).
 
 pub mod asce10;
+pub mod bends;
 pub mod bracing;
 pub mod check;
 pub mod groups;

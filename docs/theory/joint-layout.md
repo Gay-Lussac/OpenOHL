@@ -607,9 +607,9 @@ whose second leg points out of the tower.
   them; their tension with prying where the code's plugin works it out,
   [joint groups](joint-groups.md)). The member's force crosses the bend
   square to the flat on the leg; the **bend's own bending** under it is
-  **not checked — NOT ON THE SAFE SIDE where it governs**, said on the
-  plate (Joint details) — a check of the codes' plate bending in the
-  plugins is a question to the owner. No weld.
+  checked since 2026-11-19 by the code's plugin ([below](#the-bend-in-bending-2026-11-19));
+  a plugin without that check: not checked, **NOT ON THE SAFE SIDE**, said
+  on the row. No weld.
 - **Its weight**: from the developed area — the two flats to the bend
   line less, per metre of bend, (r + t/2)(2 tan(θ/2) − θ): the straight
   lengths to that line against the arc, both at the middle of the
@@ -619,6 +619,59 @@ whose second leg points out of the tower.
   the flats' outlines are automatic values of the record (the flat in the
   members' plane marked `own_plane` and `bend`, the joint details seating
   its members on it square to it), a value given by hand on them kept.
+
+### The bend in bending (2026-11-19)
+
+(The owner's decision of 2026-11-19; `ohl_structure_link` `bends`, the
+plugins' `joint-check-bends`.) The section along the bend line — its
+width the bend's length, its depth the plate's thickness — is a row of
+the joint checks ("plate P1/P2, its bend") per load case.
+OpenOHL works out what acts on it from the axial forces Nᵢ of the members
+on the flat in their plane (each along its direction dᵢ from the joint;
+a the flat's direction square to the bend line, away from it; l along
+the bend line; n the flat's normal; o the bend's middle):
+
+- across the bend N = Σ Nᵢ (dᵢ · a); along it V = |Σ Nᵢ (dᵢ · l)|;
+- about the bend line M = Σ |Nᵢ (dᵢ · a)| eᵢ + |N| sin θ · d — eᵢ the
+  distance of member i's force line out of the flat's middle plane (half
+  the plate's thickness and the angle's centroid from the back of its leg
+  bolted; another section: its steel's farthest point from its axis),
+  θ the angle the plate turns through at the bend, d the lever from the
+  bend line to the farthest bolt holding the other flat on the leg (else
+  that flat's farthest edge, said);
+- in the plate's plane M_in = |Σ Nᵢ ((cᵢ − o) × dᵢ) · n|, cᵢ the centroid
+  of member i's bolts.
+
+*Conservative assumptions:* the members' moments about the bend line
+added by size (the worst of their signs); the whole force across the
+bend turned by the bend's angle and held at the farthest holding bolt,
+the largest moment that flat's cantilever can give, **taken at the
+bend** (where the flat bears on the leg's face, less); the normal and
+the shear stresses taken at one point of the section (the codes'
+checks below). **NOT ON THE SAFE SIDE** (by what it leaves out): the
+members' axial forces only — a frame member's end moments and shear at
+its bolts are not added at the bend (the flats' plate checks take them);
+the bend short across its section — no buckling across it (the flats'
+own strut checks take theirs).
+
+The plugins apply their code to that section: **ASCE 10-97** Eq. 3.13-1
+(P/P_a + M/M_a, P_a = F_y A on the gross section by 3.10.1, the
+allowable moments F_y S of the gross elastic section by 3.14.1–3.14.3,
+S = w t²/6 and t w²/6), with the shear along the bend by the yield
+criterion of von Mises (R. von Mises, *Mechanik der festen Körper im
+plastisch-deformablen Zustand*, Göttinger Nachrichten, 1913):
+√(σ² + 3 τ²) ≤ F_y — the standard has no rule for it, **on the safe
+side**; it gives no least bend radius (said). **SIA 263:2013** 4.3.5.4,
+formula (6), the comparison stress of a plane state of stress
+√(σ² + 3 τ²) ≤ f_y/γ_M1, the stresses elastic (5.2.1, 5.2.6: W_el —
+**on the safe side**, no plastic resistance (5.1.3, W_pl) relied on in a
+cold-bent zone); the inside radius against 5.7.1.2, Table 14 (the least
+radius where a weld is made within 5 t of a cold bend: 1 t up to 3 mm,
+1.5 t up to 6 mm, 2 t up to 12 mm, 3 t up to 24 mm, 10 t beyond) — a
+smaller radius on a bent plate with a weld (where, not known) said NOT
+ON THE SAFE SIDE, without a weld a note (the table does not apply). The
+program's two thicknesses (`BEND_RADIUS_RATIO`) stays the starting
+value (the owner's decision of 2026-11-19: no shop value given).
 
 ## Splices (step 1c)
 

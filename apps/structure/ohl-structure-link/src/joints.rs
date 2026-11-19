@@ -1707,9 +1707,10 @@ fn bend_plates(
             if &p.id == id {
                 p.notes.push(format!(
                     "plate {id}: bent from {to} ({:.0}°, inside radius {:.0} mm), one part with \
-                     it; the bend's own bending under the members' force crossing it is not \
-                     checked — NOT ON THE SAFE SIDE where it governs (each flat is checked as a \
-                     flat plate, the bolts holding the part as the joint's)",
+                     it; each flat checked as a flat plate, the bolts holding the part as the \
+                     joint's, the bend's own bending under the members' force crossing it by the \
+                     joint checks (the code's plugin, 2026-11-19; where it has no such check: \
+                     not checked, NOT ON THE SAFE SIDE, said there)",
                     detail.angle,
                     detail.inner_radius * 1000.0
                 ));

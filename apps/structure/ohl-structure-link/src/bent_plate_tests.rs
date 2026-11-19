@@ -312,3 +312,82 @@ fn a_bent_plate_is_weighed_from_its_developed_area() {
         len
     );
 }
+
+/// The bend's own bending checked by both code plugins (C12, the owner's
+/// decision of 2026-11-19): the joint as laid out, P1 pulling 20 kN — a row
+/// "plate …/…, its bend" with a usage by ASCE 10-97 Eq. 3.13-1 or SIA 263
+/// 4.3.5.4 (6), its section the bend's length by the 7 mm plate; twice the
+/// force, twice the usage (linear in it: the moments are the force's).
+/// Without a design code's check: said not checked, NOT ON THE SAFE SIDE.
+#[test]
+fn the_bend_is_checked_by_the_code_plugins() {
+    let built = |name: &str| {
+        let wasm = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../../plugins/codes/{name}/target/wasm32-wasip2/release/{name}.wasm"
+        ));
+        if wasm.is_file() {
+            return true;
+        }
+        assert!(
+            std::env::var_os("OHL_REQUIRE_PLUGIN_TESTS").is_none(),
+            "plugins/codes/{name} not built"
+        );
+        false
+    };
+    let laid = run(OVER, &settings()).text;
+    let lib = library();
+    for (code, capacity, clause) in [
+        ("asce10", "", "3.13-1"),
+        (
+            "sia263",
+            "\n[analysis]\ncapacity = \"sia263-2013\"\n",
+            "4.3.5.4",
+        ),
+    ] {
+        if !built(code) {
+            return;
+        }
+        let text = format!("{laid}{capacity}");
+        let plans = crate::plate_plans(&text, &lib, &Default::default()).unwrap();
+        let f = |p1: f64| -> BTreeMap<String, f64> {
+            [("P1", p1), ("H1", -50e3), ("H2", -45e3)]
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v))
+                .collect()
+        };
+        let (one, two) = (f(20e3), f(40e3));
+        let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &one), ("two", 1.0, &two)]);
+        let bend = |n: usize| {
+            rows[n]
+                .iter()
+                .find(|x| x.part == crate::PlatePart::Bend)
+                .cloned()
+                .unwrap_or_else(|| panic!("{code}: {:?}", rows[n]))
+        };
+        let (a, b) = (bend(0), bend(1));
+        assert!(a.what().ends_with(", its bend"), "{}", a.what());
+        let (ua, ub) = (
+            a.usage.unwrap_or_else(|| panic!("{code}: {a:?}")),
+            b.usage.unwrap(),
+        );
+        assert!(
+            ua > 0.0 && (ub - 2.0 * ua).abs() < 1e-9 * ub.max(1.0),
+            "{code}: {ua} {ub}"
+        );
+        assert!(a.governs.contains(clause), "{code}: {}", a.governs);
+        assert!(!a.governs.contains("NOT CHECKED"), "{code}: {}", a.governs);
+    }
+    // The simple check (not a design code): said, no usage.
+    let text = format!("{laid}\n[analysis]\ncapacity = \"simple\"\n");
+    let plans = crate::plate_plans(&text, &lib, &Default::default()).unwrap();
+    let none = BTreeMap::new();
+    let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &none)]);
+    let b = rows[0]
+        .iter()
+        .find(|x| x.part == crate::PlatePart::Bend)
+        .unwrap_or_else(|| panic!("{:?}", rows[0]));
+    assert!(
+        b.usage.is_none() && b.governs.contains("NOT ON THE SAFE SIDE"),
+        "{b:?}"
+    );
+}

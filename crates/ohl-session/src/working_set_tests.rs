@@ -297,6 +297,20 @@ fn a_replica_follows_by_rows() {
     let mut r = Session::open(&d.join("r.ohl")).unwrap();
     assert_eq!(r.file_meta("network.line").unwrap().as_deref(), Some("A"));
     replica_is(&r, &s, &e, "written");
+    // Its import logged with an empty command (2026-11-19): the objects
+    // once, in their rows; the log still says what it changed.
+    let log = r.log().unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].kind, "import");
+    assert!(!log[0].objects.is_empty());
+    let entry = r.conn.entry(log[0].seq).unwrap().unwrap();
+    assert_eq!(
+        (entry.4.as_str(), entry.5.as_str()),
+        (crate::EMPTY_COMMAND, crate::EMPTY_COMMAND)
+    );
+    assert!(r.undo("ana").is_err(), "an import cannot be undone");
+    // The next command of the replica is logged in full.
+    assert!(!r.lean_import.load(std::sync::atomic::Ordering::SeqCst));
     let mut users = s.extent_users(&e);
     let mut rng = Rng(7);
     let (mut applied_n, mut moved_in) = (0, 0);

@@ -43,12 +43,14 @@
 //! towards what it bolts onto — as the planner measures it for an
 //! estimate, as the level 4 analysis does for a value in the file — else
 //! the joint's leg), n out of the face (u × the member). An upper bound's
-//! sign is not known, nor is the side of a plate's offset: the cases are
-//! solved without the estimates, with them (upper bounds one way) and with
-//! the upper bounds the other way, and each member and plate takes its
-//! largest usage of the solves (on the safe side for every end alone; two
-//! upper bounds at one joint where frames meet, worse with opposite signs,
-//! are not covered — said).
+//! sign is not known, nor is the side of a plate's offset (2026-11-19, the
+//! owner's decision on A1): such an offset is never in the solve — it is
+//! the member's offset of unknown sign
+//! ([`ohl_structures_fe::Member::free_offsets`]), taken only in its own
+//! check, the moment N·e whole and sign-free, at frame joints as where only
+//! bars meet. The cases are solved twice — without the estimates and with
+//! them — and each member and plate takes its larger usage (on the safe
+//! side: an estimate may not be built as planned).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -173,10 +175,12 @@ impl Estimates {
 pub struct EstimateUse {
     /// The estimates.
     pub estimates: Estimates,
-    /// The ends with an offset in the model (one way).
+    /// The ends with an offset in the model.
     pub offsets: usize,
-    /// The solves of every case: 2 (without and with them), 3 with the
-    /// upper bounds the other way.
+    /// The ends whose offset (or a part of it) is of unknown sign: taken
+    /// only in their member's own check (2026-11-19).
+    pub sign_free: usize,
+    /// The solves of every case: 2 (without and with them).
     pub solves: usize,
     /// How long the solves took in all, s.
     pub solve_seconds: f64,
@@ -455,10 +459,24 @@ pub struct EndOffset {
     pub member: usize,
     /// Its end: 0 at its first joint, 1 at its second.
     pub end: usize,
-    /// The rigid end offset, structure axes, m.
+    /// The rigid end offset of known sign (in the solve), structure axes,
+    /// m: an estimated, given or laid-out shift; zero: none.
     pub offset: [f64; 3],
+    /// The parts whose sign is not known (2026-11-19): an upper bound's
+    /// shift, a plate's offset out of the face — each the member's offset
+    /// of unknown sign, only in its own check
+    /// ([`ohl_structures_fe::Member::free_offsets`]).
+    pub free: Vec<[f64; 3]>,
     /// Where it comes from.
     pub source: Source,
+}
+
+impl EndOffset {
+    /// Its eccentricity, m: the known offset and the parts of unknown sign
+    /// square to each other.
+    pub fn e(&self) -> f64 {
+        (norm(self.offset).powi(2) + self.free.iter().map(|r| norm(*r).powi(2)).sum::<f64>()).sqrt()
+    }
 }
 
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -482,10 +500,12 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-/// The offsets of `estimates` in `model` (A2), the upper bounds and the
-/// plates' offsets with `sign` (+1 one way, −1 the other); with notes on
-/// the ends left out (not in the model, no direction to measure in).
-pub fn offsets(model: &Model, estimates: &Estimates, sign: f64) -> (Vec<EndOffset>, Vec<String>) {
+/// The offsets of `estimates` in `model` (A2): a shift of known sign as
+/// the end's rigid offset, an upper bound's shift and a plate's offset as
+/// parts of unknown sign (2026-11-19: only in the member's own check); with
+/// notes on the ends left out (not in the model, no direction to measure
+/// in).
+pub fn offsets(model: &Model, estimates: &Estimates) -> (Vec<EndOffset>, Vec<String>) {
     let mut out = Vec::new();
     let mut notes = Vec::new();
     let nodes: BTreeMap<&str, usize> = model
@@ -552,59 +572,38 @@ pub fn offsets(model: &Model, estimates: &Estimates, sign: f64) -> (Vec<EndOffse
             ));
             continue;
         };
-        let s = if e.source == Source::UpperBound {
-            sign * e.shift
-        } else {
-            e.shift
-        };
         let n = unit(cross(along, u)).unwrap_or([0.0; 3]);
-        let r: [f64; 3] = std::array::from_fn(|k| u[k] * s + n[k] * sign * e.plate);
-        if norm(r) == 0.0 {
+        let shift: [f64; 3] = u.map(|c| c * e.shift);
+        let plate: [f64; 3] = n.map(|c| c * e.plate);
+        let (offset, mut free) = if e.source == Source::UpperBound {
+            ([0.0; 3], vec![shift])
+        } else {
+            (shift, Vec::new())
+        };
+        free.push(plate);
+        free.retain(|r| norm(*r) > 0.0);
+        if norm(offset) == 0.0 && free.is_empty() {
             continue;
         }
         out.push(EndOffset {
             member: idx,
             end,
-            offset: r,
+            offset,
+            free,
             source: e.source,
         });
     }
     (out, notes)
 }
 
-/// `model` with `offsets` as its members' rigid end offsets.
+/// `model` with `offsets` as its members' rigid end offsets and offsets of
+/// unknown sign.
 pub fn apply(model: &mut Model, offsets: &[EndOffset]) {
     for o in offsets {
-        model.members[o.member].offsets[o.end] = o.offset;
+        let m = &mut model.members[o.member];
+        m.offsets[o.end] = o.offset;
+        m.free_offsets[o.end] = o.free.clone();
     }
-}
-
-/// The joints where two or more ends whose sign is not known meet a frame
-/// member (their moments shared in the solve: opposite signs not covered
-/// by the envelope), by id.
-pub fn mixed_sign_joints(
-    model: &Model,
-    offsets: &[EndOffset],
-    estimates: &Estimates,
-) -> Vec<String> {
-    let either: BTreeSet<(&str, &str)> = estimates
-        .ends
-        .iter()
-        .filter(|e| e.either_sign())
-        .map(|e| (e.member.as_str(), e.joint.as_str()))
-        .collect();
-    let mut at: BTreeMap<usize, usize> = BTreeMap::new();
-    for o in offsets {
-        let m = &model.members[o.member];
-        let node = if o.end == 0 { m.i } else { m.j };
-        if either.contains(&(m.id.as_str(), model.nodes[node].id.as_str())) {
-            *at.entry(node).or_default() += 1;
-        }
-    }
-    at.into_iter()
-        .filter(|(n, k)| *k >= 2 && model.frame_at(*n))
-        .map(|(n, _)| model.nodes[n].id.clone())
-        .collect()
 }
 
 /// The ends' sources of member `id` in words, for its eccentric words:
@@ -628,28 +627,21 @@ fn larger(a: Option<f64>, b: Option<f64>) -> bool {
     }
 }
 
-/// One case's results of the solves (A2): `with` the estimates (the upper
-/// bounds one way), `without` them, and `other` (the upper bounds the
-/// other way; none: every sign known). Each member takes the solve where
-/// its usage is largest (its forces, usage and what governs from it), each
-/// plate and weld the same; the joints, reactions and sums are those with
-/// the estimates. A solve that fails fails the case, said.
+/// One case's results of the two solves (A2): `with` the estimates (the
+/// offsets of unknown sign in their members' own checks, 2026-11-19) and
+/// `without` them. Each member takes the solve where its usage is larger
+/// (its forces, usage and what governs from it), each plate and weld the
+/// same; the joints, reactions and sums are those with the estimates. A
+/// solve that fails fails the case, said.
 pub fn envelope(
     with: Result<CaseResult, String>,
     without: Result<CaseResult, String>,
-    other: Option<Result<CaseResult, String>>,
     estimates: &Estimates,
 ) -> Result<CaseResult, String> {
     let without = without?;
     let mut out = with.map_err(|e| format!("with the estimated eccentricities: {e}"))?;
-    let other = other
-        .transpose()
-        .map_err(|e| format!("with the upper bounds the other way: {e}"))?;
-    let mut alternatives: Vec<(&CaseResult, &str)> =
+    let alternatives: Vec<(&CaseResult, &str)> =
         vec![(&without, "without the estimated eccentricities")];
-    if let Some(o) = &other {
-        alternatives.push((o, "with the upper bounds the other way"));
-    }
     for (k, m) in out.members.iter_mut().enumerate() {
         let words = sources_of(estimates, &m.id);
         for (alt, why) in &alternatives {

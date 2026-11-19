@@ -510,19 +510,41 @@ impl StructureApp {
         }
         // A part that does not fit as given (2026-11-19): the joint reads
         // so — failing, counted apart from the usages.
-        let misfit = first
+        // Only where its placements were assumed (D14, 2026-11-19): "does
+        // not fit as assumed — not detailed", in a colour of its own.
+        let misfits: Vec<&ohl_structure_link::PlateUsage> = first
             .plates
             .iter()
-            .filter(|p| p.joint == joint)
-            .find_map(|p| p.does_not_fit.as_ref().map(|w| (p.what(), w.clone())));
-        let failing = {
-            let [r, g, b, _] = crate::results_tab::DOES_NOT_FIT_COLOUR;
+            .filter(|p| p.joint == joint && p.does_not_fit.is_some())
+            .collect();
+        let misfit = misfits
+            .iter()
+            .find(|p| !p.misfit_assumed)
+            .or(misfits.first())
+            .map(|p| {
+                (
+                    p.what(),
+                    p.does_not_fit.clone().unwrap_or_default(),
+                    p.misfit_assumed,
+                )
+            });
+        let assumed_only = !misfits.is_empty() && misfits.iter().all(|p| p.misfit_assumed);
+        let colour_of = |assumed: bool| {
+            let [r, g, b, _] = if assumed {
+                crate::results_tab::DOES_NOT_FIT_ASSUMED_COLOUR
+            } else {
+                crate::results_tab::DOES_NOT_FIT_COLOUR
+            };
             egui::Color32::from_rgb(r, g, b)
         };
-        if let Some((what, why)) = &misfit {
+        if let Some((what, why, _)) = &misfit {
             ui.horizontal_wrapped(|ui| {
                 ui.label("The joint:");
-                ui.colored_label(failing, "does not fit as given");
+                if assumed_only {
+                    ui.colored_label(colour_of(true), "does not fit as assumed — not detailed");
+                } else {
+                    ui.colored_label(colour_of(false), "does not fit as given");
+                }
                 ui.label(format!("— {what}: {why}"));
             });
         }
@@ -566,8 +588,13 @@ impl StructureApp {
                     ui.label(&p.plate);
                     ui.label(p.part.words());
                     if p.does_not_fit.is_some() {
-                        ui.colored_label(failing, "does not fit");
-                        ui.colored_label(failing, "does not fit");
+                        let (c, w) = if p.misfit_assumed {
+                            (colour_of(true), "does not fit as assumed")
+                        } else {
+                            (colour_of(false), "does not fit")
+                        };
+                        ui.colored_label(c, w);
+                        ui.colored_label(c, w);
                         ui.label("");
                         ui.label(egui::RichText::new(p.governs.as_str()).small());
                         ui.end_row();

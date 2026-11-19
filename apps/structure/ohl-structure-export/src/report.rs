@@ -517,7 +517,9 @@ pub fn report_html(input: &ReportInput) -> String {
 /// largest over the cases of its plates', welds', bolt groups' and bearing
 /// checks, with the part and the check that give it; the joints with a
 /// part not checked counted beside; a joint that does not fit as given
-/// reads so (failing, counted apart: no usage).
+/// reads so (failing, counted apart: no usage); one that does not fit only
+/// where its placements were assumed reads "does not fit as assumed — not
+/// detailed", counted apart again (D14, 2026-11-19).
 fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
     let mut best: std::collections::BTreeMap<&str, (f64, &str, String, &str)> =
         std::collections::BTreeMap::new();
@@ -546,7 +548,7 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
     // Geometry: the same in every case.
     let misfit = solved
         .first()
-        .map(|(_, r)| ohl_structure_link::joints_not_fitting(&r.plates))
+        .map(|(_, r)| ohl_structure_link::joints_not_fitting_with(&r.plates))
         .unwrap_or_default();
     if best.is_empty() && bare.is_empty() && misfit.is_empty() {
         return;
@@ -566,13 +568,21 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
     joints.dedup();
     for j in joints {
         let n = bare.get(j).copied().unwrap_or(0);
-        if let Some(why) = misfit.get(j) {
+        if let Some(m) = misfit.get(j) {
+            let (cell, head) = if m.assumed {
+                (
+                    "does not fit as assumed",
+                    ohl_structure_link::DOES_NOT_FIT_ASSUMED,
+                )
+            } else {
+                ("does not fit", ohl_structure_link::DOES_NOT_FIT)
+            };
             let _ = writeln!(
                 h,
-                "<tr><td>{}</td><td class=\"n over\">does not fit</td><td></td><td></td>\
+                "<tr><td>{}</td><td class=\"n over\">{cell}</td><td></td><td></td>\
                  <td>{}</td><td class=\"n\">{}</td></tr>",
                 esc(j),
-                esc(&format!("{}: {why}", ohl_structure_link::DOES_NOT_FIT)),
+                esc(&format!("{head}: {}", m.words)),
                 n
             );
             continue;
@@ -599,13 +609,23 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
          bolt groups' and bearing checks; a part not checked (its data not given, or no \
          design code's check) is counted beside it and never taken as a pass.</p>\n",
     );
-    if !misfit.is_empty() {
+    let assumed = misfit.values().filter(|m| m.assumed).count();
+    let given = misfit.len() - assumed;
+    if given > 0 {
         let _ = writeln!(
             h,
-            "<p class=\"warn\">{} joint(s) do not fit as given (a bolt off the flange or plate \
-             it bolts onto, holes overlapping, a bolt beyond a member's end): failing, counted \
-             apart, without a usage. Correct their details and run again.</p>",
-            misfit.len()
+            "<p class=\"warn\">{given} joint(s) do not fit as given (a bolt off the flange or \
+             plate it bolts onto, holes overlapping, a bolt beyond a member's end): failing, \
+             counted apart, without a usage. Correct their details and run again.</p>"
+        );
+    }
+    if assumed > 0 {
+        let _ = writeln!(
+            h,
+            "<p class=\"warn\">{assumed} joint(s) do not fit as assumed — not detailed: they do \
+             not fit only where their placements were assumed (not given, not laid out by the \
+             joint layout): failing, counted apart, without a usage. Detail them (by hand or \
+             Design › Lay out joints…) and run again.</p>"
         );
     }
 }

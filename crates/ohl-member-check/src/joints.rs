@@ -49,6 +49,7 @@ pub use ohl_plugins::bolt_distances::DistanceInput;
 use ohl_plugins::bolt_distances_full as dist_full;
 use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
+pub use ohl_plugins::joint_check_bends as bends;
 use ohl_plugins::joint_check_full as full;
 pub use ohl_plugins::joint_check_groups as groups;
 pub use ohl_plugins::joint_check_groups_prying as prying;
@@ -327,6 +328,41 @@ pub fn check_joint_groups_tension(
             GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
             false,
         ),
+    }
+}
+
+/// The bends of `input` (a bent plate's bend, 2026-11-19, the owner's
+/// decision of that day) checked by the plugin `p` names through its
+/// `joint-check-bends` export: its results, or why there are none — the
+/// plugin has no such export (the caller says the bend's own bending is not
+/// checked, NOT ON THE SAFE SIDE, as before), is not installed or fails.
+/// One call counted when it is made.
+pub fn check_bends(p: &PluginMethod, input: &bends::BendInput) -> GroupsChecked {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return GroupsChecked::NotChecked(e),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return GroupsChecked::NotChecked(format!("the plugin host does not start: {e}"));
+        }
+    };
+    let mut with = input.clone();
+    with.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    match host.check_bends(&dir, &p.method, &with) {
+        Ok(Some(r)) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            GroupsChecked::Results(r)
+        }
+        Ok(None) => GroupsChecked::NotChecked(format!(
+            "{} has no check of a bent plate's bend (no joint-check-bends)",
+            p.plugin
+        )),
+        Err(e) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            GroupsChecked::NotChecked(format!("the bends' check failed: {e}"))
+        }
     }
 }
 

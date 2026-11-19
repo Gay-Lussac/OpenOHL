@@ -1006,7 +1006,8 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
         input.cases
     };
     // The estimated eccentricities (O45 A2, an option at level 3): the
-    // model with them, and with the upper bounds the other way.
+    // model with them (the offsets of unknown sign in their members' own
+    // checks, 2026-11-19).
     let estimated = match &model {
         Some(m) => estimated_models(input, m, &mut run),
         None => None,
@@ -1033,21 +1034,16 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             let base = fe_results(&fe_in, m, &mut run.notes);
             match estimated {
                 None => base.into_iter().map(Some).collect(),
-                Some((with, other, mut used)) => {
-                    let mut ignored = Vec::new();
+                Some((with, mut used)) => {
                     let with_r = fe_results(&fe_in, &with, &mut run.notes);
-                    let other_r = other.as_ref().map(|o| fe_results(&fe_in, o, &mut ignored));
                     used.solve_seconds = started.elapsed().as_secs_f64();
-                    let mut other_r = other_r.map(Vec::into_iter);
                     let out = base
                         .into_iter()
                         .zip(with_r)
                         .map(|(without, with)| {
-                            let other = other_r.as_mut().and_then(Iterator::next);
                             Some(crate::eccentricities::envelope(
                                 with,
                                 without,
-                                other,
                                 &used.estimates,
                             ))
                         })
@@ -1174,16 +1170,16 @@ fn fe_results(x: &FeIn, m: &Model, notes: &mut Vec<String>) -> Vec<Result<CaseRe
     fes
 }
 
-/// The models with the estimated eccentricities (O45 A2) when the
-/// structure asks for them and they apply: (with them, the upper bounds
-/// one way; with the upper bounds the other way — none when every sign is
-/// known; what was used). What applies and what was left out goes into
-/// `run`'s notes. None: the option is off, or not applied (said).
+/// The model with the estimated eccentricities (O45 A2) when the
+/// structure asks for them and they apply — the offsets of unknown sign
+/// (upper bounds, plates' offsets) its members' own (2026-11-19) — and what
+/// was used. What applies and what was left out goes into `run`'s notes.
+/// None: the option is off, or not applied (said).
 fn estimated_models(
     input: &RunInput,
     m: &Model,
     run: &mut StructureRun,
-) -> Option<(Model, Option<Model>, crate::eccentricities::EstimateUse)> {
+) -> Option<(Model, crate::eccentricities::EstimateUse)> {
     use crate::eccentricities as ecc;
     let t = input.structure;
     if !ecc::option_on(t) {
@@ -1224,23 +1220,18 @@ fn estimated_models(
             return None;
         }
     };
-    let (plus, mut left) = ecc::offsets(m, &estimates, 1.0);
+    let (plus, mut left) = ecc::offsets(m, &estimates);
     let mut with = m.clone();
     ecc::apply(&mut with, &plus);
-    let other = estimates.either_sign().then(|| {
-        let (minus, _) = ecc::offsets(m, &estimates, -1.0);
-        let mut o = m.clone();
-        ecc::apply(&mut o, &minus);
-        o
-    });
-    let solves = 2 + usize::from(other.is_some());
+    let solves = 2;
+    let sign_free = plus.iter().filter(|o| !o.free.is_empty()).count();
     let ub = estimates.count(ecc::Source::UpperBound);
     let plates = estimates.plate_bounds();
     run.notes.push(format!(
         "estimated eccentricities (an option at level 3): {} member end(s) with an offset of \
          {} the layout's planner takes — {} laid out, {} given, {} estimated from its plan (not \
          laid out), upper bound at {ub} end(s) (the {:.0} mm shift limit{}); each member's and \
-         plate's usage the largest of {solves} solves (without them, with them{}); estimated in \
+         plate's usage the larger of {solves} solves (without them, with them){}; estimated in \
          {:.1} s",
         plus.len(),
         estimates.ends.len(),
@@ -1256,29 +1247,18 @@ fn estimated_models(
         } else {
             String::new()
         },
-        if other.is_some() {
-            ", the upper bounds and the plates' offsets the other way"
+        if sign_free > 0 {
+            format!(
+                "; at {sign_free} end(s) the offset's sign is not known (an upper bound, a \
+                 plate's side): never in the solve, its moment N·e taken whole and sign-free in \
+                 the member's own check, at frame joints too (on the safe side for the member; \
+                 the joint's other members relieved of nothing)"
+            )
         } else {
-            ""
+            String::new()
         },
         estimates.seconds
     ));
-    let mixed = ecc::mixed_sign_joints(m, &plus, &estimates);
-    if !mixed.is_empty() {
-        run.notes.push(format!(
-            "NOT ON THE SAFE SIDE: at {} joint(s) where a frame meets two or more ends whose \
-             offset's sign is not known (upper bounds, a plate's side), their signs are taken \
-             all one way and all the other, not mixed: {}{}",
-            mixed.len(),
-            mixed
-                .iter()
-                .take(12)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", "),
-            if mixed.len() > 12 { ", …" } else { "" }
-        ));
-    }
     if let (Some(e), false) = (input.extension, piece_empty(input)) {
         run.notes.push(format!(
             "extension {e}: its own members have no estimated eccentricities (the layout plans \
@@ -1297,10 +1277,10 @@ fn estimated_models(
     }
     Some((
         with,
-        other,
         ecc::EstimateUse {
             estimates,
             offsets: plus.len(),
+            sign_free,
             solves,
             solve_seconds: 0.0,
         },

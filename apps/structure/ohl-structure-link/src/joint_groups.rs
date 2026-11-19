@@ -75,6 +75,12 @@ const IN_LINE_DEG: f64 = 5.0;
 /// Starts of the words of a group that does not fit (owner 2026-11-19).
 pub const DOES_NOT_FIT: &str = "DOES NOT FIT as given";
 
+/// Starts of the words of a group that does not fit only where the
+/// placements were assumed — not given by the user, not laid out by the
+/// joint layout (D14, the owner's decision of 2026-11-19): still failing,
+/// never a usage or a pass, counted apart.
+pub const DOES_NOT_FIT_ASSUMED: &str = "DOES NOT FIT as assumed — not detailed";
+
 /// A flange a bolt bends as it pulls (a T-stub's flange, the prying model
 /// of Struik and de Back): what the plugin's `tee` record takes.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +127,9 @@ struct Bolt {
     /// The bolt grades set on the members it carries, in words ("bolt
     /// grade 8.8 set by command: …"; owner 2026-11-19).
     grades: Vec<String>,
+    /// Where it lies was given — by the user or the joint layout — not
+    /// assumed by the joint details ([`placed_given`]; D14, 2026-11-19).
+    given: bool,
 }
 
 /// A ply's edges.
@@ -187,6 +196,10 @@ pub(crate) struct GroupPlan {
     /// Why it does not fit as given (empty: it fits): the row reads "does
     /// not fit", without a usage.
     misfits: Vec<String>,
+    /// A misfit lies on a placement given (by the user or the joint
+    /// layout); false with misfits: they lie only on placements assumed —
+    /// "does not fit as assumed — not detailed" (D14, 2026-11-19).
+    misfit_given: bool,
 }
 
 /// The groups of a structure and what is not checked.
@@ -271,6 +284,22 @@ fn grade_agrees(l: &ohl_structures::bolts::BoltType, g: Option<&BoltGrade>) -> b
 /// where a grade set on the member's bolts differs from the library's) and
 /// the grade set on the member's bolts over the bolts' own (owner
 /// 2026-11-19).
+/// Whether where end `a`'s bolts lie was given — by the user, or written by
+/// the joint layout (a `[[connection]]` at the end, a plate's own bolts, the
+/// member's design data) — rather than assumed by the joint details (D14,
+/// the owner's decision of 2026-11-19): what it bolts onto, its gauges, its
+/// pitch, its end distance or where its steel stops. The count of its
+/// gauge lines alone (an import's holes) is not where its bolts lie.
+pub(crate) fn placed_given(a: &Arrival) -> bool {
+    use crate::joints::Source as S;
+    let given = |s: S| matches!(s, S::Given | S::Member);
+    given(a.onto.source)
+        || given(a.gauges.source)
+        || given(a.pitch.source)
+        || given(a.end_distance.source)
+        || given(a.cut.source)
+}
+
 fn bolt_of(a: &Arrival, model: &Model, at: V3, bolts: &BoltLibrary) -> Option<Bolt> {
     let set = a.bolts.value.as_ref()?;
     let idx = model.members.iter().position(|m| m.id == a.member);
@@ -336,6 +365,7 @@ fn bolt_of(a: &Arrival, model: &Model, at: V3, bolts: &BoltLibrary) -> Option<Bo
         plates: Vec::new(),
         unknown: Vec::new(),
         grades: set_grade.map(BoltGrade::words).into_iter().collect(),
+        given: placed_given(a),
     })
 }
 
@@ -638,25 +668,29 @@ fn own_tees(a: &Arrival, model: &Model, end: Option<f64>, d: f64) -> Option<Vec<
 
 /// Holes of one ply overlapping: each pair of `holes` (where, its
 /// diameter) nearer than their radii together but not one hole, in words.
-fn overlaps(part: &str, holes: &[(V3, f64, String)]) -> Vec<String> {
-    let mut out = Vec::new();
+/// Holes in `part` that overlap, in words, each with whether one of the
+/// two lies where it was given (`holes`: where, its diameter, what it is,
+/// given; D14).
+fn overlaps(part: &str, holes: &[(V3, f64, String, bool)]) -> Vec<(String, bool)> {
+    let mut out: Vec<(String, bool)> = Vec::new();
     for (i, a) in holes.iter().enumerate() {
         for b in &holes[i + 1..] {
             let dist = norm(sub(a.0, b.0));
             let near = same_hole(a.1.min(b.1));
             if dist > near && dist < (a.1 + b.1) / 2.0 - 1e-4 {
-                push_once(
-                    &mut out,
-                    format!(
-                        "holes in {part} overlap ({} and {}: {:.0} mm apart, holes {:.1} and \
-                         {:.1} mm)",
-                        a.2,
-                        b.2,
-                        dist * 1000.0,
-                        a.1 * 1000.0,
-                        b.1 * 1000.0
-                    ),
+                let w = format!(
+                    "holes in {part} overlap ({} and {}: {:.0} mm apart, holes {:.1} and {:.1} \
+                     mm)",
+                    a.2,
+                    b.2,
+                    dist * 1000.0,
+                    a.1 * 1000.0,
+                    b.1 * 1000.0
                 );
+                match out.iter_mut().find(|x| x.0 == w) {
+                    Some(x) => x.1 |= a.3 || b.3,
+                    None => out.push((w, a.3 || b.3)),
+                }
             }
         }
     }
@@ -811,6 +845,7 @@ fn holding_groups(
                 };
                 let mut notes = Vec::new();
                 let mut misfits = Vec::new();
+                let mut misfit_given = false;
                 let outline = pd.outline.clone();
                 let mut bolts: Vec<Bolt> = Vec::new();
                 let (steel, steel_note) =
@@ -874,6 +909,7 @@ fn holding_groups(
                             && crate::plate_checks::ray_to_outline(&outline, *at, a.direction)
                                 .is_none()
                         {
+                            misfit_given |= b.given;
                             push_once(
                                 &mut misfits,
                                 format!(
@@ -932,19 +968,33 @@ fn holding_groups(
                 // Holes overlapping in the plate: its holding bolts against
                 // every hole in it.
                 let d0 = bolts.iter().map(hole_of).fold(f64::INFINITY, f64::min);
-                let mut list: Vec<(V3, f64, String)> = bolts
+                let mut list: Vec<(V3, f64, String, bool)> = bolts
                     .iter()
-                    .map(|b| (b.at, hole_of(b), format!("a bolt of {hw}")))
+                    .map(|b| (b.at, hole_of(b), format!("a bolt of {hw}"), b.given))
+                    .collect();
+                // The other members' holes in the plate: given with the
+                // plate's members (their ends onto it in the file).
+                let given_here: Vec<(V3, bool)> = onto_plate(j, q)
+                    .iter()
+                    .flat_map(|a| {
+                        let g = placed_given(a);
+                        a.bolt_points.iter().map(move |x| (*x, g))
+                    })
                     .collect();
                 for h in &holes {
                     if !bolts
                         .iter()
                         .any(|b| norm(sub(b.at, *h)) <= same_hole(b.diameter))
                     {
-                        list.push((*h, d0, "another member's bolt".into()));
+                        let g = given_here
+                            .iter()
+                            .find(|x| norm(sub(x.0, *h)) < 1e-9)
+                            .is_none_or(|x| x.1);
+                        list.push((*h, d0, "another member's bolt".into(), g));
                     }
                 }
-                for w in overlaps(&format!("plate {q}"), &list) {
+                for (w, g) in overlaps(&format!("plate {q}"), &list) {
+                    misfit_given |= g;
                     push_once(&mut misfits, w);
                 }
                 notes.push(format!(
@@ -1000,6 +1050,7 @@ fn holding_groups(
                     from: Vec::new(),
                     notes,
                     misfits,
+                    misfit_given,
                 });
             }
         }
@@ -1107,6 +1158,7 @@ fn bearing_groups(
             let part = run.join("/");
             let mut notes = Vec::new();
             let mut misfits = Vec::new();
+            let mut misfit_given = false;
             let Some((t, fy, fu, redundant)) = member_ply(host, model) else {
                 out.not_checked.push((
                     j.id.clone(),
@@ -1157,6 +1209,7 @@ fn bearing_groups(
                             if let Some((gg, w, _)) = b.flange
                                 && off_flange(gg, w, hole_of(&b))
                             {
+                                misfit_given |= b.given;
                                 push_once(
                                     &mut misfits,
                                     format!(
@@ -1198,6 +1251,7 @@ fn bearing_groups(
                             if let Some((g, w, _)) = b.flange
                                 && off_flange(g, w, hole_of(&b))
                             {
+                                misfit_given |= b.given;
                                 push_once(
                                     &mut misfits,
                                     format!(
@@ -1278,11 +1332,12 @@ fn bearing_groups(
                 }
             }
             // Holes overlapping in the host's flange.
-            let in_flange: Vec<(V3, f64, String)> = bolts
+            let in_flange: Vec<(V3, f64, String, bool)> = bolts
                 .iter()
-                .map(|b| (b.at, hole_of(b), b.carries.join("+")))
+                .map(|b| (b.at, hole_of(b), b.carries.join("+"), b.given))
                 .collect();
-            for w in overlaps(&part, &in_flange) {
+            for (w, g) in overlaps(&part, &in_flange) {
+                misfit_given |= g;
                 push_once(&mut misfits, w);
             }
             let shared = bolts.iter().filter(|b| b.carries.len() > 1).count();
@@ -1314,6 +1369,7 @@ fn bearing_groups(
                 for b in &bolts {
                     let s = dot(sub(b.at, j.position), host.direction);
                     if s < cut - 0.001 {
+                        misfit_given |= b.given;
                         push_once(
                             &mut misfits,
                             format!(
@@ -1370,6 +1426,7 @@ fn bearing_groups(
                 from,
                 notes,
                 misfits,
+                misfit_given,
             });
         }
     }
@@ -1713,6 +1770,7 @@ pub(crate) fn group_rows(
                 checks: Vec::new(),
                 notes: Vec::new(),
                 does_not_fit: None,
+                misfit_assumed: false,
             })
             .collect()
     };
@@ -1726,6 +1784,7 @@ pub(crate) fn group_rows(
     let row = |n: usize, k: usize| -> PlateUsage {
         let g = &plans.groups[k];
         let misfit = (!g.misfits.is_empty()).then(|| g.misfits.join("; "));
+        let assumed = misfit.is_some() && !g.misfit_given;
         PlateUsage {
             joint: g.joint.clone(),
             plate: g.part.clone(),
@@ -1734,11 +1793,18 @@ pub(crate) fn group_rows(
             usage: None,
             governs: misfit
                 .as_ref()
-                .map(|m| format!("{DOES_NOT_FIT}: {m}"))
+                .map(|m| {
+                    if assumed {
+                        format!("{DOES_NOT_FIT_ASSUMED}: {m}")
+                    } else {
+                        format!("{DOES_NOT_FIT}: {m}")
+                    }
+                })
                 .unwrap_or_default(),
             checks: Vec::new(),
             notes: g.notes.clone(),
             does_not_fit: misfit,
+            misfit_assumed: assumed,
         }
     };
     let Some(p) = plugin else {
@@ -2029,6 +2095,7 @@ mod tests {
             plates: Vec::new(),
             unknown: Vec::new(),
             grades: Vec::new(),
+            given: true,
         }
     }
 
@@ -2068,6 +2135,7 @@ mod tests {
             from: Vec::new(),
             notes: Vec::new(),
             misfits: Vec::new(),
+            misfit_given: false,
         }
     }
 
@@ -2347,9 +2415,13 @@ mod tests {
     /// hole (1 mm apart) and holes clear of each other are not.
     #[test]
     fn overlapping_holes_do_not_fit() {
-        let h = |x: f64| ([x, 0.0, 0.0], 0.0175, format!("at {x}"));
-        assert_eq!(overlaps("L1", &[h(0.0), h(0.01)]).len(), 1);
-        assert!(overlaps("L1", &[h(0.0), h(0.001)]).is_empty());
-        assert!(overlaps("L1", &[h(0.0), h(0.05)]).is_empty());
+        let h = |x: f64, g: bool| ([x, 0.0, 0.0], 0.0175, format!("at {x}"), g);
+        assert_eq!(overlaps("L1", &[h(0.0, true), h(0.01, false)]).len(), 1);
+        assert!(overlaps("L1", &[h(0.0, true), h(0.001, true)]).is_empty());
+        assert!(overlaps("L1", &[h(0.0, true), h(0.05, true)]).is_empty());
+        // Given where one of the two is given (D14); assumed where both are
+        // assumed.
+        assert!(overlaps("L1", &[h(0.0, true), h(0.01, false)])[0].1);
+        assert!(!overlaps("L1", &[h(0.0, false), h(0.01, false)])[0].1);
     }
 }

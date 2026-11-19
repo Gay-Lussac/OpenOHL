@@ -787,8 +787,12 @@ Notes:
 
 - The replica of the whole route is larger than the whole line's copy
   (3.5 MB against 2.6 MB): its import entry's command holds every object
-  again (the network's import keeps an empty one). Left as it is (a
-  change of how the session writes an import: a question for the owner).
+  again (the network's import keeps an empty one). Since 2026-11-19 (the
+  owner's decision) the replica's import entry is written with an empty
+  command: measured in-process on the same line (the session writing the
+  replica as the server does), the whole route's replica 3.48 → 1.98 MB,
+  the third's 1.79 → 1.03 MB, written and opened in the same time (0.05 s
+  and 0.03 s for the whole route).
 - The extent worked out again after each change touching a working set
   reads the routes of every object of the model (about 10 ms for a line
   of 145 structures); several working sets on one model add up, and on
