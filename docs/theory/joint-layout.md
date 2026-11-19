@@ -339,6 +339,11 @@ The code's slenderness curves cover only the normal framing eccentricity
 limited: on the real towers measured the layout needed a shift for
 very few ends (see the settings below).
 
+At level 3, where the joints are not laid out, the option **Estimated
+eccentricities** (O45, 2026-11-19) takes the shifts this planner would
+give — run relaxed, nothing written — and the shift limit as an upper
+bound where no layout fits: [Estimated eccentricities](estimated-eccentricities.md).
+
 ## Onto the flange or onto a plate
 
 When every bolt of a plane lands on the flange — at least the angle's

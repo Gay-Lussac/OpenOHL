@@ -102,6 +102,11 @@ pub struct LayoutRecord {
     /// roll each had before (as written) and as what (a leg or chord, a
     /// plan member).
     pub oriented: BTreeMap<String, (String, crate::OrientKind)>,
+    /// The option **estimated eccentricities** (O45, owner 2026-11-19;
+    /// `estimated_eccentricities = true`, written only when on): at level
+    /// 3 the analysis takes the member ends' eccentricities the layout's
+    /// planner estimates ([`crate::eccentricities`]); off by default.
+    pub estimated: bool,
 }
 
 /// The settings a run is made with, as the record keeps them.
@@ -294,6 +299,10 @@ impl LayoutRecord {
                 .filter(|r| r.len() == 2)
                 .map(|r| (r[0].clone(), r[1].clone()))
                 .collect(),
+            estimated: g
+                .get(crate::eccentricities::OPTION_KEY)
+                .and_then(toml::Value::as_bool)
+                == Some(true),
             ..Default::default()
         };
         for row in rows("ends") {
@@ -359,10 +368,13 @@ impl LayoutRecord {
         for t in keep {
             a.push(t);
         }
-        if !self.is_empty() || self.settings.is_some() {
+        if !self.is_empty() || self.settings.is_some() || self.estimated {
             let mut t = Table::new();
             t.insert("id", toml_edit::value(RECORD_ID));
             t.insert("kind", toml_edit::value(RECORD_KIND));
+            if self.estimated {
+                t.insert(crate::eccentricities::OPTION_KEY, toml_edit::value(true));
+            }
             if let Some(s) = &self.settings {
                 t.insert("gap", toml_edit::value(crate::mm_text(s.gap)));
                 t.insert("pull_back", toml_edit::value(crate::mm_text(s.pull_back)));
@@ -591,7 +603,40 @@ fn lay_out_with(text: &str, ask: &RunAsk<'_>, cut: bool) -> Result<LayoutRun, St
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let doc0: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
-    lay_out_read(&t, LayoutRecord::of(&t), doc0, ask, (cut, true), start)
+    lay_out_read(
+        &t,
+        LayoutRecord::of(&t),
+        doc0,
+        ask,
+        (cut, true),
+        start,
+        false,
+    )
+}
+
+/// The layout's planner **relaxed** (O45 A1, owner 2026-11-19): the
+/// joints asked planned as a run plans them — the automatic values taken
+/// out, the members turned flat where that helps, each joint searched —
+/// and nothing written: no clash rounds, the file's text unchanged, every
+/// outcome `written = false` with its plan as the planner made it (the
+/// planned shift kept even where a run would not write the joint). The
+/// estimated eccentricities read these plans
+/// ([`crate::eccentricities::estimate`]); never shown as a laid-out joint.
+/// Deterministic: the same file and settings give the same plans.
+pub fn plan_relaxed(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    let start = std::time::Instant::now();
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+        .map_err(|e| e.message)?;
+    let doc0: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+    lay_out_read(
+        &t,
+        LayoutRecord::of(&t),
+        doc0,
+        ask,
+        (true, false),
+        start,
+        true,
+    )
 }
 
 /// [`lay_out_with`] on the file read already: `t` as the structure (its
@@ -606,8 +651,10 @@ fn lay_out_read(
     // does not say them).
     (cut, count): (bool, bool),
     start: std::time::Instant,
+    // The planner relaxed ([`plan_relaxed`]): planned, nothing written.
+    relaxed: bool,
 ) -> Result<LayoutRun, String> {
-    lay_out_once(t, record, doc0, ask, (cut, count), start)
+    lay_out_once(t, record, doc0, ask, (cut, count), start, relaxed)
 }
 
 /// [`lay_out_read`]'s work.
@@ -618,6 +665,7 @@ fn lay_out_once(
     ask: &RunAsk<'_>,
     (cut, count): (bool, bool),
     start: std::time::Instant,
+    relaxed: bool,
 ) -> Result<LayoutRun, String> {
     // The structure's default minimum bolt distances (third round,
     // 2026-11-18): for the ends' pitch and end distance not given and the
@@ -1129,6 +1177,17 @@ fn lay_out_once(
                 .collect()
         };
         let mut useless = unhelpful(&outcomes, false);
+        // Relaxed (O45 A1): the plans with the turns that help, nothing
+        // written.
+        if relaxed && useless.is_empty() {
+            return Ok(LayoutRun {
+                text: doc0.to_string(),
+                joints: outcomes,
+                clashes: (0, 0),
+                notes,
+                seconds: start.elapsed().as_secs_f64(),
+            });
+        }
         let mut done = None;
         if useless.is_empty() {
             let written = write_rounds(
@@ -2581,6 +2640,7 @@ fn follow_parsed(
         &ask,
         (cut, false),
         std::time::Instant::now(),
+        false,
     )
     .ok()?;
     let again: Vec<String> = run.laid_out().map(|o| o.joint.clone()).collect();

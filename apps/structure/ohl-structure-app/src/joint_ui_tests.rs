@@ -2320,3 +2320,38 @@ fn the_joints_are_taken_only_when_ticked_at_level_4() {
     assert_eq!(structure(&h).joint_details, None);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// The option "Estimated eccentricities" (O45 A2, owner 2026-11-19): at
+/// level 3 the tick in Results writes it into the joint layout's record
+/// (one undo step) and asks for a run to show its effect and time; undone,
+/// the file as it was.
+#[test]
+fn estimated_eccentricities_are_ticked_at_level_3() {
+    let path = copy_of("type-02.ohls", "estimated-eccentricities");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("angles.ohls");
+    std::fs::write(&tower, ANGLES).unwrap();
+    let mut h = harness(&tower);
+    h.get_by_label("Level 3 — full design");
+    menu(&mut h, "Results", "FE results");
+    let on = |h: &egui_kittest::Harness<'static, crate::app::StructureApp>| {
+        ohl_structure_link::eccentricities::option_on(h.state().file.as_ref().unwrap().structure())
+    };
+    assert!(!on(&h));
+    h.get_by_label("Estimated eccentricities").click();
+    h.run();
+    assert!(on(&h));
+    h.get_by_label("run to see their effect and time");
+    h.get_by_label("Undo").click();
+    h.run();
+    assert!(!on(&h));
+    assert_eq!(h.state().file.as_ref().unwrap().text(), ANGLES);
+    std::fs::remove_dir_all(dir).ok();
+}

@@ -54,7 +54,9 @@ from here. The owner's order of 2026-11-19:
    tension with prying** ([O19](#o19-joint-details-of-towers-show-and-define-them), stage 4.5;
    built 2026-11-19, in active development, not approved yet — the
    layout's "continuous" proposal is [O44](#o44-automatic-joint-layout) J9).
-4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)).
+4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically);
+   built 2026-11-19, in active development, not approved yet — off by
+   default, the owner's questions under O45).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server)).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
@@ -1965,23 +1967,55 @@ them.
 ### O45. Joint eccentricities and member shifts set automatically
 From an investigation of 2026-11-19 (owner: "investigate a bit more how
 to automatically set the joints eccentricities and member shifts").
-**Decided 2026-11-19; not built (step 3 of the
-[order](#next-in-order-owner-2026-11-19)).** Three offsets meet at a tower
+**Decided 2026-11-19; A1–A3 built 2026-11-19, in active development, not
+approved yet (step 4 of the [order](#next-in-order-owner-2026-11-19);
+[theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/estimated-eccentricities.md)).**
+Three offsets meet at a tower
 joint: an angle bolted by one leg sits out of the plane (the codes'
 rules for such angles cover it; it is not in the FE model); the sideways
 shift (a rigid end offset in the analysis, read only at level 4 with the
 joint details on — about three quarters of the real towers' joints have
 no shift data); the welded plate's extra offset (not analysed).
-- [ ] A1 (M): the layout's planner run relaxed — the planned shift kept
+- [x] A1 (M): the layout's planner run relaxed — the planned shift kept
   even where the joint is not written; where no plan exists, an upper
   bound; kept as an analysis value apart from the fabrication record,
   never shown as a laid-out joint; deterministic, followed after edits.
-- [ ] A2 (S): the analysis reads the estimates when the option is on;
+  Built 2026-11-19, in active development, not approved yet
+  (`layout_run::plan_relaxed`, `eccentricities::estimate`): laid out /
+  given / estimated / upper bound per end; the upper bound the shift limit
+  and, where a plate in the member's own plane would be needed, that
+  plate's offset at step 4's limit; a planned welded plate's offset too;
+  made again from the file at every run (nothing written).
+- [x] A2 (S): the analysis reads the estimates when the option is on;
   results say "estimated" and "upper bound at N ends"; theory and
-  safe-side pages.
-- [ ] A3 (S): measured on the 78 real towers (ends estimated against
+  safe-side pages. Built 2026-11-19, in active development, not approved
+  yet: OHL-Structure's Results › *Estimated eccentricities*
+  (`estimated_eccentricities = true` in the layout's record); without,
+  with, and with the unknown signs the other way — each member and plate
+  its largest usage; NOT ON THE SAFE SIDE said for two or more ends of
+  unknown sign at one frame joint and for an end left out.
+- [x] A3 (S): measured on the 78 real towers (ends estimated against
   upper bounds, the usage change, the largest moments; against the real
-  shifts of level-4 towers).
+  shifts of level-4 towers). Measured 2026-11-19 (kept privately): the
+  planned shifts almost all 0, the upper bounds about a quarter of the
+  ends and the whole effect; usages rise a great deal; on some towers the
+  solve with the upper bounds does not settle (the case fails, said); the
+  level 4 offsets of laid-out joints equal the estimates' for them.
+  **Proposed: stays off by default** until the questions below.
+  > **Owner:** (1) An offset of unknown sign (an upper bound, a plate's
+  > side) taken **only in its member's own check** — the moment N·e whole,
+  > as where only bars meet a joint — also at frame joints: a core change
+  > in the finite-element crate (statically admissible, two solves
+  > instead of three, no mixed-sign gap, no unsettled solve from it). Go?
+  > (2) The upper bound: the 30 mm shift limit (+ the plate case) as
+  > decided, or the largest shift the layout plans on the tower, or one
+  > growing with the member (J5)? (3) Until (1): accept the failed cases,
+  > or leave out the upper bound at an end that is the only brace of a
+  > member running through? (4) The line (OHL-Design, `ohl loads`) and
+  > `ohl structures fe` do not read the option (the estimates are the
+  > structure application's): the core to read stored estimates (a core
+  > change), or app-only? (5) On by default after (1) and J3 / the bent
+  > plate, measured again with wind cases?
 - [ ] B (M): the bolts worked out from the forces through the code
   plugins, iterated (two or three rounds), if the presets prove too rough.
 - [ ] D (M): the out-of-plane seat offsets as rigid end offsets in the FE

@@ -248,6 +248,9 @@ pub struct StructureRun {
     /// every joint is defined; filled by a report where it has joint
     /// details (none: not counted).
     pub quantities: Option<ohl_bom::structure::StructureBom>,
+    /// The estimated eccentricities used (O45 A2; none: the option is off
+    /// or not applied — the notes say why).
+    pub estimates: Option<crate::eccentricities::EstimateUse>,
 }
 
 impl StructureRun {
@@ -999,77 +1002,129 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     } else {
         input.cases
     };
-    let solved = crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {
-        let c = &cases[k];
-        let fe = model.as_ref().map(|m| {
-            let mut notes = Vec::new();
-            let extra = match input.extension {
-                Some(e) if !piece.is_empty() => {
-                    let mut l = piece_loads(m, &piece, input.recipes, &c.name, e, &mut notes);
-                    let more = piece_part_loads(
-                        m,
-                        &piece,
-                        input.recipes.iter().find(|r| r.name == c.name),
-                        input.sections,
-                        e,
-                        &mut notes,
-                    );
-                    l.nodal.extend(more.nodal);
-                    l.member.extend(more.member);
-                    l
-                }
-                _ => Default::default(),
-            };
-            let extra = ohl_structures_fe::Loads {
-                prescribed: feet.clone(),
-                ..extra
-            };
-            analyse_one(m, input.table, c, &extra, budget).map(|(mut r, solution)| {
-                r.notes.extend(notes);
-                // A plugin's joint check: one call with every case, once
-                // they are all solved (below).
-                if let Some(p) = plans
-                    .as_ref()
-                    .filter(|p| !p.is_empty() && p.plugin.is_none())
-                {
-                    let axial = r.members.iter().map(|m| (m.id.clone(), m.axial)).collect();
-                    r.plates = crate::plate_usage(p, &axial, c.strength);
-                }
-                (r, solution)
+    // The estimated eccentricities (O45 A2, an option at level 3): the
+    // model with them, and with the upper bounds the other way.
+    let estimated = match &model {
+        Some(m) => estimated_models(input, m, &mut run),
+        None => None,
+    };
+    let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
+    let poles: Vec<Option<Result<PoleResult, String>>> =
+        crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {
+            pole.as_ref().map(|p| match p {
+                Ok(p) => pole_case(input, p, &cases[k], budget),
+                Err(e) => Err(e.clone()),
             })
         });
-        let pole = pole.as_ref().map(|p| match p {
-            Ok(p) => pole_case(input, p, c, budget),
-            Err(e) => Err(e.clone()),
-        });
-        (c.name.clone(), fe, pole)
-    });
-    // The members checked by a plugin: one call with every solved case.
-    let mut names = Vec::new();
-    let mut fes = Vec::new();
-    let mut poles = Vec::new();
-    for (name, fe, pole) in solved {
-        names.push(name);
-        fes.push(fe);
-        poles.push(pole);
-    }
+    let fe_in = FeIn {
+        input,
+        cases,
+        piece: &piece,
+        feet: &feet,
+        plans: plans.as_ref(),
+        budget,
+    };
     let fes: Vec<Option<Result<CaseResult, String>>> = match &model {
         Some(m) => {
-            let solved = fes.into_iter().map(|f| f.expect("a model")).collect();
-            crate::plugin_checked(m, cases, solved)
-                .into_iter()
-                .map(Some)
-                .collect()
+            let started = std::time::Instant::now();
+            let base = fe_results(&fe_in, m, &mut run.notes);
+            match estimated {
+                None => base.into_iter().map(Some).collect(),
+                Some((with, other, mut used)) => {
+                    let mut ignored = Vec::new();
+                    let with_r = fe_results(&fe_in, &with, &mut run.notes);
+                    let other_r = other.as_ref().map(|o| fe_results(&fe_in, o, &mut ignored));
+                    used.solve_seconds = started.elapsed().as_secs_f64();
+                    let mut other_r = other_r.map(Vec::into_iter);
+                    let out = base
+                        .into_iter()
+                        .zip(with_r)
+                        .map(|(without, with)| {
+                            let other = other_r.as_mut().and_then(Iterator::next);
+                            Some(crate::eccentricities::envelope(
+                                with,
+                                without,
+                                other,
+                                &used.estimates,
+                            ))
+                        })
+                        .collect();
+                    run.estimates = Some(used);
+                    out
+                }
+            }
         }
-        None => fes.into_iter().map(|_| None).collect(),
+        None => names.iter().map(|_| None).collect(),
     };
+    run.cases.extend(
+        names
+            .into_iter()
+            .zip(fes)
+            .zip(poles)
+            .map(|((name, fe), pole)| StructureCase { name, fe, pole }),
+    );
+    Ok(run)
+}
+
+/// What every solve of a run shares (the model aside).
+struct FeIn<'a> {
+    input: &'a RunInput<'a>,
+    cases: &'a [CaseToRun],
+    /// The extension's own members.
+    piece: &'a [String],
+    /// The line's foot movements on the supports.
+    feet: &'a [ohl_structures_fe::Prescribed],
+    /// The plates' and welds' checks, planned once.
+    plans: Option<&'a crate::PlatePlans>,
+    budget: &'a Budget,
+}
+
+/// The finite-element results of the cases of `x` on `m`: each case
+/// solved (the extension's surface loads, the foot movements, the plates'
+/// checks), the members checked by a plugin in one call, the joints a
+/// plugin checks in one call; a note for the run once in `notes`.
+fn fe_results(x: &FeIn, m: &Model, notes: &mut Vec<String>) -> Vec<Result<CaseResult, String>> {
+    let (input, cases, budget) = (x.input, x.cases, x.budget);
+    let solved = crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {
+        let c = &cases[k];
+        let mut notes = Vec::new();
+        let extra = match input.extension {
+            Some(e) if !x.piece.is_empty() => {
+                let mut l = piece_loads(m, x.piece, input.recipes, &c.name, e, &mut notes);
+                let more = piece_part_loads(
+                    m,
+                    x.piece,
+                    input.recipes.iter().find(|r| r.name == c.name),
+                    input.sections,
+                    e,
+                    &mut notes,
+                );
+                l.nodal.extend(more.nodal);
+                l.member.extend(more.member);
+                l
+            }
+            _ => Default::default(),
+        };
+        let extra = ohl_structures_fe::Loads {
+            prescribed: x.feet.to_vec(),
+            ..extra
+        };
+        analyse_one(m, input.table, c, &extra, budget).map(|(mut r, solution)| {
+            r.notes.extend(notes);
+            // A plugin's joint check: one call with every case, once
+            // they are all solved (below).
+            if let Some(p) = x.plans.filter(|p| !p.is_empty() && p.plugin.is_none()) {
+                let axial = r.members.iter().map(|m| (m.id.clone(), m.axial)).collect();
+                r.plates = crate::plate_usage(p, &axial, c.strength);
+            }
+            (r, solution)
+        })
+    });
+    // The members checked by a plugin: one call with every solved case.
+    let mut fes = crate::plugin_checked(m, cases, solved);
     // The joints of a structure a plugin checks: its joint check, one
     // call with every solved case — or every part NOT CHECKED, said.
-    let mut fes = fes;
-    if let Some(p) = plans
-        .as_ref()
-        .filter(|p| !p.is_empty() && p.plugin.is_some())
-    {
+    if let Some(p) = x.plans.filter(|p| !p.is_empty() && p.plugin.is_some()) {
         #[allow(clippy::type_complexity)]
         let solved: Vec<(
             usize,
@@ -1079,7 +1134,7 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             .iter()
             .enumerate()
             .filter_map(|(k, r)| {
-                let r = r.as_ref()?.as_ref().ok()?;
+                let r = r.as_ref().ok()?;
                 Some((
                     k,
                     r.members.iter().map(|m| (m.id.clone(), m.axial)).collect(),
@@ -1102,20 +1157,160 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             .flatten()
             .find(|r| r.usage.is_none() && r.governs.starts_with("NOT CHECKED by"))
         {
-            run.notes.push(format!("plates: {}", bare.governs));
+            let n = format!("plates: {}", bare.governs);
+            if !notes.contains(&n) {
+                notes.push(n);
+            }
         }
         for ((k, _, _), rows) in solved.iter().zip(rows) {
-            if let Some(Some(Ok(r))) = fes.get_mut(*k) {
+            if let Some(Ok(r)) = fes.get_mut(*k) {
                 r.plates = rows;
             }
         }
     }
-    run.cases.extend(
-        names
-            .into_iter()
-            .zip(fes)
-            .zip(poles)
-            .map(|((name, fe), pole)| StructureCase { name, fe, pole }),
-    );
-    Ok(run)
+    fes
+}
+
+/// The models with the estimated eccentricities (O45 A2) when the
+/// structure asks for them and they apply: (with them, the upper bounds
+/// one way; with the upper bounds the other way — none when every sign is
+/// known; what was used). What applies and what was left out goes into
+/// `run`'s notes. None: the option is off, or not applied (said).
+fn estimated_models(
+    input: &RunInput,
+    m: &Model,
+    run: &mut StructureRun,
+) -> Option<(Model, Option<Model>, crate::eccentricities::EstimateUse)> {
+    use crate::eccentricities as ecc;
+    let t = input.structure;
+    if !ecc::option_on(t) {
+        return None;
+    }
+    if t.model.is_some() {
+        run.notes.push(
+            "estimated eccentricities: not used — the structure is a model file (no joints to \
+             lay out)"
+                .into(),
+        );
+        return None;
+    }
+    if m.joint_use.taken() {
+        run.notes.push(
+            "estimated eccentricities: not used — the joint details are taken (level 4): the \
+             connections' own shifts"
+                .into(),
+        );
+        return None;
+    }
+    let bolts = bolts_of(input);
+    let presets = input.dir.map(ecc::presets_beside).unwrap_or_default();
+    let estimates = match ecc::estimate(
+        input.text,
+        &ecc::EstimateAsk {
+            library: input.sections,
+            bolts: &bolts,
+            presets: &presets,
+        },
+    ) {
+        Ok(e) => e,
+        Err(e) => {
+            run.notes.push(format!(
+                "NOT ON THE SAFE SIDE: the estimated eccentricities asked for but not made ({e}) \
+                 — the members checked without them"
+            ));
+            return None;
+        }
+    };
+    let (plus, mut left) = ecc::offsets(m, &estimates, 1.0);
+    let mut with = m.clone();
+    ecc::apply(&mut with, &plus);
+    let other = estimates.either_sign().then(|| {
+        let (minus, _) = ecc::offsets(m, &estimates, -1.0);
+        let mut o = m.clone();
+        ecc::apply(&mut o, &minus);
+        o
+    });
+    let solves = 2 + usize::from(other.is_some());
+    let ub = estimates.count(ecc::Source::UpperBound);
+    let plates = estimates.plate_bounds();
+    run.notes.push(format!(
+        "estimated eccentricities (an option at level 3): {} member end(s) with an offset of \
+         {} the layout's planner takes — {} laid out, {} given, {} estimated from its plan (not \
+         laid out), upper bound at {ub} end(s) (the {:.0} mm shift limit{}); each member's and \
+         plate's usage the largest of {solves} solves (without them, with them{}); estimated in \
+         {:.1} s",
+        plus.len(),
+        estimates.ends.len(),
+        estimates.count(ecc::Source::LaidOut),
+        estimates.count(ecc::Source::Given),
+        estimates.count(ecc::Source::Estimated),
+        estimates.shift_limit * 1e3,
+        if plates > 0 {
+            format!(
+                ", at {plates} of them with a welded plate's offset out of the face at its limit, \
+                 the leg's thickness"
+            )
+        } else {
+            String::new()
+        },
+        if other.is_some() {
+            ", the upper bounds and the plates' offsets the other way"
+        } else {
+            ""
+        },
+        estimates.seconds
+    ));
+    let mixed = ecc::mixed_sign_joints(m, &plus, &estimates);
+    if !mixed.is_empty() {
+        run.notes.push(format!(
+            "NOT ON THE SAFE SIDE: at {} joint(s) where a frame meets two or more ends whose \
+             offset's sign is not known (upper bounds, a plate's side), their signs are taken \
+             all one way and all the other, not mixed: {}{}",
+            mixed.len(),
+            mixed
+                .iter()
+                .take(12)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", "),
+            if mixed.len() > 12 { ", …" } else { "" }
+        ));
+    }
+    if let (Some(e), false) = (input.extension, piece_empty(input)) {
+        run.notes.push(format!(
+            "extension {e}: its own members have no estimated eccentricities (the layout plans \
+             the body's joints) — their ends at the work points, as without the option"
+        ));
+    }
+    left.sort();
+    left.dedup();
+    if !left.is_empty() {
+        run.notes.push(format!(
+            "NOT ON THE SAFE SIDE: estimated eccentricities of {} end(s) left out — {}{}",
+            left.len(),
+            left.iter().take(6).cloned().collect::<Vec<_>>().join("; "),
+            if left.len() > 6 { "; …" } else { "" }
+        ));
+    }
+    Some((
+        with,
+        other,
+        ecc::EstimateUse {
+            estimates,
+            offsets: plus.len(),
+            solves,
+            solve_seconds: 0.0,
+        },
+    ))
+}
+
+/// The extension `input` stands on has no members of its own.
+fn piece_empty(input: &RunInput) -> bool {
+    match (
+        input.extension.and_then(|e| input.structure.extension(e)),
+        &input.structure.model,
+    ) {
+        (Some(e), None) => e.members.is_empty(),
+        _ => true,
+    }
 }

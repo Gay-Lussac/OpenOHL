@@ -303,6 +303,22 @@ const JOINT_DETAILS_TIP: &str = "Off (the default): every member is checked in i
      restrained): run again to see.\n\nThe plates', covers' and welds' own checks and the \
      drawings do not depend on this. Stored in the file (joint_details = true).";
 
+/// The option "estimated eccentricities" (O45, owner 2026-11-19): its
+/// effect, and its time measured on real towers (the theory page).
+const ESTIMATED_TIP: &str = "Off (the default): at level 3 the members run to the joints' work \
+     points; a member end the joint layout would move sideways is not in the analysis.\n\nOn \
+     (level 3, not with the joint details taken): before the cases are solved the joint \
+     layout's planner works out, for every member end bolting by one leg onto a member at a \
+     joint, the sideways shift it would give (\"estimated\"; the value written where the joint \
+     is laid out or a shift is typed); where no layout fits, the shift limit (and a welded \
+     plate's offset where one would be needed) as an \"upper bound\". Each becomes a rigid end \
+     offset; the cases are solved without them, with them and with the upper bounds the other \
+     way, and each member and plate takes its largest usage, so a usage only goes up (the \
+     moments of the offsets). Nothing is written into the joints.\n\nTime: the estimates take \
+     about as long as a run of Lay out joints without its clash checks (a few seconds on a tower \
+     of 2 000 members), and the cases are solved two or three times. Stored in the file (the \
+     joint layout's record: estimated_eccentricities = true).";
+
 impl StructureApp {
     /// A run can start: level 3, a case in the load table, none running.
     pub fn can_run_results(&mut self) -> bool {
@@ -623,6 +639,70 @@ impl StructureApp {
                     }
                     (false, _) => {}
                 }
+            });
+        }
+        // The estimated eccentricities (O45 A2): an option at level 3.
+        let mut estimated: Option<bool> = None;
+        if t.model.is_none() && t.pole.is_none() && !t.members.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                let taken = t.joint_details_taken();
+                let mut on = ohl_structure_link::eccentricities::option_on(&t);
+                let r = ui
+                    .add_enabled(
+                        !taken || on,
+                        egui::Checkbox::new(&mut on, "Estimated eccentricities"),
+                    )
+                    .on_hover_text(ESTIMATED_TIP)
+                    .on_disabled_hover_text(
+                        "The joint details are taken (level 4): each end's own shift from its \
+                         connection. The estimates are for level 3.",
+                    );
+                if r.changed() {
+                    estimated = Some(on);
+                }
+                let last = match &self.results.results {
+                    Some(Ok(run)) => run.estimates.as_ref(),
+                    _ => None,
+                };
+                match (on, taken, last) {
+                    (true, true, _) => {
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            "not used: the joint details are taken (level 4)",
+                        );
+                    }
+                    (true, false, Some(u)) => {
+                        use ohl_structure_link::eccentricities::Source;
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "last run: {} end(s) with an offset, upper bound at {}; \
+                                 estimated in {:.1} s, the cases solved {}\u{00d7} in {:.1} s",
+                                u.offsets,
+                                u.estimates.count(Source::UpperBound),
+                                u.estimates.seconds,
+                                u.solves,
+                                u.solve_seconds
+                            ))
+                            .weak(),
+                        );
+                    }
+                    (true, false, None) => {
+                        ui.label(egui::RichText::new("run to see their effect and time").weak());
+                    }
+                    (false, _, _) => {}
+                }
+            });
+        }
+        if let Some(on) = estimated
+            && let Some(f) = self.file.as_mut()
+        {
+            let what = if on {
+                "Estimated eccentricities on"
+            } else {
+                "Estimated eccentricities off"
+            };
+            f.edit(what, |doc, _| {
+                ohl_structure_link::eccentricities::set_option(doc, on);
             });
         }
         if let Some(on) = joints
