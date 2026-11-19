@@ -117,6 +117,11 @@ impl<K: Clone + Eq + Hash, V: Clone> Lru<K, V> {
         }
     }
 
+    /// Whether `k` is kept (its place in the order left as it is).
+    pub(crate) fn contains(&self, k: &K) -> bool {
+        self.map.contains_key(k)
+    }
+
     pub(crate) fn clear(&mut self) {
         self.map.clear();
         self.order.clear();

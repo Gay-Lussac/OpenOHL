@@ -23,6 +23,7 @@ mod io_run;
 mod lightning_run;
 mod links_run;
 mod network_bench;
+mod network_bench_ws;
 mod network_run;
 mod project;
 mod reference_run;

@@ -455,3 +455,103 @@ fn a_working_set_is_a_partial_replica() {
     );
     same(&r, &t.url, &a, &bigger, "joined again");
 }
+
+/// The context case solved ahead while the server is idle: every tile
+/// holding objects made once and kept, then served from the cache; a
+/// change makes the tiles it touched again; nothing reaches a client that
+/// did not ask.
+#[test]
+fn the_idle_solve_makes_every_tile_once() {
+    let Some(t) = test_network("idle", 120) else {
+        return;
+    };
+    let server = Server::start_network(
+        local("idle2345"),
+        crate::network::NetOptions {
+            idle_solve: true,
+            idle_after: Duration::from_millis(30),
+            ..net_options(&t.url)
+        },
+    )
+    .unwrap();
+    let stats = |server: &Server| -> serde_json::Value {
+        serde_json::from_str(&server.probe(crate::network::Probe::Stats).unwrap()).unwrap()
+    };
+    let started = Instant::now();
+    let first = loop {
+        let s = stats(&server);
+        if !s["idle_done_s"].is_null() {
+            break s;
+        }
+        assert!(started.elapsed() < Duration::from_secs(60), "{s}");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let tiles = first["tiles"].as_u64().unwrap();
+    let built = first["idle_built"].as_u64().unwrap();
+    assert!(built > 0 && built <= tiles, "{built} of {tiles}");
+    assert_eq!(first["packages"].as_u64().unwrap(), built, "kept");
+    assert_eq!(first["idle_left"].as_u64().unwrap(), 0);
+    // A viewer gets them from the cache, and nothing it did not ask for.
+    let mut bob = join_network(
+        &server.invitation_for("bob"),
+        "bob",
+        &NetJoin::default(),
+        &mut |_| {},
+    )
+    .unwrap();
+    let (sid, p) = crate::network_tests::structure_of(&t, &t.codes[0], 1);
+    let around = crate::network_tests::tiles_around(p, 1);
+    bob.link
+        .send(ClientMsg::Interest {
+            routes: Vec::new(),
+            tiles: around
+                .iter()
+                .map(|k| crate::HeldTile {
+                    tile: *k,
+                    rev: None,
+                })
+                .collect(),
+        })
+        .unwrap();
+    let mut n = 0;
+    let got = pump(&bob, None, |m| {
+        if matches!(m, ServerMsg::Tile(_)) {
+            n += 1;
+        }
+        n == around.len()
+    });
+    assert!(
+        got.iter()
+            .filter_map(|m| match m {
+                ServerMsg::Tile(p) => Some(p.tile),
+                _ => None,
+            })
+            .all(|k| around.contains(&k))
+    );
+    let s = stats(&server);
+    let solved_before = s["solved"].as_u64().unwrap();
+    assert_eq!(s["idle_built"].as_u64().unwrap(), built, "{s}");
+    assert!(
+        !s["served_from_cache_us"].as_array().unwrap().is_empty(),
+        "{s}"
+    );
+    // A change: the tiles it touched made again while idle.
+    let mut id = 0;
+    edit(
+        &mut bob,
+        &mut id,
+        &t.codes[0],
+        moved(&sid, [p[0] + 0.5, p[1], p[2]]),
+    )
+    .unwrap();
+    let started = Instant::now();
+    loop {
+        let s = stats(&server);
+        if s["idle_left"].as_u64() == Some(0) && s["idle_built"].as_u64().unwrap() > built {
+            assert!(s["solved"].as_u64().unwrap() > solved_before, "{s}");
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(30), "{s}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}

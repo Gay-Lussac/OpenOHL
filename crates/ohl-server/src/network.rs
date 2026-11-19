@@ -99,6 +99,12 @@ pub struct NetOptions {
     /// A change touching more tiles goes to the clients viewing only tiles
     /// as "read again".
     pub large_tiles: usize,
+    /// Phase 6: the context case solved ahead while the server is idle
+    /// (every tile once after a start, then the tiles changes touched),
+    /// one tile at a time, its shapes kept within their bound.
+    pub idle_solve: bool,
+    /// Idle: no client's job for this long.
+    pub idle_after: Duration,
 }
 
 impl Default for NetOptions {
@@ -115,6 +121,8 @@ impl Default for NetOptions {
             max_tiles: 256,
             catch_up_max: 10_000,
             large_tiles: 256,
+            idle_solve: true,
+            idle_after: Duration::from_millis(500),
         }
     }
 }
@@ -331,6 +339,14 @@ struct Stats {
     replica_ms: Vec<f64>,
     /// Phase 6: the working sets fed after a change, ms (per change).
     rows_ms: Vec<f64>,
+    /// Phase 6: tiles made by the idle solve, their seconds, when the
+    /// first pass started and ended (seconds after the start).
+    idle_built: usize,
+    idle_s: f64,
+    idle_from: Option<f64>,
+    idle_done: Option<f64>,
+    /// The idle solve stopped: its shapes reached their bound.
+    idle_full: bool,
     solved: usize,
     shapes_cached: usize,
     start_s: f64,
@@ -376,6 +392,12 @@ pub(crate) struct NetHost {
     options: NetOptions,
     heartbeat_due: Instant,
     stats: Stats,
+    /// The idle solve (phase 6): when a client's job came last, the tiles
+    /// still to make, the one being made.
+    last_busy: Instant,
+    born: Instant,
+    idle_todo: std::collections::VecDeque<TileKey>,
+    idle_inflight: Option<TileKey>,
 }
 
 impl NetHost {
@@ -438,9 +460,23 @@ impl NetHost {
             options: o.clone(),
             heartbeat_due: Instant::now() + o.heartbeat,
             stats: Stats::default(),
+            last_busy: Instant::now(),
+            born: started,
+            idle_todo: std::collections::VecDeque::new(),
+            idle_inflight: None,
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
+        if o.idle_solve {
+            let mut all: Vec<TileKey> = host
+                .tiles
+                .iter()
+                .filter(|(_, t)| !t.objects.is_empty())
+                .map(|(k, _)| *k)
+                .collect();
+            all.sort();
+            host.idle_todo = all.into();
+        }
         log(&format!(
             "network \"{}\": {} lines, {} tiles of level {} read in {:.1} s",
             host.name,
@@ -1526,6 +1562,9 @@ impl NetHost {
         for t in &touched {
             self.tiles.entry(*t).or_default().rev = at;
         }
+        if self.options.idle_solve {
+            self.idle_todo.extend(touched.iter().copied());
+        }
         let keys: Vec<i64> = touched.iter().filter_map(|t| tile_key(&t.tile())).collect();
         if logged {
             self.net
@@ -1789,6 +1828,11 @@ impl NetHost {
 
     /// A package made: kept, and given to whoever waits for it.
     fn built(&mut self, b: Built) {
+        if self.idle_inflight == Some(b.tile) {
+            self.idle_inflight = None;
+            self.stats.idle_built += 1;
+            self.stats.idle_s += b.seconds;
+        }
         let Some(building) = self.building.remove(&b.tile) else {
             return;
         };
@@ -1814,7 +1858,12 @@ impl NetHost {
         text: Arc<Utf8Bytes>,
         waiting: BTreeSet<u64>,
     ) {
-        if made_at == rev {
+        // A package nobody waits for (the idle solve) is kept while the
+        // packages take less than half their bound: it never pushes out
+        // what clients asked for.
+        let kept =
+            !waiting.is_empty() || self.packages.bytes() < (self.options.packages_mb << 20) / 2;
+        if made_at == rev && kept {
             let bytes = text.len();
             self.packages.put((t, rev, 0), text.clone(), bytes);
         }
@@ -1930,6 +1979,65 @@ impl NetHost {
         self.common.leave(user);
     }
 
+    /// When the idle solve may make its next tile (none: nothing to make,
+    /// one being made, or switched off).
+    fn idle_due(&self) -> Option<Instant> {
+        (self.options.idle_solve
+            && !self.stats.idle_full
+            && self.idle_inflight.is_none()
+            && !self.idle_todo.is_empty())
+        .then(|| (self.last_busy + self.options.idle_after).max(Instant::now()))
+    }
+
+    /// The idle solve (phase 6; owner, 2026-11-19: the context case solved
+    /// ahead when the server is idle, low priority, its memory bounded):
+    /// while no client's job came for [`NetOptions::idle_after`] and no
+    /// tile a client asked for is being made, the next tile not kept at
+    /// its revision is made — one at a time, so a client's tile waits for
+    /// one at most. Its sections' shapes are kept (their own bound); it
+    /// stops when they reach nine tenths of it.
+    fn idle_step(&mut self) {
+        if !self.options.idle_solve
+            || self.stats.idle_full
+            || self.idle_inflight.is_some()
+            || !self.building.is_empty()
+            || self.last_busy.elapsed() < self.options.idle_after
+        {
+            return;
+        }
+        let (_, shape_bytes, _, _) = self.packager.caches.shapes_size();
+        if shape_bytes > (self.options.shapes_mb << 20) / 10 * 9 {
+            self.stats.idle_full = true;
+            log("the idle solve stopped: its shapes reached their bound");
+            return;
+        }
+        while let Some(t) = self.idle_todo.pop_front() {
+            let rev = self.tile_rev(&t);
+            if self.packages.contains(&(t, rev, 0))
+                || self.tiles.get(&t).is_none_or(|s| s.objects.is_empty())
+            {
+                continue;
+            }
+            if self.stats.idle_from.is_none() {
+                self.stats.idle_from = Some(self.born.elapsed().as_secs_f64());
+            }
+            self.idle_inflight = Some(t);
+            if let Err(e) = self.dispatch(t, BTreeSet::new(), 0) {
+                self.idle_inflight = None;
+                log(&format!("the idle solve, tile {t}: {e}"));
+            }
+            return;
+        }
+        if self.stats.idle_done.is_none() && self.stats.idle_from.is_some() {
+            let at = self.born.elapsed().as_secs_f64();
+            self.stats.idle_done = Some(at);
+            log(&format!(
+                "the idle solve: {} tiles made in {:.1} s of the packagers' time",
+                self.stats.idle_built, self.stats.idle_s
+            ));
+        }
+    }
+
     fn probe(&mut self, what: Probe) -> Result<String, String> {
         match what {
             Probe::Stats => {
@@ -1955,6 +2063,12 @@ impl NetHost {
                     "served_from_cache_us": self.stats.served_from_cache_us,
                     "replica_ms": self.stats.replica_ms,
                     "rows_ms": self.stats.rows_ms,
+                    "idle_built": self.stats.idle_built,
+                    "idle_s": self.stats.idle_s,
+                    "idle_from_s": self.stats.idle_from,
+                    "idle_done_s": self.stats.idle_done,
+                    "idle_full": self.stats.idle_full,
+                    "idle_left": self.idle_todo.len(),
                 })
                 .to_string())
             }
@@ -2017,6 +2131,9 @@ impl Host for NetHost {
     }
 
     fn handle(&mut self, job: Job) {
+        if !matches!(job, Job::Built(_) | Job::Probe { .. }) {
+            self.last_busy = Instant::now();
+        }
         match job {
             Job::Join {
                 client,
@@ -2095,17 +2212,23 @@ impl Host for NetHost {
     }
 
     fn due(&self) -> Option<Instant> {
-        Some(self.heartbeat_due)
+        Some(match self.idle_due() {
+            Some(idle) => idle.min(self.heartbeat_due),
+            None => self.heartbeat_due,
+        })
     }
 
     fn tick(&mut self) {
-        let at = self.position;
-        self.common.send(Event::to(
-            None,
-            ServerMsg::Heartbeat { at, last: None },
-            To::Heartbeat(at),
-        ));
-        self.heartbeat_due = Instant::now() + self.options.heartbeat;
+        if Instant::now() >= self.heartbeat_due {
+            let at = self.position;
+            self.common.send(Event::to(
+                None,
+                ServerMsg::Heartbeat { at, last: None },
+                To::Heartbeat(at),
+            ));
+            self.heartbeat_due = Instant::now() + self.options.heartbeat;
+        }
+        self.idle_step();
     }
 
     fn stop(&mut self) {
