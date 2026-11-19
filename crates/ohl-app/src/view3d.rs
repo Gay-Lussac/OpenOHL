@@ -66,6 +66,8 @@ pub struct View3d {
     pub vegetation: crate::vegetation::Overlay,
     /// The lines on the ground beside the line (none: not shown).
     pub ground_lines: Option<std::sync::Arc<crate::ground_lines::Drawn>>,
+    /// On a network: the context around the working set (phase 6).
+    pub context: Option<crate::context_tiles::Shared>,
     /// What Checks › Safety volumes built.
     pub safety_volume: crate::safety_volume::Overlay,
     /// The lightning shielding check's drawing.
@@ -1733,6 +1735,10 @@ impl View3d {
                     crate::field_overlay::scene(model.origin, &self.electric_field)
                 }
                 Layer::Draft => scene::draft(model.origin, &self.draft, &self.removed),
+                Layer::Context => match &self.context {
+                    Some(d) => d.scene(model.origin),
+                    None => ohl_render::Scene::new(model.origin),
+                },
                 Layer::GroundLines => crate::ground_lines::scene(
                     model.origin,
                     self.ground_lines.as_deref(),

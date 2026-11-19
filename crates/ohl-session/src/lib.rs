@@ -4108,6 +4108,9 @@ pub mod spatial;
 pub mod store;
 pub mod surfaces;
 pub mod versions;
+pub mod working_set;
+#[cfg(test)]
+mod working_set_tests;
 
 pub use live::Live;
 

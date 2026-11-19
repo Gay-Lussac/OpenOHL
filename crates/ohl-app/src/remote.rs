@@ -59,6 +59,9 @@ pub struct Remote {
     pub invite_name: String,
     /// Hosting with the web client: its address, `https://HOST:PORT/`.
     pub web: Option<String>,
+    /// Joined to a network with a working set (phase 6): its replica is
+    /// a part of the model, fed by rows ([`crate::network_window`]).
+    pub network: Option<Box<crate::network_window::NetState>>,
 }
 
 impl std::fmt::Debug for Remote {
@@ -87,6 +90,7 @@ impl Remote {
             secret: None,
             invite_name: String::new(),
             web: None,
+            network: None,
         }
     }
 }
@@ -252,21 +256,127 @@ impl Model {
                 None
             }
             ServerMsg::Notice { text } => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.note = Some((text.clone(), true));
+                }
                 others.push(text);
                 None
             }
-            // A file server's desktop client: the scene is the web
-            // client's; a network's messages (protocol 3) do not come to
-            // it (OHL-Design joins a network with working sets, phase 6).
+            // A network (phase 6): the rows of the working set's replica.
+            ServerMsg::Rows(rows) => {
+                let me = self.remote.as_ref().map(|r| r.link.user.clone())?;
+                if let Err(e) = self.take_network_rows(&me, &rows, applied, others)
+                    && let Some(r) = &mut self.remote
+                {
+                    r.closed = Some(e);
+                }
+                None
+            }
+            ServerMsg::Network(info) => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.info = Some(*info);
+                }
+                None
+            }
+            ServerMsg::Tile(p) => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.context.put(*p);
+                }
+                None
+            }
+            // A change of the network touching tiles in view (the
+            // working set's own come as rows): those tiles read again.
+            ServerMsg::Change(c) => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.context.changed(&c.tiles);
+                }
+                None
+            }
+            ServerMsg::TilesChanged { tiles, .. } => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.context.changed(&tiles);
+                }
+                None
+            }
+            ServerMsg::WorkingSets { sets } => {
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.note = Some((format!("{} working sets saved", sets.len()), false));
+                    n.saved = sets;
+                }
+                None
+            }
+            // The scene is the web client's; a working set's replica
+            // follows by rows, not by changes caught up; the Join a
+            // network window asks for picks and routes on its own
+            // connection.
             ServerMsg::Welcome { .. }
             | ServerMsg::Refused { .. }
             | ServerMsg::Scene(_)
-            | ServerMsg::Network(_)
-            | ServerMsg::Change(_)
-            | ServerMsg::Tile(_)
-            | ServerMsg::TilesChanged { .. }
             | ServerMsg::Heartbeat { .. }
-            | ServerMsg::CatchUp { .. } => None,
+            | ServerMsg::CatchUp { .. }
+            | ServerMsg::Extent { .. }
+            | ServerMsg::RouteDetail { .. } => None,
+        }
+    }
+
+    /// Rows of a network's server taken into the working set's replica
+    /// (phase 6), as `me`: its objects as the server holds them, in place
+    /// ([`ohl_server::client::take_rows`]; the line kept beside the session
+    /// follows `applied`), the working set when it changed, who made the
+    /// change into `others`. Out of step: the error (join again).
+    pub fn take_network_rows(
+        &mut self,
+        me: &str,
+        rows: &ohl_server::RowsMsg,
+        applied: &mut Vec<Applied>,
+        others: &mut Vec<String>,
+    ) -> Result<(), String> {
+        self.project_version += 1;
+        let library = |k: &ohl_session::Kind| *k == ohl_session::Kind::Library;
+        if rows.rows.puts.iter().any(|p| library(&p.kind))
+            || rows.rows.deletes.iter().any(|(k, _)| library(k))
+        {
+            self.revisions.libraries += 1;
+        }
+        let session = self.replica().ok_or("no project open")?;
+        applied.extend(ohl_server::client::take_rows(session, me, rows)?);
+        if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut())
+            && let Some(spec) = &rows.spec
+        {
+            n.spec = spec.clone();
+            n.note = Some((
+                format!(
+                    "the working set: {} objects came, {} went",
+                    rows.rows.puts.len(),
+                    rows.rows.deletes.len()
+                ),
+                false,
+            ));
+        }
+        if let (Some(user), Some(what)) = (&rows.user, &rows.what)
+            && user != me
+        {
+            others.push(format!("{user}: {what}"));
+        }
+        Ok(())
+    }
+
+    /// Rows taken as [`Model::take_network_rows`], then the line kept
+    /// beside the session brought up to date as after any edit (tests:
+    /// a replica fed without a connection).
+    #[cfg(test)]
+    pub fn take_rows_now(
+        &mut self,
+        me: &str,
+        rows: &ohl_server::RowsMsg,
+    ) -> Result<String, String> {
+        let started = Instant::now();
+        let mut applied = Vec::new();
+        let mut others = Vec::new();
+        self.take_network_rows(me, rows, &mut applied, &mut others)?;
+        match merge(applied) {
+            Some(a) => self.sync("rows", a, started).map_err(|e| e.to_string()),
+            None => Ok(String::new()),
         }
     }
 
@@ -307,7 +417,14 @@ impl Model {
         if let Some(why) = &r.closed {
             return Err(EditError::ReadOnly(format!("disconnected: {why}")));
         }
-        let id = r.link.request(op).map_err(EditError::Refused)?;
+        let id = match &r.network {
+            Some(n) => {
+                let model = n.model.clone();
+                r.link.request_on(&model, op)
+            }
+            None => r.link.request(op),
+        }
+        .map_err(EditError::Refused)?;
         let mut applied = Vec::new();
         let mut others = Vec::new();
         let answer = loop {

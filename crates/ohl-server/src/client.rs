@@ -22,9 +22,10 @@ use ohl_session::{Applied, Role, Session};
 use tokio::sync::mpsc;
 
 use crate::{
-    ALPN, Change, ClientMsg, HeldTile, Invitation, Op, PROTOCOL, Peer, Position, ServerMsg,
-    execute, fingerprint, read_msg, write_msg,
+    ALPN, Change, ClientMsg, HeldTile, Invitation, Op, PROTOCOL, Peer, Position, RowsMsg,
+    ServerMsg, execute, fingerprint, read_msg, write_msg,
 };
+use ohl_session::working_set::WorkingSetSpec;
 
 /// What the connection gives the application.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,6 +75,26 @@ impl Link {
             line: self.line.clone(),
         })?;
         Ok(self.next)
+    }
+
+    /// Sends a request on model `model` of a network (phase 6: a partial
+    /// replica's edits); returns its id.
+    pub fn request_on(&mut self, model: &str, op: Op) -> Result<u64, String> {
+        self.next += 1;
+        self.send(ClientMsg::RequestOn {
+            id: self.next,
+            model: model.to_owned(),
+            op,
+            line: self.line.clone(),
+        })?;
+        Ok(self.next)
+    }
+
+    /// A new id for a question to the server (a pick shown, a route's
+    /// structures).
+    pub fn next_id(&mut self) -> u64 {
+        self.next += 1;
+        self.next
     }
 
     /// Sends a message.
@@ -153,6 +174,53 @@ pub fn replay_change(session: &mut Session, change: &Change) -> Result<Option<Ap
     Ok(applied)
 }
 
+/// Takes rows of the server into a partial replica (phase 6): its objects
+/// as the server holds them ([`Session::take_rows`], as `user`), its
+/// working set when it changed, the stream's position it holds now
+/// (`network.position`). Out of step (a row the replica cannot take):
+/// join again.
+pub fn take_rows(
+    session: &mut Session,
+    user: &str,
+    msg: &RowsMsg,
+) -> Result<Option<Applied>, String> {
+    let applied = session
+        .take_rows(user, msg.rows.clone())
+        .map_err(|e| format!("replica out of step ({e}): join again"))?;
+    if let Some(spec) = &msg.spec {
+        session
+            .set_working_set_spec(spec)
+            .map_err(|e| e.to_string())?;
+    }
+    session
+        .set_file_meta(
+            "network.position",
+            &serde_json::to_string(&msg.at).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(applied)
+}
+
+/// What a partial replica joining again says it holds (phase 6).
+pub fn hold(session: &Session) -> ClientMsg {
+    ClientMsg::Hold {
+        objects: session
+            .held()
+            .into_iter()
+            .map(|((k, id), h)| (k, id, h))
+            .collect(),
+    }
+}
+
+/// The stream's position a partial replica holds (`network.position`).
+pub fn replica_position(session: &Session) -> Option<Position> {
+    session
+        .file_meta("network.position")
+        .ok()
+        .flatten()
+        .and_then(|t| serde_json::from_str(&t).ok())
+}
+
 /// How to join a network's server.
 #[derive(Debug, Clone, Default)]
 pub struct NetJoin {
@@ -169,6 +237,10 @@ pub struct NetJoin {
     /// The model's copy is held already (a replica catching up from
     /// `since`): none is sent.
     pub held: bool,
+    /// Phase 6: the working set to follow as a partial replica (in place
+    /// of `model`): its replica is written to `file` (unless `held`: then
+    /// send [`hold`] of the replica and take the rows that come).
+    pub working_set: Option<WorkingSetSpec>,
 }
 
 /// Joins the network's server of `invitation` as `user` (protocol 3's
@@ -180,7 +252,7 @@ pub fn join_network(
     how: &NetJoin,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<Joined, String> {
-    if how.model.is_some() && !how.held && how.file.is_none() {
+    if (how.model.is_some() || how.working_set.is_some()) && !how.held && how.file.is_none() {
         return Err("a file for the model's copy".into());
     }
     let hello = ClientMsg::Join {
@@ -192,6 +264,7 @@ pub fn join_network(
         routes: how.routes.clone(),
         tiles: how.tiles.clone(),
         held: how.held,
+        working_set: how.working_set.clone(),
     };
     join_with(invitation, user, hello, how.file.clone(), progress)
 }

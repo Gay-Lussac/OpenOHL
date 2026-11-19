@@ -44,8 +44,8 @@ pub struct Bench {
 }
 
 /// The server process, stopped when dropped.
-struct Served {
-    child: Child,
+pub(crate) struct Served {
+    pub(crate) child: Child,
 }
 
 impl Drop for Served {
@@ -56,7 +56,7 @@ impl Drop for Served {
 }
 
 /// Resident memory of process `pid`, MB.
-fn rss_mb(pid: u32) -> f64 {
+pub(crate) fn rss_mb(pid: u32) -> f64 {
     Command::new("ps")
         .args(["-o", "rss=", "-p", &pid.to_string()])
         .output()
@@ -66,7 +66,7 @@ fn rss_mb(pid: u32) -> f64 {
         .map_or(0.0, |kb| (kb / 1024.0 * 10.0).round() / 10.0)
 }
 
-fn percentile(v: &[f64], p: f64) -> f64 {
+pub(crate) fn percentile(v: &[f64], p: f64) -> f64 {
     if v.is_empty() {
         return f64::NAN;
     }
@@ -76,7 +76,7 @@ fn percentile(v: &[f64], p: f64) -> f64 {
     (s[k.min(s.len() - 1)] * 1000.0).round() / 1000.0
 }
 
-fn summary(v: &[f64]) -> Value {
+pub(crate) fn summary(v: &[f64]) -> Value {
     json!({
         "n": v.len(),
         "p50": percentile(v, 50.0),
@@ -86,7 +86,7 @@ fn summary(v: &[f64]) -> Value {
 }
 
 /// Takes messages of `j` until `until` says stop (`limit` at most).
-fn pump(
+pub(crate) fn pump(
     j: &mut Joined,
     limit: Duration,
     mut until: impl FnMut(&ServerMsg) -> bool,
@@ -112,7 +112,7 @@ fn pump(
 }
 
 /// Waits for `n` tile packages.
-fn tiles(j: &mut Joined, n: usize) -> Result<(), String> {
+pub(crate) fn tiles(j: &mut Joined, n: usize) -> Result<(), String> {
     let mut seen = 0;
     let wait = std::env::var("OHL_BENCH_TILE_WAIT_S")
         .ok()
@@ -128,7 +128,7 @@ fn tiles(j: &mut Joined, n: usize) -> Result<(), String> {
 }
 
 /// The tiles of a view of `w` × `h` tiles of level `level` around `c`.
-fn view(c: [f64; 2], w: i64, h: i64, grid: f64, level: i8) -> Vec<TileKey> {
+pub(crate) fn view(c: [f64; 2], w: i64, h: i64, grid: f64, level: i8) -> Vec<TileKey> {
     let g = ohl_core::grid::Grid::new(grid).unwrap_or_default();
     let t = g.tile_at(level, c);
     let mut out = Vec::new();
@@ -140,7 +140,7 @@ fn view(c: [f64; 2], w: i64, h: i64, grid: f64, level: i8) -> Vec<TileKey> {
     out
 }
 
-fn held(tiles: &[TileKey]) -> Vec<HeldTile> {
+pub(crate) fn held(tiles: &[TileKey]) -> Vec<HeldTile> {
     tiles
         .iter()
         .map(|t| HeldTile {
@@ -155,14 +155,15 @@ fn held(tiles: &[TileKey]) -> Vec<HeldTile> {
 /// The client following the line moved (a viewer of it: a newcomer at
 /// the first run, a user of it after; its personal invitation serves
 /// both).
-const FOLLOWER: &str = "bench-follower";
+pub(crate) const FOLLOWER: &str = "bench-follower";
 
 /// Starts `ohl network serve`; returns it, the general, the user's and
 /// the follower's invitations, and the seconds until it listened.
 #[allow(clippy::type_complexity)]
-fn serve(
+pub(crate) fn serve(
     b: &Bench,
     stats: &std::path::Path,
+    extra: &[&str],
 ) -> Result<(Served, Invitation, Invitation, Invitation, f64), String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let started = Instant::now();
@@ -179,6 +180,7 @@ fn serve(
             "--heartbeat-ms",
             "1000",
         ])
+        .args(extra)
         .arg("--stats")
         .arg(stats)
         .env("OHL_DATABASE_URL", &b.database)
@@ -228,7 +230,10 @@ fn serve(
 pub fn bench(b: &Bench) -> Result<Value, String> {
     std::fs::create_dir_all(&b.work).map_err(|e| format!("{}: {e}", b.work.display()))?;
     let stats_file = b.work.join("server-stats.json");
-    let (served, general, personal, follows, start_s) = serve(b, &stats_file)?;
+    // The idle solve (phase 6) off: the tiles timed are made for their
+    // clients alone, as in phase 5.
+    let (served, general, personal, follows, start_s) =
+        serve(b, &stats_file, &["--no-idle-solve"])?;
     let pid = served.child.id();
     std::thread::sleep(Duration::from_secs(2));
     let idle_mb = rss_mb(pid);

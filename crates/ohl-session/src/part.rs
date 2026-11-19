@@ -241,14 +241,10 @@ impl Session {
 /// The line `line` holding only the objects `keep`, in their order, with
 /// its settings.
 fn part_of(line: &Line, index: &LineIndex, keep: &BTreeSet<(Of, String)>) -> Line {
-    let mut part = line.clone();
-    part.routes.clear();
-    part.alignments.clear();
-    part.alignment_points.clear();
-    part.structures.clear();
-    part.sections.clear();
-    part.jumpers.clear();
-    part.spacers.clear();
+    // Its settings only, then the objects kept (never a copy of the whole
+    // line, phase 6); the old alignment of older files as the line has it.
+    let mut part = line.settings_only();
+    part.alignment = line.alignment.clone();
     for of in Of::ALL {
         let mut at: Vec<usize> = keep
             .iter()

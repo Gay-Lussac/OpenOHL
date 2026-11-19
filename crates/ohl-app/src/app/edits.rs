@@ -385,6 +385,7 @@ impl Ready {
                     | Layer::MagneticField
                     | Layer::ElectricField
                     | Layer::SafetyVolume
+                    | Layer::Context
             )
         }));
         self.profile.invalidate();

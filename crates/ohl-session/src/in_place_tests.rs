@@ -36,7 +36,7 @@ impl Rng {
 
 /// The example line with a spacer, a jumper on a tap of a span, a jumper
 /// on that jumper's point and a circuit start.
-fn rich() -> Line {
+pub(crate) fn rich() -> Line {
     let mut line = Line::load(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/synthetic-line/synthetic-line.ohl.json"),

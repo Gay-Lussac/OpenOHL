@@ -156,6 +156,11 @@ pub enum NetworkCommand {
         /// A heartbeat this often, ms.
         #[arg(long, default_value_t = 2000)]
         heartbeat_ms: u64,
+        /// Do not solve the context ahead while the server is idle
+        /// (phase 6: by default every tile is made once after a start,
+        /// one at a time, its shapes kept within --shapes-mb).
+        #[arg(long)]
+        no_idle_solve: bool,
         /// Write the server's counters and timings (JSON) to this file
         /// every half second (measurements).
         #[arg(long, value_name = "FILE")]
@@ -201,6 +206,34 @@ pub enum NetworkCommand {
         #[arg(long)]
         work: PathBuf,
     },
+    /// Measure phase 6 on the network: working sets picked (shown before
+    /// they are confirmed), a partial replica loaded, the rows of edits
+    /// arriving in it, a replica joining again after edits, a route
+    /// added, context tiles around a working set; then, with the server
+    /// started again, the idle solve of the context case (the time to make
+    /// every tile once, the memory). Runs `ohl network serve` as a process
+    /// of its own; prints JSON. Edits the network (structures moved back
+    /// and forth).
+    BenchWorkingSet {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// A user allowed to edit the line (the editor).
+        #[arg(long)]
+        user: String,
+        /// The line picked from (default: the first).
+        #[arg(long)]
+        line: Option<String>,
+        /// Moves timed.
+        #[arg(long, default_value_t = 40)]
+        moves: usize,
+        /// Longest wait for the idle solve, s (0: not measured).
+        #[arg(long, default_value_t = 1800)]
+        idle_wait_s: u64,
+        /// Folder for the bench's files (the replicas, the keys).
+        #[arg(long)]
+        work: PathBuf,
+    },
 }
 
 fn database(given: Option<String>) -> Result<String, String> {
@@ -227,6 +260,7 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             packages_mb,
             shapes_mb,
             heartbeat_ms,
+            no_idle_solve,
             stats,
             max_connections,
             max_per_address,
@@ -255,6 +289,7 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                     packages_mb,
                     shapes_mb,
                     heartbeat: Duration::from_millis(heartbeat_ms.max(10)),
+                    idle_solve: !no_idle_solve,
                     ..Default::default()
                 },
             )?;
@@ -289,6 +324,28 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                 view: (view_w.max(1), view_h.max(1)),
                 moves,
                 areas,
+                work,
+            })?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        NetworkCommand::BenchWorkingSet {
+            database: db,
+            user,
+            line,
+            moves,
+            idle_wait_s,
+            work,
+        } => {
+            let report = crate::network_bench_ws::bench(&crate::network_bench_ws::WsBench {
+                database: database(db)?,
+                user,
+                line,
+                moves,
+                idle_wait: Duration::from_secs(idle_wait_s),
                 work,
             })?;
             println!(

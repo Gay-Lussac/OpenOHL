@@ -13,7 +13,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 2;
+pub const SCHEMA: i32 = 3;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -276,6 +276,16 @@ CREATE TABLE stream (
 CREATE INDEX stream_line ON stream (line_id, seq, step);
 CREATE INDEX stream_tiles ON stream USING gin (tiles);
 CREATE INDEX stream_routes ON stream USING gin (routes);
+"#,
+    ),
+    (
+        3,
+        "saved working sets (phase 6)",
+        r#"
+-- A user's working set saved by name: its model and its picks (JSON as
+-- text, as written); `routes` the routes its extent was on when saved.
+ALTER TABLE working_set ADD COLUMN line_id text REFERENCES line ON DELETE CASCADE;
+ALTER TABLE working_set ADD COLUMN picks text NOT NULL DEFAULT '[]';
 "#,
     ),
 ];

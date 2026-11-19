@@ -93,6 +93,8 @@ pub(crate) fn net_options(url: &str) -> NetOptions {
         heartbeat: Duration::from_millis(150),
         packagers: 1,
         readers: 2,
+        // The idle solve has its own test (working_set_tests).
+        idle_solve: false,
         ..NetOptions::default()
     }
 }

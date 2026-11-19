@@ -44,6 +44,7 @@ mod store;
 pub mod stream;
 #[cfg(feature = "testing")]
 pub mod testing;
+pub mod working_sets;
 
 pub use store::PgStore;
 

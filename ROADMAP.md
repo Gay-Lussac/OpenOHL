@@ -58,7 +58,9 @@ from here. The owner's order of 2026-11-19:
    built 2026-11-19, in active development, not approved yet — off by
    default, the owner's questions under O45).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
-6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server)).
+6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
+   phase 6 built 2026-11-19, in active development, not approved yet —
+   the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -2455,7 +2457,7 @@ or three, L four or more. The phases, in order:
   line goes with phase 6 and O42's in-place work; default deny: only
   users an admin added may join a network, even as viewers (today a
   newcomer is a viewer of everything until phase 7).
-- [ ] 6 The client's working set and context (L): the working set picked
+- [x] 6 The client's working set and context (L): the working set picked
   as whole routes (a list or the map), a part of a route by station range
   or from one structure to another, or an area drawn on the map — always
   snapped out to whole tension sections, shown before it is confirmed,
@@ -2463,7 +2465,41 @@ or three, L four or more. The phases, in order:
   read-only (LRU); a partial replica fed by the stream (a route newly
   added caught up); "add this route to my working set"; the desktop's
   single file unchanged. With it: the idle solve of the context case, no
-  whole-line copy in the packager.
+  whole-line copy in the packager. **Built 2026-11-19, in active
+  development, not approved yet** ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/working-set.md),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-country-server-phase-6),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-6-working-sets-and-context-2026-11-19)):
+  File › Join a network (picks shown as the server snaps them, saved by
+  name, network schema 3); the replica a project file of today's format
+  holding the working set and, read-only, what its sections' solves read
+  (they solve as on the whole line, tested), fed by rows (what changed,
+  came, went; joining again: only what differs, by a hash of each
+  object); File › Working set (a route of the same line added, caught
+  up); context tiles 5 × 5 around the camera, 64 MB, drawn grey, a
+  drawing; the idle solve (the synthetic country's 26 543 tiles in 60 s,
+  78 MB of shapes); each tile's part of a line for the packager instead of
+  a copy of the whole line. On the synthetic country: a third of a route
+  loaded in 0.08 s (1.8 MB), a move's rows in the replica p95 24 ms,
+  joining again after 20 moves 0.35 s. Decided as conservative (the
+  owner's questions below): other sections on its structures come as
+  context, not as members; a working set is on one line; a 64-bit hash
+  per object; protocol 3 with messages added. Left: checks on a working
+  set pull no neighbours in (phase 10); the extent worked out per change
+  costs the model's size (an index by route next; matters for a country
+  as one model); a replica's import entry holds every object again
+  (3.5 MB for a route whose line's copy is 2.6 MB).
+  > **Owner:** (to answer, 2026-11-19; the recommendation after the
+  > arrow) 1. Other sections on a working set's structures with no span
+  > in it: context (as built) or members (a part then grows, on the
+  > synthetic country to the whole route)? → context. 2. One line per
+  > working set, or across lines (several replicas side by side)? → one
+  > line until phase 11. 3. Joining again by a 64-bit hash per object, or
+  > SHA-256? → SHA-256 if certainty matters; the 64-bit one meanwhile.
+  > 4. Protocol 3 with messages added, or 4? → 3 (nothing released).
+  > 5. The context's reach (5 × 5 tiles, about 5 km; 64 MB)? → as built,
+  > a setting later. 6. A replica's import entry with an empty command, as
+  > the network's import writes it (a change of how the session writes an
+  > import)? → yes.
 - [ ] 7 Rights and roles (M): roles as named permission sets (shipped:
   viewer, designer, checker, library maintainer, line admin, network
   admin; permissions see, edit, create, delete, review, export, lock,
