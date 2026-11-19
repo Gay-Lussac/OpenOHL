@@ -564,6 +564,12 @@ pub struct LayoutRun {
     pub notes: Vec<String>,
     /// How long it took, s.
     pub seconds: f64,
+    /// The pieces in line through the joints asked that are not one part
+    /// (O44 J9, D15): proposed `continuous` for the user to confirm
+    /// ([`crate::in_line::confirm`]), or not and why. Never written by
+    /// the run: until confirmed each piece ends at the joint (on the safe
+    /// side).
+    pub in_line: Vec<crate::InLine>,
 }
 
 impl LayoutRun {
@@ -691,6 +697,9 @@ fn lay_out_once(
         Some(j) => j.clone(),
         None => t.nodes.iter().map(|n| n.id.clone()).collect(),
     };
+    // J9 (D15): the pieces in line not one part, proposed or not (said,
+    // never written by the run).
+    let in_line = crate::in_line::in_line_pieces(t, Some(&targets));
     // The members at the joints asked and their other joints (their ends
     // there: flat or not, laid out or not).
     let members_here: BTreeMap<&str, &[String; 2]> = t
@@ -818,8 +827,8 @@ fn lay_out_once(
         }
         let joined: BTreeSet<&str> = js.iter().map(|x| x.member.as_str()).collect();
         for (m, host) in crate::joint_layout::hosts_to_name(j) {
-            let in_line = js.iter().any(|x| x.member == m || x.onto == m);
-            if in_line || joined.contains(m.as_str()) {
+            let in_line_here = js.iter().any(|x| x.member == m || x.onto == m);
+            if in_line_here || joined.contains(m.as_str()) {
                 continue;
             }
             let _ = conns.set(
@@ -1312,6 +1321,7 @@ fn lay_out_once(
                 clashes: (0, 0),
                 notes,
                 seconds: start.elapsed().as_secs_f64(),
+                in_line: in_line.clone(),
             });
         }
         let mut done = None;
@@ -1387,6 +1397,7 @@ fn lay_out_once(
             clashes: (clashes_before, after_count),
             notes,
             seconds: start.elapsed().as_secs_f64(),
+            in_line: in_line.clone(),
         });
     }
 }
@@ -2001,6 +2012,34 @@ fn write_rounds(
                 }
                 bad.push(words);
             }
+            // J9 and D16 (2026-11-19): an end laid directly onto a member
+            // as that member is written (laid out here, or left as it was:
+            // then as the file has it, not as planned) — each bolt's hole
+            // within that member's flange and on its steel where it ends at
+            // the joint (the joint checks' own rule). Else left as it was
+            // too, said, and the joint planned again.
+            for e in &o.plan.ends {
+                let crate::joint_layout::Onto::Member(h) = &e.onto else {
+                    continue;
+                };
+                if out.contains_key(&e.member) {
+                    continue;
+                }
+                let (Some(a), Some(host)) = (
+                    j.arrivals.iter().find(|x| x.member == e.member),
+                    j.arrivals.iter().find(|x| &x.member == h),
+                ) else {
+                    continue;
+                };
+                if let Some(why) = misfit_on(j, a, host) {
+                    let words = format!("{}: {why}", e.member);
+                    out.insert(
+                        e.member.clone(),
+                        format!("laid out, {why} (left as it was)"),
+                    );
+                    bad.push(words);
+                }
+            }
             if bad.is_empty() {
                 continue;
             }
@@ -2087,6 +2126,51 @@ fn write_rounds(
         );
     }
     Ok((result.to_string(), after_count))
+}
+
+/// Why end `a` bolted directly onto `host` at joint `j` (both as written)
+/// does not fit, by the joint checks' rule: a hole not within the host's
+/// flange, or a bolt beyond its steel where it ends at the joint (not one
+/// part through it) and where its steel stops is known; none: it fits.
+fn misfit_on(j: &crate::JointDetail, a: &crate::Arrival, host: &crate::Arrival) -> Option<String> {
+    let f = crate::joints::host_flange(a, host)?;
+    let hole = a
+        .bolts
+        .value
+        .as_ref()
+        .map_or(0.0, |b| b.hole.unwrap_or(b.diameter));
+    let ends = host.continuous.is_none()
+        && !j
+            .arrivals
+            .iter()
+            .any(|b| b.continuous.as_deref() == Some(host.member.as_str()));
+    let start = (ends && host.cut.known()).then(|| host.cut.value.unwrap_or(0.0));
+    for q in &a.bolt_points {
+        let rel = sub3(sub3(*q, j.position), f.heel);
+        let g = dot3(rel, f.across);
+        if g - hole / 2.0 < -0.001 || g + hole / 2.0 > f.width + 0.001 {
+            return Some(format!(
+                "its bolt {:.0} mm from {}'s heel as that is written would not lie within its \
+                 flange (0 to {:.0} mm)",
+                g * 1000.0,
+                host.member,
+                f.width * 1000.0
+            ));
+        }
+        if let Some(c) = start {
+            let s = dot3(sub3(*q, j.position), host.direction);
+            if s < c - 0.001 {
+                return Some(format!(
+                    "its bolt {:.0} mm from the work point would lie beyond the end of {}'s \
+                     steel (from {:.0} mm; not one part through the joint)",
+                    s * 1000.0,
+                    host.member,
+                    c * 1000.0
+                ));
+            }
+        }
+    }
+    None
 }
 
 /// A joint as the clash check of a run's pass left it ([`write_rounds`]).
@@ -2302,8 +2386,12 @@ fn strip_joint(
         let mut go: BTreeSet<&str> = auto.iter().map(String::as_str).collect();
         if replace_hand {
             go.extend(["cut", "shift"]);
-            // `onto` given by hand: a member or a plate of the joint.
-            go.insert("onto");
+            // `onto` given by hand: a member or a plate of the joint —
+            // not that of pieces given one part through the joint (J9: what
+            // the steel is, the user's, not a layout value).
+            if !(crate::in_line::one_part(c.kind) && !auto.contains("kind")) {
+                go.insert("onto");
+            }
         }
         for f in go {
             if f == "gauge" {

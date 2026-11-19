@@ -72,6 +72,28 @@ fn wait_preview(h: &mut Harness<'static, StructureApp>) {
     panic!("no preview");
 }
 
+/// Runs frames until Apply is enabled: the preview is the window's — its
+/// joints (with their similar ones once the joint details are worked out
+/// on their own thread: the preview is worked out again then) and the
+/// file's revision; at most ~30 s.
+fn wait_apply(h: &mut Harness<'static, StructureApp>) {
+    use egui_kittest::kittest::NodeT;
+    for _ in 0..600 {
+        h.step();
+        let ready = h
+            .query_all_by_label_contains("Apply (")
+            .next()
+            .is_some_and(|n| !n.accesskit_node().is_disabled());
+        if ready {
+            // (A few frames more: the button as the window now draws it.)
+            h.run_steps(4);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("Apply never enabled");
+}
+
 #[test]
 fn a_joint_is_laid_out_from_its_details_in_one_undo_step() {
     let (mut h, dir) = open("layout-window");
@@ -112,6 +134,7 @@ fn a_joint_is_laid_out_from_its_details_in_one_undo_step() {
     }
     // Nothing written before Apply.
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    wait_apply(&mut h);
     h.get_all_by_label_contains("Apply (")
         .next()
         .unwrap()
@@ -345,6 +368,7 @@ fn an_end_over_the_heel_is_laid_out_on_a_bent_plate_in_the_window() {
             "lay-out-joints-bent-plate",
         );
     }
+    wait_apply(&mut h);
     h.get_all_by_label_contains("Apply (")
         .next()
         .unwrap()
@@ -353,3 +377,125 @@ fn an_end_over_the_heel_is_laid_out_on_a_bent_plate_in_the_window() {
     let f = h.state().file.as_ref().unwrap();
     assert_eq!(f.structure().bent_pairs("N2").len(), 1);
 }
+
+/// Pieces in line (O44 J9, D15): a horizontal in two pieces of one section
+/// through a mid-panel joint (an invented tower). The preview proposes them
+/// one part and writes nothing of it; *Confirm all* writes both ends one
+/// part in one undo step, the preview is worked out again with nothing
+/// left to propose; undo takes it back.
+#[test]
+fn pieces_in_line_are_proposed_and_confirmed_in_one_undo_step() {
+    let path = copy_of("type-02.ohls", "layout-in-line");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("split.ohls");
+    std::fs::write(&tower, IN_LINE).unwrap();
+    let mut h = harness(&tower);
+    h.run_steps(3);
+    let before = h.state().file.as_ref().unwrap().text();
+    h.state_mut()
+        .open_layout_window(crate::layout_window::Scope::Tower);
+    wait_preview(&mut h);
+    h.run_steps(4);
+    {
+        let p = h.state().layout_window.as_ref().unwrap();
+        let p = p.preview.as_ref().unwrap();
+        assert_eq!(p.run.in_line.len(), 1, "{:?}", p.run.in_line);
+        assert!(p.run.in_line[0].proposed());
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        // The proposal per joint opened and scrolled into view.
+        h.get_by_label_contains("Each joint (").click();
+        h.run_steps(2);
+        h.get_by_label("Confirm all (1)").scroll_to_me();
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-in-line");
+    }
+    // Nothing written by the preview.
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    h.get_by_label("Confirm all (1)").click();
+    h.run_steps(2);
+    let f = h.state().file.as_ref().unwrap();
+    assert_eq!(f.structure().continuous_with("H1", "M"), Some("H2"));
+    assert!(
+        f.undo_name()
+            .unwrap()
+            .starts_with("Pieces in line one part")
+    );
+    // The preview again: nothing left to propose.
+    let mut fresh = false;
+    for _ in 0..600 {
+        h.step();
+        let revision = h.state().file.as_ref().unwrap().revision();
+        fresh = h
+            .state()
+            .layout_window
+            .as_ref()
+            .and_then(|w| w.preview.as_ref())
+            .is_some_and(|p| p.revision == revision);
+        if fresh {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(fresh, "no preview after confirming");
+    let w = h.state().layout_window.as_ref().unwrap();
+    let p = w.preview.as_ref().unwrap();
+    assert!(p.run.in_line.is_empty(), "{:?}", p.run.in_line);
+    h.state_mut().file.as_mut().unwrap().undo();
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// An invented tower: a horizontal in two pieces (H1, H2) of one section
+/// through a mid-panel joint M, a redundant (V) standing on it.
+const IN_LINE: &str = r#"id = "S"
+name = "pieces in line"
+kind = "lattice"
+
+[[node]]
+id = "A"
+point = ["-2 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "M"
+point = ["0 m", "0 m", "0 m"]
+
+[[node]]
+id = "B"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "T"
+point = ["0 m", "0 m", "1.5 m"]
+support = "fixed"
+
+[[member]]
+id = "H1"
+nodes = ["A", "M"]
+section = "EA-61x7"
+orientation = "z+y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "H2"
+nodes = ["M", "B"]
+section = "EA-61x7"
+orientation = "z+y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "V"
+nodes = ["M", "T"]
+section = "EA-61x7"
+orientation = "y-x+"
+design = { class = "redundant" }
+"#;

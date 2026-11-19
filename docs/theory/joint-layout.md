@@ -130,7 +130,9 @@ not bolted and left with "its axis runs out of the face"):
 - **Nothing named** (a crossing diagonal, a redundant at a diagonal's
   middle): the member running through the joint (in line with another
   member there, or one part with it), the one part first, then by class
-  (leg, bracing, redundant), the wider, the id.
+  (leg, bracing, redundant), the wider, then — of two pieces in line not
+  one part (J9, 2026-11-19) — the piece on the end's side (whose steel
+  lies under its bolts: such pieces each end at the joint), the id.
 - **The joint's leg, but in neither of its flanges' planes** (a plan
   diagonal meeting a vertical post; within 5°): a single angle running
   through the joint in a flange's plane of which the end's axis lies (the
@@ -141,6 +143,21 @@ not bolted and left with "its axis runs out of the face"):
 What an end bolts onto is what its restraint is worked out from (the
 code's stiffness rule, as for any end bolted onto a member): the member
 it is laid out onto, as detailed.
+
+**Two ends bolting onto each other** (the mutual-host guard, the owner's
+decision D16 of 2026-11-19, built with J9): where the ends named would
+bolt onto each other — or one onto a piece in line with the other (the
+pieces of a horizontal onto a redundant standing on them, the redundant
+onto the horizontal) — laying out both would cut each back onto the
+other, the bolts of one beyond the other's steel: physically impossible
+(measured on the private real towers before: 5 128 joints). The one
+running through the joint (in line with another of its members), else
+the larger (class, the wider leg, the id), stays what the other bolts
+onto; its own end is **left as it is**, said ("H1: it would bolt onto V
+and V onto H2 (in line with it): … its own end left as it is"). Alone,
+the guard leaves about a quarter of the ends laid out before (most of
+them pieces in line); with J9's pieces confirmed one part, those run on
+and nothing is left for it.
 
 ## Turned only where it helps
 
@@ -445,6 +462,20 @@ clash check sees it like any part. On a built-up leg no plate is laid
 out (it is drawn through the work point, where its checks take it): a
 hand detail.
 
+**On the steel of what it bolts onto** (J9 and D16, 2026-11-19): where the
+member an end bolts onto **ends at the joint** — not one part through it
+(`continuous`): pieces in line not confirmed one part, a member whose own
+end is laid out here — the end bolts on directly only where every bolt
+lies on that member's steel, past where it starts by the end distance (the
+code's, else the default minimum): its cut as laid out in this plan, else
+as given or worked out, else the work point. Otherwise the plane goes onto
+a plate (as for bolts off the flange), else a hand detail. The planes
+whose ends bolt onto a member whose own end is laid out here are planned
+after that member's plane, so its cut is known. *Conservative*: the
+pieces of a member in line are taken to end at the joint until the user
+confirms them one part (the joint checks' own rule, O19 stage 4.5); a
+bolt within the end distance of a cut is not counted as on the steel.
+
 ## A welded plate in the member's own plane (step 4)
 
 (Owner, 2026-11-18: "finaly if the angle at which the profile is coming
@@ -703,9 +734,70 @@ ends of every leg member): spliced here, or one part through the joint
 and spliced elsewhere — the data do not say. They are left as given
 (drawn lapped, as before) and the joint says so ("… where the splice is
 is not known …"), first among its reasons when the rest of it is left
-too; giving the splice (or the two one part) lets the layout lay the
+too; giving the splice (or confirming the two one part, J9) lets the layout lay the
 rest out. Never a splice bolt check dropped: one part is made only where
-neither end has bolts (step 1a).
+neither end has bolts (step 1a), else where the user confirms the pieces
+one part ([J9](#pieces-in-line-one-part-confirmed-j9); the preview
+proposes them).
+
+## Pieces in line: one part, confirmed (J9)
+
+(The owner's decision D15 of 2026-11-19; built, in active development,
+not approved yet.) Two pieces of one member line through a joint —
+**the same section**, in line within 1° (the core's angle for one part,
+`CONTINUOUS_ANGLE_DEG`), the same reference and orientation, their rolls
+within 5° — with **nothing given there** of how they are joined are
+**proposed one part** (`kind = "continuous"`) in the layout's preview,
+for the user to confirm per joint or all at once (*Confirm all*), in one
+undo step. It is **never a silent default**: a run only says them; until
+confirmed each piece **ends at the joint** — in the joint checks (their
+steel from their cut; O19 stage 4.5) and in the layout (above) — *on the
+safe side*: a splice, if there is one, keeps its bolts checked; one part,
+the pieces' bolts there are not a splice (their members' design bolts
+stay at their other ends).
+
+Not proposed, and said why:
+
+- **pieces of a leg with bolts** (their own or their members' design
+  data): a leg splice — where the splices are is proposed by a command of
+  its own (J7, to come), the user confirming; until then each piece ends
+  at the joint;
+- a **splice given** at the joint naming either piece, a connection's
+  `kind` given at either end, an end given by hand to bolt onto something
+  else, or bolts given at an end: the joint is detailed as something
+  else;
+- other sections, references or orientations, or rolls more than 5°
+  apart.
+
+**Rolls a little apart.** Orient angles turns each piece to its face on
+its own, so pieces of one member often differ by a fraction of a degree
+(on the private real towers up to about a degree). The core reads two
+pieces one part only with the same roll; confirming writes every piece of
+a chain confirmed together the roll half-way between theirs (the mean of
+their rolls) — each turns by at most half the 5°. The 5° is the flatness
+the joint details allow a leg bolted (`FLAT_OFF`): **the program's value,
+not a standard's**. Such a roll is then the user's (no longer the
+layout's: a later run does not turn it back), and the layout never turns
+pieces one part.
+
+Confirmed, the pieces **run on** through the joint: they are not laid out
+(nothing to pull back), what bolts onto them bolts onto the member
+running through, and the joint checks see one member there (its bolts'
+end distances from its steel through the joint, no splice). A run
+replacing values given by hand keeps them (one part is what the steel
+is, not a layout value). The layout's own values at the two ends (a
+previous run's cut, shift, `onto`) are taken out when confirming.
+
+**After writing** (J9 and D16): an end laid directly onto a member is
+checked against that member **as written** — laid out in the same run, or
+left as it was by the clash rounds (then as the file has it, not as the
+plan saw it: e.g. its own `onto`, named only in the planning copy, is
+not written for an end left, so its leg bolted may differ): each bolt's
+hole within that member's flange, and on its steel where it ends at the
+joint and its cut is known — the joint checks' own rule. An end that
+would not fit so is left as it was too, said ("laid out, its bolt …
+would not lie within its flange … (left as it was)"), and the joint is
+planned again without it, as for a clash.
 
 ## No fit: a hand detail
 
@@ -937,3 +1029,35 @@ joints, the ties of the search now broken alike), and makes the joints of
 one kind identical. **It saves no time measurably**: planning is about 1
 to 1.5 % of a run (the joint details worked out in each round and the clash
 checks take the rest, and each copy must be checked in its own place).
+
+## Measured (J9 and the mutual-host guard, 2026-11-19)
+
+On the same 78 tower files and settings (kept privately), with the joint
+checks' "does not fit" (one case; misfits depend on neither loads nor
+code):
+
+| | before | the guard alone | J9, nothing confirmed | J9, every proposal confirmed (an upper bound) |
+|---|---|---|---|---|
+| joints laid out whole | 46.1 % | 42.1 % | 36.2 % | 41.9 % |
+| joints with a hand detail | 47.7 % | 51.7 % | 57.6 % | 50.2 % |
+| member ends laid out (of those the layout places) | 64.6 % | 57.3 % | 51.0 % | 56.1 % |
+| ends left by the guard | — | 32 391 | 33 684 | 7 195 |
+| joints with members bolting onto each other | 10 167 | 0 | 2 | 0 |
+| joints that do not fit | 31.8 % | 34.4 % | 35.6 % | 28.8 % |
+| … of them as given (the rest as assumed — not detailed) | 6 764 | 2 210 | 839 | 605 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+46 819 pairs of pieces in line were proposed, 13 071 not (10 620 pieces of
+legs with splice bolts — J7's —, the rest turned more than 5° apart); most
+proposals needed one roll (the pieces 0.1° to 1.1° apart after Orient
+angles). The guard alone loses a quarter of the ends, as expected; with
+the pieces confirmed it leaves a fifth as many. Not confirmed, the layout
+treats the pieces as ending at the joint, as the checks do: it writes
+almost no misfit of its own (839 joints, from 6 764) but lays out fewer
+joints whole — ends bolting across the gap go onto plates, and on a
+built-up leg (no plate laid out there) to a hand detail. Confirmed, the
+fewest joints do not fit (28.8 %); the joints laid out whole before and
+not now were physically impossible (members cut back onto each other,
+bolts beyond the steel). The leg splices (J7) are now the main limit
+("ends laid out" is not comparable across the columns: pieces one part
+run on, nothing to lay out). No change in time measurable.

@@ -1677,9 +1677,9 @@ Six stages, the questions per stage and per detail level:
   tensile load F_u × A_s; **a gusset plate's own prying and bending** by
   the same T-stub model, the plate a flange without a web (the additive
   plugin interface `joint-check-groups-prying`), no longer said not
-  worked out. To build: **the joint layout proposing "continuous"** for
-  in-line pieces, for the user to confirm (after the layout's J1–J2 work
-  is merged, O44 J9); a window for a plate's own bolts onto the leg
+  worked out. **The joint layout proposing "continuous"** for in-line
+  pieces, for the user to confirm: built 2026-11-19 (O44 J9), in active
+  development, not approved yet. To build: a window for a plate's own bolts onto the leg
   (typed in the file until then), and those bolts drawn in the 3D view,
   the close-up and the IFC export (counted in the bill of materials
   already).
@@ -1695,7 +1695,8 @@ Six stages, the questions per stage and per detail level:
   3D view (orange) — built the same day, in active development, not
   approved yet (D14); J9 proposes "continuous" for same-section pieces in
   line, the user confirms (a "confirm all" button), never a silent
-  default (D15); the mutual-host guard with J9, not before (D16). On the
+  default (D15); the mutual-host guard with J9, not before (D16) — both
+  built 2026-11-19 (O44 J9). On the
   78 real towers (kept privately), one case: as imported 23 128 of 33 544
   joints do not fit, 22 993 only as assumed; with the layout 17 821 of
   55 970, 11 057 as assumed — not detailed, 6 764 as given.
@@ -2044,15 +2045,30 @@ step, reasons left), and the work stops where it stops paying:
 - [ ] J8. **Short members**: the class's smaller bolt, one bolt where the
   code's text allows it for a redundant, else a plate shared with the
   neighbouring member.
-- [ ] J9. **Pieces in line proposed "continuous"** (owner 2026-11-19, a
+- [x] J9. **Pieces in line proposed "continuous"** (owner 2026-11-19, a
   follow-up of the joint checks, O19 stage 4.5): the layout proposes
-  `continuous` where two pieces of a leg run on in line through a joint
-  without a splice, for the user to confirm; until then such pieces each
-  end at the joint in the checks (on the safe side). After J1–J2 are
-  merged. Decided 2026-11-19 (D15, D16): proposed for same-section pieces
-  in line, the user confirms (with a "confirm all" button) — never a
-  silent default; the mutual-host guard (two ends bolting onto each
-  other) built together with J9, not before.
+  `continuous` where two pieces run on in line through a joint without a
+  splice, for the user to confirm; until then such pieces each end at the
+  joint in the checks (on the safe side). Decided 2026-11-19 (D15, D16):
+  proposed for same-section pieces in line, the user confirms (with a
+  "confirm all" button) — never a silent default; the mutual-host guard
+  (two ends bolting onto each other) built together with J9. **Built
+  2026-11-19, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-joint-layout-pieces-in-line-proposed-one-part-the-mutual-host-guard)):
+  the proposals in Lay out joints' preview (*Confirm*, *Confirm all*, one
+  undo step; rolls up to 5° apart given one roll, their mean; legs with
+  splice bolts not proposed — J7); the guard; ends on a member ending at
+  the joint kept on its steel past its cut (else a plate, else by hand);
+  ends laid onto a member left as it was checked as written. On the 78
+  real towers (kept privately): every proposal confirmed, joints that do
+  not fit 31.8 % → 28.8 % (as given 6 764 → 605), joints laid out whole
+  46.1 % → 41.9 %; nothing confirmed 36.2 % whole, 839 as given; the guard
+  alone 42.1 %; a run again identical 78/78; no time change. The leg
+  splices (J7) are now the main limit.
+  > **Owner:** (1) the 5° roll tolerance for proposing pieces one part
+  > (the mean roll written; seen 0.1°–1.1°): keep? (2) Not confirmed, the
+  > layout treats the pieces as ending at the joint (fewer joints whole,
+  > almost no misfit of its own): keep? (3) J7 next?
 - Asked (open): shop drawings of real towers, to tune to how the steel
   is really detailed; the owner is looking for example joints
   (2026-11-19) and sent three that day: a bent gusset plate at a corner,

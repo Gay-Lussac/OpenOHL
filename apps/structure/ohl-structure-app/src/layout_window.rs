@@ -348,6 +348,7 @@ impl StructureApp {
         let mut apply = false;
         let mut cancel = false;
         let mut usage_asked = false;
+        let mut in_line: Option<Vec<ohl_structure_link::InLine>> = None;
         let groups: Vec<String> = self
             .file
             .as_ref()
@@ -585,6 +586,7 @@ impl StructureApp {
                     }
                     Some(p) => {
                         layout_summary(ui, p);
+                        in_line = layout_in_line(ui, p);
                         layout_changes(ui, p);
                         layout_close_ups(ui, &mut w.shown, &mut w.views, p, dark);
                         usage_asked =
@@ -616,6 +618,30 @@ impl StructureApp {
             });
         if usage_asked {
             self.start_usage(&mut w, ctx);
+        }
+        // J9 (D15): pieces in line confirmed one part, one undo step; the
+        // preview is worked out again on the file as edited.
+        if let Some(list) = in_line
+            && let Some(f) = self.file.as_mut()
+        {
+            let asked = list.len();
+            let r = f.edit(&format!("Pieces in line one part ({asked})"), |doc, t| {
+                ohl_structure_link::in_line::confirm(doc, t, &list)
+            });
+            self.message = Some(match r {
+                Ok((n, not)) if not.is_empty() => (
+                    format!("{n} pair(s) of pieces in line one part (one undo step)"),
+                    false,
+                ),
+                Ok((n, not)) => (
+                    format!(
+                        "{n} pair(s) of pieces in line one part (one undo step); not: {}",
+                        not.join("; ")
+                    ),
+                    true,
+                ),
+                Err(e) => (e, true),
+            });
         }
         if apply && let Some(p) = w.preview.take() {
             let laid = p.run.laid_out().count();
@@ -857,6 +883,97 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
                 .weak(),
         );
     }
+}
+
+/// The help of the pieces in line (O44 J9).
+pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \
+     turned alike within 5°), with nothing given there of how they are joined: the layout proposes \
+     them one part (continuous) for you to confirm. Until confirmed each piece ends at the joint \
+     in the joint checks and in the layout, its steel from its cut (on the safe side) — never a \
+     silent default. Confirming writes both ends one part in one undo step (rolls a little \
+     apart: both the roll half-way between); the preview is then worked out again. Pieces of a \
+     leg with bolts are a leg splice (a command of its own, to come) and are not proposed.";
+
+/// The pieces in line of a preview (O44 J9, D15): those proposed one part,
+/// each joint's with a button, and *Confirm all*; those not proposed with
+/// why. The pieces to confirm when a button was pressed.
+fn layout_in_line(ui: &mut egui::Ui, p: &Preview) -> Option<Vec<ohl_structure_link::InLine>> {
+    let list = &p.run.in_line;
+    if list.is_empty() {
+        return None;
+    }
+    let mut out = None;
+    let yes: Vec<&ohl_structure_link::InLine> = list.iter().filter(|x| x.proposed()).collect();
+    let no: Vec<&ohl_structure_link::InLine> = list.iter().filter(|x| !x.proposed()).collect();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.strong(format!(
+            "Pieces in line: {} pair(s) proposed one part",
+            yes.len()
+        ))
+        .on_hover_text(IN_LINE_HELP);
+        ohl_ui::tool_window::question(ui, IN_LINE_HELP);
+        if !yes.is_empty()
+            && ui
+                .button(format!("Confirm all ({})", yes.len()))
+                .on_hover_text("Writes every proposed pair one part (continuous), one undo step")
+                .clicked()
+        {
+            out = Some(yes.iter().map(|x| (*x).clone()).collect());
+        }
+    });
+    egui::CollapsingHeader::new(format!(
+        "Each joint ({} proposed, {} not)",
+        yes.len(),
+        no.len()
+    ))
+    .id_salt("layout-in-line")
+    .show(ui, |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt("layout-in-line-list")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                let mut joints: Vec<&str> = Vec::new();
+                for x in &yes {
+                    if !joints.contains(&x.joint.as_str()) {
+                        joints.push(&x.joint);
+                    }
+                }
+                for j in joints {
+                    let here: Vec<&ohl_structure_link::InLine> =
+                        yes.iter().copied().filter(|x| x.joint == j).collect();
+                    ui.horizontal(|ui| {
+                        if ui
+                            .small_button("Confirm")
+                            .on_hover_text("These pieces one part (one undo step)")
+                            .clicked()
+                        {
+                            out = Some(here.iter().map(|x| (*x).clone()).collect());
+                        }
+                        let words: Vec<String> = here
+                            .iter()
+                            .map(|x| match x.also() {
+                                Some(a) => format!("{} and {} ({a})", x.member, x.onto),
+                                None => format!("{} and {}", x.member, x.onto),
+                            })
+                            .collect();
+                        ui.label(format!("{j}: {} one part?", words.join(", ")));
+                    });
+                }
+                for x in &no {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{}: not proposed — {}",
+                            x.words(),
+                            x.not.as_deref().unwrap_or_default()
+                        ))
+                        .small()
+                        .weak(),
+                    );
+                }
+            });
+    });
+    out
 }
 
 /// What changes per joint, and the joints left for a hand detail.
