@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18 — this record is not approved yet)
+  2026-11-18; phases 0–4 and 8 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -105,6 +105,23 @@ own, `ohl-store-pg`, phase 4: the synchronous `postgres` client — the
 authority is one thread — and a connection pool for the readers). The same
 store tests run on both. Nothing PostgreSQL-specific enters the session
 before phase 4.
+
+Built 2026-11-19 (phase 4, in active development): **one model is one
+store** — the session opens a model of the network as it opens a project
+file (`Session::open_on`), every table it uses keyed by the model's code
+(`line_id`); the store tests (`ohl_session::store::suite`) and one session
+run on both stores give the same results. The session holds its store as
+`Box<dyn Store>`; the interface gained what a second store needs (making
+its tables, `prepare`; reading and writing rows as they are, for whole
+copies — `store::copy`); the project file's statements and files are
+unchanged (`sqlite3 .dump` compared). Decided beside the draft: objects
+keep their **JSON as text** (as the session wrote it: an export is the
+rows imported; `jsonb` would reorder keys and rewrite numbers); the log's
+`seq` is numbered across the network but unique per model (a copied model
+keeps its numbers); blobs are kept once with each model's use noted; the
+draft's `object.routes` and `oplog.lines`/`tiles` come with phase 5, when
+the session can keep them current. The tables and their columns: the
+[data model](../development/data-model.md#server-database-postgresql).
 
 ### One writer, transactions, order
 
@@ -305,6 +322,11 @@ format from the server".
 - Built in phase 4 (PostgreSQL → SQLite writer through the store
   interface), with a round-trip test: a project imported into the network
   and exported back has the same objects (dump compared, ids mapped).
+  Built 2026-11-19 (`ohl network export`, in active development; rights
+  and the export permission with phase 7): every row of the model read at
+  one snapshot; the same object, index, meta, user and grant rows as the
+  file imported, on the example line and on the 12 000-pylon synthetic
+  country.
 
 ### Import of existing projects
 
@@ -317,6 +339,13 @@ keep — never merged silently; the current state (and tags if asked) comes
 in as **one** log entry per line, the file kept as an archive; libraries
 mapped to the country libraries (same content mapped, conflicts to a
 maintainer, never silently replaced); a report lists every decision.
+Built 2026-11-19 (`ohl network import`, in active development): as one
+transaction with one log entry and a revision "imported from FILE";
+the twin towers within 0.5 m in plan and of the same type (an estimate
+for the owner to set); the file's history, other project lines, tags,
+point clouds and backgrounds left in the file and listed; library mapping
+waits for the country libraries (phase 9: a model keeps its own library
+files meanwhile).
 
 ### Versions at the scale of a country
 

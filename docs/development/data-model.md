@@ -4309,56 +4309,71 @@ passes (the working copy); files it imports there (File › Import) are
 stored into the project by the line application (`Change::Libraries`).
 See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
-### Server database (PostgreSQL) — draft
+### Server database (PostgreSQL)
 
-**Draft, 2026-11-18** ([ADR-0013](../adr/0013-country-server.md), in
-active development; nothing of it is built yet — the PostgreSQL store is
-phase 4, rights phase 7, country libraries phase 9). A country server keeps
-every model and model element of its network in one PostgreSQL database
-with PostGIS. The desktop's project file (above) is **unchanged**; a model
-exported from a server is a normal project file with the meta keys listed
-at the end.
+**Built 2026-11-19 for phase 4** ([ADR-0013](../adr/0013-country-server.md),
+in active development, not approved yet): the crate `ohl-store-pg`,
+network schema 1. A country server keeps every model and model element of
+its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
+is **unchanged** (the session's statements and files the same, tested by
+`sqlite3 .dump`); a model exported from a server is a normal project file
+with the meta keys listed at the end. Tables of later phases are made now
+and stay empty until then (marked). Running it and its tests:
+[the country server's database](postgresql.md).
 
-Words: a **line** is a design unit (a project today); a **branch** is what
-the desktop calls a *project line*; a **route** is as in the line model.
+Words: a **line** (a *model*) is a design unit (a project today), its code
+the `line_id` of every row it owns; a **branch** is what the desktop calls
+a *project line*; a **route** is as in the line model.
+
+**One model is one store.** The session works on one model as it works on
+a project file (`ohl_session::Session::open_on`, a `PgStore` of the
+model's code): every table the session uses has the model's `line_id` in
+its key, and the store keeps SQLite's meaning (steps as savepoints in one
+transaction; a new log entry the next seq of the network; a grant's or
+review's id the next of its model; revisions "newest first" in the order
+kept; times given as the project file writes them,
+`YYYY-MM-DDTHH:MM:SS.sssZ`). The same tests pass on both stores
+(`ohl_session::store::suite`).
 
 | Project file (SQLite) | Server (PostgreSQL) | What changes |
 |---|---|---|
-| `ols_meta` | `net_meta` | + the network's CRS, grid size and origin (one grid for the network) |
-| `session_user` | `net_user`, `net_group`, `net_member` | users from the sign-in (OIDC subject), groups (teams, contractors) |
-| — | `role`, `role_permission`, `assignment` | rights and roles on (almost) every element and library |
-| `model_object` | `object` | + the line it belongs to and the routes it is used by; `data` as `jsonb` |
-| `oplog` | `oplog` | + the lines and tiles an entry touched (interest stream) |
+| `ols_meta` | `line_meta` (per model) and `net_meta` (the network) | the network's own rows: schema, CRS, grid size (one grid for the network) |
+| — | `net_schema` | one row per migration done |
+| `session_user` | `line_user` (per model); `net_user`, `net_group`, `net_member` | the users of the network (from the sign-in later, OIDC subject), groups |
+| — | `role`, `role_permission`, `assignment` | rights and roles on (almost) every element and library; kept, evaluated from phase 7 |
+| `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network |
+| `oplog` | `oplog` | + `line_id`; `seq` numbered across the network |
 | `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree) |
-| `vc_blob`, `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same | trees split by line, kind and tile bucket (a tree version field); library reviews too |
-| `edit_grant` | — | replaced by `assignment` (an imported project's grants become assignments) |
-| `surface` (one blob per TIN) | `surface_tile` | terrain cut per tile of the grid |
-| `pointcloud*`, `background_*` | the same, `bytea` | blocks and tiles already per chunk |
-| — | `line`, `working_set`, `object_ref` | design units, saved working sets, the reference index |
-| — | `lib_file`, `lib_entry`, `lib_release`, `lib_use`, `lib_request` | country libraries |
-| — | `stale`, `notice`, `audit` | results out of date, notices to users, the audit of rights and admin actions |
+| `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
+| `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | (later: trees split by line, kind and tile bucket; library reviews) |
+| `edit_grant` | `edit_grant`, + `line_id` | kept for the session until phase 7 makes them assignments |
+| `surface` (one blob per TIN) | `surface` (+ `line_id`); `surface_tile` | whole TINs as in the file; tiles per grid tile later |
+| `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
+| — | `line`, `working_set`, `object_ref` | the models; saved working sets and the reference index (filled from phases 5–6) |
+| — | `lib_file`, `lib_entry`, `lib_release`, `lib_use`, `lib_request` | country libraries (phase 9) |
+| — | `stale`, `notice`, `audit` | results out of date and notices (later); the audit of imports, exports and admin actions |
 
-Columns (types as PostgreSQL takes them; `time` columns `timestamptz`,
-UTC; every text id is the name users see):
+Columns (`time` columns `timestamptz`, UTC; every text id is the name users
+see):
 
 ```sql
 -- Network and users
+net_schema     (version integer PRIMARY KEY, time timestamptz NOT NULL, note text NOT NULL)
 net_meta       (key text PRIMARY KEY, value text NOT NULL)
-               -- schema, crs, grid_size, grid_origin_x, grid_origin_y,
-               -- context_case (the weather case context tiles are solved in)
-net_user       (name text PRIMARY KEY, subject text UNIQUE,      -- OIDC subject
+               -- schema, crs (set by the first import), grid_size, name
+net_user       (name text PRIMARY KEY, subject text UNIQUE,      -- OIDC subject (later)
                 display text NOT NULL, active boolean NOT NULL, created timestamptz NOT NULL)
 net_group      (name text PRIMARY KEY, note text NOT NULL DEFAULT '')
 net_member     (grp text REFERENCES net_group, member text REFERENCES net_user,
                 PRIMARY KEY (grp, member))
 
--- Rights and roles (ADR-0013, "Rights and roles")
+-- Rights and roles (ADR-0013, "Rights and roles"; evaluated from phase 7)
 role           (name text PRIMARY KEY, shipped boolean NOT NULL, note text NOT NULL DEFAULT '')
                -- shipped: viewer, designer, checker, library_maintainer, line_admin, network_admin
 role_permission(role text REFERENCES role, permission text NOT NULL,
                 PRIMARY KEY (role, permission))
                -- permission: see | edit | create | delete | review | export | lock
-               --             | request | manage_rights
+               --             | request | manage_rights (the shipped sets as in ADR-0013)
 assignment     (id bigserial PRIMARY KEY,
                 subject_kind text NOT NULL,                  -- user | group
                 subject text NOT NULL,
@@ -4370,124 +4385,159 @@ assignment     (id bigserial PRIMARY KEY,
                 line text, route text,                       -- a line, a route
                 from_structure text, to_structure text,      -- a part of a route (snapped to
                                                              -- whole tension sections)
-                area geometry,                               -- a region (polygon) or a corridor
-                kind text,                                   -- an element kind (structure, section,
-                                                             -- jumper, …, cost, lidar, terrain) or a
-                                                             -- library kind (wires, bolts, …)
-                object text,                                 -- an object id, or a library file or
-                                                             -- entry name
+                area geometry,                               -- a region (polygon) or a corridor (GiST)
+                kind text,                                   -- an element kind or a library kind
+                object text,                                 -- an object id, or a library file or entry
                 by_user text NOT NULL, time timestamptz NOT NULL, note text NOT NULL DEFAULT '')
+               -- an import gives each user of the file one, on the model:
+               -- viewer → viewer, designer → designer, admin → line_admin
 
--- The model
-line           (id text PRIMARY KEY,                         -- the line's short code (A, B, …)
+-- The models
+line           (id text PRIMARY KEY,                         -- the code: 1–32 letters, digits, _ . -
                 name text NOT NULL, owner_group text REFERENCES net_group,
                 built boolean NOT NULL DEFAULT false,
-                library_pins jsonb NOT NULL DEFAULT '{}')    -- library kind → release, built lines
-object         (branch text NOT NULL, kind text NOT NULL, id text NOT NULL,
+                library_pins jsonb NOT NULL DEFAULT '{}',    -- library kind → release (phase 9)
+                source text NOT NULL DEFAULT '',             -- the project file it came from
+                created timestamptz NOT NULL)
+line_meta      (line_id text REFERENCES line, key text, value text NOT NULL,
+                PRIMARY KEY (line_id, key))                  -- the model's ols_meta rows
+line_user      (line_id text REFERENCES line, name text, role text NOT NULL,
+                PRIMARY KEY (line_id, name))                 -- the model's session_user rows
+object         (line_id text REFERENCES line, branch text, kind text, id text,
                 ord bigint NOT NULL, version bigint NOT NULL,
-                data jsonb NOT NULL, gone smallint NOT NULL DEFAULT 0,
-                line_id text REFERENCES line,                -- the line it belongs to (structures:
-                                                             -- the line that owns them)
-                routes text[] NOT NULL DEFAULT '{}',         -- the routes using it, kept with every write
-                PRIMARY KEY (branch, kind, id))
-               -- ord: per line, not across the network; gone as in model_object
-object_ref     (branch text, from_kind text, from_id text, to_kind text, to_id text, set_no integer,
-                PRIMARY KEY (branch, from_kind, from_id, to_kind, to_id, set_no))
-               -- the reference index: who refers to structure S (and which wire point set)
-oplog          (seq bigint PRIMARY KEY, time timestamptz NOT NULL, user_name text NOT NULL,
-                kind text NOT NULL, command jsonb NOT NULL, inverse jsonb NOT NULL,
-                objects jsonb NOT NULL, sections jsonb NOT NULL,
-                undoes bigint, undone_by bigint, note text,
+                json text NOT NULL,                          -- as the session wrote it
+                gone smallint NOT NULL DEFAULT 0,            -- as in model_object
+                PRIMARY KEY (line_id, branch, kind, id))
+               -- UNIQUE (kind, id) WHERE branch = 'main' AND gone = 0 AND kind IN
+               --   (route, alignment, alignment_point, structure, section, jumper, spacer):
+               --   ids unique in the network
+object_ref     (line_id, branch, from_kind, from_id, to_kind, to_id, set_no,
+                PRIMARY KEY (all))                           -- the reference index (phase 5)
+oplog          (line_id text REFERENCES line, seq bigint, time timestamptz NOT NULL,
+                user_name text NOT NULL, kind text NOT NULL,
+                command text NOT NULL, inverse text NOT NULL, objects text NOT NULL,
+                sections text NOT NULL, undoes bigint, undone_by bigint, note text,
                 branch text NOT NULL,
-                lines text[] NOT NULL, tiles bigint[] NOT NULL) -- what the entry touched
-spatial        (branch text, kind text, id text, level integer, tx integer, ty integer,
-                bounds box2d NOT NULL, geom geometry,
-                PRIMARY KEY (branch, kind, id))
-               -- INDEX on (branch, level, tx, ty); GiST on geom
-working_set    (owner text NOT NULL, name text NOT NULL, routes jsonb NOT NULL,
-                -- routes, parts (from/to structure or stations) and areas, as picked
-                time timestamptz NOT NULL, PRIMARY KEY (owner, name))
+                PRIMARY KEY (line_id, seq))                  -- INDEX on seq
+               -- seq: the next of the network for a new entry (the one writer: no gaps);
+               -- kept as it is when a model is copied
+spatial        (line_id text REFERENCES line, branch text, kind text, id text,
+                level smallint NOT NULL, tx bigint NOT NULL, ty bigint NOT NULL,
+                x0 float8, y0 float8, x1 float8, y1 float8,  -- the bounds, exact
+                geom geometry NOT NULL,                      -- the same bounds (GiST)
+                PRIMARY KEY (line_id, branch, kind, id))
+               -- INDEX on (line_id, branch, level, tx, ty); GiST on geom
+working_set    (owner text, name text, routes jsonb NOT NULL, time timestamptz NOT NULL,
+                PRIMARY KEY (owner, name))                   -- phase 6
 
--- Versions (as in the project file; trees hierarchical)
-vc_blob        (hash text PRIMARY KEY, data bytea NOT NULL)
-vc_revision    (id text PRIMARY KEY, parents jsonb NOT NULL, author text NOT NULL,
-                time timestamptz NOT NULL, message text NOT NULL, tree text NOT NULL,
-                seq bigint NOT NULL)
-vc_ref         (name text PRIMARY KEY, kind text NOT NULL, revision text,
+-- Versions
+vc_blob        (hash text PRIMARY KEY, data bytea NOT NULL)  -- once for the network
+vc_blob_use    (line_id text REFERENCES line, hash text REFERENCES vc_blob,
+                PRIMARY KEY (line_id, hash))                 -- a model's blobs
+vc_revision    (line_id text REFERENCES line, id text, n bigserial,  -- n: the order kept
+                parents text NOT NULL, author text NOT NULL, time timestamptz NOT NULL,
+                message text NOT NULL, tree text NOT NULL, seq bigint NOT NULL,
+                PRIMARY KEY (line_id, id))
+vc_ref         (line_id text REFERENCES line, name text, kind text NOT NULL, revision text,
                 protected boolean NOT NULL DEFAULT false, user_name text NOT NULL,
                 time timestamptz NOT NULL, note text NOT NULL DEFAULT '',
                 description text NOT NULL DEFAULT '', base text,
-                routes text[] NOT NULL DEFAULT '{}')         -- a branch's working set
-vc_review      (id bigserial PRIMARY KEY, branch text NOT NULL, target text NOT NULL,
-                revision text NOT NULL, author text NOT NULL, time timestamptz NOT NULL,
-                note text NOT NULL, reviewers jsonb NOT NULL, state text NOT NULL,
-                library_kind text)                           -- set for a library review
-vc_review_note (seq bigserial PRIMARY KEY, review bigint REFERENCES vc_review,
+                PRIMARY KEY (line_id, name))
+edit_grant     (line_id text REFERENCES line, id bigint, subject text NOT NULL,
+                kinds text NOT NULL, objects text NOT NULL, area text, user_name text NOT NULL,
+                time timestamptz NOT NULL, note text NOT NULL DEFAULT '',
+                PRIMARY KEY (line_id, id))
+vc_review      (line_id text REFERENCES line, id bigint, branch text NOT NULL,
+                target text NOT NULL, revision text NOT NULL, author text NOT NULL,
+                time timestamptz NOT NULL, note text NOT NULL, reviewers text NOT NULL,
+                state text NOT NULL, library_kind text,      -- set for a library review (phase 9)
+                PRIMARY KEY (line_id, id))
+vc_review_note (seq bigserial PRIMARY KEY, line_id text REFERENCES line, review bigint NOT NULL,
                 user_name text NOT NULL, time timestamptz NOT NULL,
                 verdict text NOT NULL, comment text NOT NULL)
 
--- Country libraries
-lib_file       (kind text, name text, locked boolean NOT NULL DEFAULT false,
-                kind_locked boolean NOT NULL DEFAULT false,  -- the whole kind locked
-                PRIMARY KEY (kind, name))
-lib_entry      (kind text, file text, entry text, version text,   -- content hash
-                release text,                                -- the release it first appeared in
-                withdrawn boolean NOT NULL DEFAULT false, withdrawn_note text,
+-- Country libraries (phase 9): as drafted
+lib_file       (kind, name, locked, kind_locked, PRIMARY KEY (kind, name))
+lib_entry      (kind, file, entry, version, release, withdrawn, withdrawn_note,
                 PRIMARY KEY (kind, file, entry, version))
-lib_release    (kind text, tag text, revision text NOT NULL, notes text NOT NULL,
-                by_user text NOT NULL, time timestamptz NOT NULL,
-                PRIMARY KEY (kind, tag))
-lib_use        (kind text, entry text, line text, route text, branch text,
-                object_kind text, object text,
+lib_release    (kind, tag, revision, notes, by_user, time, PRIMARY KEY (kind, tag))
+lib_use        (kind, entry, line, route, branch, object_kind, object,
                 PRIMARY KEY (kind, entry, branch, object_kind, object))
-lib_request    (id bigserial PRIMARY KEY, kind text NOT NULL, file text NOT NULL,
-                entry text NOT NULL,                         -- the entry as proposed (its text)
-                reason text NOT NULL, routes text[] NOT NULL,
-                state text NOT NULL,                         -- draft | requested | granted
+lib_request    (id bigserial PRIMARY KEY, kind, file, entry, reason, routes text[],
+                state,                                       -- draft | requested | granted
                                                              -- | refused | withdrawn
-                user_name text NOT NULL, maintainer text, note text,
-                created timestamptz NOT NULL, decided timestamptz)
-               -- library maintainers: assignments of the library_maintainer role scoped
-               -- to a library kind (no table of their own)
+                user_name, maintainer, note, created, decided)
 
--- Terrain, point clouds, backgrounds
-surface_tile   (name text, level integer, tx integer, ty integer, data bytea NOT NULL,
-                PRIMARY KEY (name, level, tx, ty))           -- a TIN cut per tile, with a skirt
-pointcloud, pointcloud_source, pointcloud_block, pointcloud_lod,
-background_image, background_tile, background_drawing, background_layer
-               -- as in the project file; blobs as bytea
+-- Terrain
+surface        (line_id text REFERENCES line, name text, time timestamptz NOT NULL,
+                user_name text NOT NULL, source text NOT NULL, points bigint NOT NULL,
+                triangles bigint NOT NULL, bounds text NOT NULL, data bytea NOT NULL,
+                PRIMARY KEY (line_id, name))                 -- whole, as in the file
+surface_tile   (name text, level integer, tx bigint, ty bigint, data bytea NOT NULL,
+                PRIMARY KEY (name, level, tx, ty))           -- later: a TIN cut per tile
 
 -- Staleness, notices, audit
 stale          (result_key text PRIMARY KEY, cause text NOT NULL, since timestamptz NOT NULL)
 notice         (id bigserial PRIMARY KEY, user_name text NOT NULL, time timestamptz NOT NULL,
                 text text NOT NULL, about jsonb NOT NULL, read boolean NOT NULL DEFAULT false)
 audit          (id bigserial PRIMARY KEY, time timestamptz NOT NULL, user_name text NOT NULL,
-                action text NOT NULL,                        -- user, group, role, assignment,
-                                                             -- lock, release, rollback, export,
-                                                             -- join, working_set …
+                action text NOT NULL,                        -- import, export (now); user, group,
+                                                             -- role, assignment, lock, release,
+                                                             -- rollback, join, working_set (later)
                 target text NOT NULL, before jsonb, after jsonb, detail text NOT NULL DEFAULT '')
-               -- append only: no role may change or delete a row
+               -- append only: a trigger refuses every UPDATE, DELETE and TRUNCATE
 ```
 
 Notes:
 
-- **Rights**: a user's permissions on an object are the union of their own
-  and their groups' assignments whose scope covers it; *see* is needed for
-  every other permission; a `deny` row overrides grants on its scope.
-  Derived rows (`spatial`, `object_ref`, `lib_use`, `stale`, tile packages,
-  solved shapes) follow the rights of the objects they come from; `audit`
-  and `net_meta` are for network admins only.
-- **The reference index** (`object_ref`) and the **use index** (`lib_use`)
-  are written in the same transaction as every command.
-- **Interest**: each `oplog` row names its lines and tiles; a client asks
-  for the entries after its `seq` that touch its tiles or its working set.
-- **A model exported as a project file**: the normal tables of schema 6
-  with these `ols_meta` keys added — `network.name`, `network.revision`
-  (the revision exported), `network.line` (the line's code),
-  `network.library_pins` (JSON, kind → release), `network.exported` (time
-  and user). An offline working set (exported to come back as a bundle)
-  also has `network.read_only` (JSON, the kinds and ids of the neighbours
-  kept read-only; the session refuses edits to them).
+- **The JSON stays text** (`object.json`, the log's command and inverse):
+  a `jsonb` column would reorder keys and rewrite numbers, so an export
+  would no longer be the rows imported. Queries read fields with
+  `json::jsonb` (the twin towers' positions and types); an expression
+  index can be added where a query needs one.
+- **Migrations** (`ohl_store_pg::schema`): numbered, forward only, run when
+  a program connects, all in one transaction under a lock; each noted in
+  `net_schema` and `net_meta` `schema`; a database of a newer schema is
+  refused before anything changes. (Refused without a recent backup:
+  phase 13.)
+- **One writer**: the authority (and an import) holds a PostgreSQL
+  advisory lock for its connection; a second writer is refused. Readers
+  (an export) read at one snapshot (`REPEATABLE READ`).
+- **Ids unique in the network**: the unique index above; an import renames
+  a clash `CODE-id` (`CODE-id-2`, …) with everything that refers to it; a
+  command making another model's id is refused ("ids are unique in the
+  network").
+- **Columns of the draft left for the phase that keeps them up to date**:
+  `object.routes` (the routes using an object) and `oplog.lines` /
+  `oplog.tiles` (what an entry touched, for the interest stream) come
+  with the server on the database (phase 5), when the session hands them
+  to the store with every write — written only at import they would go
+  stale with the first edit; `vc_ref.routes` with branches over working
+  sets (phase 11).
+- **Rights**: a user's permissions on an object are the union of their
+  own and their groups' assignments whose scope covers it; *see* is
+  needed for every other permission; a `deny` row overrides grants on its
+  scope. Derived rows (`spatial`, `object_ref`, `lib_use`, `stale`, tile
+  packages, solved shapes) follow the rights of the objects they come
+  from; `audit` and `net_meta` are for network admins only. Phase 7.
+- **An import** (`ohl network import`, `ohl_store_pg::import`): the
+  current state of the file's main project line — objects, spatial index,
+  meta rows, users, edit grants, surfaces — as one transaction, **one**
+  `oplog` entry (kind `import`, an empty batch as command, the file and
+  revision in its note) and one revision "imported from FILE"; the file's
+  history, other project lines, tags, point clouds and backgrounds stay
+  in the file (listed in the report); twin towers (another model's
+  structure within 0.5 m in plan, of the same type) listed, never merged.
+- **A model exported as a project file** (`ohl network export`,
+  `ohl_store_pg::export`): every row of the model written through the
+  store interface (`ohl_session::store::copy::copy_all`) into the normal
+  tables of schema 6, with these `ols_meta` keys added —
+  `network.name`, `network.line` (the model's code), `network.revision`
+  (its main branch's revision), `network.library_pins` (JSON, kind →
+  release), `network.exported` (JSON: time and user). In the audit. An
+  offline working set (exported to come back as a bundle, phase 12) will
+  also have `network.read_only` (JSON, the kinds and ids of the
+  neighbours kept read-only; the session refuses edits to them).
 
 ## What a plugin sees
 
