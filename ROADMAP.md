@@ -2126,6 +2126,40 @@ step, reasons left), and the work stops where it stops paying:
   leg bolted facing away, or on an inner face running towards the other
   leg), the only reason for 29 % — built for the ends over the heel (J2b
   above); the ends off their flange stay with step 4's welded plate.
+
+The owner's new ideas for the automatic layout (2026-11-19, approved the
+same day in this order; each measured on the same real towers, kept
+only where it helps):
+- [ ] L1. **The quick round.** (a) Bottom up, then out (owner: "try to
+  go bottom up and out. More things align on the body from the bottom up
+  and then less at the mast ends (arms and top)"): the joints of the body
+  first, from the bottom up, then the arms and the top, working outwards
+  from the body — the body and the arms worked out from the geometry (the
+  legs' lines give the body's outline at each height), the order
+  deterministic. (b) Slightly more plates (owner: "maybe increase
+  slightly the possibility of having plates"): the plate option also
+  tried where it lays out more ends or clears a clash, with a small
+  penalty so that bolting directly wins a tie. (c) Redundants and the
+  body's diagonals bolted directly (owner: "Redundant members are usually
+  bolted into another and diagonals of the shaft too but it can depend"):
+  bolted directly onto another member first, plates the fallback — not a
+  hard rule. (d) What an end bolts onto (`onto`) chosen in the search:
+  the other members it could bolt onto tried too, today's rule first and
+  the tie-break, the extra work bounded.
+- [ ] L2. **Clash-aware planning**: the real 3D shapes while planning,
+  not boxes; before an end is given up for a clash, the other face or the
+  plate's other side tried. The members left after the clash rounds are
+  the biggest group left on the real towers (about 26 600).
+- [ ] L3. **A plate bent by a few degrees** for ends whose members need
+  rolls 5°–20° apart at their two ends (about 24 900 ends on the real
+  towers, the second group; the owner's example joint shows such plates).
+- [ ] L4. **A joint's detail copied to the other towers of the line**
+  (laid out or done by hand) onto their matching joints, not only within
+  one tower.
+- Not scheduled yet: J7a's follow-up — the bracing's bolts used as some
+  of the splice's bolts, for the bracing ends a confirmed splice's nuts
+  block (1 242 on the real towers).
+
 Later: the bolts chosen by the code plugins and the layout run again with
 them.
 
