@@ -499,3 +499,145 @@ section = "EA-61x7"
 orientation = "y-x+"
 design = { class = "redundant" }
 "#;
+
+/// Leg splices (O44 J7, the owner's decisions of 2026-11-19): a leg in two
+/// pieces of other sections (C1 an L 150 × 12, C2 an L 150 × 15) through J
+/// with a brace D on it (an invented tower). The preview proposes the
+/// splice and writes nothing of it; *Confirm all* writes it in one undo
+/// step, the preview is worked out again with nothing left to propose and
+/// D bolted through the outer cover; undo takes it back.
+#[test]
+fn leg_splices_are_proposed_and_confirmed_in_one_undo_step() {
+    let path = copy_of("type-02.ohls", "layout-leg-splices");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    let mut sections = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    for (id, t) in [("EA-150x12", 12), ("EA-150x15", 15)] {
+        sections.push_str(&format!(
+            "\n[[section]]\nid = \"{id}\"\nname = \"Equal angle 150 × {t} (invented)\"\n\
+             shape = \"equal_angle\"\nh = \"150 mm\"\nt = \"{t} mm\"\nr = \"16 mm\"\n"
+        ));
+    }
+    std::fs::write(dir.join("Sections/example-sections.ohlsec"), sections).unwrap();
+    let tower = dir.join("leg.ohls");
+    std::fs::write(&tower, LEG).unwrap();
+    let mut h = harness(&tower);
+    h.run_steps(3);
+    let before = h.state().file.as_ref().unwrap().text();
+    h.state_mut()
+        .open_layout_window(crate::layout_window::Scope::Tower);
+    wait_preview(&mut h);
+    h.run_steps(4);
+    {
+        let p = h.state().layout_window.as_ref().unwrap();
+        let p = p.preview.as_ref().unwrap();
+        assert_eq!(p.run.splices.len(), 1, "{:?}", p.run.splices);
+        assert!(p.run.splices[0].proposed());
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        // The proposal per joint opened and scrolled into view.
+        h.get_by_label_contains("Each leg joint (").click();
+        h.run_steps(2);
+        h.get_all_by_label_contains("Confirm all (1)")
+            .next()
+            .unwrap()
+            .scroll_to_me();
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(
+            &mut h,
+            "Lay out joints",
+            "lay-out-joints-leg-splices",
+        );
+    }
+    // Nothing written by the preview.
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    h.get_all_by_label_contains("Confirm all (1)")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    let f = h.state().file.as_ref().unwrap();
+    assert_eq!(f.structure().splices.len(), 1, "{}", f.text());
+    assert!(f.undo_name().unwrap().starts_with("Leg splice places"));
+    // The preview again: nothing left to propose; D through the cover.
+    let mut fresh = false;
+    for _ in 0..600 {
+        h.step();
+        let revision = h.state().file.as_ref().unwrap().revision();
+        fresh = h
+            .state()
+            .layout_window
+            .as_ref()
+            .and_then(|w| w.preview.as_ref())
+            .is_some_and(|p| p.revision == revision);
+        if fresh {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(fresh, "no preview after confirming");
+    let w = h.state().layout_window.as_ref().unwrap();
+    let p = w.preview.as_ref().unwrap();
+    assert!(p.run.splices.is_empty(), "{:?}", p.run.splices);
+    let d = p
+        .after
+        .joint("J")
+        .and_then(|j| j.arrivals.iter().find(|a| a.member == "D"))
+        .expect("D at J");
+    assert!(d.through.is_some(), "{d:?}");
+    h.state_mut().file.as_mut().unwrap().undo();
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// An invented tower: a leg in two pieces of other sections (C1, C2)
+/// through J, both with their bolts (the import's, two a piece), and a
+/// brace D from J.
+const LEG: &str = r#"id = "L"
+name = "leg splice"
+kind = "lattice"
+
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "J"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "B"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "E"
+point = ["1.2 m", "0 m", "6 m"]
+support = "fixed"
+
+[[member]]
+id = "C1"
+nodes = ["A", "J"]
+section = "EA-150x12"
+orientation = "x+y+"
+design = { class = "leg", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "C2"
+nodes = ["J", "B"]
+section = "EA-150x15"
+orientation = "x+y+"
+design = { class = "leg", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "D"
+nodes = ["E", "J"]
+section = "EA-61x7"
+orientation = "y-z+"
+design = { class = "bracing" }
+"#;
