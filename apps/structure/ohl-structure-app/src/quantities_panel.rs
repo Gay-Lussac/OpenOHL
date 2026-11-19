@@ -19,18 +19,20 @@ use ohl_bom::structure::{PartKind, StructureBom, row_item};
 
 use crate::app::{StructureApp, error_label};
 
+/// What a count is made for: the file's revision and the libraries'
+/// stamp.
+type Key = (u64, u64);
+
+/// A count's answer.
+type Counted = Result<StructureBom, String>;
+
 /// What the panel keeps.
 #[derive(Default)]
 pub struct QuantitiesTab {
-    /// The last count: the file's revision and the libraries' stamp it was
-    /// made for, its answer, how long it took.
-    pub counted: Option<((u64, u64), Result<StructureBom, String>, Duration)>,
+    /// The last count: what it was made for, its answer, how long it took.
+    pub counted: Option<(Key, Counted, Duration)>,
     /// A count going on: when it started, for what, its answer to come.
-    running: Option<(
-        Instant,
-        (u64, u64),
-        mpsc::Receiver<Result<StructureBom, String>>,
-    )>,
+    running: Option<(Instant, Key, mpsc::Receiver<Counted>)>,
 }
 
 impl QuantitiesTab {
