@@ -8,6 +8,129 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-18 (country server, phase 8)
+
+**Towers shared by several routes: a working set per user, the rules
+that keep the other routes connected, stale marks with notices, a
+review on protected lines, connection conflicts in merges** (owner,
+2026-11-16: the plan's question 5 answered as recommended — changes that
+only move the other line allowed, its results stale and its owners told,
+a review only on protected or built lines, parts used only by the other
+line need rights on it; 2026-11-18: "continue structures + server plans";
+built, in active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md), the
+[data model](data-model.md#towers-shared-by-several-routes-2026-11-18),
+the [user guide](../user-guide/shared-towers.md)).
+
+- **Where a working set is**: a user's routes in a project file
+  (`Session::set_working_set`, `ols_meta` `working_sets`; OHL-Design's
+  View › Editable routes), or a part of a line (its working set, and the
+  objects of the whole line using its structures, recorded when it is
+  written: `part_users`). Until rights exist (phase 7) the working set
+  stands for "the routes I may edit"; on the server it will be the
+  user's picked routes.
+- **No working set: nothing changes.** The check returns at once; no
+  key is written; every existing test passes unchanged; project files
+  written by the build before and after through the example lines and
+  an 800-pylon synthetic country give the same `sqlite3 .dump`, times
+  aside (36 steps: imports, edits, undo, redo, branches, a review merged, grants, a rollback, a deletion, a bundle, a surface, a typed line, an 800-pylon country measured). The one difference without working sets: a merge
+  whose merged line would not be valid because one side changed a tower
+  and the other strung a wire on it now offers that as a conflict to
+  choose (before: refused with nothing to choose) — never a refusal of a
+  merge accepted before.
+- **What belongs to a route** (`ohl_session::shared`): a structure its
+  own `routes`, else the routes of the alignment points tied to it and
+  of every alignment within 5 m of it — worked out without a search of
+  the whole line, so never fewer than `Line::structure_routes` gives,
+  sometimes more (safe side); a section the routes all its structures on
+  a route share, else (from one route into another) all of theirs; a
+  jumper its sections' (else its structures'); a spacer its sections'.
+  An object is the other routes' when one of its routes is outside the
+  working set; a structure is *theirs* (not to be changed at all) when it
+  names only outside routes, else when everything using it is on
+  outside routes only, else when its place puts it on outside routes
+  only — an alignment drawn near another route's tower does not make it
+  one's own, nor tying one's alignment point to it.
+- **The rules and their tests** (`shared_tests.rs`, the example's two
+  routes sharing the Y pylon T3, a jumper between them with a support
+  clamp, a spare set, a structure group naming both routes' towers):
+
+  | # | Refused | Test |
+  |---|---|---|
+  | 0 | changing, making or deleting the other routes' sections, jumpers, spacers, alignments, alignment points, routes; changing a structure that is theirs | `rule_0_the_other_routes_objects_are_not_changed` |
+  | 1 | deleting or renaming a structure they use | `rule_1_a_used_structure_is_not_deleted_or_renamed` |
+  | 2 | their wire point removed, left out, renumbered | `rule_2_a_used_wire_point_stays` |
+  | 3 | what it hangs on changed (strings, tops, the points above) | `rule_3_what_it_hangs_on_stays` |
+  | 4 | suspension ↔ strain, hanging ↔ fixed | `rule_4_suspension_stays_suspension` |
+  | 5 | a support clamp's strings or assembly changed | `rule_5_a_support_clamp_keeps_its_strings` |
+  | 6 | their route taken off the structure, their point untied, the structure moved off their alignment | `rule_6_the_other_route_stays_on_it` |
+  | 7 | a structure named by their circuit start or a group naming their structures deleted or renamed | `rule_7_a_group_naming_the_other_routes_structures` |
+  | 8 | anything else leaving them not valid (the validation's refusal names the outside routes) | `rule_8_the_other_route_stays_valid` |
+  | §7.4 | their hardware (a wire point only they use, what only it hangs on) changed | `hardware_only_the_other_route_uses_is_its_own` |
+
+  A typed structure with other routes' wires on it may move (whole, or a
+  point or string of its own) but not change the make-up of its own
+  hardware, its omissions, type or extension: the session does not read
+  the structure library, so whether such a change keeps their wire
+  points cannot be shown — refused (safe side; open: reading the
+  project's type files). A wire point strings reach is placed by them:
+  only a fixed one's own place counts as a change of it.
+- **Allowed, marked stale** (`moving_a_shared_tower_marks_the_other_route_stale`):
+  moving, turning, the height, foundations, local factors, a shared
+  string or point moved (its topology kept), an insulator changed; undo
+  and redo too. Each outside route gets a stale mark with a notice
+  ("T3 moved 0.80 m" by ana, log entry N) in `ols_meta` `stale_routes`,
+  written in the command's own step (the latest 20 notices kept per
+  route, the others counted: a busy corridor does not grow it without
+  end); the log entry's note and `Applied::notice` say it; a change of
+  the settings or library files marks every outside route. A user with
+  the route in their working set (or with none) marks it up to date
+  (`Session::clear_stale`).
+- **Protected (built) lines** (`a_protected_line_needs_a_review`): on a
+  protected project line such a change is refused, even for an admin
+  with a working set: "needs a review by its owners — make the change on
+  a project line of your own and submit it for review". The existing
+  review flow; an approved review's merge is not a user's edit. The
+  desktop has no per-route "built" mark: the protected project line
+  stands for it (a question for the owner).
+- **Parts** (`a_part_checks_the_users_it_recorded`): the rules 1–7
+  against the recorded users and the context it holds; rule 8 for
+  objects it does not hold is the whole line's (the part's check stays a
+  preview).
+- **Merges** (`a_merge_breaking_a_connection_is_a_conflict`;
+  `shared::connection_conflicts`, also in project lines brought in,
+  reverts and OHL-Design's merge window): a structure changed on one side
+  only, a section or jumper made or changed on the other on it, the
+  change breaking it (rules 1–5) — a conflict on the structure: keep the
+  change (the other side's wire not taken) or the structure as it was.
+  Without working sets only where the merged line would not be valid
+  (a set removed under a new section: before refused, now a choice; a
+  string turned to strain under it: a valid line, merged as before);
+  with working sets always.
+- **Property tests**: random commands (the phase-3 generator plus
+  hardware changes at the shared tower: strain toggled, strings removed
+  or re-hung, points moved, sets left out, routes given, moves) by a user
+  working on one route, on the example (12 seeds × 60 steps in the
+  suite; 1 500 seeds run once: 46 864 accepted, 27 001 refused by the
+  rules) and on a 400-pylon synthetic country (half its routes in the
+  working set, 250 steps at towers shared with the other half, undos
+  and redos among them): every
+  command accepted with the working set is accepted the same without
+  it, the other routes' own objects are as they were (an alignment
+  point's place aside, following a shared tower), the line is valid.
+- **Measured** (12 000 pylons, seed 1; `ohl synth measure --working-set`:
+  74 of 147 routes in the working set, 50 moves of the 176 towers shared
+  with the others, against `--shared-towers`, the same towers without
+  it; [performance](performance.md#synthetic-country-phase-8-towers-shared-by-several-routes-2026-11-18)):
+  a move median 4 → 5 ms (95 % ≤ 8 ms), an undo and a redo 3 → 4 ms;
+  every move marked the outside routes stale; memory unchanged.
+- **Open**: rights (phase 7) to replace the working set as "what I may
+  edit" and to tell owners (the server's notices, phase 5); typed
+  towers checked with the project's type files; a per-route built mark
+  on the desktop; stale marks for merges (a merge marks nothing stale
+  yet); the routes of structures by their place are counted generously
+  (5 m), so a tower beside another route counts as on it.
+
 ## 2026-11-18 (country server, phase 3)
 
 **An edit costs what it touches: commands applied in place, a reference

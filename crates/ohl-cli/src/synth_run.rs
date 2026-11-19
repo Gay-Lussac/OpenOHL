@@ -73,6 +73,15 @@ pub enum SynthCommand {
         /// in place): to compare.
         #[arg(long)]
         whole: bool,
+        /// With a working set (towers shared by several routes): the user
+        /// works on every other route, the moves are of towers shared with
+        /// routes outside it (each marks those stale); both taken off at
+        /// the end.
+        #[arg(long)]
+        working_set: bool,
+        /// The same towers moved without a working set (to compare).
+        #[arg(long, conflicts_with = "working_set")]
+        shared_towers: bool,
     },
 }
 
@@ -184,8 +193,22 @@ pub fn run(command: SynthCommand) -> Result<(), String> {
             user,
             seconds,
             whole,
+            working_set,
+            shared_towers,
         } => {
-            let b = project::measure(&project, &user, edits, Duration::from_secs(seconds), whole)?;
+            let shared = match (working_set, shared_towers) {
+                (true, _) => project::Shared::WorkingSet,
+                (false, true) => project::Shared::TowersOnly,
+                _ => project::Shared::No,
+            };
+            let b = project::measure_with(
+                &project,
+                &user,
+                edits,
+                Duration::from_secs(seconds),
+                whole,
+                shared,
+            )?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&b).map_err(|e| e.to_string())?

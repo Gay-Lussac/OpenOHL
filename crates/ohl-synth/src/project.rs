@@ -182,6 +182,28 @@ pub struct Baseline {
     pub rss_after_edits_mb: f64,
     /// Edits stopped by the time limit (said in the report).
     pub stopped: Option<String>,
+    /// Measured on shared towers (`--shared-towers`, `--working-set`,
+    /// phase 8): the moves are of towers shared between every other route
+    /// and the rest, with `--working-set` the user working on every other
+    /// route (none: structures spread over the country, as before).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_set: Option<WorkingSetRun>,
+}
+
+/// What a measure with a working set did (phase 8, towers shared by
+/// several routes).
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkingSetRun {
+    /// The working set given (false: the same towers moved without one).
+    pub working_set: bool,
+    /// Routes in the user's working set.
+    pub routes_in: usize,
+    /// Routes outside it.
+    pub routes_out: usize,
+    /// Towers shared between a route in it and one outside.
+    pub shared_towers: usize,
+    /// Moves that marked an outside route stale (each with its notice).
+    pub moves_with_notice: usize,
 }
 
 /// The resident memory of this process, MB (`ps -o rss=`; 0 when `ps` is
@@ -209,6 +231,34 @@ pub fn measure(
     limit: Duration,
     whole: bool,
 ) -> Result<Baseline, String> {
+    measure_with(path, user, edits, limit, whole, Shared::No)
+}
+
+/// Which structures a measure moves, and with which working set (phase 8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shared {
+    /// Structures spread over the country, no working set (as before).
+    No,
+    /// Towers shared between every other route and the rest, no working
+    /// set: to compare with [`Shared::WorkingSet`].
+    TowersOnly,
+    /// The same towers, the user working on every other route.
+    WorkingSet,
+}
+
+/// [`measure`]; `shared`: the moves made on towers shared between every
+/// other route and the rest (phase 8), with [`Shared::WorkingSet`] the
+/// user working on every other route (each move marks the outside routes
+/// stale; the working set and the stale marks are taken off at the end).
+pub fn measure_with(
+    path: &Path,
+    user: &str,
+    edits: usize,
+    limit: Duration,
+    whole: bool,
+    shared: Shared,
+) -> Result<Baseline, String> {
+    let working_set = shared == Shared::WorkingSet;
     let file_bytes = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
     let t = Instant::now();
     let mut session = Session::open(path).map_err(|e| e.to_string())?;
@@ -218,14 +268,63 @@ pub fn measure(
     let t = Instant::now();
     session.line().validate().map_err(|e| e.to_string())?;
     let validate_s = secs(t);
+    let mut run = None;
+    let candidates: Vec<(String, [f64; 3])> = if shared != Shared::No {
+        let line = session.line();
+        let routes: Vec<String> = line.routes.iter().map(|r| r.id.clone()).collect();
+        let inside: std::collections::BTreeSet<String> =
+            routes.iter().step_by(2).cloned().collect();
+        // The routes of each tower, by the alignment points tied to it.
+        let mut of: std::collections::BTreeMap<&str, std::collections::BTreeSet<&str>> =
+            Default::default();
+        let tied: std::collections::HashMap<&str, &str> = line
+            .alignment_points
+            .iter()
+            .filter_map(|p| Some((p.id.as_str(), p.structure.as_deref()?)))
+            .collect();
+        for a in &line.alignments {
+            for p in &a.points {
+                if let Some(t) = tied.get(p.as_str()) {
+                    of.entry(t).or_default().insert(a.route.as_str());
+                }
+            }
+        }
+        let shared: Vec<(String, [f64; 3])> = line
+            .structures
+            .iter()
+            .filter(|s| {
+                of.get(s.id.as_str()).is_some_and(|r| {
+                    r.iter().any(|x| inside.contains(*x)) && r.iter().any(|x| !inside.contains(*x))
+                })
+            })
+            .map(|s| (s.id.clone(), s.position))
+            .collect();
+        run = Some(WorkingSetRun {
+            working_set,
+            routes_in: inside.len(),
+            routes_out: routes.len() - inside.len(),
+            shared_towers: shared.len(),
+            moves_with_notice: 0,
+        });
+        if working_set {
+            session
+                .set_working_set(user, Some(inside))
+                .map_err(|e| e.to_string())?;
+        }
+        shared
+    } else {
+        session
+            .line()
+            .structures
+            .iter()
+            .map(|x| (x.id.clone(), x.position))
+            .collect()
+    };
     let picks: Vec<(String, [f64; 3])> = {
-        let s = &session.line().structures;
+        let s = &candidates;
         let n = edits.min(s.len());
         (0..n)
-            .map(|k| {
-                let x = &s[(k * s.len() / n + 1).min(s.len() - 1)];
-                (x.id.clone(), x.position)
-            })
+            .map(|k| s[(k * s.len() / n + 1).min(s.len() - 1)].clone())
             .collect()
     };
     let started = Instant::now();
@@ -256,6 +355,9 @@ pub fn measure(
             .map_err(|e| format!("move {id}: {e}"))?;
         move_s.push(secs(t));
         move_sections.push(applied.sections.len());
+        if let (Some(r), Some(_)) = (&mut run, &applied.notice) {
+            r.moves_with_notice += 1;
+        }
     }
     for _ in 0..move_s.len() {
         if started.elapsed() > limit {
@@ -301,6 +403,17 @@ pub fn measure(
         session.undo(user).map_err(|e| format!("undo: {e}"))?;
     }
     let rss_after_edits_mb = rss_mb();
+    if working_set {
+        session
+            .set_working_set(user, None)
+            .map_err(|e| e.to_string())?;
+        let stale = session.stale_routes().map_err(|e| e.to_string())?;
+        for route in stale.keys() {
+            session
+                .clear_stale(user, route)
+                .map_err(|e| e.to_string())?;
+        }
+    }
     Ok(Baseline {
         file_bytes,
         open_s,
@@ -313,5 +426,6 @@ pub fn measure(
         whole,
         rss_after_edits_mb,
         stopped,
+        working_set: run,
     })
 }

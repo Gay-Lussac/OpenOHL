@@ -626,6 +626,39 @@ the wind sides (≈ 100 MB at this size). The whole way is faster too: the
 validation and the dirty sections of two lines no longer search (the
 latter was quadratic in the jumpers).
 
+## Synthetic country: phase 8, towers shared by several routes (2026-11-18)
+
+The rules of shared towers ([decision log](decisions.md#2026-11-18-country-server-phase-8))
+look at what the command changes and at what uses the structures it
+changes (the reference index), with the routes of those objects worked
+out from the alignment points tied to the structures and the alignments
+near them — never a search of the whole line.
+
+```bash
+ohl synth measure DIR/country.ohl --edits 50 --shared-towers   # the shared towers, no working set
+ohl synth measure DIR/country.ohl --edits 50 --working-set     # the same towers, every other route in the working set
+```
+
+Seed 1, 12 000 pylons (147 routes: 74 in the working set, 73 outside;
+176 towers shared between the two halves), release build, Apple
+M-series, three runs each (the median of each run; the machine shared
+with other builds):
+
+| Measure | Shared towers, no working set | The same, with the working set |
+|---|---|---|
+| Move a shared tower by 1 m (each marking the outside routes stale: 50 of 50) | median 4 ms, 95 % ≤ 6–7 ms | median 5 ms, 95 % ≤ 7–8 ms |
+| Undo | median 3 ms, 95 % ≤ 5–8 ms | median 4 ms, 95 % ≤ 7–8 ms |
+| Redo | median 3 ms, 95 % ≤ 5–6 ms | median 4 ms, 95 % ≤ 6 ms |
+| Sections to solve again per move | 8–102 | 8–102 |
+| Memory after the edits | 1 164–1 175 MB | 1 171–1 174 MB |
+
+About a millisecond more per edit: the rules, the stale marks written
+with the log entry. The shared towers are the network's junctions (8 to
+102 sections each), which is why they cost more than a tower spread over
+the country (median 2 ms, the phase 3 measure, run again: 2 ms). Without
+a working set nothing is checked: the session returns at the first
+lookup.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

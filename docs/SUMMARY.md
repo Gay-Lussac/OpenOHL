@@ -77,6 +77,7 @@
 - [Project files and point clouds (.ohl)](user-guide/project.md)
 - [Server mode (pre-alpha)](user-guide/server.md)
 - [Project lines and stages](user-guide/project-lines.md)
+- [Towers shared by several routes](user-guide/shared-towers.md)
 - [Versions, branches and reviews](user-guide/versions.md)
 
 # Theory manual
