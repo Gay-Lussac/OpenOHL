@@ -937,18 +937,20 @@ splices; "report only"):
 - `EdgeRule` gives the code's edge **and end** distances (the welded
   plate's outline). The file cut down for a follow keeps the record's
   `made` rows of the plates it keeps (the seat reads `own_plane`): the
-  follow compared byte for byte with the whole-file follow on four real
+  follow compared byte for byte with the whole-file follow on five real
   towers, a welded plate's flat plate made thicker and its weld changed
-  among the edits — identical. A flat plate with nothing bolted onto it
-  keeps a thickness given by hand (it is known by its welded plates'
-  members).
+  among the edits — identical (28 of 28). A flat plate with nothing
+  bolted onto it keeps a thickness given by hand (it is known by its
+  welded plates' members). A following edit on the real tower of 3 030
+  members: 0.28–0.34 s, the same as before this round (load 12–18); at a
+  welded joint 0.56–0.59 s.
 - **On the 78 real tower files** (Orient angles, then Lay out joints,
-  values given by hand replaced): laid out whole 17 848 → 17 868, written
-  43 576 → 43 727, with a hand detail 42 890 → 42 870, clashes at the
-  joints after 647 433 → 645 073, a run again identical on all 78; step 4
-  on 343 joints (382 ends). Of the 26 991 ends still off the flange: 7 876
+  values given by hand replaced): laid out whole 17 848 → 17 880, written
+  43 576 → 43 751, with a hand detail 42 890 → 42 858, clashes at the
+  joints after 647 433 → 644 810, a run again identical on all 78; step 4
+  on 371 joints (410 ends). Of the 26 967 ends still off the flange: 7 864
   their leg bolted facing away (half a turn did not help), 7 635 the
-  welded plate would put them farther out than a plate's thickness, 7 268
+  welded plate would put them farther out than a plate's thickness, 7 256
   on an inner face running towards the angle's other leg, 3 779 running
   down towards the flange; step 1c none (every leg splice of other
   sections has bracing on it); 6 026 joints say where their leg splice
