@@ -6,6 +6,10 @@
 //! and `bolt-distances` read into the check's types and its results back
 //! (WebAssembly only; the check itself is plain Rust, tested natively).
 
+use std::collections::HashMap;
+
+use crate::bracing::{Bracing, Piece, Point, Restraint};
+use crate::lengths::{self, Lengths};
 use crate::{asce10, check, joints, memo, params};
 
 wit_bindgen::generate!({
@@ -18,6 +22,7 @@ use crate::model::{
     Analysis, Bolts, Condition, ConnectedLeg, EndBolts, EndConditions, EndDesign, Grade, Member,
     MemberClass, MemberDesign, MemberForces, MemberKind, Onto, OntoLeg, Section, Source, Supported,
 };
+use exports::ohl::plugin::member_check_bracing as mb;
 use exports::ohl::plugin::member_check_full as full;
 
 /// The method's description.
@@ -396,23 +401,103 @@ fn capacities(c: &asce10::Capacity) -> Vec<full::Capacity> {
     .collect()
 }
 
-/// The check of every member of `input` (the parameters already set).
-pub fn check_all(input: &full::FullInput) -> Vec<full::MemberResult> {
+/// What braces a member, as the check reads it.
+fn bracing_of(b: &mb::MemberBracing) -> Bracing {
+    Bracing {
+        run: b
+            .run
+            .iter()
+            .map(|p| Piece {
+                member: p.member.clone(),
+                start: p.start,
+                end: p.end,
+                forward: p.forward,
+            })
+            .collect(),
+        length: b.length,
+        points: b
+            .points
+            .iter()
+            .map(|p| Point {
+                at: p.at,
+                joint: p.joint.clone(),
+                support: p.support,
+                restraints: p
+                    .restraints
+                    .iter()
+                    .map(|r| Restraint {
+                        member: r.member.clone(),
+                        direction: [r.direction.0, r.direction.1],
+                        through: r.through,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
+/// The check of every member of `input` (the parameters already set),
+/// with what braces each (`bracing`, `member-check-bracing`; none: the
+/// members' own lengths or assumed, as before).
+pub fn check_all(
+    input: &full::FullInput,
+    bracing: Option<&[mb::MemberBracing]>,
+) -> Vec<full::MemberResult> {
     let analysis = Analysis {
         single_angle_moments: input.single_angle_moments,
         no_compression: input.tension_compression == "none",
         redundant_force: input.redundant_share,
     };
+    let members: Vec<Member> = input.members.iter().map(member).collect();
+    let braced: Option<HashMap<String, Bracing>> = bracing.map(|b| {
+        b.iter()
+            .map(|x| (x.member.clone(), bracing_of(x)))
+            .collect()
+    });
+    let lengths = braced.as_ref().map(|b| Lengths::new(&members, b));
+    // Each case's axial forces by member (a crossing's other diagonal).
+    let axial: Vec<HashMap<String, f64>> = match &lengths {
+        Some(_) => (0..input.cases.len())
+            .map(|n| {
+                input
+                    .members
+                    .iter()
+                    .filter_map(|w| {
+                        w.forces
+                            .iter()
+                            .find(|f| f.load_case as usize == n)
+                            .map(|f| (w.id.clone(), f.axial))
+                    })
+                    .collect()
+            })
+            .collect(),
+        None => Vec::new(),
+    };
     input
         .members
         .iter()
-        .map(|w| {
-            let m = member(w);
+        .zip(&members)
+        .map(|(w, m)| {
+            let m = m.clone();
             // Its capacities as the solve's cap took them (its crossing
             // partner not taken as bracing it).
             let partner = (!w.crossing.is_empty()).then_some(false);
-            let c = asce10::capacity(&m, partner);
-            let mut notes = c.compression_assumed.clone();
+            let plain = lengths.as_ref().and_then(|l| l.worked(&m, None));
+            let c = asce10::capacity_worked(&m, partner, plain.as_ref());
+            let mut notes = Vec::new();
+            match (&lengths, &plain) {
+                (_, Some(x)) => notes.push(format!(
+                    "buckling lengths worked out from the bracing: {}",
+                    x.words()
+                )),
+                (Some(_), None) if lengths::given(&m) => {
+                    notes.push("buckling lengths given (not worked out from the bracing)".into())
+                }
+                (Some(_), None) => notes
+                    .push("buckling lengths assumed: no bracing found (length ratios 1)".into()),
+                (None, None) => {}
+            }
+            notes.extend(c.compression_assumed.iter().cloned());
             for a in &c.tension_assumed {
                 if !notes.contains(a) {
                     notes.push(a.clone());
@@ -435,6 +520,9 @@ pub fn check_all(input: &full::FullInput) -> Vec<full::MemberResult> {
                         (None, false) => Some(Err(f.braced_why.clone())),
                         (None, true) => None,
                     };
+                    let worked = lengths
+                        .as_ref()
+                        .and_then(|l| l.worked(&m, axial.get(f.load_case as usize)));
                     let u = check::member_usage(
                         &analysis,
                         &m,
@@ -443,6 +531,7 @@ pub fn check_all(input: &full::FullInput) -> Vec<full::MemberResult> {
                         f.kept_active,
                         strength,
                         supported,
+                        worked.as_ref(),
                     );
                     Some(full::CaseResult {
                         load_case: f.load_case,
@@ -488,7 +577,25 @@ impl full::Guest for Asce10 {
         ours(&method)?;
         params::parse(&input.parameters)?;
         memo::start();
-        let results = check_all(&input);
+        let results = check_all(&input, None);
+        memo::stop();
+        Ok(full::FullOutput {
+            method_note: asce10::TITLE.to_owned(),
+            results,
+        })
+    }
+}
+
+impl mb::Guest for Asce10 {
+    fn check_members_bracing(
+        method: String,
+        input: full::FullInput,
+        bracing: Vec<mb::MemberBracing>,
+    ) -> Result<full::FullOutput, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        memo::start();
+        let results = check_all(&input, Some(&bracing));
         memo::stop();
         Ok(full::FullOutput {
             method_note: asce10::TITLE.to_owned(),

@@ -48,6 +48,7 @@
 //! **Missing data are assumed on the safe side and said per member**, as
 //! for ASCE 10-97.
 
+use crate::lengths::Worked;
 use crate::model::{
     Bolts, ConnectedLeg, EndDesign, Member, MemberClass, MemberDesign, Section, Source,
 };
@@ -902,12 +903,30 @@ fn angle_connection(
 /// partner is in tension in this load case (none: no partner, or not a
 /// crossing diagonal).
 pub fn capacity(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Option<Stability>) {
-    crate::memo::capacity(&m.id, partner_in_tension, || {
-        capacity_of(m, partner_in_tension)
-    })
+    capacity_worked(m, partner_in_tension, None)
 }
 
-fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Option<Stability>) {
+/// The same with buckling lengths worked out from the member's bracing
+/// in this load case (`worked`, [`crate::lengths`]; none: its own or
+/// assumed, as [`capacity`]).
+pub fn capacity_worked(
+    m: &Member,
+    partner_in_tension: Option<bool>,
+    worked: Option<&Worked>,
+) -> (Capacity, Option<Stability>) {
+    crate::memo::capacity(
+        &m.id,
+        partner_in_tension,
+        worked.map_or(0, |w| w.key),
+        || capacity_of(m, partner_in_tension, worked),
+    )
+}
+
+fn capacity_of(
+    m: &Member,
+    partner_in_tension: Option<bool>,
+    worked: Option<&Worked>,
+) -> (Capacity, Option<Stability>) {
     let s = &m.section;
     let d = &m.design;
     let mut out = Capacity::default();
@@ -927,15 +946,21 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Optio
     let crossed = matches!(shape, Some(ohl_sections::Shape::CrossAngle { .. }));
     // Buckling lengths (5.4.1.3): between the joints held.
     let length = m.lk.unwrap_or(m.length);
-    let ratios = match d.length_ratios {
-        Some(r) => r,
-        None => {
+    let ratios = match (worked, d.length_ratios) {
+        (Some(w), _) => [&w.y, &w.z, &w.v].map(|x| x.length / m.length),
+        (None, Some(r)) => r,
+        (None, None) => {
             if m.lk.is_none() && m.k == 1.0 {
                 assumed.push("buckling lengths L (5.4.1.3)".into());
             }
             [if m.lk.is_some() { 1.0 } else { m.k }; 3]
         }
     };
+    // What the lengths from the bracing took (a free end, supports not
+    // counted).
+    if let Some(w) = worked {
+        assumed.extend(w.notes.iter().cloned());
+    }
     let ends = &m.conditions;
     let eccentric = ends.eccentric.iter().any(|c| c.value != Some(false));
     if ends.eccentric.iter().any(|c| c.source == Source::Assumed) && single_angle {
@@ -970,8 +995,13 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Optio
     let mut axes: Vec<(&'static str, f64, f64, Curve)> = Vec::new();
     match (&props, single_angle || crossed) {
         (Some(q), true) => {
-            let lv = ratios[2] * length * if eccentric || crossed { 0.9 } else { 1.0 };
-            axes.push(("u", q.iu, ratios[0].max(ratios[1]) * length, strong_curve));
+            // Worked out: u and v between the joints held along each.
+            let (lu, lv) = match worked {
+                Some(w) => (w.u.length, w.v.length),
+                None => (ratios[0].max(ratios[1]) * length, ratios[2] * length),
+            };
+            let lv = lv * if eccentric || crossed { 0.9 } else { 1.0 };
+            axes.push(("u", q.iu, lu, strong_curve));
             axes.push(("v", q.iv, lv, weak_curve));
         }
         _ => {
@@ -994,8 +1024,12 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Optio
         }
     }
     // A crossing diagonal whose partner is not in tension: its whole
-    // length out of the plane (as for ASCE 10-97).
-    if d.class == Some(MemberClass::Crossing) && partner_in_tension != Some(true) {
+    // length out of the plane (as for ASCE 10-97); worked out from the
+    // bracing, the crossing holds in its plane only already.
+    if d.class == Some(MemberClass::Crossing)
+        && partner_in_tension != Some(true)
+        && worked.is_none()
+    {
         let geometric = s.iy.min(s.iz);
         if geometric > 0.0 {
             axes.push(("out of plane", geometric, m.length, weak_curve));
@@ -1023,6 +1057,17 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> (Capacity, Optio
         if n < n_k {
             n_k = n;
             governs = format!("λ_K {lk_i:.0} about {name}, curve {}", c.letter());
+            if let Some(w) = worked {
+                governs.push_str(&format!(
+                    " (L {}, from the bracing{})",
+                    w.of(name).words(),
+                    if name == "v" && (eccentric || crossed) && (single_angle || crossed) {
+                        ", × 0.9 (5.4.1.6)"
+                    } else {
+                        ""
+                    }
+                ));
+            }
         }
     }
     // Torsional and torsional-flexural buckling by elastic theory.

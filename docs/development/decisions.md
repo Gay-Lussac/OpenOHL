@@ -8,6 +8,73 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (buckling lengths from what braces a member)
+
+**Lattice members' buckling lengths are worked out from what braces
+them** (stage 4.3 of the [joint details](joint-details.md); owner "Go
+ahead" on the lattice-tower open items, queue B, 2026-11-18; built, in
+active development, not approved yet;
+[ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member),
+[SIA 263](../theory/sia263.md#flexural-buckling)).
+
+- **The geometry in the core, the rules in the code plugins.** The core
+  finds each member's run (the members continuing it in line through its
+  joints, within 10°) and the bracing points along it: every joint, with
+  each other member there (design-checked, not a cable; a tension-only
+  one only passing through) and the direction it holds the joint in, a
+  support fixed in all three translations, and a `crossing` partner
+  where it crosses away from a joint. No code's rule in it
+  (`ohl_structures_fe::bracing`).
+- **Plugin interface** (additive, interface version stays 0.3): an
+  optional export `member-check-bracing` taking `member-check-full`'s
+  records and the bracing of each member; called first, a plugin without
+  it as before. Both bundled plugins have it.
+- **Given lengths win.** A member's `k` (other than 1), `lk` or
+  `length_ratios` are taken as before; each result says "from the
+  bracing", "given" or "assumed: no bracing found". `k = 1` counts as not
+  given (the default; it cannot be told from one not written).
+- **ASCE 10-97**: L between the points holding each axis (3.6, C3.7.4);
+  a single angle's v held at any point (Figure 3.2 (a), Appendix B's
+  Examples 5 and 7), its geometric axes and every other section's axes
+  only where held along them (within 20°) or every way (two directions
+  20° apart; assumptions); a leg with staggered bracing × 1.2 on the
+  geometric axes (Figure 3.2 (b), (c)), its v between the points held in
+  both faces where those are more than four panels apart (a panel the
+  figure's L, between the points of one face); a crossing
+  holds out of the plane only while the other diagonal pulls at least
+  20 % of the compression (Example 7; never for an unequal angle bolted
+  by its long leg); a member holding a point inside the run counts only
+  while its own KL/r is within its class's limit (C3.7.4); the curves'
+  ends per stretch (a point inside the run concentric and not
+  restrained, Examples 7–9).
+- **The 20 % rule also with lengths given** (ASCE 10-97): a crossing
+  diagonal of class `crossing` is held out of its plane only while its
+  partner pulls at least 20 % of its compression (before: any tension).
+  More members unbraced out of plane: larger usages only.
+- **SIA 263**: L between the joints held in the direction of buckling
+  (5.4.1.3), read strictly (a joint held across the direction does not
+  hold it); Table 13 and a crossing out of its plane not taken (5.4.1.4's
+  conditions not judged); a member holding a point inside the run counts
+  only while it resists 1 % of the run's largest compression in the case
+  (4.2.3.7, its resistance in one pass: an assumption); 5.4.1.6's 0.9 L
+  kept.
+- **Both**: a run's end at a joint other members frame into is held
+  every way, as a member's ends always were (ASCE 10-97 C3.7.4's working
+  points; SIA 263 5.4.1.3's nodes the bars' length runs between) — the
+  directions count at the joints a member runs on through. Measured
+  first with the ends read by direction too: on three towers with every
+  joint detailed, redundant members ending on a diagonal became
+  cantilevers, dropped out as bracing and took the diagonals' bracing
+  with them (SIA 263: members failing by N at N_cr) — not what either
+  code means. A stretch to a free end (a run end nothing frames into) is
+  a cantilever (twice, an assumption); a run nothing holds in a
+  direction: twice, said NOT ON THE SAFE SIDE. Not taken: ASCE 10-97 3.7.4.4's K', SIA 263's Table 13 —
+  the lengths longer.
+- **Measured** on the shipped examples and the real towers (local, the
+  lengths given removed to see the worked-out ones): see the results
+  review (private); usages drop only where a bracing point is found and
+  the code allows it.
+
 ## 2026-11-18 (put the project's strings in a library)
 
 **A one-off command for existing projects: every string written inline

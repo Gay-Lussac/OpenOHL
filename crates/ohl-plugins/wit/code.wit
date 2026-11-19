@@ -1791,14 +1791,97 @@ world member-check-full-export {
     export member-check-full;
 }
 
+/// Member checks with **what braces each member** (2026-11-19, stage 4.3
+/// of the joint details; added to interface version 0.3 without changing
+/// anything else: a plugin without it is called by `member-check-full` as
+/// before). The same records and results as `member-check-full`, and per
+/// member the geometry its buckling lengths are worked out from — no
+/// code's rule: the run of members in line it belongs to and the bracing
+/// points along that run, each with the members holding it and the
+/// direction each holds it in. The plugin applies its code's rules (which
+/// point holds which axis, a crossing's other diagonal by its force in
+/// the case, a bracing member strong enough). A member's own `k`, `lk` or
+/// `length-ratios` given still win (the plugin says which it took).
+interface member-check-bracing {
+    use member-check-full.{full-input, full-output};
+
+    /// A member holding a bracing point.
+    record restraint {
+        /// Its id (a member of `full-input.members`, design-checked).
+        member: string,
+        /// Its direction from the point square to the run, in the braced
+        /// member's local y and z (a unit vector).
+        direction: tuple<f64, f64>,
+        /// It passes through the point (a crossing: in line on both sides,
+        /// or a crossing partner away from a joint).
+        through: bool,
+    }
+
+    /// A bracing point along a run: each of its joints (its two ends
+    /// included) and each crossing away from a joint.
+    record bracing-point {
+        /// From the run's start, m.
+        at: f64,
+        /// The joint there ("" a crossing away from a joint).
+        joint: string,
+        /// A support fixed in all three translations (held in every
+        /// direction).
+        support: bool,
+        /// The members holding it (none: nothing holds it).
+        restraints: list<restraint>,
+    }
+
+    /// A member of a run and where it lies along it.
+    record run-piece {
+        /// Its id.
+        member: string,
+        /// From the run's start to its first end along the run, m.
+        start: f64,
+        /// To its other end, m.
+        end: f64,
+        /// Its first joint (`ends[0]`) is at `start`.
+        forward: bool,
+    }
+
+    /// What braces one member.
+    record member-bracing {
+        /// The member's id.
+        member: string,
+        /// The run it belongs to: the members in line through their
+        /// joints, in order (itself among them).
+        run: list<run-piece>,
+        /// The run's length, m.
+        length: f64,
+        /// The bracing points along the run, by `at`.
+        points: list<bracing-point>,
+    }
+
+    /// Checks the members of `input` by method `method` as
+    /// `member-check-full`'s `check-members-full`, with `bracing` (one per
+    /// member of `input` that has a run; a member without one: its lengths
+    /// as before).
+    check-members-bracing: func(method: string, input: full-input, bracing: list<member-bracing>) -> result<full-output, string>;
+}
+
+/// The `member-check-bracing` export with the `member-check-full` one
+/// whose records it takes: how the host finds them in any plugin (not a
+/// world to build plugins for).
+world member-check-bracing-export {
+    export member-check-full;
+    export member-check-bracing;
+}
+
 /// A plugin giving a design code for structures (2026-11-18): its members
 /// by `member-check` and `member-check-full`, its joints by
 /// `joint-check` and (with its parameters) `joint-check-full`, the bolt
 /// tools' minimum distances by `bolt-distances` (and, with the bolts'
-/// data and its parameters, `bolt-distances-full`: third round).
+/// data and its parameters, `bolt-distances-full`: third round), its
+/// members' buckling lengths from what braces them by
+/// `member-check-bracing` (2026-11-19).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
+    export member-check-bracing;
     export joint-check;
     export joint-check-full;
     export joint-check-moments;

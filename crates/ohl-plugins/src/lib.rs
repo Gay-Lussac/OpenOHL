@@ -313,9 +313,13 @@ pub mod bolt_distances_full {
 /// plugin.
 pub const BOLT_DISTANCES_FULL_EXPORT: &str = "ohl:plugin/bolt-distances-full@0.1.0";
 
+// One binding for `member-check-full` and `member-check-bracing`, whose
+// function takes the former's records (2026-11-19): each export is looked
+// up on its own ([`member_check_full_guest`], [`member_check_bracing_guest`]),
+// so a plugin without `member-check-bracing` loads as before.
 mod member_check_full_bindings {
     wasmtime::component::bindgen!({
-        world: "member-check-full-export",
+        world: "member-check-bracing-export",
         path: "wit",
     });
 }
@@ -334,6 +338,89 @@ pub mod member_check_full {
 /// Export name of the optional `member-check-full` interface of any
 /// plugin.
 pub const MEMBER_CHECK_FULL_EXPORT: &str = "ohl:plugin/member-check-full@0.1.0";
+
+/// The records of the `member-check-bracing` interface (2026-11-19): what
+/// braces each member, sent with the `member-check-full` records.
+pub mod member_check_bracing {
+    pub use super::member_check_full_bindings::exports::ohl::plugin::member_check_bracing::{
+        BracingPoint, MemberBracing, Restraint, RunPiece,
+    };
+}
+
+/// Export name of the optional `member-check-bracing` interface of any
+/// plugin.
+pub const MEMBER_CHECK_BRACING_EXPORT: &str = "ohl:plugin/member-check-bracing@0.1.0";
+
+/// The `member-check-full` export of an instance, looked up alone.
+fn member_check_full_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<member_check_full_bindings::exports::ohl::plugin::member_check_full::Guest> {
+    let pre = instance.instance_pre(&*store);
+    member_check_full_bindings::exports::ohl::plugin::member_check_full::GuestIndices::new(&pre)?
+        .load(&mut *store, instance)
+}
+
+/// The `member-check-bracing` export of an instance, looked up alone.
+fn member_check_bracing_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<member_check_full_bindings::exports::ohl::plugin::member_check_bracing::Guest>
+{
+    let pre = instance.instance_pre(&*store);
+    member_check_full_bindings::exports::ohl::plugin::member_check_bracing::GuestIndices::new(&pre)?
+        .load(&mut *store, instance)
+}
+
+/// What a plugin gave for `input` by `member-check-full` or
+/// `member-check-bracing`, checked: a result only for members sent, once
+/// each; a load case only once and only those sent; no negative usage; no
+/// capacity that is not a positive number. Errors name plugin `name`.
+fn check_full_output(
+    name: &str,
+    input: &member_check_full::FullInput,
+    given: &member_check_full::FullOutput,
+) -> Result<(), PluginError> {
+    let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
+    let sent: std::collections::HashSet<&str> =
+        input.members.iter().map(|m| m.id.as_str()).collect();
+    let mut seen = std::collections::HashSet::new();
+    for r in &given.results {
+        if !sent.contains(r.id.as_str()) {
+            return Err(bad(format!(
+                "a result for member {}, which was not sent",
+                r.id
+            )));
+        }
+        if !seen.insert(r.id.as_str()) {
+            return Err(bad(format!("two results for member {}", r.id)));
+        }
+        let mut cases = std::collections::HashSet::new();
+        for u in &r.cases {
+            if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
+                return Err(bad(format!(
+                    "member {}: a result for load case {} (not sent, or given twice)",
+                    r.id, u.load_case
+                )));
+            }
+            // Infinite or not a number: failing, kept as it is (as the
+            // core's own methods report it); a negative share: wrong.
+            if u.usage.is_some_and(|x| x < 0.0) {
+                return Err(bad(format!("member {}: a negative usage", r.id)));
+            }
+        }
+        if r.capacities
+            .iter()
+            .any(|c| !(c.value.is_finite() && c.value >= 0.0))
+        {
+            return Err(bad(format!(
+                "member {}: a capacity that is not a number or is negative",
+                r.id
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// Extension point of plugins checking the members of structures by a
 /// design method (the `member-check` export, 2026-11-11).
@@ -2440,12 +2527,10 @@ impl WasmHost {
         let Some((mut p, instance)) = self.optional_export(dir, MEMBER_CHECK_FULL_EXPORT)? else {
             return Ok(None);
         };
-        let export =
-            member_check_full_bindings::MemberCheckFullExport::new(&mut p.store, &instance)
-                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let export = member_check_full_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         p.store.set_epoch_deadline(p.limits.deadline_ticks());
         export
-            .ohl_plugin_member_check_full()
             .call_parameters_template(&mut p.store, method)
             .map(Some)
             .map_err(|e| classify(e, &p.manifest, "member-check-full", p.limits))
@@ -2471,54 +2556,55 @@ impl WasmHost {
         let Some((mut p, instance)) = self.optional_export(dir, MEMBER_CHECK_FULL_EXPORT)? else {
             return Ok(None);
         };
-        let export =
-            member_check_full_bindings::MemberCheckFullExport::new(&mut p.store, &instance)
-                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let export = member_check_full_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         let name = p.manifest.plugin.name.clone();
         p.store.set_epoch_deadline(p.limits.deadline_ticks());
         let given = export
-            .ohl_plugin_member_check_full()
             .call_check_members_full(&mut p.store, method, input)
             .map_err(|e| classify(e, &p.manifest, "member-check-full", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
-        let bad = |m: String| PluginError::Runtime(format!("plugin {name}: {m}"));
-        let sent: std::collections::HashSet<&str> =
-            input.members.iter().map(|m| m.id.as_str()).collect();
-        let mut seen = std::collections::HashSet::new();
-        for r in &given.results {
-            if !sent.contains(r.id.as_str()) {
-                return Err(bad(format!(
-                    "a result for member {}, which was not sent",
-                    r.id
-                )));
-            }
-            if !seen.insert(r.id.as_str()) {
-                return Err(bad(format!("two results for member {}", r.id)));
-            }
-            let mut cases = std::collections::HashSet::new();
-            for u in &r.cases {
-                if u.load_case as usize >= input.cases.len() || !cases.insert(u.load_case) {
-                    return Err(bad(format!(
-                        "member {}: a result for load case {} (not sent, or given twice)",
-                        r.id, u.load_case
-                    )));
-                }
-                // Infinite or not a number: failing, kept as it is (as the
-                // core's own methods report it); a negative share: wrong.
-                if u.usage.is_some_and(|x| x < 0.0) {
-                    return Err(bad(format!("member {}: a negative usage", r.id)));
-                }
-            }
-            if r.capacities
-                .iter()
-                .any(|c| !(c.value.is_finite() && c.value >= 0.0))
-            {
-                return Err(bad(format!(
-                    "member {}: a capacity that is not a number or is negative",
-                    r.id
-                )));
-            }
+        check_full_output(&name, input, &given)?;
+        Ok(Some(given))
+    }
+
+    /// Whether the plugin in `dir` has the `member-check-bracing` export.
+    pub fn has_member_check_bracing(&self, dir: &Path) -> Result<bool, PluginError> {
+        let manifest = Manifest::load(dir)?;
+        if manifest.plugin.tier != Tier::Wasm || !manifest.entry_path().is_file() {
+            return Ok(false);
         }
+        let p = self.prepare(dir, None)?;
+        Ok(p.component
+            .get_export_index(None, MEMBER_CHECK_BRACING_EXPORT)
+            .is_some())
+    }
+
+    /// The members of `input` checked as [`WasmHost::check_members_full`]
+    /// does, with what braces them (`bracing`), through the plugin's
+    /// `member-check-bracing` export (2026-11-19). None: the plugin has no
+    /// such export (the caller then calls [`WasmHost::check_members_full`]).
+    /// The results and errors as [`WasmHost::check_members_full`]'s.
+    pub fn check_members_bracing(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &member_check_full::FullInput,
+        bracing: &[member_check_bracing::MemberBracing],
+    ) -> Result<Option<member_check_full::FullOutput>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, MEMBER_CHECK_BRACING_EXPORT)?
+        else {
+            return Ok(None);
+        };
+        let export = member_check_bracing_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_members_bracing(&mut p.store, method, input, bracing)
+            .map_err(|e| classify(e, &p.manifest, "member-check-bracing", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_full_output(&name, input, &given)?;
         Ok(Some(given))
     }
 

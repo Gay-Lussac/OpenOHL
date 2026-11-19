@@ -24,6 +24,7 @@
 //!   share of the compression in the member they brace.
 
 use crate::asce10;
+use crate::lengths::Worked;
 use crate::model::{Analysis, Member, MemberForces, MemberKind, Supported};
 
 /// A member's usage in one load case.
@@ -127,7 +128,8 @@ pub fn usage_order(a: f64, b: f64) -> std::cmp::Ordering {
 
 /// The member's usage in one case: its own forces `f`, and — a redundant
 /// member with the check on — its nominal force (`supported`: the member
-/// it braces, else why not found).
+/// it braces, else why not found). `worked`: its buckling lengths worked
+/// out from its bracing in this case (none: its own, or assumed).
 #[allow(clippy::too_many_arguments)]
 pub fn member_usage(
     analysis: &Analysis,
@@ -137,10 +139,13 @@ pub fn member_usage(
     kept_active: bool,
     strength: f64,
     supported: Option<Result<Supported, String>>,
+    worked: Option<&Worked>,
 ) -> MemberUsage {
-    // The crossing partner in tension in this case (as the core took it).
-    let partner = partner_axial.map(|a| a > 0.0);
-    let own = usage_of(analysis, m, f, partner, kept_active, strength);
+    // The crossing partner holds it out of its plane while in tension of
+    // at least 20 % of its compression in this case (Appendix B, Example
+    // 7; 2026-11-19, before: any tension).
+    let partner = partner_axial.map(|a| partner_holds(a, f.axial));
+    let own = usage_of(analysis, m, f, partner, kept_active, strength, worked);
     match analysis.redundant_force {
         Some(share) => with_redundant_force(
             analysis,
@@ -152,9 +157,19 @@ pub fn member_usage(
             share,
             &supported,
             own,
+            worked,
         ),
         None => own,
     }
+}
+
+/// Whether a crossing partner of axial force `partner` holds a member of
+/// axial force `own` (tension positive) out of its plane: in tension of
+/// at least [`crate::lengths::CROSSING_TENSION`] of the member's
+/// compression (ASCE 10-97 Appendix B, Example 7); a member not in
+/// compression: any tension.
+pub fn partner_holds(partner: f64, own: f64) -> bool {
+    partner > 0.0 && partner >= crate::lengths::CROSSING_TENSION * (-own).max(0.0)
 }
 
 /// A redundant member's usage `own` with its nominal force check
@@ -177,6 +192,7 @@ fn with_redundant_force(
     share: f64,
     supported: &Option<Result<Supported, String>>,
     mut own: MemberUsage,
+    worked: Option<&Worked>,
 ) -> MemberUsage {
     let Some(supported) = supported else {
         return own;
@@ -224,6 +240,7 @@ fn with_redundant_force(
         partner,
         kept_active,
         strength,
+        worked,
     )];
     if !matches!(m.kind, MemberKind::Tension | MemberKind::Cable) {
         checks.push(usage_of(
@@ -233,6 +250,7 @@ fn with_redundant_force(
             partner,
             kept_active,
             strength,
+            worked,
         ));
     }
     let Some(worst) = checks
@@ -285,6 +303,7 @@ fn usage_of(
     partner: Option<bool>,
     kept_active: bool,
     strength: f64,
+    worked: Option<&Worked>,
 ) -> MemberUsage {
     let s = &m.section;
     if m.kind == MemberKind::Tension && f.slack {
@@ -300,7 +319,9 @@ fn usage_of(
     let n = f.axial;
     let kn = |x: f64| x / 1000.0;
     // The design method's capacities (none: the simple check).
-    let asce = s.yield_strength.map(|_| asce10::capacity(m, partner));
+    let asce = s
+        .yield_strength
+        .map(|_| asce10::capacity_worked(m, partner, worked));
     let mut assumed: &[String] = &[];
     let mut joints: &[String] = &[];
     let mut extra = String::new();

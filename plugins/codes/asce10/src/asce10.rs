@@ -77,6 +77,7 @@
 //! the tension is on the gross section (said so). Local buckling is
 //! checked on angles (and on sections given a `width_thickness`) only.
 
+use crate::lengths::{Worked, ends_of};
 use crate::model::{
     Bolts, Condition, ConnectedLeg, EndDesign, Ends, Member, MemberClass, MemberDesign, Onto,
     OntoLeg, Section, Source,
@@ -282,12 +283,26 @@ fn angle_legs(s: &Section) -> Option<(f64, f64, f64)> {
 /// in this load case (none: no partner, or not a crossing diagonal).
 /// Worked out once per member and partner in a call ([`crate::memo`]).
 pub fn capacity(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
-    crate::memo::capacity(&m.id, partner_in_tension, || {
-        capacity_of(m, partner_in_tension)
-    })
+    capacity_worked(m, partner_in_tension, None)
 }
 
-fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
+/// The same with buckling lengths worked out from the member's bracing
+/// in this load case (`worked`, [`crate::lengths`]; none: its own or
+/// assumed, as [`capacity`]).
+pub fn capacity_worked(
+    m: &Member,
+    partner_in_tension: Option<bool>,
+    worked: Option<&Worked>,
+) -> Capacity {
+    crate::memo::capacity(
+        &m.id,
+        partner_in_tension,
+        worked.map_or(0, |w| w.key),
+        || capacity_of(m, partner_in_tension, worked),
+    )
+}
+
+fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Worked>) -> Capacity {
     let s = &m.section;
     let d = &m.design;
     let mut out = Capacity::default();
@@ -299,9 +314,10 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
     let mut assumed: Vec<String> = Vec::new();
     // Slenderness.
     let length = m.lk.unwrap_or(m.length);
-    let ratios = match d.length_ratios {
-        Some(r) => r,
-        None => {
+    let ratios = match (worked, d.length_ratios) {
+        (Some(w), _) => w.axes.each_ref().map(|x| x.span.length / m.length),
+        (None, Some(r)) => r,
+        (None, None) => {
             if m.lk.is_none() && m.k == 1.0 {
                 assumed.push("length ratios 1".into());
             }
@@ -311,11 +327,23 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
     };
     let r = |i: f64| (i / a).sqrt();
     let radii = [r(s.iy), r(s.iz), r(s.i_min)];
-    let mut l_r = (0..3)
-        .filter(|&k| radii[k] > 0.0)
-        .map(|k| ratios[k] * length / radii[k])
-        .fold(0.0, f64::max);
-    let crossing = d.class == Some(MemberClass::Crossing);
+    // Worked out: each axis's L/r (its L the stretch's, × Figure 3.2's
+    // factor) and the curves' ends of its stretch.
+    let per_axis: Vec<(f64, usize)> = match worked {
+        Some(w) => (0..3)
+            .filter(|&k| radii[k] > 0.0)
+            .map(|k| (w.axes[k].length() / radii[k], k))
+            .collect(),
+        None => Vec::new(),
+    };
+    let mut l_r = match worked {
+        Some(_) => per_axis.iter().map(|x| x.0).fold(0.0, f64::max),
+        None => (0..3)
+            .filter(|&k| radii[k] > 0.0)
+            .map(|k| ratios[k] * length / radii[k])
+            .fold(0.0, f64::max),
+    };
+    let crossing = d.class == Some(MemberClass::Crossing) && worked.is_none();
     if crossing {
         let geometric = radii[0].min(radii[1]);
         let unsupported = if geometric > 0.0 {
@@ -328,7 +356,11 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
             Some(false) => {
                 if unsupported > l_r {
                     l_r = unsupported;
-                    assumed.push("crossing partner not in tension: unbraced out of plane".into());
+                    assumed.push(
+                        "crossing partner not in tension of 20 % of the compression (Appendix B, \
+                         Example 7): unbraced out of plane"
+                            .into(),
+                    );
                 }
             }
             None => {
@@ -353,6 +385,11 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
         }
         Some(Err(())) => assumed.push("torsional buckling not checked (general profile)".into()),
         _ => {}
+    }
+    // What the lengths from the bracing took (Figure 3.2, a free end,
+    // bracing not counted).
+    if let Some(w) = worked {
+        assumed.extend(w.notes.iter().cloned());
     }
     // The ends' eccentricity and restraint, end by end (OpenOHL's
     // member_ends, sent with the member).
@@ -398,7 +435,34 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
             ));
         }
     }
-    let kl_r = effective_slenderness(l_r, ends.eccentricity(), ends.restraint());
+    // Worked out: each axis by the ends of its stretch (a torsional mode
+    // by the member's own), the largest governing.
+    let (kl_r, axis) = match worked {
+        None => (
+            effective_slenderness(l_r, ends.eccentricity(), ends.restraint()),
+            None,
+        ),
+        Some(w) => {
+            let mut best: (f64, Option<usize>) = (0.0, None);
+            for &(lr, k) in &per_axis {
+                let (ecc, res) = match w.axes[k].ends {
+                    None => (ends.eccentricity(), ends.restraint()),
+                    Some([(e0, r0), (e1, r1)]) => (ends_of(e0, e1), ends_of(r0, r1)),
+                };
+                let x = effective_slenderness(lr, ecc, res);
+                if best.1.is_none() || x > best.0 {
+                    best = (x, Some(k));
+                }
+            }
+            if mode.is_some() {
+                let x = effective_slenderness(l_r, ends.eccentricity(), ends.restraint());
+                if x >= best.0 {
+                    best = (x, None);
+                }
+            }
+            best
+        }
+    };
     out.kl_r = Some(kl_r);
     if let Some((limit, class)) = class_limit(d.class)
         && kl_r > limit
@@ -437,9 +501,24 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>) -> Capacity {
     let column = column_stress(fcr, e, kl_r) * a;
     let mut comp = (
         column,
-        match mode {
-            Some(m) => format!("KL/r {kl_r:.0} ({m})"),
-            None => format!("KL/r {kl_r:.0}"),
+        match (axis, worked) {
+            (Some(k), Some(w)) => {
+                let x = &w.axes[k];
+                let f = if x.factor != 1.0 {
+                    format!(" × {}", x.factor)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "KL/r {kl_r:.0} ({} over {}{f}, from the bracing)",
+                    ["y", "z", "v"][k],
+                    x.span.words()
+                )
+            }
+            _ => match mode {
+                Some(m) => format!("KL/r {kl_r:.0} ({m})"),
+                None => format!("KL/r {kl_r:.0}"),
+            },
         },
     );
     // The connection, at each end: the end's own data over the member's.

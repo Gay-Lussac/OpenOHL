@@ -222,7 +222,10 @@ fn fnv(text: &str) -> u64 {
 /// items): 6 results of the variant with `single_angle_moments` changed —
 /// an angle's moments about its principal axes, dropped before, now taken
 /// (each larger: `every-profile.ohls` m-EA-2 and m-UA in cases A, B, C;
-/// the other 2 250 the same).
+/// the other 2 250 the same). Recorded again on 2026-11-19 (buckling
+/// lengths from the bracing): every usage the same to the bit; what
+/// governs a member whose lengths are now worked out says so ("L …, from
+/// the bracing").
 #[test]
 fn the_examples_give_the_cores_numbers() {
     if !built() {
@@ -237,13 +240,16 @@ fn the_examples_give_the_cores_numbers() {
         lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0xc0af_556a_a502_75d7, "{out}");
+    assert_eq!(fnv(&out), 0xc897_c15d_0593_ec69, "{out}");
 }
 
 /// The same examples by ASCE 10-97 (the default), now its bundled plugin
 /// `asce10` (2026-11-18): the numbers the core's own ASCE 10-97 gave,
 /// recorded at commit 01cc57ec before the SIA 263 move (and unchanged by
-/// it) — the same hash, every usage's bits and what governs.
+/// it) — the same hash, every usage's bits and what governs. Recorded
+/// again on 2026-11-19 (buckling lengths from the bracing): every usage
+/// the same to the bit; what governs a member whose lengths are now
+/// worked out says so ("KL/r … (v over …, from the bracing)").
 #[test]
 fn the_examples_keep_the_cores_asce10_numbers() {
     if !built() {
@@ -258,7 +264,7 @@ fn the_examples_keep_the_cores_asce10_numbers() {
         lines(&repo().join(f), &sections, "asce10-97", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0xa2ac_8421_7e06_e804, "{out}");
+    assert_eq!(fnv(&out), 0x7b52_6b28_e37a_9a62, "{out}");
 }
 
 fn library() -> ohl_sections::SectionLibrary {

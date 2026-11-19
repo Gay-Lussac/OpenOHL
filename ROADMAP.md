@@ -1340,7 +1340,10 @@ Six stages, the questions per stage and per detail level:
   and fillet welds' are built (above); the bolt group under the members'
   forces together, a gusset plate's buckling and the rest are not;
   buckling lengths from the bracing, end releases, bolt slip and the
-  bolts' and plates' weight are not built)*
+  bolts' and plates' weight are not built; 2026-11-19: buckling lengths
+  from what braces a member built, in active development, not approved
+  yet — the core's runs and bracing points, each code plugin's rules
+  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member)))*
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)

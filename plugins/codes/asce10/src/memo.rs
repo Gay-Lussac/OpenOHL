@@ -14,7 +14,9 @@ use std::collections::HashMap;
 
 use crate::asce10::Capacity;
 
-type Capacities = HashMap<(String, Option<bool>), Capacity>;
+/// By member, its crossing partner in tension or not, and the key of its
+/// lengths worked out from the bracing (0: none).
+type Capacities = HashMap<(String, Option<bool>, u64), Capacity>;
 
 thread_local! {
     static ON: Cell<bool> = const { Cell::new(false) };
@@ -33,12 +35,18 @@ pub fn stop() {
     CAPACITIES.with(|c| c.borrow_mut().clear());
 }
 
-/// `f`'s capacities of member `id` with partner `partner`, once per call.
-pub fn capacity(id: &str, partner: Option<bool>, f: impl FnOnce() -> Capacity) -> Capacity {
+/// `f`'s capacities of member `id` with partner `partner` and lengths
+/// `lengths` (their key), once per call.
+pub fn capacity(
+    id: &str,
+    partner: Option<bool>,
+    lengths: u64,
+    f: impl FnOnce() -> Capacity,
+) -> Capacity {
     if !ON.with(Cell::get) {
         return f();
     }
-    let key = (id.to_owned(), partner);
+    let key = (id.to_owned(), partner, lengths);
     if let Some(c) = CAPACITIES.with(|c| c.borrow().get(&key).cloned()) {
         return c;
     }

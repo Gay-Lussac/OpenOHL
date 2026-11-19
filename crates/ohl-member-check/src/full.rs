@@ -11,6 +11,7 @@
 //! member a redundant member braces — and the plugin's results mapped
 //! back to the members' usage.
 
+use ohl_plugins::member_check_bracing as bwit;
 use ohl_plugins::member_check_full as wit;
 use ohl_structures_fe::check::MemberUsage;
 use ohl_structures_fe::design::Onto;
@@ -285,18 +286,101 @@ pub(crate) fn input(model: &Model, cases: &[Case], parameters: &str) -> wit::Ful
     }
 }
 
+/// What braces each checked member of `model`
+/// ([`ohl_structures_fe::bracing`]), as the `member-check-bracing`
+/// records: one per checked member with a run.
+pub(crate) fn bracing(model: &Model) -> Vec<bwit::MemberBracing> {
+    let b = ohl_structures_fe::bracing::bracing(model);
+    let id = |k: usize| model.members[k].id.clone();
+    (0..model.members.len())
+        .filter(|&k| model.members[k].check)
+        .filter_map(|k| {
+            let (run, _) = b.of(k)?;
+            Some(bwit::MemberBracing {
+                member: id(k),
+                run: run
+                    .members
+                    .iter()
+                    .zip(&run.spans)
+                    .zip(&run.forward)
+                    .map(|((&m, &(start, end)), &forward)| bwit::RunPiece {
+                        member: id(m),
+                        start,
+                        end,
+                        forward,
+                    })
+                    .collect(),
+                length: run.length,
+                points: run
+                    .points
+                    .iter()
+                    .map(|p| bwit::BracingPoint {
+                        at: p.at,
+                        joint: p.joint.map_or(String::new(), |j| model.nodes[j].id.clone()),
+                        support: p.support,
+                        restraints: p
+                            .restraints
+                            .iter()
+                            .map(|r| {
+                                let d = ohl_structures_fe::bracing::local(model, k, r.direction);
+                                bwit::Restraint {
+                                    member: id(r.member),
+                                    direction: (d[0], d[1]),
+                                    through: r.through,
+                                }
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// The check of `model` in `cases` by method `method` of the plugin in
+/// `dir`: through its `member-check-bracing` export with what braces each
+/// member (true), else its `member-check-full` one (false). None: the
+/// plugin has neither.
+pub(crate) fn check_full(
+    host: &ohl_plugins::WasmHost,
+    dir: &std::path::Path,
+    method: &str,
+    model: &Model,
+    cases: &[Case],
+    params: &str,
+) -> Result<Option<(wit::FullOutput, bool)>, ohl_plugins::PluginError> {
+    let input = input(model, cases, params);
+    if let Some(out) = host.check_members_bracing(dir, method, &input, &bracing(model))? {
+        return Ok(Some((out, true)));
+    }
+    Ok(host
+        .check_members_full(dir, method, &input)?
+        .map(|out| (out, false)))
+}
+
 /// The members' usage in each of `cases` from what the plugin gave
 /// (`results`), one list per case in the model's member order: as
 /// [`crate::usages`], a usage left empty by the plugin kept empty (no
 /// capacity, its words what governs), one not a number or infinite kept
-/// (failing).
+/// (failing). `braced`: the plugin was sent what braces each member — a
+/// half of a diagonal through a crossing then needs no remark of the
+/// core's (its plugin worked its length out over the crossing) unless it
+/// gives its own lengths.
 pub(crate) fn usages(
     model: &Model,
     p: &PluginMethod,
     cases: &[Case],
     results: &[wit::MemberResult],
+    braced: bool,
 ) -> Vec<Vec<MemberUsage>> {
-    let crossings = ohl_structures_fe::check::unbraced_crossings(model);
+    let mut crossings = ohl_structures_fe::check::unbraced_crossings(model);
+    if braced {
+        for (k, c) in crossings.iter_mut().enumerate() {
+            if !ohl_structures_fe::bracing::lengths_given(&model.members[k]) {
+                *c = None;
+            }
+        }
+    }
     let by_id: std::collections::HashMap<&str, &wit::MemberResult> =
         results.iter().map(|r| (r.id.as_str(), r)).collect();
     cases

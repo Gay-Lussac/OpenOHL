@@ -1070,6 +1070,24 @@ further optional export carries them:
   report it; the host refuses only a negative one), what governs, notes
   (`joints: …`, `limit: …` for Member details), not-safe. A plugin with
   it is called by it instead of `check-members`.
+- `member-check-bracing` (2026-11-19, `code.wit`, additive: found by its
+  export name; it takes `member-check-full`'s records, the two bound
+  together in the world `member-check-bracing-export`):
+  `check-members-bracing(method, full-input, list<member-bracing>) ->
+  result<full-output, string>`. Per member **what braces it**, no code's
+  rule: its run (the members in line through their joints, each with
+  where it lies along the run and which end comes first) and the run's
+  bracing points (where, the joint, a support fixed in all three
+  translations, and each member holding it — its id, its direction square
+  to the run in the braced member's local y and z, whether it passes
+  through: a crossing). The plugin applies its code's rules (which point
+  holds which axis, a crossing's other diagonal by its force in the
+  case, a bracing member strong enough); a member's own `k`, `lk` or
+  `length-ratios` still win. OpenOHL calls it before `check-members-full`
+  (`ohl_member_check::full::check_full`); a plugin without it is called
+  as before. Both bundled plugins have it
+  ([ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member),
+  [SIA 263](../theory/sia263.md#flexural-buckling)).
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

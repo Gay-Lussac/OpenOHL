@@ -179,6 +179,24 @@ values were worked out from the joints and which assumed.
    ratios are worked out instead of typed. Expected effect: legs and main
    bracing braced by redundants get shorter buckling lengths about the
    braced axes only — the right ones, not k = 1 everywhere.
+   **Built 2026-11-19** (in active development, not approved yet): the
+   core finds each member's run of members in line through its joints
+   and the bracing points along it — each member holding a point and the
+   direction it holds it in, from the model's geometry (the members the
+   analysis joins there; a `crossing` partner where it crosses), with or
+   without `[[connection]]`s (`ohl_structures_fe::bracing`) — and sends
+   them to the code plugins (`member-check-bracing`), which apply their
+   code's rules: ASCE 10-97 (an angle's v held at any point, its
+   geometric axes only out of the plane; Figure 3.2's 1.2 for legs with
+   staggered bracing; Appendix B Example 7's 20 % for crossings; C3.7.4's
+   limits for a bracing member) and SIA 263 (5.4.1.3 read strictly;
+   4.2.3.7's 1 %). Given `k`, `lk` or `length_ratios` still win; each
+   result says "from the bracing", "given" or "assumed: no bracing
+   found" ([ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member),
+   [SIA 263](../theory/sia263.md#flexural-buckling)). Which leg of the
+   angle a member bolts onto is not read from the connection: the
+   direction of the member holding the point decides (the same thing for
+   a member lying in that leg's plane).
 4. **The FE model (options, measured before any default):**
    - the connections' eccentricity as offsets at the member ends (moments
      in frame legs) — **built 2026-11-02 for a connection's `shift`**
