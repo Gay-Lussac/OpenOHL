@@ -284,6 +284,10 @@ struct Ws {
     /// picked an area.
     routes: BTreeSet<String>,
     area: bool,
+    /// What its replica holds (each object's hash): for the changes that
+    /// do not say which objects they changed (a library file, a merge),
+    /// the rows that differ.
+    sent: BTreeMap<(Kind, String), u64>,
 }
 
 impl Ws {
@@ -294,9 +298,23 @@ impl Ws {
             users,
             routes: BTreeSet::new(),
             area: false,
+            sent: BTreeMap::new(),
         };
         ws.note_routes();
         ws
+    }
+
+    /// `rows` sent: what its replica holds now.
+    fn note_sent(&mut self, rows: &ohl_session::working_set::Rows) {
+        for p in &rows.puts {
+            self.sent.insert(
+                (p.kind, p.id.clone()),
+                ohl_session::working_set::object_hash(&p.value),
+            );
+        }
+        for d in &rows.deletes {
+            self.sent.remove(d);
+        }
     }
 
     fn note_routes(&mut self) {
@@ -850,11 +868,14 @@ impl NetHost {
                     .pick_extent(&spec.picks)
                     .map_err(|e| e.to_string())?;
                 let users = m.session.extent_users(&extent);
+                let sent = m.session.hashes_of(&extent.keep);
                 keep(
                     &mut self.stats.replica_ms,
                     started.elapsed().as_secs_f64() * 1e3,
                 );
-                Some(Ws::new(spec.clone(), extent, users))
+                let mut ws = Ws::new(spec.clone(), extent, users);
+                ws.sent = sent;
+                Some(ws)
             }
             None => None,
         };
@@ -1109,6 +1130,9 @@ impl NetHost {
         all: bool,
         routes: &[String],
     ) {
+        // `all`: the change does not say which objects it changed (a
+        // merge, a library file): the rows that differ from what the
+        // replica holds.
         let started = Instant::now();
         let ids: Vec<u64> = self
             .clients
@@ -1135,17 +1159,27 @@ impl NetHost {
                 continue;
             };
             let new = m.session.extent_of(&ws.spec.picks);
-            let every: BTreeSet<(Kind, String)>;
-            let changed = if all {
-                every = new.keep.union(&ws.extent.keep).cloned().collect();
-                &every
+            let mut rows = if all {
+                m.session.rows_against(&ws.sent, &new)
             } else {
-                changed
+                m.session.rows_for(&ws.extent, &ws.users, &new, changed)
             };
-            let rows = m.session.rows_for(&ws.extent, &ws.users, &new, changed);
+            if all {
+                // Sent always by `rows_against`: only when they differ.
+                if rows.wanted.as_ref().is_some_and(|w| {
+                    w.len() == ws.extent.wanted.len()
+                        && w.iter().all(|k| ws.extent.wanted.contains(k))
+                }) {
+                    rows.wanted = None;
+                }
+                if rows.users.as_ref() == Some(&ws.users) {
+                    rows.users = None;
+                }
+            }
             if let Some(u) = &rows.users {
                 ws.users = u.clone();
             }
+            ws.note_sent(&rows);
             ws.extent = new;
             ws.note_routes();
             if !rows.is_empty() {
@@ -1221,6 +1255,7 @@ impl NetHost {
                 if let Some(u) = &rows.users {
                     ws.users = u.clone();
                 }
+                ws.note_sent(&rows);
                 ws.extent = new;
                 ws.spec = spec.clone();
                 ws.note_routes();
@@ -1257,6 +1292,8 @@ impl NetHost {
                     .get_mut(&ws.spec.model)
                     .ok_or_else(|| format!("the network has no line {}", ws.spec.model))?;
                 let rows = m.session.rows_against(&held, &ws.extent);
+                ws.sent = held;
+                ws.note_sent(&rows);
                 keep(
                     &mut self.stats.replica_ms,
                     started.elapsed().as_secs_f64() * 1e3,
@@ -1387,22 +1424,29 @@ impl NetHost {
         };
         self.position = change.at;
         // The partial replicas of this model: their rows first.
+        // A library file (applied, not given back), a merge or a line
+        // rolled back (main changed whatever the line acted on) say not
+        // which objects they changed: the rows that differ go.
         let main = ohl_session::versions::MAIN;
-        if line == main
-            && let Some(a) = &applied
-        {
-            let changed: BTreeSet<(Kind, String)> = a.objects.iter().cloned().collect();
-            let all = a.whole
-                || matches!(
-                    op,
-                    Op::BringIn { .. }
-                        | Op::Merge { .. }
-                        | Op::Revert { .. }
-                        | Op::MergeReview { .. }
-                        | Op::RollBackLine { .. }
-                        | Op::RenameLine { .. }
-                        | Op::DeleteLine { .. }
-                );
+        let whole_op = matches!(
+            op,
+            Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. }
+        ) && line == main
+            || matches!(
+                op,
+                Op::MergeReview { .. }
+                    | Op::RollBackLine { .. }
+                    | Op::RenameLine { .. }
+                    | Op::DeleteLine { .. }
+            );
+        let library_op =
+            line == main && matches!(op, Op::PutLibrary { .. } | Op::DeleteLibrary { .. });
+        let on_main = applied.as_ref().filter(|_| line == main);
+        if on_main.is_some() || whole_op || library_op {
+            let changed: BTreeSet<(Kind, String)> = on_main
+                .map(|a| a.objects.iter().cloned().collect())
+                .unwrap_or_default();
+            let all = whole_op || library_op || on_main.is_some_and(|a| a.whole);
             let what = op.describe();
             self.feed_working_sets(code, user, &what, change.at, &changed, all, &change.routes);
         }

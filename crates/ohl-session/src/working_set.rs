@@ -1002,6 +1002,18 @@ impl Session {
         rows
     }
 
+    /// The objects `keys` of this session with their [`object_hash`] (what
+    /// a replica of them holds; the server keeps it per replica).
+    pub fn hashes_of(&self, keys: &BTreeSet<(Kind, String)>) -> BTreeMap<(Kind, String), u64> {
+        keys.iter()
+            .filter_map(|k| {
+                self.objects
+                    .get(k)
+                    .map(|o| (k.clone(), object_hash(&o.value)))
+            })
+            .collect()
+    }
+
     /// What this replica holds, each object with its [`object_hash`] (the
     /// line objects, the settings and the library files).
     pub fn held(&self) -> BTreeMap<(Kind, String), u64> {

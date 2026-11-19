@@ -387,6 +387,37 @@ fn a_working_set_is_a_partial_replica() {
     }
     settle(&d, &mut r, &t.url);
     same(&r, &t.url, &a, &part, "random edits");
+    // A library file saved and removed (changes that do not say which
+    // objects they changed): the replica follows.
+    edit(
+        &mut bob,
+        &mut id,
+        &a,
+        Op::PutLibrary {
+            kind: "weather".into(),
+            name: "extra.ohlwc".into(),
+            text: "# a test file\n".into(),
+        },
+    )
+    .unwrap();
+    settle(&d, &mut r, &t.url);
+    assert!(
+        r.held()
+            .contains_key(&(Kind::Library, "weather/extra.ohlwc".into()))
+    );
+    same(&r, &t.url, &a, &part, "a library file saved");
+    edit(
+        &mut bob,
+        &mut id,
+        &a,
+        Op::DeleteLibrary {
+            kind: "weather".into(),
+            name: "extra.ohlwc".into(),
+        },
+    )
+    .unwrap();
+    settle(&d, &mut r, &t.url);
+    same(&r, &t.url, &a, &part, "a library file removed");
     // A working set on another line is refused; the whole route added
     // comes, nothing taken away.
     d.link

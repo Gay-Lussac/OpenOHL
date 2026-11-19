@@ -62,7 +62,10 @@ of 2026-11-19, item 6; built, in active development, not approved yet;
   holds, or any change when it picked an area — the authority works the
   extent out again and sends what changed in it, came into it and left
   it, on the client's own queue before the change's broadcast (the rows
-  of a user's own edit arrive before its answer). The replica takes them
+  of a user's own edit arrive before its answer). A change that does not
+  say which objects it changed (a library file saved or removed, a merge,
+  a line rolled back) sends the rows that differ from what the replica
+  holds (the server keeps a hash of each object it sent). The replica takes them
   as one entry of kind `network`, without cascade (the server validated
   them on the whole model).
 - **Joining again** sends what the replica holds, each object with a
