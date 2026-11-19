@@ -56,6 +56,54 @@ active development, not approved yet;
   only when on); `JointPlan` gains `off_flange` and `hand_hosts`;
   `StructureRun::estimates` ([data model](data-model.md)).
 
+## 2026-11-19 (bolt grades by command, a bolt's tension capacity, a gusset plate's prying)
+
+**The owner's decisions of 2026-11-19 on the bolts, built** (O19 stage
+4.5; built, in active development, not approved yet;
+[theory](../theory/joint-groups.md#bolt-strengths-a-grade-set-by-command)):
+
+- **"Use 8.8 as default for bolts in the current line but add a command
+  to set it."** A command, not a program default: OHL-Structure's
+  **Design › Bolt grade…** (a tool window: the members picked, a member
+  group's or the whole tower; one undo step; Escape cancels;
+  [user guide](../user-guide/bolt-grade.md)) sets the grade of their
+  bolts — their ends', their design data's and a gusset plate's own bolts
+  onto them — or takes it away. The grades offered are SIA 263:2013, 3.4.2,
+  Table 2's strength classes, read in the standard's text (8.8: f_yb 640,
+  f_ub 800 N/mm²; SN EN 20898-2, which the table names, was not at hand).
+  The grade is written into the structure file with its values, source and
+  `set_by = "command"` (`[[bolt_grade]]`, a member's `bolt_grade`;
+  **structure file version 21**, written only when a member has one), and
+  every result says it ("bolt grade 8.8 set by command: f_ub 800 MPa, f_yb
+  640 MPa (SIA 263:2013, 3.4.2, Table 2)"): the run's notes, the member
+  ends' notes, the bolt groups' notes. The grade's f_ub and name go over a
+  bolt's library or design data; a capacity given for another grade is
+  dropped (the grade's worked out by the code, said); one given without a
+  grade is kept. **No silent default**: a bolt without strengths stays
+  without them, its tension said NOT ON THE SAFE SIDE. There is no
+  command-line form (`ohl` has no structure edits; the edit is
+  `ohl_structure_edit::set_bolt_grade`). Applied to the current line's
+  towers in the private data, not in the repository.
+- **A bolt library's `tension_capacity` is the bolt's ultimate tensile
+  load, F_u × A_s** (the guide of Kulak, Fisher & Struik, 17.6.1): defined
+  so in the data model, the field's documentation and OHL-Structure's help
+  beside it — not a design value (ASCE 10-97 4.3.3 takes 0.6 of it, SIA
+  263 (77) 0.9 of it over γ_M2).
+- **A gusset plate's own prying and bending under bolts in tension** by
+  the same T-stub model as an angle's flange (Struik & de Back 1969, as
+  Kulak, Fisher & Struik give it): the plate a flange **without a web** —
+  the pull reaches it through the members' bolts, which hold it against no
+  turning, so no moment is taken there (Eq. 17.8 with no moment at the
+  web): Q = T b′/a′, twice a flange's with α = δ = 1, and its bending at
+  the bolt line T b′ ≤ δ w t² f_y / 4 (SIA 263: over γ_M1); b to the
+  farthest bolt of a member pulling it, a to where the plate stops bearing
+  on the leg (its outline, the leg's toe or heel), w as a flange's — each
+  on the safe side. Removed from the NOT ON THE SAFE SIDE list
+  ([safe side](safe-side.md)); said not worked out only where the plate's
+  geometry is not known or a plugin lacks the new additive interface
+  `joint-check-groups-prying` (0.3 unchanged; both bundled plugins have
+  it).
+
 ## 2026-11-19 (the joints' own checks: the follow-ups, bolts in tension with prying)
 
 **The owner's decisions of 2026-11-19 on the joint checks, built**

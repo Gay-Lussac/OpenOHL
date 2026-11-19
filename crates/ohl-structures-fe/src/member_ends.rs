@@ -512,6 +512,7 @@ pub(crate) fn read_connections(
                 grade: lib
                     .and_then(|l| l.grade.as_deref())
                     .and_then(crate::design::Grade::parse),
+                tension_capacity: lib.and_then(|l| l.tension_capacity).map(|f| f.si()),
             });
         }
         model.members[idx].design.ends[end] = Some(e);
@@ -519,6 +520,123 @@ pub(crate) fn read_connections(
     link_continuous(model);
     crate::offsets::from_shifts(model);
     Ok(())
+}
+
+/// The bolt grades of a structure file's tables (`[[bolt_grade]]` and a
+/// member's `bolt_grade`, structure file version 21; owner 2026-11-19: "add
+/// a command to set it") on `model`'s members: each member naming one gets
+/// it ([`MemberDesign::bolt_grade`]) and its bolts — its own
+/// (`[member.design] bolts`) and its ends' — take its ultimate strength
+/// and name. A capacity given for another grade (the bolts' own ultimate
+/// strength or grade differing) is dropped — the grade's worked out by the
+/// code instead — and said. Returns the lines for the results: per grade
+/// its words and how many members' bolts take it. Err: a grade a member
+/// names that the file does not give, a grade given twice or not valid.
+pub fn apply_bolt_grades(model: &mut Model, file: &toml::Table) -> Result<Vec<String>, String> {
+    let grades: Vec<ohl_structures::bolts::BoltGrade> = file
+        .get("bolt_grade")
+        .and_then(toml::Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|v| {
+            v.try_into()
+                .map_err(|e: toml::de::Error| format!("bolt_grade: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
+    for (k, g) in grades.iter().enumerate() {
+        g.validate()?;
+        if grades[..k].iter().any(|x| x.grade.trim() == g.grade.trim()) {
+            return Err(format!("bolt_grade {}: given twice", g.grade));
+        }
+    }
+    let named: Vec<(String, String)> = file
+        .get("member")
+        .and_then(toml::Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| {
+                    let t = m.as_table()?;
+                    Some((
+                        t.get("id")?.as_str()?.to_owned(),
+                        t.get("bolt_grade")?.as_str()?.to_owned(),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut counts = vec![(0usize, 0usize); grades.len()];
+    for (id, name) in &named {
+        let Some(gi) = grades.iter().position(|g| g.grade.trim() == name.trim()) else {
+            return Err(format!(
+                "member {id}: bolt_grade \"{name}\" is no [[bolt_grade]] of the file"
+            ));
+        };
+        let Some(m) = model.members.iter_mut().find(|m| &m.id == id) else {
+            continue;
+        };
+        let dropped = set_grade(&mut m.design, &grades[gi]);
+        counts[gi].0 += 1;
+        counts[gi].1 += usize::from(dropped);
+    }
+    Ok(grades
+        .iter()
+        .zip(counts)
+        .filter(|(_, (n, _))| *n > 0)
+        .map(|(g, (n, dropped))| {
+            let mut s = format!("{} — on the bolts of {n} member(s)", g.words());
+            if dropped > 0 {
+                s.push_str(&format!(
+                    "; {dropped} of them had capacities given for another grade: dropped, the \
+                     grade's worked out by the code"
+                ));
+            }
+            s
+        })
+        .collect())
+}
+
+/// Grade `g` on design `d` and its ends' bolts; true when a capacity
+/// given for another grade was dropped.
+fn set_grade(d: &mut MemberDesign, g: &ohl_structures::bolts::BoltGrade) -> bool {
+    let fu = g.ultimate.si();
+    let grade = crate::design::Grade::parse(&g.grade);
+    let other = |u: Option<f64>, gr: Option<crate::design::Grade>| {
+        u.is_some_and(|u| (u - fu).abs() > 1e-6 * fu) || gr.is_some_and(|x| Some(x) != grade)
+    };
+    let mut dropped = false;
+    d.bolt_grade = Some(g.clone());
+    if let Some(b) = d.bolts.as_mut() {
+        if other(b.ultimate, b.grade) && b.shear_capacity.is_some() {
+            b.shear_capacity = None;
+            dropped = true;
+        }
+        b.ultimate = Some(fu);
+        b.grade = grade;
+    }
+    for e in d.ends.iter_mut().flatten() {
+        let Some(b) = e.bolts.as_mut() else {
+            continue;
+        };
+        if other(b.ultimate, b.grade) {
+            let had = [b.shear_capacity, b.shear_capacity_shank, b.tension_capacity];
+            if had.iter().any(Option::is_some) {
+                b.shear_capacity = None;
+                b.shear_capacity_shank = None;
+                b.tension_capacity = None;
+                dropped = true;
+                e.notes.push(format!(
+                    "bolts: the library's capacities were given for another grade — dropped \
+                     ({}; the grade's worked out by the code)",
+                    g.words()
+                ));
+            }
+        }
+        b.ultimate = Some(fu);
+        b.grade = grade;
+        e.notes.push(format!("bolts: {}", g.words()));
+    }
+    dropped
 }
 
 /// The ends that run on through their joint as one part: an end of kind

@@ -704,6 +704,19 @@ impl StructureApp {
                 if entry(
                     ui,
                     None,
+                    "Bolt grade…",
+                    None,
+                    tower,
+                    "Sets the grade of the bolts of the members picked, a member group's or the \
+                     whole tower (their strengths from SIA 263:2013 Table 2, recorded as set by \
+                     command), or takes it away; one undo step. Nothing takes a grade by itself",
+                    "A tower with members first",
+                ) {
+                    self.open_bolt_grade_window();
+                }
+                if entry(
+                    ui,
+                    None,
                     "Lay out joints…",
                     None,
                     tower,

@@ -274,14 +274,15 @@ pub mod joint_check_moments {
 /// plugin.
 pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
 
-// One binding for `joint-check-groups` and `joint-check-groups-tension`,
-// whose function takes the former's records (2026-11-19): each export is
-// looked up on its own ([`joint_check_groups_guest`],
-// [`joint_check_groups_tension_guest`]), so a plugin without
-// `joint-check-groups-tension` loads as before.
+// One binding for `joint-check-groups`, `joint-check-groups-tension` and
+// `joint-check-groups-prying`, whose functions take the first's records
+// (2026-11-19): each export is looked up on its own
+// ([`joint_check_groups_guest`], [`joint_check_groups_tension_guest`],
+// [`joint_check_groups_prying_guest`]), so a plugin without the later ones
+// loads as before.
 mod joint_check_groups_bindings {
     wasmtime::component::bindgen!({
-        world: "joint-check-groups-tension-export",
+        world: "joint-check-groups-prying-export",
         path: "wit",
     });
 }
@@ -313,6 +314,20 @@ pub mod joint_check_groups_tension {
 /// any plugin.
 pub const JOINT_CHECK_GROUPS_TENSION_EXPORT: &str = "ohl:plugin/joint-check-groups-tension@0.1.0";
 
+/// The records of the `joint-check-groups-prying` interface (2026-11-19,
+/// the owner's decision of that day): the bolts in tension with the plates
+/// they bend (flanges without a web) besides the flanges, sent with the
+/// `joint-check-groups` records.
+pub mod joint_check_groups_prying {
+    pub use super::joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_prying::{
+        BoltPrying, GroupPrying,
+    };
+}
+
+/// Export name of the optional `joint-check-groups-prying` interface of
+/// any plugin.
+pub const JOINT_CHECK_GROUPS_PRYING_EXPORT: &str = "ohl:plugin/joint-check-groups-prying@0.1.0";
+
 /// The `joint-check-groups` export of an instance, looked up alone.
 fn joint_check_groups_guest<T: 'static>(
     store: &mut wasmtime::Store<T>,
@@ -322,6 +337,21 @@ fn joint_check_groups_guest<T: 'static>(
     let pre = instance.instance_pre(&*store);
     joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups::GuestIndices::new(&pre)?
         .load(&mut *store, instance)
+}
+
+/// The `joint-check-groups-prying` export of an instance, looked up
+/// alone.
+fn joint_check_groups_prying_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_prying::Guest,
+> {
+    let pre = instance.instance_pre(&*store);
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_prying::GuestIndices::new(
+        &pre,
+    )?
+    .load(&mut *store, instance)
 }
 
 /// The `joint-check-groups-tension` export of an instance, looked up
@@ -2632,6 +2662,47 @@ impl WasmHost {
         let given = export
             .call_check_joint_groups_tension(&mut p.store, method, input, tension)
             .map_err(|e| classify(e, &p.manifest, "joint-check-groups-tension", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.groups.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint bolt groups of `input` with their bolts in tension and the
+    /// plates they bend (`tension`) checked by method `method` of the
+    /// plugin in `dir` through its `joint-check-groups-prying` export
+    /// (2026-11-19), every group and load case in this one call. None: the
+    /// plugin has no such export (the caller then calls
+    /// [`WasmHost::check_joint_groups_tension`] and says the plates'
+    /// prying is not worked out). Errors as [`WasmHost::check_joints`]'s.
+    pub fn check_joint_groups_prying(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_groups::GroupInput,
+        tension: &[joint_check_groups_prying::GroupPrying],
+    ) -> Result<Option<Vec<joint_check_groups::GroupResult>>, PluginError> {
+        let Some((mut p, instance)) =
+            self.optional_export(dir, JOINT_CHECK_GROUPS_PRYING_EXPORT)?
+        else {
+            return Ok(None);
+        };
+        let export = joint_check_groups_prying_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_joint_groups_prying(&mut p.store, method, input, tension)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-groups-prying", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_part_results(
             &name,

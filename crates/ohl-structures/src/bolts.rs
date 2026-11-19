@@ -22,7 +22,7 @@
 //! yield = "640 MPa"             # optional
 //! shear_capacity = "60 kN"      # optional: per shear plane, threads in it
 //! shear_capacity_shank = "75 kN" # optional: per shear plane, threads out
-//! tension_capacity = "90 kN"    # optional
+//! tension_capacity = "90 kN"    # optional: its ultimate tensile load, F_u × A_s
 //! head_across_flats = "24 mm"   # optional: for the drawings
 //! head_height = "10 mm"         # optional
 //! nut_height = "13 mm"          # optional
@@ -33,6 +33,22 @@
 //!
 //! None of a standard's numbers is built in: the values are the library's.
 //! A library shipped as an example holds invented ones.
+//!
+//! **A bolt's `tension_capacity`** (owner 2026-11-19) is its **ultimate
+//! tensile load**: its ultimate tensile strength × its stress area,
+//! F_u × A_s (Kulak, Fisher & Struik's guide, 17.6.1: the tensile capacity
+//! of a fastener is its stress area × its minimum specified tensile
+//! strength) — not a design value: each design code takes its share of it
+//! (ASCE 10-97 4.3.3: 0.6 of it; SIA 263 (77): 0.9 of it over γ_M2).
+//!
+//! **Bolt grades set by command** (owner 2026-11-19: "add a command to set
+//! it"): a structure's members' bolts take a grade's strengths from the
+//! structure file's `[[bolt_grade]]` ([`BoltGrade`], structure file version
+//! 21), which OHL-Structure's Design › Bolt grade… writes from
+//! [`SIA263_GRADES`] — the strength classes of SIA 263:2013, 3.4.2, Table 2,
+//! read in the standard's text. Nothing takes a grade by itself: a bolt
+//! without strengths stays without them (its checks said NOT ON THE SAFE
+//! SIDE).
 
 use std::path::{Path, PathBuf};
 
@@ -170,7 +186,9 @@ pub struct BoltType {
     /// Shear capacity per shear plane, the threads out of it.
     #[serde(default)]
     pub shear_capacity_shank: Option<Force>,
-    /// Tension capacity.
+    /// Tension capacity: the bolt's **ultimate tensile load**, its
+    /// ultimate tensile strength × its stress area (F_u × A_s; owner
+    /// 2026-11-19) — not a design value (each code takes its share).
     #[serde(default)]
     pub tension_capacity: Option<Force>,
     /// Across the head's flats (the drawings).
@@ -204,6 +222,178 @@ impl BoltType {
             self.head_height.map(|l| l.si()),
             self.nut_height.map(|l| l.si()),
         ]
+    }
+}
+
+/// Where [`SIA263_GRADES`]' values come from.
+pub const SIA263_GRADES_SOURCE: &str = "SIA 263:2013, 3.4.2, Table 2";
+
+/// A strength class of bolts as a standard's table gives it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StandardGrade {
+    /// Its name ("8.8").
+    pub grade: &'static str,
+    /// Yield strength f_yb, N/mm².
+    pub yield_mpa: f64,
+    /// Ultimate tensile strength f_ub, N/mm².
+    pub ultimate_mpa: f64,
+    /// Minimum elongation at rupture, %.
+    pub elongation_pct: f64,
+    /// Used in Switzerland (Table 2's footnote 1: 4.8, 5.8 and 6.8 are
+    /// not, their elongation too low).
+    pub used_in_switzerland: bool,
+}
+
+/// The strength classes of bolts of SIA 263:2013, 3.4.2, Table 2 ("Limite
+/// d'élasticité f_yb, résistance à la traction f_ub et allongement minimal
+/// de rupture ε_u des boulons", the classes as SN EN 20898-2 names them),
+/// read in the standard's text (its page 18) on 2026-11-19: the grades the
+/// bolt grade command offers (owner 2026-11-19). SN EN 20898-2 itself was
+/// not at hand.
+pub const SIA263_GRADES: [StandardGrade; 7] = [
+    StandardGrade {
+        grade: "4.6",
+        yield_mpa: 240.0,
+        ultimate_mpa: 400.0,
+        elongation_pct: 22.0,
+        used_in_switzerland: true,
+    },
+    StandardGrade {
+        grade: "4.8",
+        yield_mpa: 320.0,
+        ultimate_mpa: 400.0,
+        elongation_pct: 14.0,
+        used_in_switzerland: false,
+    },
+    StandardGrade {
+        grade: "5.6",
+        yield_mpa: 300.0,
+        ultimate_mpa: 500.0,
+        elongation_pct: 20.0,
+        used_in_switzerland: true,
+    },
+    StandardGrade {
+        grade: "5.8",
+        yield_mpa: 400.0,
+        ultimate_mpa: 500.0,
+        elongation_pct: 10.0,
+        used_in_switzerland: false,
+    },
+    StandardGrade {
+        grade: "6.8",
+        yield_mpa: 480.0,
+        ultimate_mpa: 600.0,
+        elongation_pct: 8.0,
+        used_in_switzerland: false,
+    },
+    StandardGrade {
+        grade: "8.8",
+        yield_mpa: 640.0,
+        ultimate_mpa: 800.0,
+        elongation_pct: 12.0,
+        used_in_switzerland: true,
+    },
+    StandardGrade {
+        grade: "10.9",
+        yield_mpa: 900.0,
+        ultimate_mpa: 1000.0,
+        elongation_pct: 9.0,
+        used_in_switzerland: true,
+    },
+];
+
+/// What [`BoltGrade::set_by`] says for a grade the command set.
+pub const SET_BY_COMMAND: &str = "command";
+
+impl StandardGrade {
+    /// The grade `name` of [`SIA263_GRADES`].
+    pub fn sia263(name: &str) -> Option<Self> {
+        SIA263_GRADES
+            .iter()
+            .find(|g| g.grade == name.trim())
+            .copied()
+    }
+
+    /// The structure file's record of it, set by the command, its source
+    /// named.
+    pub fn record(&self) -> BoltGrade {
+        BoltGrade {
+            grade: self.grade.to_owned(),
+            ultimate: Stress::from_si(self.ultimate_mpa * 1e6),
+            yield_strength: Some(Stress::from_si(self.yield_mpa * 1e6)),
+            source: Some(SIA263_GRADES_SOURCE.to_owned()),
+            set_by: Some(SET_BY_COMMAND.to_owned()),
+        }
+    }
+}
+
+/// A bolt grade a structure's members' bolts take (`[[bolt_grade]]`,
+/// structure file version 21, owner 2026-11-19): its strengths and where
+/// they come from; a member names it (`[[member]] bolt_grade = "8.8"`).
+/// Over a library bolt's and the member's own: its ultimate strength and
+/// its name; their capacities kept unless given for another grade (then
+/// dropped, said).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoltGrade {
+    /// Its name, as the standard names it ("8.8"), unique in the file.
+    pub grade: String,
+    /// Ultimate tensile strength f_ub.
+    pub ultimate: Stress,
+    /// Yield strength f_yb (none: not given).
+    #[serde(default, rename = "yield")]
+    pub yield_strength: Option<Stress>,
+    /// Where the values come from ("SIA 263:2013, 3.4.2, Table 2").
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Who set it: [`SET_BY_COMMAND`] for the bolt grade command (none:
+    /// typed in the file).
+    #[serde(default)]
+    pub set_by: Option<String>,
+}
+
+impl BoltGrade {
+    /// A name, its strengths above 0, the yield no higher than the
+    /// ultimate. Err: what is not.
+    pub fn validate(&self) -> Result<(), String> {
+        let ok = |v: f64| v.is_finite() && v > 0.0;
+        if self.grade.trim().is_empty() {
+            return Err("bolt_grade: a grade name".into());
+        }
+        if !ok(self.ultimate.si()) {
+            return Err(format!("bolt_grade {}: ultimate above 0", self.grade));
+        }
+        if let Some(y) = self.yield_strength
+            && !(ok(y.si()) && y.si() <= self.ultimate.si())
+        {
+            return Err(format!(
+                "bolt_grade {}: yield above 0 and no higher than the ultimate",
+                self.grade
+            ));
+        }
+        Ok(())
+    }
+
+    /// In words, for the results: "bolt grade 8.8 set by command: f_ub 800
+    /// MPa, f_yb 640 MPa (SIA 263:2013, 3.4.2, Table 2)".
+    pub fn words(&self) -> String {
+        let by = match self.set_by.as_deref() {
+            Some(SET_BY_COMMAND) => "set by command".to_owned(),
+            Some(x) => format!("set by {x}"),
+            None => "given in the file".to_owned(),
+        };
+        let mut s = format!(
+            "bolt grade {} {by}: f_ub {:.0} MPa",
+            self.grade,
+            self.ultimate.si() / 1e6
+        );
+        if let Some(y) = self.yield_strength {
+            s.push_str(&format!(", f_yb {:.0} MPa", y.si() / 1e6));
+        }
+        if let Some(src) = &self.source {
+            s.push_str(&format!(" ({src})"));
+        }
+        s
     }
 }
 
@@ -354,6 +544,26 @@ mod tests {
             let e = BoltLibrary::parse(&bad).unwrap_err();
             assert!(e.contains(says), "{says}: {e}");
         }
+    }
+
+    /// SIA 263:2013 Table 2's 8.8 as the command records it; a record
+    /// checked.
+    #[test]
+    fn a_grade_is_recorded_with_its_source() {
+        let g = StandardGrade::sia263("8.8").unwrap().record();
+        assert!((g.ultimate.si() - 800e6).abs() < 1.0);
+        assert!((g.yield_strength.unwrap().si() - 640e6).abs() < 1.0);
+        assert_eq!(g.set_by.as_deref(), Some(SET_BY_COMMAND));
+        assert_eq!(
+            g.words(),
+            "bolt grade 8.8 set by command: f_ub 800 MPa, f_yb 640 MPa (SIA 263:2013, 3.4.2, \
+             Table 2)"
+        );
+        g.validate().unwrap();
+        assert!(StandardGrade::sia263("12.9").is_none());
+        let mut bad = g.clone();
+        bad.yield_strength = Some(Stress::from_si(900e6));
+        assert!(bad.validate().unwrap_err().contains("no higher"));
     }
 
     /// The example library shipped reads.

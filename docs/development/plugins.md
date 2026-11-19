@@ -1132,7 +1132,29 @@ further optional export carries them:
   plugin has it (`ohl_member_check::joints::check_joint_groups_tension`);
   without it the bolts in tension are said not checked, NOT ON THE SAFE
   SIDE. Both bundled plugins have it
-  ([theory](../theory/joint-groups.md#bolts-in-tension-with-prying)).
+  ([theory](../theory/joint-groups.md#bolts-in-tension-with-prying)). A
+  bolt's `tension-capacity` is its library's `tension_capacity`: its
+  **ultimate tensile load**, F_u × A_s (owner 2026-11-19), not a design
+  value.
+- `joint-check-groups-prying` (2026-11-19, the owner's decision of that
+  day; `code.wit`, additive: found by its export name, world
+  `joint-check-groups-prying-export` with the two above whose records it
+  takes): `check-joint-groups-prying(method, group-input,
+  list<group-prying>) -> result<list<group-result>, string>`. As
+  `check-joint-groups-tension`, each bolt (`bolt-prying`) with the gusset
+  plates it bends besides the flanges: `plates: list<tee>` — a plate is a
+  flange **without a web** (the pull reaches it through the bolts of the
+  members on it, which hold it against no turning): `edge` a from the bolt
+  to where the plate stops bearing on the leg under it (its outline or the
+  leg's toe or heel), `web` b to the farthest bolt of a member pulling it,
+  `width` w. The plugin takes the model's moment at the web as none (Eq.
+  17.8 of Kulak, Fisher & Struik with no moment at the web): Q = T b′/a′
+  and the plate's bending T b′ ≤ δ w t² f_y / 4 (its code's factor).
+  Called first (`ohl_member_check::joints::check_joint_groups_prying`);
+  a plugin without it gets `check-joint-groups-tension` with each plate
+  among the plies whose bending is not known — said not worked out, NOT ON
+  THE SAFE SIDE, as before. Both bundled plugins have it
+  ([theory](../theory/joint-groups.md#a-gusset-plates-own-prying-and-bending)).
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

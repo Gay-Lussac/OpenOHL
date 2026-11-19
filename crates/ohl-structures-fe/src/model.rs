@@ -923,6 +923,12 @@ pub struct Model {
     /// third round): what the bolt tools keep where no design code gives
     /// minimums ([`crate::bolt_rules::assumed`]) — never in a check.
     pub bolt_defaults: ohl_structures::bolts::DefaultBoltMinimums,
+    /// The bolt grades set on members' bolts (`[[bolt_grade]]`, structure
+    /// file version 21, owner 2026-11-19;
+    /// [`crate::member_ends::apply_bolt_grades`]), each in words with how
+    /// many members' bolts take it: lines for the results ("bolt grade 8.8
+    /// set by command: …").
+    pub bolt_grade_notes: Vec<String>,
 }
 
 /// A member-check method of a plugin, as a file names it.
@@ -1328,6 +1334,7 @@ impl Model {
             capacity_plugin,
             method_compression: Vec::new(),
             bolt_defaults: Default::default(),
+            bolt_grade_notes: Vec::new(),
         };
         model.check()?;
         Ok(model)
@@ -1445,7 +1452,7 @@ impl Model {
             }
         };
         if let Some(members) = model.get_mut("member").and_then(toml::Value::as_array_mut) {
-            strip(members, &["group", "made_by"]);
+            strip(members, &["group", "made_by", "bolt_grade"]);
         }
         let mut nodes = file
             .get("node")
@@ -1464,6 +1471,9 @@ impl Model {
             crate::member_ends::read_connections(&mut out, &file, bolts)?;
         }
         out.joint_use = joints;
+        // The bolt grades set on members' bolts (version 21), over the
+        // connections' library bolts and the members' own.
+        out.bolt_grade_notes = crate::member_ends::apply_bolt_grades(&mut out, &file)?;
         // The structure's default minimum bolt distances (version 18): the
         // bolt tools' where no code gives any.
         if let Some(d) = file.get("default_bolt_minimums") {

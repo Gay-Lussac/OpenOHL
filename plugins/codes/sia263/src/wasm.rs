@@ -1121,7 +1121,59 @@ impl jgt::Guest for Sia263 {
     }
 }
 
+use exports::ohl::plugin::joint_check_groups_prying as jgp;
 use exports::ohl::plugin::joint_check_groups_tension as jgt;
+
+impl jgp::Guest for Sia263 {
+    fn check_joint_groups_prying(
+        method: String,
+        input: jgr::GroupInput,
+        tension: Vec<jgp::GroupPrying>,
+    ) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        let strengths: Vec<f64> = input.cases.iter().map(|c| c.strength).collect();
+        Ok(input
+            .groups
+            .iter()
+            .map(|g| {
+                let t = tension.iter().find(|t| t.id == g.id).map(prying_of);
+                let r = groups::check_group(&group_of(g), &strengths, t.as_ref());
+                result_of(g.id, r)
+            })
+            .collect())
+    }
+}
+
+/// A flange or plate of the interface as [`groups::Tee`].
+fn tee_of(x: &jgt::Tee) -> groups::Tee {
+    groups::Tee {
+        part: x.part.clone(),
+        thickness: x.thickness,
+        fy: x.fy,
+        edge: x.edge,
+        web: x.web,
+        width: x.width,
+    }
+}
+
+/// A `joint-check-groups-prying` group's tensions as
+/// [`groups::GroupTension`] takes them: the plates too (2026-11-19).
+fn prying_of(t: &jgp::GroupPrying) -> groups::GroupTension {
+    groups::GroupTension {
+        bolts: t
+            .bolts
+            .iter()
+            .map(|b| groups::BoltTension {
+                capacity: b.tension_capacity,
+                tees: b.tees.iter().map(tee_of).collect(),
+                plates: b.plates.iter().map(tee_of).collect(),
+                unknown: b.unknown.clone(),
+            })
+            .collect(),
+        loads: t.loads.clone(),
+    }
+}
 
 /// A `joint-check-groups-tension` group's tensions as
 /// [`groups::GroupTension`] takes them.
@@ -1132,18 +1184,8 @@ fn tension_of(t: &jgt::GroupTension) -> groups::GroupTension {
             .iter()
             .map(|b| groups::BoltTension {
                 capacity: b.tension_capacity,
-                tees: b
-                    .tees
-                    .iter()
-                    .map(|x| groups::Tee {
-                        part: x.part.clone(),
-                        thickness: x.thickness,
-                        fy: x.fy,
-                        edge: x.edge,
-                        web: x.web,
-                        width: x.width,
-                    })
-                    .collect(),
+                tees: b.tees.iter().map(tee_of).collect(),
+                plates: Vec::new(),
                 unknown: b.unknown.clone(),
             })
             .collect(),
