@@ -32,16 +32,43 @@ Guiding principles:
 - **Multi-user from day one**: every edit is a command applied by a session.
 
 **Contents**
-- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): open O3, O13–O15, O18, O22–O26; U7, U8, U11 (done: O1, O16, U10, U12); Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): open O4, O7, O8, O10, O12, O19–O21; U1, U2, U4–U6 (done: O5, O6); structure analysis, structures in their own axes, structure–line interaction
-- [Part C — Shared](#part-c--shared): open O9, O11, O17 (done: O2); Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
+- [Next, in order](#next-in-order-owner-2026-11-19): the owner's order of 2026-11-19 across both applications
+- [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): open O3, O13–O15, O18, O22–O43; U7, U8, U11, U13, U14 (done: O1, O16, U10, U12); Phases 1–5 for the line
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): open O4, O7, O8, O10, O12, O19–O21, O44, O45; U1, U2, U4–U6 (done: O5, O6); structure analysis, structures in their own axes, structure–line interaction
+- [Part C — Shared](#part-c--shared): open O9, O11, O17 (the country server and OHL-Server), O46, O47 (done: O2); Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
 each bullet becomes one or more issues labelled by module (`module:*`).
 
+## Next, in order (owner, 2026-11-19)
+
+Since 2026-11-19 every plan is on this page (owner: "put all different
+plans we did in the roadmap … and work from there"): the plans that were
+kept privately are carried into their items below, and the work runs
+from here. The owner's order of 2026-11-19:
+
+1. **Edits in OHL-Design as fast as on the server** ([O42](#o42-edits-in-ohl-design-as-fast-as-on-the-server))
+   and **the tests' speed with the PostgreSQL port flake** ([O46](#o46-the-tests-speed-and-a-flaky-postgresql-test)).
+2. **The automatic joint layout on real towers, J1–J2** ([O44](#o44-automatic-joint-layout)).
+3. **The joint checks' follow-ups** decided 2026-11-19, then **bolts in
+   tension with prying** ([O19](#o19-joint-details-of-towers-show-and-define-them), stage 4.5).
+4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)).
+5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
+6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server)).
+7. **Lattice towers: end releases and bolt slip (queue C8), then the
+   validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
+
+The owner's answers of 2026-11-19 to the plans' open questions are in
+their items ("decided 2026-11-19") and, briefly, in the
+[decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-owner-decisions-on-the-open-questions).
+Questions still open are under each item's `> **Owner:**` line.
+
 ---
 
 # Part A — OHL-Design (the line)
+
+*The order across both applications since 2026-11-19: [Next, in
+order](#next-in-order-owner-2026-11-19).*
 
 **Next up** (2026-11-14): the owner's "to work on next" of 2026-11-10,
 O22 to O26 — what is left of each is listed under it. Built since
@@ -54,7 +81,7 @@ own sheet template (2026-11-08) and the route plan's paper chosen
 automatically (O14, 2026-11-13). Still open beyond O22–O26: O13's
 dynamic method, the jumpers' swing band margin (left to the owner,
 Phase 4) and the items not built in the record below (`[ ]`). Then, in
-the owner's order of 2026-11-14: the post insulators' remaining phases,
+the owner's order of 2026-11-14: the post insulators' remaining phases (O40),
 the tables' copy, columns and paste, and the equivalence list O27–O39.
 
 ## Where it stands
@@ -641,6 +668,24 @@ against what line design practice uses). In the order proposed:
    height above ground, gust and span factors as a design code gives
    them (the factors themselves from the code plugins), ice growing with
    height.
+   **The direction built 2026-11-15 and 11-16, in active development
+   (not approved yet)** (plan of 2026-11-15, its 15 questions answered as
+   recommended; owner: "the current cases need to be identical", "add an
+   option for the friction on the wire"): a weather case's wind direction
+   (where it comes from, 0° from ahead, 90° from the right, relative to
+   the alignment at each place; spans next to an angle point their own
+   segment's direction, strings and bodies the bisector), a load case's
+   own direction or a set of directions (the worst kept), the projected
+   area by default with the cross-flow law and a friction along the wire
+   as options, the vertical part on inclined spans, the structure bodies
+   in their axes, the member wind's inclination factors (Part B, U5), the
+   views by angles; every case without a direction bit for bit as before
+   ([Wind on the line](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/wind.md)).
+   Still open: the pressure growing with height, gust and span factors,
+   ice growing with height; each element's own direction in the span
+   load (planned, not built); a wind band's area along the line (one area
+   today, said not on the safe side); compass bearings; a direction per
+   span or structure (owner, 2026-11-15: not now).
 5. **A section left in the blocks, the other model.** A section not
    clipped in rolls over frictionless sheaves in every weather case. The
    other common model fixes the wire lengths at equal tension at the
@@ -926,14 +971,181 @@ Structures › Load cases per group — groups picked or by rules (types,
 line angle, station on an alignment, dead end), a structure taking the
 union of its groups' cases (in none: every case); the per-structure and
 per-type sets read into groups; see the user guide's *Load cases per
-group*. Still open: rules on the height and the ground elevation, and
-the design-code plugins tagging their cases so a group takes cases by
-tag. (S)
+group*; a ground elevation rule and a load case's own list (picked per
+position where the case is defined) built 2026-11-15. From the plan of
+2026-11-14 for load cases between the two applications (approved with
+its recommendations; the owner's model: the line transfers what the
+wires do, the structure side decides what acts — construction stages are
+OHL-Structure load cases): phases 0 to 3 built 2026-11-14 and 11-15 (one
+user guide page, never silently absent, one name one meaning, the local
+conditions reaching OHL-Structure, one way in — Loads for structures
+gone —, the groups). Still open:
+- a rule on the height; the design-code plugins tagging their cases so a
+  group takes cases by tag (S);
+- phase 4: an extra (own) OHL-Structure load case applying to every
+  structure of a type or to one placed structure only, labelled so, the
+  latter kept with that structure in the project (owner: both) (M);
+- phase 5: the line's usage table showing OHL-Structure's last result
+  per structure, dated, marked out of date when the line changed (S–M).
 
 ### O39. Also found, smaller
 A background "design OK" flag per structure and section while editing;
 a temperature typed for a section's display without a weather case;
 reports to KML; draped orthophotos in 3D. (S each)
+Further, from the same review, not ranked: photos per structure; the
+loss of strength by annealing (needs a primary source); a departure-angle
+report; a clearance-to-ground contour map; the thermal rating's wind
+turned per span from one direction, and its results written back as
+display temperatures; statistics of a table's selection and filling cells
+as a spreadsheet does (with the tables' copy and paste); a cost factor
+per site, and an automatic spotting taken into the project as a project
+line; whole-structure interaction diagrams and capacities per component
+(arms, braces) in the line's structure check; report layouts the user can
+change; a display by catenary constant or swing angle; two attachments of
+a strung section swapped. (S each)
+
+### O40. Post insulators and rigid connections
+From the plan of 2026-11-14 (owner: "put post insulators on structures
+or on the ground so that we can make connections to a rigid piece").
+Built, in active development, not approved yet
+([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/post-insulators.md)):
+- [x] 1 — a rigid jumper's wind in its end forces (2026-11-14; its shape
+  stays straight).
+- [x] 2 — posts in the insulator library (ratings as optional limits),
+  fixed and braced (hinged) posts on structures, their load to the base
+  with its moment, a jumper leaving a post's top at a fixed exit angle,
+  the ratings in the string check (2026-11-14); a pivoting post held by
+  what is attached to it and free when nothing is (owner, 2026-11-15),
+  an optional hinge friction.
+- [x] 2c — posts on structure types and in OHL-Structure: a fixed post's
+  moment sent with its force, a hinged post's forces only (2026-11-14).
+- [x] 3 — the Add post insulator tool, its shapes, tables and guide
+  pages (2026-11-14).
+- [x] 4 — a post on the ground as a post support, a preset (2026-11-14).
+  [ ] The pedestal as a structure type of its own (its weight and wind on
+  the foundation: today said NOT ON THE SAFE SIDE).
+- [ ] The post's deflection (a spring at its top from the data sheet's
+  deflection) and its own ice.
+- [ ] 5 — a rigid conductor (tube or bar) on posts: its own section, wind
+  and ice on it, held at its ends and along it by posts (a continuous
+  beam, its reactions to the posts), its deflection against an optional
+  limit, thermal expansion (one support fixed or all, the safe side said),
+  jumpers tapping onto it, drawn as a tube; posts along risers. (L)
+- [ ] 6 — later: short-circuit forces on rigid conductors and posts (the
+  standard's document needed first; no number from memory).
+> **Owner:** (to answer, 2026-11-14) 1. The case in mind: a line entry
+> or terminal structure (conductor, post on the structure, tube to a
+> sealing end), or a busbar on posts on the ground? It decides the order
+> of 4 and 5. 3. On the ground: is the pedestal part of the post support,
+> or a structure type of its own? 4. The rigid piece: a tube library, or
+> tube dimensions given on the jumper? 5. Short-circuit forces needed?
+> Then the standard's document first. 6. In OHL-Design now, or ground
+> posts and busbars left for OHL-Substations? (Question 2, a rigid post
+> by default: built so; the deflection not yet.)
+
+### O41. LiDAR editing tools
+From the plan of 2026-11-14 (owner: "make a plan of tools to edit the
+lidar … mass selection based on a surface … delete what's in or out of the
+selection … also a duplicate detection then I'll validate it before
+moving forward with it"). **Nothing built: it waits on the answers
+below.** Every tool is a selection, then an action. The selection is a
+description (areas, a height band, classes, a corridor, combined) that
+reaches every point of the cloud inside it, not only those drawn; the
+action is previewed (counts per class, the time) and applied as one undo
+step in the background with progress and Stop.
+- Selecting: A1 an area clicked in the 3D view from above (owner,
+  2026-11-14: "we could do in 3d from above" — the camera turned straight
+  down when the tool is taken; the plan and profile keep no tool), the
+  points inside or outside; A2 an area from a DXF polyline, a GeoJSON or
+  shapefile polygon; A3 a corridor from the alignments or the conductors;
+  A4 a height band above or below a surface; A5 classes, intensity,
+  return number; A6 box and lasso reaching every point, not only those
+  drawn; A7 add, subtract, intersect, invert; A8 saved selections.
+- Acting: B1 change the class (the 10⁶-point limit lifted by batches);
+  B2 delete; B3 crop; B4 export to LAS/LAZ; B5 shift heights (optional);
+  B6 count and report.
+- Cleaning: C1 duplicates — exact (same stored coordinates and class),
+  same place with another class, near within a small tolerance (reported
+  only: overlapping flight strips are real data); removal keeps one point
+  by a rule (the first imported by default); C2 isolated points to a
+  noise class (the criterion from its primary source); C3 points below
+  the ground; C4 coverage gaps along the corridor; C5 overlapping tiles
+  found at import (add all, skip duplicates, replace the area).
+- Underneath: a deletion command in the session, a large action split
+  into commands grouped as one undo step and sent through the server;
+  `ohl pointcloud select | delete | crop | dedup | report` with the
+  selection as a small file; one LiDAR editing window (Select, Action,
+  Preview, Apply); the tools in the Terrain theme; a theory page.
+- Phases: 1 deletion and undo, the limit lifted (M); 2 A1, A4, A5, A7, the
+  window, B1–B3, the preview, the theory (L); 3 C1 and C5 (M); 4 A2, A3,
+  A6, A8, B4–B6 (M); 5 C2–C4 and the command line (M).
+> **Owner:** (to answer, 2026-11-14) 2. Delete: *withheld* (the LAS
+> flag: the points stay stored, drawn and checked as gone, undo is a
+> flag; a later "Purge withheld points" removes them for good —
+> recommended), or removed at once (each point kept in the log for undo:
+> a large log)? 3. Duplicates: the tolerance for "near" (5 mm?), the
+> point kept (the first imported?), same-place points of another class
+> deleted or only reported? 4. Isolated points (C2) now or later?
+> 5. Saved selections for everyone in the project, or per user?
+> 6. Order: deletion and the area first, or duplicates first?
+
+### O42. Edits in OHL-Design as fast as on the server
+Owner, 2026-11-19: "And the check for the server per member can it also
+be applied on the app itself? So that the process is as speedy" — "per
+element modified instead of validating the whole thing". **Decided
+2026-11-19, first in the [order](#next-in-order-owner-2026-11-19); not
+built.** The session already applies a command in place and validates
+only what it touches and what refers to it (the country server's phase 3:
+a move on the 12 000-pylon synthetic country in about 2 ms). After every
+command the app then rebuilds its own line whole — a clone of the line,
+every structure type resolved, the reference state checked over the whole
+line — before it re-solves the touched sections.
+1. Measure the app's edit, split (session, clone, resolve, reference
+   check, solve, views), on the examples and the synthetic country.
+2. Update the app's line in place from the command's applied changes:
+   the changed objects replaced, structure types resolved only for the
+   structures changed (and those whose type or library changed), the
+   reference check only for what changed; the whole rebuild kept where it
+   is needed (a library change, the creep-stretch, bimetallic or
+   reference-state switches, a library's undo) and said. Proof: random
+   command sequences — the line kept in place equals the line rebuilt,
+   and the solved cases are equal.
+3. Views: only the changed objects' chunks rebuilt, if measured costly.
+4. Kept: only the cases shown are solved at once, the others after the
+   settle (owner, 2026-11-18).
+Quality before speed: no computed result coarser, no file changed.
+
+### O43. The swing band, jumpers and spans the wind lifts — what is left
+From the reviews on a real line of 2026-11-16 and 11-17 (kept
+privately). Built, in active development, not approved yet: the swing
+band with levels, at least one every 200 Pa (within 0.063 m of the 10 Pa
+steps on that line, inside the 0.15 m margin; the old band was up to
+0.69 m outside); spans the wind lifts to or through their chord found
+and checked at their 10 Pa steps; each distinct solve made once in a run
+(cases differing only by their pressure share their solves: 69 to 84 %
+fewer solves there); stiff jumpers solved along the rising and the
+falling wind, a second still-air shape said, swaps between the band's
+pressures solved every 10 Pa
+([clearances](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/clearances.md),
+[jumpers](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/jumpers.md)).
+Still open:
+- Jumpers: the margin 0 stays NOT ON THE SAFE SIDE (a jumper about a
+  decimetre outside its band at a low pressure from one side); a
+  jumper's other still-air shape (a loop stable to either side) is said,
+  not checked — adding it as a position is the owner's choice; a jumper
+  with two shapes 0.2 m apart: a 10 Pa path, or a margin; the jumper
+  paths' cost (6 to 10 times a windy solve's jumper part).
+- A run's bands depend on which case is solved first (a span's axis
+  through a dead-end clamp as first solved); the wire positions are exact.
+- The clearance windows and `ohl zones` only say NOT ON THE SAFE SIDE for
+  lifted spans (their states are fixed before the solve): their steps
+  would need a second solve pass.
+- The 0.3 mm per pascal of spacing behind the 200 Pa rule is measured on
+  one real line and two example lines: a measured bound, not a proven one;
+  winds at an angle above 1000 Pa and the ice series not measured again.
+- A 500 Pa band takes minutes on a long real line (its slowest sections);
+  a few sections fail some steps at high pressure along the line (one
+  node held by slack strings converges slowly): each worth a look.
 
 ### Done and taken out of this list
 Built, in active development (not approved yet); the details are in the
@@ -959,7 +1171,16 @@ user guide, the theory and the [decision log](https://github.com/Gay-Lussac/Open
   also held from another point (two strings to one wire point) stays and its strings change length,
   the status bar says so. Joints are shown but not dragged: they are
   edited in OHL-Structure only (a placed structure has no joints of its
-  own).
+  own). *2026-11-18 (owner), built, in active development, not approved
+  yet:* in a placed structure's Edit window a wire point dragged turns its
+  string about its attachment point (the length kept; held by several
+  strings it moves only where every length holds, else it is refused and
+  said), an attachment point dragged moves everything hanging from it;
+  the strings come from the string library, their lengths read-only
+  there, set by two angles; a click in the view selects the row; an edit
+  solves the cases shown at once and the others later; Apply reaches the
+  main views; *Put the project's strings in a library*, a one-off command
+  for existing projects.
 - **U8. Level 2 and 3 members**: now drawn (built, in active development,
   not approved yet) in the line's 3D view — as lines, and as solids of
   their library profile within the **solids distance**, its own setting
@@ -987,6 +1208,25 @@ user guide, the theory and the [decision log](https://github.com/Gay-Lussac/Open
   answer (the full solve's, or the better converged one).
   > **Owner:** (2026-10-24) Unless it can be fixed fast, keep it as it is,
   > but say it in the docs (done: the jumpers' theory, After an edit).
+- **U13. Galloping check, left from its review** (2026-11-15; the faults
+  fixed, the open points made safe by the owner the same day, see the
+  decision log). Still open: the window runs in a weather case the
+  parameter file does not name (said before Run) while the command line
+  refuses it — align them?; pairs across adjacent spans or to another
+  line's span are not compared (a simplification, said) — wanted?; the
+  command line numbers spans from 0, the window from 1.
+- **U14. Smaller items left from the work plan of 2026-11-10**: the
+  profile sheet's side lines under the lowest arm, to confirm by the
+  owner — the 0.5 m level tolerance, the wire's end height (not the arm's
+  attachment) deciding the lowest level, the span's first structure
+  deciding, the outermost by the mean offset of both ends; the field
+  volumes not reused between runs (needs volumes per span); `ohl drawing
+  --name` (the windows have a name since 2026-11-11); the thermal limit,
+  ice shedding and lightning in the app read a vertical rule without
+  `to_ground` as off, not by the terrain classes' default the clearance
+  checks take (to look at); a plugin's own column for the insulation
+  level stays until the plugin interface passes the core's value (O23.4).
+  The version-management points of that plan: Part C, O47.
 - *Done and taken out:* U10, named terrain surfaces in the thermal limit
   (2026-10-23); U12, the old `ols` names no longer read (2026-10-26; the
   on-disk and protocol names `ols_meta`, ALPN `ols/2` and the storage ids
@@ -1163,14 +1403,16 @@ user guide, the theory and the [decision log](https://github.com/Gay-Lussac/Open
 stage than OHL-Design: built as a base, in active development (not
 approved yet), with the open points and limitations below.
 
-**Next up** (2026-11-18): O4's design codes are out of the core
-(SIA 263:2013 and ASCE 10-97 bundled plugins, 2026-11-18); the pole codes
-follow when a pole export exists. Open besides: O19's buckling lengths from what
-braces a member, end releases and bolt slip, the joints' own checks
-beyond the plates and covers, and the validation (weight and quantities
-built 2026-11-19);
-O20's B3 to B5; O21 (equipment); the hotbar's drawing and the check
-footer into the shared UI crate (Part C).
+**Next up** (2026-11-19; the order across both applications: [Next, in
+order](#next-in-order-owner-2026-11-19)): O4's design codes are out of
+the core (SIA 263:2013 and ASCE 10-97 bundled plugins, 2026-11-18); the
+pole codes follow when a pole export exists. O19's buckling lengths, the
+joints' own checks and the weight and quantities are built (2026-11-19);
+next, in the owner's order: the joint checks' follow-ups and bolts in
+tension with prying (O19), joint eccentricities set automatically (O45),
+leg splices and a weld's sides (O44), then end releases and bolt slip and
+the validation (O19). Open besides: O20's B3 to B5; O21 (equipment); the
+hotbar's drawing and the check footer into the shared UI crate (Part C).
 
 ## Where it stands
 
@@ -1237,8 +1479,13 @@ member results and 9 452 plate results compared before the core's copy
 went); no `capacity`, or `capacity = "asce10-97"`, its method, no file
 changed; a plugin's parameter file reaches its joint checks
 (`joint-check-full`) and Member details too; the bundled plugins have 120 s
-and 4 GiB a call (user plugins 5 s, 256 MiB). Next: the pole codes when a
-pole export exists.*
+and 4 GiB a call (user plugins 5 s, 256 MiB). Third round, the same day
+(owner): the bolt tools' force basis each code plugin's own
+(`bolt-distances-full`; SIA 263's bolt capacity smaller than ASCE 10-97's,
+said); default bolt minimums where no code gives any (1.5 d end and
+edge, 3 d spacing, editable, said "assumed, not a code's"); Member details
+following the plugin's parameter file; provisional bolts keeping a tower
+at level 3 everywhere. Next: the pole codes when a pole export exists.*
 
 A plugin interface for code checks: what the core hands over (member
 forces, buckling lengths, sections, joint details), what comes back
@@ -1334,22 +1581,53 @@ Six stages, the questions per stage and per detail level:
 - [x] Ends seated without bolts, bolts on both legs (`leg = "both"`,
   `other_leg_points`; the net section counting both legs' holes), bolts
   in the 3D view (2026-11-05)
-- [ ] Stage 4.3 to 4.6 — buckling lengths from what braces a member,
-  the FE model's other options (end releases, bolt slip), the joints'
-  own checks, weight and quantities
-  *(status 2026-11-07: of the joints' own checks, the plates', covers'
-  and fillet welds' are built (above); the bolt group under the members'
-  forces together, a gusset plate's buckling and the rest are not;
-  end releases and bolt slip are not built; 2026-11-19: buckling lengths
-  from what braces a member built, in active development, not approved
-  yet — the core's runs and bracing points, each code plugin's rules
-  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member));
-  the weight and quantities are built, below;
-  2026-11-19: the bolt groups under the members' forces together, the
-  leg's bearing and a usage per joint built, in active development, not
-  approved yet — a plate's bolts onto the leg holding it, every bolt onto
-  a member at a joint, each code plugin's bolt rules
-  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)))*
+- *The open-items queue of 2026-11-18* (owner: "Go ahead"), in its
+  order: **A, the safe side first** — 1 a weld's moments about its seam,
+  2 a shift where only bars meet, 3 a gusset plate in compression, 4
+  tearing towards a plate's side edge and a frame member's end shear and
+  moments in the plate checks (all built 2026-11-18, below); **B**
+  buckling lengths (stage 4.3, built 2026-11-19); **C** — 6 the joints'
+  own checks (stage 4.5, built 2026-11-19), 7 weight and quantities
+  (stage 4.6, built 2026-11-19), 8 end releases and bolt slip (stage 4.4,
+  open), 10 the validation (stage 5, open).
+- [x] Stage 4.3, buckling lengths from what braces a member (2026-11-19,
+  built, in active development, not approved yet): the core's runs and
+  bracing points, each code plugin's rules; given ratios still win, each
+  result says worked out, given or assumed
+  ([ASCE 10-97](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md#buckling-lengths-from-what-braces-the-member)).
+  Decided 2026-11-19: SIA 263's strict reading stays the default (a joint
+  held only across the direction of buckling does not hold it); ASCE
+  10-97's practice only as an option marked "not in SIA 263's text"; the
+  ASCE "panel" taken as the stretch between one face's bracing points
+  (accepted); at a run's end where every other member there lies in one
+  line or plane, the end is held only in that plane (the safer variant);
+  the 20 % crossing rule kept also for given lengths. To build: the
+  option for SIA 263 and the run ends held in one plane.
+- [ ] Stage 4.4, end releases and bolt slip as options of the FE model,
+  measured before any default (queue C8).
+- [x] Stage 4.5, the joints' own checks: the plates', covers' and fillet
+  welds' (2026-11-04, above); the safe-side items of 2026-11-18 — a weld's
+  moments about its seam (SIA 263; no weld rule in ASCE 10-97, said), a
+  shift where only bars meet carried into the member's check, a gusset
+  plate in compression as a strut of Whitmore's width (an assumption on
+  the safe side, said), tearing towards a plate's side edge and a frame
+  member's end shear and moments in the plate checks; the bolt groups
+  under the members' forces together, the leg's bearing and a usage per
+  joint in the tables, the report and the 3D view's joints (2026-11-19,
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)),
+  all built, in active development, not approved yet.
+  Decided 2026-11-19 (to build next, step 2 of the order): a gusset
+  plate's own bolts onto the leg in the file format (a plate on a leg
+  running through is not checked today, said); a joint that does not fit
+  (bolts off the flanges, holes overlapping) reads "does not fit",
+  coloured as failing and counted apart, not an infinite usage; in-line
+  pieces not marked continuous read "ends at the joint" (conservative),
+  the layout proposing "continuous" for the user to confirm; the bolts in
+  tension checked, with prying (today said NOT ON THE SAFE SIDE); the
+  elastic method for the moments stays. Still assumed or not checked,
+  said: a member's own gauge eccentricity in its plane as a moment on its
+  bolts, the plies' offsets in the levers, the joint's own loads through
+  its plates, the holding bolts of a welded plate's several plates.
 - [x] Stage 4.6, weight and quantities (2026-11-19, built, in active
   development (not approved yet)): a tower's members, gusset plates,
   splice covers, bolts and welds counted from the connection records and
@@ -1361,12 +1639,22 @@ Six stages, the questions per stage and per detail level:
   dead-load factor where the weight loads the tower and the lesser where it
   holds it (`self_weight_from`, structure file version 19: `"factor"`, or
   `"counted"` alone, not on the safe side)
-  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structure-weight.md))
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structure-weight.md)).
+  Decided 2026-11-19: the typed factor stays the floor until the counting
+  is validated (built); a typed allowance per structure for galvanising
+  and fittings (no default number: the note stays until one is given);
+  provisional bolts block the switch to the counted mass; a record for
+  fillers and packs, together with the layout's filler-plate question
+  (O44); OHL-Design keeps the typed factor until the counting is
+  validated; a per-case "weight favourable" mark in the load-case recipe
+  (the light count for it). To build: the allowance, the provisional
+  bolts' block, the fillers' record, the favourable mark.
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)
 - [ ] Stage 5, validation — connection capacities against hand
-  calculations and a tower program's results; the theory page
+  calculations and a tower program's results (on the real towers, kept
+  locally); the theory page (queue C10)
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
@@ -1402,7 +1690,10 @@ questions: [Built-up members](https://github.com/Gay-Lussac/OpenOHL/blob/main/do
   against built-up legs of angles; the joint details taking a built-up
   member's plies and filler plates: not built)*
 - [ ] B4 — the rules for built-up members
-- [ ] B5 — joints of built-up members
+- [ ] B5 — joints of built-up members *(owner to decide, from the work
+  plan of 2026-11-10: plates on built-up legs (it moves the plate checks),
+  built-up members as the arriving end, ends onto channels and I
+  sections)*
 > **Owner:** (2026-11-02) "plan the double star and 4 corners to be
 > shown or at least calculable". "Go with A" (B1 first).
 
@@ -1440,6 +1731,31 @@ failing, the reference state solved at level 4 when the line's setting
 is full structures. Next: the clearances taking the level (after the
 swing-arc band work); levels 3 and 4 linearised at / started from a
 current reference state (not built).
+
+The plan of 2026-11-15 ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structure-flexibility.md);
+owner: "keep the larger of rigid and flexible, otherwise your
+recommendations"; the structures solved side by side with a progress bar,
+the code checks once on the converged state), its phases:
+- [x] 0 the theory page; 1 the structures condensed at their attachment
+  points; 2 the wires' stiffness and moved attachments; 3 the interface
+  loop and level 3; 4 level 3 in the structure loads (the larger of rigid
+  and flexible kept per structure, point and case); 5 the line's setting
+  and the checks taking it; 5b the reference state and the foot
+  movements; 6 level 4 (2026-11-15 to 11-16), twice as fast on a real
+  line with the same digits (2026-11-17); 8 measured on a real line
+  (kept privately, 2026-11-16 to 11-18).
+- [ ] 7 completing: the internal clearances with the deflected body; the
+  clearances taking the level (rigid today, said); OHL-Design updated
+  near moved structures only; a level per structure group and per check;
+  springs per attachment point at level 2 (only if wanted); a fixed
+  post's tilt; levels 3 and 4 linearised at or started from a current
+  reference state.
+- [ ] Smaller, from the notes: foot movements are not carried by OHL XML;
+  a twist about the vertical is not in the format; the condensation's
+  note "offset taken as the joint's translation only" fires for the
+  millimetre offsets of imported points rounded to centimetres (could be
+  quiet below a tolerance); a tower model unstable at the reference state
+  is taken rigid (said).
 
 ### O8. Exports tried in other programs
 IFC4, IFC2x3 and SAF are written from the public specifications and
@@ -1491,6 +1807,121 @@ structure carrying equipment is checked without it — on the unsafe side,
 to be said by whoever models it.
 > **Owner:** (2026-11-10) Agreed in principle; kept on the roadmap for
 > now, not built yet.
+
+### O44. Automatic joint layout
+From the plan of 2026-11-18 (owner: "a plan for an automatic setting on
+the joints … so that you can click on a button and it makes the
+necessary eccentricities and creates the plates on the joint so that it's
+physically doable … the optimal bolts and bolts placement we'll do this
+later with the codes"; approved the same day with every recommendation).
+Built, in active development, not approved yet
+([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md),
+[theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md),
+[joint details](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/joint-details.md)):
+- [x] Stages 1 to 6 (2026-11-18): the 3D clash check at joints; the plane
+  layout engine (concentric first with the ends pulled back, a sideways
+  shift up to a limit only where that fails, else *needs a hand detail*
+  with the reason — never forced); the plates; the app (Design › Lay out
+  joints…, a preview, one undo step, the *automatic* marks, copies to
+  similar and symmetric joints, a laid-out joint laid out again by a later
+  edit in the same undo step); the effect and the docs; measured on 78
+  real tower files (kept privately). Bolts provisional until the codes
+  choose them; a tower with provisional bolts stays level 3.
+- [x] Orient angles from the tower's shape, a member turned only where it
+  helps, a faster follow (2026-11-18); tuned on real towers to the
+  owner's order of steps (2026-11-18 and 11-19): everything pulled back;
+  the biggest profiles first — one part when the same and aligned (1a),
+  nested (1b), else a plate; the next size directly on a flange of the
+  bigger (2a), on a plate where needed (2b); an end arriving out of plane
+  on a welded plate (4).
+- [x] Step 4, the welded plate (in the member's own plane, welded to a
+  flat plate on the flange) where its extra offset is at most one plate
+  thickness; step 1c, splice covers between in-line angles of other
+  sections where nothing else bolts onto them; leg splices said first
+  among a joint's reasons (2026-11-19).
+Decided 2026-11-19:
+- leg splices: a change of section is a splice; the same section is one
+  part unless marked; a command proposes the splice places and the user
+  confirms;
+- the welded plate's extra offset goes into the analysis through the
+  automatic eccentricities (O45, the out-of-plane offsets), not
+  separately;
+- a weld gets a `sides` (fillet count) field and its check (today a weld
+  bent about its seam is said NOT ON THE SAFE SIDE);
+- bracing bolted through the outer splice cover: yes, after the splice
+  places;
+- ends whose bolted leg faces away: first the other leg of an equal-leg
+  angle bolted where it lies in the face, a bent plate later, else a hand
+  detail.
+Next — getting the automatic layout to work on real towers (owner,
+2026-11-19: "plan ideas to get the automatic layout working", approved
+"with recommendations", in this order). On the 78 real towers about 27 %
+of the joints are laid out whole; most of the rest fail on a chain: the
+members are placed one after the other, and one that does not fit blocks
+the joint. Each step is measured on the same towers (share laid out per
+step, reasons left), and the work stops where it stops paying:
+- [ ] J1. **A search per joint** instead of one member after the other:
+  per end its choices (flange, outer or inner side, leg bolted, direct or
+  on a plate, a few shift steps), searched with backtracking for no clash
+  and the least eccentricity; deterministic, no new clash, values given
+  by hand kept.
+- [ ] J2. **The ends that fit are kept** in a joint that is not whole: the
+  space of a member left for a hand detail reserved so nothing laid out
+  runs into it; the joint then needs only that member by hand.
+- [ ] J3. **Each angle's turn chosen for the whole member**: a roll that
+  lets both its ends lie flat, the leg bolted allowed to change between
+  its ends where that is how towers are built.
+- [ ] J4. **Lay out once, apply to the joints like it**: the joints
+  grouped by kind (the tower's symmetry and repeated panels), one
+  solution per kind applied, mirrored, to the others; a command *Apply
+  this joint's detail to similar joints* for hand details too.
+- [ ] J5. **Larger shifts once the analysis takes them** (after
+  [O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)):
+  the shift limit and the welded plate's offset limit growing with the
+  member's size, the moment checked instead of the end refused.
+- [ ] J6. **Built-up members**: each angle of a back-to-back or star
+  member a surface to bolt onto.
+- [ ] J7. **Leg splices** as decided above, then the bracing bolted
+  through the splice cover; **a weld's sides**.
+- [ ] J8. **Short members**: the class's smaller bolt, one bolt where the
+  code's text allows it for a redundant, else a plate shared with the
+  neighbouring member.
+- Asked (open): shop drawings of real towers, to tune to how the steel
+  is really detailed.
+Later: the bolts chosen by the code plugins and the layout run again with
+them.
+
+### O45. Joint eccentricities and member shifts set automatically
+From an investigation of 2026-11-19 (owner: "investigate a bit more how
+to automatically set the joints eccentricities and member shifts").
+**Decided 2026-11-19; not built (step 3 of the
+[order](#next-in-order-owner-2026-11-19)).** Three offsets meet at a tower
+joint: an angle bolted by one leg sits out of the plane (the codes'
+rules for such angles cover it; it is not in the FE model); the sideways
+shift (a rigid end offset in the analysis, read only at level 4 with the
+joint details on — about three quarters of the real towers' joints have
+no shift data); the welded plate's extra offset (not analysed).
+- [ ] A1 (M): the layout's planner run relaxed — the planned shift kept
+  even where the joint is not written; where no plan exists, an upper
+  bound; kept as an analysis value apart from the fabrication record,
+  never shown as a laid-out joint; deterministic, followed after edits.
+- [ ] A2 (S): the analysis reads the estimates when the option is on;
+  results say "estimated" and "upper bound at N ends"; theory and
+  safe-side pages.
+- [ ] A3 (S): measured on the 78 real towers (ends estimated against
+  upper bounds, the usage change, the largest moments; against the real
+  shifts of level-4 towers).
+- [ ] B (M): the bolts worked out from the forces through the code
+  plugins, iterated (two or three rounds), if the presets prove too rough.
+- [ ] D (M): the out-of-plane seat offsets as rigid end offsets in the FE
+  model, measured once as an option (needed for the welded plate's
+  offset, O44).
+Decided 2026-11-19: "estimated eccentricities" an option at level 3, off
+until measured on the 78 towers, then on by default; where no layout
+fits, an upper bound — the 30 mm shift limit, or the plate case's offset
+where a plate would be needed — said "upper bound"; the bolts from the
+class presets first, from the forces (B) next if too rough; the seat
+offsets measured once as an option (D).
 
 ### Done and taken out of this list
 Built, in active development (not approved yet).
@@ -1584,6 +2015,14 @@ plugins).
   table's range). **Materials typed in the section editor**: built 2026-10-25 (in active
   development, not approved yet): new, edit, duplicate, delete, a rename
   carried to the sections and the default material.
+  *2026-11-15 (review of the member wind on inclined members; owner: "go
+  ahead with your recommendations"), built, in active development, not
+  approved yet:* SIA 261's inclination factors (Tab. 74) built in for every
+  non-round shape and sin θ for round ones, tapered below 30° with the
+  projected area, curves per shape in the library's `[wind]` so a code
+  plugin can give its own, sin² kept as an option; without a given drag,
+  SIA 261's force coefficient for the shape (Tab. 71) instead of 1 — the
+  member wind up by about 16 to 24 % on the reviewed towers.
 - **U6. Body generators**: redundants, plan bracing, widths per panel and
   several points on one crossarm built (2026-10-19, options off by
   default, in active development, not approved yet). A file using one is
@@ -1801,7 +2240,7 @@ published curves (no tables typed from memory).
 > **Owner:** (2026-10-19) Later: the owner will say when reference data is
 > available.
 
-### O17. A database as the model's backbone (standalone server)
+### O17. A database as the model's backbone — the country server
 In a standalone server mode, the project's model kept in a database
 (instead of the project file) through a connection the server holds, so
 that other software can read and write the line and OpenOHL fits into a
@@ -1809,13 +2248,191 @@ larger ecosystem (asset management, GIS, planning tools). Stronger
 version validation goes with it: every change checked against the
 revision it was made from, the model's schema version checked at each
 connection, and writes from outside validated as the session's commands
-are. Proposed (to discuss; nothing built): the session's objects and
-log as tables, the server the only writer, the database chosen with the
-owner.
+are. Since 2026-11-18 this is the country server below (PostgreSQL, the
+server the only writer, the session over a store).
 > **Owner:** (2026-10-25) Not now, but in the roadmap: a connection to a
 > database as the backbone of the model in a standalone server mode, to
 > connect it to existing software and integrate it into a bigger
 > ecosystem; it will also need stronger version validation.
+
+**The country server** (plan of 2026-11-16; owner: a whole country in a
+database, not all in memory, the user picking the routes he works on and
+the rest loaded near them, the computations on those routes, an admin
+deciding what each user may see; [ADR-0013](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/adr/0013-country-server.md)).
+The plan's 15 questions answered as recommended on 2026-11-16 ("Just
+reduce the synthetic test otherwise ok for the plan": PostgreSQL; a line
+of the network is what a project is today; ids unique, clashes renamed
+with the line's code; default deny with see-grants; a hidden neighbour
+computed on the server and reported without its details; shared towers
+checked under each line's cases, the worst kept; fields pulling in lines
+within 500 m; plugin checks declaring an optional reach; PostGIS;
+offline working sets without reservations at first; library requests as
+pending drafts; the import keeping the current state; the server's
+project lines called branches; Compose and OIDC, the owner's IT
+deciding). Started 2026-11-18 (owner: rights and roles "applied to almost
+every element and library"; the single-user model saved in today's
+format; every model and element of a server in PostgreSQL, each model
+exported on its own as a project file). Sizes: S about a session, M two
+or three, L four or more. The phases, in order:
+- [x] 0 Decisions: ADR-0013, its amendments, the database's tables drafted
+  (2026-11-18).
+- [x] 1 A synthetic country of the owner's size (12 000 pylons, 2.5
+  systems a pylon), deterministic, and today's baseline: open 25 s, an
+  edit about 32 s (2026-11-18).
+- [x] 2 The store interface under the session (SQLite), files unchanged
+  (2026-11-18). Left: the point-cloud and background stores still open
+  the file themselves.
+- [x] 3 Commands applied in place and validated locally (what a command
+  touches and what refers to it): an edit 30–60 s → 2–4 ms on the
+  synthetic country, open 25 → 1.8 s; a part of a line in a file of its
+  own (2026-11-18).
+- [x] 4 The PostgreSQL store (`ohl-store-pg`), the same store tests on
+  both stores, `ohl network import` (ids renamed with the line's code,
+  twin towers listed) and `ohl network export` of one model as a project
+  file (2026-11-19). Decided 2026-11-19: one model is one store, branches
+  per model until phase 11; the objects' JSON kept as text, not jsonb;
+  twin towers listed within 0.5 m with the same type, their height and
+  orientation differences shown, never used to hide a pair, the admin
+  deciding; the import makes the "imported from FILE" revision by
+  default, `--no-revision` to leave it out (built); renamed ids nested
+  accepted, never the same code twice; `tools/check.sh` requires the
+  PostgreSQL tests on this machine (`OHL_REQUIRE_PG_TESTS=1`; the CI stays
+  manual and skips them); `ohl network init --name`. To build of these:
+  the twins' differences shown, the check script's requirement, `ohl
+  network init`.
+- [x] 5 The server on the database (`ohl network serve`): every model in
+  memory, each command one transaction, the stream by interest (models,
+  routes, tiles) with heartbeats and catch-up, tile packages built by
+  packager threads (each section solved alone, the same to the bit), the
+  web client by tile, protocol 3 (alpha clients refused); every memory
+  and latency target met on the synthetic country (2026-11-19). Decided
+  2026-11-19: the context case solved ahead when the server is idle (in
+  phase 6, low priority, its memory bounded); catch-up positions for
+  changes without a log entry: fine; tiles of level 2 (1 024 m) and a
+  context case of 15 °C still air as a network setting, the context wires
+  labelled a drawing — never a result, never used by a check; one model
+  per line stays the recommendation, and the packager's copy of a whole
+  line goes with phase 6 and O42's in-place work; default deny: only
+  users an admin added may join a network, even as viewers (today a
+  newcomer is a viewer of everything until phase 7).
+- [ ] 6 The client's working set and context (L): the working set picked
+  as whole routes (a list or the map), a part of a route by station range
+  or from one structure to another, or an area drawn on the map — always
+  snapped out to whole tension sections, shown before it is confirmed,
+  saved by name (owner, 2026-11-16); context tiles around the camera,
+  read-only (LRU); a partial replica fed by the stream (a route newly
+  added caught up); "add this route to my working set"; the desktop's
+  single file unchanged. With it: the idle solve of the context case, no
+  whole-line copy in the packager.
+- [ ] 7 Rights and roles (M): roles as named permission sets (shipped:
+  viewer, designer, checker, library maintainer, line admin, network
+  admin; permissions see, edit, create, delete, review, export, lock,
+  request, manage rights), assignments of a user or group, a role and a
+  scope (the network, a region, a line, a route or part of one, an object
+  kind, an object, a library, a library file, an entry), default deny, an
+  explicit deny set by network admins only, one function for the commands
+  and the server's outgoing filter (the tile packages' rights class),
+  "see as user", the audit; property tests that no message holds a hidden
+  id or coordinate.
+- [x] 8 Towers shared by several routes: a change that breaks another
+  line's connection refused, naming it; a change that only moves it
+  allowed, its results marked stale and its owners told; protected lines
+  refused pending their owners' review; a merge breaking a connection is
+  a conflict; OHL-Design's editable routes, notices and stale marks
+  (2026-11-18).
+- [ ] 9 Country libraries (L): kinds locked for the whole server, their
+  maintainers, requests for additions (may be refused; a pending draft
+  usable in the requester's own branch, blocking review and merge),
+  releases, pins (built lines pinned, designs in progress following the
+  latest), *Update library pins*, withdrawn entries, a use index, the
+  import's mapping of today's per-project libraries.
+- [ ] 10 Scoped computations (L; an engine change and an optional plugin
+  interface step, asked first): each check's own reach, neighbours pulled
+  in, other lines' wires as targets, structure loads with other lines'
+  sections, hidden neighbours computed on the server, results saying what
+  was pulled in and marked stale when it changes.
+- [ ] 11 Version control at scale (M–L): trees split, branches over
+  working sets, merges at shared towers.
+- [ ] 12 The offline working set (M): exported with read-only
+  neighbours, back as a bundle.
+- [ ] 13 Security, deployment, backups (M): a security review of the
+  network server (the interest pace, tile limits, queues), Compose files,
+  OIDC sign-in, a restore drill, migrations refused without a recent
+  backup, TLS to a database on another host.
+- [ ] 14 Scale validation (S): the synthetic country measured end to end;
+  a real line's import measured locally only.
+
+Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
+by tile; the merge of twin towers (an admin's command). A first usable
+milestone (a country in the database, users moving about and editing
+their routes, checks on the working set said "neighbours not pulled in")
+comes after phase 6 with 7 and 8; phase 10 brings the full checks.
+
+**OHL-Server, an app for admins** (plan of 2026-11-18; owner: "Can we
+have the server running in its own app which would allow for the gestion
+of the roles and an overview map of the model inside but very simplified
+mostly oriented for admin? This is a plan to define and not already start
+on"). **Nothing built until the owner answers.** A third application, for
+admins only (no engineering editing, no 3D, no checks run from it), in
+two modes: *host* (the server inside the app, for a small office or a
+test; closing asks first) and *connect* (to a headless server, the
+production way; the app is never needed for the server to run). Its
+pages: Overview; a simplified 2D map (routes by voltage, owner or state,
+structures as dots past a zoom, shared towers; overlays of assignments,
+working sets in use, locks, stale results; no background by default);
+Users and groups; Roles (the permission matrix); Assignments (the scope
+picked on the map, in a tree or in the library list; "what changes"
+before saving); See as user (the server's own filter); Lines (export one
+model, import with its report); Libraries (locks, maintainers, requests,
+releases); Audit (append-only, to CSV); Operations (backups, the restore
+drill, migrations, the log, sessions, settings). It talks to the server's
+protocol only, never to the database; every admin action audited. Stages
+with the server's phases: A after 5 (the app, both modes, Overview,
+Operations, the map), B with 7 (the rights pages, replacing the admin
+window planned inside OHL-Design), C with 8, D with 9, E the Lines page,
+F with 13.
+> **Owner:** (to answer, 2026-11-18; the recommendation after the arrow)
+> 1. A desktop app or a page in the browser? → a desktop app. 2. Host and
+> connect modes, or connect only? → both. 3. Who may open it? → network
+> admins, line admins (their lines), library maintainers (their
+> libraries). 4. Anything editable on the map? → no, read-only. 5. The
+> map's background? → none by default; region outlines the admin
+> imports; optionally the owner's own tile server. 6. The admin rights in
+> OHL-Design today? → kept for a project hosted from a file; for the
+> database server only in OHL-Server. 7. When? → stages A–F with the
+> server's phases, A after phase 5.
+
+### O46. The tests' speed and a flaky PostgreSQL test
+Owner, 2026-11-19: "the server seems to have very long tests can they be
+optimised?" **Decided 2026-11-19, first in the
+[order](#next-in-order-owner-2026-11-19) with O42; not built.**
+1. First, the flake: `schema_and_the_writers_lock` failed when other runs
+   of the check ran at the same time — the PostgreSQL tests
+   (`crates/ohl-store-pg/tests/common/mod.rs`) pick a free port by
+   binding and releasing it, so two runs can take the same port or
+   connect to the other run's cluster: start again on another port and
+   check that the server's data directory is the test's own; proven with
+   runs side by side.
+2. One PostgreSQL cluster per test binary (started once, a database per
+   test, stopped and deleted at the end, also after a failure), the tests
+   as isolated and as strict.
+3. The slow command-line safety-volume test (about 20 s): cheaper
+   without testing less.
+4. Every test of the server, the store, the session and the command line
+   timed before and after (performance.md). No test removed or weakened.
+
+### O47. Version management, left from the work plan of 2026-11-10
+- Merge plans made in the engine: the app rebuilds the plans for a
+  revert, a review into another line and Bring in, and those copies skip
+  the libraries check; made in the engine, that is fixed and Bring in
+  gets its list of changes; with it "main has K newer" in the menu (the
+  count exists). (S–M)
+- A tower and its alignment point settled as one choice (a convenience;
+  today's behaviour is safe). (M)
+- The docs' screenshots of the Versions menu taken again.
+> **Owner:** (to answer, 2026-11-10) The "keep both" choice and servers:
+> a shared server updated together with the app, or the app hides the
+> choice when the server does not know it?
 
 ## Proposed stages (to discuss)
 
@@ -1878,7 +2495,7 @@ owner.
 - [x] Web client (WebGPU) joining server sessions — base: `ohl serve --web PORT` / File › Host this project (Web client), HTTPS + WebSocket with the same codes and roles; 3D (WebGPU, Canvas2D fallback), plan and profile of the line with wires solved on the server (one weather case), selection, presence, live operation log; designers move structures. Not yet: terrain/point clouds, weather choice, other edits
 
 ### Server and version control — more capabilities
-- [ ] **Server**: more editing through the web client (structures, strings, sections), terrain and point clouds in the web client, several projects per server, accounts and roles managed in the app, presence and locks per object, a server log and backups
+- [ ] **Server**: more editing through the web client (structures, strings, sections), terrain and point clouds in the web client, several projects per server, accounts and roles managed in the app, presence and locks per object, a server log and backups *(the country server and OHL-Server, O17, take most of these)*
 - [ ] **Version control**: cherry-pick, visual diffs in the views, history export for audits, revision comparison of results (sag, clearances, loads), automatic sync of offline copies, custom roles, area grants drawn in the plan
 
 ### Phase 6 — Ecosystem & 1.0
@@ -1894,8 +2511,15 @@ owner.
   previous major version from then.*
 - [ ] Plugin registry / index — GitHub issue #34
 - [ ] Complete theory manual and validation report — GitHub issue #35 *(2026-11-13: 27 theory pages and 255 validation cases; 2026-11-17: 274 validation cases, a report from `ohl validate --report`; 2026-11-18: 277; not complete)*
-- [ ] Translations (i18n)
+- [ ] Translations (i18n) *(to answer, from the equivalence review of
+  2026-11-14: which languages first — French, German and Italian for
+  Switzerland? — and the theory pages too, or only the user interface?)*
 - [ ] Public release, governance model, maintainers team
+- [ ] The Windows installer (its files and the draft-release workflow,
+  2026-11-11, never built or run on Windows;
+  [releases](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/releases.md#the-windows-installer)) —
+  to decide: the applications without their console window, the icon in
+  the executables, *Add the ohl command line to PATH* ticked by default.
 
 ### Cross-cutting (every phase)
 - Validation cases for every calculation, with references
