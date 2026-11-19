@@ -8,6 +8,54 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (estimated eccentricities at level 3)
+
+**O45 A1–A3, the joints' eccentricities set automatically** (step 4 of
+the order of 2026-11-19; the owner's decisions of the same day; built, in
+active development, not approved yet;
+[theory](../theory/estimated-eccentricities.md),
+[user guide](../user-guide/structure-analysis.md)):
+
+- **A1, the estimates**: the layout's planner run relaxed
+  (`layout_run::plan_relaxed`: the planning of *Lay out joints*, nothing
+  written, no clash rounds); per member end it takes, the shift laid out
+  or given in the file, else the planned shift (kept even where a run
+  would not write the joint), else an **upper bound** — the shift limit
+  (the record's, 30 mm to start with) and, where a plate in the member's
+  own plane would be needed, that plate's offset at step 4's limit (the
+  leg's thickness), said "upper bound". A planned welded plate's offset
+  is taken too (the decision on step 4 of the same day). Kept apart from
+  the fabrication record: nothing written, never shown as laid out, made
+  again at every run (so it follows every edit); deterministic.
+- **A2, in the analysis**: the option **Estimated eccentricities** at
+  level 3 (OHL-Structure: Results; `estimated_eccentricities = true` in the
+  layout's record — no structure file version, the core passes the record
+  through), off by default. The ends become rigid end offsets as a
+  `shift` at level 4 (the same offsets for a value in the file: tested,
+  and compared on the private real towers). An upper bound's sign and a
+  plate's side are not known: the cases are solved without the estimates,
+  with them and with those the other way, each member and plate taking its
+  largest usage (on the safe side for every end alone). Said NOT ON THE
+  SAFE SIDE: two or more ends of unknown sign at one frame joint (signs
+  not mixed), an end with no direction (left out); an extension's own
+  members get none (as without the option). Not used with the joint
+  details taken (level 4) or on a model file, said. The bolts from the
+  class presets (B, from the forces, later); the seat offsets of ends on
+  plates not in (D).
+- **A3, measured** on the 78 private real towers (kept privately): the
+  planned shifts are almost all 0 — the effect is the upper bounds' (about
+  a quarter of the ends); usages rise a great deal, and on some towers the
+  solve with the upper bounds does not settle (an eccentric single brace
+  holding an angle frame in line: the offset lets the joint turn) — the
+  case fails, said. **Proposed: off by default** until the owner decides
+  on an offset taken in its member's own check only for the ends of
+  unknown sign (a core change, asked, not built), and after J3 / the bent
+  plate bring the upper bounds down; the questions are in the roadmap
+  (O45).
+- Format: the record's key `estimated_eccentricities` (additive, written
+  only when on); `JointPlan` gains `off_flange` and `hand_hosts`;
+  `StructureRun::estimates` ([data model](data-model.md)).
+
 ## 2026-11-19 (the joints' own checks: the follow-ups, bolts in tension with prying)
 
 **The owner's decisions of 2026-11-19 on the joint checks, built**

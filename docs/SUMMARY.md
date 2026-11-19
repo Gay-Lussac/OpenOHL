@@ -104,6 +104,7 @@
 - [Lap joints, splices and continuous members](theory/joint-laps-splices.md)
 - [Joint bolt groups and the leg's bearing](theory/joint-groups.md)
 - [The automatic joint layout](theory/joint-layout.md)
+- [Estimated eccentricities](theory/estimated-eccentricities.md)
 - [Weight and quantities of a lattice tower](theory/structure-weight.md)
 - [Wood poles by SIA 265:2012](theory/sia265.md)
 - [Steel pole shafts by ASCE/SEI 48-19](theory/asce48.md)

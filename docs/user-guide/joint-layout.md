@@ -100,6 +100,12 @@ window for your tower):
   cable's is left out, said **NOT ON THE SAFE SIDE**).
 - **Provisional bolts** do not enter the calculation of the joint details:
   the tower stays at level 3 until no bolt is provisional.
+- At level 3 the option **Estimated eccentricities** (Results) takes the
+  shifts the layout writes — and, for the joints not laid out, those it
+  would give, or the shift limit as an upper bound — without writing
+  anything ([user guide](structure-analysis.md),
+  [theory](../theory/estimated-eccentricities.md)); a welded plate's
+  offset is taken there too.
 
 ## Orient angles
 
