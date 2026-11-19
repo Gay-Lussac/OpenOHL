@@ -605,7 +605,11 @@ mod tests {
         assert!((pull.demand - (20e3 + q)).abs() < 1e-6, "{}", pull.demand);
         let rt = 0.6 * 800e6 * 0.6 * std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
         assert!((pull.resistance - rt).abs() < 1e-6);
-        assert!((pull.usage(1.0) - 0.418).abs() < 1e-3, "{}", pull.usage(1.0));
+        assert!(
+            (pull.usage(1.0) - 0.418).abs() < 1e-3,
+            "{}",
+            pull.usage(1.0)
+        );
         let flange = c
             .checks
             .iter()
@@ -614,7 +618,11 @@ mod tests {
         let delta = 1.0 - 0.0175 / 0.032;
         let mp = (1.0 + delta) * 0.032 * 0.006f64.powi(2) * 355e6 / 4.0;
         assert!((flange.demand - 320.0).abs() < 1e-9 && (flange.resistance - mp).abs() < 1e-9);
-        assert!((flange.usage(1.0) - 2.15).abs() < 0.01, "{}", flange.usage(1.0));
+        assert!(
+            (flange.usage(1.0) - 2.15).abs() < 0.01,
+            "{}",
+            flange.usage(1.0)
+        );
         let both = c
             .checks
             .iter()

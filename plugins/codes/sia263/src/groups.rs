@@ -682,8 +682,8 @@ mod tests {
         assert!((pull.demand - (20e3 + q)).abs() < 1e-6 && (pull.resistance - rt).abs() < 1e-6);
         assert!(pull.what.contains("(77)"), "{}", pull.what);
         let flange = find("bending of L1");
-        let mp = (1.0 + (1.0 - 0.018 / 0.032)) * 0.032 * 0.006f64.powi(2) * 355e6 / 4.0
-            / gamma_m1();
+        let mp =
+            (1.0 + (1.0 - 0.018 / 0.032)) * 0.032 * 0.006f64.powi(2) * 355e6 / 4.0 / gamma_m1();
         assert!((flange.resistance - mp).abs() < 1e-9 && (flange.demand - 320.0).abs() < 1e-9);
         let rv = 0.6 * 800e6 * 0.6 * area / 1.25;
         let both = find("bolt shear and tension");
