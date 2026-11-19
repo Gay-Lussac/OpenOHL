@@ -1067,7 +1067,13 @@ out. Each change is one undo step.
     …", the usage of its parts that fit beside), as a red joint in the 3D
     view and on its own row of the report's *Joints — usage per joint*,
     counted apart — never as a usage. Correct the joint's details and run
-    again.
+    again. Where it does not fit only where the placements were **assumed**
+    (no connection given at those ends and not laid out by the joint
+    layout: the bolts placed as the joint details assume them), it reads
+    **does not fit as assumed — not detailed**, in orange, counted apart
+    again (the run's summary, the report) — still failing, never a pass:
+    detail the joint (by hand or Design › Lay out joints…) and run again
+    (the owner's decision of 2026-11-19).
   - **Pieces of a leg in line that are not said continuous** each end at
     the joint (on the safe side, said in the notes: "… not said
     continuous: each taken as ending at the joint"). Where they are one

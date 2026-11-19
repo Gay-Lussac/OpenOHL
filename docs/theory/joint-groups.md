@@ -331,6 +331,34 @@ Such a group is not sent to the code's plugin; its row says why
 (Joint details: "Usage of its parts that fit"); the joint is failing
 whatever they give.
 
+**Only where the placements were assumed** (the owner's decision of
+2026-11-19, D14): where every misfit of a group lies on member ends whose
+placement was **assumed** — not given by the user, not laid out by the
+joint layout (no `onto`, gauges, pitch, end distance or `cut` given at the
+end or in the member's design data: the joint details worked them out or
+assumed them, e.g. an import's bolts set from the work point at half the
+leg) — the row reads **"DOES NOT FIT as assumed — not detailed: …"**. It
+is still failing, never a usage or a pass, and is **counted apart** from a
+joint that does not fit as given: in the run's summary ("joints that do
+not fit: N as given, M as assumed — not detailed"), on its own row of the
+report's joints table with its own count, and in the 3D view in a colour
+of its own (orange; red: as given). A misfit on a placement given — or a
+plate's bolts, a plate being in the file — reads "as given". On the 78
+real towers of the investigation, about two thirds of the joints that do
+not fit with the layout, and nearly all without it, are only assumed
+([measured](#measured-the-joints-that-do-not-fit-as-assumed-2026-11-19)).
+
+### Measured: the joints that do not fit as assumed (2026-11-19)
+
+On the 78 tower files of a private real line (kept privately), one case:
+as imported (no joint given — the bolts placed as the joint details assume
+them) 23 128 of 33 544 joints do not fit, 22 993 of them only as assumed,
+135 as given; after Orient angles and Lay out joints, 17 821 of 55 970,
+11 057 as assumed — not detailed and 6 764 as given (most of these the
+layout's own: pieces in line it cuts back with a member bolted onto them,
+the mutual hosts — the owner's decisions D15 and D16 of 2026-11-19 take
+them with J9).
+
 ## The distances along a bolt's force
 
 Each bolt pushes the ply it bears on: the member it bolts onto **along**

@@ -275,6 +275,62 @@ fn a_plate_on_a_leg_running_on_is_held_by_its_own_bolts() {
     );
 }
 
+/// D14 (the owner's decision of 2026-11-19): D1's bolts with 70 mm holes
+/// (wider than the leg's 61 mm flange) placed only as the joint details
+/// assume them (its design data's bolts, no connection at the end): the
+/// leg's group "does not fit as assumed — not detailed" — failing, no
+/// usage, counted apart from a joint that does not fit as given; the same
+/// holes at an end given (its connection's gauges and distances): "does not
+/// fit as given".
+#[test]
+fn a_misfit_only_where_assumed_reads_not_detailed() {
+    if !built("asce10") {
+        return;
+    }
+    let assumed = TOWER.replace(
+        "bolts = { diameter = \"16 mm\", count = 1 }",
+        "bolts = { diameter = \"16 mm\", count = 2, hole = \"70 mm\" }",
+    );
+    assert_ne!(assumed, TOWER);
+    let r = rows(&assumed, &axial(40e3));
+    let leg = r
+        .iter()
+        .find(|x| x.part == PlatePart::Bearing && x.does_not_fit.is_some())
+        .unwrap_or_else(|| panic!("{r:?}"));
+    assert!(leg.misfit_assumed, "{leg:?}");
+    assert!(leg.usage.is_none(), "{leg:?}");
+    assert!(
+        leg.governs.starts_with(crate::DOES_NOT_FIT_ASSUMED),
+        "{}",
+        leg.governs
+    );
+    let n = crate::joints_not_fitting_with(&r);
+    assert!(n.get("N2").is_some_and(|m| m.assumed), "{n:?}");
+    assert!(
+        crate::joints_not_fitting(&r).contains_key("N2"),
+        "still failing"
+    );
+    // Given at the end: as given.
+    let given = format!(
+        "{TOWER}{}",
+        AT_N2.replace("grade = \"8.8\" }", "grade = \"8.8\", hole = \"70 mm\" }")
+    );
+    let r = rows(&given, &axial(40e3));
+    let leg = r
+        .iter()
+        .find(|x| x.part == PlatePart::Bearing && x.does_not_fit.is_some())
+        .unwrap_or_else(|| panic!("{r:?}"));
+    assert!(!leg.misfit_assumed, "{leg:?}");
+    assert!(
+        leg.governs.starts_with(crate::DOES_NOT_FIT)
+            && !leg.governs.starts_with(crate::DOES_NOT_FIT_ASSUMED),
+        "{}",
+        leg.governs
+    );
+    let n = crate::joints_not_fitting_with(&r);
+    assert!(n.get("N2").is_some_and(|m| !m.assumed), "{n:?}");
+}
+
 /// D1's two bolts 10 mm apart (17.5 mm holes): its holes in the leg
 /// overlap — the leg's group does not fit: no usage, failing, counted
 /// apart (never an infinite usage).

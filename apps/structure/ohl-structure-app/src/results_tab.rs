@@ -116,6 +116,12 @@ pub const NOT_SAFE_COLOUR: [u8; 4] = [200, 120, 230, 255];
 /// failing colour.
 pub const DOES_NOT_FIT_COLOUR: [u8; 4] = [235, 70, 60, 255];
 
+/// The colour of a joint that does not fit only where its placements were
+/// assumed — "does not fit as assumed — not detailed" (D14, the owner's
+/// decision of 2026-11-19): failing too, a colour of its own (orange) to
+/// count it apart from a joint that does not fit as given.
+pub const DOES_NOT_FIT_ASSUMED_COLOUR: [u8; 4] = [240, 150, 40, 255];
+
 fn rgb(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgb(c[0], c[1], c[2])
 }
@@ -265,11 +271,17 @@ impl ResultsTab {
                 s.point(at(k), usage_colour(Some(u), ""), 9.0);
             }
         }
-        // A joint that does not fit as given (2026-11-19): failing,
-        // whatever its other checks give.
-        for j in ohl_structure_link::joints_not_fitting(&r.plates).keys() {
-            if let Some(k) = r.joints.iter().position(|x| &x.id == j) {
-                s.point(at(k), DOES_NOT_FIT_COLOUR, 9.0);
+        // A joint that does not fit (2026-11-19): failing, whatever its
+        // other checks give — as given red, only where its placements were
+        // assumed orange (D14).
+        for (j, n) in ohl_structure_link::joints_not_fitting_with(&r.plates) {
+            if let Some(k) = r.joints.iter().position(|x| x.id == j) {
+                let c = if n.assumed {
+                    DOES_NOT_FIT_ASSUMED_COLOUR
+                } else {
+                    DOES_NOT_FIT_COLOUR
+                };
+                s.point(at(k), c, 9.0);
             }
         }
         if self.reactions {
@@ -1050,6 +1062,32 @@ fn case_ui(ui: &mut egui::Ui, r: &CaseResult, shown: (u64, usize)) {
                 None => ui.label("no member has a capacity"),
             };
             ui.end_row();
+            // The joints that do not fit, counted apart (2026-11-19): as
+            // given, and only as assumed — not detailed (D14).
+            let misfit = ohl_structure_link::joints_not_fitting_with(&r.plates);
+            if !misfit.is_empty() {
+                let assumed = misfit.values().filter(|m| m.assumed).count();
+                let given = misfit.len() - assumed;
+                ui.strong("joints that do not fit");
+                ui.horizontal_wrapped(|ui| {
+                    if given > 0 {
+                        ui.colored_label(rgb(DOES_NOT_FIT_COLOUR), format!("{given} as given"));
+                    }
+                    if assumed > 0 {
+                        ui.colored_label(
+                            rgb(DOES_NOT_FIT_ASSUMED_COLOUR),
+                            format!("{assumed} as assumed — not detailed"),
+                        );
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "Failing, without a usage. \"As assumed — not detailed\": they do not fit only \
+                     where the placements were assumed (not given, not laid out by the joint \
+                     layout).",
+                );
+                ui.end_row();
+            }
             ui.strong("largest displacement");
             ui.label(r.largest_displacement().map_or("—".into(), |(j, d)| {
                 format!("{:.1} mm at joint {j}", d * 1e3)

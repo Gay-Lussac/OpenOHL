@@ -3237,6 +3237,20 @@ layout's record (`estimated_eccentricities = true`, below);
 `presets_beside(dir)` reads `Connections/connection-presets.ohlcp`.
 Nothing of the estimates is written into any file.
 
+**Joints that do not fit only where assumed** (2026-11-19, the owner's
+decision D14; [theory](../theory/joint-groups.md#a-joint-that-does-not-fit)):
+`ohl_structure_link::PlateUsage::misfit_assumed` (a row that does not fit
+only where its placements were assumed — "DOES NOT FIT as assumed — not
+detailed", `DOES_NOT_FIT_ASSUMED`; failing, without a usage),
+`joints_not_fitting_with(plates) -> BTreeMap<joint, NotFitting { words,
+assumed }>` (`assumed`: every part of the joint that does not fit is so;
+`joints_not_fitting` keeps its words only), the link's
+`joint_groups::placed_given(arrival)` (given: `onto`, gauges, pitch, end
+distance or `cut` given at the end or in the member's design data — the
+user's or the joint layout's). OHL-Structure:
+`results_tab::DOES_NOT_FIT_ASSUMED_COLOUR` (orange). In memory only;
+nothing in any file.
+
 **Weight and quantities** (2026-11-19, joint details stage 4.6;
 [theory](../theory/structure-weight.md)): `ohl_bom::structure` (core,
 plain data, serde `Serialize`): `PartKind` (member, plate, cover, bolt,

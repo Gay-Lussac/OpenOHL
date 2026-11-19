@@ -105,6 +105,12 @@ pub struct PlateUsage {
     /// or plate it bolts onto, holes in one ply overlapping), why in
     /// words: no usage, failing, counted apart (none: it fits).
     pub does_not_fit: Option<String>,
+    /// It does not fit only where the placements were assumed — not given
+    /// by the user, not laid out by the joint layout: "does not fit as
+    /// assumed — not detailed" (D14, the owner's decision of 2026-11-19),
+    /// still failing, never a usage, counted apart from those that do not
+    /// fit as given.
+    pub misfit_assumed: bool,
 }
 
 impl PlateUsage {
@@ -953,6 +959,7 @@ pub fn plate_usage(
                     .collect(),
                 notes: x.notes.iter().chain(&checked.notes).cloned().collect(),
                 does_not_fit: None,
+                misfit_assumed: false,
             }
         })
         .collect();
@@ -1150,6 +1157,7 @@ pub fn plate_usage_cases_with(
                         checks: Vec::new(),
                         notes: x.notes.clone(),
                         does_not_fit: None,
+                        misfit_assumed: false,
                     };
                     if matches!(x.plan, Plan::NoSeam { .. } | Plan::Unplaced { .. }) {
                         // Nothing to send: not checked, as the core says it.
@@ -1296,16 +1304,42 @@ fn weld_loads_with(
 /// (2026-11-19): each with why, its parts' words joined — failing,
 /// counted apart from the usages, never an infinite usage.
 pub fn joints_not_fitting(plates: &[PlateUsage]) -> BTreeMap<String, String> {
-    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    joints_not_fitting_with(plates)
+        .into_iter()
+        .map(|(j, n)| (j, n.words))
+        .collect()
+}
+
+/// A joint that does not fit ([`joints_not_fitting_with`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NotFitting {
+    /// Why, its parts' words joined.
+    pub words: String,
+    /// Only where the placements were assumed (every part of it that does
+    /// not fit: [`PlateUsage::misfit_assumed`]): "does not fit as assumed
+    /// — not detailed" (D14, 2026-11-19), counted apart.
+    pub assumed: bool,
+}
+
+/// The joints of a case's joint checks that do not fit, each with why and
+/// whether only where its placements were assumed (D14, the owner's
+/// decision of 2026-11-19: "does not fit as assumed — not detailed",
+/// still failing, counted apart).
+pub fn joints_not_fitting_with(plates: &[PlateUsage]) -> BTreeMap<String, NotFitting> {
+    let mut out: BTreeMap<String, NotFitting> = BTreeMap::new();
     for p in plates {
         if let Some(w) = &p.does_not_fit {
-            let e = out.entry(p.joint.clone()).or_default();
+            let e = out.entry(p.joint.clone()).or_insert_with(|| NotFitting {
+                words: String::new(),
+                assumed: true,
+            });
+            e.assumed &= p.misfit_assumed;
             let words = format!("{}: {w}", p.what());
-            if !e.contains(&words) {
-                if !e.is_empty() {
-                    e.push_str("; ");
+            if !e.words.contains(&words) {
+                if !e.words.is_empty() {
+                    e.words.push_str("; ");
                 }
-                e.push_str(&words);
+                e.words.push_str(&words);
             }
         }
     }

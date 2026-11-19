@@ -96,7 +96,7 @@ pub use export::{
     ExportPlate, ExportSection, ExportStructure, LoadPlace, export_joints, export_structure,
     member_axes,
 };
-pub use joint_groups::DOES_NOT_FIT;
+pub use joint_groups::{DOES_NOT_FIT, DOES_NOT_FIT_ASSUMED};
 pub use joint_layout::{
     BEND_RADIUS_RATIO, BendPlan, BoltArea, EdgeRule, EndPlan, GAP_START, HoldPlan, Join, JoinKind,
     JointPlan, LayoutSettings, NODE_LIMIT, Onto, OwnPlane, PULL_BACK_START, PlatePlan, Reach,
@@ -135,8 +135,9 @@ pub use orient::{
     orient_angles,
 };
 pub use plate_checks::{
-    EndForces, PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage, joints_not_fitting,
-    plate_plans, plate_plans_in, plate_usage, plate_usage_cases, plate_usage_cases_with,
+    EndForces, NotFitting, PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage,
+    joints_not_fitting, joints_not_fitting_with, plate_plans, plate_plans_in, plate_usage,
+    plate_usage_cases, plate_usage_cases_with,
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
 pub use quantities::{
