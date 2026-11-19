@@ -206,6 +206,21 @@ values were worked out from the joints and which assumed.
    - the bill of materials lists bolts by diameter, length and grade, and
      the plates.
 
+   **Built 2026-11-19** (in active development, not approved yet): the
+   members, gusset plates, splice covers, bolts (library mass, else
+   weighed from their sizes) and welds counted from the connection records
+   only, the automatic layout's marked; a heavy and a light count (holes
+   kept or deducted, a weld without a size at SIA 263 6.3.6.3's largest
+   throat or left out); the bill in Design › Weight & quantities, as CSV,
+   XLSX and in the report; where every joint is defined (no end without a
+   `[[connection]]`, none left for a hand detail, every bolted end with
+   bolts) a run's self-weight is the counted mass, the light count for
+   the cases whose self-weight factor is below 1; `counted_self_weight =
+   false` keeps the factor (version 19). On 73 real towers after the
+   layout none has every joint defined. Not counted, said: galvanising,
+   fillers and packs (no record), fittings, washers of bolts without a
+   library mass. [Theory](../theory/structure-weight.md).
+
 > **Owner:**
 
 ### Stage 5 — Exports and validation (M) — exports built 2026-11-02
@@ -630,7 +645,8 @@ added and imported/exported."
   of materials counts the bolts per kind (stage 4.6).
 
 Built as above, but: the head's and nut's sizes and one mass and grip per
-bolt (as sold); the bill of materials does not read it yet; the checks do since stage
+bolt (as sold); the bill of materials reads its mass and grip (stage 4.6,
+2026-11-19); the checks do since stage
 4.2 (2026-11-02: its shear capacities and ultimate strength).
 [Format](../user-guide/structure-library.md). Questions left: masses per
 grip length; one library per project or per folder (today: per folder,
@@ -906,7 +922,8 @@ yes"):
 
 - A level 3 tower **without** connection data keeps today's per-member
   flags and conservative assumptions, said per member.
-- The self-weight factor stays until every joint is defined (Stage 4.6).
+- The self-weight factor stays until every joint is defined (Stage 4.6;
+  built 2026-11-19: then the counted mass, [theory](../theory/structure-weight.md)).
 
 ## Order and dependencies
 

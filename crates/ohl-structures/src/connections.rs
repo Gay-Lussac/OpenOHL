@@ -722,6 +722,12 @@ impl StructureType {
         out
     }
 
+    /// Whether the self-weight may come from the counted mass where every
+    /// joint is defined (`counted_self_weight` not false; 2026-11-19).
+    pub fn counts_self_weight(&self) -> bool {
+        self.counted_self_weight != Some(false)
+    }
+
     /// Whether the calculation takes the joint details: asked for
     /// (`joint_details = true`) on a level 4 structure. Asked for below
     /// level 4 it is not applied ([`Self::joint_details_not_applied`]).

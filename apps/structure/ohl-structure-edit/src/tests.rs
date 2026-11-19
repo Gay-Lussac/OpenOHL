@@ -1758,6 +1758,31 @@ fn continuous_ends_splices_and_faces_are_edited() {
 /// connections) it is not applied, and the To do list for level 4 names
 /// the member ends without joint details — grouped by joint, kept short.
 #[test]
+fn the_counted_self_weight_option_is_one_key() {
+    let mut f = example("type-02.ohls");
+    let before = f.text();
+    assert!(f.structure().counts_self_weight());
+    f.edit("Keep the dead-load factor", |doc, _| {
+        crate::connection_edits::set_counted_self_weight(doc, false);
+    });
+    assert!(f.error().is_none(), "{:?}", f.error());
+    assert_eq!(f.structure().counted_self_weight, Some(false));
+    assert!(!f.structure().counts_self_weight());
+    assert_eq!(
+        f.doc()["version"].as_integer(),
+        Some(i64::from(
+            ohl_structures::structures::COUNTED_SELF_WEIGHT_VERSION
+        ))
+    );
+    f.edit("Self weight from the counted mass", |doc, _| {
+        crate::connection_edits::set_counted_self_weight(doc, true);
+    });
+    assert_eq!(f.structure().counted_self_weight, None);
+    assert!(!f.text().contains("counted_self_weight"));
+    assert_ne!(f.text(), before, "the version stays raised");
+}
+
+#[test]
 fn the_joint_details_option_is_one_key_and_level_4_lists_what_lacks() {
     let mut f = example("type-02.ohls");
     let before = f.text();

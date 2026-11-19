@@ -13,6 +13,8 @@
 //! - [`saf`]: SAF, the Structural Analysis Format (xlsx; analysis
 //!   programs);
 //! - [`csv`]: neutral CSV tables for anything else;
+//! - [`quantities`]: the bill of materials (weight and quantities, joint
+//!   details stage 4.6) as CSV, XLSX and a section of the report;
 //! - [`report`]: the structure report (printable HTML and the members'
 //!   results as CSV) of a run of the structure's cases;
 //! - [`request`]: a run asked for by another program (the command line
@@ -28,6 +30,7 @@
 
 pub mod csv;
 pub mod ifc;
+pub mod quantities;
 pub mod report;
 pub mod request;
 pub mod saf;
@@ -79,16 +82,19 @@ pub enum Format {
     Saf,
     /// CSV tables in a folder.
     Csv,
+    /// The bill of materials (weight and quantities) as an XLSX workbook.
+    Quantities,
 }
 
 impl Format {
     /// Every format, in menu order.
-    pub const ALL: [Format; 5] = [
+    pub const ALL: [Format; 6] = [
         Format::Ifc,
         Format::IfcMembers,
         Format::Ifc2x3,
         Format::Saf,
         Format::Csv,
+        Format::Quantities,
     ];
 
     /// Name on the command line.
@@ -99,6 +105,7 @@ impl Format {
             Format::Ifc2x3 => "ifc2x3",
             Format::Saf => "saf",
             Format::Csv => "csv",
+            Format::Quantities => "quantities",
         }
     }
 
@@ -114,7 +121,12 @@ impl Format {
             Format::IfcMembers => "IFC4 — members with their profiles (BIM viewers)",
             Format::Ifc2x3 => "IFC2x3 — members for steel-detailing programs",
             Format::Saf => "SAF (xlsx) — analysis model with load cases (analysis programs)",
-            Format::Csv => "CSV tables (nodes, members, sections, supports, loads)",
+            Format::Csv => {
+                "CSV tables (nodes, members, sections, supports, loads, the bill of materials)"
+            }
+            Format::Quantities => {
+                "Bill of materials (xlsx) — members, plates, covers, bolts, welds and their mass"
+            }
         }
     }
 
@@ -122,7 +134,7 @@ impl Format {
     pub fn extension(self) -> Option<&'static str> {
         match self {
             Format::Ifc | Format::IfcMembers | Format::Ifc2x3 => Some("ifc"),
-            Format::Saf => Some("xlsx"),
+            Format::Saf | Format::Quantities => Some("xlsx"),
             Format::Csv => None,
         }
     }
@@ -188,7 +200,9 @@ pub fn load_sections(paths: &[PathBuf]) -> Result<(SectionLibrary, Vec<String>),
 /// first; its bolts and gusset plates where the joint details put them,
 /// the bolts' sizes from `bolts` (`ohl_structure_link::export_joints`);
 /// the load cases from `table` (a CSV load table), else its own recipes
-/// evaluated without line values ([`own_load_table`]).
+/// evaluated without line values ([`own_load_table`]); its weight and
+/// quantities (`ohl_structure_link::structure_quantities`; none when they
+/// cannot be counted: a note says why).
 pub fn structure(
     text: &str,
     library: &SectionLibrary,
@@ -199,7 +213,26 @@ pub fn structure(
     let mut s =
         ohl_structure_link::export_structure(text, library, Some(table.unwrap_or(&own)), &recipes)?;
     ohl_structure_link::export_joints(&mut s, text, library, bolts)?;
+    add_quantities(&mut s, text, library, bolts);
     Ok(s)
+}
+
+/// Counts the weight and quantities of the structure file `text` into
+/// `s` (`ohl_structure_link::structure_quantities`: the bill of materials
+/// of the CSV tables and of [`Format::Quantities`]); what cannot be
+/// counted is said in its notes.
+pub fn add_quantities(
+    s: &mut ExportStructure,
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &BoltLibrary,
+) {
+    match ohl_structure_link::structure_quantities(text, library, bolts) {
+        Ok(q) => s.quantities = Some(q),
+        Err(e) => s
+            .notes
+            .push(format!("weight and quantities not counted: {e}")),
+    }
 }
 
 /// The bolt libraries of `paths` (files `.ohlb`, or folders whose `.ohlb`
@@ -241,6 +274,11 @@ pub fn write(
         }
         Format::Ifc2x3 => ifc::ifc(s, &ifc_options(ifc::Schema::Ifc2x3, true, false))?.into_bytes(),
         Format::Saf => saf::workbook(s)?,
+        Format::Quantities => quantities::workbook(
+            s.quantities
+                .as_ref()
+                .ok_or("weight and quantities not counted (see the export's notes)")?,
+        )?,
         Format::Csv => {
             std::fs::create_dir_all(out).map_err(|e| io(out, e))?;
             let mut written = Vec::new();

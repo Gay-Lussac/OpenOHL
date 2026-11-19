@@ -423,6 +423,17 @@ impl StructureApp {
             );
         }
         let run = self.results.run().ok_or("no results")?;
+        // The weight and quantities of a tower with joint details, when
+        // the run did not count them (stage 4.6).
+        let mut run = run.clone();
+        ohl_structure_export::report::with_quantities(
+            &mut run,
+            f.structure(),
+            f.text_ref(),
+            &self.loads.sections,
+            f.path().and_then(Path::parent),
+        );
+        let run = &run;
         let (table, recipes) = &self.results.ran_with;
         let incomplete: Vec<(String, String)> = run
             .cases

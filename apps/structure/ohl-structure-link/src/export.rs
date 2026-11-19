@@ -241,6 +241,10 @@ pub struct ExportStructure {
     /// the joint view draws it ([`export_joints`]); empty or zero: on the
     /// axis. The analysis model always keeps the axes.
     pub body_offsets: Vec<[f64; 3]>,
+    /// The structure's weight and quantities (joint details stage 4.6;
+    /// `crate::structure_quantities`), for the bill of materials of the
+    /// CSV and XLSX exports; none: not counted.
+    pub quantities: Option<ohl_bom::structure::StructureBom>,
 }
 
 /// A bolt as the exports place it, consistent with its member's solid

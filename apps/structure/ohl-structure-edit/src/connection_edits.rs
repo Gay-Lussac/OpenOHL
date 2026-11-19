@@ -193,6 +193,23 @@ fn tidy(doc: &mut DocumentMut) {
     }
 }
 
+/// Sets whether a run's self-weight is the counted mass where every joint
+/// is defined (joint details stage 4.6, 2026-11-19): counted (the
+/// default) removes `counted_self_weight`, the file as before; not
+/// (`counted_self_weight = false`, version 19) keeps the dead-load factor
+/// anyway.
+pub fn set_counted_self_weight(doc: &mut DocumentMut, counted: bool) {
+    if counted {
+        doc.remove("counted_self_weight");
+    } else {
+        doc["counted_self_weight"] = toml_edit::value(false);
+        raise_version(
+            doc,
+            i64::from(ohl_structures::structures::COUNTED_SELF_WEIGHT_VERSION),
+        );
+    }
+}
+
 /// Gives (`Some`) or clears (`None`) `field` of `member`'s end at `joint`:
 /// a connection made when missing, dropped when nothing is left in it.
 pub fn set_connection_field(

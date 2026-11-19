@@ -18,6 +18,8 @@ path = "src/report_main.rs"
 
 [dependencies]
 ohl-core.workspace = true
+# The bill of materials (weight and quantities, joint details stage 4.6).
+ohl-bom.workspace = true
 ohl-sections.workspace = true
 ohl-structure-link.workspace = true
 ohl-structure-loads.workspace = true

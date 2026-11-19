@@ -32,7 +32,7 @@ struct Args {
     file: PathBuf,
     /// ifc (IFC4: analysis model and members), ifc-members (IFC4, members
     /// only), ifc2x3 (members for steel-detailing programs), saf (xlsx), csv
-    /// (tables in a folder).
+    /// (tables in a folder), quantities (the bill of materials, xlsx).
     #[arg(long)]
     format: String,
     /// Section library files (.ohlsec) or folders; the first one giving

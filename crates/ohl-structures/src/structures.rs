@@ -271,8 +271,16 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// says so. Version 18 (2026-11-18, third round) adds the structure's
 /// default minimum bolt distances (`[default_bolt_minimums]`:
 /// [`crate::bolts::DefaultBoltMinimums`], [`DEFAULT_BOLT_MINIMUMS_VERSION`]);
-/// a file is written at 18 only when it gives them.
-pub const STRUCTURE_FILE_VERSION: u32 = 18;
+/// a file is written at 18 only when it gives them. Version 19
+/// (2026-11-19, joint details stage 4.6) adds `counted_self_weight =
+/// false` ([`StructureType::counted_self_weight`],
+/// [`COUNTED_SELF_WEIGHT_VERSION`]): the dead-load factor kept even where
+/// every joint is defined; a file is written at 19 only when it gives the
+/// key.
+pub const STRUCTURE_FILE_VERSION: u32 = 19;
+
+/// The structure file version of `counted_self_weight` (2026-11-19).
+pub const COUNTED_SELF_WEIGHT_VERSION: u32 = 19;
 
 /// The structure file version of `[default_bolt_minimums]` (owner
 /// 2026-11-18, third round): the default minimum end, edge and spacing of
@@ -1337,6 +1345,14 @@ pub struct StructureType {
     /// [`crate::bolts::DefaultBoltMinimums::default`]).
     #[serde(default)]
     pub default_bolt_minimums: Option<crate::bolts::DefaultBoltMinimums>,
+    /// Version 19 (2026-11-19, joint details stage 4.6): where every joint
+    /// is defined, the run's self-weight is the structure's counted mass
+    /// (members, plates, covers, bolts, welds) instead of the members'
+    /// steel × the dead-load factor; `false` keeps the factor anyway. None
+    /// or true: the counted mass where every joint is defined
+    /// ([`Self::counts_self_weight`]).
+    #[serde(default)]
+    pub counted_self_weight: Option<bool>,
 }
 
 /// An attachment of a placed structure, in global coordinates.

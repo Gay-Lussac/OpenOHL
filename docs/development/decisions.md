@@ -8,6 +8,55 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (lattice towers: weight and quantities)
+
+**A tower's parts counted and weighed; the self-weight from the counted
+mass where every joint is defined** (owner, 2026-11-18: "go ahead" on the
+lattice-tower open items, queue C item 7 — joint details stage 4.6, and
+2026-11-02: "the self-weight factor stays until every joint is defined";
+built, in active development, not approved yet;
+[theory](../theory/structure-weight.md)).
+
+- **What is counted**: the members (section × length), and from the
+  connection records only the bolts of each end (the bolt library's mass,
+  else weighed from their sizes), the gusset plates and splice covers
+  (outline × thickness), the welds between plates; a member end without a
+  `[[connection]]`, a joint left for a hand detail, a bolted end without
+  bolts or a plate without an outline make the joint not defined, its
+  parts not counted. The automatic layout's parts are marked.
+- **Two counts**: heavy (holes not deducted, a weld without a size at SIA
+  263 6.3.6.3's largest throat both sides, the more open fillet corner, a
+  member's steel beyond the work points) and light (holes deducted, the
+  members to where their steel stops, a weld without a size left out).
+  The steel of a plate: the heaviest member on it; nothing on it, and
+  every weld: SIA 261 Table 28's 78.5 kN/m³.
+- **The switch**: where every joint is defined and the file does not say
+  `counted_self_weight = false` (structure file version 19), OHL-Structure's
+  runs take the heavy count over the members' steel as the factor on every
+  member's self-weight (the members' own factors dropped); a case whose
+  self-weight factor is below 1 takes the light count (SIA 260 Table 1's
+  \( \gamma_{G,inf} \) applies to G as before). An extension with its own
+  members keeps the factor. The run says which, per structure.
+- **Not counted, said NOT ON THE SAFE SIDE**: galvanising, fillers and
+  packs (no record in the data), fittings, the washers of a bolt without a
+  library mass, a worked-out plate outline (the least plate), the welds of
+  welded member ends. A case typed with a factor of 1 where the weight is
+  favourable takes the heavy count (not on the safe side by the two
+  counts' difference, shown).
+- **The bill**: Design › Weight & quantities in OHL-Structure (a panel,
+  counted in the background), `bill_of_materials.csv` among the CSV tables,
+  File › Export › Bill of materials (xlsx), a section of the structure
+  report.
+- **Measured**: no shipped example has joint details; on 73 real towers
+  after Orient angles and Lay out joints none has every joint defined (the
+  legs' ends and the hand-detail joints have no records), so no run
+  switches; the plates and bolts scaled to all ends give about 1.14 (up to
+  1.20) against the typed 1.15 to 2.4 (median 1.3). The line's checks (the core) keep the
+  factor.
+- **Kept to the brief's limits**: `ohl-structures` gained the one key,
+  `ohl-structure-link` the counting and the switch (run.rs, lib.rs), no
+  change in `ohl-structures-fe`.
+
 ## 2026-11-19 (country server, phase 4)
 
 **The PostgreSQL store: a model of the network opened as a project; the
