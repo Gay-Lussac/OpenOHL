@@ -395,7 +395,10 @@ fn put_value(kind: Kind, id: &str, value: Value) -> Command {
 /// What the two sessions give, to compare.
 fn answer<T: fmt::Debug>(r: &Result<T, SessionError>) -> String {
     match r {
-        Ok(v) => format!("ok {v:?}"),
+        // (Which way a command went, `Applied::whole`, is what differs.)
+        Ok(v) => format!("ok {v:?}")
+            .replace(", whole: true", "")
+            .replace(", whole: false", ""),
         Err(e) => format!("err {e:?}"),
     }
 }

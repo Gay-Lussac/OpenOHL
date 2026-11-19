@@ -561,6 +561,7 @@ impl Session {
             sections,
             points: points_changed,
             notice: None,
+            whole: false,
         }))
     }
 

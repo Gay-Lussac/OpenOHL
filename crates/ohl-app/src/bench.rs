@@ -1752,3 +1752,202 @@ fn hover_pick_benchmark() {
         );
     }
 }
+
+/// One project for [`edit_split_benchmark`]: `file` (a project, edited:
+/// give a copy) opened as `user`, the weather cases of `weather`, case 0
+/// shown and solved.
+fn bench_project(
+    file: &std::path::Path,
+    user: &str,
+    weather: &std::path::Path,
+    typed: bool,
+    library: Option<&std::path::Path>,
+) -> Model {
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let ex = root.join("examples/synthetic-line");
+    let mut m = model::load(
+        Sources {
+            file: file.to_owned(),
+            library: Some(library.map_or_else(|| root.join("libraries/cables"), |l| l.to_owned())),
+            weather: Some(weather.to_owned()),
+            structures: typed.then(|| ex.join("Structures")),
+            insulators: typed.then(|| ex.join("Insulators")),
+            point_budget: 1000,
+            corridor: 60.0,
+            user: Some(user.to_owned()),
+            ..Sources::default()
+        },
+        &|_| {},
+    )
+    .unwrap();
+    m.shown_cases = vec![0];
+    m.ensure_solved(0);
+    m
+}
+
+/// An example line imported into a project of its own in `dir`.
+fn example_project(dir: &std::path::Path, file: &str) -> std::path::PathBuf {
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let line = ohl_line::Line::load(&root.join("examples/synthetic-line").join(file)).unwrap();
+    let path = dir.join(file.replace(".ohl.json", ".ohl"));
+    std::fs::remove_file(&path).ok();
+    ohl_session::Session::open(&path)
+        .unwrap()
+        .import(&line, "tester")
+        .unwrap();
+    path
+}
+
+/// Moves structure `id` of `m` by 1 m (one command).
+fn move_by_a_metre(m: &mut Model, id: &str) {
+    let p = m.stored_line().unwrap().structure(id).unwrap().position;
+    m.apply(
+        "bench",
+        ohl_session::Command::MoveStructure {
+            id: id.to_owned(),
+            position: [p[0] + 1.0, p[1], p[2]],
+        },
+    )
+    .unwrap();
+}
+
+/// Where an edit's time goes in OHL-Design (O42): structures moved by
+/// 1 m (each followed by its undo and redo), the line made again whole
+/// and taken in place, on the example lines (as projects) and on
+/// `OHL_BENCH_FILE` (a project copy, e.g. the synthetic country,
+/// `ohl synth country`; opened as `OHL_BENCH_USER`, default `tester`):
+/// the session, the line copied, resolved and validated, the weather
+/// cases and reference check, the case shown solved again, and the
+/// views' first frame after an edit (the plan, then the 3D view; with a
+/// GPU). Medians, ms. Ignored by default.
+///
+/// ```bash
+/// OHL_BENCH_FILE=/path/to/copy.ohl cargo test --profile bench-fast -p ohl-app edit_split_benchmark -- --ignored --nocapture
+/// # OHL_BENCH_EDITS=N moves (default 10); OHL_BENCH_VIEWS=0: no views;
+/// # OHL_BENCH_LIBRARY=DIR: OHL_BENCH_FILE's wire library (an empty folder:
+/// # every section refused at once, the line's upkeep measured alone)
+/// ```
+#[test]
+#[ignore = "benchmark: run optimised with --ignored --nocapture"]
+fn edit_split_benchmark() {
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let weather = root.join("examples/synthetic-line/weather-cases.ohlwc");
+    let dir = std::env::temp_dir().join(format!("ohl-edit-split-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let edits: usize = ohl_core::env::var("OHL_BENCH_EDITS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+    let views = ohl_core::env::var("OHL_BENCH_VIEWS").ok().as_deref() != Some("0") && gpu();
+    let user = ohl_core::env::var("OHL_BENCH_USER").unwrap_or_else(|_| "tester".into());
+    let mut projects: Vec<(String, std::path::PathBuf, bool)> = vec![
+        (
+            "example".into(),
+            example_project(&dir, "synthetic-line.ohl.json"),
+            false,
+        ),
+        (
+            "example, typed".into(),
+            example_project(&dir, "synthetic-line-typed.ohl.json"),
+            true,
+        ),
+    ];
+    if let Some(f) = ohl_core::env::var_os("OHL_BENCH_FILE") {
+        projects.push(("OHL_BENCH_FILE".into(), f.into(), false));
+    }
+    let big_library = ohl_core::env::var_os("OHL_BENCH_LIBRARY").map(std::path::PathBuf::from);
+    let mut table = vec![
+        "| Project | way | session | copy | resolve, validate | weather, reference | solve | \
+         edit | first frame, plan | first frame, 3D |"
+            .to_owned(),
+        "|---|---|---|---|---|---|---|---|---|---|".to_owned(),
+    ];
+    for (name, file, typed) in projects {
+        let library = big_library.as_deref().filter(|_| name == "OHL_BENCH_FILE");
+        let t = Instant::now();
+        let mut m = bench_project(&file, &user, &weather, typed, library);
+        eprintln!(
+            "{name}: opened, case 0 solved in {:.1?} ({} structures, {} sections)",
+            t.elapsed(),
+            m.line.structures.len(),
+            m.line.sections.len()
+        );
+        let ids: Vec<String> = {
+            let st = &m.line.structures;
+            (0..edits)
+                .map(|k| st[(k * 7919 + st.len() / 3) % st.len()].id.clone())
+                .collect()
+        };
+        for whole in [true, false] {
+            m.set_whole_line_edits(whole);
+            let mut rows: Vec<crate::edit::EditTimes> = Vec::new();
+            for id in &ids {
+                move_by_a_metre(&mut m, id);
+                rows.push(m.last_edit.clone());
+                m.undo().unwrap();
+                rows.push(m.last_edit.clone());
+                m.redo().unwrap();
+                rows.push(m.last_edit.clone());
+            }
+            let med = |f: &dyn Fn(&crate::edit::EditTimes) -> Duration| {
+                let mut v: Vec<f64> = rows.iter().map(|r| f(r).as_secs_f64() * 1e3).collect();
+                median(&mut v)
+            };
+            let way = if whole { "whole" } else { "in place" };
+            let taken_whole: Vec<String> = rows.iter().filter_map(|r| r.whole.clone()).collect();
+            assert_eq!(
+                taken_whole.len(),
+                if whole { rows.len() } else { 0 },
+                "{name} {way}: {taken_whole:?}"
+            );
+            // The views' first frame after an edit (the line's version
+            // changed: what they build again), each view settled first.
+            let mut frames = [f64::NAN; 2];
+            if views {
+                for (k, tab) in [Tab::Plan, Tab::View3d].into_iter().enumerate() {
+                    let mut h = settled(bench_project(&file, &user, &weather, typed, library), tab);
+                    h.state_mut()
+                        .ready()
+                        .unwrap()
+                        .model
+                        .set_whole_line_edits(whole);
+                    let mut v = Vec::new();
+                    for id in ids.iter().take(5) {
+                        move_by_a_metre(&mut h.state_mut().ready().unwrap().model, id);
+                        let t = Instant::now();
+                        h.step();
+                        v.push(t.elapsed().as_secs_f64() * 1e3);
+                        for _ in 0..50 {
+                            if h.state_mut().ready().unwrap().view3d.pending() == 0 {
+                                break;
+                            }
+                            h.step();
+                        }
+                    }
+                    frames[k] = median(&mut v);
+                }
+            }
+            table.push(format!(
+                "| {name} | {way} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} | {:.1} | {:.0} | {:.0} |",
+                med(&|r| r.session),
+                med(&|r| r.copy),
+                med(&|r| r.resolve),
+                med(&|r| r.reference),
+                med(&|r| r.solve),
+                med(&|r| r.total),
+                frames[0],
+                frames[1],
+            ));
+            eprintln!("{}", table.last().unwrap());
+        }
+        // The line kept in place is the line made again, and so are the
+        // case's solutions (a full solve of it).
+        m.set_whole_line_edits(true);
+        let in_place = m.line.clone();
+        move_by_a_metre(&mut m, &ids[0]);
+        m.undo().unwrap();
+        assert!(in_place == m.line, "{name}: the line kept differs");
+    }
+    println!("{}", table.join("\n"));
+    std::fs::remove_dir_all(&dir).ok();
+}

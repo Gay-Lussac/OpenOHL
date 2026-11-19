@@ -317,142 +317,10 @@ impl Line {
         insulators: &InsulatorLibrary,
         cache: Option<&ResolveCache>,
     ) -> Result<Line, LineError> {
-        let invalid = |m: String| LineError::Invalid(m);
         let mut line = self.clone();
         let mut kept = cache.and_then(|c| c.kept.lock().ok());
         for s in &mut line.structures {
-            let Some(type_id) = &s.structure_type else {
-                continue;
-            };
-            if let Some(m) = kept.as_deref()
-                && let Some((stored, merged)) = m.get(&s.id)
-                && stored == s
-            {
-                *s = merged.clone();
-                continue;
-            }
-            let stored = kept.is_some().then(|| s.clone());
-            let t = structures.get(type_id).ok_or_else(|| {
-                invalid(format!(
-                    "structure {}: type \"{type_id}\" not in the structure library",
-                    s.id
-                ))
-            })?;
-            // The type's feet on the ground at the position, raised by the
-            // height adjustment.
-            let at = crate::links::feet(s);
-            let placed = t
-                .place(at, s.orientation_deg, s.extension.as_deref(), insulators)
-                .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
-            let attachments: Vec<AttachmentV1> = placed
-                .into_iter()
-                .map(|p| AttachmentV1 {
-                    set: p.set,
-                    phase: p.phase,
-                    label: p.label,
-                    insulator_point: p.insulator_point,
-                    wire_point: p.wire_point,
-                    insulator_weight: p.insulator_weight,
-                    insulator: p.insulator,
-                    insulator_wind_area: 0.0,
-                    legs: p.legs,
-                    top_label: p.top_label,
-                    bottom_label: p.bottom_label,
-                    strain_member: p.strain,
-                })
-                .collect();
-            let (mut points, mut strings, mut wires) = from_v1(&attachments);
-            let placed = t
-                .place_strings(at, s.orientation_deg, s.extension.as_deref(), insulators)
-                .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
-            points.extend(placed.points.into_iter().map(|p| {
-                let (joint, offset) = t
-                    .point_link(&p.label)
-                    .map_or((None, [0.0; 3]), |(j, o)| (Some(j.to_owned()), o));
-                StructurePoint {
-                    description: p.description,
-                    label: p.label,
-                    position: p.position,
-                    joint,
-                    offset,
-                    unlinked: false,
-                }
-            }));
-            wires.extend(placed.wires.into_iter().map(|w| WirePoint {
-                description: w.description,
-                label: w.label,
-                position: w.position,
-                set: w.set,
-                weight: w.weight,
-            }));
-            strings.extend(placed.strings.into_iter().map(|x| InsulatorString {
-                label: x.label,
-                top: x.top,
-                wire: x.wire,
-                insulator: x.insulator,
-                weight: x.weight,
-                compression: x.compression,
-                wind_area: x.wind_area,
-                stiffness: x.stiffness,
-                strain: x.strain,
-                description: x.description,
-                max_load: x.limits.max_load,
-                max_swing_deg: x.limits.max_swing_deg,
-                max_swing_across_deg: x.limits.max_swing_across_deg,
-                max_swing_along_deg: x.limits.max_swing_along_deg,
-                shapes: x.shapes,
-                // A post (structure file version 13, 2026-11-15): as a
-                // string made by hand, its exit direction in the
-                // structure's axes.
-                post: x.post,
-                hinged: x.hinged,
-                cantilever_load: x.cantilever_load,
-                exit_angle_deg: x.exit_angle_deg,
-                exit_direction_deg: x.exit_direction_deg,
-                hinge_friction_nm: x.hinge_friction_nm,
-                ..Default::default()
-            }));
-            // Sets replaced by the structure's own wire points, or left out.
-            let replaced: Vec<u32> = s
-                .wires
-                .iter()
-                .filter_map(|w| w.set)
-                .chain(s.omit_sets.iter().copied())
-                .collect();
-            for set in replaced {
-                if let Some(label) = wires
-                    .iter()
-                    .find(|w| w.set == Some(set))
-                    .map(|w| w.label.clone())
-                {
-                    without_component(&mut strings, &mut wires, &points, &label);
-                }
-            }
-            points.retain(|p| !s.omit.contains(&p.label));
-            strings.retain(|x| !s.omit.contains(&x.label));
-            wires.retain(|w| !s.omit.contains(&w.label));
-            // The structure's own items over the type's, each point linked
-            // to its joint.
-            for mut p in s.points.drain(..) {
-                link_point(&mut p, t, at, s.orientation_deg, s.extension.as_deref());
-                points.retain(|q| q.label != p.label);
-                points.push(p);
-            }
-            for x in s.strings.drain(..) {
-                strings.retain(|y| y.label != x.label);
-                strings.push(x);
-            }
-            for w in s.wires.drain(..) {
-                wires.retain(|v| v.label != w.label);
-                wires.push(w);
-            }
-            (s.points, s.strings, s.wires) = (points, strings, wires);
-            s.members = t
-                .place_stick(at, s.orientation_deg, s.extension.as_deref())
-                .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
-            if let (Some(m), Some(stored)) = (kept.as_deref_mut(), stored) {
-                m.insert(s.id.clone(), (stored, s.clone()));
-            }
+            merge_type(s, structures, insulators, kept.as_deref_mut())?;
         }
         // Structures no longer in the line forgotten.
         if let Some(m) = kept.as_deref_mut()
@@ -464,58 +332,8 @@ impl Line {
         }
         drop(kept);
 
-        // Wind areas of library assemblies (a V's shared by its legs), for
-        // strings without their own.
         for s in &mut line.structures {
-            let legs: BTreeMap<String, usize> = s
-                .strings
-                .iter()
-                .map(|x| (x.wire.clone(), s.strings_to(&x.wire).count()))
-                .collect();
-            // Weight and stiffness of library assemblies too, for strings
-            // without their own (a V's weight shared by its legs).
-            for x in s.strings.iter_mut() {
-                let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) else {
-                    continue;
-                };
-                let share = if i.kind == AssemblyKind::VString {
-                    1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
-                } else {
-                    1.0
-                };
-                if x.weight == 0.0 {
-                    x.weight = i.weight.si() * share;
-                }
-                if x.stiffness.is_none() {
-                    x.stiffness = Some(i.axial_stiffness.si());
-                }
-                // A post insulator (owner, 2026-11-14): the string is one,
-                // its ratings its own over the assembly's.
-                if i.kind == AssemblyKind::Post {
-                    x.post = true;
-                    x.strain = false;
-                    x.cantilever_load = x.cantilever_load.or(i.cantilever_load.map(|f| f.si()));
-                    x.compression = x.compression.or(i.compression_load.map(|f| f.si()));
-                }
-                // Its limits (not checked): its own over the assembly's.
-                let l = i.limits();
-                x.set_limits(x.limits().or(crate::StringLimits {
-                    max_load: l.max_load,
-                    max_swing_deg: l.max_swing_deg,
-                    max_swing_across_deg: l.max_swing_across_deg,
-                    max_swing_along_deg: l.max_swing_along_deg,
-                }));
-            }
-            for x in s.strings.iter_mut().filter(|x| x.wind_area == 0.0) {
-                if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
-                    let share = if i.kind == AssemblyKind::VString {
-                        1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
-                    } else {
-                        1.0
-                    };
-                    x.wind_area = i.wind_area.si() * share;
-                }
-            }
+            library_strings(s, insulators);
         }
 
         // The strings' lengths and directions (the type's as placed), their
@@ -709,12 +527,250 @@ pub(crate) fn link_point(
     p.joint = Some(id);
 }
 
+/// Structure `s` (as stored) merged with its type from `structures`, as
+/// [`Line::resolve_with`] does it (`kept`: the cache's structures, taken
+/// from it while `s` is as it was, kept in it otherwise); a structure
+/// without a type stays as it is.
+fn merge_type(
+    s: &mut crate::Structure,
+    structures: &StructureLibrary,
+    insulators: &InsulatorLibrary,
+    kept: Option<&mut std::collections::HashMap<String, (crate::Structure, crate::Structure)>>,
+) -> Result<(), LineError> {
+    let Some(type_id) = &s.structure_type else {
+        return Ok(());
+    };
+    if let Some(m) = kept.as_deref()
+        && let Some((stored, merged)) = m.get(&s.id)
+        && stored == s
+    {
+        *s = merged.clone();
+        return Ok(());
+    }
+    let stored = kept.is_some().then(|| s.clone());
+    let invalid = |m: String| LineError::Invalid(m);
+    let t = structures.get(type_id).ok_or_else(|| {
+        invalid(format!(
+            "structure {}: type \"{type_id}\" not in the structure library",
+            s.id
+        ))
+    })?;
+    // The type's feet on the ground at the position, raised by the
+    // height adjustment.
+    let at = crate::links::feet(s);
+    let placed = t
+        .place(at, s.orientation_deg, s.extension.as_deref(), insulators)
+        .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+    let attachments: Vec<AttachmentV1> = placed
+        .into_iter()
+        .map(|p| AttachmentV1 {
+            set: p.set,
+            phase: p.phase,
+            label: p.label,
+            insulator_point: p.insulator_point,
+            wire_point: p.wire_point,
+            insulator_weight: p.insulator_weight,
+            insulator: p.insulator,
+            insulator_wind_area: 0.0,
+            legs: p.legs,
+            top_label: p.top_label,
+            bottom_label: p.bottom_label,
+            strain_member: p.strain,
+        })
+        .collect();
+    let (mut points, mut strings, mut wires) = from_v1(&attachments);
+    let placed = t
+        .place_strings(at, s.orientation_deg, s.extension.as_deref(), insulators)
+        .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+    points.extend(placed.points.into_iter().map(|p| {
+        let (joint, offset) = t
+            .point_link(&p.label)
+            .map_or((None, [0.0; 3]), |(j, o)| (Some(j.to_owned()), o));
+        StructurePoint {
+            description: p.description,
+            label: p.label,
+            position: p.position,
+            joint,
+            offset,
+            unlinked: false,
+        }
+    }));
+    wires.extend(placed.wires.into_iter().map(|w| WirePoint {
+        description: w.description,
+        label: w.label,
+        position: w.position,
+        set: w.set,
+        weight: w.weight,
+    }));
+    strings.extend(placed.strings.into_iter().map(|x| InsulatorString {
+        label: x.label,
+        top: x.top,
+        wire: x.wire,
+        insulator: x.insulator,
+        weight: x.weight,
+        compression: x.compression,
+        wind_area: x.wind_area,
+        stiffness: x.stiffness,
+        strain: x.strain,
+        description: x.description,
+        max_load: x.limits.max_load,
+        max_swing_deg: x.limits.max_swing_deg,
+        max_swing_across_deg: x.limits.max_swing_across_deg,
+        max_swing_along_deg: x.limits.max_swing_along_deg,
+        shapes: x.shapes,
+        // A post (structure file version 13, 2026-11-15): as a
+        // string made by hand, its exit direction in the
+        // structure's axes.
+        post: x.post,
+        hinged: x.hinged,
+        cantilever_load: x.cantilever_load,
+        exit_angle_deg: x.exit_angle_deg,
+        exit_direction_deg: x.exit_direction_deg,
+        hinge_friction_nm: x.hinge_friction_nm,
+        ..Default::default()
+    }));
+    // Sets replaced by the structure's own wire points, or left out.
+    let replaced: Vec<u32> = s
+        .wires
+        .iter()
+        .filter_map(|w| w.set)
+        .chain(s.omit_sets.iter().copied())
+        .collect();
+    for set in replaced {
+        if let Some(label) = wires
+            .iter()
+            .find(|w| w.set == Some(set))
+            .map(|w| w.label.clone())
+        {
+            without_component(&mut strings, &mut wires, &points, &label);
+        }
+    }
+    points.retain(|p| !s.omit.contains(&p.label));
+    strings.retain(|x| !s.omit.contains(&x.label));
+    wires.retain(|w| !s.omit.contains(&w.label));
+    // The structure's own items over the type's, each point linked
+    // to its joint.
+    for mut p in s.points.drain(..) {
+        link_point(&mut p, t, at, s.orientation_deg, s.extension.as_deref());
+        points.retain(|q| q.label != p.label);
+        points.push(p);
+    }
+    for x in s.strings.drain(..) {
+        strings.retain(|y| y.label != x.label);
+        strings.push(x);
+    }
+    for w in s.wires.drain(..) {
+        wires.retain(|v| v.label != w.label);
+        wires.push(w);
+    }
+    (s.points, s.strings, s.wires) = (points, strings, wires);
+    s.members = t
+        .place_stick(at, s.orientation_deg, s.extension.as_deref())
+        .map_err(|m| invalid(format!("structure {}: {m}", s.id)))?;
+    if let (Some(m), Some(stored)) = (kept, stored) {
+        m.insert(s.id.clone(), (stored, s.clone()));
+    }
+    Ok(())
+}
+
+/// Wind areas of library assemblies (a V's shared by its legs), for
+/// strings without their own; their weights, stiffnesses, post ratings and
+/// limits too (as [`Line::resolve_with`] gives them).
+fn library_strings(s: &mut crate::Structure, insulators: &InsulatorLibrary) {
+    let legs: BTreeMap<String, usize> = s
+        .strings
+        .iter()
+        .map(|x| (x.wire.clone(), s.strings_to(&x.wire).count()))
+        .collect();
+    // Weight and stiffness of library assemblies too, for strings
+    // without their own (a V's weight shared by its legs).
+    for x in s.strings.iter_mut() {
+        let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) else {
+            continue;
+        };
+        let share = if i.kind == AssemblyKind::VString {
+            1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
+        } else {
+            1.0
+        };
+        if x.weight == 0.0 {
+            x.weight = i.weight.si() * share;
+        }
+        if x.stiffness.is_none() {
+            x.stiffness = Some(i.axial_stiffness.si());
+        }
+        // A post insulator (owner, 2026-11-14): the string is one,
+        // its ratings its own over the assembly's.
+        if i.kind == AssemblyKind::Post {
+            x.post = true;
+            x.strain = false;
+            x.cantilever_load = x.cantilever_load.or(i.cantilever_load.map(|f| f.si()));
+            x.compression = x.compression.or(i.compression_load.map(|f| f.si()));
+        }
+        // Its limits (not checked): its own over the assembly's.
+        let l = i.limits();
+        x.set_limits(x.limits().or(crate::StringLimits {
+            max_load: l.max_load,
+            max_swing_deg: l.max_swing_deg,
+            max_swing_across_deg: l.max_swing_across_deg,
+            max_swing_along_deg: l.max_swing_along_deg,
+        }));
+    }
+    for x in s.strings.iter_mut().filter(|x| x.wind_area == 0.0) {
+        if let Some(i) = x.insulator.as_deref().and_then(|id| insulators.get(id)) {
+            let share = if i.kind == AssemblyKind::VString {
+                1.0 / legs.get(&x.wire).copied().unwrap_or(1).max(1) as f64
+            } else {
+                1.0
+            };
+            x.wind_area = i.wind_area.si() * share;
+        }
+    }
+}
+
+/// Structure `s` (as stored) as [`Line::resolve_with`] gives it in the
+/// line, the line not yet validated: merged with its type (kept in
+/// `cache`, as there), its strings given the insulator library's values,
+/// placed. Before using it the line is validated and its strings checked
+/// ([`crate::Structure::check_strings`]), as `resolve_with` does — what an
+/// edit of a resolved line in place needs (O42): each structure resolves
+/// on its own.
+///
+/// # Errors
+///
+/// Its type not in the library, or not placed (the messages of
+/// `resolve_with`).
+pub fn resolve_structure(
+    s: &crate::Structure,
+    structures: &StructureLibrary,
+    insulators: &InsulatorLibrary,
+    cache: Option<&ResolveCache>,
+) -> Result<crate::Structure, LineError> {
+    let mut s = s.clone();
+    let mut kept = cache.and_then(|c| c.kept.lock().ok());
+    merge_type(&mut s, structures, insulators, kept.as_deref_mut())?;
+    drop(kept);
+    library_strings(&mut s, insulators);
+    s.take_string_geometry();
+    s.place_wires().map_err(LineError::Invalid)?;
+    Ok(s)
+}
+
 /// Structures merged with their types by [`Line::resolve_with`], kept by
 /// structure id with the structure as stored: one per pair of structure
 /// and insulator libraries.
 #[derive(Debug, Default)]
 pub struct ResolveCache {
     kept: std::sync::Mutex<std::collections::HashMap<String, (crate::Structure, crate::Structure)>>,
+}
+
+impl ResolveCache {
+    /// Forgets structure `id` (deleted, renamed).
+    pub fn forget(&self, id: &str) {
+        if let Ok(mut m) = self.kept.lock() {
+            m.remove(id);
+        }
+    }
 }
 
 #[cfg(test)]
