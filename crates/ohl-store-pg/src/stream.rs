@@ -426,7 +426,7 @@ impl Network {
         line: &str,
         kind: &str,
         id: &str,
-    ) -> Result<(Option<Vec<String>>, Vec<(String, String, i32)>), NetError> {
+    ) -> Result<KeptInterest, NetError> {
         let mut c = lock(&self.conn);
         let routes = c
             .query_opt(
@@ -510,6 +510,10 @@ impl Network {
         Ok(crate::PgStore::new(self.shared(), "").roll_back_to(UNIT)?)
     }
 }
+
+/// An element's routes kept (`None`: not counted) and its references
+/// (to kind, to id, set number).
+pub type KeptInterest = (Option<Vec<String>>, Vec<(String, String, i32)>);
 
 /// The savepoint of the server's unit of work.
 const UNIT: &str = "ohl_server_unit";

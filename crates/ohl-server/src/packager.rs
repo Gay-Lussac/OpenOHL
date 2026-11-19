@@ -229,6 +229,9 @@ struct Resolved {
 /// A section's spans in the context case, or why it did not solve.
 type Shape = Arc<(Vec<SceneSpan>, Option<String>)>;
 
+/// A section's spans, why it did not solve, whether from the cache.
+type Solved = (Vec<SceneSpan>, Option<String>, bool);
+
 /// What the packagers keep between packages.
 pub(crate) struct Caches {
     pub(crate) shapes: Mutex<Lru<Key, Shape>>,
@@ -441,14 +444,13 @@ pub(crate) fn build(job: &BuildJob, caches: &Caches, work: &std::path::Path) -> 
             .filter_map(|id| r.sections.get(id).map(|&k| &line.sections[k]))
             .collect();
         let threads = job.threads.clamp(1, sections.len().max(1));
-        let shapes: Vec<(Vec<SceneSpan>, Option<String>, bool)> = if threads == 1 {
+        let shapes: Vec<Solved> = if threads == 1 {
             sections
                 .iter()
                 .map(|s| shape(part, &r, &libs, s, &job.case, caches))
                 .collect()
         } else {
-            let mut out: Vec<Option<(Vec<SceneSpan>, Option<String>, bool)>> =
-                vec![None; sections.len()];
+            let mut out: Vec<Option<Solved>> = vec![None; sections.len()];
             std::thread::scope(|scope| {
                 let handles: Vec<_> = (0..threads)
                     .map(|t| {
@@ -781,7 +783,7 @@ fn shape(
     section: &ohl_line::Section,
     case: &ohl_weather::WeatherCase,
     caches: &Caches,
-) -> (Vec<SceneSpan>, Option<String>, bool) {
+) -> Solved {
     // What the solve reads, and nothing else: its key.
     let sub = sub_line(r, section);
     let cable = libs.cables.get(&section.cable);
@@ -917,13 +919,13 @@ fn empty_like(line: &Line) -> Line {
         circuits: circuits.clone(),
         display: display.clone(),
         creep_stretch: creep_stretch.clone(),
-        bimetallic: bimetallic.clone(),
-        solver: solver.clone(),
-        defaults: defaults.clone(),
+        bimetallic: *bimetallic,
+        solver: *solver,
+        defaults: *defaults,
         circuit_starts: circuit_starts.clone(),
         structure_loads: structure_loads.clone(),
         structure_groups: structure_groups.clone(),
-        electrical: electrical.clone(),
+        electrical: *electrical,
         reference: reference.clone(),
         feet_state: feet_state.clone(),
         condition_cases: condition_cases.clone(),

@@ -22,7 +22,7 @@
 //! revision (the position of the last change touching it); per client its
 //! interest; bounded caches (settings): tile packages per (tile,
 //! revision, rights class — 0 until phase 7), solved section shapes and
-//! resolved structures ([`crate::packager`]). **Not in memory**: the log,
+//! resolved structures (the packagers). **Not in memory**: the log,
 //! revisions and blobs (read from the database when asked), and what
 //! PostgreSQL does not hold yet — point clouds, backgrounds and tiled
 //! terrain stay in the project files (phase 4's import lists them); a

@@ -488,7 +488,14 @@ fn a_network_serves_by_interest() {
             .collect();
         assert_eq!(tiles.into_iter().collect::<BTreeSet<_>>(), keys);
         let rows: Vec<_> = net
-            .stream_after(c.at.seq - 1, i32::MAX, &[b.clone()], &[], &[], 10)
+            .stream_after(
+                c.at.seq - 1,
+                i32::MAX,
+                std::slice::from_ref(&b),
+                &[],
+                &[],
+                10,
+            )
             .unwrap()
             .into_iter()
             .filter(|r| r.seq == c.at.seq)

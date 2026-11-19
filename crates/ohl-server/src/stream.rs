@@ -19,10 +19,10 @@
 //!
 //! Order without copies: every change is encoded once and broadcast to
 //! every connection ([`crate::server`]); each connection's forwarder keeps
-//! its client's interest ([`View`]) and passes on only what touches it.
+//! its client's interest (`View`) and passes on only what touches it.
 //! What is for one client alone — a tile package, a catch-up, a change of
 //! its interest — goes on that client's own queue, marked with the place
-//! in the broadcast it belongs after ([`Feed`]): the forwarder merges both
+//! in the broadcast it belongs after (`Feed`): the forwarder merges both
 //! in the authority's order, so a tile taken is followed by exactly the
 //! changes after its revision, none missed, none twice.
 
