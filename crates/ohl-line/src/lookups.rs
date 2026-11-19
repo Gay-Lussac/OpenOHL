@@ -51,6 +51,7 @@ pub(crate) struct Lookups {
     library: usize,
     ids: OnceLock<Ids>,
     views: OnceLock<Arc<Vec<AlignmentView>>>,
+    route_grid: OnceLock<crate::route::RouteGrid>,
     local_wind: OnceLock<bool>,
     end_loads: Mutex<Vec<(String, Arc<JumperLoadMap>)>>,
     end_loads_on: Mutex<Vec<(String, Arc<JumperLoadMap>)>>,
@@ -124,6 +125,23 @@ impl Lookups {
     /// Where the line's objects are.
     pub(crate) fn ids(&self, line: &Line) -> &Ids {
         self.ids.get_or_init(|| Ids::of(line))
+    }
+
+    /// The nearest route segment to `at` on the routes `views`
+    /// ([`Line::nearest_on`]) found through the routes' grid, when `views`
+    /// are these lookups' route views; none otherwise (searched then).
+    pub(crate) fn nearest_on(
+        &self,
+        views: &[AlignmentView],
+        at: [f64; 2],
+    ) -> Option<Option<crate::route::OnRoute>> {
+        let own = self.views.get()?;
+        if !std::ptr::eq(own.as_slice(), views) {
+            return None;
+        }
+        self.route_grid
+            .get_or_init(|| crate::route::RouteGrid::of(own))
+            .nearest(at)
     }
 
     /// The line's route views ([`Line::alignment_views`]).
@@ -222,6 +240,7 @@ pub fn indexed<R>(line: &Line, library: Option<&ohl_cables::Library>, f: impl Fn
         library: lib,
         ids: OnceLock::new(),
         views: OnceLock::new(),
+        route_grid: OnceLock::new(),
         local_wind: OnceLock::new(),
         end_loads: Mutex::new(Vec::new()),
         end_loads_on: Mutex::new(Vec::new()),

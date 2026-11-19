@@ -126,6 +126,47 @@ fn small_country() -> Line {
     c.line
 }
 
+/// The route views worked out through the places of the structures and
+/// spans (O42) equal those worked out before (every structure and span
+/// against every alignment, `Line::alignment_views_reference`) on
+/// synthetic countries — short and long sections (suspension towers on
+/// the straights), routes sharing towers — also with structures moved
+/// beside and off their alignments.
+#[test]
+fn the_route_views_of_a_country_are_those_worked_out_before() {
+    for (seed, section_spans) in [(1, 2.0), (2, 6.0)] {
+        let line = country(&Settings {
+            pylons: 400,
+            seed,
+            section_spans,
+            ..Settings::default()
+        })
+        .unwrap()
+        .line;
+        let mut moved = line.clone();
+        let n = moved.structures.len();
+        for (k, off) in [(n / 3, 3.0), (n / 2, 4.9), (n / 5, 5.2), (n / 7, 30.0)] {
+            let s = &mut moved.structures[k];
+            *s = s.moved_to([s.position[0] + off, s.position[1], s.position[2]]);
+        }
+        // The structures not giving their routes: put on the alignments
+        // by their points, free points near them and the spans along the
+        // straights.
+        let mut found = moved.clone();
+        for s in &mut found.structures {
+            s.routes.clear();
+        }
+        for (what, l) in [("as made", &line), ("moved", &moved), ("found", &found)] {
+            let views = l.alignment_views();
+            assert!(views.iter().map(|v| v.structures.len()).sum::<usize>() > n / 2);
+            assert!(
+                views == l.alignment_views_reference(),
+                "seed {seed}, {what}: the views differ"
+            );
+        }
+    }
+}
+
 /// [`solves_as_the_searches`] on a small synthetic country in still air.
 #[test]
 fn the_lookups_solve_a_country_in_still_air_as_the_searches() {
@@ -219,5 +260,55 @@ fn solve_update_benchmark() {
         max,
         times.len(),
         &counts[..counts.len().min(6)],
+    );
+}
+
+/// What a case's update works out over the whole line however few
+/// sections it solves again, on the synthetic country
+/// (`OHL_BENCH_PYLONS`, default 2 000): the route views, the jumpers'
+/// estimated loads, the solved shapes listed. Medians of 3, ms. Ignored
+/// by default.
+///
+/// ```bash
+/// OHL_BENCH_PYLONS=12000 cargo test --profile bench-fast -p ohl-synth update_parts_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run optimised with --ignored --nocapture"]
+fn update_parts_benchmark() {
+    let pylons = ohl_core::env::var("OHL_BENCH_PYLONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2000);
+    let line = country(&Settings {
+        pylons,
+        ..Settings::default()
+    })
+    .unwrap()
+    .line;
+    let lib = cables();
+    let case = weather(0);
+    let time = |f: &dyn Fn()| {
+        let mut v: Vec<f64> = (0..3)
+            .map(|_| {
+                let t = Instant::now();
+                f();
+                t.elapsed().as_secs_f64() * 1e3
+            })
+            .collect();
+        median(&mut v)
+    };
+    let views = time(&|| {
+        std::hint::black_box(line.alignment_views());
+    });
+    let loads = time(&|| {
+        ohl_line::lookups::indexed(&line, Some(&lib), || {
+            std::hint::black_box(ohl_line::jumper::end_loads(&line, &case, |id| lib.get(id)));
+        });
+    });
+    println!(
+        "| {pylons} pylons ({} sections, {} jumpers, {} alignments) | route views {views:.0} ms | jumpers' loads (views included) {loads:.0} ms |",
+        line.sections.len(),
+        line.jumpers.len(),
+        line.alignments.len(),
     );
 }

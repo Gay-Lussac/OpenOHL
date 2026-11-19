@@ -86,13 +86,19 @@ fn sag_length(props: CableProperties, a: Point, b: Point, sag: f64) -> Option<f6
     let budget = Budget::new().max_iterations(200);
     let l = length_for_sag(props, v(a), v(b), sag, &budget).ok();
     if let Ok(mut m) = lengths.lock() {
-        if m.len() >= MAX_CUTS {
+        if m.len() >= MAX_SAG_LENGTHS {
             m.clear();
         }
         m.insert(key, l);
     }
     l
 }
+
+/// Still-air lengths kept at most (then forgotten all at once): more than
+/// a whole country's jumpers (43 041 on the synthetic one of 12 000
+/// pylons; O42, 2026-11-19: 20 000 made every case's update work them all
+/// out again there), about 100 bytes each.
+const MAX_SAG_LENGTHS: usize = 200_000;
 
 /// The estimated load each jumper hangs on its ends in weather case
 /// `case` (the whole bundle's, N, as a force vector), by section point:
