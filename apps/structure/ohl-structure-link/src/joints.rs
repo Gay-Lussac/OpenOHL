@@ -510,7 +510,7 @@ pub struct PlateDetail {
     /// Its own bolts onto the joint's leg (`[plate.leg_bolts]`,
     /// 2026-11-19): the leg's member end as bolted onto this plate by
     /// them — its bolts where they are, through its flange the plate lies
-    /// on ([`plate_leg_arrival`]); none: not given, or not usable (said in
+    /// on (`plate_leg_arrival`); none: not given, or not usable (said in
     /// `notes`).
     pub leg_bolts: Option<Box<Arrival>>,
 }
