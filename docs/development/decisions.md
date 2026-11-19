@@ -8,6 +8,60 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (the joints' own checks: the follow-ups, bolts in tension with prying)
+
+**The owner's decisions of 2026-11-19 on the joint checks, built**
+(step 3 of the order of 2026-11-19, O19 stage 4.5; built, in active
+development, not approved yet; [theory](../theory/joint-groups.md)):
+
+- **A gusset plate's own bolts onto the leg** in the file format:
+  `[plate.leg_bolts]` (`member`, `leg?`, `bolts`, `bolt_points`; structure
+  file version 20, written only when a plate gives them; older files read
+  unchanged). A plate on a leg running on through the joint — which has
+  no bolts at that end — is held by them: checked as the plate's holding
+  bolts and the leg's bearing under them, its outline drawn round them,
+  counted in the bill of materials. No window for them yet (typed in the
+  file; `connection_edits::set_plate_leg_bolts` writes them).
+- **A joint that does not fit** reads "does not fit": a bolt's hole not
+  within the flange it bolts onto, a holding bolt outside the plate's
+  outline, holes in one ply overlapping, a bolt beyond the end of a
+  member's steel where it is known. Coloured as failing in the 3D view,
+  said in Joint details and on its own row of the report's *Joints*
+  table, counted apart; the group is not sent to the plugin — never an
+  infinite usage (`PlateUsage::does_not_fit`, `joints_not_fitting`).
+- **Pieces in line not said continuous end at the joint** (on the safe
+  side; before, one angle running on, an assumption). Where the piece's
+  steel stops is not given: the code's conservative case, as before
+  (ASCE 10-97: its end distance said NOT ON THE SAFE SIDE; SIA 263:
+  Table 17's e₁ at most). The joint layout proposing `continuous` for the
+  user to confirm follows the layout's current work (ROADMAP O19).
+- **Bolts in tension, with prying.** Each bolt's pull: the forces square
+  to the plies and the moments bending them out of their plane, shared
+  elastically about the bolts' centroid (`bolt_groups::tension`; no
+  contact of the plies taken and each share taken as pulling — on the
+  safe side; a moment about a line every bolt lies on said NOT ON THE
+  SAFE SIDE). Prying: both codes ask for it without a method (ASCE 10-97
+  4.3.3, SIA 263 6.2.2.4): the T-stub model of Struik and de Back (Stevin
+  Laboratory report 6-69-13, 1969, as Kulak, Fisher & Struik's guide gives
+  it, Eqs. 17.8–17.12, a′ = a + d/2, b′ = b − d/2, a ≤ 1.25 b) with α = δ
+  = 1 — its largest bolt force, on the safe side —, the most prying of the
+  flanges a bolt pulls governing, each flange's bending by the model's
+  mechanism. By the codes, in the plugins (additive interface
+  `joint-check-groups-tension`, 0.3 unchanged): ASCE 10-97 4.3.3 (F_t =
+  0.6 F_u, case (b): the proof-load stress is not in the data) and 4.3.4
+  (Eq. 4.3-2); SIA 263 Table 16 (77) and 6.2.2.6 (78); the stress area
+  taken as 0.6 of the gross (on the safe side); a library bolt's
+  `tension_capacity` read as its ultimate tensile load. Not worked out,
+  said NOT ON THE SAFE SIDE: a plate's own prying and bending, a member
+  that is not an angle, more than two gauge lines, the local prying of a
+  bolt's head; not checked, said in the notes: fatigue and preloading
+  (SIA 263 6.2.2.3), countersunk bolts and thin nuts (6.2.1.4).
+- **The elastic method for the moments stays.**
+- Still assumed or not checked, said: a member's own gauge eccentricity
+  in its plane as a moment on its bolts, the plies' offsets in the
+  levers, the joint's own loads through its plates, the holding bolts of
+  a welded plate's several plates.
+
 ## 2026-11-19 (O42: the solve after an edit; the writer's lock released)
 
 **Owner decisions of 2026-11-19**, on the questions the in-place work

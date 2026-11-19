@@ -22,6 +22,15 @@
 //! Where a ply's distances are not known (where its steel stops not
 //! given), the end distance is not checked — said NOT ON THE SAFE SIDE
 //! (the standard's bearing takes no distance).
+//!
+//! **The bolts in tension** (2026-11-19, `joint-check-groups-tension`):
+//! OpenOHL sends each bolt's pull per case and the flanges it bends; here
+//! the prying force (4.3.3 asks for "any tensile stress resulting from
+//! prying action" and gives no method: the T-stub model of Struik and de
+//! Back, [`prying`], on the safe side), the bolt's tension (4.3.3: F_t =
+//! 0.6 F_u, its case (b) — the proof-load stress is not in the data), its
+//! shear and tension together (4.3.4, Eq. 4.3-2) and each flange's bending
+//! (the model's mechanism).
 
 use crate::joints::{Checked, PlateCheck};
 
@@ -91,6 +100,208 @@ pub struct Group {
     pub bolts: Vec<Bolt>,
     /// Per case, per bolt.
     pub loads: Vec<Vec<Load>>,
+}
+
+/// A flange a bolt bends as it pulls (a T-stub's flange; theory page).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tee {
+    /// The member or plate.
+    pub part: String,
+    /// Its thickness, m.
+    pub thickness: f64,
+    /// Its yield strength, Pa.
+    pub fy: Option<f64>,
+    /// From the bolt to its free edge, m (`a`).
+    pub edge: f64,
+    /// From the bolt to the web's face, m (`b`).
+    pub web: f64,
+    /// Its length along the bolts the bolt takes, m (`w`).
+    pub width: f64,
+}
+
+/// A bolt's data in tension.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BoltTension {
+    /// Its library's tension capacity (its ultimate tensile load), N.
+    pub capacity: Option<f64>,
+    /// The flanges it bends.
+    pub tees: Vec<Tee>,
+    /// The plies it pulls whose bending is not known, in words.
+    pub unknown: Vec<String>,
+}
+
+/// A group's bolts in tension: per bolt its data, per case per bolt its
+/// pull, N.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GroupTension {
+    /// Per bolt (the group's order).
+    pub bolts: Vec<BoltTension>,
+    /// Per case, per bolt.
+    pub loads: Vec<Vec<f64>>,
+}
+
+/// The prying force on a bolt (diameter `d`, hole `d0`) pulled by `t`
+/// through flanges `tees`: the T-stub model of Struik and de Back as
+/// Kulak, Fisher & Struik give it (*Guide to Design Criteria for Bolted and
+/// Riveted Joints*, 2nd ed., 1987, Eqs. 17.8–17.12, with the modified
+/// distances a′ = a + d/2, b′ = b − d/2 and a ≤ 1.25 b of 17.5 and
+/// 17.6.1): B = T (1 + δα b′ / ((1 + δα) a′)), taken with α = δ = 1 — the
+/// largest the model gives, B rising with both (on the safe side) — so Q
+/// = T b′ / (2 a′); the flange giving the most governs (the least stiff
+/// part, Guide 17.6.1). With each flange's bending (the model's mechanism,
+/// Eq. 17.12 with α = 1: T b′ ≤ (1 + δ) w t² f_y / 4, δ = 1 − d₀/w; f_y
+/// divided by `fy_factor`, `clause` its words) and what is not covered.
+/// Returns (Q, the flange that gives it, the flanges' checks, not safe).
+pub fn prying(
+    t: f64,
+    d: f64,
+    d0: f64,
+    tees: &[Tee],
+    fy_factor: f64,
+    clause: &str,
+) -> (f64, Option<String>, Vec<PlateCheck>, Vec<String>) {
+    let mut q = 0.0;
+    let mut by = None;
+    let mut checks = Vec::new();
+    let mut not_safe = Vec::new();
+    for x in tees {
+        let a = x.edge.min(1.25 * x.web.max(0.0));
+        let a1 = a + d / 2.0;
+        let b1 = x.web - d / 2.0;
+        if b1 <= 0.0 {
+            not_safe.push(format!(
+                "the bolt within half a diameter of {}'s web: the local prying of its head \
+                 (Kulak et al. Fig. 17.19) not covered",
+                x.part
+            ));
+            continue;
+        }
+        let qi = t * b1 / (2.0 * a1);
+        if qi > q {
+            q = qi;
+            by = Some(format!(
+                "{}: a′ {:.0} mm, b′ {:.0} mm",
+                x.part,
+                mm(a1),
+                mm(b1)
+            ));
+        }
+        let Some(fy) = x.fy else {
+            not_safe.push(format!(
+                "the bending of {} under the bolt's pull not checked (no yield strength)",
+                x.part
+            ));
+            continue;
+        };
+        let delta = (1.0 - d0 / x.width.max(1e-9)).max(0.0);
+        checks.push(PlateCheck {
+            what: format!(
+                "bending of {} under the bolt's pull {:.1} kN (T-stub of Struik and de Back, \
+                 Kulak et al. Eq. 17.12, α = 1: T b′ ≤ (1 + δ) w t² f_y / 4{clause}; b′ {:.0} \
+                 mm, w {:.0} mm, δ {:.2})",
+                x.part,
+                t / 1000.0,
+                mm(b1),
+                mm(x.width),
+                delta
+            ),
+            demand: t * b1,
+            resistance: (1.0 + delta) * x.width * x.thickness.powi(2) * fy / 4.0 / fy_factor,
+            distance: false,
+        });
+    }
+    (q, by, checks, not_safe)
+}
+
+/// The tension checks of bolt `b` pulled by `t` (N) with its shear force
+/// `v` (N) by ASCE 10-97: the prying force from its flanges ([`prying`]),
+/// its tension (4.3.3) and its shear and tension together (4.3.4).
+pub fn tension_checks(b: &Bolt, bt: &BoltTension, t: f64, v: f64) -> Checked {
+    let mut out = Checked::default();
+    let d = b.diameter;
+    // The hole: given, else a standard hole (4.1: 1/16 in. larger).
+    let d0 = b.hole.unwrap_or(d + 0.0016);
+    let (q, by, flanges, said) = prying(t, d, d0, &bt.tees, 1.0, "");
+    out.checks.extend(flanges);
+    out.not_safe.extend(said);
+    for u in &bt.unknown {
+        out.not_safe.push(format!(
+            "the prying of {u} under the bolt's pull not worked out (its bending not known)"
+        ));
+    }
+    let pull = t + q;
+    let gross = std::f64::consts::PI * d * d / 4.0;
+    // 4.3.3: F_t on the stress area A_s.
+    let (rt, words) = match (bt.capacity, b.ultimate) {
+        (Some(c), _) => (
+            0.6 * c,
+            "F_t A_s = 0.6 × the bolt's given tension capacity (its F_u A_s), 4.3.3 (b)".to_owned(),
+        ),
+        (None, Some(fu)) => (
+            0.6 * fu * 0.6 * gross,
+            "F_t = 0.6 F_u, 4.3.3 (b), on A_s taken as 0.6 of the gross area (Eq. 4.3-1 gives \
+             more for a coarse thread: on the safe side)"
+                .to_owned(),
+        ),
+        (None, None) => {
+            out.not_safe.push(
+                "bolt tension not checked (no tension capacity nor ultimate strength of the bolt)"
+                    .into(),
+            );
+            return out;
+        }
+    };
+    note_once(
+        &mut out.notes,
+        "bolts in tension: F_t = 0.6 F_u (ASCE 10-97 4.3.3 (b)); the ASTM proof-load stress of \
+         4.3.3 (a) is not in the data (C4.3.3: 0.6 F_u a conservative estimate)"
+            .into(),
+    );
+    let prying_words = match &by {
+        Some(w) => format!(", prying {:.1} kN ({w})", q / 1000.0),
+        None => String::new(),
+    };
+    out.checks.push(PlateCheck {
+        what: format!(
+            "bolt tension: pull {:.1} kN{prying_words}, {:.1} kN together (ASCE 10-97 4.3.3: \
+             {words})",
+            t / 1000.0,
+            pull / 1000.0
+        ),
+        demand: pull,
+        resistance: rt,
+        distance: false,
+    });
+    if let Some(rv) = crate::asce10::bolt_shear(
+        d,
+        b.planes.max(1),
+        b.shear_capacity,
+        b.shank,
+        b.threads_in,
+        b.ultimate,
+    ) && rv > 0.0
+        && v > 0.0
+    {
+        let x = ((pull / rt).powi(2) + (v / rv).powi(2)).sqrt();
+        out.checks.push(PlateCheck {
+            what: format!(
+                "bolt shear and tension together {:.1} and {:.1} kN (ASCE 10-97 4.3.4, Eq. \
+                 4.3-2: (f_t/F_t)² + (f_v/F_v)² ≤ 1, its square root shown)",
+                v / 1000.0,
+                pull / 1000.0
+            ),
+            demand: x,
+            resistance: 1.0,
+            distance: false,
+        });
+    }
+    out
+}
+
+fn note_once(v: &mut Vec<String>, w: String) {
+    if !v.contains(&w) {
+        v.push(w);
+    }
 }
 
 /// What a group gives: per case its usage and the check (none: nothing
@@ -226,8 +437,9 @@ pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load) -> Checked {
 }
 
 /// Every bolt of `g` checked in every case (`strengths`: each case's
-/// strength factor): per case the most loaded bolt's usage and check.
-pub fn check_group(g: &Group, strengths: &[f64]) -> GroupResult {
+/// strength factor), in tension too where `tension` gives its pull: per
+/// case the most loaded bolt's usage and check.
+pub fn check_group(g: &Group, strengths: &[f64], tension: Option<&GroupTension>) -> GroupResult {
     let mut out = GroupResult::default();
     let mut worst: Option<f64> = None;
     for (n, strength) in strengths.iter().enumerate() {
@@ -236,7 +448,22 @@ pub fn check_group(g: &Group, strengths: &[f64]) -> GroupResult {
             let Some(l) = g.loads.get(n).and_then(|x| x.get(k)) else {
                 continue;
             };
-            let c = bolt_checks(b, &g.plies, l);
+            let mut c = bolt_checks(b, &g.plies, l);
+            if let Some(gt) = tension
+                && let Some(t) = gt.loads.get(n).and_then(|x| x.get(k)).copied()
+                && t > 0.0
+                && let Some(bt) = gt.bolts.get(k)
+            {
+                let mut x = tension_checks(b, bt, t, l.force);
+                // What is not worked out matters where the pull is 1 %
+                // or more of the shear (the core's rule).
+                if t < 0.01 * l.force || t < 1.0 {
+                    x.not_safe.retain(|w| !w.contains("not worked out"));
+                }
+                c.checks.extend(x.checks);
+                c.notes.extend(x.notes);
+                c.not_safe.extend(x.not_safe);
+            }
             for w in &c.notes {
                 if !out.notes.contains(w) {
                     out.notes.push(w.clone());
@@ -344,6 +571,77 @@ mod tests {
         assert!(c.not_safe.is_empty());
     }
 
+    /// A bolt pulled through an angle's flange (invented, by hand): an M16
+    /// (F_u 800 MPa, no tension capacity given) pulled by 20 kN through a
+    /// 60 × 6 mm leg (S355), the bolt 30 mm from the heel, w 32 mm, hole
+    /// 17.5 mm. a = 30, b = 24 mm; a ≤ 1.25 b = 30: a′ = 38, b′ = 16 mm; Q
+    /// = 20 × 16 / (2 × 38) = 4.211 kN, B = 24.211 kN. F_t A_s = 0.6 × 800
+    /// × 0.6 × π 16²/4 = 57.906 kN: 41.8 %. The flange: δ = 1 − 17.5/32 =
+    /// 0.453; (1 + δ) w t² f_y / 4 = 1.453 × 32 × 36 × 355 / 4 = 148.6 N m
+    /// against T b′ = 320 N m: 215 %. With a shear of 30 kN (one plane,
+    /// 59.84 kN): √(0.418² + 0.501²) = 0.653.
+    #[test]
+    fn a_bolt_in_tension_with_prying() {
+        let b = m16(&["D1"]);
+        let bt = BoltTension {
+            capacity: None,
+            tees: vec![Tee {
+                part: "L1".into(),
+                thickness: 0.006,
+                fy: Some(355e6),
+                edge: 0.03,
+                web: 0.024,
+                width: 0.032,
+            }],
+            unknown: Vec::new(),
+        };
+        let c = tension_checks(&b, &bt, 20e3, 30e3);
+        let pull = c
+            .checks
+            .iter()
+            .find(|x| x.what.starts_with("bolt tension"))
+            .unwrap();
+        let q = 20e3 * 0.016 / (2.0 * 0.038);
+        assert!((pull.demand - (20e3 + q)).abs() < 1e-6, "{}", pull.demand);
+        let rt = 0.6 * 800e6 * 0.6 * std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+        assert!((pull.resistance - rt).abs() < 1e-6);
+        assert!(
+            (pull.usage(1.0) - 0.418).abs() < 1e-3,
+            "{}",
+            pull.usage(1.0)
+        );
+        let flange = c
+            .checks
+            .iter()
+            .find(|x| x.what.starts_with("bending of L1"))
+            .unwrap();
+        let delta = 1.0 - 0.0175 / 0.032;
+        let mp = (1.0 + delta) * 0.032 * 0.006f64.powi(2) * 355e6 / 4.0;
+        assert!((flange.demand - 320.0).abs() < 1e-9 && (flange.resistance - mp).abs() < 1e-9);
+        assert!(
+            (flange.usage(1.0) - 2.15).abs() < 0.01,
+            "{}",
+            flange.usage(1.0)
+        );
+        let both = c
+            .checks
+            .iter()
+            .find(|x| x.what.starts_with("bolt shear and tension"))
+            .unwrap();
+        let rv = 0.62 * 800e6 * 0.6 * std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+        let want = (((20e3 + q) / rt).powi(2) + (30e3 / rv).powi(2)).sqrt();
+        assert!((both.demand - want).abs() < 1e-12, "{} {want}", both.demand);
+        assert!((want - 0.653).abs() < 1e-3, "{want}");
+        assert!(c.not_safe.is_empty(), "{:?}", c.not_safe);
+        // A plate whose bending is not known: said.
+        let bt = BoltTension {
+            unknown: vec!["plate G1".into()],
+            ..bt
+        };
+        let c = tension_checks(&b, &bt, 20e3, 30e3);
+        assert!(c.not_safe.iter().any(|w| w.contains("plate G1")));
+    }
+
     /// Where the leg's end is not known the end distance is not checked,
     /// said; the group takes its most loaded bolt per case.
     #[test]
@@ -369,7 +667,7 @@ mod tests {
                 },
             ]],
         };
-        let r = check_group(&g, &[1.0]);
+        let r = check_group(&g, &[1.0], None);
         let (u, w) = r.usages[0].clone().unwrap();
         assert!(w.starts_with("bolt 2 of 2 (carries D1, R1"), "{w}");
         assert!(u > 0.6 && u < 0.7, "{u}");

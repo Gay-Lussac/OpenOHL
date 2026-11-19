@@ -508,9 +508,31 @@ impl StructureApp {
                 }
             }
         }
+        // A part that does not fit as given (2026-11-19): the joint reads
+        // so — failing, counted apart from the usages.
+        let misfit = first
+            .plates
+            .iter()
+            .filter(|p| p.joint == joint)
+            .find_map(|p| p.does_not_fit.as_ref().map(|w| (p.what(), w.clone())));
+        let failing = {
+            let [r, g, b, _] = crate::results_tab::DOES_NOT_FIT_COLOUR;
+            egui::Color32::from_rgb(r, g, b)
+        };
+        if let Some((what, why)) = &misfit {
+            ui.horizontal_wrapped(|ui| {
+                ui.label("The joint:");
+                ui.colored_label(failing, "does not fit as given");
+                ui.label(format!("— {what}: {why}"));
+            });
+        }
         if let Some((u, case, what)) = &joint_best {
             ui.horizontal(|ui| {
-                ui.label("Usage of the joint:");
+                ui.label(if misfit.is_some() {
+                    "Usage of its parts that fit:"
+                } else {
+                    "Usage of the joint:"
+                });
                 ui.colored_label(colour(Some(*u)), pct(Some(*u)));
                 ui.label(format!("in case {case}, {what}"));
             });
@@ -543,6 +565,14 @@ impl StructureApp {
                     }
                     ui.label(&p.plate);
                     ui.label(p.part.words());
+                    if p.does_not_fit.is_some() {
+                        ui.colored_label(failing, "does not fit");
+                        ui.colored_label(failing, "does not fit");
+                        ui.label("");
+                        ui.label(egui::RichText::new(p.governs.as_str()).small());
+                        ui.end_row();
+                        continue;
+                    }
                     let u = now.and_then(|x| x.usage);
                     ui.colored_label(colour(u), pct(u));
                     let b = best.map(|b| b.0);

@@ -1085,7 +1085,7 @@ impl jgr::Guest for Asce10 {
             .groups
             .iter()
             .map(|g| {
-                let r = groups::check_group(&group_of(g), &strengths);
+                let r = groups::check_group(&group_of(g), &strengths, None);
                 jgr::GroupResult {
                     id: g.id,
                     usages: r
@@ -1106,6 +1106,79 @@ impl jgr::Guest for Asce10 {
                 }
             })
             .collect())
+    }
+}
+
+impl jgt::Guest for Asce10 {
+    fn check_joint_groups_tension(
+        method: String,
+        input: jgr::GroupInput,
+        tension: Vec<jgt::GroupTension>,
+    ) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        let strengths: Vec<f64> = input.cases.iter().map(|c| c.strength).collect();
+        Ok(input
+            .groups
+            .iter()
+            .map(|g| {
+                let t = tension.iter().find(|t| t.id == g.id).map(tension_of);
+                let r = groups::check_group(&group_of(g), &strengths, t.as_ref());
+                result_of(g.id, r)
+            })
+            .collect())
+    }
+}
+
+use exports::ohl::plugin::joint_check_groups_tension as jgt;
+
+/// A `joint-check-groups-tension` group's tensions as
+/// [`groups::GroupTension`] takes them.
+fn tension_of(t: &jgt::GroupTension) -> groups::GroupTension {
+    groups::GroupTension {
+        bolts: t
+            .bolts
+            .iter()
+            .map(|b| groups::BoltTension {
+                capacity: b.tension_capacity,
+                tees: b
+                    .tees
+                    .iter()
+                    .map(|x| groups::Tee {
+                        part: x.part.clone(),
+                        thickness: x.thickness,
+                        fy: x.fy,
+                        edge: x.edge,
+                        web: x.web,
+                        width: x.width,
+                    })
+                    .collect(),
+                unknown: b.unknown.clone(),
+            })
+            .collect(),
+        loads: t.loads.clone(),
+    }
+}
+
+/// A group's result as the interface gives it.
+fn result_of(id: u32, r: groups::GroupResult) -> jgr::GroupResult {
+    jgr::GroupResult {
+        id,
+        usages: r
+            .usages
+            .into_iter()
+            .enumerate()
+            .filter_map(|(n, u)| {
+                u.map(|(usage, check)| jgr::CaseUsage {
+                    load_case: n as u32,
+                    usage,
+                    check,
+                })
+            })
+            .collect(),
+        governs: r.governs,
+        notes: r.notes,
+        not_safe: (!r.not_safe.is_empty()).then(|| r.not_safe.join("; ")),
     }
 }
 

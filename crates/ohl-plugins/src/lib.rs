@@ -274,9 +274,14 @@ pub mod joint_check_moments {
 /// plugin.
 pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
 
+// One binding for `joint-check-groups` and `joint-check-groups-tension`,
+// whose function takes the former's records (2026-11-19): each export is
+// looked up on its own ([`joint_check_groups_guest`],
+// [`joint_check_groups_tension_guest`]), so a plugin without
+// `joint-check-groups-tension` loads as before.
 mod joint_check_groups_bindings {
     wasmtime::component::bindgen!({
-        world: "joint-check-groups-export",
+        world: "joint-check-groups-tension-export",
         path: "wit",
     });
 }
@@ -294,6 +299,45 @@ pub mod joint_check_groups {
 /// Export name of the optional `joint-check-groups` interface of any
 /// plugin.
 pub const JOINT_CHECK_GROUPS_EXPORT: &str = "ohl:plugin/joint-check-groups@0.1.0";
+
+/// The records of the `joint-check-groups-tension` interface (2026-11-19,
+/// stage 4.5 of the joint details): each bolt's tension per case and the
+/// flanges it bends (prying), sent with the `joint-check-groups` records.
+pub mod joint_check_groups_tension {
+    pub use super::joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_tension::{
+        BoltTension, GroupTension, Tee,
+    };
+}
+
+/// Export name of the optional `joint-check-groups-tension` interface of
+/// any plugin.
+pub const JOINT_CHECK_GROUPS_TENSION_EXPORT: &str = "ohl:plugin/joint-check-groups-tension@0.1.0";
+
+/// The `joint-check-groups` export of an instance, looked up alone.
+fn joint_check_groups_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups::Guest>
+{
+    let pre = instance.instance_pre(&*store);
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups::GuestIndices::new(&pre)?
+        .load(&mut *store, instance)
+}
+
+/// The `joint-check-groups-tension` export of an instance, looked up
+/// alone.
+fn joint_check_groups_tension_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_tension::Guest,
+> {
+    let pre = instance.instance_pre(&*store);
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_tension::GuestIndices::new(
+        &pre,
+    )?
+    .load(&mut *store, instance)
+}
 
 mod bolt_distances_bindings {
     wasmtime::component::bindgen!({
@@ -2540,15 +2584,54 @@ impl WasmHost {
         let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_GROUPS_EXPORT)? else {
             return Ok(None);
         };
-        let export =
-            joint_check_groups_bindings::JointCheckGroupsExport::new(&mut p.store, &instance)
-                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let export = joint_check_groups_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         let name = p.manifest.plugin.name.clone();
         p.store.set_epoch_deadline(p.limits.deadline_ticks());
         let given = export
-            .ohl_plugin_joint_check_groups()
             .call_check_joint_groups(&mut p.store, method, input)
             .map_err(|e| classify(e, &p.manifest, "joint-check-groups", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.groups.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint bolt groups of `input` with their bolts in tension
+    /// (`tension`) checked by method `method` of the plugin in `dir`
+    /// through its `joint-check-groups-tension` export (2026-11-19), every
+    /// group and load case in this one call. None: the plugin has no such
+    /// export (the caller then calls [`WasmHost::check_joint_groups`] and
+    /// says the bolts in tension are not checked). Errors as
+    /// [`WasmHost::check_joints`]'s.
+    pub fn check_joint_groups_tension(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_groups::GroupInput,
+        tension: &[joint_check_groups_tension::GroupTension],
+    ) -> Result<Option<Vec<joint_check_groups::GroupResult>>, PluginError> {
+        let Some((mut p, instance)) =
+            self.optional_export(dir, JOINT_CHECK_GROUPS_TENSION_EXPORT)?
+        else {
+            return Ok(None);
+        };
+        let export = joint_check_groups_tension_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_joint_groups_tension(&mut p.store, method, input, tension)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-groups-tension", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_part_results(
             &name,

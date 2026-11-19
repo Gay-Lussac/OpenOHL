@@ -187,6 +187,80 @@ pub fn elastic(points: &[V2], load: &PlaneLoad) -> Elastic {
     }
 }
 
+/// What [`tension`] gives.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tension {
+    /// Each bolt's share along the plane's normal, N (positive along it),
+    /// in the order of the points.
+    pub forces: Vec<f64>,
+    /// The part of the moment the bolts cannot carry by tension (about a
+    /// line all of them lie on, or every moment for one bolt), N·m.
+    pub left: f64,
+}
+
+/// The bolts at `points` (in a plane, m) sharing a force `normal` along
+/// the plane's normal (N) and a moment `moment` about axes in the plane
+/// (its components along the plane's u and v, N·m) **elastically about
+/// their centroid** (2026-11-19, the bolts in tension): the plies rigid,
+/// every bolt equally stiff in tension, no contact between the plies
+/// taken. The force is shared equally; the moment by each bolt's distance
+/// from the centroid, `t_k = N/n + s · r_k` with `I s = n̂ × M`, `I = Σ r_k
+/// r_kᵀ`. Taking no contact is **on the safe side**: contact of the plies
+/// beyond the bolts would lengthen the levers and lower the bolts' forces.
+/// A moment about a line through every bolt (one bolt, one row of bolts
+/// about the row) cannot be carried by them in tension: it is `left`, for
+/// the caller to say.
+pub fn tension(points: &[V2], normal: f64, moment: V2) -> Tension {
+    let n = points.len();
+    if n == 0 {
+        return Tension {
+            forces: Vec::new(),
+            left: moment[0].hypot(moment[1]),
+        };
+    }
+    let c = centroid(points);
+    let r: Vec<V2> = points.iter().map(|p| [p[0] - c[0], p[1] - c[1]]).collect();
+    let (ixx, ixy, iyy) = r.iter().fold((0.0, 0.0, 0.0), |s, q| {
+        (s.0 + q[0] * q[0], s.1 + q[0] * q[1], s.2 + q[1] * q[1])
+    });
+    // n̂ × M in the plane's axes.
+    let g = [-moment[1], moment[0]];
+    // The eigenvectors of I: a stiffness below a tenth of a millimetre's
+    // square per bolt carries nothing.
+    let tr = ixx + iyy;
+    let det = ixx * iyy - ixy * ixy;
+    let root = ((tr * tr / 4.0) - det).max(0.0).sqrt();
+    let lambdas = [tr / 2.0 + root, tr / 2.0 - root];
+    let small = 1e-8 * n as f64;
+    let mut s = [0.0, 0.0];
+    let mut left2 = 0.0;
+    for (k, l) in lambdas.iter().enumerate() {
+        // Its unit eigenvector (orthogonal to the other's).
+        let e = if ixy.abs() > 1e-15 {
+            let v = [*l - iyy, ixy];
+            let lv = v[0].hypot(v[1]);
+            [v[0] / lv, v[1] / lv]
+        } else if (ixx >= iyy) == (k == 0) {
+            [1.0, 0.0]
+        } else {
+            [0.0, 1.0]
+        };
+        let ge = g[0] * e[0] + g[1] * e[1];
+        if *l > small {
+            s = [s[0] + e[0] * ge / l, s[1] + e[1] * ge / l];
+        } else {
+            left2 += ge * ge;
+        }
+    }
+    Tension {
+        forces: r
+            .iter()
+            .map(|q| normal / n as f64 + s[0] * q[0] + s[1] * q[1])
+            .collect(),
+        left: left2.sqrt(),
+    }
+}
+
 /// a × b of two plane vectors (the normal's component), N·m for a lever
 /// and a force.
 pub fn cross2(a: V2, b: V2) -> f64 {
@@ -291,6 +365,42 @@ mod tests {
         );
         assert!(!one.shared);
         assert!((one.forces[0][0] - 10e3).abs() < 1e-9);
+    }
+
+    /// A force and moments square to a group's plane (invented, by hand):
+    /// four bolts on an 80 × 60 mm rectangle, 40 kN pulling square to the
+    /// plane, 10 each; a moment of 1.2 kN m about v (bending about the
+    /// 60 mm side's axis): I s = n̂ × M = (−1.2, 0) kN m, Σx² = 4 × 0.04² =
+    /// 0.0064 m², s = (−187.5 kN/m, 0): the bolts at x = +40 mm −7.5 kN,
+    /// at −40 mm +7.5 kN; together 2.5 and 17.5 kN. Their moment about the
+    /// centroid is the one applied. A row of bolts along u cannot carry a
+    /// moment about u: all of it left.
+    #[test]
+    fn bolts_share_a_pull_and_a_moment_out_of_their_plane() {
+        let pts = [[0.04, 0.03], [0.04, -0.03], [-0.04, 0.03], [-0.04, -0.03]];
+        let t = tension(&pts, 40e3, [0.0, 1.2e3]);
+        assert!(t.left.abs() < 1e-9, "{t:?}");
+        for (p, f) in pts.iter().zip(&t.forces) {
+            let want = if p[0] > 0.0 { 2.5e3 } else { 17.5e3 };
+            assert!((f - want).abs() < 1e-6, "{p:?} {f}");
+        }
+        // Σ r × (f n̂) = M: about u Σ y f, about v −Σ x f.
+        let mu: f64 = pts.iter().zip(&t.forces).map(|(p, f)| p[1] * f).sum();
+        let mv: f64 = pts.iter().zip(&t.forces).map(|(p, f)| -p[0] * f).sum();
+        assert!(mu.abs() < 1e-6 && (mv - 1.2e3).abs() < 1e-6, "{mu} {mv}");
+        // A moment about an oblique axis is carried too.
+        let t = tension(&pts, 0.0, [0.5e3, -0.7e3]);
+        let mu: f64 = pts.iter().zip(&t.forces).map(|(p, f)| p[1] * f).sum();
+        let mv: f64 = pts.iter().zip(&t.forces).map(|(p, f)| -p[0] * f).sum();
+        assert!((mu - 0.5e3).abs() < 1e-6 && (mv + 0.7e3).abs() < 1e-6);
+        let row = [[0.0, 0.0], [0.05, 0.0], [0.1, 0.0]];
+        let t = tension(&row, 30e3, [0.9e3, 0.0]);
+        assert!((t.left - 0.9e3).abs() < 1e-9, "{t:?}");
+        for f in &t.forces {
+            assert!((f - 10e3).abs() < 1e-6);
+        }
+        let one = tension(&[[0.0, 0.0]], 5e3, [0.3e3, 0.4e3]);
+        assert!((one.left - 0.5e3).abs() < 1e-9 && (one.forces[0] - 5e3).abs() < 1e-9);
     }
 
     /// A plane's axes: right-handed, u along the direction given.

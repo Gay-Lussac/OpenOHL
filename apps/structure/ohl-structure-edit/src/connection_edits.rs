@@ -1303,6 +1303,101 @@ pub fn set_plate_outline(
     Ok(())
 }
 
+/// A plate's own bolts onto the joint's leg as [`set_plate_leg_bolts`]
+/// writes them (2026-11-19).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegBolts<'a> {
+    /// The member of the leg at the plate's joint.
+    pub member: &'a str,
+    /// `long` or `short` (none: worked out).
+    pub leg: Option<&'a str>,
+    /// The bolts' diameter, m.
+    pub diameter: f64,
+    /// Their grade (none: not given).
+    pub grade: Option<&'a str>,
+    /// A bolt of the libraries, by id (none: typed only).
+    pub bolt: Option<&'a str>,
+    /// Each bolt along the member from the work point and across its
+    /// flange from the heel, m.
+    pub points: &'a [[f64; 2]],
+}
+
+/// Plate `id`'s own bolts onto the joint's leg (`[plate.leg_bolts]`,
+/// 2026-11-19) given (`Some`, the file raised to version 20) or removed
+/// (`None`). Refused for a plate not in the file, a member not meeting at
+/// the plate's joint, or no bolts.
+pub fn set_plate_leg_bolts(
+    doc: &mut DocumentMut,
+    t: &StructureType,
+    id: &str,
+    bolts: Option<&LegBolts>,
+) -> Result<(), String> {
+    let joint = t
+        .plates
+        .iter()
+        .find(|p| p.id == id)
+        .map(|p| p.joint.clone())
+        .ok_or_else(|| format!("no plate {id}"))?;
+    if let Some(b) = bolts {
+        if !t
+            .members
+            .iter()
+            .any(|m| m.id == b.member && m.nodes.contains(&joint))
+        {
+            return Err(format!("{} does not meet at joint {joint}", b.member));
+        }
+        if b.points.is_empty() {
+            return Err(format!(
+                "plate {id}: its bolts onto the leg need their places"
+            ));
+        }
+        if b.diameter.is_nan() || b.diameter <= 0.0 {
+            return Err(format!("plate {id}: a bolt diameter"));
+        }
+    }
+    let table = doc
+        .get_mut("plate")
+        .and_then(Item::as_array_of_tables_mut)
+        .and_then(|a| {
+            a.iter_mut()
+                .find(|t| t.get("id").and_then(Item::as_str) == Some(id))
+        })
+        .ok_or_else(|| format!("no plate {id}"))?;
+    let Some(b) = bolts else {
+        table.remove("leg_bolts");
+        return Ok(());
+    };
+    let mut lb = Table::new();
+    lb.insert("member", toml_edit::value(b.member));
+    if let Some(l) = b.leg {
+        lb.insert("leg", toml_edit::value(l));
+    }
+    let mut bt = InlineTable::new();
+    bt.insert("count", Value::from(b.points.len() as i64));
+    if let Some(x) = b.bolt {
+        bt.insert("bolt", Value::from(x));
+    }
+    bt.insert("diameter", mm(b.diameter));
+    if let Some(g) = b.grade {
+        bt.insert("grade", Value::from(g));
+    }
+    lb.insert("bolts", Item::Value(Value::InlineTable(bt)));
+    let mut a = toml_edit::Array::new();
+    for p in b.points {
+        let mut q = toml_edit::Array::new();
+        q.push(mm(p[0]));
+        q.push(mm(p[1]));
+        a.push(Value::Array(q));
+    }
+    lb.insert("bolt_points", Item::Value(Value::Array(a)));
+    table.insert("leg_bolts", Item::Table(lb));
+    raise_version(
+        doc,
+        i64::from(ohl_structures::connections::PLATE_LEG_BOLTS_VERSION),
+    );
+    Ok(())
+}
+
 /// Plate `id`'s outline taken out of the file: drawn round its bolts
 /// again (the code's end and edge distances kept).
 pub fn clear_plate_outline(doc: &mut DocumentMut, id: &str) -> Result<(), String> {

@@ -22,6 +22,7 @@ plugin's method `asce10-97`; no file is rewritten). Theory:
 | `member-check-bracing` | the same with what braces each member: buckling lengths worked out by Figure 3.2, Appendix B's Example 7 and C3.7.4 where the member gives none (2026-11-19; `src/lengths.rs`, `src/bracing.rs`) |
 | `joint-check`, `joint-check-full`, `joint-check-moments` | a member's bolts in a gusset plate or cover (bearing, block shear, net section, end and edge distances); a weld between two plates is not checked (ASCE 10-97 gives no weld resistance), said |
 | `joint-check-groups` | a joint's bolt groups under the members' forces together (2026-11-19): each bolt's shear (4.3.2), bearing on the plate or member (4.4), end distance along its force (4.5.1), spacing (4.5.2) and edge distance (4.5.3) |
+| `joint-check-groups-tension` | the same with the bolts in tension (2026-11-19): the prying of the flanges each bolt bends (the T-stub model of Struik and de Back, α = δ = 1: on the safe side), the bolt's tension (4.3.3, F_t = 0.6 F_u on 0.6 of the gross area), shear and tension together (4.3.4, Eq. 4.3-2), each flange's bending (the model's mechanism) |
 | `bolt-distances`, `bolt-distances-full` | 4.5 with the bolt's force; without an analysis its own design shear capacity (4.3.2: a given capacity, else 0.62 f_u on 0.6 of the gross area, times the shear planes), worked out by the plugin since 2026-11-18 (third round; before, by the core — the same numbers) |
 
 ## Parameters

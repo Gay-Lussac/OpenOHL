@@ -233,10 +233,24 @@ values were worked out from the joints and which assumed.
    is the largest of its plates', welds', bolt groups' and bearing checks:
    in Joint details, the 3D view's joint colours and the report's
    *Joints* table. Not defined → said, never skipped: a plate the joint's
-   leg does not bolt onto ("how it is held is not given" — a leg running
-   on has no bolts at the joint in the file: an open question), bolts not
+   leg does not bolt onto ("how it is held is not given"), bolts not
    placed, a thickness not known
-   ([theory](../theory/joint-groups.md)).
+   ([theory](../theory/joint-groups.md)). The owner's follow-ups of
+   2026-11-19 (built the same day, in active development, not approved
+   yet): **a plate's own bolts onto the leg** (`[plate.leg_bolts]`,
+   structure file version 20: a leg running on through the joint holds the
+   plate by them); **a joint that does not fit** (a bolt's hole off its
+   flange, a holding bolt outside the plate, holes overlapping, a bolt
+   beyond a member's known end) reads "does not fit" — failing, counted
+   apart, never an infinite usage; **pieces in line not said continuous
+   end at the joint** (on the safe side; the layout proposing
+   `continuous` for the user to confirm follows the layout's work, ROADMAP
+   O19); **bolts in tension checked, with prying** (each bolt's pull from
+   the forces square to the plies and the moments out of their plane,
+   shared elastically about the bolts' centroid; the T-stub model of
+   Struik and de Back with α = δ = 1; ASCE 10-97 4.3.3, 4.3.4, SIA 263
+   (77), (78); `joint-check-groups-tension`); the elastic method for the
+   moments stays.
 6. **Weight and quantities.** The bolts and plates counted and weighed:
    - the weight replaces the `dead_load_factor` estimate (1.1–1.4 today)
      where every joint is defined;

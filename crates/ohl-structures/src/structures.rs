@@ -276,8 +276,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// ([`StructureType::self_weight_from`], [`SelfWeightFrom`],
 /// [`SELF_WEIGHT_FROM_VERSION`]): where a run's self-weight comes from
 /// once every joint is defined; a file is written at 19 only when it gives
-/// the key.
-pub const STRUCTURE_FILE_VERSION: u32 = 19;
+/// the key. Version 20 (2026-11-19, the joints' own checks) adds a plate's
+/// own bolts onto the joint's leg (`[plate.leg_bolts]`:
+/// [`crate::connections::PlateLegBolts`],
+/// [`crate::connections::PLATE_LEG_BOLTS_VERSION`]); a file is written at
+/// 20 only when a plate gives them.
+pub const STRUCTURE_FILE_VERSION: u32 = 20;
 
 /// The structure file version of `self_weight_from` (2026-11-19).
 pub const SELF_WEIGHT_FROM_VERSION: u32 = 19;

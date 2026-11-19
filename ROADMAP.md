@@ -51,7 +51,9 @@ from here. The owner's order of 2026-11-19:
    and **the tests' speed with the PostgreSQL port flake** ([O46](#o46-the-tests-speed-and-a-flaky-postgresql-test)).
 2. **The automatic joint layout on real towers, J1–J2** ([O44](#o44-automatic-joint-layout)).
 3. **The joint checks' follow-ups** decided 2026-11-19, then **bolts in
-   tension with prying** ([O19](#o19-joint-details-of-towers-show-and-define-them), stage 4.5).
+   tension with prying** ([O19](#o19-joint-details-of-towers-show-and-define-them), stage 4.5;
+   built 2026-11-19, in active development, not approved yet — the
+   layout's "continuous" proposal is [O44](#o44-automatic-joint-layout) J9).
 4. **Joint eccentricities set automatically**, steps A1–A3 ([O45](#o45-joint-eccentricities-and-member-shifts-set-automatically)).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout)).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server)).
@@ -1642,18 +1644,28 @@ Six stages, the questions per stage and per detail level:
   joint in the tables, the report and the 3D view's joints (2026-11-19,
   [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)),
   all built, in active development, not approved yet.
-  Decided 2026-11-19 (to build next, step 2 of the order): a gusset
-  plate's own bolts onto the leg in the file format (a plate on a leg
-  running through is not checked today, said); a joint that does not fit
-  (bolts off the flanges, holes overlapping) reads "does not fit",
-  coloured as failing and counted apart, not an infinite usage; in-line
-  pieces not marked continuous read "ends at the joint" (conservative),
-  the layout proposing "continuous" for the user to confirm; the bolts in
-  tension checked, with prying (today said NOT ON THE SAFE SIDE); the
-  elastic method for the moments stays. Still assumed or not checked,
-  said: a member's own gauge eccentricity in its plane as a moment on its
-  bolts, the plies' offsets in the levers, the joint's own loads through
-  its plates, the holding bolts of a welded plate's several plates.
+  Decided 2026-11-19 and built the same day (step 3 of the order;
+  built, in active development, not approved yet;
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md)):
+  a gusset plate's own bolts onto the leg in the file format
+  (`[plate.leg_bolts]`, structure file version 20) and checked; a joint
+  that does not fit (a bolt's hole off its flange, a holding bolt outside
+  the plate, holes overlapping, a bolt beyond a member's known end) reads
+  "does not fit", coloured as failing and counted apart, never an
+  infinite usage; in-line pieces not marked continuous end at the joint
+  (on the safe side); the bolts in tension checked, with prying (the
+  T-stub model of Struik and de Back, α = δ = 1; ASCE 10-97 4.3.3, 4.3.4;
+  SIA 263 (77), (78)); the elastic method for the moments stays. Still
+  assumed or not checked, said: a member's own gauge eccentricity in its
+  plane as a moment on its bolts, the plies' offsets in the levers, the
+  joint's own loads through its plates, the holding bolts of a welded
+  plate's several plates, a plate's own prying and bending under bolts in
+  tension. To build: **the joint layout proposing "continuous"** for
+  in-line pieces, for the user to confirm (after the layout's J1–J2 work
+  is merged, O44 J9); a window for a plate's own bolts onto the leg
+  (typed in the file until then), and those bolts drawn in the 3D view,
+  the close-up and the IFC export (counted in the bill of materials
+  already).
 - [x] Stage 4.6, weight and quantities (2026-11-19, built, in active
   development (not approved yet)): a tower's members, gusset plates,
   splice covers, bolts and welds counted from the connection records and
@@ -1930,6 +1942,12 @@ step, reasons left), and the work stops where it stops paying:
 - [ ] J8. **Short members**: the class's smaller bolt, one bolt where the
   code's text allows it for a redundant, else a plate shared with the
   neighbouring member.
+- [ ] J9. **Pieces in line proposed "continuous"** (owner 2026-11-19, a
+  follow-up of the joint checks, O19 stage 4.5): the layout proposes
+  `continuous` where two pieces of a leg run on in line through a joint
+  without a splice, for the user to confirm; until then such pieces each
+  end at the joint in the checks (on the safe side). After J1–J2 are
+  merged.
 - Asked (open): shop drawings of real towers, to tune to how the steel
   is really detailed; the owner is looking for example joints
   (2026-11-19) and sent three that day: a bent gusset plate at a corner,

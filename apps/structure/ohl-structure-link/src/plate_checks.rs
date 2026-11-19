@@ -101,6 +101,10 @@ pub struct PlateUsage {
     pub checks: Vec<(String, f64)>,
     /// What was assumed or not checked.
     pub notes: Vec<String>,
+    /// It does not fit as given (owner 2026-11-19: a bolt off the flange
+    /// or plate it bolts onto, holes in one ply overlapping), why in
+    /// words: no usage, failing, counted apart (none: it fits).
+    pub does_not_fit: Option<String>,
 }
 
 impl PlateUsage {
@@ -334,7 +338,7 @@ pub fn plate_plans_in(
                     .into(),
             );
         } else {
-            out.groups = crate::joint_groups::group_plans(&details, &model, library);
+            out.groups = crate::joint_groups::group_plans(&details, &model, library, bolts);
         }
     }
     for j in &details.joints {
@@ -948,6 +952,7 @@ pub fn plate_usage(
                     .map(|c| (c.what.clone(), c.usage(strength)))
                     .collect(),
                 notes: x.notes.iter().chain(&checked.notes).cloned().collect(),
+                does_not_fit: None,
             }
         })
         .collect();
@@ -1144,6 +1149,7 @@ pub fn plate_usage_cases_with(
                         governs: String::new(),
                         checks: Vec::new(),
                         notes: x.notes.clone(),
+                        does_not_fit: None,
                     };
                     if matches!(x.plan, Plan::NoSeam { .. } | Plan::Unplaced { .. }) {
                         // Nothing to send: not checked, as the core says it.
@@ -1286,8 +1292,30 @@ fn weld_loads_with(
     out
 }
 
+/// The joints of a case's joint checks that do not fit as given
+/// (2026-11-19): each with why, its parts' words joined — failing,
+/// counted apart from the usages, never an infinite usage.
+pub fn joints_not_fitting(plates: &[PlateUsage]) -> BTreeMap<String, String> {
+    let mut out: BTreeMap<String, String> = BTreeMap::new();
+    for p in plates {
+        if let Some(w) = &p.does_not_fit {
+            let e = out.entry(p.joint.clone()).or_default();
+            let words = format!("{}: {w}", p.what());
+            if !e.contains(&words) {
+                if !e.is_empty() {
+                    e.push_str("; ");
+                }
+                e.push_str(&words);
+            }
+        }
+    }
+    out
+}
+
 /// The worst usage per joint of a case's joint checks: its plates', welds',
-/// bolt groups' and bearing (2026-11-19) — the joint's usage.
+/// bolt groups' and bearing (2026-11-19) — the joint's usage. A joint that
+/// does not fit is in [`joints_not_fitting`] (its parts that fit keep
+/// their usage here).
 pub fn joint_plate_usage(plates: &[PlateUsage]) -> BTreeMap<String, f64> {
     let mut out: BTreeMap<String, f64> = BTreeMap::new();
     for p in plates {

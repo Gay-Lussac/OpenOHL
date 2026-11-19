@@ -498,3 +498,52 @@ fn level_4_is_a_full_design_with_every_end_detailed() {
         .is_ok()
     );
 }
+
+/// A plate's own bolts onto the leg (`[plate.leg_bolts]`, version 20,
+/// 2026-11-19): read; a member not at the joint, a count differing from
+/// the places and `leg = "both"` said in the notes, kept.
+#[test]
+fn a_plates_own_bolts_onto_the_leg_are_read() {
+    let text = format!(
+        "{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [plate.leg_bolts]\nmember = \"L1\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n\
+         bolt_points = [[\"-60 mm\", \"30 mm\"], [\"60 mm\", \"30 mm\"]]\n"
+    );
+    let t = parse(&text).unwrap();
+    let lb = t.plates[0].leg_bolts.as_ref().unwrap();
+    assert_eq!(lb.member, "L1");
+    assert_eq!(lb.leg, Some(BoltedLeg::Long));
+    assert_eq!(lb.bolt_points.len(), 2);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let odd = text
+        .replace(
+            "member = \"L1\"\nleg = \"long\"",
+            "member = \"D9\"\nleg = \"both\"",
+        )
+        .replace("count = 2", "count = 3");
+    let notes = parse(&odd).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("does not meet at joint N2")),
+        "{notes:?}"
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("count 3 but 2 bolt_points")),
+        "{notes:?}"
+    );
+    assert!(
+        notes.iter().any(|n| n.contains("long or short only")),
+        "{notes:?}"
+    );
+    // A plate without them reads as before.
+    let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n");
+    assert!(parse(&plain).unwrap().plates[0].leg_bolts.is_none());
+}

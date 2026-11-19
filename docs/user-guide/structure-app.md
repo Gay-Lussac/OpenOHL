@@ -1037,6 +1037,44 @@ out. Each change is one undo step.
   onto reads NOT CHECKED, NOT ON THE SAFE SIDE (how it is held is not
   given). How the forces are gathered and each code's rules:
   [Joint bolt groups and the leg's bearing](../theory/joint-groups.md).
+- **Since 2026-11-19** (in active development, not approved yet):
+  - **Bolts in tension** are checked with their prying: where a member's
+    force or moment pulls the plies apart, each bolt's pull, the prying of
+    the flanges it bends, the bolt in tension and in shear and tension
+    together by the code, and each flange's bending. What governs names
+    it ("bolt tension: pull … kN, prying … kN …", "bolt shear and tension
+    together …", "bending of L1 under the bolt's pull …"). A gusset
+    plate's own prying is not worked out: said NOT ON THE SAFE SIDE.
+  - **A joint that does not fit** as given (a bolt's hole not within the
+    flange it bolts onto, a holding bolt outside the plate, holes in one
+    part overlapping, a bolt beyond a member's end) reads **does not fit**
+    in red — in the table, above it ("The joint: does not fit as given —
+    …", the usage of its parts that fit beside), as a red joint in the 3D
+    view and on its own row of the report's *Joints — usage per joint*,
+    counted apart — never as a usage. Correct the joint's details and run
+    again.
+  - **Pieces of a leg in line that are not said continuous** each end at
+    the joint (on the safe side, said in the notes: "… not said
+    continuous: each taken as ending at the joint"). Where they are one
+    piece, make them continuous (Design › Continuous members…).
+  - **A plate on a leg running on through the joint** is held by its own
+    bolts onto the leg, given in the structure file under the plate:
+
+    ```toml
+    [plate.leg_bolts]
+    member = "L1"     # the leg at the joint (running on: either piece)
+    leg = "long"      # optional: the flange the plate lies on
+    bolts = { count = 2, diameter = "16 mm", grade = "8.8" }
+    bolt_points = [["-60 mm", "30 mm"], ["60 mm", "30 mm"]]
+    ```
+
+    each bolt along the member from the joint (negative: past it, on the
+    piece running on) and across its flange from the heel. The plate's
+    outline worked out goes round them, the bill of materials counts them
+    and the joint checks take them as the plate's bolts onto the leg (a
+    file with them is written at structure file version 20). There is no
+    window for them yet, and the 3D view, the close-up and the IFC export
+    do not draw these bolts yet: type them in the file.
 - **Presets** are kept in `Connections/connection-presets.ohlcp` next to
   the structure file (format `ohl-connection-presets`; a `[[preset]]`
   per name with the fields of a connection but `onto` and `bolt_points`),
