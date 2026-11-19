@@ -398,8 +398,8 @@ pub enum JoinKind {
     /// onto a splice of covers on both faces of its legs (`[[splice]]`;
     /// the owner's step 1c, 2026-11-19). **No longer made by
     /// [`joins_of`]** since O44 J7 (2026-11-19: never written silently —
-    /// proposed by [`crate::leg_splices`], written when confirmed); a run
-    /// still takes out such a splice an older run made.
+    /// proposed by [`crate::leg_splices::leg_splices`], written when
+    /// confirmed); a run still takes out such a splice an older run made.
     Spliced,
 }
 
@@ -2052,8 +2052,8 @@ pub fn splice_unknown(j: &JointDetail) -> Option<String> {
 ///   less its thickness and root radius) — their legs along each other
 ///   within the nesting tolerance, else not;
 /// - else not joined (a splice of other sections: proposed by
-///   [`crate::leg_splices`] for the user to confirm, O44 J7; else covers
-///   or a plate by hand).
+///   [`crate::leg_splices::leg_splices`] for the user to confirm, O44 J7;
+///   else covers or a plate by hand).
 ///
 /// Only ends with nothing given of how they are joined (`kind`, `face`,
 /// `onto`, bolts given at the end), as the run takes them out first.
@@ -2137,7 +2137,7 @@ pub fn joins_of(j: &JointDetail) -> Vec<Join> {
             // (Step 1c, other sections in line spliced with covers, is no
             // longer made here: since O44 J7 (2026-11-19) a splice is
             // proposed and written only when the user confirms it —
-            // [`crate::leg_splices`].)
+            // [`crate::leg_splices::leg_splices`].)
             if fits(ga, gb) && along(pa, pb) {
                 Some((x, y, JoinKind::Nested))
             } else if fits(gb, ga) && along(pa, pb) {

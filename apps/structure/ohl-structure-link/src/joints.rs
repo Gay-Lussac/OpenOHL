@@ -308,7 +308,7 @@ pub struct Arrival {
     /// cover lies on. The end is seated on the cover (moved out by its
     /// thickness), its bolts clamp the cover, the member's leg and the
     /// inner covers on that leg, and the cover is drawn round its bolts
-    /// too and checked for its force ([`through_cover`]). None: lapped
+    /// too and checked for its force (`through_cover`). None: lapped
     /// directly, or not onto a spliced member.
     pub through: Option<(String, CoverLeg)>,
     /// It does not fit as given (a nested angle too large, its legs not

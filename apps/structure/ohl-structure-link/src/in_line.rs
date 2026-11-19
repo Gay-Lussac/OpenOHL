@@ -20,10 +20,10 @@
 //! one part too, as **leg splice places** (O44 J7, the owner's rule of
 //! 2026-11-19: "a change of section is a splice; the same section is one
 //! part unless marked"), flagged [`InLine::splice_bolts`] and listed with
-//! the leg splices ([`crate::leg_splices`]), not with these: confirmed,
-//! their bolts are not checked at this joint — **not on the safe side**
-//! where a splice of one section is really there (to mark by hand, a
-//! splice given here).
+//! the leg splices ([`crate::leg_splices::leg_splices`]), not with these:
+//! confirmed, their bolts are not checked at this joint — **not on the
+//! safe side** where a splice of one section is really there (to mark by
+//! hand, a splice given here).
 //!
 //! Not proposed, and said why:
 //!
