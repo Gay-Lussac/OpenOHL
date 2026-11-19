@@ -8,6 +8,80 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-19 (O42 and O46: edits in OHL-Design in place; the tests' PostgreSQL)
+
+**OHL-Design's line is kept in step with the session in place** (owner,
+2026-11-19: "per element modified instead of validating the whole
+thing"; roadmap O42, first in the order; built, in active development,
+not approved yet; [performance](performance.md#ohl-design-an-edit-taken-in-place-o42-2026-11-19)).
+
+- **What changes**: after a command the session applied in place, the
+  desktop takes only the line objects it changed from the session's line
+  — a structure resolved with its type alone
+  (`ohl_line::library::resolve_structure`, the steps of `resolve_with`
+  for one structure), the sections a changed spacer ends on, a structure
+  moved by a drag — puts them where the session has them, keeps its own
+  reference index, and validates locally (`Line::validate_local`: the
+  objects changed and what refers to them). The line's own fields follow
+  the session's. The reference state is checked again as before (the
+  stored state, never what an earlier check left). On a refusal the line
+  is left as it was, as the whole way leaves it.
+- **Made whole, as before**, and said in the edit's report ("the line
+  made again whole: …"): a change of the line's settings (a `meta` row:
+  the creep-stretch, bimetallic and reference-state switches, systems,
+  circuits, the solver…), a library (read again whole, as before), the
+  session's whole way (`ohl_session::Applied::whole`, new: objects of
+  older forms read into others, an import), a line replaced meanwhile
+  (another project line, libraries read again), objects that would not
+  land in the session's order (a check).
+- **Proof**: two copies of a project, the same random commands (moves,
+  turned and retyped structures, a type not in the library, stringings,
+  wind factors, deletions, renames, copies, alignment points, settings,
+  batches), undos, redos and drags (let go or cancelled), one taking them
+  in place and one whole: the same answers, the same line, the same
+  solved cases (the plain and the typed example, three seeds, 60 steps
+  each; most taken in place). Every edit any test of the desktop makes is
+  also compared, while testing, with the line made again whole.
+- **Kept**: only the cases shown are solved at once, the others after
+  the 2 s settle (owner, 2026-11-18); no result is computed coarser, no
+  file changes.
+- **The solve's routes once per update**: a case's update made the
+  line's route views again for each section it solved (its wind's side)
+  and searched the line for it; the side now comes from the routes made
+  once per update (a few sections) or from the routes' grid (many) — the
+  same answer. Outside the in-place work, done because without it the
+  app could not open the measured country at all; the jumpers still read
+  the whole line each (left, on the roadmap).
+
+**The tests' PostgreSQL: one cluster per test program, the flake
+fixed** (owner, 2026-11-19: "the server seems to have very long tests
+can they be optimised?"; roadmap O46; built, in active development, not
+approved yet; [the scheme](postgresql.md#the-tests),
+[timings](performance.md#the-tests-of-the-server-the-store-the-session-and-the-command-line-o46-2026-11-19)).
+
+- **The flake** was not the port: `schema_and_the_writers_lock` dropped
+  its first writer and connected the second at once; PostgreSQL lets a
+  connection's advisory lock go when its process for it has ended, a
+  moment later (1 run in 144 with six programs' tests side by side). The
+  tests wait for it (`Cluster::wait_for_locks_gone`, at most 10 s): what
+  is tested — one writer, and the lock going with its connection — is
+  unchanged.
+- **Ports**: a start refused for its port is made again on another, and
+  every cluster started or joined is checked by its `data_directory`
+  before a test uses it.
+- **One cluster per test program**, shared by its tests across nextest's
+  processes through file locks the operating system lets go with the
+  process (a key lock while joining, making, leaving or stopping; a
+  shared lock per test using it); a database and a folder per test,
+  dropped at its end; the last test out stops and deletes the cluster; a
+  killed test's cluster is stopped and deleted by the next test of any
+  program. Chosen over a cluster kept by a process of its own (that
+  process could outlive or die before the tests) and over nextest's
+  setup scripts (no teardown).
+- **The safety-volume test** meshes at 0.5 m instead of 0.2 m: the same
+  command, steps, files and assertions; nothing it asserts depends on the
+  mesh's fineness.
+
 ## 2026-11-19 (owner decisions on the open questions)
 
 **Every plan on the roadmap; the owner's answers to the plans' open

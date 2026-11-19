@@ -1093,8 +1093,21 @@ step in the background with progress and Stop.
 Owner, 2026-11-19: "And the check for the server per member can it also
 be applied on the app itself? So that the process is as speedy" — "per
 element modified instead of validating the whole thing". **Decided
-2026-11-19, first in the [order](#next-in-order-owner-2026-11-19); not
-built.** The session already applies a command in place and validates
+2026-11-19, first in the [order](#next-in-order-owner-2026-11-19); items
+1, 2 and 4 built 2026-11-19, in active development, not approved yet**
+([performance](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#ohl-design-an-edit-taken-in-place-o42-2026-11-19),
+[decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-19-o42-and-o46-edits-in-ohl-design-in-place-the-tests-postgresql)):
+the app's line is taken in place after a command the session applied in
+place (on the whole synthetic country 0.85 ms instead of 587 ms an edit),
+made whole only for a settings or library change, the session's whole
+way or a line replaced meanwhile (said in the edit's report), proved on
+random command sequences. **Left: the solve** — a case's update after an
+edit still reads the whole line for every jumper it solves again (the
+route views, the jumper's section searched): about 3 s an edit on a
+2 000-pylon country, 21 minutes to open it; the server's sub-line way
+(each section on the part of the line it reads) would remove it. Item 3
+(views) measured, left: the first frame after an edit 57 ms on a
+500-pylon country (the solve there about 0.5 s). The session already applies a command in place and validates
 only what it touches and what refers to it (the country server's phase 3:
 a move on the 12 000-pylon synthetic country in about 2 ms). After every
 command the app then rebuilds its own line whole — a clone of the line,
@@ -2405,7 +2418,14 @@ F with 13.
 ### O46. The tests' speed and a flaky PostgreSQL test
 Owner, 2026-11-19: "the server seems to have very long tests can they be
 optimised?" **Decided 2026-11-19, first in the
-[order](#next-in-order-owner-2026-11-19) with O42; not built.**
+[order](#next-in-order-owner-2026-11-19) with O42; built 2026-11-19, in
+active development, not approved yet**
+([the test scheme](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/postgresql.md#the-tests),
+[timings](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#the-tests-of-the-server-the-store-the-session-and-the-command-line-o46-2026-11-19)):
+the flake was the writer's lock still held a moment after its connection
+closed (1 run in 144 side by side), now waited for; ports made safe; one
+cluster per test program, a database per test; the safety-volume test
+11.5 s → 5.6 s; nothing removed or weakened.
 1. First, the flake: `schema_and_the_writers_lock` failed when other runs
    of the check ran at the same time — the PostgreSQL tests
    (`crates/ohl-store-pg/tests/common/mod.rs`) pick a free port by

@@ -1951,3 +1951,137 @@ fn edit_split_benchmark() {
     println!("{}", table.join("\n"));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// The line's upkeep alone after an edit (O42), on `OHL_BENCH_FILE` (a
+/// project copy without structure types, e.g. the synthetic country;
+/// opened as `OHL_BENCH_USER`, default `tester`): structures moved by
+/// 1 m (each with its undo and redo) through the session, the desktop's
+/// line then made again whole (the session's line copied, resolved with
+/// the project's structure and insulator libraries — empty for the
+/// synthetic country: the strings placed, the line validated whole — and
+/// the weather cases set, as [`Model`] does) or taken in place
+/// ([`crate::in_place::update`]) — without the model's solve, which
+/// on a whole country takes far longer than the edits (see
+/// performance.md). Medians and 95th percentiles, ms; the lines compared
+/// at the end. Ignored by default.
+///
+/// ```bash
+/// OHL_BENCH_FILE=/path/to/copy.ohl cargo test --profile bench-fast -p ohl-app line_upkeep_benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: run optimised with --ignored --nocapture"]
+fn line_upkeep_benchmark() {
+    let Some(file) = ohl_core::env::var_os("OHL_BENCH_FILE") else {
+        eprintln!("line upkeep benchmark: give OHL_BENCH_FILE");
+        return;
+    };
+    let user = ohl_core::env::var("OHL_BENCH_USER").unwrap_or_else(|_| "tester".into());
+    let edits: usize = ohl_core::env::var("OHL_BENCH_EDITS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(50);
+    let root = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let cases =
+        ohl_weather::WeatherCases::load(&root.join("examples/synthetic-line/weather-cases.ohlwc"))
+            .unwrap()
+            .cases;
+    let t = Instant::now();
+    let mut s = ohl_session::Session::open(std::path::Path::new(&file)).unwrap();
+    eprintln!("opened in {:.1?}", t.elapsed());
+    // The project's libraries: none of the country's structures has a
+    // type; the app resolves all the same (its Structures folder).
+    let (types, insulators) = (
+        ohl_structures::StructureLibrary::default(),
+        ohl_structures::InsulatorLibrary::default(),
+    );
+    let cache = ohl_line::library::ResolveCache::default();
+    let mut line = s
+        .export()
+        .resolve_with(&types, &insulators, Some(&cache))
+        .unwrap();
+    line.set_weather_cases(&cases);
+    let mut step = crate::in_place::InStep::at(0, s.current_line());
+    let t = Instant::now();
+    step.index = Some(ohl_line::index::LineIndex::of(&line));
+    eprintln!("the desktop's reference index made in {:.1?}", t.elapsed());
+    let ids: Vec<String> = {
+        let st = &line.structures;
+        (0..edits)
+            .map(|k| st[(k * 7919 + st.len() / 3) % st.len()].id.clone())
+            .collect()
+    };
+    let (mut session, mut whole, mut in_place) = (Vec::new(), Vec::new(), Vec::new());
+    let ms = |d: Duration| d.as_secs_f64() * 1e3;
+    for id in &ids {
+        for k in 0..3 {
+            let t = Instant::now();
+            let applied = match k {
+                0 => {
+                    let p = s.line().structure(id).unwrap().position;
+                    s.apply(
+                        &user,
+                        ohl_session::Command::MoveStructure {
+                            id: id.clone(),
+                            position: [p[0] + 1.0, p[1], p[2]],
+                        },
+                    )
+                }
+                1 => s.undo(&user),
+                _ => s.redo(&user),
+            }
+            .unwrap();
+            session.push(ms(t.elapsed()));
+            assert!(!applied.whole);
+            // The whole way: the session's line copied, the weather cases.
+            let t = Instant::now();
+            let mut again = s
+                .export()
+                .resolve_with(&types, &insulators, Some(&cache))
+                .unwrap();
+            again.set_weather_cases(&cases);
+            whole.push(ms(t.elapsed()));
+            // In place: the objects changed taken, validated locally.
+            let t = Instant::now();
+            crate::in_place::update(
+                &mut line,
+                &mut step,
+                s.line(),
+                &applied,
+                &|x| ohl_line::library::resolve_structure(x, &types, &insulators, Some(&cache)),
+                true,
+            )
+            .unwrap();
+            line.set_weather_cases(&cases);
+            in_place.push(ms(t.elapsed()));
+            drop(again);
+        }
+    }
+    let p = |v: &mut Vec<f64>| {
+        v.sort_by(f64::total_cmp);
+        (
+            v[v.len() / 2],
+            v[(v.len() * 95 / 100).min(v.len() - 1)],
+            v[v.len() - 1],
+        )
+    };
+    let again = {
+        let mut l = s
+            .export()
+            .resolve_with(&types, &insulators, Some(&cache))
+            .unwrap();
+        l.set_weather_cases(&cases);
+        l
+    };
+    assert!(again == line, "the line kept in place differs");
+    for (what, v) in [
+        ("session (apply, undo, redo)", &mut session),
+        ("the line made again whole", &mut whole),
+        ("the line taken in place", &mut in_place),
+    ] {
+        let (a, b, c) = p(v);
+        println!(
+            "{what}: median {a:.2} ms, 95 % {b:.2} ms, at most {c:.2} ms ({} edits)",
+            v.len()
+        );
+    }
+}
