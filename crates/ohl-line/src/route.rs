@@ -1000,22 +1000,32 @@ impl Line {
             chord_along(&pts, pa.position, pb.position)
         };
         // (A span with both ends in the run is one of a run's structure.)
-        let spans: Vec<(&str, &str)> = spans
+        // Each with the stations it spans, and whether it runs along the
+        // alignment worked out once when first asked (a question of the
+        // span alone: the same answers in any order).
+        let spans: Vec<(&str, &str, f64, f64)> = spans
             .at(run.keys().copied())
             .into_iter()
             .map(|k| spans.all[k])
             .filter(|(a, b)| a != b && run.contains_key(a) && run.contains_key(b))
+            .map(|(a, b)| {
+                let (sa, sb) = (run[a], run[b]);
+                (a, b, sa.min(sb), sa.max(sb))
+            })
             .collect();
+        let runs_along: Vec<std::cell::OnceCell<bool>> =
+            vec![std::cell::OnceCell::new(); spans.len()];
+        let along_of = |k: usize| *runs_along[k].get_or_init(|| along(spans[k].0, spans[k].1));
         candidates
             .into_iter()
             .filter(|&(st, x)| {
-                let over = spans.iter().any(|&(a, b)| {
-                    let (sa, sb) = (run[a], run[b]);
-                    a != x && b != x && sa.min(sb) < st && st < sa.max(sb) && along(a, b)
+                let over = spans.iter().enumerate().any(|(k, &(a, b, lo, hi))| {
+                    a != x && b != x && lo < st && st < hi && along_of(k)
                 });
                 over && !spans
                     .iter()
-                    .any(|&(a, b)| (a == x || b == x) && along(a, b))
+                    .enumerate()
+                    .any(|(k, &(a, b, ..))| (a == x || b == x) && along_of(k))
             })
             .map(|(_, x)| x.to_owned())
             .collect()
