@@ -1111,6 +1111,28 @@ further optional export carries them:
   `group-input.parameters`. A plugin without it: every group NOT CHECKED,
   NOT ON THE SAFE SIDE (`ohl_member_check::joints::check_joint_groups`).
   Both bundled plugins have it ([theory](../theory/joint-groups.md)).
+- `joint-check-groups-tension` (2026-11-19, `code.wit`, additive: found
+  by its export name, world `joint-check-groups-tension-export` with
+  `joint-check-groups` whose records it takes):
+  `check-joint-groups-tension(method, group-input, list<group-tension>) ->
+  result<list<group-result>, string>`. Per group with a bolt pulled in a
+  case, `group-tension`: per bolt (`bolt-tension`) its library's tension
+  capacity (its ultimate tensile load), the flanges it bends as it pulls
+  (`tee`: the part, its thickness and yield strength, `edge` a from the
+  bolt to the free edge, `web` b to the web's face, `width` w its length
+  along the bolts the bolt takes) and the plies whose bending is not
+  known (`unknown`, in words); per case and bolt its pull, N — the forces
+  square to the plies and the moments out of their plane shared
+  elastically about the bolts' centroid (no contact taken, each share as
+  pulling: on the safe side). The plugin works out the prying (no code
+  gives a method: the T-stub model of Struik and de Back, theory page),
+  checks each bolt in tension and in shear and tension together by its
+  code, and each flange's bending, and gives back per group what
+  `check-joint-groups` gives. Called instead of `check-joint-groups` when a
+  plugin has it (`ohl_member_check::joints::check_joint_groups_tension`);
+  without it the bolts in tension are said not checked, NOT ON THE SAFE
+  SIDE. Both bundled plugins have it
+  ([theory](../theory/joint-groups.md#bolts-in-tension-with-prying)).
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

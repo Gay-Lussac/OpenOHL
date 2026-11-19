@@ -176,8 +176,15 @@ fn bolt_parts(
 /// cover on `leg`: none, every leg), m²: each bolt of the ends bolted
 /// onto it, its hole (else its diameter).
 fn holes_through(j: &JointDetail, id: &str, leg: Option<Option<CoverLeg>>) -> f64 {
-    bolted_onto(&j.arrivals, id)
+    let own = j
+        .plates
         .iter()
+        .filter(|p| p.id == id)
+        .filter_map(|p| p.leg_bolts.as_deref())
+        .map(std::borrow::Cow::Borrowed);
+    bolted_onto(&j.arrivals, id)
+        .into_iter()
+        .chain(own)
         .filter(|a| match leg {
             Some(Some(l)) => match a.leg.value {
                 Some(BoltedLeg::Long) => l == CoverLeg::Long,
@@ -297,6 +304,18 @@ pub(crate) fn quantities_of(
             .or_insert(why);
     };
     for j in &details.joints {
+        // A plate's own bolts onto the leg (`[plate.leg_bolts]`,
+        // 2026-11-19): bolts, and holes through the leg.
+        for p in &j.plates {
+            if let Some(a) = p.leg_bolts.as_deref()
+                && let Some(b) = &a.bolts.value
+            {
+                let hole = hole_area(b.hole.unwrap_or(b.diameter));
+                let through: f64 = a.bolts_with_axes().map(|(_, _, g)| hole * g[0]).sum();
+                *member_holes.entry(a.member.clone()).or_default() += through;
+                parts.extend(bolt_parts(a, &j.id, b, bolts, false, &mut tally));
+            }
+        }
         for a in &j.arrivals {
             if a.modelling || !record.contains(&(a.member.as_str(), j.id.as_str())) {
                 continue;

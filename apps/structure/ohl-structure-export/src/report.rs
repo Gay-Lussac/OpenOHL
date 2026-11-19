@@ -516,7 +516,8 @@ pub fn report_html(input: &ReportInput) -> String {
 /// The usage per joint (2026-11-19, stage 4.5 of the joint details): the
 /// largest over the cases of its plates', welds', bolt groups' and bearing
 /// checks, with the part and the check that give it; the joints with a
-/// part not checked counted beside.
+/// part not checked counted beside; a joint that does not fit as given
+/// reads so (failing, counted apart: no usage).
 fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
     let mut best: std::collections::BTreeMap<&str, (f64, &str, String, &str)> =
         std::collections::BTreeMap::new();
@@ -542,7 +543,12 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
             }
         }
     }
-    if best.is_empty() && bare.is_empty() {
+    // Geometry: the same in every case.
+    let misfit = solved
+        .first()
+        .map(|(_, r)| ohl_structure_link::joints_not_fitting(&r.plates))
+        .unwrap_or_default();
+    if best.is_empty() && bare.is_empty() && misfit.is_empty() {
         return;
     }
     h.push_str(
@@ -550,11 +556,27 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
          <th>Usage</th><th>Governing case</th><th>Part</th><th>What governs</th>\
          <th>Parts not checked</th></tr>\n",
     );
-    let mut joints: Vec<&str> = best.keys().chain(bare.keys()).copied().collect();
+    let mut joints: Vec<&str> = best
+        .keys()
+        .chain(bare.keys())
+        .copied()
+        .chain(misfit.keys().map(String::as_str))
+        .collect();
     joints.sort();
     joints.dedup();
     for j in joints {
         let n = bare.get(j).copied().unwrap_or(0);
+        if let Some(why) = misfit.get(j) {
+            let _ = writeln!(
+                h,
+                "<tr><td>{}</td><td class=\"n over\">does not fit</td><td></td><td></td>\
+                 <td>{}</td><td class=\"n\">{}</td></tr>",
+                esc(j),
+                esc(&format!("{}: {why}", ohl_structure_link::DOES_NOT_FIT)),
+                n
+            );
+            continue;
+        }
         let (u, case, part, governs) = match best.get(j) {
             Some((u, c, p, g)) => (Some(*u), *c, p.as_str(), *g),
             None => (None, "", "", ""),
@@ -577,6 +599,15 @@ fn joints_table(h: &mut String, solved: &[(&str, &CaseResult)]) {
          bolt groups' and bearing checks; a part not checked (its data not given, or no \
          design code's check) is counted beside it and never taken as a pass.</p>\n",
     );
+    if !misfit.is_empty() {
+        let _ = writeln!(
+            h,
+            "<p class=\"warn\">{} joint(s) do not fit as given (a bolt off the flange or plate \
+             it bolts onto, holes overlapping, a bolt beyond a member's end): failing, counted \
+             apart, without a usage. Correct their details and run again.</p>",
+            misfit.len()
+        );
+    }
 }
 
 /// Every member's result in every case solved, as CSV:

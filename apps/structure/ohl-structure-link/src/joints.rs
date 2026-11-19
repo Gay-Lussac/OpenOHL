@@ -507,6 +507,12 @@ pub struct PlateDetail {
     /// Bolts nearer its edge than those distances (an outline given in
     /// the file; the outline worked out keeps them).
     pub notes: Vec<String>,
+    /// Its own bolts onto the joint's leg (`[plate.leg_bolts]`,
+    /// 2026-11-19): the leg's member end as bolted onto this plate by
+    /// them — its bolts where they are, through its flange the plate lies
+    /// on ([`plate_leg_arrival`]); none: not given, or not usable (said in
+    /// `notes`).
+    pub leg_bolts: Option<Box<Arrival>>,
 }
 
 /// How far a plate's edge keeps from one bolt onto it: along the member
@@ -894,7 +900,27 @@ pub(crate) fn joint_details_and_model(
             .map(|p| {
                 let fu = fu_of(p.material.as_deref());
                 let rules = |a: &Arrival| rules_in(a, Some((p.thickness.si(), fu)));
-                plate(p, at, &arrivals, seats.get(&p.id), &rules)
+                let d = plate(p, at, &arrivals, seats.get(&p.id), &rules);
+                if !level3 || p.leg_bolts.is_none() {
+                    return d;
+                }
+                // Its own bolts onto the leg (2026-11-19): drawn round them
+                // too (their edge distances kept), as the leg's end bolted
+                // onto it.
+                match plate_leg_arrival(p, at, &arrivals, &d, bolts) {
+                    Ok(a) => {
+                        let mut with = arrivals.clone();
+                        with.push(a.clone());
+                        let mut d = plate(p, at, &with, seats.get(&p.id), &rules);
+                        d.leg_bolts = Some(Box::new(a));
+                        d
+                    }
+                    Err(w) => {
+                        let mut d = d;
+                        d.notes.push(w);
+                        d
+                    }
+                }
             })
             .collect();
         let splices: Vec<SpliceDetail> = t
@@ -2731,6 +2757,7 @@ fn plate(
             leg: on_leg,
             edges,
             notes,
+            leg_bolts: None,
         };
     }
     // Nothing bolted onto it and no outline given: nothing to draw it
@@ -2752,6 +2779,7 @@ fn plate(
             leg: on_leg,
             edges,
             notes: vec![format!("{}: {NO_OUTLINE}", p.id)],
+            leg_bolts: None,
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -2828,7 +2856,146 @@ fn plate(
         leg: on_leg,
         edges,
         notes,
+        leg_bolts: None,
     }
+}
+
+/// The leg's member end at a joint as a plate's own bolts onto it
+/// (`[plate.leg_bolts]`, 2026-11-19) bolt it onto the plate `d` (`p` in
+/// the file, at `joint`): `all`'s end of the member, bolted onto the plate
+/// by those bolts — each where it is, along the member from the work point
+/// and across the flange from the heel, through the flange the plate lies
+/// on (given as the long or short leg, else the one whose face is the
+/// plate's). An error in words where it cannot be: the member not at the
+/// joint, not an angle, no bolts.
+pub(crate) fn plate_leg_arrival(
+    p: &ohl_structures::connections::TypePlate,
+    joint: [f64; 3],
+    all: &[Arrival],
+    d: &PlateDetail,
+    bolts: &ohl_structures::bolts::BoltLibrary,
+) -> Result<Arrival, String> {
+    let Some(lb) = &p.leg_bolts else {
+        return Err(format!("plate {}: no bolts onto the leg", p.id));
+    };
+    let a = all.iter().find(|a| a.member == lb.member).ok_or_else(|| {
+        format!(
+            "plate {}: its bolts onto the leg name {}, which does not meet at the joint",
+            p.id, lb.member
+        )
+    })?;
+    let prof = a.profile.as_ref().ok_or_else(|| {
+        format!(
+            "plate {}: its bolts onto {}: no profile (level 3 needed)",
+            p.id, lb.member
+        )
+    })?;
+    let g = prof
+        .angle
+        .ok_or_else(|| format!("plate {}: its bolts onto {}: not an angle", p.id, lb.member))?;
+    if lb.bolt_points.is_empty() {
+        return Err(format!(
+            "plate {}: its bolts onto {} have no places (bolt_points)",
+            p.id, lb.member
+        ));
+    }
+    let (ey, ez) = (prof.axes[1], prof.axes[2]);
+    let given = lb
+        .leg
+        .filter(|l| matches!(l, BoltedLeg::Long | BoltedLeg::Short));
+    // The plate's normal: the bolts' axis of a member end bolted onto it,
+    // else its outline's.
+    let normal = all
+        .iter()
+        .find(|x| x.onto.value.as_deref() == Some(p.id.as_str()) && !x.bolt_points.is_empty())
+        .map(|x| x.bolt_axis)
+        .or(d.through);
+    let along_y = match (given, normal) {
+        (Some(l), _) => along_y(g, Some(l)),
+        // The flange whose normal is the plate's.
+        (None, Some(n)) => dot(ez, n).abs() >= dot(ey, n).abs(),
+        (None, None) => along_y(g, None),
+    };
+    let leg = if along_y == (g.b >= g.h) {
+        BoltedLeg::Long
+    } else {
+        BoltedLeg::Short
+    };
+    let base = add(joint, a.offset);
+    let at = |s: f64, across: f64| {
+        let (y, z) = if along_y {
+            (g.heel[0] + across, g.heel[1])
+        } else {
+            (g.heel[0], g.heel[1] + across)
+        };
+        let mut q = base;
+        for k in 0..3 {
+            q[k] += a.direction[k] * s + ey[k] * y + ez[k] * z;
+        }
+        q
+    };
+    let flat: Vec<[f64; 2]> = lb
+        .bolt_points
+        .iter()
+        .map(|q| [q[0].si(), q[1].si()])
+        .collect();
+    let b = &lb.bolts;
+    let lib = b.bolt.as_deref().and_then(|id| bolts.get(id));
+    let mut notes = Vec::new();
+    if let (Some(id), None) = (&b.bolt, lib) {
+        notes.push(format!("bolt {id}: in no bolt library"));
+    }
+    let diameter = b
+        .diameter
+        .map(|x| x.si())
+        .or(lib.map(|l| l.diameter.si()))
+        .ok_or_else(|| {
+            format!(
+                "plate {}: its bolts onto {}: no diameter (nor a library bolt)",
+                p.id, lb.member
+            )
+        })?;
+    let set = BoltSet {
+        count: flat.len() as u32,
+        diameter,
+        hole: b
+            .hole
+            .map(|h| h.si())
+            .or(lib.and_then(|l| l.hole.map(|h| h.si()))),
+        grade: b.grade.clone().or(lib.and_then(|l| l.grade.clone())),
+        bolt: b.bolt.clone(),
+        drawn: lib.map_or([None; 3], |l| l.drawn()),
+    };
+    Ok(Arrival {
+        onto: Valued::of(p.id.clone(), Source::Given),
+        kind: Valued::of(ConnectionKind::Bolted, Source::Given),
+        leg: Valued::of(
+            leg,
+            if given.is_some() {
+                Source::Given
+            } else {
+                Source::WorkedOut
+            },
+        ),
+        bolts: Valued::of(set, Source::Given),
+        planes: (
+            Valued::of(b.shear_planes.unwrap_or(1).max(1), Source::Given),
+            None,
+        ),
+        bolt_points: flat.iter().map(|q| at(q[0], q[1])).collect(),
+        bolt_axis: if along_y { ez } else { ey },
+        grip: [g.t, p.thickness.si()],
+        leg_y: along_y,
+        bolt_flat: flat,
+        other_points: Vec::new(),
+        other_flat: Vec::new(),
+        other_onto: None,
+        continuous: None,
+        misfit: false,
+        notes,
+        problems: Vec::new(),
+        ..a.clone()
+    })
 }
 
 /// The leg of an angle `a` bolts by, as a splice's covers name it (none:

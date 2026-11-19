@@ -33,7 +33,10 @@
 //! - **A joint's bolt groups** under the members' forces together
 //!   (2026-11-19, stage 4.5): one more call per structure through the
 //!   plugin's optional `joint-check-groups` export ([`check_joint_groups`]);
-//!   without it every group is [`not_checked_by`] the plugin.
+//!   without it every group is [`not_checked_by`] the plugin. With the
+//!   bolts' tensions (prying), through its optional
+//!   `joint-check-groups-tension` export instead when it has it
+//!   ([`check_joint_groups_tension`]).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -46,6 +49,7 @@ use ohl_plugins::joint_check as wit;
 pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
 use ohl_plugins::joint_check_full as full;
 pub use ohl_plugins::joint_check_groups as groups;
+pub use ohl_plugins::joint_check_groups_tension as tension;
 use ohl_plugins::joint_check_moments as mom;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
@@ -269,6 +273,57 @@ pub fn check_joint_groups(p: &PluginMethod, input: &groups::GroupInput) -> Group
             p.plugin
         )),
         Err(e) => GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+    }
+}
+
+/// The joint bolt groups of `input` with their bolts in tension
+/// (`tension`) checked by the plugin `p` names (2026-11-19): through its
+/// `joint-check-groups-tension` export when it has it (true: the bolts in
+/// tension checked), else as [`check_joint_groups`] (false: the caller says
+/// the bolts in tension are not checked).
+pub fn check_joint_groups_tension(
+    p: &PluginMethod,
+    input: &groups::GroupInput,
+    tension: &[tension::GroupTension],
+) -> (GroupsChecked, bool) {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return (GroupsChecked::NotChecked(e), false),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return (
+                GroupsChecked::NotChecked(format!("the plugin host does not start: {e}")),
+                false,
+            );
+        }
+    };
+    let mut input = input.clone();
+    input.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    match host.check_joint_groups_tension(&dir, &p.method, &input, tension) {
+        Ok(Some(r)) => (GroupsChecked::Results(r), true),
+        // No such export: the groups alone (the same call counted once).
+        Ok(None) => match host.check_joint_groups(&dir, &p.method, &input) {
+            Ok(Some(r)) => (GroupsChecked::Results(r), false),
+            Ok(None) => (
+                GroupsChecked::NotChecked(format!(
+                    "the plugin {} has no check of a joint's bolt groups (no joint-check-groups \
+                     export)",
+                    p.plugin
+                )),
+                false,
+            ),
+            Err(e) => (
+                GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+                false,
+            ),
+        },
+        Err(e) => (
+            GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+            false,
+        ),
     }
 }
 

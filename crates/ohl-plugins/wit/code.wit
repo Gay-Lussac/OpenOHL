@@ -1395,6 +1395,85 @@ world joint-check-groups-export {
     export joint-check-groups;
 }
 
+/// The bolts of a joint's groups in tension, with prying (optional export
+/// of any plugin beside `joint-check-groups`, found by its export name;
+/// 2026-11-19, stage 4.5 of the joint details; added to interface version
+/// 0.3 without changing anything else). OpenOHL sends the groups of
+/// `joint-check-groups` and, per group, each bolt's tension in every load
+/// case — the forces square to the plies and the moments bending them out
+/// of their plane, shared by the bolts elastically about their centroid
+/// (no contact between the plies taken; which side each ply lies on not
+/// used: each bolt's share taken as pulling) — with the flanges each bolt
+/// bends as it pulls (a T-stub's flange: its edge and its web's face from
+/// the bolt, its length along the bolts the bolt takes). The plugin checks
+/// each bolt in tension and in shear and tension together by its code,
+/// the prying force on it from the flanges, and each flange's bending;
+/// one call gives back per group what `check-joint-groups` gives, the
+/// checks in tension among them. A plugin without this export is called by
+/// `check-joint-groups`, and OpenOHL says that the bolts in tension are not
+/// checked (NOT ON THE SAFE SIDE). SI units throughout.
+interface joint-check-groups-tension {
+    use joint-check-groups.{group-input, group-result};
+
+    /// A flange a bolt in tension bends (the flange of a T-stub: the
+    /// prying model of Struik and de Back, theory page joint-groups).
+    record tee {
+        /// The member or plate it is a flange of.
+        part: string,
+        /// Its thickness, m.
+        thickness: f64,
+        /// Its yield strength, Pa (none: not given).
+        fy: option<f64>,
+        /// From the bolt's centre to the flange's free edge (an angle's
+        /// toe) across the bolts' line, m: `a` of the model.
+        edge: f64,
+        /// From the bolt's centre to the face of the web stiffening the
+        /// flange (an angle's other leg), m: `b` of the model.
+        web: f64,
+        /// The flange's length along the bolts' line this bolt takes, m
+        /// (`w` of the model): to the middle between it and the next bolt
+        /// each way, at most to the flange's end and to its distance from
+        /// the web.
+        width: f64,
+    }
+
+    /// One bolt of a group (the order of `group.bolts`).
+    record bolt-tension {
+        /// The bolt's tension capacity as its library gives it (its
+        /// ultimate tensile load), N (none: not given).
+        tension-capacity: option<f64>,
+        /// The flanges it bends as it pulls.
+        tees: list<tee>,
+        /// The plies it pulls whose bending is not known (a plate, a
+        /// flange not found), in words: their prying not worked out.
+        unknown: list<string>,
+    }
+
+    /// The tensions of one group of `group-input.groups`.
+    record group-tension {
+        /// The group's number.
+        id: u32,
+        /// Its bolts (the order of `group.bolts`).
+        bolts: list<bolt-tension>,
+        /// Per load case, per bolt: the tension pulling it, N (0: none).
+        loads: list<list<f64>>,
+    }
+
+    /// Checks the groups of `input` by method `method` as
+    /// `check-joint-groups` does, each bolt also in tension with `tension`
+    /// (one per group of `input` that has bolts in tension; a group
+    /// without one: in shear as before).
+    check-joint-groups-tension: func(method: string, input: group-input, tension: list<group-tension>) -> result<list<group-result>, string>;
+}
+
+/// The `joint-check-groups-tension` export with the `joint-check-groups`
+/// one whose records it takes: how the host finds them in any plugin (not
+/// a world to build plugins for).
+world joint-check-groups-tension-export {
+    export joint-check-groups;
+    export joint-check-groups-tension;
+}
+
 /// Minimum bolt distances by a design method (optional export of any
 /// plugin beside `member-check`, found by its export name;
 /// 2026-11-11): what OpenOHL's bolt tools place and check bolts by when
@@ -2055,7 +2134,9 @@ world member-check-bracing-export {
 /// data and its parameters, `bolt-distances-full`: third round), its
 /// members' buckling lengths from what braces them by
 /// `member-check-bracing` (2026-11-19), its joints' bolt groups under the
-/// members' forces together by `joint-check-groups` (2026-11-19).
+/// members' forces together by `joint-check-groups` (2026-11-19) and their
+/// bolts in tension, with prying, by `joint-check-groups-tension`
+/// (2026-11-19).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
@@ -2064,6 +2145,7 @@ world structure-code-plugin {
     export joint-check-full;
     export joint-check-moments;
     export joint-check-groups;
+    export joint-check-groups-tension;
     export bolt-distances;
     export bolt-distances-full;
 }

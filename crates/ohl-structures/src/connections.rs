@@ -76,7 +76,19 @@
 //! size = "6 mm"           #   does; the fillet's throat a (SIA 263 6.3.2.6)
 //! length = "220 mm"       # none: the seam's length from the geometry
 //! kind = "fillet"         # fillet (default) or full_penetration
+//!
+//! [plate.leg_bolts]       # the plate's own bolts onto the joint's leg
+//! member = "L3"           #   (2026-11-19, version 20): a member of the
+//! leg = "long"            #   leg at the joint (running on through it:
+//! bolts = { count = 2, diameter = "16 mm", grade = "8.8" }   # either
+//! bolt_points = [["-40 mm", "35 mm"], ["40 mm", "35 mm"]]    # piece)
 //! ```
+//!
+//! A plate's **own bolts onto the leg** (`[plate.leg_bolts]`, 2026-11-19,
+//! [`PlateLegBolts`]) hold it where the leg has no bolts of its own onto
+//! it — a leg running on through the joint (`kind = "continuous"`): each
+//! bolt along the member from the joint's work point (negative: past the
+//! joint, on the piece running on) and across its flange from the heel.
 //!
 //! A **welded plate** is several plates welded together so that every
 //! member bolting onto the joint reaches one of them (owner 2026-11-04).
@@ -531,6 +543,36 @@ impl TypeWeld {
     }
 }
 
+/// The structure file version of a plate's own bolts onto the joint's
+/// leg (`[plate.leg_bolts]`, 2026-11-19): a file is written at 20 only
+/// when a plate gives them.
+pub const PLATE_LEG_BOLTS_VERSION: u32 = 20;
+
+/// A plate's own bolts onto the joint's leg (`[plate.leg_bolts]`,
+/// 2026-11-19, structure file version 20; the owner's decision of
+/// 2026-11-19): how the plate is held where the leg has no bolts of its
+/// own onto it — a leg running on through the joint
+/// (`kind = "continuous"`) has none at that end. The joints' own checks
+/// take them as the plate's holding bolts and the leg's bearing under
+/// them.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlateLegBolts {
+    /// The member of the joint's leg the plate bolts onto: one meeting at
+    /// the joint (the leg running on through it: either piece).
+    pub member: String,
+    /// The angle's leg (flange) the plate lies on (none: the one whose
+    /// face is the plate's, worked out). `both` and `none` are not taken.
+    #[serde(default)]
+    pub leg: Option<BoltedLeg>,
+    /// The bolts (their `count` is how many `bolt_points` give).
+    pub bolts: ConnectionBolts,
+    /// Each bolt where it is: along the member from the joint's work point
+    /// (negative: past the joint, on the piece running on through it) and
+    /// across its flange from the heel.
+    pub bolt_points: Vec<[Length; 2]>,
+}
+
 /// A gusset plate at a joint (`[[plate]]`); a joint may have several.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -563,6 +605,11 @@ pub struct TypePlate {
     /// as `welded_to` does.
     #[serde(default, rename = "weld")]
     pub welds: Vec<TypeWeld>,
+    /// Its own bolts onto the joint's leg (`[plate.leg_bolts]`, 2026-11-19,
+    /// version 20; none: held only by the bolts of the leg's member ends
+    /// onto it, as before).
+    #[serde(default)]
+    pub leg_bolts: Option<PlateLegBolts>,
 }
 
 impl TypePlate {
@@ -945,6 +992,38 @@ impl StructureType {
                     "plate {}: no joint {} (kept, not used)",
                     p.id, p.joint
                 ));
+            }
+            if let Some(l) = &p.leg_bolts {
+                if !self
+                    .members
+                    .iter()
+                    .any(|x| x.id == l.member && x.nodes.contains(&p.joint))
+                {
+                    out.push(format!(
+                        "plate {}: leg_bolts onto {}: it does not meet at joint {} (kept, not used)",
+                        p.id, l.member, p.joint
+                    ));
+                }
+                if l.bolt_points.is_empty() {
+                    out.push(format!(
+                        "plate {}: leg_bolts without bolt_points (kept, not used)",
+                        p.id
+                    ));
+                } else if l.bolts.count as usize != l.bolt_points.len() {
+                    out.push(format!(
+                        "plate {}: leg_bolts count {} but {} bolt_points: the points taken",
+                        p.id,
+                        l.bolts.count,
+                        l.bolt_points.len()
+                    ));
+                }
+                if matches!(l.leg, Some(BoltedLeg::Both | BoltedLeg::None)) {
+                    out.push(format!(
+                        "plate {}: leg_bolts leg = \"{}\": long or short only (worked out instead)",
+                        p.id,
+                        l.leg.map_or("", |x| x.as_str())
+                    ));
+                }
             }
             for o in p.welded_ids() {
                 if !self.plates.iter().any(|q| q.id == o && q.joint == p.joint) {

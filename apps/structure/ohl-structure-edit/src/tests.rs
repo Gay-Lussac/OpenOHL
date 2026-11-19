@@ -1835,3 +1835,58 @@ fn the_joint_details_option_is_one_key_and_level_4_lists_what_lacks() {
     // Nothing of it at level 3 (the level reached).
     assert!(level_items(&missing(t, 3)).is_empty());
 }
+
+/// A plate's own bolts onto the leg (`[plate.leg_bolts]`, 2026-11-19):
+/// written with the file raised to version 20, read back, removed; a
+/// member not at the plate's joint or no places refused.
+#[test]
+fn a_plates_own_bolts_onto_the_leg_are_written() {
+    let text = "format = \"ohl-structure\"\nversion = 9\nid = \"T\"\nname = \"t\"\n\
+        kind = \"lattice\"\n\
+        [[node]]\nid = \"N1\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+        [[node]]\nid = \"N2\"\npoint = [\"0 m\", \"0 m\", \"5 m\"]\n\
+        [[node]]\nid = \"N3\"\npoint = [\"0 m\", \"0 m\", \"10 m\"]\n\
+        [[member]]\nid = \"L1\"\nnodes = [\"N1\", \"N2\"]\n\
+        [[member]]\nid = \"L2\"\nnodes = [\"N2\", \"N3\"]\n\
+        [[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n";
+    let mut doc: DocumentMut = text.parse().unwrap();
+    let t = read(&doc);
+    let points = [[-0.06, 0.03], [0.06, 0.03]];
+    let lb = crate::connection_edits::LegBolts {
+        member: "L1",
+        leg: Some("long"),
+        diameter: 0.016,
+        grade: Some("8.8"),
+        bolt: None,
+        points: &points,
+    };
+    crate::connection_edits::set_plate_leg_bolts(&mut doc, &t, "G1", Some(&lb)).unwrap();
+    assert_eq!(
+        doc["version"].as_integer(),
+        Some(i64::from(
+            ohl_structures::connections::PLATE_LEG_BOLTS_VERSION
+        ))
+    );
+    let t2 = read(&doc);
+    let got = t2.plates[0].leg_bolts.as_ref().unwrap();
+    assert_eq!(got.member, "L1");
+    assert_eq!(got.bolts.count, 2);
+    assert_eq!(got.bolt_points.len(), 2);
+    assert!((got.bolt_points[0][0].si() + 0.06).abs() < 1e-9);
+    assert!(
+        t2.connection_notes().is_empty(),
+        "{:?}",
+        t2.connection_notes()
+    );
+    let far = crate::connection_edits::LegBolts {
+        member: "X9",
+        ..lb.clone()
+    };
+    assert!(crate::connection_edits::set_plate_leg_bolts(&mut doc, &t2, "G1", Some(&far)).is_err());
+    let none = crate::connection_edits::LegBolts { points: &[], ..lb };
+    assert!(
+        crate::connection_edits::set_plate_leg_bolts(&mut doc, &t2, "G1", Some(&none)).is_err()
+    );
+    crate::connection_edits::set_plate_leg_bolts(&mut doc, &t2, "G1", None).unwrap();
+    assert!(read(&doc).plates[0].leg_bolts.is_none());
+}

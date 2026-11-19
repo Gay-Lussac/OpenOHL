@@ -7,7 +7,8 @@ mechanics of `crates/ohl-structures-fe/src/bolt_groups.rs` (`elastic`,
 ASCE 10-97 in `plugins/codes/asce10/src/groups.rs`, SIA 263:2013 in
 `plugins/codes/sia263/src/groups.rs` — reached through the plugin
 interface `joint-check-groups` (2026-11-19; one call with every group and
-case), run with every case of OHL-Structure's analysis (Results › Run)
+case) and, with the bolts in tension, `joint-check-groups-tension`
+(2026-11-19), run with every case of OHL-Structure's analysis (Results › Run)
 and shown with the plate checks in Joint details, the 3D view's joint
 colours and the structure report. Stage 4.5 of the
 [joint details](../development/joint-details.md) ("checks of the joints
@@ -22,7 +23,13 @@ each read in their texts. The elastic sharing of a bolt group's moment:
 Kulak, G. L., Fisher, J. W. and Struik, J. H. A., *Guide to Design
 Criteria for Bolted and Riveted Joints*, 2nd ed., Wiley, New York, 1987,
 its chapter on eccentrically loaded joints (the guide ASCE 10-97's
-commentary cites as Kulak et al. 1988). Every assumption below is marked
+commentary cites as Kulak et al. 1988). The prying of bolts in tension:
+the T-stub model of Struik, J. H. A. and de Back, J., *Tests on Bolted
+T-Stubs with Respect to a Bolted Beam-to-Column Connection*, Report
+6-69-13, Stevin Laboratory, Delft University of Technology, 1969, as the
+same guide gives it (its chapter 17, *Tension-type connections*, Eqs.
+17.8–17.12 and the design recommendations of 17.6.1 — checked there; the
+Stevin report itself was not at hand). Every assumption below is marked
 **on the safe side** (conservative) or **not on the safe side**.
 
 ## What is checked
@@ -34,7 +41,10 @@ the same part** at a joint, its bolts carry their forces **together**:
 
 - **A plate's bolts onto the leg holding it** (`holding`): a gusset
   plate (or a welded plate: plates welded together) that the joint's leg
-  bolts onto and other members bolt onto too. The leg's bolts on it carry
+  bolts onto and other members bolt onto too — a leg piece's own end
+  bolted onto the plate, or (2026-11-19) **the plate's own bolts onto the
+  leg** (`[plate.leg_bolts]` in the structure file: a leg running on
+  through the joint has no bolts of its own there). The leg's bolts on it carry
   the **resultant of the other members' forces on the plate**, with the
   moment of their lines about those bolts' centroid. Checked: each bolt's
   shear, its bearing on the plate and the plate's edges along and square
@@ -46,15 +56,19 @@ the same part** at a joint, its bolts carry their forces **together**:
   under that sum, the member's bearing under it and its edges along and
   square to it.
 
-Each bolt is checked; a group's usage in a case is its most loaded
-bolt's largest check, named with the bolt (its place from the group's
-centroid, what it carries, its force) and the check's clause.
+Each bolt is checked — in shear and bearing, and (2026-11-19) in tension
+with prying where the forces pull it ([below](#bolts-in-tension-with-prying));
+a group's usage in a case is its most loaded bolt's largest check, named
+with the bolt (its place from the group's centroid, what it carries, its
+force) and the check's clause.
 
 **The joint's usage** is the largest of its plates', welds', bolt groups'
 and bearing checks over the cases: shown in Joint details ("Usage of the
 joint"), coloured in the 3D view (the joints' dots, as the members) and
 listed per joint in the structure report. A part not checked is counted
-beside it, never taken as a pass.
+beside it, never taken as a pass. **A joint that does not fit** as given
+reads so ([below](#a-joint-that-does-not-fit)): failing, counted apart,
+without a usage.
 
 ## The forces
 
@@ -97,13 +111,21 @@ the holding bolts' axis. By the plate's equilibrium the holding bolts carry
 \\( -\mathbf F \\) on the plate, \\( +\mathbf F \\) on the leg.
 
 - **The holding leg** is the joint's leg (the members of class `leg`,
-  else the steep ones) bolted onto the plate, with the members running on
-  in line with it through the joint (`continuous`, or in line within 5°
-  of the same section with no splice of the two there — **an
-  assumption**, said: two pieces in line that are not one would have a
-  splice in the file). Its own force does not pass through the plate when
-  it runs on; where it ends at the plate its force is the others'
-  resultant (equilibrium), the same. Where each piece of a leg spliced on
+  else the steep ones, and the member a plate's own bolts onto the leg
+  name) bolted onto the plate, with the members running on in line with
+  it through the joint as one part (`continuous`). **Pieces in line not
+  said continuous each end at the joint** (owner 2026-11-19; until then
+  taken as one angle running on, an assumption): each is a member of its
+  own there, its steel stopping at the joint — **on the safe side** (its
+  bolts are its own; an end where its steel stops; the other piece's
+  bolts not counted with it), said in the group's notes ("… in line with
+  … not said continuous: each taken as ending at the joint"). Where the
+  piece's steel stops is not given, the code's conservative case
+  ([below](#the-distances-along-a-bolts-force)). Its own force does not
+  pass through the plate when it runs on; where it ends at the plate its
+  force is the others' resultant (equilibrium), the same. The joint
+  layout proposing `continuous` for the user to confirm is on the roadmap
+  (O19, stage 4.5). Where each piece of a leg spliced on
   the plate carries its own force through its own bolts, that is the
   plate check of each piece (its own force, ASCE 10-97 4.1) — not added
   here.
@@ -136,10 +158,11 @@ force.
 
 **Forces square to the plies** (a member's force out of the plate's
 plane, a welded plate's other plates, a frame member's moment bending the
-part out of its plane) pull on the bolts: **bolts in tension not
-checked** (ASCE 10-97 4.3.3, 4.3.4; SIA 263 (77), (78)) — said **NOT ON
-THE SAFE SIDE** when their force, the moment over the lever above added,
-is 1 % or more of the force in the plane.
+part out of its plane) pull on the bolts: checked since 2026-11-19
+([bolts in tension, with prying](#bolts-in-tension-with-prying)). A code
+plugin without the `joint-check-groups-tension` export: **bolts in tension
+not checked**, said **NOT ON THE SAFE SIDE** when their force, the moment
+over the lever above added, is 1 % or more of the force in the plane.
 
 ### One physical bolt
 
@@ -150,6 +173,103 @@ under the sum (**on the safe side**: the plane next to the member they
 bolt onto carries the sum of what is on its far side) and with the
 smaller diameter, the lower strengths (said). A bolt of one part keeps
 its own planes.
+
+## Bolts in tension, with prying
+
+Since 2026-11-19 (the owner's decision of that day; before, said NOT ON
+THE SAFE SIDE).
+
+**Each bolt's pull.** The force of a member end (a plate's holding bolts:
+the resultant on the plate) square to the plies, \\( N \\), and its moment
+bending them out of their plane, \\( \mathbf M \\) (about the bolts'
+centroid, the in-plane levers as above), are shared by the bolts
+elastically about their centroid — the plies rigid, the bolts equally
+stiff in tension:
+
+\\[ t_k = \frac{N}{n} + \mathbf s\cdot\mathbf r_k,\qquad
+\Big(\sum_j \mathbf r_j\,\mathbf r_j^{\mathsf T}\Big)\,\mathbf s = \hat{\mathbf n}\times\mathbf M \\]
+
+(`ohl_structures_fe::bolt_groups::tension`). **No contact of the plies is
+taken** — **on the safe side**: where the plies bear on each other beyond
+the bolts, the levers are longer and the bolts' pulls lower. **Which side
+of the plies each ply lies on is not used**: each bolt's share is taken as
+pulling, its size whatever its sign — **on the safe side** (a share that
+presses the plies together would be carried by their contact). Several
+parts' pulls on one physical bolt are added. A moment about a line every
+bolt lies on (one bolt, one row about the row) cannot be carried by them in
+tension: said **NOT ON THE SAFE SIDE** ("… is not carried by them in
+tension") when it is 1 % or more of the force over the group's lever.
+
+**Prying.** Both codes ask for it — ASCE 10-97 4.3.3 ("any tensile stress
+resulting from prying action"), SIA 263 6.2.2.4 with its Figure 26 — and
+neither gives a method. OpenOHL uses the T-stub model of Struik and de Back
+(Kulak et al., Eqs. 17.8–17.12). A bolt pulling a flange (an angle's leg:
+its web the angle's other leg) with the force \\( T \\) carries
+
+\\[ B = T\Big(1 + \frac{\delta\alpha}{1+\delta\alpha}\,\frac{b'}{a'}\Big),
+\qquad a' = a + \tfrac d2,\quad b' = b - \tfrac d2,\quad a \le 1.25\,b \\]
+
+with \\( a \\) from the bolt to the flange's free edge (its toe), \\( b \\) to
+the web's face (the gauge less the angle's thickness), \\( \delta \\) the net
+over the gross area of the flange at the bolts and \\( \alpha \le 1 \\) the
+ratio of the flange's moments at the bolts and at the web. OpenOHL takes
+**α = δ = 1** — the largest the model gives (B rises with both): **on the
+safe side** — so \\( Q = T\,b'/(2a') \\). The guide finds the model already
+overestimates the prying of its tests (its Figs. 17.16 and 17.18). Each
+flange the bolt pulls is taken (the lapped member's own leg and the leg it
+bolts onto; a plate's holding bolts: the leg's flange) and **the largest
+prying governs** (the guide, 17.6.1: the least stiff part governs).
+
+**The flange's bending** (the model's mechanism, Eq. 17.12 with α = 1):
+\\( T\,b' \le (1+\delta)\,w\,t^2 f_y/4 \\), \\( \delta = 1 - d_0/w \\), with
+\\( w \\) the flange's length along the bolts the bolt takes: to the middle
+between it and the next bolt each way, at most to the flange's end and at
+most \\( b' \\) each way (a lone bolt's spread taken no further — **on the
+safe side**: the yield lines round a lone bolt reach further).
+
+Then each code's rules (below): the bolt's tension under \\( T + Q \\) and its
+shear and tension together.
+
+**Not covered, said NOT ON THE SAFE SIDE** in the group's result:
+
+- a ply whose bending is not known — **a plate** (a gusset plate has no
+  web near the bolts: its prying is not worked out), a member that is not
+  an angle, a flange with bolts on more than two gauge lines (the outer
+  lines are not effective in tension without stiffening, the guide 17.6.1)
+  — "the prying of … not worked out", where the pull is 1 % or more of the
+  bolt's shear;
+- a bolt within half a diameter of the web (\\( b' \le 0 \\)): the local
+  prying of its head (the guide's Fig. 17.19) is not covered;
+- a flange without a yield strength: its bending not checked;
+- a bolt without a tension capacity or an ultimate strength: its tension
+  not checked.
+
+**Not checked, said in the notes**: fatigue (the guide 17.6.2; SIA 263
+6.2.2.3 asks for preloaded high-strength bolts where the loads are not
+essentially static — the loads' character is the engineer's); SIA 263
+6.2.1.4 (countersunk bolts, thin nuts: 25 % less) and 6.2.2.7 (machined
+threads: 0.85) — the bolts' kind is not in the data.
+
+## A joint that does not fit
+
+Owner 2026-11-19: a joint whose details do not fit as given reads **"does
+not fit"** — coloured as failing, counted apart in the tables, the report
+and the 3D view, **never an infinite usage** (before, a distance of 0 gave
+one). A group does not fit when:
+
+- a bolt's hole is not within the flange it bolts onto (from the heel,
+  its centre less half the hole below 0, or its centre and half the hole
+  beyond the toe; 1 mm allowed either way);
+- a holding bolt lies outside the plate's outline;
+- two holes in one ply overlap (centres nearer than the holes' radii
+  together, and not one hole);
+- a bolt lies beyond the end of the member's steel at the joint (where
+  its `cut` is given or worked out).
+
+Such a group is not sent to the code's plugin; its row says why
+("DOES NOT FIT as given: …"). The joint's other parts keep their usages
+(Joint details: "Usage of its parts that fit"); the joint is failing
+whatever they give.
 
 ## The distances along a bolt's force
 
@@ -182,6 +302,9 @@ angle) — each code then takes its conservative case (below), said.
 | end distance along the force | e ≥ max(1.2 P/(F_u t), 1.3 d, t + d/2) (redundant member: max(t + d/2, 1.2 d)), P the bolt's force | 4.5.1, Eqs. 4.5-1 to 4.5-4 |
 | spacing to the next hole along the force | s ≥ 1.2 P/(F_u t) + 0.6 d | 4.5.2, Eq. 4.5-5 |
 | edge distance square to it | f ≥ 0.85 e_min (an angle's rolled toe), + 1/16 in. (a plate's sheared edge) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
+| bolt tension (2026-11-19) | the pull with its prying ≤ F_t A_s, F_t = 0.6 F_u (case (b): the ASTM proof-load stress of case (a) is not in the data); A_s taken as 0.6 of the gross area; a library's tension capacity (its F_u A_s): 0.6 of it | 4.3.3 |
+| shear and tension together | (f_t/F_t)² + (f_v/F_v)² ≤ 1 (Eq. 4.3-2, F_t(v) = F_t [1 − (f_v/F_v)²]^½, squared), its square root as the usage | 4.3.4, Eq. 4.3-2 |
+| the flange's bending under the pull | T b′ ≤ (1 + δ) w t² F_y / 4 (the prying model's mechanism; no rule in the standard) | — |
 
 - 4.5.1 measures the end distance "from the center of a hole to the end,
   whether this end is perpendicular or inclined to the line of force":
@@ -192,6 +315,17 @@ angle) — each code then takes its conservative case (below), said.
 - No bolt strength given (neither a shear capacity nor F_u): the bolt's
   shear not checked, said NOT ON THE SAFE SIDE; the bearing then on the
   ply's F_u alone (said).
+- **Bolts in tension**: 4.3.3's F_t = 0.6 F_u (case (b)) for every bolt —
+  C4.3.3 calls it "a conservative estimate" for bolts without a proof
+  load; for bolts with one (case (a)) **on the safe side**. The stress area
+  of Eq. 4.3-1, \\( A_s = \frac\pi4 (d - 0.974/n)^2 \\), needs the threads
+  per length \\( n \\), not in the data: \\( A_s \\) taken as 0.6 of the gross
+  area — **on the safe side** for any thread with \\( n\,d \ge 4.32 \\) (a
+  pitch up to 0.23 d, every coarse thread). 4.3.4 asks for the combined
+  stresses "at the same cross-section": the shear's ratio as the shear
+  check takes it (on its planes) with the tension's — **on the safe side**
+  (the two sections may differ). The flange's bending has no rule in
+  the standard: F_y without a factor, as its other members' capacities.
 
 ## SIA 263:2013
 
@@ -203,6 +337,9 @@ parameter file for the plugin may change it).
 | bolt shear | per plane \\( 0.6 f_{ub} A_s/\gamma_{M2} \\) (4.6, 5.6, 8.8) or 0.5 (4.8, 5.8, 6.8, 10.9; a grade not known: 0.5, said), a given capacity over γ_M2 | Table 16, (73), (74), (75) |
 | bearing on the ply | \\( F_{b,Rd} = \min(0.85\,e_1/d_0,\ 2.4)\, f_u\, d\, t / \gamma_{M2} \\), \\( e_1 \\) along the bolt's force (no edge: 2.4); a hole ahead nearer than \\( e_1 + d_0/2 \\): \\( e_1 = p_1 - d_0/2 \\) | Table 16, (76) |
 | end, spacing and edge distances | \\( e_1 \\), \\( p_1 \\) along the force and \\( e_2 \\) square to it ≥ Table 17's minimums | Table 17, Figure 31 |
+| bolt tension (2026-11-19) | the pull with its prying ≤ \\( F_{t,Rd} = 0.9 f_{ub} A_s/\gamma_{M2} \\), \\( A_s \\) taken as 0.6 of the gross area; a library's tension capacity (its \\( f_{ub} A_s \\)): 0.9 of it over \\( \gamma_{M2} \\) | Table 16, (77); 6.2.2.4 (prying) |
+| shear and tension together | \\( (F_{v,Ed}/F_{v,Rd})^2 + (F_{t,Ed}/F_{t,Rd})^2 \le 1 \\), its square root as the usage | 6.2.2.6, (78) |
+| the flange's bending under the pull | \\( T b' \le (1+\delta) w t^2 f_y/(4\gamma_{M1}) \\) (the prying model's mechanism; SIA 263 gives no rule) | — |
 
 - Figure 31 names the distances by the force's direction and says
   \\( e_2 \\) and \\( p_2 \\) apply also oblique to it ("Les désignations
@@ -211,6 +348,11 @@ parameter file for the plugin may change it).
   force.
 - (76) asks \\( e_2 \ge d_0 \\) and \\( p_2 \ge 2 d_0 \\): where a bolt's
   \\( e_2 \\) is smaller it is said.
+- **Bolts in tension**: \\( A_s = \pi d_s^2/4 \\), \\( d_s = 0.5(d_f + d_k) \\)
+  (Table 16) needs the threads' diameters, not in the data: \\( A_s \\) taken
+  as 0.6 of the gross area — **on the safe side** for every coarse thread
+  (as the shear of (73)–(74) takes it). The flange's bending with
+  \\( \gamma_{M1} \\) (4.1.3; the plugin's parameter file may change it).
 - **Not known** where the member's steel stops: \\( e_1 \\) the smaller of
   the one found and Table 17's minimum (the ply may end as near the bolt
   as the code allows — **on the safe side**, said; as the member check
@@ -223,16 +365,27 @@ Never silently skipped — each a row of the joint without a usage,
 "NOT CHECKED, NOT ON THE SAFE SIDE: …":
 
 - **a plate the joint's leg does not bolt onto**: how it is held is not
-  given (a leg running on through the joint has no bolts at that end in
-  the file, `kind = "continuous"`), so neither the bolts holding it nor
-  the leg's bearing under them are checked. The file format has no
-  plate's own bolts onto the leg (an open question to the owner);
+  given, so neither the bolts holding it nor the leg's bearing under them
+  are checked. A leg running on through the joint (`kind =
+  "continuous"`) has no bolts at that end: give the plate's own bolts onto
+  it (`[plate.leg_bolts]`, structure file version 20, 2026-11-19);
 - a holding leg whose bolts on the plate are not placed or not known;
 - a member others bolt onto whose thickness is not known.
 
 The simple check checks no joint group (not a design code, said); a
 design code whose plugin was not run or has no `joint-check-groups`
 export: every group NOT CHECKED, never another code's check.
+
+**Still assumed or not checked** (2026-11-19), each said in the results
+and above: a member's own gauge eccentricity in its plane not taken as a
+moment on its bolts (ASCE 10-97 4.1; SIA 263 6.2.4.6 gives no rule — not
+on the safe side); the plies' offsets through their thickness left out of
+the levers; the joint's own loads not routed through its plates; the
+holding bolts of a welded plate's several plates each taken carrying the
+whole (on the safe side); a plate's prying and bending under bolts in
+tension not worked out (not on the safe side, said); the moments shared by
+the elastic method (on the safe side; owner 2026-11-19: the elastic method
+stays, the instantaneous centre not used).
 
 ## Validation
 
@@ -252,6 +405,19 @@ Unit tests on invented data, worked by hand:
   diagonal through one hole of the leg: (12, 16) + (−10, 0) = (2, 16) kN;
   the distances along and square to each bolt's force to the leg's toe
   (51.7 and 38.75 mm) and to the next hole (50 mm centre to centre).
+- `crates/ohl-structures-fe/src/bolt_groups.rs`
+  `bolts_share_a_pull_and_a_moment_out_of_their_plane`: four bolts on an
+  80 × 60 mm rectangle, 40 kN square to the plane (10 kN each) and 1.2 kN
+  m about the 60 mm side's axis: Σx² = 0.0064 m², ∓7.5 kN, together 2.5
+  and 17.5 kN; a row of bolts about the row: all of the moment not
+  carried.
+- `plugins/codes/asce10/src/groups.rs` `a_bolt_in_tension_with_prying`: an
+  M16 (F_u 800 MPa) pulled by 20 kN through a 60 × 6 mm leg, a = 30, b =
+  24 mm: a′ = 38, b′ = 16 mm, Q = 4.21 kN; F_t A_s = 0.6 × 800 × 0.6 ×
+  201.06 mm² = 57.91 kN, 41.8 %; the flange (w 32 mm, hole 17.5 mm, δ
+  0.453) 148.6 N m against T b′ = 320 N m, 215 %; with 30 kN of shear
+  (59.84 kN) Eq. 4.3-2's root 0.653. `plugins/codes/sia263/src/groups.rs`
+  `a_bolt_in_tension_with_prying`: the same by (77), 69.49 kN, and (78).
 - `plugins/codes/asce10/src/groups.rs` `a_shared_bolt_on_the_leg`: 60 kN
   on an M16 8.8 in an 8 mm leg: shear 59.84 kN (one plane), bearing
   97.92 kN, end distance 20.8 mm needed; `plugins/codes/sia263/src/groups.rs`
@@ -263,4 +429,7 @@ Unit tests on invented data, worked by hand:
   diagonal lapped onto the leg gives the leg's bearing 20 kN / (1.5 F_u ×
   16 × 7 mm²) per bolt (ASCE 10-97 4.4), by SIA 263 its (76); a plate the
   leg does not bolt onto is said not checked; a plate the leg bolts onto
-  gives its holding bolts and the leg's bearing under them.
+  gives its holding bolts and the leg's bearing under them; a plate on a
+  leg running on held by its own bolts onto it (`[plate.leg_bolts]`) the
+  same; overlapping holes "does not fit", without a usage; a diagonal
+  pulled out of the plate's plane checked in tension by both codes.

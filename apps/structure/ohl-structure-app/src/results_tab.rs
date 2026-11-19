@@ -112,6 +112,10 @@ pub fn usage_colour(usage: Option<f64>, governs: &str) -> [u8; 4] {
 /// The colour of a usage whose check is not on the safe side.
 pub const NOT_SAFE_COLOUR: [u8; 4] = [200, 120, 230, 255];
 
+/// The colour of a joint that does not fit as given (2026-11-19): the
+/// failing colour.
+pub const DOES_NOT_FIT_COLOUR: [u8; 4] = [235, 70, 60, 255];
+
 fn rgb(c: [u8; 4]) -> egui::Color32 {
     egui::Color32::from_rgb(c[0], c[1], c[2])
 }
@@ -259,6 +263,13 @@ impl ResultsTab {
         for (j, u) in ohl_structure_link::joint_plate_usage(&r.plates) {
             if let Some(k) = r.joints.iter().position(|x| x.id == j) {
                 s.point(at(k), usage_colour(Some(u), ""), 9.0);
+            }
+        }
+        // A joint that does not fit as given (2026-11-19): failing,
+        // whatever its other checks give.
+        for j in ohl_structure_link::joints_not_fitting(&r.plates).keys() {
+            if let Some(k) = r.joints.iter().position(|x| &x.id == j) {
+                s.point(at(k), DOES_NOT_FIT_COLOUR, 9.0);
             }
         }
         if self.reactions {
