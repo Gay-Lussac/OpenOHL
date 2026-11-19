@@ -30,6 +30,7 @@
 
 pub mod asce48;
 pub mod bolt_rules;
+pub mod bracing;
 pub mod capacity;
 pub mod check;
 pub mod condense;

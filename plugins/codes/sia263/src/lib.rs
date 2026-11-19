@@ -31,8 +31,10 @@
 //! Build with `cargo build --release --target wasm32-wasip2`; its own
 //! tests with `cargo test` (natively).
 
+pub mod bracing;
 pub mod check;
 pub mod joints;
+pub mod lengths;
 pub mod memo;
 pub mod model;
 pub mod params;

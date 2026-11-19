@@ -535,8 +535,8 @@ fn a_truss_with_the_moment_of_its_shift() {
         no_compression: false,
         redundant_force: None,
     };
-    let u0 = member_usage(&a, &m, &plain, None, false, 1.0, None);
-    let u1 = member_usage(&a, &m, &bent, None, false, 1.0, None);
+    let u0 = member_usage(&a, &m, &plain, None, false, 1.0, None, None);
+    let u1 = member_usage(&a, &m, &bent, None, false, 1.0, None, None);
     assert!(
         (u1.usage.unwrap() - u0.usage.unwrap() - 0.1).abs() < 1e-12,
         "{u0:?} {u1:?}"

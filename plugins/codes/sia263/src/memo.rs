@@ -15,7 +15,9 @@ use std::collections::HashMap;
 use crate::shared::Capacity;
 use crate::sia263::Stability;
 
-type Capacities = HashMap<(String, Option<bool>), (Capacity, Option<Stability>)>;
+/// By member, its crossing partner in tension or not, and the key of its
+/// lengths worked out from the bracing (0: none).
+type Capacities = HashMap<(String, Option<bool>, u64), (Capacity, Option<Stability>)>;
 type Effective = HashMap<(String, u64, u64), Option<([f64; 2], f64)>>;
 
 thread_local! {
@@ -38,16 +40,18 @@ pub fn stop() {
     EFFECTIVE.with(|c| c.borrow_mut().clear());
 }
 
-/// `f`'s capacities of member `id` with partner `partner`, once per call.
+/// `f`'s capacities of member `id` with partner `partner` and lengths
+/// `lengths` (their key), once per call.
 pub fn capacity(
     id: &str,
     partner: Option<bool>,
+    lengths: u64,
     f: impl FnOnce() -> (Capacity, Option<Stability>),
 ) -> (Capacity, Option<Stability>) {
     if !ON.with(Cell::get) {
         return f();
     }
-    let key = (id.to_owned(), partner);
+    let key = (id.to_owned(), partner, lengths);
     if let Some(c) = CAPACITIES.with(|c| c.borrow().get(&key).cloned()) {
         return c;
     }

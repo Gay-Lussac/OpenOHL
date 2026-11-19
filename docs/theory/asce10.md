@@ -51,7 +51,7 @@ this method ([structure analysis](structures-fe.md#member-usage)).
 | \\( E, f_y, f_u \\) | the material | column curve, local buckling, net section, bearing |
 | shape and dimensions | the library profile | \\( w/t \\), shear centre, \\( C_w \\), \\( J \\), symmetry |
 | \\( L \\) | the member's `lk` when given, else its length between its joints | slenderness |
-| length ratios \\( \rho_y, \rho_z, \rho_v \\) | `[member.design] length_ratios`, else the member's `k` on all three | \\( L/r \\) per axis |
+| length ratios \\( \rho_y, \rho_z, \rho_v \\) | `[member.design] length_ratios`, else the member's `k` (or `lk`) on all three; none of them given: **worked out from what braces the member** ([below](#buckling-lengths-from-what-braces-the-member)) | \\( L/r \\) per axis |
 | class | `class`: leg, bracing, redundant, crossing | slenderness limit, crossing rule |
 | ends' eccentricity and restraint | each end's `[[connection]]`, else `end_eccentricity`, `end_restraint` ([below](#end-conditions)) | effective slenderness |
 | \\( w/t \\) | `width_thickness`, else from the angle profile | local buckling |
@@ -79,15 +79,121 @@ length ratios say where the member is braced: 0.5 about an axis for a
 member held at mid-length in that plane. Section properties are those of
 the gross cross-section (3.5).
 
-**Crossing diagonals** (the program's rule, not a clause of the
-standard). A member of class `crossing` with a `crossing` partner is
-taken as braced at the crossing (its length ratios as given) only while
-its partner is in tension in the load case (the partner's solved axial
-force above 0). Otherwise its \\( L/r \\) is at least its whole length
-over the smaller geometric radius \\( \min(r_y, r_z) \\): it may buckle
-out of its plane over its full length. **Conservative:** a partner
-compressed less than the member would still hold it partly; the standard's
-3.7.4.4 (\\( K' \\) for forces varying over the length) is not used.
+**Crossing diagonals with their lengths given** (Appendix B, Example 7 —
+an example of the standard, "to illustrate many of the requirements").
+A member of class `crossing` with a `crossing` partner is taken as braced
+at the crossing (its length ratios as given) only while its partner is
+in tension of **at least 20 % of the member's compression** in the load
+case (Example 7: "If the member in tension has a force of not less than
+20% of the force in the compression member, the crossover point provides
+support resisting out-of-plane buckling"; before 2026-11-19 any tension).
+Otherwise its \\( L/r \\) is at least its whole length over the smaller
+geometric radius \\( \min(r_y, r_z) \\): it may buckle out of its plane
+over its full length. **Conservative:** a partner compressed less than
+the member would still hold it partly; the standard's 3.7.4.4
+(\\( K' \\) for forces varying over the length) is not used.
+
+### Buckling lengths from what braces the member
+
+*2026-11-19, stage 4.3 of the [joint details](../development/joint-details.md);
+built, in active development, not approved yet.* A member giving none of
+`lk`, a `k` other than 1 or `length_ratios` has its \\( L \\) about each
+axis **worked out from what braces it** — its result says "from the
+bracing", its notes the three lengths and between which joints; one
+giving them keeps them ("buckling lengths given"); where OpenOHL sends no
+bracing for it, ratios 1 ("assumed: no bracing found"). Where the bracing
+gives the member its own length between its joints about every axis — the
+lengths the default took — the check, its numbers and its words are those
+before (`[assumed: length ratios 1, …]`); its notes say the lengths were
+worked out. (`k = 1` is the default and cannot be told from one not
+written: it counts as not given.)
+
+**What OpenOHL sends** (`crates/ohl-structures-fe/src/bracing.rs`, no
+code's rule): the member's **run** — the members continuing it in line
+through its joints (two design-checked members whose directions from the
+joint are opposite within 10°, each the other's most nearly opposite: a
+leg split at every panel joint, a diagonal split at its crossing) — and
+the run's **bracing points**: each of its joints, its two ends included,
+with every other member ending or passing there (design-checked, not a
+cable, more than 10° off the run's line; a tension-only member only
+passing through) and the direction it holds the joint in (its own,
+square to the run, in the member's local y and z: its axial stiffness);
+a support fixed in all three translations holds a joint every way, one
+fixed along some axes along each of them (springs not counted); a
+`crossing` partner crossing the run away from a joint (the two lines
+within 5 % of the shorter length) gives a point there, held along it.
+
+**What the plugin takes** (`plugins/codes/asce10/src/lengths.rs`,
+`bracing.rs`):
+
+- \\( L \\) about each axis is the longest stretch of the run **between
+  the points that hold that axis** overlapping the member (3.6: "L =
+  unbraced length"; C3.7.4: "from working point to working point").
+- **A single angle's v axis** (the standard's z, \\( r_z \\)) is held at
+  every point some member holds, whatever its direction: Figure 3.2 (a)
+  takes a leg's (2/3 L)/\\( r_z \\) between the points of either face,
+  Appendix B's Example 5 a strut's 0.5 L/\\( r_z \\) at a support in its
+  plane and Example 7 a crossing diagonal's \\( L_1/r_z \\) at a crossover
+  that does not hold it out of the plane. Its geometric axes
+  (\\( r_x, r_y \\)), and every axis of another section (3.9), only where a
+  member holds the joint along that axis's buckling (within 20°,
+  **assumption**) or the joint is held every way (two directions at least
+  20° apart, **assumption**; a support).
+- **Legs with staggered bracing** (3.7.4.1, Figure 3.2): an angle leg
+  whose v stretch is shorter than the stretch between the points held
+  every way takes its geometric axes' \\( L \\) **× 1.2** (Figure 3.2 (b),
+  (c): (1.2 L)/\\( r_{xx} \\)), said. Where the points held every way are
+  more than four panels apart (Figure 3.2: "supported in both faces at
+  the same elevation every four panels"; a panel is the figure's L, the
+  stretch between the points of one face — the longer of the geometric
+  axes' stretches) the figure does not apply: v between the points held
+  every way (the longer length), said. (Measured first with a panel taken
+  as a stretch between any two bracing points: on three detailed towers
+  legs braced in the figure's pattern lost it and took L/r up to 351.) Figure 3.2 is drawn for equal legs without a change of load
+  between panels: taken for every angle leg (**assumption**, said for an
+  unequal angle).
+- **Crossings** (Appendix B, Example 7): a crossing — a point inside the
+  run of a member that is not a leg, where another member passes through
+  — holds the member out of its plane only while the other diagonal —
+  each of its pieces at the crossing — is in tension of at least 20 % of
+  the member's compression in that load case; otherwise only in its plane
+  (as any member: v of an
+  angle, and the axis whose buckling lies in the plane). An unequal angle
+  bolted by its long leg is never held out of the plane at a crossing
+  (Example 7's note: \\( (L_1 + 0.5 L_2)/r_{yy} \\); the whole length, longer,
+  taken).
+- **A bracing member strong enough** (C3.7.4: "The L/r limitations
+  specified in Section 3.7.4.3 normally ensure that the redundant support
+  is adequate"): a member holding a point inside the run counts only while
+  its own KL/r is within its class's limit (leg 150, bracing 200,
+  redundant 250 — the program's limits —; without a class 250, as a
+  redundant member, the role 1.0 defines); worked out again until none
+  more drops out; those not counted are said.
+- **A run's ends** at a joint other members frame into are **working
+  points** (C3.7.4: "from working point to working point"), held every
+  way as the member's own ends always were (in whichever directions the
+  members there lie; the joint's hold out of their plane is the
+  structure's). **A free end** — a run end nothing frames into and not
+  supported — makes the stretch to it a **cantilever: twice its length**
+  (K = 2, **assumption**). A run nothing holds in a direction: twice its
+  length, said **not on the safe side** (a mechanism unless the joints'
+  bending holds it).
+- **The curves' ends** (3.7.4.2: the ends "of the unsupported panel"):
+  each end of the governing stretch takes that member end's eccentricity
+  and restraint ([below](#end-conditions)); a point inside the run (the
+  member continuous through it) concentric and not restrained (Example 7
+  takes the crossover concentric, Eq. 3.7-6; Examples 8 and 9: "No end
+  restraint is assumed in segment between crossover point and
+  intermediate redundant support point"); a free end eccentric and not
+  restrained. Each axis gets its own \\( KL/r \\); the largest governs.
+- **Not taken** (the lengths longer, on the safe side): 3.7.4.4's
+  \\( K' \\) for a force varying along a panel, 3.7.4.6's tests.
+
+Worked example (the plugin's test `a_crossing_diagonal_pair`): an L
+100×10 crossing diagonal of 5 m, eccentric at both ends, crossed at its
+middle. Its partner pulling 30 % of its compression: every axis over
+2.5 m. Pulling 10 %: \\( KL/r = \max(30 + 0.75 \cdot 2.5/r_v,\ 60 + 0.5
+\cdot 5/r_y) \\) — Example 7's case 2 (Eqs. 3.7-6 and 3.7-7).
 
 ### 2. Torsional and torsional-flexural buckling
 
@@ -452,10 +558,10 @@ said in what governs (`[assumed: …]`):
 
 | Missing | Assumed |
 |---|---|
-| length ratios | 1 (or the member's `k`) |
+| length ratios | worked out from what braces the member ([above](#buckling-lengths-from-what-braces-the-member), 2026-11-19); without its bracing: 1 (or the member's `k`) |
 | end eccentricity | both ends eccentric |
 | end restraint | none |
-| crossing partner | unbraced out of plane |
+| crossing partner (lengths given) | unbraced out of plane |
 | root radius of an angle | 0 (w larger) |
 | connected leg | one leg (× 0.9); an unequal angle's short leg |
 | hole | a standard hole, bolt + 1.6 mm (4.1) |
@@ -509,8 +615,10 @@ the plugin's. The others below (staggered bracing, \\( K' \\), lipped
 angles, rods and guys, bolts in tension, \\( f_y \\) by thickness) cannot
 be told from the model's data and stay said here only.
 
-- 3.7.4.1 Figure 3.2: legs with staggered bracing (give the length
-  ratios); 3.7.4.4: \\( K' \\) for forces varying along the member.
+- 3.7.4.1 Figure 3.2: legs with staggered bracing — taken where the
+  lengths are worked out from the bracing (2026-11-19, above); with
+  length ratios given, the user's. 3.7.4.4: \\( K' \\) for forces varying
+  along the member (not taken: longer lengths).
 - 3.8: lipped angles (no lipped profile in the library).
 - 3.9.2, 3.9.3: effective widths of other profiles' elements.
 - 3.10.4, 3.10.5: threaded rods, anchor bolts, guys.

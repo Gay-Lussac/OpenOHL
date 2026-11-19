@@ -226,3 +226,58 @@ fn a_parameter_file_with_values_is_refused() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Buckling lengths from what braces a member, through the plugin
+/// (2026-11-19, `member-check-bracing`): an X panel of L 100 angles whose
+/// diagonals are split at their crossing joint. Pushed sideways, the
+/// other diagonal pulls and the crossing holds the compressed half every
+/// way (Appendix B, Example 7): its own length about every axis, the check
+/// and its words as before, and the core's remark on an unbraced crossing
+/// no longer added. Pushed down, both diagonals compressed: the crossing
+/// holds the half in the plane only, its length out of the plane the whole
+/// diagonal's, worked out from the bracing (said). With `k = 0.5` given:
+/// its own length, not from the bracing.
+#[test]
+fn lengths_from_the_bracing_through_the_plugin() {
+    if !built() {
+        return;
+    }
+    let panel = |extra: &str, load: &str| {
+        format!(
+            "[analysis]\nnonlinear = false\nself_weight = false\n\
+             [[node]]\nid = \"A\"\npoint = [0, 0, 0]\nsupport = \"pinned\"\n\
+             [[node]]\nid = \"B\"\npoint = [4, 0, 0]\nsupport = \"pinned\"\n\
+             [[node]]\nid = \"C\"\npoint = [0, 0, 4]\nsupport = [\"y\"]\n\
+             [[node]]\nid = \"D\"\npoint = [4, 0, 4]\nsupport = [\"y\"]\n\
+             [[node]]\nid = \"M\"\npoint = [2, 0, 2]\n\
+             [[member]]\nid = \"c1\"\nnodes = [\"A\", \"C\"]\nsection = \"L100\"\n\
+             [[member]]\nid = \"c2\"\nnodes = [\"B\", \"D\"]\nsection = \"L100\"\n\
+             [[member]]\nid = \"top\"\nnodes = [\"C\", \"D\"]\nsection = \"L100\"\n\
+             [[member]]\nid = \"d1a\"\nnodes = [\"A\", \"M\"]\nsection = \"L100\"\n{extra}\
+             [[member]]\nid = \"d1b\"\nnodes = [\"M\", \"D\"]\nsection = \"L100\"\n{extra}\
+             [[member]]\nid = \"d2a\"\nnodes = [\"B\", \"M\"]\nsection = \"L100\"\n{extra}\
+             [[member]]\nid = \"d2b\"\nnodes = [\"M\", \"C\"]\nsection = \"L100\"\n{extra}\
+             {load}"
+        )
+    };
+    let sideways = "[[load]]\nnode = \"C\"\nforce = [\"-50 kN\", 0, 0]\n";
+    let down = "[[load]]\nnode = \"C\"\nforce = [0, 0, \"-50 kN\"]\n\
+                [[load]]\nnode = \"D\"\nforce = [0, 0, \"-50 kN\"]\n";
+    let compressed = |m: &Model, u: &[MemberUsage]| {
+        ["d1a", "d1b", "d2a", "d2b"]
+            .into_iter()
+            .find(|id| governs(m, u, id).starts_with("compression"))
+            .expect("a compressed half")
+    };
+    let (m, u) = run(&panel("", sideways), 0.0, None);
+    let g = governs(&m, &u, compressed(&m, &u));
+    assert!(!g.contains("from the bracing"), "{g}");
+    assert!(!g.contains("buckling length its own"), "{g}");
+    let (m, u) = run(&panel("", down), 0.0, None);
+    let half = compressed(&m, &u);
+    let g = governs(&m, &u, half);
+    assert!(g.contains("from the bracing") && g.contains("A–D"), "{g}");
+    let (m, u) = run(&panel("k = 0.5\n", down), 0.0, None);
+    let g = governs(&m, &u, half);
+    assert!(!g.contains("from the bracing"), "{g}");
+}

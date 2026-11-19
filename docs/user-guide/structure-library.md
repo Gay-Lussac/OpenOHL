@@ -249,7 +249,8 @@ section = "L60x6"
 class = "bracing"                  # leg | bracing | redundant | crossing
 crossing = "D2"                    # its crossing partner (another member's id), for class crossing
 length_ratios = [1.0, 1.0, 0.5]    # buckling length / member length about the section's
-                                   # y, z and minor principal axes (default: all 1)
+                                   # y, z and minor principal axes (default: worked out
+                                   # from what braces the member, below)
 end_eccentricity = "both_ends"     # ends connected eccentrically (an angle bolted by one leg):
                                    # none | one_end | both_ends
 end_restraint = "none"             # ends partly restrained against rotation (two or more bolts
@@ -270,6 +271,8 @@ spacing = "50 mm"
 ```
 
 A file with design data is version 8 (an older program says it is newer); the structure application keeps them as written, and its member properties show them (one line; editing them there: not yet — edit the file, or import them).
+
+**Buckling lengths from what braces a member** (2026-11-19; built, in active development, not approved yet). A member that gives none of `lk`, a `k` other than 1 or `length_ratios` has its buckling lengths **worked out from what braces it** by its design code (ASCE 10-97 and SIA 263): along the members continuing it in line through its joints, from joint to joint where another member — or a support — holds it in the direction of each axis's buckling; a `crossing` partner holds it where it crosses. A joint held across one axis only (a redundant member on one face of a leg) holds that axis only; under ASCE 10-97 a crossing holds a diagonal out of its plane only while the other diagonal pulls at least 20 % of its compression. The member's result says *from the bracing* with the axis, the length and between which joints (`KL/r 85 (v over 1.20 m, N3–N5, from the bracing)`), its notes all three lengths; where the bracing gives the member its own length between its joints about every axis, its result reads as before and its notes say the lengths were worked out; a member giving its own lengths keeps them (*given*). The ends of the line of members, at joints other members frame into, are held as before; a stretch to a free end (nothing frames into it) is a cantilever (twice its length), said; a member nothing holds at all is said not on the safe side. Give `length_ratios` where you know better (a code's more exact verification): they win. How each code decides: [ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member), [SIA 263](../theory/sia263.md#flexural-buckling).
 
 **Connections and plates** (version 9, 2026-11-02; built, in active development, not approved yet; [Joint details of towers](../development/joint-details.md), stage 1). Where a member's end says more than its design data — the two ends differ, or the end bolts onto a plate — a `[[connection]]` gives that end, and a `[[plate]]` a gusset plate at a joint. All optional; what a connection does not give comes from the member's `[member.design]` (the same at both ends). OHL-Structure shows each value as given, the member's, worked out, assumed or not given ([Joint details](structure-app.md#joint-details-towers)). The ASCE 10-97 check reads them since 2026-11-02 (each end's eccentricity, restraint, bolts and net section; [theory](../theory/joint-plates.md)); a file without connections computes as before.
 

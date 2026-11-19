@@ -467,11 +467,8 @@ pub fn capacities(model: &Model) -> Result<Vec<Given>, String> {
         )
     };
     let params = p.parameters.as_ref().map_or("", |x| x.1.as_str());
-    match host
-        .check_members_full(&dir, &p.method, &full::input(model, &[], params))
-        .map_err(fail)?
-    {
-        Some(out) => Ok(out.results.iter().map(Given::from).collect()),
+    match full::check_full(host, &dir, &p.method, model, &[], params).map_err(fail)? {
+        Some((out, _)) => Ok(out.results.iter().map(Given::from).collect()),
         None => Ok(host
             .check_members(&dir, &p.method, &input(model, &[]))
             .map_err(fail)?
@@ -859,26 +856,24 @@ fn check_in(
         })
         .collect();
     let params = p.parameters.as_ref().map_or("", |x| x.1.as_str());
-    let (each, results, method_note) = match host
-        .check_members_full(dir, &p.method, &full::input(model, &full_cases, params))
-        .map_err(fail)?
-    {
-        Some(out) => (
-            full::usages(model, p, &full_cases, &out.results),
-            out.results.iter().map(Given::from).collect::<Vec<_>>(),
-            Some(out.method_note),
-        ),
-        None => {
-            let results = host
-                .check_members(dir, &p.method, &input(model, &sent))
-                .map_err(fail)?;
-            (
-                usages(model, p, &sent, &results),
-                results.iter().map(Given::from).collect(),
-                None,
-            )
-        }
-    };
+    let (each, results, method_note) =
+        match full::check_full(host, dir, &p.method, model, &full_cases, params).map_err(fail)? {
+            Some((out, braced)) => (
+                full::usages(model, p, &full_cases, &out.results, braced),
+                out.results.iter().map(Given::from).collect::<Vec<_>>(),
+                Some(out.method_note),
+            ),
+            None => {
+                let results = host
+                    .check_members(dir, &p.method, &input(model, &sent))
+                    .map_err(fail)?;
+                (
+                    usages(model, p, &sent, &results),
+                    results.iter().map(Given::from).collect(),
+                    None,
+                )
+            }
+        };
     // Back to one list per case: with foot movements, each member's
     // larger usage of the two.
     let mut each = each.into_iter();
