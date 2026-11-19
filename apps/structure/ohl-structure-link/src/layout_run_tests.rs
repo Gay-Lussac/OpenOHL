@@ -937,7 +937,10 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         .find_map(|p| p.welds.first().map(|w| w.to.clone()))
         .expect("welded");
     let kept = ta.plates.iter().find(|p| p.id == to).unwrap();
-    assert!((kept.thickness.si() - (th + 0.002)).abs() < 1e-9, "{kept:?}");
+    assert!(
+        (kept.thickness.si() - (th + 0.002)).abs() < 1e-9,
+        "{kept:?}"
+    );
     // The weld's throat given by hand: the user's, kept by a run again.
     let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
     let edit = ohl_structure_edit::connection_edits::WeldEdit {
