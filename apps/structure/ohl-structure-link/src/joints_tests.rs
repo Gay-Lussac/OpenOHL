@@ -1594,8 +1594,8 @@ fn an_end_on_a_seated_member_is_drawn_on_it_where_it_is_drawn() {
     let dot = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
     let heel = |p: &crate::Profile, g: [f64; 2], off: [f64; 3]| {
         let mut h = off;
-        for k in 0..3 {
-            h[k] += p.axes[1][k] * g[0] + p.axes[2][k] * g[1];
+        for (k, x) in h.iter_mut().enumerate() {
+            *x += p.axes[1][k] * g[0] + p.axes[2][k] * g[1];
         }
         h
     };
