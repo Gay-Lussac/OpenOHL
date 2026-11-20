@@ -68,6 +68,126 @@ joint layout's [L5](#2026-11-20-joint-layout-ends-moved-to-bolt-directly-l5)
 8. The order: L5o, then J6, then L5m; L5a after O45 A5, L5b after O45 D;
    L5c–L5e not built.
 
+## 2026-11-20 (country server, phase 14)
+
+**Scale validation, and the offline export on a thread of its own the
+owner approved the same day** (ROADMAP O17 phase 14 and phase 12's
+question 6; built, in active development, not approved yet;
+[measured](performance.md#synthetic-country-phase-14-scale-validation-and-the-exports-thread-2026-11-20),
+[commands](../user-guide/network-commands.md#measurements-each-but-bench-scoped-edits-the-network-use-a-database-made-for-it),
+[user guide](../user-guide/server.md#offline-working-sets-phase-12-in-active-development)).
+
+- **The exports' thread** (owner, 2026-11-20: phase 12's question 6, "a
+  thread of its own"): an offline working set's export is **decided on
+  the authority** — the reach checked, the working set seen whole and
+  exportable by the user's rights, main's unrecorded changes recorded
+  first (a revision, phase 11's rule) and the base taken, the line's and
+  the other lines' neighbours within the reach chosen by the same rights,
+  the replica's rows, the meta and the export's number taken — all in
+  one moment between two commands; it is **written on a thread of its
+  own** (the neighbours' structure types merged in, the project file
+  with its export revision, a client's file read back); it is **recorded
+  and audited on the authority** when it comes back, and answered. The
+  same plan and the same writer serve the authority's way
+  (`NetOptions::export_worker` off), so the two cannot drift; tested:
+  the report and the file the same either way, for a user seeing
+  everything and one seeing a route, through the protocol and the
+  command line's way.
+- **Changes landing while it is written: marked, not replayed.** The
+  file stays the base revision's working set, which its record names.
+  Replaying a change into it would make the file differ from the
+  revision recorded as its base, and a bundle made from it would carry
+  that change back as the user's own — applied twice, or conflicting with
+  itself; refusing the export would starve it while others edit. So each
+  change applied on a main line while it is written is kept and compared
+  with what it holds (its objects, its lines, its area's tiles) when it
+  comes back: the report's `changed_meanwhile` counts the objects and
+  `stale` says the server is newer than the file — exactly as if they
+  had landed just after an export on the authority; bringing the work
+  back lists them as conflicts with main or as neighbours changed since
+  (phase 12). Nothing is lost, nothing applied twice. Tested: a move
+  before an export in it; a move while it is written not in it, the
+  export stale, its base and record unchanged.
+- **A user whose rights changed while the export was written gets
+  nothing** (the file removed, nothing recorded, the refusal audited);
+  a client gone gets nothing. The rights are read again before it is
+  recorded.
+- **One client's export at a time** on the thread; a check queued behind
+  it starts meanwhile (and the other way round): the first long work in
+  the queue that may start goes, no longer only the first.
+- **Long work overdue starts anyway** (found by the scale bench): with
+  forty users editing at once the authority's queue of commands was never
+  empty, and on main's code no check or export started while they
+  edited. Long work that may start and has waited 2 s now starts between
+  two jobs, at most once every 2 s (`HEAVY_MAX_WAIT`). A check's or an
+  export's start holds the commands only for its snapshot or decision; a
+  bundle brought back still for its length (seconds at most). Tested on
+  the authority's loop.
+- **A large first revision** (found measuring): a model's first revision
+  in one transaction checked each blob's references by reading the rows
+  written so far (the planner's statistics of nearly empty tables): more
+  than 7 minutes for the synthetic country as one model, stopped there.
+  The store reads the version store's statistics again (`ANALYZE vc_blob,
+  vc_blob_use`, its own rows counted) after 2 000 blobs, then each time
+  their number doubled: 25 s. Only statistics change.
+- **Measured** ([performance](performance.md#synthetic-country-phase-14-scale-validation-and-the-exports-thread-2026-11-20);
+  a shared machine, main's code and phase 14's in turn, the quietest
+  rounds): **a move while a whole route is exported with 10 km on the
+  country as one model: on the authority it waited the whole export,
+  1.40 s; on the thread p50 6.7 ms, at most 714 ms** (the decision; 102
+  moves meanwhile); on the 147 lines 274 ms → p50 3.9 ms, at most 112 ms.
+  **End to end** (`bench-scale`): 80 clients joining at once p50 3.8 s to
+  their whole first view; 40 editors moving without a pause p50 200 ms
+  a move (the authority applies about 200 moves a second); checks and
+  exports asked meanwhile started after 60 s (when the editing stopped)
+  with main's code, after p50 6.0 s with phase 14's — clearances answered
+  in 21–26 s instead of 78–83 s, exports in 5.6–7.1 s instead of 60 s
+  (stale: 43 and 44 objects changed while written); memory 1.31 GB idle,
+  2.29 GB with everyone working; the start 2.4–2.6 s; a backup 6.2–7.2 s,
+  a restore with its drill 8.4–10.0 s. Moves, replicas, joining again
+  and the start as with main's code.
+- **A line's library import** (found measuring a real line locally, its
+  numbers kept private): mapping each library entry onto the country
+  library read every file of its kind from the database and parsed it
+  again — for each entry, and for each file laid in — quadratic in the
+  files of a kind: minutes for a line with hundreds of tower files. Each
+  file's entry ids are now kept on the connection by its text's SHA-256
+  (read in PostgreSQL), a file read and parsed again only when its text
+  changed: about a sixth of the time, the same mappings and requests
+  (the import's report compared).
+- **The report's format**: `OfflineExported` gets `changed_meanwhile`
+  and `stale` (serde defaults: 0 and false from a server of before); the
+  protocol stays 3; no schema change.
+- **Not yet**: the export's decision is still on the authority — on the
+  country as one model 0.7 s for a whole route with 10 km (the working
+  set's extent and its neighbours' extent worked out over the whole
+  model, the known per-model cost of O17's extents); a bundle brought
+  back runs on the authority; a real country's lines measured on a
+  server of their own (the private import measured locally only).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. An export decided on the authority and written on a thread of its
+> own; a change landing meanwhile marks it stale instead of being
+> replayed into the file? → yes, as built (a replay would make the file
+> differ from the base its record names).
+> 2. A user whose rights change while their export is written gets
+> nothing (asks again)? → yes, as built.
+> 3. Long work that has waited 2 s behind commands that keep coming
+> starts anyway, at most once every 2 s (a pause of up to its snapshot or
+> decision for the editors)? → yes, as built; a setting of the server if
+> 2 s proves wrong in use.
+> 4. The version store's statistics read again during a large first
+> revision (ANALYZE after 2 000 blobs, then each doubling)? → yes, as
+> built; a store reading many blob hashes at once later.
+> 5. The export's decision on the country as one model (0.7 s) and a
+> bundle brought back there (10 s) still on the authority? → for now;
+> next an index by place in the session (the extents) and the bundle on
+> the exports' thread.
+> 6. Forty editors moving without a pause is the saturation measured
+> (about 200 moves a second); is that enough for the country? → yes for
+> now (a working day's edits are far fewer); measure again with the real
+> country's lines once they are imported on a server of their own.
+
 ## 2026-11-20 (country server, phase 13)
 
 **Security, deployment, backups: a security review of the network

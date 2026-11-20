@@ -25,6 +25,8 @@ struct Fake {
     log: Arc<Mutex<Vec<String>>>,
     /// A job sent while the first long work runs (it arrives meanwhile).
     late: Option<std_mpsc::Sender<Job>>,
+    /// Phase 14: long work overdue (started even while jobs wait).
+    overdue: bool,
 }
 
 impl Host for Fake {
@@ -40,6 +42,10 @@ impl Host for Fake {
 
     fn deferred(&self) -> bool {
         !self.waiting.is_empty()
+    }
+
+    fn deferred_overdue(&self) -> bool {
+        self.overdue
     }
 
     fn run_deferred(&mut self) {
@@ -69,6 +75,7 @@ fn long_work_waits_behind_the_commands() {
         waiting: VecDeque::from(["check", "export"]),
         log: log.clone(),
         late: Some(tx.clone()),
+        overdue: false,
     };
     for user in ["a", "b"] {
         tx.send(Job::Leave {
@@ -89,6 +96,38 @@ fn long_work_waits_behind_the_commands() {
         *log.lock().unwrap(),
         ["a", "b", "heavy check", "late", "heavy export"]
     );
+}
+
+/// Phase 14 (S1): long work overdue starts although jobs keep coming
+/// (users editing at once never leave the queue empty).
+#[test]
+fn overdue_long_work_starts_between_jobs() {
+    let (tx, rx) = std_mpsc::channel();
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let host = Fake {
+        common: Common::new(Keys::random(), None, tokio::sync::broadcast::channel(16).0),
+        waiting: VecDeque::from(["check"]),
+        log: log.clone(),
+        late: None,
+        overdue: true,
+    };
+    for k in 0..100 {
+        tx.send(Job::Leave {
+            client: 1,
+            user: format!("u{k}"),
+        })
+        .unwrap();
+    }
+    let t = std::thread::spawn(move || run(host, rx));
+    let started = Instant::now();
+    while log.lock().unwrap().len() < 101 {
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    tx.send(Job::Stop).unwrap();
+    t.join().unwrap();
+    // Started before the jobs already waiting.
+    assert_eq!(log.lock().unwrap()[0], "heavy check");
 }
 
 /// S1: one long work per user waiting, at most so many in all.

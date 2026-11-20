@@ -1003,6 +1003,18 @@ pub struct OfflineExported {
     pub recorded_first: bool,
     /// Seconds on the server.
     pub seconds: f64,
+    /// Phase 14: objects of it, or within its reach, changed on the
+    /// network after its content was taken, while it was written on the
+    /// exports' thread (each once) — **not in it**: the file is the base
+    /// revision's working set, and its work brought back lists them as
+    /// conflicts or neighbours changed since. 0 on the authority.
+    #[serde(default)]
+    pub changed_meanwhile: usize,
+    /// Phase 14: such a change, or a line of it changed whole (its
+    /// libraries), landed while it was written: newer on the server than
+    /// in the file.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// An offline working set's file as the server sends it (phase 12).

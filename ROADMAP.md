@@ -62,10 +62,10 @@ from here. The owner's order of 2026-11-19:
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
    not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
-   phase 6 built 2026-11-19, phase 7 (rights and roles), phase 9
-   (country libraries) and phase 11 (version control at scale)
-   2026-11-20, in active development, not approved yet — the owner's
-   questions under O17).
+   phase 6 built 2026-11-19, phases 7 to 14 (rights and roles, country
+   libraries, version control at scale, offline working sets, security,
+   scale validation) 2026-11-20, in active development, not approved
+   yet — the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -3345,7 +3345,8 @@ or three, L four or more. The phases, in order:
   branches, a line made from a revision). Measured on the synthetic
   country: a whole route exported in 0.25 s (7.7 MB, 15 other lines near), bundles of 20 / 500 changes brought back in 0.29 / 0.66 s, the country as one model opened with its branches 20.8 → 4.7 s; moves, replicas, joining again and the start as with main's code.
   Left: OHL-Design's Offline copy menu for a network (the command line
-  and the protocol do it); the export on a thread of its own; OHL-Design's
+  and the protocol do it); the export on a thread of its own (built with
+  phase 14); OHL-Design's
   check windows using a file's neighbours; a revision of main's changes
   made by the server so any designer can export.
   > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
@@ -3400,7 +3401,7 @@ or three, L four or more. The phases, in order:
   meanwhile marking it stale.
   Measured on the synthetic country: main's code against phase 13's on fresh databases of the 147 lines (a shared machine, the quietest rounds): a move applied and broadcast p50 9.2 → 8.4 ms (a route's designer 9.5 → 8.9 ms), a replica loaded 0.076 / 0.130 → 0.074 / 0.120 s, joining again after 20 moves 358 → 355 ms, the start 3.0 → 2.8 s; a backup of the 147 lines 7.0–10.6 s (13.6 MB), a restore with its drill 13.8–14.1 s; **a move while a whole route's clearances run (12 s): on the authority the first waited 12.08 s, on the worker p50 9.6 ms, p95 27.8 ms (836 moves meanwhile)**.
   Left: the offline export on a thread of its own (phase 12's question
-  6, approved); OHL-Design's and the web client's sign-in windows (the
+  6, approved; built with phase 14); OHL-Design's and the web client's sign-in windows (the
   protocol takes the token); a role per task in the database; WAL
   archiving driven by `ohl`; OHL-Server's Operations page (stage F).
   > **Owner:** (to answer, 2026-11-20; the recommendation after the
@@ -3419,8 +3420,60 @@ or three, L four or more. The phases, in order:
   > without superuser, the image on PostgreSQL's? → yes; a slimmer image
   > later. 10. The checks' worker from a snapshot of the lines within
   > 10 km? → yes; the export next.
-- [ ] 14 Scale validation (S): the synthetic country measured end to end;
-  a real line's import measured locally only.
+- [x] 14 Scale validation (S): the synthetic country measured end to end;
+  a real line's import measured locally only. **Built 2026-11-20, in
+  active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-14),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-14-scale-validation-and-the-exports-thread-2026-11-20),
+  [commands](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/network-commands.md#measurements-each-but-bench-scoped-edits-the-network-use-a-database-made-for-it)):
+  `ohl network bench-scale` (80 clients joining at once, 40 editors
+  moving at once while checks and exports are asked) and `bench-offline
+  --during-reach`; with it **the offline export on a thread of its own**
+  (phase 12's question 6, approved): decided on the authority (rights,
+  base, neighbours, replica in one moment), written on the exports'
+  thread, recorded and answered on the authority; a change landing while
+  it is written marks it stale (`changed_meanwhile`, `stale`) instead of
+  being replayed; the same file either way (tested). Found and fixed
+  while measuring: **long work starved** behind forty editors (it now
+  starts after 2 s, at most once every 2 s) and **a big model's first
+  revision** (more than 7 minutes → 25 s: the version store's statistics
+  read again during it), and **a line's library import** reading every
+  file of a kind again for each entry (about a sixth of the time on a
+  real line measured locally). Measured on the synthetic country: a move while
+  a whole route is exported with 10 km on the country as one model 1.40 s
+  (on the authority) → p50 6.7 ms, at most 714 ms (on the thread);
+  checks and exports asked while 40 users edit started after 60 s → p50
+  6.0 s; 80 joins at once p50 3.8 s to the whole first view; about 200
+  moves a second through the authority; 1.31 GB idle, 2.29 GB with 85
+  clients working; a backup 6.2–7.2 s, a restore with its drill
+  8.4–10.0 s; moves, replicas and the start as with main's code. The
+  real line's import measured locally (results private).
+  Left: the export's decision on a big model (0.7 s on the country as
+  one model: its extents over the whole model) and a bundle brought back
+  there (10 s) still on the authority; the real country's lines on a
+  server of their own.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+  > 1. An export decided on the authority and written on a thread of its
+  > own; a change landing meanwhile marks it stale instead of being
+  > replayed into the file? → yes, as built (a replay would make the file
+  > differ from the base its record names).
+  > 2. A user whose rights change while their export is written gets
+  > nothing (asks again)? → yes, as built.
+  > 3. Long work that has waited 2 s behind commands that keep coming
+  > starts anyway, at most once every 2 s (a pause of up to its snapshot or
+  > decision for the editors)? → yes, as built; a setting of the server if
+  > 2 s proves wrong in use.
+  > 4. The version store's statistics read again during a large first
+  > revision (ANALYZE after 2 000 blobs, then each doubling)? → yes, as
+  > built; a store reading many blob hashes at once later.
+  > 5. The export's decision on the country as one model (0.7 s) and a
+  > bundle brought back there (10 s) still on the authority? → for now;
+  > next an index by place in the session (the extents) and the bundle on
+  > the exports' thread.
+  > 6. Forty editors moving without a pause is the saturation measured
+  > (about 200 moves a second); is that enough for the country? → yes for
+  > now (a working day's edits are far fewer); measure again with the real
+  > country's lines once they are imported on a server of their own.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

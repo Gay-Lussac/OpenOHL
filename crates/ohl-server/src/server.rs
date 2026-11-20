@@ -458,6 +458,10 @@ pub(crate) enum Job {
     /// Network, phase 13: a check done by the checks' worker.
     #[cfg(feature = "network")]
     Checked(Box<crate::network::CheckDone>),
+    /// Network, phase 14: an offline working set written by the exports'
+    /// thread.
+    #[cfg(feature = "network")]
+    Exported(Box<crate::network::ExportBack>),
     /// Network, phase 12: an offline working set exported or brought
     /// back for a user of the network (its report as JSON).
     #[cfg(feature = "network")]
@@ -716,6 +720,12 @@ pub(crate) trait Host {
     }
     /// Phase 13: one waiting long work done.
     fn run_deferred(&mut self) {}
+    /// Phase 14: long work that may start has waited too long behind
+    /// jobs that never stop coming (many users editing at once): started
+    /// now, between two jobs (at most one so every so often).
+    fn deferred_overdue(&self) -> bool {
+        false
+    }
     /// When it wants [`Host::tick`] next.
     fn due(&self) -> Option<Instant> {
         None
@@ -734,8 +744,12 @@ pub(crate) fn run<H: Host>(mut host: H, jobs: std_mpsc::Receiver<Job>) {
             .flatten()
             .min();
         // Phase 13: long work waiting goes after every job already
-        // there (the commands, interests, joins), one at a time.
-        let job = if host.deferred() {
+        // there (the commands, interests, joins), one at a time; phase
+        // 14: or when it has waited too long behind jobs that keep coming.
+        let job = if host.deferred() && host.deferred_overdue() {
+            host.run_deferred();
+            None
+        } else if host.deferred() {
             match jobs.try_recv() {
                 Ok(job) => Some(job),
                 Err(std_mpsc::TryRecvError::Empty) => {
@@ -1082,7 +1096,7 @@ impl Host for Authority {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
             #[cfg(feature = "network")]
-            Job::Built(_) | Job::Checked(_) => {}
+            Job::Built(_) | Job::Checked(_) | Job::Exported(_) => {}
             #[cfg(feature = "network")]
             Job::Probe { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));

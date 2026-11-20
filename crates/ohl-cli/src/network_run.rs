@@ -178,6 +178,11 @@ pub enum NetworkCommand {
         /// Folder for the files.
         #[arg(long)]
         work: PathBuf,
+        /// Phase 14: then a move's latency while the route is exported
+        /// with this reach (m), on the authority and on the exports'
+        /// thread (adds the user bench-mover, a designer of the network).
+        #[arg(long)]
+        during_reach: Option<f64>,
     },
     /// The network's users, groups, roles and assignments (admins; every
     /// change through the rights' one function and into the audit).
@@ -502,6 +507,43 @@ pub enum NetworkCommand {
         #[arg(long, default_value_t = 40)]
         moves: usize,
     },
+    /// Measure phase 14 on the network, end to end with many clients at
+    /// once: `ohl network serve` as a process of its own; editors (each a
+    /// designer of one route) and viewers join together, each with a view
+    /// of its own; every editor moves structures of its route at once
+    /// while two whole routes' clearances and two offline working sets are
+    /// asked; the joins', moves' and long work's times, the memory. Adds
+    /// users named scale-… (made once); edits the network (structures
+    /// moved back and forth). Prints JSON.
+    BenchScale {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// The network admin (makes the users).
+        #[arg(long)]
+        user: String,
+        /// Editors moving at once (one route each).
+        #[arg(long, default_value_t = 40)]
+        editors: usize,
+        /// Viewers of the whole network joining with them.
+        #[arg(long, default_value_t = 40)]
+        viewers: usize,
+        /// A view: tiles across and down.
+        #[arg(long, default_value_t = 4)]
+        view_w: i64,
+        #[arg(long, default_value_t = 3)]
+        view_h: i64,
+        /// Moves of each editor at least (back and forth).
+        #[arg(long, default_value_t = 40)]
+        moves: usize,
+        /// The editors move on until the long work is answered, at most
+        /// this long, s.
+        #[arg(long, default_value_t = 60)]
+        edit_seconds: u64,
+        /// Folder for the bench's files (the keys, the server's log).
+        #[arg(long)]
+        work: PathBuf,
+    },
     /// Measure phase 6 on the network: working sets picked (shown before
     /// they are confirmed), a partial replica loaded, the rows of edits
     /// arriving in it, a replica joining again after edits, a route
@@ -661,9 +703,16 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             line,
             rounds,
             work,
+            during_reach,
         } => {
-            let report =
-                crate::network_offline_run::bench(&database(db)?, &user, line, rounds, &work)?;
+            let report = crate::network_offline_run::bench(
+                &database(db)?,
+                &user,
+                line,
+                rounds,
+                &work,
+                during_reach,
+            )?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
@@ -843,6 +892,33 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                     assignments,
                     moves,
                 })?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        NetworkCommand::BenchScale {
+            database: db,
+            user,
+            editors,
+            viewers,
+            view_w,
+            view_h,
+            moves,
+            edit_seconds,
+            work,
+        } => {
+            let report = crate::network_bench_scale::bench(&crate::network_bench_scale::Scale {
+                database: database(db)?,
+                user,
+                editors,
+                viewers,
+                view: (view_w, view_h),
+                moves,
+                edit_seconds,
+                work,
+            })?;
             println!(
                 "{}",
                 serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?

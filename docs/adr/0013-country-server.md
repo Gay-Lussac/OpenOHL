@@ -478,7 +478,13 @@ work back (plan of 2026-11-16: no reservations at first). Built
   main line's changes recorded first, by phase 11's rule for a branch);
   the file's first revision — the export's — is recorded on the server
   (`offline_export`, network schema 6: its tree's list of hashes, no
-  object again) and the export audited.
+  object again) and the export audited. **Phase 14 (owner, 2026-11-20:
+  phase 12's question 6)**: decided on the authority (rights, extent,
+  main's changes recorded, the base, the neighbours, the replica — one
+  moment between two commands), written on a thread of its own, recorded
+  and answered on the authority; a change landing while it is written is
+  not replayed into the file (it stays the base revision's, as recorded)
+  but marks the export stale in its report.
 - **Offline**: the scoped checks of phase 10 run on the file with the
   server's own code and the neighbours it holds — the same report, or NOT
   ALL CHECKED where the file cannot give it (a hidden neighbour left out,

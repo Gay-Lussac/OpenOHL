@@ -83,6 +83,10 @@ mod offline;
 // authority's models and tile index).
 #[path = "network_checks.rs"]
 mod checks;
+// Phase 14 (owner, 2026-11-20: phase 12's question 6): the exports'
+// thread (a child module: it takes what an export holds on the authority).
+#[path = "network_exports.rs"]
+mod exports;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -94,6 +98,15 @@ use crate::{
     ServerMsg, TileKey, random_code,
 };
 pub(crate) use checks::CheckDone;
+pub(crate) use exports::ExportBack;
+
+/// Phase 14: the longest long work (a check, an export, a bundle) waits
+/// behind jobs that keep coming before it starts anyway, and the least
+/// time between two such starts: with forty users editing at once the
+/// authority's queue was never empty, and a check or an export waited
+/// for as long as they edited. A check's or an export's start holds the
+/// jobs only for its snapshot or its decision; a bundle for its length.
+pub(crate) const HEAVY_MAX_WAIT: Duration = Duration::from_secs(2);
 
 /// Broadcasts kept for slow readers (a client further behind is dropped
 /// and catches up when it joins again).
@@ -161,6 +174,14 @@ pub struct NetOptions {
     /// thread of their own, from a snapshot (false: on the authority, as
     /// before — measurements, tests of the same result).
     pub check_worker: bool,
+    /// Phase 14 (owner, 2026-11-20): offline working sets written on a
+    /// thread of their own, decided on the authority (false: written on
+    /// the authority, as before — measurements, tests of the same file).
+    pub export_worker: bool,
+    /// Tests: the exports' thread waits this long before writing (a
+    /// change landing while an export is written, made certain).
+    #[cfg(test)]
+    pub(crate) export_delay: Option<Duration>,
 }
 
 impl std::fmt::Debug for NetOptions {
@@ -177,6 +198,7 @@ impl std::fmt::Debug for NetOptions {
             .field("invite_days", &self.invite_days)
             .field("oidc", &self.oidc)
             .field("check_worker", &self.check_worker)
+            .field("export_worker", &self.export_worker)
             .finish_non_exhaustive()
     }
 }
@@ -204,6 +226,9 @@ impl Default for NetOptions {
             invite_days: None,
             oidc: None,
             check_worker: true,
+            export_worker: true,
+            #[cfg(test)]
+            export_delay: None,
         }
     }
 }
@@ -520,6 +545,9 @@ struct Stats {
     tiles_not_made: usize,
     /// Phase 13: a check's snapshot taken on the authority, ms.
     check_snapshot_ms: Vec<f64>,
+    /// Phase 14: an export decided on the authority (before its thread
+    /// writes it), ms.
+    export_plan_ms: Vec<f64>,
 }
 
 fn keep(v: &mut Vec<f64>, x: f64) {
@@ -590,6 +618,11 @@ pub(crate) struct NetHost {
     /// whether a check runs on it.
     worker: Option<checks::Worker>,
     check_running: bool,
+    /// Phase 14: the exports' thread (none: exports on the authority) and
+    /// the exports being written.
+    exports: exports::Exports,
+    /// Phase 14: when long work last started (see [`HEAVY_MAX_WAIT`]).
+    heavy_started: Instant,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -634,6 +667,15 @@ impl NetHost {
             Some(checks::Worker::start(jobs.clone())?)
         } else {
             None
+        };
+        let exports = if o.export_worker {
+            #[cfg(test)]
+            let delay = o.export_delay;
+            #[cfg(not(test))]
+            let delay = None;
+            exports::Exports::start(jobs.clone(), delay)?
+        } else {
+            exports::Exports::default()
         };
         let packager = Packager::start(o.packagers, caches, jobs, copies.join("work"))?;
         let mut host = NetHost {
@@ -683,6 +725,8 @@ impl NetHost {
             generations,
             worker,
             check_running: false,
+            exports,
+            heavy_started: Instant::now(),
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -2207,24 +2251,7 @@ impl NetHost {
                 }
                 // Phase 13: no name a client gave in a path.
                 let path = self.copies.join(format!("offline-{}.ohl", random_code(16)));
-                let made = self.offline_export(user, &rights, working_set, reach, &path);
-                let result = made.and_then(|report| {
-                    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-                    if bytes.len() * 4 / 3 + 4096 > crate::MAX_MESSAGE {
-                        return Err(format!(
-                            "the offline working set is {:.0} MB: more than a message carries \
-                             (pick less, or ask for it with the command line on the server)",
-                            bytes.len() as f64 / 1e6
-                        ));
-                    }
-                    Ok(Box::new(crate::OfflineFile {
-                        report,
-                        file: crate::base64::encode(&bytes),
-                    }))
-                });
-                for ext in ["", "-wal", "-shm"] {
-                    let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
-                }
+                let result = self.client_export_here(user, &rights, working_set, reach, &path);
                 ServerMsg::WorkingSetExported {
                     id,
                     result: result.map_err(|e| self.sanitise(&rights, &e)),
@@ -3034,6 +3061,8 @@ impl NetHost {
         // Phase 10: the results using what it touched are stale.
         if line == main {
             self.stale_checks(code, user, &touched_objects, &touched, whole || library);
+            // Phase 14: and the exports being written are told.
+            self.export_landed(code, &touched_objects, &touched, whole || library);
         }
         self.update_places(code, line, op, whole, &objects);
         let tiles: Vec<TileKey> = touched.into_iter().collect();
@@ -3765,6 +3794,7 @@ impl NetHost {
                     "heavy_refused": self.stats.heavy_refused,
                     "tiles_not_made": self.stats.tiles_not_made,
                     "check_snapshot_ms": self.stats.check_snapshot_ms,
+                    "export_plan_ms": self.stats.export_plan_ms,
                 })
                 .to_string())
             }
@@ -3938,6 +3968,17 @@ impl NetHost {
         Ok(self.common.keys.personal_code(user, generation, until))
     }
 
+    /// Whether long work `ask` may start now: a check waits while the
+    /// checks' worker runs one, a client's export while the exports'
+    /// thread writes one (the jobs go on meanwhile).
+    fn may_start(&self, ask: &NetAsk) -> bool {
+        match ask {
+            NetAsk::Check { .. } => !(self.check_running && self.worker.is_some()),
+            NetAsk::Export { .. } => !self.exports.client_running(),
+            _ => true,
+        }
+    }
+
     /// Phase 13: a check, export or bundle put in the queue (answered
     /// when done, on the client's own queue): one per user waiting, at
     /// most `max_heavy_queue` in all; its parameters refused at once.
@@ -3990,7 +4031,10 @@ impl Host for NetHost {
     }
 
     fn handle(&mut self, job: Job) {
-        if !matches!(job, Job::Built(_) | Job::Probe { .. } | Job::Checked(_)) {
+        if !matches!(
+            job,
+            Job::Built(_) | Job::Probe { .. } | Job::Checked(_) | Job::Exported(_)
+        ) {
             self.last_busy = Instant::now();
             // Phase 7: rights an admin changed hold from the next job on.
             if !matches!(job, Job::Leave { .. }) {
@@ -4070,6 +4114,31 @@ impl Host for NetHost {
                     Ok(())
                 });
             }
+            Job::Exported(back) => {
+                let _ = self.guarded("the offline working set", |s| {
+                    s.exported(*back);
+                    Ok(())
+                });
+            }
+            Job::Offline {
+                user,
+                what:
+                    crate::server::OfflineJob::Export {
+                        working_set,
+                        reach,
+                        out,
+                    },
+                reply,
+            } if self.exports.on_thread() => {
+                // Phase 14: written on the exports' thread, answered when
+                // it comes back.
+                if !self.rights.active(&user) {
+                    let _ = reply.send(Err(format!("{user} is not a user of this network")));
+                } else {
+                    let rights = self.rights_of(&user);
+                    self.start_command_export(&user, rights, working_set, reach, out, reply);
+                }
+            }
             Job::Offline { user, what, reply } => {
                 let done = self.guarded("the offline working set", |h| {
                     let rights = h.rights_of(&user);
@@ -4110,14 +4179,26 @@ impl Host for NetHost {
     }
 
     fn deferred(&self) -> bool {
-        // A check waits while the worker runs one (the jobs go on).
-        self.heavy.front().is_some_and(|h| {
-            !(self.check_running && self.worker.is_some() && matches!(h.ask, NetAsk::Check { .. }))
-        })
+        self.heavy.iter().any(|h| self.may_start(&h.ask))
+    }
+
+    fn deferred_overdue(&self) -> bool {
+        self.heavy_started.elapsed() >= HEAVY_MAX_WAIT
+            && self
+                .heavy
+                .iter()
+                .find(|h| self.may_start(&h.ask))
+                .is_some_and(|h| h.queued.elapsed() >= HEAVY_MAX_WAIT)
     }
 
     fn run_deferred(&mut self) {
-        let Some(h) = self.heavy.pop_front() else {
+        self.heavy_started = Instant::now();
+        // The first in the queue that may start (phase 14: a check behind
+        // an export being written goes on, and the other way round).
+        let Some(k) = self.heavy.iter().position(|h| self.may_start(&h.ask)) else {
+            return;
+        };
+        let Some(h) = self.heavy.remove(k) else {
             return;
         };
         if !self.clients.contains_key(&h.client) {
@@ -4151,6 +4232,31 @@ impl Host for NetHost {
                     None,
                     None,
                     Some(ServerMsg::CheckResult { id, result }),
+                );
+            }
+            return;
+        }
+        // Phase 14: an export on the exports' thread (decided here).
+        if self.exports.on_thread()
+            && let NetAsk::Export {
+                id,
+                working_set,
+                reach,
+            } = h.ask
+        {
+            let started = self.guarded("the offline working set", |s| {
+                s.start_client_export(client, &user, id, working_set, reach)
+            });
+            if let Err(e) = started {
+                let result = Err(match self.client_rights(client) {
+                    Some(r) => self.sanitise(&r, &e),
+                    None => e,
+                });
+                self.push(
+                    client,
+                    None,
+                    None,
+                    Some(ServerMsg::WorkingSetExported { id, result }),
                 );
             }
             return;

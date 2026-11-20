@@ -30,7 +30,8 @@
 //! takes the branch away again.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use ohl_core::grid::Bounds;
@@ -38,15 +39,17 @@ use ohl_session::offline::{
     LeftOut, NEIGHBOURS_KEY, NeighbourLine, OfflineMeta, offline_changes, tree_object_hashes,
     value_hash,
 };
+use ohl_session::part::PartSummary;
 use ohl_session::rights::{Permission, UserRights};
 use ohl_session::versions::{Bundle, MAIN, short};
-use ohl_session::working_set::{Extent, Pick, WORKING_SET_KEY, WorkingSetSpec};
+use ohl_session::working_set::{Extent, Pick, Replica, WORKING_SET_KEY, WorkingSetSpec};
 use ohl_session::{Command, Kind, Session};
 use ohl_store_pg::offline::OfflineExport;
 
 use super::NetHost;
 use crate::network_rights as nr;
-use crate::{BroughtBack, OfflineExported, Op};
+use crate::packager::{Caches, LibFiles};
+use crate::{BroughtBack, OfflineExported, OfflineFile, Op, TileKey};
 
 /// The largest reach an export takes, m (a plugin's reach's bound).
 pub(crate) const MAX_REACH: f64 = 10_000.0;
@@ -104,6 +107,182 @@ fn s(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// A neighbour line as an export takes it on the authority: its part as
+/// the session holds it, the library files its checks read (those the
+/// user sees) and, when a structure of it is typed, its structure types'
+/// library (merged in when the export is written).
+pub(super) struct NeighbourPlan {
+    model: String,
+    part: ohl_line::Line,
+    libraries: BTreeMap<String, BTreeMap<String, String>>,
+    types: Option<(u64, Arc<LibFiles>)>,
+}
+
+/// What an export's record and report need, decided on the authority.
+pub(crate) struct ExportHead {
+    pub(super) user: String,
+    pub(super) code: String,
+    pub(super) path: PathBuf,
+    number: i64,
+    base: String,
+    spec: WorkingSetSpec,
+    routes: Vec<String>,
+    reach: f64,
+    wanted: Vec<(Kind, String)>,
+    left_out: LeftOut,
+    recorded_first: bool,
+    neighbour_lines: usize,
+    neighbour_sections: usize,
+    started: Instant,
+    /// The file read back (base64) and removed by its writer: a client's
+    /// export, sent through the protocol.
+    pub(super) for_client: bool,
+}
+
+/// An export decided on the authority ([`NetHost::export_plan`]): what is
+/// left is writing it ([`write_export`]), on the exports' thread or on the
+/// authority — the same function either way.
+pub(super) struct ExportPlan {
+    pub(super) head: ExportHead,
+    replica: Replica,
+    meta: Vec<(String, String)>,
+    neighbours: Vec<NeighbourPlan>,
+    offline: OfflineMeta,
+    message: String,
+    /// The tiles of its area (the reach).
+    tiles: BTreeSet<TileKey>,
+    caches: Arc<Caches>,
+    work: PathBuf,
+}
+
+/// What an export holds, for the changes landing while it is written: its
+/// objects (the line's and its neighbours'), its lines, its area's tiles.
+#[derive(Default)]
+pub(super) struct Holds {
+    pub(super) objects: BTreeSet<(String, Kind, String)>,
+    pub(super) models: BTreeSet<String>,
+    pub(super) tiles: BTreeSet<TileKey>,
+}
+
+/// An export written ([`write_export`]).
+pub(crate) struct ExportWritten {
+    pub(super) head: ExportHead,
+    written: Result<(PartSummary, OfflineMeta, String), String>,
+    bytes: u64,
+    /// A client's export: the file, base64 (or why it cannot be sent).
+    pub(super) file: Option<Result<String, String>>,
+    pub(super) holds: Holds,
+}
+
+/// What changed on the network while an export was written, after its
+/// content was taken (phase 14): objects of it or within its reach (each
+/// once), and whether a line of it changed whole (its libraries).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Meanwhile {
+    pub(super) objects: usize,
+    pub(super) at_large: bool,
+}
+
+impl Meanwhile {
+    fn stale(&self) -> bool {
+        self.objects > 0 || self.at_large
+    }
+}
+
+/// A project file and its SQLite companions removed.
+pub(super) fn remove_project(path: &Path) {
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+}
+
+/// Writes an export decided on the authority (phase 14: on the exports'
+/// thread, or on the authority without one): the neighbours' structure
+/// types merged in, the meta, the project file with its export revision
+/// ([`Session::write_offline`]); for a client the file read back and
+/// removed. Reads nothing of the authority.
+pub(super) fn write_export(plan: ExportPlan) -> ExportWritten {
+    let ExportPlan {
+        head,
+        replica,
+        mut meta,
+        neighbours,
+        offline,
+        message,
+        tiles,
+        caches,
+        work,
+    } = plan;
+    let mut holds = Holds {
+        objects: replica
+            .rows
+            .iter()
+            .map(|r| (head.code.clone(), r.kind, r.id.clone()))
+            .collect(),
+        models: BTreeSet::from([head.code.clone()]),
+        tiles,
+    };
+    for n in &neighbours {
+        holds.models.insert(n.model.clone());
+        holds.objects.extend(
+            part_objects(&n.part)
+                .into_iter()
+                .map(|(k, id)| (n.model.clone(), k, id)),
+        );
+    }
+    let lines: Vec<NeighbourLine> = neighbours
+        .into_iter()
+        .map(|n| {
+            let line = match n.types {
+                Some((rev, files)) => {
+                    let libs =
+                        crate::packager::model_libs(&n.model, true, rev, files, &caches, &work);
+                    crate::packager::resolve_part(n.part, &libs).0
+                }
+                None => n.part,
+            };
+            NeighbourLine {
+                model: n.model,
+                line,
+                libraries: n.libraries,
+            }
+        })
+        .collect();
+    let written = serde_json::to_string(&lines).map_err(s).and_then(|text| {
+        meta.push((NEIGHBOURS_KEY.to_owned(), text));
+        Session::write_offline(replica, &head.path, &head.user, &meta, offline, &message)
+            .map_err(|e| format!("the offline working set: {e}"))
+    });
+    if written.is_err() {
+        remove_project(&head.path);
+    }
+    let bytes = std::fs::metadata(&head.path).map(|m| m.len()).unwrap_or(0);
+    let file = (head.for_client && written.is_ok()).then(|| {
+        let file = std::fs::read(&head.path)
+            .map_err(|e| e.to_string())
+            .and_then(|bytes| {
+                if bytes.len() * 4 / 3 + 4096 > crate::MAX_MESSAGE {
+                    Err(format!(
+                        "the offline working set is {:.0} MB: more than a message carries \
+                         (pick less, or ask for it with the command line on the server)",
+                        bytes.len() as f64 / 1e6
+                    ))
+                } else {
+                    Ok(crate::base64::encode(&bytes))
+                }
+            });
+        remove_project(&head.path);
+        file
+    });
+    ExportWritten {
+        head,
+        written,
+        bytes,
+        file,
+        holds,
+    }
+}
+
 impl NetHost {
     /// Whether every object of `part` (of model `code`) is seen by
     /// `rights`.
@@ -114,36 +293,36 @@ impl NetHost {
                 .all(|(k, id)| self.visible(rights, code, *k, id))
     }
 
-    /// What solving `sections` of model `code` reads, structure types
-    /// resolved.
+    /// What solving `sections` of model `code` reads, as the session's
+    /// line holds it: its structure types are merged in when the export
+    /// is written ([`write_export`]: on the exports' thread when the
+    /// server has one) — the same objects either way, a type merged into
+    /// its structure.
     fn neighbour_part(&mut self, code: &str, sections: &[String]) -> ohl_line::Line {
-        let work = self.copies.join("work").join("offline");
-        let caches = self.packager.caches.clone();
         let m = self.models.get_mut(code).expect("a model");
-        let line = m.session.line();
-        let mut structures: BTreeSet<String> = BTreeSet::new();
-        for id in sections {
-            if let Some(sec) = line.sections.iter().find(|x| &x.id == id) {
-                structures.extend(sec.points.iter().map(|p| p.structure.clone()));
-            }
-        }
+        let wanted: BTreeSet<&String> = sections.iter().collect();
+        let structures: BTreeSet<String> = m
+            .session
+            .line()
+            .sections
+            .iter()
+            .filter(|x| wanted.contains(&x.id))
+            .flat_map(|x| x.points.iter().map(|p| p.structure.clone()))
+            .collect();
         let structures: Vec<String> = structures.into_iter().collect();
-        let part = m.session.drawing_part(
+        m.session.drawing_part(
             &structures,
             sections,
             &[],
             ohl_session::interest::SOLVE_NEAR,
-        );
-        if !m.session.any_typed() {
-            return part;
-        }
-        let libs = crate::packager::model_libs(code, true, m.libs_rev, m.libs(), &caches, &work);
-        crate::packager::resolve_part(part, &libs).0
+        )
     }
 
     /// Exports working set `spec` of `user` (acting with `rights`) as an
     /// offline working set into the new project file `path`, its
-    /// neighbours taken within `reach` m (default the field distance).
+    /// neighbours taken within `reach` m (default the field distance) —
+    /// decided, written and recorded here, on the authority (the way
+    /// without the exports' thread, and the command line's).
     pub(super) fn offline_export(
         &mut self,
         user: &str,
@@ -152,6 +331,53 @@ impl NetHost {
         reach: Option<f64>,
         path: &Path,
     ) -> Result<OfflineExported, String> {
+        let plan = self.export_plan(user, rights, spec, reach, path, false)?;
+        let written = write_export(plan);
+        self.export_done(written, Meanwhile::default())
+    }
+
+    /// A client's export written here, on the authority (without the
+    /// exports' thread): its report and the file (base64), the file
+    /// removed.
+    pub(super) fn client_export_here(
+        &mut self,
+        user: &str,
+        rights: &UserRights,
+        spec: WorkingSetSpec,
+        reach: Option<f64>,
+        path: &Path,
+    ) -> Result<Box<OfflineFile>, String> {
+        let result = self
+            .export_plan(user, rights, spec, reach, path, true)
+            .and_then(|plan| {
+                let w = write_export(plan);
+                let file = w.file.clone();
+                let report = self.export_done(w, Meanwhile::default())?;
+                let file = file.ok_or("the file was not read back")??;
+                Ok(Box::new(OfflineFile { report, file }))
+            });
+        remove_project(path);
+        result
+    }
+
+    /// An export decided (phase 14: what the authority does of it before
+    /// the writing, on the exports' thread or here): the reach checked,
+    /// the working set seen whole and exportable by `rights`, main's
+    /// changes recorded first, the base taken; the neighbours within the
+    /// reach chosen by the rights; the replica, the meta and the export's
+    /// number taken — all in one moment, between two commands, so the
+    /// file is the base revision's working set and the neighbours as they
+    /// were then. `for_client`: the file read back and removed by the
+    /// writer (sent through the protocol).
+    pub(super) fn export_plan(
+        &mut self,
+        user: &str,
+        rights: &UserRights,
+        spec: WorkingSetSpec,
+        reach: Option<f64>,
+        path: &Path,
+        for_client: bool,
+    ) -> Result<ExportPlan, String> {
         let started = Instant::now();
         let reach = reach.unwrap_or(ohl_scope::reach::FIELD_DISTANCE);
         if !(reach.is_finite() && reach > 0.0 && reach <= MAX_REACH) {
@@ -283,8 +509,9 @@ impl NetHost {
         // Other lines' neighbours: their sections in the tiles of the
         // reach, what solving them reads.
         let mut by_model: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for t in self.tiles_of(&area) {
-            if let Some(st) = self.tiles.get(&t) {
+        let area_tiles = self.tiles_of(&area);
+        for t in &area_tiles {
+            if let Some(st) = self.tiles.get(t) {
                 for (m, k, id) in &st.objects {
                     if *k == Kind::Section && &**m != code.as_str() {
                         by_model
@@ -317,7 +544,12 @@ impl NetHost {
                 }
                 part = self.neighbour_part(&model, &seen);
             }
-            neighbour_sections += part.sections.iter().filter(|x| all.contains(&x.id)).count();
+            let asked: BTreeSet<&String> = all.iter().collect();
+            neighbour_sections += part
+                .sections
+                .iter()
+                .filter(|x| asked.contains(&x.id))
+                .count();
             let mut libraries: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
             for kind in NEIGHBOUR_LIBRARIES {
                 let files = self.models[&model].session.library_files(kind).map_err(s)?;
@@ -335,10 +567,13 @@ impl NetHost {
                     }
                 }
             }
-            neighbours.push(NeighbourLine {
+            let m = self.models.get_mut(&model).expect("a model");
+            let types = m.session.any_typed().then(|| (m.libs_rev, m.libs()));
+            neighbours.push(NeighbourPlan {
                 model,
-                line: part,
+                part,
                 libraries,
+                types,
             });
         }
         let number = self.net.next_offline_export().map_err(s)?;
@@ -383,10 +618,6 @@ impl NetHost {
                 "network.library_pins".to_owned(),
                 serde_json::to_string(&pins).map_err(s)?,
             ),
-            (
-                NEIGHBOURS_KEY.to_owned(),
-                serde_json::to_string(&neighbours).map_err(s)?,
-            ),
         ];
         let message = format!(
             "Offline working set {number} of {user}: {} (from revision {}, {time})",
@@ -397,62 +628,117 @@ impl NetHost {
                 .join(", "),
             short(&base)
         );
-        let written = Session::write_offline(replica, path, user, &meta, offline, &message);
-        let (summary, offline, tree) = match written {
-            Ok(w) => w,
-            Err(e) => {
-                let _ = std::fs::remove_file(path);
-                return Err(format!("the offline working set: {e}"));
-            }
-        };
+        Ok(ExportPlan {
+            head: ExportHead {
+                user: user.to_owned(),
+                code,
+                path: path.to_owned(),
+                number,
+                base,
+                spec,
+                routes,
+                reach,
+                wanted: extent.wanted.iter().cloned().collect(),
+                left_out,
+                recorded_first: !clean,
+                neighbour_lines: neighbours.len(),
+                neighbour_sections,
+                started,
+                for_client,
+            },
+            tiles: area_tiles.into_iter().collect(),
+            replica,
+            meta,
+            neighbours,
+            offline,
+            message,
+            caches: self.packager.caches.clone(),
+            work: self.copies.join("work").join("offline"),
+        })
+    }
+
+    /// An export written: recorded (schema 6: its revision and tree, no
+    /// object again) and audited here, on the authority; what changed on
+    /// the network while it was written (`meanwhile`) said in its report.
+    pub(super) fn export_done(
+        &mut self,
+        w: ExportWritten,
+        meanwhile: Meanwhile,
+    ) -> Result<OfflineExported, String> {
+        let ExportWritten {
+            head,
+            written,
+            bytes,
+            ..
+        } = w;
+        let (summary, offline, tree) = written?;
+        let path = &head.path;
         let record = OfflineExport {
-            id: number,
-            model: code.clone(),
-            user: user.to_owned(),
+            id: head.number,
+            model: head.code.clone(),
+            user: head.user.clone(),
             time: String::new(),
-            base: base.clone(),
+            base: head.base.clone(),
             export: offline.export.clone(),
             tree,
-            wanted: extent.wanted.iter().cloned().collect(),
-            routes: routes.clone(),
-            spec,
-            reach,
+            wanted: head.wanted.clone(),
+            routes: head.routes.clone(),
+            spec: head.spec.clone(),
+            reach: head.reach,
             brought_back: Vec::new(),
         };
         if let Err(e) = self.net.record_offline_export(&record) {
-            let _ = std::fs::remove_file(path);
+            remove_project(path);
             return Err(format!("the export was not recorded: {e}"));
         }
-        let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let changed = if meanwhile.stale() {
+            format!(
+                "; {} object(s) of it changed on the server while it was written{} (not in it)",
+                meanwhile.objects,
+                if meanwhile.at_large {
+                    ", a line of it changed whole"
+                } else {
+                    ""
+                }
+            )
+        } else {
+            String::new()
+        };
         let detail = format!(
-            "offline working set {number}: routes {}, base {}, export {}; {} objects, {} \
-             neighbour line(s) with {} section(s); left out (not seen): {} of other lines, {} \
-             of this line",
-            routes.join(", "),
-            short(&base),
+            "offline working set {}: routes {}, base {}, export {}; {} objects, {} neighbour \
+             line(s) with {} section(s); left out (not seen): {} of other lines, {} of this \
+             line{changed}",
+            head.number,
+            head.routes.join(", "),
+            short(&head.base),
             short(&offline.export),
             summary.wanted + summary.context,
-            neighbours.len(),
-            neighbour_sections,
-            left_out.other_lines,
-            left_out.this_line
+            head.neighbour_lines,
+            head.neighbour_sections,
+            head.left_out.other_lines,
+            head.left_out.this_line
         );
-        if let Err(e) = self.net.audit(user, "export working set", &code, &detail) {
+        if let Err(e) = self
+            .net
+            .audit(&head.user, "export working set", &head.code, &detail)
+        {
             super::log(&format!("the audit: {e}"));
         }
         Ok(OfflineExported {
-            model: code,
-            number,
+            model: head.code,
+            number: head.number,
             bytes,
             wanted: summary.wanted,
             context: summary.context,
-            neighbour_lines: neighbours.len(),
-            neighbour_sections,
-            left_out,
-            base,
+            neighbour_lines: head.neighbour_lines,
+            neighbour_sections: head.neighbour_sections,
+            left_out: head.left_out,
+            base: head.base,
             export: offline.export,
-            recorded_first: !clean,
-            seconds: started.elapsed().as_secs_f64(),
+            recorded_first: head.recorded_first,
+            seconds: head.started.elapsed().as_secs_f64(),
+            changed_meanwhile: meanwhile.objects,
+            stale: meanwhile.stale(),
         })
     }
 

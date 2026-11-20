@@ -25,6 +25,7 @@ mod links_run;
 mod network_bench;
 mod network_bench_library;
 mod network_bench_rights;
+mod network_bench_scale;
 mod network_bench_scoped;
 mod network_bench_versions;
 mod network_bench_ws;

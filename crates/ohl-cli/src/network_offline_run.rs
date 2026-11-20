@@ -210,13 +210,17 @@ fn ms(t: Instant) -> f64 {
 
 /// `bench-offline`: an offline working set of a whole route exported (its
 /// size and time), worked on (bundles of 20 and of 500 changes, their
-/// size and time) and brought back (its time on the server).
+/// size and time) and brought back (its time on the server); with
+/// `during_reach`, phase 14: a move's latency while the route is exported
+/// with that reach, on the authority and on the exports' thread
+/// ([`moves_during_export`]).
 pub fn bench(
     database: &str,
     user: &str,
     line: Option<String>,
     rounds: usize,
     work: &Path,
+    during_reach: Option<f64>,
 ) -> Result<Value, String> {
     let e = |x: ohl_store_pg::NetError| x.to_string();
     let net = ohl_store_pg::Network::connect(database).map_err(e)?;
@@ -330,10 +334,21 @@ pub fn bench(
     }
     server.stop();
     std::thread::sleep(Duration::from_millis(100));
+    let mut during = serde_json::Map::new();
+    if let Some(reach) = during_reach {
+        for (name, worker) in [("on_the_authority", false), ("on_the_thread", true)] {
+            eprintln!("bench-offline: moves while the route is exported ({name}, {reach} m)");
+            during.insert(
+                name.to_owned(),
+                moves_during_export(database, user, worker, &spec, reach, work)?,
+            );
+        }
+    }
     Ok(json!({
         "line": code,
         "route": route,
         "start_s": start_s,
+        "moves_during_an_export": during,
         "export": {
             "ms": summary(&export_ms),
             "server_ms": summary(&server_ms),
@@ -345,5 +360,178 @@ pub fn bench(
             "recorded_first": out.recorded_first,
         },
         "bundles": results,
+    }))
+}
+
+/// Phase 14: a move's latency (sent, applied, answered) by another user,
+/// again and again while the working set `spec` is exported for `user`
+/// with `reach` (the export written on the authority, as before, or on
+/// the exports' thread). The export through the command line's way (the
+/// network hosted here: no message's limit on the file), in a thread of
+/// its own; the mover is `bench-mover`, a designer of the network (made
+/// once). Every wait is bounded.
+pub fn moves_during_export(
+    database: &str,
+    user: &str,
+    worker: bool,
+    spec: &WorkingSetSpec,
+    reach: f64,
+    work: &Path,
+) -> Result<Value, String> {
+    use ohl_server::client::{Joined, NetJoin, join_network};
+    use ohl_server::{ClientMsg, ServerMsg};
+    let e = |x: ohl_store_pg::NetError| x.to_string();
+    let net = ohl_store_pg::Network::connect(database).map_err(e)?;
+    let mover = "bench-mover";
+    if !net.rights().map_err(e)?.users.contains_key(mover) {
+        use ohl_store_pg::rights::RightsCommand as R;
+        net.rights_command(
+            user,
+            &R::AddUser {
+                name: mover.into(),
+                display: None,
+            },
+        )
+        .map_err(e)?;
+        net.rights_command(
+            user,
+            &R::Assign {
+                subject: ohl_session::rights::Subject::User(mover.into()),
+                role: Some("designer".into()),
+                deny: false,
+                scope: ohl_session::rights::Scope::network(),
+                note: "bench-offline".into(),
+            },
+        )
+        .map_err(e)?;
+    }
+    // A structure of another line than the exported one, moved and back
+    // (a network of one model: its last structure).
+    let others: Vec<String> = net.lines().map_err(e)?.into_iter().map(|l| l.id).collect();
+    let (other, own) = match others.iter().rfind(|c| **c != spec.model) {
+        Some(c) => (c.clone(), false),
+        None => (spec.model.clone(), true),
+    };
+    let s = Session::open_on(Box::new(net.store(&other).map_err(e)?), &other)
+        .map_err(|x| x.to_string())?;
+    let st = if own {
+        s.line().structures.last()
+    } else {
+        s.line().structures.first()
+    }
+    .ok_or("no structure")?;
+    let (sid, p) = (st.id.clone(), st.position);
+    drop(s);
+    drop(net);
+    let server = Server::start_network(
+        Options {
+            bind: "127.0.0.1:0".parse().map_err(|_| "address")?,
+            code: Some(format!("offline-{}", std::process::id())),
+            newcomers: None,
+            ..Options::default()
+        },
+        NetOptions {
+            database: database.to_owned(),
+            idle_solve: false,
+            export_worker: worker,
+            ..NetOptions::default()
+        },
+    )?;
+    let mut moving = join_network(
+        &server.invitation_for(mover),
+        mover,
+        &NetJoin::default(),
+        &mut |_| {},
+    )?;
+    crate::network_bench::pump(&mut moving, Duration::from_secs(120), |m| {
+        matches!(m, ServerMsg::Network(_))
+    })?;
+    let mut id = 100;
+    let mut move_once = |j: &mut Joined, k: usize| -> Result<f64, String> {
+        id += 1;
+        let dx = if k.is_multiple_of(2) { 0.1 } else { 0.0 };
+        let started = Instant::now();
+        j.link
+            .send(ClientMsg::RequestOn {
+                id,
+                model: other.clone(),
+                op: ohl_server::Op::Do {
+                    command: Command::MoveStructure {
+                        id: sid.clone(),
+                        position: [p[0] + dx, p[1], p[2]],
+                    },
+                },
+                line: "main".into(),
+            })
+            .map_err(|e| e.to_string())?;
+        let want = id;
+        let got = crate::network_bench::pump(
+            j,
+            Duration::from_secs(600),
+            |m| matches!(m, ServerMsg::Response { id: i, .. } if *i == want),
+        )?;
+        match got.last() {
+            Some(ServerMsg::Response { result: Ok(_), .. }) => {
+                Ok(started.elapsed().as_secs_f64() * 1e3)
+            }
+            other => Err(format!("move refused: {other:?}")),
+        }
+    };
+    // A first export (the main line recorded, what an export reads made
+    // once), then the moves alone.
+    let first = work.join(format!("during-first-{worker}.ohl"));
+    let _ = std::fs::remove_file(&first);
+    export(&server, user, spec.clone(), Some(reach), &first)?;
+    let idle: Vec<f64> = (0..10)
+        .map(|k| move_once(&mut moving, k))
+        .collect::<Result<_, _>>()?;
+    let out = work.join(format!("during-{worker}.ohl"));
+    let _ = std::fs::remove_file(&out);
+    let mut during = Vec::new();
+    let mut k = 0;
+    let started = Instant::now();
+    let done = std::thread::scope(|s| -> Result<OfflineExported, String> {
+        let h = s.spawn(|| export(&server, user, spec.clone(), Some(reach), &out));
+        while !h.is_finished() {
+            if started.elapsed() > Duration::from_secs(1800) {
+                return Err("the export did not end in 30 minutes".into());
+            }
+            during.push(move_once(&mut moving, k)?);
+            k += 1;
+        }
+        h.join()
+            .map_err(|_| "the export's thread panicked".to_owned())?
+    })?;
+    let export_s = started.elapsed().as_secs_f64();
+    // The structure back where it was.
+    if k % 2 == 1 {
+        move_once(&mut moving, 1)?;
+    }
+    let stats: Value = serde_json::from_str(&server.probe(ohl_server::network::Probe::Stats)?)
+        .map_err(|e| e.to_string())?;
+    drop(moving);
+    server.stop();
+    for f in [&first, &out] {
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", f.display()));
+        }
+    }
+    Ok(json!({
+        "reach_m": reach,
+        "moved": format!("{other} {sid}"),
+        "export_s": export_s,
+        "export_server_s": done.seconds,
+        "bytes": done.bytes,
+        "wanted": done.wanted,
+        "context": done.context,
+        "neighbour_lines": done.neighbour_lines,
+        "neighbour_sections": done.neighbour_sections,
+        "stale": done.stale,
+        "changed_meanwhile": done.changed_meanwhile,
+        "export_plan_ms": stats["export_plan_ms"],
+        "moves_during": during.len(),
+        "move_ms_idle": summary(&idle),
+        "move_ms_during": summary(&during),
+        "move_ms_during_max": during.iter().cloned().fold(0.0, f64::max),
     }))
 }

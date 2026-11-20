@@ -165,7 +165,12 @@ pub(crate) fn serve(
     stats: &std::path::Path,
     extra: &[&str],
 ) -> Result<(Served, Invitation, Invitation, Invitation, f64), String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Phase 14: another program's server measured by this bench's clients
+    // (another version's, before against after).
+    let exe = match std::env::var_os("OHL_BENCH_SERVE_EXE") {
+        Some(p) => PathBuf::from(p),
+        None => std::env::current_exe().map_err(|e| e.to_string())?,
+    };
     let started = Instant::now();
     let mut child = Command::new(exe)
         .args(["network", "serve", "--bind", "127.0.0.1:0", "--code"])
