@@ -2585,8 +2585,8 @@ only where it helps):
   > complex cases"). (4) keep. (5) the order as a starting point, not a
   > fixed rule ("if it needs change to make it better it should not be a
   > fixed decision"): changed where the measurements show a better order
-  > or approach, with why. (6) trace it. (7) fix it. (6), (7) and the first
-  > of (5) built with L7 below.
+  > or approach, with why. (6) trace it. (7) fix it. (6) and the first of
+  > (5) built with L7 below, (7) traced there.
 - [x] L7. **An end seated where its member is drawn, the measured columns
   traced, the bent flats' bolts traced, the clashes after writing**
   (the owner's answers to L6 of 2026-11-20). **Built 2026-11-20, in active
