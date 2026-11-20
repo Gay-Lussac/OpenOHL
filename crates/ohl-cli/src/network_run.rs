@@ -77,6 +77,30 @@ pub enum NetworkCommand {
         #[command(subcommand)]
         command: crate::network_rights_run::RightsCommandArgs,
     },
+    /// The country libraries (phase 9): kinds locked for the whole
+    /// network, requests, releases, withdrawn entries, the lines' pins,
+    /// the use index, Update library pins.
+    Library {
+        #[command(subcommand)]
+        command: crate::network_library_run::LibraryCommandArgs,
+    },
+    /// Measure phase 9 on the network: a library released and every line
+    /// in design moved to it (Update library pins, twice: the files put,
+    /// then one entry changed), the use index made and queried, a move
+    /// with the use index kept. Needs the writer (no server running);
+    /// prints JSON. Edits the network (library files, pins, a structure
+    /// moved and back).
+    BenchLibrary {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// The network admin (made one when the network has none).
+        #[arg(long)]
+        user: String,
+        /// Uses-index queries timed.
+        #[arg(long, default_value_t = 20)]
+        queries: usize,
+    },
     /// The network's lines, its schema and size.
     Lines {
         /// Database (default: OHL_DATABASE_URL).
@@ -276,6 +300,19 @@ pub(crate) fn database(given: Option<String>) -> Result<String, String> {
 pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
         NetworkCommand::Rights { command } => crate::network_rights_run::run(command),
+        NetworkCommand::Library { command } => crate::network_library_run::run(command),
+        NetworkCommand::BenchLibrary {
+            database: db,
+            user,
+            queries,
+        } => {
+            let report = crate::network_bench_library::bench(&database(db)?, &user, queries)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::Serve {
             database: db,
             bind,

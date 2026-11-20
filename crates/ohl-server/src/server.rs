@@ -830,6 +830,12 @@ impl Authority {
         op: Op,
         line: String,
     ) -> Result<(), String> {
+        if matches!(op, Op::UpdateLibraryPins { .. } | Op::LibraryPins { .. }) {
+            return Err(format!(
+                "library pins are a network's (phase 9); {}",
+                FILE_MODE.split(':').next().unwrap_or(FILE_MODE)
+            ));
+        }
         // Soft locks: others' objects are refused (admins pass).
         let admin = self.session.role(user).map_err(|e| e.to_string())? == Some(Role::Admin);
         if !admin && self.common.locks.values().any(|u| u != user) {

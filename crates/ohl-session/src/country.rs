@@ -422,7 +422,11 @@ diameter = "12 mm"
             ["a", "b"]
         );
         assert_eq!(e[0].list.as_deref(), Some("cable"));
-        let one = entries("t.ohls", "id = \"T1\"\nname = \"T\"\n[[point]]\nid = \"p\"\n").unwrap();
+        let one = entries(
+            "t.ohls",
+            "id = \"T1\"\nname = \"T\"\n[[point]]\nid = \"p\"\n",
+        )
+        .unwrap();
         assert_eq!(one.len(), 1);
         assert_eq!(one[0].id, "T1");
         assert_eq!(one[0].list, None);
@@ -434,9 +438,10 @@ diameter = "12 mm"
     #[test]
     fn a_version_is_the_values_not_the_layout() {
         let a = entries("x.ohlw", CABLES).unwrap();
-        let reordered = CABLES
-            .replace("# a comment\n", "")
-            .replace("id = \"a\"\ndiameter = \"10 mm\"", "diameter = \"10 mm\"\nid = \"a\"");
+        let reordered = CABLES.replace("# a comment\n", "").replace(
+            "id = \"a\"\ndiameter = \"10 mm\"",
+            "diameter = \"10 mm\"\nid = \"a\"",
+        );
         let b = entries("x.ohlw", &reordered).unwrap();
         assert_eq!(a, b);
         let changed = CABLES.replace("r = 1.5", "r = 1.6");

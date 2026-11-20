@@ -106,6 +106,10 @@ pub fn changes_scene(op: &Op, line: &str) -> bool {
         Op::PutLibrary { kind, .. } | Op::DeleteLibrary { kind, .. } => {
             SCENE_LIBRARIES.contains(&kind.as_str())
         }
+        Op::LibraryPins { changes, .. } => changes
+            .iter()
+            .any(|(kind, _, _)| SCENE_LIBRARIES.contains(&kind.as_str())),
+        Op::UpdateLibraryPins { .. } => main,
         // Version control: these replace the working state (line and
         // libraries).
         Op::BringIn { .. } | Op::Merge { .. } | Op::Revert { .. } => main,

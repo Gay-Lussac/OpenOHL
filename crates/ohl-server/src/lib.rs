@@ -314,6 +314,31 @@ pub enum Op {
         /// Grant id.
         id: i64,
     },
+    /// **Update library pins** (a network's server, phase 9): the line's
+    /// library files moved to the network's releases — every kind
+    /// released (`kinds` empty) or those named, to the latest or to
+    /// `release` (one kind). The server carries it out as
+    /// [`Op::LibraryPins`].
+    UpdateLibraryPins {
+        /// The kinds (empty: every kind released).
+        #[serde(default)]
+        kinds: Vec<String>,
+        /// The release (one kind; none: the latest).
+        #[serde(default)]
+        release: Option<String>,
+    },
+    /// Update library pins as the network's server carried it out: what
+    /// it broadcasts and the replicas replay (never asked by a client).
+    LibraryPins {
+        /// The pins after (kind → release).
+        pins: BTreeMap<String, String>,
+        /// The library files changed (kind, name, text — none: removed).
+        changes: Vec<(String, String, Option<String>)>,
+        /// The routes whose results go out of date, with their notice.
+        stale: BTreeMap<String, String>,
+        /// The log entry's words.
+        note: String,
+    },
 }
 
 impl Op {
@@ -437,6 +462,21 @@ impl Op {
             Op::MergeReview { id, .. } => format!("review #{id} merged"),
             Op::Grant { grant } => format!("{} may edit {}", grant.subject, grant.describe()),
             Op::Revoke { id } => format!("grant {id} revoked"),
+            Op::UpdateLibraryPins { kinds, .. } => format!(
+                "library pins updated ({})",
+                if kinds.is_empty() {
+                    "every kind".to_owned()
+                } else {
+                    kinds.join(", ")
+                }
+            ),
+            Op::LibraryPins { pins, .. } => format!(
+                "library pins: {}",
+                pins.iter()
+                    .map(|(k, r)| format!("{k} → {r}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -608,6 +648,17 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
             session.revoke(user, *id)?;
             None
         }
+        Op::UpdateLibraryPins { .. } => {
+            return Err(SessionError::Refused(
+                "library pins are a network's: its server updates them".into(),
+            ));
+        }
+        Op::LibraryPins {
+            changes,
+            stale,
+            note,
+            ..
+        } => session.library_pins_update(user, changes, stale, note)?,
     })
 }
 
@@ -1451,6 +1502,8 @@ pub fn random_code(n: usize) -> String {
         .collect()
 }
 
+#[cfg(all(test, feature = "network"))]
+mod library_tests;
 #[cfg(all(test, feature = "network"))]
 mod network_tests;
 #[cfg(test)]

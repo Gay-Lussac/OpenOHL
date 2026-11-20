@@ -457,8 +457,7 @@ pub fn import(
         // What each element uses of the libraries (phase 9), and the
         // file's library entries mapped onto the network's library.
         net.write_uses(code, &[], &use_rows)?;
-        let mapping =
-            crate::library::map_import(net, code, &options.user, &file, &lib_files)?;
+        let mapping = crate::library::map_import(net, code, &options.user, &file, &lib_files)?;
         let mut users = users.clone();
         if !users.iter().any(|(n, _)| n == &options.user) {
             users.push((options.user.clone(), Role::Admin));
@@ -788,11 +787,7 @@ impl ImportReport {
                 self.libraries.len()
             );
             for m in self.libraries.iter().take(40) {
-                let _ = writeln!(
-                    out,
-                    "    {}/{} {}: {}",
-                    m.kind, m.file, m.entry, m.outcome
-                );
+                let _ = writeln!(out, "    {}/{} {}: {}", m.kind, m.file, m.entry, m.outcome);
             }
             if self.libraries.len() > 40 {
                 let _ = writeln!(out, "    … {} more", self.libraries.len() - 40);

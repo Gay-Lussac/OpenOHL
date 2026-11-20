@@ -31,6 +31,7 @@ use std::sync::{Arc, RwLock};
 use ohl_core::grid::Bounds;
 use ohl_session::rights::{HIDDEN_REFUSAL, Permission, Placement, Target, UserRights, words};
 use ohl_session::{Kind, Role, RoleSource, Session};
+use ohl_store_pg::library::LibraryState;
 
 use crate::Op;
 
@@ -264,7 +265,67 @@ pub(crate) fn need(op: &Op) -> Need {
             "on a network, users and their rights are the network's (ohl network rights …, by \
              an admin)",
         ),
+        // Phase 9: the server plans it (and checks its plan: each file's
+        // edit, a built line's review) and carries it out as LibraryPins,
+        // whose files are decided after as any object.
+        Op::UpdateLibraryPins { .. } => Need::Refused(
+            "Update library pins is carried out by the network's server as it plans it",
+        ),
+        Op::LibraryPins { .. } => Need::Objects,
     }
+}
+
+/// Phase 9: what the libraries need of an operation on project line
+/// `branch` of model `line` before it runs — a library file of a locked
+/// kind or a draft by [`LibraryState::check_file`]; a branch holding a
+/// pending draft not submitted for review nor merged into main.
+pub(crate) fn check_library_need(
+    lib: &LibraryState,
+    user: &str,
+    line: &str,
+    branch: &str,
+    op: &Op,
+    s: &Session,
+) -> Result<(), String> {
+    let main = ohl_session::versions::MAIN;
+    let blocked = |from: &str| -> Result<(), String> {
+        // A tag or a revision: its library files are decided as they come
+        // in (a draft reaching main pending is refused then).
+        let Ok(files) = s.line_library_all(from) else {
+            return Ok(());
+        };
+        let pending = lib.pending_drafts(&files);
+        if pending.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "project line {from} holds pending library drafts ({}): it is not reviewed or \
+                 merged into {main} until they are granted, or taken out of it",
+                pending.join(", ")
+            ))
+        }
+    };
+    match op {
+        Op::PutLibrary { kind, name, text } => {
+            lib.check_file(user, line, branch, kind, name, Some(text))
+        }
+        Op::DeleteLibrary { kind, name } => lib.check_file(user, line, branch, kind, name, None),
+        Op::SubmitReview { branch: from, .. } => blocked(from),
+        Op::Merge { other, .. } if branch == main => blocked(other),
+        Op::BringIn { from, .. } if branch == main => blocked(from),
+        _ => Ok(()),
+    }
+}
+
+/// Phase 9: how the objects a command changed are decided for the
+/// libraries — its library files by [`LibraryState::check_file`] (but
+/// Update library pins', the server's own), and no element starting to
+/// use a withdrawn entry.
+pub(crate) struct LibCheck<'a> {
+    pub(crate) state: &'a LibraryState,
+    pub(crate) branch: &'a str,
+    pub(crate) pins: bool,
+    pub(crate) net: &'a ohl_store_pg::Network,
 }
 
 /// Decides operation `op` of `rights` on model `line` before it runs.
@@ -340,10 +401,14 @@ pub(crate) fn check_objects(
     s: &mut Session,
     before: &Places,
     changed: &[(Kind, String)],
+    lib: Option<&LibCheck>,
 ) -> Result<(), String> {
     let mut after = Places::default();
     after.update(s, changed);
     let user = rights.user();
+    if let Some(lib) = lib {
+        check_library_objects(lib, user, line, s, changed)?;
+    }
     for (kind, id) in changed {
         let b = before.get(*kind, id);
         let existed = b.is_some() || (*kind == Kind::Meta);
@@ -371,6 +436,55 @@ pub(crate) fn check_objects(
                 decided(Permission::Edit, a)?;
             }
             (false, false) => {}
+        }
+    }
+    Ok(())
+}
+
+/// The libraries' side of the objects a command changed ([`LibCheck`]).
+fn check_library_objects(
+    lib: &LibCheck,
+    user: &str,
+    line: &str,
+    s: &Session,
+    changed: &[(Kind, String)],
+) -> Result<(), String> {
+    for (kind, id) in changed {
+        let value = s.object_value(*kind, id);
+        match kind {
+            Kind::Library if !lib.pins => {
+                let Some((k, name)) = id.split_once('/') else {
+                    continue;
+                };
+                let text = value
+                    .as_ref()
+                    .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_owned));
+                lib.state
+                    .check_file(user, line, lib.branch, k, name, text.as_deref())?;
+            }
+            Kind::Section | Kind::Jumper | Kind::Structure | Kind::Spacer => {
+                let Some(v) = value else {
+                    continue;
+                };
+                let uses = ohl_session::country::uses_of(*kind, &v);
+                for (k, entry) in uses {
+                    if !lib.state.withdrawn.contains(&(k.to_owned(), entry.clone())) {
+                        continue;
+                    }
+                    let before = lib
+                        .net
+                        .used_before(line, *kind, id, k, &entry)
+                        .map_err(|e| e.to_string())?;
+                    if !before {
+                        return Err(format!(
+                            "entry {entry} of library {k} is withdrawn: {} {id} may not start \
+                             using it (pick another)",
+                            kind.as_str()
+                        ));
+                    }
+                }
+            }
+            _ => {}
         }
     }
     Ok(())
@@ -485,5 +599,23 @@ mod tests {
         assert!(matches!(rules[5], Need::Refused(_)));
         assert_eq!(rules[6], Need::Line(&[Permission::Lock]));
         assert_eq!(rules[7], Need::Line(&[Permission::Review]));
+        // Phase 9: Update library pins planned by the server; what it
+        // carries out decided by its objects.
+        assert!(matches!(
+            need(&Op::UpdateLibraryPins {
+                kinds: Vec::new(),
+                release: None
+            }),
+            Need::Refused(_)
+        ));
+        assert_eq!(
+            need(&Op::LibraryPins {
+                pins: Default::default(),
+                changes: Vec::new(),
+                stale: Default::default(),
+                note: String::new(),
+            }),
+            Need::Objects
+        );
     }
 }

@@ -788,7 +788,12 @@ fn the_country_library_is_of_no_line() {
         ));
     }
     // A network admin: everything.
-    let d = data(vec![grant(1, "user:ann", "network_admin", Scope::network())]);
+    let d = data(vec![grant(
+        1,
+        "user:ann",
+        "network_admin",
+        Scope::network(),
+    )]);
     let ann = d.compile("ann", &NoModels);
     assert!(ann.allows(Permission::Lock, &costs));
 }

@@ -1041,7 +1041,11 @@ fn library_pins_move_as_one_entry_marking_routes_stale() {
     let stale: BTreeMap<String, String> =
         [(route.clone(), "cables release R2: a changed".to_owned())].into();
     let changes = vec![
-        ("cables".to_owned(), "new.ohlw".to_owned(), Some("y = 2".to_owned())),
+        (
+            "cables".to_owned(),
+            "new.ohlw".to_owned(),
+            Some("y = 2".to_owned()),
+        ),
         ("cables".to_owned(), "old.ohlw".to_owned(), None),
     ];
     // A viewer may not.
@@ -1066,7 +1070,10 @@ fn library_pins_move_as_one_entry_marking_routes_stale() {
         entry.note
     );
     let marks = s.stale_routes().unwrap();
-    assert_eq!(marks[&route].notices[0].what, "cables release R2: a changed");
+    assert_eq!(
+        marks[&route].notices[0].what,
+        "cables release R2: a changed"
+    );
     // Already so: nothing.
     assert!(
         s.library_pins_update("ben", &changes, &stale, "again")

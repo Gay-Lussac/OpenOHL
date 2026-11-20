@@ -132,8 +132,20 @@ fn country_libraries_through_the_rights() {
         )
         .unwrap();
     }
-    assign(&net, "user:mia", Some("library_maintainer"), false, of_kind("cables"));
-    assign(&net, "user:max", Some("library_maintainer"), false, of_kind("cables"));
+    assign(
+        &net,
+        "user:mia",
+        Some("library_maintainer"),
+        false,
+        of_kind("cables"),
+    );
+    assign(
+        &net,
+        "user:max",
+        Some("library_maintainer"),
+        false,
+        of_kind("cables"),
+    );
     assign(&net, "user:dan", Some("designer"), false, Scope::network());
     assign(&net, "user:eve", Some("viewer"), false, Scope::line("A"));
     let cmd = |actor: &str, c: L| net.library_command(actor, &c).map_err(|e| e.to_string());
@@ -233,8 +245,17 @@ fn country_libraries_through_the_rights() {
             },
         )
     };
-    assert!(release("dan", "R1").unwrap_err().contains("not a maintainer"));
-    assert!(release("mia", "R1").unwrap().text.contains("no line changed"));
+    assert!(
+        release("dan", "R1")
+            .unwrap_err()
+            .contains("not a maintainer")
+    );
+    assert!(
+        release("mia", "R1")
+            .unwrap()
+            .text
+            .contains("no line changed")
+    );
     assert!(release("mia", "R1b").unwrap_err().contains("not changed"));
 
     // A request for an addition, its draft used in ben's own branch.
@@ -262,9 +283,17 @@ fn country_libraries_through_the_rights() {
             },
         )
     };
-    assert!(ask("ben", Some("main"), false).unwrap_err().contains("never in main"));
+    assert!(
+        ask("ben", Some("main"), false)
+            .unwrap_err()
+            .contains("never in main")
+    );
     assert!(ask("ben", Some("a1"), false).unwrap_err().contains("own"));
-    assert!(ask("eve", None, false).unwrap_err().contains("may not request"));
+    assert!(
+        ask("eve", None, false)
+            .unwrap_err()
+            .contains("may not request")
+    );
     let done = net
         .library_command(
             "ben",
@@ -317,7 +346,9 @@ fn country_libraries_through_the_rights() {
     assert_eq!(as_mia[0].line, None, "mia sees nothing of line A");
     assert!(as_mia[0].reason.contains("no access"));
     assert_eq!(
-        net.library_requests(&rights(&net, "zoe")).unwrap()[0].line.as_deref(),
+        net.library_requests(&rights(&net, "zoe")).unwrap()[0]
+            .line
+            .as_deref(),
         Some("A")
     );
 
@@ -326,12 +357,19 @@ fn country_libraries_through_the_rights() {
     let state = net.library_state().unwrap();
     let draft = state.requests[&id].draft_name();
     let text = state.requests[&id].text.clone();
-    assert!(text.contains("new-cable") && !text.contains(DRAKE), "{text}");
+    assert!(
+        text.contains("new-cable") && !text.contains(DRAKE),
+        "{text}"
+    );
     let check = |s: &ohl_store_pg::library::LibraryState, who: &str, branch: &str, t: &str| {
         s.check_file(who, "A", branch, "cables", &draft, Some(t))
     };
     check(&state, "ben", "b1", &text).unwrap();
-    assert!(check(&state, "ben", "main", &text).unwrap_err().contains("blocks the merge"));
+    assert!(
+        check(&state, "ben", "main", &text)
+            .unwrap_err()
+            .contains("blocks the merge")
+    );
     assert!(check(&state, "ana", "b1", &text).is_err());
     assert!(check(&state, "ben", "b1", "x = 1").is_err());
     assert!(
@@ -362,11 +400,14 @@ fn country_libraries_through_the_rights() {
     let state = net.library_state().unwrap();
     check(&state, "zoe", "main", &text).unwrap();
     assert!(state.pending_drafts(&files).is_empty());
-    let head = net
-        .library_files(&rights(&net, "mia"), "cables")
-        .unwrap();
+    let head = net.library_files(&rights(&net, "mia"), "cables").unwrap();
     assert!(head[0].entries.iter().any(|e| e.0 == "new-cable"));
-    assert!(release("max", "R2").unwrap().text.contains("1 line(s) in design"));
+    assert!(
+        release("max", "R2")
+            .unwrap()
+            .text
+            .contains("1 line(s) in design")
+    );
 
     // Update library pins: the line's own file becomes the release's.
     let mut s = session(&net, "ben");
@@ -379,13 +420,13 @@ fn country_libraries_through_the_rights() {
         .expect("changed");
     assert_eq!(a.objects.len(), 1);
     assert_eq!(s.log().unwrap().pop().unwrap().kind, "library_pins");
-    let status = net
-        .library_status(&rights(&net, "ben"), Some("A"))
-        .unwrap();
+    let status = net.library_status(&rights(&net, "ben"), Some("A")).unwrap();
     let cables = status[0].kinds.iter().find(|k| k.kind == "cables").unwrap();
     assert_eq!((cables.pinned.as_deref(), cables.behind), (Some("R2"), 0));
     assert_eq!(
-        net.library_state().unwrap().requests[&id].released.as_deref(),
+        net.library_state().unwrap().requests[&id]
+            .released
+            .as_deref(),
         Some("R2")
     );
 
@@ -425,7 +466,12 @@ fn country_libraries_through_the_rights() {
     .unwrap();
     let plan = plan_pins(&net, &mut s, "A", None, None).unwrap();
     let k = plan.kinds.iter().find(|k| k.kind == "cables").unwrap();
-    assert_eq!(k.used_changed, vec![DRAKE.to_owned()], "{}", plan.describe());
+    assert_eq!(
+        k.used_changed,
+        vec![DRAKE.to_owned()],
+        "{}",
+        plan.describe()
+    );
     assert!(!k.stale_routes.is_empty());
     assert!(plan.built);
     let e = check_pin_rights(&rights(&net, "ben"), &plan).unwrap_err();
@@ -485,10 +531,7 @@ fn country_libraries_through_the_rights() {
     let cables = status[0].kinds.iter().find(|k| k.kind == "cables").unwrap();
     assert_eq!(cables.withdrawn_used, vec![DRAKE.to_owned()]);
     let state = net.library_state().unwrap();
-    assert_eq!(
-        state.withdrawn_in(&[("cables", DRAKE.to_owned())]).len(),
-        1
-    );
+    assert_eq!(state.withdrawn_in(&[("cables", DRAKE.to_owned())]).len(), 1);
 
     // The use index through the rights: liz sees the wires but no line —
     // no use; rob sees line A and the wires — every use; ria a route —
@@ -515,15 +558,28 @@ fn country_libraries_through_the_rights() {
     assign(&net, "user:kim", Some("viewer"), false, structures);
     let all = net.uses(&rights(&net, "zoe"), "cables", DRAKE).unwrap();
     assert!(all.len() >= 4, "{all:?}");
-    assert!(net.uses(&rights(&net, "liz"), "cables", DRAKE).unwrap().is_empty());
+    assert!(
+        net.uses(&rights(&net, "liz"), "cables", DRAKE)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(
-        net.uses(&rights(&net, "rob"), "cables", DRAKE).unwrap().len(),
+        net.uses(&rights(&net, "rob"), "cables", DRAKE)
+            .unwrap()
+            .len(),
         all.len()
     );
     let ria = net.uses(&rights(&net, "ria"), "cables", DRAKE).unwrap();
     assert!(!ria.is_empty() && ria.len() < all.len(), "{ria:?}");
-    assert!(ria.iter().all(|u| u.routes == vec!["branch".to_owned()]), "{ria:?}");
-    assert!(net.uses(&rights(&net, "kim"), "cables", DRAKE).unwrap().is_empty());
+    assert!(
+        ria.iter().all(|u| u.routes == vec!["branch".to_owned()]),
+        "{ria:?}"
+    );
+    assert!(
+        net.uses(&rights(&net, "kim"), "cables", DRAKE)
+            .unwrap()
+            .is_empty()
+    );
     let none = net
         .uses(&rights(&net, "rob"), "cables", "no-such-wire")
         .unwrap_err()
@@ -542,9 +598,18 @@ fn country_libraries_through_the_rights() {
     );
     // Nor listed in the files, nor among the kinds' withdrawn entries.
     let rob_files = net.library_files(&rights(&net, "rob"), "cables").unwrap();
-    assert!(rob_files.iter().all(|f| f.entries.iter().all(|e| e.0 != DRAKE)));
+    assert!(
+        rob_files
+            .iter()
+            .all(|f| f.entries.iter().all(|e| e.0 != DRAKE))
+    );
     let rob_status = net.library_status(&rights(&net, "rob"), Some("A")).unwrap();
-    assert!(rob_status[0].kinds.iter().all(|k| k.withdrawn_used.is_empty()));
+    assert!(
+        rob_status[0]
+            .kinds
+            .iter()
+            .all(|k| k.withdrawn_used.is_empty())
+    );
     // Eve sees line A but not the network's library: no entry found.
     assert!(net.uses(&rights(&net, "eve"), "cables", DRAKE).is_err());
     assert!(net.library_kinds(&rights(&net, "eve")).unwrap().is_empty());
@@ -559,13 +624,21 @@ fn country_libraries_through_the_rights() {
     let f = Session::open_read_only(&out).unwrap();
     assert!(f.library_files("cables").unwrap()[0].1.contains("1.109 in"));
     let pins = f.file_meta("network.library_pins").unwrap().unwrap();
-    assert!(pins.contains("\"cables\": \"R3\"") || pins.contains("\"cables\":\"R3\""), "{pins}");
+    assert!(
+        pins.contains("\"cables\": \"R3\"") || pins.contains("\"cables\":\"R3\""),
+        "{pins}"
+    );
     let w = f.file_meta("network.library_withdrawn").unwrap().unwrap();
     assert!(w.contains(DRAKE), "{w}");
 
     // Every change and refusal in the audit.
     let audit = net.audit_rows().unwrap();
-    for action in ["library.lock", "library.release", "library.grant", "library.pins"] {
+    for action in [
+        "library.lock",
+        "library.release",
+        "library.grant",
+        "library.pins",
+    ] {
         assert!(audit.iter().any(|r| r[2] == action), "{action}");
     }
     assert!(

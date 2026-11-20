@@ -457,6 +457,9 @@ pub(crate) struct NetHost {
     compiled: Compiled,
     parts: HashMap<nr::PartKey, (u64, nr::Members)>,
     regions: BTreeMap<String, BTreeSet<String>>,
+    /// Phase 9: the libraries' locks, requests and withdrawn entries as
+    /// read (at their revision).
+    lib: Arc<ohl_store_pg::library::LibraryState>,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -493,6 +496,7 @@ impl NetHost {
             ohl_core::units::Temperature::from_celsius(celsius),
         ));
         let rights = net.rights().map_err(|e| e.to_string())?;
+        let lib = Arc::new(net.library_state().map_err(|e| e.to_string())?);
         let copies = crate::private_temp_dir("ohl-network")?;
         let caches = Arc::new(Caches::new(o.shapes_mb, o.resolved_models));
         let packager = Packager::start(o.packagers, caches, jobs, copies.join("work"))?;
@@ -537,6 +541,7 @@ impl NetHost {
             compiled: Compiled::default(),
             parts: HashMap::new(),
             regions: BTreeMap::new(),
+            lib,
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -589,6 +594,17 @@ impl NetHost {
                 );
                 match written {
                     Ok(()) => self.net.commit_unit().map_err(e)?,
+                    Err(x) => {
+                        let _ = self.net.roll_back_unit();
+                        return Err(x.to_string());
+                    }
+                }
+            }
+            // Imported before the use index (schema 5): made once.
+            if self.net.uses_missing(&row.id).map_err(e)? {
+                self.net.begin_unit().map_err(e)?;
+                match self.net.reindex_uses(&row.id, &session) {
+                    Ok(_) => self.net.commit_unit().map_err(e)?,
                     Err(x) => {
                         let _ = self.net.roll_back_unit();
                         return Err(x.to_string());
@@ -890,7 +906,36 @@ impl NetHost {
     /// job and with each heartbeat): read again, every user's compiled
     /// again when needed; a client whose rights changed is let go (it
     /// holds what it may no longer see, or follows what it may now).
+    /// Phase 9: the libraries' locks, requests and withdrawn entries read
+    /// again when a library change moved their revision.
+    fn refresh_library(&mut self) {
+        let rev = match self.net.library_rev() {
+            Ok(r) => r,
+            Err(e) => {
+                log(&format!("the libraries' revision: {e}"));
+                return;
+            }
+        };
+        if rev == self.lib.rev {
+            return;
+        }
+        match self.net.library_state() {
+            Ok(l) => {
+                log(&format!(
+                    "libraries read again (revision {rev}): {} kinds locked, {} requests, {} \
+                     withdrawn entries",
+                    l.locked_kinds.len(),
+                    l.requests.len(),
+                    l.withdrawn.len()
+                ));
+                self.lib = Arc::new(l);
+            }
+            Err(e) => log(&format!("reading the libraries again: {e}")),
+        }
+    }
+
     fn refresh_rights(&mut self) {
+        self.refresh_library();
         let rev = match self.net.rights_rev() {
             Ok(r) => r,
             Err(e) => {
@@ -1999,6 +2044,20 @@ impl NetHost {
             .or_else(|| c.model.clone())
             .ok_or("name the line (model) of the network the edit is on")?;
         let rights = self.rights_of(user);
+        // Phase 9: Update library pins planned here and carried out as the
+        // server plans it; its carried-out form is never a client's.
+        let op = match op {
+            Op::LibraryPins { .. } => {
+                return Err(
+                    "refused: library pins move by Update library pins (the server plans it)"
+                        .into(),
+                );
+            }
+            Op::UpdateLibraryPins { kinds, release } => self
+                .plan_library_pins(&rights, &model, &line, &kinds, release.as_deref())
+                .map_err(|e| self.sanitise(&rights, &e))?,
+            op => op,
+        };
         let m = self
             .models
             .get(&model)
@@ -2011,6 +2070,47 @@ impl NetHost {
         }
         self.apply(Some((client, id)), user, &model, &line, op)
             .map_err(|e| self.sanitise(&rights, &e))
+    }
+
+    /// Phase 9: Update library pins of model `code`, planned on its main
+    /// branch and checked by the rights (each file's edit, a built line's
+    /// review): the operation the server then carries out.
+    fn plan_library_pins(
+        &mut self,
+        rights: &UserRights,
+        code: &str,
+        line: &str,
+        kinds: &[String],
+        release: Option<&str>,
+    ) -> Result<Op, String> {
+        if line != ohl_session::versions::MAIN {
+            return Err("refused: library pins are of the main branch".into());
+        }
+        let m = self
+            .models
+            .get_mut(code)
+            .ok_or_else(|| format!("the network has no line {code}"))?;
+        let plan = ohl_store_pg::library::plan_pins(
+            &self.net,
+            &mut m.session,
+            code,
+            (!kinds.is_empty()).then_some(kinds),
+            release,
+        )
+        .map_err(|e| e.to_string())?;
+        if let Err(why) = ohl_store_pg::library::check_pin_rights(rights, &plan) {
+            self.audit_refused(rights.user(), &format!("{code}: library pins"), &why);
+            return Err(format!("refused: {why}"));
+        }
+        if !plan.moves() {
+            return Err(format!("nothing to update: {}", plan.describe()));
+        }
+        Ok(Op::LibraryPins {
+            pins: plan.pins(),
+            changes: plan.changes(),
+            stale: plan.stale(),
+            note: plan.note(),
+        })
     }
 
     /// Applies `op` of `user` on project line `line` of model `code` as one
@@ -2037,8 +2137,17 @@ impl NetHost {
             self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
             return Err(format!("refused: {why}"));
         }
+        if let Err(why) =
+            nr::check_library_need(&self.lib, user, code, line, &op, &self.models[code].session)
+        {
+            self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
+            return Err(format!("refused: {why}"));
+        }
         let mut check_us = checking.elapsed().as_secs_f64() * 1e6;
         self.net.begin_unit().map_err(|e| e.to_string())?;
+        let lib = self.lib.clone();
+        let net = &self.net;
+        let pins = matches!(op, Op::LibraryPins { .. });
         let m = self.models.get_mut(code).expect("checked");
         let Model {
             session, places, ..
@@ -2047,7 +2156,13 @@ impl NetHost {
         let mut objects_us = 0.0;
         let executed = crate::execute_checked(session, user, line, &op, |s, a| {
             let t = Instant::now();
-            let decided = nr::check_objects(&rights, code, s, places, &a.objects);
+            let check = nr::LibCheck {
+                state: &lib,
+                branch: line,
+                pins,
+                net,
+            };
+            let decided = nr::check_objects(&rights, code, s, places, &a.objects, Some(&check));
             objects_us = t.elapsed().as_secs_f64() * 1e6;
             decided.map_err(|why| {
                 refusal = Some(why.clone());
@@ -2099,8 +2214,11 @@ impl NetHost {
                     | Op::RenameLine { .. }
                     | Op::DeleteLine { .. }
             );
-        let library_op =
-            line == main && matches!(op, Op::PutLibrary { .. } | Op::DeleteLibrary { .. });
+        let library_op = line == main
+            && matches!(
+                op,
+                Op::PutLibrary { .. } | Op::DeleteLibrary { .. } | Op::LibraryPins { .. }
+            );
         let on_main = applied.as_ref().filter(|_| line == main);
         if on_main.is_some() || whole_op || library_op {
             let changed: BTreeSet<(Kind, String)> = on_main
@@ -2169,7 +2287,13 @@ impl NetHost {
         // What changed of the main branch.
         let library = matches!(op,
             Op::PutLibrary { kind, .. } | Op::DeleteLibrary { kind, .. }
-                if crate::web::SCENE_LIBRARIES.contains(&kind.as_str()));
+                if crate::web::SCENE_LIBRARIES.contains(&kind.as_str()))
+            || matches!(op, Op::LibraryPins { changes, .. }
+                if changes.iter().any(|(k, _, _)| crate::web::SCENE_LIBRARIES.contains(&k.as_str())));
+        // Phase 9: the pins moved with the files, in the same unit.
+        if let Op::LibraryPins { pins, .. } = op {
+            self.net.set_pins(code, pins).map_err(e)?;
+        }
         let whole = matches!(
             op,
             Op::BringIn { .. }
@@ -2195,6 +2319,42 @@ impl NetHost {
             objects.extend(a.sections.iter().map(|s| (Kind::Section, s.clone())));
         }
         let main_changed = whole || library || !objects.is_empty();
+        // Phase 9: the use index of what changed in main.
+        if line == main {
+            let files_changed = matches!(
+                op,
+                Op::PutLibrary { .. } | Op::DeleteLibrary { .. } | Op::LibraryPins { .. }
+            ) || objects.iter().any(|(k, _)| *k == Kind::Library);
+            if whole {
+                self.net.reindex_uses(code, &m.session).map_err(e)?;
+            } else {
+                let elems: Vec<(Kind, String)> = objects
+                    .iter()
+                    .filter(|(k, _)| {
+                        matches!(
+                            k,
+                            Kind::Section | Kind::Jumper | Kind::Structure | Kind::Spacer
+                        )
+                    })
+                    .cloned()
+                    .collect();
+                if !elems.is_empty() {
+                    let rows = ohl_store_pg::library::uses_of_session(&m.session, Some(&elems));
+                    let from: Vec<(String, String)> = elems
+                        .iter()
+                        .map(|(k, id)| (k.as_str().to_owned(), id.clone()))
+                        .collect();
+                    self.net.write_uses(code, &from, &rows).map_err(e)?;
+                }
+                if files_changed {
+                    let files = m
+                        .session
+                        .line_library_all(main)
+                        .map_err(|x| x.to_string())?;
+                    self.net.write_file_uses(code, &files).map_err(e)?;
+                }
+            }
+        }
         let mut touched: BTreeSet<TileKey> = BTreeSet::new();
         let mut routes: BTreeSet<String> = BTreeSet::new();
         if whole {

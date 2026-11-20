@@ -281,7 +281,8 @@ impl Request {
     }
 }
 
-const REQUEST_SELECT: &str = "SELECT id, kind, file, entry, text, state, user_name, line_id, branch,
+const REQUEST_SELECT: &str =
+    "SELECT id, kind, file, entry, text, state, user_name, line_id, branch,
      reason, routes, maintainer, note, ohl_time(created), ohl_time(decided), released
      FROM lib_request";
 
@@ -417,7 +418,10 @@ impl LibraryState {
                 let id = country::draft_of(name)?;
                 match self.requests.get(&id) {
                     Some(r) if r.state == "granted" => None,
-                    Some(r) => Some(format!("{kind}/{name} (library request #{id}, {})", r.state)),
+                    Some(r) => Some(format!(
+                        "{kind}/{name} (library request #{id}, {})",
+                        r.state
+                    )),
                     None => Some(format!("{kind}/{name} (no such library request)")),
                 }
             })
@@ -534,9 +538,7 @@ impl PinPlan {
                 format!(
                     "{} {}→ {} ({} file{} changed)",
                     k.kind,
-                    k.from
-                        .as_deref()
-                        .map_or(String::new(), |f| format!("{f} ")),
+                    k.from.as_deref().map_or(String::new(), |f| format!("{f} ")),
                     k.to,
                     k.changes.len(),
                     if k.changes.len() == 1 { "" } else { "s" }
@@ -548,7 +550,8 @@ impl PinPlan {
 
     /// Whether anything moves (a pin, or a file).
     pub fn moves(&self) -> bool {
-        self.moving().any(|k| k.from.as_deref() != Some(k.to.as_str()) || !k.changes.is_empty())
+        self.moving()
+            .any(|k| k.from.as_deref() != Some(k.to.as_str()) || !k.changes.is_empty())
     }
 
     /// In words, for the command line (a dry run or what was done).
@@ -713,11 +716,7 @@ fn check_tag(tag: &str) -> Result<(), NetError> {
     }
 }
 
-fn country_target<'a>(
-    kind: &'a str,
-    file: Option<&'a str>,
-    entry: Option<&'a str>,
-) -> Target<'a> {
+fn country_target<'a>(kind: &'a str, file: Option<&'a str>, entry: Option<&'a str>) -> Target<'a> {
     Target::CountryLibrary { kind, file, entry }
 }
 
@@ -739,20 +738,20 @@ fn maintains(me: &UserRights, kind: &str, file: Option<&str>, entry: Option<&str
 
 /// The head of a kind: file → text.
 fn head(c: &mut Conn, kind: &str) -> Result<BTreeMap<String, String>, postgres::Error> {
-    Ok(c
-        .query(
-            "SELECT name, text FROM lib_file WHERE kind = $1 ORDER BY name",
-            &[&kind],
-        )?
-        .into_iter()
-        .map(|r| (r.get(0), r.get(1)))
-        .collect())
+    Ok(c.query(
+        "SELECT name, text FROM lib_file WHERE kind = $1 ORDER BY name",
+        &[&kind],
+    )?
+    .into_iter()
+    .map(|r| (r.get(0), r.get(1)))
+    .collect())
 }
 
 fn kind_locked(c: &mut Conn, kind: &str) -> Result<bool, postgres::Error> {
-    Ok(c
-        .query_opt("SELECT locked FROM lib_kind WHERE kind = $1", &[&kind])?
-        .is_some_and(|r| r.get(0)))
+    Ok(
+        c.query_opt("SELECT locked FROM lib_kind WHERE kind = $1", &[&kind])?
+            .is_some_and(|r| r.get(0)),
+    )
 }
 
 fn file_locked(c: &mut Conn, kind: &str, file: &str) -> Result<bool, postgres::Error> {
@@ -766,14 +765,13 @@ fn file_locked(c: &mut Conn, kind: &str, file: &str) -> Result<bool, postgres::E
 
 /// The withdrawn entries of a kind: (file, entry).
 fn withdrawn_of(c: &mut Conn, kind: &str) -> Result<BTreeSet<(String, String)>, postgres::Error> {
-    Ok(c
-        .query(
-            "SELECT file, entry FROM lib_withdrawn WHERE kind = $1",
-            &[&kind],
-        )?
-        .into_iter()
-        .map(|r| (r.get(0), r.get(1)))
-        .collect())
+    Ok(c.query(
+        "SELECT file, entry FROM lib_withdrawn WHERE kind = $1",
+        &[&kind],
+    )?
+    .into_iter()
+    .map(|r| (r.get(0), r.get(1)))
+    .collect())
 }
 
 /// Checks a head file's new text: TOML with entries; for the kinds named
@@ -844,14 +842,13 @@ fn put_head(
 
 /// The latest release of each kind.
 fn latest_releases(c: &mut Conn) -> Result<BTreeMap<String, String>, postgres::Error> {
-    Ok(c
-        .query(
-            "SELECT DISTINCT ON (kind) kind, tag FROM lib_release ORDER BY kind, n DESC",
-            &[],
-        )?
-        .into_iter()
-        .map(|r| (r.get(0), r.get(1)))
-        .collect())
+    Ok(c.query(
+        "SELECT DISTINCT ON (kind) kind, tag FROM lib_release ORDER BY kind, n DESC",
+        &[],
+    )?
+    .into_iter()
+    .map(|r| (r.get(0), r.get(1)))
+    .collect())
 }
 
 /// The files of release `tag` of `kind`: file → text.
@@ -878,14 +875,13 @@ fn release_files(
 
 /// The releases of a kind, oldest first.
 fn releases_of(c: &mut Conn, kind: &str) -> Result<Vec<String>, postgres::Error> {
-    Ok(c
-        .query(
-            "SELECT tag FROM lib_release WHERE kind = $1 ORDER BY n",
-            &[&kind],
-        )?
-        .into_iter()
-        .map(|r| r.get(0))
-        .collect())
+    Ok(c.query(
+        "SELECT tag FROM lib_release WHERE kind = $1 ORDER BY n",
+        &[&kind],
+    )?
+    .into_iter()
+    .map(|r| r.get(0))
+    .collect())
 }
 
 fn bump(c: &mut Conn) -> Result<(), postgres::Error> {
@@ -920,13 +916,12 @@ fn file_of_entry(c: &mut Conn, kind: &str, entry: &str) -> Result<Option<String>
             return Ok(Some(f));
         }
     }
-    Ok(c
-        .query_opt(
-            "SELECT e.file FROM lib_entry e JOIN lib_release r ON r.kind = e.kind AND r.tag = e.release
+    Ok(c.query_opt(
+        "SELECT e.file FROM lib_entry e JOIN lib_release r ON r.kind = e.kind AND r.tag = e.release
              WHERE e.kind = $1 AND e.entry = $2 ORDER BY r.n DESC LIMIT 1",
-            &[&kind, &entry],
-        )?
-        .map(|r| r.get(0)))
+        &[&kind, &entry],
+    )?
+    .map(|r| r.get(0)))
 }
 
 impl Network {
@@ -966,11 +961,7 @@ impl Network {
     /// one function against the rights and libraries as they are (read in
     /// the same transaction), written, audited, the revision moved on;
     /// refused (and audited) otherwise.
-    pub fn library_command(
-        &self,
-        actor: &str,
-        command: &LibraryCommand,
-    ) -> Result<Done, NetError> {
+    pub fn library_command(&self, actor: &str, command: &LibraryCommand) -> Result<Done, NetError> {
         let done = self.library_change(actor, command);
         if let Err(e) = &done {
             // The command in full, but a file's text only by its size.
@@ -1099,7 +1090,11 @@ impl Network {
                             if exists { "changed" } else { "added" },
                             entries.len(),
                             if entries.len() == 1 { "y" } else { "ies" },
-                            if *emergency { ", an emergency change" } else { "" }
+                            if *emergency {
+                                ", an emergency change"
+                            } else {
+                                ""
+                            }
                         ),
                         format!("library:{kind}/{file}"),
                         None,
@@ -1120,7 +1115,8 @@ impl Network {
                                  instead)"
                             )));
                         }
-                    } else if !me.allows(Permission::Delete, &country_target(kind, Some(file), None))
+                    } else if !me
+                        .allows(Permission::Delete, &country_target(kind, Some(file), None))
                     {
                         return Err(refused(format!(
                             "{actor} may not delete library {kind}/{file}"
@@ -1161,9 +1157,10 @@ impl Network {
                     }
                     let found = country::entries(file, text).map_err(refused)?;
                     let e = match entry {
-                        Some(id) => found.iter().find(|e| &e.id == id).ok_or_else(|| {
-                            refused(format!("the text holds no entry {id}"))
-                        })?,
+                        Some(id) => found
+                            .iter()
+                            .find(|e| &e.id == id)
+                            .ok_or_else(|| refused(format!("the text holds no entry {id}")))?,
                         None if found.len() == 1 => &found[0],
                         None => {
                             return Err(refused(
@@ -1385,12 +1382,7 @@ impl Network {
                         "UPDATE lib_request SET state = $2, maintainer = $3, note = $4,
                              decided = clock_timestamp()
                          WHERE id = $1",
-                        &[
-                            id,
-                            &if grant { "granted" } else { "refused" },
-                            &actor,
-                            note,
-                        ],
+                        &[id, &if grant { "granted" } else { "refused" }, &actor, note],
                     )?;
                     (
                         format!(
@@ -1573,10 +1565,8 @@ impl Network {
                             "{actor} may not mark line {line} built (lock on the whole line)"
                         )));
                     }
-                    let n = c.execute(
-                        "UPDATE line SET built = $2 WHERE id = $1",
-                        &[line, built],
-                    )?;
+                    let n =
+                        c.execute("UPDATE line SET built = $2 WHERE id = $1", &[line, built])?;
                     if n == 0 {
                         return Err(refused(format!("the network has no line {line}")));
                     }
@@ -1676,7 +1666,11 @@ impl Network {
     }
 
     /// The head files of `kind` with the entries `viewer` may see.
-    pub fn library_files(&self, viewer: &UserRights, kind: &str) -> Result<Vec<FileInfo>, NetError> {
+    pub fn library_files(
+        &self,
+        viewer: &UserRights,
+        kind: &str,
+    ) -> Result<Vec<FileInfo>, NetError> {
         let mut c = lock(&self.conn);
         let withdrawn = withdrawn_of(&mut c, kind)?;
         let mut out = Vec::new();
@@ -1727,8 +1721,8 @@ impl Network {
         for r in rows {
             let mut q = request_of(&r);
             let own = q.user == viewer.user() && viewer.active();
-            let maintainer = q.state != "draft"
-                && maintains(viewer, &q.kind, Some(&q.file), Some(&q.entry));
+            let maintainer =
+                q.state != "draft" && maintains(viewer, &q.kind, Some(&q.file), Some(&q.entry));
             if !(own || maintainer) {
                 continue;
             }
@@ -1762,7 +1756,10 @@ impl Network {
         let Some(file) = file else {
             return Err(not_found());
         };
-        if !viewer.allows(Permission::See, &country_target(kind, Some(&file), Some(entry))) {
+        if !viewer.allows(
+            Permission::See,
+            &country_target(kind, Some(&file), Some(entry)),
+        ) {
             return Err(not_found());
         }
         let rows = lock(&self.conn).query(
@@ -1903,18 +1900,17 @@ impl Network {
                 for (wk, wf, we) in withdrawn.iter().filter(|w| w.0 == kind) {
                     // Seen in the network's library, or in the line's own
                     // copy of the file.
-                    let seen = viewer.allows(
-                        Permission::See,
-                        &country_target(wk, Some(wf), Some(we)),
-                    ) || viewer.allows(
-                        Permission::See,
-                        &Target::Library {
-                            line: &id,
-                            kind: wk,
-                            file: wf,
-                            entry: Some(we),
-                        },
-                    );
+                    let seen = viewer
+                        .allows(Permission::See, &country_target(wk, Some(wf), Some(we)))
+                        || viewer.allows(
+                            Permission::See,
+                            &Target::Library {
+                                line: &id,
+                                kind: wk,
+                                file: wf,
+                                entry: Some(we),
+                            },
+                        );
                     if !seen {
                         continue;
                     }
@@ -2023,6 +2019,30 @@ impl Network {
             )?;
         }
         Ok(())
+    }
+
+    /// The use index of the files model `code`'s main branch holds, made
+    /// again from them (kind, name, text): its rows of files go, `files`'
+    /// come.
+    pub fn write_file_uses(
+        &self,
+        code: &str,
+        files: &[(String, String, String)],
+    ) -> Result<(), NetError> {
+        self.require_writer()?;
+        lock(&self.conn).execute(
+            "DELETE FROM lib_use WHERE line_id = $1 AND branch = 'main' AND object_kind = 'library'",
+            &[&code],
+        )?;
+        self.write_uses(code, &[], &uses_of_files(files))
+    }
+
+    /// Whether model `code` has no row in the use index (imported before
+    /// schema 5, or using nothing).
+    pub fn uses_missing(&self, code: &str) -> Result<bool, NetError> {
+        Ok(lock(&self.conn)
+            .query_opt("SELECT 1 FROM lib_use WHERE line_id = $1 LIMIT 1", &[&code])?
+            .is_none())
     }
 
     /// The use index of model `code` made again from its session (on its
@@ -2187,7 +2207,10 @@ pub fn plan_pins(
             withdrawn_used: Vec::new(),
             refused: None,
         };
-        let to = match release.map(str::to_owned).or_else(|| latest.get(&kind).cloned()) {
+        let to = match release
+            .map(str::to_owned)
+            .or_else(|| latest.get(&kind).cloned())
+        {
             Some(t) => t,
             None => {
                 plan.refused = Some(format!("library {kind} has no release"));
@@ -2278,7 +2301,11 @@ pub fn plan_pins(
                         "{kind}/{f} holds {} (used, not in release {to}) beside entries the \
                          release has: ask for {} first",
                         used_missing.join(", "),
-                        if used_missing.len() == 1 { "it" } else { "them" }
+                        if used_missing.len() == 1 {
+                            "it"
+                        } else {
+                            "them"
+                        }
                     ));
                 }
             }
