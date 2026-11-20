@@ -502,3 +502,103 @@ fn route_lines_split_the_country() {
     let twice = seen.values().filter(|n| **n > 1).count();
     assert_eq!(twice, c.summary.shared_pylons);
 }
+
+/// The place index of working sets (2026-11-20, the exports' thread) on a
+/// synthetic country: every route whole, a station range of each, areas
+/// around structures and across the country — the same extent (and the
+/// same structures' users) as by the whole scan, before and after moves
+/// that take structures into other cells and lengthen spans.
+#[test]
+fn extents_by_place_are_the_whole_scans_on_a_country() {
+    use ohl_session::Session;
+    use ohl_session::working_set::Pick;
+    let c = country(&Settings {
+        pylons: 300,
+        seed: 3,
+        ..Settings::default()
+    })
+    .unwrap();
+    let dir = std::env::temp_dir().join(format!("ohl-synth-places-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut s = Session::open(&dir.join("c.ohl")).unwrap();
+    s.import(&c.line, "ana").unwrap();
+    let square = |p: [f64; 3], h: f64| Pick::Area {
+        polygon: vec![
+            [p[0] - h, p[1] - h],
+            [p[0] + h, p[1] - h],
+            [p[0] + h, p[1] + h],
+            [p[0] - h, p[1] + h],
+        ],
+    };
+    let picks = |s: &Session| -> Vec<Vec<Pick>> {
+        let line = s.line();
+        let mut out: Vec<Vec<Pick>> = Vec::new();
+        for r in &line.routes {
+            out.push(vec![Pick::Route {
+                route: r.id.clone(),
+            }]);
+            out.push(vec![Pick::Stations {
+                route: r.id.clone(),
+                alignment: None,
+                from: 1000.0,
+                to: 4000.0,
+            }]);
+        }
+        for t in line.structures.iter().step_by(23) {
+            out.push(vec![square(t.position, 150.0)]);
+        }
+        // Across a span's middle (no structure inside).
+        for sec in line.sections.iter().step_by(97) {
+            if let [a, z, ..] = sec.points.as_slice()
+                && let (Some(a), Some(z)) =
+                    (line.structure(&a.structure), line.structure(&z.structure))
+            {
+                let m = [
+                    (a.position[0] + z.position[0]) / 2.0,
+                    (a.position[1] + z.position[1]) / 2.0,
+                    0.0,
+                ];
+                out.push(vec![square(m, 2.0)]);
+            }
+        }
+        if let Some(t) = line.structures.first() {
+            out.push(vec![square(t.position, 20_000.0)]);
+        }
+        out
+    };
+    let same = |s: &mut Session, at: &str| {
+        for p in picks(s) {
+            let a = s.extent_of(&p);
+            let au = s.extent_users(&a);
+            s.set_whole_scan(true);
+            let b = s.extent_of(&p);
+            let bu = s.extent_users(&b);
+            s.set_whole_scan(false);
+            assert_eq!(a, b, "{at}: {p:?}");
+            assert_eq!(au, bu, "{at}: users of {p:?}");
+        }
+    };
+    same(&mut s, "at first");
+    let ids: Vec<String> = s
+        .line()
+        .structures
+        .iter()
+        .step_by(31)
+        .map(|t| t.id.clone())
+        .collect();
+    for (k, id) in ids.iter().enumerate() {
+        let p = s.line().structure(id).unwrap().position;
+        let d = 400.0 + 900.0 * (k % 3) as f64;
+        s.apply(
+            "ana",
+            ohl_session::Command::MoveStructure {
+                id: id.clone(),
+                position: [p[0] + d, p[1] - d / 2.0, p[2]],
+            },
+        )
+        .unwrap();
+    }
+    same(&mut s, "after the moves");
+    let _ = std::fs::remove_dir_all(&dir);
+}

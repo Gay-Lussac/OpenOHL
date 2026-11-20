@@ -507,11 +507,63 @@ pub fn moves_during_export(
     if k % 2 == 1 {
         move_once(&mut moving, 1)?;
     }
+    // The export worked on (20 structures moved, committed) and brought
+    // back as a bundle while the other user moves (2026-11-20: its
+    // branch's line made ready on the exports' thread).
+    let worked = work.join(format!("during-work-{worker}.ohl"));
+    let bundle_path = work.join(format!("during-bundle-{worker}.json"));
+    let _ = std::fs::remove_file(&bundle_path);
+    std::fs::copy(&out, &worked).map_err(|e| e.to_string())?;
+    {
+        let mut s = Session::open(&worked).map_err(|e| e.to_string())?;
+        let ids: Vec<String> = s
+            .part()
+            .ok_or("not a part")?
+            .iter()
+            .filter(|(k, _)| *k == ohl_session::Kind::Structure)
+            .map(|(_, id)| id.clone())
+            .take(20)
+            .collect();
+        for id in &ids {
+            let p = s.line().structure(id).ok_or("no structure")?.position;
+            s.apply(
+                user,
+                Command::MoveStructure {
+                    id: id.clone(),
+                    position: [p[0] + 0.01, p[1], p[2]],
+                },
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        s.commit(user, "bench: 20 changes")
+            .map_err(|e| e.to_string())?;
+    }
+    let bundle = make_bundle(&worked, &bundle_path)?;
+    let mut bundle_during = Vec::new();
+    let mut k = 0;
+    let started = Instant::now();
+    let back = std::thread::scope(|s| -> Result<BroughtBack, String> {
+        let h = s.spawn(|| bring_back(&server, user, bundle.clone(), None));
+        while !h.is_finished() {
+            if started.elapsed() > Duration::from_secs(1800) {
+                return Err("the bundle did not come back in 30 minutes".into());
+            }
+            bundle_during.push(move_once(&mut moving, k)?);
+            k += 1;
+        }
+        h.join()
+            .map_err(|_| "the bundle's thread panicked".to_owned())?
+    })?;
+    let bundle_s = started.elapsed().as_secs_f64();
+    if k % 2 == 1 {
+        move_once(&mut moving, 1)?;
+    }
     let stats: Value = serde_json::from_str(&server.probe(ohl_server::network::Probe::Stats)?)
         .map_err(|e| e.to_string())?;
     drop(moving);
     server.stop();
-    for f in [&first, &out] {
+    let _ = std::fs::remove_file(&bundle_path);
+    for f in [&first, &out, &worked] {
         for ext in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{ext}", f.display()));
         }
@@ -533,5 +585,16 @@ pub fn moves_during_export(
         "move_ms_idle": summary(&idle),
         "move_ms_during": summary(&during),
         "move_ms_during_max": during.iter().cloned().fold(0.0, f64::max),
+        "bundle": {
+            "changes": 20,
+            "s": bundle_s,
+            "server_s": back.seconds,
+            "puts": back.puts,
+            "conflicts": back.conflicts.len(),
+            "bundle_plan_ms": stats["bundle_plan_ms"],
+            "moves_during": bundle_during.len(),
+            "move_ms_during": summary(&bundle_during),
+            "move_ms_during_max": bundle_during.iter().cloned().fold(0.0, f64::max),
+        },
     }))
 }

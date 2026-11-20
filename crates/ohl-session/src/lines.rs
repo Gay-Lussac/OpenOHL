@@ -70,6 +70,8 @@ pub(crate) struct LineState {
     pub(crate) spatial: BTreeMap<(Kind, String), spatial::Entry>,
     /// The reference index of `line`, when made ([`ohl_line::index`]).
     pub(crate) index: Option<ohl_line::index::LineIndex>,
+    /// The index by place of `line`, when made ([`crate::places`]).
+    pub(crate) places: Option<crate::places::PlaceIndex>,
     /// Whether the file's spatial index of the line is `spatial` (written
     /// when the line is first worked on).
     pub(crate) indexed: bool,
@@ -359,7 +361,129 @@ fn objects_of_line(line: &Line) -> BTreeMap<(Kind, String), Object> {
         .collect()
 }
 
+/// A line's spatial index entries.
+type Entries = BTreeMap<(Kind, String), spatial::Entry>;
+
+/// The line and spatial index of a project line's objects (read whole,
+/// validated).
+fn line_and_index(
+    objects: &Objects,
+    grid: &ohl_core::grid::Grid,
+) -> Result<(Line, Entries), SessionError> {
+    let line = if objects.is_empty() {
+        empty_line()
+    } else {
+        line_of(objects)?
+    };
+    let entries = spatial::entries(&line, grid);
+    Ok((line, entries))
+}
+
+/// What making a project line from a revision reads of the session
+/// ([`Session::line_source`]): the revision's objects (read along the
+/// main line's), the project's grid. Made ready with
+/// [`LineSource::prepare`] — on another thread: it reads nothing of the
+/// session nor of its store.
+#[derive(Debug)]
+pub struct LineSource {
+    revision: String,
+    objects: Objects,
+    grid: ohl_core::grid::Grid,
+}
+
+/// A project line made ready from a revision away from the session
+/// (ADR-0013, the exports' thread, 2026-11-20: a bundle brought back on
+/// a network's server): its objects read whole and validated, its
+/// spatial index, its reference index, its split tree's index — what
+/// [`Session::create_line`] otherwise works out itself, holding the
+/// server's commands meanwhile. Offered with [`Session::offer_line`],
+/// it is taken by the next `create_line` from the same revision; the
+/// line made is the same either way (tested).
+pub struct PreparedLine {
+    revision: String,
+    state: LineState,
+    tree: crate::trees::TreeIndex,
+}
+
+impl std::fmt::Debug for PreparedLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedLine")
+            .field("revision", &self.revision)
+            .field("objects", &self.state.objects.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl LineSource {
+    /// The revision it is read from.
+    pub fn revision(&self) -> &str {
+        &self.revision
+    }
+
+    /// Makes the line ready: everything [`Session::create_line`] works
+    /// out from a revision's objects. Reads neither the session nor the
+    /// store (expected cost: the model read whole once and its objects
+    /// hashed once — a second or two for a model of 100 000 objects).
+    pub fn prepare(self) -> Result<PreparedLine, SessionError> {
+        let (line, entries) = line_and_index(&self.objects, &self.grid)?;
+        let index = ohl_line::index::LineIndex::of(&line);
+        let mut tree = crate::trees::TreeIndex::default();
+        tree.update(&self.objects);
+        // Its nodes' hashes worked out too (a commit then hashes only the
+        // paths of what changed).
+        let _ = tree.root();
+        Ok(PreparedLine {
+            revision: self.revision,
+            state: LineState {
+                objects: self.objects,
+                line,
+                spatial: entries,
+                index: Some(index),
+                places: None,
+                indexed: false,
+            },
+            tree,
+        })
+    }
+}
+
 impl Session {
+    /// What [`LineSource::prepare`] needs to make a project line from
+    /// revision `from` (its whole id, a branch or a tag): the revision's
+    /// objects, read along the main line's where its tree is split (the
+    /// objects the main line shares are not read again). Cheap enough for
+    /// a server's authority between two commands.
+    pub fn line_source(&self, from: &str) -> Result<LineSource, SessionError> {
+        let revision = self.resolve_revision(from.trim())?;
+        Ok(LineSource {
+            objects: self.revision_objects(&revision)?,
+            revision,
+            grid: self.grid,
+        })
+    }
+
+    /// Offers `line`, made ready away from the session, to the next
+    /// [`Session::create_line`] from its revision (any other call drops
+    /// it).
+    pub fn offer_line(&mut self, line: PreparedLine) {
+        self.offered = Some(Box::new(line));
+    }
+
+    /// Revision `rev`'s objects, read along the main line's when its tree
+    /// is split, else whole.
+    fn revision_objects(&self, rev: &str) -> Result<Objects, SessionError> {
+        let along = if self.is_line(MAIN) {
+            let main = self.line_objects_named(MAIN)?;
+            self.objects_at(rev, MAIN, main)?
+        } else {
+            None
+        };
+        Ok(match along {
+            Some(b) => b,
+            None => objects_of_state(self.revision_state(rev)?),
+        })
+    }
+
     /// Builds the state of line `name` from its objects; the index in the
     /// file is brought up to date when `index` (else when the line is
     /// first worked on, [`Session::select_line`]).
@@ -369,12 +493,7 @@ impl Session {
         objects: BTreeMap<(Kind, String), Object>,
         index: bool,
     ) -> Result<LineState, SessionError> {
-        let line = if objects.is_empty() {
-            empty_line()
-        } else {
-            line_of(&objects)?
-        };
-        let current = spatial::entries(&line, &self.grid);
+        let (line, current) = line_and_index(&objects, &self.grid)?;
         if index {
             self.write_index(name, &current)?;
         }
@@ -383,6 +502,7 @@ impl Session {
             line,
             spatial: current,
             index: None,
+            places: None,
             indexed: index,
         })
     }
@@ -394,6 +514,9 @@ impl Session {
         name: &str,
         entries: &BTreeMap<(Kind, String), spatial::Entry>,
     ) -> Result<(), SessionError> {
+        if !self.conn.spatial_kept(name) {
+            return Ok(());
+        }
         let stored = self.conn.spatial_load(name)?;
         if stored != *entries {
             let tx = crate::Step::begin(&*self.conn)?;
@@ -533,6 +656,7 @@ impl Session {
                 self.line = state.line;
                 self.spatial = state.spatial;
                 self.index = state.index;
+                self.places = state.places;
                 self.sides = None;
             } else {
                 self.others.insert(name, state);
@@ -648,6 +772,7 @@ impl Session {
             line: std::mem::replace(&mut self.line, next.line),
             spatial: std::mem::replace(&mut self.spatial, next.spatial),
             index: std::mem::replace(&mut self.index, next.index),
+            places: std::mem::replace(&mut self.places, next.places),
             indexed: true,
         };
         // The wind sides kept are the line's worked on only.
@@ -719,6 +844,8 @@ impl Session {
     /// `from` first, the two lines' common ancestor) or a revision or tag.
     /// The line is `user`'s; it is not selected.
     pub fn create_line(&mut self, user: &str, name: &str, from: &str) -> Result<(), SessionError> {
+        // A line made ready away from the session: taken by this call only.
+        let offered = self.offered.take();
         self.require(user, Role::Designer)?;
         let name = self.check_ref_name(name)?;
         let from = from.trim();
@@ -773,16 +900,11 @@ impl Session {
             let rev = self.resolve_revision(from)?;
             // Read along what differs from the main line when the
             // revision's tree is split (phase 12: a branch made from an
-            // offline working set's base), else whole.
-            let along = if self.is_line(MAIN) {
-                let main = self.line_objects_named(MAIN)?;
-                self.objects_at(&rev, MAIN, main)?
-            } else {
-                None
-            };
-            let base = match along {
-                Some(b) => b,
-                None => objects_of_state(self.revision_state(&rev)?),
+            // offline working set's base), else whole — or made ready
+            // away from the session from the same revision.
+            let base = match &offered {
+                Some(p) if p.revision == rev => p.state.objects.clone(),
+                _ => self.revision_objects(&rev)?,
             };
             // The revision's line with its library files (owner,
             // 2026-10-23; lines made from a revision started without them
@@ -816,10 +938,18 @@ impl Session {
                 objects,
                 line,
                 index: None,
+                places: None,
                 indexed: false,
             }
         } else {
-            self.line_state(&name, objects, false)?
+            match offered {
+                Some(p) if base.as_ref().is_some_and(|(rev, _)| *rev == p.revision) => {
+                    let p = *p;
+                    self.trees_lock().insert(name.clone(), p.tree);
+                    p.state
+                }
+                _ => self.line_state(&name, objects, false)?,
+            }
         };
         self.others.insert(name, state);
         Ok(())

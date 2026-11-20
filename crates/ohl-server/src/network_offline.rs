@@ -155,6 +155,20 @@ pub(super) struct ExportPlan {
     work: PathBuf,
 }
 
+/// A bundle decided on the authority ([`NetHost::bundle_decide`]): what
+/// its final apply needs ([`NetHost::bundle_apply`]).
+pub(crate) struct BundleDecided {
+    started: Instant,
+    what: String,
+    head: String,
+    row: OfflineExport,
+    pub(super) code: String,
+    changes: ohl_session::offline::OfflineChanges,
+    wanted: BTreeSet<(Kind, String)>,
+    exported: BTreeMap<(Kind, String), String>,
+    name: String,
+}
+
 /// What an export holds, for the changes landing while it is written: its
 /// objects (the line's and its neighbours'), its lines, its area's tiles.
 #[derive(Default)]
@@ -745,7 +759,8 @@ impl NetHost {
     /// Brings back `bundle`, an offline working set's work of `user`
     /// (acting with `rights`), onto a branch over its working set made
     /// from the export's base (named `branch`, default
-    /// `offline-USER-N-K`).
+    /// `offline-USER-N-K`) — decided and applied here, on the authority
+    /// (the way without the exports' thread).
     pub(super) fn offline_import(
         &mut self,
         user: &str,
@@ -753,6 +768,23 @@ impl NetHost {
         bundle: Bundle,
         branch: Option<String>,
     ) -> Result<BroughtBack, String> {
+        let decided = self.bundle_decide(user, rights, bundle, branch)?;
+        self.bundle_apply(user, rights, decided, None)
+    }
+
+    /// A bundle decided (the exports' thread, 2026-11-20: what the
+    /// authority does of it before its branch's line is made ready): its
+    /// base the one revision its revisions come from, an export of this
+    /// network by `user`, not brought back already, verified against the
+    /// export's record, no library file and nothing read-only changed —
+    /// refusals audited.
+    pub(super) fn bundle_decide(
+        &mut self,
+        user: &str,
+        rights: &UserRights,
+        bundle: Bundle,
+        branch: Option<String>,
+    ) -> Result<BundleDecided, String> {
         let started = Instant::now();
         let what = format!("bundle {}", short(&bundle.head));
         let refuse = |h: &mut Self, why: String| -> String {
@@ -861,6 +893,87 @@ impl NetHost {
         // A branch over the working set made from the export's base.
         let name = branch
             .unwrap_or_else(|| format!("offline-{user}-{}-{}", row.id, row.brought_back.len() + 1));
+        Ok(BundleDecided {
+            started,
+            what,
+            head: bundle.head,
+            row,
+            code,
+            changes,
+            wanted,
+            exported,
+            name,
+        })
+    }
+
+    /// The line a decided bundle's branch is made of, as the exports'
+    /// thread makes it ready ([`ohl_session::lines::LineSource`]): the
+    /// export's base read along the main line's.
+    pub(super) fn bundle_source(
+        &self,
+        d: &BundleDecided,
+    ) -> Result<ohl_session::lines::LineSource, String> {
+        self.models
+            .get(&d.code)
+            .ok_or_else(|| format!("the network has no line {} now", d.code))?
+            .session
+            .line_source(&d.row.base)
+            .map_err(s)
+    }
+
+    /// A decided bundle applied (the final apply, always on the
+    /// authority): its branch over the working set made from the export's
+    /// base — of `ready`, the line the exports' thread made ready, when
+    /// given — its changes applied there as one command checked by the
+    /// user's rights now and the rules of shared towers, committed; the
+    /// conflicts with main as main is now listed. All or nothing.
+    pub(super) fn bundle_apply(
+        &mut self,
+        user: &str,
+        rights: &UserRights,
+        d: BundleDecided,
+        ready: Option<ohl_session::lines::PreparedLine>,
+    ) -> Result<BroughtBack, String> {
+        let BundleDecided {
+            started,
+            what,
+            head,
+            row,
+            code,
+            changes,
+            wanted,
+            exported,
+            name,
+        } = d;
+        let refuse = |h: &mut Self, why: String| -> String {
+            h.audit_refused(user, &what, &why);
+            h.sanitise(rights, &why)
+        };
+        if !self.models.contains_key(&code) {
+            return Err(refuse(self, format!("the network has no line {code} now")));
+        }
+        if let Some(ready) = ready {
+            // Brought back meanwhile (by another of the user's
+            // connections): refused as at its decision.
+            let again = self.net.offline_export(&row.base).map_err(s)?;
+            if let Some((_, b)) = again
+                .as_ref()
+                .and_then(|r| r.brought_back.iter().find(|(h, _)| *h == head))
+            {
+                return Err(refuse(
+                    self,
+                    format!(
+                        "this bundle (head {}) was brought back already, onto branch {b}",
+                        short(&head)
+                    ),
+                ));
+            }
+            self.models
+                .get_mut(&code)
+                .expect("checked")
+                .session
+                .offer_line(ready);
+        }
         let made = self.apply(
             None,
             user,

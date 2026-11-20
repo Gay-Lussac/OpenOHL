@@ -1142,3 +1142,204 @@ fn exports_on_their_thread_as_on_the_authority() {
     assert!(!out_path.exists());
     server.stop();
 }
+
+/// The rest of the exports' thread (2026-11-20): a bundle decided on the
+/// authority, its branch's line made ready on the exports' thread,
+/// applied on the authority — the same report and the same branch as all
+/// on the authority (through the protocol and the command line's way); a
+/// move of main landing while it is made ready is a conflict when it is
+/// applied (main as it is then), never replayed; a user whose rights
+/// change meanwhile gets nothing applied.
+#[test]
+fn bundles_on_their_thread_as_on_the_authority() {
+    use crate::network::{NetOptions, Probe};
+    let Some(t) = test_network("bundles", 200) else {
+        return;
+    };
+    let (code, route, _other, _twin, at) = shared(&t.url, &t.codes);
+    {
+        let net = Network::connect(&t.url).unwrap();
+        let on_route = Scope {
+            route: Some(route.clone()),
+            ..Scope::default()
+        };
+        add_user(&net, "pat", "designer", on_route);
+    }
+    let dir: PathBuf = t.dir.join("bundles");
+    std::fs::create_dir_all(&dir).unwrap();
+    let spec = WorkingSetSpec {
+        name: String::new(),
+        model: code.clone(),
+        picks: vec![area(at, 400.0)],
+    };
+    let null = serde_json::Value::Null;
+    let report = |r: &BroughtBack| -> serde_json::Value {
+        let mut v = serde_json::to_value(r).unwrap();
+        for k in ["branch", "seconds"] {
+            v[k] = null.clone();
+        }
+        v
+    };
+    // Bob's working set exported once; worked on twice alike (two bundles
+    // of the same export, their messages apart).
+    let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
+    let bob = join(&server, "bob");
+    let mut log = Vec::new();
+    let path = dir.join("bob.ohl");
+    export_via(&bob, &mut log, 1, &spec, &path).unwrap();
+    drop(bob);
+    server.stop();
+    let (s1, s2) = {
+        let s = Session::open(&path).unwrap();
+        (wanted_structure(&s, 0), wanted_structure(&s, 3))
+    };
+    let worked = |name: &str| -> Bundle {
+        let copy = dir.join(format!("{name}.ohl"));
+        std::fs::copy(&path, &copy).unwrap();
+        let mut s = Session::open(&copy).unwrap();
+        shift(&mut s, "bob", &s1, 0.4).unwrap();
+        shift(&mut s, "bob", &s2, -0.2).unwrap();
+        s.commit("bob", &format!("two moves ({name})")).unwrap();
+        s.offline_bundle().unwrap()
+    };
+    let mut got = Vec::new();
+    let mut lines = Vec::new();
+    for (k, worker) in [false, true].into_iter().enumerate() {
+        let server = Server::start_network(
+            local("abcd2345"),
+            NetOptions {
+                export_worker: worker,
+                ..net_options(&t.url)
+            },
+        )
+        .unwrap();
+        let bob = join(&server, "bob");
+        let mut log = Vec::new();
+        let a = import_via(&bob, &mut log, 10, &worked(&format!("p{k}"))).unwrap();
+        let b: BroughtBack = serde_json::from_value(
+            server
+                .offline(
+                    "bob",
+                    OfflineJob::Import {
+                        bundle: Box::new(worked(&format!("c{k}"))),
+                        branch: None,
+                    },
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        got.push((report(&a), report(&b)));
+        drop(bob);
+        server.stop();
+        let net = Network::connect(&t.url).unwrap();
+        let model = Session::open_on(Box::new(net.store(&code).unwrap()), &code).unwrap();
+        for branch in [&a.branch, &b.branch] {
+            lines.push(serde_json::to_value(model.line_named(branch).unwrap()).unwrap());
+        }
+    }
+    assert!(got[0] == got[1], "the thread's bundles differ: {got:?}");
+    assert!(got[0].0["puts"].as_u64() >= Some(2), "{got:?}");
+    assert!(lines.iter().all(|l| *l == lines[0]), "the branches differ");
+    // A move of s1 on main while a bundle's line is made ready (its
+    // making held 1.5 s): a conflict when it is applied.
+    let server = Server::start_network(
+        local("abcd2345"),
+        NetOptions {
+            export_delay: Some(Duration::from_millis(1500)),
+            ..net_options(&t.url)
+        },
+    )
+    .unwrap();
+    let (bob, carol) = (join(&server, "bob"), join(&server, "carol"));
+    let mut log = Vec::new();
+    let plans = |server: &Server| -> usize {
+        let v: serde_json::Value =
+            serde_json::from_str(&server.probe(Probe::Stats).unwrap()).unwrap();
+        v["bundle_plan_ms"].as_array().map_or(0, Vec::len)
+    };
+    let planned = plans(&server);
+    bob.link
+        .send(ClientMsg::ImportBundle {
+            id: 30,
+            bundle: Box::new(worked("during")),
+            branch: None,
+        })
+        .unwrap();
+    let t0 = std::time::Instant::now();
+    while plans(&server) == planned {
+        assert!(t0.elapsed() < Duration::from_secs(60), "no bundle started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let p1 = Network::connect(&t.url)
+        .map(|net| {
+            Session::open_on(Box::new(net.store(&code).unwrap()), &code)
+                .unwrap()
+                .line()
+                .structure(&s1)
+                .unwrap()
+                .position
+        })
+        .unwrap();
+    request(
+        &carol,
+        &mut log,
+        31,
+        &code,
+        moved(&s1, [p1[0] - 0.3, p1[1], p1[2]]),
+    )
+    .unwrap();
+    let got = pump_for(&bob, &mut log, Duration::from_secs(120), |m| {
+        matches!(m, ServerMsg::BundleImported { id: 30, .. })
+    });
+    let Some(ServerMsg::BundleImported { result, .. }) = got.last() else {
+        panic!("no bundle: {got:?}")
+    };
+    let during = result.clone().unwrap();
+    assert!(
+        during.conflicts.contains(&format!("structure {s1}")),
+        "{during:?}"
+    );
+    drop((bob, carol));
+    // Pat's work brought back while her rights change: nothing applied.
+    let pat = join(&server, "pat");
+    let mut log = Vec::new();
+    let pat_path = dir.join("pat.ohl");
+    export_via(&pat, &mut log, 40, &spec, &pat_path).unwrap();
+    drop(pat);
+    let bundle = {
+        let mut s = Session::open(&pat_path).unwrap();
+        let id = wanted_structure(&s, 1);
+        shift(&mut s, "pat", &id, 0.1).unwrap();
+        s.commit("pat", "one move").unwrap();
+        s.offline_bundle().unwrap()
+    };
+    let before = lines_of(&t.url, &code);
+    let planned = plans(&server);
+    let asked = std::thread::scope(|s| {
+        let h = s.spawn(|| {
+            server.offline(
+                "pat",
+                OfflineJob::Import {
+                    bundle: Box::new(bundle.clone()),
+                    branch: None,
+                },
+            )
+        });
+        let t0 = std::time::Instant::now();
+        while plans(&server) == planned {
+            assert!(t0.elapsed() < Duration::from_secs(60), "no bundle started");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assign(&t.url, "user:pat", Some("viewer"), false, Scope::network());
+        h.join().unwrap()
+    });
+    let e = asked.unwrap_err();
+    assert!(e.contains("rights changed"), "{e}");
+    assert_eq!(lines_of(&t.url, &code), before, "no branch made");
+    assert!(audit_has(
+        &t.url,
+        "refused",
+        "rights changed while the bundle"
+    ));
+    server.stop();
+}

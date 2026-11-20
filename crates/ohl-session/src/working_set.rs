@@ -51,7 +51,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use ohl_line::index::{LineIndex, Of};
+use ohl_line::index::Of;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -382,35 +382,28 @@ impl Session {
                 "pick at least one route, a part of a route or an area",
             ));
         }
-        // Every line object with its routes.
-        let all: Vec<(Kind, String)> = {
-            let l = &self.line;
-            let mut v = Vec::new();
-            v.extend(l.routes.iter().map(|x| (Kind::Route, x.id.clone())));
-            v.extend(l.alignments.iter().map(|x| (Kind::Alignment, x.id.clone())));
-            v.extend(
-                l.alignment_points
-                    .iter()
-                    .map(|x| (Kind::AlignmentPoint, x.id.clone())),
-            );
-            v.extend(l.structures.iter().map(|x| (Kind::Structure, x.id.clone())));
-            v.extend(l.sections.iter().map(|x| (Kind::Section, x.id.clone())));
-            v.extend(l.jumpers.iter().map(|x| (Kind::Jumper, x.id.clone())));
-            v.extend(l.spacers.iter().map(|x| (Kind::Spacer, x.id.clone())));
-            v
-        };
-        let routes_of: BTreeMap<(Kind, String), BTreeSet<String>> = all
-            .iter()
-            .cloned()
-            .zip(self.routes_of_objects(&all))
-            .collect();
+        // The place index narrows the objects looked at; each is tested
+        // as by the whole scan (see [`crate::places`]).
         self.line_index();
+        let scan = self.whole_scan;
+        if !scan {
+            self.ensure_places();
+        }
+        let none = crate::places::PlaceIndex::default();
         let index = self.index.as_ref().expect("made above");
+        let places = self.places.as_ref().filter(|_| !scan).unwrap_or(&none);
         let line = &self.line;
-        let on = |kind: Kind, id: &str, route: &str| {
-            routes_of
-                .get(&(kind, id.to_owned()))
-                .is_some_and(|r| r.contains(route))
+        let routes_of = if scan {
+            crate::shared::RouteOf::fresh(line, index)
+        } else {
+            crate::shared::RouteOf::new(line, index, places)
+        };
+        let on = |kind: Kind, id: &str, route: &str| routes_of.on(kind, id, route);
+        let cands = crate::places::Candidates {
+            line,
+            index,
+            places,
+            scan,
         };
         let position = |id: &str| index.structure(line, id).map(|s| xy(&s.position));
         // The polyline of a route's alignment (given, else its first).
@@ -477,10 +470,13 @@ impl Session {
             // its structures without one.
             let mut range = |route: &str, poly: &[[f64; 3]], from: f64, to: f64| {
                 let (lo, hi) = (from.min(to), from.max(to));
-                for s in &line.sections {
-                    if !on(Kind::Section, &s.id, route) {
+                for id in cands.sections_on(route) {
+                    if !on(Kind::Section, &id, route) {
                         continue;
                     }
+                    let Some(s) = index.section(line, &id) else {
+                        continue;
+                    };
                     let st: Vec<Option<f64>> = s
                         .points
                         .iter()
@@ -494,11 +490,11 @@ impl Session {
                         seeds.insert(s.id.clone());
                     }
                 }
-                for s in &line.structures {
-                    if on(Kind::Structure, &s.id, route)
-                        && station(poly, &s.id).is_some_and(|x| (lo..=hi).contains(&x))
+                for id in cands.structures_on(route) {
+                    if on(Kind::Structure, &id, route)
+                        && station(poly, &id).is_some_and(|x| (lo..=hi).contains(&x))
                     {
-                        lone.insert(s.id.clone());
+                        lone.insert(id);
                     }
                 }
             };
@@ -507,9 +503,9 @@ impl Session {
                     check!(route_known(route));
                     whole.insert(route.clone());
                     routes.insert(route.clone());
-                    for (kind, id) in &all {
-                        if on(*kind, id, route) {
-                            wanted.insert((*kind, id.clone()));
+                    for (kind, id) in cands.on_route(route) {
+                        if on(kind, &id, route) {
+                            wanted.insert((kind, id));
                         }
                     }
                 }
@@ -553,7 +549,11 @@ impl Session {
                     if polygon.len() < 3 || polygon.iter().flatten().any(|v| !v.is_finite()) {
                         check!(Err(refused("an area needs three corners or more")));
                     }
-                    for s in &line.sections {
+                    let (sections, structures) = cands.in_area(polygon);
+                    for id in sections {
+                        let Some(s) = index.section(line, &id) else {
+                            continue;
+                        };
                         let pts: Vec<Option<[f64; 2]>> =
                             s.points.iter().map(|p| position(&p.structure)).collect();
                         let hit = pts.windows(2).any(|w| match (w[0], w[1]) {
@@ -561,18 +561,17 @@ impl Session {
                             _ => false,
                         }) || pts.iter().flatten().any(|p| inside(polygon, *p));
                         if hit {
-                            seeds.insert(s.id.clone());
-                            if let Some(r) = routes_of.get(&(Kind::Section, s.id.clone())) {
-                                routes.extend(r.iter().cloned());
-                            }
+                            routes.extend(routes_of.of(Kind::Section, &id));
+                            seeds.insert(id);
                         }
                     }
-                    for s in &line.structures {
+                    for id in structures {
+                        let Some(s) = index.structure(line, &id) else {
+                            continue;
+                        };
                         if inside(polygon, xy(&s.position)) {
-                            lone.insert(s.id.clone());
-                            if let Some(r) = routes_of.get(&(Kind::Structure, s.id.clone())) {
-                                routes.extend(r.iter().cloned());
-                            }
+                            routes.extend(routes_of.of(Kind::Structure, &id));
+                            lone.insert(id);
                         }
                     }
                 }
@@ -679,7 +678,14 @@ impl Session {
             .map(|(of, id)| (kind_of(*of), id.clone()))
             .collect();
         wanted.retain(|k| keep.contains(k));
-        keep.extend(self.objects.keys().filter(|(k, _)| kept_whole(*k)).cloned());
+        for kind in [Kind::Meta, Kind::Library] {
+            keep.extend(
+                self.objects
+                    .range((kind, String::new())..)
+                    .take_while(|((k, _), _)| *k == kind)
+                    .map(|(key, _)| key.clone()),
+            );
+        }
         // In numbers, by route.
         let mut summary = ExtentSummary::default();
         let mut bounds: Option<[f64; 4]> = None;
@@ -752,8 +758,19 @@ impl Session {
         })
     }
 
-    /// The structures' users outside `keep` (a replica's `part_users`).
-    fn users_of(&self, index: &LineIndex, extent: &Extent) -> BTreeMap<String, Vec<User>> {
+    /// The `part_users` of `extent` on the line worked on: the structures'
+    /// users outside its `keep` (the structures' routes from the place
+    /// index, [`crate::places`]).
+    pub fn extent_users(&mut self, extent: &Extent) -> BTreeMap<String, Vec<User>> {
+        self.line_index();
+        if !self.whole_scan {
+            self.ensure_places();
+        }
+        let index = self.index.as_ref().expect("made above");
+        let routes_of = match self.places.as_ref().filter(|_| !self.whole_scan) {
+            Some(places) => crate::shared::RouteOf::new(&self.line, index, places),
+            None => crate::shared::RouteOf::fresh(&self.line, index),
+        };
         let keep_of: BTreeSet<(Of, String)> = extent
             .keep
             .iter()
@@ -763,16 +780,9 @@ impl Session {
             .wanted
             .iter()
             .filter(|(k, _)| *k == Kind::Structure)
-            .map(|(_, id)| (id.clone(), self.users_outside(index, id, &keep_of)))
+            .map(|(_, id)| (id.clone(), routes_of.users_outside(id, &keep_of)))
             .filter(|(_, u)| !u.is_empty())
             .collect()
-    }
-
-    /// The `part_users` of `extent` on the line worked on.
-    pub fn extent_users(&mut self, extent: &Extent) -> BTreeMap<String, Vec<User>> {
-        self.line_index();
-        let index = self.index.as_ref().expect("made above");
-        self.users_of(index, extent)
     }
 
     /// The row of object `key`, if the session holds it.

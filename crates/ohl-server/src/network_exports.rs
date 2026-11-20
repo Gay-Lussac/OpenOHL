@@ -43,6 +43,35 @@
 //! check waiting behind one runs meanwhile); the command line's (the
 //! network hosted in its own process) goes to the same thread.
 //! `NetOptions::export_worker` (on) off keeps the authority's way.
+//!
+//! **A bundle brought back** (2026-11-20, the rest of the exports'
+//! thread) goes the same way:
+//!
+//! - **on the authority**, between two commands
+//!   ([`NetHost::bundle_decide`]): the bundle verified against the
+//!   export's record (its base, its user, not brought back already, no
+//!   library file nor read-only object changed) and the export's base read
+//!   along the main line's ([`ohl_session::lines::LineSource`]);
+//! - **on the exports' thread**: the branch's line made ready from it
+//!   ([`ohl_session::lines::LineSource::prepare`]: the model read whole
+//!   and validated, its spatial, reference and tree indexes — what took
+//!   most of the time on a big model);
+//! - **on the authority** when it comes back ([`NetHost::bundle_apply`],
+//!   the final apply, the same function as without the thread): the
+//!   branch made of the line made ready, the bundle's changes applied
+//!   there as one command, checked by the rules of shared towers and the
+//!   user's rights, committed, its conflicts with main listed — as main
+//!   is then. The final apply stays on the authority: it changes the
+//!   model (a branch, a command, a revision, the stream's position) and
+//!   decides by the rights and the other lines as they are, which only
+//!   the authority holds; it costs what the bundle changes.
+//!
+//! The line made ready is the export's base revision's, which no change
+//! of main alters: **changes landing meanwhile** are main's when the
+//! bundle is applied and are listed as its conflicts, exactly as on the
+//! authority — nothing is replayed and nothing goes stale. **A user whose
+//! rights changed meanwhile** gets nothing (nothing applied, the refusal
+//! audited: bring it back again); a client gone gets nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -53,7 +82,12 @@ use ohl_session::Kind;
 use ohl_session::rights::UserRights;
 use ohl_session::working_set::WorkingSetSpec;
 
-use super::offline::{ExportPlan, ExportWritten, Holds, Meanwhile, remove_project, write_export};
+use ohl_session::lines::{LineSource, PreparedLine};
+use ohl_session::versions::Bundle;
+
+use super::offline::{
+    BundleDecided, ExportPlan, ExportWritten, Holds, Meanwhile, remove_project, write_export,
+};
 use super::{NetHost, keep, log};
 use crate::server::Job;
 use crate::{OfflineFile, ServerMsg, TileKey, random_code};
@@ -74,27 +108,47 @@ struct Landed {
     at_large: bool,
 }
 
-/// An export being written: who asked, with which rights, where, and the
-/// changes applied since its content was taken.
+/// What the exports' thread does.
+enum Work {
+    /// An export written.
+    Export(Box<ExportPlan>),
+    /// A bundle's branch's line made ready.
+    Bundle(Box<LineSource>),
+}
+
+/// What the exports' thread gives back (or why it could not).
+enum Done {
+    Export(Result<Box<ExportWritten>, String>),
+    Bundle(Result<Box<PreparedLine>, String>),
+}
+
+/// What is in flight on the thread.
+enum Flight {
+    /// An export being written: where, and the changes applied since its
+    /// content was taken.
+    Export { path: PathBuf, landed: Vec<Landed> },
+    /// A bundle decided, its branch's line being made ready.
+    Bundle(Box<BundleDecided>),
+}
+
+/// Work on the exports' thread: who asked, with which rights, what.
 struct InFlight {
     to: ExportTo,
     user: String,
     rights: Arc<UserRights>,
-    path: PathBuf,
-    landed: Vec<Landed>,
+    flight: Flight,
 }
 
-/// An export back from the exports' thread (or why it could not be
-/// written).
+/// Work back from the exports' thread.
 pub(crate) struct ExportBack {
     key: u64,
-    written: Result<Box<ExportWritten>, String>,
+    done: Done,
 }
 
-/// The exports' thread and the exports in flight.
+/// The exports' thread and the work in flight.
 #[derive(Default)]
 pub(super) struct Exports {
-    tx: Option<std_mpsc::Sender<(u64, ExportPlan)>>,
+    tx: Option<std_mpsc::Sender<(u64, Work)>>,
     next: u64,
     in_flight: BTreeMap<u64, InFlight>,
 }
@@ -106,27 +160,40 @@ impl Exports {
         jobs: std_mpsc::Sender<Job>,
         delay: Option<std::time::Duration>,
     ) -> Result<Self, String> {
-        let (tx, rx) = std_mpsc::channel::<(u64, ExportPlan)>();
+        let (tx, rx) = std_mpsc::channel::<(u64, Work)>();
         std::thread::Builder::new()
             .name("ohl-exports".into())
             .spawn(move || {
-                while let Ok((key, plan)) = rx.recv() {
+                while let Ok((key, work)) = rx.recv() {
                     if let Some(d) = delay {
                         std::thread::sleep(d);
                     }
-                    let path = plan.head.path.clone();
                     // A panic is a refusal, not a stop.
-                    let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        Box::new(write_export(plan))
-                    }))
-                    .map_err(|_| {
-                        remove_project(&path);
-                        "the offline working set: an internal error of the server (it keeps \
-                         running)"
-                            .to_owned()
-                    });
+                    let internal = |what: &str| {
+                        format!("{what}: an internal error of the server (it keeps running)")
+                    };
+                    let done = match work {
+                        Work::Export(plan) => {
+                            let path = plan.head.path.clone();
+                            Done::Export(
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    Box::new(write_export(*plan))
+                                }))
+                                .map_err(|_| {
+                                    remove_project(&path);
+                                    internal("the offline working set")
+                                }),
+                            )
+                        }
+                        Work::Bundle(source) => Done::Bundle(
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                source.prepare().map(Box::new).map_err(|e| e.to_string())
+                            }))
+                            .unwrap_or_else(|_| Err(internal("the bundle"))),
+                        ),
+                    };
                     if jobs
-                        .send(Job::Exported(Box::new(ExportBack { key, written })))
+                        .send(Job::Exported(Box::new(ExportBack { key, done })))
                         .is_err()
                     {
                         break;
@@ -145,7 +212,7 @@ impl Exports {
         self.tx.is_some()
     }
 
-    /// Whether a client's export is being written.
+    /// Whether a client's work (an export, a bundle) is on the thread.
     pub(super) fn client_running(&self) -> bool {
         self.in_flight
             .values()
@@ -193,23 +260,112 @@ impl NetHost {
             &mut self.stats.export_plan_ms,
             started.elapsed().as_secs_f64() * 1e3,
         );
-        let key = self.exports.next;
-        self.exports.next += 1;
-        let tx = self.exports.tx.as_ref().ok_or("no exports' thread")?;
-        if tx.send((key, plan)).is_err() {
-            return Err("the exports' thread stopped".into());
-        }
-        self.exports.in_flight.insert(
-            key,
+        self.send_work(
+            Work::Export(Box::new(plan)),
             InFlight {
                 to,
                 user: user.to_owned(),
                 rights,
-                path,
-                landed: Vec::new(),
+                flight: Flight::Export {
+                    path,
+                    landed: Vec::new(),
+                },
             },
-        );
+        )
+    }
+
+    /// Work sent to the exports' thread, kept in flight.
+    fn send_work(&mut self, work: Work, flight: InFlight) -> Result<(), String> {
+        let key = self.exports.next;
+        self.exports.next += 1;
+        let tx = self.exports.tx.as_ref().ok_or("no exports' thread")?;
+        if tx.send((key, work)).is_err() {
+            return Err("the exports' thread stopped".into());
+        }
+        self.exports.in_flight.insert(key, flight);
         Ok(())
+    }
+
+    /// Starts bringing `bundle` of `user` (acting with `rights`) back:
+    /// decided here, its branch's line made ready on the exports' thread,
+    /// applied when it comes back (answered to `to`).
+    fn start_bundle(
+        &mut self,
+        to: ExportTo,
+        user: &str,
+        rights: Arc<UserRights>,
+        bundle: Bundle,
+        branch: Option<String>,
+    ) -> Result<(), String> {
+        let started = std::time::Instant::now();
+        let decided = self.bundle_decide(user, &rights, bundle, branch)?;
+        let source = self.bundle_source(&decided)?;
+        keep(
+            &mut self.stats.bundle_plan_ms,
+            started.elapsed().as_secs_f64() * 1e3,
+        );
+        self.send_work(
+            Work::Bundle(Box::new(source)),
+            InFlight {
+                to,
+                user: user.to_owned(),
+                rights,
+                flight: Flight::Bundle(Box::new(decided)),
+            },
+        )
+    }
+
+    /// A client's bundle (its question `id`) started on the exports'
+    /// thread.
+    pub(super) fn start_client_bundle(
+        &mut self,
+        client: u64,
+        user: &str,
+        id: u64,
+        bundle: Bundle,
+        branch: Option<String>,
+    ) -> Result<(), String> {
+        let rights = self
+            .client_rights(client)
+            .ok_or("not joined (let go): join again")?;
+        if self
+            .clients
+            .get(&client)
+            .is_some_and(|c| c.see_as.is_some())
+        {
+            return Err("seeing as another user: nothing is changed so".into());
+        }
+        self.start_bundle(
+            ExportTo::Client { client, id },
+            user,
+            rights,
+            bundle,
+            branch,
+        )
+    }
+
+    /// The command line's bundle started on the exports' thread; `reply`
+    /// answered when it comes back (or now, refused).
+    pub(super) fn start_command_bundle(
+        &mut self,
+        user: &str,
+        rights: Arc<UserRights>,
+        bundle: Bundle,
+        branch: Option<String>,
+        reply: std_mpsc::Sender<Result<serde_json::Value, String>>,
+    ) {
+        let started = self.guarded("the bundle", |h| {
+            h.start_bundle(
+                ExportTo::Command(reply.clone()),
+                user,
+                rights.clone(),
+                bundle,
+                branch,
+            )
+        });
+        if let Err(e) = started {
+            let _ = reply.send(Err(self.sanitise(&rights, &e)));
+        }
     }
 
     /// A client's export (its question `id`) started on the exports'
@@ -282,12 +438,14 @@ impl NetHost {
         at_large: bool,
     ) {
         for f in self.exports.in_flight.values_mut() {
-            f.landed.push(Landed {
-                code: code.to_owned(),
-                objects: objects.to_vec(),
-                tiles: tiles.clone(),
-                at_large,
-            });
+            if let Flight::Export { landed, .. } = &mut f.flight {
+                landed.push(Landed {
+                    code: code.to_owned(),
+                    objects: objects.to_vec(),
+                    tiles: tiles.clone(),
+                    at_large,
+                });
+            }
         }
     }
 
@@ -303,8 +461,7 @@ impl NetHost {
             to,
             user,
             rights,
-            path,
-            landed,
+            flight,
         } = f;
         // The rights it was decided with, still the user's.
         let now = match &to {
@@ -314,7 +471,18 @@ impl NetHost {
                 active.then(|| self.rights_of(&user))
             }
         };
-        let result = match (back.written, now) {
+        let (path, landed, written) = match (flight, back.done) {
+            (Flight::Export { path, landed }, Done::Export(w)) => (path, landed, w),
+            (Flight::Bundle(d), Done::Bundle(ready)) => {
+                self.bundle_back(to, &user, &rights, now, *d, ready);
+                return;
+            }
+            _ => {
+                log("the exports' thread: work came back as another kind (a bug)");
+                return;
+            }
+        };
+        let result = match (written, now) {
             (_, None) => {
                 // Its client gone or let go: nothing to send, nothing kept.
                 remove_project(&path);
@@ -363,6 +531,63 @@ impl NetHost {
                     .and_then(|(report, _)| serde_json::to_value(report).map_err(|e| e.to_string()))
                     .map_err(|e| self.sanitise(&rights, &e));
                 let _ = reply.send(result);
+            }
+        }
+    }
+}
+
+impl NetHost {
+    /// A bundle's branch's line back from the exports' thread: applied
+    /// ([`NetHost::bundle_apply`]) and answered — or nothing, its user's
+    /// rights changed meanwhile or its client gone (see the module's
+    /// notes).
+    fn bundle_back(
+        &mut self,
+        to: ExportTo,
+        user: &str,
+        rights: &Arc<UserRights>,
+        now: Option<Arc<UserRights>>,
+        decided: BundleDecided,
+        ready: Result<Box<PreparedLine>, String>,
+    ) {
+        let result = match (ready, now) {
+            (_, None) => {
+                if let ExportTo::Command(reply) = to {
+                    let _ = reply.send(Err(format!("{user} is not a user of this network")));
+                }
+                return;
+            }
+            (Err(e), Some(_)) => Err(e),
+            (Ok(_), Some(now)) if !now.same_as(rights) => {
+                let why = "your rights changed while the bundle was made ready: nothing \
+                           applied — bring it back again"
+                    .to_owned();
+                self.audit_refused(user, "a bundle", &why);
+                Err(why)
+            }
+            (Ok(ready), Some(now)) => self.guarded("the bundle", |h| {
+                h.bundle_apply(user, &now, decided, Some(*ready))
+            }),
+        };
+        if let Err(e) = &result {
+            log(&format!("bundle of {user}: {e}"));
+        }
+        let result = result.map_err(|e| self.sanitise(rights, &e));
+        match to {
+            ExportTo::Client { client, id } => {
+                self.push(
+                    client,
+                    None,
+                    None,
+                    Some(ServerMsg::BundleImported {
+                        id,
+                        result: result.map(Box::new),
+                    }),
+                );
+            }
+            ExportTo::Command(reply) => {
+                let _ = reply
+                    .send(result.and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())));
             }
         }
     }

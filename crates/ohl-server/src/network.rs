@@ -548,6 +548,9 @@ struct Stats {
     /// Phase 14: an export decided on the authority (before its thread
     /// writes it), ms.
     export_plan_ms: Vec<f64>,
+    /// A bundle decided on the authority (before its thread makes its
+    /// branch's line ready), ms.
+    bundle_plan_ms: Vec<f64>,
 }
 
 fn keep(v: &mut Vec<f64>, x: f64) {
@@ -3795,6 +3798,7 @@ impl NetHost {
                     "tiles_not_made": self.stats.tiles_not_made,
                     "check_snapshot_ms": self.stats.check_snapshot_ms,
                     "export_plan_ms": self.stats.export_plan_ms,
+                    "bundle_plan_ms": self.stats.bundle_plan_ms,
                 })
                 .to_string())
             }
@@ -3969,12 +3973,12 @@ impl NetHost {
     }
 
     /// Whether long work `ask` may start now: a check waits while the
-    /// checks' worker runs one, a client's export while the exports'
-    /// thread writes one (the jobs go on meanwhile).
+    /// checks' worker runs one, a client's export or bundle while the
+    /// exports' thread works on one (the jobs go on meanwhile).
     fn may_start(&self, ask: &NetAsk) -> bool {
         match ask {
             NetAsk::Check { .. } => !(self.check_running && self.worker.is_some()),
-            NetAsk::Export { .. } => !self.exports.client_running(),
+            NetAsk::Export { .. } | NetAsk::Import { .. } => !self.exports.client_running(),
             _ => true,
         }
     }
@@ -4139,6 +4143,20 @@ impl Host for NetHost {
                     self.start_command_export(&user, rights, working_set, reach, out, reply);
                 }
             }
+            Job::Offline {
+                user,
+                what: crate::server::OfflineJob::Import { bundle, branch },
+                reply,
+            } if self.exports.on_thread() => {
+                // Its branch's line made ready on the exports' thread,
+                // answered when applied.
+                if !self.rights.active(&user) {
+                    let _ = reply.send(Err(format!("{user} is not a user of this network")));
+                } else {
+                    let rights = self.rights_of(&user);
+                    self.start_command_bundle(&user, rights, *bundle, branch, reply);
+                }
+            }
             Job::Offline { user, what, reply } => {
                 let done = self.guarded("the offline working set", |h| {
                     let rights = h.rights_of(&user);
@@ -4257,6 +4275,28 @@ impl Host for NetHost {
                     None,
                     None,
                     Some(ServerMsg::WorkingSetExported { id, result }),
+                );
+            }
+            return;
+        }
+        // A bundle: decided here, its branch's line made ready on the
+        // exports' thread, applied here when it comes back.
+        if self.exports.on_thread()
+            && let NetAsk::Import { id, bundle, branch } = h.ask
+        {
+            let started = self.guarded("the bundle", |s| {
+                s.start_client_bundle(client, &user, id, *bundle, branch)
+            });
+            if let Err(e) = started {
+                let result = Err(match self.client_rights(client) {
+                    Some(r) => self.sanitise(&r, &e),
+                    None => e,
+                });
+                self.push(
+                    client,
+                    None,
+                    None,
+                    Some(ServerMsg::BundleImported { id, result }),
                 );
             }
             return;

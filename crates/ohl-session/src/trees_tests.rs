@@ -461,3 +461,57 @@ fn a_branchs_base_is_read_along_what_differs() {
     let again = Session::open(&path).unwrap();
     assert_eq!(held(&again), before);
 }
+
+/// A project line made ready on another thread ([`crate::lines::LineSource`],
+/// the exports' thread of a network's server) is the line `create_line`
+/// makes itself from the same revision: the same objects, line, spatial
+/// and reference indexes, and after the same command and commit the same
+/// tree. An offer from another revision is not taken, and dropped.
+#[test]
+fn a_line_made_ready_elsewhere_is_the_line_made_here() {
+    for split in [true, false] {
+        let mut s = project(&format!("prepared-{split}"), split, 40);
+        let first = s.head_revision().unwrap().unwrap();
+        shift(&mut s, "T2", 3.0).unwrap();
+        s.commit("ana", "second").unwrap();
+        let second = s.head_revision().unwrap().unwrap();
+        shift(&mut s, "T3", 1.0).unwrap();
+        // Made here, then from a line made ready on another thread.
+        s.create_line("ana", "here", &first).unwrap();
+        let source = s.line_source(&first).unwrap();
+        assert_eq!(source.revision(), first);
+        let ready = std::thread::spawn(move || source.prepare())
+            .join()
+            .unwrap()
+            .unwrap();
+        s.offer_line(ready);
+        s.create_line("ana", "ready", &first).unwrap();
+        assert!(s.offered.is_none());
+        let (a, b) = (&s.others["here"], &s.others["ready"]);
+        assert_eq!(a.objects, b.objects);
+        assert_eq!(a.line, b.line);
+        assert_eq!(a.spatial, b.spatial);
+        assert_eq!(
+            b.index.as_ref().unwrap(),
+            &ohl_line::index::LineIndex::of(&a.line)
+        );
+        assert_eq!(s.line_tree("here").unwrap(), s.line_tree("ready").unwrap());
+        let mut trees = Vec::new();
+        for name in ["here", "ready"] {
+            s.select_line(name).unwrap();
+            shift(&mut s, "T4", 2.0).unwrap();
+            trees.push(s.commit("ana", &format!("on {name}")).unwrap().tree);
+        }
+        assert_eq!(trees[0], trees[1], "split {split}");
+        s.select_line(crate::versions::MAIN).unwrap();
+        // Offered from the first revision, a line made from the second
+        // works it out itself; the offer goes.
+        let source = s.line_source(&first).unwrap();
+        s.offer_line(source.prepare().unwrap());
+        s.create_line("ana", "other", &second).unwrap();
+        assert!(s.offered.is_none());
+        s.create_line("ana", "other-here", &second).unwrap();
+        assert_eq!(s.others["other"].line, s.others["other-here"].line);
+        assert_ne!(s.others["other"].line, s.others["here"].line);
+    }
+}
