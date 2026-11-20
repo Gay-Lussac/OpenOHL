@@ -1453,6 +1453,28 @@ that order; "plan ideas to get the automatic layout working"):
   facing; the two quarter turns face opposite ways), and the app's
   `layout_ui_tests` (the window lays a few-degree bend out; its picture).
 
+- **L5, an end moved to bolt directly** (2026-11-20; in active development,
+  not approved yet; [theory](../theory/joint-layout.md#ends-moved-to-bolt-directly-one-bolt-through-the-leg-looked-into-l5)).
+  `LayoutSettings::direct_moved`, on by default (the window lays out with
+  it on). In `plan_once`, a face that goes onto a plate (not every end
+  landing, not forced onto one by L1 b or the run's clash rounds): each end
+  not landing goes through `land_moved` — `cut_need` (the search's least
+  cut, refactored out of `place`, unchanged) at each sideways move from
+  the concentric one, the least whole millimetre first either way, up to
+  the shift limit and the face's thickest leg (the plate's thickness), the
+  cuts keeping every bolt on the flange and on the host's steel worked out
+  by `narrow` (the least kept) —, the others of the face as they lie; where
+  every end then lands, the face is bolted directly (`direct_planes`, so L1
+  b may still try it on a plate), each move noted. `plan_joint_ctx` plans
+  the joint again without (`direct_moved` off) and keeps the plan with the
+  moves only where it lays out more ends, or as many on fewer plates. No
+  format change (the move is the end's `shift`, written as before). Tests:
+  `joint_layout::narrow_tests`, `joint_layout_tests::ends_moved_to_bolt_directly_never_lay_out_less`
+  (never fewer ends nor more plates on the invented joints, the same plan
+  twice, no new clash, a move at most the plate's thickness). The owner's
+  one bolt through the leg with the rest on a shorter plate: looked into,
+  not built (a bolt through three plies needs a format field; measured
+  rarely possible).
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

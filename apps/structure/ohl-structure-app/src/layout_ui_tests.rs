@@ -807,3 +807,145 @@ section = "EA-61x7"
 orientation = "y-z+"
 design = { class = "bracing" }
 "#;
+
+/// An invented K-brace for the ends moved to bolt directly (L5,
+/// 2026-11-20): the leg an invented 160 × 14 angle running through N2 (one
+/// part), the two diagonals with two bolts each. Without the moves both go
+/// onto a plate on the leg (pulled back clear of each other, their bolts
+/// past its flange); with them one lies at the work point and the other is
+/// pulled back further clear of it (moved a few millimetres where that is
+/// not enough) — both bolted directly, no plate.
+const WIDE_K: &str = r#"id = "K"
+name = "Wide leg example"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["3.6 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["3.6 m", "0 m", "6 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-160x14"
+orientation = "x+y+"
+design = { class = "leg" }
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-160x14"
+orientation = "x+y+"
+design = { class = "leg" }
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "EA-61x7"
+orientation = "y-z+"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "EA-61x7"
+orientation = "z-y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[connection]]
+member = "L1"
+joint = "N2"
+kind = "continuous"
+onto = "L2"
+"#;
+
+/// L5 (2026-11-20): the window bolts both diagonals of the wide-leg K-brace
+/// directly onto the leg, no plate; its picture (the close-up before and after) for the user
+/// guide.
+#[test]
+fn ends_moved_to_bolt_directly_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-moved");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    // The example sections and an invented wide leg angle beside them.
+    let sections = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("Sections/example-sections.ohlsec"),
+        format!(
+            "{sections}\n[[section]]\nid = \"EA-160x14\"\nname = \"Equal angle 160 × 14 (invented)\"\n\
+             shape = \"equal_angle\"\nh = \"160 mm\"\nt = \"14 mm\"\nr = \"12 mm\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("wide-leg.ohls");
+    std::fs::write(&tower, WIDE_K).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n2 = p.run.joints.iter().find(|o| o.joint == "N2").unwrap();
+        assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+        assert!(n2.plan.plates.is_empty(), "{:?}", n2.plan);
+        assert_eq!(n2.plan.ends.len(), 2, "{:?}", n2.plan);
+        // Both onto the leg directly: D1 at the work point, D2 pulled back
+        // clear of it (without the moves both went onto a plate).
+        assert!(
+            n2.plan
+                .ends
+                .iter()
+                .all(|e| matches!(&e.onto, ohl_structure_link::Onto::Member(_))),
+            "{:?}",
+            n2.plan
+        );
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-moved");
+    }
+    wait_apply(&mut h);
+    h.get_all_by_label_contains("Apply (")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    let f = h.state().file.as_ref().unwrap();
+    assert!(f.structure().plates.is_empty(), "{}", f.text());
+    std::fs::remove_dir_all(dir).ok();
+}
