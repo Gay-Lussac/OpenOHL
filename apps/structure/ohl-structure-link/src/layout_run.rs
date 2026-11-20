@@ -2534,7 +2534,8 @@ fn write_rounds(
             }
             // (2026-11-20, found measuring L1) A plate's own bolts onto the
             // member it lies on (a bent plate's flat, J2b) each within its
-            // outline as written — the joint checks' own rule; else the
+            // outline and on that member's steel as written — the joint
+            // checks' own rules; else the
             // members on the plate (and on what is bent or welded to it)
             // left as they were too, said, and the joint planned again.
             for (k, id) in o.plates.iter().enumerate() {
@@ -2544,18 +2545,46 @@ fn write_rounds(
                 let Some(h) = pd.leg_bolts.as_deref() else {
                     continue;
                 };
-                if pd.outline.len() < 3
-                    || h.bolt_points.iter().all(|at| {
-                        crate::plate_checks::ray_to_outline(&pd.outline, *at, h.direction).is_some()
-                    })
-                {
+                // (And on that member's steel where it ends at the joint,
+                // past its cut: as for an end bolted onto it.)
+                let start = j
+                    .arrivals
+                    .iter()
+                    .find(|x| x.member == h.member)
+                    .and_then(|host| {
+                        let ends = host.continuous.is_none()
+                            && !j
+                                .arrivals
+                                .iter()
+                                .any(|b| b.continuous.as_deref() == Some(host.member.as_str()));
+                        (ends && host.cut.known())
+                            .then(|| (host.cut.value.unwrap_or(0.0), host.direction))
+                    });
+                let outside = pd.outline.len() >= 3
+                    && h.bolt_points.iter().any(|at| {
+                        crate::plate_checks::ray_to_outline(&pd.outline, *at, h.direction).is_none()
+                    });
+                let beyond = start.is_some_and(|(c, d)| {
+                    h.bolt_points
+                        .iter()
+                        .any(|at| dot3(sub3(*at, j.position), d) < c - 0.001)
+                });
+                if !outside && !beyond {
                     continue;
                 }
                 let on = o.plan.plates.get(k).map_or("?", |p| p.on.as_str());
-                let why = format!(
-                    "a plate on {on}: its own bolts onto {} would lie outside its outline",
-                    h.member
-                );
+                let why = if outside {
+                    format!(
+                        "a plate on {on}: its own bolts onto {} would lie outside its outline",
+                        h.member
+                    )
+                } else {
+                    format!(
+                        "a plate on {on}: its own bolts onto {} would lie beyond the end of its \
+                         steel (not one part through the joint)",
+                        h.member
+                    )
+                };
                 for (i, p) in o.plan.plates.iter().enumerate() {
                     if i == k || p.own.as_ref().is_some_and(|w| w.welded_to == k) {
                         for m in &p.members {
