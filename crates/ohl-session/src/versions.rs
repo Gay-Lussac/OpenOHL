@@ -1307,7 +1307,7 @@ pub(crate) fn settle_local(
 }
 
 /// An object of a state: its place among its kind and its JSON (shared).
-type Placed = (i64, Arc<Value>);
+pub(crate) type Placed = (i64, Arc<Value>);
 
 /// Whether two objects' values are the same: one and the same (shared
 /// between the states — most objects of two lines of one project: no

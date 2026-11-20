@@ -106,7 +106,7 @@ pub(crate) fn key_hash(kind: Kind, id: &str) -> H {
 
 fn nibble(h: &H, k: usize) -> u8 {
     let b = h[k / 2];
-    if k % 2 == 0 { b >> 4 } else { b & 15 }
+    if k.is_multiple_of(2) { b >> 4 } else { b & 15 }
 }
 
 /// A node's place in the trie: the first `len` hexadecimal digits of the
@@ -443,13 +443,17 @@ impl Src for Stored<'_> {
     }
 }
 
+/// What a tree keeps of one object: its JSON as hashed, its place, its
+/// value and key hashes.
+type Memo = (Arc<Value>, i64, H, H);
+
 /// What the session keeps of a project line's tree: each object's value
 /// hash (with the JSON it was taken from: shared, never copied) and the
 /// hashes of the trie's nodes, so that the next tree costs what changed.
 #[derive(Debug, Default)]
 pub(crate) struct TreeIndex {
     /// Per object: its JSON as hashed, its place, its value and key hashes.
-    memo: HashMap<(Kind, String), (Arc<Value>, i64, H, H)>,
+    memo: HashMap<(Kind, String), Memo>,
     /// Every object by key hash: place and value hash.
     entries: BTreeMap<(H, Kind, String), (i64, H)>,
     /// The nodes' hashes known (none for a node under which something
@@ -858,7 +862,7 @@ impl crate::Session {
     pub(crate) fn stored_values(
         &self,
         entries: impl Iterator<Item = ((Kind, String), (i64, H))>,
-    ) -> Result<BTreeMap<(Kind, String), (i64, Arc<Value>)>, SessionError> {
+    ) -> Result<BTreeMap<(Kind, String), crate::versions::Placed>, SessionError> {
         let mut read: HashMap<H, Arc<Value>> = HashMap::new();
         let mut out = BTreeMap::new();
         for (key, (ord, h)) in entries {
