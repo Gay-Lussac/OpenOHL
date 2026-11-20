@@ -165,6 +165,10 @@ impl LayoutWindow {
             // bent away from the flange too.
             bend_facing: true,
             bend_back: true,
+            // L5 (2026-11-20): an end of a face going onto a plate bolted
+            // directly where pulled back further, or moved by at most the
+            // plate's thickness, its bolts land.
+            direct_moved: true,
         }
     }
 
