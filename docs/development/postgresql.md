@@ -325,7 +325,12 @@ PostgreSQL's own, beside them, not driven by `ohl`.
 phase 11's measurements): while the version store's tables have no rows
 the planner's statistics say so, and checking each blob of a first
 revision of 100 000 objects reads the rows written so far in the same
-transaction one after the other (minutes instead of seconds). An
-`ANALYZE` after the network holds some revisions (or a few small lines
-imported with theirs first) avoids it; a store reading many blob hashes
-at once is to come.
+transaction one after the other (minutes instead of seconds). **Since phase 14** the
+store reads the version store's statistics again (`ANALYZE vc_blob,
+vc_blob_use`, inside the transaction: its own rows counted) after 2 000
+blobs put, then each time their number doubled: the synthetic country's
+first revision as one model (an export recording it first) took 25 s
+instead of more than 7 minutes (stopped there,
+[measured](performance.md#synthetic-country-phase-14-scale-validation-and-the-exports-thread-2026-11-20)).
+Only statistics change; a store reading many blob hashes at once is
+still to come.

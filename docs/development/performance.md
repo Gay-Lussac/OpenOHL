@@ -1067,6 +1067,145 @@ Notes:
 - The run's other measures of the first line, for the record: opening it
   50 ms (split) and 194 ms (flat, after the split run's branches).
 
+## Synthetic country: phase 14, scale validation and the exports' thread (2026-11-20)
+
+Phase 14 ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-20-country-server-phase-14); built,
+in active development, not approved yet) on the 12 000-pylon synthetic
+country (seed 1, line SHA-256 `1c14a252…3d7a`): its 147 line models
+imported without revisions (51.2 s with main's code, 53.0 s with phase
+14's; 280–315 MB after `VACUUM ANALYZE`), and the country as one model
+(CH, 108 785 objects, imported in 14.0 s) in a database of its own. Each
+round worked on a fresh copy of the imported database:
+
+```bash
+ohl network serve --bind 127.0.0.1:0 --no-idle-solve --seconds 1      # three starts
+ohl network bench-rights --user admin --users 200 --assignments 1000 --moves 40
+ohl network bench-working-set --user admin --moves 20 --idle-wait-s 0 --work DIR
+OHL_BENCH_SERVE_EXE=… ohl network bench-scale --user admin --editors 40 --viewers 40 --moves 40 --work DIR
+ohl network bench-offline --user admin --rounds 3 --during-reach 10000 --work DIR           # 147 lines
+ohl network bench-offline --user admin --line CH --rounds 1 --during-reach 10000 --work DIR # one model
+ohl network backup --out DIR --user admin
+ohl network restore DIR --user admin --database "…an empty database…"
+```
+
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on 127.0.0.1.
+**The machine was shared** with another agent's full check (a load
+average of 4 to 14 on 10 cores): main's code (a2b8b705) and phase 14's
+were run in turn, three rounds each; the table gives the quietest round
+of each (load 4.5–8.9; the third round of each ran at 9–14).
+`bench-scale` uses phase 14's clients against either program's server
+(`OHL_BENCH_SERVE_EXE`).
+
+**End to end with many clients** (`bench-scale`: the server as a
+process of its own; 40 editors, each a designer of one route, and 40
+viewers of the whole network join at once with views of 4 × 3 tiles of
+their own; every editor then moves structures of its route without a
+pause, each answer awaited, until two whole routes' clearances and two
+whole routes' offline working sets asked half a second later are
+answered — at most 60 s):
+
+| Measure | Main's code | Phase 14's code |
+|---|---|---|
+| Server start (every line read, the tile index made; three starts) | 2.4–2.6 s | 2.4–2.6 s |
+| Memory idle / 80 joined / everyone working | 1 311 / 1 651 / 2 353 MB | 1 310 / 1 650 / 2 293 MB |
+| 80 joins at once, each to its whole first view (960 packages made) | p50 3.8 s, p95 5.7 s | p50 3.8 s, p95 5.6 s |
+| A move by one of 40 editors moving at once (sent → answered) | p50 200 ms, p95 221 ms, at most 346 ms | p50 210 ms, p95 855 ms, at most 1.56 s |
+| Moves applied by the authority | 199 a second (p50 4.2 ms each) | 126 a second while long work ran (p50 4.9 ms each) |
+| **Checks and exports asked while they edit: waited before starting** | **60 s — none started while anyone edited** (they began when the editors stopped at 60 s) | **p50 6.0 s, at most 20.7 s** (started overdue after 2 s, one at a time) |
+| A whole route's clearances, asked → answered | 78 s and 83 s | 21 s and 26 s |
+| A whole route's offline working set, asked → answered | 60.6 s and 60.8 s | 5.6 s and 7.1 s, **stale**: 43 and 44 objects changed while written (the editors of those routes moving) |
+| A check's snapshot / an export's decision on the authority | 46 ms / — (written on the authority) | 44 ms / 645 ms (main's changes of the route recorded first) |
+| Clients still connected after (all 80 receive every change) | 80 of 80 | 80 of 80 |
+
+Forty users moving without a pause is a saturation test, not a working
+day: the authority applies about 200 moves a second (each 4–5 ms with
+its broadcast and rows), so each of 40 editors waits for the others'
+moves, about 200 ms. With phase 14's code the long work starts within
+seconds instead of after the editing: each start holds the commands
+waiting behind it once — a check's snapshot, an export's decision
+(here with a commit of the route's changes) — which is the p95 and the
+longest move above.
+
+**A move while a large export is written** (`bench-offline
+--during-reach`, phase 14's code in both ways: `export_worker` off is
+the authority's way as before):
+
+| | The export on the authority (as before) | On the exports' thread (phase 14) |
+|---|---|---|
+| A whole route, 10 km around, the 147 lines (1 576 objects editable, 17 other lines with 4 804 sections, 9.4 MB) | the move during it waited 274 ms (the whole export) | 42 moves meanwhile: p50 3.9 ms, p95 5.3 ms, at most 112 ms (its decision) |
+| **A whole route, 10 km around, the country as one model** (3 328 objects editable, 8 551 read-only, 15.5 MB) | **the move during it waited 1.40 s** (the whole export) | **102 moves meanwhile: p50 6.7 ms, p95 7.9 ms, at most 714 ms** (its decision: 705 ms) |
+| The export itself | 0.27 s / 1.40 s | 0.28 s / 1.44 s, the same file (tested) |
+| A move idle | p50 4.0 / 6.6 ms | p50 3.8 / 6.7 ms |
+
+Of the export on the country as one model, the decision left on the
+authority is half: the working set's extent (0.23 s) and the line's own
+neighbours within 10 km (0.39 s), both worked out over the whole model
+(O17's known per-model cost of an extent); the writing (0.7 s) is on
+the thread.
+
+**The country as one model**, measured with it (phase 14's code):
+
+| Measure | Value |
+|---|---|
+| The first export (main had no revision: its first revision recorded first, 108 785 objects) | 23.7 s; with main's code more than 7 minutes, stopped there (see below) |
+| A bundle of 20 / 500 changes brought back (on the authority) | 9.7 s / 10.6 s |
+
+**Not slower** — the same benches as phase 13, main's code against
+phase 14's (the quietest rounds; the others within 3 %, the busiest
+third rounds aside):
+
+| Measure | Main's code | Phase 14's code |
+|---|---|---|
+| A move applied and broadcast, in the server, a network admin | p50 8.6 ms, p95 9.4 ms | p50 8.6 ms, p95 9.2 ms |
+| The same, a designer of one route | p50 8.7 ms, p95 9.2 ms | p50 8.8 ms, p95 9.4 ms |
+| A partial replica loaded: a third / the whole route | 0.070 / 0.121 s | 0.073 / 0.114 s |
+| A move's rows in the replica | p50 18.0 ms | p50 18.1 ms |
+| A replica joining again after 20 moves | 373 ms | 380 ms |
+| A whole route exported (500 m, 7.7 MB; the first, then p50) | — | 0.65 s, then 0.24 s (phase 12: 0.93 / 0.25 s) |
+| Bundles of 20 / 500 changes brought back | — | 0.25 / 0.54 s (phase 12: 0.29 / 0.66 s) |
+
+**Backups and the database** (each round's database after its benches):
+
+| Measure | Main's rounds | Phase 14's rounds |
+|---|---|---|
+| The database | 429–449 MB (12 000 moves logged in `bench-scale`) | 320–327 MB (3 400–4 200 moves) |
+| `ohl network backup` | 7.1–7.2 s (dump 2.5–2.6 s, hashes 4.5 s), 22–24 MB | 6.2–6.7 s (dump 2.0–2.2 s, hashes 4.1–4.4 s), 19 MB |
+| `ohl network restore` with its drill | 9.6–10.0 s | 8.4–9.3 s |
+
+The database grows with the log of every move (the editors of main's
+rounds made three times as many); the backup and the restore are the
+same work per row in both.
+
+Notes:
+
+- **Found and fixed** — long work waited behind commands that never
+  stopped coming: phase 13 starts a check, an export or a bundle only
+  when no other job waits, and with forty users editing at once there
+  always was one. Phase 14 starts long work that may start and has
+  waited 2 s anyway, between two jobs, at most one such start every 2 s.
+- **Found and fixed** — a big model's first revision in one transaction
+  checked each blob's references by reading the rows written so far
+  (the planner's statistics of nearly empty tables, see
+  [PostgreSQL](postgresql.md)): the store reads the version store's
+  statistics again after 2 000 blobs, then each time their number
+  doubled. On the country as one model: more than 7 minutes (stopped,
+  about two thirds of the rows written) → 23.7–25.4 s.
+- **Found and fixed** — a line's library import read and parsed every
+  file of a kind again for each of its entries (quadratic in the files
+  of a kind): minutes for a line with hundreds of tower files, about a
+  sixth of that now, the same report (measured locally on a real line;
+  its numbers are not published). The synthetic lines carry no library
+  files: their import is unchanged (51–53 s).
+- **Not changed, measured**: a bundle brought back on the country as one
+  model holds the authority 10 s (its branch made over the working set
+  and its command applied on a model of 108 785 objects); the 147 lines
+  0.25–0.54 s. The export's decision on the country as one model 0.7 s.
+  Both are the per-model costs O17 lists (an index by place in the
+  session, then the bundle on a thread too).
+- The packages of 80 views made at once: p50 6.9 ms, p95 66 ms each on
+  the server; none refused (the budget of 1 024 being made).
+
 ## Synthetic country: phase 13, security, backups and the checks' worker (2026-11-20)
 
 Phase 13 ([ADR-0013](../adr/0013-country-server.md),

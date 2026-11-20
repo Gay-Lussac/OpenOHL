@@ -403,7 +403,17 @@ the work back:
    they are recorded first — only by someone who may edit them all (as
    for a branch over a working set): otherwise ask for a commit of main.
    The export is recorded on the server and in the audit; nothing is
-   reserved for you.
+   reserved for you. *Since phase 14* the server writes the file on a
+   thread of its own, so other users keep editing meanwhile: the file is
+   your working set as it was when the server took it (its base
+   revision). If something in it, or within its reach, changes on the
+   server while the file is being written, the report says how many
+   objects changed and marks the export **stale** (`"stale": true`,
+   `changed_meanwhile`): those changes are not in your file — export
+   again for the newest state, or bring your work back as usual (they
+   are listed as conflicts with main, or as neighbours changed since).
+   If your rights change while it is written, you get nothing: ask
+   again.
 2. **Work offline** in OHL-Design or on the command line, and **commit**
    your work. The read-only neighbours cannot be changed. `ohl network
    check-offline ws.ohl --check clearances --case "10 °C" --rules
