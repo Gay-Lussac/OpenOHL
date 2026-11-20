@@ -718,7 +718,7 @@ fn schema_4_brought_to_5() {
             .unwrap();
     }
     let net = Network::connect(&url).unwrap();
-    assert_eq!(net.schema().unwrap(), 5);
+    assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
     assert_eq!(net.library_rev().unwrap(), 0);
     assert_eq!(net.lines().unwrap().len(), 1);
     let s = net.library_state().unwrap();
