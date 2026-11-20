@@ -878,6 +878,72 @@ kind = "continuous"
 onto = "L2"
 "#;
 
+/// J6 (2026-11-20): the window lays the K-brace's diagonals onto a plate on
+/// the angle of a built-up leg (four angles in a cross) facing them — the
+/// plate drawn on that angle, nothing running into the leg's other angles;
+/// its picture for the user guide.
+#[test]
+fn a_plate_on_a_built_up_leg_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-built-up");
+    let dir = path.parent().unwrap().to_path_buf();
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries");
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        examples.join("sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        examples.join("bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("built-up-leg.ohls");
+    std::fs::write(
+        &tower,
+        WIDE_K
+            .replace(
+                "name = \"Wide leg example\"",
+                "name = \"Built-up leg example\"",
+            )
+            .replace(
+                "section = \"EA-160x14\"\norientation = \"x+y+\"",
+                "section = \"4X-61x7\"",
+            )
+            .replace(
+                "bolts = { diameter = \"16 mm\", count = 2 }",
+                "bolts = { diameter = \"12 mm\", count = 3 }",
+            ),
+    )
+    .unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n2 = p.run.joints.iter().find(|o| o.joint == "N2").unwrap();
+        assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+        assert!(!n2.plan.plates.is_empty(), "{:?}", n2.plan);
+        assert!(
+            n2.plan.plates.iter().all(|q| q.on == "L1" || q.on == "L2"),
+            "{:?}",
+            n2.plan
+        );
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-built-up");
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// L5 (2026-11-20): the window bolts both diagonals of the wide-leg K-brace
 /// directly onto the leg, no plate; its picture (the close-up before and after) for the user
 /// guide.

@@ -402,9 +402,16 @@ fn a_built_up_leg_is_met_on_the_angle_facing_the_member_never_forced() {
             "design = { class = \"bracing\", bolts = { diameter = \"12 mm\", count = 1 } }",
         );
     // On the inner face of the facing angle (as turned): clear of its other
-    // leg, the bolt does not land on the flange, and a plate on a built-up
-    // member is not laid out automatically; not laid out, said.
-    let p = plan(&text, "N2");
+    // leg, the bolt does not land on the flange, and (J6 off) a plate on a
+    // built-up member is not laid out automatically; not laid out, said.
+    let p = plan_joint(
+        &joint(&text, "N2"),
+        &LayoutSettings {
+            built_up_plates: false,
+            ..settings()
+        },
+        &|_, _| None,
+    );
     assert!(!p.laid_out());
     assert!(
         p.hand.iter().all(|h| h.contains("is built up")),
@@ -839,11 +846,16 @@ fn an_end_asked_bolted_directly_leaves_its_plate() {
 /// 160 mm angle added to the example sections; its star of two, built
 /// up, too), the diagonals with two 12 mm bolts each.
 pub(crate) fn wide_main() -> (crate::SectionLibrary, String) {
+    wide_main_with("16 mm")
+}
+
+/// [`wide_main`] with the star's root radius `r_star`.
+pub(crate) fn wide_main_with(r_star: &str) -> (crate::SectionLibrary, String) {
     let lib = crate::SectionLibrary::parse(&format!(
         "{}\n[[section]]\nid = \"EA-160x15\"\nname = \"Equal angle 160 × 15 (invented)\"\n\
          shape = \"equal_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"16 mm\"\n\
          \n[[section]]\nid = \"2S-160x15\"\nname = \"Two angles 160 × 15 in a star \
-         (invented)\"\nshape = \"star_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"16 mm\"\n\
+         (invented)\"\nshape = \"star_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"{r_star}\"\n\
          gap = \"11 mm\"\n",
         std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
