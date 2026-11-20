@@ -4355,6 +4355,7 @@ dependencies = [
  "ohl-server",
  "ohl-session",
  "ohl-spotting",
+ "ohl-store-pg",
  "ohl-structure-edit",
  "ohl-structure-link",
  "ohl-structure-loads",

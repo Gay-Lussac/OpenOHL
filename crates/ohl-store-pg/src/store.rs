@@ -762,6 +762,9 @@ impl Store for PgStore {
         old: &BTreeMap<(Kind, String), Entry>,
         new: &BTreeMap<(Kind, String), Entry>,
     ) -> Result<usize, SessionError> {
+        if !self.spatial_kept(line) {
+            return Ok(0);
+        }
         let mut changed = 0;
         let mut c = self.c();
         let delete = c
@@ -815,8 +818,16 @@ impl Store for PgStore {
         Ok(changed)
     }
 
+    fn spatial_kept(&self, line: &str) -> bool {
+        line == ohl_session::versions::MAIN
+    }
+
     fn spatial_load(&self, line: &str) -> Result<BTreeMap<(Kind, String), Entry>, SessionError> {
         let mut out = BTreeMap::new();
+        if !self.spatial_kept(line) {
+            // Rows of a branch written before 2026-11-20: not read.
+            return Ok(out);
+        }
         for r in self.rows(
             "SELECT kind, id, level, tx, ty, x0, y0, x1, y1 FROM spatial
              WHERE line_id = $1 AND branch = $2",

@@ -172,6 +172,7 @@ pub(crate) async fn listen(
     jobs: std_mpsc::Sender<Job>,
     gate: Arc<Gate>,
     token_check: Option<crate::server::TokenCheck>,
+    sign_in: Option<crate::sign_in::OidcOffer>,
 ) {
     let scenes = Arc::new(Scenes::new());
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
@@ -195,12 +196,13 @@ pub(crate) async fn listen(
         };
         next += 1;
         let client = WEB_CLIENTS + next;
-        let (acceptor, jobs, scenes, gate, token_check) = (
+        let (acceptor, jobs, scenes, gate, token_check, sign_in) = (
             acceptor.clone(),
             jobs.clone(),
             scenes.clone(),
             gate.clone(),
             token_check.clone(),
+            sign_in.clone(),
         );
         tokio::spawn(async move {
             let entry = Entry {
@@ -208,6 +210,7 @@ pub(crate) async fn listen(
                 ip: from.ip(),
                 pending,
                 token_check,
+                sign_in,
             };
             if let Err(e) = connection(tcp, acceptor, client, jobs, scenes, entry).await {
                 log(&format!("web connection {next}: {e}"));
@@ -224,6 +227,8 @@ struct Entry {
     pending: Pending,
     /// Phase 13: a network's checker of sign-in tokens.
     token_check: Option<crate::server::TokenCheck>,
+    /// Its sign-in offered (the sign-in page, 2026-11-20).
+    sign_in: Option<crate::sign_in::OidcOffer>,
 }
 
 /// An HTTP request's head.
@@ -475,6 +480,21 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
         None => return Ok(()),
     };
     let (protocol, user, code, options, id_token) = match hello {
+        // The join page's question: answered, then the WebSocket goes.
+        ClientMsg::SignInOptions { protocol } => {
+            let msg = if protocol == PROTOCOL {
+                ServerMsg::SignIn(crate::sign_in::SignInOptions {
+                    oidc: entry.sign_in.clone(),
+                })
+            } else {
+                ServerMsg::Refused {
+                    reason: crate::protocol_refusal(protocol),
+                }
+            };
+            let _ = send(&mut ws, &msg).await;
+            let _ = ws.close(None).await;
+            return Ok(());
+        }
         ClientMsg::Hello {
             protocol,
             user,

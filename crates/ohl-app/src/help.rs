@@ -152,6 +152,33 @@ pub fn open(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens web address `url` in the system's browser (an organisation's
+/// sign-in page: its `&`s kept whole on every system).
+#[cfg(not(test))]
+pub fn open_url(url: &str) -> Result<(), String> {
+    let mut command = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(target_os = "windows") {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    command
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("opening the browser: {e}"))
+}
+
+/// Tests: the address is noted, nothing is started.
+#[cfg(test)]
+pub fn open_url(url: &str) -> Result<(), String> {
+    OPENED.lock().unwrap().push(PathBuf::from(url));
+    Ok(())
+}
+
 /// Opens the manual's page `page` (e.g. `user-guide/analyses`, without
 /// extension) at section `anchor`: the built book's page, else its
 /// Markdown source (the section's heading then to look for). What was

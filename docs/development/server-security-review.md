@@ -79,6 +79,38 @@ fetch may take a moment); a bad token makes the address wait as a wrong
 code does. The subject signs in only as the user a network admin mapped
 it to.
 
+## The sign-in window's side (2026-11-20)
+
+`crates/ohl-server/src/sign_in.rs` (the client's side, used by
+OHL-Design's Sign in to a network window) and the server's answer to
+`sign_in_options`:
+
+- **What the server says before a join**: only whether it takes OIDC
+  sign-ins, with its provider's issuer and the client id — both public
+  (they are in the provider's own sign-in page). Nothing about users;
+  the question costs the address its pending slot like a hello, answered
+  once, then the connection goes.
+- **The authorization code flow with PKCE** (S256, a 64-character
+  verifier from the system's random source), a `state` and a `nonce` of
+  32 random characters each, checked; the redirect on the loopback
+  (`http://127.0.0.1:PORT/callback`, RFC 8252), a port for each sign-in,
+  listening on 127.0.0.1 only, closed after it, at most 5 minutes, any
+  other path answered 404, 16 KB of request read at most; the provider's
+  endpoints from its discovery document (its `issuer` the one the server
+  names), over HTTPS only (plain HTTP only to this computer: tests), no
+  redirect followed, 10 s and 1 MB at most. The ID token's claims looked
+  at (issuer, audience, nonce) before it is used; its signature and
+  times are the server's to check, as before.
+- **No password in OHL-Design**, and **tokens in memory only** — no
+  keychain is used in the code base, so none is used here: never written,
+  never logged (`SignedIn`'s `Debug` names no token, tested), gone when
+  OHL-Design closes. A refresh token, when given, renews the ID token for
+  joining again (after 50 minutes, a server taking tokens issued within
+  the hour).
+- **Accepted**: a program on the same computer could connect to the
+  loopback port during a sign-in; without the `state` its answer is
+  refused, and the code is useless without the verifier (PKCE).
+
 ## Not reviewed here
 
 The desktop applications, the plugins' sandbox (ADR-0003, its own

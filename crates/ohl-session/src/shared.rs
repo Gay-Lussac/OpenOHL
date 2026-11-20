@@ -329,11 +329,20 @@ struct Ctx<'a> {
     recorded: &'a BTreeMap<String, Vec<User>>,
     geo: RefCell<Option<Geo>>,
     of_structure: RefCell<HashMap<String, BTreeSet<String>>>,
+    /// The structures' routes kept by the place index ([`crate::places`]),
+    /// when it is up to date.
+    known: Option<&'a crate::places::PlaceIndex>,
 }
+
+/// No users recorded (a [`RouteOf`]'s).
+static NO_USERS: BTreeMap<String, Vec<User>> = BTreeMap::new();
 
 impl Ctx<'_> {
     /// The routes of structure `s` as it is (see the module's notes).
     fn structure_routes(&self, s: &Structure) -> BTreeSet<String> {
+        if let Some(r) = self.known.and_then(|p| p.routes(&s.id)) {
+            return r.clone();
+        }
         if let Some(r) = self.of_structure.borrow().get(&s.id) {
             return r.clone();
         }
@@ -1253,11 +1262,64 @@ impl Session {
             recorded: &BTreeMap::new(),
             geo: RefCell::new(None),
             of_structure: RefCell::new(HashMap::new()),
+            known: None,
         };
         objects
             .iter()
             .map(|(kind, id)| ctx.routes_now(*kind, id))
             .collect()
+    }
+
+    /// The place index of the line worked on, made when first needed
+    /// ([`crate::places`]: each structure's routes as the rules above
+    /// count them).
+    pub(crate) fn ensure_places(&mut self) {
+        if self.places.is_some() {
+            return;
+        }
+        self.line_index();
+        let index = self.index.as_ref().expect("made above");
+        let ctx = Ctx {
+            line: &self.line,
+            index,
+            routes: None,
+            part: None,
+            recorded: &NO_USERS,
+            geo: RefCell::new(None),
+            of_structure: RefCell::new(HashMap::new()),
+            known: None,
+        };
+        let routes: HashMap<String, BTreeSet<String>> = self
+            .line
+            .structures
+            .iter()
+            .map(|s| (s.id.clone(), ctx.structure_routes(s)))
+            .collect();
+        self.places = Some(crate::places::PlaceIndex::of(&self.line, index, routes));
+    }
+
+    /// The place index kept up to date after a command applied in place
+    /// changed `changed` (or dropped, see [`crate::places`]).
+    pub(crate) fn places_changed(&mut self, changed: &[(Kind, String)]) {
+        let Some(mut places) = self.places.take() else {
+            return;
+        };
+        let Some(index) = self.index.as_ref() else {
+            return;
+        };
+        let ctx = Ctx {
+            line: &self.line,
+            index,
+            routes: None,
+            part: None,
+            recorded: &NO_USERS,
+            geo: RefCell::new(None),
+            of_structure: RefCell::new(HashMap::new()),
+            known: None,
+        };
+        if places.changed(&self.line, index, changed, |id| ctx.routes_of_id(id)) {
+            self.places = Some(places);
+        }
     }
 
     /// The objects of the line using structure `id` that `keep` does not
@@ -1276,6 +1338,7 @@ impl Session {
             recorded: &BTreeMap::new(),
             geo: RefCell::new(None),
             of_structure: RefCell::new(HashMap::new()),
+            known: None,
         };
         ctx.users(id)
             .into_iter()
@@ -1312,6 +1375,7 @@ impl Session {
             recorded: &self.part_users,
             geo: RefCell::new(None),
             of_structure: RefCell::new(HashMap::new()),
+            known: None,
         };
         let after = after_values(prims);
         let mut out = Outcome::default();
@@ -1927,4 +1991,81 @@ fn user_in(kind: Kind, id: &str, value: &Value, structure: &str) -> Option<User>
         clamps,
         tied: false,
     })
+}
+
+/// The routes of the line's objects as the rules of shared towers count
+/// them, the structures' taken from an up-to-date place index
+/// ([`crate::places`]); each object's worked out once.
+pub(crate) struct RouteOf<'a> {
+    ctx: Ctx<'a>,
+    memo: RefCell<HashMap<(Kind, String), BTreeSet<String>>>,
+}
+
+impl<'a> RouteOf<'a> {
+    pub(crate) fn new(
+        line: &'a Line,
+        index: &'a LineIndex,
+        places: &'a crate::places::PlaceIndex,
+    ) -> Self {
+        Self {
+            ctx: Ctx {
+                line,
+                index,
+                routes: None,
+                part: None,
+                recorded: &NO_USERS,
+                geo: RefCell::new(None),
+                of_structure: RefCell::new(HashMap::new()),
+                known: Some(places),
+            },
+            memo: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// As [`Self::new`], every structure's routes worked out (no place
+    /// index: the tests' whole scan).
+    pub(crate) fn fresh(line: &'a Line, index: &'a LineIndex) -> Self {
+        Self {
+            ctx: Ctx {
+                line,
+                index,
+                routes: None,
+                part: None,
+                recorded: &NO_USERS,
+                geo: RefCell::new(None),
+                of_structure: RefCell::new(HashMap::new()),
+                known: None,
+            },
+            memo: RefCell::new(HashMap::new()),
+        }
+    }
+
+    /// The routes of line object `kind`/`id` (none: not there).
+    pub(crate) fn of(&self, kind: Kind, id: &str) -> BTreeSet<String> {
+        let key = (kind, id.to_owned());
+        if let Some(r) = self.memo.borrow().get(&key) {
+            return r.clone();
+        }
+        let r = self.ctx.routes_now(kind, id);
+        self.memo.borrow_mut().insert(key, r.clone());
+        r
+    }
+
+    /// Whether line object `kind`/`id` is on route `route`.
+    pub(crate) fn on(&self, kind: Kind, id: &str, route: &str) -> bool {
+        self.of(kind, id).contains(route)
+    }
+
+    /// The users of structure `id` outside `keep` (as
+    /// [`Session::users_outside`]).
+    pub(crate) fn users_outside(&self, id: &str, keep: &BTreeSet<(Of, String)>) -> Vec<User> {
+        self.ctx
+            .users(id)
+            .into_iter()
+            .filter(|u| {
+                of_kind(u.user.kind).is_some_and(|of| !keep.contains(&(of, u.user.id.clone())))
+            })
+            .map(|u| u.user)
+            .collect()
+    }
 }

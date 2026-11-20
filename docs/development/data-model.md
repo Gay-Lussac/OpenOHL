@@ -3932,6 +3932,16 @@ Nothing of this is stored: the file is the same as before.
   and wire points, a jumper its ends' structures and wire points, the
   section or jumper it taps and its support clamps' structures, a spacer
   its two sections); the sections with a span point placed by station.
+- Since 2026-11-20, for the line worked on, its **place index**
+  (`ohl_session::places`, made when a working set's extent first needs
+  it): each structure's routes (as the rules of shared towers count
+  them) and the structures of each route, the structures by cell of a
+  1 km grid in plan, and an upper bound of the longest span. An extent
+  looks at its candidates only, each tested as by the whole scan
+  (`Session::set_whole_scan` compares both ways). Kept up to date by the
+  commands applied in place (structures placed again, spans measured);
+  dropped on a change of routes, alignments, their points or the
+  settings, a line made whole, a unit of work put back.
 - A command is **applied in place** (`ohl_session::in_place`): the
   objects it puts and deletes change in the map, the line's objects
   changed are read again from their JSON and put in the line where their
@@ -4537,7 +4547,7 @@ kept; times given as the project file writes them,
 | `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network; + `routes` (schema 2) |
 | `oplog` | `oplog` | + `line_id`; `seq` numbered across the network; + `lines`, `tiles` (schema 2) |
 | — | `stream` | every change the server applied and broadcast, logged or not, at its position (schema 2) |
-| `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree) |
+| `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree); since 2026-11-20 **the main line's rows only** (`Store::spatial_kept`: a branch's index is worked out in memory — nothing reads it from the database, and writing a whole model's index for each new branch was most of bringing a bundle back); rows of branches written before are not read, and go with their branch |
 | `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
 | `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | since phase 11 (2026-11-20) a model's revisions are written as split trees (a trie by the hash of kind and id, its nodes blobs; above); library reviews later |
 | `edit_grant` | `edit_grant`, + `line_id` | a project's edit grants as imported: still checked by the session beside the assignments (phase 7; turned into assignments at import later) |
@@ -4961,6 +4971,8 @@ alone (a network's messages sent to it get a notice).
 
 | Message | Fields | Meaning |
 |---|---|---|
+| client `sign_in_options` | `protocol` | asked first instead of joining (2026-11-20, OHL-Design's sign-in window; the web client's socket too): answered with `sign_in`, then the connection closes. A server of before closes it unanswered (invitations only) — no new protocol |
+| server `sign_in` | `oidc`? (`issuer`, `client_id`) | how the server takes sign-ins: personal invitations always; the OIDC provider's issuer and the client id its tokens are for when it checks them. Another protocol's question gets `refused` |
 | client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`?, `see_as`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows`; phase 7: only the network's users join, each with their personal invitation (the general one admits nobody); `model` needs see on the whole line, a `working_set` see on everything its replica holds; `see_as` (whoever manages rights): what both users may see, nothing changed, in the audit; phase 13: `id_token`? — an OIDC ID token in place of the code (`code` empty), its subject mapped to `user` by a network admin; a personal code may be `G.UNTIL.MAC` (its generation and last day) |
 | client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
 | client `catch` | `since` | every change of its interest after `since` |

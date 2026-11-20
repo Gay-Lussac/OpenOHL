@@ -518,7 +518,15 @@ fn lines(open: Open<'_>) {
     let lines_now: Vec<String> = lines_of(&*s).unwrap().into_iter().collect();
     assert_eq!(lines_now, vec!["main".to_owned(), "p2".to_owned()]);
     assert_eq!(s.entry(e).unwrap().unwrap().11, "p2");
-    assert_eq!(s.spatial_load("p2").unwrap(), index);
+    // A store keeping the main line's index only (a network's database,
+    // 2026-11-20) keeps none of a project line.
+    if s.spatial_kept("p2") {
+        assert_eq!(s.spatial_load("p2").unwrap(), index);
+    } else {
+        assert!(!s.spatial_kept("p1"));
+        assert!(s.spatial_load("p2").unwrap().is_empty());
+    }
+    assert!(s.spatial_kept(crate::versions::MAIN));
     assert!(s.spatial_load("p1").unwrap().is_empty());
     assert_eq!(s.open_review("p2", "main").unwrap(), Some(review));
     s.delete_line("p2").unwrap();

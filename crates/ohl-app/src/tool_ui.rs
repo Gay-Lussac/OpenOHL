@@ -60,6 +60,7 @@ mod tests {
                 "edit-on-a-kept-measurement-or-a-note",
             ),
             ("user-guide/desktop-app", "cross-section-view"),
+            crate::sign_in::GUIDE,
         ];
         let tools = Tool::ALL.map(guide);
         let all = tools

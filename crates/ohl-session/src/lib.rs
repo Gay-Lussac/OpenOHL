@@ -1092,6 +1092,16 @@ pub struct Session {
     /// first needed and kept up to date by the commands applied in place
     /// ([`in_place`]); none after the line was made again whole.
     index: Option<ohl_line::index::LineIndex>,
+    /// The index by place of `line` ([`places`]), made when first needed
+    /// and kept up to date by the commands applied in place; none after
+    /// the line was made again whole.
+    places: Option<places::PlaceIndex>,
+    /// A project line made ready away from the session, for the next
+    /// [`Session::create_line`] ([`lines::PreparedLine`]).
+    offered: Option<Box<lines::PreparedLine>>,
+    /// The extents worked out by the whole scan (every object looked at,
+    /// no place index): for the tests comparing both ways.
+    whole_scan: bool,
     /// Every command the whole way (the line made again from its objects
     /// and validated whole), as before phase 3: for the tests comparing
     /// both ways.
@@ -1879,6 +1889,9 @@ impl Session {
             renamed: None,
             unit: None,
             index: None,
+            places: None,
+            offered: None,
+            whole_scan: false,
             whole_only: false,
             sides: None,
             part: None,
@@ -1927,6 +1940,15 @@ impl Session {
     #[doc(hidden)]
     pub fn set_whole_only(&mut self, whole: bool) {
         self.whole_only = whole;
+    }
+
+    /// Working sets' extents by the whole scan (`true`: every object
+    /// looked at, every structure's routes worked out, no place index —
+    /// as before the place index): for tests and measurements comparing
+    /// both ways; the results are the same.
+    #[doc(hidden)]
+    pub fn set_whole_scan(&mut self, whole: bool) {
+        self.whole_scan = whole;
     }
 
     /// Writes revisions as split trees (`true`) or flat ones
@@ -1996,6 +2018,20 @@ impl Session {
         &self,
         area: &Bounds,
     ) -> Result<Vec<(Kind, String, spatial::Entry)>, SessionError> {
+        if !self.conn.spatial_kept(&self.current) {
+            // A network's branch: its index in memory only.
+            return Ok(self
+                .spatial
+                .iter()
+                .filter(|(_, e)| {
+                    e.bounds.max[0] >= area.min[0]
+                        && e.bounds.min[0] <= area.max[0]
+                        && e.bounds.max[1] >= area.min[1]
+                        && e.bounds.min[1] <= area.max[1]
+                })
+                .map(|((k, id), e)| (*k, id.clone(), *e))
+                .collect());
+        }
         self.conn.spatial_query(&self.current, &self.grid, area)
     }
 
@@ -3603,6 +3639,7 @@ impl Session {
                             self.line = state.line;
                             self.spatial = state.spatial;
                             self.index = state.index;
+                            self.places = state.places;
                             self.sides = None;
                         } else if let Some(other) = self.others.get_mut(&name) {
                             let indexed = other.indexed;
@@ -3612,6 +3649,7 @@ impl Session {
                     Kept::Journal(j) => {
                         if name == self.current {
                             self.sides = None;
+                            self.places = None;
                             in_place::revert(
                                 &mut self.objects,
                                 &mut self.line,
@@ -3620,6 +3658,7 @@ impl Session {
                                 j,
                             );
                         } else if let Some(other) = self.others.get_mut(&name) {
+                            other.places = None;
                             in_place::revert(
                                 &mut other.objects,
                                 &mut other.line,
@@ -3933,6 +3972,7 @@ impl Session {
             line: std::mem::replace(&mut self.line, line),
             spatial: std::mem::replace(&mut self.spatial, spatial),
             index: self.index.take(),
+            places: self.places.take(),
             indexed: true,
         };
         // The wind sides kept are worked out again when next needed.
@@ -4331,6 +4371,9 @@ pub mod packing;
 pub mod part;
 #[cfg(test)]
 mod part_tests;
+pub mod places;
+#[cfg(test)]
+mod places_tests;
 pub mod points;
 pub mod replace;
 pub mod reports;

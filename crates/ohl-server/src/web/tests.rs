@@ -120,10 +120,29 @@ fn web_clients_join_and_follow() {
     assert!(link.ends_with(&format!("/#code={general}")), "{link}");
     let personal = server.web_link(Some("bob b")).unwrap();
     assert!(personal.contains("#user=bob%20b&code="), "{personal}");
+    // The sign-in window's question (2026-11-20): a project's server takes
+    // invitations only.
+    assert_eq!(
+        crate::sign_in::options(&server.invitation).unwrap(),
+        crate::sign_in::SignInOptions::default()
+    );
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     // The files, and nothing else.
     rt.block_on(async {
+        // The same question over the web client's socket: answered.
+        let mut w = ws(addr, fp).await;
+        send(
+            &mut w,
+            &ClientMsg::SignInOptions {
+                protocol: crate::PROTOCOL,
+            },
+        )
+        .await;
+        assert!(
+            matches!(next(&mut w).await, Some(ServerMsg::SignIn(o)) if o.oidc.is_none()),
+            "the sign-in options"
+        );
         let page = http(addr, fp, "GET / HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(page.starts_with("HTTP/1.1 200 OK"), "{page}");
         assert!(page.contains("Content-Security-Policy"));

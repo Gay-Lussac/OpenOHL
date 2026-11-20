@@ -36,7 +36,7 @@ ohl-loads = { workspace = true, optional = true }
 # audience and times checked; the issuer's keys fetched over HTTPS and
 # kept).
 jsonwebtoken = { version = "11.1", default-features = false, features = ["rust_crypto"], optional = true }
-ureq = { version = "3.4", default-features = false, features = ["rustls", "json"], optional = true }
+ureq = { version = "3.4", default-features = false, features = ["rustls", "json"] }
 
 [features]
 # A server on a country server's database (PostgreSQL, ADR-0013 phase 5):
@@ -47,7 +47,6 @@ network = [
     "dep:ohl-clearance",
     "dep:ohl-loads",
     "dep:jsonwebtoken",
-    "dep:ureq",
 ]
 
 [dev-dependencies]

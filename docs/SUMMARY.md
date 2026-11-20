@@ -77,6 +77,7 @@
   - [OHL XML schema](schema/ohl-line.md)
 - [Project files and point clouds (.ohl)](user-guide/project.md)
 - [Server mode (pre-alpha)](user-guide/server.md)
+  - [Signing in to a network](user-guide/sign-in.md)
   - [Working sets on a network](user-guide/working-set.md)
   - [A network on the command line](user-guide/network-commands.md)
   - [Deploying a network's server](user-guide/server-deployment.md)

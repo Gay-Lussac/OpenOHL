@@ -420,6 +420,16 @@ pub trait Store: Send {
     ) -> Result<usize, SessionError>;
     /// The stored index of line `line`.
     fn spatial_load(&self, line: &str) -> Result<BTreeMap<(Kind, String), Entry>, SessionError>;
+    /// Whether the store keeps project line `line`'s spatial index: a
+    /// project file every line's; a network's database (ADR-0013, the
+    /// exports' thread 2026-11-20) its models' main lines only — nothing
+    /// reads a branch's there, the session works it out in memory, and
+    /// writing a whole model's index for each new branch was most of
+    /// bringing a bundle back. Not kept: writes of it are skipped, its
+    /// load is empty, [`crate::Session::objects_in`] answers from memory.
+    fn spatial_kept(&self, _line: &str) -> bool {
+        true
+    }
     /// Objects of line `line` whose bounds touch `area`, by kind and id.
     fn spatial_query(
         &self,

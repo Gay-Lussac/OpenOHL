@@ -51,6 +51,9 @@
 pub mod base64;
 pub mod client;
 #[cfg(feature = "network")]
+#[doc(hidden)]
+pub mod fake_provider;
+#[cfg(feature = "network")]
 pub mod network;
 #[cfg(feature = "network")]
 pub(crate) mod network_rights;
@@ -63,6 +66,7 @@ pub(crate) mod packager;
 #[cfg(feature = "network")]
 pub(crate) mod scoped_report;
 pub mod server;
+pub mod sign_in;
 pub mod stream;
 pub mod web;
 
@@ -790,6 +794,14 @@ pub enum ClientMsg {
         /// The access code of the invitation.
         code: String,
     },
+    /// Asked first instead of joining (2026-11-20, the sign-in window):
+    /// how the server takes sign-ins, answered with [`ServerMsg::SignIn`],
+    /// then the connection closes. A server of before closes it
+    /// unanswered (invitations only).
+    SignInOptions {
+        /// [`PROTOCOL`].
+        protocol: u32,
+    },
     /// An edit; answered with [`ServerMsg::Response`] of the same id.
     Request {
         /// Chosen by the client.
@@ -1206,6 +1218,9 @@ pub struct SavedSet {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMsg {
+    /// What the server takes to join (the answer to
+    /// [`ClientMsg::SignInOptions`]).
+    SignIn(sign_in::SignInOptions),
     /// Joined: the project file follows on its own stream (`size` bytes),
     /// as it was after log entry `seq`.
     Welcome {
@@ -2006,6 +2021,8 @@ mod rights_tests;
 mod scoped_tests;
 #[cfg(test)]
 mod security_tests;
+#[cfg(all(test, feature = "network"))]
+mod sign_in_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(all(test, feature = "network"))]

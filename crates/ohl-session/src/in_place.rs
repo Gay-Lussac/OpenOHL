@@ -287,6 +287,7 @@ impl Session {
         });
         match out {
             Ok(Some(applied)) => {
+                self.places_changed(&applied.objects);
                 if let Some(kept) = &mut self.unit {
                     kept.replaced
                         .push((self.current.clone(), crate::Kept::Journal(j)));

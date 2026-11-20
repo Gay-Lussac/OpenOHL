@@ -64,7 +64,8 @@ from here. The owner's order of 2026-11-19:
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
    phase 6 built 2026-11-19, phases 7 to 14 (rights and roles, country
    libraries, version control at scale, offline working sets, security,
-   scale validation) 2026-11-20, in active development, not approved
+   scale validation) and the rest of the exports' thread with OHL-Design's
+   sign-in window 2026-11-20, in active development, not approved
    yet — the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
@@ -3470,9 +3471,11 @@ or three, L four or more. The phases, in order:
   meanwhile marking it stale.
   Measured on the synthetic country: main's code against phase 13's on fresh databases of the 147 lines (a shared machine, the quietest rounds): a move applied and broadcast p50 9.2 → 8.4 ms (a route's designer 9.5 → 8.9 ms), a replica loaded 0.076 / 0.130 → 0.074 / 0.120 s, joining again after 20 moves 358 → 355 ms, the start 3.0 → 2.8 s; a backup of the 147 lines 7.0–10.6 s (13.6 MB), a restore with its drill 13.8–14.1 s; **a move while a whole route's clearances run (12 s): on the authority the first waited 12.08 s, on the worker p50 9.6 ms, p95 27.8 ms (836 moves meanwhile)**.
   Left: the offline export on a thread of its own (phase 12's question
-  6, approved; built with phase 14); OHL-Design's and the web client's sign-in windows (the
-  protocol takes the token); a role per task in the database; WAL
-  archiving driven by `ohl`; OHL-Server's Operations page (stage F).
+  6, approved; built with phase 14); ~~OHL-Design's sign-in window~~
+  (built 2026-11-20, below); the web client's sign-in window (the
+  protocol takes the token; the server answers its question); a role per
+  task in the database; WAL archiving driven by `ohl`; OHL-Server's
+  Operations page (stage F).
   > **Owner:** (to answer, 2026-11-20; the recommendation after the
   > arrow) 1. Long work queued behind the commands, one per user, four
   > in all? → yes, as built. 2. A check reads at most 10 km around its
@@ -3517,10 +3520,10 @@ or three, L four or more. The phases, in order:
   clients working; a backup 6.2–7.2 s, a restore with its drill
   8.4–10.0 s; moves, replicas and the start as with main's code. The
   real line's import measured locally (results private).
-  Left: the export's decision on a big model (0.7 s on the country as
+  Left: ~~the export's decision on a big model (0.7 s on the country as
   one model: its extents over the whole model) and a bundle brought back
-  there (10 s) still on the authority; the real country's lines on a
-  server of their own.
+  there (10 s) still on the authority~~ (built 2026-11-20, below); the
+  real country's lines on a server of their own.
   > **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
   > 1. An export decided on the authority and written on a thread of its
   > own; a change landing meanwhile marks it stale instead of being
@@ -3543,6 +3546,60 @@ or three, L four or more. The phases, in order:
   > (about 200 moves a second); is that enough for the country? → yes for
   > now (a working day's edits are far fewer); measure again with the real
   > country's lines once they are imported on a server of their own.
+- [x] 15 The rest of the exports' thread and the sign-in window (S):
+  phase 14's "left" and phase 13's OHL-Design sign-in window. **Built
+  2026-11-20, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-the-rest-of-the-exports-thread-and-the-sign-in-window),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-the-rest-of-the-exports-thread-2026-11-20),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/sign-in.md)):
+  **an index by place in the session** (each structure's routes, the
+  structures by cell, the longest span: an extent looks at its
+  candidates only, each tested as before — the same extent, tested
+  against the whole scan); **a bundle's branch made ready on the
+  exports' thread** (decided and applied on the authority; changes of
+  main meanwhile its conflicts, rights changed meanwhile nothing
+  applied; the same report and branch as on the authority, tested);
+  **a network's database keeps the main lines' spatial index only**
+  (writing a whole model's for each new branch was most of a bundle);
+  **OHL-Design's Sign in to a network window** (the invitation's end
+  said, reissued and expired invitations explained, "Sign in with your
+  organisation" when the server offers it: the code flow with PKCE and a
+  loopback redirect, no password in OHL-Design, tokens in memory only;
+  tested against a fake provider on the loopback); **personal
+  invitations 90 days by default** (phase 13's question 4). Measured on
+  the country as one model: an export's decision 0.79 → 0.31 s (a move
+  during the export at most 804 → 314 ms); a bundle of 20 changes 22.8 s
+  on the authority (10.7 s on a quieter round) → 2.4 s asked → answered,
+  the authority held about 0.1 s for its decision and 0.1–0.3 s for its
+  final apply (a move meanwhile p50 6.8 ms, at most 243 ms); moves,
+  joins, memory and the start as with main's code.
+  Left: the web client's sign-in (the server answers its question; the
+  page needs the provider's origin in its security policy and the
+  provider's consent to the page's address and CORS); a clean-up of the
+  branches' spatial rows written before; OHL-Design's Offline copy menu
+  for a network (phase 12).
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+  > 1. An extent narrowed by an index by place, every candidate tested as
+  > before (the same extent, tested)? → yes, as built.
+  > 2. A network's database keeps only the main lines' spatial index (a
+  > branch's in memory; rows of branches written before ignored)? → yes,
+  > as built; a clean-up of the old rows with the next migration.
+  > 3. A bundle decided and applied on the authority, its branch's line
+  > made ready on the exports' thread; the final apply on the authority
+  > (it changes the model, decided by the rights and lines as they are)?
+  > → yes, as built.
+  > 4. A change of main landing while a bundle is made ready: one of its
+  > conflicts; rights changed meanwhile: nothing applied? → yes, as built.
+  > 5. Personal invitations 90 days by default (`--invite-days 0`: until
+  > reissued)? → yes, as built.
+  > 6. The organisation's sign-in in the user's browser (code flow with
+  > PKCE, a loopback redirect), tokens in memory only, renewed with the
+  > refresh token; signing in again after OHL-Design restarts? → yes; an
+  > OS keychain only if users ask for it.
+  > 7. The sign-in question answered without a new protocol number (a
+  > server of before answers nothing: invitations only)? → yes.
+  > 8. The web client's sign-in → build it next, with the provider's
+  > origin added to the page's `connect-src`.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

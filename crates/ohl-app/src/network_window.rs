@@ -53,6 +53,9 @@ pub struct NetState {
     /// replica holds: only what differs comes).
     #[allow(clippy::type_complexity)]
     pub rejoin: Option<Receiver<Result<Joined, String>>>,
+    /// Signed in with the organisation (in memory only): joining again
+    /// carries its ID token, renewed when old.
+    pub signed: Option<ohl_server::sign_in::SignedIn>,
 }
 
 impl std::fmt::Debug for NetState {
@@ -99,15 +102,18 @@ struct Map {
     scale: f64,
 }
 
-/// File › Join a network.
+/// File › Join a network: first the **Sign in to a network** window
+/// ([`crate::sign_in`]), then the working set picked.
 #[derive(Default)]
 pub struct JoinNetworkWindow {
-    /// The invitation, as given.
-    pub invitation: String,
-    /// User name.
+    /// The sign-in (invitation, user name, organisation's sign-in).
+    pub sign_in: crate::sign_in::SignIn,
+    /// User name (as signed in).
     pub user: String,
     /// Why the last attempt failed.
     pub error: Option<String>,
+    /// Signed in with the organisation (in memory only).
+    signed: Option<ohl_server::sign_in::SignedIn>,
     connecting: Option<Receiver<Result<(Joined, Invitation), String>>>,
     browse: Option<(Joined, Invitation)>,
     info: Option<NetworkInfo>,
@@ -133,16 +139,23 @@ pub struct JoinNetworkWindow {
     progress: Option<Progress>,
 }
 
-/// Connects to look around (no working set yet), in the background.
+/// Connects to look around (no working set yet), in the background
+/// (with the organisation's sign-in when `token`).
 fn connect(
     invitation: Invitation,
     user: String,
+    token: Option<String>,
     ctx: egui::Context,
 ) -> Receiver<Result<(Joined, Invitation), String>> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let r = join_network(&invitation, &user, &NetJoin::default(), &mut |_| {})
-            .map(|j| (j, invitation));
+        let how = NetJoin {
+            id_token: token,
+            ..NetJoin::default()
+        };
+        let r = join_network(&invitation, &user, &how, &mut |_| {})
+            .map(|j| (j, invitation))
+            .map_err(|e| crate::sign_in::explain(&e));
         let _ = tx.send(r);
         ctx.request_repaint();
     });
@@ -172,6 +185,7 @@ pub fn start_open(
     user: String,
     spec: WorkingSetSpec,
     dir: PathBuf,
+    signed: Option<ohl_server::sign_in::SignedIn>,
     ctx: egui::Context,
 ) -> Receiver<JoinEvent> {
     let (tx, rx) = channel();
@@ -181,20 +195,34 @@ pub fn start_open(
         let _ = std::fs::remove_file(&file);
         let p = tx.clone();
         let c = ctx.clone();
+        // The organisation's sign-in renewed when old.
+        let signed = match signed.as_ref().map(crate::sign_in::fresh).transpose() {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = tx.send(JoinEvent::Done(Err(e)));
+                ctx.request_repaint();
+                return;
+            }
+        };
         let how = NetJoin {
             working_set: Some(spec.clone()),
             file: Some(file.clone()),
+            id_token: signed.as_ref().map(|s| s.id_token().to_owned()),
             ..NetJoin::default()
         };
         let result = join_network(&invitation, &user, &how, &mut |g| {
             let _ = p.send(JoinEvent::Progress(g));
             c.request_repaint();
         });
-        let done = result.map(|j| {
-            let mut remote = Remote::new(j, invitation, false);
-            remote.network = Some(Box::new(NetState::new(spec)));
-            (file, Box::new(remote))
-        });
+        let done = result
+            .map(|j| {
+                let mut remote = Remote::new(j, invitation, false);
+                let mut state = NetState::new(spec);
+                state.signed = signed;
+                remote.network = Some(Box::new(state));
+                (file, Box::new(remote))
+            })
+            .map_err(|e| crate::sign_in::explain(&e));
         let _ = tx.send(JoinEvent::Done(done));
         ctx.request_repaint();
     });
@@ -205,6 +233,7 @@ impl JoinNetworkWindow {
     /// The window for `user`, not connected.
     pub fn new(user: String) -> Self {
         Self {
+            sign_in: crate::sign_in::SignIn::new(user.clone()),
             user,
             ..Self::default()
         }
@@ -337,6 +366,12 @@ impl JoinNetworkWindow {
             },
             ..Self::default()
         }
+    }
+
+    /// Whether joined to look around (past the sign-in; tests).
+    #[cfg(test)]
+    pub fn joined_network(&self) -> bool {
+        self.browse.is_some()
     }
 
     /// The picks of the controls (or why there are none).
@@ -490,16 +525,55 @@ impl JoinNetworkWindow {
             }
         }
         let mut open_spec: Option<WorkingSetSpec> = None;
+        if self.browse.is_none() && self.info.is_none() {
+            // First the sign-in, a window of its own.
+            let mut asked = None;
+            egui::Window::new("Sign in to a network")
+                .open(open)
+                .collapsible(false)
+                .resizable(false)
+                .default_width(520.0)
+                .show(ctx, |ui| {
+                    asked = self.sign_in.ui(ui, self.connecting.is_some());
+                    if let Some(e) = &self.error {
+                        crate::menu::error_label(ui, e);
+                    }
+                    if self.connecting.is_some() {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label("connecting…");
+                        });
+                    }
+                });
+            match asked {
+                Some(crate::sign_in::SignInAction::Cancel) => *open = false,
+                Some(crate::sign_in::SignInAction::Join {
+                    invitation,
+                    user,
+                    signed,
+                }) => {
+                    self.error = None;
+                    self.user = user.clone();
+                    self.signed = signed.as_deref().cloned();
+                    let token = signed.map(|s| s.id_token().to_owned());
+                    self.connecting = Some(connect(invitation, user, token, ctx.clone()));
+                }
+                None => {}
+            }
+            if !*open {
+                self.sign_in.cancel();
+            }
+            if self.connecting.is_some() {
+                ctx.request_repaint_after(Duration::from_millis(100));
+            }
+            return joined;
+        }
         egui::Window::new("Join a network")
             .open(open)
             .collapsible(false)
             .resizable(true)
             .default_width(780.0)
             .show(ctx, |ui| {
-                if self.browse.is_none() && self.info.is_none() {
-                    self.connect_ui(ui);
-                    return;
-                }
                 ui.horizontal_top(|ui| {
                     ui.vertical(|ui| {
                         ui.set_width(390.0);
@@ -533,6 +607,7 @@ impl JoinNetworkWindow {
                 self.user.trim().to_owned(),
                 spec,
                 dir.to_owned(),
+                self.signed.clone(),
                 ctx.clone(),
             ));
         }
@@ -540,47 +615,6 @@ impl JoinNetworkWindow {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
         joined
-    }
-
-    fn connect_ui(&mut self, ui: &mut egui::Ui) {
-        ui.label("Invitation (from the network's administrator)");
-        ui.add(
-            egui::TextEdit::singleline(&mut self.invitation)
-                .desired_width(480.0)
-                .hint_text("ohl://host:port/code/fingerprint"),
-        );
-        ui.horizontal(|ui| {
-            ui.label("User name");
-            ui.text_edit_singleline(&mut self.user);
-        });
-        ui.label(
-            egui::RichText::new(
-                "A network holds many lines: you pick what you work on (whole routes, a part of \
-                 a route, an area), the server snaps it out to whole tension sections and sends \
-                 it; the rest around it is drawn as read-only context.",
-            )
-            .small()
-            .weak(),
-        );
-        if let Some(e) = &self.error {
-            crate::menu::error_label(ui, e);
-        }
-        if self.connecting.is_some() {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("connecting…");
-            });
-        } else if ui.button("Connect").clicked() {
-            match self.invitation.parse::<Invitation>() {
-                Ok(inv) if !self.user.trim().is_empty() => {
-                    self.error = None;
-                    self.connecting =
-                        Some(connect(inv, self.user.trim().to_owned(), ui.ctx().clone()));
-                }
-                Ok(_) => self.error = Some("give a user name".into()),
-                Err(e) => self.error = Some(e),
-            }
-        }
     }
 
     /// The saved working sets, the picking controls, what was shown;
@@ -1008,14 +1042,27 @@ pub fn working_set_window(ctx: &egui::Context, remote: &mut Remote) -> Option<(S
                 {
                     let (tx, rx) = channel();
                     let (inv, user, spec) = (invitation.clone(), link.user.clone(), n.spec.clone());
+                    let signed = n.signed.clone();
                     let ctx = ui.ctx().clone();
                     std::thread::spawn(move || {
+                        // The organisation's sign-in renewed when old.
+                        let token = match signed.as_ref().map(crate::sign_in::fresh).transpose() {
+                            Ok(s) => s.map(|s| s.id_token().to_owned()),
+                            Err(e) => {
+                                let _ = tx.send(Err(e));
+                                ctx.request_repaint();
+                                return;
+                            }
+                        };
                         let how = NetJoin {
                             working_set: Some(spec),
                             held: true,
+                            id_token: token,
                             ..NetJoin::default()
                         };
-                        let _ = tx.send(join_network(&inv, &user, &how, &mut |_| {}));
+                        let r = join_network(&inv, &user, &how, &mut |_| {})
+                            .map_err(|e| crate::sign_in::explain(&e));
+                        let _ = tx.send(r);
                         ctx.request_repaint();
                     });
                     n.rejoin = Some(rx);

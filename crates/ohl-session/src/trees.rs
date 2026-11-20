@@ -721,7 +721,7 @@ impl crate::Session {
             .ok_or_else(|| crate::refused(format!("no project line \"{name}\"")))
     }
 
-    fn trees_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, TreeIndex>> {
+    pub(crate) fn trees_lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, TreeIndex>> {
         self.trees
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

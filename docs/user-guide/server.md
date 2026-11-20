@@ -101,7 +101,7 @@ yet** ([ADR-0013](../adr/0013-country-server.md),
 | Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
 | Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
 | Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line and the server's protocol (OHL-Design's Offline copy menu for a network not yet) |
-| Security review and its fixes, deployment files (Compose), **backups, restores and the restore drill**, migrations only after a backup, OIDC sign-in, invitations reissued and expiring, TLS to a database on another host (phase 13) | built, in active development: on the command line ([below](#security-sign-in-and-backups-phase-13-in-active-development), [deployment](server-deployment.md), [the review](../development/server-security-review.md)); a sign-in window in OHL-Design and the web client not yet |
+| Security review and its fixes, deployment files (Compose), **backups, restores and the restore drill**, migrations only after a backup, OIDC sign-in, invitations reissued and expiring, TLS to a database on another host (phase 13) | built, in active development: on the command line ([below](#security-sign-in-and-backups-phase-13-in-active-development), [deployment](server-deployment.md), [the review](../development/server-security-review.md)); OHL-Design's sign-in window built 2026-11-20 ([Signing in to a network](sign-in.md)); the web client's not yet |
 | The admin app OHL-Server | a plan waiting for the owner |
 | Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
 
@@ -436,6 +436,13 @@ the work back:
    you). Refused, with nothing kept: a bundle changing a read-only
    neighbour or a library file, changed by hand, of an export the network
    does not know or of another user's, or brought back already.
+   *Since 2026-11-20* the others' edits no longer wait for a big bundle:
+   the server checks it at once, makes its branch's line ready on a
+   thread of its own (seconds on a model of a whole country), then
+   applies it between two edits (a fraction of a second). An edit of main
+   landing meanwhile is one of its conflicts, as if it had come just
+   before; if your rights changed meanwhile nothing is applied (bring it
+   back again).
 
 Then merge the branch into main as any branch over a working set
 (above). OHL-Design's Offline copy menu does not do this for a network
@@ -461,16 +468,20 @@ yet: use the command line.
   invitation again (`ohl network rights reissue-invitation NAME`): every
   older one of that user is refused, and they are let go if connected.
   `ohl network serve --invite NAME --invite-days 30` prints invitations
-  valid to the end of that day (UTC). Invitations given before stay valid
-  until reissued.
+  valid to the end of that day (UTC) — 90 days by default since
+  2026-11-20 (`--invite-days 0`: until reissued). Invitations given
+  before stay valid until reissued.
 - **Signing in with the organisation's account (OIDC)**, if the owner's
   IT wants it: the server takes an ID token of the identity provider
   instead of an access code, checks its signature, issuer, audience and
   times, and lets the token's subject in as the network user a network
   admin mapped it to (`ohl network rights map-identity`). Personal
-  invitations stay the default and keep working. OHL-Design and the web
-  client have no sign-in window yet: the protocol and the command-line
-  client take the token.
+  invitations stay the default and keep working. Since 2026-11-20
+  OHL-Design's **Sign in to a network** window (File › Join a network)
+  offers it when the server does — the browser's sign-in, no password in
+  OHL-Design, the token in memory only — and says when an invitation
+  expired or was reissued ([Signing in to a network](sign-in.md)); the
+  web client does not offer it yet.
 - **Backups** (`ohl network backup`) beside the running server, **a
   restore** (`ohl network restore`) into an empty database that checks
   every line against the backup (the restore drill), and **schema
@@ -529,5 +540,5 @@ Somebody holding an invitation must not be able to stop the others (security rev
 - Joining a project file's server copies the whole project; joining a network's server sends a working set and the tiles around the view (above).
 - The application speaks QUIC only (UDP). Browsers use the web client's WebSocket (TCP); the application cannot use it yet, for networks that block UDP.
 - The web client: a viewer of the main line (of the tiles around the view, on a network's server); one weather case, no terrain, point clouds or backgrounds.
-- On a project file's server a user's name and the access code are the only identity. A network's server may also take sign-ins of the organisation's identity provider (OIDC, phase 13: [above](#security-sign-in-and-backups-phase-13-in-active-development)); OHL-Design's sign-in window is to come.
+- On a project file's server a user's name and the access code are the only identity. A network's server may also take sign-ins of the organisation's identity provider (OIDC, phase 13: [above](#security-sign-in-and-backups-phase-13-in-active-development)), offered by OHL-Design's sign-in window ([Signing in to a network](sign-in.md)); the web client's is to come.
 - If the connection drops, the project turns read-only. Join again to continue.

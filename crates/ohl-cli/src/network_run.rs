@@ -416,9 +416,10 @@ pub enum NetworkCommand {
         #[arg(long, default_value_t = ohl_server::server::MAX_PENDING)]
         max_per_address: usize,
         /// Phase 13: the personal invitations printed are valid this many
-        /// days (default: until reissued).
-        #[arg(long)]
-        invite_days: Option<u32>,
+        /// days (default 90 since 2026-11-20, OHL-Design's sign-in window
+        /// showing an expired invitation; 0: until reissued).
+        #[arg(long, default_value_t = ohl_server::network::DEFAULT_INVITE_DAYS)]
+        invite_days: u32,
         /// Phase 13: checks, exports and bundles waiting at most (one per
         /// user), done when no other job waits.
         #[arg(long, default_value_t = 4)]
@@ -830,7 +831,7 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                     shapes_mb,
                     heartbeat: Duration::from_millis(heartbeat_ms.max(10)),
                     idle_solve: !no_idle_solve,
-                    invite_days,
+                    invite_days: (invite_days > 0).then_some(invite_days),
                     max_heavy_queue,
                     tiles_per_second: tiles_per_second.max(0.001),
                     tiles_burst: (4.0 * tiles_per_second).max(1.0),

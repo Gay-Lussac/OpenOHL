@@ -529,6 +529,53 @@ type Connected = (
     Joined,
 );
 
+/// Asks the server of `invitation` one question as its first message
+/// (`ask`, e.g. [`ClientMsg::SignInOptions`]) and returns its one answer
+/// (none: it closed the connection unanswered). Bounded: 20 s to
+/// connect, 10 s for the answer.
+pub(crate) fn ask_once(
+    invitation: &Invitation,
+    ask: &ClientMsg,
+) -> Result<Option<ServerMsg>, String> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    rt.block_on(async {
+        let addr = tokio::net::lookup_host(&invitation.address)
+            .await
+            .map_err(|e| format!("{}: {e}", invitation.address))?
+            .next()
+            .ok_or_else(|| format!("{}: no address", invitation.address))?;
+        let bind: std::net::SocketAddr = if addr.is_ipv6() {
+            "[::]:0".parse().expect("address")
+        } else {
+            "0.0.0.0:0".parse().expect("address")
+        };
+        let mut endpoint = quinn::Endpoint::client(bind).map_err(|e| e.to_string())?;
+        endpoint.set_default_client_config(tls_client(invitation.fingerprint)?);
+        let conn = tokio::time::timeout(
+            Duration::from_secs(20),
+            endpoint
+                .connect(addr, "ohl-server")
+                .map_err(|e| e.to_string())?,
+        )
+        .await
+        .map_err(|_| format!("{}: no answer in 20 s", invitation.address))?
+        .map_err(|e| format!("{}: {e}", invitation.address))?;
+        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+        write_msg(&mut send, ask).await?;
+        let answer =
+            tokio::time::timeout(Duration::from_secs(10), read_msg::<ServerMsg>(&mut recv))
+                .await
+                .map_err(|_| format!("{}: no answer in 10 s", invitation.address))?;
+        conn.close(0u32.into(), b"done");
+        endpoint.close(0u32.into(), b"done");
+        // A server of before closes the stream unanswered: no answer.
+        Ok(answer.unwrap_or(None))
+    })
+}
+
 async fn connect(
     invitation: &Invitation,
     hello: &ClientMsg,
