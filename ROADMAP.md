@@ -2253,6 +2253,8 @@ only where it helps):
   > the record then takes it as the layout's (a run again from the file
   > takes it out): keep the hand value in the record? Recommended: yes.
   > **(4)–(6) built 2026-11-20 as recommended** (L2's follow-ups, below).
+  > **Answered 2026-11-20: as recommended** (owner; (1)–(3) kept as
+  > they are; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-joint-layout-l2-l3-l3b-recommendations-approved)).
 - [x] L2's follow-ups. **Built 2026-11-20, in active development, not
   approved yet**
   ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#l2s-follow-ups-2026-11-20),
@@ -2320,6 +2322,8 @@ only where it helps):
   > is bent (`BEND_SMALL_MAX`) and a bolt's edge distance from a bend's
   > curved part as from a free edge: keep? Recommended: yes, until a shop
   > gives its rules.
+  > **Answered 2026-11-20: as recommended** (owner; (4): the run with the
+  > design cases done with L5 below; (5)'s next step built with L3b).
 - [x] L3b. **The bent end's turn, the end running back to its bend, L3's
   small things.** **Built 2026-11-20, in active development, not approved
   yet**
@@ -2367,6 +2371,154 @@ only where it helps):
   > (3 955 left) cannot be laid out within one plate thickness either way
   > round: allow a filler (a packing plate) under the bent flap? →
   > Recommended: not before the owner's answers to L3's questions 4–6.
+  > **Answered 2026-11-20: as recommended** (owner; (4) measured with L5
+  > below).
+- [x] L5. **Ends moved to bolt directly** (the owner's idea, 2026-11-20:
+  "move the 2 diagonal a bit forward maybe to have one bolt on the main leg
+  without them touching each other. The second bolt needs the plate anyway
+  but maybe shorter"). **Built 2026-11-20, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#ends-moved-to-bolt-directly-one-bolt-through-the-leg-looked-into-l5),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-ends-moved-to-bolt-directly-l5);
+  no format change): on a face that goes onto a plate, each end whose bolts
+  do not land pulled back further, else moved sideways by at most the
+  plate's thickness, until its bolts land on the flange; where every end of
+  the face then lands, no plate (`direct_moved`, on). The move is the end's
+  `shift` (the analysis takes it at level 4, and at level 3 with the
+  estimated eccentricities; without them NOT ON THE SAFE SIDE, as every
+  shift); the limit on the safe side relative to the plate it replaces
+  (whose own offset out of the flange is as large and not in the analysis).
+  Kept at a joint only where it lays out more ends, or as many on fewer
+  plates. The owner's one bolt through the leg with the rest on a shorter
+  plate: **looked into, not built** — the bolt through the leg must lie on
+  the flange and the next one past its toe by its nut, so the two lie apart
+  across the flange by about three bolt diameters (edge distance, nut, gap):
+  only for members nearly square to the flange; 3.7 % of the plate ends on
+  a sample (63 % of them have one bolt), and a bolt through three plies
+  needs a format field. On the 78 real towers (kept privately;
+  J9's and J7a's proposals confirmed): joints laid out whole 49.7 % → 50.4 %
+  (body 49.3 % → 50.7 %, arms and top 50.1 %), ends 65.0 % → 65.3 %, plates
+  written 65 878 → 61 800 (−6.2 %; their steel by the bill of
+  materials 94.2 → 90.8 t, −3.7 %), shifts written 346 → 2 333 (the
+  moves median 3 mm, at most 8), joints not fitting as given 26 → 28 (L2's
+  question 3: a member left for a hand detail onto one laid out), a run
+  again identical 78/78; the time per tower about a quarter more (median
+  19.6 → 24.8 s on six towers back to back: the plan made twice for the
+  guard, the moves searched).
+  > **Owner:** (1) Moves up to the plate's thickness to bolt directly (no
+  > plate), on by default, for about a quarter more time: keep? →
+  > Recommended: yes (fewer plates, more joints whole, the eccentricity no
+  > larger than the plate's own and in the analysis; the time to win back
+  > later by planning the moves only where a face goes onto a plate).
+  > (2) Up to the shift limit (30 mm) instead (L5a below: on a sample 12 %
+  > fewer plates and 0.6 points more joints whole on top of L5, but moves of
+  > 18 mm median, e·A/W median 2.3 — the member's usage rises much where the
+  > analysis takes it) → Recommended: not by default; after O45 A5 (the
+  > estimated eccentricities on by default), as a proposal shown with its
+  > usage.
+  > (3) One bolt through the leg, the rest on a shorter plate (a format field,
+  > version 24, for 3–4 % of the plate ends) → Recommended: not now; again
+  > when the codes choose the bolts (O45 B: a pitch that takes the second
+  > bolt past the toe). (4) Found: a flat plate the layout lays on a leg
+  > running through the joint has no bolt of its own into that leg (the
+  > joint checks say its holding not checked) → Recommended: give such
+  > plates two provisional holding bolts as J2b's flats have (next, small;
+  > measured first). (5) The bend check under the design cases (L3's
+  > question 4): the line's checking cases (ice ×1.3, wind 300 Pa
+  > ×1.5 from four sides; not a design code's): L3's bends 80 % (the one vertical
+  > case) → 57 % pass, J2b's 49 % → 24 % → Recommended: keep the check strict; the
+  > bent plate made thick enough for its bend at the forces (with O45 B),
+  > else a flat or welded plate, before any relief. (6) A packing plate under
+  > the bent flap (L3b's question 4): +1.0 point of the joints whole on a sample (its
+  > own target barely), the member a further plate's thickness out of the
+  > flange, not in the analysis → Recommended: after
+  > O45 D (the out-of-plane offsets in the analysis), not before.
+- Proposed (2026-11-20, L5's part 3; the owner: "imagine more ways the
+  number of automatically laid joints can increase. The goal is to have a
+  level 3 pylon where the steel is defined and to help the designer to go to
+  level 4"). Not built; each measured on every thirteenth of the 78 private
+  real towers, or counted on all 78. **What is left** after L5 (the joints
+  not laid out whole, by the reasons the layout and its after-writing
+  checks give; of 64 760 joints, 61 915 member ends left — main of
+  2026-11-20, before L5): ends off their flange (no one roll lays both ends
+  flat) 26 262 — at most 20° off 15 674 (their outstanding leg towards the
+  flange 5 738, on an inner face running towards the other leg 4 604, the
+  axis more than a plate's thickness out 4 389), 20°–45° 6 941, beyond 45°
+  3 647; clashes after writing 12 914 and plates planned into steel 6 015;
+  built-up members 8 630; flat on an inner face running towards the other
+  leg 4 804; a splice's cover in the way 1 119; the longest pull-back 1 432;
+  too short for their bolts 725. The only cause at a joint: the clashes
+  after writing 4 632 joints, ends ≤ 20° off 4 517, built-up 2 542, inner
+  face 1 647, 20°–45° off 1 379, beyond 45° 953, plates into steel 875, too
+  short 446, the pull-back 230, a splice 184.
+  - L5a. **Moves up to the shift limit** (30 mm) to bolt directly: on the
+    sample, on top of L5, +0.6 points of the joints whole, +0.6 of the ends,
+    12 % fewer plates; but moves of 18 mm median, the member's extra stress
+    from N·e (e·A/W) 2.3 times the axial one at the median, 4.8 at most. No
+    steel; the work point moved — shown with its usage, never silently.
+  - L5b. **A packing plate under a bent flap** (the axis allowed two plate
+    thicknesses out instead of one): +1.0 point of the joints whole, +0.9 of
+    the ends on the sample (its own target, the outstanding leg towards the
+    flange, barely: 257 → 246 such ends); one small part more per end; the
+    member's axis a further plate's thickness out of the flange, not in the
+    analysis (NOT ON THE SAFE SIDE until O45 D).
+  - L5c. **A longer pull-back** (400 mm instead of 300): +0.2 points of the
+    joints whole, +0.25 of the ends, plates +0.5 %: stops paying. L5d. **A
+    larger shift limit** (60 mm) and L5e. **bends up to 30° or 45°**: no
+    change on the sample (the axis limit fails first).
+  - L5f. **A larger member** (a wider flange of what the ends bolt onto):
+    of the ends on plates on the sample, 9 % (+10 mm of flange), 17 % (+20)
+    and 23 % (+30) would bolt directly at the same cut, the plates of 6, 12
+    and 18 % of the joints with plates gone. It lays out few more joints (the
+    plates lay them out already): a trade of plates against the steel of a
+    whole member (about +10 % of its weight per 10 mm of leg), and it
+    changes the level 3 design (stiffness, forces, every joint of that
+    member) — proposed to the designer with its usage, never applied.
+  - L5g. **Other bolts**: one diameter less (16 → 12 mm) lands 9 % of the
+    plate ends directly on the sample — more bolts for the same force, so
+    only with the codes choosing them (O45 B); two gauge lines or staggered
+    bolts for long ends, and the other leg of an unequal angle (J3: few):
+    not measured. L5h. **The owner's one bolt through the leg** (L5 above):
+    3.7 % of the plate ends, a format field.
+  - L5i. **Built-up members** (J6): 8 630 ends, the only cause at 2 542
+    joints (up to +3.9 points). L5j. **The bracing's bolts as some of a
+    splice's** (J7a's follow-up): 1 119 ends, 184 joints (+0.3). L5k.
+    **Short members** (J8): 725 ends, 446 joints (+0.7). L5l. **Ends off
+    their flange on an inner face** (J5, a bent or welded plate for tilted
+    ends; C10): 6 446 ends tilted and 4 804 flat, the only cause at 1 647
+    joints for the flat ones (+2.5).
+  - L5m. **The clashes after writing**, the largest group (the only cause at
+    4 632 joints, 7.2 points): a plate into a member's steel 3 962, a nut
+    into a plate 1 439, steel into steel 1 397, a head into a plate 859 —
+    next to look into one by one (L2's way), the moves of L5 and L5a helping
+    some.
+  - L5n. **A hand detail copied across towers of a type** (L4): the 78
+    towers are 22 types, 63 of them of 7 types with three or more towers —
+    each hand detail made once per type would save about seven in ten of
+    them on such a line (counted, not measured).
+  - L5o. **Holding bolts for the flat plates on a leg running through**
+    (found with L5: such a plate has no bolt into that leg; the joint checks
+    say its holding not checked): two provisional bolts as J2b's flats.
+  **One way to weigh them per joint** (proposed): an ordered rule, each step
+  tried only for the ends the steps before leave, within a step the least
+  eccentricity, then the fewest parts — (1) as given or concentric, pulled
+  back, bolted directly; (2) pulled back further to bolt directly; (3) moved
+  by at most the plate's thickness to bolt directly (L5); (4) a flat plate,
+  stopping short where it runs into steel; (5) a plate bent by a few degrees
+  (L3); (6) a plate bent round the other leg (J2b); (7) a welded plate;
+  (8) a sideways shift up to the shift limit — all of these automatic, then,
+  **never applied silently, proposed to the designer with their effect on
+  the usage**: (9) another bolt layout within the design's capacity (with
+  the codes, O45 B); (10) a larger offset of the work point, in the analysis
+  (L5a); (11) a larger member (L5f); (12) a hand detail, copied from a joint
+  like it (J4, L4). Each step's cost in that order: no part; a cut only; an
+  eccentricity no larger than a plate's; a plate; a bend; a bend and two
+  bolts; a weld; an eccentricity up to 30 mm; then a change of the design.
+  > **Owner:** (7) The weighing rule above, the automatic steps (1)–(8) in
+  > that order, (9)–(12) only proposed → Recommended: yes. (8) Next of these
+  > → Recommended: L5o (small, the plates' holding), then J6 (the largest
+  > single gain, +3.9 points at most), then a look into the clashes after
+  > writing (L5m); L5a after O45 A5; L5b after O45 D; L5c–L5e not.
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.
