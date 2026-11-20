@@ -565,5 +565,177 @@ radial = "50000 m"
         let _ = Incoming::Closed(String::new());
     }
 
+    /// The checks' worker (owner, 2026-11-20): every check's report the
+    /// same as on the authority (its seconds aside), for a user seeing
+    /// everything and one seeing a route; a move landing while a check
+    /// runs either is in its result or marks it stale.
+    #[test]
+    fn checks_on_the_worker_as_on_the_authority() {
+        let Some(t) = test_network("worker", 200) else {
+            return;
+        };
+        let (code, route, _, twin_other, p) = crate::scoped_tests::shared(&t.url, &t.codes);
+        crate::network_tests::add_user(
+            &Network::connect(&t.url).unwrap(),
+            "rita",
+            "viewer",
+            ohl_session::rights::Scope {
+                route: Some(route.clone()),
+                ..ohl_session::rights::Scope::default()
+            },
+        );
+        let ws = ohl_session::working_set::WorkingSetSpec {
+            name: String::new(),
+            model: code.clone(),
+            picks: vec![crate::scoped_tests::area(p, 400.0)],
+        };
+        let checks = [
+            ScopedCheck::Clearances {
+                case: "10 °C".into(),
+                rules: crate::scoped_tests::RULES.into(),
+            },
+            ScopedCheck::Fields {
+                case: "10 °C".into(),
+                distance: None,
+                amps: Some(500.0),
+                limit_ut: Some(1.0),
+            },
+            ScopedCheck::StructureLoads {
+                structures: Vec::new(),
+            },
+        ];
+        let reports = |worker: bool, user: &str| -> Vec<serde_json::Value> {
+            let server = Server::start_network(
+                local("abcd2345"),
+                NetOptions {
+                    check_worker: worker,
+                    ..net_options(&t.url)
+                },
+            )
+            .unwrap();
+            let j = join(&server, user, NetJoin::default()).unwrap();
+            let mut log = Vec::new();
+            let mut out = Vec::new();
+            for (k, check) in checks.iter().enumerate() {
+                let want = 10 + k as u64;
+                j.link
+                    .send(ClientMsg::Check {
+                        id: want,
+                        working_set: Some(ws.clone()),
+                        check: check.clone(),
+                    })
+                    .unwrap();
+                let got = pump_for(
+                    &j,
+                    &mut log,
+                    Duration::from_secs(300),
+                    |m| matches!(m, ServerMsg::CheckResult { id, .. } if *id == want),
+                );
+                let mut v = serde_json::to_value(got.last().unwrap()).unwrap();
+                if let Some(r) = v.pointer_mut("/result/Ok") {
+                    r["seconds"] = serde_json::Value::Null;
+                }
+                out.push(v);
+            }
+            drop(j);
+            server.stop();
+            out
+        };
+        for user in ["bob", "rita"] {
+            let on_authority = reports(false, user);
+            let on_worker = reports(true, user);
+            assert_eq!(on_authority, on_worker, "{user}");
+            assert!(
+                on_worker.iter().any(|v| v.pointer("/result/Ok").is_some()),
+                "{user}: no check computed: {on_worker:?}"
+            );
+        }
+        // A move of the shared tower's twin while the clearances run: in
+        // the result (applied before the snapshot), or the result stale.
+        let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
+        let bob = join(&server, "bob", NetJoin::default()).unwrap();
+        let carol = join(&server, "carol", NetJoin::default()).unwrap();
+        let mut log = Vec::new();
+        let (other_line, other_p) = {
+            let net = Network::connect(&t.url).unwrap();
+            let line = net
+                .lines()
+                .unwrap()
+                .into_iter()
+                .map(|l| l.id)
+                .find(|c| {
+                    ohl_session::Session::open_on(Box::new(net.store(c).unwrap()), c)
+                        .unwrap()
+                        .line()
+                        .structure(&twin_other)
+                        .is_some()
+                })
+                .unwrap();
+            let s =
+                ohl_session::Session::open_on(Box::new(net.store(&line).unwrap()), &line).unwrap();
+            let p = s.line().structure(&twin_other).unwrap().position;
+            (line, p)
+        };
+        bob.link
+            .send(ClientMsg::Check {
+                id: 50,
+                working_set: Some(ws.clone()),
+                check: checks[0].clone(),
+            })
+            .unwrap();
+        carol
+            .link
+            .send(ClientMsg::RequestOn {
+                id: 51,
+                model: other_line,
+                op: crate::network_tests::moved(
+                    &twin_other,
+                    [other_p[0] + 0.4, other_p[1], other_p[2]],
+                ),
+                line: "main".into(),
+            })
+            .unwrap();
+        pump(&carol, &mut log, |m| {
+            matches!(m, ServerMsg::Response { id: 51, .. })
+        });
+        let got = pump_for(&bob, &mut log, Duration::from_secs(300), |m| {
+            matches!(m, ServerMsg::CheckResult { id: 50, .. })
+        });
+        let first = got.last().unwrap().clone();
+        // A stale mark comes at once after the result; else a few
+        // heartbeats pass without one.
+        let mut beats = 0;
+        let stale = pump_for(&bob, &mut log, Duration::from_secs(5), |m| {
+            beats += usize::from(matches!(m, ServerMsg::Heartbeat { .. }));
+            matches!(m, ServerMsg::CheckStale { id: 50, .. }) || beats > 6
+        });
+        let was_stale = matches!(stale.last(), Some(ServerMsg::CheckStale { .. }));
+        if !was_stale {
+            // The move was applied before the check's snapshot: the same
+            // check again gives the same result.
+            bob.link
+                .send(ClientMsg::Check {
+                    id: 52,
+                    working_set: Some(ws.clone()),
+                    check: checks[0].clone(),
+                })
+                .unwrap();
+            let again = pump_for(&bob, &mut log, Duration::from_secs(300), |m| {
+                matches!(m, ServerMsg::CheckResult { id: 52, .. })
+            });
+            let strip = |m: &ServerMsg| {
+                let mut v = serde_json::to_value(m).unwrap();
+                v["id"] = serde_json::Value::Null;
+                if let Some(r) = v.pointer_mut("/result/Ok") {
+                    r["seconds"] = serde_json::Value::Null;
+                }
+                v
+            };
+            assert_eq!(strip(&first), strip(again.last().unwrap()));
+        }
+        drop((bob, carol));
+        server.stop();
+    }
+
     use std::sync::Arc;
 }

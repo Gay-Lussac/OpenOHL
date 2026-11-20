@@ -78,6 +78,11 @@ mod scoped;
 // authority's models and tile index).
 #[path = "network_offline.rs"]
 mod offline;
+// Phase 13 (owner, 2026-11-20: phase 10's question 1): the checks'
+// worker thread (a child module: it takes its snapshot of the
+// authority's models and tile index).
+#[path = "network_checks.rs"]
+mod checks;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -88,6 +93,7 @@ use crate::{
     Change, HeldTile, ModelInfo, NetworkInfo, Op, Position, RouteInfo, RowsMsg, SavedSet,
     ServerMsg, TileKey, random_code,
 };
+pub(crate) use checks::CheckDone;
 
 /// Broadcasts kept for slow readers (a client further behind is dropped
 /// and catches up when it joins again).
@@ -151,6 +157,10 @@ pub struct NetOptions {
     pub invite_days: Option<u32>,
     /// Phase 13: OIDC sign-in (none: personal invitations only).
     pub oidc: Option<Arc<crate::oidc::Oidc>>,
+    /// Phase 13 (owner, 2026-11-20): scoped checks computed on a worker
+    /// thread of their own, from a snapshot (false: on the authority, as
+    /// before — measurements, tests of the same result).
+    pub check_worker: bool,
 }
 
 impl std::fmt::Debug for NetOptions {
@@ -166,6 +176,7 @@ impl std::fmt::Debug for NetOptions {
             .field("max_heavy_queue", &self.max_heavy_queue)
             .field("invite_days", &self.invite_days)
             .field("oidc", &self.oidc)
+            .field("check_worker", &self.check_worker)
             .finish_non_exhaustive()
     }
 }
@@ -192,6 +203,7 @@ impl Default for NetOptions {
             max_heavy_queue: 4,
             invite_days: None,
             oidc: None,
+            check_worker: true,
         }
     }
 }
@@ -506,6 +518,8 @@ struct Stats {
     /// tiles not made (the budgets).
     heavy_refused: usize,
     tiles_not_made: usize,
+    /// Phase 13: a check's snapshot taken on the authority, ms.
+    check_snapshot_ms: Vec<f64>,
 }
 
 fn keep(v: &mut Vec<f64>, x: f64) {
@@ -572,6 +586,10 @@ pub(crate) struct NetHost {
     /// Phase 13: each user's personal invitation's generation (read with
     /// the rights).
     generations: BTreeMap<String, i32>,
+    /// Phase 13: the checks' worker (none: checks on the authority), and
+    /// whether a check runs on it.
+    worker: Option<checks::Worker>,
+    check_running: bool,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -612,6 +630,11 @@ impl NetHost {
         let lib = Arc::new(net.library_state().map_err(|e| e.to_string())?);
         let copies = crate::private_temp_dir("ohl-network")?;
         let caches = Arc::new(Caches::new(o.shapes_mb, o.resolved_models));
+        let worker = if o.check_worker {
+            Some(checks::Worker::start(jobs.clone())?)
+        } else {
+            None
+        };
         let packager = Packager::start(o.packagers, caches, jobs, copies.join("work"))?;
         let mut host = NetHost {
             common,
@@ -658,6 +681,8 @@ impl NetHost {
             scoped: scoped::ScopedState::default(),
             heavy: std::collections::VecDeque::new(),
             generations,
+            worker,
+            check_running: false,
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -3739,6 +3764,7 @@ impl NetHost {
                     "heavy_wait_ms": self.stats.heavy_wait_ms,
                     "heavy_refused": self.stats.heavy_refused,
                     "tiles_not_made": self.stats.tiles_not_made,
+                    "check_snapshot_ms": self.stats.check_snapshot_ms,
                 })
                 .to_string())
             }
@@ -3964,7 +3990,7 @@ impl Host for NetHost {
     }
 
     fn handle(&mut self, job: Job) {
-        if !matches!(job, Job::Built(_) | Job::Probe { .. }) {
+        if !matches!(job, Job::Built(_) | Job::Probe { .. } | Job::Checked(_)) {
             self.last_busy = Instant::now();
             // Phase 7: rights an admin changed hold from the next job on.
             if !matches!(job, Job::Leave { .. }) {
@@ -4038,6 +4064,12 @@ impl Host for NetHost {
                 let _ = reply.send(self.personal_code(&user, days));
             }
             Job::Built(b) => self.built(*b),
+            Job::Checked(done) => {
+                let _ = self.guarded("the check", |s| {
+                    s.finish_check(*done);
+                    Ok(())
+                });
+            }
             Job::Offline { user, what, reply } => {
                 let done = self.guarded("the offline working set", |h| {
                     let rights = h.rights_of(&user);
@@ -4078,7 +4110,10 @@ impl Host for NetHost {
     }
 
     fn deferred(&self) -> bool {
-        !self.heavy.is_empty()
+        // A check waits while the worker runs one (the jobs go on).
+        self.heavy.front().is_some_and(|h| {
+            !(self.check_running && self.worker.is_some() && matches!(h.ask, NetAsk::Check { .. }))
+        })
     }
 
     fn run_deferred(&mut self) {
@@ -4095,6 +4130,31 @@ impl Host for NetHost {
             h.queued.elapsed().as_secs_f64() * 1e3,
         );
         let (client, user) = (h.client, h.user.clone());
+        // Phase 13: a check on the worker (its snapshot taken here).
+        if self.worker.is_some()
+            && let NetAsk::Check {
+                id,
+                working_set,
+                check,
+            } = h.ask
+        {
+            let started = self.guarded("the check", |s| {
+                s.start_check(client, id, working_set, check)
+            });
+            if let Err(e) = started {
+                let result = Err(match self.client_rights(client) {
+                    Some(r) => self.sanitise(&r, &e),
+                    None => e,
+                });
+                self.push(
+                    client,
+                    None,
+                    None,
+                    Some(ServerMsg::CheckResult { id, result }),
+                );
+            }
+            return;
+        }
         if let Err(text) = self.guarded("the working set", |s| s.net_ask(client, &user, h.ask)) {
             self.push(client, None, None, Some(ServerMsg::Notice { text }));
         }

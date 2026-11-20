@@ -455,6 +455,9 @@ pub(crate) enum Job {
     /// Network: a tile package built by a packager.
     #[cfg(feature = "network")]
     Built(Box<crate::packager::Built>),
+    /// Network, phase 13: a check done by the checks' worker.
+    #[cfg(feature = "network")]
+    Checked(Box<crate::network::CheckDone>),
     /// Network, phase 12: an offline working set exported or brought
     /// back for a user of the network (its report as JSON).
     #[cfg(feature = "network")]
@@ -1079,7 +1082,7 @@ impl Host for Authority {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
             #[cfg(feature = "network")]
-            Job::Built(_) => {}
+            Job::Built(_) | Job::Checked(_) => {}
             #[cfg(feature = "network")]
             Job::Probe { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));
