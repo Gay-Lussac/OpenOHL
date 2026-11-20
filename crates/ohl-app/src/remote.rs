@@ -362,6 +362,7 @@ impl Model {
             // connection.
             ServerMsg::Welcome { .. }
             | ServerMsg::Refused { .. }
+            | ServerMsg::SignIn(_)
             | ServerMsg::Scene(_)
             | ServerMsg::Heartbeat { .. }
             | ServerMsg::CatchUp { .. }

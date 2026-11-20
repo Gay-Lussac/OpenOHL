@@ -1442,6 +1442,8 @@ pub(crate) struct Listening {
     pub(crate) authority_thread: std::thread::JoinHandle<()>,
     /// Phase 13: a network's checker of sign-in tokens (OIDC), if any.
     pub(crate) token_check: Option<TokenCheck>,
+    /// Its sign-in offered to the clients (the sign-in window, 2026-11-20).
+    pub(crate) sign_in: Option<crate::sign_in::OidcOffer>,
     /// A network's server (its personal invitations made by its
     /// authority: generations, expiry).
     pub(crate) network: bool,
@@ -1537,6 +1539,7 @@ impl Server {
                 jobs,
                 authority_thread,
                 token_check: None,
+                sign_in: None,
                 network: false,
             },
         )
@@ -1554,6 +1557,7 @@ impl Server {
             jobs,
             authority_thread,
             token_check,
+            sign_in,
             network,
         } = l;
         let (stop, stop_rx) = oneshot::channel();
@@ -1613,6 +1617,7 @@ impl Server {
                             net_jobs.clone(),
                             gate.clone(),
                             token_check.clone(),
+                            sign_in.clone(),
                         ))
                     });
                     let large = Arc::new(tokio::sync::Semaphore::new(LARGE_BUDGET >> 10));
@@ -1635,9 +1640,10 @@ impl Server {
                                 };
                                 next += 1;
                                 let (jobs, gate) = (net_jobs.clone(), gate.clone());
-                                let (large, token_check) = (large.clone(), token_check.clone());
+                                let (large, token_check, sign_in) =
+                                    (large.clone(), token_check.clone(), sign_in.clone());
                                 tokio::spawn(async move {
-                                    let limits = Limits { large, token_check };
+                                    let limits = Limits { large, token_check, sign_in };
                                     if let Err(e) = connection(incoming, next, jobs, gate, pending, limits).await {
                                         log(&format!("connection {next}: {e}"));
                                     }
@@ -1784,6 +1790,7 @@ pub(crate) fn log(text: &str) {
 struct Limits {
     large: Arc<tokio::sync::Semaphore>,
     token_check: Option<TokenCheck>,
+    sign_in: Option<crate::sign_in::OidcOffer>,
 }
 
 /// One client: hello, the copy, then requests in and broadcasts out.
@@ -1806,6 +1813,24 @@ async fn connection(
             .await
             .map_err(|_| "no hello in 10 s".to_owned())??;
     let (protocol, user, code, options, id_token) = match hello {
+        // The sign-in window's question: answered, then the connection
+        // goes (2026-11-20).
+        Some(ClientMsg::SignInOptions { protocol }) => {
+            let msg = if protocol == PROTOCOL {
+                ServerMsg::SignIn(crate::sign_in::SignInOptions {
+                    oidc: limits.sign_in.clone(),
+                })
+            } else {
+                ServerMsg::Refused {
+                    reason: crate::protocol_refusal(protocol),
+                }
+            };
+            write_msg(&mut send, &msg).await?;
+            let _ = send.finish();
+            // Let the answer arrive before the connection goes.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            return Ok(());
+        }
         Some(ClientMsg::Hello {
             protocol,
             user,
@@ -2046,7 +2071,9 @@ pub(crate) async fn dispatch(
     pace: &mut Pace,
 ) -> Result<Option<ServerMsg>, String> {
     Ok(match msg {
-        ClientMsg::Hello { .. } | ClientMsg::Join { .. } => return Err("hello twice".into()),
+        ClientMsg::Hello { .. } | ClientMsg::Join { .. } | ClientMsg::SignInOptions { .. } => {
+            return Err("hello twice".into());
+        }
         ClientMsg::Interest { .. } | ClientMsg::Catch { .. } if !pace.interest.take() => {
             Some(ServerMsg::Notice {
                 text: "too many interest or catch-up requests: slow down".into(),

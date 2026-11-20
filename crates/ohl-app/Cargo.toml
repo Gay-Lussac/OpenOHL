@@ -75,6 +75,10 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 las = { version = "0.11", features = ["laz"] }
 # Crafting a project file the session would refuse to write (tests).
 rusqlite = { version = "0.40", features = ["bundled"] }
+# The sign-in window against a local network's server and a fake
+# identity provider on the loopback (tests and the user guide's picture).
+ohl-server = { workspace = true, features = ["network"] }
+ohl-store-pg = { workspace = true, features = ["testing"] }
 
 [lints]
 workspace = true

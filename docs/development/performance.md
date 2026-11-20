@@ -1067,6 +1067,92 @@ Notes:
 - The run's other measures of the first line, for the record: opening it
   50 ms (split) and 194 ms (flat, after the split run's branches).
 
+## Synthetic country: the rest of the exports' thread (2026-11-20)
+
+The place index in the session and bundles made ready on the exports'
+thread ([decision log](decisions.md#2026-11-20-country-server-the-rest-of-the-exports-thread-and-the-sign-in-window);
+built, in active development, not approved yet), measured as phase 14
+was: the 12 000-pylon synthetic country (seed 1, line SHA-256
+`1c14a252…3d7a`), its 147 line models imported with main's code
+(91.9 s on a busy machine) and the country as one model (CH, 108 785
+objects, its first revision recorded once beforehand: each round's
+export then decides from a recorded main line). Each round on fresh
+copies:
+
+```bash
+ohl network serve --bind 127.0.0.1:0 --no-idle-solve --seconds 1      # three starts
+OHL_BENCH_SERVE_EXE=… ohl network bench-scale --user admin --editors 40 --viewers 40 --moves 40 --work DIR
+ohl network bench-offline --user admin --rounds 3 --during-reach 10000 --work DIR           # 147 lines
+ohl network bench-offline --user admin --line CH --rounds 2 --during-reach 10000 --work DIR # one model
+```
+
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on 127.0.0.1, a
+**shared machine** (another agent building; load average 5 to 24 on 10
+cores): main's code (2a072df7) and this branch's run in turn, three
+rounds each. The table gives the quietest round of each (main's third,
+load 5–21; the branch's second, load 9–18) with the range of the three
+in brackets. `bench-offline`'s bundle-while-moving part is new (main's
+bench has none): main's bundle holds the authority for the whole bundle,
+its time below.
+
+**The country as one model** (a whole route, 3 328 objects editable):
+
+| Measure | Main's code | This branch |
+|---|---|---|
+| An export's decision on the authority (10 km around; the working set's extent and the line's own neighbours) | 816 / 792 ms (756–817) | **318 / 303 ms** (303–357) |
+| A move while that export is written on the thread: p50, at most | 10.5 ms, 804 ms (767–804) | 6.7 ms, **314 ms** (314–401) |
+| A move while it is written on the authority (the whole export) | 1 581 ms | 1 001 ms (1 001–1 084) |
+| The export itself | 1.56 s | 1.02 s |
+| A bundle of 20 / 500 changes brought back, asked → answered | 22.8 s / 13.8 s (10.7–22.8 / 11.4–13.8) | **2.36 s / 2.78 s** (2.36–2.49 / 2.78–2.98) |
+| … of which the authority is held | the whole bundle | its decision 102 ms (102–109), then its final apply |
+| A move while a bundle of 20 is brought back: p50, at most | — (it waits the whole bundle) | **6.8 ms, 243 ms** (243–285; 191–318 moves meanwhile) |
+| The same bundle all on the authority (the branch's `export_worker` off) | — | 2.40 s (2.40–2.58): the move during it waited 2.40 s |
+
+**The 147 lines** (route L001, 1 576 objects editable, 7.7 MB):
+
+| Measure | Main's code | This branch |
+|---|---|---|
+| A whole route exported (500 m; first, then p50) | 0.73 s, 0.25 s | 0.68 s, 0.24 s |
+| An export's decision with 10 km | 144 / 113 ms | 138 / 104 ms |
+| A move while written on the thread: p50, at most | 5.0 ms, 119 ms | 3.9 ms, 111 ms |
+| Bundles of 20 / 500 changes brought back | 0.27 / 0.57 s | **0.12 / 0.37 s** |
+| A move while a bundle of 20 is brought back: p50, at most | — | 4.2 ms, 50 ms (13 ms its decision) |
+
+**Not slower** (`bench-scale`, the server a process of its own, 40
+editors and 40 viewers; the same rounds):
+
+| Measure | Main's code | This branch |
+|---|---|---|
+| Server start | 2.4–2.6 s | 2.6–2.9 s |
+| Memory idle / 80 joined / everyone working | 1 308 / 1 651 / 2 308 MB | 1 310 / 1 656 / 2 295 MB |
+| 80 joins at once, to the whole first view | p50 3.9 s, p95 5.6 s | p50 4.0 s, p95 5.9 s |
+| A move of one of 40 editors moving at once | p50 225 ms, p95 862 ms | p50 221 ms, p95 779 ms |
+| Moves applied by the authority | 113 a second | 123 a second |
+| Checks and exports asked meanwhile: waited | p50 6.0 s | p50 6.0 s |
+| Two whole routes' clearances, asked → answered | 11 s and 31 s | 24 s and 29 s (one after the other on the checks' worker, either order) |
+| Two whole routes' exports (stale: changed while written) | 2.9 s and 7.2 s | 2.7 s and 7.9 s |
+
+Notes:
+
+- **Where the decision's time went** on the country as one model: the
+  extent of a whole route worked out the routes of every object of the
+  model (twice: the working set and the area of its neighbours) and
+  tested every section and structure against the area. With the place
+  index each structure's routes are kept, and only the candidates are
+  looked at; what is left is proportional to the working set and its
+  area (its context closed, its neighbours' replica rows).
+- **Where a bundle's time went** (profiled on the one model): writing
+  the new branch's whole spatial index into the database (108 773 rows,
+  one statement each: 19–29 s on a loaded machine, most of the 10 s phase
+  14 measured), reading and validating the model whole for the branch,
+  and hashing every object for its first tree. The first is gone (a
+  network keeps the main line's index only); the other two are made on
+  the exports' thread. The final apply on the authority costs what the
+  bundle changes plus walks of the branch's maps (0.1–0.3 s here).
+- The place index is made the first time an extent needs it (one pass
+  over the structures and sections; within the first export's decision,
+  not measured on its own) and kept up to date by the edits after.
+
 ## Synthetic country: phase 14, scale validation and the exports' thread (2026-11-20)
 
 Phase 14 ([ADR-0013](../adr/0013-country-server.md),

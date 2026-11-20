@@ -12,8 +12,11 @@ kept on your computer as an ordinary `.ohl` file holding a part of a line.
 
 ## Picking a working set
 
-**File › Join a network…**: paste the invitation the network's
-administrator gave you, give your user name, **Connect**. The window lists
+**File › Join a network…**: in the **Sign in to a network** window paste
+the invitation the network's administrator gave you, give your user name
+and join — or sign in with your organisation's account when the network
+offers it ([Signing in to a network](sign-in.md)). The **Join a network**
+window then lists
 your saved working sets (if any) and lets you pick a new one on one line
 (model) of the network:
 

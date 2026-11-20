@@ -150,3 +150,168 @@ fn join_a_network_window_image() {
         .save(format!("{dir}/join-a-network.png"))
         .unwrap();
 }
+
+/// The Sign in to a network window against a local network's server
+/// (a throwaway PostgreSQL cluster, invented users) with OIDC sign-in from
+/// a fake identity provider on the loopback: the server asked how it takes
+/// sign-ins, the invitation's end said, the organisation's sign-in done in
+/// the "browser" (the provider's page played by the test), joined with it
+/// to the Join a network window; Escape closes the window. With
+/// `OHL_SHOTS` (made as `USER=tester`): the user guide's picture.
+#[test]
+fn signing_in_to_a_local_network() {
+    use ohl_server::fake_provider::FakeProvider;
+    use ohl_server::network::NetOptions;
+    use ohl_server::oidc::{Oidc, OidcConfig};
+    use ohl_server::server::{Options, Server};
+    use ohl_store_pg::Network;
+    use ohl_store_pg::rights::RightsCommand as R;
+    let Some(cluster) = ohl_store_pg::testing::Cluster::start("app-sign-in") else {
+        return;
+    };
+    cluster.create_db("net");
+    let url = cluster.url("net");
+    let idp = FakeProvider::start("00u-tester");
+    {
+        let net = Network::connect_writer(&url).unwrap();
+        for c in [
+            R::Bootstrap {
+                user: "admin".into(),
+            },
+            R::AddUser {
+                name: "tester".into(),
+                display: None,
+            },
+            R::MapIdentity {
+                issuer: idp.issuer.clone(),
+                subject: "00u-tester".into(),
+                user: "tester".into(),
+            },
+        ] {
+            net.rights_command("admin", &c).unwrap();
+        }
+    }
+    cluster.wait_for_locks_gone("net");
+    let server = Server::start_network(
+        Options {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            code: Some("abcd2345".into()),
+            newcomers: None,
+            ..Options::default()
+        },
+        NetOptions {
+            database: url.clone(),
+            idle_solve: false,
+            invite_days: Some(90),
+            oidc: Some(std::sync::Arc::new(
+                Oidc::new(OidcConfig::new(&idp.issuer, "ohl-design")).unwrap(),
+            )),
+            ..NetOptions::default()
+        },
+    )
+    .unwrap();
+    let invitation = server.invitation_for("tester").to_string();
+    let model = synthetic_project("sign-in-shot");
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1000.0, 700.0))
+        .build_eframe(|_| App::with_model(model, None));
+    let mut w = crate::network_window::JoinNetworkWindow::new("tester".into());
+    w.sign_in.invitation = invitation.clone();
+    harness.state_mut().join_network_window = Some(w);
+    let wait = |h: &mut Harness<'_, App>, what: &str, done: &dyn Fn(&App) -> bool| {
+        let t0 = std::time::Instant::now();
+        while !done(h.state()) {
+            assert!(t0.elapsed() < std::time::Duration::from_secs(30), "{what}");
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(2);
+    };
+    let sign_in = |a: &App| -> bool {
+        a.join_network_window
+            .as_ref()
+            .is_some_and(|w| w.sign_in.options_known())
+    };
+    wait(&mut harness, "the server asked", &sign_in);
+    assert!(harness.query_by_label_contains("valid until").is_some());
+    assert!(
+        harness
+            .query_by_label_contains("also takes your organisation's sign-in")
+            .is_some()
+    );
+    if let Ok(dir) = ohl_core::env::var("OHL_SHOTS") {
+        assert_eq!(crate::files::user(), "tester", "made with USER=tester");
+        let image = harness.render().unwrap();
+        let ppp = image.width() as f32 / 1000.0;
+        let image = match super::tool_shots::window_rect(&harness, "Sign in to a network") {
+            Some(rect) => super::tool_shots::crop(&image, rect, ppp),
+            None => image,
+        };
+        image
+            .save(format!("{dir}/sign-in-to-a-network.png"))
+            .unwrap();
+    }
+    // Signed in in the "browser".
+    harness
+        .get_by_label("Sign in with your organisation ↗")
+        .click();
+    harness.run_steps(2);
+    let t0 = std::time::Instant::now();
+    let page = loop {
+        let opened = crate::help::OPENED.lock().unwrap().clone();
+        if let Some(p) = opened
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .find(|p| p.starts_with(&idp.issuer))
+        {
+            break p;
+        }
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(30),
+            "no sign-in page opened"
+        );
+        harness.run_steps(2);
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    };
+    assert!(
+        FakeProvider::browse(&page)
+            .unwrap()
+            .contains("close this tab")
+    );
+    let signed = |a: &App| -> bool {
+        a.join_network_window
+            .as_ref()
+            .is_some_and(|w| w.sign_in.signed().is_some())
+    };
+    wait(&mut harness, "signed in", &signed);
+    assert!(
+        harness
+            .query_by_label_contains("Signed in as 00u-tester")
+            .is_some()
+    );
+    // Joined with the sign-in: the Join a network window.
+    harness.get_by_label("Join with your sign-in").click();
+    wait(&mut harness, "joined", &|a: &App| {
+        a.join_network_window
+            .as_ref()
+            .is_some_and(|w| w.joined_network())
+    });
+    assert!(harness.query_by_label_contains("Join a network").is_some());
+    // Escape closes the sign-in window, nothing changes.
+    let mut w = crate::network_window::JoinNetworkWindow::new("tester".into());
+    w.sign_in.invitation = invitation;
+    harness.state_mut().join_network_window = Some(w);
+    harness.run_steps(2);
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run_steps(2);
+    assert!(harness.state().join_network_window.is_none());
+    server.stop();
+}

@@ -204,6 +204,11 @@ impl Oidc {
         &self.config.issuer
     }
 
+    /// The client id the tokens are for (their audience).
+    pub fn audience(&self) -> &str {
+        &self.config.audience
+    }
+
     /// Fetches made so far (the keys and the discovery document count as
     /// one; tests).
     pub fn fetches(&self) -> usize {

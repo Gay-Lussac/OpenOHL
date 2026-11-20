@@ -123,6 +123,7 @@ mod sagging_panel;
 mod scene;
 mod selection;
 mod sheet_ui;
+mod sign_in;
 mod span_pick;
 mod span_tool;
 mod spot;

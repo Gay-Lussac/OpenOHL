@@ -8,6 +8,125 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server: the rest of the exports' thread and the sign-in window)
+
+**An index by place in the session, a bundle's branch made ready on the
+exports' thread, and OHL-Design's Sign in to a network window** (ROADMAP
+O17: phase 14's "not built yet" and phase 13's sign-in windows, within
+the owner's approvals of phase 12's question 6 and phase 13; built, in
+active development, not approved yet;
+[measured](performance.md#synthetic-country-the-rest-of-the-exports-thread-2026-11-20),
+[user guide](../user-guide/sign-in.md),
+[the security review](server-security-review.md#the-sign-in-windows-side-2026-11-20)).
+
+- **The place index** (`ohl_session::places`): for the line worked on,
+  each structure's routes (the rules of shared towers' function) and the
+  structures of each route, the structures by cell of a 1 km grid, an
+  upper bound of the longest span. A working set's extent looks only at
+  the candidates it gives — the objects through a structure of the
+  route; the structures in the area's bounds and the sections through a
+  structure within the bounds grown by the longest span — and tests each
+  exactly as the whole scan did, so **the extent is the same** (tested
+  against the whole scan, `Session::set_whole_scan`, on every route,
+  station ranges and areas of the in-place tests' line and of a
+  synthetic country, before and after hundreds of random commands and
+  moves across cells). Kept up to date by the commands applied in place;
+  dropped (made again when next needed) on a change of routes,
+  alignments, their points or the settings, a line made whole, a unit of
+  work put back. On the country as one model an export's decision went
+  from 0.76–0.82 s to 0.30–0.36 s; what is left is proportional to the
+  working set and its area.
+- **A bundle brought back on the exports' thread**: decided on the
+  authority (verified against the export's record, its base read along
+  the main line's: about 0.1 s on the one model); **its branch's line
+  made ready on the "ohl-exports" thread** (`LineSource::prepare`: the
+  model read whole and validated, its spatial, reference and tree
+  indexes — offered to the session's `create_line` from that revision,
+  the same line either way, tested); **applied on the authority** (the
+  final apply, the same function as without the thread). The final apply
+  stays on the authority because it changes the model — a branch, one
+  command, a revision, the stream's position — and is decided by the
+  user's rights and the other lines as they are, which only the authority
+  holds; it costs what the bundle changes (0.1–0.3 s on the one model).
+  **Changes of main landing meanwhile** are main's when it is applied:
+  listed as its conflicts, exactly as on the authority — the line made
+  ready is the export's base revision's, which no change of main alters,
+  so nothing is replayed and nothing goes stale. **A user whose rights
+  changed meanwhile gets nothing applied** (the refusal audited: bring it
+  back again); a client gone gets nothing; brought back meanwhile by
+  another connection: refused. Long work overdue 2 s still starts (one
+  client's work on the thread at a time, exports and bundles alike).
+  Tested: the same report and the same branch on the thread as on the
+  authority (protocol and command line), a move landing while it is made
+  ready a conflict, rights changed meanwhile nothing applied.
+- **A network's database keeps the spatial index of each model's main
+  line only** (`Store::spatial_kept`; a project file every line's, as
+  before). Writing a whole model's index (108 773 rows) for each new
+  branch was most of bringing a bundle back on a big model; nothing reads
+  a branch's rows there (every query of the database is on the main
+  line), and the session keeps a branch's index in memory
+  (`Session::objects_in` answers from it). Rows of branches written
+  before are not read and go with their branch. Bundles on the one model:
+  10.7–22.8 s on the authority → 2.4–3.0 s asked → answered, a move
+  meanwhile p50 6.8 ms, at most 243–285 ms.
+- **OHL-Design's Sign in to a network window** (File › Join a network
+  starts there): the invitation (its end said at once: *valid until …*,
+  *expired on …*), the user name, and **Sign in with your organisation**
+  when the server offers it — asked before joining with the new message
+  `sign_in_options` (the server answers `sign_in`: its provider's issuer
+  and client id; a server of before closes unanswered: invitations only;
+  protocol 3 unchanged). The sign-in is the **authorization code flow
+  with PKCE (S256) and a loopback redirect** (`ohl_server::sign_in`:
+  a port on 127.0.0.1 for each sign-in, `state` and `nonce` checked, the
+  provider's endpoints from its discovery document, HTTPS only). **No
+  password in OHL-Design; tokens in memory only** (no keychain is used in
+  the code base): the join, opening a working set and joining again carry
+  the ID token, renewed with the refresh token after 50 minutes. Refusals
+  are explained (reissued, expired, an account not mapped, another
+  user's), the server's words kept under; errors in boxes that scroll;
+  Escape cancels (a sign-in in the browser too); the tool windows' shape.
+  Tested against a fake provider on the loopback (`fake_provider`, the
+  browser played by the test) with a network's server on a throwaway
+  cluster: options asked, signed in, joined, renewed, a refusal, a
+  forged answer, a cancel; OHL-Design's window against such a local
+  server through to the Join a network window, and its picture made
+  from it as `USER=tester`.
+- **Personal invitations end after 90 days by default** (phase 13's
+  question 4, as recommended "once OHL-Design shows an expired
+  invitation", which it now does): `ohl network serve --invite-days`
+  defaults to 90 (`DEFAULT_INVITE_DAYS`), `0` until reissued; invitations
+  given before keep their terms.
+- **The web client** answers the same question on its socket (tested),
+  but its page does not offer the organisation's sign-in yet.
+- **Formats**: no schema change; the protocol gains `sign_in_options` /
+  `sign_in` (data model); `bench-offline --during-reach` also measures a
+  move while a bundle is brought back.
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. An extent narrowed by an index by place, every candidate tested as
+> before (the same extent, tested)? → yes, as built.
+> 2. A network's database keeps only the main lines' spatial index (a
+> branch's in memory; rows of branches written before ignored)? → yes,
+> as built; a clean-up of the old rows with the next migration.
+> 3. A bundle decided and applied on the authority, its branch's line
+> made ready on the exports' thread; the final apply on the authority
+> (it changes the model, decided by the rights and lines as they are)?
+> → yes, as built.
+> 4. A change of main landing while a bundle is made ready: one of its
+> conflicts; rights changed meanwhile: nothing applied? → yes, as built.
+> 5. Personal invitations 90 days by default (`--invite-days 0`: until
+> reissued)? → yes, as built.
+> 6. The organisation's sign-in in the user's browser (code flow with
+> PKCE, a loopback redirect), tokens in memory only, renewed with the
+> refresh token; signing in again after OHL-Design restarts? → yes; an
+> OS keychain only if users ask for it.
+> 7. The sign-in question answered without a new protocol number (a
+> server of before answers nothing: invitations only)? → yes.
+> 8. The web client's sign-in: the provider must accept the page's own
+> address as a redirect and its token endpoint from the page (CORS), and
+> the page's security policy must name the provider → build it next,
+> with the provider's origin added to the page's `connect-src`.
+
 ## 2026-11-20 (country server, phase 14)
 
 **Scale validation, and the offline export on a thread of its own the

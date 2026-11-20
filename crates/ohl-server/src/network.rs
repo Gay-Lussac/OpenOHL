@@ -108,6 +108,12 @@ pub(crate) use exports::ExportBack;
 /// jobs only for its snapshot or its decision; a bundle for its length.
 pub(crate) const HEAVY_MAX_WAIT: Duration = Duration::from_secs(2);
 
+/// The days a personal invitation printed by `ohl network serve` is valid
+/// by default (phase 13's question 4, the owner's recommendation: once
+/// OHL-Design shows an expired invitation — its sign-in window does since
+/// 2026-11-20). `NetOptions::invite_days` none: until reissued.
+pub const DEFAULT_INVITE_DAYS: u32 = 90;
+
 /// Broadcasts kept for slow readers (a client further behind is dropped
 /// and catches up when it joins again).
 const EVENTS: usize = 8192;
@@ -290,6 +296,10 @@ impl Server {
                 jobs,
                 authority_thread,
                 token_check,
+                sign_in: net.oidc.as_ref().map(|o| crate::sign_in::OidcOffer {
+                    issuer: o.issuer().to_owned(),
+                    client_id: o.audience().to_owned(),
+                }),
                 network: true,
             },
         )

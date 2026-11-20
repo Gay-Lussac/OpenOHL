@@ -4371,7 +4371,7 @@ pub mod packing;
 pub mod part;
 #[cfg(test)]
 mod part_tests;
-mod places;
+pub mod places;
 #[cfg(test)]
 mod places_tests;
 pub mod points;
