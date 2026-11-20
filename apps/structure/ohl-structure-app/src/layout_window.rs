@@ -142,6 +142,11 @@ impl LayoutWindow {
             defaults: Default::default(),
             bent_plates: true,
             once_per_kind: true,
+            // L1 (owner 2026-11-19): bottom up, then out; slightly more
+            // plates; what an end bolts onto chosen in the search.
+            bottom_up: true,
+            more_plates: true,
+            onto_search: true,
         }
     }
 

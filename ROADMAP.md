@@ -2126,6 +2126,80 @@ step, reasons left), and the work stops where it stops paying:
   leg bolted facing away, or on an inner face running towards the other
   leg), the only reason for 29 % — built for the ends over the heel (J2b
   above); the ends off their flange stay with step 4's welded plate.
+
+The owner's new ideas for the automatic layout (2026-11-19, approved the
+same day in this order; each measured on the same real towers, kept
+only where it helps):
+- [x] L1. **The quick round.** (a) Bottom up, then out (owner: "try to
+  go bottom up and out. More things align on the body from the bottom up
+  and then less at the mast ends (arms and top)"): the joints of the body
+  first, from the bottom up, then the arms and the top, working outwards
+  from the body — the body and the arms worked out from the geometry (the
+  legs' lines give the body's outline at each height), the order
+  deterministic. (b) Slightly more plates (owner: "maybe increase
+  slightly the possibility of having plates"): the plate option also
+  tried where it lays out more ends or clears a clash, with a small
+  penalty so that bolting directly wins a tie. (c) Redundants and the
+  body's diagonals bolted directly (owner: "Redundant members are usually
+  bolted into another and diagonals of the shaft too but it can depend"):
+  bolted directly onto another member first, plates the fallback — not a
+  hard rule. (d) What an end bolts onto (`onto`) chosen in the search:
+  the other members it could bolt onto tried too, today's rule first and
+  the tie-break, the extra work bounded. **Built 2026-11-20, in active
+  development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-owners-quick-round-l1),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-the-owners-quick-round-l1)):
+  (a), (b) and (d) kept, each a switch, on by default; (c) left out (no
+  gain: the members bolted directly ran into the plate of the others on
+  the same flange). (a) the body, arms and top from the legs' lines; the
+  joint a kind is planned at and a member no one roll lays flat (none of
+  its ends flat now) taken bottom up, then out — the order matters
+  nowhere else (each joint is planned on its own). (b) a plate also tried
+  where it lays out more, and for an end bolted directly before it is
+  given up after writing. (d) at most two other members per end left,
+  kept at a joint only where it lays out more after the clash rounds than
+  today's plan (the guard). Found measuring: three more of the joint
+  checks' rules checked after writing (holes of the ends in one member
+  overlapping; a plate's own bolts outside its outline or beyond the
+  steel of the member it lies on) — the misfits as given 475 → 41. On
+  the 78 real towers (kept privately; J9's and J7a's proposals
+  confirmed): joints laid out whole 41.5 % → 42.7 % (body 44.0 % →
+  45.2 %, arms and top 38.3 % → 39.5 %; (a) +0.3, (b) +0.3, (d) +0.8
+  points alone), ends 55.3 % → 56.5 %, plates +4.5 %, a run again
+  identical 78/78, the time per tower 12.3 → 20.7 s (median; largest
+  18.8 → 33.2 s).
+  > **Owner:** (1) The three together take about 1.7 times the time of a
+  > run for 1.2 points more joints whole: keep all on by default?
+  > Recommended: yes (a follow lays out only the joints an edit touches).
+  > (2) (c) is left out; redundants bolted onto another member come from
+  > (d) where that lays out more: agree? Recommended: yes, and look at it
+  > again with L2 (a direct end kept clear of the plate while planning).
+  > (3) The guard keeps L1's plan at a joint only where it lays out at
+  > least as many ends as today's *plan* (today's result after the clash
+  > rounds is not known without a second run, about twice the time):
+  > keep? Recommended: yes. (4) A bent plate's own bolts are placed
+  > without the cut of the member they bolt onto, and on some members
+  > drawn just outside the flat's outline: the layout now leaves such ends
+  > (said). Fix in the bent plate next? Recommended: yes, before L2 (small).
+  > (5) The body's tolerances — legs within 30° of the vertical, 0.10 m
+  > from the outline — keep? Recommended: yes. (6) More plates put more
+  > ends a plate's thickness out of the flange, not in the analysis (NOT
+  > ON THE SAFE SIDE, as for every plate): leave to O45 D? Recommended:
+  > yes.
+- [ ] L2. **Clash-aware planning**: the real 3D shapes while planning,
+  not boxes; before an end is given up for a clash, the other face or the
+  plate's other side tried. The members left after the clash rounds are
+  the biggest group left on the real towers (about 26 600).
+- [ ] L3. **A plate bent by a few degrees** for ends whose members need
+  rolls 5°–20° apart at their two ends (about 24 900 ends on the real
+  towers, the second group; the owner's example joint shows such plates).
+- [ ] L4. **A joint's detail copied to the other towers of the line**
+  (laid out or done by hand) onto their matching joints, not only within
+  one tower.
+- Not scheduled yet: J7a's follow-up — the bracing's bolts used as some
+  of the splice's bolts, for the bracing ends a confirmed splice's nuts
+  block (1 242 on the real towers).
+
 Later: the bolts chosen by the code plugins and the layout run again with
 them.
 

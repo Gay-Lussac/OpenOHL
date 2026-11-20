@@ -746,3 +746,90 @@ fn members_bolting_onto_each_other_are_never_both_laid_out() {
     // The same plan again.
     assert_eq!(plan_joint(&j, &settings(), &|_, _| None), p);
 }
+
+/// L1 (b), slightly more plates (owner 2026-11-19): a member the run's
+/// clash rounds put onto a plate takes its face onto one, though its
+/// bolts land on the flange (D1 and D2 lie on one face of L: both onto the
+/// one plate); without, both bolted directly as before.
+#[test]
+fn a_face_put_onto_a_plate_goes_onto_one_though_its_bolts_land() {
+    use std::collections::{BTreeMap, BTreeSet};
+    // The main angle running through, wide (as in the owner's example of
+    // diagonals bolted directly on it, above): the bolts land.
+    let (lib, text) = wide_main();
+    let j = joint_details(&text, &lib, &Default::default())
+        .unwrap()
+        .joint("N2")
+        .unwrap()
+        .clone();
+    let s = settings();
+    let direct = plan_joint(&j, &s, &|_, _| None);
+    assert!(
+        direct.plates.is_empty()
+            && direct
+                .ends
+                .iter()
+                .all(|e| matches!(e.onto, Onto::Member(_))),
+        "{direct:?}"
+    );
+    let ctx = crate::joint_layout::PlanCtx {
+        plated: BTreeSet::from(["D1".to_owned()]),
+        ..Default::default()
+    };
+    let p = crate::joint_layout::plan_joint_ctx(
+        &j,
+        &s,
+        &|_, _| None,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        crate::joint_layout::NODE_LIMIT,
+        &ctx,
+    );
+    assert_eq!(p.plates.len(), 1, "{p:?}");
+    assert_eq!(p.ends.len(), 2, "{p:?}");
+    assert!(p.ends.iter().all(|e| e.onto == Onto::Plate(0)), "{p:?}");
+}
+
+/// The K-brace on a wide main angle running through N2 (an invented
+/// 160 mm angle added to the example sections; its star of two, built
+/// up, too), the diagonals with two 12 mm bolts each.
+pub(crate) fn wide_main() -> (crate::SectionLibrary, String) {
+    let lib = crate::SectionLibrary::parse(&format!(
+        "{}\n[[section]]\nid = \"EA-160x15\"\nname = \"Equal angle 160 × 15 (invented)\"\n\
+         shape = \"equal_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"16 mm\"\n\
+         \n[[section]]\nid = \"2S-160x15\"\nname = \"Two angles 160 × 15 in a star \
+         (invented)\"\nshape = \"star_angle\"\nh = \"160 mm\"\nt = \"15 mm\"\nr = \"16 mm\"\n\
+         gap = \"11 mm\"\n",
+        std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../libraries/sections/example-sections.ohlsec"),
+        )
+        .unwrap()
+    ))
+    .unwrap();
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+        K.replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"12 mm\", count = 2 } }",
+        )
+        .replace(
+            "section = \"EA-61x7\"\norientation = \"x+y+\"",
+            "section = \"EA-160x15\"\norientation = \"x+y+\"",
+        )
+    );
+    (lib, text)
+}
+
+/// L1 (d): the members an end could bolt onto, in today's rule's order —
+/// those running through the joint first (the leg's piece on the end's
+/// side, then the other), then the other diagonal ending there.
+#[test]
+fn the_members_an_end_could_bolt_onto_in_todays_order() {
+    let j = joint(K, "N2");
+    let d1 = j.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert_eq!(
+        crate::joint_layout::onto_candidates(&j, d1),
+        ["L1", "L2", "D2"]
+    );
+}

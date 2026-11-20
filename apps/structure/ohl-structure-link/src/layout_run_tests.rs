@@ -1192,7 +1192,13 @@ fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
 #[test]
 fn no_roll_for_both_ends_leaves_the_member_as_it_was() {
     let text = plan_strut("EA-61x7", 1.5 * 8f64.to_radians().tan());
-    let r = run(&text, &settings(), Some(&["N2", "N7"]), true);
+    // (Bottom up, then out — L1 a, on by default — turns it to lie flat at
+    // its end on the body: below.)
+    let s = LayoutSettings {
+        bottom_up: false,
+        ..settings()
+    };
+    let r = run(&text, &s, Some(&["N2", "N7"]), true);
     assert!(
         roll_of(&r.text, "H").and_then(|v| v.as_str().map(str::to_owned)) == Some("12 deg".into()),
         "{:?}",
@@ -1212,4 +1218,124 @@ fn no_roll_for_both_ends_leaves_the_member_as_it_was() {
         .iter()
         .any(|e| e.member == "H" && e.onto == crate::joint_layout::Onto::Member("S1".into()));
     assert!(!on_flange, "{:?}", o.plan);
+}
+
+/// L1 (d), what an end bolts onto chosen in the search (owner
+/// 2026-11-19): the K-brace on a wide built-up main angle running through
+/// (a star of two), D1 with six 16 mm bolts — they do not land on the
+/// angle's flange and no plate is laid out on a built-up member, so today
+/// D1 is left for a hand detail (D2's two bolts land). Searched (on by
+/// default), D1 is laid onto D2, the other member it could bolt onto, and
+/// the joint is laid out whole. A run again changes nothing.
+#[test]
+fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
+    let (lib, wide) = crate::joint_layout_tests::wide_main();
+    let text = wide
+        .replace("section = \"EA-160x15\"", "section = \"2S-160x15\"")
+        .replacen(
+            "bolts = { diameter = \"12 mm\", count = 2 }",
+            "bolts = { diameter = \"16 mm\", count = 6 }",
+            1,
+        );
+    assert_eq!(text.matches("2S-160x15").count(), 2);
+    let bolts = Default::default();
+    let go = |text: &str, s: &LayoutSettings| {
+        lay_out(
+            text,
+            &RunAsk {
+                library: &lib,
+                bolts: &bolts,
+                settings: s,
+                preset_fields: BTreeMap::new(),
+                joints: Some(["N2".to_owned()].into()),
+                replace_hand: true,
+            },
+        )
+        .unwrap()
+    };
+    let today = LayoutSettings {
+        onto_search: false,
+        ..settings()
+    };
+    let base = go(&text, &today);
+    let n2 = base.joints.iter().find(|o| o.joint == "N2").unwrap();
+    assert!(
+        n2.plan.hand_members.iter().any(|m| m == "D1")
+            && n2.plan.ends.iter().any(|e| e.member == "D2"),
+        "{:?}",
+        n2.plan
+    );
+    let s = settings();
+    assert!(s.onto_search);
+    let r = go(&text, &s);
+    let n2 = r.joints.iter().find(|o| o.joint == "N2").unwrap();
+    assert!(
+        n2.written && n2.hand.is_empty(),
+        "{:?} {:?}",
+        n2.hand,
+        n2.plan
+    );
+    let e = n2.plan.ends.iter().find(|e| e.member == "D1").unwrap();
+    let on_d2 = match &e.onto {
+        crate::joint_layout::Onto::Member(m) => m == "D2",
+        crate::joint_layout::Onto::Plate(k) => n2.plan.plates[*k].on == "D2",
+    };
+    assert!(on_d2, "{:?}", n2.plan);
+    assert_eq!(go(&r.text, &s).text, r.text);
+}
+
+/// L1 (a), bottom up, then out (owner 2026-11-19): the strut's flange
+/// turned 8° about H, H's roll 12° — no one roll lays both its ends flat
+/// and neither lies flat now. N2 is on the body (the leg's line), N7 out
+/// of it (an arm): H is turned to lie flat at N2, its end first in the
+/// order, and laid out there; its end at N7 takes what comes (a welded
+/// plate or a hand detail). Off: not turned, as before (above). A run
+/// again changes nothing.
+#[test]
+fn bottom_up_turns_a_member_to_lie_flat_at_its_end_on_the_body() {
+    let text = plan_strut("EA-61x7", 1.5 * 8f64.to_radians().tan());
+    let o = crate::joint_order(&parse(&text));
+    assert_eq!(o.zone_of("N2"), crate::Zone::Body);
+    assert_eq!(o.zone_of("N7"), crate::Zone::Arm);
+    assert!(o.rank_of("N2") < o.rank_of("N7"));
+    let s = LayoutSettings {
+        bottom_up: true,
+        ..settings()
+    };
+    let r = run(&text, &s, Some(&["N2", "N7"]), true);
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("H: no one roll") && n.contains("turned to lie flat at N2")),
+        "{:?}",
+        r.notes
+    );
+    assert_ne!(
+        roll_of(&r.text, "H").and_then(|v| v.as_str().map(str::to_owned)),
+        Some("12 deg".into())
+    );
+    assert!(
+        h_flat(&r.text, "N2").off < 0.1,
+        "{:?}",
+        h_flat(&r.text, "N2")
+    );
+    let n2 = r.joints.iter().find(|o| o.joint == "N2").unwrap();
+    assert!(
+        n2.written && n2.plan.ends.iter().any(|e| e.member == "H"),
+        "{:?}",
+        n2.plan
+    );
+    assert_eq!(run(&r.text, &s, Some(&["N2", "N7"]), true).text, r.text);
+}
+
+/// The after-writing check of holes in one member (2026-11-20, found
+/// measuring L1): the joint checks' own rule — two holes nearer than their
+/// radii together overlap, one hole (a bolt through both) does not.
+#[test]
+fn holes_overlap_as_the_joint_checks_say() {
+    use crate::layout_run::holes_overlap;
+    let d = 0.0175;
+    assert!(holes_overlap([0.0; 3], d, [0.013, 0.0, 0.0], d));
+    assert!(!holes_overlap([0.0; 3], d, [0.001, 0.0, 0.0], d));
+    assert!(!holes_overlap([0.0; 3], d, [0.0, 0.03, 0.0], d));
 }

@@ -63,6 +63,9 @@ mod joint_kinds_tests;
 mod joint_layout;
 #[cfg(test)]
 mod joint_layout_tests;
+pub mod joint_order;
+#[cfg(test)]
+mod joint_order_tests;
 mod joint_sheet;
 mod joints;
 #[cfg(test)]
@@ -111,6 +114,7 @@ pub use joint_layout::{
     SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX, bend_radius, flat_turns, hosts_to_name, joins_of,
     mm_text, plan_joint, plan_joint_except, plan_joint_with, splice_unknown, weld_throat,
 };
+pub use joint_order::{JointOrder, Zone, joint_order};
 pub use joint_sheet::{
     FaceView, LineKind, Mark, face_axes, face_pdf, face_sheet, face_svg, face_view, faces_of, reach,
 };
