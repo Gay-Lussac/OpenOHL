@@ -805,6 +805,61 @@ Notes:
   each tile's part of the line (`Session::drawing_part`) gives each
   section the sub-line the whole line gives (tested, bit for bit).
 
+## Synthetic country: phase 7, rights and roles (2026-11-20)
+
+What the rights cost on the network's server
+([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-20-country-server-phase-7)): the 147
+line models of the 12 000-pylon country (seed 1; made in 82 s, imported
+without revisions in 72 s into a throwaway cluster), with **204 users in
+10 groups and 1 297 assignments** (1 000 made by the bench — lines,
+routes, parts of routes, regions of 3 × 3 km, kinds on a line, library
+kinds, one in twenty a deny, a tenth to groups — beside the import's),
+measured by
+
+```bash
+ohl network bench-rights --user admin --users 200 --assignments 1000 --moves 40
+```
+
+The server in the bench's process (the idle solve off); 20 viewers of
+other rights on the 2 × 2 tiles around the structure moved; 40 moves by
+the network admin, then 40 by a designer of the route (27 assignments of
+their own and their groups'); a viewer of a region (3.6 × 2.4 km) on a
+view of 4 × 3 tiles, against the network admin on the same view.
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on 127.0.0.1, the
+machine shared with another agent's builds (load 13–22).
+
+| Measure | Measured |
+|---|---|
+| An assignment made (`ohl network rights assign`: checked, written, audited, the revision moved on) | p50 1.7 ms, p95 2.2 ms (1 000 in 2.1 s) |
+| Server start (every model read, the tile index, **every object's place kept**: 113 194) | 2.8 s (phase 5: 2.5 s) |
+| **A command's rights decided** (its rule, then every object it changed, as it was and as it is) | the network admin p50 15 µs, p95 18 µs; the route's designer p50 16 µs, p95 23 µs |
+| A move applied and broadcast, in the server (phase 5: p50 5.5 ms, p95 10.3 ms) | the network admin p50 8.7 ms, p95 9.4 ms; the route's designer p50 9.2 ms, p95 9.8 ms; answered p95 10.6 / 11.1 ms |
+| Who may not see a change (20 viewers of other rights connected; once per user) | p50 83–123 µs, p95 92–139 µs per change |
+| **A tile's rights class** for the region's viewer (the exact set it may not see) | p50 28–39 µs, p95 100–150 µs per tile |
+| **A package filtered** for that class (read, filtered, written again; then kept) | p50 0.18 ms, p95 0.68 ms, at most 1.4 ms |
+| A view of 12 tiles, none made | the region's viewer 83 ms; the network admin 90 ms (the packages p50 7–9 ms, p95 41–44 ms) |
+| The same view, kept | the region's viewer 15 ms (its classes worked out again, its filtered packages kept); the network admin 24 ms |
+| A user's rights compiled (once per rights change, and per change of a model a route part of theirs is on) | p50 4.9 ms, p95 28 ms (a route's part worked out on its model; a region's lines found once per rights change) |
+
+Notes:
+
+- The rights' own work is microseconds per command and per tile, far
+  below the database's round trips and a package's solves: the phase 5
+  targets hold (a move p95 < 10 ms in the server, < 50 ms the target).
+- The check is the same for everyone (a network admin's objects are
+  decided too); what sees everything skips the outgoing filter (one
+  package per tile shared as before).
+- A filtered package costs reading the whole one back and writing it
+  again (0.2–0.7 ms, once per tile, revision and class; kept after).
+- The places kept for the edit side (each object's bounds and routes)
+  add to the start a few tenths of a second; their memory was not
+  measured on its own (113 194 small entries).
+- Compiling a user with a part of a route works the part out on its
+  model (a working set's extent: 10–30 ms on a line of 145 structures);
+  it is done again only after a change of that model, when the user next
+  acts or a change is filtered for them.
+
 ## OHL-Design: an edit taken in place (O42, 2026-11-19)
 
 Owner, 2026-11-19: "per element modified instead of validating the whole

@@ -4455,12 +4455,14 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phase 7** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 3 (schema 1: phase 4's tables; schema 2: what the server
+network schema 4 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
 `oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
-sets — `working_set.line_id`, `working_set.picks`). A country server keeps every model and model element of
+sets — `working_set.line_id`, `working_set.picks`; schema 4, phase 7:
+rights evaluated — `assignment.lib_kind`, `lib_file`, `lib_entry`,
+`region`, `stream.objects`, `stream.whole`, `net_meta` `rights_rev`). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4487,14 +4489,14 @@ kept; times given as the project file writes them,
 | `ols_meta` | `line_meta` (per model) and `net_meta` (the network) | the network's own rows: schema, CRS, grid size (one grid for the network) |
 | — | `net_schema` | one row per migration done |
 | `session_user` | `line_user` (per model); `net_user`, `net_group`, `net_member` | the users of the network (from the sign-in later, OIDC subject), groups |
-| — | `role`, `role_permission`, `assignment` | rights and roles on (almost) every element and library; kept, evaluated from phase 7 |
+| — | `role`, `role_permission`, `assignment` | rights and roles on (almost) every element and library; evaluated since phase 7 (schema 4) |
 | `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network; + `routes` (schema 2) |
 | `oplog` | `oplog` | + `line_id`; `seq` numbered across the network; + `lines`, `tiles` (schema 2) |
 | — | `stream` | every change the server applied and broadcast, logged or not, at its position (schema 2) |
 | `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree) |
 | `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
 | `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | (later: trees split by line, kind and tile bucket; library reviews) |
-| `edit_grant` | `edit_grant`, + `line_id` | kept for the session until phase 7 makes them assignments |
+| `edit_grant` | `edit_grant`, + `line_id` | a project's edit grants as imported: still checked by the session beside the assignments (phase 7; turned into assignments at import later) |
 | `surface` (one blob per TIN) | `surface` (+ `line_id`); `surface_tile` | whole TINs as in the file; tiles per grid tile later |
 | `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
 | — | `line`, `working_set`, `object_ref` | the models; saved working sets (phase 6) and the reference index (written by the import and by every command of the server, phase 5) |
@@ -4508,14 +4510,17 @@ see):
 -- Network and users
 net_schema     (version integer PRIMARY KEY, time timestamptz NOT NULL, note text NOT NULL)
 net_meta       (key text PRIMARY KEY, value text NOT NULL)
-               -- schema, crs (set by the first import), grid_size, name
+               -- schema, crs (set by the first import), grid_size, name,
+               -- rights_rev (schema 4: each rights change adds one; the
+               -- server reads the rights again when it moved)
 net_user       (name text PRIMARY KEY, subject text UNIQUE,      -- OIDC subject (later)
                 display text NOT NULL, active boolean NOT NULL, created timestamptz NOT NULL)
 net_group      (name text PRIMARY KEY, note text NOT NULL DEFAULT '')
 net_member     (grp text REFERENCES net_group, member text REFERENCES net_user,
                 PRIMARY KEY (grp, member))
 
--- Rights and roles (ADR-0013, "Rights and roles"; evaluated from phase 7)
+-- Rights and roles (ADR-0013, "Rights and roles"; evaluated since phase 7,
+-- `ohl_session::rights`, changed by `ohl_store_pg::rights`)
 role           (name text PRIMARY KEY, shipped boolean NOT NULL, note text NOT NULL DEFAULT '')
                -- shipped: viewer, designer, checker, library_maintainer, line_admin, network_admin
 role_permission(role text REFERENCES role, permission text NOT NULL,
@@ -4533,10 +4538,18 @@ assignment     (id bigserial PRIMARY KEY,
                 line text, route text,                       -- a line, a route
                 from_structure text, to_structure text,      -- a part of a route (snapped to
                                                              -- whole tension sections)
-                area geometry,                               -- a region (polygon) or a corridor (GiST)
-                kind text,                                   -- an element kind or a library kind
-                object text,                                 -- an object id, or a library file or entry
+                area geometry,                               -- a region (polygon, GiST): `region`'s
+                kind text,                                   -- an object kind (`meta`: the settings,
+                                                             -- `library`: every library file)
+                object text,                                 -- an object id
+                lib_kind text, lib_file text, lib_entry text,-- schema 4: a library kind, file, entry
+                region text,                                 -- schema 4: the region's points as given
+                                                             -- (JSON [[x, y], …], exact)
                 by_user text NOT NULL, time timestamptz NOT NULL, note text NOT NULL DEFAULT '')
+               -- every constraint given must hold (none: the network); a
+               -- route or object scope has its line set when assigned;
+               -- scope_kind names the narrowest constraint; subject <> ''
+               -- (schema 4); INDEX net_member (member) (schema 4)
                -- an import gives each user of the file one, on the model:
                -- viewer → viewer, designer → designer, admin → line_admin
 
@@ -4600,6 +4613,10 @@ stream         (seq bigint, step integer NOT NULL,           -- schema 2: the po
                 first_seq bigint, log_seq bigint,            -- the log entries it made (none: none)
                 tiles bigint[] NOT NULL DEFAULT '{}',        -- the package tiles it touched
                 routes text[] NOT NULL DEFAULT '{}',         -- the routes it touched
+                objects text[],                              -- schema 4: the objects it touched
+                                                             -- (`kind/id`; NULL before schema 4)
+                whole boolean NOT NULL DEFAULT false,        -- schema 4: it touched its model at
+                                                             -- large (a merge, a library file)
                 time timestamptz NOT NULL,
                 PRIMARY KEY (seq, step))                     -- INDEX on (line_id, seq, step);
                                                              -- GIN on tiles and on routes
@@ -4655,9 +4672,15 @@ stale          (result_key text PRIMARY KEY, cause text NOT NULL, since timestam
 notice         (id bigserial PRIMARY KEY, user_name text NOT NULL, time timestamptz NOT NULL,
                 text text NOT NULL, about jsonb NOT NULL, read boolean NOT NULL DEFAULT false)
 audit          (id bigserial PRIMARY KEY, time timestamptz NOT NULL, user_name text NOT NULL,
-                action text NOT NULL,                        -- import, export (now); user, group,
-                                                             -- role, assignment, lock, release,
-                                                             -- rollback, join, working_set (later)
+                action text NOT NULL,                        -- import, export; rights.<change>
+                                                             -- (phase 7: bootstrap, add_user,
+                                                             -- set_active, add_group, delete_group,
+                                                             -- add_member, remove_member, put_role,
+                                                             -- delete_role, assign, unassign, with
+                                                             -- before and after); refused (joins,
+                                                             -- commands, working sets, rights
+                                                             -- changes, see as, exports, imports);
+                                                             -- see_as, explain; lock, release (later)
                 target text NOT NULL, before jsonb, after jsonb, detail text NOT NULL DEFAULT '')
                -- append only: a trigger refuses every UPDATE, DELETE and TRUNCATE
 ```
@@ -4708,12 +4731,25 @@ Notes:
   `net_meta` `tile_level` (2 by default: 1 024 m with the 256 m grid).
   `net_meta` also keeps `context_temperature` (°C, default 15): the
   weather case of the context's wires (still air).
-- **Rights**: a user's permissions on an object are the union of their
-  own and their groups' assignments whose scope covers it; *see* is
-  needed for every other permission; a `deny` row overrides grants on its
-  scope. Derived rows (`spatial`, `object_ref`, `lib_use`, `stale`, tile
-  packages, solved shapes) follow the rights of the objects they come
-  from; `audit` and `net_meta` are for network admins only. Phase 7.
+- **Rights** (phase 7, built 2026-11-20; the one function
+  `ohl_session::rights::UserRights::allows`): nothing without a grant; a
+  user's permissions on a target are the union of their own and their
+  groups' assignments whose scope covers it; *see* is needed for edit,
+  create, delete, review and export; a `deny` row covering the target
+  removes its permissions whatever grants it (any order). Targets: the
+  network (users, groups, roles, assignments, the audit: network scopes
+  only), a line whole (merges, branches, following it whole, an export:
+  scopes of the whole line; any deny that may touch it), an object (its
+  plan bounds and routes; a region grants what lies inside, denies what
+  it touches), a library file or entry. Derived data (tile packages,
+  solved shapes, route bounds, rows, changes) follows the objects it
+  comes from, seen "as drawn" (a section with its structures, an
+  alignment with its route and points, an alignment point with its tied
+  structure). Rights changes: `ohl_store_pg::rights::RightsCommand`
+  (each one transaction with its audit row and `rights_rev` moved on;
+  no writer's lock needed). Tile packages are kept per rights class: the
+  exact set of a tile's objects a client may not see. The decisions:
+  [decision log](decisions.md#2026-11-20-country-server-phase-7).
 - **An import** (`ohl network import`, `ohl_store_pg::import`): the
   current state of the file's main project line — objects, spatial index,
   meta rows, users, edit grants, surfaces — as one transaction, **one**
@@ -4746,7 +4782,7 @@ alone (a network's messages sent to it get a notice).
 
 | Message | Fields | Meaning |
 |---|---|---|
-| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows` |
+| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`?, `see_as`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows`; phase 7: only the network's users join, each with their personal invitation (the general one admits nobody); `model` needs see on the whole line, a `working_set` see on everything its replica holds; `see_as` (whoever manages rights): what both users may see, nothing changed, in the audit |
 | client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
 | client `catch` | `since` | every change of its interest after `since` |
 | client `pick` | `id`, `model`, `picks` | phase 6: the working set of `picks` worked out and snapped, answered with `extent` of the same id (nothing kept) |
@@ -4758,13 +4794,24 @@ alone (a network's messages sent to it get a notice).
 | server `network` | `name`, `crs`, `grid_size`, `tile_level`, `context_case`, `at`, `heartbeat_ms`, `bounds`, `models` (`code`, `name`, `structures`), `routes` (`id`, `model`, `name`, `bounds`) | what the network holds, after the welcome |
 | server `change` | `model`, `user`, `op`, `line`, `seq`, `first`, `at`, `tiles`, `routes` | an operation applied, to the clients whose interest it touches; a replica replays it numbering its log entries from `first` (`ohl_server::client::replay_change`) |
 | server `tile` | `tile`, `rev`, `bounds`, `case`, `structures` (`model`, `id`, `position`, `orientation_deg`, `type_name`, `height`, `stick`: segments), `wires` (`model`, `section`, `color`, `spans`: points, sag, max. tension; `error`), `routes` (`model`, `route`, `alignment`, `points`: its segments in the tile), `labels`, `notes` | a tile of the context at its revision |
-| server `tiles_changed` | `tiles`, `at`, `reason` | a change too large to follow (more tiles than a setting, or a merge): read these tiles again |
+| server `tiles_changed` | `tiles`, `at`, `reason` | a change too large to follow (more tiles than a setting, or a merge): read these tiles again; phase 7: also a change the client may not see all of (and, after a catch-up, the changes of lines it does not see whole) — never the change itself |
 | server `heartbeat` | `at`, `last` | the stream's position and the last change sent to this client: a client that has not received `last` missed something |
 | server `catch_up` | `from`, `to`, `changes`, `incomplete` | the changes asked for, in order; `incomplete`: more than a catch-up carries (10 000 by default) — read again |
 | server `extent` | `id`, `model`, `result` (`Ok`: `routes` (`route`, `whole`, `alignment`, `from`, `to`, `first`, `last`, `structures`, `outline`), `structures`, `sections`, `jumpers`, `spacers`, `context`, `bounds`, `notes`; `Err`: why) | phase 6: a working set as the server snapped it |
 | server `rows` | `model`, `at`, `user`?, `what`?, `rows` (`puts`, `deletes`, `wanted`?, `users`?), `spec`? | phase 6: rows a working set's replica takes (after a change touching it — on its own queue before the change's broadcast, so before the answer to its own edit —, a working set changed, a replica joining again) |
 | server `working_sets` | `sets` (`spec`, `routes`, `time`) | phase 6: the user's saved working sets |
-| server `route_detail` | `model`, `result` (`Ok`: `route`, `name`, `alignments` (`id`, `name`, `length`), `structures` (`id`, `station`, `position`)) | phase 6: a route's structures in station order |
+| server `route_detail` | `model`, `result` (`Ok`: `route`, `name`, `alignments` (`id`, `name`, `length`), `structures` (`id`, `station`, `position`)) | phase 6: a route's structures in station order (phase 7: those its user may see) |
+
+Phase 7 (2026-11-20): what a network's server sends is filtered by the
+rights' one function — `network` lists the lines its user may see
+something of and the routes they may see (bounds and counts of what they
+see), `tile` holds what they may see (packages kept per rights class),
+`change` goes only to who may see all of it, `rows` and `extent` hold
+nothing hidden, the users' presence and the soft locks (`peers`,
+`locks`, the welcome) are left out for users who do not see everything,
+and an error naming an object its user may not see is "refused: it
+touches objects you have no access to (ask a network admin)". A client
+whose rights changed gets a `notice` and is let go (it joins again).
 
 ## What a plugin sees
 

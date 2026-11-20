@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–6, 2026-11-19; the tests' scheme O46, 2026-11-19); not approved yet.*
+*In active development (ADR-0013, phases 4–6, 2026-11-19, phase 7 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.*
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -71,7 +71,7 @@ refused its second writer while two check runs ran side by side): 1 run in
 three tests each in a process of its own, as nextest runs them); with the
 scheme above, 0 in 144, and the same runs took 90 s instead of 126 s.
 
-About 4 s for the three tests:
+About 6 s for the five tests:
 
 - `store_suite_on_postgresql` — the **store suite**
   (`ohl_session::store::suite`, feature `store-suite`), the same tests the
@@ -94,6 +94,15 @@ About 4 s for the three tests:
   tower a twin; mapped back, the same line), ids unique in the network,
   refusals (a code taken, another coordinate system, a part of a line)
   leaving nothing behind, the audit.
+- `rights_changes_through_the_one_function` (phase 7) — the shipped
+  roles as the session knows them; the first network admin by bootstrap
+  only; users, groups and roles by network admins; an assignment by who
+  manages its scope and holds its role's permissions there; a deny by
+  network admins only; the last network admin kept; a route scope given
+  its line; a region read back exactly; the audit (what it was and is,
+  the refusals) and the rights' revision.
+- `schema_3_brought_to_4` (phase 7) — a database of phase 6 brought
+  forward, its assignments read.
 
 ## The server's tests on a network
 
@@ -139,6 +148,23 @@ each:
   cache to a viewer, nothing sent to a client that did not ask; a move
   makes the tiles it touched again. The other tests run with the idle
   solve off.
+- `rights_decide_commands_and_what_is_sent` (in `rights_tests`, phase 7)
+  — only the network's users join, with their personal invitations (in
+  the audit when refused); a designer of one route: her edits pass on it,
+  are refused elsewhere (nothing kept, nothing named); tiles, the
+  network's lines and routes, changes ("read these tiles again"),
+  catch-ups, route details and picks filtered; following a line whole
+  refused.
+- `grants_denies_and_groups_while_connected` — a deny set before the
+  grant still wins; a line admin may set no deny nor give rights on
+  another line; the deny taken away, the member taken out of her group,
+  the user disabled — each while she is connected: let go, nothing more
+  on the old connection, less seen after; the audit.
+- `see_as_a_user` — an admin seeing as a viewer of one line: that line
+  only, edits refused, in the audit; a viewer may not see as another.
+- `property_no_message_holds_a_hidden_id_or_place` — six rounds of random
+  assignments, moves, tiles, catch-ups, route details and picks: no id
+  and no place of what the user may not see in any message (about 7 s).
 - `web_viewers_read_tiles_of_a_network` (in `web::tests`) — a browser:
   protocol 2 refused, the network's info, its tiles, an edit refused
   (a viewer), a QUIC user's move arriving and the tile read again.
@@ -148,6 +174,7 @@ each:
 With a database made as below and lines imported:
 
 ```sh
+ohl network rights bootstrap --user admin    # once: the first network admin
 ohl network serve --bind 127.0.0.1:4433 --web 8443 --invite admin
 ```
 
@@ -200,8 +227,8 @@ on the command line.
 
 ## What is not there yet
 
-Rights are kept (roles, assignments) but not evaluated (phase 7); point
-clouds, backgrounds and tiled terrain stay in the project files (the
+Rights are evaluated since phase 7, managed with `ohl network rights …`
+(the admin app OHL-Server is a plan); point clouds, backgrounds and tiled terrain stay in the project files (the
 import report lists them) and the server does not serve them yet; a
 model's surfaces are in the database whole, not served by tile yet; a
 working set is on one model (routes of another line are their own working
