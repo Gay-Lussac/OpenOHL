@@ -151,6 +151,29 @@ pub struct LayoutSettings {
     /// kept at a joint only where it lays out more there after the clash
     /// rounds than today's plan does. On by default; off: as before.
     pub onto_search: bool,
+    /// L2 (a), each plate the layout makes names the member whose flange
+    /// it lies on (`on`, structure file version 23; 2026-11-20): drawn,
+    /// seated and checked for clashes on that member,
+    /// as planned — not on the joint's leg where that is another member.
+    /// On by default; off: as before (for the comparison).
+    pub plate_on: bool,
+    /// L2 (b), clash-aware planning (2026-11-20): the planner sees what the
+    /// clash check sees — an end's outstanding leg to its full height, the
+    /// nuts behind the flange or plate, each plate's outline as it will be
+    /// drawn (round the work point, the members' legs over their bolts and
+    /// the flange under it) against the fixed steel and what the planes
+    /// before laid out, the laid-out ends' bolts whole. On by default; off:
+    /// as before.
+    pub exact_plan: bool,
+    /// L2 (c), tries before an end is left for a clash (2026-11-20): an end
+    /// on a plate whose bolts land on the flange bolted directly instead,
+    /// once, where the plate or what is on it runs into something. On by
+    /// default; off: as before.
+    pub clash_tries: bool,
+    /// L1 (c) looked at again with L2 (2026-11-20): on a face that goes onto
+    /// a plate, the redundants and the body's diagonals whose bolts land on
+    /// the flange bolted directly first. Off by default (measured).
+    pub direct_first: bool,
 }
 
 impl Default for LayoutSettings {
@@ -168,6 +191,10 @@ impl Default for LayoutSettings {
             bottom_up: true,
             more_plates: true,
             onto_search: true,
+            plate_on: true,
+            exact_plan: true,
+            clash_tries: true,
+            direct_first: false,
         }
     }
 }
@@ -569,6 +596,16 @@ struct Strip {
     /// joint not laid out in this plan that reach into its slab, each by
     /// name as its footprint on the plane (2D, convex).
     fixed: Vec<(String, Vec<[f64; 2]>)>,
+    /// L2 (b, 2026-11-20): the fixed steel as high as its outstanding leg
+    /// reaches (over the band of that leg, `out_band`), and behind the face
+    /// where its bolts' nuts and shanks reach (over each bolt's disc).
+    fixed_out: Vec<(String, Vec<[f64; 2]>)>,
+    fixed_far: Vec<(String, Vec<[f64; 2]>)>,
+    /// Its outstanding leg across it now (lo ≤ hi), m.
+    out_band: [f64; 2],
+    /// The edge and end distances its bolts keep in a plate of its leg's
+    /// thickness (the code's, else the default minimums), m.
+    keep_plate: (f64, f64),
     /// The least cut a clash after asks (the run's rounds: pulled back
     /// past what it ran into) and why.
     floor: Option<(f64, String)>,
@@ -698,12 +735,23 @@ struct BentOver {
 /// runs on there, no free edge —, the edge distance from the leg's toe, the
 /// default spacing apart). Refused where those bolts find no room, or the flat
 /// would lie under an end laid out on that leg's outer face.
+///
+/// (J2b fix, 2026-11-20.) Its own bolts lie on the steel of the member they
+/// bolt onto: where that member ends at the joint, past where its steel
+/// starts (its cut as laid out in this plan, `laid_cut`, else as given or
+/// worked out, else the work point) by the end distance — the pair moved
+/// out along it where needed, the flat with them. Where that member's own
+/// end is laid out here, the plate is laid out where that member will be
+/// drawn (moved across and onto its plate as laid out), so that the flat's
+/// outline and its bolts (drawn from that member) agree.
+#[allow(clippy::too_many_arguments)]
 fn bent_over(
     strips: &[Strip],
     group: &[Placed],
     j: &JointDetail,
     s: &LayoutSettings,
     laid: &[Placed],
+    laid_cut: &BTreeMap<String, f64>,
     plate_of: &BTreeMap<usize, usize>,
     plates: &[PlatePlan],
 ) -> Result<BentOver, Vec<(usize, String)>> {
@@ -752,12 +800,42 @@ fn bent_over(
         .map(|p| strips[p.k].own_t)
         .fold(into.map_or(0.0, |i| plates[i].thickness), f64::max);
     let r = bend_radius(tp);
+    // (J2b fix) The member it bolts onto as it will be drawn: where its own
+    // end is laid out in this plan, moved across by its move and lifted onto
+    // its plate (structure axes, m; with L2's clash-aware planning the
+    // plane is taken there already); on a plate in its own plane (step 4):
+    // not followed, left.
+    let mut moved3 = [0.0; 3];
+    if let Some(hk) = strips.iter().position(|y| y.member == first.host)
+        && let Some(hp) = laid.iter().find(|q| q.k == hk)
+    {
+        let h = &strips[hk];
+        if h.tilted.is_some() {
+            let e = format!(
+                "{} is laid out on a welded plate in its own plane here (its place for the bent \
+                 plate not followed)",
+                first.host
+            );
+            return Err(group.iter().map(|p| (p.k, why(p.k, &e))).collect());
+        }
+        if !s.exact_plan {
+            let v3 = add(scale(h.x3, h.v[0]), scale(h.y3, h.v[1]));
+            let lift = match plate_of.get(&hk) {
+                Some(&i) if plates[i].own.is_none() => plates[i].thickness,
+                _ => 0.0,
+            };
+            moved3 = add(scale(v3, hp.moved), scale(h.n3, lift));
+        }
+    }
+    // Its other leg's outer face moved across this plane's y by the member's
+    // move: the ends pulled back by as much more.
+    let dy = dot(moved3, first.y3);
     let mut placed: Vec<Placed> = Vec::new();
     let mut left: Vec<(usize, String)> = Vec::new();
     for p in group {
         let x = &strips[p.k];
         let keep = x.over.as_ref().map_or(o.keep, |v| v.keep);
-        let (need, _) = over_cut(x, p.moved, over_steel(tp, s.gap), tp + r + keep.0);
+        let (need, _) = over_cut(x, p.moved, over_steel(tp, s.gap) - dy, tp + r + keep.0 - dy);
         let need = ceil_to(need, 0.001);
         if need <= p.cut + 1e-9 {
             placed.push(p.clone());
@@ -845,12 +923,29 @@ fn bent_over(
         ));
     }
     let xc = (lo + hi) / 2.0;
-    let bx = [xc - spacing_min / 2.0, xc + spacing_min / 2.0];
+    let mut bx = [xc - spacing_min / 2.0, xc + spacing_min / 2.0];
+    // (J2b fix) On that member's steel where it ends at the joint: past
+    // where it starts by the end distance (its cut as laid out here, else
+    // as given or worked out, else the work point), the pair moved out
+    // along it where needed. *Conservative*: a cut not known is taken at the
+    // work point, the end distance the code's (else the default minimum).
+    let wp_x = first.w[0];
+    if first.host_ends {
+        let from = laid_cut.get(&first.host).copied().unwrap_or(first.host_cut);
+        let need = from + first.host_end;
+        let at = |x: f64| (x - wp_x) * o.along_host;
+        let least = at(bx[0]).min(at(bx[1]));
+        if least < need - 1e-9 {
+            let d = (need - least) * o.along_host.signum();
+            bx = [bx[0] + d, bx[1] + d];
+        }
+    }
     let flo = lo.min(bx[0] - end_min);
     let fhi = hi.max(bx[1] + end_min);
     // 3D from the work point: the plane's heel, along, across, down the
-    // other leg (into the angle).
-    let (heel, x3, y3, down) = (first.heel3, first.x3, first.y3, o.down);
+    // other leg (into the angle) — the heel where the member it bolts onto
+    // will be drawn.
+    let (heel, x3, y3, down) = (add(first.heel3, moved3), first.x3, first.y3, o.down);
     let on_b = |x: f64, sd: f64| add(add(heel, scale(x3, x)), scale(down, sd));
     // Clear of the ends laid out on that leg's outer face (by half the
     // gap): their leg from their cut to half their length.
@@ -866,7 +961,10 @@ fn bent_over(
         ]
         .iter()
         .map(|p2| {
-            let p3 = add(add(b.heel3, scale(b.x3, p2[0])), scale(b.y3, p2[1]));
+            let p3 = add(
+                add(add(b.heel3, moved3), scale(b.x3, p2[0])),
+                scale(b.y3, p2[1]),
+            );
             let d3 = sub(p3, heel);
             [dot(d3, x3), dot(d3, down)]
         })
@@ -928,7 +1026,6 @@ fn bent_over(
             .filter(|b| (b.diameter - d).abs() < 1e-9)
             .unwrap_or_else(|| BoltArea::picked(None, d, None)),
     };
-    let wp_x = first.w[0];
     let hold = HoldPlan {
         member: first.host.clone(),
         leg: o.leg,
@@ -1125,6 +1222,14 @@ pub(crate) struct PlanCtx {
     /// Members whose face goes onto a plate even where their bolts land on
     /// the flange (L1 b: a clash after writing a plate may clear).
     pub plated: BTreeSet<String>,
+    /// Members bolted directly where their bolts land even where their face
+    /// goes onto a plate (L2 c: the plate, or what is on it, ran into
+    /// something after writing).
+    pub direct: BTreeSet<String>,
+    /// The joint is of the tower's body ([`mod@crate::joint_order`]): its
+    /// diagonals bolted directly first (L1 c, with
+    /// [`LayoutSettings::direct_first`]).
+    pub body: bool,
     /// Planned as before L1 (b's faces tried on a plate off): the run's
     /// guard found the joint laid out worse with it.
     pub plain: bool,
@@ -1363,6 +1468,48 @@ fn plan_once(
     let mut bent_wait: BTreeMap<PlaneKey, Vec<Placed>> = BTreeMap::new();
     let mut budget = limit;
     for ((_, _, _, plane_key), ks) in &planes {
+        // L2 (b), 2026-11-20: a plane on a member whose own end is laid out
+        // in this plan (its planes come first) taken where that member will
+        // be drawn — moved across by its move and lifted onto its plate —,
+        // so that what bolts onto it, and a plate on it, are planned where
+        // they will be drawn (before, where the member was: their bolts on
+        // its flange and their clashes not as written). The ends themselves
+        // stay where they are drawn (their gauge lines through the work
+        // point); their bolts' places on that flange, its face and what is
+        // in their way follow it. Not followed: a member on a plate in its
+        // own plane (step 4) — as before.
+        if s.exact_plan {
+            for &k in ks {
+                if strips[k].tilted.is_some() {
+                    continue;
+                }
+                let Some(hk) = strips.iter().position(|y| y.member == strips[k].host) else {
+                    continue;
+                };
+                let Some(hp) = placed_all.iter().find(|q| q.k == hk) else {
+                    continue;
+                };
+                let h = &strips[hk];
+                if h.tilted.is_some() {
+                    continue;
+                }
+                let v3 = add(scale(h.x3, h.v[0]), scale(h.y3, h.v[1]));
+                let lift = match plate_of.get(&hk) {
+                    Some(&i) if plan.plates[i].own.is_none() => plan.plates[i].thickness,
+                    _ => 0.0,
+                };
+                let d = add(scale(v3, hp.moved), scale(h.n3, lift));
+                let x = &mut strips[k];
+                let dp = [dot(d, x.x3), dot(d, x.y3)];
+                x.heel3 = add(x.heel3, d);
+                x.face3 = add(x.face3, d);
+                x.heel = add(x.heel, d);
+                x.w = sub2(x.w, dp);
+                for (c, _) in x.obstacles.iter_mut() {
+                    *c = sub2(*c, dp);
+                }
+            }
+        }
         let mut order = ks.clone();
         order.sort_by(|&a, &b| {
             strips[a]
@@ -1373,6 +1520,19 @@ fn plan_once(
         for &k in &order {
             let polys = fixed_in(&strips[k], j, &pieces, &fixed, &laid3);
             strips[k].fixed = polys;
+            // L2 (b): as high as its outstanding leg, and behind the face
+            // where its nuts and shanks lie (a flange or plate as thick as
+            // the thicker of its leg and the flange).
+            if s.exact_plan && strips[k].tilted.is_none() && strips[k].over.is_none() {
+                let x = &strips[k];
+                let thick = x.own_t.max(x.t);
+                let top = x.out_w + thick;
+                let far = thick + (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * x.d;
+                let up = fixed_slab(x, j, &pieces, &fixed, &laid3, (FACE_TOUCH, top));
+                let down = fixed_slab(x, j, &pieces, &fixed, &laid3, (-far, -FACE_TOUCH));
+                strips[k].fixed_out = up;
+                strips[k].fixed_far = down;
+            }
         }
         let found = search_plane(&strips, &order, s, &mut budget);
         let mut placed = found.placed;
@@ -1493,6 +1653,36 @@ fn plan_once(
         // (Each end's landing as it is now, for the ends on a splice's
         // cover below.)
         let landed: BTreeSet<usize> = placed.iter().filter(|p| lands(p)).map(|p| p.k).collect();
+        // L2 (c): on a face that goes onto a plate, the members the run's
+        // clash rounds asked bolted directly (their bolts landing) — and
+        // (L1 c, owner 2026-11-19: "Redundant members are usually bolted
+        // into another and diagonals of the shaft too") the redundants and
+        // the body's diagonals whose bolts land, first — bolted directly; the
+        // others onto the plate.
+        if !direct {
+            let first = |p: &Placed| {
+                let x = &strips[p.k];
+                landed.contains(&p.k)
+                    && (ctx.direct.contains(&x.member)
+                        || (s.direct_first
+                            && !ctx.plain
+                            && !plated
+                            && (x.rank.0 == ClassRank::Redundant as u8
+                                || (ctx.body && x.rank.0 == ClassRank::Diagonal as u8))))
+            };
+            let (on, off): (Vec<Placed>, Vec<Placed>) = placed.iter().cloned().partition(first);
+            if !on.is_empty() {
+                laid3.extend(solids_of(&strips, &on, 0.0, s));
+                for p in &on {
+                    laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+                }
+                placed_all.extend(on);
+                placed = off;
+                if placed.is_empty() {
+                    continue;
+                }
+            }
+        }
         if !direct
             && find(&strips[placed[0].k].host)
                 .and_then(|h| h.profile.as_ref())
@@ -1505,8 +1695,9 @@ fn plan_once(
             // work point, was tried on two real towers, 2026-11-18: more
             // joints then clashed; every end of the plane goes onto the
             // plate.)
-            let (on, off): (Vec<Placed>, Vec<Placed>) = placed.iter().cloned().partition(lands);
-            laid3.extend(solids_of(&strips, &on, 0.0));
+            let (on, off): (Vec<Placed>, Vec<Placed>) =
+                placed.iter().cloned().partition(|p| landed.contains(&p.k));
+            laid3.extend(solids_of(&strips, &on, 0.0, s));
             for p in &on {
                 laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
             }
@@ -1522,7 +1713,7 @@ fn plan_once(
             // plate over the cover is not laid out.
             let (on, off): (Vec<Placed>, Vec<Placed>) =
                 placed.iter().cloned().partition(|p| landed.contains(&p.k));
-            laid3.extend(solids_of(&strips, &on, 0.0));
+            laid3.extend(solids_of(&strips, &on, 0.0, s));
             for p in &on {
                 laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
             }
@@ -1564,6 +1755,8 @@ fn plan_once(
                 }
                 continue;
             }
+            // (L2 c: as placed before going onto a plate.)
+            let orig: Vec<Placed> = placed.clone();
             let mut kept: Vec<Placed> = Vec::new();
             for mut p in placed {
                 let x = &strips[p.k];
@@ -1652,6 +1845,59 @@ fn plan_once(
                 continue;
             }
             let thickness = tf(&placed);
+            // L2 (b), 2026-11-20: the plate as it will be drawn (round the
+            // work point, the legs over their bolts with their end and edge
+            // distances, and the flange under it as far as those reach, cut
+            // at the heel) clear of the fixed steel and of what the planes
+            // before laid out, in its thickness; else (L2 c) the ends whose
+            // bolts land on the flange bolted directly instead, the others
+            // left (by hand).
+            if s.exact_plan && placed.iter().any(|p| strips[p.k].tilted.is_none()) {
+                let poly = plate_outline2(&strips, &placed, s.gap);
+                let on: BTreeSet<&str> =
+                    placed.iter().map(|p| strips[p.k].member.as_str()).collect();
+                let excused: BTreeSet<String> = plan.hand_members.iter().cloned().collect();
+                let x0 = placed
+                    .iter()
+                    .map(|p| &strips[p.k])
+                    .find(|x| x.tilted.is_none())
+                    .expect("a flat end");
+                if let Some(by) = plate_hits(
+                    x0, &on, j, &pieces, &fixed, &excused, &laid3, &poly, thickness,
+                ) {
+                    let direct_now: Vec<Placed> = if s.clash_tries {
+                        orig.iter()
+                            .filter(|p| placed.iter().any(|q| q.k == p.k) && landed.contains(&p.k))
+                            .cloned()
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    for p in &placed {
+                        if direct_now.iter().any(|q| q.k == p.k) {
+                            continue;
+                        }
+                        let m = strips[p.k].member.clone();
+                        plan.by_hand(
+                            &m,
+                            format!(
+                                "{m}: on a plate on {}, the plate would run into {by} (its \
+                                 outline round the work point, the legs over their bolts and \
+                                 the flange under it; lay it out by hand)",
+                                x0.host
+                            ),
+                        );
+                    }
+                    if !direct_now.is_empty() {
+                        laid3.extend(solids_of(&strips, &direct_now, 0.0, s));
+                        for p in &direct_now {
+                            laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+                        }
+                        placed_all.extend(direct_now);
+                    }
+                    continue;
+                }
+            }
             let index = plan.plates.len();
             let members: Vec<String> = placed
                 .iter()
@@ -1726,7 +1972,7 @@ fn plan_once(
                 plate_of.insert(*k, plan.plates.len());
                 plan.plates.push(w);
             }
-            laid3.extend(solids_of(&strips, &placed, thickness));
+            laid3.extend(solids_of(&strips, &placed, thickness, s));
             for p in &placed {
                 laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
             }
@@ -1734,7 +1980,7 @@ fn plan_once(
             continue;
         }
         direct_planes.push(*plane_key);
-        laid3.extend(solids_of(&strips, &placed, 0.0));
+        laid3.extend(solids_of(&strips, &placed, 0.0, s));
         for p in &placed {
             laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
         }
@@ -1743,7 +1989,16 @@ fn plan_once(
     // J2b: the bent plates of the ends leaving over the heel, the ends of
     // one plane sharing its flat.
     for (_, group) in bent_wait {
-        match bent_over(&strips, &group, j, s, &placed_all, &plate_of, &plan.plates) {
+        match bent_over(
+            &strips,
+            &group,
+            j,
+            s,
+            &placed_all,
+            &laid_cut,
+            &plate_of,
+            &plan.plates,
+        ) {
             Ok(b) => {
                 if let Some(h) = &b.flat.hold {
                     plan.notes.push(format!(
@@ -2818,6 +3073,19 @@ fn strip_of(
         out_w: other_w,
         slab: g.t + g.t.max(host_t) + 0.7 * d,
         fixed: Vec::new(),
+        fixed_out: Vec::new(),
+        fixed_far: Vec::new(),
+        out_band: {
+            // The outstanding leg at the heel's edge, its thickness inwards
+            // (as `solids_of` draws it).
+            let inward = if (lat0 - lat[0]).abs() <= (lat0 - lat[1]).abs() {
+                g.t
+            } else {
+                -g.t
+            };
+            [lat0.min(lat0 + inward), lat0.max(lat0 + inward)]
+        },
+        keep_plate: edge_end(g.t),
         floor: None,
         host_rank: class_rank(host.class.as_deref(), host.direction) as u8,
         over,
@@ -3387,6 +3655,27 @@ fn place(
                 by = Some(name.clone());
             }
         }
+        // L2 (b): its outstanding leg to its full height, and its bolts'
+        // nuts and shanks behind the face (each bolt's disc, the nut's
+        // corner radius), clear of the fixed steel by the gap.
+        let band = [x.out_band[0] + moved, x.out_band[1] + moved];
+        for (name, poly) in &x.fixed_out {
+            let c = poly_need(x, band, poly, s.gap);
+            if c > need {
+                need = c;
+                by = Some(name.clone());
+            }
+        }
+        for (name, poly) in &x.fixed_far {
+            for (along, line) in &x.bolts {
+                let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+                let c = poly_need(x, [l - x.nut, l + x.nut], poly, s.gap) + x.nut - along;
+                if c > need {
+                    need = c;
+                    by = Some(format!("{name} (behind the face, at its nuts)"));
+                }
+            }
+        }
         (need.max(0.0), by)
     };
     // The least cut a clash asked for (the run's rounds): beyond the
@@ -3637,12 +3926,13 @@ fn search_plane(
 const FACE_TOUCH: f64 = crate::clash::CLASH_TOLERANCE / 2.0;
 
 /// The footprint on `x`'s plane of a convex piece (its corners `pts`, 3D
-/// from the work point) where it lies in `x`'s slab (from the face to what
-/// `x` carries over it): convex, 2D in the plane's axes; none where it
-/// lies outside.
-fn footprint(x: &Strip, pts: &[[f64; 3]]) -> Option<Vec<[f64; 2]>> {
+/// from the work point) where it lies in a slab over `x`'s face, from
+/// `slab.0` to `slab.1` (negative: behind it; `x`'s own slab: from the face
+/// to what `x` carries over it), m: convex, 2D in the plane's axes; none
+/// where it lies outside.
+fn footprint_in(x: &Strip, pts: &[[f64; 3]], slab: (f64, f64)) -> Option<Vec<[f64; 2]>> {
     let h = |q: &[f64; 3]| dot(sub(*q, x.face3), x.n3);
-    let (lo, hi) = (FACE_TOUCH, x.slab);
+    let (lo, hi) = slab;
     let hs: Vec<f64> = pts.iter().map(h).collect();
     if hs.iter().all(|v| *v < lo) || hs.iter().all(|v| *v > hi) {
         return None;
@@ -3712,6 +4002,19 @@ fn fixed_in(
     fixed: &BTreeSet<String>,
     laid3: &[Laid3],
 ) -> Vec<(String, Vec<[f64; 2]>)> {
+    fixed_slab(x, j, pieces, fixed, laid3, (FACE_TOUCH, x.slab))
+}
+
+/// [`fixed_in`] in the slab `slab` over `x`'s face (L2 b: as high as its
+/// outstanding leg, or behind the face where its nuts lie).
+fn fixed_slab(
+    x: &Strip,
+    j: &JointDetail,
+    pieces: &[(crate::ClashPart, Vec<[f64; 3]>)],
+    fixed: &BTreeSet<String>,
+    laid3: &[Laid3],
+    slab: (f64, f64),
+) -> Vec<(String, Vec<[f64; 2]>)> {
     use crate::ClashPart;
     use crate::clash::BoltPiece;
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
@@ -3764,7 +4067,7 @@ fn fixed_in(
                 part.words()
             }
         };
-        if let Some(p) = footprint(x, pts) {
+        if let Some(p) = footprint_in(x, pts, slab) {
             out.push((name, p));
         }
     }
@@ -3772,7 +4075,7 @@ fn fixed_in(
         if m == &x.member || (!bolt && (host_run(m) || onto_me(m))) {
             continue;
         }
-        if let Some(p) = footprint(x, pts) {
+        if let Some(p) = footprint_in(x, pts, slab) {
             out.push((m.clone(), p));
         }
     }
@@ -3784,7 +4087,7 @@ fn fixed_in(
 /// too), 3D corners from the work point: each leg's box from its cut to
 /// half its length (the outstanding leg as high as it is wide), each bolt's
 /// head a box round it — what the planes after keep clear of.
-fn solids_of(strips: &[Strip], placed: &[Placed], lift: f64) -> Vec<Laid3> {
+fn solids_of(strips: &[Strip], placed: &[Placed], lift: f64, s: &LayoutSettings) -> Vec<Laid3> {
     let mut out: Vec<Laid3> = Vec::new();
     let mut plate: Vec<[f64; 2]> = Vec::new();
     let mut first: Option<&Strip> = None;
@@ -3847,6 +4150,20 @@ fn solids_of(strips: &[Strip], placed: &[Placed], lift: f64) -> Vec<Laid3> {
                     [lift + x.own_t, lift + x.own_t + 0.7 * x.d],
                 ),
             ));
+            // L2 (b): its nut and the shank beyond it, behind the flange (or
+            // the plate) it bolts through.
+            if s.exact_plan {
+                let g1 = if lift > 0.0 { lift } else { x.t };
+                out.push((
+                    x.member.clone(),
+                    true,
+                    boxed(
+                        [a - r, a + r],
+                        [l - r, l + r],
+                        [lift - g1 - (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * x.d, lift - g1],
+                    ),
+                ));
+            }
             if lift > 0.0 {
                 let e = x.edge + 1e-3;
                 for (da, dl) in [(-e, -e), (-e, e), (e, -e), (e, e)] {
@@ -3860,7 +4177,13 @@ fn solids_of(strips: &[Strip], placed: &[Placed], lift: f64) -> Vec<Laid3> {
     {
         let off = dot(sub(x.face3, x.heel3), x.n3);
         let mut c = Vec::new();
-        for q in crate::joint_sheet::hull(plate) {
+        // L2 (b): the plate's outline as it will be drawn.
+        let hull = if s.exact_plan {
+            plate_outline2(strips, placed, s.gap)
+        } else {
+            crate::joint_sheet::hull(plate)
+        };
+        for q in hull {
             for z in [0.0, lift] {
                 c.push(add(
                     add(add(x.heel3, scale(x.x3, q[0])), scale(x.y3, q[1])),
@@ -3965,4 +4288,168 @@ fn norm(a: [f64; 3]) -> f64 {
 fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
     let l = norm(a);
     (l > 1e-9).then(|| scale(a, 1.0 / l))
+}
+
+/// The outline (in the plane's axes) the plate of the ends `placed` will be
+/// drawn with (L2 b, 2026-11-20; as `joints` draws a plate round its
+/// bolts): round the work point, each end's leg over its bolts (from its
+/// first bolt less the end distance, not before the work point, to its last
+/// plus it, across the leg), each bolt with its end and edge distances in
+/// the plate, and the flange under it from its heel across its width as far
+/// along as those reach; cut at the heel by half the gap where every end
+/// leaves towards the toe (as the run cuts it). *An assumption, on the safe
+/// side for the fit*: the distances its bolts keep those of a plate as thick
+/// as each end's leg (the plate is as thick as the thickest).
+fn plate_outline2(strips: &[Strip], placed: &[Placed], gap: f64) -> Vec<[f64; 2]> {
+    let flat: Vec<&Placed> = placed
+        .iter()
+        .filter(|p| strips[p.k].tilted.is_none())
+        .collect();
+    let Some(p0) = flat.first() else {
+        return Vec::new();
+    };
+    let x0 = &strips[p0.k];
+    let mut pts: Vec<[f64; 2]> = vec![x0.w];
+    const N: usize = 16;
+    let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+    for p in &flat {
+        let x = &strips[p.k];
+        let lat = [x.lat[0] + p.moved, x.lat[1] + p.moved];
+        let amin = x.bolts.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
+        let amax = x
+            .bolts
+            .iter()
+            .map(|b| b.0)
+            .fold(f64::NEG_INFINITY, f64::max);
+        if amin.is_finite() {
+            for s in [(p.cut + amin - amin).max(0.0), p.cut + amax + amin] {
+                for l in lat {
+                    pts.push(x.at(s, l));
+                }
+            }
+        }
+        let (edge, end) = x.keep_plate;
+        for (along, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+            let c = x.at(p.cut + along, l);
+            for i in 0..N {
+                let a = i as f64 * std::f64::consts::TAU / N as f64;
+                let (da, dl) = (end * grow * a.cos(), edge * grow * a.sin());
+                pts.push([
+                    c[0] + x.u[0] * da + x.v[0] * dl,
+                    c[1] + x.u[1] * da + x.v[1] * dl,
+                ]);
+            }
+        }
+    }
+    let lo = pts.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min);
+    let hi = pts.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max);
+    for xq in [lo, hi] {
+        pts.push([xq, 0.0]);
+        pts.push([xq, x0.width]);
+    }
+    let hull = crate::joint_sheet::hull(pts);
+    if flat.iter().all(|p| strips[p.k].u[1] > 1e-6) {
+        let yc = if x0.inside { x0.t + x0.r } else { 0.0 } + gap / 2.0;
+        clip(&hull, |q| q[1] - yc)
+    } else {
+        hull
+    }
+}
+
+/// What the plate `poly` (in `x0`'s plane, `tp` thick over its face) of the
+/// ends `on` would run into (L2 b): the fixed steel of the joint (not a
+/// member on it, the member it lies on or one in line with that, nor a
+/// member left for a hand detail — the run lets a plate lie under those),
+/// the plates and covers given by hand, and what the planes before laid
+/// out — each as its footprint in the plate's thickness, overlapping by
+/// more than the clash check's tolerance (separating axes in the plane:
+/// exact for the convex footprints). None: clear.
+#[allow(clippy::too_many_arguments)]
+fn plate_hits(
+    x0: &Strip,
+    on: &BTreeSet<&str>,
+    j: &JointDetail,
+    pieces: &[(crate::ClashPart, Vec<[f64; 3]>)],
+    fixed: &BTreeSet<String>,
+    excused: &BTreeSet<String>,
+    laid3: &[Laid3],
+    poly: &[[f64; 2]],
+    tp: f64,
+) -> Option<String> {
+    use crate::ClashPart;
+    if poly.len() < 3 {
+        return None;
+    }
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    let host = find(&x0.host);
+    let host_run = |m: &str| {
+        m == x0.host
+            || host
+                .zip(find(m))
+                .is_some_and(|(h, b)| angle_deg(h.direction, b.direction) > 160.0)
+    };
+    let slab = (FACE_TOUCH, (tp - FACE_TOUCH).max(2.0 * FACE_TOUCH));
+    let hit = |pts: &[[f64; 3]]| {
+        footprint_in(x0, pts, slab).is_some_and(|f| sat2(poly, &f) > crate::clash::CLASH_TOLERANCE)
+    };
+    for (part, pts) in pieces {
+        let name = match part {
+            ClashPart::Member(m) | ClashPart::Bolt { member: m, .. } => {
+                if on.contains(m.as_str())
+                    || host_run(m)
+                    || !fixed.contains(m)
+                    || excused.contains(m)
+                {
+                    continue;
+                }
+                part.words()
+            }
+            ClashPart::Plate(_) | ClashPart::Cover(..) => part.words(),
+        };
+        if hit(pts) {
+            return Some(name);
+        }
+    }
+    for (m, _, pts) in laid3 {
+        if on.contains(m.as_str()) || host_run(m) {
+            continue;
+        }
+        if hit(pts) {
+            return Some(m.clone());
+        }
+    }
+    None
+}
+
+/// How deep two convex polygons (2D) overlap: the least overlap of their
+/// spans over their edges' normals (≤ 0: apart).
+fn sat2(a: &[[f64; 2]], b: &[[f64; 2]]) -> f64 {
+    let mut best = f64::INFINITY;
+    for poly in [a, b] {
+        let n = poly.len();
+        for i in 0..n {
+            let e = sub2(poly[(i + 1) % n], poly[i]);
+            let l = (e[0] * e[0] + e[1] * e[1]).sqrt();
+            if l < 1e-12 {
+                continue;
+            }
+            let ax = [-e[1] / l, e[0] / l];
+            let span = |p: &[[f64; 2]]| {
+                p.iter()
+                    .map(|q| dot2(*q, ax))
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), d| {
+                        (lo.min(d), hi.max(d))
+                    })
+            };
+            let (a0, a1) = span(a);
+            let (b0, b1) = span(b);
+            let o = a1.min(b1) - a0.max(b0);
+            if o <= 0.0 {
+                return o;
+            }
+            best = best.min(o);
+        }
+    }
+    best
 }

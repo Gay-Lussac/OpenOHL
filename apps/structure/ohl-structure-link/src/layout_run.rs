@@ -1211,7 +1211,14 @@ fn lay_out_once(
                 let inner = why.contains("runs towards the angle's other leg")
                     || why.contains("do not all land on the inner face")
                     || why.contains("its outstanding leg points towards the flange");
-                if !inner
+                // L2 (c), 2026-11-20: an end the clash-aware plan leaves for
+                // what it (or its plate) would run into — the other face of
+                // the flange tried too (the half turn), kept as above.
+                let clash = settings.clash_tries
+                    && settings.exact_plan
+                    && (why.contains("the plate would run into")
+                        || why.contains("mm pulled back to clear"));
+                if !(inner || clash)
                     || held.contains(m)
                     || one_part.contains(m)
                     || !members_here.contains_key(m)
@@ -1513,7 +1520,8 @@ fn lay_out_once(
         let replan = |joint: &str,
                       except: &BTreeMap<String, String>,
                       floors: &BTreeMap<String, (f64, String)>,
-                      plated: &BTreeSet<String>|
+                      plated: &BTreeSet<String>,
+                      direct: &BTreeSet<String>|
          -> Option<JointPlan> {
             let j = details.joint(joint)?;
             let edge = edge_rule(model);
@@ -1524,7 +1532,14 @@ fn lay_out_once(
                 except,
                 floors,
                 crate::joint_layout::NODE_LIMIT,
-                &ctx_of(plated, guard.borrow().plain.contains(joint)),
+                &ctx_of(
+                    &settings,
+                    &order,
+                    joint,
+                    plated,
+                    direct,
+                    guard.borrow().plain.contains(joint),
+                ),
             );
             p.joins = joins
                 .get(joint)
@@ -1761,7 +1776,14 @@ fn plans_of(
                 &BTreeMap::new(),
                 &BTreeMap::new(),
                 crate::joint_layout::NODE_LIMIT,
-                &ctx_of(&BTreeSet::new(), plain),
+                &ctx_of(
+                    settings,
+                    order,
+                    &j.id,
+                    &BTreeSet::new(),
+                    &BTreeSet::new(),
+                    plain,
+                ),
             )
         };
         let mut p = match kinds
@@ -1795,11 +1817,21 @@ fn plans_of(
         .collect()
 }
 
-/// What the run tells a joint's plan (L1 b): the members put onto a plate
-/// by the clash rounds, planned as today (the guard).
-fn ctx_of(plated: &BTreeSet<String>, plain: bool) -> crate::joint_layout::PlanCtx {
+/// What the run tells joint `j`'s plan: the members put onto a plate by the
+/// clash rounds (L1 b), those bolted directly instead of on a plate (L2 c),
+/// of the tower's body (L1 c), planned as today (the guard).
+fn ctx_of(
+    settings: &LayoutSettings,
+    order: &JointOrder,
+    j: &str,
+    plated: &BTreeSet<String>,
+    direct: &BTreeSet<String>,
+    plain: bool,
+) -> crate::joint_layout::PlanCtx {
     crate::joint_layout::PlanCtx {
         plated: plated.clone(),
+        direct: direct.clone(),
+        body: settings.direct_first && order.zone_of(j) == crate::Zone::Body,
         plain,
     }
 }
@@ -2039,6 +2071,7 @@ type Replan<'a> = dyn Fn(
         &BTreeMap<String, String>,
         &BTreeMap<String, (f64, String)>,
         &BTreeSet<String>,
+        &BTreeSet<String>,
     ) -> Option<JointPlan>
     + 'a;
 
@@ -2110,6 +2143,9 @@ fn write_rounds(
     // L1 (b): the members at each joint put onto a plate for a clash (or a
     // misfit) instead of being pulled back or left.
     let mut plated: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // L2 (c): the members at each joint bolted directly for a clash instead
+    // of on their plate.
+    let mut directed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     // The plates' outlines cut at the heel, by joint and plate (kept while
     // the joint's plan stays).
     let mut outlines: BTreeMap<(String, usize), Vec<[f64; 3]>> = BTreeMap::new();
@@ -2132,6 +2168,7 @@ fn write_rounds(
         except.insert(o.joint.clone(), c.except.clone());
         floors.insert(o.joint.clone(), c.floors.clone());
         plated.insert(o.joint.clone(), c.plated.clone());
+        directed.insert(o.joint.clone(), c.directed.clone());
         for (k, x) in &c.outlines {
             outlines.insert((o.joint.clone(), *k), x.clone());
         }
@@ -2569,7 +2606,35 @@ fn write_rounds(
                         .iter()
                         .any(|at| dot3(sub3(*at, j.position), d) < c - 0.001)
                 });
-                if !outside && !beyond {
+                // (J2b fix, 2026-11-20) Nor through a hole of that member's
+                // own end or of an end bolted onto it (or onto the run it is
+                // one part of), as written — the joint checks' own rule.
+                let hole_of = |x: &crate::Arrival| {
+                    x.bolts
+                        .value
+                        .as_ref()
+                        .map_or(0.0, |b| b.hole.unwrap_or(b.diameter))
+                };
+                let run = |m: &str| {
+                    m == h.member
+                        || j.arrivals.iter().any(|x| {
+                            (x.member == h.member && x.continuous.as_deref() == Some(m))
+                                || (x.member == m && x.continuous.as_deref() == Some(&h.member))
+                        })
+                };
+                let overlap = j
+                    .arrivals
+                    .iter()
+                    .filter(|x| x.member == h.member || x.onto.value.as_deref().is_some_and(run))
+                    .find(|x| {
+                        x.bolt_points.iter().any(|q| {
+                            h.bolt_points
+                                .iter()
+                                .any(|p| holes_overlap(*p, hole_of(h), *q, hole_of(x)))
+                        })
+                    })
+                    .map(|x| x.member.clone());
+                if !outside && !beyond && overlap.is_none() {
                     continue;
                 }
                 let on = o.plan.plates.get(k).map_or("?", |p| p.on.as_str());
@@ -2578,11 +2643,17 @@ fn write_rounds(
                         "a plate on {on}: its own bolts onto {} would lie outside its outline",
                         h.member
                     )
-                } else {
+                } else if beyond {
                     format!(
                         "a plate on {on}: its own bolts onto {} would lie beyond the end of its \
                          steel (not one part through the joint)",
                         h.member
+                    )
+                } else {
+                    format!(
+                        "a plate on {on}: its own bolts onto {} would overlap the holes of {}",
+                        h.member,
+                        overlap.as_deref().unwrap_or("?")
                     )
                 };
                 for (i, p) in o.plan.plates.iter().enumerate() {
@@ -2629,6 +2700,32 @@ fn write_rounds(
                     true
                 }
             });
+            // L2 (c), 2026-11-20: an end on a plate that would be left as it
+            // was bolted directly instead where its bolts land (once), while
+            // a round is left to check it; kept where the plan lays it out.
+            let dtried: BTreeSet<String> = directed.get(&o.joint).cloned().unwrap_or_default();
+            let on_plate: BTreeSet<String> = o
+                .plan
+                .ends
+                .iter()
+                .filter(|e| matches!(e.onto, Onto::Plate(_)))
+                .map(|e| e.member.clone())
+                .collect();
+            let mut dtrying: BTreeMap<String, String> = BTreeMap::new();
+            out.retain(|m, why| {
+                if ask.settings.clash_tries
+                    && round + 2 < CLASH_ROUNDS
+                    && on_plate.contains(m)
+                    && !dtried.contains(m)
+                {
+                    dtrying.insert(m.clone(), why.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            let mut dl = dtried.clone();
+            dl.extend(dtrying.keys().cloned());
             let fl = floors.entry(o.joint.clone()).or_default();
             for (m, f) in &pull {
                 *pulls.entry((o.joint.clone(), m.clone())).or_default() += 1;
@@ -2640,12 +2737,13 @@ fn write_rounds(
             pl.extend(trying.keys().cloned());
             let plan_now = |ex: &BTreeMap<String, String>,
                             fl: &BTreeMap<String, (f64, String)>,
-                            pl: &BTreeSet<String>| {
+                            pl: &BTreeSet<String>,
+                            dl: &BTreeSet<String>| {
                 (round + 1 < CLASH_ROUNDS)
-                    .then(|| (r.replan)(&o.joint, ex, fl, pl))
+                    .then(|| (r.replan)(&o.joint, ex, fl, pl, dl))
                     .flatten()
             };
-            let mut again = plan_now(ex, fl, &pl);
+            let mut again = plan_now(ex, fl, &pl, &dl);
             if ask.settings.more_plates {
                 let laid = |p: &Option<JointPlan>, m: &str| {
                     p.as_ref()
@@ -2665,7 +2763,7 @@ fn write_rounds(
                         }
                         pl.insert(m.clone());
                     }
-                    again = plan_now(ex, fl, &pl);
+                    again = plan_now(ex, fl, &pl, &dl);
                 }
                 // Not laid out on a plate either: left as it was.
                 let failed: Vec<String> = trying
@@ -2678,10 +2776,30 @@ fn write_rounds(
                         pl.remove(m);
                         ex.insert(m.clone(), trying[m].clone());
                     }
-                    again = plan_now(ex, fl, &pl);
+                    again = plan_now(ex, fl, &pl, &dl);
+                }
+            }
+            // (L2 c) Not laid out bolted directly either: left as it was.
+            if !dtrying.is_empty() {
+                let failed: Vec<String> = dtrying
+                    .keys()
+                    .filter(|m| {
+                        !again
+                            .as_ref()
+                            .is_some_and(|p| p.ends.iter().any(|e| &e.member == *m))
+                    })
+                    .cloned()
+                    .collect();
+                if !failed.is_empty() {
+                    for m in &failed {
+                        dl.remove(m);
+                        ex.insert(m.clone(), dtrying[m].clone());
+                    }
+                    again = plan_now(ex, fl, &pl, &dl);
                 }
             }
             plated.insert(o.joint.clone(), pl);
+            directed.insert(o.joint.clone(), dl);
             let again = again.filter(JointPlan::laid_out);
             match again {
                 Some(p) => {
@@ -2743,6 +2861,7 @@ fn write_rounds(
                 except: except.get(&o.joint).cloned().unwrap_or_default(),
                 floors: floors.get(&o.joint).cloned().unwrap_or_default(),
                 plated: plated.get(&o.joint).cloned().unwrap_or_default(),
+                directed: directed.get(&o.joint).cloned().unwrap_or_default(),
                 outlines: outlines
                     .iter()
                     .filter(|((j, _), _)| j == &o.joint)
@@ -2826,6 +2945,8 @@ struct Checked {
     floors: BTreeMap<String, (f64, String)>,
     /// The members its clashes put onto a plate (L1 b).
     plated: BTreeSet<String>,
+    /// The members its clashes bolted directly instead of on a plate (L2 c).
+    directed: BTreeSet<String>,
     /// Its plates' outlines cut at the heel, by plate.
     outlines: Vec<(usize, Vec<[f64; 3]>)>,
     /// Its clashes after.
@@ -3174,6 +3295,19 @@ fn write_plan(
             x.insert("material", toml_edit::value(m));
         }
         let mut auto: BTreeSet<String> = BTreeSet::new();
+        // L2 (2026-11-20): the member whose flange it lies on (a plate in
+        // its member's own plane lies on none: it stands on the flat
+        // plate), so that it is drawn, seated and checked on that member's
+        // flange as planned — not on the joint's leg when that is another
+        // member.
+        if pl.own.is_none() && ask.settings.plate_on {
+            x.insert("on", toml_edit::value(pl.on.as_str()));
+            auto.insert("on".into());
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_ON_VERSION),
+            );
+        }
         if before.and_then(|o| o.thickness).is_none() {
             auto.insert("thickness".into());
         }

@@ -1226,7 +1226,12 @@ fn no_roll_for_both_ends_leaves_the_member_as_it_was() {
 /// angle's flange and no plate is laid out on a built-up member, so today
 /// D1 is left for a hand detail (D2's two bolts land). Searched (on by
 /// default), D1 is laid onto D2, the other member it could bolt onto, and
-/// the joint is laid out whole. A run again changes nothing.
+/// the joint is laid out whole. A run again changes nothing. (L2,
+/// 2026-11-20: D1 goes onto a plate on D2's flange, which reaches the work
+/// point; with the plate seated on D2 (its `on`) the clash check sees it run
+/// into the leg below the joint — hidden before, when the plate counted as
+/// lying on the leg — and the clash-aware plan sees it before writing: D1
+/// is left, said. The search as L1 measured it with L2's two off.)
 #[test]
 fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
     let (lib, wide) = crate::joint_layout_tests::wide_main();
@@ -1265,7 +1270,19 @@ fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
         "{:?}",
         n2.plan
     );
-    let s = settings();
+    let l2 = go(&text, &settings());
+    let n2 = l2.joints.iter().find(|o| o.joint == "N2").unwrap();
+    assert!(
+        n2.plan.hand_members.iter().any(|m| m == "D1")
+            && n2.plan.ends.iter().any(|e| e.member == "D2"),
+        "{:?}",
+        n2.plan
+    );
+    let s = LayoutSettings {
+        plate_on: false,
+        exact_plan: false,
+        ..settings()
+    };
     assert!(s.onto_search);
     let r = go(&text, &s);
     let n2 = r.joints.iter().find(|o| o.joint == "N2").unwrap();

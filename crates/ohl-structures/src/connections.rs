@@ -87,6 +87,8 @@
 //! id = "G3"
 //! joint = "N7"
 //! thickness = "8 mm"
+//! on = "D4"               # the member whose flange it lies on (2026-11-20,
+//! #   version 23; none: the joint's leg)
 //! outline = [["0 m", "0 m", "10 m"], …]   # its flat in its members' plane
 //!
 //! [plate.bend]            # bent from another plate of the joint
@@ -599,6 +601,11 @@ pub struct PlateLegBolts {
 /// only when a plate gives one (21 is the bolt grade's).
 pub const PLATE_BEND_VERSION: u32 = 22;
 
+/// The structure file version of the member a plate lies on (`on`,
+/// 2026-11-20, the automatic joint layout's L2): a file is written at 23
+/// only when a plate names one.
+pub const PLATE_ON_VERSION: u32 = 23;
+
 /// A plate bent from another plate of its joint (`[plate.bend]`,
 /// 2026-11-19, structure file version 22): the two are the two flats of
 /// one bent plate, folded along `line`. Read as one part (its weight from
@@ -636,6 +643,12 @@ pub struct TypePlate {
     /// Its outline in local axes (none: around the bolts onto it).
     #[serde(default)]
     pub outline: Vec<[Length; 3]>,
+    /// The member whose flange it lies on (2026-11-20, version 23, the
+    /// automatic joint layout's L2: a plate on a bracing member's flange at
+    /// a joint whose leg is another member); none: the joint's leg, worked
+    /// out as before.
+    #[serde(default)]
+    pub on: Option<String>,
     /// Bolted or welded onto the joint's leg (2026-11-03; none: bolted).
     /// Read only: `welded` plates of a joint form one welded assembly
     /// (2026-11-04, [`StructureType::welded_assemblies`]).
@@ -1063,6 +1076,17 @@ impl StructureType {
             if !self.nodes.iter().any(|n| n.id == p.joint) {
                 out.push(format!(
                     "plate {}: no joint {} (kept, not used)",
+                    p.id, p.joint
+                ));
+            }
+            if let Some(m) = &p.on
+                && !self
+                    .members
+                    .iter()
+                    .any(|x| &x.id == m && x.nodes.contains(&p.joint))
+            {
+                out.push(format!(
+                    "plate {}: on {m}: it does not meet at joint {} (the joint's leg taken)",
                     p.id, p.joint
                 ));
             }
