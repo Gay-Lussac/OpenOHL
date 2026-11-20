@@ -325,7 +325,62 @@ pub(crate) struct LibCheck<'a> {
     pub(crate) state: &'a LibraryState,
     pub(crate) branch: &'a str,
     pub(crate) pins: bool,
-    pub(crate) net: &'a ohl_store_pg::Network,
+    /// What each element of main used before the command.
+    pub(crate) before: &'a UsesCache,
+}
+
+/// What each element of a model's main branch uses of the libraries
+/// (library kind, entry), those using something only.
+pub(crate) type UsesCache = HashMap<(Kind, String), Vec<(&'static str, String)>>;
+
+const USING: [Kind; 4] = [Kind::Section, Kind::Jumper, Kind::Structure, Kind::Spacer];
+
+/// The uses of every element of `s`'s line worked on.
+pub(crate) fn uses_cache(s: &Session) -> UsesCache {
+    let keys: Vec<(Kind, String)> = s
+        .object_keys()
+        .filter(|(k, _)| USING.contains(k))
+        .cloned()
+        .collect();
+    let mut out = UsesCache::new();
+    for (k, id) in keys {
+        if let Some(v) = s.object_value(k, &id) {
+            let u = ohl_session::country::uses_of(k, &v);
+            if !u.is_empty() {
+                out.insert((k, id), u);
+            }
+        }
+    }
+    out
+}
+
+/// The elements among `objects` whose uses changed, `cache` brought up
+/// to date.
+pub(crate) fn uses_changed(
+    s: &Session,
+    cache: &mut UsesCache,
+    objects: &[(Kind, String)],
+) -> Vec<(Kind, String)> {
+    let mut out = Vec::new();
+    for key in objects {
+        if !USING.contains(&key.0) {
+            continue;
+        }
+        let now = s
+            .object_value(key.0, &key.1)
+            .map(|v| ohl_session::country::uses_of(key.0, &v))
+            .unwrap_or_default();
+        let was = cache.get(key).cloned().unwrap_or_default();
+        if now != was {
+            if now.is_empty() {
+                cache.remove(key);
+            } else {
+                cache.insert(key.clone(), now);
+            }
+            out.push(key.clone());
+        }
+    }
+    out
 }
 
 /// Decides operation `op` of `rights` on model `line` before it runs.
@@ -472,9 +527,9 @@ fn check_library_objects(
                         continue;
                     }
                     let before = lib
-                        .net
-                        .used_before(line, *kind, id, k, &entry)
-                        .map_err(|e| e.to_string())?;
+                        .before
+                        .get(&(*kind, id.clone()))
+                        .is_some_and(|u| u.iter().any(|(a, b)| *a == k && *b == entry));
                     if !before {
                         return Err(format!(
                             "entry {entry} of library {k} is withdrawn: {} {id} may not start \

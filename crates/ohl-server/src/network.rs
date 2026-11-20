@@ -249,6 +249,10 @@ struct Model {
     /// Phase 7: where each object is as of the last command (the state
     /// before the next).
     places: Places,
+    /// Phase 9: what each element of its main branch uses of the
+    /// libraries, as of the last command (the use index's rows written
+    /// only when they change; a new use of a withdrawn entry told apart).
+    uses: nr::UsesCache,
 }
 
 impl Model {
@@ -621,6 +625,7 @@ impl NetHost {
                 rights: self.compiled.clone(),
             })));
             let places = Places::of_session(&mut session);
+            let uses = nr::uses_cache(&session);
             self.models.insert(
                 row.id.clone(),
                 Model {
@@ -631,6 +636,7 @@ impl NetHost {
                     libs_rev: 0,
                     libs: None,
                     places,
+                    uses,
                 },
             );
         }
@@ -908,14 +914,7 @@ impl NetHost {
     /// holds what it may no longer see, or follows what it may now).
     /// Phase 9: the libraries' locks, requests and withdrawn entries read
     /// again when a library change moved their revision.
-    fn refresh_library(&mut self) {
-        let rev = match self.net.library_rev() {
-            Ok(r) => r,
-            Err(e) => {
-                log(&format!("the libraries' revision: {e}"));
-                return;
-            }
-        };
+    fn refresh_library(&mut self, rev: i64) {
         if rev == self.lib.rev {
             return;
         }
@@ -935,14 +934,15 @@ impl NetHost {
     }
 
     fn refresh_rights(&mut self) {
-        self.refresh_library();
-        let rev = match self.net.rights_rev() {
+        // Both revisions in one round trip (before each job).
+        let (rev, lib_rev) = match self.net.revisions() {
             Ok(r) => r,
             Err(e) => {
-                log(&format!("the rights' revision: {e}"));
+                log(&format!("the rights' and libraries' revisions: {e}"));
                 return;
             }
         };
+        self.refresh_library(lib_rev);
         if rev == self.rights.rev {
             return;
         }
@@ -2146,11 +2146,13 @@ impl NetHost {
         let mut check_us = checking.elapsed().as_secs_f64() * 1e6;
         self.net.begin_unit().map_err(|e| e.to_string())?;
         let lib = self.lib.clone();
-        let net = &self.net;
         let pins = matches!(op, Op::LibraryPins { .. });
         let m = self.models.get_mut(code).expect("checked");
         let Model {
-            session, places, ..
+            session,
+            places,
+            uses,
+            ..
         } = m;
         let mut refusal: Option<String> = None;
         let mut objects_us = 0.0;
@@ -2160,7 +2162,7 @@ impl NetHost {
                 state: &lib,
                 branch: line,
                 pins,
-                net,
+                before: uses,
             };
             let decided = nr::check_objects(&rights, code, s, places, &a.objects, Some(&check));
             objects_us = t.elapsed().as_secs_f64() * 1e6;
@@ -2327,20 +2329,15 @@ impl NetHost {
             ) || objects.iter().any(|(k, _)| *k == Kind::Library);
             if whole {
                 self.net.reindex_uses(code, &m.session).map_err(e)?;
+                m.uses = nr::uses_cache(&m.session);
             } else {
-                let elems: Vec<(Kind, String)> = objects
-                    .iter()
-                    .filter(|(k, _)| {
-                        matches!(
-                            k,
-                            Kind::Section | Kind::Jumper | Kind::Structure | Kind::Spacer
-                        )
-                    })
-                    .cloned()
-                    .collect();
-                if !elems.is_empty() {
-                    let rows = ohl_store_pg::library::uses_of_session(&m.session, Some(&elems));
-                    let from: Vec<(String, String)> = elems
+                // Only the elements whose uses changed (a move: none).
+                let changed: Vec<(Kind, String)> = applied
+                    .map(|a| nr::uses_changed(&m.session, &mut m.uses, &a.objects))
+                    .unwrap_or_default();
+                if !changed.is_empty() {
+                    let rows = ohl_store_pg::library::uses_of_session(&m.session, Some(&changed));
+                    let from: Vec<(String, String)> = changed
                         .iter()
                         .map(|(k, id)| (k.as_str().to_owned(), id.clone()))
                         .collect();
@@ -2655,6 +2652,7 @@ impl NetHost {
                         rights: self.compiled.clone(),
                     })));
                     m.places = Places::of_session(&mut m.session);
+                    m.uses = nr::uses_cache(&m.session);
                     m.rev += 1;
                     m.libs_rev += 1;
                 }

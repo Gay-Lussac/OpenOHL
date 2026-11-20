@@ -822,6 +822,32 @@ pub fn session_transcript(open: Open<'_>, name: &str) -> String {
             "library: {:?}",
             s.library_files("weather").unwrap().len()
         );
+        // Update library pins (country libraries, phase 9): one entry,
+        // the routes given marked out of date.
+        let route = s.line().routes[0].id.clone();
+        let stale: BTreeMap<String, String> = [(
+            route.clone(),
+            "library weather → W2: cases changed".to_owned(),
+        )]
+        .into();
+        let pins = s
+            .library_pins_update(
+                "ben",
+                &[(
+                    "weather".to_owned(),
+                    "cases".to_owned(),
+                    Some("[cases]\nwind = 1\n".to_owned()),
+                )],
+                &stale,
+                "library pins: weather → W2",
+            )
+            .unwrap()
+            .map(|a| a.objects);
+        let _ = writeln!(
+            out,
+            "pins: {pins:?}, stale {:?}",
+            s.stale_routes().unwrap().keys().collect::<Vec<_>>()
+        );
     }
     let s = Session::open_on(open(name), name).expect("open again");
     let line = s.export();

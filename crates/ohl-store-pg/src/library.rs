@@ -933,6 +933,24 @@ impl Network {
             .unwrap_or(0))
     }
 
+    /// The rights' and the libraries' revisions, in one round trip.
+    pub fn revisions(&self) -> Result<(i64, i64), NetError> {
+        let mut out = (0, 0);
+        for r in lock(&self.conn).query(
+            "SELECT key, value FROM net_meta WHERE key IN ('rights_rev', 'library_rev')",
+            &[],
+        )? {
+            let (k, v): (String, String) = (r.get(0), r.get(1));
+            let v = v.parse().unwrap_or(0);
+            if k == "rights_rev" {
+                out.0 = v;
+            } else {
+                out.1 = v;
+            }
+        }
+        Ok(out)
+    }
+
     /// The locks, requests and withdrawn entries, read at one moment.
     pub fn library_state(&self) -> Result<LibraryState, NetError> {
         let mut c = lock(&self.conn);
@@ -1762,6 +1780,17 @@ impl Network {
         ) {
             return Err(not_found());
         }
+        // Objects read only on the lines the viewer may see objects of (a
+        // prefilter: every row is decided all the same; files on every line).
+        let lines: Vec<String> = if viewer.sees_everything() {
+            Vec::new()
+        } else {
+            self.lines()?
+                .into_iter()
+                .map(|l| l.id)
+                .filter(|l| viewer.sees_objects_of_line(l))
+                .collect()
+        };
         let rows = lock(&self.conn).query(
             "SELECT u.line_id, u.object_kind, u.object, u.file, o.routes, s.x0, s.y0, s.x1, s.y1
              FROM lib_use u
@@ -1770,8 +1799,9 @@ impl Network {
              LEFT JOIN spatial s ON s.line_id = u.line_id AND s.branch = u.branch
                  AND s.kind = u.object_kind AND s.id = u.object
              WHERE u.kind = $1 AND u.entry = $2 AND u.branch = 'main'
+               AND ($3 OR u.object_kind = 'library' OR u.line_id = ANY($4))
              ORDER BY u.line_id, u.object_kind, u.object",
-            &[&kind, &entry],
+            &[&kind, &entry, &viewer.sees_everything(), &lines],
         )?;
         let mut route_seen: BTreeMap<(String, String), bool> = BTreeMap::new();
         let mut out = Vec::new();
@@ -1961,26 +1991,6 @@ impl Network {
             &[&code, &json],
         )?;
         Ok(())
-    }
-
-    /// Whether element `kind`/`id` of model `code`'s main branch used
-    /// entry `entry` of library `lib` before the command being decided
-    /// (the use index as it was; a branch's object: main's).
-    pub fn used_before(
-        &self,
-        code: &str,
-        kind: Kind,
-        id: &str,
-        lib: &str,
-        entry: &str,
-    ) -> Result<bool, NetError> {
-        Ok(lock(&self.conn)
-            .query_opt(
-                "SELECT 1 FROM lib_use WHERE line_id = $1 AND branch = 'main'
-                   AND object_kind = $2 AND object = $3 AND kind = $4 AND entry = $5",
-                &[&code, &kind.as_str(), &id, &lib, &entry],
-            )?
-            .is_some())
     }
 
     /// Writes the use index of model `code`'s main branch: the rows of

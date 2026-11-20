@@ -1026,6 +1026,26 @@ impl UserRights {
             && self.also.as_ref().is_none_or(|o| o.sees_some_of_line(line))
     }
 
+    /// May see some object of line `line` (a grant of `see` that may touch
+    /// it, not of a library scope; unless denied the whole line): a
+    /// prefilter of what to decide object by object (phase 9's use index).
+    pub fn sees_objects_of_line(&self, line: &str) -> bool {
+        self.active
+            && self.grants.iter().any(|g| {
+                g.perms.contains(Permission::See)
+                    && g.scope.library_kind.is_none()
+                    && g.may_touch_line(line, false)
+            })
+            && !self
+                .denies
+                .iter()
+                .any(|d| d.perms.contains(Permission::See) && d.whole_line(line))
+            && self
+                .also
+                .as_ref()
+                .is_none_or(|o| o.sees_objects_of_line(line))
+    }
+
     /// The role the session's own rules give `user` on line `line`: admin
     /// with every permission on the whole line, designer with a grant to
     /// edit, make or remove something of it, viewer with one to see

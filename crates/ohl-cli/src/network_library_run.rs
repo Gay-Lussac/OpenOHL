@@ -616,7 +616,7 @@ pub fn run(command: LibraryCommandArgs) -> Result<(), String> {
                 Network::connect_writer(&url)
             }
             .map_err(|e| {
-                format!("{e} (with a server running, ask it from a client: Update library pins)")
+                format!("{e} (a server running: stop it, or ask the server through its protocol)")
             })?;
             let lines: Vec<String> = match (line, following) {
                 (Some(l), _) => vec![l],

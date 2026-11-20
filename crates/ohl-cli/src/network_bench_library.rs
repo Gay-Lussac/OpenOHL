@@ -234,13 +234,19 @@ pub fn bench(database: &str, user: &str, queries: usize) -> Result<Value, String
             }
         }
         let data = net.rights().map_err(e)?;
-        for (label, who) in [("network_admin", user), ("route_viewer", viewer)] {
+        // The wire every section and jumper uses, and a weather case every
+        // line holds (a file's entry).
+        for (label, who, kind, entry) in [
+            ("network_admin", user, "cables", DRAKE),
+            ("route_viewer", viewer, "cables", DRAKE),
+            ("network_admin_weather_case", user, "weather", "-20 °C"),
+        ] {
             let me = data.compile(who, &DbResolve(&net));
             let mut ms = Vec::new();
             let mut n = 0;
             for _ in 0..queries.max(1) {
                 let t = Instant::now();
-                n = net.uses(&me, "cables", DRAKE).map_err(e)?.len();
+                n = net.uses(&me, kind, entry).map_err(e)?.len();
                 ms.push(t.elapsed().as_secs_f64() * 1e3);
             }
             out.insert(

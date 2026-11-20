@@ -365,7 +365,7 @@ fn import_and_export_round_trip() {
         )
     );
     let network_keys = dump(&back, "SELECT key FROM ols_meta WHERE key LIKE 'network.%'");
-    assert_eq!(network_keys.len(), 5, "{network_keys:?}");
+    assert_eq!(network_keys.len(), 6, "{network_keys:?}");
     assert_eq!(Session::open_read_only(&back).unwrap().export(), file_line);
     // An export does not overwrite.
     assert!(export(&net, "A", &back, "ana").is_err());
