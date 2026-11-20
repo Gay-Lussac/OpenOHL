@@ -2177,19 +2177,79 @@ only where it helps):
   > (3) The guard keeps L1's plan at a joint only where it lays out at
   > least as many ends as today's *plan* (today's result after the clash
   > rounds is not known without a second run, about twice the time):
-  > keep? Recommended: yes. (4) A bent plate's own bolts are placed
+  > keep? Recommended: yes. (4) ~~A bent plate's own bolts are placed
   > without the cut of the member they bolt onto, and on some members
   > drawn just outside the flat's outline: the layout now leaves such ends
-  > (said). Fix in the bent plate next? Recommended: yes, before L2 (small).
+  > (said). Fix in the bent plate next? Recommended: yes, before L2
+  > (small).~~ **Built 2026-11-20 as recommended** (the J2b fix, with L2
+  > below).
   > (5) The body's tolerances — legs within 30° of the vertical, 0.10 m
   > from the outline — keep? Recommended: yes. (6) More plates put more
   > ends a plate's thickness out of the flange, not in the analysis (NOT
   > ON THE SAFE SIDE, as for every plate): leave to O45 D? Recommended:
   > yes.
-- [ ] L2. **Clash-aware planning**: the real 3D shapes while planning,
-  not boxes; before an end is given up for a clash, the other face or the
-  plate's other side tried. The members left after the clash rounds are
-  the biggest group left on the real towers (about 26 600).
+- [x] J2b fix and L2. **The bent plate's own bolts; clash-aware
+  planning**: the real 3D shapes while planning, not boxes; before an end
+  is given up for a clash, the other face or the plate's other side
+  tried. **Built 2026-11-20, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#clash-aware-planning-l2),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-the-bent-plates-own-bolts-clash-aware-planning-l2)).
+  The clash-kind reasons left on the real towers before it (36 837), by
+  the two parts: a plate with a member's steel 51 %, a bolt's head, nut or
+  shank with a plate 19 %, member with member 13 %, plate with plate 9 %,
+  the bent plate's own bolts 4 %. The bent plate's own bolts now lie on
+  the steel of the member they bolt onto (past its cut by the end
+  distance, where that member will be drawn), not through a hole there.
+  L2, three parts, each a switch, on by default: (a) **each plate names
+  the member whose flange it lies on** (`on`, structure file version 23 —
+  found looking into the clashes: the joint details took every plate to
+  lie on the joint's leg, so a plate on a bracing member's flange was drawn
+  elsewhere than planned and its clash with the leg hidden; now seen, on
+  the safe side); (b) **the planner sees what the clash check sees** — the
+  outstanding leg to its full height, the nuts and shanks behind the
+  flange or plate, each plate's outline as it will be drawn against the
+  fixed steel and the planes before, the laid-out bolts whole, and a member
+  laid out at the same joint taken where it will be drawn for what bolts
+  onto it (deterministic, no new search); (c) **tries**: an end on a plate
+  bolted directly where its bolts land (in the plan where its plate hits;
+  after writing once per end), the half turn for an end the plan leaves
+  for a clash; an end on its own plate not built (it would reach the work
+  point and the flange as the shared plate does). Found measuring, for
+  every run: two more of the joint checks' rules after writing (a member's
+  bolts within the outline of a plate laid out in the plan; a member not
+  laid out, nor left by hand, still fitting onto one laid out). L1 (c)
+  measured again on top: no gain, left out. On the 78 real towers (kept
+  privately; J9's and J7a's proposals confirmed): joints laid out whole
+  42.7 % → 48.6 % (body 45.2 % → 48.2 %, arms and top 39.5 % → 49.0 %),
+  ends 56.5 % → 61.8 %, joints not fitting 29.7 % → 24.7 % (as given
+  41 → 42), clash-kind reasons 36 837 → 22 960 (8 945 of them said in the
+  plan, not written), plates +15 %, a run again identical 78/78; the time per tower about the same (median 19.3 → 17–18 s on six towers laid out back to back, the largest about a tenth more).
+  The bent plate's own bolts alone: +949 joints whole, the ends left for
+  them 1 456 → 872.
+  > **Owner:** (1) Each plate the layout makes names the member it lies
+  > on (`on`): a laid-out tower with plates is written at structure file
+  > version 23 (an older program refuses it). Keep? Recommended: yes — the
+  > plates were drawn on the wrong member before; a plate given by hand can
+  > name it too (by hand in the file for now; in the Joint panel later).
+  > (2) The two new after-writing checks take 2 384 ends back out (joints
+  > that would be written not fitting): keep? Recommended: yes (nothing
+  > that does not fit is written). (3) A member left for a hand detail is
+  > not asked by the second: its bolts may no longer fit the member laid
+  > out under it (as given 41 → 42; leaving that member too cost about four
+  > times the ends on a sample). Keep? Recommended: yes (its hand detail
+  > places its bolts; said). (4) About 9 000 ends are now left in the plan
+  > because their plate would run into steel already there, mostly near the
+  > work point (a plate's outline always reaches the work point and the
+  > flange under it — the rule for plates of 2026-11-02, "keep hidden in
+  > the shape of the corner"). Let the layout give such a plate an outline
+  > that stops short of what it would run into (round its bolts and the
+  > flange it is held by)? Recommended: measure it next, it is the biggest
+  > group of L2's. (5) The bent plate's own bolts through a hole of another
+  > member there (about 670 ends): slide the pair along clear of the holes?
+  > Recommended: yes (small). (6) An `onto` given by hand is replaced by
+  > the plate when the layout puts the end onto a plate on that member, and
+  > the record then takes it as the layout's (a run again from the file
+  > takes it out): keep the hand value in the record? Recommended: yes.
 - [ ] L3. **A plate bent by a few degrees** for ends whose members need
   rolls 5°–20° apart at their two ends (about 24 900 ends on the real
   towers, the second group; the owner's example joint shows such plates).

@@ -8,6 +8,57 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (joint layout: the bent plate's own bolts, clash-aware planning L2)
+
+**O44, the J2b follow-up of L1 and L2 with the owner's ideas of
+2026-11-19** (built 2026-11-20, in active development, not approved yet;
+[theory](../theory/joint-layout.md#clash-aware-planning-l2),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md), [data model](data-model.md)):
+
+- **The bent plate's own bolts (for every run)**: on the steel of the
+  member they bolt onto — past its cut by the end distance where it ends
+  at the joint (a cut not known: the work point, *conservative*), the pair
+  moved out along it, the flat with them; the flats laid out where that
+  member will be drawn when its own end is laid out at the joint; a plate
+  whose own bolts would overlap a hole of that member's end or of an end
+  bolted onto it left, said.
+- **(a) Each plate on the member it lies on — kept, a format change**:
+  found looking into the clashes, the joint details took every plate to
+  lie on the joint's leg (its plane with one member on it, the flange
+  under its outline, the clash check's leg); the layout's plates on a
+  bracing member's flange were drawn elsewhere than planned and their
+  clash with the leg hidden. A plate's `on` (the member whose flange it
+  lies on): **structure file version 23**, written by the layout for every
+  plate it makes on a flange; a plate without it as before. Clashes hidden
+  before now seen: *on the safe side*.
+- **(b) Clash-aware planning — kept**: the outstanding leg to its full
+  height, the nuts and shanks behind the flange or plate, each plate's
+  outline as it will be drawn (tested in its thickness against the fixed
+  steel and what the planes before laid out), the laid-out bolts whole,
+  and a member laid out at the same joint taken where it will be drawn for
+  what bolts onto it. Deterministic, no new search.
+- **(c) Tries before an end is left for a clash** — kept: an end
+  on a plate bolted directly where its bolts land (in the plan where the
+  plate hits; after writing once per end), the half turn tried for an end
+  the plan leaves for a clash. The end on a plate of its own: not built (it
+  would reach the work point and the flange as the shared plate does).
+- **Two more of the joint checks' rules after writing (for every run)**,
+  found measuring: the bolts of each member on a plate the layout made
+  within its outline, and a member not laid out (nor left for a hand
+  detail) bolting onto one laid out still fitting onto it — else left as
+  it was, said.
+- **L1 (c) again — left out**: with the plate in the plan the members
+  bolted directly keep clear of it, but no more is laid out (rebuilt as
+  `direct_first`, off).
+
+Measured on the 78 private real towers (the theory page): joints laid out
+whole 42.7 % → 48.6 % (the arms and the top 39.5 % → 49.0 %), ends
+56.5 % → 61.8 %, joints not fitting 29.7 % → 24.7 % (as given 41 → 42),
+the clash-kind reasons 36 837 → 22 960 (8 945 of them now said in the
+plan), plates +15 %, a run again identical 78 of 78, the time per tower about the same (median 19.3 s → 17–18 s on six towers laid out back to back; the largest about a tenth more). The
+owner's questions are in the roadmap (O44 L2).
+
 ## 2026-11-20 (joint layout: the owner's quick round L1)
 
 **O44 L1 with the owner's ideas of 2026-11-19** (approved the same day in
