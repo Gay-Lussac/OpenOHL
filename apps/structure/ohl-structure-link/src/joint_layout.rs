@@ -131,7 +131,7 @@ pub struct LayoutSettings {
     /// default. Off: every joint planned on its own (as before; for the
     /// comparison).
     pub once_per_kind: bool,
-    /// L1 (a), bottom up, then out (owner 2026-11-19; [`crate::joint_order`]):
+    /// L1 (a), bottom up, then out (owner 2026-11-19; [`mod@crate::joint_order`]):
     /// the joints taken in that order where the order matters — the joint a
     /// kind is planned at (J4), and a member that no one roll lays flat at
     /// all its ends, none of them flat now, turned to lie flat at its end
