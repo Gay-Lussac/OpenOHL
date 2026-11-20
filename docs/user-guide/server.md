@@ -118,9 +118,79 @@ database before it tells anyone.
   `--no-idle-solve` turns it off).
 - Clients of **protocol 2** (OpenOHL before 2026-11-19) are refused by
   every server, with a message to update.
-- Users and roles are each line's own (as in its project file); the
-  general invitation lets newcomers in as viewers. Rights by role on
-  (almost) every element come later (phase 7).
+- **Only the network's users join**, each with their **personal
+  invitation** (`--invite NAME`): the general invitation admits nobody,
+  and `--newcomers` is refused on a network. What each user may see and
+  do comes from the network's **rights** (below).
+
+### Rights on a network (phase 7, in active development)
+
+*Built 2026-11-20, in active development, not approved yet
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-7)).*
+
+A **role** is a named set of permissions — *see*, *edit*, *create*,
+*delete*, *review*, *export*, *lock*, *request*, *manage rights*. Six are
+shipped: **viewer** (see), **designer** (see, edit, create, delete,
+export, request), **checker** (see, review, export), **library
+maintainer** (see, edit, create, delete, review, lock), **line admin** and
+**network admin** (everything, on their scope). An admin may define
+others.
+
+An **assignment** gives a user or a group a role on a **scope**: the whole
+network; a line; a route, or the part of a route between two of its
+structures (whole tension sections, as a working set); a region (a
+polygon); an object kind (on a line or everywhere); one object; a library
+kind, file or entry (on a line or everywhere) — every part given must
+hold ("the costs of line B" is a line and a library kind). Nothing is
+allowed without an assignment. A user's permissions are those of all
+their own and their groups' assignments together; editing, making,
+removing, reviewing and exporting need seeing too. A network admin may
+also set a **deny** (a role's permissions, or everything) on a scope: it
+wins over every grant there.
+
+On the safe side: a region gives what lies wholly inside it and denies
+what it touches; someone who may see part of a line also sees its
+settings and library files (needed to solve its sections), never more;
+merging, rolling back, branching, committing, following a line whole and
+exporting it need a right on the **whole line**. What a user may not see
+never reaches them — not in the tiles, the changes, the catch-ups, a
+working set, a route's structures, the users' list or an error message
+("refused: it touches objects you have no access to"); a working set
+reaching something they may not see is refused.
+
+Rights are managed on the command line (the admin app OHL-Server is a
+plan waiting for the owner). `--user` is who acts: their own rights
+decide whether they may.
+
+    ohl network rights bootstrap --user ana          # the first network admin (only while none)
+    ohl network rights add-user ben --user ana       # users, groups, roles: network admins
+    ohl network rights add-group crew --user ana
+    ohl network rights add-member crew ben --user ana
+    ohl network rights put-role surveyor --permissions see,export --user ana
+    ohl network rights assign --to group:crew --role designer --line L001 --user ana
+    ohl network rights assign --to user:ben --role viewer --route R7 --user ana
+    ohl network rights assign --to user:ben --role designer --route R7 --from T3 --to T9 --user ana
+    ohl network rights assign --to user:ben --role viewer --region "0,0;900,0;900,700" --user ana
+    ohl network rights assign --to group:crew --deny --line L002 --library-kind costs --user ana
+    ohl network rights list                          # roles, users, groups, assignments (numbered)
+    ohl network rights unassign 12 --user ana
+    ohl network rights disable ben --user ana        # no rights at all; connections let go
+    ohl network rights explain --as ben --permission edit --line L001 --kind structure --id T5 --user ana
+    ohl network rights see-as --as ben --user ana    # what ben may see of each line
+    ohl network rights audit --user ana              # network admins: changes and refusals
+
+- A **line admin** gives rights within their line (never a deny, never
+  more than they hold); users, groups, memberships and roles are the
+  network admins'. The last network admin cannot be taken away.
+- A running server takes a change before its next request (at the latest
+  with its next heartbeat); a connected user whose rights changed is
+  told and let go, and joins again with their new rights.
+- **See as user**: an admin (whoever manages rights) may join seeing as
+  another user (what both may see; nothing is changed so; in the audit).
+- Every change, with what it was and is, and every refusal is in the
+  network's **audit** (append only).
+- Importing lines needs a network admin (anyone while the network has
+  none); exporting a line needs *export* on the whole line.
 
 ## Roles
 

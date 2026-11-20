@@ -125,6 +125,8 @@ pub fn bench(w: &WsBench) -> Result<Value, String> {
         areas: 0,
         work: w.work.clone(),
     };
+    // Phase 7: the follower is a user of the network (a viewer).
+    crate::network_bench::admit(&b, &[FOLLOWER.to_owned()])?;
     let mut out = BTreeMap::new();
     let stats_file = w.work.join("server-ws-stats.json");
     let (served, _general, personal, follows, start_s) =

@@ -227,8 +227,66 @@ pub(crate) fn serve(
     ))
 }
 
+/// Phase 7: `names` admitted as viewers of the whole network (users of
+/// it, by `b.user` — made the network admin first when it has none).
+pub(crate) fn admit(b: &Bench, names: &[String]) -> Result<(), String> {
+    use ohl_session::rights::{Scope, Subject};
+    use ohl_store_pg::rights::RightsCommand as R;
+    let net = ohl_store_pg::Network::connect(&b.database).map_err(|e| e.to_string())?;
+    let d = net.rights().map_err(|e| e.to_string())?;
+    if d.network_admins().is_empty() {
+        net.rights_command(
+            &b.user,
+            &R::Bootstrap {
+                user: b.user.clone(),
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    for name in names {
+        if d.users.contains_key(name) {
+            continue;
+        }
+        let run = |c: R| net.rights_command(&b.user, &c).map_err(|e| e.to_string());
+        run(R::AddUser {
+            name: name.clone(),
+            display: None,
+        })?;
+        run(R::Assign {
+            subject: Subject::User(name.clone()),
+            role: Some("viewer".into()),
+            deny: false,
+            scope: Scope::network(),
+            note: "the bench".into(),
+        })?;
+    }
+    Ok(())
+}
+
+/// The personal invitation of `name` (the server's keys in the bench's
+/// key file).
+pub(crate) fn personal_of(
+    general: &Invitation,
+    b: &Bench,
+    name: &str,
+) -> Result<Invitation, String> {
+    let key = ohl_server::Keys::personal_key_file(&b.work.join("bench.server-key"))?;
+    let keys = ohl_server::Keys::new("bench-general-code", key);
+    Ok(Invitation {
+        code: keys.code(Some(name)),
+        ..general.clone()
+    })
+}
+
 pub fn bench(b: &Bench) -> Result<Value, String> {
     std::fs::create_dir_all(&b.work).map_err(|e| format!("{}: {e}", b.work.display()))?;
+    // Phase 7: a network admits its users only.
+    let mut names = vec!["viewer-0".to_owned(), FOLLOWER.to_owned()];
+    for k in 0..b.viewers {
+        names.push(format!("viewer-d{k}"));
+        names.push(format!("viewer-s{k}"));
+    }
+    admit(b, &names)?;
     let stats_file = b.work.join("server-stats.json");
     // The idle solve (phase 6) off: the tiles timed are made for their
     // clients alone, as in phase 5.
@@ -241,7 +299,12 @@ pub fn bench(b: &Bench) -> Result<Value, String> {
     eprintln!("bench: the network's info");
     // What the network holds.
     let t = Instant::now();
-    let mut first = join_network(&general, "viewer-0", &NetJoin::default(), &mut |_| {})?;
+    let mut first = join_network(
+        &personal_of(&general, b, "viewer-0")?,
+        "viewer-0",
+        &NetJoin::default(),
+        &mut |_| {},
+    )?;
     let got = pump(&mut first, Duration::from_secs(60), |m| {
         matches!(m, ServerMsg::Network(_))
     })?;
@@ -273,7 +336,7 @@ pub fn bench(b: &Bench) -> Result<Value, String> {
         let tiles_k = view(c, w, h, grid, level);
         let t = Instant::now();
         let mut j = join_network(
-            &general,
+            &personal_of(&general, b, &format!("viewer-d{k}"))?,
             &format!("viewer-d{k}"),
             &NetJoin {
                 tiles: held(&tiles_k),
@@ -296,7 +359,7 @@ pub fn bench(b: &Bench) -> Result<Value, String> {
     for k in 0..same {
         let t = Instant::now();
         let mut j = join_network(
-            &general,
+            &personal_of(&general, b, &format!("viewer-s{k}"))?,
             &format!("viewer-s{k}"),
             &NetJoin {
                 tiles: held(&shared_view),

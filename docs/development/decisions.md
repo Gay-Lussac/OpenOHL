@@ -8,6 +8,202 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server, phase 7)
+
+**Rights and roles on a network: one function deciding for the commands
+and for everything the server sends; assignments by scope, denies by
+network admins, the audit, "see as user"** (ROADMAP O17 phase 7; the
+owner's "rights and roles applied to almost every element and library",
+2026-11-18; built, in active development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md#rights-and-roles-on-almost-every-element-and-library),
+[data model](data-model.md#server-database-postgresql),
+[user guide](../user-guide/server.md#a-networks-server-in-active-development),
+[measured](performance.md#synthetic-country-phase-7-rights-and-roles-2026-11-20)).
+
+- **The one function** (`ohl_session::rights`, no database in it):
+  `UserRights::allows(permission, target)`. A role is a set of the nine
+  permissions (see, edit, create, delete, review, export, lock, request,
+  manage rights); the six shipped roles as in the ADR (the schema's rows
+  tested against the session's list). An assignment gives a user or a
+  group a role on a **scope**, or — network admins only — denies a role's
+  permissions there (every permission when no role is named). A scope is
+  a conjunction of constraints (none: the network): a line, a route or
+  the part of a route between two of its structures (snapped out to
+  whole tension sections, as a working set), a region (a polygon), an
+  object kind, an object, a library kind, file or entry; "the costs of
+  line B" is a line and a library kind. **Default deny**; the union of a
+  user's own and their groups' grants covering the target; edit, create,
+  delete, review and export need see on the same target; **a deny
+  covering the target wins whatever the order** (tested: assignments
+  reversed, a deny added never allows more, a grant added never less); a
+  disabled user has no rights. A **target** is the network itself (its
+  users, groups, roles, assignments, audit), a line as a whole, an object
+  of a line (its plan bounds and routes), or a library file or entry of
+  a line.
+- **Decided here (conservative)**: a region **grants** what lies wholly
+  inside it and **denies** what it touches (an object's plan bounds); a
+  target without a place (the line's settings, a library file, a report)
+  is in no region or route, but a grant on a route, a region or an object
+  lets its user **see** (only see) the settings and library files of the
+  lines it lies on — a section is solved with them; **the line as a
+  whole** (merges, rollbacks, branches, commits, tags, reviews' merges,
+  following a model whole, an export) is granted only by a scope of the
+  whole line or the network, and denied by any deny that may touch the
+  line; a deny's region may touch every line; a grant naming a role
+  removed gives nothing, a deny naming one denies everything.
+- **What is seen is seen as drawn**: an object with what it refers to — a
+  section with every structure it hangs on, an alignment with its route
+  and every point of it, an alignment point with the structure it is
+  tied to (its place is the structure's), a jumper or a spacer with its
+  sections and structures. Found by the property test: an alignment
+  point on a visible route tied to a hidden structure gave the structure's
+  place away in the route's bounds.
+- **The edit side**: every server operation has a rule (an exhaustive
+  match: a new operation cannot be added without one): its objects only
+  (commands, undo, redo), these permissions on the line whole (rollbacks,
+  merges, bringing in, project lines, commits, branches, tags, reviews:
+  edit, create and delete or edit; protecting a branch: lock; deciding a
+  review: review), edit of the settings, create, edit or delete of a
+  library file; users, roles and the project's edit grants are refused on
+  a network (they are the network's). After the operation ran, in the
+  **same unit of work** (`ohl_server::execute_checked`, the session's
+  `atomically`: the store's savepoint and the line in memory put back
+  when refused), every object it changed is decided: **create** for a new
+  one (as it is), **delete** for one gone (as it was), **edit** for one
+  changed (as it was and as it is: nothing moved out of, or into, what
+  one may edit). The places "as it was" are the server's: each model's
+  objects' bounds and routes as of its last command (`Places`). The
+  session's own role rules take their roles from the rights
+  (`RoleSource`, `model_role`: admin with edit, create, delete and manage
+  rights on the whole line; designer with a grant to edit something of
+  it; viewer otherwise). The project's own edit grants (imported with
+  it) are still checked by the session too: both apply.
+- **Decided here (conservative)**: on a project line other than main,
+  an object's place is main's (a new object there: its own); branches,
+  commits and tags need edit on the whole line (a designer of a route
+  works on main until branches over working sets, phase 11); a grant on
+  a part of a route covers what the part holds (resolved again after
+  each change of its model) — **making new objects needs a whole route,
+  a region or the line** (a question below).
+- **The see side** (the outgoing filter, the same function): the
+  network's lines and routes (a line listed when its user may see
+  something of it, a route when they may see it; bounds and counts of
+  what they see); **tile packages** kept per **rights class** — the exact
+  set of a tile's objects its client may not see (none for those who see
+  everything: one package shared as before; never a hash, so two classes
+  cannot be confused) —, a class's package filtered from the whole one
+  (structures, wires, alignments, the names of the routes still drawn,
+  notes naming what is hidden); **changes**: a client that may not see
+  every object a change touched (as it is now; as it was for what went),
+  its routes, its library file or settings, or, for a change at large or
+  on a branch, the whole line, gets "read these tiles again" for its own
+  tiles (through the filter) and nothing more; **catch-ups**: a change as
+  it is only to a client seeing its whole line (its operation may name,
+  or have moved, what the client may not see then or now), the others'
+  tiles read again; **working sets**: refused when they reach anything
+  their user may not see (the refusal names nothing), rows of what came
+  in later and may not be seen left out (logged), deletes only of what
+  was sent, the users of their structures (`part_users`) filtered; a
+  route's structures and alignments by station: those seen; **error
+  messages** naming an object the user may not see become one fixed
+  refusal, "it touches objects you have no access to"; the users' list
+  without their presence (a selection names objects, a camera a place)
+  and no soft locks for users who do not see everything.
+- **Who joins**: only the network's users (`net_user`, enabled), each
+  with their personal invitation — the general one admits nobody, and
+  `ohl network serve --newcomers` is refused on a network (default deny,
+  owner 2026-11-19: "only users an admin added may join a network").
+- **Rights changes** (`ohl_store_pg::rights::RightsCommand`, the command
+  line `ohl network rights …`): users, groups, members and roles by
+  network admins only (a membership or a role reaches every scope its
+  assignments name); an assignment by whoever **manages rights on a scope
+  holding it** and **holds every permission of the role there** (no one
+  gives more than they hold); a deny by network admins only; the shipped
+  roles fixed; a role given cannot be removed; the last network admin
+  cannot be taken away or disabled; the first one by `bootstrap`, only
+  while there is none. A route or object scope gets its line (ids are
+  unique in the network); what it names must exist. Each change is one
+  transaction serialised by an advisory lock, with its audit row (what
+  it was and is) and the rights' revision moved on. **Decided here**:
+  rights changes need no writer's lock (an admin changes them while the
+  server runs); the server looks at the revision before each job and
+  with each heartbeat, reads the rights again when it moved, and **lets
+  go every client whose rights changed** (it holds what it may no longer
+  see) — it joins again, filtered anew. Group membership changed while a
+  client is connected: tested (let go; the next request on the old
+  connection refused; less seen after).
+- **"See as user"**: whoever manages rights somewhere may join seeing as
+  another user (`see_as` in the join; `ohl network rights see-as` and
+  `explain` on the command line): what both may see, nothing changed, in
+  the audit.
+- **The audit** (append only, as before): every rights change with what
+  it was and is; refusals — joins, commands, working sets, rights
+  changes, see-as, exports, imports, the audit asked by a non-admin —
+  with what was asked in full (the audit is the network admins').
+- **Imports and exports**: importing needs a network admin (any user
+  while the network has none: it is being set up); exporting a model
+  needs export on its whole line (a model exported is every row of it;
+  a part of one is the offline working set, phase 12).
+- **Network schema 4**: `assignment` gains the library kind, file and
+  entry and the region's points as given (JSON as text; `area` the same
+  polygon for PostGIS); `stream` gains the objects each change touched
+  (`kind/id`) and whether it touched its line at large; `net_meta`
+  `rights_rev`; an index of members. A database of schema 3 is brought
+  forward when a program connects (tested).
+- **Tests**: the function's property over random roles, assignments and
+  targets (300 rounds); the store's rights changes on PostgreSQL (who may
+  do what, the audit, the revision, a region read back exactly, schema 3
+  brought to 4); the server: who joins, commands decided and put back,
+  tiles, changes, catch-ups, working sets, route details and refusals
+  filtered; grants and denies in any order, a group's member taken out
+  and a user disabled while connected; see as user; and **the property
+  that no message holds a hidden id or place**: six rounds of random
+  assignments (a line, a route, a part of one, a region, a kind on a
+  line, with a deny now and then), random moves by another user and the
+  user's own, tiles, a catch-up, a route's detail and a pick — every
+  string, word and number of every message to the user checked against
+  what the user may not see before and after (a structure standing where
+  a visible twin of another line stands excepted: its place is the
+  visible one's).
+- **Measured** on the 12 000-pylon synthetic country with 204 users and
+  1 297 assignments ([performance](performance.md#synthetic-country-phase-7-rights-and-roles-2026-11-20)):
+  a command's rights decided p50 15–16 µs, p95 23 µs; who may not see a
+  change (20 viewers) p95 under 0.14 ms; a tile's rights class p50
+  28–39 µs; a package filtered p50 0.18 ms, p95 0.68 ms (then kept); a
+  move applied and broadcast p95 9.8 ms; a view of 12 tiles for a
+  region's viewer 83 ms (a network admin's 90 ms); the start 2.8 s
+  (phase 5: 2.5 s).
+- **Not yet**: the OHL-Server admin app (its plan waits for the owner);
+  rights in the desktop's own server of a project file (unchanged: its
+  three roles and edit grants); library locks, requests and releases
+  (phase 9: the permissions lock and request exist, the scopes too);
+  history, diffs and reviews served to a network's clients (not served
+  yet; the stream keeps each change's objects for them); OIDC (phase 13).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. A designer of a part of a route may not make new objects there
+> (only a whole route, a region or the line allows it): allow them inside
+> the part as it is after the command? → yes, with branches over working
+> sets (phase 11); until then a whole route.
+> 2. Branches, commits and tags need edit on the whole line: keep until
+> branches over working sets? → yes.
+> 3. Users, groups and memberships by network admins only, line admins
+> assigning within their lines: or line admins managing groups too? →
+> network admins only, as built.
+> 4. An export needs export on the whole line (no export of only what one
+> sees)? → yes; a part goes as an offline working set (phase 12).
+> 5. A client let go whenever its rights change (even when it gains
+> some), joining again: fine, or re-filter in place? → let go, as built.
+> 6. The users' presence and the soft locks hidden from users who do not
+> see everything: or filtered object by object? → hidden now; filtered
+> with OHL-Server's stage B.
+> 7. A project's edit grants imported with it stay checked beside the
+> assignments: or turned into assignments at import? → turned into
+> assignments at import (a later step), both checked until then.
+> 8. Who may see as another user: whoever manages rights somewhere,
+> within what both may see? → yes (the OHL-Server plan's question 3
+> answered the same way).
+
 ## 2026-11-20 (joint layout: the owner's quick round L1)
 
 **O44 L1 with the owner's ideas of 2026-11-19** (approved the same day in

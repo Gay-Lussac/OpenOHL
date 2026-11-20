@@ -5,7 +5,8 @@
 //! The PostgreSQL store on a throwaway cluster (`common`): the store
 //! suite every store passes, the same session on both stores, the
 //! network's schema and writer's lock, import (renames, twin towers,
-//! refusals) and the per-model export's round trip.
+//! refusals) and the per-model export's round trip; the rights' changes
+//! through the one function, their audit, and schema 3 brought to 4.
 
 mod common;
 
@@ -213,7 +214,7 @@ fn schema_and_the_writers_lock() {
     )
     .unwrap();
     let old = Network::connect(&cluster.url("old")).unwrap();
-    assert_eq!(old.schema().unwrap(), 3);
+    assert_eq!(old.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
     let saved = old.working_sets("ana").unwrap();
     assert_eq!(saved[0].spec.picks, [Pick::Route { route: "r1".into() }]);
     assert_eq!(saved[0].spec.model, "");
@@ -533,4 +534,317 @@ fn import_and_export_round_trip() {
         beside.push(end);
         assert!(!Path::new(&beside).exists(), "{end} beside the file");
     }
+}
+
+/// Phase 7: rights changes go through the rights' one function — the
+/// first network admin by bootstrap only; users, groups and roles by
+/// network admins; an assignment by who manages its scope and holds its
+/// role's permissions there; a deny by network admins only; the last
+/// network admin kept; route and object scopes get their line; a region
+/// read back exactly; every change and refusal in the audit; the
+/// revision moved on by each change.
+#[test]
+fn rights_changes_through_the_one_function() {
+    use ohl_session::rights::{NoModels, Permission, Perms, SHIPPED_ROLES, Scope, Subject};
+    use ohl_store_pg::rights::RightsCommand as R;
+    let Some(cluster) = Cluster::start("rights") else {
+        return;
+    };
+    cluster.create_db("net");
+    let dir = cluster.scratch();
+    let file = project(&dir);
+    let net = Network::connect_writer(&cluster.url("net")).unwrap();
+    import(&net, &file, &ImportOptions::new("A", "ana")).unwrap();
+    let d = net.rights().unwrap();
+    // The shipped roles as the session knows them; the import's users.
+    for (name, perms) in SHIPPED_ROLES {
+        assert_eq!(d.roles[name], (Perms::of(perms), true), "{name}");
+    }
+    assert!(d.users.contains_key("ana") && d.users.contains_key("ben"));
+    assert!(d.rev > 0, "the import moved the rights on");
+    let route = Session::open_on(Box::new(net.store("A").unwrap()), "A")
+        .unwrap()
+        .line()
+        .routes[0]
+        .id
+        .clone();
+    let no = NoModels;
+    let ok = |actor: &str, c: R| net.rights_command(actor, &c).map_err(|e| e.to_string());
+    let assign = |subject: &str, role: Option<&str>, deny: bool, scope: Scope| R::Assign {
+        subject: Subject::parse(subject).unwrap(),
+        role: role.map(str::to_owned),
+        deny,
+        scope,
+        note: String::new(),
+    };
+    // Users only by network admins: none yet, so bootstrap first, once.
+    let e = ok(
+        "ana",
+        R::AddUser {
+            name: "cid".into(),
+            display: None,
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("network admins only"), "{e}");
+    ok("zoe", R::Bootstrap { user: "zoe".into() }).unwrap();
+    let e = ok("ana", R::Bootstrap { user: "ana".into() }).unwrap_err();
+    assert!(e.contains("has a network admin"), "{e}");
+    let rev = net.rights_rev().unwrap();
+    ok(
+        "zoe",
+        R::AddUser {
+            name: "cid".into(),
+            display: Some("Cid".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(net.rights_rev().unwrap(), rev + 1);
+    ok(
+        "zoe",
+        R::AddGroup {
+            name: "crew".into(),
+            note: String::new(),
+        },
+    )
+    .unwrap();
+    ok(
+        "zoe",
+        R::AddMember {
+            group: "crew".into(),
+            user: "cid".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        ok(
+            "zoe",
+            R::AddMember {
+                group: "crew".into(),
+                user: "nobody".into()
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        ok(
+            "zoe",
+            R::AddUser {
+                name: "a:b".into(),
+                display: None
+            }
+        )
+        .is_err()
+    );
+    // Roles: not a shipped one; not removed while given.
+    let e = ok(
+        "zoe",
+        R::PutRole {
+            name: "viewer".into(),
+            permissions: vec![Permission::Edit],
+            note: String::new(),
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("shipped"), "{e}");
+    ok(
+        "zoe",
+        R::PutRole {
+            name: "keeper".into(),
+            permissions: vec![Permission::See, Permission::ManageRights],
+            note: String::new(),
+        },
+    )
+    .unwrap();
+    // A route scope gets its line; one not in the network is refused.
+    let done = ok(
+        "zoe",
+        assign(
+            "group:crew",
+            Some("viewer"),
+            false,
+            Scope {
+                route: Some(route.clone()),
+                ..Scope::default()
+            },
+        ),
+    )
+    .unwrap();
+    assert!(done.contains("line A"), "{done}");
+    let e = ok(
+        "zoe",
+        assign(
+            "group:crew",
+            Some("viewer"),
+            false,
+            Scope {
+                route: Some("nowhere".into()),
+                ..Scope::default()
+            },
+        ),
+    )
+    .unwrap_err();
+    assert!(e.contains("no route"), "{e}");
+    // The line admin (ana, from the import) gives on her line, not
+    // beyond; no deny.
+    ok(
+        "ana",
+        assign("user:ben", Some("checker"), false, Scope::line("A")),
+    )
+    .unwrap();
+    let e = ok(
+        "ana",
+        assign("user:ben", Some("viewer"), false, Scope::network()),
+    )
+    .unwrap_err();
+    assert!(e.contains("does not manage"), "{e}");
+    let e = ok("ana", assign("user:ben", None, true, Scope::line("A"))).unwrap_err();
+    assert!(e.contains("network admins only"), "{e}");
+    // Who holds see and manage_rights only gives no more than that.
+    ok(
+        "zoe",
+        assign("user:cid", Some("keeper"), false, Scope::line("A")),
+    )
+    .unwrap();
+    let e = ok(
+        "cid",
+        assign("user:ben", Some("designer"), false, Scope::line("A")),
+    )
+    .unwrap_err();
+    assert!(e.contains("may give only"), "{e}");
+    ok(
+        "cid",
+        assign("user:ben", Some("viewer"), false, Scope::line("A")),
+    )
+    .unwrap();
+    let e = ok(
+        "zoe",
+        R::DeleteRole {
+            name: "keeper".into(),
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("given by"), "{e}");
+    // A region read back exactly; a deny by the network admin.
+    let region = vec![[0.1, 0.2], [1000.3, 0.4], [1000.5, 900.6]];
+    ok(
+        "zoe",
+        assign(
+            "user:ben",
+            None,
+            true,
+            Scope {
+                region: Some(region.clone()),
+                ..Scope::default()
+            },
+        ),
+    )
+    .unwrap();
+    let d = net.rights().unwrap();
+    let back = d.assignments.iter().find(|a| a.deny).unwrap();
+    assert_eq!(back.scope.region.as_ref(), Some(&region));
+    // The last network admin stays.
+    let zoe_admin = d
+        .assignments
+        .iter()
+        .find(|a| a.role.as_deref() == Some("network_admin"))
+        .unwrap()
+        .id;
+    let e = ok("zoe", R::Unassign { id: zoe_admin }).unwrap_err();
+    assert!(e.contains("last network admin"), "{e}");
+    let e = ok(
+        "zoe",
+        R::SetActive {
+            name: "zoe".into(),
+            active: false,
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("last network admin"), "{e}");
+    // The audit: each change with what it was and is, each refusal.
+    let rows = net.audit_rows().unwrap();
+    for action in [
+        "rights.bootstrap",
+        "rights.add_user",
+        "rights.assign",
+        "rights.put_role",
+    ] {
+        assert!(rows.iter().any(|r| r[2] == action), "{action}");
+    }
+    assert!(rows.iter().filter(|r| r[2] == "refused").count() >= 8);
+    let after: Option<String> = {
+        let mut c = postgres::Client::connect(&cluster.url("net"), postgres::NoTls).unwrap();
+        c.query_one(
+            "SELECT after::text FROM audit WHERE action = 'rights.assign' ORDER BY id DESC LIMIT 1",
+            &[],
+        )
+        .unwrap()
+        .get(0)
+    };
+    assert!(after.unwrap().contains("region"));
+    // A disabled user has no rights; a removed group takes its
+    // assignments.
+    ok(
+        "zoe",
+        R::SetActive {
+            name: "ben".into(),
+            active: false,
+        },
+    )
+    .unwrap();
+    let d = net.rights().unwrap();
+    assert!(!d.compile("ben", &no).active());
+    ok(
+        "zoe",
+        R::DeleteGroup {
+            name: "crew".into(),
+        },
+    )
+    .unwrap();
+    let d = net.rights().unwrap();
+    assert!(
+        d.assignments
+            .iter()
+            .all(|a| a.subject != Subject::Group("crew".into()))
+    );
+}
+
+/// A network of schema 3 (phase 6) brought to 4 when a program connects:
+/// its assignments kept and read, the rights' revision made.
+#[test]
+fn schema_3_brought_to_4() {
+    let Some(cluster) = Cluster::start("schema3") else {
+        return;
+    };
+    cluster.create_db("old");
+    let url = cluster.url("old");
+    {
+        let mut c = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+        c.batch_execute(
+            "CREATE TABLE net_schema (version integer PRIMARY KEY,
+                 time timestamptz NOT NULL DEFAULT clock_timestamp(), note text NOT NULL)",
+        )
+        .unwrap();
+        for (version, note, sql) in &ohl_store_pg::schema::MIGRATIONS[..3] {
+            c.batch_execute(sql).unwrap();
+            c.execute(
+                "INSERT INTO net_schema (version, note) VALUES ($1, $2)",
+                &[version, note],
+            )
+            .unwrap();
+        }
+        c.batch_execute(
+            "INSERT INTO net_user (name, display) VALUES ('old', 'old');
+             INSERT INTO line (id, name) VALUES ('A', 'a');
+             INSERT INTO assignment (subject_kind, subject, role, scope_kind, line, by_user)
+                 VALUES ('user', 'old', 'designer', 'line', 'A', 'import')",
+        )
+        .unwrap();
+    }
+    let net = Network::connect(&url).unwrap();
+    assert_eq!(net.schema().unwrap(), 4);
+    assert_eq!(net.rights_rev().unwrap(), 0);
+    let d = net.rights().unwrap();
+    let rights = d.compile("old", &ohl_session::rights::NoModels);
+    assert_eq!(rights.model_role("A"), Some(Role::Designer));
 }

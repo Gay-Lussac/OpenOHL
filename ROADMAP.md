@@ -62,8 +62,9 @@ from here. The owner's order of 2026-11-19:
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
    not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
-   phase 6 built 2026-11-19, in active development, not approved yet —
-   the owner's questions under O17).
+   phase 6 built 2026-11-19, phase 7 (rights and roles) 2026-11-20, in
+   active development, not approved yet — the owner's questions under
+   O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -2703,7 +2704,7 @@ or three, L four or more. The phases, in order:
   built the same day, in active development, not approved yet: the whole
   route's replica on the synthetic country 3.48 → 1.98 MB (the line's own
   copy 2.6 MB).
-- [ ] 7 Rights and roles (M): roles as named permission sets (shipped:
+- [x] 7 Rights and roles (M): roles as named permission sets (shipped:
   viewer, designer, checker, library maintainer, line admin, network
   admin; permissions see, edit, create, delete, review, export, lock,
   request, manage rights), assignments of a user or group, a role and a
@@ -2712,7 +2713,46 @@ or three, L four or more. The phases, in order:
   explicit deny set by network admins only, one function for the commands
   and the server's outgoing filter (the tile packages' rights class),
   "see as user", the audit; property tests that no message holds a hidden
-  id or coordinate.
+  id or coordinate. **Built 2026-11-20, in active development, not
+  approved yet** ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-7),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#a-networks-server-in-active-development),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-7-rights-and-roles-2026-11-20)):
+  the one function `ohl_session::rights` (a scope a conjunction of
+  constraints; the union of grants, see needed, a deny wins whatever the
+  order); every server operation with a rule (an exhaustive match) and
+  every object a command changed decided as it was and as it is, in the
+  same unit of work (refused: nothing kept); everything the server sends
+  filtered by the same function — lines and routes listed, tile packages
+  per rights class (the exact set hidden in a tile), changes ("read these
+  tiles again" for who may not see all of one), catch-ups, working sets
+  and their rows, route details, error messages, the users' presence and
+  locks; only the network's users join, with their personal invitations;
+  rights changed by `ohl network rights …` (network schema 4), audited,
+  taken by the running server before its next job, a client whose
+  rights changed let go; "see as user" for who manages rights (both
+  users' rights). Decided as conservative (the owner's questions below):
+  a region grants what lies inside it and denies what it touches; a
+  grant on a route, region or object lets see its lines' settings and
+  library files; the line as a whole needs a scope of the whole line;
+  branches, commits and tags need edit on the whole line; a part of a
+  route's grant does not make new objects; an export needs export on the
+  whole line; users, groups and roles by network admins only. Measured
+  on the synthetic country with 204 users and 1 297 assignments: a
+  command's rights decided p95 23 µs, a tile's rights class p50 28–39 µs
+  and its package filtered p50 0.18 ms (once, then kept), a move applied
+  and broadcast p95 9.8 ms (phase 5: 10.3 ms), the start 2.5 → 2.8 s.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. A designer of a part of a route making new objects in it?
+  > → yes, with phase 11; a whole route until then. 2. Branches, commits
+  > and tags need edit on the whole line until phase 11? → yes. 3. Users,
+  > groups and memberships by network admins only? → yes, as built.
+  > 4. Export only of the whole line? → yes; parts as offline working
+  > sets (phase 12). 5. A client let go when its rights change? → yes, as
+  > built. 6. Presence and locks hidden from who does not see everything?
+  > → now; filtered per object with OHL-Server stage B. 7. A project's
+  > edit grants turned into assignments at import? → yes (later), both
+  > checked until then. 8. "See as user" for whoever manages rights,
+  > within what both see? → yes.
 - [x] 8 Towers shared by several routes: a change that breaks another
   line's connection refused, naming it; a change that only moves it
   allowed, its results marked stale and its owners told; protected lines

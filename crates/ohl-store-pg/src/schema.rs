@@ -13,7 +13,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 3;
+pub const SCHEMA: i32 = 4;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -41,7 +41,7 @@ CREATE TABLE net_member (
   member text NOT NULL REFERENCES net_user ON DELETE CASCADE,
   PRIMARY KEY (grp, member));
 
--- Rights and roles (ADR-0013): kept, not evaluated before phase 7.
+-- Rights and roles (ADR-0013): evaluated since phase 7 (schema 4).
 CREATE TABLE role (name text PRIMARY KEY, shipped boolean NOT NULL, note text NOT NULL DEFAULT '');
 CREATE TABLE role_permission (
   role text NOT NULL REFERENCES role ON DELETE CASCADE,
@@ -286,6 +286,29 @@ CREATE INDEX stream_routes ON stream USING gin (routes);
 -- text, as written); `routes` the routes its extent was on when saved.
 ALTER TABLE working_set ADD COLUMN line_id text REFERENCES line ON DELETE CASCADE;
 ALTER TABLE working_set ADD COLUMN picks text NOT NULL DEFAULT '[]';
+"#,
+    ),
+    (
+        4,
+        "rights and roles evaluated (phase 7)",
+        r#"
+-- An assignment's scope in full: a library kind, file or entry; a region's
+-- points as given (JSON as text, exact; `area` the same polygon for
+-- PostGIS). A route or object scope has its line set when assigned.
+ALTER TABLE assignment ADD COLUMN lib_kind text;
+ALTER TABLE assignment ADD COLUMN lib_file text;
+ALTER TABLE assignment ADD COLUMN lib_entry text;
+ALTER TABLE assignment ADD COLUMN region text;
+ALTER TABLE assignment ADD CONSTRAINT assignment_subject_named CHECK (subject <> '');
+CREATE INDEX net_member_member ON net_member (member);
+-- What a change touched, for the outgoing filter of a catch-up
+-- (`kind/id`; NULL before schema 4: shown to those who see its whole
+-- line only), and whether it touched its line at large.
+ALTER TABLE stream ADD COLUMN objects text[];
+ALTER TABLE stream ADD COLUMN whole boolean NOT NULL DEFAULT false;
+-- The rights' revision: each change of users, groups, roles or
+-- assignments adds one; the server reads the rights again when it moved.
+INSERT INTO net_meta (key, value) VALUES ('rights_rev', '0') ON CONFLICT (key) DO NOTHING;
 "#,
     ),
 ];

@@ -368,6 +368,7 @@ fn web_viewers_read_tiles_of_a_network() {
     let addr = server.web_addr.unwrap();
     let fp = server.invitation.fingerprint;
     let general = server.keys().code(None);
+    let personal = server.keys().code(Some("wendy"));
     let code = t.codes[0].clone();
     let (id, p) = n::structure_of(&t, &code, 2);
     let tiles = n::tiles_around(p, 1);
@@ -385,7 +386,7 @@ fn web_viewers_read_tiles_of_a_network() {
             matches!(&m, ServerMsg::Refused { reason } if reason.contains("protocol 2")),
             "{m:?}"
         );
-        let (mut w, m) = join(addr, fp, "wendy", &general).await;
+        let (mut w, m) = join(addr, fp, "wendy", &personal).await;
         assert!(
             matches!(
                 m,

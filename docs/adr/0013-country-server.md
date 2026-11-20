@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–6 and 8 built — this record is not approved yet)
+  2026-11-18; phases 0–8 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -333,6 +333,24 @@ element and library".
   shipped roles when a project is imported into a network. Built in phase 7
   (rights) and phase 9 (libraries); the store's collaboration group keeps
   room for them.
+
+Built 2026-11-20 (phase 7, in active development; the
+[decision log](../development/decisions.md#2026-11-20-country-server-phase-7)):
+the one function is `ohl_session::rights::UserRights::allows` (a scope a
+conjunction of constraints; regions grant what lies inside them and deny
+what they touch; the line as a whole needs a scope of the whole line);
+the server decides each operation by its rule before it runs and every
+object it changed after, as it was and as it is, in the same unit of work
+(refused: nothing kept); everything it sends is filtered by the same
+function, objects seen as drawn (a section with its structures, an
+alignment point with its tied structure), tile packages kept per rights
+class (the exact set hidden in the tile). Only the network's users join,
+each with their personal invitation. Rights are changed by
+`ohl network rights …` (network schema 4) without the writer's lock,
+audited, taken by the running server before its next job; a client
+whose rights changed is let go. "See as user" is the intersection of
+both users' rights. A project's edit grants imported with it are still
+checked by the session beside the assignments.
 
 ### Country libraries
 
