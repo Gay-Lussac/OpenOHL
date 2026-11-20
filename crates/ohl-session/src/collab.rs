@@ -678,8 +678,16 @@ impl Session {
         // Merged into its target, whichever line the user works on.
         let target = review.target.clone();
         let revision = review.revision.clone();
+        let branch = review.branch.clone();
         let outcome = self.with_line(&target, |s| {
-            s.merge_as(user, &revision, Some(&message), choices, true)
+            s.merge_as(
+                user,
+                &revision,
+                Some(&branch),
+                Some(&message),
+                choices,
+                true,
+            )
         })?;
         let tx = crate::Step::begin(&*self.conn)?;
         tx.set_review_state(id, "merged")?;

@@ -849,3 +849,121 @@ fn hardware_change(s: &Session, rng: &mut Rng) -> Command {
     }
     put_structure(&t)
 }
+
+/// A branch over a working set (phase 11): the rules of shared towers on
+/// the branch with its routes, stale marks only when its changes reach
+/// main, a protected main waiting for its owners' review, the review's
+/// merge marking the other route stale; renamed and deleted with its
+/// line.
+#[test]
+fn a_branch_over_a_working_set() {
+    use crate::shared::BranchScope;
+    let (_, mut s) = open("scoped");
+    s.commit("ana", "first").unwrap();
+    s.create_line("ben", "ws", "main").unwrap();
+    let scope = BranchScope {
+        by: "ben".into(),
+        routes: ["main".to_owned()].into(),
+        team: vec![],
+    };
+    assert!(
+        s.set_branch_scope("ben", "main", Some(scope.clone()))
+            .is_err()
+    );
+    let mut wrong = scope.clone();
+    wrong.routes = ["nowhere".to_owned()].into();
+    assert!(s.set_branch_scope("ben", "ws", Some(wrong)).is_err());
+    s.set_branch_scope("ben", "ws", Some(scope.clone()))
+        .unwrap();
+    assert!(s.shared_rules_in_use());
+    s.select_line("ws").unwrap();
+    // The other route's section: not on this branch.
+    let s3 = s
+        .line()
+        .sections
+        .iter()
+        .find(|x| x.id == "S3")
+        .unwrap()
+        .clone();
+    let e = s
+        .apply(
+            "ben",
+            Command::SetStringing {
+                section: "S3".into(),
+                stringing: s3.stringing.clone(),
+            },
+        )
+        .unwrap_err();
+    assert!(e.to_string().contains("not in your working set"), "{e}");
+    // The shared tower moved: allowed; no stale mark on the branch.
+    let t3 = structure(&s, "T3");
+    s.apply("ben", moved(&t3, 0.6)).unwrap();
+    assert!(s.stale_routes().unwrap().is_empty());
+    s.commit("ben", "T3 east").unwrap();
+    s.select_line("main").unwrap();
+    // A protected main: a direct merge waits for its owners' review.
+    s.protect_branch("ana", "main", true).unwrap();
+    let e = s.merge("ana", "ws", None, &Choices::new()).unwrap_err();
+    assert!(
+        e.to_string().contains("needs a review by its owners"),
+        "{e}"
+    );
+    assert!(s.stale_routes().unwrap().is_empty());
+    assert_eq!(structure(&s, "T3").position, t3.position);
+    // Through a review: merged, the other route marked stale.
+    let id = s
+        .submit_review("ben", "ws", "main", &["ana".to_owned()], "")
+        .unwrap();
+    s.decide_review("ana", id, true, "ok").unwrap();
+    s.merge_review("ana", id, None, &Choices::new()).unwrap();
+    assert_eq!(structure(&s, "T3").position[0], t3.position[0] + 0.6);
+    let stale = s.stale_routes().unwrap();
+    assert_eq!(stale.keys().collect::<Vec<_>>(), ["branch"]);
+    assert!(stale["branch"].notices[0].what.contains("T3 moved"));
+    // Renamed and deleted with its line.
+    s.rename_line("ben", "ws", "ws2").unwrap();
+    assert_eq!(s.branch_scope("ws2"), Some(&scope));
+    assert!(s.branch_scope("ws").is_none());
+    s.delete_line("ben", "ws2").unwrap();
+    assert!(s.branch_scopes().is_empty());
+}
+
+/// On a network the same history comes as split trees: a branch over a
+/// working set merged at a shared tower answers the same, worked out from
+/// what differs.
+#[test]
+fn a_branch_over_a_working_set_on_split_trees() {
+    use crate::shared::BranchScope;
+    let (_, mut s) = open("scoped-split");
+    s.set_split_trees(true);
+    s.commit("ana", "first").unwrap();
+    s.create_line("ben", "ws", "main").unwrap();
+    s.set_branch_scope(
+        "ben",
+        "ws",
+        Some(BranchScope {
+            by: "ben".into(),
+            routes: ["main".to_owned()].into(),
+            team: vec![],
+        }),
+    )
+    .unwrap();
+    s.select_line("ws").unwrap();
+    let t3 = structure(&s, "T3");
+    s.apply("ben", moved(&t3, 0.4)).unwrap();
+    s.commit("ben", "T3 east").unwrap();
+    s.select_line("main").unwrap();
+    let t2 = structure(&s, "T2");
+    s.apply("ana", moved(&t2, 0.3)).unwrap();
+    s.commit("ana", "T2 east").unwrap();
+    let plan = s.merge_plan("ws", &Choices::new()).unwrap();
+    assert!(plan.local.is_some());
+    s.merge("ana", "ws", None, &Choices::new()).unwrap();
+    assert_eq!(structure(&s, "T3").position[0], t3.position[0] + 0.4);
+    let stale = s.stale_routes().unwrap();
+    assert!(stale["branch"].notices[0].what.contains("T3 moved"));
+    // Main brought into the branch: not checked again (it was on main).
+    s.select_line("ws").unwrap();
+    s.bring_in("ben", "main", &Choices::new()).unwrap();
+    assert_eq!(structure(&s, "T2").position[0], t2.position[0] + 0.3);
+}

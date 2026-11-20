@@ -1122,6 +1122,22 @@ pub struct Session {
     /// On a network (phase 7): where users' roles come from instead of the
     /// project's users ([`Session::set_role_source`]).
     role_source: Option<Arc<dyn RoleSource>>,
+    /// The project lines made over a working set ([`shared::BranchScope`],
+    /// phase 11).
+    branch_scopes: BTreeMap<String, shared::BranchScope>,
+    /// While a merge runs: the routes its changes are checked against by
+    /// the rules of shared towers (`Some(None)`: none — changes made and
+    /// checked elsewhere; `None`: the line's or the user's as usual).
+    merge_routes: Option<Option<BTreeSet<String>>>,
+    /// While a merge through an approved review runs: a protected line's
+    /// owners reviewed it.
+    approved_merge: bool,
+    /// Revisions written as split trees ([`trees`], phase 11): the
+    /// store's choice ([`Store::split_trees`]; a project file: no).
+    split: bool,
+    /// Per project line, what its last tree kept to make the next one at
+    /// the cost of what changed ([`trees::TreeIndex`]; split trees only).
+    trees: std::sync::Mutex<std::collections::HashMap<String, trees::TreeIndex>>,
 }
 
 /// Where a session on a network takes its users' roles from (the
@@ -1867,7 +1883,13 @@ impl Session {
             next_seq: std::sync::Mutex::new(None),
             lean_import: std::sync::atomic::AtomicBool::new(false),
             role_source: None,
+            branch_scopes: BTreeMap::new(),
+            merge_routes: None,
+            approved_merge: false,
+            split: false,
+            trees: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
+        session.split = session.conn.split_trees();
         session.load_lines(by_line, gone, placed)?;
         session.read_part()?;
         session.read_shared()?;
@@ -1899,6 +1921,20 @@ impl Session {
     #[doc(hidden)]
     pub fn set_whole_only(&mut self, whole: bool) {
         self.whole_only = whole;
+    }
+
+    /// Writes revisions as split trees (`true`) or flat ones
+    /// ([`trees`]): the store decides when a session opens (a network's
+    /// models split, a project file flat); for tests and measurements
+    /// comparing both. Both kinds are always read.
+    #[doc(hidden)]
+    pub fn set_split_trees(&mut self, split: bool) {
+        self.split = split;
+    }
+
+    /// Whether revisions are written as split trees ([`trees`]).
+    pub fn split_trees(&self) -> bool {
+        self.split
     }
 
     /// On a network (phase 7): the users' roles from `source` (the
@@ -3633,11 +3669,19 @@ impl Session {
         }
         // Towers shared with routes outside the user's working set
         // ([`shared`]; nothing without one).
-        let shared = if matches!(entry_kind, "do" | "undo" | "redo" | "rollback") {
+        let mut shared = if matches!(entry_kind, "do" | "undo" | "redo" | "rollback") {
             self.check_shared(user, &prims)?
         } else {
             None
         };
+        // On a branch over a working set (phase 11) its changes reach the
+        // other routes when it is merged: their stale marks come then.
+        if self.merge_routes.is_none()
+            && self.branch_scopes.contains_key(&self.current)
+            && let Some(o) = &mut shared
+        {
+            o.notices.clear();
+        }
         if let Some(n) = shared.as_ref().and_then(shared::Outcome::note) {
             notes.push(n);
         }
@@ -4291,6 +4335,7 @@ mod shared_tests;
 pub mod spatial;
 pub mod store;
 pub mod surfaces;
+pub mod trees;
 pub mod versions;
 pub mod working_set;
 #[cfg(test)]
@@ -4310,5 +4355,7 @@ mod read_only_tests;
 mod replace_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trees_tests;
 #[cfg(test)]
 mod versions_tests;

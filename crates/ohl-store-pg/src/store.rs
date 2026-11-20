@@ -861,6 +861,10 @@ impl Store for PgStore {
         Ok(out)
     }
 
+    fn split_trees(&self) -> bool {
+        true
+    }
+
     fn has_blob(&self, hash: &str) -> Result<bool, SessionError> {
         Ok(self
             .row(
