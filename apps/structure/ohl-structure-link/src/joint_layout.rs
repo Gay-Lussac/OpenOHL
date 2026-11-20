@@ -208,6 +208,16 @@ pub struct LayoutSettings {
     /// distance from it, its axis within a plate's thickness as every bent
     /// plate's. With [`Self::small_bends`]. On by default; off: as before.
     pub bend_back: bool,
+    /// L5, 2026-11-20 (the owner's idea: the diagonals "a bit forward" so
+    /// that their bolt lies on the leg without them touching each other): on
+    /// a face that goes onto a plate, an end whose bolts do not land on the
+    /// flange tried pulled back further, else moved sideways by at most the
+    /// plate's thickness (the eccentricity that plate would have put it out
+    /// of the flange by), until every bolt lands; where every end of the
+    /// face then lands, the face is bolted directly — no plate. The move is
+    /// the end's `shift`, which the analysis takes. On by default; off: as
+    /// before.
+    pub direct_moved: bool,
 }
 
 impl Default for LayoutSettings {
@@ -234,6 +244,7 @@ impl Default for LayoutSettings {
             small_bends: true,
             bend_facing: true,
             bend_back: true,
+            direct_moved: true,
         }
     }
 }
@@ -1446,7 +1457,24 @@ pub(crate) fn plan_joint_ctx(
     limit: usize,
     ctx: &PlanCtx,
 ) -> JointPlan {
-    let (plan, direct) = plan_once(j, s, edge, except, floors, limit, ctx, &BTreeSet::new());
+    let (mut plan, mut direct) =
+        plan_once(j, s, edge, except, floors, limit, ctx, &BTreeSet::new());
+    // L5: the faces bolted directly by moving their ends kept only where
+    // that lays out more of the joint's ends, or as many on fewer plates;
+    // else the plan without (no move).
+    if s.direct_moved {
+        let s0 = LayoutSettings {
+            direct_moved: false,
+            ..s.clone()
+        };
+        let (p0, d0) = plan_once(j, &s0, edge, except, floors, limit, ctx, &BTreeSet::new());
+        let better = plan.ends.len() > p0.ends.len()
+            || (plan.ends.len() == p0.ends.len() && plan.plates.len() < p0.plates.len());
+        if !better {
+            plan = p0;
+            direct = d0;
+        }
+    }
     if !s.more_plates || ctx.plain || plan.hand_members.is_empty() {
         return plan;
     }
@@ -1873,6 +1901,63 @@ fn plan_once(
                 if placed.is_empty() {
                     continue;
                 }
+            }
+        }
+        // L5 (2026-11-20, the owner's idea: "move the 2 diagonal a bit
+        // forward maybe to have one bolt on the main leg without them
+        // touching each other"): on a face that goes onto a plate, an end
+        // whose bolts do not land bolted directly where pulled back further,
+        // or moved sideways by at most the plate's thickness — the
+        // eccentricity the plate would have put it out of the flange by —,
+        // every bolt lands on the flange, clear of the others as they lie.
+        // Where every end of the face then lands, the face is bolted
+        // directly: no plate.
+        if !direct && s.direct_moved && !plated {
+            let tp = placed.iter().map(|p| strips[p.k].own_t).fold(0.0, f64::max);
+            let most = s.shift_limit.min(tp);
+            let mut cur = placed.clone();
+            let mut moved_ks: BTreeSet<usize> = BTreeSet::new();
+            for i in 0..cur.len() {
+                let x = &strips[cur[i].k];
+                if landed.contains(&cur[i].k) || x.tilted.is_some() || x.over.is_some() {
+                    continue;
+                }
+                let others: Vec<Placed> = cur
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| *j != i)
+                    .map(|(_, q)| q.clone())
+                    .collect();
+                let from = laid_cut.get(&x.host).copied().unwrap_or(x.host_cut);
+                if let Some(q) = land_moved(&strips, &cur[i], &others, s, from, most) {
+                    moved_ks.insert(q.k);
+                    cur[i] = q;
+                }
+            }
+            let all = cur
+                .iter()
+                .all(|p| landed.contains(&p.k) || moved_ks.contains(&p.k));
+            if !moved_ks.is_empty() && all {
+                for p in cur.iter().filter(|p| moved_ks.contains(&p.k)) {
+                    let x = &strips[p.k];
+                    let by = (p.moved - concentric_of(x)).abs();
+                    if by > 1e-9 {
+                        plan.notes.push(format!(
+                            "{}: moved {} sideways to bolt directly onto {} (no plate): an \
+                             eccentricity, its shift — at most the plate's thickness",
+                            x.member,
+                            mm_text(by),
+                            x.host
+                        ));
+                    }
+                }
+                laid3.extend(solids_of(&strips, &cur, 0.0, s, None));
+                for p in &cur {
+                    laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
+                }
+                placed_all.extend(cur);
+                direct_planes.push(*plane_key);
+                continue;
             }
         }
         if !direct
@@ -4184,6 +4269,193 @@ fn past_toe(x: &Strip, p: &Placed, gap: f64) -> f64 {
     ceil_to(need, 0.001)
 }
 
+/// `lo` and `hi` narrowed to the cuts `c` with `a ≤ v0 + c·dv ≤ b`.
+fn narrow(lo: &mut f64, hi: &mut f64, v0: f64, dv: f64, a: f64, b: f64) {
+    if dv.abs() < 1e-9 {
+        if v0 < a - 1e-9 || v0 > b + 1e-9 {
+            *lo = f64::INFINITY;
+        }
+        return;
+    }
+    let (c1, c2) = ((a - v0) / dv, (b - v0) / dv);
+    let (mn, mx) = if dv > 0.0 { (c1, c2) } else { (c2, c1) };
+    *lo = lo.max(mn);
+    *hi = hi.min(mx);
+}
+
+/// L5 (2026-11-20): end `p` of a face going onto a plate placed so that
+/// every bolt lands on the flange — clear of its heel's leg and root by the
+/// nut, the edge distance from its toe, on the steel of what it bolts onto
+/// past where that starts (`from`) by the end distance — pulled back
+/// further, else moved sideways by the least whole millimetre up to `most`
+/// (m), clear of the ends `others` as they lie and of the fixed steel; none
+/// where nothing within that does. A cut or shift given by hand is kept
+/// (none).
+fn land_moved(
+    strips: &[Strip],
+    p: &Placed,
+    others: &[Placed],
+    s: &LayoutSettings,
+    from: f64,
+    most: f64,
+) -> Option<Placed> {
+    let x = &strips[p.k];
+    if x.hand_cut.is_some() || x.tilted.is_some() || x.over.is_some() {
+        return None;
+    }
+    let limit = s.pull_back.min(x.half - bolt_run(x));
+    let floor = x.floor.as_ref().map_or(0.0, |f| f.0);
+    let conc = concentric_of(x);
+    let can = x.shift_per.is_some() && !x.hand_shift;
+    let steps = if can {
+        (most * 1000.0 + 1e-9).floor() as i64
+    } else {
+        0
+    };
+    let (lo_y, hi_y) = (x.t + x.r + x.nut, x.width - x.edge);
+    for n in 0..=steps {
+        for sign in [1.0, -1.0] {
+            if n == 0 && sign < 0.0 {
+                continue;
+            }
+            let moved = if can {
+                conc + sign * n as f64 * 0.001
+            } else {
+                p.moved
+            };
+            let (need, _) = cut_need(strips, p.k, others, s, moved);
+            let mut lo = need.max(floor);
+            let mut hi = limit;
+            for (along, line) in &x.bolts {
+                let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+                let q = x.at(*along, l);
+                narrow(&mut lo, &mut hi, q[1], x.u[1], lo_y, hi_y);
+                if x.host_ends {
+                    narrow(
+                        &mut lo,
+                        &mut hi,
+                        (q[0] - x.w[0]) * x.host_along,
+                        x.u[0] * x.host_along,
+                        from + x.host_end,
+                        f64::INFINITY,
+                    );
+                }
+            }
+            let c = ceil_to(lo, 0.001);
+            if c.is_finite() && c <= hi + 1e-9 {
+                return Some(Placed {
+                    k: p.k,
+                    cut: c,
+                    moved,
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The least cut (from the work point) that takes strip `k`, moved `moved`
+/// across, clear of the flange's heel, the bolts not laid out, the ends
+/// `placed` and the fixed steel (its floor not applied), and what asks it.
+fn cut_need(
+    strips: &[Strip],
+    k: usize,
+    placed: &[Placed],
+    s: &LayoutSettings,
+    moved: f64,
+) -> (f64, Option<String>) {
+    let x = &strips[k];
+    let lat = [x.lat[0] + moved, x.lat[1] + moved];
+    // Its leg on the flange's side of the heel (a member leaving the
+    // joint towards the toe, as bracing does at a leg; one leaving towards
+    // the heel crosses over it, as a crossing diagonal: nothing of the
+    // host there — the clash check sees the rest).
+    let mut need = f64::NEG_INFINITY;
+    let mut by: Option<String> = None;
+    // Over the heel onto a bent plate (J2b): past the other leg's
+    // outer face, the plate and its bend.
+    if let Some(o) = &x.over {
+        let r = bend_radius(o.tp);
+        let (c, w) = over_cut(x, moved, over_steel(o.tp, s.gap), o.tp + r + o.keep.0);
+        need = c;
+        by = Some(w.to_owned());
+    }
+    for l in lat {
+        if x.over.is_some() {
+            break;
+        }
+        // Inside: clear of the angle's other leg and its root too.
+        let floor = if x.inside {
+            x.t + x.r + s.gap / 2.0
+        } else {
+            0.0
+        };
+        let y0 = x.at(0.0, l)[1] - floor;
+        let c = if x.u[1] > 1e-6 {
+            -y0 / x.u[1]
+        } else if x.u[1] >= -1e-6 && y0 < 0.0 {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        };
+        if c > need {
+            need = c;
+            by = Some(format!("the heel of {}", x.host));
+        }
+    }
+    // The bolts not laid out on this face: each a disc to keep clear of.
+    for (c2, r) in &x.obstacles {
+        let rel = sub2(*c2, x.w);
+        let (along, across) = (dot2(rel, x.u), dot2(rel, x.v));
+        let reach = r + s.gap / 2.0;
+        if across + reach > lat[0] - s.gap / 2.0 && across - reach < lat[1] + s.gap / 2.0 {
+            let c = along + reach + s.gap / 2.0;
+            if c > need {
+                need = c;
+                by = Some("a bolt already there".to_owned());
+            }
+        }
+    }
+    for q in placed {
+        let b = &strips[q.k];
+        let c = clear_of(x, lat, b, q, s.gap);
+        if c > need {
+            need = c;
+            by = Some(b.member.clone());
+        }
+    }
+    // The fixed steel in its plane (J1/J2): clear of it by the gap.
+    for (name, poly) in &x.fixed {
+        let c = poly_need(x, lat, poly, s.gap);
+        if c > need {
+            need = c;
+            by = Some(name.clone());
+        }
+    }
+    // L2 (b): its outstanding leg to its full height, and its bolts'
+    // nuts and shanks behind the face (each bolt's disc, the nut's
+    // corner radius), clear of the fixed steel by the gap.
+    let band = [x.out_band[0] + moved, x.out_band[1] + moved];
+    for (name, poly) in &x.fixed_out {
+        let c = poly_need(x, band, poly, s.gap);
+        if c > need {
+            need = c;
+            by = Some(name.clone());
+        }
+    }
+    for (name, poly) in &x.fixed_far {
+        for (along, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+            let c = poly_need(x, [l - x.nut, l + x.nut], poly, s.gap) + x.nut - along;
+            if c > need {
+                need = c;
+                by = Some(format!("{name} (behind the face, at its nuts)"));
+            }
+        }
+    }
+    (need.max(0.0), by)
+}
+
 /// Strip `k` placed against those `placed` before it: concentric and
 /// pulled back, else shifted, else why not.
 fn place(
@@ -4203,97 +4475,7 @@ fn place(
     }
     // Concentric: its first gauge line through the work point.
     let concentric = concentric_of(x);
-    let cut_at = |moved: f64| -> (f64, Option<String>) {
-        let lat = [x.lat[0] + moved, x.lat[1] + moved];
-        // Its leg on the flange's side of the heel (a member leaving the
-        // joint towards the toe, as bracing does at a leg; one leaving towards
-        // the heel crosses over it, as a crossing diagonal: nothing of the
-        // host there — the clash check sees the rest).
-        let mut need = f64::NEG_INFINITY;
-        let mut by: Option<String> = None;
-        // Over the heel onto a bent plate (J2b): past the other leg's
-        // outer face, the plate and its bend.
-        if let Some(o) = &x.over {
-            let r = bend_radius(o.tp);
-            let (c, w) = over_cut(x, moved, over_steel(o.tp, s.gap), o.tp + r + o.keep.0);
-            need = c;
-            by = Some(w.to_owned());
-        }
-        for l in lat {
-            if x.over.is_some() {
-                break;
-            }
-            // Inside: clear of the angle's other leg and its root too.
-            let floor = if x.inside {
-                x.t + x.r + s.gap / 2.0
-            } else {
-                0.0
-            };
-            let y0 = x.at(0.0, l)[1] - floor;
-            let c = if x.u[1] > 1e-6 {
-                -y0 / x.u[1]
-            } else if x.u[1] >= -1e-6 && y0 < 0.0 {
-                f64::INFINITY
-            } else {
-                f64::NEG_INFINITY
-            };
-            if c > need {
-                need = c;
-                by = Some(format!("the heel of {}", x.host));
-            }
-        }
-        // The bolts not laid out on this face: each a disc to keep clear of.
-        for (c2, r) in &x.obstacles {
-            let rel = sub2(*c2, x.w);
-            let (along, across) = (dot2(rel, x.u), dot2(rel, x.v));
-            let reach = r + s.gap / 2.0;
-            if across + reach > lat[0] - s.gap / 2.0 && across - reach < lat[1] + s.gap / 2.0 {
-                let c = along + reach + s.gap / 2.0;
-                if c > need {
-                    need = c;
-                    by = Some("a bolt already there".to_owned());
-                }
-            }
-        }
-        for q in placed {
-            let b = &strips[q.k];
-            let c = clear_of(x, lat, b, q, s.gap);
-            if c > need {
-                need = c;
-                by = Some(b.member.clone());
-            }
-        }
-        // The fixed steel in its plane (J1/J2): clear of it by the gap.
-        for (name, poly) in &x.fixed {
-            let c = poly_need(x, lat, poly, s.gap);
-            if c > need {
-                need = c;
-                by = Some(name.clone());
-            }
-        }
-        // L2 (b): its outstanding leg to its full height, and its bolts'
-        // nuts and shanks behind the face (each bolt's disc, the nut's
-        // corner radius), clear of the fixed steel by the gap.
-        let band = [x.out_band[0] + moved, x.out_band[1] + moved];
-        for (name, poly) in &x.fixed_out {
-            let c = poly_need(x, band, poly, s.gap);
-            if c > need {
-                need = c;
-                by = Some(name.clone());
-            }
-        }
-        for (name, poly) in &x.fixed_far {
-            for (along, line) in &x.bolts {
-                let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
-                let c = poly_need(x, [l - x.nut, l + x.nut], poly, s.gap) + x.nut - along;
-                if c > need {
-                    need = c;
-                    by = Some(format!("{name} (behind the face, at its nuts)"));
-                }
-            }
-        }
-        (need.max(0.0), by)
-    };
+    let cut_at = |moved: f64| cut_need(strips, k, placed, s, moved);
     // The least cut a clash asked for (the run's rounds): beyond the
     // longest pull-back it is left with that clash.
     if let Some((f, why)) = &x.floor
@@ -5318,5 +5500,40 @@ mod slide_tests {
         let holes: Vec<[f64; 2]> = (-20..40).map(|k| [f64::from(k) * 0.04, gauge]).collect();
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
         assert_eq!(slide_holds(bx, 1.0, 0.3, clear), None);
+    }
+}
+
+#[cfg(test)]
+mod narrow_tests {
+    use super::narrow;
+
+    /// L5: the cuts that keep a bolt within a band, whichever way it moves
+    /// with the cut, and none where it stands still outside the band.
+    #[test]
+    fn the_cuts_keeping_a_bolt_on_the_flange() {
+        let (mut lo, mut hi) = (0.0, 1.0);
+        // y = 0.02 + 0.5 c within [0.03, 0.08]: c within [0.02, 0.12].
+        narrow(&mut lo, &mut hi, 0.02, 0.5, 0.03, 0.08);
+        assert!(
+            (lo - 0.02).abs() < 1e-12 && (hi - 0.12).abs() < 1e-12,
+            "{lo} {hi}"
+        );
+        // Moving the other way: y = 0.10 - 0.5 c within [0.03, 0.08]: c within
+        // [0.04, 0.14], narrowed with the above to [0.04, 0.12].
+        narrow(&mut lo, &mut hi, 0.10, -0.5, 0.03, 0.08);
+        assert!(
+            (lo - 0.04).abs() < 1e-12 && (hi - 0.12).abs() < 1e-12,
+            "{lo} {hi}"
+        );
+        // An end distance only from below.
+        narrow(&mut lo, &mut hi, 0.0, 1.0, 0.05, f64::INFINITY);
+        assert!(
+            (lo - 0.05).abs() < 1e-12 && (hi - 0.12).abs() < 1e-12,
+            "{lo} {hi}"
+        );
+        // Standing still outside the band: no cut.
+        let (mut lo2, mut hi2) = (0.0, 1.0);
+        narrow(&mut lo2, &mut hi2, 0.2, 0.0, 0.03, 0.08);
+        assert!(lo2 > hi2);
     }
 }

@@ -1524,6 +1524,96 @@ by default, both with `small_bends`. No format change.)
   towards the other leg are not laid out (J2b's bent plate is not for
   tilted ends).
 
+## Ends moved to bolt directly; one bolt through the leg looked into (L5)
+
+(Owner, 2026-11-20, on the picture of the plate bent by a few degrees:
+"you could move the 2 diagonal a bit forward maybe to have one bolt on the
+main leg without them touching each other. The second bolt needs the plate
+anyway but maybe shorter." Built 2026-11-20, in active development, not
+approved yet. The code: `joint_layout` (`land_moved`, `narrow`, the guard
+in `plan_joint_ctx`), the switch `LayoutSettings::direct_moved`, on by
+default. **No format change**: a move is the end's `shift`.)
+
+**One bolt through the leg, the rest on a shorter plate — looked into, not
+built.** A gusset plate lies between the member and the flange. A bolt of
+the member through the plate *and the leg* must lie on the flange as every
+bolt bolted directly does (its nut behind the flange clear of the angle's
+other leg and root, its edge distance from the toe); a bolt through the
+member and the plate only must lie past the flange's toe by its nut and
+the gap, its nut behind the plate where the flange is not (the rule of
+[plates](#onto-the-flange-or-onto-a-plate)). Between the two, the member's
+bolts must therefore lie apart *across the flange* by at least the edge
+distance, the nut's corner radius and the gap: for 16 mm bolts and the
+default minimums 24 + 13.9 + 10 ≈ 48 mm, for 20 mm bolts about 57 mm. One
+gauge line at the default pitch of three diameters (48 and 60 mm) crosses
+the flange by the pitch times the sine of the member's angle to it: enough
+only for a member nearly square to the flange. Measured on every
+thirteenth private real tower (six): of 6 626 member ends lying flat that
+go onto a plate, 63 % have **one bolt** (nothing to split); the placement
+fits for 248 ends (3.7 %) within a move of 60 mm, 128 of them without a
+move, all within 26° of square to the flange (nine in ten within 14°)
+and nine in ten with 20 mm bolts.
+To write it, the format would have to say which bolts of an end also pass
+through the member under the plate (a new field, structure file version
+24), and the joint details, the clash check, the joint checks and the bill
+of materials follow it — not built for so few ends (a question to the
+owner). Found looking into it: a flat plate the layout lays on a leg
+running through the joint is held to that leg by no bolt of its own; the
+joint checks say the plate's holding *not checked* (as for any plate the
+leg does not bolt onto); a bolt through the plate and the leg would hold
+it.
+
+**Built: an end moved to bolt directly.** On a face that goes onto a plate
+(some end's bolts do not land on the flange where the search placed it),
+each end whose bolts do not land is placed again:
+
+1. pulled back further, else
+2. moved sideways by the least whole millimetre — "a bit forward" along
+   what it bolts onto, away from the other ends — up to **the plate's
+   thickness** (the thickest leg of the face's ends, as the plate would
+   be),
+
+until every bolt lands on the flange as for any end bolted directly
+(clear of the heel's leg and root by the nut, the edge distance from the
+toe, on the steel of what it bolts onto past where that starts by the end
+distance), clear of the other ends of the face as they lie and of the
+joint's fixed steel (the search's own rule, `cut_need`). Where every end of
+the face then lands, **the face is bolted directly: no plate**. Otherwise
+the face goes onto its plate as before. Moving only some ends of a face
+off its plate (the others staying on it) was measured and left out: more
+ends laid out, but fewer joints whole and more plates than moving whole
+faces.
+
+*The limit, on the safe side relative to the plate it replaces*: on the
+plate, the end lies a plate's thickness out of the flange — an
+eccentricity of the member's force out of the flange's plane that is
+**not** in the analysis (as every gusset's offset: [above](#onto-the-flange-or-onto-a-plate),
+O45 D). Moved by at most that thickness, its force passes the work point
+by no more than the plate put it out, and **the move is in the analysis**:
+it is the end's `shift`, a rigid end offset at level 4 ([Eccentric member
+ends](structures-fe.md#eccentric-member-ends-rigid-end-offsets)), and at
+level 3 with *Estimated eccentricities* on (O45: a laid-out shift read as
+laid out). At level 3 without that option the move is, like every shift,
+not in the analysis — **NOT ON THE SAFE SIDE** there, as said for the
+shift ([above](#moved-sideways-the-shift)). Measured on every thirteenth
+real tower: the new moves 1–8 mm (median 3); the extra elastic stress at
+the far toe of the angle from N·e, over the axial stress, e·A/W, median
+0.37, at most 0.92 — of the order of the plate's own offset's, which is
+left out. Up to the shift limit (30 mm) instead: about a fifth fewer
+plates and 1.5 points more joints whole, but moves of median 15 mm and
+e·A/W median 1.9, at most 4.8 — **not** chosen (a question to the owner,
+with the usage it costs).
+
+*The guard — the clear rule*: each joint is planned with and without the
+moves; the plan with them is kept only where it lays out **more ends, or
+as many on fewer plates**; else the plan without (no move). Deterministic
+(both plans are). With the moves' search a millimetre at a time, a run
+takes about a quarter more time (measured below).
+
+Each move is said with the end in the window's notes ("D2: moved 3 mm
+sideways to bolt directly onto L1 (no plate): an eccentricity, its shift —
+at most the plate's thickness").
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -1587,6 +1677,7 @@ the same towers:
 | Straight cuts of a plate stopping short (L2's follow-up a) | 4 | a bound on the extra work |
 | How much a plate stopping short must lie on the flange (L2's follow-up a) | half a square of the flange's width | room to bear on it, as step 4's flat plate; not a standard's |
 | How far off its flange an end is put on a plate bent by as much (L3) | 20° | the owner's range of the ends whose member needs rolls 5°–20° apart; beyond, welded (step 4) |
+| How far an end of a face going onto a plate is moved to bolt directly (L5) | the plate's thickness (at most the shift limit) | on the safe side relative to the plate it replaces: no larger an eccentricity than the plate's own offset out of the flange, and in the analysis as a shift; the shift limit measured on six private real towers (about a fifth fewer plates, but moves of 15 mm median): a question to the owner |
 
 ## Measured (J1 and J2, 2026-11-19)
 
@@ -2004,3 +2095,76 @@ for the bent end alone, "(2)" the end running back to its bend alone,
   (about 3–6 % more: the quarter turns' planning pass), the largest 21.0 and
   21.4 s before, 21.9 and 22.8 s after. The full columns ran up to eight at
   a time on a shared machine: their times are not compared.
+
+## Measured (L5, 2026-11-20)
+
+On the same 78 private tower files and settings as L3b (J9's proposals and
+J7a's leg splice places confirmed, every switch before on). "Before" is the
+main build of 2026-11-20 measured again (it differs a little from L3b's
+column: the work merged since); "L5" with the moves (the default now).
+
+| | before | L5 |
+|---|---|---|
+| joints laid out whole | 32 158 (49.7 %) | 32 652 (50.4 %) |
+| … of the body | 17 909 (49.3 %) | 18 413 (50.7 %) |
+| … of the arms and the top | 14 249 (50.1 %) | 14 239 (50.1 %) |
+| member ends laid out | 115 759 (65.0 %) | 116 426 (65.3 %) |
+| joints that do not fit, as assumed / as given | 12 999 / 26 | 12 926 / 28 |
+| plates written | 65 878 | 61 800 (−6.2 %) |
+| … their weight (the bill of materials) | 94.2 t (73 towers) | 90.8 t (−3.7 %) |
+| shifts written | 346 | 2 333 |
+| a run again identical | 78 of 78 | 78 of 78 |
+
+- **The moves on all 78**: 1 987 shifts written that were not; 1 867 of them
+  at most 8 mm (median 3 mm) — the moves; 112 above 14 mm, the ordinary
+  shifts (up to the shift limit) of plans that changed with them. e·A/W of
+  the new shifts median 0.37, nine in ten below 0.67. The 2 more joints not
+  fitting as given: at both, a member left for a hand detail whose bolts (as
+  they are) no longer fit the member laid out under it (L2's question 3).
+
+- **The moves on every thirteenth tower** (six): the moves written 1–8 mm
+  (median 3); the member's extra stress at its far toe from N·e over the
+  axial stress (e·A/W, the angle's elastic modulus in the plane of its
+  connected leg) median 0.37, at most 0.92. Moving only some ends of a face
+  off its plate: more ends (+0.3 points) but fewer joints whole and more
+  plates than moving whole faces — left out. Up to the shift limit (30 mm),
+  on top of L5: +0.6 points of the joints whole, +0.6 of the ends, 12 %
+  fewer plates, but moves of 18 mm median and e·A/W median 2.3, at most 4.8
+  — not chosen.
+- **One bolt through the leg** (looked into): of 6 626 flat ends going onto
+  plates on the six towers, 63 % have one bolt; the placement fits 248
+  (3.7 %), 128 without a move — within 26° of square to the flange, nine in
+  ten with 20 mm bolts.
+- **The bend check under the design cases** (L3's question 4): the line's
+  load case library of the comparison (8 cases: −20, 10 and 40 °C; 0 °C with
+  20 N/m of ice, ×1.3 on the vertical; 10 °C with 300 Pa of wind ×1.5 from
+  the left, the right, ahead and behind, with the wind on the members of the
+  body, 300 Pa × 1.5 on their profiles; **checking values, not a design
+  code's**), the wire loads from the line's own calculation at the
+  structure's points, each case solved as the analysis does (63 of the 78
+  towers solved every case; in the others some cases did not settle — "axial
+  compression above the elastic buckling load" — and those bends are
+  checked with the cases that did), the ASCE plugin's strict check
+  (unchanged): L3's bends
+  (angle below 45°, 5 008 checked): **80 % pass under the vertical case
+  (median usage 0.26), 57 % under the design cases (median 0.83, nine in
+  ten below 4.1, the largest 22.9)**; J2b's bends round the other leg
+  (4 871): 49 % (median 1.04) → **24 %** (median 2.88). The design cases
+  give 2.3 times the vertical case's usage at the median; the ice case
+  governs about four bends in ten, the wind cases the rest. 1 212 of the
+  L3 bends and 1 273 of J2b's pass under the vertical case and not under
+  the design cases.
+- **A packing plate under the bent flap** (L3b's question 4; measured
+  without L5, the axis allowed two plate thicknesses out instead of one):
+  +1.0 point of the joints whole, +0.9 of the ends, the ends ≤ 20° off left
+  1 052 → 917 on the six towers; of them those with their outstanding leg
+  towards the flange (the packing's target) only 257 → 246, the rest the
+  axis-limit group. Not built: the member a further plate's thickness out
+  of the flange, an offset not in the analysis (NOT ON THE SAFE SIDE until
+  O45 D).
+- **Time**: every thirteenth tower, six, laid out back to back twice at a quiet
+  moment: the median per tower 19.6 s before, 24.8 s with L5 (both passes
+  alike), the largest 21.3 s → 26.7 s — about a quarter more: each joint
+  planned twice (the guard) and the moves searched a millimetre at a time.
+  The full columns ran beside other work on a shared machine: their
+  times are not compared.

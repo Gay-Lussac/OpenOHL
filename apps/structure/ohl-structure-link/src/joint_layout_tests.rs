@@ -878,3 +878,128 @@ fn the_members_an_end_could_bolt_onto_in_todays_order() {
         ["L1", "L2", "D2"]
     );
 }
+
+/// L5 (2026-11-20): an end of a face going onto a plate bolted directly
+/// where pulled back further, or moved by at most the plate's thickness,
+/// its bolts land — kept only where the joint then lays out more ends, or
+/// as many on fewer plates (the guard). On the invented joints: never fewer
+/// ends, never more plates, no new clash, the same plan twice, and a move
+/// at most the plate's thickness.
+#[test]
+fn ends_moved_to_bolt_directly_never_lay_out_less() {
+    let bolts = |c: u32| {
+        K.replace(
+            "design = { class = \"bracing\" }",
+            &format!("design = {{ class = \"bracing\", bolts = {{ diameter = \"16 mm\", count = {c} }} }}"),
+        )
+    };
+    let texts = [
+        (K.to_owned(), "N2"),
+        (bolts(1), "N2"),
+        (bolts(4), "N2"),
+        (bolts(6), "N2"),
+        (SHALLOW.to_owned(), "N2"),
+        (CORNER.to_owned(), "N2"),
+        (yielding(10.0, 1.0), "N2"),
+        (yielding(25.0, 0.6), "N2"),
+        (SPLIT.to_owned(), "M"),
+    ];
+    for (text, id) in &texts {
+        let Ok(d) = joint_details(text, &library(), &Default::default()) else {
+            continue;
+        };
+        let Some(j) = d.joint(id) else { continue };
+        let off = LayoutSettings {
+            direct_moved: false,
+            ..settings()
+        };
+        let a = plan_joint(j, &off, &|_, _| None);
+        let b = plan_joint(j, &settings(), &|_, _| None);
+        assert!(
+            b.ends.len() > a.ends.len()
+                || (b.ends.len() == a.ends.len() && b.plates.len() <= a.plates.len()),
+            "{id}: {a:?} -> {b:?}"
+        );
+        assert_eq!(b, plan_joint(j, &settings(), &|_, _| None));
+        if b != a {
+            let w = written(text, &b);
+            assert!(clashes(&w, id, &b).is_empty(), "{:?}", clashes(&w, id, &b));
+        }
+        for e in &b.ends {
+            if let Some(sh) = e.shift
+                && a.ends
+                    .iter()
+                    .any(|x| x.member == e.member && x.shift != e.shift)
+            {
+                assert!(sh.abs() <= 0.007 + 1e-9, "{e:?}");
+            }
+        }
+    }
+}
+
+/// The K-brace with a wider leg running through the joint (an invented
+/// 160 × 14 angle) and two bolts on each diagonal: concentric, both pulled
+/// back clear of each other, their bolts past the leg's flange — a plate.
+/// With L5 one diagonal lies at the work point and the other is pulled
+/// back clear of it and moved a few millimetres: both bolted directly onto
+/// the leg, no plate.
+#[test]
+fn a_k_brace_on_a_wide_leg_bolts_directly_with_a_small_move() {
+    let base = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let lib = crate::SectionLibrary::parse(&format!(
+        "{base}\n[[section]]\nid = \"EA-160x14\"\nname = \"Equal angle 160 × 14 (invented)\"\n\
+         shape = \"equal_angle\"\nh = \"160 mm\"\nt = \"14 mm\"\nr = \"12 mm\"\n"
+    ))
+    .unwrap();
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+        K.replace(
+            "section = \"EA-61x7\"\norientation = \"x+y+\"",
+            "section = \"EA-160x14\"\norientation = \"x+y+\""
+        )
+        .replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 2 } }"
+        )
+        .replace(
+            "[\"2.5 m\", \"0 m\", \"0 m\"]",
+            "[\"3.6 m\", \"0 m\", \"0 m\"]"
+        )
+        .replace(
+            "[\"2.5 m\", \"0 m\", \"6 m\"]",
+            "[\"3.6 m\", \"0 m\", \"6 m\"]"
+        )
+    );
+    let d = joint_details(&text, &lib, &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let off = LayoutSettings {
+        direct_moved: false,
+        ..settings()
+    };
+    let a = plan_joint(j, &off, &|_, _| None);
+    assert_eq!(a.plates.len(), 1, "{a:?}");
+    let b = plan_joint(j, &settings(), &|_, _| None);
+    assert!(b.hand.is_empty(), "{:?}", b.hand);
+    assert!(b.plates.is_empty(), "{b:?}");
+    assert_eq!(b.ends.len(), 2);
+    assert!(
+        b.ends
+            .iter()
+            .all(|e| matches!(&e.onto, Onto::Member(m) if m == "L1" || m == "L2")),
+        "{b:?}"
+    );
+    // A move of at most the plate's thickness (the diagonals' 7 mm legs),
+    // said in the notes.
+    assert!(
+        b.ends
+            .iter()
+            .all(|e| e.shift.unwrap_or(0.0).abs() <= 0.007 + 1e-9),
+        "{b:?}"
+    );
+    assert!(b.notes.iter().any(|n| n.contains("moved")), "{:?}", b.notes);
+    assert_eq!(b, plan_joint(j, &settings(), &|_, _| None));
+}

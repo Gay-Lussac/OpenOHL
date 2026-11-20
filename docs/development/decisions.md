@@ -221,6 +221,78 @@ already or "later" items staying in the roadmap; two built with phase 13
    built.
 9. Library files and settings not changed offline — as built.
 
+## 2026-11-20 (joint layout: ends moved to bolt directly L5)
+
+**O44, L5** (built 2026-11-20, in active development, not approved yet;
+[theory](../theory/joint-layout.md#ends-moved-to-bolt-directly-one-bolt-through-the-leg-looked-into-l5),
+[user guide](../user-guide/joint-layout.md), [joint details](joint-details.md);
+no format change). From the owner's idea of the same day ("move the 2
+diagonal a bit forward maybe to have one bolt on the main leg without them
+touching each other. The second bolt needs the plate anyway but maybe
+shorter"):
+
+- **One bolt through the leg, the rest on a shorter plate — not built.**
+  Between a bolt through the member, the plate and the leg (on the flange)
+  and one through the member and the plate only (past the toe, its nut
+  clear of the flange) the bolts must lie apart across the flange by the
+  edge distance, the nut and the gap — about three bolt diameters, the
+  default pitch: only for members nearly square to the flange. Measured on
+  six private real towers: 3.7 % of the plate ends; 63 % of the plate ends
+  have one bolt. It would need a format field (version 24) for a bolt
+  through three plies, followed by the joint details, the clash check, the
+  joint checks and the bill of materials. Asked.
+- **An end moved to bolt directly — built, a switch** (`direct_moved`, on):
+  on a face going onto a plate, each end whose bolts do not land pulled
+  back further, else moved sideways by at most the plate's thickness,
+  until its bolts land; where every end of the face then lands, no plate.
+  The move is the end's `shift` (in the analysis at level 4 and with the
+  estimated eccentricities; at level 3 without them NOT ON THE SAFE SIDE,
+  as every shift). **The limit, the plate's thickness**, on the safe side
+  relative to the plate it replaces (that plate's own offset out of the
+  flange, not in the analysis, is as large). Moving only some ends of a
+  face off its plate: measured, left out (fewer joints whole, more
+  plates). Up to the shift limit (30 mm): measured, not chosen (moves of
+  18 mm median on top of L5; asked).
+- **The clear rule (a guard)**: the joint planned with and without the
+  moves, the moves kept only where they lay out more ends, or as many on
+  fewer plates.
+- **The bend check under design cases** (L3's question 4): measured with
+  the line's load case library (three temperatures, ice ×1.3, wind 300 Pa
+  ×1.5 from four sides with the wind on the bodies; checking values, not a
+  design code's).
+- **A packing plate under the bent flap** (L3b's question 4): measured,
+  not built — it puts the member a further plate's thickness out of the
+  flange, an offset not in the analysis (NOT ON THE SAFE SIDE until O45 D).
+
+Measured on the 78 private real towers (the theory page): joints laid out
+whole 49.7 % → 50.4 %, ends 65.0 % → 65.3 %, plates 65 878 → 61 800
+(−6.2 %), the moves median 3 mm (at most 8), joints not fitting as given
+26 → 28, a run again identical 78 of 78, about a quarter more time per
+tower. The bend check under the line's
+checking cases: L3's bends 80 % → 57 % pass, J2b's 49 % → 24 % (against the
+one vertical case). The packing plate: +1.0 point of the joints whole on a
+sample. The owner's questions, and the proposals to lay out more joints
+(L5a–L5o, with one way to weigh them per joint), are in the roadmap (O44
+L5).
+
+## 2026-11-20 (owner): joint layout L2, L3, L3b recommendations approved
+
+The owner, 2026-11-20 ("Go ahead with recommendations"): the questions of
+the joint layout's [L2](#2026-11-20-joint-layout-the-bent-plates-own-bolts-clash-aware-planning-l2)
+(six), [L3](#2026-11-20-joint-layout-l2s-follow-ups-a-plate-bent-by-a-few-degrees-l3)
+(six) and [L3b](#2026-11-20-joint-layout-the-bent-ends-turn-the-end-running-back-to-its-bend-l3b)
+(four) answered as recommended (roadmap O44): each plate names the member
+it lies on (`on`, version 23); the two after-writing checks kept; a member
+left for a hand detail not asked by the second; plates stopping short of
+the work point on by default; bent before welded up to 20°, also towards
+the flange past its toe; the bend check strict, decided after a run with
+the design cases (done with [L5](#2026-11-20-joint-layout-ends-moved-to-bolt-directly-l5),
+above); the existing rules for which end takes the bend; 20° and the edge
+distance from a bend as from a free edge until a shop gives its rules; the
+other leg tried for the bent end and the end running back to its bend
+kept; the holding bolts over a hole left for a hand detail until L4; a
+packing plate under the bent flap measured with L5.
+
 ## 2026-11-20 (country server, phase 12)
 
 **The offline working set: exported with read-only neighbours, checked
