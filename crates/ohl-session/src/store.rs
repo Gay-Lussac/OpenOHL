@@ -430,6 +430,12 @@ pub trait Store: Send {
 
     // --- Versions ---------------------------------------------------------
 
+    /// Whether the session writes **split trees** for revisions
+    /// ([`crate::trees`], phase 11): a network's models do; a project file
+    /// keeps flat trees (the desktop's format unchanged). Both are read.
+    fn split_trees(&self) -> bool {
+        false
+    }
     /// Whether blob `hash` is stored.
     fn has_blob(&self, hash: &str) -> Result<bool, SessionError>;
     /// Stores blob `hash` (its data compressed by the caller).

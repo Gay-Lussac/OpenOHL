@@ -233,7 +233,10 @@ yet):
   (schema 6 already).
 - **Trees split** into a tree of trees (by line, kind, tile bucket) so that
   a commit costs what changed, as the Consequences above foresaw; old flat
-  trees still read (a tree version field).
+  trees still read (a tree version field). Built 2026-11-20 (phase 11) as
+  a trie keyed by the hash of each object's kind and id instead, on a
+  network's models only — a project file keeps this record's flat trees
+  ([ADR-0013](0013-country-server.md#versions-at-the-scale-of-a-country)).
 - A merge (or bring in) that would break another line's connection at a
   shared tower is a **conflict**, never applied.
 - **Country libraries** are released as revisions of the library (each

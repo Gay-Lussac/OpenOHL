@@ -118,6 +118,17 @@ impl State {
         line_of(&objects)
     }
 
+    /// The objects `keys` of this state (its library files left out).
+    pub fn only(&self, keys: &BTreeSet<(Kind, String)>) -> State {
+        State {
+            objects: keys
+                .iter()
+                .filter_map(|k| self.objects.get(k).map(|v| (k.clone(), v.clone())))
+                .collect(),
+            libraries: BTreeMap::new(),
+        }
+    }
+
     /// The texts of the library files of one kind, by name.
     pub fn library_files(&self, kind: &str) -> Vec<(&str, &str)> {
         self.libraries
@@ -412,6 +423,13 @@ pub struct MergePlan {
     pub notes: Vec<String>,
     /// The merged state (unresolved conflicts: ours).
     pub merged: State,
+    /// Worked out from what differs (split trees, [`crate::trees`]): the
+    /// objects that may differ between the working state and `merged`.
+    /// The merged line is then validated where it changes when the merge
+    /// is carried out, as a command is (phase 3, `in_place`), not whole
+    /// here (`problem` says only what was found without it). `None`: the
+    /// whole states compared, the merged line validated whole.
+    pub local: Option<BTreeSet<(Kind, String)>>,
 }
 
 impl MergePlan {
@@ -1246,8 +1264,50 @@ pub(crate) fn settle_merged(
     }
 }
 
+/// What [`settle_merged`] does for a merge worked out from what differs
+/// (`keys`): the notes whose objects it changed (or the notes it made or
+/// changed) checked against the merged line — read whole only then (a
+/// note on an object deleted is not taken); the line itself is validated
+/// where it changes when the merge is carried out.
+pub(crate) fn settle_local(
+    merged: &mut State,
+    keys: &BTreeSet<(Kind, String)>,
+    notes: &mut Vec<String>,
+) -> Option<String> {
+    let touched: Vec<(String, Value)> = merged
+        .objects
+        .range((Kind::Annotation, String::new())..)
+        .take_while(|((k, _), _)| *k == Kind::Annotation)
+        .filter(|((k, id), (_, v))| {
+            keys.contains(&(*k, id.clone()))
+                || serde_json::from_value::<crate::annotations::Annotation>((**v).clone())
+                    .is_ok_and(|a| {
+                        a.anchors.iter().any(|x| {
+                            x.object()
+                                .is_some_and(|(k, i)| keys.contains(&(k, i.to_owned())))
+                        })
+                    })
+        })
+        .map(|((_, id), (_, v))| (id.clone(), (**v).clone()))
+        .collect();
+    if touched.is_empty() {
+        return None;
+    }
+    let line = match merged.line() {
+        Ok(l) => l,
+        Err(e) => return Some(e.to_string()),
+    };
+    for id in crate::annotations::orphaned(touched.iter().map(|(id, v)| (id, v)), &line) {
+        merged.objects.remove(&(Kind::Annotation, id.clone()));
+        notes.push(format!(
+            "note {id}: what it was put on is not in the merged line — not taken"
+        ));
+    }
+    None
+}
+
 /// An object of a state: its place among its kind and its JSON (shared).
-type Placed = (i64, Arc<Value>);
+pub(crate) type Placed = (i64, Arc<Value>);
 
 /// Whether two objects' values are the same: one and the same (shared
 /// between the states — most objects of two lines of one project: no
@@ -1443,7 +1503,7 @@ fn store(e: impl std::fmt::Display) -> SessionError {
 }
 
 impl Session {
-    fn write_blob(conn: &dyn Store, h: &str, text: &str) -> Result<(), SessionError> {
+    pub(crate) fn write_blob(conn: &dyn Store, h: &str, text: &str) -> Result<(), SessionError> {
         if !conn.has_blob(h)? {
             let data = zstd::encode_all(text.as_bytes(), LEVEL).map_err(store)?;
             conn.put_blob(h, &data)?;
@@ -1451,7 +1511,7 @@ impl Session {
         Ok(())
     }
 
-    fn read_blob(&self, h: &str) -> Result<String, SessionError> {
+    pub(crate) fn read_blob(&self, h: &str) -> Result<String, SessionError> {
         let data: Option<Vec<u8>> = self.conn.blob(h)?;
         let data = data.ok_or_else(|| store(format!("version store: blob {h} missing")))?;
         let raw = zstd::decode_all(data.as_slice()).map_err(store)?;
@@ -1467,16 +1527,149 @@ impl Session {
     /// 10 µs each).
     pub fn revision_state(&self, id: &str) -> Result<State, SessionError> {
         let rev = self.revision(id)?;
-        let tree: Tree = serde_json::from_str(&self.read_blob(&rev.tree)?).map_err(store)?;
-        let mut state = State::default();
-        for (kind, id, ord, h) in tree.objects {
-            let value: Value = serde_json::from_str(&self.read_blob(&h)?).map_err(store)?;
-            state.objects.insert((kind, id), (ord, Arc::new(value)));
-        }
-        for (kind, name, h) in tree.libraries {
-            state.libraries.insert((kind, name), self.read_blob(&h)?);
+        let tree = self.stored_tree(&rev.tree)?;
+        let read = |h: &str| self.read_blob(h);
+        let mut nodes = crate::trees::Stored::new(&read);
+        let entries = crate::trees::all_entries(&mut nodes, &tree)?;
+        let mut state = State {
+            objects: self
+                .stored_values(entries.into_iter().map(|(k, id, o, h)| ((k, id), (o, h))))?,
+            libraries: BTreeMap::new(),
+        };
+        for ((kind, name), h) in tree.libraries() {
+            state.libraries.insert(
+                (kind.clone(), name.clone()),
+                self.read_blob(&crate::trees::hex(h))?,
+            );
         }
         Ok(state)
+    }
+
+    /// The objects project line `name` changed since its last revision —
+    /// what a commit of it records: each object (a library file as
+    /// `library` `kind/name`), whether the revision has it, whether the
+    /// line has it now. Split trees: read along the nodes that differ.
+    #[allow(clippy::type_complexity)]
+    pub fn uncommitted(
+        &self,
+        name: &str,
+    ) -> Result<Vec<((Kind, String), bool, bool)>, SessionError> {
+        let objects = self.line_objects_named(name)?;
+        let Some(rev) = self.branch_revision(name)? else {
+            return Ok(objects.keys().map(|k| (k.clone(), false, true)).collect());
+        };
+        let tree = self.revision(&rev)?.tree;
+        if self.split || self.tree_is_split(&tree)? {
+            let d = self.differs(
+                crate::trees::Side::Stored(&tree),
+                crate::trees::Side::Line(name),
+            )?;
+            let mut out: Vec<((Kind, String), bool, bool)> = d
+                .objects
+                .iter()
+                .map(|(k, (a, b))| (k.clone(), a.is_some(), b.is_some()))
+                .collect();
+            out.extend(d.libraries.iter().map(|((k, n), (a, b))| {
+                (
+                    (Kind::Library, crate::library_id(k, n)),
+                    a.is_some(),
+                    b.is_some(),
+                )
+            }));
+            return Ok(out);
+        }
+        let d = self.diff_to(&rev, &State::of_objects(objects))?;
+        let mut out: Vec<((Kind, String), bool, bool)> = d
+            .objects
+            .iter()
+            .map(|c| {
+                (
+                    (c.kind, c.id.clone()),
+                    c.change != Change::Added,
+                    c.change != Change::Removed,
+                )
+            })
+            .collect();
+        out.extend(d.libraries.iter().map(|c| {
+            (
+                (Kind::Library, crate::library_id(&c.kind, &c.name)),
+                c.change != Change::Added,
+                c.change != Change::Removed,
+            )
+        }));
+        Ok(out)
+    }
+
+    /// The JSON of object `kind`/`id` of project line `line` as it is now.
+    pub fn line_object_value(&self, line: &str, kind: Kind, id: &str) -> Option<Arc<Value>> {
+        self.line_objects_named(line)
+            .ok()?
+            .get(&(kind, id.to_owned()))
+            .map(|o| Arc::clone(&o.value))
+    }
+
+    /// The differences between revisions `a` and `b` (branches, tags or
+    /// revision ids): with split trees only the nodes and objects that
+    /// differ are read ([`crate::trees`]).
+    pub fn diff_revisions(&self, a: &str, b: &str) -> Result<Diff, SessionError> {
+        let (ra, rb) = (
+            self.revision(&self.resolve_revision(a)?)?,
+            self.revision(&self.resolve_revision(b)?)?,
+        );
+        let d = self.differs(
+            crate::trees::Side::Stored(&ra.tree),
+            crate::trees::Side::Stored(&rb.tree),
+        )?;
+        let (sa, sb) = self.partial_states(&d, None, None)?;
+        Ok(diff(&sa, &sb))
+    }
+
+    /// The two partial states of what `d` says differs (`line_a`,
+    /// `line_b`: a side that is a project line, its objects taken from
+    /// memory; else read from the store).
+    pub(crate) fn partial_states(
+        &self,
+        d: &crate::trees::Differs,
+        line_a: Option<&str>,
+        line_b: Option<&str>,
+    ) -> Result<(State, State), SessionError> {
+        let mut out = [State::default(), State::default()];
+        for (k, line) in [line_a, line_b].into_iter().enumerate() {
+            let entries = d.objects.iter().filter_map(|(key, (a, b))| {
+                let e = if k == 0 { a } else { b };
+                e.map(|e| (key.clone(), e))
+            });
+            out[k].objects = match line {
+                Some(name) => {
+                    let objects = self.line_objects_named(name)?;
+                    entries
+                        .filter_map(|(key, _)| {
+                            objects
+                                .get(&key)
+                                .map(|o| (key, (o.ord, Arc::clone(&o.value))))
+                        })
+                        .collect()
+                }
+                None => self.stored_values(entries)?,
+            };
+            for (key, (a, b)) in &d.libraries {
+                let Some(h) = (if k == 0 { a } else { b }) else {
+                    continue;
+                };
+                let text = match line {
+                    Some(name) => self
+                        .line_objects_named(name)?
+                        .get(&(Kind::Library, crate::library_id(&key.0, &key.1)))
+                        .and_then(|o| crate::library_entry(&o.value))
+                        .map(|(_, _, t)| t)
+                        .ok_or_else(|| store("a library file went while read"))?,
+                    None => self.read_blob(&crate::trees::hex(h))?,
+                };
+                out[k].libraries.insert(key.clone(), text);
+            }
+        }
+        let [a, b] = out;
+        Ok((a, b))
     }
 
     fn revision_of(r: RevisionRow) -> Result<Revision, SessionError> {
@@ -1596,10 +1789,25 @@ impl Session {
     pub fn status(&self) -> Result<Status, SessionError> {
         let head = self.head()?;
         let revision = self.head_revision()?;
-        let working = self.working_state()?;
         let changes = match &revision {
-            Some(id) => self.diff_to(id, &working)?,
-            None => diff(&State::default(), &working),
+            // Split trees: what differs from the head, read along the
+            // nodes that differ ([`crate::trees`]).
+            Some(id) if self.split => {
+                let tree = self.revision(id)?.tree;
+                let current = self.current.clone();
+                if self.line_tree(&current)?.0 == tree {
+                    Diff::default()
+                } else {
+                    let d = self.differs(
+                        crate::trees::Side::Stored(&tree),
+                        crate::trees::Side::Line(&current),
+                    )?;
+                    let (a, b) = self.partial_states(&d, None, Some(&current))?;
+                    diff(&a, &b)
+                }
+            }
+            Some(id) => self.diff_to(id, &self.working_state()?)?,
+            None => diff(&State::default(), &self.working_state()?),
         };
         Ok(Status {
             head,
@@ -1617,22 +1825,31 @@ impl Session {
         if hash(&tree_text(&now)) == rev.tree {
             return Ok(Diff::default());
         }
-        let then: Tree = serde_json::from_str(&self.read_blob(&rev.tree)?).map_err(store)?;
-        let index = |t: &Tree| -> BTreeMap<(Kind, String), (i64, String)> {
-            t.objects
-                .iter()
-                .map(|(k, id, ord, h)| ((*k, id.clone()), (*ord, h.clone())))
-                .collect()
-        };
-        let files = |t: &Tree| -> BTreeMap<(String, String), String> {
-            t.libraries
-                .iter()
-                .map(|(k, n, h)| ((k.clone(), n.clone()), h.clone()))
-                .collect()
-        };
+        let then = self.stored_tree(&rev.tree)?;
+        let read = |h: &str| self.read_blob(h);
+        let mut nodes = crate::trees::Stored::new(&read);
+        let ia: BTreeMap<(Kind, String), (i64, String)> =
+            crate::trees::all_entries(&mut nodes, &then)?
+                .into_iter()
+                .map(|(k, id, ord, h)| ((k, id), (ord, crate::trees::hex(&h))))
+                .collect();
+        let ib: BTreeMap<(Kind, String), (i64, String)> = now
+            .objects
+            .iter()
+            .map(|(k, id, ord, h)| ((*k, id.clone()), (*ord, h.clone())))
+            .collect();
+        let fa: BTreeMap<(String, String), String> = then
+            .libraries()
+            .iter()
+            .map(|(k, h)| (k.clone(), crate::trees::hex(h)))
+            .collect();
+        let fb: BTreeMap<(String, String), String> = now
+            .libraries
+            .iter()
+            .map(|(k, n, h)| ((k.clone(), n.clone()), h.clone()))
+            .collect();
         // Only what differs, on both sides: their diff is the whole diff.
         let (mut a, mut b) = (State::default(), State::default());
-        let (ia, ib) = (index(&then), index(&now));
         for key in ia.keys().chain(ib.keys()) {
             if ia.get(key) == ib.get(key) || a.objects.contains_key(key) {
                 continue;
@@ -1645,7 +1862,6 @@ impl Session {
                 b.objects.insert(key.clone(), x.clone());
             }
         }
-        let (fa, fb) = (files(&then), files(&now));
         for key in fa.keys().chain(fb.keys()) {
             if fa.get(key) == fb.get(key) {
                 continue;
@@ -1692,11 +1908,28 @@ impl Session {
         Ok(())
     }
 
-    /// Writes a revision of `state` and moves `branch` to it.
+    /// Whether the working state of the line worked on is revision
+    /// `rev`'s, its tree flat or split (`tree`: the working state's tree
+    /// hash as written now).
+    fn current_is(&self, rev: &Revision, tree: &str) -> Result<bool, SessionError> {
+        if rev.tree == tree {
+            return Ok(true);
+        }
+        let split_now = self.split;
+        let split_then = self.tree_is_split(&rev.tree)?;
+        if split_now == split_then {
+            return Ok(false);
+        }
+        // Trees of the two kinds: compared object by object.
+        self.line_is_revision(&self.current.clone(), &rev.id)
+    }
+
+    /// Writes a revision of the working state of the line worked on and
+    /// moves `branch` to it: a flat tree, or a split one costing what
+    /// changed since the first parent ([`crate::trees`]).
     pub(crate) fn write_revision(
         &self,
         user: &str,
-        state: &State,
         parents: Vec<String>,
         message: &str,
         branch: Option<&str>,
@@ -1705,15 +1938,20 @@ impl Session {
         if message.is_empty() {
             return Err(refused("a revision needs a message"));
         }
-        let (tree, blobs) = tree_of(state);
-        let text = tree_text(&tree);
-        let tree_hash = hash(&text);
-        if let [parent] = &parents[..]
-            && self.revision(parent)?.tree == tree_hash
+        let first = parents.first().map(|p| self.revision(p)).transpose()?;
+        let (tree_hash, flat) = if self.split {
+            (self.line_tree(&self.current.clone())?.0, None)
+        } else {
+            let (tree, blobs) = tree_of(&self.working_state()?);
+            let text = tree_text(&tree);
+            (hash(&text), Some((text, blobs)))
+        };
+        if let ([_], Some(parent)) = (&parents[..], &first)
+            && self.current_is(parent, &tree_hash)?
         {
             return Err(refused(format!(
                 "nothing to commit: the working state is that of revision {}",
-                short(parent)
+                parent.short()
             )));
         }
         let id = revision_id(&tree_hash, &parents, user, message);
@@ -1723,10 +1961,22 @@ impl Session {
         }
         let seq = self.last_seq()?;
         let tx = crate::Step::begin(&*self.conn)?;
-        for (h, t) in &blobs {
-            Self::write_blob(&*tx, h, t)?;
+        match &flat {
+            Some((text, blobs)) => {
+                for (h, t) in blobs {
+                    Self::write_blob(&*tx, h, t)?;
+                }
+                Self::write_blob(&*tx, &tree_hash, text)?;
+            }
+            None => {
+                let written = self.write_line_tree(
+                    &*tx,
+                    &self.current,
+                    first.as_ref().map(|r| r.tree.as_str()),
+                )?;
+                debug_assert_eq!(written, tree_hash);
+            }
         }
-        Self::write_blob(&*tx, &tree_hash, &text)?;
         tx.put_revision(&RevisionRow {
             id: id.clone(),
             parents: serde_json::to_string(&parents).expect("serialises"),
@@ -1752,14 +2002,7 @@ impl Session {
             return Err(refused("the project holds no line yet"));
         }
         let parent = self.branch_revision(&branch)?;
-        let state = self.working_state()?;
-        self.write_revision(
-            user,
-            &state,
-            parent.into_iter().collect(),
-            message,
-            Some(&branch),
-        )
+        self.write_revision(user, parent.into_iter().collect(), message, Some(&branch))
     }
 
     pub(crate) fn check_ref_name(&self, name: &str) -> Result<String, SessionError> {
@@ -2027,6 +2270,54 @@ impl Session {
         Ok((applied, changed))
     }
 
+    /// [`Session::set_working`] for a merge worked out from what differs
+    /// ([`MergePlan::local`]): only the objects `keys` compared, the line
+    /// validated where it changes as a command is (not whole first); the
+    /// library files are the same on both sides.
+    pub(crate) fn set_working_on(
+        &mut self,
+        user: &str,
+        target: &State,
+        keys: &BTreeSet<(Kind, String)>,
+        note: &str,
+    ) -> Result<(Option<Applied>, bool), SessionError> {
+        let mut prims = Vec::new();
+        for key in keys {
+            match (self.objects.get(key), target.objects.get(key)) {
+                (Some(o), Some((ord, value)))
+                    if o.ord == *ord && same(Some(&o.value), Some(value)) => {}
+                (_, Some((ord, value))) => prims.push(Command::Put {
+                    kind: key.0,
+                    id: key.1.clone(),
+                    value: (**value).clone(),
+                    ord: Some(*ord),
+                }),
+                (Some(_), None) => prims.push(Command::Delete {
+                    kind: key.0,
+                    id: key.1.clone(),
+                    confirm: false,
+                }),
+                (None, None) => {}
+            }
+        }
+        if prims.is_empty() {
+            return Ok((None, false));
+        }
+        let applied = self.unit(|s| {
+            let a = s.apply_as(
+                user,
+                Command::Batch { commands: prims },
+                "do",
+                None,
+                false,
+                false,
+            )?;
+            s.conn.set_entry_note(a.seq, note)?;
+            Ok(a)
+        })?;
+        Ok((Some(applied), false))
+    }
+
     /// Works on project line `target` from now on ([`Session::select_line`])
     /// and keeps it as the line the file opens on (command-line tools work
     /// on it; the application remembers each user's own). Nothing of the
@@ -2067,6 +2358,7 @@ impl Session {
             problem: None,
             notes: Vec::new(),
             merged: working.clone(),
+            local: None,
         };
         let Some(ours) = ours else {
             plan.kind = MergeKind::FastForward;
@@ -2098,9 +2390,57 @@ impl Session {
             ));
         }
         plan.base = base.clone();
+        // Split trees, the working state committed, no object kept twice:
+        // what differs only ([`Session::merge_local`]).
+        let local = self.split
+            && !choices.values().any(|c| *c == Side::Both)
+            && self.line_matches(&self.current, &ours)?;
+        let current = self.current.clone();
         if base.as_deref() == Some(ours.as_str()) {
             plan.kind = MergeKind::FastForward;
-            plan.merged = self.revision_state(&theirs)?;
+            let theirs_tree = self.revision(&theirs)?.tree;
+            let d = if local {
+                Some(self.differs(
+                    crate::trees::Side::Line(&current),
+                    crate::trees::Side::Stored(&theirs_tree),
+                )?)
+            } else {
+                None
+            };
+            match d {
+                Some(d) if d.libraries.is_empty() => {
+                    let (_, after) = self.partial_states(&d, Some(&current), None)?;
+                    let keys: BTreeSet<(Kind, String)> = d.objects.keys().cloned().collect();
+                    let mut merged = working.clone();
+                    for key in &keys {
+                        match after.objects.get(key) {
+                            Some(v) => merged.objects.insert(key.clone(), v.clone()),
+                            None => merged.objects.remove(key),
+                        };
+                    }
+                    plan.merged = merged;
+                    plan.local = Some(keys);
+                }
+                _ => plan.merged = self.revision_state(&theirs)?,
+            }
+        } else if let Some((merged, conflicts, keys)) = match (&base, local) {
+            (Some(b), true) => {
+                let base_tree = self.revision(b)?.tree;
+                let theirs_tree = self.revision(&theirs)?.tree;
+                self.merge_local(
+                    &base_tree,
+                    crate::trees::Side::Line(&current),
+                    crate::trees::Side::Stored(&theirs_tree),
+                    &working,
+                    choices,
+                )?
+            }
+            _ => None,
+        } {
+            plan.kind = MergeKind::ThreeWay;
+            plan.merged = merged;
+            plan.conflicts = conflicts;
+            plan.local = Some(keys);
         } else {
             plan.kind = MergeKind::ThreeWay;
             let base_state = match &base {
@@ -2128,10 +2468,104 @@ impl Session {
             plan.conflicts = conflicts;
         }
         if plan.unresolved().is_empty() {
-            plan.problem = settle_merged(&mut plan.merged, &working, &mut plan.notes);
+            plan.problem = match &plan.local {
+                Some(keys) => settle_local(&mut plan.merged, keys, &mut plan.notes),
+                None => settle_merged(&mut plan.merged, &working, &mut plan.notes),
+            };
         }
-        plan.changes = diff(&working, &plan.merged);
+        plan.changes = match &plan.local {
+            // Only what may differ: the rest is the working state's.
+            Some(keys) => diff(&working.only(keys), &plan.merged.only(keys)),
+            None => diff(&working, &plan.merged),
+        };
         Ok(plan)
+    }
+
+    /// A three-way merge worked out from what differs (split trees,
+    /// [`crate::trees`]): the objects that differ between the base's tree
+    /// (`base_tree`) and each side — a project line in memory or a stored
+    /// tree — read alone, merged as [`merge_states_with`] merges whole
+    /// states (objects not among them are equal on all three sides), and
+    /// laid over `working` (the state of the side `ours`). The connection
+    /// conflicts of shared towers as on whole states. `None`: library files
+    /// differ (their merge and the structure types' check need the whole
+    /// states).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn merge_local(
+        &self,
+        base_tree: &str,
+        ours: crate::trees::Side<'_>,
+        theirs: crate::trees::Side<'_>,
+        working: &State,
+        choices: &Choices,
+    ) -> Result<Option<(State, Vec<Conflict>, BTreeSet<(Kind, String)>)>, SessionError> {
+        use crate::trees::Side as S;
+        let d_o = self.differs(S::Stored(base_tree), ours)?;
+        let d_t = self.differs(S::Stored(base_tree), theirs)?;
+        if !d_o.libraries.is_empty() || !d_t.libraries.is_empty() {
+            return Ok(None);
+        }
+        let keys: BTreeSet<(Kind, String)> = d_o
+            .objects
+            .keys()
+            .chain(d_t.objects.keys())
+            .cloned()
+            .collect();
+        // Each side's objects among them: as changed, else as in the base.
+        let mut both = crate::trees::Differs::default();
+        for key in &keys {
+            let base = d_o
+                .objects
+                .get(key)
+                .map(|x| x.0)
+                .or_else(|| d_t.objects.get(key).map(|x| x.0))
+                .flatten();
+            both.objects.insert(key.clone(), (base, None));
+        }
+        let (base, _) = self.partial_states(&both, None, None)?;
+        let side = |d: &crate::trees::Differs, s: S<'_>| -> Result<State, SessionError> {
+            let mut out = State::default();
+            let mut changed = crate::trees::Differs::default();
+            for key in &keys {
+                match d.objects.get(key) {
+                    Some((_, now)) => {
+                        changed.objects.insert(key.clone(), (None, *now));
+                    }
+                    None => {
+                        if let Some(v) = base.objects.get(key) {
+                            out.objects.insert(key.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+            let line = match s {
+                S::Line(n) => Some(n),
+                S::Stored(_) => None,
+            };
+            let (_, read) = self.partial_states(&changed, None, line)?;
+            out.objects.extend(read.objects);
+            Ok(out)
+        };
+        let o = side(&d_o, ours)?;
+        let t = side(&d_t, theirs)?;
+        let (part, mut conflicts) = merge_states_with(&base, &o, &t, &Patch::new(), choices);
+        let mut merged = working.clone();
+        for key in &keys {
+            match part.objects.get(key) {
+                Some(v) => merged.objects.insert(key.clone(), v.clone()),
+                None => merged.objects.remove(key),
+            };
+        }
+        crate::shared::connection_conflicts(
+            &base,
+            &o,
+            &t,
+            &mut merged,
+            &mut conflicts,
+            choices,
+            self.shared_rules_in_use(),
+        );
+        Ok(Some((merged, conflicts, keys)))
     }
 
     /// Merges `other` into the current branch: fast-forward when the
@@ -2145,10 +2579,45 @@ impl Session {
         message: Option<&str>,
         choices: &Choices,
     ) -> Result<MergeOutcome, SessionError> {
-        self.merge_as(user, other, message, choices, false)
+        self.merge_as(user, other, None, message, choices, false)
     }
 
+    /// [`Session::merge`]; `line`: the project line `other` is the
+    /// revision of (a review's branch); `approved`: through an approved
+    /// review.
     pub(crate) fn merge_as(
+        &mut self,
+        user: &str,
+        other: &str,
+        line: Option<&str>,
+        message: Option<&str>,
+        choices: &Choices,
+        approved: bool,
+    ) -> Result<MergeOutcome, SessionError> {
+        // Branches over a working set (phase 11): a branch's changes are
+        // checked by the rules of shared towers against its routes where
+        // they come in (stale marks for the other routes, a protected line
+        // waiting for its owners' review); changes coming into a branch
+        // from elsewhere were checked there.
+        let current = self.current.clone();
+        let other_name = line.unwrap_or(other).trim();
+        let routes = match (
+            self.branch_scopes.get(other_name),
+            self.branch_scopes.get(&current),
+        ) {
+            (Some(sc), _) if other_name != current => Some(Some(sc.routes.clone())),
+            (None, Some(_)) => Some(None),
+            _ => None,
+        };
+        let kept_routes = std::mem::replace(&mut self.merge_routes, routes);
+        let kept_approved = std::mem::replace(&mut self.approved_merge, approved);
+        let out = self.merge_inner(user, other, message, choices, approved);
+        self.merge_routes = kept_routes;
+        self.approved_merge = kept_approved;
+        out
+    }
+
+    fn merge_inner(
         &mut self,
         user: &str,
         other: &str,
@@ -2185,7 +2654,10 @@ impl Session {
         // The working state, its log entry and the revision (or the line
         // moved forward): all of them or none ([`Session::unit`]).
         self.unit(|s| {
-            let (applied, libraries_changed) = s.set_working(user, &plan.merged, &note)?;
+            let (applied, libraries_changed) = match &plan.local {
+                Some(keys) => s.set_working_on(user, &plan.merged, keys, &note)?,
+                None => s.set_working(user, &plan.merged, &note)?,
+            };
             let revision = match plan.kind {
                 MergeKind::FastForward => {
                     s.conn.set_branch_revision(&branch, &plan.theirs)?;
@@ -2198,8 +2670,7 @@ impl Session {
                         .map(str::to_owned)
                         .unwrap_or_else(|| format!("Merge {other} into {branch}"));
                     let parents = vec![plan.ours.clone().expect("three-way"), plan.theirs.clone()];
-                    let state = s.working_state()?;
-                    Some(s.write_revision(user, &state, parents, &message, Some(&branch))?)
+                    Some(s.write_revision(user, parents, &message, Some(&branch))?)
                 }
             };
             Ok(MergeOutcome {
@@ -2281,8 +2752,7 @@ impl Session {
         // The working state and its revision: both or neither.
         self.unit(|s| {
             let (applied, libraries_changed) = s.set_working(user, &merged, &note)?;
-            let state = s.working_state()?;
-            let revision = s.write_revision(user, &state, vec![head], &message, Some(&branch))?;
+            let revision = s.write_revision(user, vec![head], &message, Some(&branch))?;
             Ok(MergeOutcome {
                 kind: MergeKind::ThreeWay,
                 revision: Some(revision),
@@ -2306,16 +2776,33 @@ impl Session {
             .collect();
         revisions.reverse();
         let mut blobs = BTreeMap::new();
+        let read = |h: &str| self.read_blob(h);
+        let mut nodes = crate::trees::Stored::new(&read);
         for r in &revisions {
             let text = self.read_blob(&r.tree)?;
-            let tree: Tree = serde_json::from_str(&text).map_err(store)?;
+            let tree = crate::trees::TreeBlob::parse(&text)?;
             blobs.insert(r.tree.clone(), text);
-            for (_, _, _, h) in tree.objects {
-                if !blobs.contains_key(&h) {
-                    blobs.insert(h.clone(), self.read_blob(&h)?);
+            // A split tree's nodes travel with it.
+            if let crate::trees::TreeBlob::Split {
+                objects: Some(top), ..
+            } = &tree
+            {
+                let mut list = Vec::new();
+                crate::trees::node_hashes(&mut nodes, top, &mut list)?;
+                for h in list {
+                    let h = crate::trees::hex(&h);
+                    if !blobs.contains_key(&h) {
+                        blobs.insert(h.clone(), self.read_blob(&h)?);
+                    }
                 }
             }
-            for (_, _, h) in tree.libraries {
+            let named: Vec<crate::trees::H> = crate::trees::all_entries(&mut nodes, &tree)?
+                .into_iter()
+                .map(|e| e.3)
+                .chain(tree.libraries().values().copied())
+                .collect();
+            for h in named {
+                let h = crate::trees::hex(&h);
                 if !blobs.contains_key(&h) {
                     blobs.insert(h.clone(), self.read_blob(&h)?);
                 }
@@ -2385,19 +2872,30 @@ impl Session {
                     Some(t) => t.clone(),
                     None => self.read_blob(&r.tree)?,
                 };
-                let tree: Tree = serde_json::from_str(&text)
+                let tree = crate::trees::TreeBlob::parse(&text)
                     .map_err(|e| refused(format!("bundle: tree of {}: {e}", r.short())))?;
-                let named = tree
-                    .objects
+                // A split tree's nodes: from the bundle, else the store (one
+                // missing: the bundle is not whole).
+                let read = |h: &str| -> Result<String, SessionError> {
+                    match bundle.blobs.get(h) {
+                        Some(t) => Ok(t.clone()),
+                        None if self.conn.has_blob(h)? => self.read_blob(h),
+                        None => Err(refused(format!(
+                            "bundle: a tree node of revision {} is missing (the file is not whole)",
+                            r.short()
+                        ))),
+                    }
+                };
+                let mut nodes = crate::trees::Stored::new(&read);
+                let objects = crate::trees::all_entries(&mut nodes, &tree)?;
+                let named = objects
                     .iter()
-                    .map(|o| (&o.3, format!("{} {}", o.0.as_str(), o.1)))
-                    .chain(
-                        tree.libraries
-                            .iter()
-                            .map(|l| (&l.2, format!("library file {}/{}", l.0, l.1))),
-                    );
+                    .map(|o| (crate::trees::hex(&o.3), format!("{} {}", o.0.as_str(), o.1)))
+                    .chain(tree.libraries().iter().map(|((k, n), h)| {
+                        (crate::trees::hex(h), format!("library file {k}/{n}"))
+                    }));
                 for (h, what) in named {
-                    if !has(h)? {
+                    if !has(&h)? {
                         return Err(refused(format!(
                             "bundle: {what} of revision {} is missing (the file is not whole)",
                             r.short()

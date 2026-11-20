@@ -109,10 +109,11 @@ pub use export::{
 pub use in_line::{InLine, in_line_pieces};
 pub use joint_groups::{DOES_NOT_FIT, DOES_NOT_FIT_ASSUMED};
 pub use joint_layout::{
-    BEND_RADIUS_RATIO, BendPlan, BoltArea, EdgeRule, EndPlan, GAP_START, HoldPlan, Join, JoinKind,
-    JointPlan, LayoutSettings, NODE_LIMIT, Onto, OwnPlane, PULL_BACK_START, PlatePlan, Reach,
-    SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX, bend_radius, flat_turns, hosts_to_name, joins_of,
-    mm_text, plan_joint, plan_joint_except, plan_joint_with, splice_unknown, weld_throat,
+    BEND_RADIUS_RATIO, BEND_SMALL_MAX, BendPlan, BoltArea, CUT_TRIES, EdgeRule, EndPlan, GAP_START,
+    HoldPlan, Join, JoinKind, JointPlan, LayoutSettings, NODE_LIMIT, Onto, OwnPlane,
+    PULL_BACK_START, PlatePlan, Reach, SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX, bend_radius,
+    flat_turns, hosts_to_name, joins_of, mm_text, plan_joint, plan_joint_except, plan_joint_with,
+    splice_unknown, weld_throat,
 };
 pub use joint_order::{JointOrder, Zone, joint_order};
 pub use joint_sheet::{
@@ -125,7 +126,7 @@ pub use joints::{
     joint_details, joint_details_at, part_chains, similar_joints,
 };
 pub use layout_run::{
-    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
+    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, ONTO_HAND, RECORD_ID, RECORD_KIND,
     RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
     plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };

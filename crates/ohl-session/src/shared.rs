@@ -112,6 +112,27 @@ pub const STALE_KEY: &str = "stale_routes";
 pub const PART_USERS_KEY: &str = "part_users";
 /// Notices kept per stale route (the latest; the others counted).
 pub const NOTICES_KEPT: usize = 20;
+/// `ols_meta` key: the project lines made over a working set (country
+/// server, phase 11), `{line: BranchScope}` (absent: none).
+pub const BRANCH_SCOPES_KEY: &str = "branch_scopes";
+
+/// A project line made over a working set (a **branch over a working
+/// set**, phase 11): the routes it works on — the rules of shared towers
+/// apply to every command on it with these routes as the working set —
+/// who made it and the team it is shared with. It holds only what it
+/// changes (as every line since schema 6, [`crate::lines`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchScope {
+    /// Who made it.
+    pub by: String,
+    /// The routes it works on.
+    pub routes: BTreeSet<String>,
+    /// The users and groups it is shared with (a team's branch; its maker
+    /// always works on it).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub team: Vec<String>,
+}
 
 /// A route's results out of date, and why.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1020,7 +1041,103 @@ impl Session {
     /// Whether the rules of shared towers apply anywhere in this project:
     /// a working set given, or a part.
     pub fn shared_rules_in_use(&self) -> bool {
-        self.part.is_some() || !self.working_sets.is_empty()
+        self.part.is_some() || !self.working_sets.is_empty() || !self.branch_scopes.is_empty()
+    }
+
+    /// The project lines made over a working set, by name.
+    pub fn branch_scopes(&self) -> &BTreeMap<String, BranchScope> {
+        &self.branch_scopes
+    }
+
+    /// Project line `line`'s working set, when it was made over one.
+    pub fn branch_scope(&self, line: &str) -> Option<&BranchScope> {
+        self.branch_scopes.get(line)
+    }
+
+    /// Makes project line `line` a branch over the working set `scope`
+    /// (none: a line of the whole project again): its maker or an admin;
+    /// its routes must be the line's. Refused on the main line.
+    pub fn set_branch_scope(
+        &mut self,
+        user: &str,
+        line: &str,
+        scope: Option<BranchScope>,
+    ) -> Result<(), SessionError> {
+        if line == crate::versions::MAIN {
+            return Err(refused(
+                "the main line is the whole project's, not a working set's",
+            ));
+        }
+        let r = self
+            .find_ref(line)?
+            .filter(|r| self.is_line(&r.name))
+            .ok_or_else(|| refused(format!("no project line \"{line}\"")))?;
+        if r.user != user && self.role(user)? != Some(crate::Role::Admin) {
+            return Err(refused(format!(
+                "project line \"{line}\" is {}'s: only they or an admin give it a working set",
+                r.user
+            )));
+        }
+        let mut scopes = self.branch_scopes.clone();
+        match scope {
+            Some(sc) => {
+                if sc.routes.is_empty() {
+                    return Err(refused("a working set holds at least one route"));
+                }
+                let known = &self.line_named(line)?.routes;
+                if let Some(x) = sc
+                    .routes
+                    .iter()
+                    .find(|x| !known.iter().any(|y| y.id == **x))
+                {
+                    return Err(refused(format!("no route {x}")));
+                }
+                scopes.insert(line.to_owned(), sc);
+            }
+            None => {
+                if scopes.remove(line).is_none() {
+                    return Ok(());
+                }
+            }
+        }
+        self.write_branch_scopes(&scopes)?;
+        self.branch_scopes = scopes;
+        Ok(())
+    }
+
+    pub(crate) fn write_branch_scopes(
+        &self,
+        scopes: &BTreeMap<String, BranchScope>,
+    ) -> Result<(), SessionError> {
+        self.write_branch_scopes_in(&*self.conn, scopes)
+    }
+
+    pub(crate) fn write_branch_scopes_in(
+        &self,
+        store: &dyn Store,
+        scopes: &BTreeMap<String, BranchScope>,
+    ) -> Result<(), SessionError> {
+        if scopes.is_empty() {
+            store.delete_meta(BRANCH_SCOPES_KEY)
+        } else {
+            let text = serde_json::to_string(scopes).expect("serialises");
+            store.set_meta(BRANCH_SCOPES_KEY, &text)
+        }
+    }
+
+    /// The routes a command of `user` is checked against: a merge's own
+    /// ([`Session::merge`] of a branch over a working set), else the
+    /// working set of the line worked on (a branch over one), else
+    /// `user`'s.
+    pub(crate) fn working_routes(&self, user: &str) -> Option<&BTreeSet<String>> {
+        match &self.merge_routes {
+            Some(r) => r.as_ref(),
+            None => self
+                .branch_scopes
+                .get(&self.current)
+                .map(|s| &s.routes)
+                .or_else(|| self.working_sets.get(user)),
+        }
     }
 
     /// The routes whose results are out of date, and why.
@@ -1083,6 +1200,11 @@ impl Session {
         self.working_sets = match self.conn.meta(WORKING_SETS_KEY)? {
             Some(t) => serde_json::from_str(&t)
                 .map_err(|e| SessionError::Store(format!("{WORKING_SETS_KEY}: {e}")))?,
+            None => BTreeMap::new(),
+        };
+        self.branch_scopes = match self.conn.meta(BRANCH_SCOPES_KEY)? {
+            Some(t) => serde_json::from_str(&t)
+                .map_err(|e| SessionError::Store(format!("{BRANCH_SCOPES_KEY}: {e}")))?,
             None => BTreeMap::new(),
         };
         self.part_users = match self.conn.meta(PART_USERS_KEY)? {
@@ -1154,7 +1276,7 @@ impl Session {
         prims: &[Command],
     ) -> Result<Option<Outcome>, SessionError> {
         let in_part = self.part.is_some();
-        if !in_part && !self.working_sets.contains_key(user) {
+        if !in_part && self.working_routes(user).is_none() {
             return Ok(None);
         }
         self.line_index();
@@ -1165,7 +1287,7 @@ impl Session {
             routes: if in_part {
                 None
             } else {
-                self.working_sets.get(user)
+                self.working_routes(user)
             },
             part: self.part.as_ref(),
             recorded: &self.part_users,
@@ -1454,7 +1576,11 @@ impl Session {
             }
         }
         // A protected project line: a review by the other routes' owners.
-        if !out.notices.is_empty() && self.find_ref(&self.current)?.is_some_and(|r| r.protected) {
+        // (A merge through an approved review: its owners reviewed it.)
+        if !out.notices.is_empty()
+            && !self.approved_merge
+            && self.find_ref(&self.current)?.is_some_and(|r| r.protected)
+        {
             let routes: Vec<String> = out.notices.keys().cloned().collect();
             return Err(refused(format!(
                 "this changes {} ({}) on project line \"{}\", which is protected: it needs a \

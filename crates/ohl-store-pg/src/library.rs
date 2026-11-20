@@ -614,6 +614,10 @@ pub struct UseRow {
 pub struct UseView {
     /// The line.
     pub line: String,
+    /// The branch (`main`, or a branch using it in what it changed;
+    /// phase 11: an object there is placed as on main — one made there
+    /// alone is seen only by who sees the whole line).
+    pub branch: String,
     /// The object's kind (`library`: the line holds the file).
     pub object_kind: String,
     /// The object.
@@ -1233,14 +1237,34 @@ impl Network {
                                 &[l, b],
                             )?
                             .map(|r| r.get(0));
+                        // Phase 11 (the owner's question 9 of phase 9): or
+                        // a branch over a working set its maker shares
+                        // with a team the requester is named in.
+                        let team: bool = match &made {
+                            Some(u) if u != actor => {
+                                c.query_opt(
+                                    "SELECT value FROM line_meta WHERE line_id = $1 AND key = $2",
+                                    &[l, &ohl_session::shared::BRANCH_SCOPES_KEY],
+                                )?
+                                .and_then(|r| {
+                                    serde_json::from_str::<
+                                        BTreeMap<String, ohl_session::shared::BranchScope>,
+                                    >(&r.get::<_, String>(0))
+                                    .ok()
+                                })
+                                .and_then(|m| m.get(b).cloned())
+                                .is_some_and(|sc| sc.by == *u && sc.team.iter().any(|t| t == actor))
+                            }
+                            _ => false,
+                        };
                         match made {
                             None => {
                                 return Err(refused(format!("line {l} has no branch {b}")));
                             }
-                            Some(u) if u != actor => {
+                            Some(u) if u != actor && !team => {
                                 return Err(refused(format!(
                                     "branch {b} is {u}'s: a draft is used in its requester's own \
-                                     branch"
+                                     branch, or a team's branch they are named in"
                                 )));
                             }
                             _ => {}
@@ -1791,18 +1815,24 @@ impl Network {
                 .filter(|l| viewer.sees_objects_of_line(l))
                 .collect()
         };
-        let rows = lock(&self.conn).query(
-            "SELECT u.line_id, u.object_kind, u.object, u.file, o.routes, s.x0, s.y0, s.x1, s.y1
-             FROM lib_use u
-             LEFT JOIN object o ON o.line_id = u.line_id AND o.branch = u.branch
-                 AND o.kind = u.object_kind AND o.id = u.object
-             LEFT JOIN spatial s ON s.line_id = u.line_id AND s.branch = u.branch
-                 AND s.kind = u.object_kind AND s.id = u.object
-             WHERE u.kind = $1 AND u.entry = $2 AND u.branch = 'main'
-               AND ($3 OR u.object_kind = 'library' OR u.line_id = ANY($4))
-             ORDER BY u.line_id, u.object_kind, u.object",
-            &[&kind, &entry, &viewer.sees_everything(), &lines],
-        )?;
+        // Main's rows, then (phase 11) the branches' — placed as on main;
+        // two statements: the branches' few rows do not widen main's sort.
+        let mut rows = Vec::new();
+        for on_main in [true, false] {
+            rows.extend(lock(&self.conn).query(
+                "SELECT u.line_id, u.object_kind, u.object, u.file, o.routes, s.x0, s.y0, s.x1,
+                     s.y1, u.branch
+                 FROM lib_use u
+                 LEFT JOIN object o ON o.line_id = u.line_id AND o.branch = 'main'
+                     AND o.kind = u.object_kind AND o.id = u.object
+                 LEFT JOIN spatial s ON s.line_id = u.line_id AND s.branch = 'main'
+                     AND s.kind = u.object_kind AND s.id = u.object
+                 WHERE u.kind = $1 AND u.entry = $2 AND (u.branch = 'main') = $5
+                   AND ($3 OR u.object_kind = 'library' OR u.line_id = ANY($4))
+                 ORDER BY u.line_id, u.object_kind, u.object, u.branch",
+                &[&kind, &entry, &viewer.sees_everything(), &lines, &on_main],
+            )?);
+        }
         let mut route_seen: BTreeMap<(String, String), bool> = BTreeMap::new();
         let mut out = Vec::new();
         for r in rows {
@@ -1810,6 +1840,7 @@ impl Network {
             let object_kind: String = r.get(1);
             let object: String = r.get(2);
             let ufile: String = r.get(3);
+            let branch: String = r.get(9);
             let routes: Vec<String> = r.get::<_, Option<Vec<String>>>(4).unwrap_or_default();
             let x0: Option<f64> = r.get(5);
             let bounds =
@@ -1874,6 +1905,7 @@ impl Network {
             }
             out.push(UseView {
                 line,
+                branch,
                 object_kind,
                 object,
                 routes: shown,
@@ -2001,6 +2033,20 @@ impl Network {
         from: &[(String, String)],
         rows: &[UseRow],
     ) -> Result<(), NetError> {
+        self.write_branch_uses(code, ohl_session::versions::MAIN, from, rows)
+    }
+
+    /// **A branch's use index** (phase 11): what the objects branch
+    /// `branch` of model `code` changed use, as it holds them — only its
+    /// changes, never a copy of main's rows. The rows of the objects
+    /// `from` go, `rows` come.
+    pub fn write_branch_uses(
+        &self,
+        code: &str,
+        branch: &str,
+        from: &[(String, String)],
+        rows: &[UseRow],
+    ) -> Result<(), NetError> {
         self.require_writer()?;
         let shared = self.shared();
         for chunk in from.chunks(BATCH) {
@@ -2008,9 +2054,9 @@ impl Network {
             let ids: Vec<&str> = chunk.iter().map(|(_, i)| i.as_str()).collect();
             lock(&shared).execute(
                 "DELETE FROM lib_use u USING unnest($2::text[], $3::text[]) AS v(k, i)
-                 WHERE u.line_id = $1 AND u.branch = 'main' AND u.object_kind = v.k
+                 WHERE u.line_id = $1 AND u.branch = $4 AND u.object_kind = v.k
                    AND u.object = v.i",
-                &[&code, &kinds, &ids],
+                &[&code, &kinds, &ids, &branch],
             )?;
         }
         for chunk in rows.chunks(BATCH) {
@@ -2021,13 +2067,36 @@ impl Network {
             let e: Vec<&str> = chunk.iter().map(|r| r.entry.as_str()).collect();
             lock(&shared).execute(
                 "INSERT INTO lib_use (line_id, branch, object_kind, object, kind, file, entry)
-                 SELECT $1, 'main', a, b, c, d, e
+                 SELECT $1, $7, a, b, c, d, e
                  FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
                      AS v(a, b, c, d, e)
                  ON CONFLICT DO NOTHING",
-                &[&code, &ok, &o, &k, &f, &e],
+                &[&code, &ok, &o, &k, &f, &e, &branch],
             )?;
         }
+        Ok(())
+    }
+
+    /// A branch's use index gone with it (phase 11).
+    pub fn forget_branch_uses(&self, code: &str, branch: &str) -> Result<(), NetError> {
+        self.require_writer()?;
+        if branch == ohl_session::versions::MAIN {
+            return Ok(());
+        }
+        lock(&self.conn).execute(
+            "DELETE FROM lib_use WHERE line_id = $1 AND branch = $2",
+            &[&code, &branch],
+        )?;
+        Ok(())
+    }
+
+    /// A branch's use index renamed with it (phase 11).
+    pub fn rename_branch_uses(&self, code: &str, from: &str, to: &str) -> Result<(), NetError> {
+        self.require_writer()?;
+        lock(&self.conn).execute(
+            "UPDATE lib_use SET branch = $3 WHERE line_id = $1 AND branch = $2",
+            &[&code, &from, &to],
+        )?;
         Ok(())
     }
 

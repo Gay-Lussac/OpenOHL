@@ -26,6 +26,7 @@ mod network_bench;
 mod network_bench_library;
 mod network_bench_rights;
 mod network_bench_scoped;
+mod network_bench_versions;
 mod network_bench_ws;
 mod network_library_run;
 mod network_rights_run;
@@ -3856,4 +3857,14 @@ fn validate(path: &std::path::Path, report_path: Option<&std::path::Path>, list:
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// Every command and flag of the command line is well formed (clap's
+/// own checks: no flag given twice, e.g. a scope's part of a route and
+/// the subject of an assignment, which once both were `--to`).
+#[cfg(test)]
+#[test]
+fn the_command_line_is_well_formed() {
+    use clap::CommandFactory;
+    Cli::command().debug_assert();
 }

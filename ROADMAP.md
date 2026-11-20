@@ -62,9 +62,10 @@ from here. The owner's order of 2026-11-19:
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
    not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
-   phase 6 built 2026-11-19, phase 7 (rights and roles) and phase 9
-   (country libraries) 2026-11-20, in active development, not approved
-   yet — the owner's questions under O17).
+   phase 6 built 2026-11-19, phase 7 (rights and roles), phase 9
+   (country libraries) and phase 11 (version control at scale)
+   2026-11-20, in active development, not approved yet — the owner's
+   questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -2251,9 +2252,74 @@ only where it helps):
   > the plate when the layout puts the end onto a plate on that member, and
   > the record then takes it as the layout's (a run again from the file
   > takes it out): keep the hand value in the record? Recommended: yes.
-- [ ] L3. **A plate bent by a few degrees** for ends whose members need
+  > **(4)–(6) built 2026-11-20 as recommended** (L2's follow-ups, below).
+- [x] L2's follow-ups. **Built 2026-11-20, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#l2s-follow-ups-2026-11-20),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-l2s-follow-ups-a-plate-bent-by-a-few-degrees-l3)):
+  (a) a plate whose outline round the work point would run into
+  something stops short of the work point — round its members' legs from
+  the flange's toe over their bolts (each bolt's end and edge distances)
+  and the flange under them —, cut straight short of what it would still
+  run into (at most four cuts), where it still lies on the flange over half
+  a square of its width; convex, its bolts inside with their distances
+  (checked after writing); the plate checks take the outline as cut (the
+  strut's free length still to the flange's toe: less conservative than
+  round the work point, said). (b) a bent plate's holding bolts slid along
+  the leg clear of the holes there (the default minimum spacing). (c) an
+  `onto` given by hand kept in the record (`onto=<member>`). Each of (a)
+  and (b) a switch, on by default. Measured: below with L3.
+- [x] L3. **A plate bent by a few degrees** for ends whose members need
   rolls 5°–20° apart at their two ends (about 24 900 ends on the real
   towers, the second group; the owner's example joint shows such plates).
+  **Built 2026-11-20, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plate-bent-by-a-few-degrees-l3)):
+  an end at most 20° off its flange goes first onto a plate bent by as
+  much from step 4's flat plate — away from the flange, or towards it past
+  the flange's toe, whichever moves the member's axis least (within one
+  plate thickness either way, step 4's limit) —, then welded as before;
+  `[plate.bend]` as J2b's, **no new format field** (no version 24); the
+  bend's curved part (r + t) tan(θ/2) from its line, the member's steel
+  half the gap beyond it, its bolts their edge distance beyond it. The end
+  that takes the bend: unchanged rules — an end flat now stays flat, else
+  the end first bottom up, then out lies flat (the arms' and the top's end,
+  or the higher one, takes the bend). The bend check C12 applies as it is
+  (plugins unchanged). On the 78 real towers (kept privately; J9's and J7a's proposals confirmed;
+  L2's result 48.6 % whole, 61.8 % of the ends): (a) alone 49.0 % / 64.0 %
+  (5 533 plates stop short, the plates said to run into steel 8 290 →
+  5 396), (b) alone the ends left for a hole under a holding bolt 668 →
+  129, Part 1 together 49.0 % / 64.0 % (as given 42 → 28), **L3 on top
+  49.7 % whole (body 49.5 %, arms and top 50.0 %), 64.7 % of the ends**,
+  joints not fitting 24.7 % → 24.1 %, a run again identical 78/78; 4 085
+  bent plates written and the welded plates 2 758 → 11 (a bent plate fits
+  wherever the welded one did); the ends at most 20° off left 17 840 →
+  15 907 (most bends are of 2°–5°; of the 5°–20° ends left, 4 100 have
+  their outstanding leg towards the flange, 2 639 lie on an inner face
+  running towards the other leg, 2 598 would lie more than a plate's
+  thickness out). The bend check C12 as it is, under the comparison's one
+  vertical case: 83 % of the L3 bends pass (median usage 0.20, 90 % below
+  1.49, largest 6.97 — short bends of thin plates); J2b's 90° bends 50 %
+  (median 1.00). Time per tower (six back to back, twice): median
+  17.5–18.2 s → 19.3–20.1 s, the largest 24 s → 22 s.
+  > **Owner:** (1) Plates stopping short of the work point (a): keep on by default?
+  > The strut check of such a plate is less conservative than of the plate
+  > round the work point (its free length still reaches the flange's toe).
+  > Recommended: yes. (2) Bent before welded up to 20° off (the welded
+  > plates almost gone): keep? Recommended: yes (galvanised towers are
+  > rarely welded; no weld to check). (3) Bent towards the flange past its
+  > toe (the member then nearer the flange than on a flat plate): keep?
+  > Recommended: yes. (4) The bend check stays strict for now (no contact
+  > relief): 83 % of the L3 bends pass under one vertical case, J2b's only
+  > 50 %. Recommended: decide after a run with the design cases; then, if
+  > still many fail, a least bend length in the layout rather than relief.
+  > (5) Which end takes the bend: the existing rules (the end flat now, else
+  > bottom up then out — the arms' and top's end takes it); the end with
+  > fewer members not preferred. Recommended: keep; next, choose the flat
+  > end's half turn so that the bent end's leg faces its flange (4 100
+  > ends 5°–20° off are left for that alone). (6) 20° as the most a plate
+  > is bent (`BEND_SMALL_MAX`) and a bolt's edge distance from a bend's
+  > curved part as from a free edge: keep? Recommended: yes, until a shop
+  > gives its rules.
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.
@@ -2858,7 +2924,9 @@ or three, L four or more. The phases, in order:
   engineering impact before a pin moves, a line's file filtered per
   entry, branches' use index (phase 11), OHL-Server's Libraries page
   (stage D).
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phase-9s-10-recommendations-approved);
+  > question 9 and the branches' use index built with phase 11; the recommendation after the
   > arrow) 1. A release moves no line; designs in progress follow by
   > `update-pins --following`, shown behind? → yes, as built. 2. Unlocking
   > by network admins only? → yes. 3. A grant by a maintainer other than
@@ -2923,8 +2991,55 @@ or three, L four or more. The phases, in order:
   > line within 2 km? → yes. 6. A result stale when anything changes in
   > its reach's tiles (more often than needed)? → yes. 7. A hidden
   > neighbour's distance said ("within X m")? → yes, as the plan's answer.
-- [ ] 11 Version control at scale (M–L): trees split, branches over
-  working sets, merges at shared towers.
+- [x] 11 Version control at scale (M–L): trees split, branches over
+  working sets, merges at shared towers. **Built 2026-11-20, in active
+  development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-11),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#branches-over-a-working-set-phase-11-in-active-development),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-11-version-control-at-scale-2026-11-20)):
+  **split trees** on a network's models (a trie of the objects by the
+  hash of their kind and id, 64 objects a leaf, the library files in the
+  root; the desktop's project file keeps flat trees, both read
+  everywhere): a commit hashes and writes what changed since the line's
+  last tree, a diff or a merge reads the nodes and objects that differ,
+  ahead/behind and merge bases exact as before; **merges from what
+  differs**, validated as a command is (locally), library files' merges
+  the whole way; **branches over a working set** (`CreateWorkingSetBranch`:
+  its routes, its maker, a team), only changes stored, the rules of
+  shared towers on every command with its routes, its stale marks written
+  when it reaches main; **merges at shared towers**: a broken connection
+  a conflict, named; a move marking the other routes stale and their
+  connected owners told; a protected main waiting for a review. With the
+  owner's questions left for phase 11: a commit needs edit only on what
+  it records, a branch over a working set its routes, its work its maker
+  and team, its merge into main what it changes there (tags and
+  whole-line branches the line whole, as before); a part's designer makes
+  new objects inside the part; a draft usable in a team's branch; the
+  branches' use index (only their changes). Network schema unchanged (5).
+  Measured on the synthetic country as one model (108 785 objects): a
+  commit of one changed route 6.7 s → 0.10 s, its status 1.4 → 0.11 s, a
+  branch's diff 134 → 10 ms, its merge 33.8 → 0.12 s, a merge at a shared
+  tower 10.7 → 0.08 s (flat trees, as phase 9's code writes them, against
+  split ones); moves, replicas, joining again and Update library pins as
+  with phase 9's code.
+  Left: a branch's line in memory is a whole line (its JSON shared:
+  a branch the size of its working set with phase 12); reverts and
+  rollbacks read whole states; history, diffs and reviews served to a
+  network's clients and OHL-Design's window for these branches.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. Split trees only on a network, the project file keeping flat
+  > ones? → yes, as built. 2. A model exported keeps its split trees
+  > (readable by this build on), or is flattened (new revision ids, the
+  > bundle round trip lost)? → keep them, as built. 3. Tags, whole-line
+  > branches, rollbacks and reviews' merges still need the whole line? →
+  > yes for now. 4. A commit decided object by object (it records others'
+  > uncommitted work only if its user may edit it all)? → yes, as built.
+  > 5. A branch's stale marks written when it reaches main? → yes, as
+  > built. 6. A merge into a protected main moving another route's tower
+  > waits for a review, even by a line admin? → yes, as built (phase 8's
+  > rule). 7. A team named by users and groups, a draft's requester named
+  > in it? → yes, as built. 8. Merges changing library files the whole
+  > way? → yes, until library files merge entry by entry on the trees.
 - [ ] 12 The offline working set (M): exported with read-only
   neighbours, back as a bundle.
 - [ ] 13 Security, deployment, backups (M): a security review of the

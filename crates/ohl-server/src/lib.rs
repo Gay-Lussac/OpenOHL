@@ -213,6 +213,23 @@ pub enum Op {
         /// Message.
         message: String,
     },
+    /// A **branch over a working set** (a network's server, phase 11):
+    /// project line `name` started from project line `from`, working on
+    /// `routes` — the rules of shared towers apply to its commands with
+    /// them as the working set, its changes reach the other routes when it
+    /// is merged — shared with `team` (users who work on it beside its
+    /// maker). It holds only what it changes.
+    CreateWorkingSetBranch {
+        /// Name.
+        name: String,
+        /// The project line it starts from.
+        from: String,
+        /// The routes it works on.
+        routes: Vec<String>,
+        /// The users it is shared with.
+        #[serde(default)]
+        team: Vec<String>,
+    },
     /// Make a branch (at a revision, default the head's).
     CreateBranch {
         /// Name.
@@ -427,6 +444,12 @@ impl Op {
             Op::PutLibrary { kind, name, .. } => format!("library {kind}/{name} saved"),
             Op::DeleteLibrary { kind, name } => format!("library {kind}/{name} removed"),
             Op::CreateLine { name, from } => format!("project line {name} started from {from}"),
+            Op::CreateWorkingSetBranch {
+                name, from, routes, ..
+            } => format!(
+                "branch {name} over routes {} started from {from}",
+                routes.join(", ")
+            ),
             Op::DeleteLine { name } => format!("project line {name} deleted"),
             Op::RenameLine { from, to } => format!("project line {from} renamed {to}"),
             Op::BringIn { from, .. } => format!("changes of {from} brought in"),
@@ -533,6 +556,39 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
         }
         Op::DeleteLibrary { kind, name } => {
             session.delete_library_file(user, kind, name)?;
+            None
+        }
+        Op::CreateWorkingSetBranch {
+            name,
+            from,
+            routes,
+            team,
+        } => {
+            let from = from.trim();
+            if !session.is_line(from) {
+                return Err(SessionError::Refused(format!(
+                    "a branch over a working set starts from a project line, not \"{from}\""
+                )));
+            }
+            if routes.is_empty() {
+                return Err(SessionError::Refused(
+                    "a working set holds at least one route".into(),
+                ));
+            }
+            let known = &session.line_named(from)?.routes;
+            if let Some(r) = routes.iter().find(|r| !known.iter().any(|x| &x.id == *r)) {
+                return Err(SessionError::Refused(format!("no route {r}")));
+            }
+            session.create_line(user, name, from)?;
+            session.set_branch_scope(
+                user,
+                name.trim(),
+                Some(ohl_session::shared::BranchScope {
+                    by: user.to_owned(),
+                    routes: routes.iter().cloned().collect(),
+                    team: team.clone(),
+                }),
+            )?;
             None
         }
         Op::CreateLine { name, from } => {

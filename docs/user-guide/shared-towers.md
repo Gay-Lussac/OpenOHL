@@ -2,6 +2,13 @@
 
 *In active development (country server, phase 8): built, not approved yet.*
 
+*On a network's server* (phase 11) the same rules apply to a **branch
+over a working set** — its routes are the working set — and to its merge
+into main: see
+[Branches over a working set](server.md#branches-over-a-working-set-phase-11-in-active-development).
+Edits made directly on a network's main line are decided by the rights,
+without these rules yet.
+
 A tower often carries the wires of more than one route: a branch leaves
 a line at a Y pylon, two routes run on the same towers for a while, a
 jumper joins their wires. When several people work on one project, each

@@ -52,8 +52,9 @@ sections and jumpers on its structures, another route's section ending at
 a jumper, the alignments within 500 m, the structures tied to its routes'
 alignments) is in the line too but **cannot be edited** in it.
 
-- **Edits go to the server**: the whole line validates them (the rules of
-  [shared towers](shared-towers.md) included), then the server sends back
+- **Edits go to the server**: your rights decide each object it changes
+  (as it was and as it is; [rights](server.md#rights-on-a-network-phase-7-in-active-development)),
+  the line validates them where they change, then the server sends back
   the rows that changed and your working set takes them, like any edit.
   Others' edits touching your working set arrive the same way, with who
   made them in the status bar. Deleting or renaming is decided by the
@@ -90,9 +91,25 @@ server runs these checks with their neighbours pulled in
 ([server mode](server.md#checks-with-their-neighbours-phase-10-in-active-development));
 a result it sends is marked stale in your file when what it used changes.
 
+## A branch over your working set
+
+On a network you can keep your work apart from main in a branch over your
+working set's routes, shared with a team if you like, and merge it back
+when it is ready — see
+[Branches over a working set](server.md#branches-over-a-working-set-phase-11-in-active-development)
+(through the server's protocol for now; a window and a command
+in OHL-Design are to come).
+
 ## What is not there yet
 
-A button for the network's checks in OHL-Design's check windows (the
-server answers them; the windows still run on the file). Point clouds
-and terrain are not served by the network yet: clearances to the ground
-and to points are not checked on the network.
+OHL-Design's check windows asking the network for the checks with their
+neighbours (the server answers them through its protocol; the windows
+still run on your file and say what they did not pull in). What you may
+pick, see and edit follows your rights (phase 7: a working set reaching
+something you may not see is refused, saying nothing of it). On main, the
+rights decide each edit; the rules of [towers shared by several
+routes](shared-towers.md) (other routes refused, stale marks) apply on a
+branch over your working set and when it is merged (phase 11), not yet to
+edits made directly on main. Point clouds, terrain and backgrounds are
+not served by the network yet (so clearances to the ground and to points
+are not checked on the network); a working set is on one line.

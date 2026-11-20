@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–6, 2026-11-19, phases 7 and 9 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.*
+*In active development (ADR-0013, phases 4–6, 2026-11-19, phases 7, 9 and 11 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.* Every command: [A network on the command line](../user-guide/network-commands.md).
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -214,7 +214,11 @@ targets, the idle solve off; `ohl network bench-working-set --user admin
 again, a route added, context tiles, then the idle solve; `ohl network
 bench-library --user admin` phase 9's: a library released, Update
 library pins of every line in design, the use index, moves — as the
-writer, with no server running) (it starts
+writer, with no server running; `ohl network bench-versions --user admin
+--line CODE` phase 11's: a commit of one changed route, a branch over a
+working set — its diff, ahead and behind, its merge — and a merge at a
+shared tower, with split trees and with flat ones on the same model, as
+the writer) (it starts
 `ohl network serve` as a process of its own, then the server in its own
 process; the machine's other work shows in the numbers; it moves
 structures back and forth, so use a database made for it):
@@ -266,5 +270,18 @@ import report lists them) and the server does not serve them yet; a
 model's surfaces are in the database whole, not served by tile yet; a
 working set is on one model (routes of another line are their own working
 set); checks on a working set pull no neighbours in yet (phase 10);
-refusing a migration without a recent backup, TLS to a database on
-another host and the deployment files are phase 13.
+branches over a working set and split trees (phase 11) are made through
+the server's protocol, no command line yet; **backups and a restore drill
+are not built** (phase 13: base backups and WAL archiving, a migration
+refused without a recent backup) — until then back the database up with
+PostgreSQL's own tools (`pg_dump`, or a base backup); TLS to a database
+on another host and the deployment files are phase 13 too.
+
+**A big model's first revision in an empty network** (found 2026-11-20,
+phase 11's measurements): while the version store's tables have no rows
+the planner's statistics say so, and checking each blob of a first
+revision of 100 000 objects reads the rows written so far in the same
+transaction one after the other (minutes instead of seconds). An
+`ANALYZE` after the network holds some revisions (or a few small lines
+imported with theirs first) avoids it; a store reading many blob hashes
+at once is to come.

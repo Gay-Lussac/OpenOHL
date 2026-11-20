@@ -1373,6 +1373,57 @@ that order; "plan ideas to get the automatic layout working"):
   asked bolted directly leaves its plate, with clash-aware planning off and
   on), `layout_run_tests` (the end laid onto another member left when its
   plate, seated on that member, would run into the leg).
+- **L2's follow-ups and L3, a plate bent by a few degrees** (2026-11-20; in
+  active development, not approved yet;
+  [theory](../theory/joint-layout.md#l2s-follow-ups-2026-11-20)). Three
+  switches of `LayoutSettings`, on by default (the window lays out with them on):
+  `short_plates` (a) — where `plate_hits` finds the plate's outline round the
+  work point (`plate_outline2(.., Outline::Round)`) running into something,
+  the short one (`Outline::Short`: no work point, each leg from where its
+  nearer edge crosses the flange's toe, the flange only as far as the legs
+  and rings reach) is tested, then cut straight (`separate`: the axis
+  parting `Outline::Core` — the legs and the rings — from what it hits
+  farthest, the plate stopping half the gap short, or half the parting; at
+  most `CUT_TRIES` = 4) while it still lies on the flange over half a square
+  of its width (`on_flange`); kept: `PlatePlan::short` (the record's
+  `made` mark `layout_run::SHORT`: `joints::plate` draws it short, its
+  `leg_strip` from the flange's toe) and `PlatePlan::cuts` (applied by
+  `write_rounds` where it writes the outline, beside the heel's cut);
+  `plate_hits` now gives what it hits as its footprint too; `solids_of`
+  takes the plate's 2D outline. After writing, a bolt on a short plate
+  nearer the outline than its distances (the joint details' `notes`) leaves
+  its member, said. `slide_holds` (b) — `bent_over` slides the holding
+  pair along the leg (millimetre steps, either way, up to the longest
+  pull-back) until each keeps the default minimum spacing from the holes
+  through that leg (`leg_holes`: the member's own end and the ends onto it,
+  planned or as they are); none: refused, said. (c), for every run: the
+  record's `ends` mark `onto=<member>` (`layout_run::ONTO_HAND`,
+  `hand_onto`) where `write_plan` writes an `onto` given by hand that the
+  plan kept (onto that member or a plate on it); `strip_joint` puts it back
+  (unless replaced), the follow drops it when the edit changes `onto`, the
+  window says "onto (yours: …, kept)". **L3**, `small_bends`: step 4's
+  `own_geometry` takes a `Room` — `Weld` as before, or `Bend { down }`
+  (the seam the bend; the steel the curved part (r + t) tan(θ/2) and half
+  the gap from it, the bolts their edge distance from the curved part; the
+  member lifted the least, or — towards the flange — lowered the least,
+  `q` and the extreme taken the other way); `rooms_for` gives both bends
+  then the weld for an end at most `BEND_SMALL_MAX` = 20° off; each
+  `toe_clear`ed with its own cut, then `own_geometry`, `within` (bent:
+  `|out_more|` at most the plate's thickness) and `own_fits`; of the bends
+  that fit the least `|out_more|` (up on a tie), else the weld; the plate
+  in the member's plane gets `OwnPlane::bend` (`BendPlan`: the angle, the
+  inside radius `bend_radius`, the line where the middle planes meet,
+  `OwnGeo::middle`), no weld — written by `write_plan`'s existing
+  `[plate.bend]` branch (version 22, no format change). `strip_of`'s early
+  test of a tilted end takes the union of the rooms that fit; the words
+  of a hand detail say why each does not (`rooms_words`). Tests:
+  `layout_run_tests` (an end 10° off on a bent plate: written, flat on it,
+  no clash, its bend a row of the joint checks, a run again identical, the
+  follow as the whole file's, off: welded as before; a plate marked short
+  drawn without the work point, convex, its bolts' distances kept; an
+  `onto` given by hand kept in the record and by a run again, replaced
+  when asked), `joint_layout::cut_tests` (the straight cut), the welded
+  plate's test now with `small_bends` off.
 
 ## Detail levels
 

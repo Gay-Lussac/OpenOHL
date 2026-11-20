@@ -96,6 +96,22 @@ pub enum Anchor {
 }
 
 impl Anchor {
+    /// The object of the line it is attached to (none: a point in space
+    /// or of a cloud).
+    pub fn object(&self) -> Option<(Kind, &str)> {
+        match self {
+            Anchor::Structure { structure }
+            | Anchor::OnStructure { structure, .. }
+            | Anchor::Attachment { structure, .. } => Some((Kind::Structure, structure)),
+            Anchor::Wire { section, .. } | Anchor::SpanPoint { section, .. } => {
+                Some((Kind::Section, section))
+            }
+            Anchor::Jumper { jumper, .. } => Some((Kind::Jumper, jumper)),
+            Anchor::AlignmentPoint { id } => Some((Kind::AlignmentPoint, id)),
+            Anchor::Lidar { .. } | Anchor::Point { .. } => None,
+        }
+    }
+
     /// Whether what it is attached to is in `line` (a point always is).
     pub fn holds(&self, line: &Line) -> bool {
         let section = |id: &str| line.sections.iter().find(|s| s.id == id);

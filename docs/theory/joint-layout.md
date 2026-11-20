@@ -1306,6 +1306,168 @@ the others on the same flange — the plan did not see that plate. With the
 plate's outline in the plan it does; built again as
 `LayoutSettings::direct_first` and measured on top of L2 (below).
 
+## L2's follow-ups (2026-11-20)
+
+(The recommendations given to the owner with L2 — its questions 4, 5 and
+6 —, small and on the safe side; built 2026-11-20, in active development,
+not approved yet. The code: `joint_layout`, `layout_run`, `joints`.) Two
+are switches (`LayoutSettings::short_plates`, `slide_holds`), on by
+default; the third is a fix of the record.
+
+### A plate stopping short of what it would run into (a)
+
+A plate's outline worked out reaches the work point and the flange under
+it (the rule for plates of 2026-11-02, "keep hidden in the shape of the
+corner"). About 9 000 ends were left in L2's plan because their plate
+would run into steel already there, mostly near the work point (a member
+left as it is there, a mutual host's partner, a built-up member, a piece
+in line). Now, where the outline round the work point would run into
+something, the plan tries:
+
+1. **Stopping short of the work point**: the outline round each member's
+   leg bolted from where its nearer edge crosses the flange's toe (or its
+   first bolt less its end distance, whichever is nearer the joint; not
+   before the work point) to its last bolt plus the end distance, each
+   bolt's ring of its end and edge distances in the plate (the code's,
+   else the default minimums — as every plate's outline), and the flange
+   under those across its whole width as far along as they reach; cut at
+   the heel as before. The plate spans the whole free part between the
+   flange and the bolts (the member's force crosses it there) and lies on
+   the flange beside the legs.
+2. **Cut straight short of what it would still run into**: where the short
+   outline still runs into something, a straight cut — the line that
+   parts that thing from what the plate must keep (the legs from the toe
+   over their bolts and the bolts' rings) farthest, the plate stopping half
+   the gap short of it (half of what parts them where that is less); at
+   most four cuts (`CUT_TRIES`, the program's bound).
+3. Kept where it then runs into nothing and still lies on the flange over
+   at least half a square of the flange's width (room to bear on it; the
+   program's value, as step 4's flat plate's); else the plate is not laid
+   out, as before (said: "… the plate would run into D4 (stopping short of
+   the work point too) …").
+
+The plate is convex (a hull, cut by straight lines) and every bolt on it
+keeps the code's end and edge distances from its edge: the cuts never
+enter the rings. The run marks such a plate `short` in its record (the
+joint details draw it so) and writes its outline with the cuts. **After
+writing** the run checks, as the joint checks do, that every bolt on such
+a plate keeps those distances from the outline as written (the plan and
+the drawing may differ by a millimetre); else that member is left as it
+was, said. Not for a flat plate with plates in their members' own planes
+welded or bent from it (it must reach the seams and the flange from the
+work point).
+
+**The plate checks take the outline as cut** ([plates](joint-plates.md)):
+the end and edge distances, the block shear's paths and the width the
+sections are checked with are measured to the outline as written, so a
+plate stopping short is checked as it is. The strut's **free length**
+(a plate in compression) runs from the bolts towards the joint to the
+plate's edge that way: at least to the flange's toe — the outline keeps the
+legs from where they cross it — so the plate's free part beyond the flange
+is in it; where the plate lies on the flange it is held on one side only,
+by contact (*an assumption*, as before for the plate round the work point,
+whose free length reached farther). **NOT ON THE SAFE SIDE** in the same
+sense as every plate the layout makes: how the plate is fastened to the
+flange it lies on is not modelled (the members' bolts hold it; a flange
+running on through the joint has no bolts of its own there) — unchanged by
+the short outline.
+
+### The bent plate's own bolts clear of the holes there (b)
+
+J2b's two bolts holding a bent plate's flat on the other leg were placed
+about the middle of the ends' bolts, then moved out along the leg past its
+cut; about 670 ends were left after writing because the first holding bolt
+fell on a hole there (most often the member's own first bolt). Now the
+pair is **slid along the leg** — the least slide first, either way, away
+from the work point on a tie, at most the longest pull-back — until each of
+its bolts keeps the **default minimum spacing** from every hole through that
+leg: the member's own end there and the ends bolted onto it, those laid out
+in this plan where they will be, the others where they are. *On the safe
+side*: the joint checks' rule is only that holes do not overlap; the
+spacing keeps the heads and nuts apart too. No place within the longest
+pull-back: the bent plate is not laid out, said.
+
+### An `onto` given by hand kept in the record (c)
+
+An end's `onto` given by hand (a member) is kept by the layout; where the
+layout puts the end onto a plate on that member, the file then names the
+plate. Before, the record took that value as the layout's, so a run again
+took it out and the end was planned from the rule — the hand value lost.
+Now the record keeps the hand value (`onto=D4` among the end's marks): a
+run again puts it back before planning, the window says "onto (yours: D4,
+kept)", an edit of the end's `onto` makes the new value the user's, and
+*Replace values given by hand* replaces it as before.
+
+## A plate bent by a few degrees (L3)
+
+(Owner, 2026-11-19: "a plate bent by a few degrees" for the ends whose
+member needs rolls 5°–20° apart at its two ends — the second group of ends
+left after L2; the owner's example joint shows a gusset plate bent at a
+corner. Built 2026-11-20, in active development, not approved yet. The
+code: `joint_layout` (`Room`, `rooms_for`, `own_geometry`), switch
+`LayoutSettings::small_bends`, on by default.) An angle's roll is one value
+for the member (J3): where its ends need rolls a few degrees apart, one end
+lies flat and the other is off its flange by the difference. Shops bend
+the gusset (or the end's own connection plate) by that much so that the
+brace lies flat on it.
+
+- **Which end takes the bend.** The rules of J3 and L1 (a) unchanged: a
+  turn never spoils an end that lies flat now, so where one end is flat it
+  stays flat and the other takes the bend; where none is, the member is
+  turned to lie flat at its end first bottom up, then out — the body's end
+  before an arm's or the top's, the lower before the higher —, so the end
+  on the arms and the top (or the higher one) takes the bend. *Not built*:
+  preferring the end with fewer members (a question to the owner).
+- **The plate.** As step 4's plate in the member's own plane (its member's
+  leg bolted lies on it, its bolts through it; round them with the end and
+  edge distances down to the line where its plane meets the flat plate's
+  face), but **bent from the flat plate on the flange** along that line —
+  one plate, no weld (`[plate.bend]`, structure file version 22, as J2b's;
+  no new field): its angle the angle between the member's leg and the
+  flange, its inside radius two thicknesses (`BEND_RADIUS_RATIO`, the
+  program's starting value as for J2b), its bend line where the two flats'
+  middle planes meet. The flat plate on the flange is step 4's (the face's
+  other ends on it, covering the bend line and the flange from the work
+  point).
+- **Away from the flange or towards it.** The flap may turn away from the
+  flange (the member on the bend's inside, lifted the least that keeps it
+  on the flap) or towards it past the flange's toe (the member on the
+  outside, lowered the least that keeps it so): both are tried; of those
+  that fit, the one moving the member's axis least from where it lies on a
+  flat plate (away from the flange on a tie); then the welded plate of step
+  4, as before; else a hand detail, said with why each does not fit.
+- **The bend line clear of the bolts.** The bend's curved part reaches
+  (r + t) tan(θ/2) either side of the line (r the inside radius, t the
+  plate's thickness, θ the angle — the outside radius, *on the safe
+  side*); the member's steel keeps half the gap beyond it, its bolts their
+  edge distance (the code's in a plate of the member's leg's thickness,
+  else the default minimum) beyond it. *An assumption of the tool*: the
+  edge distance from a bend's curved part as from a free edge (the plate
+  runs on there).
+- **Its line of action.** As for step 4 (the same limit): the member's
+  axis at its bolts at most **one plate thickness** farther out of the
+  flange than on a flat plate — or, turned towards the flange, nearer —
+  else not laid out so. The joint eccentricity of a gusset is not in the
+  analysis (usual for lattice towers, not a standard's rule): the limit
+  keeps the bent plate within it; **NOT ON THE SAFE SIDE** by that offset,
+  as for every plate the layout makes. The estimated eccentricities (O45)
+  take a bent plate's offset only where it is farther out (nearer: none,
+  as a flat plate).
+- **The bend in bending.** A row of the joint checks as every bend
+  ([above](#the-bend-in-bending-2026-11-19); the owner's decision C12):
+  the plugins' `joint-check-bends`, unchanged — the strict check, no
+  contact relief (the owner has not decided). For an end whose member lies
+  along the bend line (its leg twisted about its axis — the usual case
+  here) the force across the bend is small and the bend works mostly in
+  shear along it and in its own plane; the flat on the flange has no bolts
+  of its own onto the flange: the lever of the force across the bend to
+  that flat's farthest edge (said, *on the safe side*). Measured below.
+- **Never forced**, deterministic, followed as every plate: the bend and
+  the flap's outline are automatic values of the record (`own_plane`,
+  `bend`), a radius given by hand kept. Weighed from the developed area,
+  drawn in the 3D view, close-up, sheets and IFC as J2b's bent plates (the
+  bend's angle any).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -1366,6 +1528,9 @@ the same towers:
 | Passes of other members an end could bolt onto (L1 d) | 2 | a bound on the extra work |
 | An end on a plate bolted directly instead, after writing (L2 c) | once per end | a bound on the extra work; the half turn for a clash once per member, with the half turns already tried |
 | How deep behind a face an end's nuts are kept clear of steel (L2 b) | the thicker of its leg and the flange, and 1.1 bolt diameters | the drawing's nut (0.8 d) and the shank beyond it (0.3 d), not a standard's: the deeper of bolting directly and on a plate |
+| Straight cuts of a plate stopping short (L2's follow-up a) | 4 | a bound on the extra work |
+| How much a plate stopping short must lie on the flange (L2's follow-up a) | half a square of the flange's width | room to bear on it, as step 4's flat plate; not a standard's |
+| How far off its flange an end is put on a plate bent by as much (L3) | 20° | the owner's range of the ends whose member needs rolls 5°–20° apart; beyond, welded (step 4) |
 
 ## Measured (J1 and J2, 2026-11-19)
 
@@ -1661,3 +1826,74 @@ point — a plate always reaches it); the bolts with a plate after writing
 (about 3 400: mostly the nuts of members bolted through the flange behind a
 plate on its other face); built-up members (about 8 300, J6); the bent
 plate's own bolts through another member's hole (about 670).
+
+## Measured (L2's follow-ups and L3, 2026-11-20)
+
+On the same 78 tower files and settings as L2 (kept privately; J9's
+proposals and J7a's leg splice places confirmed in every column, L1's (a),
+(b), (d) and L2's three parts on). "Before" is L2's result (measured again:
+the same to the unit); "(a)" the short plates alone, "(b)" the holding
+bolts slid alone, "Part 1" the two with (c); "L3" the plates bent by a few
+degrees on top (the default now). (c) changes nothing on these files (they
+give no `onto` by hand, and the run replaced values given by hand): the
+same as before on every thirteenth tower.
+
+| | before | (a) | (b) | Part 1 | L3 |
+|---|---|---|---|---|---|
+| joints laid out whole | 48.6 % | 49.0 % | 48.6 % | 49.0 % | 49.7 % |
+| … of the body | 48.2 % | 48.9 % | 48.3 % | 49.0 % | 49.5 % |
+| … of the arms and the top | 49.0 % | 49.1 % | 49.0 % | 49.1 % | 50.0 % |
+| joints with a hand detail | 43.5 % | 43.1 % | 43.5 % | 43.1 % | 42.4 % |
+| member ends laid out | 61.8 % | 64.0 % | 61.9 % | 64.0 % | 64.7 % |
+| joints that do not fit | 24.7 % | 24.5 % | 24.7 % | 24.5 % | 24.1 % |
+| … of them as given | 42 | 34 | 36 | 28 | 28 |
+| plates written | 58 424 | 60 379 | 58 641 | 60 543 | 62 936 |
+| plates said in the plan to run into steel | 8 290 | 5 396 | 8 333 | 5 439 | 5 458 |
+| ends left for a bent plate's own bolts over a hole | 668 | 639 | 129 | 127 | 132 |
+| ends off their flange, at most 20° off, left | 17 840 | 17 384 | 17 836 | 17 381 | 15 907 |
+| welded plates (step 4) / L3 bent plates written | 2 934 / 0 | 2 758 / 0 | 2 957 / 0 | 2 758 / 0 | 11 / 4 085 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+- **(a) Short plates**: 5 533 plates stop short of the work point (cut
+  straight where needed); the plates said in the plan to run into steel
+  8 290 → 5 396, ends laid out +3 848, joints whole +274. Some of the
+  plates written so run into something after writing (plate with steel,
+  left: 2 727 → 3 378) — the clash rounds take them back, as for any
+  plate. The joints that do not fit as given 42 → 34. The rest of "its
+  plate would run into": steel on the members' own path (a member left at
+  the work point lying across the legs' band, a piece in line not one
+  part), which no cut short of it clears.
+- **(b) The holding bolts slid**: +13 joints whole, +134 ends, the joints
+  not fitting as given 42 → 36; the ends left for a hole under a holding
+  bolt 668 → 129 (with (a): 127) (not looked into yet: holes the plan does not see where
+  they will be drawn); 33 bent plates found no place within the longest
+  pull-back (said).
+- **L3**: 4 085 bent plates written, and the welded plates of step 4
+  2 758 → 11 (a bent plate fits wherever the welded one did: its curved
+  part takes less room than the weld's gap) — the welds a galvanised tower
+  avoids are almost gone. The ends off their flange at most 20° off left
+  17 381 → 15 907 (under 5° off 5 817 → 4 647; 5°–10° 6 246 → 5 871; 10°–20°
+  about the same): most bent plates are of 2°–5°. Of the ends 5°–20° off
+  still left (11 260): their outstanding leg towards the flange (the roll
+  that lays the other end flat turns this one's leg the wrong way round)
+  4 100; on an inner face running towards the other leg 2 639; the axis
+  more than a plate's thickness out (the low edge of the leg the far one
+  from the bend) 2 598; running towards the bend away from the joint
+  1 600. Joints whole +453, ends +1 136, plates +2 393.
+- **The bend check (C12, the plugins' strict check, no relief)** under the
+  comparison's one vertical case (64 towers with it): of the L3 bends
+  checked (4 035), **3 365 pass (83 %)**, median usage 0.20, 90 % below
+  1.49, the largest 6.97 (a 38 mm long bend of a 5 mm plate: the force
+  across a short bend held at the far edge of the flat on the flange); by
+  angle, under 5° 84 % pass, 5°–10° 81 %, 10°–20° 92 % (53 bends). Usages:
+  ≤ 0.25: 2 256; 0.25–0.5: 596; 0.5–0.75: 324; 0.75–1: 189; 1–1.5: 269;
+  1.5–2: 178; 2–3: 141; above 3: 82. The bends of J2b (90°, round the other
+  leg) under the same case: 50 % pass, median 1.00, the largest 22. One
+  vertical case, not the design's: an indication, not a check of the
+  towers.
+- **Time** (every thirteenth tower, six, laid out back to back twice):
+  the median per tower 17.5 and 18.2 s before, 19.3 and 20.1 s with
+  everything on (about a tenth more: the short plates' cuts and the bent
+  plates' tries), the largest 24.1 and 24.3 s before, 21.4 and 22.0 s
+  after. The full columns ran four at a time on a shared machine: their
+  times are not compared.

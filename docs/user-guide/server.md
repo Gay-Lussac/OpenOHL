@@ -86,6 +86,25 @@ shows:
 
 ## A network's server (in active development)
 
+What is built — every row **built, in active development, not approved
+yet** ([ADR-0013](../adr/0013-country-server.md),
+[decisions](../development/decisions.md)) — and what is not yet:
+
+| Part | State |
+|---|---|
+| The database (PostgreSQL with PostGIS), import and export of lines (phases 2–4) | built, in active development |
+| The server on the database: tiles, changes by interest, catch-up, heartbeats, the web client by tile (phase 5) | built, in active development |
+| Working sets and context in OHL-Design (phase 6) | built, in active development |
+| Rights and roles on (almost) every element and library, the audit, see as user (phase 7) | built, in active development; managed on the command line |
+| Towers shared by several routes (phase 8) | built, in active development: in the session and on branches over a working set; not yet on edits made directly on a network's main line |
+| Country libraries: locks, requests, releases, pins, withdrawn entries, the use index (phase 9) | built, in active development; Update library pins on the command line and the server's protocol |
+| Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
+| Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
+| Offline working sets (phase 12) | not yet |
+| Security review, deployment files, **backups and restore**, OIDC sign-in, TLS to a remote database (phase 13) | not yet — back up the database with PostgreSQL's own tools meanwhile |
+| The admin app OHL-Server | a plan waiting for the owner |
+| Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
+
 A country server keeps every line of a network in a PostgreSQL database
 ([ADR-0013](../adr/0013-country-server.md); setting one up:
 [the country server's database](../development/postgresql.md)). Its
@@ -96,8 +115,17 @@ server is started on the database instead of a project file:
 (the same options as `ohl serve`, and `--readers`, `--packagers`,
 `--packages-mb`, `--shapes-mb`, `--heartbeat-ms`). One server per
 database: a second one is refused. It reads every line once (the
-12 000-pylon synthetic country: about 15 s) and writes each edit to the
-database before it tells anyone.
+12 000-pylon synthetic country's 147 lines: about 3 s) and writes each
+edit to the database, in one transaction, before it tells anyone. Every
+`ohl network …` command, its rights and an example:
+[A network on the command line](network-commands.md).
+
+- **Lines in and out**: `ohl network import FILES…` makes each project
+  file a line of the network (ids another line has renamed `CODE-id`,
+  twin towers listed for an admin, never merged; library files mapped
+  onto the network's; network admins); `ohl network export --line CODE
+  FILE` writes one line as a standalone project file of today's format
+  (*export* on the whole line). Both are in the audit.
 
 - **Browsers** joining it get no copy of a line: they see the network
   **by tiles** around their view — the structures (a stick each), the
@@ -169,7 +197,7 @@ decide whether they may.
     ohl network rights put-role surveyor --permissions see,export --user ana
     ohl network rights assign --to group:crew --role designer --line L001 --user ana
     ohl network rights assign --to user:ben --role viewer --route R7 --user ana
-    ohl network rights assign --to user:ben --role designer --route R7 --from T3 --to T9 --user ana
+    ohl network rights assign --to user:ben --role designer --route R7 --from-structure T3 --to-structure T9 --user ana
     ohl network rights assign --to user:ben --role viewer --region "0,0;900,0;900,700" --user ana
     ohl network rights assign --to group:crew --deny --line L002 --library-kind costs --user ana
     ohl network rights list                          # roles, users, groups, assignments (numbered)
@@ -299,7 +327,59 @@ the result **NOT ALL CHECKED**, never a pass. The bench `ohl network
 bench-scoped --user admin` measures the three checks
 ([performance](../development/performance.md#synthetic-country-phase-10-scoped-computations-2026-11-20)).
 
+### Branches over a working set (phase 11, in active development)
+
+*Built 2026-11-20, in active development, not approved yet
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-11)).*
+
+On a network, a designer of a route — or of a part of one — can work on
+a **branch of their own over their working set**, without needing the
+whole line:
+
+- **Making one**: a branch over a set of routes is made from a line (main,
+  usually) by whoever sees each route and may edit something on it; its
+  maker may name a **team** (users or groups) who work on it too. It
+  holds **only what it changes**, never a copy of the line. A branch of
+  the whole line still needs edit on the whole line.
+- **Working on it**: its maker and its team only. The rules of towers
+  shared by several routes apply to every edit on it, its routes being
+  the working set: what would break another route's connection is
+  refused, naming it; moving a shared tower is allowed. Rights decide
+  every object as on main.
+- **Committing** — on a branch or on main — needs edit only on **what the
+  commit records** (the changes since the last revision, whoever made
+  them); a commit recording something you may not change is refused
+  (without naming it when you may not see it). A tag still needs the
+  whole line.
+- **Merging it into main** needs only what the merge changes there. It is
+  worked out from what differs and checked where it changes, as an edit
+  is. A merge touching a shared tower: a broken connection is a
+  **conflict**, named, to choose; a tower moved marks the other routes'
+  results **out of date** and the users connected who may edit those
+  routes get a notice; **a protected main waits for a review** — submit
+  the branch, a reviewer of the whole line approves it, then it is
+  merged. Bringing main's changes into the branch is not checked again
+  (they were on main).
+- **Library drafts**: a pending library request's draft may be used in a
+  branch over a working set whose maker named the requester in its team.
+- **Deleting or renaming** it: its maker.
+
+A network's revisions are kept as **split trees**: a commit, a diff or a
+merge reads and writes what changed, not the whole line (on the
+12 000-pylon synthetic country as one model, a commit of one changed
+route takes a tenth of a second instead of seven seconds, a branch's
+merge a tenth of a second instead of half a minute). A project
+file on the desktop keeps its revisions as before; a model exported from
+a network keeps its split revisions, which this version and later read.
+
 ## Roles
+
+*A project file's server.* On a network's server the roles are the
+network's (viewer, designer, checker, library maintainer, line admin,
+network admin, and roles of an admin's own), given by assignments on a
+scope — [above](#rights-on-a-network-phase-7-in-active-development); the
+edit grants a line's project file brought with it are still checked beside
+them.
 
 Each user of a project has one role; admins give them (People). The
 **Roles** page (View) shows this table, your own role marked. Edit grants
@@ -337,8 +417,8 @@ Somebody holding an invitation must not be able to stop the others (security rev
 ## Limits for now
 
 - Edits wait for the server's answer (milliseconds on a network; at most 15 s) before they show. Edits are not shown before the server confirms them.
-- Joining copies the whole project. Only the chunks a user views will be sent, later.
+- Joining a project file's server copies the whole project; joining a network's server sends a working set and the tiles around the view (above).
 - The application speaks QUIC only (UDP). Browsers use the web client's WebSocket (TCP); the application cannot use it yet, for networks that block UDP.
 - The web client: a viewer of the main line (of the tiles around the view, on a network's server); one weather case, no terrain, point clouds or backgrounds.
-- A user's name and the access code are the only identity. Sign-in through an organisation (OIDC / SSO) is to come.
+- A user's name and the access code are the only identity. Sign-in through an organisation (OIDC / SSO) is to come (phase 13).
 - If the connection drops, the project turns read-only. Join again to continue.

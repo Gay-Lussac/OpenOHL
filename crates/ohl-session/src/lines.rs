@@ -719,9 +719,8 @@ impl Session {
                     s.others[from].objects.clone()
                 }
             };
-            let tree = state_hash(&State::of_objects(&source(self)));
             let clean = match self.branch_revision(from)? {
-                Some(rev) => self.revision(&rev)?.tree == tree,
+                Some(rev) => self.line_matches(from, &rev)?,
                 None => false,
             };
             // The state it starts from, recorded on its source: their
@@ -748,7 +747,7 @@ impl Session {
                 None => (objects, None),
                 // Its state is its last revision's: that revision is the
                 // base, taken from the line itself.
-                Some(rev) if self.revision(&rev)?.tree == tree => {
+                Some(rev) if self.line_matches(from, &rev)? => {
                     let base = base_of(&source);
                     (objects, Some((rev, base)))
                 }
@@ -838,8 +837,15 @@ impl Session {
         for id in reviews {
             tx.set_review_state(id, "closed")?;
         }
+        if self.branch_scopes.contains_key(name) {
+            let mut scopes = self.branch_scopes.clone();
+            scopes.remove(name);
+            self.write_branch_scopes_in(&*tx, &scopes)?;
+            self.branch_scopes = scopes;
+        }
         tx.commit()?;
         self.others.remove(name);
+        self.forget_tree(name);
         Ok(())
     }
 
@@ -850,7 +856,14 @@ impl Session {
         let to = self.check_ref_name(to)?;
         let tx = crate::Step::begin(&*self.conn)?;
         tx.rename_line(from, &to)?;
+        let mut scopes = self.branch_scopes.clone();
+        if let Some(sc) = scopes.remove(from) {
+            scopes.insert(to.clone(), sc);
+            self.write_branch_scopes_in(&*tx, &scopes)?;
+        }
         tx.commit()?;
+        self.branch_scopes = scopes;
+        self.rename_tree(from, &to);
         if self.current == from {
             self.current = to.clone();
         } else if let Some(s) = self.others.remove(from) {
@@ -876,15 +889,8 @@ impl Session {
             ))
         })?;
         let parent = self.branch_revision(&self.current.clone())?;
-        let state = self.working_state()?;
         let branch = self.current.clone();
-        self.write_revision(
-            user,
-            &state,
-            parent.into_iter().collect(),
-            message,
-            Some(&branch),
-        )?;
+        self.write_revision(user, parent.into_iter().collect(), message, Some(&branch))?;
         Ok(())
     }
 
@@ -907,7 +913,6 @@ impl Session {
             .ok_or_else(|| refused(format!("no project line \"{from}\"")))?
             .objects;
         let ours = self.working_state()?;
-        let theirs = State::of_objects(theirs_objects);
         let base = match (
             self.branch_revision(&self.current)?,
             self.branch_revision(from)?,
@@ -915,6 +920,31 @@ impl Session {
             (Some(a), Some(b)) => self.merge_base(&a, &b)?,
             _ => None,
         };
+        // Split trees: what differs from the base on each line only
+        // ([`Session::merge_local`]).
+        if self.split
+            && !choices.values().any(|c| *c == crate::versions::Side::Both)
+            && let Some(b) = &base
+        {
+            let base_tree = self.revision(b)?.tree;
+            let current = self.current.clone();
+            if let Some((mut merged, conflicts, keys)) = self.merge_local(
+                &base_tree,
+                crate::trees::Side::Line(&current),
+                crate::trees::Side::Line(from),
+                &ours,
+                choices,
+            )? {
+                let settled = conflicts.iter().all(|c| c.chosen.is_some());
+                let problem = if settled {
+                    crate::versions::settle_local(&mut merged, &keys, &mut Vec::new())
+                } else {
+                    None
+                };
+                return Ok((conflicts, problem));
+            }
+        }
+        let theirs = State::of_objects(theirs_objects);
         let base = match base {
             Some(b) => self.revision_state(&b)?,
             None => State::default(),
@@ -1010,8 +1040,23 @@ impl Session {
         let Some(rev) = self.branch_revision(name)? else {
             return Ok(!objects.is_empty());
         };
-        let state = State::of_objects(objects);
-        Ok(state_hash(&state) != self.revision(&rev)?.tree)
+        Ok(!self.line_matches(name, &rev)?)
+    }
+
+    /// Whether project line `name`'s working state is revision `rev`'s:
+    /// its tree hashed (flat: every object; split: what changed since its
+    /// last tree, [`crate::trees`]).
+    pub(crate) fn line_matches(&self, name: &str, rev: &str) -> Result<bool, SessionError> {
+        if self.split {
+            return self.line_is_revision(name, rev);
+        }
+        let objects = self.line_objects_named(name)?;
+        let tree = self.revision(rev)?.tree;
+        if state_hash(&State::of_objects(objects)) == tree {
+            return Ok(true);
+        }
+        // A split tree (a model exported from a network): object by object.
+        Ok(self.tree_is_split(&tree)? && self.line_is_revision(name, rev)?)
     }
 
     /// Admin: rolls project line `line` back to revision `revision` (any

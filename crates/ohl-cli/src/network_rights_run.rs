@@ -22,12 +22,12 @@ pub struct ScopeArgs {
     /// A route by id (its line found).
     #[arg(long)]
     pub route: Option<String>,
-    /// With --to: the part of --route from this structure (snapped out to
-    /// whole tension sections).
-    #[arg(long)]
+    /// With --to-structure: the part of --route from this structure
+    /// (snapped out to whole tension sections).
+    #[arg(long = "from-structure", id = "from_structure")]
     pub from: Option<String>,
-    /// See --from.
-    #[arg(long)]
+    /// See --from-structure (not `--to`: that names who is assigned).
+    #[arg(long = "to-structure", id = "to_structure")]
     pub to: Option<String>,
     /// A region: points "x,y;x,y;x,y;…" in the network's coordinates.
     #[arg(long)]

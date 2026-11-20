@@ -77,6 +77,40 @@ pub const HOLD: &str = "leg_bolts";
 /// and the covers' thickness as written; step 1c, 2026-11-19).
 pub const SPLICE: &str = "splice";
 
+/// The record's mark of a plate whose outline stops short of the work
+/// point (`made`; L2's follow-up, 2026-11-20): the joint details draw it
+/// round its members' legs from the flange's toe over their bolts and the
+/// flange under them ([`crate::joints`]), and the run writes that outline.
+pub const SHORT: &str = "short";
+
+/// The record's mark of a member end whose `onto` was given by hand and
+/// kept by the layout (`ends`, "onto=D4"; O44 L2's follow-up, 2026-11-20):
+/// the end laid out onto that member, or onto a plate the layout made on
+/// it. The value written is the layout's (the plate's id where it goes onto
+/// one); taking the run's values out puts the hand value back (unless
+/// values given by hand are replaced), so a run again keeps it.
+pub const ONTO_HAND: &str = "onto=";
+
+/// The `onto` given by hand at member `m`'s end at joint `j` before a run
+/// (the file `t`, its record `record`): the record's [`ONTO_HAND`] mark,
+/// else the file's value where the record does not take it as the
+/// layout's.
+pub(crate) fn hand_onto(
+    t: &StructureType,
+    record: &LayoutRecord,
+    m: &str,
+    j: &str,
+) -> Option<String> {
+    let fields = record.ends.get(&(m.to_owned(), j.to_owned()));
+    if let Some(h) = fields.and_then(|f| f.iter().find_map(|x| x.strip_prefix(ONTO_HAND))) {
+        return Some(h.to_owned());
+    }
+    if fields.is_some_and(|f| f.contains("onto")) {
+        return None;
+    }
+    t.connection(m, j).and_then(|c| c.onto.clone())
+}
+
 /// The fields of a member end the layout sets.
 pub const END_FIELDS: [&str; 8] = [
     "cut",
@@ -2240,7 +2274,16 @@ fn write_rounds(
                 continue;
             }
             strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand, &mut w);
-            o.plates = write_plan(&mut doc, r.t, &mut rec, &o.plan, ask, r.hand_plates, &mut w);
+            o.plates = write_plan(
+                &mut doc,
+                r.t,
+                r.record,
+                &mut rec,
+                &o.plan,
+                ask,
+                r.hand_plates,
+                &mut w,
+            );
             o.written = true;
             rec.joints.insert(o.joint.clone());
             if o.plan.hand.is_empty() {
@@ -2261,21 +2304,31 @@ fn write_rounds(
                     .iter()
                     .zip(&o.plan.plates)
                     .enumerate()
-                    .filter(|(_, (_, p))| p.heel.is_some() || p.reach.is_some())
-                    .map(|(k, (id, p))| ((o.joint.clone(), k), id.clone(), p.heel, p.reach.clone()))
+                    .filter(|(_, (_, p))| {
+                        p.heel.is_some() || p.reach.is_some() || !p.cuts.is_empty()
+                    })
+                    .map(|(k, (id, p))| {
+                        (
+                            (o.joint.clone(), k),
+                            id.clone(),
+                            p.heel,
+                            p.reach.clone(),
+                            p.cuts.clone(),
+                        )
+                    })
                     .collect::<Vec<_>>()
             })
             .collect();
         let new: BTreeSet<String> = heels
             .iter()
-            .filter(|(key, _, _, _)| !outlines.contains_key(key))
-            .map(|(key, _, _, _)| key.0.clone())
+            .filter(|(key, _, _, _, _)| !outlines.contains_key(key))
+            .map(|(key, _, _, _, _)| key.0.clone())
             .collect();
         if !new.is_empty() {
             // The record first: the drawing reads its marks.
             rec.write(&mut doc);
             let mid = (r.at)(&doc, Some(&new))?;
-            for (key, id, heel, reach) in &heels {
+            for (key, id, heel, reach, cuts) in &heels {
                 if outlines.contains_key(key) {
                     continue;
                 }
@@ -2300,16 +2353,21 @@ fn write_rounds(
                     }
                 }
                 let half = ask.settings.gap / 2.0;
-                let cut = match heel {
+                let mut cut = match heel {
                     Some((heel, across)) => clip3(&outline, |q| {
                         (0..3).map(|k| (q[k] - heel[k]) * across[k]).sum::<f64>() - half
                     }),
                     None => outline,
                 };
+                // (L2's follow-up a) A short plate cut straight short of
+                // what it would still run into.
+                for (at, n) in cuts {
+                    cut = clip3(&cut, |q| 1e-9 - dot3(sub3(q, *at), *n));
+                }
                 outlines.insert(key.clone(), cut);
             }
         }
-        for (key, id, _, _) in &heels {
+        for (key, id, _, _, _) in &heels {
             if let Some(cut) = outlines.get(key)
                 && cut.len() >= 3
                 && connection_edits::set_plate_outline(&mut doc, id, cut).is_ok()
@@ -2701,6 +2759,40 @@ fn write_rounds(
                         bad.push(format!("{}: {why}", a.member));
                     }
                 }
+                // (L2's follow-up a) A plate stopping short of the work
+                // point, cut straight: every bolt on it its end and edge
+                // distances from the outline as written (the joint details'
+                // words); else the member left as it was, said.
+                let short = o
+                    .plates
+                    .iter()
+                    .position(|p| p == id)
+                    .is_some_and(|k| o.plan.plates[k].short);
+                if short {
+                    for note in &pd.notes {
+                        let Some(m) = note
+                            .split_once(" of ")
+                            .and_then(|(_, r)| r.split_once(' '))
+                            .map(|(m, _)| m.to_owned())
+                            .filter(|_| note.contains("from its edge"))
+                        else {
+                            continue;
+                        };
+                        if out.contains_key(&m) {
+                            continue;
+                        }
+                        let why = format!(
+                            "its bolts on a plate on {} would lie nearer the plate's edge than \
+                             their distances",
+                            o.plates
+                                .iter()
+                                .position(|p| p == id)
+                                .map_or("?", |k| o.plan.plates[k].on.as_str())
+                        );
+                        out.insert(m.clone(), format!("laid out, {why} (left as it was)"));
+                        bad.push(format!("{m}: {why}"));
+                    }
+                }
             }
             // (L2, 2026-11-20, found measuring) A member not laid out here
             // bolting onto one that is: its bolts, where they are, still
@@ -3041,7 +3133,13 @@ type HeelLine = ([f64; 3], [f64; 3]);
 /// A plate whose outline the run works out after writing: (its joint and
 /// index in the plan), its id, the flange's heel line it is cut at, what
 /// it must also cover and keep to (step 4).
-type OutlinePass = ((String, usize), String, Option<HeelLine>, Option<Reach>);
+type OutlinePass = (
+    (String, usize),
+    String,
+    Option<HeelLine>,
+    Option<Reach>,
+    Vec<([f64; 3], [f64; 3])>,
+);
 
 fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -3226,6 +3324,20 @@ fn strip_joint(
             if f == "gauge" {
                 continue;
             }
+            // (An `onto` given by hand the layout kept: back to it, unless
+            // values given by hand are replaced.)
+            if let Some(h) = f.strip_prefix(ONTO_HAND) {
+                if !replace_hand {
+                    let _ = w.conns.set(
+                        doc,
+                        &c.member,
+                        j,
+                        "onto",
+                        Some(&FieldValue::Word(h.to_owned())),
+                    );
+                }
+                continue;
+            }
             if f == "preset" {
                 for k in connection_edits::CARRIED {
                     let _ = w.conns.set(doc, &c.member, j, k, None);
@@ -3284,6 +3396,7 @@ impl Writing {
 fn write_plan(
     doc: &mut DocumentMut,
     t: &StructureType,
+    before: &LayoutRecord,
     rec: &mut LayoutRecord,
     p: &JointPlan,
     ask: &RunAsk<'_>,
@@ -3485,6 +3598,11 @@ fn write_plan(
         if pl.hold.is_some() {
             auto.insert(HOLD.into());
         }
+        // (L2's follow-up a) Its outline stopping short of the work point:
+        // drawn so by the joint details (the record's mark), then written.
+        if pl.short {
+            auto.insert(SHORT.into());
+        }
         if pl.hold.as_ref().is_some_and(|h| h.provisional) {
             rec.provisional.insert((id.clone(), p.joint.clone()));
         }
@@ -3502,7 +3620,22 @@ fn write_plan(
             let _ = w.conns.set(doc, &e.member, &p.joint, f, Some(&v));
         };
         set(w, doc, "onto", FieldValue::Word(onto));
-        fields.insert("onto".into());
+        // (L2's follow-up, 2026-11-20) An `onto` given by hand kept: the end
+        // laid out onto that member, or onto a plate the layout made on it —
+        // the record keeps the hand value, so that a run again starts from it
+        // (before, the record took it as the layout's and a run again took
+        // it out).
+        let hand = (!ask.replace_hand)
+            .then(|| hand_onto(t, before, &e.member, &p.joint))
+            .flatten()
+            .filter(|h| match &e.onto {
+                Onto::Member(m) => m == h,
+                Onto::Plate(k) => p.plates.get(*k).is_some_and(|q| &q.on == h),
+            });
+        match hand {
+            Some(h) => fields.insert(format!("{ONTO_HAND}{h}")),
+            None => fields.insert("onto".into()),
+        };
         // Drawn with its gauge line through the work point (the record's
         // mark only: no field of the file).
         if e.on_gauge {
@@ -3773,6 +3906,9 @@ fn follow_parsed(
                 "gauge_lines" => a.map(|c| &c.gauge_lines) == b.map(|c| &c.gauge_lines),
                 // The drawing's mark: the user's once the shift is.
                 "gauge" => a.map(|c| &c.shift) == b.map(|c| &c.shift),
+                // (An `onto` given by hand the layout kept: the user's
+                // again once the edit changes it.)
+                x if x.starts_with(ONTO_HAND) => a.map(|c| &c.onto) == b.map(|c| &c.onto),
                 _ => true,
             };
             if !same {
