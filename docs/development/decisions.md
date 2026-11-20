@@ -8,6 +8,53 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (joint layout: the owner's quick round L1)
+
+**O44 L1 with the owner's ideas of 2026-11-19** (approved the same day in
+this order: L1 the quick round, L2 clash-aware planning, L3 a plate bent
+by a few degrees, L4 a joint's detail copied to the other towers of the
+line; built 2026-11-20, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-owners-quick-round-l1),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)). Each idea a switch of the layout's
+settings, measured alone and together on the 78 private real towers,
+kept only where it helps:
+
+- **(a) Bottom up, then out — kept**: the body, the arms and the top from
+  the legs' lines (no names); the joint a kind is planned at and a member
+  no one roll lays flat (none of its ends flat now) taken in that order —
+  turned to lie flat at its end on the body first. A turn never spoils an
+  end that was flat (turning to the first end whatever was tried: fewer
+  joints whole on a sample).
+- **(b) Slightly more plates — kept**: a face bolted directly tried on a
+  plate where that lays out more (direct wins a tie), and an end bolted
+  directly that would be left after writing tried on a plate first.
+  **NOT ON THE SAFE SIDE** as for every plate: the plate's thickness puts
+  the member farther out of the flange, not in the analysis (O45 D).
+- **(c) Redundants and the body's diagonals bolted directly — left out**:
+  bolted directly on a face going onto a plate, they ran into the plate
+  (no gain).
+- **(d) What an end bolts onto searched — kept**: for an end left for a
+  hand detail, the other members it could bolt onto tried (today's rule
+  first and the tie-break, two passes at most), kept at a joint only where
+  it lays out more after the clash rounds than today's plan does (the
+  guard: else planned again as today).
+- **Found measuring, for every run**: three more of the joint checks'
+  rules checked by the layout after writing — holes of the ends in one
+  member overlapping, a plate's own bolts outside its outline or beyond the
+  steel of the member it lies on: such members left as they were, said
+  (before: written, and said *does not fit, as given* by the joint
+  checks).
+- No format change. J7a's follow-up (the bracing's bolts used as some of
+  the splice's) recorded, not scheduled.
+
+Measured on the 78 private real towers (the theory page): the
+after-writing checks alone take the joints not fitting as given from 475
+to 41; with (a), (b) and (d) joints laid out whole 41.5 % → 42.7 %
+(body 44.0 % → 45.2 %, arms and top 38.3 % → 39.5 %), ends 55.3 % →
+56.5 %, plates +4.5 %, a run again identical 78 of 78, the time per tower
+about 1.7 times. The owner's questions are in the roadmap (O44 L1).
+
 ## 2026-11-19 (joint layout: leg splices proposed, bracing through the outer cover)
 
 **O44 J7a with the owner's decisions of 2026-11-19** ("a change of

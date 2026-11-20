@@ -1266,6 +1266,53 @@ that order; "plan ideas to get the automatic layout working"):
   `in_line_tests` (legs with bolts flagged), the app's
   `layout_ui_tests::leg_splices_are_proposed_and_confirmed_in_one_undo_step`
   (its picture `tool-lay-out-joints-leg-splices.png`).
+- **L1, the owner's quick round** (2026-11-20, the ideas of 2026-11-19; in
+  active development, not approved yet;
+  [theory](../theory/joint-layout.md#the-owners-quick-round-l1)): three
+  switches of `LayoutSettings`, on by default (`RecordSettings::layout` and
+  the window take the defaults; not in the file — no format change).
+  `bottom_up` (a): `joint_order::joint_order(t) -> JointOrder { zone,
+  rank }` (`Zone::{Body, Arm, Top}`: the legs' lines of class `leg` within
+  30° of the vertical, `LEG_STEEP`, give the body's outline at each height
+  as a convex hull; a joint within `ON_OUTLINE` = 0.10 m of it is of the
+  body; the order the body bottom up, then the arms and the top by how far
+  out); `layout_run::plans_of` plans the joints in that order
+  (`joint_kinds::kinds_in`: the first of a kind its representative) and
+  lists them in the file's; the roll stage turns a member no one roll lays
+  flat, none of its ends flat now, to lie flat at its end first in the
+  order (said, kept only where it helps). `more_plates` (b):
+  `joint_layout::plan_joint_ctx(.., ctx: &PlanCtx { plated, plain })` —
+  `plan_once` with faces forced onto a plate (`PLATE_TRIES` = 4 faces
+  bolted directly tried where the plan leaves members; strictly more ends
+  wins); `write_rounds`: an end bolted directly that would be left (or is
+  pulled back past its longest pull-back) is put in `plated` once and the
+  joint planned again, kept where the plan lays it out (`Checked::plated`
+  in the memo). `onto_search` (d): after the half turns, for each end the
+  plans leave (its `onto` not given by hand), `joint_layout::onto_candidates`
+  (single angles at the joint, 20°–160°, in a flange's plane, not bolting
+  onto it; today's rule's order, those running through first) — each of
+  `ONTO_TRIES` = 2 passes names the next one in a copy of the planning
+  file, works out those joints in detail and plans them alone; a joint
+  takes them where its plan lays out more ends and leaves no new end in
+  `left`. The guard (`layout_run::Guard { changed, plain }`, for (d) and
+  for (b) in the plan): after `write_rounds`, a joint L1 changed that lays
+  out fewer ends than today's plan of it is planned again as today (its
+  names taken back, `PlanCtx::plain`) and the clash rounds run again on it
+  (the memo keeps the rest). Not in `plan_relaxed` (the estimated
+  eccentricities). (c), redundants and the body's diagonals bolted directly
+  on a face going onto a plate, was built, measured and taken out (no
+  gain). Found measuring, for every run: `write_rounds` checks the holes of
+  the ends laid directly onto a member's run overlapping
+  (`holes_overlap`, the joint checks' rule) and a plate's own bolts
+  (`[plate.leg_bolts]`) within its outline and on that member's steel past
+  its cut as written
+  (`plate_checks::ray_to_outline`), leaving such members as they were.
+  Tests: `joint_order_tests` (the zones and the order of an invented tower
+  with an arm and a peak, no legs), `layout_run_tests` (a member turned to
+  lie flat at its end on the body; an end left on a built-up leg laid onto
+  the other diagonal; holes overlapping as the checks say; the 8° strut
+  with `bottom_up` off as before), `joint_layout_tests` (a face put onto a
+  plate though its bolts land; the candidates' order).
 
 ## Detail levels
 

@@ -5,7 +5,8 @@
 tower joint's member ends so that they fit, and what that does to the
 analysis and the checks. The code: `ohl_structure_link::joint_layout`
 (the plan of one joint, a pure function), `layout_run` (the run on a
-file, its record, following later edits), `clash` (the 3D check).
+file, its record, following later edits), `clash` (the 3D check),
+`joint_order` (the body, the arms and the top; L1).
 
 ## What is decided, and what is not
 
@@ -983,6 +984,155 @@ axis) and its repeated panels.
   into more than the source does is left as it was, said; a splice is not
   copied (by hand). One undo step.
 
+## The owner's quick round (L1)
+
+(Owner, 2026-11-19: four ideas for the automatic layout, approved in this
+order; built 2026-11-20, in active development, not approved yet. The
+code: `ohl_structure_link::joint_order`, `layout_run`, `joint_layout`.)
+Each idea has its own switch (`LayoutSettings::bottom_up`, `more_plates`,
+`onto_search`, on by default; off: as before, for the comparison), was
+measured on the private real towers alone and with the others
+([below](#measured-l1-2026-11-20)) and is kept only where it helps.
+
+### Bottom up, then out (a)
+
+(Owner: "try to go bottom up and out. More things align on the body from
+the bottom up and then less at the mast ends (arms and top)".) A tower's
+joints are sorted into its **body**, its **arms** and its **top** from the
+geometry alone, never from names (`joint_order`):
+
+- **The body's outline at each height** is the convex hull of the points
+  where the legs' lines pass that height — the members of class `leg`
+  running within 30° of the vertical (an arm's chord of class `leg` lies
+  flatter; one line: the outline is that point).
+- A joint **in the outline** at its height (within 0.10 m: a drawing's
+  rounding and a leg's own width) is of the body; **outside** it, of an
+  arm — so is a joint at a height the legs do not reach; the body above the
+  highest arm joint is the **top** (the peak), and so is what lies above the
+  legs' highest point. The 30° and the 0.10 m are the tool's values, not a
+  standard's.
+- **The order**: the body from the bottom up, then the arms and the top
+  working outwards — an arm joint by how far it lies outside the body's
+  outline, a top joint by how far above the highest arm joint (or the
+  legs) — each tie by height, then the id. No legs found: every joint of
+  the body, from the bottom up. Deterministic.
+
+**Where the order matters.** Each joint is planned from its own joint in
+detail: the cut, the shift, the plates and the clash rounds of one joint
+do not depend on another's, so in most of the run the order changes
+nothing. It matters in two places, which now follow it:
+
+1. **The joint a kind is planned at** (J4): the first of the kind in this
+   order (before: in the file's order); the others take its plan, mapped,
+   checked in their own place as before.
+2. **A member's roll** is one value for all its ends (J3). Where no one
+   roll lays every end flat and **none of its ends lies flat now**, the
+   member was left as it was; now it is turned to lie flat at its end
+   **first in the order** — the body's end before an arm's, the lower
+   before the higher —, its other ends taking what comes (step 4's welded
+   plate or a hand detail), said ("… turned to lie flat at N2, its end
+   first bottom up, then out; its others as they come"). The turn is kept
+   only where it helps (rule 3 above). **A turn never spoils an end that
+   was flat**: tried — turning to the end first in the order whatever the
+   others — it laid out fewer joints whole on a sample of the real towers
+   (43.6 % against 43.9 % on six of them).
+
+### Slightly more plates (b)
+
+(Owner: "maybe increase slightly the possibility of having plates".)
+Today a face goes onto a plate only where the direct bolts do not land.
+Now the plate is also tried:
+
+- **In the plan**, where it leaves members for a hand detail: each face
+  bolted directly (up to four per joint, `PLATE_TRIES`, the program's
+  bound) planned on a plate instead; taken where that lays out **more** of
+  the joint's ends — direct bolting wins a tie (the plate's penalty). On the
+  real towers this almost never changes a plan: the planner's boxes do not
+  hold the nuts behind a flange, which a plate would move away (L2).
+- **After writing**, before an end bolted directly is given up: an end
+  that would be left as it was — its clash or misfit not cleared by
+  pulling it back (three times), or pulled back past its longest
+  pull-back — is first put on a plate (its face onto one, once per end),
+  kept where the plan then lays it out; the clash rounds check it as any
+  end, a round being left to do so. Never forced.
+
+**NOT ON THE SAFE SIDE** as for every plate the layout makes: an end on a
+plate lies the plate's thickness farther out of the flange than bolted
+directly, an offset not in the analysis (the joint eccentricity of a
+gusset, usual for lattice towers, [above](#a-welded-plate-in-the-members-own-plane-step-4);
+O45 D); (b) makes more such ends (measured below).
+
+### Redundants and the body's diagonals bolted directly (c): tried, left out
+
+(Owner: "Redundant members are usually bolted into another and diagonals
+of the shaft too but it can depend".) Direct bolting onto another member
+is already the first choice of every end: a face goes onto a plate only
+where its bolts do not all land. Built and measured: on a face going onto
+a plate, the redundants and the body's diagonals whose bolts land stayed
+bolted directly, the others on the plate. **No gain** on the real towers
+(below: 33 joints more whole of 64 760, 16 more not fitting as given): the members bolted directly ran into the plate of the others on
+the same flange — the members leave the flange across the plate's place
+beyond its toe —, as the mixed face tried on 2026-11-18. Left out; a
+redundant bolted onto another member where that lays out more is what (d)
+gives.
+
+### What an end bolts onto, searched (d)
+
+Today the member an end bolts onto (`onto`) is a fixed rule before the
+plan ([above](#which-member-an-end-bolts-onto)). Now, for an end the
+plans leave for a hand detail (its `onto` not given by hand, unless
+replaced):
+
+- **The other members it could bolt onto**: the single angles at the
+  joint not in line with it (20° to 160°), in a flange's plane of which
+  its axis lies (within 2°, `FLAT_OFF`), not bolting onto it nor running on
+  into it — in **today's rule's order** (those running through the joint
+  first, then the one part, by class, the wider, the piece on its side, the
+  id). Today's choice is the first one tried and the tie-break: the joint
+  keeps it unless another lays out more.
+- **Each pass** names the next member for every such end in the planning
+  copy (as the run names `onto` today) and plans those joints again; a
+  joint takes the names where its plan lays out **more ends** and leaves no
+  end as it is that was not before (an end named onto a member it cannot
+  lie on is not laid out). At most **two passes** (`ONTO_TRIES`, the
+  program's bound on the extra work).
+- **The guard** (for (d) and for (b) in the plan): after the clash rounds,
+  a joint whose plan L1 changed and that lays out **fewer ends than
+  today's plan of it** is planned again as today (its names taken back) —
+  one more pass of the clash rounds over those joints. Today's ends after
+  the clash rounds are at most its planned ones, so a joint keeps L1's plan
+  only where it does at least as well as today: *on the safe side for the
+  comparison* (some gains are given up).
+- Not for the planner relaxed (the estimated eccentricities, O45): without
+  writing there are no clash rounds to judge by.
+- The mutual-host guard (D16) applies as before; what an end bolts onto is
+  what its restraint is worked out from, as detailed (unchanged).
+
+### Three more of the joint checks' rules checked after writing (2026-11-20)
+
+Found while measuring L1, on for every run: after writing, the run checks
+as the joint checks do (as for an end laid onto a member, J9 and D16):
+
+- the **holes of the ends bolted directly into one member** (or the run it
+  is one part of) overlapping each other's or those of the other ends onto
+  it as written — an end on a flange's outer face and one on its inner face
+  bolted through the same place (holes nearer than their radii together,
+  not one hole): the later end (class, then id) left as it was, said
+  ("laid out, its holes in … would overlap those of … (left as it was)");
+- **a plate's own bolts onto the member it lies on** (a bent plate's flat,
+  J2b) outside its outline, or beyond the end of that member's steel
+  where it ends at the joint (before its cut), as written: the members on
+  the plate (and on what is bent or welded to it) left as they were, said.
+  The planner places a bent plate's own bolts on the other leg without
+  that member's cut (a follow-up of J2b).
+
+The joint is planned again without them, as for a clash. Before, such
+joints were written and the joint checks said them *does not fit, as
+given*. A question to look into (not changed): on some members the bent
+plate's own bolts are drawn a few millimetres outside the flat's outline,
+near the heel (where the flat is laid out and where its bolts are drawn
+disagree) — the layout now leaves such ends rather than write them.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -1039,6 +1189,8 @@ the same towers:
 |---|---|---|
 | Placings searched per joint | 400 | never reached on the 78 tower files (the most ends of one plane there: a handful); 1 (no search) gave the same shares there, 2 000 the same layouts on the two towers tried |
 | Pulled back past a clash | 3 times per end, 6 rounds | 0 (4 rounds): 33.9 % of the joints laid out whole instead of 44.1 %, 53.9 % of the ends instead of 62.8 %; 2 (5 rounds): on two towers the same joints whole, about 1 % fewer ends, about 10 % quicker |
+| Faces bolted directly tried on a plate per joint (L1 b) | 4 | a bound on the extra work; the plate rarely lays out more in the plan (the planner does not see the nuts behind a flange) |
+| Passes of other members an end could bolt onto (L1 d) | 2 | a bound on the extra work |
 
 ## Measured (J1 and J2, 2026-11-19)
 
@@ -1210,3 +1362,49 @@ the inner covers (about 450 such clashes said). Joints that do not fit
 rise a little (15 793 → 15 847, mostly as assumed): fewer joints are
 checked as written (the confirmed pieces run on) and the covers bring
 plates of their own to check. No change in time.
+
+## Measured (L1, 2026-11-20)
+
+On the same 78 tower files and settings (kept privately; J9's proposals
+and J7a's leg splice places confirmed in every column, the 2° flatness),
+with the joint checks' "does not fit" (one case). "After writing" is the
+run with the three after-writing checks above and no L1 switch; each L1
+column adds its switch to it:
+
+| | before | after writing | (a) | (b) | (d) | (a), (b) and (d) |
+|---|---|---|---|---|---|---|
+| joints laid out whole | 41.5 % | 41.4 % | 41.7 % | 41.7 % | 42.2 % | 42.7 % |
+| … of the body | 44.0 % | 43.9 % | 44.2 % | 44.3 % | 44.6 % | 45.2 % |
+| … of the arms and the top | 38.3 % | 38.3 % | 38.6 % | 38.4 % | 39.1 % | 39.5 % |
+| joints with a hand detail | 50.6 % | 50.7 % | 50.4 % | 50.4 % | 49.9 % | 49.5 % |
+| member ends laid out | 55.3 % | 55.2 % | 55.4 % | 55.5 % | 55.9 % | 56.5 % |
+| joints that do not fit | 29.8 % | 29.8 % | 29.7 % | 29.8 % | 29.7 % | 29.7 % |
+| … of them as given | 475 | 41 | 41 | 41 | 40 | 41 |
+| plates written | 48 570 | 47 963 | 48 412 | 48 687 | 49 945 | 50 756 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+| time per tower, median / largest | 12.3 / 18.8 s | 12.2 / 18.7 s | 13.0 / 19.7 s | 16.1 / 23.9 s | 16.1 / 25.7 s | 20.7 / 33.2 s |
+
+Of the tower's joints 56 % are of the body, 44 % of the arms and the top.
+
+- **The after-writing checks** take the joints said *does not fit, as
+  given* from 475 to 41 (nine in ten), for 34 joints fewer laid out whole
+  (0.1 point): the layout no longer writes those misfits.
+- **(a)** lays out 190 more joints whole (+0.3 point) — on the body and on
+  the arms alike —, 7 % more time.
+- **(b)** lays out 193 more joints whole (+0.3 point) with 724 plates more
+  (+1.5 %); about a third more time (the joints planned again with a
+  plate).
+- **(d)** lays out 485 more joints whole (+0.8 point; the ends left on a
+  built-up member 10 337 → 8 712, off their flange 30 860 → 29 224); about
+  a third more time.
+- **Together**: 799 more joints whole than without them (41.4 % →
+  42.7 %), ends 55.2 % → 56.5 %, 2 793 plates more (+5.8 %), no misfit
+  more; the time per tower about 1.7 times (median 12.2 → 20.7 s).
+- **(c)** measured on its own (against the run with the first two
+  after-writing checks): 33 joints more whole (+0.05 point), 16 more
+  joints not fitting as given, about 40 % more time — left out.
+
+The gains stay small: the two big groups left are untouched by L1 — the
+members left after the clash rounds (about 36 000 hand-detail reasons)
+and the ends off their flange that need rolls 5°–20° apart at their two
+ends (about 29 000): L2 and L3.
