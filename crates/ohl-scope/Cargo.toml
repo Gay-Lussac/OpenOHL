@@ -1,0 +1,26 @@
+[package]
+name = "ohl-scope"
+description = "OpenOHL scoped computations: each check's reach, the neighbours within it pulled in from this and other lines, what was pulled in (country server, phase 10)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+ohl-core.workspace = true
+ohl-cables.workspace = true
+ohl-clearance.workspace = true
+ohl-electrical.workspace = true
+ohl-line.workspace = true
+ohl-loads.workspace = true
+ohl-weather.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+ohl-session.workspace = true
+ohl-synth.workspace = true
+
+[lints]
+workspace = true

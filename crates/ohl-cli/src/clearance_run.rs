@@ -615,6 +615,7 @@ pub fn check(
             point_classes: &p.point_classes,
             points: Some(&mut points),
             other_wires: &other_wires,
+            min_reach: 0.0,
         },
     )?;
 

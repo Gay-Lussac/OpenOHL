@@ -4070,6 +4070,7 @@ dependencies = [
  "ohl-plugins",
  "ohl-pointcloud",
  "ohl-render",
+ "ohl-scope",
  "ohl-sections",
  "ohl-server",
  "ohl-session",
@@ -4377,6 +4378,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ohl-scope"
+version = "0.0.2"
+dependencies = [
+ "ohl-cables",
+ "ohl-clearance",
+ "ohl-core",
+ "ohl-electrical",
+ "ohl-line",
+ "ohl-loads",
+ "ohl-session",
+ "ohl-synth",
+ "ohl-weather",
+ "serde",
+]
+
+[[package]]
 name = "ohl-sections"
 version = "0.0.2"
 dependencies = [
@@ -4392,10 +4409,13 @@ dependencies = [
  "futures-util",
  "getrandom 0.3.4",
  "ohl-cables",
+ "ohl-clearance",
  "ohl-core",
  "ohl-lidar",
  "ohl-line",
+ "ohl-loads",
  "ohl-pointcloud",
+ "ohl-scope",
  "ohl-session",
  "ohl-store-pg",
  "ohl-structures",

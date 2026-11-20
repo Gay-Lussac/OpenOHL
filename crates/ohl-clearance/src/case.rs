@@ -137,6 +137,12 @@ pub struct CaseTargets<'a> {
         Option<&'a mut dyn FnMut(&[u8], &mut dyn FnMut(f64, f64, f64, u8)) -> Result<(), String>>,
     /// The other lines' wires in this weather case.
     pub other_wires: &'a [Wire],
+    /// The wire-to-wire checks look at least this far, m (0: their rules'
+    /// reach): a check of a working set with its neighbours pulled in
+    /// (country server, phase 10) gives its own reach, so that no pair
+    /// within a rule's distance is left out however long its wires'
+    /// pieces are.
+    pub min_reach: f64,
 }
 
 /// The terrain surface of ground rule `rule`: the one it names, else the
@@ -172,7 +178,7 @@ pub fn check_case(
     let reach = active
         .iter()
         .map(|&k| rules[k].reach_in_plan(targets.voltages, targets.other_voltages, top))
-        .fold(0.0, f64::max);
+        .fold(targets.min_reach.max(0.0), f64::max);
     // The reach of every rule, as the point checks were capped before.
     let every = active
         .iter()
@@ -421,6 +427,7 @@ mod tests {
             point_classes: &[],
             points: None,
             other_wires: &[],
+            min_reach: 0.0,
         }
     }
 

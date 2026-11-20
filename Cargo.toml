@@ -44,6 +44,7 @@ ohl-bom = { path = "crates/ohl-bom" }
 ohl-spotting = { path = "crates/ohl-spotting" }
 ohl-synth = { path = "crates/ohl-synth" }
 ohl-store-pg = { path = "crates/ohl-store-pg" }
+ohl-scope = { path = "crates/ohl-scope" }
 ohl-structure-loads = { path = "apps/structure/ohl-structure-loads" }
 ohl-structure-link = { path = "apps/structure/ohl-structure-link" }
 ohl-structure-edit = { path = "apps/structure/ohl-structure-edit" }

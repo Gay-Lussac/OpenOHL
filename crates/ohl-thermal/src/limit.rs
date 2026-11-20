@@ -250,6 +250,7 @@ impl Search<'_, '_> {
                 point_classes: &self.classes,
                 points,
                 other_wires: &[],
+                min_reach: 0.0,
             },
         )?;
         let mut worst: Option<Governing> = None;

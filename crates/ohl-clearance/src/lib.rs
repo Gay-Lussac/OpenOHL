@@ -310,6 +310,7 @@ mod tests {
                     point_classes: &classes,
                     points: Some(&mut feed),
                     other_wires: &[],
+                    min_reach: 0.0,
                 },
             )
             .unwrap();

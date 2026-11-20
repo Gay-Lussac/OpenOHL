@@ -817,6 +817,54 @@ pub const COLUMN_TABLES: [&str; 7] = [
     "routes",
 ];
 
+/// The largest reach a plugin's check may declare, m (more: refused —
+/// declare none instead, and the whole line is taken).
+pub const MAX_REACH_M: f64 = 10_000.0;
+
+/// A plugin's checks' reach (`[reach]` in its manifest; optional,
+/// 2026-11-20): the plan distance from the checked wires within which
+/// other objects — of the same line or of other lines — can change a
+/// check's result. A check run on a network's working set pulls in what
+/// lies within it; 0: only what the working set holds (the conductors of
+/// its spans and those on its structures).
+///
+/// ```toml
+/// [reach]
+/// default = 0.0                       # m, every check not named below
+/// check = { "phase-distance" = 0.0 }  # m, per check id
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CheckReach {
+    /// Every check not named in `check`, m (none: not declared).
+    #[serde(default)]
+    pub default: Option<f64>,
+    /// Per check id, m.
+    #[serde(default)]
+    pub check: std::collections::BTreeMap<String, f64>,
+}
+
+impl CheckReach {
+    fn check(&self) -> Result<(), String> {
+        let ok = |v: f64| v.is_finite() && (0.0..=MAX_REACH_M).contains(&v);
+        if let Some(d) = self.default
+            && !ok(d)
+        {
+            return Err(format!(
+                "default {d}: 0 to {MAX_REACH_M} m (or none: the whole line)"
+            ));
+        }
+        for (id, v) in &self.check {
+            if !ok(*v) {
+                return Err(format!(
+                    "check {id}: {v}: 0 to {MAX_REACH_M} m (or none: the whole line)"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A parsed `ohl-plugin.toml`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -852,6 +900,13 @@ pub struct Manifest {
     /// shipped in its folder ([`help`]).
     #[serde(default)]
     pub help: HelpPages,
+    /// `[reach]`: how far from what its checks check other objects can
+    /// change their results (2026-11-20, the country server's phase 10;
+    /// optional — none declared: the most conservative default, the
+    /// working set's whole line and every line near it,
+    /// [`Manifest::check_reach`]).
+    #[serde(default)]
+    pub reach: Option<CheckReach>,
     /// Directory containing the manifest.
     #[serde(skip)]
     pub dir: PathBuf,
@@ -910,6 +965,9 @@ impl Manifest {
             .help
             .check()
             .map_err(|m| bad(format!("help: {m}")))?;
+        if let Some(r) = &manifest.reach {
+            r.check().map_err(|m| bad(format!("reach: {m}")))?;
+        }
         let mut names = std::collections::BTreeSet::new();
         for c in &manifest.columns {
             if !COLUMN_TABLES.contains(&c.table.as_str()) {
@@ -951,6 +1009,14 @@ impl Manifest {
     /// `plugin.column`.
     pub fn field_key(&self, column: &TableColumn) -> String {
         format!("{}.{}", self.plugin.name, column.name)
+    }
+
+    /// The reach check `id` declares, m (`[reach]`: its own, else the
+    /// default); none: not declared — the most conservative default
+    /// applies (the working set's whole line and every line near it).
+    pub fn check_reach(&self, id: &str) -> Option<f64> {
+        let r = self.reach.as_ref()?;
+        r.check.get(id).copied().or(r.default)
     }
 
     /// Loads `ohl-plugin.toml` from a plugin directory.
@@ -3474,6 +3540,40 @@ mod tests {
             "[plugin]\nname = \"t\"\nversion = \"1.0.0\"\nsdk = \"{sdk}\"\ntier = \"wasm\"\nentry = \"t.wasm\"\n{extra}"
         );
         Manifest::parse(&text, Path::new("/plugins/t")).unwrap()
+    }
+
+    /// A check's reach is optional manifest data (2026-11-20): a manifest
+    /// without `[reach]` reads as before and declares none (the most
+    /// conservative default applies); one with it gives each check its
+    /// own or the default; a reach that is not a distance is refused.
+    #[test]
+    fn a_checks_reach_is_optional() {
+        let none = manifest("0.3", "");
+        assert_eq!(none.reach, None);
+        assert_eq!(none.check_reach("phase-distance"), None);
+        let some = manifest(
+            "0.3",
+            "[reach]\ndefault = 25.0\ncheck = { \"phase-distance\" = 0.0 }\n",
+        );
+        assert_eq!(some.check_reach("phase-distance"), Some(0.0));
+        assert_eq!(some.check_reach("unequal-wind"), Some(25.0));
+        let only = manifest("0.3", "[reach]\ncheck = { \"phase-distance\" = 3.5 }\n");
+        assert_eq!(only.check_reach("phase-distance"), Some(3.5));
+        assert_eq!(only.check_reach("other"), None);
+        for bad in [
+            "[reach]\ndefault = -1.0\n",
+            "[reach]\ndefault = 20000.0\n",
+            "[reach]\ncheck = { \"x\" = nan }\n",
+            "[reach]\nmetres = 3.0\n",
+        ] {
+            let text = format!(
+                "[plugin]\nname = \"t\"\nversion = \"1.0.0\"\nsdk = \"0.3\"\ntier = \"wasm\"\nentry = \"t.wasm\"\n{bad}"
+            );
+            assert!(
+                Manifest::parse(&text, Path::new("/plugins/t")).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     /// The bundled plugins' longer time and larger memory (2026-11-18)
