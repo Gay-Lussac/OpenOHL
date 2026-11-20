@@ -76,12 +76,24 @@ fn edit(
     model: &str,
     op: Op,
 ) -> Result<String, String> {
+    edit_on(j, log, id, model, "main", op)
+}
+
+/// [`edit`] on project line (branch) `line`.
+fn edit_on(
+    j: &Joined,
+    log: &mut Vec<ServerMsg>,
+    id: u64,
+    model: &str,
+    line: &str,
+    op: Op,
+) -> Result<String, String> {
     j.link
         .send(ClientMsg::RequestOn {
             id,
             model: model.into(),
             op,
-            line: "main".into(),
+            line: line.into(),
         })
         .unwrap();
     let got = pump(
@@ -987,6 +999,72 @@ fn property_no_message_holds_a_hidden_id_or_place() {
                 moved(s, [p[0] + 0.6, p[1], p[2]]),
             );
         }
+        // Phase 11: branches over a working set — Bob's (Pat in its team),
+        // worked on, committed and merged into main (the other routes'
+        // owners told), and Pat's own try at one.
+        let ws = format!("ws-{round}");
+        let on = |line: &str, op: Op| (line.to_owned(), op);
+        for (line, op) in [
+            on(
+                "main",
+                Op::Commit {
+                    message: format!("round {round}"),
+                },
+            ),
+            on(
+                "main",
+                Op::CreateWorkingSetBranch {
+                    name: ws.clone(),
+                    from: "main".into(),
+                    routes: vec![route.clone()],
+                    team: vec!["pat".into()],
+                },
+            ),
+            on(&ws, moved(&sx, [px[0] + 0.9, px[1], px[2]])),
+            on(
+                &ws,
+                Op::Commit {
+                    message: "on the branch".into(),
+                },
+            ),
+        ] {
+            next_id += 1;
+            let _ = edit_on(&bob, &mut bob_log, next_id, &code, &line, op);
+        }
+        for (line, op) in [
+            on(&ws, moved(&sx, [px[0] + 1.2, px[1], px[2]])),
+            on(
+                &ws,
+                Op::Commit {
+                    message: "pat's".into(),
+                },
+            ),
+            on(
+                "main",
+                Op::CreateWorkingSetBranch {
+                    name: format!("pat-{round}"),
+                    from: "main".into(),
+                    routes: vec![route.clone()],
+                    team: Vec::new(),
+                },
+            ),
+        ] {
+            next_id += 1;
+            let _ = edit_on(&pat, &mut log, next_id, &code, &line, op);
+        }
+        next_id += 1;
+        let _ = edit_on(
+            &bob,
+            &mut bob_log,
+            next_id,
+            &code,
+            "main",
+            Op::Merge {
+                other: ws.clone(),
+                message: None,
+                choices: Default::default(),
+            },
+        );
         // A catch-up, a route detail, a pick, a working set of another line.
         pat.link.send(ClientMsg::Catch { since: start }).unwrap();
         pump(&pat, &mut log, |m| matches!(m, ServerMsg::CatchUp { .. }));
@@ -1021,5 +1099,227 @@ fn property_no_message_holds_a_hidden_id_or_place() {
         }
     }
     drop(bob);
+    server.stop();
+}
+
+/// Phase 11: branches over a working set on a network — made by a
+/// designer of a route (not a branch of the whole line), worked on by its
+/// maker and team only, committed and merged into main by what they
+/// touch, deleted by its maker; a commit records only what its user may
+/// edit; a tag still needs the line whole; a designer of a part of a
+/// route makes new objects inside it (the owner's question 1 of phase 7).
+#[test]
+fn branches_over_working_sets_on_a_network() {
+    let Some(t) = test_network("branches", 240) else {
+        return;
+    };
+    let a = t.codes[0].clone();
+    let (route, from, to) = route_of(&t, &a);
+    {
+        let net = Network::connect(&t.url).unwrap();
+        let on_route = Scope {
+            route: Some(route.clone()),
+            ..Scope::default()
+        };
+        add_user(&net, "dora", "designer", on_route.clone());
+        add_user(&net, "tom", "designer", on_route);
+        add_user(
+            &net,
+            "pia",
+            "designer",
+            Scope {
+                route: Some(route.clone()),
+                from_structure: Some(from.clone()),
+                to_structure: Some(to.clone()),
+                ..Scope::default()
+            },
+        );
+    }
+    let net = Network::connect(&t.url).unwrap();
+    let mut s = Session::open_on(Box::new(net.store(&a).unwrap()), &a).unwrap();
+    let d = s.route_detail(&route).unwrap();
+    let ids: Vec<String> = d.structures.iter().map(|x| x.id.clone()).collect();
+    let at = |id: &str| s.line().structure(id).unwrap().position;
+    let (mine, pm) = (ids[0].clone(), at(&ids[0]));
+    // A structure of the part, not one of its ends; one of the route
+    // outside the part.
+    let (inner, pi) = (ids[2].clone(), at(&ids[2]));
+    let (outer, po) = (ids[8].clone(), at(&ids[8]));
+    let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
+    let join = |u: &str| {
+        join_network(
+            &server.invitation_for(u),
+            u,
+            &NetJoin::default(),
+            &mut |_| {},
+        )
+        .unwrap()
+    };
+    let (bob, dora, tom, pia) = (join("bob"), join("dora"), join("tom"), join("pia"));
+    let mut log = Vec::new();
+    let mut n = 0u64;
+    let mut go = |j: &Joined, line: &str, op: Op| {
+        n += 1;
+        edit_on(j, &mut log, n, &a, line, op)
+    };
+    // Main has no revision yet: a branch from it would record every
+    // object — only who may edit them all (Bob) commits it.
+    let ws = |name: &str, team: Vec<String>| Op::CreateWorkingSetBranch {
+        name: name.into(),
+        from: "main".into(),
+        routes: vec![route.clone()],
+        team,
+    };
+    let e = go(&dora, "main", ws("early", vec![])).unwrap_err();
+    assert!(e.contains("may not commit"), "{e}");
+    go(
+        &bob,
+        "main",
+        Op::Commit {
+            message: "first".into(),
+        },
+    )
+    .unwrap();
+    // A branch of the whole line: refused (the line whole); over her
+    // route: made.
+    let e = go(
+        &dora,
+        "main",
+        Op::CreateLine {
+            name: "whole".into(),
+            from: "main".into(),
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("whole"), "{e}");
+    go(&dora, "main", ws("dora-ws", vec!["pia".into()])).unwrap();
+    assert!(
+        go(
+            &dora,
+            "main",
+            Op::CreateWorkingSetBranch {
+                name: "nowhere".into(),
+                from: "main".into(),
+                routes: vec!["no-such-route".into()],
+                team: vec![],
+            },
+        )
+        .is_err()
+    );
+    // Her move on it and her commit; Pia (its team) too; Tom not.
+    go(&dora, "dora-ws", moved(&mine, [pm[0] + 0.4, pm[1], pm[2]])).unwrap();
+    go(
+        &dora,
+        "dora-ws",
+        Op::Commit {
+            message: "mine".into(),
+        },
+    )
+    .unwrap();
+    go(&pia, "dora-ws", moved(&inner, [pi[0] + 0.2, pi[1], pi[2]])).unwrap();
+    let e = go(&tom, "dora-ws", moved(&mine, [pm[0] + 0.8, pm[1], pm[2]])).unwrap_err();
+    assert!(e.contains("dora's"), "{e}");
+    // Deleting or renaming it: its maker only.
+    assert!(
+        go(
+            &pia,
+            "main",
+            Op::DeleteLine {
+                name: "dora-ws".into(),
+            },
+        )
+        .is_err()
+    );
+    go(
+        &pia,
+        "dora-ws",
+        Op::Commit {
+            message: "pia's".into(),
+        },
+    )
+    .unwrap();
+    // Merged into main by Dora: what the merge changes there is hers to
+    // change.
+    go(
+        &dora,
+        "main",
+        Op::Merge {
+            other: "dora-ws".into(),
+            message: None,
+            choices: Default::default(),
+        },
+    )
+    .unwrap();
+    let main_now = Session::open_on(Box::new(net.store(&a).unwrap()), &a).unwrap();
+    assert_eq!(
+        main_now.line().structure(&mine).unwrap().position[0],
+        pm[0] + 0.4
+    );
+    assert_eq!(
+        main_now.line().structure(&inner).unwrap().position[0],
+        pi[0] + 0.2
+    );
+    // A tag still needs the line whole.
+    let e = go(
+        &dora,
+        "main",
+        Op::Tag {
+            name: "issued".into(),
+            at: None,
+            note: String::new(),
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("whole"), "{e}");
+    // A commit records only what its user may edit: Dora moved a
+    // structure outside Pia's part, Pia may not commit it; Dora may.
+    go(&dora, "main", moved(&outer, [po[0] + 0.3, po[1], po[2]])).unwrap();
+    let e = go(
+        &pia,
+        "main",
+        Op::Commit {
+            message: "not hers".into(),
+        },
+    )
+    .unwrap_err();
+    // (The structure lies outside what she sees: the refusal names nothing.)
+    assert!(e.contains("no access") && !e.contains(&outer), "{e}");
+    go(
+        &dora,
+        "main",
+        Op::Commit {
+            message: "hers".into(),
+        },
+    )
+    .unwrap();
+    // The owner's question 1 of phase 7: Pia makes a new structure inside
+    // her part (one of its structures copied a metre along); outside it,
+    // refused.
+    let copy = |id: &str, new: &str, dx: f64| {
+        let mut v = serde_json::to_value(s.line().structure(id).unwrap()).unwrap();
+        v["id"] = serde_json::Value::String(new.into());
+        let p = v["position"][0].as_f64().unwrap();
+        v["position"][0] = serde_json::json!(p + dx);
+        Op::Do {
+            command: ohl_session::Command::Put {
+                kind: Kind::Structure,
+                id: new.into(),
+                value: v,
+                ord: None,
+            },
+        }
+    };
+    go(&pia, "main", copy(&inner, "P11-NEW", 1.0)).unwrap();
+    assert!(go(&pia, "main", copy(&outer, "P11-OUT", 1.0)).is_err());
+    // Deleted by its maker.
+    go(
+        &dora,
+        "main",
+        Op::DeleteLine {
+            name: "dora-ws".into(),
+        },
+    )
+    .unwrap();
+    drop((bob, dora, tom, pia));
     server.stop();
 }

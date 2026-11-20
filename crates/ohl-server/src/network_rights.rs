@@ -220,6 +220,25 @@ pub(crate) enum Need {
     },
     /// Not on a network.
     Refused(&'static str),
+    /// Phase 11: a commit — the objects it records (the line's changes
+    /// since its revision) decided as edits of their own.
+    Recorded,
+    /// Phase 11: a branch over a working set made — its routes seen, each
+    /// with something its maker may edit.
+    WorkingSet,
+    /// Phase 11: changes brought into a branch over a working set — its
+    /// objects decided after, but those now as on main (main's changes,
+    /// decided there).
+    IntoBranch,
+}
+
+/// Phase 11: who may act on a branch over a working set.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Member {
+    /// Its maker only (deleting, renaming, describing it).
+    Maker(String),
+    /// Its maker or its team (its commands, commits, reviews, merges).
+    Team(String),
 }
 
 const AT_LARGE: &[Permission] = &[Permission::Edit, Permission::Create, Permission::Delete];
@@ -248,6 +267,8 @@ pub(crate) fn need(op: &Op) -> Need {
         | Op::Tag { .. }
         | Op::DeleteRef { .. }
         | Op::SubmitReview { .. } => Need::Line(EDIT),
+        // Decided by [`need_on`] (its routes).
+        Op::CreateWorkingSetBranch { .. } => Need::WorkingSet,
         Op::ProtectBranch { .. } => Need::Line(&[Permission::Lock]),
         Op::DecideReview { .. } => Need::Line(&[Permission::Review]),
         Op::SetSetting { .. } => Need::Settings,
@@ -383,15 +404,175 @@ pub(crate) fn uses_changed(
     out
 }
 
-/// Decides operation `op` of `rights` on model `line` before it runs.
-pub(crate) fn check_need(
+/// Phase 11 (the owner's questions of phase 7, decided conservatively):
+/// the rule of `op` on project line `branch` of a model, branches over a
+/// working set considered — **a commit needs edit only on what it
+/// records**; a branch over a working set is made by whoever may edit on
+/// each of its routes, its commands, commits, reviews and merges are its
+/// maker's and its team's, deleting, renaming or describing it its
+/// maker's; merging it into main needs only what the merge changes there;
+/// changes brought into it from main are main's. Tags, branches without a
+/// working set, rollbacks, reverts and reviews' merges need the line
+/// whole, as before.
+pub(crate) fn need_on(op: &Op, branch: &str, s: &Session) -> (Need, Option<Member>) {
+    let main = ohl_session::versions::MAIN;
+    let scoped = |b: &str| s.branch_scope(b).is_some();
+    let team = |b: &str| scoped(b).then(|| Member::Team(b.to_owned()));
+    match op {
+        Op::Do { .. } | Op::Undo | Op::Redo => (Need::Objects, team(branch)),
+        Op::Commit { .. } => (Need::Recorded, team(branch)),
+        Op::DeleteLine { name } | Op::DeleteRef { name, .. } if scoped(name) => {
+            (Need::Objects, Some(Member::Maker(name.clone())))
+        }
+        Op::RenameLine { from: name, .. } | Op::SetLineDescription { line: name, .. }
+            if scoped(name) =>
+        {
+            (Need::Objects, Some(Member::Maker(name.clone())))
+        }
+        Op::SubmitReview { branch: b, .. } if scoped(b) => (Need::Objects, team(b)),
+        Op::Merge { other, .. } if scoped(branch) => {
+            let _ = other;
+            (Need::IntoBranch, team(branch))
+        }
+        Op::BringIn { .. } if scoped(branch) => (Need::IntoBranch, team(branch)),
+        Op::Merge { other: b, .. } | Op::BringIn { from: b, .. } if branch == main && scoped(b) => {
+            (Need::Objects, None)
+        }
+        _ => (need(op), None),
+    }
+}
+
+/// Whether `user` may act on branch-over-a-working-set `m` of `s`: its
+/// maker, or (for its work) a user named in its team or in one of its
+/// groups (`data`).
+pub(crate) fn check_member(
+    data: &ohl_session::rights::RightsData,
+    s: &Session,
+    m: &Member,
+    user: &str,
+) -> Result<(), String> {
+    let (name, team_too) = match m {
+        Member::Maker(n) => (n, false),
+        Member::Team(n) => (n, true),
+    };
+    let Some(scope) = s.branch_scope(name) else {
+        return Ok(());
+    };
+    if scope.by == user {
+        return Ok(());
+    }
+    if team_too {
+        let groups = data.groups_of(user);
+        if scope
+            .team
+            .iter()
+            .any(|t| t == user || groups.contains(t.as_str()))
+        {
+            return Ok(());
+        }
+    }
+    Err(format!(
+        "branch {name} is {}'s{}: {user} may not work on it",
+        scope.by,
+        if team_too { " and its team's" } else { "" }
+    ))
+}
+
+/// Phase 11: the objects a commit on project line `branch` records — its
+/// changes since its revision — decided as edits (`create` for one the
+/// revision lacks, `delete` for one gone, `edit` for one changed; places
+/// as the server keeps them, main's, else the object's own on the
+/// branch).
+pub(crate) fn check_recorded(
+    rights: &UserRights,
+    line: &str,
+    s: &mut Session,
+    branch: &str,
+    places: &Places,
+) -> Result<(), String> {
+    let changed = s.uncommitted(branch).map_err(|e| e.to_string())?;
+    if changed.is_empty() {
+        return Ok(());
+    }
+    let user = rights.user();
+    s.with_line(branch, |s| {
+        let keys: Vec<(Kind, String)> = changed.iter().map(|(k, _, _)| k.clone()).collect();
+        let mut here = Places::default();
+        here.update(s, &keys);
+        for ((kind, id), was, is) in &changed {
+            let place = places.get(*kind, id).or_else(|| here.get(*kind, id));
+            let p = match (was, is) {
+                (false, true) => Permission::Create,
+                (true, false) => Permission::Delete,
+                _ => Permission::Edit,
+            };
+            let t = target(line, *kind, id, place);
+            if !rights.allows(p, &t) {
+                return Err(ohl_session::SessionError::Refused(
+                    if rights.allows(Permission::See, &t) {
+                        format!(
+                            "{user} may not commit: it records {} of {} {id} (no assignment \
+                             gives it there)",
+                            p.as_str(),
+                            kind.as_str()
+                        )
+                    } else {
+                        HIDDEN_REFUSAL.to_owned()
+                    },
+                ));
+            }
+        }
+        Ok(())
+    })
+    .map_err(|e| e.to_string())
+}
+
+/// Phase 11: may `rights` make a branch over `routes` of model `line`?
+/// Each route seen, with at least one object on it they may edit (the
+/// places as the server keeps them).
+pub(crate) fn check_working_set(
+    rights: &UserRights,
+    line: &str,
+    routes: &[String],
+    places: &Places,
+) -> Result<(), String> {
+    let user = rights.user();
+    for r in routes {
+        let seen = sees(rights, line, Kind::Route, r, places.get(Kind::Route, r));
+        let editable = seen
+            && places.iter().any(|((k, id), p)| {
+                p.routes.iter().any(|x| x == r)
+                    && rights.allows(Permission::Edit, &target(line, *k, id, Some(p)))
+            });
+        if !seen {
+            return Err(HIDDEN_REFUSAL.to_owned());
+        }
+        if !editable {
+            return Err(format!(
+                "{user} may edit nothing of route {r}: a branch over it is not theirs to make"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Decides operation `op` of `rights` on model `line` before it runs, by
+/// its rule `need` ([`need_on`]).
+pub(crate) fn check_need_with(
     rights: &UserRights,
     line: &str,
     op: &Op,
     s: &Session,
+    need: Need,
 ) -> Result<(), String> {
     let user = rights.user();
-    match need(op) {
+    match need {
+        Need::Recorded | Need::WorkingSet | Need::IntoBranch => {
+            if rights.model_role(line).is_none() {
+                return Err(format!("{user} has no rights on line {line}"));
+            }
+            Ok(())
+        }
         Need::Objects => {
             if rights.model_role(line).is_none() {
                 return Err(format!("{user} has no rights on line {line}"));
@@ -450,6 +631,12 @@ pub(crate) fn check_need(
 /// Decides every object a command changed (`changed`), on `s` as it is
 /// now (after) and `before` as it was: `create` for a new one, `delete`
 /// for one gone, `edit` for one changed (both places).
+///
+/// Phase 11 (the owner's question 1 of phase 7): a new object refused by
+/// the rights as they were is decided again by `again` — the user's
+/// rights with their parts of routes worked out on the line as it is
+/// after the command — so a designer of a part of a route may make new
+/// objects inside it.
 pub(crate) fn check_objects(
     rights: &UserRights,
     line: &str,
@@ -457,12 +644,31 @@ pub(crate) fn check_objects(
     before: &Places,
     changed: &[(Kind, String)],
     lib: Option<&LibCheck>,
+    again: Option<&dyn Fn(&mut Session) -> UserRights>,
 ) -> Result<(), String> {
     let mut after = Places::default();
     after.update(s, changed);
     let user = rights.user();
     if let Some(lib) = lib {
         check_library_objects(lib, user, line, s, changed)?;
+    }
+    let mut after_rights: Option<UserRights> = None;
+    for (kind, id) in changed {
+        let b = before.get(*kind, id);
+        let existed = b.is_some() || (*kind == Kind::Meta);
+        let a = after.get(*kind, id);
+        if !existed && a.is_some() {
+            let t = target(line, *kind, id, a);
+            if rights.allows(Permission::Create, &t) {
+                continue;
+            }
+            if let Some(again) = again {
+                let r = after_rights.get_or_insert_with(|| again(s));
+                if r.allows(Permission::Create, &t) {
+                    continue;
+                }
+            }
+        }
     }
     for (kind, id) in changed {
         let b = before.get(*kind, id);
@@ -484,7 +690,16 @@ pub(crate) fn check_objects(
             }
         };
         match (existed, exists) {
-            (false, true) => decided(Permission::Create, a)?,
+            (false, true) => {
+                let t = target(line, *kind, id, a);
+                let made = rights.allows(Permission::Create, &t)
+                    || after_rights
+                        .as_ref()
+                        .is_some_and(|r| r.allows(Permission::Create, &t));
+                if !made {
+                    decided(Permission::Create, a)?;
+                }
+            }
             (true, false) => decided(Permission::Delete, b)?,
             (true, true) => {
                 decided(Permission::Edit, b.or(a))?;

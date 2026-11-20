@@ -580,6 +580,47 @@ fn country_libraries_through_the_rights() {
             .unwrap()
             .is_empty()
     );
+    // Phase 11: a branch's use index — its changes only, labelled with
+    // the branch, placed as on main (ria sees the branch's row of her
+    // route's section, not one of an object made only there), renamed and
+    // gone with the branch.
+    let one = all
+        .iter()
+        .find(|u| u.routes == vec!["branch".to_owned()] && u.object_kind == "section")
+        .expect("a section of route branch");
+    assert!(all.iter().all(|u| u.branch == "main"));
+    let row = |object: &str| ohl_store_pg::library::UseRow {
+        object_kind: "section".into(),
+        object: object.into(),
+        kind: "cables".into(),
+        file: String::new(),
+        entry: DRAKE.into(),
+    };
+    net.write_branch_uses(
+        "A",
+        "phase-1",
+        &[],
+        &[row(&one.object), row("S-ONLY-THERE")],
+    )
+    .unwrap();
+    let zoe = || net.uses(&rights(&net, "zoe"), "cables", DRAKE).unwrap();
+    assert_eq!(zoe().len(), all.len() + 2);
+    assert!(
+        zoe()
+            .iter()
+            .any(|u| u.branch == "phase-1" && u.object == one.object)
+    );
+    let ria_b = net.uses(&rights(&net, "ria"), "cables", DRAKE).unwrap();
+    assert!(
+        ria_b
+            .iter()
+            .any(|u| u.branch == "phase-1" && u.object == one.object)
+    );
+    assert!(!ria_b.iter().any(|u| u.object == "S-ONLY-THERE"));
+    net.rename_branch_uses("A", "phase-1", "phase-2").unwrap();
+    assert!(zoe().iter().any(|u| u.branch == "phase-2"));
+    net.forget_branch_uses("A", "phase-2").unwrap();
+    assert_eq!(zoe().len(), all.len());
     let none = net
         .uses(&rights(&net, "rob"), "cables", "no-such-wire")
         .unwrap_err()

@@ -2133,20 +2133,54 @@ impl NetHost {
         }
         let rights = self.rights_of(user);
         let checking = Instant::now();
-        if let Err(why) = nr::check_need(&rights, code, &op, &self.models[code].session) {
+        // Phase 11: the rule considering branches over a working set.
+        let (need, member) = nr::need_on(&op, line, &self.models[code].session);
+        let early = member
+            .as_ref()
+            .map_or(Ok(()), |m| {
+                nr::check_member(&self.rights, &self.models[code].session, m, user)
+            })
+            .and_then(|()| {
+                nr::check_need_with(&rights, code, &op, &self.models[code].session, need.clone())
+            })
+            .and_then(|()| match (&need, &op) {
+                (nr::Need::WorkingSet, Op::CreateWorkingSetBranch { routes, .. }) => {
+                    nr::check_working_set(&rights, code, routes, &self.models[code].places)
+                }
+                _ => Ok(()),
+            })
+            .and_then(|()| {
+                nr::check_library_need(&self.lib, user, code, line, &op, &self.models[code].session)
+            });
+        if let Err(why) = early {
             self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
             return Err(format!("refused: {why}"));
         }
-        if let Err(why) =
-            nr::check_library_need(&self.lib, user, code, line, &op, &self.models[code].session)
-        {
-            self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
-            return Err(format!("refused: {why}"));
-        }
+        // Phase 11, the owner's question 1 of phase 7: a designer of a
+        // part of a route makes new objects inside the part as it is after
+        // the command — their parts worked out again then.
+        let parts: Vec<(String, String, String)> = if rights.has_route_parts(code) {
+            self.rights
+                .assignments_of(user)
+                .into_iter()
+                .filter(|a| !a.deny && a.scope.line.as_deref() == Some(code))
+                .filter_map(|a| {
+                    let sc = &a.scope;
+                    match (&sc.route, &sc.from_structure, &sc.to_structure) {
+                        (Some(r), Some(f), Some(t)) => Some((r.clone(), f.clone(), t.clone())),
+                        _ => None,
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let resolved = (!parts.is_empty()).then(|| self.resolve_for(user));
         let mut check_us = checking.elapsed().as_secs_f64() * 1e6;
         self.net.begin_unit().map_err(|e| e.to_string())?;
         let lib = self.lib.clone();
         let pins = matches!(op, Op::LibraryPins { .. });
+        let data = &self.rights;
         let m = self.models.get_mut(code).expect("checked");
         let Model {
             session,
@@ -2154,6 +2188,60 @@ impl NetHost {
             uses,
             ..
         } = m;
+        // Phase 11: a commit records what it touches — decided first (in
+        // the unit: what a refusal wrote goes).
+        // A branch made from a line with uncommitted changes records them
+        // first: the same rule.
+        let recorded_line = match (&need, &op) {
+            (nr::Need::Recorded, _) => Some(line.to_owned()),
+            (nr::Need::WorkingSet, Op::CreateWorkingSetBranch { from, .. }) => {
+                Some(from.trim().to_owned())
+            }
+            _ => None,
+        };
+        if let Some(recorded_line) = recorded_line {
+            let recorded = session.atomically(|s| {
+                nr::check_recorded(&rights, code, s, &recorded_line, places)
+                    .map_err(ohl_session::SessionError::Refused)
+            });
+            if let Err(e) = recorded {
+                let _ = self.net.roll_back_unit();
+                let why = match e {
+                    ohl_session::SessionError::Refused(w) => w,
+                    other => other.to_string(),
+                };
+                self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
+                return Err(format!("refused: {why}"));
+            }
+        }
+        let again = |s: &mut Session| -> ohl_session::rights::UserRights {
+            let mut r = nr::Resolved {
+                parts: resolved
+                    .as_ref()
+                    .map(|x| x.parts.clone())
+                    .unwrap_or_default(),
+                regions: resolved
+                    .as_ref()
+                    .map(|x| x.regions.clone())
+                    .unwrap_or_default(),
+            };
+            for (route, from, to) in &parts {
+                let members: std::collections::HashSet<(Kind, String)> = s
+                    .pick_extent(&[ohl_session::working_set::Pick::Structures {
+                        route: route.clone(),
+                        from: from.clone(),
+                        to: to.clone(),
+                    }])
+                    .map(|e| e.wanted.into_iter().collect())
+                    .unwrap_or_default();
+                r.parts.insert(
+                    (code.to_owned(), route.clone(), from.clone(), to.clone()),
+                    Arc::new(members),
+                );
+            }
+            data.compile(user, &r)
+        };
+        let into_branch = need == nr::Need::IntoBranch;
         let mut refusal: Option<String> = None;
         let mut objects_us = 0.0;
         let executed = crate::execute_checked(session, user, line, &op, |s, a| {
@@ -2164,7 +2252,27 @@ impl NetHost {
                 pins,
                 before: uses,
             };
-            let decided = nr::check_objects(&rights, code, s, places, &a.objects, Some(&check));
+            // Changes brought into a branch over a working set: those now
+            // as on main are main's (decided there).
+            let objects: Vec<(Kind, String)> = if into_branch {
+                let main = ohl_session::versions::MAIN;
+                a.objects
+                    .iter()
+                    .filter(|(k, id)| s.object_value(*k, id) != s.line_object_value(main, *k, id))
+                    .cloned()
+                    .collect()
+            } else {
+                a.objects.clone()
+            };
+            let decided = nr::check_objects(
+                &rights,
+                code,
+                s,
+                places,
+                &objects,
+                Some(&check),
+                (!parts.is_empty()).then_some(&again as &dyn Fn(&mut Session) -> _),
+            );
             objects_us = t.elapsed().as_secs_f64() * 1e6;
             decided.map_err(|why| {
                 refusal = Some(why.clone());
@@ -2240,6 +2348,13 @@ impl NetHost {
                 }
             ));
         }
+        // Phase 8's rules on a network (phase 11): the other routes made
+        // out of date by what reached main — their owners told.
+        if line == ohl_session::versions::MAIN
+            && let Some(a) = applied.as_ref().filter(|a| a.notice.is_some())
+        {
+            self.notify_stale(code, user, a.seq);
+        }
         let role_changed = matches!(&op, Op::SetUser { .. });
         self.common.send(Event::to(
             answers,
@@ -2257,6 +2372,61 @@ impl NetHost {
             started.elapsed().as_secs_f64() * 1e3,
         );
         Ok(())
+    }
+
+    /// Tells the owners of the routes log entry `seq` of model `code` made
+    /// out of date (phase 8's stale marks, phase 11): each connected
+    /// client who may edit such a route, in words it may see (a route or
+    /// object it may not see: the fixed refusal's words instead).
+    fn notify_stale(&mut self, code: &str, user: &str, seq: i64) {
+        let Some(m) = self.models.get(code) else {
+            return;
+        };
+        let Ok(stale) = m.session.stale_routes() else {
+            return;
+        };
+        let marked: Vec<(String, String)> = stale
+            .into_iter()
+            .filter_map(|(r, st)| {
+                st.notices
+                    .iter()
+                    .rev()
+                    .find(|n| n.seq == seq)
+                    .map(|n| (r, n.what.clone()))
+            })
+            .collect();
+        if marked.is_empty() {
+            return;
+        }
+        let clients: Vec<u64> = self
+            .clients
+            .iter()
+            .filter(|(_, c)| c.user != user)
+            .map(|(k, _)| *k)
+            .collect();
+        for client in clients {
+            let Some(rights) = self.client_rights(client) else {
+                continue;
+            };
+            for (route, what) in &marked {
+                let owner = self.models.get(code).is_some_and(|m| {
+                    rights.allows(
+                        Permission::Edit,
+                        &nr::target(code, Kind::Route, route, m.places.get(Kind::Route, route)),
+                    )
+                });
+                if !owner {
+                    continue;
+                }
+                let text = self.sanitise(
+                    &rights,
+                    &format!(
+                        "line {code}: route {route}'s results are out of date ({what}, by {user})"
+                    ),
+                );
+                self.push(client, None, None, Some(ServerMsg::Notice { text }));
+            }
+        }
     }
 
     /// What an applied command touched, written with it (inside its
@@ -2351,6 +2521,38 @@ impl NetHost {
                     self.net.write_file_uses(code, &files).map_err(e)?;
                 }
             }
+        }
+        // Phase 11: a branch's use index — the objects it changed, as it
+        // holds them (only its changes).
+        if line != main
+            && let Some(a) = applied
+            && !a.objects.is_empty()
+        {
+            let changed: Vec<(Kind, String)> = a.objects.clone();
+            let rows = m
+                .session
+                .with_line(line, |s| {
+                    Ok(ohl_store_pg::library::uses_of_session(s, Some(&changed)))
+                })
+                .map_err(|x| x.to_string())?;
+            let from: Vec<(String, String)> = changed
+                .iter()
+                .map(|(k, id)| (k.as_str().to_owned(), id.clone()))
+                .collect();
+            self.net
+                .write_branch_uses(code, line, &from, &rows)
+                .map_err(e)?;
+        }
+        match op {
+            Op::DeleteLine { name }
+            | Op::DeleteRef {
+                name,
+                confirm: true,
+            } => self.net.forget_branch_uses(code, name).map_err(e)?,
+            Op::RenameLine { from, to } => {
+                self.net.rename_branch_uses(code, from, to).map_err(e)?;
+            }
+            _ => {}
         }
         let mut touched: BTreeSet<TileKey> = BTreeSet::new();
         let mut routes: BTreeSet<String> = BTreeSet::new();

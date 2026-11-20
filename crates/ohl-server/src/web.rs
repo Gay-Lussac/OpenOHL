@@ -119,6 +119,7 @@ pub fn changes_scene(op: &Op, line: &str) -> bool {
         Op::MergeReview { .. } | Op::DeleteLine { .. } | Op::RenameLine { .. } => true,
         Op::SetUser { .. }
         | Op::CreateLine { .. }
+        | Op::CreateWorkingSetBranch { .. }
         | Op::SetLineDescription { .. }
         | Op::SetSetting { .. }
         | Op::Commit { .. }
