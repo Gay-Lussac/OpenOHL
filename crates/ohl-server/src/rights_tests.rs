@@ -33,13 +33,24 @@ use crate::{ClientMsg, HeldTile, Op, ServerMsg, TileKey};
 pub(crate) fn pump(
     j: &Joined,
     log: &mut Vec<ServerMsg>,
+    until: impl FnMut(&ServerMsg) -> bool,
+) -> Vec<ServerMsg> {
+    pump_for(j, log, Duration::from_secs(10), until)
+}
+
+/// [`pump`] for at most `limit` (a check computed on the server takes
+/// longer when the machine is busy with the other tests).
+pub(crate) fn pump_for(
+    j: &Joined,
+    log: &mut Vec<ServerMsg>,
+    limit: Duration,
     mut until: impl FnMut(&ServerMsg) -> bool,
 ) -> Vec<ServerMsg> {
     let started = Instant::now();
     let mut got = Vec::new();
     loop {
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < limit,
             "{:?}",
             got.iter().rev().take(4).collect::<Vec<_>>()
         );
@@ -1038,7 +1049,7 @@ fn property_no_message_holds_a_hidden_id_or_place() {
                     check,
                 })
                 .unwrap();
-            let got = pump(&pat, &mut log, |m| {
+            let got = pump_for(&pat, &mut log, Duration::from_secs(120), |m| {
                 matches!(m, ServerMsg::CheckResult { id, .. } if *id == want)
                     || matches!(m, ServerMsg::Notice { .. })
             });

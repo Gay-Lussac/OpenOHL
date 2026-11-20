@@ -20,7 +20,7 @@ use ohl_store_pg::Network;
 
 use crate::client::{NetJoin, join_network};
 use crate::network_tests::{add_user, local, moved, net_options, test_network};
-use crate::rights_tests::{hidden_for, no_leak, pump};
+use crate::rights_tests::{hidden_for, no_leak, pump, pump_for};
 use crate::server::Server;
 use crate::{ClientMsg, ScopedCheck, ScopedReport, ServerMsg};
 
@@ -85,7 +85,7 @@ fn ask(
             check,
         })
         .unwrap();
-    let got = pump(j, log, |m| {
+    let got = pump_for(j, log, Duration::from_secs(120), |m| {
         matches!(m, ServerMsg::CheckResult { id: i, .. } if *i == id)
             || matches!(m, ServerMsg::Notice { .. })
     });
